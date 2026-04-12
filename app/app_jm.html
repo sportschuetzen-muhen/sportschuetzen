@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jahresmeisterschaft</title>
+    <style>
+        :root {
+            --primary: #0f3c5c;
+            --bg: #f4f6f8;
+            --text: #333;
+            --line: #e0e0e0;
+        }
+
+        body {
+            font-family: Arial, system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            margin: 0;
+            padding: 15px;
+            color: var(--text);
+        }
+
+        /* Pull-to-Refresh Spinner */
+        #pull-spinner {
+            position: fixed; top: -50px; left: 50%; transform: translateX(-50%);
+            width: 40px; height: 40px; background: var(--primary); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 9999; transition: top 0.15s ease-out;
+        }
+        .spinner-icon {
+            width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: #fff; border-radius: 50%; animation: spin 0.8s infinite linear;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        .liga { margin-bottom: 30px; }
+        .liga h2 { font-size: 18px; color: var(--primary); margin: 0 0 10px 0; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,.08);
+            border-radius: 6px;
+            overflow: hidden;
+            table-layout: fixed;
+        }
+
+        thead th {
+            background: var(--primary);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 10px 6px;
+            line-height: 1.2;
+        }
+
+        /* --- Spalten-Alignment --- */
+        .col-rang { width: 60px; text-align: center; }
+        .col-name { width: auto; text-align: left; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--primary); }
+        .col-total { width: 85px; text-align: right; padding-right: 10px; }
+
+        td {
+            padding: 10px 6px;
+            border-bottom: 1px solid var(--line);
+            vertical-align: middle;
+            font-size: 14px;
+        }
+
+        .status-label {
+            display: block;
+            font-size: 9px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-top: 2px;
+        }
+        .text-auf { color: #27ae60; }
+        .text-ab { color: #c0392b; }
+
+        .aufsteiger { border-left: 4px solid #2ecc71; }
+        .absteiger { border-left: 4px solid #e74c3c; }
+        .neutral { border-left: 4px solid transparent; }
+
+        .details { display: none; background: #f9f9f9; }
+        .detail-grid { display: grid; grid-template-columns: 1fr; gap: 15px; padding: 15px; border-top: 1px solid #ddd; }
+        @media(min-width:768px){ .detail-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); } }
+        
+        .detail-box h4 { display: flex; justify-content: space-between; margin: 0 0 8px; border-bottom: 1px solid #ddd; color: var(--primary); font-size: 14px; }
+        .two-col { list-style: none; padding: 0; margin: 0; }
+        .two-col li { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #eee; }
+        .is-streich { color: #e74c3c; text-decoration: line-through; opacity: 0.7; }
+
+        .max-hint { font-size: 0.6em; vertical-align: super; color: rgba(255,255,255,0.7); cursor: pointer; }
+        .tooltip {
+            position: fixed; background: #fff; padding: 6px 10px; font-size: 12px; border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); opacity: 0; pointer-events: none;
+            transition: 0.15s; z-index: 9999; border: 1px solid #ccc;
+        }
+        .tooltip.show { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div id="pull-spinner"><div class="spinner-icon"></div></div>
+
+<div class="subtitle">Tippe auf einen Schützen für Details</div>
+<div id="content">Lade Daten…</div>
+
+<div id="tooltip" class="tooltip"></div>
+
+<script>
+(function(){
+    // --- PULL TO REFRESH ---
+    let touchStart = 0;
+    const spinner = document.getElementById('pull-spinner');
+
+    document.addEventListener('touchstart', e => { touchStart = e.touches[0].pageY; }, {passive: true});
+    document.addEventListener('touchmove', e => {
+        let distance = e.touches[0].pageY - touchStart;
+        if (window.scrollY <= 0 && distance > 0) {
+            spinner.style.top = Math.min(distance / 2.5, 60) + 'px';
+        }
+    }, {passive: true});
+    document.addEventListener('touchend', e => {
+        let distance = e.changedTouches[0].pageY - touchStart;
+        if (window.scrollY <= 0 && distance > 130) {
+            location.reload();
+        } else {
+            spinner.style.top = '-50px';
+        }
+    }, {passive: true});
+
+    // --- DATEN ---
+    const API_URL="https://jahresmeisterschaft-muhen.dan-hunziker73.workers.dev?jahr=current";
+    const fmt=v=>isFinite(v)?Number(v).toFixed(2):"0.00";
+    const arr=v=>Array.isArray(v)?v:[];
+    let openRow=null;
+
+    window.toggle=id=>{
+        if(openRow && openRow!==id){
+            const prev=document.getElementById(openRow);
+            if(prev) prev.style.display="none";
+        }
+        const el=document.getElementById(id);
+        if(!el) return;
+        el.style.display=(el.style.display==="table-row")?"none":"table-row";
+        openRow=(el.style.display==="table-row")?id:null;
+    };
+
+    function renderLiga(ligaNr, data){
+        let html=`<div class="liga"><h2>Liga ${ligaNr}</h2>
+        <table><thead><tr>
+        <th class="col-rang">Rang</th>
+        <th class="col-name">Name</th>
+        <th class="col-total">Total <span class="max-hint">max</span></th>
+        </tr></thead><tbody>`;
+
+        arr(data).forEach((t, i)=>{
+            const id=`l${ligaNr}_${i}`;
+            let rowCls="neutral", label="";
+            if(ligaNr===1 && i>=data.length-2){ rowCls="absteiger"; label='<span class="status-label text-ab">Abstieg</span>'; }
+            if(ligaNr===2 && i<2){ rowCls="aufsteiger"; label='<span class="status-label text-auf">Aufstieg</span>'; }
+
+            html+=`<tr class="clickable ${rowCls}" onclick="toggle('${id}')">
+                <td class="col-rang"><b>${t.rang||"-"}</b>${label}</td>
+                <td class="col-name">${t.name||"-"}</td>
+                <td class="col-total"><b>${fmt(t.total)}</b></td>
+            </tr>
+            <tr id="${id}" class="details"><td colspan="3"><div class="detail-grid">`;
+
+            let used=false, streich=Number(t.streichresultat_prz)||0;
+            html+=`<div class="detail-box"><h4><span>Meisterschaft</span><span>Pkt (%)</span></h4><ul class="two-col">`;
+            arr(t.schiessen).forEach(s=>{
+                const p=Number(s.prozent);
+                const isStreich=!used && streich>0 && Math.abs(p-streich)<0.0001;
+                if(isStreich) used=true;
+                html+=`<li class="${isStreich?"is-streich":""}"><span>${s.name}</span><span>${s.punkte} (${fmt(p)}%)</span></li>`;
+            });
+            html+=`</ul></div><div class="detail-box"><h4><span>Mannschaft</span><span>Pkt</span></h4><ul class="two-col">`;
+            arr(t.mannschaft).forEach((m,j)=>{ html+=`<li><span>Runde ${j+1}</span><span>${m.punkte||"-"}</span></li>`; });
+            html+=`</ul></div><div class="detail-box"><h4><span>Auswärts</span><span>Pkt</span></h4><ul class="two-col">`;
+            const au=arr(t.auswaerts);
+            if(au.length) au.forEach(a=> html+=`<li><span>${a.name}</span><span>${a.punkte}</span></li>`);
+            else html+=`<li style="color:#999">Keine Resultate</li>`;
+            html+=`</ul></div></div></td></tr>`;
+        });
+        return html+`</tbody></table></div>`;
+    }
+
+    async function loadJMData() {
+        try {
+            const r = await fetch(API_URL + "&t=" + Date.now());
+            const d = await r.json();
+            
+            document.getElementById("content").innerHTML = renderLiga(1, d.liga1) + renderLiga(2, d.liga2);
+            
+            const tip=document.getElementById("tooltip");
+            document.querySelectorAll(".max-hint").forEach(el=>{
+                el.addEventListener("click", e=>{
+                    e.stopPropagation();
+                    const rect=el.getBoundingClientRect();
+                    tip.textContent="Maximum: "+d.max;
+                    tip.style.top=(rect.top - 35)+"px";
+                    tip.style.left=(rect.left - 20)+"px";
+                    tip.classList.add("show");
+                });
+            });
+            document.addEventListener("click",()=>tip.classList.remove("show"));
+        } catch(e) {
+            console.error("Fehler beim Laden:", e);
+            document.getElementById("content").innerHTML = "Fehler beim Laden der Daten.";
+        }
+    }
+
+    // Beim ersten Start laden
+    window.onload = loadJMData;
+
+    // Automatischer Refresh beim Wiederöffnen (iOS Push Support)
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            loadJMData();
+        }
+    });
+})();
+</script>
+</body>
+</html>
+

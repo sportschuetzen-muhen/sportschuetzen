@@ -1,0 +1,411 @@
+:root { 
+    --primary: #0f3a5d; 
+    --bg: #ffffff; 
+    --card: #ffffff; 
+    --text: #1f2937; 
+    --text-light: #6b7280; 
+    --border: #d1d5db; 
+}
+
+/* --- BASICS --- */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body { 
+    font-family: 'Inter', sans-serif; 
+    background: var(--bg); 
+    margin: 0; 
+    /* Platz für Header oben und Nav unten */
+    padding-top: calc(60px + env(safe-area-inset-top)); 
+    padding-bottom: calc(85px + env(safe-area-inset-bottom)); 
+    color: var(--text); 
+    overflow-x: hidden; 
+}
+
+header {
+    background: var(--primary);
+    color: white;
+    padding: calc(15px + env(safe-area-inset-top)) 15px 15px 15px;
+    text-align: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+header h1 { margin: 0; font-size: 1.2rem; font-weight: 700; }
+
+/* --- NAVIGATION --- */
+.bottom-nav { 
+    position: fixed; bottom: 0; width: 100%; 
+    height: calc(75px + env(safe-area-inset-bottom));
+    background: #ffffff; display: flex; justify-content: space-around; 
+    align-items: flex-start; /* Damit Icons oben bleiben trotz Safe Area */
+    border-top: 1px solid #e5e7eb; z-index: 2000; 
+    padding: 10px 10px 0 10px;
+}
+.nav-item { 
+    background: none; border: none; color: var(--text-light); 
+    font-size: 0.7rem; font-weight: 600; display: flex; flex-direction: column; 
+    align-items: center; cursor: pointer; flex: 1; transition: 0.2s;
+}
+.nav-item span { font-size: 1.4rem; margin-bottom: 2px; }
+.nav-item.active { color: var(--primary); }
+
+.nav-home { 
+    position: relative; top: -25px; 
+    background: var(--primary) !important; 
+    color: white !important; width: 60px; height: 60px; border-radius: 50%; 
+    box-shadow: 0 4px 12px rgba(15, 58, 93, 0.4); 
+    justify-content: center; flex: none !important; 
+    border: 5px solid var(--bg) !important;
+}
+
+/* --- PAGES --- */
+.page {
+    display: none;
+    padding: 15px;
+}
+
+
+.card {
+    background: white;
+    border-radius: 16px;
+    padding: 16px;
+    margin: 15px;
+}
+.card h3 {
+    text-align: center;
+    margin-top: 0;
+}
+
+
+.active-page {
+    display: block;
+}
+
+/*   Korrektur blauer rand entfernen .page iframe {
+    width: 100%;
+    height: 100%;
+    min-height: calc(100vh - 145px);
+} */
+
+.page iframe {
+    width: 100%;
+    min-height: calc(100vh - 175px);
+    border: none;
+    border-radius: 16px;
+    background: white;
+}
+
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+
+
+
+/* --- TERMINE LISTE --- */
+.termine-list { display: flex; flex-direction: column; gap: 10px; }
+
+.termin-row {
+    display: grid;
+    grid-template-columns: 85px 1fr; /* Etwas schmaler für das Datum */
+    gap: 15px;
+    align-items: center;
+    padding: 12px;
+    border-radius: 16px;
+    background: #fff;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.termin-row.extern {
+    background: #f8fafc; /* Ganz leichter Grauton für externe */
+}
+
+.termin-date {
+    background: #ffffff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 8px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 70px;
+}
+
+.date-main { font-size: 1.0rem; font-weight: 800; color: var(--primary); }
+.date-sub { font-size: 0.7rem; color: #718096; text-transform: uppercase; font-weight: 600; }
+
+/* Spezial-Style für EXTERNE Termine (Dunkles Datum) */
+.termin-row.extern .termin-date {
+    background: #4a5568;
+    border-color: #2d3748;
+}
+.termin-row.extern .date-main { color: #ffffff; }
+.termin-row.extern .date-sub { color: #cbd5e0; }
+
+.termin-content { display: flex; flex-direction: column; gap: 2px; }
+.termin-title { font-weight: 700; font-size: 1.05rem; line-height: 1.2; color: var(--text); }
+
+.termin-meta { 
+    font-size: 0.85rem; color: var(--text-light); 
+    margin-top: 4px; display: flex; flex-wrap: wrap; gap: 8px; 
+}
+
+/* Google Maps Link Style */
+.map-link {
+    text-decoration: none;
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+}
+.map-link span { border-bottom: 1px dashed #cbd5e0; } /* Optischer Hinweis auf Klickbarkeit */
+
+.badge-prov { 
+    font-size: 0.65rem; background: #fffaf0; color: #b7791f; 
+    padding: 2px 8px; border-radius: 6px; border: 1px solid #fbd38d; 
+    width: fit-content; margin-top: 5px; font-weight: 700; 
+}
+.badge-extern { 
+    font-size: 0.65rem; background: #e2e8f0; color: #4a5568; 
+    padding: 2px 8px; border-radius: 6px; 
+    width: fit-content; margin-top: 5px; font-weight: 700; 
+}
+
+/* --- FILTER --- */
+.filter-container { display: flex; background: #f1f5f9; padding: 4px; border-radius: 12px; margin-bottom: 15px; }
+.filter-btn {
+    flex: 1; border: none; background: none;
+    padding: 10px; font-size: 0.8rem; font-weight: 700; color: #64748b;
+    border-radius: 8px; transition: 0.2s;
+}
+.filter-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+/* --- PULL-TO-REFRESH SPINNER --- */
+#pull-spinner { 
+    position: fixed; top: -50px; left: 50%; transform: translateX(-50%); 
+    width: 40px; height: 40px; background: var(--primary); 
+    border-radius: 50%; display: flex; align-items: center; justify-content: center; 
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2); z-index: 1001; 
+}
+.spinner-icon { 
+    width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); 
+    border-top-color: #fff; border-radius: 50%; animation: spin 0.8s infinite linear; 
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------------- UPLOAD / FORM STYLES ---------------- */
+
+.card {
+    background: white;
+    border-radius: 16px;
+    padding: 16px;
+    margin: 15px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #64748b;
+}
+
+input, select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    font-size: 0.9rem;
+    background: white;
+}
+
+.upload-area {
+    border: 2px dashed #cbd5e1;
+    border-radius: 14px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: 0.2s;
+    background: #f8fafc;
+}
+
+.upload-area:hover {
+    border-color: var(--primary);
+    background: #f1f5f9;
+}
+
+#preview {
+    width: 100%;
+    margin-top: 10px;
+    border-radius: 10px;
+}
+
+.btn-main {
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    border: none;
+    font-weight: 700;
+    font-size: 1rem;
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.btn-main:disabled {
+    opacity: 0.6;
+}
+
+/* --- LOGIN OVERLAY --- */
+#login-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+.login-box {
+    background: var(--card);
+    width: 100%;
+    max-width: 400px;
+    border-radius: 20px;
+    padding: 30px 20px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    text-align: center;
+}
+.login-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 15px;
+}
+.login-box h2 {
+    margin-top: 0;
+    margin-bottom: 5px;
+    color: var(--primary);
+}
+.login-box p {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-bottom: 25px;
+}
+.login-box .form-group {
+    text-align: left;
+    margin-bottom: 15px;
+}
+
+/* --- HERO CARD STYLES --- */
+#hero-rsvps {
+    margin-top: 15px;
+    width: 100%;
+}
+
+.hero-card {
+    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+    border-radius: 16px;
+    padding: 2px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
+}
+
+.hero-card-inner {
+    background: white;
+    border-radius: 14px;
+    padding: 20px;
+    text-align: center;
+}
+
+.hero-card-inner h2 {
+    color: #1e293b;
+    font-size: 1.25rem;
+    margin: 0 0 5px 0;
+}
+
+.hero-date {
+    color: #64748b;
+    font-size: 0.9rem;
+    margin-bottom: 15px;
+}
+
+.hero-subtitle {
+    font-size: 1rem;
+    font-weight: bold;
+    color: #0f172a;
+    margin-bottom: 10px;
+}
+
+.hero-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.hero-btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    color: white;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.hero-btn.success { background: #16a34a; }
+.hero-btn.error { background: #ef4444; }
+
+.hero-chip {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 10px;
+}
+.hero-chip.success { background: #16a34a; }
+.hero-chip.error { background: #ef4444; }
+
+.hero-link {
+    display: block;
+    background: none;
+    border: none;
+    color: #64748b;
+    text-decoration: underline;
+    font-size: 0.85rem;
+    margin: 10px auto 0;
+    cursor: pointer;
+}
+.hero-link.participants {
+    color: var(--primary);
+    font-weight: bold;
+    text-decoration: none;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5); z-index: 3000;
+    display: none; justify-content: center; align-items: center; padding: 20px;
+}
+.modal-content {
+    background: white; border-radius: 16px; width: 100%; max-width: 400px;
+    max-height: 80vh; overflow-y: auto; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.modal-header h2 { margin: 0; font-size: 1.2rem; }
+.modal-close { background: #f1f5f9; border: none; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer; }
+.participant-list { list-style: none; padding: 0; margin: 0; }
+.participant-list li { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; display: flex; justify-content: space-between; }
+.participant-list li:last-child { border-bottom: none; }
+
+

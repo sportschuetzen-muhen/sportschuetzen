@@ -1,0 +1,206 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Sportschützen Muhen App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f3a5d">
+
+<link rel="manifest" href="/sportschuetzen/manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="/sportschuetzen/icons/apple-touch-icon.png">
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sportschützen Muhen">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+<link rel="icon" type="image/png" sizes="192x192" href="/sportschuetzen/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/sportschuetzen/icons/icon-512.png">
+
+<!-- OneSignal SDK (nur EINMAL!) -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+
+<script>
+/************************************************
+ * OneSignal Init + PID Handling (stabil)
+ ************************************************/
+window.OneSignalDeferred = window.OneSignalDeferred || [];
+OneSignalDeferred.push(async function (OneSignal) {
+
+    try {
+        await OneSignal.init({
+            appId: "975091f5-948b-48d4-9e61-b7f4d43a1021",
+            serviceWorkerParam: { scope: "/sportschuetzen/" },
+            serviceWorkerPath: "OneSignalSDKWorker.js",
+            autoRegister: false,
+            notifyButton: { enable: true }
+        });
+
+        console.log("OneSignal Init fertig");
+
+        // ---- PID Handling ----
+        const params = new URLSearchParams(window.location.search);
+        let pid = params.get("pid") || localStorage.getItem("sportschuetzen_pid");
+
+        if (!pid) {
+            console.log("Keine PID vorhanden");
+            return;
+        }
+
+        localStorage.setItem("sportschuetzen_pid", pid);
+
+        if (OneSignal.User.externalId !== pid) {
+            await OneSignal.login(String(pid));
+            console.log("Login mit PID:", pid);
+        }
+
+        const permission = OneSignal.Notifications.permission;
+
+        if (permission === "default") {
+            await OneSignal.Notifications.requestPermission();
+        }
+
+    } catch (err) {
+        console.error("OneSignal Fehler:", err);
+    }
+});
+
+/************************************************
+ * ZENTRALE APP-RESUME LOGIK
+ ************************************************/
+(function () {
+
+    let lastResume = 0;
+    const MIN_INTERVAL = 1500;
+
+    function fireResume(source) {
+        const now = Date.now();
+        if (now - lastResume < MIN_INTERVAL) return;
+        lastResume = now;
+
+        console.log("📲 App Resume:", source);
+
+        // Event für Hauptseite
+        document.dispatchEvent(new CustomEvent("app:resume"));
+
+        // Resume an alle iFrames senden
+        document.querySelectorAll("iframe").forEach(iframe => {
+            iframe.contentWindow?.postMessage(
+                { type: "app:resume", source, ts: now },
+                "*"
+            );
+        });
+    }
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            fireResume("visibility");
+        }
+    });
+
+    window.addEventListener("pageshow", e => {
+        if (e.persisted) {
+            fireResume("pageshow");
+        }
+    });
+
+    window.addEventListener("focus", () => {
+        fireResume("focus");
+    });
+
+})();
+</script>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=3">
+</head>
+
+<body>
+
+<div id="login-overlay" style="display:none;">
+    <div class="login-box">
+        <img src="icons/icon-512.png" alt="Logo" class="login-logo">
+        <h2>Anmeldung</h2>
+        <p>Bitte wähle deinen Namen aus und gib zur Bestätigung deine Lizenznummer ein.</p>
+        <div class="form-group">
+            <label for="login-user-select">Name</label>
+            <select id="login-user-select">
+                <option value="">Lade Teilnehmer...</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="login-password">Lizenz-Nummer</label>
+            <input type="number" id="login-password" placeholder="123456" autocomplete="off">
+        </div>
+        <div id="login-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:15px; font-weight:600;">Lizenznummer inkorrekt.</div>
+        <button id="login-btn" class="btn-main">Einloggen</button>
+    </div>
+</div>
+
+<div id="app-wrapper" style="display:none;">
+<div id="pull-spinner"><div class="spinner-icon"></div></div>
+<header>
+    <h1 id="main-title">Termine</h1>
+    <div id="user-badge" style="display:none; position:absolute; right:15px; top:calc(17px + env(safe-area-inset-top)); font-size:0.85rem; font-weight:600; background:rgba(255,255,255,0.2); padding:4px 8px; border-radius:12px;">
+        👤 <span id="display-firstname"></span>
+    </div>
+</header>
+
+<main>
+<section id="page-home" class="page active-page">
+    <div class="card" style="text-align:center;">
+        <img src="icons/icon-512.png" style="height:100px; margin-bottom:10px;" alt="Logo">
+        <h2>Sportschützen Muhen</h2>
+        <p>Willkommen</p>
+    </div>
+    
+    <div id="hero-rsvps"></div>
+    
+    <div class="filter-bar">
+        <h3>Termine</h3>
+
+        <div class="filter-container">
+            <button class="filter-btn active" onclick="filterTermine('all', this)">Alle</button>
+            <button class="filter-btn" onclick="filterTermine('verein', this)">🎯 Verein</button>
+            <button class="filter-btn" onclick="filterTermine('extern', this)">🏠 Haus</button>
+        </div>
+
+        <div id="termine" class="termine-list">Lade Termine...</div>
+    </div>
+</section>
+
+<section id="page-jm" class="page"><iframe src="app/app_jm.html"></iframe></section>
+<section id="page-gruppe" class="page"><iframe src="app/app_gruppe.html"></iframe></section>
+<section id="page-mannschaft" class="page"><iframe src="app/app_mannschaft.html"></iframe></section>
+
+<section id="page-upload" class="page">
+    <iframe src="app/upload.html?v=3"></iframe>
+</section>
+</main>
+
+<nav class="bottom-nav">
+<button class="nav-item" onclick="nav('page-jm', 'Jahresmeisterschaft', this)"><span>🏆</span>JM</button>
+<button class="nav-item" onclick="nav('page-gruppe', 'Gruppe & Grenzland', this)"><span>👥</span>G&G</button>
+<button class="nav-item nav-home active" onclick="nav('page-home', 'Termine', this)"><span>🏠</span></button>
+<button class="nav-item" onclick="nav('page-mannschaft', 'Mannschaft', this)"><span>🎯</span>Mannschaft</button>
+<button class="nav-item" onclick="nav('page-upload', 'Upload', this)"><span>📤</span>Upload</button>
+</nav>
+
+<script src="app.js?v=5" defer></script>
+</div>
+
+<!-- Participant Modal -->
+<div id="participant-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-event-title">Teilnehmer</h2>
+            <button class="modal-close" onclick="closeParticipantsModal()">×</button>
+        </div>
+        <ul id="participant-list" class="participant-list">
+            <li>Lade Teilnehmer...</li>
+        </ul>
+    </div>
+</div>
+
+</body>
+</html>

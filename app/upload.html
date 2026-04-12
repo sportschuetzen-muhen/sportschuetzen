@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Standblatt Upload</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+
+
+    
+</head>
+<body>
+
+<div class="card">
+    <h2 style="margin-top:0;">Standblatt Upload</h2>
+    <form id="uploadForm">
+        <div class="form-group">
+            <div id="upload-user-info" style="background:#f1f5f9; padding:12px; border-radius:8px; font-weight:bold; text-align:center; color:#334155; font-size:1.05rem;">
+                <!-- Wird per JS gefüllt -->
+            </div>
+            <input type="hidden" id="name">
+        </div>
+        <div class="form-group">
+            <div class="upload-area" onclick="document.getElementById('foto').click()">
+                <span id="upload-hint">📸 Foto Standblatt aufnehmen</span>
+                <input type="file" id="foto" accept="image/*" required style="display:none">
+                <img id="preview">
+            </div>
+        </div>
+         <div style="display:flex; gap:20px; margin-bottom:30px;">
+            <div style="flex:1;"><label>Erzielt</label><input type="number" id="erzielt" placeholder="Pkt" required></div>
+            <div style="flex:1;"><label>Maximum</label><input type="number" id="maximal" placeholder="100" required></div>
+        </div>
+        <button type="submit" id="submitBtn" class="btn-main">Jetzt senden</button>
+    </form>
+</div>
+
+
+<script src="upload.js?v=3" defer></script>
+</body>
+</html>
+
