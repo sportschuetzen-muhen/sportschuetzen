@@ -51,10 +51,16 @@ function nav(id, title, btn) {
     // 3. Header-Titel anpassen
     document.getElementById('main-title').textContent = title;
     
-    // 4. Aktiven Button in der Navigation markieren
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     if (btn) {
         btn.classList.add('active');
+    }
+
+    if (id === 'page-upload') {
+        const uploadIFrame = document.querySelector('#page-upload iframe');
+        if (uploadIFrame) {
+            uploadIFrame.contentWindow.location.reload();
+        }
     }
 
     // --- NEU: User Badge nur auf Home ---
@@ -239,44 +245,67 @@ function renderTermine(data) {
 
         // HERO CARD RENDERING
         if (t.isRSVP && heroWrap) {
-            let heroContent = '';
+            const hasAnswered = t.attending === true || t.attending === "true" || t.attending === false || t.attending === "false";
+            const isAttending = t.attending === true || t.attending === "true";
             
             let onYesClick = `submitRSVP('${t.id}', true)`;
             if (t.frage_begleitung || t.frage_essen) {
                 onYesClick = `openRSVPForm('${t.id}', ${!!t.frage_begleitung}, ${!!t.frage_essen})`;
             }
 
-            if (t.attending === true || t.attending === "true") {
-                heroContent = `<div class="hero-chip success" style="margin-bottom:0;">✅ Angemeldet</div>`;
-                
+            let bodyContent = '';
+            
+            if (isAttending) {
+                bodyContent = `<div class="hero-chip success" style="margin-bottom:0; align-self:center;">✅ Angemeldet</div>`;
                 if (t.frage_begleitung || t.frage_essen) {
-                    heroContent += `<button class="hero-link" style="color:var(--primary); font-weight:bold; margin-top:5px;" onclick="${onYesClick}">Details ändern</button>`;
+                    bodyContent += `<button class="hero-link" style="color:var(--primary); font-weight:bold; margin-top:5px;" onclick="${onYesClick}">Details ändern</button>`;
                 }
-                heroContent += `<button class="hero-link" style="margin-top:5px;" onclick="submitRSVP('${t.id}', false)">Absagen</button>`;
+                bodyContent += `<button class="hero-link" style="margin-top:5px;" onclick="submitRSVP('${t.id}', false)">Absagen</button>`;
 
-            } else if (t.attending === false || t.attending === "false") {
-                heroContent = `<div class="hero-chip error">❌ Abgemeldet</div><button class="hero-link" onclick="${onYesClick}">Doch Anmelden</button>`;
+            } else if (hasAnswered && !isAttending) {
+                bodyContent = `<div class="hero-chip error" style="align-self:center;">❌ Abgemeldet</div><button class="hero-link" onclick="${onYesClick}">Doch Anmelden</button>`;
             } else {
-                heroContent = `
+                bodyContent = `
+                    <h3 style="margin-top:0; color:#1e293b; font-size:1.2rem;">${t.titel}</h3>
+                    <p style="color:#64748b; font-size:0.9rem; font-weight:600; margin-bottom:15px;">📅 ${dateDisplay} ${yearVal !== currentYear ? yearVal : ''}</p>
                     <p class="hero-subtitle">Bist du dabei?</p>
                     <div class="hero-actions">
                         <button class="hero-btn success" onclick="${onYesClick}">Ja, sicher</button>
                         <button class="hero-btn error" onclick="submitRSVP('${t.id}', false)">Nein</button>
                     </div>`;
             }
+
             if (t.showParticipants) {
-                heroContent += `<button class="hero-link participants" onclick="showParticipants('${t.id}')">👥 Teilnehmer anzeigen</button>`;
+                bodyContent += `<button class="hero-link participants" onclick="showParticipants('${t.id}')">👥 Teilnehmer anzeigen</button>`;
             }
 
-            heroWrap.innerHTML += `
-                <div class="hero-card" id="rsvp-${t.id}">
-                    <div class="hero-card-inner">
-                        <h2>${t.titel}</h2>
-                        <div class="hero-date">📅 ${dateDisplay} ${yearVal !== currentYear ? yearVal : ''}</div>
-                        ${heroContent}
+            if (hasAnswered) {
+                // COMPACT ACCORDION MODE
+                heroWrap.innerHTML += `
+                <div class="hero-card compact" id="rsvp-${t.id}">
+                    <div class="compact-header" onclick="document.getElementById('hero-body-${t.id}').style.display = document.getElementById('hero-body-${t.id}').style.display === 'none' ? 'flex' : 'none'">
+                        <div class="compact-info">
+                            <strong>${t.titel}</strong>
+                            <span>📅 ${dateDisplay}</span>
+                        </div>
+                        <div class="hero-chip ${isAttending ? 'success' : 'error'}" style="margin:0; padding:6px 12px; font-size:1.2rem;">
+                            ${isAttending ? '✅' : '❌'}
+                        </div>
                     </div>
-                </div>
-            `;
+                    <div class="compact-body" id="hero-body-${t.id}" style="display:none; flex-direction:column; text-align:center;">
+                        ${bodyContent}
+                    </div>
+                </div>`;
+            } else {
+                // NORMAL MODE (Unanswered)
+                heroWrap.innerHTML += `
+                <div class="hero-card" id="rsvp-${t.id}">
+                    <div class="hero-card-inner" style="display:flex; flex-direction:column; text-align:center;">
+                        ${bodyContent}
+                    </div>
+                </div>`;
+            }
+
             return; // Beende Schleife für diesen Termin, weil er NICHT in die normale Liste soll
         }
 

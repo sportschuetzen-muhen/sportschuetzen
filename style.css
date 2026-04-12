@@ -337,10 +337,54 @@ input, select {
 }
 
 .hero-subtitle {
-    font-size: 1rem;
-    font-weight: bold;
-    color: #0f172a;
-    margin-bottom: 10px;
+    color: #475569;
+    font-size: 0.95em;
+    font-weight: 500;
+    margin-bottom: 20px;
+}
+
+/* Compact Accordion Mode */
+.hero-card.compact {
+    padding: 0;
+    overflow: hidden;
+}
+
+.compact-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    cursor: pointer;
+    background: linear-gradient(to right, #ffffff, #f8fafc);
+    transition: background 0.2s ease;
+}
+
+.compact-header:active {
+    background: #f1f5f9;
+}
+
+.compact-info {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+}
+
+.compact-info strong {
+    color: #1e293b;
+    font-size: 1.05rem;
+}
+
+.compact-info span {
+    color: #64748b;
+    font-size: 0.85rem;
+    margin-top: 3px;
+    font-weight: 600;
+}
+
+.compact-body {
+    padding: 20px;
+    border-top: 1px solid #e2e8f0;
+    background: #ffffff;
 }
 
 .hero-actions {
