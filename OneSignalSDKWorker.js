@@ -1,5 +1,2 @@
-// MUSS als allererstes kommen
-self.addEventListener("message", function () {});
-
-// OneSignal laden
+// OneSignal Service Worker für Sportschützen Muhen
 importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");

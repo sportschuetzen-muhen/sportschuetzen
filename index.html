@@ -26,13 +26,24 @@
 window.OneSignalDeferred = window.OneSignalDeferred || [];
 OneSignalDeferred.push(async function (OneSignal) {
 
-    try {
-        await OneSignal.init({
+        // Auf localhost deaktivieren um Fehler zu vermeiden
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log("OneSignal: Deaktiviert auf localhost (Domain-Mismatch)");
+            return;
+        }
+
+        try {
+            await OneSignal.init({
             appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
             serviceWorkerParam: { scope: "/sportschuetzen/" },
             serviceWorkerPath: "OneSignalSDKWorker.js",
             autoRegister: false,
-            notifyButton: { enable: true }
+            notifyButton: { enable: true },
+            // NEU: Icon für Benachrichtigungen (gegen 404)
+            notificationDisplay: {
+                display: true,
+                icon: "/sportschuetzen/icons/icon-192.png"
+            }
         });
 
         console.log("OneSignal Init fertig");

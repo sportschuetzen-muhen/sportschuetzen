@@ -548,6 +548,9 @@ window.logout = function() {
 function syncOneSignal(user) {
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function(OneSignal) {
+        // Auf localhost überspringen
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
+
         try {
             if (user && user.lizenz) {
                 const pid = String(user.lizenz).padStart(6, '0');
