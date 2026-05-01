@@ -24,14 +24,16 @@
         <div class="form-group">
             <div class="upload-area" onclick="document.getElementById('foto').click()">
                 <span id="upload-hint">📸 Foto Standblatt aufnehmen</span>
-                <input type="file" id="foto" accept="image/*" required style="display:none">
+                <input type="file" id="foto" accept="image/*" style="display:none">
                 <img id="preview">
             </div>
         </div>
-         <div style="display:flex; gap:20px; margin-bottom:30px;">
+
+        <div style="display:flex; gap:20px; margin-bottom:20px;">
             <div style="flex:1;"><label>Erzielt</label><input type="number" id="erzielt" placeholder="Pkt" required></div>
             <div style="flex:1;"><label>Maximum</label><input type="number" id="maximal" placeholder="100" required></div>
         </div>
+        <div id="error-msg" style="display:none; color:#e53e3e; background:#fef2f2; padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.9rem; font-weight:600; text-align:center; border:1px solid #fee2e2;"></div>
         <button type="submit" id="submitBtn" class="btn-main">Jetzt senden</button>
     </form>
 </div>

@@ -19,8 +19,8 @@ function loadTeilnehmer() {
     }
 
     const user = JSON.parse(userStr);
-    badge.innerHTML = `👤 Angemeldet als:<br>${user.vorname} ${user.nachname || ''} (${user.lizenz})`;
-    nameInput.value = String(user.lizenz);
+    badge.innerHTML = `👤 Angemeldet als:<br>${user.vorname} ${user.nachname || ''} (${String(user.lizenz).padStart(6, '0')})`;
+    nameInput.value = String(user.lizenz).padStart(6, '0');
 }
 
 /* ---------------------------------------------
@@ -77,11 +77,21 @@ document.getElementById("foto").addEventListener("change", async e => {
 document.getElementById("uploadForm").onsubmit = async (e) => {
     e.preventDefault();
 
-    const erzielt = parseInt(document.getElementById("erzielt").value);
-    const maximal = parseInt(document.getElementById("maximal").value);
+    const errorDiv = document.getElementById("error-msg");
+    errorDiv.style.display = "none";
+
+    const erzielt = parseFloat(document.getElementById("erzielt").value);
+    const maximal = parseFloat(document.getElementById("maximal").value);
+
+    if (isNaN(erzielt) || isNaN(maximal)) {
+        errorDiv.textContent = "Bitte Punkte und Maximum eingeben.";
+        errorDiv.style.display = "block";
+        return;
+    }
 
     if (erzielt > maximal) {
-        alert("Erzielt kann nicht höher als Maximum sein!");
+        errorDiv.textContent = "Erzielt kann nicht höher als Maximum sein!";
+        errorDiv.style.display = "block";
         return;
     }
 
@@ -100,7 +110,10 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
         const compressedImage = document.getElementById("foto").dataset.compressed;
 
         if (!compressedImage) {
-            alert("Bitte Foto auswählen.");
+            errorDiv.textContent = "Bitte zuerst ein Foto vom Standblatt aufnehmen.";
+            errorDiv.style.display = "block";
+            btn.disabled = false;
+            btn.textContent = "Jetzt senden";
             return;
         }
 

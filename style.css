@@ -35,6 +35,10 @@ header {
 }
 header h1 { margin: 0; font-size: 1.2rem; font-weight: 700; }
 
+#logout-btn:hover {
+    opacity: 1 !important;
+}
+
 /* --- NAVIGATION --- */
 .bottom-nav { 
     position: fixed; bottom: 0; width: 100%; 

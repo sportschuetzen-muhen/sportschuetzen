@@ -66,7 +66,7 @@ function nav(id, title, btn) {
     // --- NEU: User Badge nur auf Home ---
     const badge = document.getElementById('user-badge');
     if (badge && localStorage.getItem('sportschuetzen_user')) {
-        badge.style.display = (id === 'page-home') ? 'block' : 'none';
+        badge.style.display = (id === 'page-home') ? 'flex' : 'none';
     }
 
     // --- NEU: URL AKTUALISIEREN FÜR PULL-TO-REFRESH ---
@@ -121,7 +121,8 @@ async function loadTermine() {
     };
 
     try {
-        const activeLizenz = (JSON.parse(localStorage.getItem('sportschuetzen_user') || '{}')).lizenz || '';
+        const userObj = JSON.parse(localStorage.getItem('sportschuetzen_user') || '{}');
+        const activeLizenz = userObj.lizenz ? String(userObj.lizenz).padStart(6, '0') : '';
 
         const [resWorker, resGoogle, resRSVP] = await Promise.all([
             safeFetch(WORKER_TERMINE_URL),
@@ -392,11 +393,26 @@ async function initLogin() {
     const loginOverlay = document.getElementById('login-overlay');
 
     if (userStr) {
-        const user = JSON.parse(userStr);
+        let user = JSON.parse(userStr);
+        // Migration: Falls Lizenz noch nicht sechstellig ist
+        if (user.lizenz && user.lizenz.length < 6 && !isNaN(user.lizenz)) {
+            user.lizenz = user.lizenz.padStart(6, '0');
+            localStorage.setItem('sportschuetzen_user', JSON.stringify(user));
+        }
+        syncOneSignal(user);
         showApp(user);
     } else {
         if (wrapper) wrapper.style.display = 'none';
         if (loginOverlay) loginOverlay.style.display = 'flex';
+        
+        // PID aus URL Parameter prüfen (Deep Link Support)
+        const params = new URLSearchParams(window.location.search);
+        const pidParam = params.get("pid");
+        if (pidParam) {
+            console.log("PID aus URL erkannt:", pidParam);
+            // Wir loggen hier noch nicht ein, da der User erst den Namen wählen muss
+            // Aber wir könnten das Feld später vorbefüllen falls nötig.
+        }
 
         try {
             try {
@@ -404,9 +420,8 @@ async function initLogin() {
                 if(!r.ok) throw new Error("Backend nicht erreichbar");
                 allUsers = await r.json();
             } catch(e) {
-                console.warn("Worker Fallback:", e);
-                let r = await fetch('teilnehmer.json');
-                allUsers = await r.json();
+                console.error("Backend nicht erreichbar, kein Fallback verfügbar:", e);
+                allUsers = [];
             }
             
             if (!Array.isArray(allUsers)) allUsers = [];
@@ -467,6 +482,7 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
                 role: result.role
             };
             localStorage.setItem('sportschuetzen_user', JSON.stringify(userData));
+            syncOneSignal(userData);
             errorDiv.style.display = 'none';
             document.getElementById('login-overlay').style.display = 'none';
             showApp(userData);
@@ -493,11 +509,69 @@ function showApp(user) {
         
         const homePage = document.getElementById('page-home');
         const isHome = homePage && homePage.classList.contains('active-page');
-        badge.style.display = isHome ? 'block' : 'none';
+        badge.style.display = isHome ? 'flex' : 'none';
     }
     
     loadTermine();
     handleDeepLink();
+    syncOneSignal(user);
+
+    // Event Listener für Logout Button (sicherer als onclick)
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.onclick = null; // Entferne inline handler falls vorhanden
+        logoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.logout();
+        });
+    }
+}
+
+window.logout = function() {
+    console.log("Logout Button geklickt");
+    const confirmLogout = confirm("Möchtest du dich wirklich abmelden?");
+    if (confirmLogout) {
+        console.log("Logout bestätigt");
+        syncOneSignal(null); // OneSignal abmelden
+        localStorage.removeItem('sportschuetzen_user');
+        // Veralteten Key ebenfalls löschen zur Sicherheit
+        localStorage.removeItem('sportschuetzen_pid');
+        location.reload();
+    }
+}
+
+/**
+ * Synchronisiert den aktuellen Benutzer mit OneSignal
+ * @param {Object|null} user - Das Benutzerobjekt oder null für Logout
+ */
+function syncOneSignal(user) {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+        try {
+            if (user && user.lizenz) {
+                const pid = String(user.lizenz).padStart(6, '0');
+                
+                // Nur einloggen wenn nicht bereits diese ID gesetzt ist
+                if (OneSignal.User.externalId !== pid) {
+                    await OneSignal.login(pid);
+                    console.log("OneSignal: Identität synchronisiert für PID", pid);
+                }
+
+                // Benachrichtigungs-Berechtigung abfragen falls noch Standard
+                if (OneSignal.Notifications.permission === "default") {
+                    await OneSignal.Notifications.requestPermission();
+                }
+            } else {
+                if (OneSignal.User.externalId) {
+                    await OneSignal.logout();
+                    console.log("OneSignal: Identität entfernt (Logout)");
+                }
+            }
+        } catch (err) {
+            console.error("OneSignal Sync Fehler:", err);
+        }
+    });
 }
 
 // --- INITIALISIERUNG ---
@@ -565,7 +639,9 @@ window.submitRSVP = async function(eventId, attending) {
     document.getElementById(`rsvp-${eventId}`).innerHTML = `<span style="font-size:0.8rem; color:white; font-weight:bold;">Verarbeite...</span>`;
 
     try {
-        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${user.lizenz}&attending=${attending}&count=${count}&essen=${essen}`);
+        // Sicherstellen dass Lizenz sechstellig ist
+        const cleanLizenz = String(user.lizenz).padStart(6, '0');
+        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${cleanLizenz}&attending=${attending}&count=${count}&essen=${essen}`);
         const result = await resp.json();
         if (!result.success) throw new Error("Serverfehler beim Speichern");
         
