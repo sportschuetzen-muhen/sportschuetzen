@@ -19,7 +19,7 @@ function loadTeilnehmer() {
     }
 
     const user = JSON.parse(userStr);
-    badge.innerHTML = `👤 Angemeldet als:<br>${user.vorname} ${user.nachname} (${user.lizenz})`;
+    badge.innerHTML = `👤 Angemeldet als:<br>${user.vorname} ${user.nachname || ''} (${user.lizenz})`;
     nameInput.value = String(user.lizenz);
 }
 

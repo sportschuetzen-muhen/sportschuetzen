@@ -378,27 +378,31 @@ function applyRundenPrefix(termine) {
 // --- LOGIN LOGIK ---
 let allUsers = [];
 
+// --- HASHING FUNKTION (SHA-256) ---
+async function sha256(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function initLogin() {
     const userStr = localStorage.getItem('sportschuetzen_user');
     const wrapper = document.getElementById('app-wrapper');
     const loginOverlay = document.getElementById('login-overlay');
 
     if (userStr) {
-        // Eingeloggt
         const user = JSON.parse(userStr);
         showApp(user);
     } else {
-        // Nicht eingeloggt
         if (wrapper) wrapper.style.display = 'none';
         if (loginOverlay) loginOverlay.style.display = 'flex';
 
         try {
             try {
-                let r = await fetch(`${EVENTPLANER_URL}?action=getMembers`);
+                let r = await fetch(`${EVENTPLANER_URL}?action=getMembers&type=member`);
                 if(!r.ok) throw new Error("Backend nicht erreichbar");
-                let data = await r.json();
-                if(!Array.isArray(data)) throw new Error("Antwort ist kein Array: " + JSON.stringify(data));
-                allUsers = data;
+                allUsers = await r.json();
             } catch(e) {
                 console.warn("Worker Fallback:", e);
                 let r = await fetch('teilnehmer.json');
@@ -407,8 +411,13 @@ async function initLogin() {
             
             if (!Array.isArray(allUsers)) allUsers = [];
             
-            // Namen sortieren
-            allUsers.sort((a, b) => a.nachname.localeCompare(b.nachname));
+            // Sortieren: Admins zuerst, dann Mitglieder nach Nachname
+            allUsers.sort((a, b) => {
+                if (a.type !== b.type) return a.type === 'admin' ? -1 : 1;
+                const nA = a.lastname || a.firstname || '';
+                const nB = b.lastname || b.firstname || '';
+                return nA.localeCompare(nB);
+            });
 
             const select = document.getElementById('login-user-select');
             if (select) {
@@ -416,7 +425,9 @@ async function initLogin() {
                 allUsers.forEach(u => {
                     const opt = document.createElement('option');
                     opt.value = u.id;
-                    opt.textContent = `${u.nachname} ${u.vorname} (${u.jahrgang})`;
+                    const vName = u.firstname || '';
+                    const nName = u.lastname || '';
+                    opt.textContent = (u.type === 'admin' ? `⭐ ${vName}` : `${nName} ${vName}`).trim();
                     select.appendChild(opt);
                 });
             }
@@ -426,26 +437,48 @@ async function initLogin() {
     }
 }
 
-document.getElementById('login-btn')?.addEventListener('click', () => {
+document.getElementById('login-btn')?.addEventListener('click', async () => {
     const userId = document.getElementById('login-user-select').value;
     const pwdInput = document.getElementById('login-password').value;
     const errorDiv = document.getElementById('login-error');
     
     if (!userId || !pwdInput) {
-        errorDiv.textContent = "Bitte Namen wählen und Lizenznummer eingeben.";
+        errorDiv.textContent = "Bitte Namen wählen und Passwort eingeben.";
         errorDiv.style.display = 'block';
         return;
     }
 
-    const user = allUsers.find(u => u.id === userId);
-    if (user && String(user.lizenz) === pwdInput.trim()) {
-        localStorage.setItem('sportschuetzen_user', JSON.stringify(user));
-        errorDiv.style.display = 'none';
-        document.getElementById('login-overlay').style.display = 'none';
-        showApp(user);
-    } else {
-        errorDiv.textContent = "Lizenznummer inkorrekt.";
+    document.getElementById('login-btn').textContent = "Prüfe...";
+    const inputHash = await sha256(pwdInput.trim());
+
+    try {
+        // SICHERER BACKEND-LOGIN
+        const resp = await fetch(`${EVENTPLANER_URL}?action=checkLogin&user=${userId}&pw=${inputHash}`);
+        const result = await resp.json();
+
+        if (result.success) {
+            const nameParts = result.name.split(' ');
+            const userData = {
+                id: userId,
+                lizenz: String(userId).padStart(6, '0'),
+                vorname: nameParts[0],
+                nachname: nameParts.slice(1).join(' '),
+                name: result.name,
+                role: result.role
+            };
+            localStorage.setItem('sportschuetzen_user', JSON.stringify(userData));
+            errorDiv.style.display = 'none';
+            document.getElementById('login-overlay').style.display = 'none';
+            showApp(userData);
+        } else {
+            errorDiv.textContent = result.error || "Login fehlgeschlagen.";
+            errorDiv.style.display = 'block';
+        }
+    } catch (e) {
+        errorDiv.textContent = "Verbindungsfehler zum Backend.";
         errorDiv.style.display = 'block';
+    } finally {
+        document.getElementById('login-btn').textContent = "Einloggen";
     }
 });
 
@@ -532,9 +565,15 @@ window.submitRSVP = async function(eventId, attending) {
     document.getElementById(`rsvp-${eventId}`).innerHTML = `<span style="font-size:0.8rem; color:white; font-weight:bold;">Verarbeite...</span>`;
 
     try {
-        await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${user.lizenz}&attending=${attending}&count=${count}&essen=${essen}`);
-    } catch(e) { console.error(e); }
-    loadTermine(); // Refresh after response
+        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${user.lizenz}&attending=${attending}&count=${count}&essen=${essen}`);
+        const result = await resp.json();
+        if (!result.success) throw new Error("Serverfehler beim Speichern");
+        
+        loadTermine(); // Nur bei Erfolg neu laden
+    } catch(e) { 
+        console.error(e);
+        alert("Fehler: Deine Antwort konnte nicht gespeichert werden. Bitte versuche es erneut.");
+    }
 };
 
 window.showParticipants = async function(eventId) {
