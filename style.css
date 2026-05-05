@@ -33,11 +33,7 @@ header {
     z-index: 1000;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
-header h1 { margin: 0; font-size: 1.2rem; font-weight: 700; padding-right: 130px; }
-
-@media (max-width: 380px) {
-    header h1 { padding-right: 110px; font-size: 1.05rem; }
-}
+header h1 { margin: 0; font-size: 1.2rem; font-weight: 700; }
 
 #logout-btn:hover {
     opacity: 1 !important;
