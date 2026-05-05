@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Portal | Sportschützen Muhen</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" href="data:,">
+
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+
+    <style>
+        :root { --primary: #0f3a5d; --secondary: #1e293b; --bg: #f3f4f6; }
+        body { background-color: var(--bg); font-family: 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+
+        #login-screen { position: fixed; inset: 0; background: var(--primary); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+        .login-card { background: white; padding: 2rem; border-radius: 1rem; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+
+        #app-screen { height: 100%; display: flex; flex-direction: column; }
+        .main-wrapper { display: flex; flex: 1; overflow: hidden; }
+
+        .sidebar { width: 250px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; transition: 0.3s; }
+        .sidebar-header { padding: 1.5rem; border-bottom: 1px solid #eee; font-weight: bold; color: var(--primary); }
+        .nav-link { color: #555; padding: 0.8rem 1.5rem; border-left: 4px solid transparent; cursor: pointer; }
+        .nav-link:hover { background: #f8f9fa; }
+        .nav-link.active { background: #eef2ff; color: var(--primary); border-left-color: var(--primary); font-weight: bold; }
+        .nav-link i { width: 25px; }
+
+        .content { flex: 1; padding: 20px; overflow-y: auto; position: relative; }
+        .module-view { display: none; animation: fadeIn 0.3s; }
+        .module-view.active { display: block; }
+
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; left: -250px; height: 100%; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+            .sidebar.show { left: 0; }
+            .mobile-header { display: flex !important; }
+        }
+        .mobile-header { display: none; background: white; padding: 10px 20px; align-items: center; justify-content: space-between; border-bottom: 1px solid #ddd; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .d-none { display: none !important; }
+        .draggable-player { touch-action: none; }
+
+	/* Animation für den Toast */
+@keyframes fadeInToast {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Toast Styling */
+.custom-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 3000; /* Höher als Bootstrap Modals */
+    background: #0f3a5d;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    font-size: 14px;
+    animation: fadeInToast 0.3s ease-out;
+    border-left: 4px solid #28a745;
+}
+
+    </style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+    <div class="login-card text-center">
+        <img src="https://danhunziker73-lgtm.github.io/sportschuetzen/icons/icon-512.png"
+             alt="Logo" height="60" class="mb-4">
+        <h4 class="mb-3">Vereins-Portal</h4>
+        <div class="form-floating mb-3">
+            <input type="text" class="form-control" id="login-user" placeholder="Benutzer">
+            <label>Benutzername</label>
+        </div>
+        <div class="form-floating mb-3">
+            <input type="password" class="form-control" id="login-pw" placeholder="Passwort">
+            <label>Passwort</label>
+        </div>
+        <button class="btn btn-primary w-100 py-2 fw-bold" onclick="doLogin()">Einloggen</button>
+        <p id="login-error" class="text-danger mt-3 small d-none">Zugangsdaten falsch!</p>
+    </div>
+</div>
+
+<!-- APP SCREEN -->
+<div id="app-screen" class="d-none">
+
+    <!-- MOBILE HEADER -->
+    <div class="mobile-header">
+        <button class="btn btn-link text-dark p-0" onclick="toggleSidebar()">
+            <i class="fas fa-bars fa-lg"></i>
+        </button>
+        <span class="fw-bold text-primary">SPORTSCHÜTZEN MUHEN</span>
+        <span id="user-badge-mobile" class="badge bg-secondary">Gast</span>
+    </div>
+
+    <div class="main-wrapper">
+
+        <!-- SIDEBAR -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header d-none d-md-block">
+                <i class="fas fa-bullseye me-2"></i> Muhen Portal
+                <div id="user-info" class="small text-muted fw-normal mt-1">Nicht angemeldet</div>
+            </div>
+
+            <div class="nav flex-column mt-2">
+                <div class="nav-link active" onclick="navTo('dashboard', this)">
+                    <i class="fas fa-home"></i> Übersicht
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('inventar', this)">
+                    <i class="fas fa-boxes"></i> Inventar
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('termine', this)">
+                    <i class="fas fa-calendar-alt"></i> Termine
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,aktuar"
+                     onclick="navTo('gv', this)">
+                    <i class="fas fa-users"></i> GV
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('system-mails', this)">
+                    <i class="fas fa-envelope-open-text"></i> System-Mails
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('umfragen', this)">
+                    <i class="fas fa-poll"></i> Umfragen
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
+                     onclick="navTo('manager', this)">
+                    <i class="fas fa-shield-alt"></i> Team Manager
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
+                     onclick="navTo('resultate', this)">
+                    <i class="fas fa-trophy"></i> Resultate
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,vermieter,kassier"
+                     onclick="navTo('vermietung', this)">
+                    <i class="fas fa-home"></i> Vermietung
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('jahresmeisterschaft', this)">
+                    <i class="fas fa-medal"></i> Jahresmeisterschaft KK
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('mail', this)">
+                    <i class="fas fa-envelope"></i> Mail
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
+                     onclick="navTo('jahresbeitrag', this)">
+                    <i class="fas fa-coins"></i> Jahresbeitrag
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar"
+                     onclick="navTo('mitglieder', this)">
+                    <i class="fas fa-users"></i> Mitglieder
+                </div>
+                <div class="nav-link role-protected" data-roles="admin"
+                     onclick="navTo('logins', this)">
+                    <i class="fas fa-user-lock"></i> Logins
+                </div>
+                <div class="mt-auto border-top p-3">
+                    <button class="btn btn-outline-danger w-100 btn-sm" onclick="doLogout()">
+                        <i class="fas fa-sign-out-alt"></i> Abmelden
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- MAIN CONTENT -->
+        <main class="content" onclick="closeSidebarMobile()">
+
+            <!-- DASHBOARD -->
+            <div id="view-dashboard" class="module-view active">
+                <h3>Willkommen zurück! 👋</h3>
+                <p class="text-muted">Wähle einen Bereich im Menü aus.</p>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('inventar')" style="cursor:pointer">
+                            <h5>🔫 Inventar</h5>
+                            <p class="small text-muted">Ausgabe & Rückgabe verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('termine')" style="cursor:pointer">
+                            <h5>📅 Termine</h5>
+                            <p class="small text-muted">Termine, Anlässe & Orte</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,aktuar">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('gv')" style="cursor:pointer">
+                            <h5>🏛️ GV</h5>
+                            <p class="small text-muted">GV Stammdaten & Präsenz</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('system-mails')" style="cursor:pointer">
+                            <h5>✉️ System-Mails</h5>
+                            <p class="small text-muted">Abo-Verteiler & App Info</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('umfragen')" style="cursor:pointer">
+                            <h5>📊 Umfragen</h5>
+                            <p class="small text-muted">Anmeldungen & Rückmeldungen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('manager')" style="cursor:pointer">
+                            <h5>🛡️ Manager</h5>
+                            <p class="small text-muted">Teams verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('resultate')" style="cursor:pointer">
+                            <h5>🏆 Resultate</h5>
+                            <p class="small text-muted">Ranglisten & Auswertung</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,vermieter,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('vermietung')" style="cursor:pointer">
+                            <h5>🏠 Vermietung</h5>
+                            <p class="small text-muted">Schützenhaus Vermietung verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('jahresmeisterschaft')" style="cursor:pointer">
+                            <h5>🏅 Jahresmeisterschaft KK</h5>
+                            <p class="small text-muted">Kleinkaliber Meisterschaft verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('mail')" style="cursor:pointer">
+                            <h5>📧 Mail</h5>
+                            <p class="small text-muted">Nachrichten & Kommunikation</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('jahresbeitrag')" style="cursor:pointer">
+                            <h5>💰 Jahresbeitrag</h5>
+                            <p class="small text-muted">Beiträge einsehen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('mitglieder')" style="cursor:pointer">
+                            <h5>👥 Mitglieder</h5>
+                            <p class="small text-muted">Mitgliederliste einsehen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('logins')" style="cursor:pointer">
+                            <h5>🔐 Logins</h5>
+                            <p class="small text-muted">Benutzerzugriffe verwalten</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- INVENTAR -->
+            <div id="view-inventar" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>Inventar Verwaltung</h2>
+                    <button class="btn btn-sm btn-primary write-protected" onclick="loadInventarData()">
+                        🔄 Aktualisieren
+                    </button>
+                </div>
+                <div id="inventar-container"></div>
+            </div>
+
+            <!-- TERMINE -->
+            <div id="view-termine" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>Termine & Stammdaten</h2>
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-success write-protected" onclick="saveTermineData()">
+                            💾 Speichern
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadTermineData()">
+                            🔄 Laden
+                        </button>
+                    </div>
+                </div>
+                <!-- Container filled by js/termine.js -->
+                <div id="termine-container"></div>
+            </div>
+
+            <!-- RESULTATE -->
+            <div id="view-resultate" class="module-view">
+                <div id="resultate-container"></div>
+            </div>
+
+            <!-- MANAGER -->
+            <div id="view-manager" class="module-view">
+                <div id="manager-container"></div>
+            </div>
+
+            <!-- VERMIETUNG -->
+            <div id="view-vermietung" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>🏠 Vermietung Cockpit</h2>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadVermietungData()">
+                        🔄 Aktualisieren
+                    </button>
+                </div>
+                <div id="vermietung-container"></div>
+            </div>
+
+            <!-- NEU: JAHRESMEISTERSCHAFT KK -->
+            <div id="view-jahresmeisterschaft" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>🏅 Jahresmeisterschaft KK</h2>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresmeisterschaftData()">
+                        🔄 Aktualisieren
+                    </button>
+                </div>
+            <div id="jahresmeisterschaft-container">
+                <div class="alert alert-info">
+                    <i class="fas fa-tools me-2"></i>
+                    <strong>Jahresmeisterschaft KK</strong> – Modul wird vorbereitet.
+                    <br><small class="text-muted">Das Backend-Script ist noch nicht aktiviert.</small>
+                </div>
+            </div>
+            </div>
+<!-- MAIL -->
+<div id="view-mail" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📧 Mail</h2>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadMailData()">
+            🔄 Aktualisieren
+        </button>
+    </div>
+    <div id="mail-container"></div>
+</div>
+
+<!-- JAHRESBEITRAG -->
+<div id="view-jahresbeitrag" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>💰 Jahresbeitrag</h2>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresbeitragData()">
+            🔄 Aktualisieren
+        </button>
+    </div>
+    <div id="jahresbeitrag-container"></div>
+</div>
+
+<!-- MITGLIEDER -->
+<div id="view-mitglieder" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>👥 Mitglieder</h2>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadMitgliederData()">
+            🔄 Aktualisieren
+        </button>
+    </div>
+    <div id="mitglieder-container"></div>
+</div>
+
+<!-- GV -->
+<div id="view-gv" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🏛️ GV & Präsenz</h2>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-success write-protected" onclick="saveGVData()">
+                💾 Speichern
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadGVData()">
+                🔄 Laden
+            </button>
+        </div>
+    </div>
+    <div id="gv-container"></div>
+</div>
+
+<!-- SYSTEM-MAILS -->
+<div id="view-system-mails" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>✉️ System-Mails (App Info)</h2>
+        <div class="btn-group">
+             <button class="btn btn-sm btn-success write-protected" onclick="saveSystemMailsData()">
+                💾 Speichern
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadSystemMailsData()">
+                🔄 Laden
+            </button>
+        </div>
+    </div>
+    <div id="system-mails-container"></div>
+</div>
+
+<!-- UMFRAGEN -->
+<div id="view-umfragen" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📊 Umfragen & Anmeldungen</h2>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-success write-protected" onclick="saveUmfragenData()">
+                💾 Speichern
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenData()">
+                🔄 Laden
+            </button>
+        </div>
+    </div>
+    <div id="umfragen-container"></div>
+</div>
+
+<!-- LOGINS -->
+<div id="view-logins" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🔐 Logins & System Log</h2>
+        <small class="text-muted">Benutzerzugriffe, Rollen und Protokoll</small>
+    </div>
+    <ul class="nav nav-tabs mb-3" id="logins-tabs">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-user-logins">Logins</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-system-log">System Log</a></li>
+    </ul>
+    
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tab-user-logins">
+            <div class="alert alert-secondary">Diese Seite wartet auf die Implementierung der Login-Verwaltung.</div>
+        </div>
+        <div class="tab-pane fade" id="tab-system-log">
+             <div class="d-flex justify-content-end mb-2">
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadLoginsData()">🔄 Log Aktualisieren</button>
+            </div>
+            <div class="card p-3 shadow-sm border-0">
+                <div id="system-log-container" class="small text-muted" style="max-height: 500px; overflow-y:auto;">Lade...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+        </main>
+    </div>
+</div>
+
+<!-- SCRIPTS – Reihenfolge wichtig! -->
+<script src="js/auth.js"></script>
+<script src="js/main.js"></script>
+<script src="js/inventar.js"></script>
+<script src="js/termine.js"></script>
+<script src="js/gv.js"></script>
+<script src="js/system-mails.js"></script>
+<script src="js/umfragen.js"></script>
+<script src="js/logins.js"></script>
+<script src="js/manager.js"></script>
+<script src="js/resultate.js"></script>
+<script src="js/vermietung.js"></script>
+<script src="js/mail.js"></script>
+<script src="js/jahresbeitrag.js"></script>
+<script src="js/mitglieder.js"></script>
+
+    
+<!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->
+<!-- <script src="js/jahresmeisterschaft.js"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>
