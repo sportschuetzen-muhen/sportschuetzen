@@ -22,7 +22,7 @@
         .login-card { background: white; padding: 2rem; border-radius: 1rem; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
 
         #app-screen { height: 100%; display: flex; flex-direction: column; }
-        .main-wrapper { display: flex; flex: 1; overflow: hidden; }
+        .main-wrapper { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 
         .sidebar { width: 250px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; transition: 0.3s; }
         .sidebar-header { padding: 1.5rem; border-bottom: 1px solid #eee; font-weight: bold; color: var(--primary); }
@@ -39,8 +39,18 @@
             .sidebar { position: fixed; left: -250px; height: 100%; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
             .sidebar.show { left: 0; }
             .mobile-header { display: flex !important; }
+            .main-wrapper { min-height: 0; }
+            /* Modul-Header (h2 + Buttons) auf kleinen Screens umbrechen */
+            .module-view > .d-flex.justify-content-between {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .module-view > .d-flex.justify-content-between h2 {
+                font-size: 1.2rem;
+                word-break: break-word;
+            }
         }
-        .mobile-header { display: none; background: white; padding: 10px 20px; align-items: center; justify-content: space-between; border-bottom: 1px solid #ddd; }
+        .mobile-header { display: none; background: white; padding: 10px 20px; align-items: center; justify-content: space-between; border-bottom: 1px solid #ddd; flex-shrink: 0; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .d-none { display: none !important; }
@@ -424,31 +434,8 @@
     <div id="umfragen-container"></div>
 </div>
 
-<!-- LOGINS -->
-<div id="view-logins" class="module-view">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>🔐 Logins & System Log</h2>
-        <small class="text-muted">Benutzerzugriffe, Rollen und Protokoll</small>
-    </div>
-    <ul class="nav nav-tabs mb-3" id="logins-tabs">
-        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-user-logins">Logins</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-system-log">System Log</a></li>
-    </ul>
-    
-    <div class="tab-content">
-        <div class="tab-pane fade show active" id="tab-user-logins">
-            <div class="alert alert-secondary">Diese Seite wartet auf die Implementierung der Login-Verwaltung.</div>
-        </div>
-        <div class="tab-pane fade" id="tab-system-log">
-             <div class="d-flex justify-content-end mb-2">
-                <button class="btn btn-sm btn-outline-secondary" onclick="loadLoginsData()">🔄 Log Aktualisieren</button>
-            </div>
-            <div class="card p-3 shadow-sm border-0">
-                <div id="system-log-container" class="small text-muted" style="max-height: 500px; overflow-y:auto;">Lade...</div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- LOGINS - wird vollstaendig durch logins.js gerendert -->
+<div id="view-logins" class="module-view"></div>
 
         </main>
     </div>
