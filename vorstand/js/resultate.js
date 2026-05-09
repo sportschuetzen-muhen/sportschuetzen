@@ -79,6 +79,7 @@ function ensureResultateShell() {
         </div>
         <div class="d-flex gap-2 flex-wrap">
           <button class="btn btn-outline-primary btn-sm" onclick="pushOneSignalGrenzland()">📣 Push</button>
+          <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup_Grenzland übernehmen (nur fehlende)">📥 Von Setup laden</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData()">🔄 Laden</button>
           <button id="btn-save-resultate" class="btn btn-success btn-sm fw-bold" onclick="saveResultateData()">💾 Speichern</button>
         </div>
@@ -534,6 +535,38 @@ async function saveResultateData() {
     alert("Fehler beim Speichern: " + e.message);
     if (btn) { btn.disabled = false; btn.innerText = original; }
     setStatus("Fehler beim Speichern", true);
+  }
+}
+
+// ---------- Sync: Setup_Grenzland → aktuell_Grenzland ----------
+
+async function syncSetupToResultate() {
+  const btn = document.querySelector('button[onclick="syncSetupToResultate()"]');
+  const origText = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Syncing…'; }
+
+  try {
+    const res = await apiFetch(
+      'manager',
+      'action=syncSetupToResultate&setupSheetName=Setup_Grenzland&resultateSheetName=aktuell_Grenzland'
+    );
+    const txt = await res.text();
+    let data;
+    try { data = JSON.parse(txt); } catch { throw new Error('Backend-Antwort ist kein JSON'); }
+    if (data.error) throw new Error(data.error);
+
+    const added = data.added || 0;
+    if (added === 0) {
+      alert('Alle Setup-Schützen sind bereits in Resultate vorhanden – nichts hinzugefügt.');
+    } else {
+      alert(`✅ ${added} Schütze${added === 1 ? '' : 'n'} aus Setup_Grenzland übernommen.`);
+      await loadResultateData(); // Neu laden damit UI aktuell ist
+      return; // loadResultateData setzt Status selbst
+    }
+  } catch (e) {
+    alert('Fehler beim Sync: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origText; }
   }
 }
 
