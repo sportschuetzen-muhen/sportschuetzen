@@ -561,6 +561,11 @@ function syncOneSignal(user) {
                     console.log("OneSignal: Identität synchronisiert für PID", pid);
                 }
 
+                // Namen als Tag hinzufügen, damit er im Dashboard sichtbar ist
+                if (user.name) {
+                    await OneSignal.User.addTag("name", user.name);
+                }
+
                 // Benachrichtigungs-Berechtigung abfragen falls noch Standard
                 if (OneSignal.Notifications.permission === "default") {
                     await OneSignal.Notifications.requestPermission();
@@ -665,8 +670,14 @@ window.showParticipants = async function(eventId) {
         const res = await fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${eventId}`);
         if(res.ok) {
             const data = await res.json();
-            list.innerHTML = data.length ? data.map(n => `<li><span>${n.name}</span> <span class="status-yes">✅</span></li>`).join('') 
-                                         : '<li>Noch keine Anmeldungen.</li>';
+            list.innerHTML = data.length 
+                ? data.map(n => {
+                    const name = (n.vorname || n.nachname)
+                        ? `${n.nachname || ''} ${n.vorname || ''}`.trim()
+                        : (n.name || `Lizenz ${n.lizenz || '?'}`);
+                    return `<li><span>${name}</span> <span class="status-yes">✅</span></li>`;
+                  }).join('') 
+                : '<li>Noch keine Anmeldungen.</li>';
         } else throw new Error();
     } catch(e) { list.innerHTML = '<li style="color:red;">Fehler beim Laden.</li>'; }
 };
