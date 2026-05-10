@@ -202,14 +202,14 @@ allTermine = allTermine.filter(t => {
 });
 
 allTermine = applyRundenPrefix(allTermine);
-renderTermine(allTermine);
+renderTermine(allTermine, activeLizenz);
 
     } catch (e) { 
         wrap.innerHTML = "Fehler beim Laden."; 
     }
 }
 
-function renderTermine(data) {
+function renderTermine(data, activeLizenz) {
     const wrap = document.getElementById("termine");
     const heroWrap = document.getElementById("hero-rsvps");
     const currentYear = new Date().getFullYear();
@@ -247,6 +247,10 @@ function renderTermine(data) {
         // HERO CARD RENDERING
         if (t.isRSVP && heroWrap) {
             const hasAnswered = t.attending === true || t.attending === "true" || t.attending === false || t.attending === "false";
+            
+            // Tracking: Dem Backend sagen, dass diese Karte gesehen wurde (nur wenn noch nicht geantwortet)
+            if (activeLizenz && !hasAnswered) trackRSVPView(t.id, activeLizenz);
+
             const isAttending = t.attending === true || t.attending === "true";
             
             let onYesClick = `submitRSVP('${t.id}', true)`;
@@ -338,8 +342,12 @@ function renderTermine(data) {
 function filterTermine(type, btn) {
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    if(type === 'all') renderTermine(allTermine);
-    else renderTermine(allTermine.filter(t => t.typ === type));
+    
+    const userObj = JSON.parse(localStorage.getItem('sportschuetzen_user') || '{}');
+    const activeLizenz = userObj.lizenz ? String(userObj.lizenz).padStart(6, '0') : '';
+
+    if(type === 'all') renderTermine(allTermine, activeLizenz);
+    else renderTermine(allTermine.filter(t => t.typ === type), activeLizenz);
 }
 
 function applyRundenPrefix(termine) {
@@ -685,3 +693,24 @@ window.showParticipants = async function(eventId) {
 window.closeParticipantsModal = function() {
     document.getElementById('participant-modal').style.display = 'none';
 };
+
+// --- TRACKING ---
+
+/**
+ * Protokolliert im Backend, dass ein User eine bestimmte RSVP-Karte gesehen hat.
+ */
+async function trackRSVPView(eventId, lizenz) {
+    if (!eventId || !lizenz) return;
+
+    const trackKey = `viewed_${eventId}_${lizenz}`;
+    if (localStorage.getItem(trackKey)) return;
+
+    try {
+        // Wir nutzen den EVENTPLANER_URL (Cloudflare Worker -> Google Script)
+        await fetch(`${EVENTPLANER_URL}?action=trackView&eventid=${encodeURIComponent(eventId)}&lizenz=${encodeURIComponent(lizenz)}`);
+        localStorage.setItem(trackKey, "true");
+        console.log("View tracked for event:", eventId);
+    } catch (e) {
+        // Silent fail, damit die App bei Tracking-Fehlern nicht abstürzt
+    }
+}
