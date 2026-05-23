@@ -27,6 +27,51 @@
       --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
+    html {
+      scroll-behavior: smooth;
+    }
+
+    /* Header Jump-Buttons */
+    .btn-action {
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 12px 24px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      transition: var(--transition);
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    }
+
+    .btn-action.primary {
+      background-color: var(--primary-color);
+      color: white;
+      border: 1px solid var(--primary-color);
+    }
+
+    .btn-action.primary:hover {
+      background-color: var(--primary-light);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 15px rgba(15, 58, 93, 0.2);
+      color: white;
+    }
+
+    .btn-action.secondary {
+      background-color: white;
+      color: var(--primary-color);
+      border: 1px solid #d2d6dc;
+    }
+
+    .btn-action.secondary:hover {
+      background-color: var(--bg-light);
+      border-color: var(--primary-color);
+      transform: translateY(-2px);
+      color: var(--primary-color);
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -550,6 +595,16 @@
     <header>
       <h1>Schützenhaus zu vermieten</h1>
       <p>Suchen Sie eine gemütliche und gut ausgestattete Location für Ihre Feier, Tagung oder einen Anlass? Unser Schützenhaus im Suhrental steht zur Vermietung und bietet ideale Bedingungen für Ihre Veranstaltung!</p>
+      
+      <!-- UX Jump Buttons -->
+      <div class="header-actions" style="margin-top: 25px; display: flex; gap: 15px; flex-wrap: wrap;">
+        <a href="#kalender" class="btn-action primary">
+          <i class="fa-solid fa-calendar-days"></i> Freie Termine prüfen & buchen
+        </a>
+        <a href="#downloads" class="btn-action secondary">
+          <i class="fa-solid fa-file-arrow-down"></i> Unterlagen & PDF-Muster
+        </a>
+      </div>
     </header>
 
     <!-- Amenities Grid -->
