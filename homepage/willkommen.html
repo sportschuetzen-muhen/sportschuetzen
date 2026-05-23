@@ -1,0 +1,256 @@
+export default function SportschuetzenMuhenHomepage() {
+  return (
+    <div className="min-h-screen bg-zinc-100 text-zinc-900">
+      {/* HERO */}
+      <section
+        className="relative h-[80vh] flex items-center justify-center overflow-hidden"
+        style={{
+          backgroundImage:
+            "url('https://images.unsplash.com/photo-1517457373958-b7bdd4587205?q=80&w=1920&auto=format&fit=crop')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+        <div className="absolute inset-0 bg-black/55" />
+
+        <div className="relative z-10 max-w-5xl mx-auto px-6 text-center text-white">
+          <div className="inline-flex items-center rounded-full bg-white/10 backdrop-blur px-4 py-2 text-sm mb-6 border border-white/20">
+            Sportschützen Muhen
+          </div>
+
+          <h1 className="text-5xl md:text-7xl font-bold leading-tight mb-6">
+            Schützenhaus Muhen
+            <span className="block text-amber-300 mt-2">mieten & erleben</span>
+          </h1>
+
+          <p className="text-lg md:text-2xl text-zinc-200 max-w-3xl mx-auto mb-10 leading-relaxed">
+            Die gemütliche Location für Geburtstage, Vereinsanlässe,
+            Familienfeste und Firmenevents.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <a
+              href="#vermietung"
+              className="bg-amber-400 hover:bg-amber-300 transition px-8 py-4 rounded-2xl text-black font-semibold shadow-2xl"
+            >
+              Jetzt reservieren
+            </a>
+
+            <a
+              href="#bilder"
+              className="bg-white/10 hover:bg-white/20 backdrop-blur transition px-8 py-4 rounded-2xl border border-white/20 font-semibold"
+            >
+              Bilder ansehen
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* QUICK CARDS */}
+      <section className="max-w-7xl mx-auto px-6 -mt-20 relative z-20">
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-3xl shadow-xl p-8">
+            <div className="text-4xl mb-4">🏠</div>
+            <h2 className="text-2xl font-bold mb-3">Schützenhaus mieten</h2>
+            <p className="text-zinc-600 leading-relaxed mb-6">
+              Ideal für Feste, Vereinsanlässe und private Veranstaltungen.
+            </p>
+            <a href="#vermietung" className="font-semibold text-amber-700">
+              Mehr erfahren →
+            </a>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-xl p-8">
+            <div className="text-4xl mb-4">🎯</div>
+            <h2 className="text-2xl font-bold mb-3">Verein & Nachwuchs</h2>
+            <p className="text-zinc-600 leading-relaxed mb-6">
+              Informationen zum Verein, Trainings und Nachwuchsförderung.
+            </p>
+            <a href="#verein" className="font-semibold text-amber-700">
+              Zum Verein →
+            </a>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-xl p-8">
+            <div className="text-4xl mb-4">📅</div>
+            <h2 className="text-2xl font-bold mb-3">Termine & Resultate</h2>
+            <p className="text-zinc-600 leading-relaxed mb-6">
+              Aktuelle Termine, Wettkämpfe und Resultate auf einen Blick.
+            </p>
+            <a href="#termine" className="font-semibold text-amber-700">
+              Alle Termine →
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* RENTAL SECTION */}
+      <section id="vermietung" className="py-28 bg-zinc-100">
+        <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <div className="text-amber-700 font-semibold uppercase tracking-widest mb-4">
+              Vermietung
+            </div>
+
+            <h2 className="text-4xl md:text-5xl font-bold mb-8 leading-tight">
+              Die perfekte Location
+              <span className="block text-amber-700">für euren Anlass</span>
+            </h2>
+
+            <div className="space-y-5 text-lg text-zinc-700 leading-relaxed">
+              <p>
+                Das Schützenhaus Muhen bietet eine gemütliche Atmosphäre in
+                ruhiger Umgebung – ideal für Geburtstage, Familienfeste,
+                Vereinsanlässe oder Firmenessen.
+              </p>
+
+              <p>
+                Moderne Küche, genügend Parkplätze und flexible Nutzung machen
+                die Vermietung unkompliziert und attraktiv.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mt-10">
+              {[
+                'Bis 40 Personen',
+                'Küche vorhanden',
+                'Parkplätze direkt vor Ort',
+                'Geschirr vorhanden',
+                'Ruhige Lage',
+                'Flexible Nutzung',
+              ].map((item) => (
+                <div
+                  key={item}
+                  className="bg-white rounded-2xl p-4 shadow-sm border border-zinc-200"
+                >
+                  ✓ {item}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-4 mt-10">
+              <button className="bg-zinc-900 hover:bg-black transition text-white px-8 py-4 rounded-2xl font-semibold shadow-lg">
+                Reservation anfragen
+              </button>
+
+              <button className="border border-zinc-300 hover:bg-zinc-200 transition px-8 py-4 rounded-2xl font-semibold">
+                Mietvertrag herunterladen
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <img
+              src="https://images.unsplash.com/photo-1519167758481-83f550bb49b3?q=80&w=1200&auto=format&fit=crop"
+              className="rounded-3xl shadow-2xl h-72 w-full object-cover"
+            />
+
+            <img
+              src="https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=1200&auto=format&fit=crop"
+              className="rounded-3xl shadow-2xl h-72 w-full object-cover mt-10"
+            />
+
+            <img
+              src="https://images.unsplash.com/photo-1511578314322-379afb476865?q=80&w=1200&auto=format&fit=crop"
+              className="rounded-3xl shadow-2xl h-72 w-full object-cover -mt-10"
+            />
+
+            <img
+              src="https://images.unsplash.com/photo-1505236858219-8359eb29e329?q=80&w=1200&auto=format&fit=crop"
+              className="rounded-3xl shadow-2xl h-72 w-full object-cover"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* GALLERY */}
+      <section id="bilder" className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-14">
+            <div>
+              <div className="text-amber-700 font-semibold uppercase tracking-widest mb-4">
+                Impressionen
+              </div>
+
+              <h2 className="text-4xl font-bold">Einblicke ins Schützenhaus</h2>
+            </div>
+
+            <p className="max-w-2xl text-zinc-600 text-lg leading-relaxed">
+              Moderne, gemütliche Atmosphäre mit viel Platz für gesellige
+              Anlässe.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=1200&auto=format&fit=crop',
+              'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=1200&auto=format&fit=crop',
+              'https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?q=80&w=1200&auto=format&fit=crop',
+            ].map((img) => (
+              <img
+                key={img}
+                src={img}
+                className="rounded-3xl shadow-xl h-80 w-full object-cover hover:scale-[1.02] transition duration-300"
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="py-28 bg-zinc-900 text-white">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <div className="text-amber-300 font-semibold uppercase tracking-widest mb-5">
+            Jetzt anfragen
+          </div>
+
+          <h2 className="text-4xl md:text-6xl font-bold leading-tight mb-8">
+            Plant euren nächsten Anlass
+            <span className="block text-amber-300">im Schützenhaus Muhen</span>
+          </h2>
+
+          <p className="text-zinc-300 text-xl leading-relaxed mb-10 max-w-3xl mx-auto">
+            Schnell, unkompliziert und persönlich.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button className="bg-amber-400 hover:bg-amber-300 transition text-black px-8 py-4 rounded-2xl font-semibold shadow-2xl">
+              Reservation anfragen
+            </button>
+
+            <button className="border border-zinc-600 hover:bg-zinc-800 transition px-8 py-4 rounded-2xl font-semibold">
+              Kontakt aufnehmen
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="bg-black text-zinc-400 py-10 border-t border-zinc-800">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between gap-6">
+          <div>
+            <div className="text-white font-bold text-xl mb-2">
+              Sportschützen Muhen
+            </div>
+            <p>Tradition • Gemeinschaft • Vermietung</p>
+          </div>
+
+          <div className="flex flex-wrap gap-6">
+            <a href="#" className="hover:text-white transition">
+              Vermietung
+            </a>
+            <a href="#" className="hover:text-white transition">
+              Verein
+            </a>
+            <a href="#" className="hover:text-white transition">
+              Termine
+            </a>
+            <a href="#" className="hover:text-white transition">
+              Kontakt
+            </a>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
