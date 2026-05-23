@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Gib uns eine kurze Rückmeldung zur Stornierung deines Mietvertrags für das Schützenhaus Muhen. Hilf uns, unseren Service weiter zu verbessern.">
-  <title>Rückmeldung zur Mietvertragsstornierung – Sportschützen Muhen</title>
+  <title>Rückmeldung zur Mietvertragsstornierung</title>
   
   <!-- Modern Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,7 +21,6 @@
       --text-dark: #2d3748;
       --text-light: #718096;
       --bg-light: #f4f7f9;
-      --bg-sidebar: #0f3a5d;
       --success-color: #28a745;
       --error-color: #dc3545;
       --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -37,118 +35,57 @@
     body {
       font-family: 'Outfit', sans-serif;
       color: var(--text-dark);
-      background-color: var(--bg-light);
-      display: flex;
-      min-height: 100vh;
-      overflow-x: hidden;
+      background-color: transparent; /* Transparent for seamless embedding */
+      padding: 10px;
     }
 
-    /* Side navigation panel */
-    .sidebar {
-      width: 280px;
-      background-color: var(--bg-sidebar);
-      color: white;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 40px 20px;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      box-shadow: 4px 0 20px rgba(0,0,0,0.1);
-      z-index: 10;
-    }
-
-    .logo-container {
-      background-color: white;
-      padding: 15px;
-      border-radius: 12px;
-      box-shadow: 0 8px 16px rgba(0,0,0,0.15);
-      text-align: center;
-      width: 100%;
-      max-width: 180px;
-      margin-bottom: 30px;
-      transform: translateY(0);
-      transition: var(--transition);
-    }
-
-    .logo-container img {
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-
-    .sidebar h2 {
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 1.5rem;
-      font-weight: 700;
-      text-align: center;
-      letter-spacing: 0.5px;
-      margin-top: 10px;
-      color: white;
-    }
-
-    .sidebar p {
-      font-size: 1.1rem;
-      color: rgba(255,255,255,0.7);
-      margin-top: 5px;
-      font-weight: 300;
-    }
-
-    /* Main content container */
-    .main-content {
-      flex-grow: 1;
-      padding: 50px 60px;
-      max-width: 900px;
+    /* Feedback Card Container */
+    .feedback-card {
+      background: white;
+      border-radius: 16px;
+      padding: 35px;
+      box-shadow: 0 10px 30px rgba(15, 58, 93, 0.05);
+      border: 1px solid #e2e8f0;
+      max-width: 750px;
       margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
+      animation: fadeIn 0.4s ease;
     }
 
     header {
-      margin-bottom: 35px;
+      margin-bottom: 25px;
+      text-align: center;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 20px;
     }
 
     header h1 {
       font-family: 'Space Grotesk', sans-serif;
-      font-size: 2.3rem;
+      font-size: 1.6rem;
       color: var(--primary-color);
       font-weight: 700;
-      line-height: 1.2;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     header p {
-      font-size: 1.15rem;
+      font-size: 0.95rem;
       color: var(--text-light);
-      line-height: 1.5;
-    }
-
-    /* Card Wrapper */
-    .feedback-card {
-      background: white;
-      border-radius: 16px;
-      padding: 40px;
-      box-shadow: 0 10px 35px rgba(15, 58, 93, 0.05);
-      transition: var(--transition);
+      line-height: 1.4;
     }
 
     .feedback-form {
       display: flex;
       flex-direction: column;
-      gap: 25px;
+      gap: 20px;
     }
 
     .form-group {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
 
     label {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 600;
       color: var(--primary-color);
     }
@@ -156,7 +93,7 @@
     input, textarea {
       font-family: inherit;
       font-size: 0.95rem;
-      padding: 12px 16px;
+      padding: 10px 14px;
       border: 1px solid #d2d6dc;
       border-radius: 8px;
       outline: none;
@@ -166,7 +103,7 @@
 
     input:focus, textarea:focus {
       border-color: var(--primary-color);
-      box-shadow: 0 0 0 3px rgba(15, 58, 93, 0.15);
+      box-shadow: 0 0 0 3px rgba(15, 58, 93, 0.12);
       background-color: white;
     }
 
@@ -180,14 +117,14 @@
 
     textarea {
       resize: vertical;
-      min-height: 120px;
+      min-height: 100px;
     }
 
     /* Premium Radio Card Deck */
     .reason-cards {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
       margin-top: 5px;
     }
 
@@ -195,9 +132,9 @@
       display: flex;
       align-items: center;
       gap: 15px;
-      padding: 16px 20px;
+      padding: 12px 18px;
       border: 2px solid #e2e8f0;
-      border-radius: 10px;
+      border-radius: 8px;
       cursor: pointer;
       transition: var(--transition);
       user-select: none;
@@ -211,16 +148,15 @@
     .reason-card.selected {
       border-color: var(--primary-color);
       background-color: rgba(15, 58, 93, 0.04);
-      box-shadow: 0 4px 12px rgba(15, 58, 93, 0.05);
     }
 
     .reason-card-icon {
-      font-size: 1.3rem;
+      font-size: 1.15rem;
       color: var(--text-light);
       background-color: var(--bg-light);
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -235,7 +171,7 @@
 
     .reason-card-text {
       flex-grow: 1;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 500;
       color: var(--text-dark);
       transition: var(--transition);
@@ -247,8 +183,8 @@
     }
 
     .reason-radio {
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       border: 2px solid #cbd5e0;
       display: flex;
@@ -264,8 +200,8 @@
 
     .reason-card.selected .reason-radio::after {
       content: '';
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background-color: var(--primary-color);
       display: block;
@@ -274,27 +210,27 @@
     /* Submit Button styling */
     .btn-submit {
       font-family: inherit;
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 600;
       color: white;
       background-color: var(--primary-color);
       border: none;
       border-radius: 8px;
-      padding: 15px;
+      padding: 13px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
-      margin-top: 10px;
-      box-shadow: 0 4px 12px rgba(15, 58, 93, 0.2);
+      margin-top: 5px;
+      box-shadow: 0 4px 12px rgba(15, 58, 93, 0.15);
       transition: var(--transition);
     }
 
     .btn-submit:hover {
       background-color: var(--primary-light);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(15, 58, 93, 0.3);
+      box-shadow: 0 6px 18px rgba(15, 58, 93, 0.25);
     }
 
     .btn-submit:active {
@@ -316,32 +252,32 @@
     }
 
     .success-icon {
-      font-size: 4rem;
+      font-size: 3.5rem;
       color: var(--success-color);
       background-color: rgba(40, 167, 69, 0.1);
-      width: 100px;
-      height: 100px;
+      width: 85px;
+      height: 85px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 25px;
+      margin-bottom: 20px;
       box-shadow: 0 8px 24px rgba(40, 167, 69, 0.15);
     }
 
     .success-view h2 {
       font-family: 'Space Grotesk', sans-serif;
-      font-size: 1.8rem;
+      font-size: 1.5rem;
       color: var(--primary-color);
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     .success-view p {
-      font-size: 1.05rem;
+      font-size: 0.95rem;
       color: var(--text-light);
-      line-height: 1.5;
-      max-width: 500px;
-      margin-bottom: 30px;
+      line-height: 1.4;
+      max-width: 480px;
+      margin-bottom: 25px;
     }
 
     .btn-back {
@@ -351,7 +287,7 @@
       color: var(--primary-color);
       text-decoration: none;
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       transition: var(--transition);
     }
 
@@ -363,16 +299,16 @@
     /* Custom Toast Notifications */
     .custom-toast {
       position: fixed;
-      bottom: 30px;
-      right: 30px;
+      bottom: 20px;
+      right: 20px;
       background: white;
       border-radius: 10px;
-      padding: 18px 25px;
+      padding: 15px 20px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.15);
       z-index: 1000;
       display: flex;
       align-items: center;
-      gap: 15px;
+      gap: 12px;
       transform: translateY(100px);
       opacity: 0;
       transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -386,136 +322,104 @@
     .toast-icon.error { color: var(--error-color); }
 
     .toast-message h4 {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 600;
       color: var(--text-dark);
       margin-bottom: 2px;
     }
 
     .toast-message p {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       color: var(--text-light);
     }
 
     /* Animations */
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
+      from { opacity: 0; transform: translateY(15px); }
       to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Responsive */
-    @media (max-width: 1024px) {
-      body {
-        flex-direction: column;
-      }
-      .sidebar {
-        width: 100%;
-        height: auto;
-        padding: 30px 20px;
-      }
-      .logo-container {
-        display: none;
-      }
-      .main-content {
-        padding: 40px 20px;
-      }
     }
   </style>
 </head>
 <body>
 
-  <!-- Sidebar Nav Panel -->
-  <aside class="sidebar">
-    <div class="logo-container">
-      <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png" alt="Sportschützen Muhen Logo">
-    </div>
-    <h2>SPORTSCHÜTZEN</h2>
-    <p>Muhen</p>
-  </aside>
-
-  <!-- Main View Area -->
-  <main class="main-content">
+  <!-- Feedback Card Embeddable Widget -->
+  <div class="feedback-card">
     
     <!-- Title & Description Header -->
     <header id="form-header">
-      <h1>Rückmeldung zu Mietvertragsstornierung</h1>
+      <h1>Rückmeldung zur Mietvertragsstornierung</h1>
       <p>Es tut uns leid zu hören, dass deine Buchung nicht stattfinden kann. Bitte hilf uns, unseren Service weiter zu verbessern, indem du uns kurz mitteilst, warum du die Reservation storniert hast.</p>
     </header>
-
-    <!-- Feedback Card -->
-    <div class="feedback-card">
+    
+    <!-- Interactive Form View -->
+    <form class="feedback-form" id="feedback-form" onsubmit="submitFeedback(event)">
       
-      <!-- Interactive Form View -->
-      <form class="feedback-form" id="feedback-form" onsubmit="submitFeedback(event)">
-        
-        <!-- Pre-filled locked Contract number -->
-        <div class="form-group">
-          <label for="vertragsnummer">Vertragsnummer *</label>
-          <input type="text" id="vertragsnummer" required placeholder="z.B. V-2026-0001">
-        </div>
-
-        <!-- Premium Choice cards -->
-        <div class="form-group">
-          <label>Grund für die Stornierung *</label>
-          <div class="reason-cards">
-            
-            <div class="reason-card" onclick="selectReason(this, 'Kein Bedarf mehr')">
-              <div class="reason-card-icon"><i class="fa-solid fa-ban"></i></div>
-              <div class="reason-card-text">Kein Bedarf mehr (Termin wird nicht benötigt)</div>
-              <div class="reason-radio"></div>
-            </div>
-
-            <div class="reason-card" onclick="selectReason(this, 'Mietbestimmungen entsprechen nicht den Vorstellungen')">
-              <div class="reason-card-icon"><i class="fa-solid fa-file-signature"></i></div>
-              <div class="reason-card-text">Mietbestimmungen (Mietvertrag) entsprechen nicht den Vorstellungen</div>
-              <div class="reason-radio"></div>
-            </div>
-
-            <div class="reason-card" onclick="selectReason(this, 'Mietgebühr zu hoch')">
-              <div class="reason-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-              <div class="reason-card-text">Mietgebühr ist zu hoch</div>
-              <div class="reason-radio"></div>
-            </div>
-
-            <div class="reason-card" onclick="selectReason(this, 'Terminkonflikt / Verschiebung')">
-              <div class="reason-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
-              <div class="reason-card-text">Terminkonflikt / Verschiebung des Anlasses</div>
-              <div class="reason-radio"></div>
-            </div>
-
-            <div class="reason-card" onclick="selectReason(this, 'Anderer Grund')">
-              <div class="reason-card-icon"><i class="fa-solid fa-circle-question"></i></div>
-              <div class="reason-card-text">Ein anderer Grund (bitte unten erläutern)</div>
-              <div class="reason-radio"></div>
-            </div>
-
-          </div>
-        </div>
-
-        <!-- Detailed comment field (Requested!) -->
-        <div class="form-group">
-          <label for="bemerkung">Bemerkungen / Ergänzende Rückmeldung (Optional)</label>
-          <textarea id="bemerkung" placeholder="Hier kannst du uns konstruktives Feedback geben, Verbesserungsvorschläge hinterlassen oder uns genauere Gründe mitteilen..."></textarea>
-        </div>
-
-        <button type="submit" class="btn-submit" id="btn-submit">
-          <i class="fa-solid fa-paper-plane"></i> Rückmeldung senden
-        </button>
-      </form>
-
-      <!-- Success Screen (Shown dynamically upon success) -->
-      <div class="success-view" id="success-view">
-        <div class="success-icon"><i class="fa-solid fa-check"></i></div>
-        <h2>Vielen Dank für deine Rückmeldung!</h2>
-        <p>Deine Rückmeldung wurde erfolgreich verbucht. Dein offenes Feedback hilft uns sehr dabei, die Vermietung der Schützenstube Muhen in Zukunft noch kundenfreundlicher zu gestalten.</p>
-        <a href="https://www.sportschuetzen-muhen.ch" class="btn-back">
-          <i class="fa-solid fa-arrow-left"></i> Zurück zur Homepage
-        </a>
+      <!-- Pre-filled locked Contract number -->
+      <div class="form-group">
+        <label for="vertragsnummer">Vertragsnummer *</label>
+        <input type="text" id="vertragsnummer" required placeholder="z.B. V-2026-0001">
       </div>
 
+      <!-- Premium Choice cards -->
+      <div class="form-group">
+        <label>Grund für die Stornierung *</label>
+        <div class="reason-cards">
+          
+          <div class="reason-card" onclick="selectReason(this, 'Kein Bedarf mehr')">
+            <div class="reason-card-icon"><i class="fa-solid fa-ban"></i></div>
+            <div class="reason-card-text">Kein Bedarf mehr (Termin wird nicht benötigt)</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Mietbestimmungen entsprechen nicht den Vorstellungen')">
+            <div class="reason-card-icon"><i class="fa-solid fa-file-signature"></i></div>
+            <div class="reason-card-text">Mietbestimmungen (Mietvertrag) entsprechen nicht den Vorstellungen</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Mietgebühr zu hoch')">
+            <div class="reason-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+            <div class="reason-card-text">Mietgebühr ist zu hoch</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Terminkonflikt / Verschiebung')">
+            <div class="reason-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
+            <div class="reason-card-text">Terminkonflikt / Verschiebung des Anlasses</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Anderer Grund')">
+            <div class="reason-card-icon"><i class="fa-solid fa-circle-question"></i></div>
+            <div class="reason-card-text">Ein anderer Grund (bitte unten erläutern)</div>
+            <div class="reason-radio"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Detailed comment field -->
+      <div class="form-group">
+        <label for="bemerkung">Bemerkungen / Ergänzende Rückmeldung (Optional)</label>
+        <textarea id="bemerkung" placeholder="Hier kannst du uns konstruktives Feedback geben, Verbesserungsvorschläge hinterlassen oder uns genauere Gründe mitteilen..."></textarea>
+      </div>
+
+      <button type="submit" class="btn-submit" id="btn-submit">
+        <i class="fa-solid fa-paper-plane"></i> Rückmeldung senden
+      </button>
+    </form>
+
+    <!-- Success Screen (Shown dynamically upon success) -->
+    <div class="success-view" id="success-view">
+      <div class="success-icon"><i class="fa-solid fa-check"></i></div>
+      <h2>Vielen Dank für deine Rückmeldung!</h2>
+      <p>Deine Rückmeldung wurde erfolgreich verbucht. Dein offenes Feedback hilft uns sehr dabei, die Vermietung der Schützenstube Muhen in Zukunft noch kundenfreundlicher zu gestalten.</p>
+      <a href="https://www.sportschuetzen-muhen.ch" class="btn-back">
+        <i class="fa-solid fa-arrow-left"></i> Zurück zur Homepage
+      </a>
     </div>
 
-  </main>
+  </div>
 
   <!-- Error Toast -->
   <div class="custom-toast" id="toast">
@@ -527,8 +431,8 @@
   </div>
 
   <script>
-    // Config: Trage hier die Live-URL deines Google Apps Script Web-Apps ein!
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx77T_HpoVzfJsI47RAHN4_EmHZgTPHMSNnk5pIgPs0/exec";
+    // Config: Live-URL eures Cloudflare Worker CORS-Proxys
+    const WEB_APP_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=vermietung&action=feedback";
 
     let selectedReasonVal = "";
 
@@ -540,19 +444,15 @@
       if (vnr) {
         const vnrInput = document.getElementById('vertragsnummer');
         vnrInput.value = vnr;
-        // Bei übergebener Vertragsnummer sperren wir das Feld zur Eingabeerleichterung
         vnrInput.readOnly = true;
       }
     });
 
     // Reason card selection
     function selectReason(cardElement, reasonText) {
-      // Alle Karten deselectieren
       document.querySelectorAll('.reason-card').forEach(card => {
         card.classList.remove('selected');
       });
-      
-      // Ausgewählte Karte selectieren
       cardElement.classList.add('selected');
       selectedReasonVal = reasonText;
     }
@@ -585,21 +485,30 @@
       try {
         const response = await fetch(WEB_APP_URL, {
           method: 'POST',
-          mode: 'no-cors', // standard für CORS-freie Apps Script integration
+          mode: 'cors',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(payload)
         });
 
-        // Interface umschalten auf Success
-        document.getElementById('feedback-form').style.display = 'none';
-        document.getElementById('form-header').style.display = 'none';
-        document.getElementById('success-view').classList.add('active');
+        if (!response.ok) {
+          throw new Error("HTTP Fehler " + response.status);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+          document.getElementById('feedback-form').style.display = 'none';
+          document.getElementById('form-header').style.display = 'none';
+          document.getElementById('success-view').classList.add('active');
+        } else {
+          showErrorToast(result.error || "Rückmeldung fehlgeschlagen. Bitte versuche es später nochmals.");
+        }
 
       } catch (error) {
         console.error("Fehler beim Senden des Feedbacks:", error);
-        showErrorToast("Die Rückmeldung konnte nicht gesendet werden. Bitte wende dich direkt an sportschuetzen.muhen@gmail.com.");
+        showErrorToast("Verbindungsfehler. Bitte wende dich direkt an sportschuetzen.muhen@gmail.com.");
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
