@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rückmeldung zur Mietvertragsstornierung</title>
+  <title>Rückmeldung zur Annullierung der Reservation</title>
   
   <!-- Modern Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -347,8 +347,8 @@
     
     <!-- Title & Description Header -->
     <header id="form-header">
-      <h1>Rückmeldung zur Mietvertragsstornierung</h1>
-      <p>Es tut uns leid zu hören, dass deine Buchung nicht stattfinden kann. Bitte hilf uns, unseren Service weiter zu verbessern, indem du uns kurz mitteilst, warum du die Reservation storniert hast.</p>
+      <h1>Rückmeldung zur Annullierung der Reservation</h1>
+      <p>Ihre Reservation wurde storniert, da innerhalb der Frist (bzw. nach der Zahlungserinnerung) kein Zahlungseingang registriert werden konnte. Bitte teilen Sie uns kurz mit, woran es lag, damit wir unseren Service und die Zahlungsabläufe verbessern können.</p>
     </header>
     
     <!-- Interactive Form View -->
@@ -365,27 +365,27 @@
         <label>Grund für die Stornierung *</label>
         <div class="reason-cards">
           
-          <div class="reason-card" onclick="selectReason(this, 'Kein Bedarf mehr')">
+          <div class="reason-card" onclick="selectReason(this, 'Mietobjekt nicht mehr benötigt & vergessen abzusagen')">
             <div class="reason-card-icon"><i class="fa-solid fa-ban"></i></div>
-            <div class="reason-card-text">Kein Bedarf mehr (Termin wird nicht benötigt)</div>
+            <div class="reason-card-text">Ich habe das Mietobjekt nicht mehr benötigt und vergessen abzusagen</div>
             <div class="reason-radio"></div>
           </div>
 
-          <div class="reason-card" onclick="selectReason(this, 'Mietbestimmungen entsprechen nicht den Vorstellungen')">
-            <div class="reason-card-icon"><i class="fa-solid fa-file-signature"></i></div>
-            <div class="reason-card-text">Mietbestimmungen (Mietvertrag) entsprechen nicht den Vorstellungen</div>
+          <div class="reason-card" onclick="selectReason(this, 'Zahlung bereits getätigt / Datum behalten')">
+            <div class="reason-card-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+            <div class="reason-card-text">Zahlung bereits getätigt / möchte das Datum behalten (Bitte um Kontaktaufnahme)</div>
             <div class="reason-radio"></div>
           </div>
 
-          <div class="reason-card" onclick="selectReason(this, 'Mietgebühr zu hoch')">
+          <div class="reason-card" onclick="selectReason(this, 'Zahlungsfrist war zu kurz')">
+            <div class="reason-card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+            <div class="reason-card-text">Die Zahlungsfrist war zu kurz</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Mietgebühr/Kaution zu hoch')">
             <div class="reason-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-            <div class="reason-card-text">Mietgebühr ist zu hoch</div>
-            <div class="reason-radio"></div>
-          </div>
-
-          <div class="reason-card" onclick="selectReason(this, 'Terminkonflikt / Verschiebung')">
-            <div class="reason-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
-            <div class="reason-card-text">Terminkonflikt / Verschiebung des Anlasses</div>
+            <div class="reason-card-text">Die Mietgebühr/Kaution ist zu hoch</div>
             <div class="reason-radio"></div>
           </div>
 
