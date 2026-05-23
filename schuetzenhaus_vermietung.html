@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Miete das gemütliche Schützenhaus der Sportschützen Muhen im Suhrental für deine Feier, Tagung oder deinen Anlass. Moderne Küche, Saal für 40 Personen und bequeme Online-Buchung.">
+  <title>Schützenhaus mieten – Sportschützen Muhen</title>
+  
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    :root {
+      --primary-color: #0f3a5d;
+      --primary-light: #1e5a8f;
+      --accent-color: #e5a93b;
+      --text-dark: #2d3748;
+      --text-light: #718096;
+      --bg-light: #f4f7f9;
+      --success-color: #28a745;
+      --error-color: #dc3545;
+      --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      color: var(--text-dark);
+      background-color: transparent; /* Transparent to blend seamlessly into parent layout */
+      padding: 20px 0;
+    }
+
+    /* Single Column Main container - No Sidebar! */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    header {
+      margin-bottom: 40px;
+    }
+
+    header h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 2.5rem;
+      color: var(--primary-color);
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 15px;
+    }
+
+    header p {
+      font-size: 1.2rem;
+      color: var(--text-light);
+      line-height: 1.6;
+    }
+
+    /* Features Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 45px;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 22px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      border-left: 4px solid var(--primary-color);
+      display: flex;
+      gap: 15px;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid var(--primary-color);
+      transition: var(--transition);
+    }
+
+    .feature-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      border-left-color: var(--accent-color);
+    }
+
+    .feature-icon {
+      font-size: 1.4rem;
+      color: var(--primary-color);
+      background-color: rgba(15, 58, 93, 0.08);
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .feature-info h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--primary-color);
+    }
+
+    .feature-info p {
+      font-size: 0.95rem;
+      color: var(--text-light);
+      line-height: 1.45;
+    }
+
+    /* Photo Gallery Section */
+    .gallery-section {
+      margin-bottom: 50px;
+    }
+
+    .section-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.8rem;
+      color: var(--primary-color);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+    }
+
+    .gallery-item {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      aspect-ratio: 4/3;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.05);
+      border: 1px solid #e2e8f0;
+      transition: var(--transition);
+    }
+
+    .gallery-item:hover {
+      transform: scale(1.02);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.12);
+    }
+
+    .gallery-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: var(--transition);
+    }
+
+    .gallery-item:hover img {
+      transform: scale(1.05);
+    }
+
+    .gallery-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(15, 58, 93, 0.7), transparent);
+      display: flex;
+      align-items: flex-end;
+      padding: 15px;
+      opacity: 0;
+      transition: var(--transition);
+    }
+
+    .gallery-item:hover .gallery-overlay {
+      opacity: 1;
+    }
+
+    .gallery-overlay span {
+      color: white;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+
+    /* Lightbox Modal */
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      background-color: rgba(15, 58, 93, 0.95);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .lightbox.active {
+      display: flex;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .lightbox-content {
+      position: relative;
+      max-width: 90%;
+      max-height: 80vh;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+
+    .lightbox-content img {
+      display: block;
+      max-width: 100%;
+      max-height: 80vh;
+      object-fit: contain;
+    }
+
+    .lightbox-caption {
+      background-color: white;
+      color: var(--primary-color);
+      padding: 15px 25px;
+      font-weight: 600;
+      font-size: 1.1rem;
+      text-align: center;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: 30px;
+      right: 30px;
+      color: white;
+      font-size: 2.2rem;
+      cursor: pointer;
+      background: rgba(255,255,255,0.1);
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--transition);
+    }
+
+    .lightbox-close:hover {
+      background: rgba(255,255,255,0.25);
+      color: var(--accent-color);
+    }
+
+    .lightbox-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: white;
+      font-size: 2.5rem;
+      cursor: pointer;
+      background: rgba(255,255,255,0.1);
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      transition: var(--transition);
+    }
+
+    .lightbox-nav:hover {
+      background: rgba(255,255,255,0.25);
+      color: var(--accent-color);
+    }
+
+    .lightbox-prev { left: 40px; }
+    .lightbox-next { right: 40px; }
+
+    /* Marketing Construction Notice Card */
+    .notice-card {
+      background: linear-gradient(135deg, #fffcf3, #fdf8e6);
+      border: 1px solid #faeab8;
+      border-left: 6px solid var(--accent-color);
+      border-radius: 12px;
+      padding: 25px;
+      margin-bottom: 45px;
+      display: flex;
+      gap: 20px;
+      box-shadow: 0 4px 12px rgba(229, 169, 59, 0.05);
+    }
+
+    .notice-icon {
+      font-size: 2rem;
+      color: var(--accent-color);
+      flex-shrink: 0;
+      margin-top: 3px;
+    }
+
+    .notice-text h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.15rem;
+      color: var(--primary-color);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .notice-text p {
+      font-size: 0.95rem;
+      color: var(--text-dark);
+      line-height: 1.55;
+    }
+
+    /* Downloads Section */
+    .downloads-section {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      border: 1px solid #e2e8f0;
+      margin-bottom: 50px;
+    }
+
+    .downloads-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 15px;
+    }
+
+    .download-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px 20px;
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--primary-color);
+      font-weight: 600;
+      border: 1px solid transparent;
+      transition: var(--transition);
+    }
+
+    .download-item:hover {
+      border-color: rgba(15, 58, 93, 0.15);
+      background-color: rgba(15, 58, 93, 0.04);
+      transform: translateX(4px);
+    }
+
+    .download-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .download-title i {
+      font-size: 1.25rem;
+      color: var(--accent-color);
+    }
+
+    .download-size {
+      font-size: 0.85rem;
+      color: var(--text-light);
+      font-weight: 400;
+    }
+
+    /* Interactive Calendar and Booking Area */
+    .booking-section {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 10px 30px rgba(15, 58, 93, 0.05);
+      border: 1px solid #e2e8f0;
+      margin-bottom: 30px;
+    }
+
+    .booking-container {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 40px;
+      margin-top: 30px;
+    }
+
+    .calendar-container {
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+      border: 1px solid #e2e8f0;
+    }
+
+    /* Modern Styled Booking Form */
+    .form-container h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.3rem;
+      color: var(--primary-color);
+      margin-bottom: 15px;
+      font-weight: 600;
+    }
+
+    .booking-form {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group.row {
+      flex-direction: row;
+      gap: 15px;
+    }
+
+    .form-group.row .form-group {
+      flex: 1;
+    }
+
+    label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--primary-color);
+    }
+
+    input, select {
+      font-family: inherit;
+      font-size: 0.95rem;
+      padding: 12px 16px;
+      border: 1px solid #d2d6dc;
+      border-radius: 8px;
+      outline: none;
+      background-color: var(--bg-light);
+      transition: var(--transition);
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(15, 58, 93, 0.15);
+      background-color: white;
+    }
+
+    input[readonly] {
+      background-color: rgba(229, 169, 59, 0.08);
+      border-color: var(--accent-color);
+      color: var(--primary-color);
+      font-weight: 600;
+      cursor: not-allowed;
+    }
+
+    .btn-submit {
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      color: white;
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      padding: 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 10px;
+      box-shadow: 0 4px 12px rgba(15, 58, 93, 0.2);
+      transition: var(--transition);
+    }
+
+    .btn-submit:hover {
+      background-color: var(--primary-light);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(15, 58, 93, 0.3);
+    }
+
+    .btn-submit:active {
+      transform: translateY(0);
+    }
+
+    /* Custom Toast Notification */
+    .custom-toast {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      background: white;
+      border-radius: 10px;
+      padding: 18px 25px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .custom-toast.active {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast-icon {
+      font-size: 1.4rem;
+    }
+
+    .toast-icon.success { color: var(--success-color); }
+    .toast-icon.error { color: var(--error-color); }
+
+    .toast-message h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 2px;
+    }
+
+    .toast-message p {
+      font-size: 0.85rem;
+      color: var(--text-light);
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1024px) {
+      .booking-container {
+        grid-template-columns: 1fr;
+        gap: 30px;
+      }
+      .gallery-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Full Single-Column Wrapper - No Sidebar! -->
+  <div class="container">
+    
+    <!-- Title & Description Header -->
+    <header>
+      <h1>Schützenhaus zu vermieten</h1>
+      <p>Suchen Sie eine gemütliche und gut ausgestattete Location für Ihre Feier, Tagung oder einen Anlass? Unser Schützenhaus im Suhrental steht zur Vermietung und bietet ideale Bedingungen für Ihre Veranstaltung!</p>
+    </header>
+
+    <!-- Amenities Grid -->
+    <section class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-users"></i></div>
+        <div class="feature-info">
+          <h3>Platz für ca. 40 Personen</h3>
+          <p>Ideal geeignet für Geburtstage, gemütliche Familien- und Firmenfeiern, Vereinsanlässe & vieles mehr.</p>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-coins"></i></div>
+        <div class="feature-info">
+          <h3>Attraktiver Mietpreis</h3>
+          <p>Die Mietgebühr beträgt <strong>CHF 300.-</strong> pro Anlasstag (inklusive Strom und Wasser).</p>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-chair"></i></div>
+        <div class="feature-info">
+          <h3>Gemütlicher Saal</h3>
+          <p>Ausgestattet mit einer vollkommen flexiblen Bestuhlung. Tische und Stühle lassen sich individuell anpassen.</p>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-sink"></i></div>
+        <div class="feature-info">
+          <h3>Voll ausgestattete Küche</h3>
+          <p>Inklusive Gastro-Geschirrspüler sowie komplettem Geschirr und Besteck für ca. 40 Personen.</p>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-mug-hot"></i></div>
+        <div class="feature-info">
+          <h3>Kaffeeautomat vorhanden</h3>
+          <p>Geniesse auf Knopfdruck frisch zubereiteten Kaffee (Abrechnung erfolgt bequem pro Tasse).</p>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-wheelchair"></i></div>
+        <div class="feature-info">
+          <h3>Rollstuhlgängiges WC</h3>
+          <p>Das Schützenhaus ist barrierefrei zugänglich und verfügt über eine voll rollstuhlgängige Toilettenanlage.</p>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-cloud-sun"></i></div>
+        <div class="feature-info">
+          <h3>Outdoor Möglichkeiten</h3>
+          <p>Nutzung des Aussenbereichs möglich. Genügend rustikale Festbank-Garnituren sind vorhanden.</p>
+        </div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fa-solid fa-square-parking"></i></div>
+        <div class="feature-info">
+          <h3>Bequeme Parkplätze</h3>
+          <p>Grosszügiger Parkplatz direkt am Schützenhaus gewährleistet eine komfortable Anreise für alle deine Gäste.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Clickable Interactive Photo Gallery -->
+    <section class="gallery-section">
+      <h2 class="section-title"><i class="fa-solid fa-camera"></i> Impressionen aus der Schützenstube</h2>
+      <div class="gallery-grid">
+        <div class="gallery-item" onclick="openLightbox(0)">
+          <img src="bilder_haus/aussen.jpg" alt="Aussenansicht Schützenhaus Muhen" onerror="this.src='https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=600&q=80'">
+          <div class="gallery-overlay">
+            <span>Aussenansicht</span>
+          </div>
+        </div>
+        <div class="gallery-item" onclick="openLightbox(1)">
+          <img src="bilder_haus/saal.jpg" alt="Innenraum gemütlicher Saal" onerror="this.src='https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=600&q=80'">
+          <div class="gallery-overlay">
+            <span>Gemütlicher Saal</span>
+          </div>
+        </div>
+        <div class="gallery-item" onclick="openLightbox(2)">
+          <img src="bilder_haus/kueche.jpg" alt="Voll ausgestattete Küche" onerror="this.src='https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=600&q=80'">
+          <div class="gallery-overlay">
+            <span>Küche & Ausstattung</span>
+          </div>
+        </div>
+        <div class="gallery-item" onclick="openLightbox(3)">
+          <img src="bilder_haus/umgebung.jpg" alt="Malerische Umgebung im Suhrental" onerror="this.src='https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80'">
+          <div class="gallery-overlay">
+            <span>Malerische Umgebung</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Marketing Construction Notice -->
+    <section class="notice-card">
+      <div class="notice-icon">
+        <i class="fa-solid fa-circle-info"></i>
+      </div>
+      <div class="notice-text">
+        <h3>Informationen zu den Strassen- & Umgebungsarbeiten (2026 - 2027)</h3>
+        <p>Der Kanton Aargau modernisiert die Suhrentalstrasse sowie die Suhre-Brücke und verlegt die Erdgasleitung in den Boden. 
+        <strong>Das Wichtigste vorweg: Das Schützenhaus bleibt während der gesamten Bauzeit vollumfänglich geöffnet, uneingeschränkt mietbar und für deinen Anlass nutzbar!</strong></p>
+        <p style="margin-top: 8px; font-size: 0.95rem; line-height: 1.5; color: var(--text-dark);">
+          <strong>Was bedeutet das für deinen Anlass? (Provisorischer Zeitplan, abhängig von den finalen Baubewilligungen):</strong><br>
+          • <strong>Ruhiges Wochenende:</strong> Die Bauarbeiten finden ausschliesslich von Montag bis Freitag statt. An Samstagen und Sonntagen ruht die Baustelle komplett – ideal für ungestörte Feiern und Wochenendanlässe!<br>
+          • <strong>Juni – September 2026 (Leitungsumlegung):</strong> Die Bauarbeiten finden im Bereich des Schiessstandes statt. Die Zufahrt zum Schützenhaus über die Rütelistrasse bleibt für dich und deine Gäste jederzeit gewährleistet. Temporär kann es zu einer leicht angepassten Parksituation kommen.<br>
+          • <strong>Herbst 2026 – Ende 2027 (Brücken-Neubau):</strong> Der Verkehr wird über eine direkt angrenzende Hilfsbrücke geleitet, sodass die Erreichbarkeit deines Events durchgehend gesichert ist.<br>
+          • <strong>Ein Plus für die Natur:</strong> Als ökologischer Ausgleich wird die Uferböschung und die Gebüschlandschaft direkt rund um unser Schützenhaus ökologisch aufgewertet und verschönert!<br>
+          • <strong>Weitere Details:</strong> Detaillierte Hintergrundinformationen findest du im <a href="https://www.aargauerzeitung.ch/aargau/wyna-suhre/muhenoberentfelden-die-leitung-kommt-unter-den-fluss-kanton-trifft-vorbereitungen-fuer-die-sanierung-der-suhrentalstrasse-ld.2750477" target="_blank" style="color: var(--primary-color); font-weight: 600; text-decoration: underline;">Bericht der Aargauer Zeitung</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- PDF Downloads Container -->
+    <section class="downloads-section" id="downloads">
+      <h2 class="section-title"><i class="fa-solid fa-file-arrow-down"></i> Unterlagen & Muster</h2>
+      <div class="downloads-list">
+        <a href="Mustermietvertrag.pdf" target="_blank" class="download-item">
+          <div class="download-title">
+            <i class="fa-regular fa-file-pdf"></i>
+            <span>Mustermietvertrag (PDF)</span>
+          </div>
+          <span class="download-size">184 KB</span>
+        </a>
+        <a href="Fotos Innenbereich.pdf" target="_blank" class="download-item">
+          <div class="download-title">
+            <i class="fa-regular fa-file-pdf"></i>
+            <span>Bilder & Detailaufnahmen Innenbereich (PDF)</span>
+          </div>
+          <span class="download-size">1.8 MB</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- Interactive Calendar & Booking Module -->
+    <section class="booking-section" id="kalender">
+      <h2 class="section-title"><i class="fa-solid fa-calendar-days"></i> Termin prüfen & buchen</h2>
+      <p style="color: var(--text-light); margin-bottom: 25px;">Wähle freie Termine direkt im Kalender aus und buche dein Event bequem online. Bereits markierte Tage (z.B. "Besetzt" oder "Gesperrt") können nicht gebucht werden.</p>
+      
+      <div class="booking-container">
+        <!-- Embedded Google Belegungskalender -->
+        <div class="calendar-container">
+          <iframe
+            src="https://calendar.google.com/calendar/embed?src=c3BvcnRzY2h1ZXR6ZW4ubXVoZW5AZ21haWwuY29t&ctz=Europe%2FZurich&mode=MONTH&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&wkst=2&bgcolor=%23ffffff&color=%230f3a5d"
+            style="border:none; width:100%; height:450px;"
+            frameborder="0" scrolling="no" id="calendar-iframe">
+          </iframe>
+        </div>
+
+        <!-- Reservation Application Form -->
+        <div class="form-container">
+          <h3>Online-Reservation einreichen</h3>
+          <form class="booking-form" id="res-form" onsubmit="submitBooking(event)">
+            
+            <div class="form-group row">
+              <div class="form-group" style="flex: 0 0 100px;">
+                <label for="anrede">Anrede *</label>
+                <select id="anrede" required>
+                  <option value="Frau">Frau</option>
+                  <option value="Herr">Herr</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="vorname">Vorname *</label>
+                <input type="text" id="vorname" required placeholder="z.B. Hans">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="nachname">Nachname *</label>
+              <input type="text" id="nachname" required placeholder="z.B. Muster">
+            </div>
+
+            <div class="form-group row">
+              <div class="form-group" style="flex: 2;">
+                <label for="email">E-Mail *</label>
+                <input type="email" id="email" required placeholder="name@beispiel.ch">
+              </div>
+              <div class="form-group" style="flex: 1.5;">
+                <label for="telefon">Telefon *</label>
+                <input type="tel" id="telefon" required placeholder="079 123 45 67">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="strasse">Strasse / Hausnummer *</label>
+              <input type="text" id="strasse" required placeholder="Hauptstrasse 12">
+            </div>
+
+            <div class="form-group row">
+              <div class="form-group" style="flex: 0 0 100px;">
+                <label for="plz">PLZ *</label>
+                <input type="text" id="plz" required placeholder="5037">
+              </div>
+              <div class="form-group">
+                <label for="ort">Wohnort *</label>
+                <input type="text" id="ort" required placeholder="Muhen">
+              </div>
+            </div>
+
+            <div class="form-group row">
+              <div class="form-group">
+                <label for="festbeginn">Festbeginn (Uhrzeit) *</label>
+                <input type="text" id="festbeginn" required placeholder="z.B. ab 17:00 Uhr">
+              </div>
+              <div class="form-group">
+                <label for="mietdatum">Gewünschtes Mietdatum *</label>
+                <input type="text" id="mietdatum" required placeholder="Format: DD.MM.YYYY (z.B. 12.08.2026)">
+              </div>
+            </div>
+
+            <button type="submit" class="btn-submit" id="btn-submit">
+              <i class="fa-solid fa-paper-plane"></i> Jetzt verbindlich reservieren
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Clickable Photo Lightbox Structure -->
+  <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+    <span class="lightbox-close">&times;</span>
+    <span class="lightbox-nav lightbox-prev" onclick="changeImage(-1, event)">&#10094;</span>
+    <span class="lightbox-nav lightbox-next" onclick="changeImage(1, event)">&#10095;</span>
+    <div class="lightbox-content" onclick="event.stopPropagation()">
+      <img id="lightbox-img" src="" alt="Zoomed view">
+      <div class="lightbox-caption" id="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <!-- Custom Toast Feedbacks -->
+  <div class="custom-toast" id="toast">
+    <div class="toast-icon" id="toast-icon"></div>
+    <div class="toast-message">
+      <h4 id="toast-title">Buchung</h4>
+      <p id="toast-desc">Nachricht gesendet.</p>
+    </div>
+  </div>
+
+  <!-- JS Logic -->
+  <script>
+    // Config: Live-URL eures Cloudflare Worker CORS-Proxys
+    const WEB_APP_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=vermietung&action=booking";
+
+    // Bilderliste für Galerie
+    const galleryImages = [
+      { src: 'bilder_haus/aussen.jpg', title: 'Aussenansicht des Schützenhauses Muhen', fallback: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80' },
+      { src: 'bilder_haus/saal.jpg', title: 'Innenbereich: Gemütlicher Saal für ca. 40 Personen', fallback: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80' },
+      { src: 'bilder_haus/kueche.jpg', title: 'Moderne, voll ausgestattete Küche mit Gastro-Geschirrspüler', fallback: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=1200&q=80' },
+      { src: 'bilder_haus/umgebung.jpg', title: 'Malerische Umgebung am Suhrental', fallback: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80' }
+    ];
+
+    let currentImgIdx = 0;
+
+    // Open zoomable Lightbox
+    function openLightbox(index) {
+      currentImgIdx = index;
+      const lightbox = document.getElementById('lightbox');
+      const img = document.getElementById('lightbox-img');
+      const caption = document.getElementById('lightbox-caption');
+      
+      const item = galleryImages[index];
+      img.src = item.src;
+      img.onerror = () => { img.src = item.fallback; };
+      caption.textContent = item.title;
+      
+      lightbox.classList.add('active');
+    }
+
+    // Close zoomable Lightbox
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('active');
+    }
+
+    // Navigate Lightbox
+    function changeImage(dir, event) {
+      event.stopPropagation();
+      currentImgIdx = (currentImgIdx + dir + galleryImages.length) % galleryImages.length;
+      const img = document.getElementById('lightbox-img');
+      const caption = document.getElementById('lightbox-caption');
+      
+      const item = galleryImages[currentImgIdx];
+      img.src = item.src;
+      img.onerror = () => { img.src = item.fallback; };
+      caption.textContent = item.title;
+    }
+
+    // Submit Booking to Apps Script doPost
+    async function submitBooking(e) {
+      e.preventDefault();
+      
+      const btn = document.getElementById('btn-submit');
+      const originalHtml = btn.innerHTML;
+      
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Sende Reservierung...`;
+
+      // Payload zusammenbauen
+      const payload = {
+        anrede: document.getElementById('anrede').value,
+        vorname: document.getElementById('vorname').value,
+        nachname: document.getElementById('nachname').value,
+        email: document.getElementById('email').value,
+        telefon: document.getElementById('telefon').value,
+        strasse: document.getElementById('strasse').value,
+        plz: document.getElementById('plz').value,
+        wohnort: document.getElementById('ort').value,
+        festbeginn: document.getElementById('festbeginn').value,
+        mietdatum: document.getElementById('mietdatum').value
+      };
+
+      // Validierung des Datumsformats
+      const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
+      if (!dateRegex.test(payload.mietdatum)) {
+        showCustomToast("error", "Ungültiges Datumsformat", "Das Mietdatum muss im Format DD.MM.YYYY eingegeben werden (z.B. 12.08.2026).");
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        return;
+      }
+
+      try {
+        const response = await fetch(WEB_APP_URL, {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error("HTTP Fehler " + response.status);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+          showCustomToast("success", "Reservierung übermittelt", "Deine Reservierung (" + (result.vertragsnummer || "") + ") wurde erfolgreich eingereicht! Bitte prüfe in wenigen Minuten dein E-Mail-Postfach auf den Mietvertrag.");
+          document.getElementById('res-form').reset();
+          
+          // Iframe neu laden, um die Belegung zu aktualisieren
+          const iframe = document.getElementById('calendar-iframe');
+          iframe.src = iframe.src;
+        } else {
+          showCustomToast("error", "Reservierung fehlgeschlagen", result.error || "Ein unbekannter Fehler ist aufgetreten.");
+        }
+
+      } catch (error) {
+        console.error("Fehler beim Senden der Buchung:", error);
+        showCustomToast("error", "Verbindungsfehler", "Die Reservierung konnte nicht gesendet werden. Bitte wende dich direkt an sportschuetzen.muhen@gmail.com.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
+
+    // Custom Toast Notification System
+    function showCustomToast(type, title, message) {
+      const toast = document.getElementById('toast');
+      const icon = document.getElementById('toast-icon');
+      const tTitle = document.getElementById('toast-title');
+      const tDesc = document.getElementById('toast-desc');
+
+      tTitle.textContent = title;
+      tDesc.textContent = message;
+
+      if (type === "success") {
+        icon.className = "toast-icon success fa-solid fa-circle-check";
+      } else {
+        icon.className = "toast-icon error fa-solid fa-circle-exclamation";
+      }
+
+      toast.classList.add('active');
+      setTimeout(() => {
+        toast.classList.remove('active');
+      }, 7000);
+    }
+  </script>
+</body>
+</html>
