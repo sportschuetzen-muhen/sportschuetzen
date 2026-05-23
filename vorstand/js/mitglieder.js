@@ -131,6 +131,8 @@ function renderMitgliederView(data) {
         background:#fff;border-radius:10px;padding:28px;color:#6b7280;
         text-align:center;border:1px dashed #d1d5db
       }
+      .cursor-pointer{cursor:pointer}
+      .hover-opacity-100:hover{opacity:1 !important}
     </style>
 
     <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
@@ -172,8 +174,10 @@ function renderMitgliederView(data) {
               id="mglSort" onchange="mglSortChange()">
         <option value="LastName:asc">Name A–Z</option>
         <option value="LastName:desc">Name Z–A</option>
-        <option value="PersonNumber:asc">Mitglied-Nr. aufsteigend</option>
-        <option value="PersonNumber:desc">Mitglied-Nr. absteigend</option>
+        <option value="AddressNumber:asc">Mitglied-Nr. aufsteigend</option>
+        <option value="AddressNumber:desc">Mitglied-Nr. absteigend</option>
+        <option value="PersonNumber:asc">Lizenz-Nr. aufsteigend</option>
+        <option value="PersonNumber:desc">Lizenz-Nr. absteigend</option>
         <option value="_mitgliedsjahre:desc">Mitgliedsjahre absteigend</option>
         <option value="_mitgliedsjahre:asc">Mitgliedsjahre aufsteigend</option>
         <option value="_aktiveLizenzenCount:desc">Aktive Lizenzen absteigend</option>
@@ -196,7 +200,7 @@ function renderMitgliederView(data) {
           <table class="table table-hover table-sm mb-0 align-middle">
             <thead class="table-dark">
               <tr>
-                <th class="mgl-clickable-sort" onclick="mglSetSort('PersonNumber')">Nr. <span class="mgl-sort-ind">${mglSortIndicator('PersonNumber')}</span></th>
+                <th class="mgl-clickable-sort" onclick="mglSetSort('AddressNumber')">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
                 <th class="mgl-clickable-sort" onclick="mglSetSort('LastName')">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
                 <th>E-Mail</th>
                 <th>Telefon</th>
@@ -373,8 +377,21 @@ function mglRenderRows(data) {
     const email = escapeHtml(m.PrimaryEmail || '–');
     const phone = escapeHtml(m.PrivateMobilePhone || m.BusinessMobilePhone || '–');
 
+    const addrNum = String(m.AddressNumber || '').padStart(6, '0');
+    const birthDateStr = mglFmtDate(m.BirthDate);
+    const copyIcon = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(pn)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(pn)}'); event.stopPropagation();" title="Lizenznummer kopieren"></i>`;
+
     return `<tr>
-      <td class="text-muted small">${pn}</td>
+      <td class="small">
+        <div class="fw-bold text-dark font-monospace" style="font-size:0.9rem">${addrNum}</div>
+        <div class="text-muted small d-flex align-items-center mt-1" style="font-size:0.75rem">
+          <span class="font-monospace">Liz: ${pn}</span>
+          ${copyIcon}
+        </div>
+        <div class="text-muted mt-1" style="font-size:0.75rem">
+          <i class="fa-regular fa-calendar-days text-muted me-1" style="font-size:0.7rem"></i>${birthDateStr}
+        </div>
+      </td>
       <td>
         <a href="#" class="text-decoration-none fw-semibold"
            onclick="mglOpenDetail('${pn}'); return false;">
@@ -443,10 +460,15 @@ function mglFilter() {
 
   let filtered = _mglData.filter(m => {
     const fullName = `${m.FirstName || ''} ${m.LastName || ''}`.toLowerCase();
+    const birthDateStr = mglFmtDate(m.BirthDate).toLowerCase();
+    const addrNum = String(m.AddressNumber || '').padStart(6, '0');
     const matchSearch = !search ||
       fullName.includes(search) ||
       String(m.PrimaryEmail || '').toLowerCase().includes(search) ||
-      String(m.PersonNumber || '').toLowerCase().includes(search);
+      String(m.PersonNumber || '').toLowerCase().includes(search) ||
+      String(m.AddressNumber || '').toLowerCase().includes(search) ||
+      addrNum.toLowerCase().includes(search) ||
+      birthDateStr.includes(search);
 
     const aktiveLiz = Number(m._aktiveLizenzenCount || 0);
     const isAktiv = m.IsActive == 1 || m.IsActive === true || m.IsActive === '1';

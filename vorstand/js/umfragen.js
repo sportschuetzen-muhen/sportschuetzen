@@ -15,6 +15,58 @@ async function loadUmfragenData() {
     <div class="text-center p-4 text-muted">
       <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
       <div>Lade Umfragen & Events...</div>
+
+        <!-- TAB 4: ERWEITERTES CONTROLLING (GV & PRAESENZ) -->
+        <div class="tab-pane fade" id="tab-umfragen-controlling">
+            <div class="row g-3">
+                <div class="col-md-12 write-protected">
+                    <div class="card p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title mb-0">&#128640; Tools</h5>
+                            <button class="btn btn-success btn-sm write-protected" onclick="saveGVData()">&#128190; GV-Stammdaten speichern</button>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">&#128196; Einladungs-PDF</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendMails')">&#128231; GV Mails senden</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">&#128276; Mahnungen senden</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendSummary')">&#128202; Uebersicht senden</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendPraesenz')">&#128221; Praesenzliste senden</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h5 class="card-title">Stammdaten / Platzhalter</h5>
+                        <div id="gv-list-embedded"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h5 class="card-title">Praesenz / Anmeldungen (Eventplaner)</h5>
+                        <div class="mb-2">
+                            <label class="form-label small">Verknuepftes Event waehlen:</label>
+                            <select class="form-select form-select-sm" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
+                                <option value="">-- Lade Events... --</option>
+                            </select>
+                        </div>
+                        <div class="table-responsive" style="max-height: 430px;">
+                            <table class="table table-sm table-striped">
+                                <thead>
+                                    <tr>
+                                        <th style="cursor: pointer;" onclick="sortGvTable('name')">Name &#8645;</th>
+                                        <th style="cursor: pointer;" onclick="sortGvTable('status')">Teilnahme &#8645;</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="gv-anmelde-body">
+                                    <tr><td colspan="2" class="text-center text-muted">Bitte Event auswaehlen</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="gv-anmelde-summary" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
   `;
 
@@ -41,6 +93,9 @@ function renderUmfragenUI(container) {
         <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-umfragen-events">🗓️ Events verwalten</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-teilnehmer" onclick="loadParticipantsIfEventSelected()">👥 Auswertung & Mails</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-gruppen" onclick="loadGroupsIfEventSelected()">🎯 Gruppen-Anmeldung</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-historie" onclick="loadUmfragenHistorie()">📜 Historie & Tracking</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-personenkreise" onclick="loadUmfragenPersonenkreise()">👥 Personenkreise</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-controlling" onclick="initGVControllingTab()">&#9881;&#65039; Generalversammlungen</a></li>
     </ul>
 
     <div class="tab-content">
@@ -86,9 +141,6 @@ function renderUmfragenUI(container) {
                         <div class="d-flex justify-content-between align-items-center mb-2">
                              <h5 class="card-title mb-0">Angemeldete Teilnehmer ("Ja")</h5>
                              <div class="d-flex gap-2">
-                                 <button class="btn btn-sm btn-outline-primary" id="btn-umfragen-group-mail" onclick="generateGroupMailForParticipants()" disabled>
-                                     📧 Gruppen-Anmeldung
-                                 </button>
                                  <button class="btn btn-sm btn-primary" id="btn-umfragen-mail" onclick="generateMailForParticipants()" disabled>
                                      📧 Mail an Teilnehmer
                                  </button>
@@ -121,13 +173,184 @@ function renderUmfragenUI(container) {
                     <div class="card shadow-sm border-0 p-3">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h5 class="card-title mb-0">Gruppen-Vorschlag (5er Teams)</h5>
-                            <button class="btn btn-sm btn-primary" id="btn-generate-group-mail" onclick="generateGroupMail()" disabled>
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-generate-group-mail" onclick="generateGroupMail()" disabled>
                                 📧 Gruppen-Anmeldung Mail
                             </button>
                         </div>
                         <div id="umfragen-gruppen-container" class="small">
                             <div class="text-muted">Wähle einen Schiessanlass aus, um die Gruppenbildung zu sehen.</div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: HISTORIE & TRACKING -->
+        <div class="tab-pane fade" id="tab-umfragen-historie">
+            <div class="row g-3">
+                <div class="col-md-12">
+                    <div class="card shadow-sm border-0 p-3">
+                        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                            <h5 class="card-title mb-0">📜 Aktivitäts-Log & Gelesen-Tracking</h5>
+                            <div class="d-flex gap-2 align-items-center">
+                                <label class="form-label mb-0 small fw-bold">Event:</label>
+                                <select class="form-select form-select-sm" id="hist-event-filter" onchange="filterHistorieData()" style="width: auto; max-width: 250px;">
+                                    <option value="">-- Alle Events --</option>
+                                </select>
+                                <input type="text" class="form-control form-control-sm" id="hist-search-input" oninput="filterHistorieData()" placeholder="🔍 Mitglied suchen..." style="width: 180px;">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenHistorie()">
+                                    🔄 Aktualisieren
+                                </button>
+                            </div>
+                        </div>
+                        <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active btn-sm" id="pills-rsvp-tab" data-bs-toggle="pill" data-bs-target="#pills-rsvp" type="button" role="tab">💬 An-/Abmeldungen</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link btn-sm" id="pills-views-tab" data-bs-toggle="pill" data-bs-target="#pills-views" type="button" role="tab">👁️ Gelesen-Tracking</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="pills-tabContent">
+                            <div class="tab-pane fade show active" id="pills-rsvp" role="tabpanel">
+                                <div class="table-responsive" style="max-height: 500px;">
+                                    <table class="table table-sm table-striped align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Zeitpunkt</th>
+                                                <th>Mitglied</th>
+                                                <th>Event</th>
+                                                <th class="text-center">Status</th>
+                                                <th class="text-center">Begl.</th>
+                                                <th class="text-center">Essen</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="hist-rsvp-body">
+                                            <tr><td colspan="6" class="text-center text-muted py-3">Lade Daten...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="pills-views" role="tabpanel">
+                                <div class="table-responsive" style="max-height: 500px;">
+                                    <table class="table table-sm table-striped align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Zeitpunkt</th>
+                                                <th>Mitglied</th>
+                                                <th>Event / Ort</th>
+                                                <th>Aktion/Info</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="hist-views-body">
+                                            <tr><td colspan="4" class="text-center text-muted py-3">Lade Daten...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: PERSONENKREISE -->
+        <div class="tab-pane fade" id="tab-umfragen-personenkreise">
+            <div class="card shadow-sm border-0 p-3">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0">👥 Mitglieder & Personenkreise</h5>
+                    <div class="d-flex gap-2">
+                        <input type="text" class="form-control form-control-sm" id="personenkreise-search" oninput="filterPersonenkreise()" placeholder="🔍 Mitglied suchen..." style="width: 200px;">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenPersonenkreise()">
+                            🔄 Aktualisieren
+                        </button>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="card h-100 border-light shadow-sm">
+                            <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center">
+                                <span class="fw-bold">🎯 Aktiv-Verteiler</span>
+                                <span class="badge bg-light text-primary" id="count-pk-aktiv">0</span>
+                            </div>
+                            <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;">
+                                <ul class="list-group list-group-flush small" id="list-pk-aktiv"></ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card h-100 border-light shadow-sm">
+                            <div class="card-header bg-secondary text-white py-2 d-flex justify-content-between align-items-center">
+                                <span class="fw-bold">📁 Passiv-Verteiler</span>
+                                <span class="badge bg-light text-secondary" id="count-pk-passiv">0</span>
+                            </div>
+                            <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;">
+                                <ul class="list-group list-group-flush small" id="list-pk-passiv"></ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card h-100 border-light shadow-sm">
+                            <div class="card-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
+                                <span class="fw-bold">👥 Alle Mitglieder</span>
+                                <span class="badge bg-light text-dark" id="count-pk-alle">0</span>
+                            </div>
+                            <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;">
+                                <ul class="list-group list-group-flush small" id="list-pk-alle"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: ERWEITERTES CONTROLLING (GV & PRAESENZ) -->
+        <div class="tab-pane fade" id="tab-umfragen-controlling">
+            <div class="row g-3">
+                <div class="col-md-12 write-protected">
+                    <div class="card p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title mb-0">&#128640; Tools</h5>
+                            <button class="btn btn-success btn-sm write-protected" onclick="saveGVData()">&#128190; GV-Stammdaten speichern</button>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">&#128196; Einladungs-PDF</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendMails')">&#128231; GV Mails senden</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">&#128276; Mahnungen senden</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendSummary')">&#128202; Uebersicht senden</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendPraesenz')">&#128221; Praesenzliste senden</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h5 class="card-title">Stammdaten / Platzhalter</h5>
+                        <div id="gv-list-embedded"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card p-3">
+                        <h5 class="card-title">Praesenz / Anmeldungen (Eventplaner)</h5>
+                        <div class="mb-2">
+                            <label class="form-label small">Verknuepftes Event waehlen:</label>
+                            <select class="form-select form-select-sm" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
+                                <option value="">-- Lade Events... --</option>
+                            </select>
+                        </div>
+                        <div class="table-responsive" style="max-height: 430px;">
+                            <table class="table table-sm table-striped">
+                                <thead>
+                                    <tr>
+                                        <th style="cursor: pointer;" onclick="sortGvTable('name')">Name &#8645;</th>
+                                        <th style="cursor: pointer;" onclick="sortGvTable('status')">Teilnahme &#8645;</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="gv-anmelde-body">
+                                    <tr><td colspan="2" class="text-center text-muted">Bitte Event auswaehlen</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="gv-anmelde-summary" class="mt-3"></div>
                     </div>
                 </div>
             </div>
@@ -291,13 +514,10 @@ async function loadParticipantsIfEventSelected() {
     if(!currentEventId) return;
     const listDiv = document.getElementById('umfragen-teilnehmer-list');
     const mailBtn = document.getElementById('btn-umfragen-mail');
-    const groupMailBtn = document.getElementById('btn-umfragen-group-mail');
     if(!listDiv) return;
 
     listDiv.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer...`;
     if(mailBtn) mailBtn.disabled = true;
-    if(groupMailBtn) groupMailBtn.disabled = true;
-
     try {
         await ensureMembersLookup();
 
@@ -377,8 +597,7 @@ async function loadParticipantsIfEventSelected() {
 
         if(eventParticipants.length > 0) {
             if(mailBtn) mailBtn.disabled = false;
-            if(groupMailBtn) groupMailBtn.disabled = false;
-        }
+            }
 
     } catch(e) {
         listDiv.innerHTML = `<div class="text-danger">Fehler: ${escapeHtml(e.message)}</div>`;
@@ -476,6 +695,7 @@ function renderGroups(container, mailBtn) {
     let html = '';
     groups.forEach((group, idx) => {
         const isFull = group.length === 5;
+        const isOver = group.length > 5;
         const groupName = `Muhen ${idx + 1}`;
         
         html += `
@@ -537,16 +757,26 @@ function renderGroups(container, mailBtn) {
                         const header = card.querySelector('.card-header');
                         const headerSpan = header.querySelector('.fw-bold');
                         const isFull = rowCount === 5;
+                        const isOver = rowCount > 5;
                         
                         if (headerSpan) {
-                            headerSpan.innerText = `Muhen ${idx + 1} ${!isFull ? '(Unvollständig)' : ''}`;
+                            if (isOver) {
+                                headerSpan.innerText = `Muhen ${idx + 1} (Zu viele!)`;
+                            } else if (!isFull) {
+                                headerSpan.innerText = `Muhen ${idx + 1} (Unvollständig)`;
+                            } else {
+                                headerSpan.innerText = `Muhen ${idx + 1}`;
+                            }
                         }
 
-                        if (isFull) {
-                            header.classList.remove('bg-warning', 'text-dark');
-                    header.classList.add('bg-primary', 'text-white');
+                        if (isOver) {
+                            header.classList.remove('bg-warning', 'bg-primary', 'text-dark', 'text-white');
+                            header.classList.add('bg-danger', 'text-white');
+                        } else if (isFull) {
+                            header.classList.remove('bg-warning', 'bg-danger', 'text-dark', 'text-white');
+                            header.classList.add('bg-primary', 'text-white');
                         } else {
-                            header.classList.remove('bg-primary', 'text-white');
+                            header.classList.remove('bg-primary', 'bg-danger', 'text-white');
                             header.classList.add('bg-warning', 'text-dark');
                         }
                     });
@@ -605,7 +835,6 @@ async function generateGroupMail() {
                  width="48" height="48"
                  style="border-radius:8px; margin-right:16px; flex-shrink:0;" />
             <div style="font-size:13px; color:#6c757d; line-height:1.4;">
-                Sportschützen Muhen<br>
                 <span style="font-size:12px;">Gruppenanmeldung – ${eventTitle}</span>
             </div>
         </div>
@@ -617,6 +846,7 @@ async function generateGroupMail() {
 
     groups.forEach((group, idx) => {
         const isFull = group.length === 5;
+        const isOver = group.length > 5;
         const tnChar = isFull ? 'G' : 'E';
         
         html += `
@@ -738,4 +968,482 @@ function sortUmfragenEvents(field) {
     });
     
     renderUmfragenEventsList();
+}
+
+// === TAB 4: ERWEITERTES CONTROLLING (Integration von gv.js) ===
+
+/**
+ * Wird aufgerufen, wenn Tab 4 "Erweitertes Controlling" geoeffnet wird.
+ * Laedt die GV-Stammdaten (falls noch nicht geladen) und baut die UI auf.
+ */
+async function initGVControllingTab() {
+  if (gvState) {
+    // Daten bereits geladen – nur UI neu rendern
+    renderGVListEmbedded();
+    fetchGVEventsEmbedded();
+    return;
+  }
+
+  const listDiv = document.getElementById('gv-list-embedded');
+  if (listDiv) {
+    listDiv.innerHTML = '<div class="text-center p-3 text-muted"><div class="spinner-border spinner-border-sm text-primary mb-2"></div><div>Lade GV Daten...</div></div>';
+  }
+
+  try {
+    const [resAdmin, resVorstand] = await Promise.all([
+      apiFetch('termine', 'action=loadAdminData'),
+      apiFetch('mitglieder', 'action=getVorstand')
+    ]);
+    gvState = await resAdmin.json();
+    try {
+      const vorstandData = await resVorstand.json();
+      if(vorstandData.success) {
+        gvState.vorstandMembers = vorstandData.data;
+      } else {
+        gvState.vorstandMembers = [];
+      }
+    } catch(e) { gvState.vorstandMembers = []; }
+
+    originalGvState = JSON.parse(JSON.stringify(gvState));
+    renderGVListEmbedded();
+    fetchGVEventsEmbedded();
+  } catch (e) {
+    if (listDiv) {
+      listDiv.innerHTML = '<div class="alert alert-danger">Fehler beim Laden: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+/**
+ * Rendert die Stammdaten/Platzhalter-Liste in den eingebetteten Container.
+ * Wie renderGVList() aus gv.js, aber mit dem Embedded-Container-ID.
+ */
+function renderGVListEmbedded() {
+  const list = document.getElementById('gv-list-embedded');
+  if (!list || !gvState || !gvState.platzhalter) return;
+
+  const pickPlaceholder = (label) => {
+    const l = String(label || '').toLowerCase();
+    if (l.includes('datum') && l.includes('gv') && l.includes('vorjahr')) return 'dd.mm.jjjj';
+    if (l.includes('datum') && l.includes('abmeldung')) return 'dd.mm.jjjj';
+    if (l.includes('mahndatum')) return 'dd.mm.jjjj';
+    if (l.includes('datum') && l.includes('gv')) return 'dd.mm.jjjj';
+    if (l.includes('zeit') && l.includes('gv')) return 'hh:mm';
+    if (l.includes('welche gv')) return '100';
+    return '';
+  };
+
+  const isBudget = (label) => String(label || '').toLowerCase().includes('budget') || label.toLowerCase().includes('wort');
+  const isMailField = (label) => String(label || '').toLowerCase().includes('mail');
+  const isAttachment = (label) => ['anhänge', 'einladung', 'protokoll', 'jahresbericht', 'logo'].some(term => label.toLowerCase().includes(term));
+  const isPresident = (label) => label.toLowerCase().includes('präsident') && !label.toLowerCase().includes('wort') && !label.toLowerCase().includes('bericht');
+  const isTermin = (label) => label.toLowerCase().includes('datum') || label.toLowerCase().includes('zeit');
+
+  const members = typeof getGVMemberMails === 'function' ? getGVMemberMails() : [];
+
+  let htmlTermine = '';
+  let htmlAllgemein = '';
+  let htmlDocs = '';
+  let htmlMails = '';
+
+  gvState.platzhalter.forEach((p, i) => {
+    const label = p.bezeichnung_app || p.platzhaltername || '';
+    const ph = pickPlaceholder(label);
+    const value = p.inhalt || '';
+    
+    let fieldHtml = '';
+
+    if (isBudget(label)) {
+      fieldHtml = '<div class="mb-3">' +
+        '<label class="form-label small fw-bold mb-1">' + escapeHtml(label) + '</label>' +
+        '<textarea class="form-control form-control-sm write-protected" rows="5" placeholder="Mehrzeiliger Text..." ' +
+        'onchange="gvState.platzhalter[' + i + '].inhalt=this.value">' + escapeHtml(value) + '</textarea>' +
+        '</div>';
+    } else if (isMailField(label)) {
+      const mails = value.split(';').map(x => x.trim()).filter(Boolean);
+      const tags = mails.length
+        ? mails.map(m => '<span style="background:#e9f2ff;color:#0d6efd;padding:2px 8px;border-radius:10px;font-size:.85rem;">' +
+            escapeHtml(m) + ' <span style="color:#dc3545;cursor:pointer;" class="write-protected" onclick="removeGVMailEmbedded(' + i + ', \'' + escapeJs(m) + '\')">&times;</span></span>').join('')
+        : '<span class="text-muted small">Keine</span>';
+      const opts = members.map(mm => '<option value="' + escapeHtml(mm.email) + '">' + escapeHtml(mm.name) + '</option>').join('');
+      fieldHtml = '<div class="mb-3 pb-2">' +
+        '<label class="form-label small fw-bold mb-1">' + escapeHtml(label) + ' <span class="text-muted fw-normal" style="font-size:0.8em;">(nur Vorstandsmitglieder)</span></label>' +
+        '<div class="tag-box mb-2" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:1px solid #ccc;border-radius:8px;min-height:40px;">' + tags + '</div>' +
+        '<select class="form-select form-select-sm write-protected" onchange="addGVMailEmbedded(' + i + ', this.value); this.value=\'\'">' +
+        '<option value="">+ Empfänger hinzufügen</option>' + opts + '</select></div>';
+    } else if (isPresident(label)) {
+      const opts = members.map(mm => '<option value="' + escapeHtml(mm.name) + '" ' + (value === mm.name ? 'selected' : '') + '>' + escapeHtml(mm.name) + '</option>').join('');
+      fieldHtml = '<div class="mb-2">' +
+        '<label class="form-label small fw-bold mb-0">' + escapeHtml(label) + ' <span class="text-muted fw-normal" style="font-size:0.8em;">(nur Vorstandsmitglieder)</span></label>' +
+        '<div class="input-group input-group-sm"><input type="text" class="form-control write-protected" value="' + escapeHtml(value) + '" placeholder="Name manuell..." onchange="gvState.platzhalter[' + i + '].inhalt=this.value">' +
+        '<select class="form-select write-protected" style="max-width:200px;" onchange="gvState.platzhalter[' + i + '].inhalt=this.value; renderGVListEmbedded();"><option value="">-- Wählen --</option>' + opts + '</select></div>' +
+        '</div>';
+    } else if (label.toLowerCase() === 'logo') {
+      fieldHtml = '<div class="mb-3 border rounded p-2 bg-light">' +
+        '<div class="d-flex justify-content-between align-items-center mb-1"><label class="form-label small fw-bold mb-0 text-muted">' + escapeHtml(label) + ' (Geschützt)</label>' +
+        '<button class="btn btn-xs btn-outline-secondary py-0" onclick="document.getElementById(\'gv-logo-edit-' + i + '\').classList.toggle(\'d-none\')"><i class="fas fa-lock-open"></i> Ändern</button></div>' +
+        '<div id="gv-logo-edit-' + i + '" class="d-none mt-2"><input type="text" class="form-control form-control-sm write-protected" value="' + escapeHtml(value) + '" onchange="gvState.platzhalter[' + i + '].inhalt=this.value"></div>' +
+        '</div>';
+    } else {
+      const isDateField = ph === 'dd.mm.jjjj';
+      const displayValue = isDateField ? isoToDisplay(value) : value;
+      let hint = '';
+      if (label.toLowerCase().includes('anhänge')) {
+          hint = '<div class="form-text text-info" style="font-size:0.75rem;"><i class="fas fa-info-circle"></i> Bei mehreren Anhängen diese mit Komma trennen.</div>';
+      }
+      fieldHtml = '<div class="mb-2">' +
+        '<label class="form-label small fw-bold mb-0">' + escapeHtml(label) + '</label>' +
+        '<input type="text" class="form-control form-control-sm write-protected"' +
+        ' value="' + escapeHtml(displayValue) + '" placeholder="' + escapeHtml(ph) + '"' +
+        ' onchange="gvState.platzhalter[' + i + '].inhalt = ' + (isDateField ? 'displayToIso(this.value)' : 'this.value') + '">' +
+        hint +
+        '</div>';
+    }
+
+    if (isTermin(label)) {
+        htmlTermine += fieldHtml;
+    } else if (isAttachment(label)) {
+        htmlDocs += fieldHtml;
+    } else if (isMailField(label)) {
+        htmlMails += fieldHtml;
+    } else {
+        htmlAllgemein += fieldHtml;
+    }
+  });
+
+  list.innerHTML = `
+    <div class="mb-4">
+        <h6 class="border-bottom pb-1 text-primary">Allgemeine Infos</h6>
+        ${htmlAllgemein}
+    </div>
+    <div class="mb-4">
+        <h6 class="border-bottom pb-1 text-primary">Termine & Fristen</h6>
+        ${htmlTermine}
+    </div>
+    <div class="mb-4">
+        <h6 class="border-bottom pb-1 text-primary">Dokumente & Anhänge</h6>
+        ${htmlDocs}
+    </div>
+    <div class="mb-2">
+        <h6 class="border-bottom pb-1 text-primary">Mail-Verteiler</h6>
+        ${htmlMails}
+    </div>
+  `;
+}
+
+function addGVMailEmbedded(idx, email) {
+  if (!email) return;
+  window.markUnsaved();
+  const current = (gvState.platzhalter[idx].inhalt || '').split(';').map(x => x.trim()).filter(Boolean);
+  if (!current.includes(email)) current.push(email);
+  gvState.platzhalter[idx].inhalt = current.join('; ');
+  renderGVListEmbedded();
+}
+
+function removeGVMailEmbedded(idx, email) {
+  window.markUnsaved();
+  const current = (gvState.platzhalter[idx].inhalt || '').split(';').map(x => x.trim()).filter(Boolean);
+  gvState.platzhalter[idx].inhalt = current.filter(x => x !== email).join('; ');
+  renderGVListEmbedded();
+}
+
+async function fetchGVEventsEmbedded() {
+  const selector = document.getElementById('gv-event-selector');
+  if (!selector) return;
+  try {
+    const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
+    const data = await res.json();
+    const events = Array.isArray(data) ? data : (data.events || []);
+    selector.innerHTML = '<option value="">-- Bitte waehlen --</option>' +
+      events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
+        (gvState.linked_event === e.id ? ' selected' : '') + '>' +
+        escapeHtml(e.title) + ' (' + (e.datum ? e.datum.split('T')[0] : '') + ')</option>').join('');
+    if (gvState.linked_event) {
+      loadGVParticipants(gvState.linked_event);
+    }
+  } catch (e) {
+    if (selector) selector.innerHTML = '<option value="">Fehler beim Laden</option>';
+  }
+}
+
+// === TAB 5: HISTORIE & TRACKING LOGIK ===
+let rawResponsesLog = [];
+let rawViewsLog = [];
+
+function getEventIdFromLog(log) {
+    if (!log) return '';
+    // 1. Direkt prüfen
+    if (log.eventid !== undefined) return String(log.eventid);
+    if (log.event !== undefined) return String(log.event);
+    
+    // 2. Alle Keys durchsuchen (case-insensitive, Sonderzeichen ignoriert)
+    for (const key of Object.keys(log)) {
+        const normalizedKey = key.toLowerCase().trim().replace(/[-_\s]/g, '');
+        if (normalizedKey === 'eventid' || normalizedKey === 'event' || normalizedKey === 'anlassid' || normalizedKey === 'anlass') {
+            return String(log[key]);
+        }
+    }
+    
+    // 3. Fallback: Erster Key (Spalte A), falls nicht einer der bekannten Spalten
+    const firstKey = Object.keys(log)[0];
+    if (firstKey && !['lizenz', 'zeitpunkt', 'timestamp', 'info', 'teilnahme', 'attending', 'anzahl_teilnehmer', 'count', 'anzahl_essen', 'essen', 'food'].includes(firstKey.toLowerCase().trim())) {
+        return String(log[firstKey]);
+    }
+    return '';
+}
+
+async function loadUmfragenHistorie() {
+    const rsvpBody = document.getElementById('hist-rsvp-body');
+    const viewsBody = document.getElementById('hist-views-body');
+    if (!rsvpBody || !viewsBody) return;
+
+    rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Historie...</td></tr>`;
+    viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Gelesen-Logs...</td></tr>`;
+
+    try {
+        await ensureMembersLookup();
+
+        // 1. Fetch raw logs from new API actions
+        const [resLog, resViews] = await Promise.all([
+            apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
+            apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
+        ]);
+
+        if (resLog && resLog.error) throw new Error(resLog.error);
+        if (resViews && resViews.error) throw new Error(resViews.error);
+
+        rawResponsesLog = Array.isArray(resLog) ? resLog : [];
+        rawViewsLog = Array.isArray(resViews) ? resViews : [];
+
+        // Sort by timestamp desc
+        const parseTime = (t) => t ? new Date(t).getTime() : 0;
+        rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
+        rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
+
+        // 2. Populate Event Selector
+        const filterSelect = document.getElementById('hist-event-filter');
+        if (filterSelect) {
+            // Get unique events from events in state OR in logs
+            const eventsMap = {};
+            (umfragenState || []).forEach(e => {
+                if (e.id) eventsMap[e.id] = e.title;
+            });
+            rawResponsesLog.forEach(log => {
+                const evId = getEventIdFromLog(log);
+                if (evId && !eventsMap[evId]) {
+                    eventsMap[evId] = `Unbekanntes Event (${evId})`;
+                }
+            });
+
+            // Keep selected value if any
+            const curVal = filterSelect.value;
+            filterSelect.innerHTML = '<option value="">-- Alle Events --</option>' +
+                Object.entries(eventsMap).map(([id, title]) => `<option value="${escapeHtml(id)}">${escapeHtml(title)}</option>`).join('');
+            filterSelect.value = curVal;
+        }
+
+        filterHistorieData();
+
+    } catch (e) {
+        rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</td></tr>`;
+        viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+function filterHistorieData() {
+    const rsvpBody = document.getElementById('hist-rsvp-body');
+    const viewsBody = document.getElementById('hist-views-body');
+    if (!rsvpBody || !viewsBody) return;
+
+    const eventFilter = document.getElementById('hist-event-filter')?.value || '';
+    const searchFilter = (document.getElementById('hist-search-input')?.value || '').toLowerCase().trim();
+
+    // Map events for name resolution
+    const eventsMap = {};
+    (umfragenState || []).forEach(e => {
+        if (e.id) eventsMap[e.id] = e.title;
+    });
+
+    const formatTimestamp = (ts) => {
+        if (!ts) return '-';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return escapeHtml(ts);
+        return d.toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    };
+
+    // 1. Render Responses Log
+    const filteredResponses = rawResponsesLog.filter(log => {
+        const evId = getEventIdFromLog(log);
+        const matchesEvent = !eventFilter || String(evId) === eventFilter;
+
+        let name = "Lizenz " + log.lizenz;
+        let liz = String(log.lizenz || '').trim();
+        if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
+        const m = membersLookup[liz] || membersLookup[String(log.lizenz).trim()];
+        if (m) name = `${m.LastName} ${m.FirstName}`;
+
+        const matchesSearch = !searchFilter ||
+            name.toLowerCase().includes(searchFilter) ||
+            String(log.lizenz).includes(searchFilter);
+
+        return matchesEvent && matchesSearch;
+    });
+
+    if (filteredResponses.length === 0) {
+        rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">Keine Einträge für die Auswahl gefunden.</td></tr>`;
+    } else {
+        rsvpBody.innerHTML = filteredResponses.map(log => {
+            let name = "Lizenz " + log.lizenz;
+            let liz = String(log.lizenz || '').trim();
+            if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
+            const m = membersLookup[liz] || membersLookup[String(log.lizenz).trim()];
+            if (m) name = `<b>${m.LastName} ${m.FirstName}</b>`;
+
+            const evId = getEventIdFromLog(log);
+            const evTitle = eventsMap[evId] || `Event ${evId}`;
+            const attending = isTrue(log.teilnahme !== undefined ? log.teilnahme : log.attending);
+            const statusBadge = attending
+                ? `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fa-solid fa-check me-1"></i>Angemeldet</span>`
+                : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1"><i class="fa-solid fa-xmark me-1"></i>Abgemeldet</span>`;
+
+            const countVal = log.anzahl_teilnehmer !== undefined ? log.anzahl_teilnehmer : log.count;
+            const essenVal = log.anzahl_essen !== undefined ? log.anzahl_essen : log.essen;
+
+            return `<tr>
+                <td class="text-muted small">${formatTimestamp(log.timestamp)}</td>
+                <td>${name} <small class="text-muted">(${escapeHtml(log.lizenz)})</small></td>
+                <td>${escapeHtml(evTitle)}</td>
+                <td class="text-center">${statusBadge}</td>
+                <td class="text-center">${parseInt(countVal) > 1 ? `<span class="badge bg-info text-dark">+${parseInt(countVal)-1}</span>` : '-'}</td>
+                <td class="text-center">${parseInt(essenVal) > 0 ? `<span class="badge bg-warning text-dark">${parseInt(essenVal)}</span>` : '-'}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // 2. Render Views Log
+    const filteredViews = rawViewsLog.filter(view => {
+        const evId = getEventIdFromLog(view);
+        const matchesEvent = !eventFilter || String(evId) === eventFilter;
+
+        let name = "Lizenz " + view.lizenz;
+        let liz = String(view.lizenz || '').trim();
+        if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
+        const m = membersLookup[liz] || membersLookup[String(view.lizenz).trim()];
+        if (m) name = `${m.LastName} ${m.FirstName}`;
+
+        const matchesSearch = !searchFilter ||
+            name.toLowerCase().includes(searchFilter) ||
+            String(view.lizenz).includes(searchFilter);
+
+        return matchesEvent && matchesSearch;
+    });
+
+    if (filteredViews.length === 0) {
+        viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3">Keine Einträge für die Auswahl gefunden.</td></tr>`;
+    } else {
+        viewsBody.innerHTML = filteredViews.map(view => {
+            let name = "Lizenz " + view.lizenz;
+            let liz = String(view.lizenz || '').trim();
+            if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
+            const m = membersLookup[liz] || membersLookup[String(view.lizenz).trim()];
+            if (m) name = `<b>${m.LastName} ${m.FirstName}</b>`;
+
+            const evId = getEventIdFromLog(view);
+            let evTitle = eventsMap[evId] || `Event ${evId}`;
+            if (evId === 'APP_OPEN') evTitle = `📱 Portal geöffnet`;
+
+            return `<tr>
+                <td class="text-muted small">${formatTimestamp(view.zeitpunkt || view.timestamp)}</td>
+                <td>${name} <small class="text-muted">(${escapeHtml(view.lizenz)})</small></td>
+                <td>${escapeHtml(evTitle)}</td>
+                <td><span class="text-secondary small">${escapeHtml(view.info || 'Gesehen')}</span></td>
+            </tr>`;
+        }).join('');
+    }
+}
+
+// === TAB 6: PERSONENKREISE LOGIK ===
+let rawUmfragenMembers = [];
+
+async function loadUmfragenPersonenkreise() {
+    const listAktiv = document.getElementById('list-pk-aktiv');
+    const listPassiv = document.getElementById('list-pk-passiv');
+    const listAlle = document.getElementById('list-pk-alle');
+    if (!listAktiv || !listPassiv || !listAlle) return;
+
+    listAktiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
+    listPassiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
+    listAlle.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
+
+    try {
+        const res = await apiFetch('umfragen', 'action=getMembers');
+        const data = await res.json();
+
+        rawUmfragenMembers = Array.isArray(data) ? data : [];
+        filterPersonenkreise();
+
+    } catch (e) {
+        listAktiv.innerHTML = `<li class="list-group-item text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</li>`;
+        listPassiv.innerHTML = `<li class="list-group-item text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</li>`;
+        listAlle.innerHTML = `<li class="list-group-item text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</li>`;
+    }
+}
+
+function filterPersonenkreise() {
+    const listAktiv = document.getElementById('list-pk-aktiv');
+    const listPassiv = document.getElementById('list-pk-passiv');
+    const listAlle = document.getElementById('list-pk-alle');
+    if (!listAktiv || !listPassiv || !listAlle) return;
+
+    const search = (document.getElementById('personenkreise-search')?.value || '').toLowerCase().trim();
+
+    const filtered = rawUmfragenMembers.filter(m => {
+        if (!search) return true;
+        return String(m.name || '').toLowerCase().includes(search) ||
+               String(m.lizenz || '').includes(search) ||
+               String(m.mail || '').toLowerCase().includes(search);
+    });
+
+    const buildItem = (m) => {
+        const mailStr = m.mail ? `<div class="text-muted small mt-1"><i class="fa-regular fa-envelope me-1"></i>${escapeHtml(m.mail)}</div>` : '';
+        return `
+            <li class="list-group-item py-2 px-3 hover-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="fw-bold text-dark">${escapeHtml(m.name)}</div>
+                        ${mailStr}
+                    </div>
+                    <span class="badge bg-light text-dark border small text-muted font-monospace">${escapeHtml(m.lizenz)}</span>
+                </div>
+            </li>
+        `;
+    };
+
+    const aktivMembers = filtered.filter(m => String(m.gruppe).toLowerCase() === 'aktiv');
+    const passivMembers = filtered.filter(m => String(m.gruppe).toLowerCase() === 'passiv');
+    const alleMembers = filtered;
+
+    // Update Counts
+    document.getElementById('count-pk-aktiv').innerText = aktivMembers.length;
+    document.getElementById('count-pk-passiv').innerText = passivMembers.length;
+    document.getElementById('count-pk-alle').innerText = alleMembers.length;
+
+    // Update Lists
+    if (aktivMembers.length === 0) {
+        listAktiv.innerHTML = `<li class="list-group-item text-center text-muted py-3">Keine aktiven Mitglieder</li>`;
+    } else {
+        listAktiv.innerHTML = aktivMembers.map(buildItem).join('');
+    }
+
+    if (passivMembers.length === 0) {
+        listPassiv.innerHTML = `<li class="list-group-item text-center text-muted py-3">Keine passiven Mitglieder</li>`;
+    } else {
+        listPassiv.innerHTML = passivMembers.map(buildItem).join('');
+    }
+
+    if (alleMembers.length === 0) {
+        listAlle.innerHTML = `<li class="list-group-item text-center text-muted py-3">Keine Mitglieder gefunden</li>`;
+    } else {
+        listAlle.innerHTML = alleMembers.map(buildItem).join('');
+    }
 }

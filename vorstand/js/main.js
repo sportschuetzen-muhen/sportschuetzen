@@ -278,11 +278,13 @@ const Validation = {
 //  LADEZUSTAND (Loading Overlay)
 // =========================================================
 function showLoadingOverlay(message = 'Lade...') {
+    console.log('🔌 showLoadingOverlay called with message:', message);
     let overlay = document.getElementById('global-loading-overlay');
     if (!overlay) {
+        console.log('🔌 overlay not found in DOM, creating new one');
         overlay = document.createElement('div');
         overlay.id = 'global-loading-overlay';
-        overlay.className = 'position-fixed inset-0 d-flex align-items-center justify-content-center';
+        overlay.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center d-none';
         overlay.style.background = 'rgba(255,255,255,0.9)';
         overlay.style.zIndex = '9998';
         overlay.innerHTML = `
@@ -292,17 +294,30 @@ function showLoadingOverlay(message = 'Lade...') {
             </div>`;
         document.body.appendChild(overlay);
     }
-    document.getElementById('global-loading-message').textContent = message;
-    overlay.style.display = 'flex';
-    AppState.setLoading(true, message);
+    const msgEl = document.getElementById('global-loading-message');
+    if (msgEl) msgEl.textContent = message;
+    overlay.classList.remove('d-none');
+    try {
+        AppState.setLoading(true, message);
+    } catch(e) {
+        console.error('🔌 Error in AppState.setLoading:', e);
+    }
 }
 
 function hideLoadingOverlay() {
+    console.log('🔌 hideLoadingOverlay called');
     const overlay = document.getElementById('global-loading-overlay');
     if (overlay) {
-        overlay.style.display = 'none';
+        console.log('🔌 overlay found, adding d-none class');
+        overlay.classList.add('d-none');
+    } else {
+        console.warn('🔌 overlay NOT found in DOM!');
     }
-    AppState.setLoading(false, '');
+    try {
+        AppState.setLoading(false, '');
+    } catch(e) {
+        console.error('🔌 Error in AppState.setLoading:', e);
+    }
 }
 
 // Wrapper für API-Calls mit Ladezustand

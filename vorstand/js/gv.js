@@ -15,8 +15,20 @@ async function loadGVData() {
   `;
 
   try {
-    const res = await apiFetch('termine', 'action=loadAdminData');
-    gvState = await res.json();
+    const [resAdmin, resVorstand] = await Promise.all([
+      apiFetch('termine', 'action=loadAdminData'),
+      apiFetch('mitglieder', 'action=getVorstand')
+    ]);
+    gvState = await resAdmin.json();
+    try {
+      const vorstandData = await resVorstand.json();
+      if(vorstandData.success) {
+        gvState.vorstandMembers = vorstandData.data;
+      } else {
+        gvState.vorstandMembers = [];
+      }
+    } catch(e) { gvState.vorstandMembers = []; }
+
     originalGvState = JSON.parse(JSON.stringify(gvState));
     
     renderGVUI(container);
@@ -35,6 +47,8 @@ function renderGVUI(container) {
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">📄 Einladungs-PDF</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('importClubdesk')">📥 Clubdesk Import</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendMails')">📧 GV Mails senden</button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">🔔 Mahnungen senden</button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendSummary')">📊 Übersicht senden</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendPraesenz')">📝 Präsenzliste senden</button>
                 </div>
             </div>
@@ -47,11 +61,24 @@ function renderGVUI(container) {
         </div>
         <div class="col-md-6">
             <div class="card p-3">
-                <h5 class="card-title">Präsenz / Anmeldungen</h5>
-                <div class="table-responsive" style="max-height: 500px;">
+                <h5 class="card-title">Präsenz / Anmeldungen (Eventplaner)</h5>
+                <div class="mb-2">
+                    <label class="form-label small">Verknüpftes Event wählen:</label>
+                    <select class="form-select form-select-sm" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
+                        <option value="">-- Lade Events... --</option>
+                    </select>
+                </div>
+                <div class="table-responsive" style="max-height: 430px;">
                     <table class="table table-sm table-striped">
-                        <thead><tr><th>Name</th><th>Teilnahme</th><th>Zeit</th></tr></thead>
-                        <tbody id="gv-anmelde-body"></tbody>
+                        <thead>
+                            <tr>
+                                <th style="cursor: pointer;" onclick="sortGvTable('name')">Name ↕</th>
+                                <th style="cursor: pointer;" onclick="sortGvTable('status')">Teilnahme ↕</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gv-anmelde-body">
+                            <tr><td colspan="2" class="text-center text-muted">Bitte Event auswählen</td></tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -59,7 +86,7 @@ function renderGVUI(container) {
     </div>
   `;
   renderGVList();
-  renderGVAnmeldungenList();
+  fetchGVEvents();
 }
 
 function renderGVList() {
@@ -102,7 +129,7 @@ function renderGVList() {
       const mails = value.split(';').map(x => x.trim()).filter(Boolean);
       return `
         <div class="mb-3 border-bottom pb-3">
-          <label class="form-label small fw-bold mb-1">${escapeHtml(label)}</label>
+          <label class="form-label small fw-bold mb-1">${escapeHtml(label)} <span class="text-muted fw-normal" style="font-size:0.8em;">(nur Vorstandsmitglieder)</span></label>
           <div class="tag-box mb-2" style="display:flex; flex-wrap:wrap; gap:6px; padding:6px; border:1px solid #ccc; border-radius:8px; min-height:40px;">
             ${mails.length ? mails.map(m => `
                 <span style="background:#e9f2ff; color:#0d6efd; padding:2px 8px; border-radius:10px; font-size:.85rem;">
@@ -133,18 +160,125 @@ function renderGVList() {
   }).join('');
 }
 
-function renderGVAnmeldungenList() {
+async function fetchGVEvents() {
+    const selector = document.getElementById('gv-event-selector');
+    if(!selector) return;
+    try {
+        const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
+        const data = await res.json();
+        const events = Array.isArray(data) ? data : (data.events || []);
+        
+        selector.innerHTML = '<option value="">-- Bitte wählen --</option>' + 
+            events.map(e => `<option value="${escapeHtml(e.id)}" ${gvState.linked_event === e.id ? 'selected' : ''}>${escapeHtml(e.title)} (${e.datum ? e.datum.split('T')[0] : ''})</option>`).join('');
+            
+        if(gvState.linked_event) {
+            loadGVParticipants(gvState.linked_event);
+        }
+    } catch(e) {
+        selector.innerHTML = '<option value="">Fehler beim Laden</option>';
+    }
+}
+
+async function loadGVParticipants(eventId) {
+    if(!eventId) return;
+    
+    // Speichere die Auswahl im State (wird beim Speichern an backend gesendet, falls gewünscht)
+    gvState.linked_event = eventId;
+    window.markUnsaved();
+    
     const tbody = document.getElementById('gv-anmelde-body');
-    if(!tbody || !gvState || !gvState.anmeldungen) return;
-    tbody.innerHTML = gvState.anmeldungen.map(a => `
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
+    
+    try {
+        // Wir nutzen nun die neue Backend-API "getGVStatus", die uns Ja, Nein und Offen liefert!
+        const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
+        const result = await res.json();
+        
+        if (!result.success) throw new Error(result.error || "Fehler beim Laden");
+        
+        const pData = result.data || [];
+        window.currentGvData = pData;
+        window.gvSortDir = { name: 1, status: 1 };
+        renderGvTableBody();
+        
+    } catch(e) {
+        tbody.innerHTML = `<tr><td colspan="2" class="text-danger">Fehler: ${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+function sortGvTable(field) {
+    if (!window.currentGvData) return;
+    window.gvSortDir[field] *= -1;
+    const dir = window.gvSortDir[field];
+    
+    window.currentGvData.sort((a, b) => {
+        let valA = String(a[field]).toLowerCase();
+        let valB = String(b[field]).toLowerCase();
+        if (valA < valB) return -1 * dir;
+        if (valA > valB) return 1 * dir;
+        return 0;
+    });
+    renderGvTableBody();
+}
+
+function renderGvTableBody() {
+    const tbody = document.getElementById('gv-anmelde-body');
+    if (!tbody || !window.currentGvData) return;
+    
+    if(window.currentGvData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Keine Daten gefunden.</td></tr>';
+        const summaryDiv = document.getElementById('gv-anmelde-summary');
+        if(summaryDiv) summaryDiv.innerHTML = '';
+        return;
+    }
+    
+    let countJa = 0;
+    let countNein = 0;
+    let countOffen = 0;
+    let countEssen = 0;
+
+    tbody.innerHTML = window.currentGvData.map(a => {
+        let badgeStr = '';
+        if (a.status === 'ja') {
+            badgeStr = `<span class="badge bg-success">Ja</span> ${a.essen > 0 ? '(+Essen)' : ''}`;
+            countJa++;
+            if(a.essen > 0) countEssen += Number(a.essen);
+        }
+        else if (a.status === 'nein') {
+            badgeStr = `<span class="badge bg-danger">Nein</span>`;
+            countNein++;
+        }
+        else {
+            badgeStr = `<span class="badge bg-secondary">Offen</span>`;
+            countOffen++;
+        }
+        
+        return `
         <tr>
-            <td>${escapeHtml(a.vorname)} ${escapeHtml(a.nachname)}</td>
-            <td><span class="badge bg-${a.teilnahme==='Ja'?'success':'danger'}">${escapeHtml(a.teilnahme)}</span></td>
-            <td><small>${a.zeitstempel ? a.zeitstempel.split('T')[0] : '-'}</small></td>
-        </tr>`).join('');
+            <td>${escapeHtml(a.name)}</td>
+            <td>${badgeStr}</td>
+        </tr>`;
+    }).join('');
+
+    const summaryDiv = document.getElementById('gv-anmelde-summary');
+    if(summaryDiv) {
+        summaryDiv.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border mt-2">
+                <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-check-circle"></i> Zugesagt: ${countJa}</span>
+                <span class="text-danger fw-bold" style="font-size:0.85rem;"><i class="fas fa-times-circle"></i> Abgesagt: ${countNein}</span>
+                <span class="text-secondary fw-bold" style="font-size:0.85rem;"><i class="fas fa-question-circle"></i> Offen: ${countOffen}</span>
+                <span class="text-info fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Essen: ${countEssen}</span>
+            </div>
+        `;
+    }
 }
 
 function getGVMemberMails() {
+  if (gvState && gvState.vorstandMembers && gvState.vorstandMembers.length > 0) {
+    return gvState.vorstandMembers;
+  }
+  // Fallback to legacy
   const arr = (gvState.members || []).map(m => ({
     name: (m.nachname + " " + m.vorname).trim() || m.name || m.email,
     email: m.e_mail || m.email || m.mailadresse
@@ -170,8 +304,23 @@ function removeGVMail(idx, email) {
 async function runGVTool(toolName) {
     if(!confirm('Tool "'+toolName+'" starten?')) return;
     try {
+        let evId = "";
+        const dropdown = document.getElementById('gv-event-selector');
+        if(dropdown && dropdown.value) {
+            evId = dropdown.value;
+        }
+
+        let payload = { action: 'runTool', tool: toolName, eventId: evId, user: localStorage.getItem('portal_user') };
+
+        // Pass participants data if it's sendSummary, sendPraesenz, or sendReminders
+        if (toolName === 'sendSummary' || toolName === 'sendPraesenz' || toolName === 'sendReminders') {
+            if (window.currentGvData) {
+                payload.participants = window.currentGvData;
+            }
+        }
+
         const res = await apiFetch('termine', '', {
-            method: 'POST', body: JSON.stringify({ action: 'runTool', tool: toolName, user: localStorage.getItem('portal_user') })
+            method: 'POST', body: JSON.stringify(payload)
         });
         const data = await res.json();
         alert(data.success ? "✅ " + data.msg : "❌ Fehler: " + data.error);
@@ -179,7 +328,7 @@ async function runGVTool(toolName) {
 }
 
 async function saveGVData() {
-  if(!confirm("GV-Änderungen speichern?")) return;
+  if(!confirm("GV-Aenderungen speichern?")) return;
   const user = localStorage.getItem('portal_user') || "Admin";
   // The server expects all payload parts, so we send the whole state
   const payload = {
@@ -192,11 +341,22 @@ async function saveGVData() {
     logDetails: "GV-Daten aktualisiert"
   };
   try {
-    await apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) });
-    window.clearUnsaved();
-    alert("✅ Gespeichert!");
-    loadGVData();
+    const res = await apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) { data = { error: "Ungueltige Server-Antwort" }; }
+    
+    if(data.status === 'success' || data.success) {
+        window.clearUnsaved();
+        alert("✅ Gespeichert!");
+        gvState = null;
+        if (typeof initGVControllingTab === 'function') {
+            initGVControllingTab();
+        }
+    } else {
+        alert("Fehler beim Speichern: " + (data.error || data.message || "Unbekannt"));
+    }
   } catch(e) {
-    alert("Fehler: " + e);
+    alert("Netzwerk/Skript-Fehler: " + e);
   }
 }

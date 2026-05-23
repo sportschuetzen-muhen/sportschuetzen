@@ -13,6 +13,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 
+    <!-- OneSignal Integration -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
+        });
+      });
+    </script>
 
     <style>
         :root { --primary: #0f3a5d; --secondary: #1e293b; --bg: #f3f4f6; }
@@ -134,17 +144,14 @@
                      onclick="navTo('termine', this)">
                     <i class="fas fa-calendar-alt"></i> Termine
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,aktuar"
-                     onclick="navTo('gv', this)">
-                    <i class="fas fa-users"></i> GV
-                </div>
+
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('system-mails', this)">
                     <i class="fas fa-envelope-open-text"></i> System-Mails
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('umfragen', this)">
-                    <i class="fas fa-poll"></i> Umfragen
+                    <i class="fas fa-calendar-check"></i> Anlässe & Umfragen
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('manager', this)">
@@ -208,13 +215,7 @@
                             <p class="small text-muted">Termine, Anlässe & Orte</p>
                         </div>
                     </div>
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,aktuar">
-                        <div class="card p-3 shadow-sm border-0 h-100"
-                             onclick="navTo('gv')" style="cursor:pointer">
-                            <h5>🏛️ GV</h5>
-                            <p class="small text-muted">GV Stammdaten & Präsenz</p>
-                        </div>
-                    </div>
+
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('system-mails')" style="cursor:pointer">
@@ -225,8 +226,8 @@
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('umfragen')" style="cursor:pointer">
-                            <h5>📊 Umfragen</h5>
-                            <p class="small text-muted">Anmeldungen & Rückmeldungen</p>
+                            <h5>🗓️ Anlässe & Umfragen</h5>
+                            <p class="small text-muted">Umfragen, Controlling & Mails</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
@@ -341,17 +342,33 @@
             <div id="view-jahresmeisterschaft" class="module-view">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2>🏅 Jahresmeisterschaft KK</h2>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresmeisterschaftData()">
-                        🔄 Aktualisieren
-                    </button>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select id="jm-history-select" class="form-select form-select-sm" style="width: auto;" onchange="loadJahresmeisterschaftData()">
+                            <!-- Wird dynamisch gefüllt -->
+                            <option value="current">JM 2025 (Aktuell)</option>
+                        </select>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-primary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
+                                ⚙️ Aktionen
+                            </button>
+                            <ul class="dropdown-menu" id="jm-actions-menu">
+                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereKantonalstichDaten', 'Kantonalstich importieren')">Import: Kantonalstich</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVerbandsschiessendaten', 'Verbandsschiessen importieren')">Import: Verband</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVereinswettschiessendaten', 'Vereinswettschiessen importieren')">Import: Vereinswettschiessen</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')">Archivieren (Aktuelles Jahr)</a></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')">Neues Jahr (Nullen)</a></li>
+                            </ul>
+                        </div>
+                        <button class="btn btn-sm btn-success write-protected" onclick="saveJahresmeisterschaftData()">
+                            💾 Speichern
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresmeisterschaftData()">
+                            🔄 Aktualisieren
+                        </button>
+                    </div>
                 </div>
-            <div id="jahresmeisterschaft-container">
-                <div class="alert alert-info">
-                    <i class="fas fa-tools me-2"></i>
-                    <strong>Jahresmeisterschaft KK</strong> – Modul wird vorbereitet.
-                    <br><small class="text-muted">Das Backend-Script ist noch nicht aktiviert.</small>
-                </div>
-            </div>
+                <div id="jahresmeisterschaft-container"></div>
             </div>
 <!-- MAIL -->
 <div id="view-mail" class="module-view">
@@ -386,21 +403,7 @@
     <div id="mitglieder-container"></div>
 </div>
 
-<!-- GV -->
-<div id="view-gv" class="module-view">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>🏛️ GV & Präsenz</h2>
-        <div class="btn-group">
-            <button class="btn btn-sm btn-success write-protected" onclick="saveGVData()">
-                💾 Speichern
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadGVData()">
-                🔄 Laden
-            </button>
-        </div>
-    </div>
-    <div id="gv-container"></div>
-</div>
+<!-- GV & Präsenz wurde in Tab 4 von Anlässe & Umfragen integriert -->
 
 <!-- SYSTEM-MAILS -->
 <div id="view-system-mails" class="module-view">
@@ -441,14 +444,58 @@
     </div>
 </div>
 
+<!-- Auswärtiges Calculator Modal -->
+<div class="modal fade" id="auswaertiges-modal" tabindex="-1" aria-labelledby="auswaertigesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="auswaertigesModalLabel"><i class="fas fa-calculator me-2"></i>Auswärtiges Resultat eintragen</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="calc-row">
+                <input type="hidden" id="calc-points-col">
+                <input type="hidden" id="calc-percent-col">
+                
+                <div class="mb-3">
+                    <label for="calc-max-points" class="form-label fw-bold">Maximalpunkte des Anlasses</label>
+                    <input type="number" class="form-control" id="calc-max-points" oninput="calculatePercentage()">
+                </div>
+                <div class="mb-3">
+                    <label for="calc-points" class="form-label fw-bold">Erzielte Punkte</label>
+                    <input type="number" step="any" class="form-control" id="calc-points" oninput="calculatePercentage()" placeholder="z.B. 95">
+                </div>
+                <div class="mb-3">
+                    <label for="calc-percent" class="form-label fw-bold">Resultat in % (automatisch berechnet)</label>
+                    <input type="text" class="form-control bg-light" id="calc-percent" readonly>
+                    <div class="form-text text-muted">
+                        Hinweis: Das Prozentresultat wird anhand der Formel: <code>(Erzielt / Max) * 100</code> berechnet.
+                    </div>
+                </div>
+                
+                <div class="alert alert-info text-start small" id="calc-info-text">
+                    <i class="fas fa-info-circle me-1"></i> <strong>Wichtig:</strong> Bitte selbst prüfen, welches Resultat das höchste ist, da dieses eingetragen werden sollte.
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-danger" onclick="clearAuswaertigesCalculator()"><i class="fas fa-trash me-2"></i>Leeren / Löschen</button>
+                <div>
+                    <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-success" onclick="saveAuswaertigesCalculator()"><i class="fas fa-save me-2"></i>Speichern</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- SCRIPTS – Reihenfolge wichtig! -->
 <script src="js/auth.js"></script>
 <script src="js/main.js"></script>
 <script src="js/inventar.js"></script>
 <script src="js/termine.js"></script>
-<script src="js/gv.js"></script>
 <script src="js/system-mails.js"></script>
 <script src="js/umfragen.js"></script>
+<script src="js/gv.js"></script>
 <script src="js/logins.js"></script>
 <script src="js/manager.js"></script>
 <script src="js/resultate.js"></script>
@@ -459,7 +506,7 @@
 
     
 <!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->
-<!-- <script src="js/jahresmeisterschaft.js"></script> -->
+<script src="js/jahresmeisterschaft.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
