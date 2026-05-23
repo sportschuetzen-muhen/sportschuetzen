@@ -22,7 +22,6 @@
       --text-dark: #2d3748;
       --text-light: #718096;
       --bg-light: #f4f7f9;
-      --bg-sidebar: #0f3a5d;
       --success-color: #28a745;
       --error-color: #dc3545;
       --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -37,103 +36,15 @@
     body {
       font-family: 'Outfit', sans-serif;
       color: var(--text-dark);
-      background-color: var(--bg-light);
-      display: flex;
-      min-height: 100vh;
-      overflow-x: hidden;
+      background-color: transparent; /* Transparent to blend seamlessly into parent layout */
+      padding: 20px 0;
     }
 
-    /* Side navigation panel */
-    .sidebar {
-      width: 280px;
-      background-color: var(--bg-sidebar);
-      color: white;
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 40px 20px;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      box-shadow: 4px 0 20px rgba(0,0,0,0.1);
-      z-index: 10;
-    }
-
-    .logo-container {
-      background-color: white;
-      padding: 15px;
-      border-radius: 12px;
-      box-shadow: 0 8px 16px rgba(0,0,0,0.15);
-      text-align: center;
-      width: 100%;
-      max-width: 180px;
-      margin-bottom: 30px;
-      transform: translateY(0);
-      transition: var(--transition);
-    }
-
-    .logo-container:hover {
-      transform: translateY(-5px);
-    }
-
-    .logo-container img {
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-
-    .sidebar h2 {
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 1.5rem;
-      font-weight: 700;
-      text-align: center;
-      letter-spacing: 0.5px;
-      margin-top: 10px;
-      color: white;
-    }
-
-    .sidebar p {
-      font-size: 1.1rem;
-      color: rgba(255,255,255,0.7);
-      margin-top: 5px;
-      font-weight: 300;
-    }
-
-    .nav-links {
-      width: 100%;
-      margin-top: 40px;
-      list-style: none;
-    }
-
-    .nav-links li {
-      margin-bottom: 12px;
-    }
-
-    .nav-links a {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      color: rgba(255,255,255,0.8);
-      text-decoration: none;
-      padding: 12px 18px;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 500;
-      transition: var(--transition);
-    }
-
-    .nav-links a:hover, .nav-links a.active {
-      background-color: rgba(255, 255, 255, 0.1);
-      color: var(--accent-color);
-    }
-
-    /* Main content container */
-    .main-content {
-      flex-grow: 1;
-      padding: 50px 60px;
+    /* Single Column Main container - No Sidebar! */
+    .container {
       max-width: 1200px;
       margin: 0 auto;
+      padding: 0 20px;
     }
 
     header {
@@ -153,25 +64,26 @@
       font-size: 1.2rem;
       color: var(--text-light);
       line-height: 1.6;
-      max-width: 800px;
     }
 
     /* Features Grid */
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 20px;
       margin-bottom: 45px;
     }
 
     .feature-card {
       background: white;
-      padding: 20px;
+      padding: 22px;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.03);
       border-left: 4px solid var(--primary-color);
       display: flex;
       gap: 15px;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid var(--primary-color);
       transition: var(--transition);
     }
 
@@ -185,8 +97,8 @@
       font-size: 1.4rem;
       color: var(--primary-color);
       background-color: rgba(15, 58, 93, 0.08);
-      width: 42px;
-      height: 42px;
+      width: 44px;
+      height: 44px;
       border-radius: 8px;
       display: flex;
       align-items: center;
@@ -204,7 +116,7 @@
     .feature-info p {
       font-size: 0.95rem;
       color: var(--text-light);
-      line-height: 1.4;
+      line-height: 1.45;
     }
 
     /* Photo Gallery Section */
@@ -235,6 +147,7 @@
       aspect-ratio: 4/3;
       cursor: pointer;
       box-shadow: 0 6px 16px rgba(0,0,0,0.05);
+      border: 1px solid #e2e8f0;
       transition: var(--transition);
     }
 
@@ -397,7 +310,7 @@
     .notice-text p {
       font-size: 0.95rem;
       color: var(--text-dark);
-      line-height: 1.5;
+      line-height: 1.55;
     }
 
     /* Downloads Section */
@@ -406,6 +319,7 @@
       border-radius: 12px;
       padding: 25px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      border: 1px solid #e2e8f0;
       margin-bottom: 50px;
     }
 
@@ -459,12 +373,13 @@
       border-radius: 16px;
       padding: 40px;
       box-shadow: 0 10px 30px rgba(15, 58, 93, 0.05);
-      margin-bottom: 60px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 30px;
     }
 
     .booking-container {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1.1fr 1fr;
       gap: 40px;
       margin-top: 30px;
     }
@@ -473,6 +388,7 @@
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+      border: 1px solid #e2e8f0;
     }
 
     /* Modern Styled Booking Form */
@@ -529,7 +445,7 @@
     }
 
     input[readonly] {
-      background-color: rgba(229, 169, 59, 0.1);
+      background-color: rgba(229, 169, 59, 0.08);
       border-color: var(--accent-color);
       color: var(--primary-color);
       font-weight: 600;
@@ -563,34 +479,6 @@
 
     .btn-submit:active {
       transform: translateY(0);
-    }
-
-    /* Footer styling */
-    footer {
-      border-top: 1px solid #e2e8f0;
-      padding-top: 25px;
-      margin-top: 60px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      color: var(--text-light);
-      font-size: 0.9rem;
-    }
-
-    .social-links {
-      display: flex;
-      gap: 15px;
-    }
-
-    .social-links a {
-      color: var(--primary-color);
-      font-size: 1.25rem;
-      transition: var(--transition);
-    }
-
-    .social-links a:hover {
-      color: var(--accent-color);
-      transform: translateY(-2px);
     }
 
     /* Custom Toast Notification */
@@ -635,7 +523,7 @@
       color: var(--text-light);
     }
 
-    /* CSS Keyframes */
+    /* Animations */
     @keyframes fadeIn {
       from { opacity: 0; }
       to { opacity: 1; }
@@ -643,24 +531,6 @@
 
     /* Responsive adjustments */
     @media (max-width: 1024px) {
-      body {
-        flex-direction: column;
-      }
-      .sidebar {
-        width: 100%;
-        height: auto;
-        position: relative;
-        padding: 30px 20px;
-      }
-      .logo-container {
-        margin-bottom: 15px;
-      }
-      .nav-links {
-        display: none; /* Hide navigation lists on mobile header */
-      }
-      .main-content {
-        padding: 40px 20px;
-      }
       .booking-container {
         grid-template-columns: 1fr;
         gap: 30px;
@@ -673,24 +543,8 @@
 </head>
 <body>
 
-  <!-- Sidebar Nav Panel -->
-  <aside class="sidebar">
-    <div class="logo-container">
-      <!-- Embedded Sportschützen Logo -->
-      <img id="logo" src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png" alt="Sportschützen Muhen Logo">
-    </div>
-    <h2>SPORTSCHÜTZEN</h2>
-    <p>Muhen</p>
-    
-    <ul class="nav-links">
-      <li><a href="#" class="active"><i class="fa-solid fa-house"></i>Übersicht</a></li>
-      <li><a href="#downloads"><i class="fa-solid fa-file-pdf"></i>Unterlagen</a></li>
-      <li><a href="#kalender"><i class="fa-solid fa-calendar-check"></i>Reservieren</a></li>
-    </ul>
-  </aside>
-
-  <!-- Main View Area -->
-  <main class="main-content">
+  <!-- Full Single-Column Wrapper - No Sidebar! -->
+  <div class="container">
     
     <!-- Title & Description Header -->
     <header>
@@ -698,7 +552,7 @@
       <p>Suchen Sie eine gemütliche und gut ausgestattete Location für Ihre Feier, Tagung oder einen Anlass? Unser Schützenhaus im Suhrental steht zur Vermietung und bietet ideale Bedingungen für Ihre Veranstaltung!</p>
     </header>
 
-    <!-- Amenities Grid (Recreating Bullets as Cards) -->
+    <!-- Amenities Grid -->
     <section class="features-grid">
       <div class="feature-card">
         <div class="feature-icon"><i class="fa-solid fa-users"></i></div>
@@ -780,7 +634,7 @@
       </div>
     </section>
 
-    <!-- Marketing-Phased Construction Notice -->
+    <!-- Marketing Construction Notice -->
     <section class="notice-card">
       <div class="notice-icon">
         <i class="fa-solid fa-circle-info"></i>
@@ -815,7 +669,7 @@
     <!-- Interactive Calendar & Booking Module -->
     <section class="booking-section" id="kalender">
       <h2 class="section-title"><i class="fa-solid fa-calendar-days"></i> Termin prüfen & buchen</h2>
-      <p style="color: var(--text-light); margin-bottom: 25px;">Wähle freie Termine direkt im Kalender aus und buche dein Event bequem online. Bereits markierte Tage (z. B. "Besetzt" oder "Gesperrt") können nicht gebucht werden.</p>
+      <p style="color: var(--text-light); margin-bottom: 25px;">Wähle freie Termine direkt im Kalender aus und buche dein Event bequem online. Bereits markierte Tage (z.B. "Besetzt" oder "Gesperrt") können nicht gebucht werden.</p>
       
       <div class="booking-container">
         <!-- Embedded Google Belegungskalender -->
@@ -897,18 +751,7 @@
       </div>
     </section>
 
-    <!-- Footer Area -->
-    <footer>
-      <div>
-        <p>&copy; 2026 Sportschützen Muhen. Alle Rechte vorbehalten.</p>
-      </div>
-      <div class="social-links">
-        <a href="https://www.facebook.com/sportschuetzen.muhen" target="_blank" title="Besuche uns auf Facebook"><i class="fa-brands fa-facebook"></i></a>
-        <a href="mailto:sportschuetzen.muhen@gmail.com" title="Schreib uns eine E-Mail"><i class="fa-solid fa-envelope"></i></a>
-      </div>
-    </footer>
-
-  </main>
+  </div>
 
   <!-- Clickable Photo Lightbox Structure -->
   <div class="lightbox" id="lightbox" onclick="closeLightbox()">
@@ -925,15 +768,14 @@
   <div class="custom-toast" id="toast">
     <div class="toast-icon" id="toast-icon"></div>
     <div class="toast-message">
-      <h4 id="toast-title">Zahlungserinnerung</h4>
+      <h4 id="toast-title">Buchung</h4>
       <p id="toast-desc">Nachricht gesendet.</p>
     </div>
   </div>
 
   <!-- JS Logic -->
   <script>
-    // Config: Trage hier die Live-URL deines Google Apps Script Web-Apps ein!
-    // HINWEIS: Nach Bereitstellung als Web-App in Google Apps Script erhälst du die URL
+    // Config: Live-URL deines Google Apps Script Web-Apps
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx77T_HpoVzfJsI47RAHN4_EmHZgTPHMSNnk5pIgPs0/exec";
 
     // Bilderliste für Galerie
@@ -986,7 +828,6 @@
       const btn = document.getElementById('btn-submit');
       const originalHtml = btn.innerHTML;
       
-      // Spinner setzen
       btn.disabled = true;
       btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Sende Reservierung...`;
 
@@ -1016,19 +857,14 @@
       try {
         const response = await fetch(WEB_APP_URL, {
           method: 'POST',
-          mode: 'no-cors', // Da GAS redirects nutzt und CORS-Schnittstellen schwer ohne Proxy arbeiten
+          mode: 'no-cors',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(payload)
         });
 
-        // HINWEIS: Da fetch mit 'no-cors' keine Lesbarkeit der Antwort erlaubt (Status 0), 
-        // zeigen wir eine positive Rückmeldung und bitten den Kunden, sein Postfach zu prüfen.
-        // Das ist der Standard-Weg für Google Apps Script Web-Apps!
         showCustomToast("success", "Reservierung übermittelt", "Deine Reservierung wurde erfolgreich eingereicht! Bitte prüfe in wenigen Minuten dein E-Mail-Postfach auf den Mietvertrag.");
-        
-        // Formular zurücksetzen
         document.getElementById('res-form').reset();
         
         // Iframe neu laden, um die Belegung zu aktualisieren
@@ -1061,7 +897,6 @@
       }
 
       toast.classList.add('active');
-
       setTimeout(() => {
         toast.classList.remove('active');
       }, 7000);
