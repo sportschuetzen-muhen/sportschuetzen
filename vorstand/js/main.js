@@ -925,6 +925,15 @@ function closeSidebarMobile() {
 // =========================================================
 let _presencePingTimerId = null;
 
+function getSessionId() {
+    let sessId = sessionStorage.getItem('portal_session_id');
+    if (!sessId) {
+        sessId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        sessionStorage.setItem('portal_session_id', sessId);
+    }
+    return sessId;
+}
+
 async function pingPresence() {
     console.log("🔍 pingPresence called. window.currentUser:", window.currentUser);
     if (!window.currentUser) {
@@ -932,7 +941,8 @@ async function pingPresence() {
         return;
     }
     try {
-        const res = await apiFetch('mitglieder', `action=ping&user=${encodeURIComponent(window.currentUser)}`);
+        const sessId = getSessionId();
+        const res = await apiFetch('logins', `action=ping&user=${encodeURIComponent(window.currentUser)}&sessionId=${sessId}`);
         const data = await res.json();
         console.log("🔍 pingPresence response data:", data);
         if (data.success && Array.isArray(data.onlineUsers)) {

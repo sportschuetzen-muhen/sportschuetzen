@@ -1175,34 +1175,41 @@ function jbHandleExcelUpload(file, type) {
 
         console.log('📂 Sheets in der Datei:', workbook.SheetNames);
 
-        // Bestes Sheet finden: dasjenige mit den meisten Header-Keywords
-        // (nicht immer Sheet 1 – z.B. Verbandsschiessen hat Daten auf Sheet 6)
-        const SCORE_KEYWORDS = [
-          'lizenz', 'ausweis', 'liz', 'total', 'resultat', 'ergebnis',
-          'punkte', 'passe', 'stich', 'name', 'vorname', 'jahrgang'
-        ];
-
         let bestSheet = workbook.SheetNames[0];
         let bestScore = -1;
 
-        workbook.SheetNames.forEach(sheetName => {
-          const ws = workbook.Sheets[sheetName];
-          const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-          let score = 0;
-          // Scanne erste 40 Zeilen nach Keywords
-          for (let r = 0; r < Math.min(rows.length, 40); r++) {
-            const row = rows[r] || [];
-            for (let c = 0; c < row.length; c++) {
-              const val = String(row[c] || '').toLowerCase().trim();
-              if (SCORE_KEYWORDS.some(k => val.includes(k))) score++;
+        // Priorität 1: Sheet namens "Resultatblatt" (case-insensitive) bevorzugen
+        const foundResultatblatt = workbook.SheetNames.find(s => s.toLowerCase().trim() === 'resultatblatt');
+        if (foundResultatblatt) {
+          bestSheet = foundResultatblatt;
+          console.log('🎯 Prio 1: Sheet "Resultatblatt" direkt gewählt:', bestSheet);
+        } else {
+          // Fallback: Bestes Sheet finden: dasjenige mit den meisten Header-Keywords
+          // (nicht immer Sheet 1 – z.B. Verbandsschiessen hat Daten auf Sheet 6)
+          const SCORE_KEYWORDS = [
+            'lizenz', 'ausweis', 'liz', 'total', 'resultat', 'ergebnis',
+            'punkte', 'passe', 'stich', 'name', 'vorname', 'jahrgang'
+          ];
+
+          workbook.SheetNames.forEach(sheetName => {
+            const ws = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+            let score = 0;
+            // Scanne erste 40 Zeilen nach Keywords
+            for (let r = 0; r < Math.min(rows.length, 40); r++) {
+              const row = rows[r] || [];
+              for (let c = 0; c < row.length; c++) {
+                const val = String(row[c] || '').toLowerCase().trim();
+                if (SCORE_KEYWORDS.some(k => val.includes(k))) score++;
+              }
             }
-          }
-          console.log('  Sheet "' + sheetName + '": Score ' + score);
-          if (score > bestScore) {
-            bestScore = score;
-            bestSheet = sheetName;
-          }
-        });
+            console.log('  Sheet "' + sheetName + '": Score ' + score);
+            if (score > bestScore) {
+              bestScore = score;
+              bestSheet = sheetName;
+            }
+          });
+        }
 
         console.log('✅ Verwende Sheet:', bestSheet, '(Score ' + bestScore + ')');
 
@@ -1260,21 +1267,29 @@ async function jbHandleExcelUploadMulti(files, type) {
           try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
-            const SCORE_KW = ['lizenz','name','vorname','jahrgang','kat','ssv','agsv'];
             let bestSheet = workbook.SheetNames[0];
             let bestScore = -1;
-            workbook.SheetNames.forEach(sheetName => {
-              const ws = workbook.Sheets[sheetName];
-              const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-              let score = 0;
-              for (let r = 0; r < Math.min(rows.length, 15); r++) {
-                (rows[r] || []).forEach(cell => {
-                  const v = String(cell || '').toLowerCase();
-                  if (SCORE_KW.some(k => v.includes(k))) score++;
-                });
-              }
-              if (score > bestScore) { bestScore = score; bestSheet = sheetName; }
-            });
+
+            // Priorität 1: Sheet namens "Resultatblatt" (case-insensitive) bevorzugen
+            const foundResultatblatt = workbook.SheetNames.find(s => s.toLowerCase().trim() === 'resultatblatt');
+            if (foundResultatblatt) {
+              bestSheet = foundResultatblatt;
+              console.log('🎯 Prio 1 (Multi): Sheet "Resultatblatt" direkt gewählt:', bestSheet);
+            } else {
+              const SCORE_KW = ['lizenz','name','vorname','jahrgang','kat','ssv','agsv'];
+              workbook.SheetNames.forEach(sheetName => {
+                const ws = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                let score = 0;
+                for (let r = 0; r < Math.min(rows.length, 15); r++) {
+                  (rows[r] || []).forEach(cell => {
+                    const v = String(cell || '').toLowerCase();
+                    if (SCORE_KW.some(k => v.includes(k))) score++;
+                  });
+                }
+                if (score > bestScore) { bestScore = score; bestSheet = sheetName; }
+              });
+            }
             const ws = workbook.Sheets[bestSheet];
             const jsonRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
             jbProcessExcelRows(jsonRows, type, isAppend);
@@ -2699,7 +2714,8 @@ function jbBankRenderResults(filter) {
     let memberInfo = '–';
     if (r.matchedMember) {
       const m = r.matchedMember;
-      memberInfo = `<span class="fw-semibold">${m.FirstName || ''} ${m.LastName || ''}</span><br>
+      const passivBadge = m._istPassiv ? ' <span class="badge bg-secondary" style="font-size: 10px; padding: 2px 4px;">Passiv</span>' : '';
+      memberInfo = `<span class="fw-semibold">${m.FirstName || ''} ${m.LastName || ''}</span>${passivBadge}<br>
         <small class="text-muted">${m.PersonNumber || ''} · ${m.PostCode || ''} ${m.City || ''}</small>`;
     } else if (isJb) {
       memberInfo = '<span class="text-danger small">Kein Mitglied gefunden</span>';
@@ -2721,6 +2737,9 @@ function jbBankRenderResults(filter) {
             <i class="fas fa-question-circle me-1"></i>Trotzdem buchen
           </button>`;
         }
+      } else if (r.matchedMember) {
+        // Matched but no invoice calculated yet
+        bookBtn = `<span class="badge bg-warning text-dark py-1.5" style="font-size: 11px;" title="Rechnung wurde für das aktive Jahr noch nicht berechnet. Bitte in Beitrags-Übersicht berechnen."><i class="fas fa-calculator me-1"></i>Rechnung fehlt</span>`;
       }
       const umbuchenBtn = `<button class="btn btn-sm btn-outline-secondary ms-1" title="Andere Person auswählen" onclick="jbBankShowReassignModal(${realI})">
         <i class="fas fa-exchange-alt"></i>
@@ -2772,10 +2791,10 @@ function jbBankRenderResults(filter) {
 // ---- Reassign Modal: Score alle Kandidaten ----------------
 function jbBankScoreAllCandidates(tx) {
   const beitraege = (_jbAllBeitraege || []).filter(h => Number(h.year) === Number(_jbYear));
+  const members   = _jbMembers || [];
 
-  return beitraege.map(b => {
-    const m = _jbMemberMap[String(b.PersonNumber)] || null;
-    if (!m) return null;
+  return members.map(m => {
+    const b = beitraege.find(x => String(x.PersonNumber) === String(m.PersonNumber)) || null;
 
     const bankName = normalizeName(tx.debtorName || '');
     const bankPLZ  = String(tx.debtorPostCode || '').trim();
@@ -2785,7 +2804,7 @@ function jbBankScoreAllCandidates(tx) {
     const mFirst = normalizeName(m.FirstName || '');
     const mPLZ   = String(m.PostCode || '').trim();
     const mOrt   = normalizeName(m.City || '');
-    const mGesamt = Number(b.Gesamt || 0);
+    const mGesamt = b ? Number(b.Gesamt || 0) : (m._istPassiv ? 20 : 0);
 
     let score = 0;
     let reasons = [];
@@ -2799,7 +2818,24 @@ function jbBankScoreAllCandidates(tx) {
     if (bankPLZ && mPLZ && bankPLZ === mPLZ) { score += 0.5; reasons.push('PLZ'); }
     if (bankOrt && mOrt && (bankOrt.includes(mOrt) || mOrt.includes(bankOrt))) { score += 0.3; reasons.push('Ort'); }
 
-    return { b, m, score, reasons, alreadyPaid: b.status === 'bezahlt' };
+    // Reference matching in reassign modal
+    const cleanMpn = String(m.PersonNumber || '').trim().replace(/^0+/, '');
+    const cleanBid = b ? String(b.id || '').trim().replace(/^0+/, '') : '';
+    const cleanDref = b ? String(b.document_ref || '').trim().replace(/^0+/, '') : '';
+    const cleanRef = (tx.creditorReference || '').toLowerCase();
+
+    if (cleanRef) {
+      const numericRef = cleanRef.replace(/[^0-9]/g, '').replace(/^0+/, '');
+      if (cleanMpn && numericRef.endsWith(cleanMpn)) {
+        score += 2; reasons.push('Referenz (Mitglied)');
+      } else if (cleanBid && numericRef === cleanBid) {
+        score += 3; reasons.push('Referenz (Rechnung)');
+      } else if (cleanDref && numericRef === cleanDref) {
+        score += 3; reasons.push('Referenz (Beleg)');
+      }
+    }
+
+    return { b, m, score, reasons, alreadyPaid: b ? (b.status === 'bezahlt') : false };
   })
   .filter(Boolean)
   .sort((a, b) => b.score - a.score);
@@ -2831,10 +2867,12 @@ function jbBankShowReassignModal(txIdx) {
   const listHTML = candidates.slice(0, 30).map((c, ci) => {
     const paidBadge = c.alreadyPaid
       ? '<span class="badge bg-success ms-1">Bezahlt</span>'
-      : '<span class="badge bg-light text-dark border ms-1">Offen</span>';
+      : (c.b ? '<span class="badge bg-light text-dark border ms-1">Offen</span>' : '<span class="badge bg-warning text-dark ms-1" title="Rechnung wurde für das aktive Jahr noch nicht berechnet.">Rechnung fehlt</span>');
     const scoreBar = Math.min(100, Math.round((c.score / 3.3) * 100));
     const reasonStr = c.reasons.length ? `<small class="text-muted">(${c.reasons.join(', ')})</small>` : '';
-    const disabledAttr = c.alreadyPaid ? 'disabled title="Bereits als bezahlt markiert"' : '';
+    const disabledAttr = (c.alreadyPaid || !c.b) ? 'disabled title="Bereits als bezahlt markiert oder keine Beitragsrechnung vorhanden"' : '';
+    const betragStr = c.b ? `CHF ${Number(c.b.Gesamt || 0).toFixed(2)}` : '–';
+    const bidVal = c.b ? c.b.id : '';
 
     return `
       <tr>
@@ -2842,7 +2880,7 @@ function jbBankShowReassignModal(txIdx) {
           <span class="fw-semibold">${escHtml(c.m.LastName || '')} ${escHtml(c.m.FirstName || '')}</span>${paidBadge}<br>
           <small class="text-muted">${c.m.PersonNumber || ''} · ${String(c.m.PostCode || '')} ${escHtml(c.m.City || '')}</small>
         </td>
-        <td class="text-end fw-bold" style="white-space:nowrap;">CHF ${Number(c.b.Gesamt || 0).toFixed(2)}</td>
+        <td class="text-end fw-bold" style="white-space:nowrap;">${betragStr}</td>
         <td style="min-width:120px;">
           <div class="progress mb-1" style="height:6px;">
             <div class="progress-bar ${scoreColor(c.score)}" style="width:${scoreBar}%"></div>
@@ -2851,7 +2889,7 @@ function jbBankShowReassignModal(txIdx) {
         </td>
         <td>
           <button class="btn btn-sm btn-outline-primary py-0" ${disabledAttr}
-                  onclick="jbBankBookAlternative(${txIdx}, '${c.b.id}', '${escHtml(c.m.FirstName || '')} ${escHtml(c.m.LastName || '')}', '${dateStr}')">
+                  onclick="jbBankBookAlternative(${txIdx}, '${bidVal}', '${escHtml(c.m.FirstName || '')} ${escHtml(c.m.LastName || '')}', '${dateStr}')">
             <i class="fas fa-arrow-right me-1"></i>Buchen
           </button>
         </td>
@@ -3078,9 +3116,8 @@ function jbBankParseCAMT053(xmlText) {
     const addtlRmt   = getTagText(strd, 'AddtlRmtInf');
     const remittanceInfo = addtlRmt || ustrd || addtlInfo || '';
 
-    // Detect Jahresbeitrag
-    const isJahresbeitrag = /jahresbeitrag/i.test(remittanceInfo) ||
-                            /jahresbeitrag/i.test(addtlInfo);
+    const cdtrRefInf = getFirstChild(strd, 'CdtrRefInf');
+    const creditorReference = getTagText(cdtrRefInf, 'Ref');
 
     transactions.push({
       amount,
@@ -3089,7 +3126,8 @@ function jbBankParseCAMT053(xmlText) {
       debtorPostCode,
       debtorCity: debtorCity || (adrLine ? adrLine.split(' ').slice(-1)[0] : ''),
       remittanceInfo,
-      isJahresbeitrag
+      creditorReference,
+      isJahresbeitrag: false // will be calculated during matching
     });
   }
 
@@ -3107,9 +3145,30 @@ function jbBankMatchAll(transactions) {
   const members   = _jbMembers || [];
 
   return transactions.map(tx => {
-    if (!tx.isJahresbeitrag) {
-      return { ...tx, matchScore: -1, matchedMember: null, matchedBeitrag: null, alreadyPaid: false };
-    }
+    // 1. Text-based detection (typos, abbreviations, keywords)
+    const cleanRemittance = (tx.remittanceInfo || '').toLowerCase();
+    const cleanAddtlInfo  = (tx.addtlInfo || '').toLowerCase();
+    const cleanRef        = (tx.creditorReference || '').toLowerCase();
+    
+    // Patterns for matching the word "Jahresbeitrag" and its variants
+    const jbRegex = /jahresbeitra\s*g/i;
+    const jbRegex2 = /mitgliederbeitra\s*g/i;
+    const jbRegex3 = /mitgliedsbeitra\s*g/i;
+    const jbRegex4 = /vereinsbeitra\s*g/i;
+    const jbRegex5 = /beitra\s*g/i;
+    const jbRegex6 = /\bjb\b/i;
+    const jbRegex7 = /jahresbeitr/i;
+    
+    const textHasJb = jbRegex.test(cleanRemittance) || jbRegex.test(cleanAddtlInfo) ||
+                      jbRegex2.test(cleanRemittance) || jbRegex2.test(cleanAddtlInfo) ||
+                      jbRegex3.test(cleanRemittance) || jbRegex3.test(cleanAddtlInfo) ||
+                      jbRegex4.test(cleanRemittance) || jbRegex4.test(cleanAddtlInfo) ||
+                      jbRegex5.test(cleanRemittance) || jbRegex5.test(cleanAddtlInfo) ||
+                      jbRegex6.test(cleanRemittance) || jbRegex6.test(cleanAddtlInfo) ||
+                      jbRegex7.test(cleanRemittance) || jbRegex7.test(cleanAddtlInfo);
+
+    // If it has a structured reference, we consider it a likely Jahresbeitrag
+    const hasRef = cleanRef.startsWith('rf') || /^\d+$/.test(cleanRef);
 
     // Extract name tokens from bank
     const bankName = normalizeName(tx.debtorName || '');
@@ -3121,51 +3180,78 @@ function jbBankMatchAll(transactions) {
     let bestBeitrag  = null;
     let bestAlready  = false;
     let bestPaidDate = '';
+    let bestLastNameMatch = false;
+    let bestFirstAndLastMatch = false;
 
-    for (const b of beitraege) {
-      const m = _jbMemberMap[String(b.PersonNumber)] || null;
-      if (!m) continue;
+    for (const m of members) {
+      const b = beitraege.find(x => String(x.PersonNumber) === String(m.PersonNumber)) || null;
 
       const mLast  = normalizeName(m.LastName  || '');
       const mFirst = normalizeName(m.FirstName || '');
       const mPLZ   = String(m.PostCode || '').trim();
       const mOrt   = normalizeName(m.City || '');
-      const mGesamt = Number(b.Gesamt || 0);
+      const mGesamt = b ? Number(b.Gesamt || 0) : (m._istPassiv ? 20 : 0);
 
       let score = 0;
+      let lastNameMatch = false;
+      let firstNameMatch = false;
 
       // 1. Betrag
       const amountMatch = Math.abs(mGesamt - tx.amount) < 0.01;
       if (amountMatch) score++;
 
       // 2. Nachname
-      const lastNameMatch = bankName.includes(mLast) || mLast.includes(bankName);
+      lastNameMatch = bankName.includes(mLast) || mLast.includes(bankName);
       if (lastNameMatch && mLast.length > 1) score++;
 
       // 3. Vorname (bonus)
-      const firstNameMatch = bankName.includes(mFirst) || mFirst.includes(bankName.split(' ')[0]);
+      firstNameMatch = bankName.includes(mFirst) || mFirst.includes(bankName.split(' ')[0]);
       if (firstNameMatch && mFirst.length > 1) score += 0.5;
 
       // 4. PLZ / Ort (bonus)
       if (bankPLZ && mPLZ && bankPLZ === mPLZ) score += 0.5;
       if (bankOrt && mOrt && (bankOrt.includes(mOrt) || mOrt.includes(bankOrt))) score += 0.3;
 
+      // 5. Reference number match
+      const cleanMpn = String(m.PersonNumber || '').trim().replace(/^0+/, '');
+      const cleanBid = b ? String(b.id || '').trim().replace(/^0+/, '') : '';
+      const cleanDref = b ? String(b.document_ref || '').trim().replace(/^0+/, '') : '';
+
+      if (cleanRef) {
+        const numericRef = cleanRef.replace(/[^0-9]/g, '').replace(/^0+/, '');
+        if (cleanMpn && numericRef.endsWith(cleanMpn)) {
+          score += 2;
+        } else if (cleanBid && numericRef === cleanBid) {
+          score += 3;
+        } else if (cleanDref && numericRef === cleanDref) {
+          score += 3;
+        }
+      }
+
       if (score > bestScore) {
         bestScore   = score;
         bestMember  = m;
         bestBeitrag = b;
-        bestAlready = b.status === 'bezahlt';
-        bestPaidDate = b.payment_date || '';
+        bestAlready = b ? (b.status === 'bezahlt') : false;
+        bestPaidDate = b ? (b.payment_date || '') : '';
+        bestLastNameMatch = lastNameMatch;
+        bestFirstAndLastMatch = lastNameMatch && firstNameMatch;
       }
     }
 
-    // Normalize score to 0/1/2
+    // Determine if it is a Jahresbeitrag transaction
+    const isJahresbeitrag = textHasJb || hasRef || bestFirstAndLastMatch || bestLastNameMatch || (bestScore >= 2);
+
+    // Normalize matchScore to 0/1/2
     let matchScore = 0;
-    if (bestScore >= 2) matchScore = 2;       // eindeutig (Betrag + Name)
-    else if (bestScore >= 1) matchScore = 1;  // unsicher
+    if (isJahresbeitrag) {
+      if (bestScore >= 2) matchScore = 2;       // eindeutig
+      else if (bestScore >= 1) matchScore = 1;  // unsicher
+    }
 
     return {
       ...tx,
+      isJahresbeitrag,
       matchScore,
       matchedMember:  matchScore > 0 ? bestMember  : null,
       matchedBeitrag: matchScore > 0 ? bestBeitrag : null,

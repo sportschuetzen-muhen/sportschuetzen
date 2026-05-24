@@ -395,13 +395,13 @@ function mglRenderListe(data) {
           <table class="table table-hover table-sm mb-0 align-middle">
             <thead class="table-dark">
               <tr>
-                <th class="mgl-clickable-sort" onclick="mglSetSort('AddressNumber')">Nr. / Lizenz <span class="mgl-sort-ind">\${mglSortIndicator('AddressNumber')}</span></th>
-                <th class="mgl-clickable-sort" onclick="mglSetSort('LastName')">Name <span class="mgl-sort-ind">\${mglSortIndicator('LastName')}</span></th>
+                <th class="mgl-clickable-sort" onclick="mglSetSort('AddressNumber')">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
+                <th class="mgl-clickable-sort" onclick="mglSetSort('LastName')">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
                 <th>E-Mail</th>
                 <th>Telefon</th>
-                <th class="mgl-clickable-sort" onclick="mglSetSort('_kategorie')">Kategorie <span class="mgl-sort-ind">\${mglSortIndicator('_kategorie')}</span></th>
-                <th class="mgl-clickable-sort" onclick="mglSetSort('_aktiveLizenzenCount')">Lizenzen <span class="mgl-sort-ind">\${mglSortIndicator('_aktiveLizenzenCount')}</span></th>
-                <th class="mgl-clickable-sort" onclick="mglSetSort('_aktiveFunktionenCount')">Funktionen <span class="mgl-sort-ind">\${mglSortIndicator('_aktiveFunktionenCount')}</span></th>
+                <th class="mgl-clickable-sort" onclick="mglSetSort('_kategorie')">Kategorie <span class="mgl-sort-ind">${mglSortIndicator('_kategorie')}</span></th>
+                <th class="mgl-clickable-sort" onclick="mglSetSort('_aktiveLizenzenCount')">Lizenzen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveLizenzenCount')}</span></th>
+                <th class="mgl-clickable-sort" onclick="mglSetSort('_aktiveFunktionenCount')">Funktionen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveFunktionenCount')}</span></th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -416,17 +416,29 @@ function mglRenderListe(data) {
 }
 
 function mglRenderAnalyse(data) {
-  const deceased = data.filter(m => m.Deceased == 1 || m.Deceased === true || m.Deceased === '1');
-  const living = data.filter(m => !(m.Deceased == 1 || m.Deceased === true || m.Deceased === '1'));
-  const active = living.filter(m => m.IsActive == 1 || m.IsActive === true || m.IsActive === '1');
+  const isTrue = val => val === true || val === 1 || val === '1' || String(val).toLowerCase() === 'ja' || String(val).toLowerCase() === 'true';
+
+  // Filter active, living members for analysis base (include active, passive, and honorary members who are alive)
+  const activeMembers = data.filter(m => 
+    !isTrue(m.Deceased) && 
+    (
+      isTrue(m.IsActive) || 
+      isTrue(m.IsPassive) || 
+      isTrue(m.IsHonoraryMember) || 
+      isTrue(m._istPassiv) || 
+      isTrue(m._istEhren) ||
+      String(m._kategorie || '').toLowerCase().includes('passiv') ||
+      String(m._kategorie || '').toLowerCase().includes('ehren')
+    )
+  );
   
-  const total = living.length;
-  const totalActive = active.length;
-  const totalPassive = living.filter(m => m._istPassiv || m.IsPassive == 1 || m.IsPassive === true).length;
-  const totalEhren = living.filter(m => m._istEhren || m.IsHonoraryMember == 1 || m.IsHonoraryMember === true).length;
+  const total = activeMembers.length;
+  const totalActive = activeMembers.length;
+  const totalPassive = activeMembers.filter(m => isTrue(m._istPassiv) || isTrue(m.IsPassive) || String(m._kategorie || '').toLowerCase().includes('passiv')).length;
+  const totalEhren = activeMembers.filter(m => isTrue(m._istEhren) || isTrue(m.IsHonoraryMember) || String(m._kategorie || '').toLowerCase().includes('ehren')).length;
   
-  const femaleCount = living.filter(m => m.Gender === 'F' || m.Gender === 'W' || String(m.Gender).toLowerCase().startsWith('w')).length;
-  const maleCount = living.filter(m => m.Gender === 'M' || String(m.Gender).toLowerCase().startsWith('m')).length;
+  const femaleCount = activeMembers.filter(m => m.Gender === 'F' || m.Gender === 'W' || String(m.Gender).toLowerCase().startsWith('w')).length;
+  const maleCount = activeMembers.filter(m => m.Gender === 'M' || String(m.Gender).toLowerCase().startsWith('m')).length;
   
   const femalePct = total > 0 ? Math.round((femaleCount / total) * 100) : 0;
   const malePct = total > 0 ? Math.round((maleCount / total) * 100) : 0;
@@ -434,7 +446,7 @@ function mglRenderAnalyse(data) {
   const currentYear = new Date().getFullYear();
   let junior = 0, elite = 0, senior = 0, veteran = 0, seniorveteran = 0;
   
-  active.forEach(m => {
+  activeMembers.forEach(m => {
     if (!m.BirthDate) return;
     const d = new Date(m.BirthDate);
     if (isNaN(d.getTime())) return;
@@ -446,29 +458,344 @@ function mglRenderAnalyse(data) {
     else seniorveteran++;
   });
 
-  const activeCount = active.length;
+  const activeCount = activeMembers.length;
   const juniorPct = activeCount > 0 ? Math.round((junior / activeCount) * 100) : 0;
   const elitePct = activeCount > 0 ? Math.round((elite / activeCount) * 100) : 0;
   const seniorPct = activeCount > 0 ? Math.round((senior / activeCount) * 100) : 0;
   const veteranPct = activeCount > 0 ? Math.round((veteran / activeCount) * 100) : 0;
   const svPct = activeCount > 0 ? Math.round((seniorveteran / activeCount) * 100) : 0;
 
-  let g50Count = 0, g10Count = 0, g300Count = 0;
-  living.forEach(m => {
-    const lizz = m._lizenzen || [];
+  let g50 = { total: 0, aktivA: 0, aktivB: 0, aktivAAuflage: 0, aktivBAuflage: 0 };
+  let g10 = { total: 0, aktivA: 0, aktivB: 0, aktivAAuflage: 0, aktivBAuflage: 0 };
+  let kombi = { total: 0, aktivA: 0, aktivB: 0, aktivAAuflage: 0, aktivBAuflage: 0 };
+
+  activeMembers.forEach(m => {
+    // Verwende vorverlegte Lizenzen aus Cache falls nicht direkt am Objekt vorhanden
+    const rawLizz = m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || _mglLizenzenCache?.[String(m.PersonNumber)] || [];
+    // Nur aktive Lizenzen betrachten (kein ExitDate und aktiv-Flag)
+    const lizz = rawLizz.filter(l => 
+      (l.IsActive === undefined || isTrue(l.IsActive)) && 
+      !String(l.ExitDate || '').trim()
+    );
+
+    let hasG50 = false;
+    let hasG10 = false;
+
     lizz.forEach(l => {
       const c = String(l.MembershipCategory || '').toLowerCase();
-      if (c.includes('g50') || c.includes('50m')) g50Count++;
-      else if (c.includes('g10') || c.includes('10m')) g10Count++;
-      else if (c.includes('g300') || c.includes('300')) g300Count++;
+      if (c.includes('g50') || c.includes('50m')) hasG50 = true;
+      if (c.includes('g10') || c.includes('10m')) hasG10 = true;
     });
+
+    // 1. Distanz-Zählungen einzeln
+    lizz.forEach(l => {
+      const c = String(l.MembershipCategory || '').toLowerCase();
+      const isA = c.includes('aktiv-a') || c.includes('aktiv a');
+      const isB = c.includes('aktiv-b') || c.includes('aktiv b');
+      const isAuflage = c.includes('auflage') || c.includes('aufgelegt') || c.includes('aufg');
+      
+      if (c.includes('g50') || c.includes('50m')) {
+        g50.total++;
+        if (isA && isAuflage) g50.aktivAAuflage++;
+        else if (isA) g50.aktivA++;
+        else if (isB && isAuflage) g50.aktivBAuflage++;
+        else if (isB) g50.aktivB++;
+      }
+      if (c.includes('g10') || c.includes('10m')) {
+        g10.total++;
+        if (isA && isAuflage) g10.aktivAAuflage++;
+        else if (isA) g10.aktivA++;
+        else if (isB && isAuflage) g10.aktivBAuflage++;
+        else if (isB) g10.aktivB++;
+      }
+    });
+
+    // 2. Kombi-Zählung (wenn beides vorhanden)
+    if (hasG50 && hasG10) {
+      kombi.total++;
+      const isA = lizz.some(l => {
+        const c = String(l.MembershipCategory || '').toLowerCase();
+        return c.includes('aktiv-a') || c.includes('aktiv a');
+      });
+      const isB = lizz.some(l => {
+        const c = String(l.MembershipCategory || '').toLowerCase();
+        return c.includes('aktiv-b') || c.includes('aktiv b');
+      });
+      const isAuflage = lizz.some(l => {
+        const c = String(l.MembershipCategory || '').toLowerCase();
+        return c.includes('auflage') || c.includes('aufgelegt') || c.includes('aufg');
+      });
+
+      if (isA && isAuflage) kombi.aktivAAuflage++;
+      else if (isA) kombi.aktivA++;
+      else if (isB && isAuflage) kombi.aktivBAuflage++;
+      else if (isB) kombi.aktivB++;
+    }
   });
 
-  const ehrenListe = living
+  let licensesHtml = '';
+
+  // Gewehr 50m (KK)
+  if (g50.total > 0) {
+    const g50PctA = total > 0 ? Math.round((g50.aktivA / total) * 100) : 0;
+    const g50PctB = total > 0 ? Math.round((g50.aktivB / total) * 100) : 0;
+    const g50PctAA = total > 0 ? Math.round((g50.aktivAAuflage / total) * 100) : 0;
+    const g50PctBA = total > 0 ? Math.round((g50.aktivBAuflage / total) * 100) : 0;
+
+    licensesHtml += `
+      <div class="mb-4">
+        <div class="d-flex justify-content-between mb-1 small fw-bold text-dark" style="font-size:0.9rem">
+          <span>Gewehr 50m (KK)</span>
+          <span>${g50.total} Lizenzen</span>
+        </div>
+        <div class="progress mb-2" style="height: 12px; border-radius: 6px;">
+          ${g50.aktivA > 0 ? `<div class="progress-bar bg-success" style="width: ${g50PctA}%; border-right: 2px solid #fff;" title="Aktiv-A: ${g50.aktivA}"></div>` : ''}
+          ${g50.aktivB > 0 ? `<div class="progress-bar bg-success" style="width: ${g50PctB}%; opacity: 0.75; border-right: 2px solid #fff;" title="Aktiv-B: ${g50.aktivB}"></div>` : ''}
+          ${g50.aktivAAuflage > 0 ? `<div class="progress-bar bg-success progress-bar-striped" style="width: ${g50PctAA}%; opacity: 0.5; border-right: 2px solid #fff;" title="Aktiv-A aufgelegt: ${g50.aktivAAuflage}"></div>` : ''}
+          ${g50.aktivBAuflage > 0 ? `<div class="progress-bar bg-success progress-bar-striped" style="width: ${g50PctBA}%; opacity: 0.35; border-right: 2px solid #fff;" title="Aktiv-B aufgelegt: ${g50.aktivBAuflage}"></div>` : ''}
+        </div>
+        <div class="d-flex flex-column gap-3 mt-3 ps-3 ms-2 border-start" style="border-left: 3px solid #dee2e6 !important;">
+    `;
+    
+    if (g50.aktivA > 0) {
+      const pct = total > 0 ? Math.round((g50.aktivA / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-A</span>
+              <span>${g50.aktivA} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-success" style="width: ${pct}%"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (g50.aktivB > 0) {
+      const pct = total > 0 ? Math.round((g50.aktivB / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-B</span>
+              <span>${g50.aktivB} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-success" style="width: ${pct}%; opacity: 0.75;"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (g50.aktivAAuflage > 0) {
+      const pct = total > 0 ? Math.round((g50.aktivAAuflage / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-A aufgelegt</span>
+              <span>${g50.aktivAAuflage} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-success progress-bar-striped" style="width: ${pct}%; opacity: 0.5;"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (g50.aktivBAuflage > 0) {
+      const pct = total > 0 ? Math.round((g50.aktivBAuflage / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-B aufgelegt</span>
+              <span>${g50.aktivBAuflage} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-success progress-bar-striped" style="width: ${pct}%; opacity: 0.35;"></div>
+            </div>
+          </div>
+      `;
+    }
+    
+    licensesHtml += `
+        </div>
+      </div>
+    `;
+  }
+
+  // Luftgewehr 10m
+  if (g10.total > 0) {
+    const g10PctA = total > 0 ? Math.round((g10.aktivA / total) * 100) : 0;
+    const g10PctB = total > 0 ? Math.round((g10.aktivB / total) * 100) : 0;
+    const g10PctAA = total > 0 ? Math.round((g10.aktivAAuflage / total) * 100) : 0;
+    const g10PctBA = total > 0 ? Math.round((g10.aktivBAuflage / total) * 100) : 0;
+
+    licensesHtml += `
+      <div class="mb-4">
+        <div class="d-flex justify-content-between mb-1 small fw-bold text-dark" style="font-size:0.9rem">
+          <span>Luftgewehr 10m</span>
+          <span>${g10.total} Lizenzen</span>
+        </div>
+        <div class="progress mb-2" style="height: 12px; border-radius: 6px;">
+          ${g10.aktivA > 0 ? `<div class="progress-bar bg-primary" style="width: ${g10PctA}%; border-right: 2px solid #fff;" title="Aktiv-A: ${g10.aktivA}"></div>` : ''}
+          ${g10.aktivB > 0 ? `<div class="progress-bar bg-info text-dark" style="width: ${g10PctB}%; border-right: 2px solid #fff;" title="Aktiv-B: ${g10.aktivB}"></div>` : ''}
+          ${g10.aktivAAuflage > 0 ? `<div class="progress-bar bg-primary progress-bar-striped" style="width: ${g10PctAA}%; opacity: 0.5; border-right: 2px solid #fff;" title="Aktiv-A aufgelegt: ${g10.aktivAAuflage}"></div>` : ''}
+          ${g10.aktivBAuflage > 0 ? `<div class="progress-bar bg-info progress-bar-striped" style="width: ${g10PctBA}%; opacity: 0.5; border-right: 2px solid #fff;" title="Aktiv-B aufgelegt: ${g10.aktivBAuflage}"></div>` : ''}
+        </div>
+        <div class="d-flex flex-column gap-3 mt-3 ps-3 ms-2 border-start" style="border-left: 3px solid #dee2e6 !important;">
+    `;
+    
+    if (g10.aktivA > 0) {
+      const pct = total > 0 ? Math.round((g10.aktivA / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-A</span>
+              <span>${g10.aktivA} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-primary" style="width: ${pct}%"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (g10.aktivB > 0) {
+      const pct = total > 0 ? Math.round((g10.aktivB / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-B</span>
+              <span>${g10.aktivB} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-info" style="width: ${pct}%"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (g10.aktivAAuflage > 0) {
+      const pct = total > 0 ? Math.round((g10.aktivAAuflage / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-A aufgelegt</span>
+              <span>${g10.aktivAAuflage} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-primary progress-bar-striped" style="width: ${pct}%; opacity: 0.5;"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (g10.aktivBAuflage > 0) {
+      const pct = total > 0 ? Math.round((g10.aktivBAuflage / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-B aufgelegt</span>
+              <span>${g10.aktivBAuflage} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar bg-info progress-bar-striped" style="width: ${pct}%; opacity: 0.5;"></div>
+            </div>
+          </div>
+      `;
+    }
+    
+    licensesHtml += `
+        </div>
+      </div>
+    `;
+  }
+
+  // Kombiniert Gewehr 50m & 10m
+  if (kombi.total > 0) {
+    const kombiPctA = total > 0 ? Math.round((kombi.aktivA / total) * 100) : 0;
+    const kombiPctB = total > 0 ? Math.round((kombi.aktivB / total) * 100) : 0;
+    const kombiPctAA = total > 0 ? Math.round((kombi.aktivAAuflage / total) * 100) : 0;
+    const kombiPctBA = total > 0 ? Math.round((kombi.aktivBAuflage / total) * 100) : 0;
+
+    licensesHtml += `
+      <div class="mb-4">
+        <div class="d-flex justify-content-between mb-1 small fw-bold text-dark" style="font-size:0.9rem">
+          <span>Kombiniert (50m & 10m)</span>
+          <span>${kombi.total} Mitglieder</span>
+        </div>
+        <div class="progress mb-2" style="height: 12px; border-radius: 6px;">
+          ${kombi.aktivA > 0 ? `<div class="progress-bar" style="width: ${kombiPctA}%; background-color: #6f42c1 !important; border-right: 2px solid #fff;" title="Aktiv-A: ${kombi.aktivA}"></div>` : ''}
+          ${kombi.aktivB > 0 ? `<div class="progress-bar" style="width: ${kombiPctB}%; background-color: #6f42c1 !important; opacity: 0.75; border-right: 2px solid #fff;" title="Aktiv-B: ${kombi.aktivB}"></div>` : ''}
+          ${kombi.aktivAAuflage > 0 ? `<div class="progress-bar progress-bar-striped" style="width: ${kombiPctAA}%; background-color: #6f42c1 !important; opacity: 0.5; border-right: 2px solid #fff;" title="Aktiv-A aufgelegt: ${kombi.aktivAAuflage}"></div>` : ''}
+          ${kombi.aktivBAuflage > 0 ? `<div class="progress-bar progress-bar-striped" style="width: ${kombiPctBA}%; background-color: #6f42c1 !important; opacity: 0.35; border-right: 2px solid #fff;" title="Aktiv-B aufgelegt: ${kombi.aktivBAuflage}"></div>` : ''}
+        </div>
+        <div class="d-flex flex-column gap-3 mt-3 ps-3 ms-2 border-start" style="border-left: 3px solid #dee2e6 !important;">
+    `;
+    
+    if (kombi.aktivA > 0) {
+      const pct = total > 0 ? Math.round((kombi.aktivA / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-A</span>
+              <span>${kombi.aktivA} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar" style="width: ${pct}%; background-color: #6f42c1 !important;"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (kombi.aktivB > 0) {
+      const pct = total > 0 ? Math.round((kombi.aktivB / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-B</span>
+              <span>${kombi.aktivB} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar" style="width: ${pct}%; background-color: #6f42c1 !important; opacity: 0.75;"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (kombi.aktivAAuflage > 0) {
+      const pct = total > 0 ? Math.round((kombi.aktivAAuflage / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-A aufgelegt</span>
+              <span>${kombi.aktivAAuflage} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar progress-bar-striped" style="width: ${pct}%; background-color: #6f42c1 !important; opacity: 0.5;"></div>
+            </div>
+          </div>
+      `;
+    }
+    if (kombi.aktivBAuflage > 0) {
+      const pct = total > 0 ? Math.round((kombi.aktivBAuflage / total) * 100) : 0;
+      licensesHtml += `
+          <div>
+            <div class="d-flex justify-content-between mb-1 small text-dark fw-semibold" style="font-size:0.8rem">
+              <span>Aktiv-B aufgelegt</span>
+              <span>${kombi.aktivBAuflage} Lizenzen</span>
+            </div>
+            <div class="progress" style="height: 6px;">
+              <div class="progress-bar progress-bar-striped" style="width: ${pct}%; background-color: #6f42c1 !important; opacity: 0.35;"></div>
+            </div>
+          </div>
+      `;
+    }
+    
+    licensesHtml += `
+        </div>
+      </div>
+    `;
+  }
+
+
+  const ehrenListe = activeMembers
     .filter(m => m._istEhren)
     .sort((a, b) => String(a.HonoraryMemberSince || '').localeCompare(String(b.HonoraryMemberSince || '')));
 
-  const vorstandListe = living.filter(m => Number(m._aktiveFunktionenCount || 0) > 0);
+  const vorstandListe = activeMembers.filter(m => Number(m._aktiveFunktionenCount || 0) > 0);
 
   document.getElementById('mglTabContent').innerHTML = `
     <div class="row g-3 mb-4">
@@ -482,7 +809,7 @@ function mglRenderAnalyse(data) {
       <div class="col-6 col-md-3">
         <div class="mgl-stat-card p-3 h-100 border-start border-4" style="border-left-color: #198754 !important;">
           <div class="mgl-stat-title text-uppercase mb-1">Aktive Lizenzierte</div>
-          <div class="mgl-stat-value text-success">${active.filter(m => Number(m._aktiveLizenzenCount || 0) > 0).length}</div>
+          <div class="mgl-stat-value text-success">${activeMembers.filter(m => Number(m._aktiveLizenzenCount || 0) > 0).length}</div>
           <div class="small text-muted" style="font-size:0.7rem">Aktiv mit gültiger SSV Lizenz</div>
         </div>
       </div>
@@ -515,35 +842,9 @@ function mglRenderAnalyse(data) {
             <div class="progress-bar bg-danger" style="width: ${femalePct}%;" aria-valuenow="${femalePct}" aria-valuemin="0" aria-valuemax="100">${femalePct}%</div>
           </div>
           
-          <h5 class="fw-bold mb-3 mt-4 text-dark"><i class="fas fa-award text-primary me-2"></i>Disziplinen & Lizenzen</h5>
+          <h5 class="fw-bold mb-3 mt-4 text-dark"><i class="fas fa-award text-primary me-2"></i>Lizenzen & Disziplinen</h5>
           <div class="d-flex flex-column gap-3">
-            <div>
-              <div class="d-flex justify-content-between mb-1 small fw-semibold">
-                <span>Gewehr 50m (KK)</span>
-                <span>${g50Count} Lizenzen</span>
-              </div>
-              <div class="progress" style="height: 8px;">
-                <div class="progress-bar bg-success" style="width: ${total > 0 ? Math.round(g50Count/total*100) : 0}%"></div>
-              </div>
-            </div>
-            <div>
-              <div class="d-flex justify-content-between mb-1 small fw-semibold">
-                <span>Luftgewehr 10m</span>
-                <span>${g10Count} Lizenzen</span>
-              </div>
-              <div class="progress" style="height: 8px;">
-                <div class="progress-bar bg-primary" style="width: ${total > 0 ? Math.round(g10Count/total*100) : 0}%"></div>
-              </div>
-            </div>
-            <div>
-              <div class="d-flex justify-content-between mb-1 small fw-semibold">
-                <span>Gewehr 300m (Fremd)</span>
-                <span>${g300Count} Lizenzen</span>
-              </div>
-              <div class="progress" style="height: 8px;">
-                <div class="progress-bar bg-secondary" style="width: ${total > 0 ? Math.round(g300Count/total*100) : 0}%"></div>
-              </div>
-            </div>
+            ${licensesHtml}
           </div>
         </div>
       </div>
@@ -858,6 +1159,12 @@ function mglFilter() {
 
   mglRenderStats(filtered);
   mglRenderRows(filtered);
+
+  // Update header arrows in real-time
+  ['AddressNumber', 'LastName', '_kategorie', '_aktiveLizenzenCount', '_aktiveFunktionenCount'].forEach(field => {
+    const el = document.querySelector(`[onclick="mglSetSort('${field}')"] .mgl-sort-ind`);
+    if (el) el.textContent = mglSortIndicator(field);
+  });
 }
 
 function mglSortChange() {

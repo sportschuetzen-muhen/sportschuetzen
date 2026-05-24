@@ -8,8 +8,9 @@
 const LoginsState = {
   login_daten: [],
   app_login:   [],
-  sortKey:     { login_daten: 'username', app_login: 'lastname' },
-  sortDir:     { login_daten: 1, app_login: 1 },
+  login_sessions: [],
+  sortKey:     { login_daten: 'username', app_login: 'lastname', login_sessions: 'loginTime' },
+  sortDir:     { login_daten: 1, app_login: 1, login_sessions: -1 },
   activeTab:   'login_daten',
   loaded:      false
 };
@@ -62,6 +63,12 @@ function renderLoginsShell() {
         <a class="nav-link" id="tab-btn-app_login" href="#"
            onclick="loginsSetTab('app_login'); return false;">
           <i class="fas fa-users me-1"></i> App-Mitglieder <span class="badge bg-secondary ms-1" id="logins-badge-app_login">0</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="tab-btn-login_sessions" href="#"
+           onclick="loginsSetTab('login_sessions'); return false;">
+          <i class="fas fa-history me-1"></i> Online-Protokoll <span class="badge bg-secondary ms-1" id="logins-badge-login_sessions">0</span>
         </a>
       </li>
     </ul>
@@ -128,6 +135,7 @@ async function fetchLoginsData() {
 
     LoginsState.login_daten = data.login_daten || [];
     LoginsState.app_login   = data.app_login   || [];
+    LoginsState.login_sessions = data.login_sessions || [];
     LoginsState.loaded      = true;
 
     loginsUpdateBadges();
@@ -145,8 +153,10 @@ async function fetchLoginsData() {
 function loginsUpdateBadges() {
   const b1 = document.getElementById('logins-badge-login_daten');
   const b2 = document.getElementById('logins-badge-app_login');
+  const b3 = document.getElementById('logins-badge-login_sessions');
   if (b1) b1.textContent = LoginsState.login_daten.length;
   if (b2) b2.textContent = LoginsState.app_login.length;
+  if (b3) b3.textContent = LoginsState.login_sessions.length;
 }
 
 // ─────────────────────────────────────────────
@@ -200,6 +210,16 @@ function loginsRenderTable() {
   const sortDir  = LoginsState.sortDir[tab];
   const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('logins') : true;
 
+  // Show/Hide Add button
+  const addBtn = document.getElementById('btn-logins-add');
+  if (addBtn) {
+    if (tab === 'login_sessions') {
+      addBtn.classList.add('d-none');
+    } else {
+      if (canWrite) addBtn.classList.remove('d-none');
+    }
+  }
+
   // Daten
   let rows = [...LoginsState[tab]];
 
@@ -212,9 +232,20 @@ function loginsRenderTable() {
 
   // Sortieren
   rows.sort((a, b) => {
-    const av = String(a[sortKey] || '').toLowerCase();
-    const bv = String(b[sortKey] || '').toLowerCase();
-    return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    let av = a[sortKey];
+    let bv = b[sortKey];
+
+    if (sortKey === 'loginTime' || sortKey === 'lastActive') {
+      const ad = parseGermanDate(String(av));
+      const bd = parseGermanDate(String(bv));
+      return (ad.getTime() - bd.getTime()) * sortDir;
+    } else if (sortKey === 'durationSec' || sortKey === 'durationMin') {
+      return (Number(av || 0) - Number(bv || 0)) * sortDir;
+    }
+
+    const avStr = String(av || '').toLowerCase();
+    const bvStr = String(bv || '').toLowerCase();
+    return avStr < bvStr ? -sortDir : avStr > bvStr ? sortDir : 0;
   });
 
   if (rows.length === 0) {
@@ -224,8 +255,10 @@ function loginsRenderTable() {
 
   if (tab === 'login_daten') {
     wrapper.innerHTML = renderLoginDatenTable(rows, canWrite);
-  } else {
+  } else if (tab === 'app_login') {
     wrapper.innerHTML = renderAppLoginTable(rows, canWrite);
+  } else {
+    wrapper.innerHTML = renderLoginSessionsTable(rows);
   }
 }
 
@@ -588,4 +621,154 @@ async function loginsSync() {
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i> App-Users Synchronisieren';
   }
+}
+
+// ─────────────────────────────────────────────
+//  ONLINE-PROTOKOLL AUSWERTUNG RENDERING
+// ─────────────────────────────────────────────
+function renderLoginSessionsTable(rows) {
+  const th = (key, label) =>
+    `<th style="cursor:pointer;white-space:nowrap;user-select:none;" onclick="loginsSort('${key}')">${label}${loginsSortIcon(key)}</th>`;
+
+  // Statistik-Berechnungen
+  const now = Date.now();
+  const activeUserSet = new Set();
+  let totalDurationSec = 0;
+  let durationCount = 0;
+
+  rows.forEach(r => {
+    const lat = parseGermanDate(r.lastActive).getTime();
+    if (now - lat < 300000) { // Letzte 5 Minuten aktiv
+      activeUserSet.add(r.username);
+    }
+    const dSec = parseInt(r.durationSec || '0');
+    if (dSec > 0) {
+      totalDurationSec += dSec;
+      durationCount++;
+    }
+  });
+
+  const activeUsersCount = activeUserSet.size;
+  const avgDurationSec = durationCount > 0 ? Math.round(totalDurationSec / durationCount) : 0;
+  const friendlyAvgDur = formatDuration(avgDurationSec);
+
+  const rows_html = rows.map(r => {
+    const formattedDur = formatDuration(r.durationSec);
+    const friendlyUA = simplifyUserAgent(r.userAgent);
+    const deviceIcon = getDeviceIcon(r.userAgent);
+    return `
+    <tr>
+      <td><code class="text-primary fw-bold">${escapeHtml(r.username)}</code></td>
+      <td class="small">${escapeHtml(r.loginTime)}</td>
+      <td class="small">${escapeHtml(r.lastActive)}</td>
+      <td class="fw-medium">${escapeHtml(formattedDur)}</td>
+      <td class="small"><code>${escapeHtml(r.ip)}</code></td>
+      <td class="small text-muted" title="${escapeHtml(r.userAgent)}">
+        <i class="fas ${deviceIcon} me-1 text-secondary"></i> ${escapeHtml(friendlyUA)}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="card p-3 shadow-xs mb-3 border bg-white rounded-3">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="p-3 border rounded-3 text-center" style="background-color: #f8fafc;">
+            <h6 class="text-muted mb-1 small text-uppercase fw-bold"><i class="fas fa-sign-in-alt me-1 text-primary"></i> Sitzungen gesamt</h6>
+            <h3 class="mb-0 text-primary fw-bold">${rows.length}</h3>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="p-3 border rounded-3 text-center" style="background-color: #f0fdf4;">
+            <h6 class="text-muted mb-1 small text-uppercase fw-bold"><i class="fas fa-users me-1 text-success"></i> Aktive Nutzer (5 Min)</h6>
+            <h3 class="mb-0 text-success fw-bold">${activeUsersCount}</h3>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="p-3 border rounded-3 text-center" style="background-color: #fef8ec;">
+            <h6 class="text-muted mb-1 small text-uppercase fw-bold"><i class="fas fa-hourglass-half me-1 text-warning"></i> Durchschnitts-Dauer</h6>
+            <h3 class="mb-0 text-dark fw-bold" style="font-size: 1.5rem;">${friendlyAvgDur}</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <table class="table table-hover table-sm align-middle mb-0" style="min-width:650px">
+      <thead class="table-dark">
+        <tr>
+          ${th('username','Benutzer')}
+          ${th('loginTime','Login-Zeit')}
+          ${th('lastActive','Letzte Aktivität')}
+          ${th('durationSec','Dauer')}
+          ${th('ip','IP-Adresse')}
+          ${th('userAgent','Gerät / Browser')}
+        </tr>
+      </thead>
+      <tbody>${rows_html}</tbody>
+    </table>`;
+}
+
+// ─────────────────────────────────────────────
+//  AUSWERTUNGS-HILFSFUNKTIONEN
+// ─────────────────────────────────────────────
+function parseGermanDate(str) {
+  if (!str) return new Date(0);
+  try {
+    const parts = str.split(' ');
+    const dateParts = parts[0].split('.');
+    const timeParts = parts[1] ? parts[1].split(':') : ['00', '00', '00'];
+    return new Date(
+      parseInt(dateParts[2]), // Jahr
+      parseInt(dateParts[1]) - 1, // Monat
+      parseInt(dateParts[0]), // Tag
+      parseInt(timeParts[0]), // Stunde
+      parseInt(timeParts[1]), // Minute
+      parseInt(timeParts[2]) || 0 // Sekunde
+    );
+  } catch (e) {
+    return new Date(str) || new Date(0);
+  }
+}
+
+function formatDuration(secStr) {
+  const sec = parseInt(secStr || '0');
+  if (sec <= 0) return '0 Sek';
+  if (sec < 60) return `${sec} Sek`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) {
+    return s > 0 ? `${m} Min, ${s} Sek` : `${m} Min`;
+  }
+  const h = Math.floor(m / 60);
+  const remMin = m % 60;
+  return remMin > 0 ? `${h} Std, ${remMin} Min` : `${h} Std`;
+}
+
+function simplifyUserAgent(ua) {
+  if (!ua) return 'unbekannt';
+  const uaLower = ua.toLowerCase();
+  
+  let os = 'Unbekannt';
+  if (uaLower.includes('windows')) os = 'Windows';
+  else if (uaLower.includes('android')) os = 'Android';
+  else if (uaLower.includes('iphone') || uaLower.includes('ipad')) os = 'iOS';
+  else if (uaLower.includes('macintosh') || uaLower.includes('mac os')) os = 'macOS';
+  else if (uaLower.includes('linux')) os = 'Linux';
+
+  let browser = 'Browser';
+  if (uaLower.includes('edg/')) browser = 'Edge';
+  else if (uaLower.includes('chrome')) browser = 'Chrome';
+  else if (uaLower.includes('safari')) browser = 'Safari';
+  else if (uaLower.includes('firefox')) browser = 'Firefox';
+  else if (uaLower.includes('trident') || uaLower.includes('msie')) browser = 'IE';
+
+  return `${os} (${browser})`;
+}
+
+function getDeviceIcon(ua) {
+  if (!ua) return 'fa-laptop';
+  const uaLower = ua.toLowerCase();
+  if (uaLower.includes('iphone') || uaLower.includes('android') && uaLower.includes('mobile')) return 'fa-mobile-alt';
+  if (uaLower.includes('ipad') || uaLower.includes('tablet')) return 'fa-tablet-alt';
+  return 'fa-laptop';
 }

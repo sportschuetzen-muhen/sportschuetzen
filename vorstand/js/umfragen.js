@@ -11,6 +11,19 @@ async function loadUmfragenData(force = false) {
   const container = document.getElementById('umfragen-container');
   if(!container) return;
   
+  if (force) {
+    window._umfragenParticipantsCache = {};
+    window._gvParticipantsCache = {};
+    umfragenState = null;
+    gvState = null;
+    rawResponsesLog = [];
+    rawViewsLog = [];
+    rawUmfragenMembers = [];
+    if (typeof adminState !== 'undefined') {
+      adminState = null;
+    }
+  }
+  
   if (!force && umfragenState && document.getElementById('umfragen-tabs')) {
     console.log("⚡ loadUmfragenData: Lade aus lokalem Cache...");
     return;
@@ -84,6 +97,7 @@ async function loadUmfragenData(force = false) {
 
     umfragenState = Array.isArray(data) ? data : (data.events || []);
     renderUmfragenUI(container);
+    setTimeout(preloadUmfragenAllDetails, 50);
   } catch (e) {
     container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden (Google Script bereits aktualisiert?): ${escapeHtml(e.message)}</div>`;
   }
@@ -203,7 +217,7 @@ function renderUmfragenUI(container) {
                                     <option value="">-- Alle Events --</option>
                                 </select>
                                 <input type="text" class="form-control form-control-sm" id="hist-search-input" oninput="filterHistorieData()" placeholder="🔍 Mitglied suchen..." style="width: 180px;">
-                                <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenHistorie()">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenHistorie(true)">
                                     🔄 Aktualisieren
                                 </button>
                             </div>
@@ -266,7 +280,7 @@ function renderUmfragenUI(container) {
                     <h5 class="card-title mb-0">👥 Mitglieder & Personenkreise</h5>
                     <div class="d-flex gap-2">
                         <input type="text" class="form-control form-control-sm" id="personenkreise-search" oninput="filterPersonenkreise()" placeholder="🔍 Mitglied suchen..." style="width: 200px;">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenPersonenkreise()">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenPersonenkreise(true)">
                             🔄 Aktualisieren
                         </button>
                     </div>
@@ -492,10 +506,14 @@ async function ensureMembersLookup() {
     if(membersLookup !== null) return;
     membersLookup = {};
     try {
-        // Fetch original mitglieder list to get addresses
-        const res = await apiFetch('mitglieder', 'action=getAll');
-        const data = await res.json();
-        const members = Array.isArray(data.data) ? data.data : [];
+        // Verwende den globalen Cache window._mglData, falls bereits vorverlegt geladen,
+        // um eine redundante API-Anfrage ans Backend komplett zu vermeiden!
+        let members = window._mglData || [];
+        if (members.length === 0) {
+            const res = await apiFetch('mitglieder', 'action=getAll');
+            const data = await res.json();
+            members = Array.isArray(data.data) ? data.data : [];
+        }
         members.forEach(m => {
             if(m.PersonNumber) {
                 membersLookup[String(m.PersonNumber).trim()] = m;
@@ -521,14 +539,27 @@ async function loadParticipantsIfEventSelected() {
     const mailBtn = document.getElementById('btn-umfragen-mail');
     if(!listDiv) return;
 
-    listDiv.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer...`;
-    if(mailBtn) mailBtn.disabled = true;
+    const hasCache = window._umfragenParticipantsCache && window._umfragenParticipantsCache[currentEventId];
+    if (!hasCache) {
+        listDiv.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer...`;
+        if(mailBtn) mailBtn.disabled = true;
+    }
+    
     try {
         await ensureMembersLookup();
 
-        const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentEventId)}`);
-        const pData = await res.json();
+        let pData;
+        if (hasCache) {
+            console.log("⚡ loadParticipantsIfEventSelected: Verwende Cache...");
+            pData = window._umfragenParticipantsCache[currentEventId];
+        } else {
+            const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentEventId)}`);
+            pData = await res.json();
+            window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
+            window._umfragenParticipantsCache[currentEventId] = pData;
+        }
         // pData is array of {lizenz, name} // The GAS only returns Lizenz + Name
+        pData.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
         
         eventParticipants = [];
 
@@ -644,15 +675,27 @@ async function loadGroupsIfEventSelected() {
     const mailBtn = document.getElementById('btn-generate-group-mail');
     if(!container) return;
 
-    container.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer & bilde Gruppen...`;
-    mailBtn.disabled = true;
+    const hasCache = window._umfragenParticipantsCache && window._umfragenParticipantsCache[currentGroupEventId];
+    if (!hasCache) {
+        container.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer & bilde Gruppen...`;
+        mailBtn.disabled = true;
+    }
 
     try {
         await ensureMembersLookup();
 
-        const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentGroupEventId)}`);
-        const pData = await res.json();
+        let pData;
+        if (hasCache) {
+            console.log("⚡ loadGroupsIfEventSelected: Verwende Cache...");
+            pData = window._umfragenParticipantsCache[currentGroupEventId];
+        } else {
+            const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentGroupEventId)}`);
+            pData = await res.json();
+            window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
+            window._umfragenParticipantsCache[currentGroupEventId] = pData;
+        }
         
+        pData.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
         currentGroupParticipants = [];
 
         pData.forEach(p => {
@@ -995,21 +1038,50 @@ async function initGVControllingTab() {
   }
 
   try {
-    const [resAdmin, resVorstand] = await Promise.all([
-      apiFetch('termine', 'action=loadAdminData'),
-      apiFetch('mitglieder', 'action=getVorstand')
-    ]);
-    gvState = await resAdmin.json();
-    try {
-      const vorstandData = await resVorstand.json();
-      if(vorstandData.success) {
-        gvState.vorstandMembers = vorstandData.data;
-      } else {
-        gvState.vorstandMembers = [];
-      }
-    } catch(e) { gvState.vorstandMembers = []; }
+    let loadedAdminData = null;
+    let loadedVorstandData = null;
 
+    // Verwende vorverlegte Admin-Daten aus Cache falls vorhanden
+    if (typeof adminState !== 'undefined' && adminState) {
+      console.log("⚡ initGVControllingTab: Verwende vorverlegte Admin-Daten aus Cache...");
+      loadedAdminData = JSON.parse(JSON.stringify(adminState));
+    } else {
+      const res = await apiFetch('termine', 'action=loadAdminData');
+      loadedAdminData = await res.json();
+    }
+
+    // Berechne Vorstand aus vorverlegtem Cache falls vorhanden
+    if (window._mglData && window._mglFunktionenCache) {
+      console.log("⚡ initGVControllingTab: Berechne Vorstand aus vorverlegtem Cache...");
+      const vorstandPNs = {};
+      Object.entries(window._mglFunktionenCache).forEach(([pn, funcs]) => {
+        funcs.forEach(f => {
+          if (!String(f.OfficialFunctionExitDate || '').trim()) {
+            const cat = String(f.OfficialFunctionCategory || '').toLowerCase();
+            if (!cat.includes('hausmeister') && !cat.includes('hauswart')) {
+              vorstandPNs[String(pn)] = true;
+            }
+          }
+        });
+      });
+      loadedVorstandData = window._mglData
+        .filter(m => vorstandPNs[String(m.PersonNumber)])
+        .map(m => ({
+          name: (String(m.FirstName || '') + " " + String(m.LastName || '')).trim() || m.PrimaryEmail,
+          email: String(m.PrimaryEmail || m.Email || '').trim()
+        }))
+        .filter(x => x.email);
+      loadedVorstandData.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      const resVorstand = await apiFetch('mitglieder', 'action=getVorstand');
+      const vorstandData = await resVorstand.json();
+      loadedVorstandData = vorstandData.success ? vorstandData.data : [];
+    }
+
+    gvState = loadedAdminData;
+    gvState.vorstandMembers = loadedVorstandData;
     originalGvState = JSON.parse(JSON.stringify(gvState));
+
     renderGVListEmbedded();
     fetchGVEventsEmbedded();
   } catch (e) {
@@ -1152,22 +1224,19 @@ function removeGVMailEmbedded(idx, email) {
   renderGVListEmbedded();
 }
 
-async function fetchGVEventsEmbedded() {
+function fetchGVEventsEmbedded() {
   const selector = document.getElementById('gv-event-selector');
   if (!selector) return;
-  try {
-    const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
-    const data = await res.json();
-    const events = Array.isArray(data) ? data : (data.events || []);
-    selector.innerHTML = '<option value="">-- Bitte waehlen --</option>' +
-      events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
-        (gvState.linked_event === e.id ? ' selected' : '') + '>' +
-        escapeHtml(e.title) + ' (' + (e.datum ? e.datum.split('T')[0] : '') + ')</option>').join('');
-    if (gvState.linked_event) {
-      loadGVParticipants(gvState.linked_event);
-    }
-  } catch (e) {
-    if (selector) selector.innerHTML = '<option value="">Fehler beim Laden</option>';
+  
+  // Verwende die bereits geladenen Events aus dem globalen umfragenState,
+  // anstatt unnötig erneut eine API-Anfrage ans Backend zu senden!
+  const events = umfragenState || [];
+  selector.innerHTML = '<option value="">-- Bitte wählen --</option>' +
+    events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
+      (gvState.linked_event === e.id ? ' selected' : '') + '>' +
+      escapeHtml(e.title) + ' (' + (e.datum ? e.datum.split('T')[0] : '') + ')</option>').join('');
+  if (gvState.linked_event) {
+    loadGVParticipants(gvState.linked_event);
   }
 }
 
@@ -1197,33 +1266,38 @@ function getEventIdFromLog(log) {
     return '';
 }
 
-async function loadUmfragenHistorie() {
+async function loadUmfragenHistorie(force = false) {
     const rsvpBody = document.getElementById('hist-rsvp-body');
     const viewsBody = document.getElementById('hist-views-body');
     if (!rsvpBody || !viewsBody) return;
 
-    rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Historie...</td></tr>`;
-    viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Gelesen-Logs...</td></tr>`;
+    const hasLogs = rawResponsesLog.length > 0 && rawViewsLog.length > 0;
+    if (force || !hasLogs) {
+        rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Historie...</td></tr>`;
+        viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Gelesen-Logs...</td></tr>`;
+    }
 
     try {
         await ensureMembersLookup();
 
-        // 1. Fetch raw logs from new API actions
-        const [resLog, resViews] = await Promise.all([
-            apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
-            apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
-        ]);
+        if (force || !hasLogs) {
+            // 1. Fetch raw logs from new API actions
+            const [resLog, resViews] = await Promise.all([
+                apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
+                apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
+            ]);
 
-        if (resLog && resLog.error) throw new Error(resLog.error);
-        if (resViews && resViews.error) throw new Error(resViews.error);
+            if (resLog && resLog.error) throw new Error(resLog.error);
+            if (resViews && resViews.error) throw new Error(resViews.error);
 
-        rawResponsesLog = Array.isArray(resLog) ? resLog : [];
-        rawViewsLog = Array.isArray(resViews) ? resViews : [];
+            rawResponsesLog = Array.isArray(resLog) ? resLog : [];
+            rawViewsLog = Array.isArray(resViews) ? resViews : [];
 
-        // Sort by timestamp desc
-        const parseTime = (t) => t ? new Date(t).getTime() : 0;
-        rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
-        rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
+            // Sort by timestamp desc
+            const parseTime = (t) => t ? new Date(t).getTime() : 0;
+            rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
+            rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
+        }
 
         // 2. Populate Event Selector
         const filterSelect = document.getElementById('hist-event-filter');
@@ -1370,21 +1444,51 @@ function filterHistorieData() {
 // === TAB 6: PERSONENKREISE LOGIK ===
 let rawUmfragenMembers = [];
 
-async function loadUmfragenPersonenkreise() {
+async function loadUmfragenPersonenkreise(force = false) {
     const listAktiv = document.getElementById('list-pk-aktiv');
     const listPassiv = document.getElementById('list-pk-passiv');
     const listAlle = document.getElementById('list-pk-alle');
     if (!listAktiv || !listPassiv || !listAlle) return;
 
-    listAktiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
-    listPassiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
-    listAlle.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
+    const hasMembers = rawUmfragenMembers.length > 0;
+    if (force || !hasMembers) {
+        listAktiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
+        listPassiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
+        listAlle.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
+    }
 
     try {
-        const res = await apiFetch('umfragen', 'action=getMembers');
-        const data = await res.json();
+        if (force || !hasMembers) {
+            let data = [];
+            if (window._mglData && window._mglData.length > 0) {
+                console.log("⚡ loadUmfragenPersonenkreise: Verwende vorverlegte Mitglieder-Daten aus Cache...");
+                const isTrue = val => val === true || val === 1 || val === '1' || String(val).toLowerCase() === 'ja' || String(val).toLowerCase() === 'true';
+                data = window._mglData.filter(m => {
+                    if (isTrue(m.Deceased)) return false;
+                    const isAct = isTrue(m.IsActive);
+                    const isPass = isTrue(m._istPassiv) || isTrue(m.IsPassive) || String(m._kategorie || '').toLowerCase().includes('passiv');
+                    const isEhren = isTrue(m._istEhren) || isTrue(m.IsHonoraryMember) || String(m._kategorie || '').toLowerCase().includes('ehren');
+                    return isAct || isPass || isEhren;
+                }).map(m => {
+                    const isPass = isTrue(m._istPassiv) || isTrue(m.IsPassive) || String(m._kategorie || '').toLowerCase().includes('passiv');
+                    let gruppe = 'aktiv';
+                    if (isPass) {
+                        gruppe = 'passiv';
+                    }
+                    return {
+                        name: `${m.LastName || ''} ${m.FirstName || ''}`.trim() || m.PrimaryEmail || 'Unbekannt',
+                        mail: String(m.PrimaryEmail || m.AdditionalEmail || '').trim(),
+                        lizenz: String(m.PersonNumber || m.AddressNumber || '').trim(),
+                        gruppe: gruppe
+                    };
+                });
+            } else {
+                const res = await apiFetch('umfragen', 'action=getMembers');
+                data = await res.json();
+            }
 
-        rawUmfragenMembers = Array.isArray(data) ? data : [];
+            rawUmfragenMembers = Array.isArray(data) ? data : [];
+        }
         filterPersonenkreise();
 
     } catch (e) {
@@ -1407,7 +1511,7 @@ function filterPersonenkreise() {
         return String(m.name || '').toLowerCase().includes(search) ||
                String(m.lizenz || '').includes(search) ||
                String(m.mail || '').toLowerCase().includes(search);
-    });
+    }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
 
     const buildItem = (m) => {
         const mailStr = m.mail ? `<div class="text-muted small mt-1"><i class="fa-regular fa-envelope me-1"></i>${escapeHtml(m.mail)}</div>` : '';
@@ -1450,5 +1554,79 @@ function filterPersonenkreise() {
         listAlle.innerHTML = `<li class="list-group-item text-center text-muted py-3">Keine Mitglieder gefunden</li>`;
     } else {
         listAlle.innerHTML = alleMembers.map(buildItem).join('');
+    }
+}
+
+// === HINTERGRUND-PRELOADER FÜR UMFRAGEN-DETAILS ===
+async function preloadUmfragenAllDetails() {
+    console.log("🕒 Starte Hintergrund-Preloading für alle Umfragen-Details...");
+    try {
+        // 1. Adress-Lookup im Hintergrund vorverlegen
+        await ensureMembersLookup();
+
+        // 2. Historie & Tracking Logs vorverlegen
+        const hasLogs = rawResponsesLog.length > 0 && rawViewsLog.length > 0;
+        if (!hasLogs) {
+            Promise.all([
+                apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
+                apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
+            ]).then(([resLog, resViews]) => {
+                rawResponsesLog = Array.isArray(resLog) ? resLog : [];
+                rawViewsLog = Array.isArray(resViews) ? resViews : [];
+                
+                const parseTime = (t) => t ? new Date(t).getTime() : 0;
+                rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
+                rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
+                console.log("✅ Historie & Tracking Logs im Hintergrund geladen.");
+                
+                // Falls der User bereits auf dem Tab ist, Daten direkt rendern
+                if (document.getElementById('hist-rsvp-body') && document.getElementById('hist-rsvp-body').innerHTML.includes('Lade')) {
+                    filterHistorieData();
+                }
+            }).catch(err => console.warn("Hintergrund-Laden der Historie fehlgeschlagen:", err));
+        }
+
+        // 3. Teilnehmer für alle Events im Hintergrund vorverlegen
+        const events = umfragenState || [];
+        window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
+        window._gvParticipantsCache = window._gvParticipantsCache || {};
+
+        // Wir rufen die Api-Anfragen parallel auf, um eine extrem schnelle Ladezeit zu erreichen
+        const promises = events.map(async (e) => {
+            const eventId = e.id;
+            if (!eventId) return;
+
+            // Teilnehmer preloade
+            if (!window._umfragenParticipantsCache[eventId]) {
+                try {
+                    const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(eventId)}`);
+                    const pData = await res.json();
+                    window._umfragenParticipantsCache[eventId] = pData;
+                    console.log(`✅ Teilnehmer für Event ${eventId} im Hintergrund geladen.`);
+                } catch (err) {
+                    console.warn(`Fehler beim Preload der Teilnehmer für Event ${eventId}:`, err);
+                }
+            }
+
+            // GV Status preloade
+            if (!window._gvParticipantsCache[eventId]) {
+                try {
+                    const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
+                    const result = await res.json();
+                    if (result.success) {
+                        window._gvParticipantsCache[eventId] = result.data || [];
+                        console.log(`✅ GV Status für Event ${eventId} im Hintergrund geladen.`);
+                    }
+                } catch (err) {
+                    console.warn(`Fehler beim Preload des GV Status für Event ${eventId}:`, err);
+                }
+            }
+        });
+
+        await Promise.all(promises);
+        console.log("✅ Hintergrund-Preloading für Umfragen vollständig abgeschlossen!");
+
+    } catch (err) {
+        console.warn("Fehler beim Preload von Umfragen-Details:", err);
     }
 }
