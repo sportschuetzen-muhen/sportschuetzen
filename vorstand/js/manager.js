@@ -423,7 +423,7 @@ let appState = {
 // =========================================================
 //  ENTRY: called from main.js navTo('manager')
 // =========================================================
-async function loadContestData(moduleKey) {
+async function loadContestData(moduleKey, force = false) {
     ensureManagerShell();
 
     if (appState.isDirty && !confirm("Ungespeicherte Änderungen verwerfen?")) {
@@ -432,7 +432,25 @@ async function loadContestData(moduleKey) {
         return;
     }
 
-    appState.activeModule = moduleKey || appState.activeModule;
+    const targetModule = moduleKey || appState.activeModule;
+
+    if (!force && mailWizard.cachedModules[targetModule] && appState.members.length > 0) {
+        console.log("⚡ loadContestData: Lade aus lokalem Cache...");
+        appState.activeModule = targetModule;
+        const cached = mailWizard.cachedModules[targetModule];
+        appState.teams = JSON.parse(JSON.stringify(cached.teams));
+        appState.pool = JSON.parse(JSON.stringify(cached.pool));
+        appState.isDirty = false;
+        window.clearUnsaved();
+        appState.mailList = [];
+        renderContestUI();
+
+        const sel = document.getElementById('module-selector');
+        if (sel) sel.value = appState.activeModule;
+        return;
+    }
+
+    appState.activeModule = targetModule;
     appState.isDirty = false;
     window.clearUnsaved();
     appState.mailList = [];

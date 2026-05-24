@@ -12,6 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
 
     <!-- OneSignal Integration -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
@@ -119,7 +120,10 @@
         <button class="btn btn-link text-dark p-0" onclick="toggleSidebar()">
             <i class="fas fa-bars fa-lg"></i>
         </button>
-        <span class="fw-bold text-primary">SPORTSCHÜTZEN MUHEN</span>
+        <div class="d-flex flex-column align-items-center text-center">
+            <span class="fw-bold text-primary" style="font-size: 0.9rem; line-height: 1.2;">SPORTSCHÜTZEN MUHEN</span>
+            <div id="mobile-presence-banner" class="small text-muted" style="font-size: 0.65rem; font-weight: 500;"></div>
+        </div>
         <span id="user-badge-mobile" class="badge bg-secondary">Gast</span>
     </div>
 
@@ -130,6 +134,7 @@
             <div class="sidebar-header d-none d-md-block">
                 <i class="fas fa-bullseye me-2"></i> Muhen Portal
                 <div id="user-info" class="small text-muted fw-normal mt-1">Nicht angemeldet</div>
+                <div id="sidebar-presence-badge" class="mt-2"></div>
             </div>
 
             <div class="nav flex-column mt-2">
@@ -186,8 +191,11 @@
                     <i class="fas fa-user-lock"></i> Logins
                 </div>
                 <div class="mt-auto border-top p-3">
+                    <button class="btn btn-outline-primary w-100 btn-sm mb-2" onclick="openChangePasswordModal()">
+                        <i class="fas fa-key me-1"></i> Passwort ändern
+                    </button>
                     <button class="btn btn-outline-danger w-100 btn-sm" onclick="doLogout()">
-                        <i class="fas fa-sign-out-alt"></i> Abmelden
+                        <i class="fas fa-sign-out-alt me-1"></i> Abmelden
                     </button>
                 </div>
             </div>
@@ -198,8 +206,15 @@
 
             <!-- DASHBOARD -->
             <div id="view-dashboard" class="module-view active">
-                <h3>Willkommen zurück! 👋</h3>
-                <p class="text-muted">Wähle einen Bereich im Menü aus.</p>
+                <div class="d-flex justify-content-between align-items-md-center flex-column flex-md-row mb-4 p-4 rounded-4 shadow-sm border border-light position-relative overflow-hidden" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(240,244,248,0.9) 100%); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+                    <div class="position-absolute" style="top:-50px; right:-50px; width:150px; height:150px; background:radial-gradient(circle, rgba(15,58,93,0.05) 0%, rgba(255,255,255,0) 70%); border-radius:50%; z-index:0; pointer-events:none;"></div>
+                    <div class="position-relative" style="z-index: 1;">
+                        <h3 class="mb-1 text-primary" style="font-weight: 700; letter-spacing: -0.5px;">Willkommen zurück! 👋</h3>
+                        <div id="presence-banner" class="mt-1"></div>
+                    </div>
+                    <div id="last-login-banner" class="mt-2 mt-md-0 position-relative" style="z-index: 1;"></div>
+                </div>
+                <p class="text-muted mb-3 fw-medium">Wähle einen Bereich im Menü aus:</p>
                 <div class="row g-3 mt-2">
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter">
                         <div class="card p-3 shadow-sm border-0 h-100"
@@ -385,7 +400,7 @@
 <div id="view-jahresbeitrag" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>💰 Jahresbeitrag</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresbeitragData()">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresbeitragData(true)">
             🔄 Aktualisieren
         </button>
     </div>
@@ -396,7 +411,7 @@
 <div id="view-mitglieder" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>👥 Mitglieder</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadMitgliederData()">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadMitgliederData(true)">
             🔄 Aktualisieren
         </button>
     </div>
@@ -487,6 +502,107 @@
         </div>
     </div>
 </div>
+
+<!-- Welcome Security & Presence Modal -->
+<div class="modal fade" id="welcome-security-modal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);">
+            <!-- STEP 1: SAFETY CONFIRMATION -->
+            <div id="welcome-step-login" class="modal-body p-4 text-center">
+                <div class="mb-3 text-success">
+                    <i class="fas fa-user-shield fa-4x animate__animated animate__bounceIn"></i>
+                </div>
+                <h4 class="fw-bold text-primary mb-3" style="letter-spacing: -0.5px;">Sicherheits-Bestätigung</h4>
+                <p class="text-muted mb-4" style="font-size: 0.95rem;">
+                    Dein letzter Portal-Zugriff war am:<br>
+                    <strong class="text-dark fs-5 d-block mt-2" id="welcome-login-timestamp" style="font-weight: 700;">unbekannt</strong>
+                </p>
+                <div class="alert border-0 small mb-4 py-2" style="background-color: rgba(40,167,69,0.1); color: #1e7e34; border-radius: 12px; font-weight: 500;">
+                    <i class="fas fa-check-circle me-1"></i> Deine Sitzung wurde erfolgreich verifiziert.
+                </div>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" onclick="advanceWelcomeStep()">
+                        Ja, das war ich – Weiter <i class="fas fa-arrow-right ms-1"></i>
+                    </button>
+                    <button type="button" class="btn btn-link text-danger btn-sm text-decoration-none" onclick="handleSecurityLock()">
+                        Nein, das war ich nicht! (Sperren)
+                    </button>
+                </div>
+            </div>
+
+            <!-- STEP 2: PRESENCE TRACKING -->
+            <div id="welcome-step-presence" class="modal-body p-4 text-center d-none">
+                <div id="welcome-presence-icon" class="mb-3 text-success">
+                    <i class="fas fa-users-viewfinder fa-4x text-success animate__animated animate__pulse animate__infinite" id="presence-modal-icon" style="transition: color 0.3s ease;"></i>
+                </div>
+                <h4 class="fw-bold text-primary mb-3" style="letter-spacing: -0.5px;">Gleichzeitigkeits-Schutz</h4>
+                <p class="text-muted mb-3" style="font-size: 0.95rem;">
+                    Wir prüfen die aktiven Sitzungen im Vorstand...
+                </p>
+                <div class="p-3 rounded-3 mb-4 text-start border border-light shadow-xs" id="welcome-presence-alert" style="background-color: rgba(248, 249, 250, 0.95);">
+                    <div id="welcome-presence-text" class="small text-muted text-center py-2">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                        Suche aktive Sitzungen...
+                    </div>
+                </div>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" data-bs-dismiss="modal">
+                        Portal betreten <i class="fas fa-sign-in-alt ms-1"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal fade" id="change-password-modal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);">
+            <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                <h5 class="modal-title fw-bold" id="changePasswordModalLabel"><i class="fas fa-key me-2"></i>Passwort ändern</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="change-password-form" onsubmit="submitChangePassword(event)">
+                    <div class="mb-3">
+                        <label for="cp-old-password" class="form-label fw-bold small text-muted">Aktuelles Passwort</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="cp-old-password" required placeholder="Dein bisheriges Passwort">
+                            <button class="btn btn-outline-secondary" type="button" onclick="loginsTogglePw('cp-old-password')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cp-new-password" class="form-label fw-bold small text-muted">Neues Passwort</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="cp-new-password" required placeholder="Mindestens 4 Zeichen">
+                            <button class="btn btn-outline-secondary" type="button" onclick="loginsTogglePw('cp-new-password')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label for="cp-confirm-password" class="form-label fw-bold small text-muted">Neues Passwort bestätigen</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="cp-confirm-password" required placeholder="Wiederhole das neue Passwort">
+                            <button class="btn btn-outline-secondary" type="button" onclick="loginsTogglePw('cp-confirm-password')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="cp-submit-btn">
+                            <i class="fas fa-save me-1"></i> Passwort aktualisieren
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <!-- SCRIPTS – Reihenfolge wichtig! -->
 <script src="js/auth.js"></script>

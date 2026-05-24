@@ -17,7 +17,11 @@ const LoginsState = {
 // ─────────────────────────────────────────────
 //  ENTRY POINT (called from navTo in main.js)
 // ─────────────────────────────────────────────
-async function loadLoginsData() {
+async function loadLoginsData(force = false) {
+  if (!force && LoginsState.loaded && document.getElementById('tab-btn-login_daten')) {
+    console.log("⚡ loadLoginsData: Lade aus lokalem Cache...");
+    return;
+  }
   renderLoginsShell();
   await fetchLoginsData();
 }

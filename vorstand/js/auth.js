@@ -137,6 +137,7 @@ async function doLogin() {
             localStorage.setItem('portal_user', currentUser);
             localStorage.setItem('portal_role', userRole);
             localStorage.setItem('portal_roles', currentRoles.join(','));
+            localStorage.setItem('portal_login_id', u);
             
             // Neue Felder aus der DB für Mails speichern
             localStorage.setItem('portal_mailanzeige', data.mailanzeige || data.Mailanzeige || currentUser);
@@ -160,6 +161,7 @@ function doLogout() {
     localStorage.removeItem('portal_user');
     localStorage.removeItem('portal_role');
     localStorage.removeItem('portal_roles');
+    localStorage.removeItem('portal_login_id');
     sessionStorage.removeItem('csrf_token');
     csrfToken = null;
     currentRoles = [];

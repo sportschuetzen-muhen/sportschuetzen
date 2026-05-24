@@ -7,9 +7,14 @@ let membersLookup = null;
 let umfragenSortField = 'datum';
 let umfragenSortDir = -1;
 
-async function loadUmfragenData() {
+async function loadUmfragenData(force = false) {
   const container = document.getElementById('umfragen-container');
   if(!container) return;
+  
+  if (!force && umfragenState && document.getElementById('umfragen-tabs')) {
+    console.log("⚡ loadUmfragenData: Lade aus lokalem Cache...");
+    return;
+  }
   
   container.innerHTML = `
     <div class="text-center p-4 text-muted">

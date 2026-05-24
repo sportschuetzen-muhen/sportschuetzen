@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rückmeldung zur Annullierung der Reservation</title>
+  
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    :root {
+      --primary-color: #0f3a5d;
+      --primary-light: #1e5a8f;
+      --accent-color: #e5a93b;
+      --text-dark: #2d3748;
+      --text-light: #718096;
+      --bg-light: #f4f7f9;
+      --success-color: #28a745;
+      --error-color: #dc3545;
+      --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      color: var(--text-dark);
+      background-color: transparent; /* Transparent for seamless embedding */
+      padding: 10px;
+    }
+
+    /* Feedback Card Container */
+    .feedback-card {
+      background: white;
+      border-radius: 16px;
+      padding: 35px;
+      box-shadow: 0 10px 30px rgba(15, 58, 93, 0.05);
+      border: 1px solid #e2e8f0;
+      max-width: 750px;
+      margin: 0 auto;
+      animation: fadeIn 0.4s ease;
+    }
+
+    header {
+      margin-bottom: 25px;
+      text-align: center;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 20px;
+    }
+
+    header h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.6rem;
+      color: var(--primary-color);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    header p {
+      font-size: 0.95rem;
+      color: var(--text-light);
+      line-height: 1.4;
+    }
+
+    .feedback-form {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--primary-color);
+    }
+
+    input, textarea {
+      font-family: inherit;
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      border: 1px solid #d2d6dc;
+      border-radius: 8px;
+      outline: none;
+      background-color: var(--bg-light);
+      transition: var(--transition);
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(15, 58, 93, 0.12);
+      background-color: white;
+    }
+
+    input[readonly] {
+      background-color: rgba(15, 58, 93, 0.05);
+      color: var(--primary-color);
+      font-weight: 600;
+      cursor: not-allowed;
+      border-color: rgba(15, 58, 93, 0.15);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    /* Premium Radio Card Deck */
+    .reason-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 5px;
+    }
+
+    .reason-card {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      padding: 12px 18px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: var(--transition);
+      user-select: none;
+    }
+
+    .reason-card:hover {
+      border-color: var(--primary-light);
+      background-color: rgba(15, 58, 93, 0.02);
+    }
+
+    .reason-card.selected {
+      border-color: var(--primary-color);
+      background-color: rgba(15, 58, 93, 0.04);
+    }
+
+    .reason-card-icon {
+      font-size: 1.15rem;
+      color: var(--text-light);
+      background-color: var(--bg-light);
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: var(--transition);
+    }
+
+    .reason-card.selected .reason-card-icon {
+      color: white;
+      background-color: var(--primary-color);
+    }
+
+    .reason-card-text {
+      flex-grow: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      transition: var(--transition);
+    }
+
+    .reason-card.selected .reason-card-text {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+
+    .reason-radio {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #cbd5e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: var(--transition);
+    }
+
+    .reason-card.selected .reason-radio {
+      border-color: var(--primary-color);
+    }
+
+    .reason-card.selected .reason-radio::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--primary-color);
+      display: block;
+    }
+
+    /* Submit Button styling */
+    .btn-submit {
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: white;
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      padding: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 5px;
+      box-shadow: 0 4px 12px rgba(15, 58, 93, 0.15);
+      transition: var(--transition);
+    }
+
+    .btn-submit:hover {
+      background-color: var(--primary-light);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(15, 58, 93, 0.25);
+    }
+
+    .btn-submit:active {
+      transform: translateY(0);
+    }
+
+    /* Success / Feedback Overlay View */
+    .success-view {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 20px 0;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .success-view.active {
+      display: flex;
+    }
+
+    .success-icon {
+      font-size: 3.5rem;
+      color: var(--success-color);
+      background-color: rgba(40, 167, 69, 0.1);
+      width: 85px;
+      height: 85px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 24px rgba(40, 167, 69, 0.15);
+    }
+
+    .success-view h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.5rem;
+      color: var(--primary-color);
+      margin-bottom: 10px;
+    }
+
+    .success-view p {
+      font-size: 0.95rem;
+      color: var(--text-light);
+      line-height: 1.4;
+      max-width: 480px;
+      margin-bottom: 25px;
+    }
+
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--primary-color);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: var(--transition);
+    }
+
+    .btn-back:hover {
+      color: var(--accent-color);
+      transform: translateX(-4px);
+    }
+
+    /* Custom Toast Notifications */
+    .custom-toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: white;
+      border-radius: 10px;
+      padding: 15px 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .custom-toast.active {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast-icon.error { color: var(--error-color); }
+
+    .toast-message h4 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 2px;
+    }
+
+    .toast-message p {
+      font-size: 0.8rem;
+      color: var(--text-light);
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Feedback Card Embeddable Widget -->
+  <div class="feedback-card">
+    
+    <!-- Title & Description Header -->
+    <header id="form-header">
+      <h1>Rückmeldung zur Annullierung der Reservation</h1>
+      <p>Ihre Reservation wurde storniert, da innerhalb der Frist (bzw. nach der Zahlungserinnerung) kein Zahlungseingang registriert werden konnte. Bitte teilen Sie uns kurz mit, woran es lag, damit wir unseren Service und die Zahlungsabläufe verbessern können.</p>
+    </header>
+    
+    <!-- Interactive Form View -->
+    <form class="feedback-form" id="feedback-form" onsubmit="submitFeedback(event)">
+      
+      <!-- Pre-filled locked Contract number -->
+      <div class="form-group">
+        <label for="vertragsnummer">Vertragsnummer *</label>
+        <input type="text" id="vertragsnummer" required placeholder="z.B. V-2026-0001">
+      </div>
+
+      <!-- Premium Choice cards -->
+      <div class="form-group">
+        <label>Grund für die Stornierung *</label>
+        <div class="reason-cards">
+          
+          <div class="reason-card" onclick="selectReason(this, 'Mietobjekt nicht mehr benötigt & vergessen abzusagen')">
+            <div class="reason-card-icon"><i class="fa-solid fa-ban"></i></div>
+            <div class="reason-card-text">Ich habe das Mietobjekt nicht mehr benötigt und vergessen abzusagen</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Zahlung bereits getätigt / Datum behalten')">
+            <div class="reason-card-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+            <div class="reason-card-text">Zahlung bereits getätigt / möchte das Datum behalten (Bitte um Kontaktaufnahme)</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Zahlungsfrist war zu kurz')">
+            <div class="reason-card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+            <div class="reason-card-text">Die Zahlungsfrist war zu kurz</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Mietgebühr/Kaution zu hoch')">
+            <div class="reason-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+            <div class="reason-card-text">Die Mietgebühr/Kaution ist zu hoch</div>
+            <div class="reason-radio"></div>
+          </div>
+
+          <div class="reason-card" onclick="selectReason(this, 'Anderer Grund')">
+            <div class="reason-card-icon"><i class="fa-solid fa-circle-question"></i></div>
+            <div class="reason-card-text">Ein anderer Grund (bitte unten erläutern)</div>
+            <div class="reason-radio"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Detailed comment field -->
+      <div class="form-group">
+        <label for="bemerkung">Bemerkungen / Ergänzende Rückmeldung (Optional)</label>
+        <textarea id="bemerkung" placeholder="Hier kannst du uns konstruktives Feedback geben, Verbesserungsvorschläge hinterlassen oder uns genauere Gründe mitteilen..."></textarea>
+      </div>
+
+      <button type="submit" class="btn-submit" id="btn-submit">
+        <i class="fa-solid fa-paper-plane"></i> Rückmeldung senden
+      </button>
+    </form>
+
+    <!-- Success Screen (Shown dynamically upon success) -->
+    <div class="success-view" id="success-view">
+      <div class="success-icon"><i class="fa-solid fa-check"></i></div>
+      <h2>Vielen Dank für deine Rückmeldung!</h2>
+      <p>Deine Rückmeldung wurde erfolgreich verbucht. Dein offenes Feedback hilft uns sehr dabei, die Vermietung der Schützenstube Muhen in Zukunft noch kundenfreundlicher zu gestalten.</p>
+      <a href="https://www.sportschuetzen-muhen.ch" class="btn-back">
+        <i class="fa-solid fa-arrow-left"></i> Zurück zur Homepage
+      </a>
+    </div>
+
+  </div>
+
+  <!-- Error Toast -->
+  <div class="custom-toast" id="toast">
+    <div class="toast-icon error" id="toast-icon"><i class="fa-solid fa-circle-exclamation"></i></div>
+    <div class="toast-message">
+      <h4 id="toast-title">Fehler</h4>
+      <p id="toast-desc">Es ist ein Fehler aufgetreten.</p>
+    </div>
+  </div>
+
+  <script>
+    // Config: Live-URL eures Cloudflare Worker CORS-Proxys
+    const WEB_APP_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=vermietung&action=feedback";
+
+    let selectedReasonVal = "";
+
+    // On Load: Query Parameter 'vnr' auslesen & eintragen
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const vnr = urlParams.get('vnr');
+      
+      if (vnr) {
+        const vnrInput = document.getElementById('vertragsnummer');
+        vnrInput.value = vnr;
+        vnrInput.readOnly = true;
+      }
+    });
+
+    // Reason card selection
+    function selectReason(cardElement, reasonText) {
+      document.querySelectorAll('.reason-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      cardElement.classList.add('selected');
+      selectedReasonVal = reasonText;
+    }
+
+    // Submit Feedback
+    async function submitFeedback(e) {
+      e.preventDefault();
+      
+      const vnr = document.getElementById('vertragsnummer').value.trim();
+      const bemerkung = document.getElementById('bemerkung').value.trim();
+      const btn = document.getElementById('btn-submit');
+      
+      if (!selectedReasonVal) {
+        showErrorToast("Bitte wähle einen Grund für die Stornierung aus.");
+        return;
+      }
+
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Übermittle Rückmeldung...`;
+
+      // Payload aufbauen
+      const payload = {
+        action: "feedback",
+        vertragsnummer: vnr,
+        grund: selectedReasonVal,
+        bemerkung: bemerkung
+      };
+
+      try {
+        const response = await fetch(WEB_APP_URL, {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error("HTTP Fehler " + response.status);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+          document.getElementById('feedback-form').style.display = 'none';
+          document.getElementById('form-header').style.display = 'none';
+          document.getElementById('success-view').classList.add('active');
+        } else {
+          showErrorToast(result.error || "Rückmeldung fehlgeschlagen. Bitte versuche es später nochmals.");
+        }
+
+      } catch (error) {
+        console.error("Fehler beim Senden des Feedbacks:", error);
+        showErrorToast("Verbindungsfehler. Bitte wende dich direkt an sportschuetzen.muhen@gmail.com.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
+
+    // Show Error Toast
+    function showErrorToast(msg) {
+      const toast = document.getElementById('toast');
+      const tDesc = document.getElementById('toast-desc');
+      tDesc.textContent = msg;
+
+      toast.classList.add('active');
+      setTimeout(() => {
+        toast.classList.remove('active');
+      }, 6000);
+    }
+  </script>
+</body>
+</html>

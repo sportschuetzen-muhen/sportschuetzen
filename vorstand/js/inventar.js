@@ -48,9 +48,14 @@ function formatCHDateTime(val) {
 // =========================================================
 //  ENTRY
 // =========================================================
-async function loadInventarData() {
+async function loadInventarData(force = false) {
     const container = document.getElementById('inventar-container');
     if (!container) return;
+
+    if (!force && inventarState && container.querySelector('.nav-btn')) {
+        console.log("⚡ loadInventarData: Lade aus lokalem Cache...");
+        return;
+    }
 
     container.innerHTML = `
         <div class="text-center p-5">
@@ -98,7 +103,6 @@ showInventarSection(lastTab);
 //  TEARDOWN
 // =========================================================
 function teardownInventar() {
-    inventarState  = null;
     sigPadMitglied = null;
     sigPadVorstand = null;
     warenkorb      = [];

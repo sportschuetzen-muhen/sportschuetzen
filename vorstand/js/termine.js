@@ -49,13 +49,20 @@ function showTermineOverlay(show, text) {
   overlay.style.display = show ? 'flex' : 'none';
 }
 
-async function loadTermineData() {
+async function loadTermineData(force = false) {
   ensureTermineStylesOnce();
 
   // Flag zurücksetzen damit Events nach Re-Navigation neu gebunden werden (Bug-Fix)
   termineEventsBound = false;
 
   const container = document.getElementById('termine-container');
+  if (!container) return;
+
+  if (!force && adminState && document.getElementById('termine-ui')?.children.length > 0) {
+    console.log("⚡ loadTermineData: Lade aus lokalem Cache...");
+    return;
+  }
+
   container.innerHTML = `
     <div id="termine-shell">
       <div class="d-flex justify-content-between align-items-center mb-2">

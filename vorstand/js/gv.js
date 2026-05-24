@@ -3,9 +3,14 @@
 let gvState = null;
 let originalGvState = null;
 
-async function loadGVData() {
+async function loadGVData(force = false) {
   const container = document.getElementById('gv-container');
   if(!container) return;
+
+  if (!force && gvState && document.getElementById('gv-list')) {
+    console.log("⚡ loadGVData: Lade aus lokalem Cache...");
+    return;
+  }
   
   container.innerHTML = `
     <div class="text-center p-4 text-muted">
