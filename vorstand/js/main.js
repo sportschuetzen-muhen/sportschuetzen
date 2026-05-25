@@ -404,6 +404,9 @@ function showApp() {
 
     document.getElementById('user-info').innerText = `${currentUser} (${roleLabel})`;
     document.getElementById('user-badge-mobile').innerText = primaryRole;
+    
+    const dbUserName = document.getElementById('dashboard-user-name');
+    if (dbUserName) dbUserName.innerText = currentUser;
 
     // Kacheln & Nav-Links nach data-roles filtern
     document.querySelectorAll('.role-protected').forEach(el => {
@@ -481,6 +484,87 @@ function showApp() {
 async function startPreloadSequence() {
     console.log("🚀 Gestaffeltes Bulk-Loading im Hintergrund gestartet...");
     
+    // 1. CSS für Preload-Status-Indikatoren dynamisch injizieren (absolute Positionierung)
+    if (!document.getElementById('preload-spinner-styles')) {
+        const style = document.createElement('style');
+        style.id = 'preload-spinner-styles';
+        style.textContent = `
+            .preload-status {
+                position: absolute;
+                right: 15px;
+                top: 50%;
+                transform: translateY(-50%);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+            }
+            .preload-spinner {
+                width: 8px;
+                height: 8px;
+                border: 1.5px solid rgba(13, 110, 253, 0.2);
+                border-top-color: #0d6efd;
+                border-radius: 50%;
+                animation: preload-spin 0.8s linear infinite;
+            }
+            .preload-success {
+                color: #198754;
+                font-size: 10px;
+                animation: preload-fade 1.5s forwards;
+            }
+            @keyframes preload-spin {
+                to { transform: rotate(360deg); }
+            }
+            @keyframes preload-fade {
+                0% { opacity: 1; }
+                70% { opacity: 1; }
+                100% { opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // 2. Status-Helper deklarieren
+    window.setPreloadStatus = function(viewId, status) {
+        const link = Array.from(document.querySelectorAll('.nav-link, .card')).find(el => {
+            const oc = el.getAttribute('onclick') || '';
+            return oc.includes(`navTo('${viewId}'`) || oc.includes(`navTo("${viewId}"`);
+        });
+        if (!link) return;
+
+        // Sicherstellen, dass das relative Positionieren für absolute Kinder aktiv ist
+        link.style.position = 'relative';
+
+        const oldStatus = link.querySelector('.preload-status');
+        if (oldStatus) oldStatus.remove();
+
+        if (status === 'loading') {
+            const span = document.createElement('span');
+            span.className = 'preload-status preload-spinner';
+            span.title = 'Daten werden im Hintergrund geladen...';
+            link.appendChild(span);
+        } else if (status === 'success') {
+            const span = document.createElement('span');
+            span.className = 'preload-status preload-success';
+            span.innerHTML = '<i class="fas fa-check"></i>';
+            span.title = 'Daten erfolgreich im Hintergrund geladen';
+            link.appendChild(span);
+            setTimeout(() => span.remove(), 1600);
+        }
+    };
+
+    // 3. Alle anstehenden Module initial auf "loading" setzen (sofern für Rolle sichtbar)
+    const pendingModules = ['termine', 'umfragen', 'resultate', 'manager', 'system-mails', 'inventar', 'jahresmeisterschaft', 'vermietung', 'buchhaltung'];
+    pendingModules.forEach(m => {
+        const link = Array.from(document.querySelectorAll('.nav-link, .card')).find(el => {
+            const oc = el.getAttribute('onclick') || '';
+            return oc.includes(`navTo('${m}'`) || oc.includes(`navTo("${m}"`);
+        });
+        if (link && !link.classList.contains('d-none')) {
+            window.setPreloadStatus(m, 'loading');
+        }
+    });
+
     // Phase 1 (Core - Immediate)
     await silentInitialLoad();
     
@@ -488,44 +572,76 @@ async function startPreloadSequence() {
     setTimeout(async () => {
         if (window.hasUnsavedChanges) return;
         console.log("🕒 Phase 2 Preload (Termine, Umfragen) gestartet...");
-        if (typeof loadTermineData === 'function') await loadTermineData();
-        if (typeof loadUmfragenData === 'function') await loadUmfragenData();
+        if (typeof loadTermineData === 'function') {
+            await loadTermineData();
+            window.setPreloadStatus('termine', 'success');
+        }
+        if (typeof loadUmfragenData === 'function') {
+            await loadUmfragenData();
+            window.setPreloadStatus('umfragen', 'success');
+        }
     }, 2000);
     
     // Phase 3 (nach 5 Sekunden): Resultate, Team Manager, System-Mails, Logins
     setTimeout(async () => {
         if (window.hasUnsavedChanges) return;
         console.log("🕒 Phase 3 Preload (Resultate, Team Manager, System-Mails, Logins) gestartet...");
-        if (typeof loadResultateData === 'function') await loadResultateData();
-        if (typeof loadContestData === 'function') {
-            await loadContestData('grenzland');
-            await loadContestData('mannschaft');
-            await loadContestData('gruppe');
+        if (typeof loadResultateData === 'function') {
+            await loadResultateData();
+            window.setPreloadStatus('resultate', 'success');
         }
-        if (typeof loadSystemMailsData === 'function') await loadSystemMailsData();
+        if (typeof loadContestData === 'function') {
+            await loadContestData('grenzland', false, true);
+            await loadContestData('mannschaft', false, true);
+            await loadContestData('gruppe', false, true);
+            window.setPreloadStatus('manager', 'success');
+        }
+        if (typeof loadSystemMailsData === 'function') {
+            await loadSystemMailsData();
+            window.setPreloadStatus('system-mails', 'success');
+        }
         if (typeof loadLoginsData === 'function' && userHasRole('admin')) await loadLoginsData();
     }, 5000);
     
-    // Phase 4 (nach 8 Sekunden): Inventar (drittletztes)
+    // Phase 4 (nach 8 Sekunden): Inventar
     setTimeout(async () => {
         if (window.hasUnsavedChanges) return;
         console.log("🕒 Phase 4 Preload (Inventar) gestartet...");
-        if (typeof loadInventarData === 'function') await loadInventarData();
+        if (typeof loadInventarData === 'function') {
+            await loadInventarData();
+            window.setPreloadStatus('inventar', 'success');
+        }
     }, 8000);
     
-    // Phase 5 (nach 11 Sekunden): Jahresmeisterschaft KK (zweitletztes)
+    // Phase 5 (nach 11 Sekunden): Jahresmeisterschaft KK
     setTimeout(async () => {
         if (window.hasUnsavedChanges) return;
         console.log("🕒 Phase 5 Preload (Jahresmeisterschaft KK) gestartet...");
-        if (typeof loadJahresmeisterschaftData === 'function') await loadJahresmeisterschaftData(false, true);
+        if (typeof loadJahresmeisterschaftData === 'function') {
+            await loadJahresmeisterschaftData(false, true);
+            window.setPreloadStatus('jahresmeisterschaft', 'success');
+        }
     }, 11000);
     
-    // Phase 6 (nach 14 Sekunden): Vermietung (am Schluss / last)
+    // Phase 6 (nach 14 Sekunden): Vermietung
     setTimeout(async () => {
         if (window.hasUnsavedChanges) return;
         console.log("🕒 Phase 6 Preload (Vermietung) gestartet...");
-        if (typeof loadVermietungData === 'function') await loadVermietungData();
+        if (typeof loadVermietungData === 'function') {
+            await loadVermietungData();
+            window.setPreloadStatus('vermietung', 'success');
+        }
     }, 14000);
+    
+    // Phase 7 (nach 15 Sekunden): Buchhaltung
+    setTimeout(async () => {
+        if (window.hasUnsavedChanges) return;
+        console.log("🕒 Phase 7 Preload (Buchhaltung) gestartet...");
+        if (typeof loadBuchhaltungData === 'function' && (userHasRole('admin') || userHasRole('kassier'))) {
+            await loadBuchhaltungData(true);
+            window.setPreloadStatus('buchhaltung', 'success');
+        }
+    }, 15000);
 }
 
 // =========================================================
@@ -539,118 +655,127 @@ async function silentInitialLoad() {
         // 1. Jahresbeitrag bulk load
         console.log("🔍 Checking loadJahresbeitragData: ", typeof loadJahresbeitragData);
         if (typeof loadJahresbeitragData === 'function') {
-            const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
-            console.log("🔍 Fetching Jahresbeitrag APIs for year: ", year);
-            const [beitraege, members, participations, positions] = await Promise.all([
-                apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json())
-            ]);
+            window._jbPreloadPromise = (async () => {
+                const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
+                console.log("🔍 Fetching Jahresbeitrag APIs for year: ", year);
+                const [beitraege, members, participations, positions] = await Promise.all([
+                    apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
+                    apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
+                    apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
+                    apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json())
+                ]);
 
-            console.log("🔍 Jahresbeitrag API success statuses:", {
-                beitraege: beitraege.success,
-                members: members.success,
-                participations: participations.success,
-                positions: positions.success
-            });
-
-            if (beitraege.success && members.success && participations.success && positions.success) {
-                window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
-                window._jbMemberMap = {};
-                (members.data || []).forEach(m => { 
-                    window._jbMemberMap[String(m.PersonNumber)] = m; 
+                console.log("🔍 Jahresbeitrag API success statuses:", {
+                    beitraege: beitraege.success,
+                    members: members.success,
+                    participations: participations.success,
+                    positions: positions.success
                 });
-                
-                window._jbAllBeitraege = beitraege.data || [];
-                window._jbAllParticipations = participations.data || [];
-                window._jbAllPositions = positions.positions || [];
-                
-                window._jbData = window._jbAllBeitraege.filter(h => Number(h.year) === Number(year));
 
-                window._jbParticipationsCache = {};
-                window._jbAllParticipations.forEach(p => {
-                    if (Number(p.year) === Number(year)) {
-                        const pn = String(p.PersonNumber).trim();
-                        if (!window._jbParticipationsCache[pn]) window._jbParticipationsCache[pn] = [];
-                        window._jbParticipationsCache[pn].push(p);
+                if (beitraege.success && members.success && participations.success && positions.success) {
+                    window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
+                    window._jbMemberMap = {};
+                    (members.data || []).forEach(m => { 
+                        window._jbMemberMap[String(m.PersonNumber)] = m; 
+                    });
+                    
+                    window._jbAllBeitraege = beitraege.data || [];
+                    window._jbAllParticipations = participations.data || [];
+                    window._jbAllPositions = positions.positions || [];
+                    
+                    window._jbData = window._jbAllBeitraege.filter(h => Number(h.year) === Number(year));
+
+                    window._jbParticipationsCache = {};
+                    window._jbAllParticipations.forEach(p => {
+                        if (Number(p.year) === Number(year)) {
+                            const pn = String(p.PersonNumber).trim();
+                            if (!window._jbParticipationsCache[pn]) window._jbParticipationsCache[pn] = [];
+                            window._jbParticipationsCache[pn].push(p);
+                        }
+                    });
+
+                    window._jbPositionsCache = {};
+                    window._jbAllPositions.forEach(p => {
+                        if (Number(p.year) === Number(year)) {
+                            const hid = String(p.headerid).trim();
+                            if (!window._jbPositionsCache[hid]) window._jbPositionsCache[hid] = [];
+                            window._jbPositionsCache[hid].push(p);
+                        }
+                    });
+
+                    if (typeof jbApplyTableSorting === 'function') jbApplyTableSorting();
+                    if (typeof jbApplySidebarSorting === 'function') jbApplySidebarSorting();
+                    
+                    const activeView = document.querySelector('.module-view.active');
+                    const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
+                    if (activeViewId === 'jahresbeitrag' && typeof renderJahresbeitragView === 'function') {
+                        renderJahresbeitragView();
                     }
-                });
-
-                window._jbPositionsCache = {};
-                window._jbAllPositions.forEach(p => {
-                    if (Number(p.year) === Number(year)) {
-                        const hid = String(p.headerid).trim();
-                        if (!window._jbPositionsCache[hid]) window._jbPositionsCache[hid] = [];
-                        window._jbPositionsCache[hid].push(p);
-                    }
-                });
-
-                if (typeof jbApplyTableSorting === 'function') jbApplyTableSorting();
-                if (typeof jbApplySidebarSorting === 'function') jbApplySidebarSorting();
-                
-                const activeView = document.querySelector('.module-view.active');
-                const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
-                if (activeViewId === 'jahresbeitrag' && typeof renderJahresbeitragView === 'function') {
-                    renderJahresbeitragView();
+                    console.log("✅ Initiales Bulk-Loading: Jahresbeitrag geladen.");
                 }
-                console.log("✅ Initiales Bulk-Loading: Jahresbeitrag geladen.");
-            }
+            })();
         }
 
         // 2. Mitglieder bulk load
         if (typeof loadMitgliederData === 'function') {
-            const [resAll, resLizz, resFn, resHist] = await Promise.all([
-                apiFetch('mitglieder', 'action=getAll'),
-                apiFetch('mitglieder', 'action=getLizenzen'),
-                apiFetch('mitglieder', 'action=getFunktionen'),
-                apiFetch('mitglieder', 'action=getHistorie')
-            ]);
+            window._mglPreloadPromise = (async () => {
+                const [resAll, resLizz, resFn, resHist] = await Promise.all([
+                    apiFetch('mitglieder', 'action=getAll'),
+                    apiFetch('mitglieder', 'action=getLizenzen'),
+                    apiFetch('mitglieder', 'action=getFunktionen'),
+                    apiFetch('mitglieder', 'action=getHistorie')
+                ]);
 
-            const data = await resAll.json();
-            const lizzData = await resLizz.json();
-            const fnData = await resFn.json();
-            const histData = await resHist.json();
+                const data = await resAll.json();
+                const lizzData = await resLizz.json();
+                const fnData = await resFn.json();
+                const histData = await resHist.json();
 
-            if (data.success && lizzData.success && fnData.success && histData.success) {
-                window._mglData = Array.isArray(data.data) ? data.data : [];
+                if (data.success && lizzData.success && fnData.success && histData.success) {
+                    window._mglData = Array.isArray(data.data) ? data.data : [];
 
-                window._mglLizenzenCache = {};
-                lizzData.data.forEach(l => {
-                    const pnKey = String(l.PersonNumber || '').trim();
-                    if (pnKey) {
-                        if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
-                        window._mglLizenzenCache[pnKey].push(l);
+                    window._mglLizenzenCache = {};
+                    lizzData.data.forEach(l => {
+                        const pnKey = String(l.PersonNumber || '').trim();
+                        if (pnKey) {
+                            if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
+                            window._mglLizenzenCache[pnKey].push(l);
+                        }
+                    });
+
+                    window._mglFunktionenCache = {};
+                    fnData.data.forEach(f => {
+                        const pnKey = String(f.PersonNumber || '').trim();
+                        if (pnKey) {
+                            if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
+                            window._mglFunktionenCache[pnKey].push(f);
+                        }
+                    });
+
+                    window._mglHistoryCache = {};
+                    histData.data.forEach(h => {
+                        const pnKey = String(h.PersonNumber || '').trim();
+                        if (pnKey) {
+                            if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
+                            window._mglHistoryCache[pnKey].push(h);
+                        }
+                    });
+
+                    const activeView = document.querySelector('.module-view.active');
+                    const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
+                    if (activeViewId === 'mitglieder') {
+                        if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
+                        if (typeof mglFilter === 'function') mglFilter();
                     }
-                });
-
-                window._mglFunktionenCache = {};
-                fnData.data.forEach(f => {
-                    const pnKey = String(f.PersonNumber || '').trim();
-                    if (pnKey) {
-                        if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
-                        window._mglFunktionenCache[pnKey].push(f);
-                    }
-                });
-
-                window._mglHistoryCache = {};
-                histData.data.forEach(h => {
-                    const pnKey = String(h.PersonNumber || '').trim();
-                    if (pnKey) {
-                        if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
-                        window._mglHistoryCache[pnKey].push(h);
-                    }
-                });
-
-                const activeView = document.querySelector('.module-view.active');
-                const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
-                if (activeViewId === 'mitglieder') {
-                    if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
-                    if (typeof mglFilter === 'function') mglFilter();
+                    console.log("✅ Initiales Bulk-Loading: Mitglieder geladen.");
                 }
-                console.log("✅ Initiales Bulk-Loading: Mitglieder geladen.");
-            }
+            })();
         }
+
+        await Promise.all([
+            window._jbPreloadPromise || Promise.resolve(),
+            window._mglPreloadPromise || Promise.resolve()
+        ]);
         console.log("🚀 Initiales Bulk-Loading erfolgreich abgeschlossen.");
     } catch (e) {
         console.error("❌ Fehler beim initialen Bulk-Loading:", e);
@@ -828,6 +953,7 @@ function hasWriteAccess(module) {
         'jahresmeisterschaft-kk': ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
         'mail':                ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
         'jahresbeitrag':       ['admin', 'kassier', 'vorstand'],
+        'rechnungen':          ['admin', 'kassier', 'vorstand'],
         'mitglieder':          ['admin', 'schuetzenmeister', 'aktuar', 'vorstand'],
         'logins':              ['admin']
     };
@@ -905,10 +1031,11 @@ function navTo(viewId, el) {
     // NEU: Jahresmeisterschaften laden
     if (viewId === 'jahresmeisterschaft' && typeof loadJahresmeisterschaftData === 'function') loadJahresmeisterschaftData();
     if (viewId === 'jahresmeisterschaft-kk' && typeof loadJahresmeisterschaftKKData === 'function') loadJahresmeisterschaftKKData();
-    // In navTo() ergänzen:
     if (viewId === 'mail'          && typeof loadMailData          === 'function') loadMailData();
     if (viewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') loadJahresbeitragData();
+    if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadRechnungenData();
     if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadMitgliederData();
+    if (viewId === 'buchhaltung'   && typeof renderBuchhaltung     === 'function') renderBuchhaltung();
 
 }
 

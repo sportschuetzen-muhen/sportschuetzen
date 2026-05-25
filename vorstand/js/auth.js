@@ -140,7 +140,8 @@ async function doLogin() {
             localStorage.setItem('portal_login_id', u);
             
             // Neue Felder aus der DB für Mails speichern
-            localStorage.setItem('portal_mailanzeige', data.mailanzeige || data.Mailanzeige || currentUser);
+            localStorage.setItem('portal_mailadresse', data.mailadresse || data.Mailadresse || data.mailanzeige || data.Mailanzeige || '');
+            localStorage.setItem('portal_mailanzeige', data.mailadresse || data.Mailadresse || data.mailanzeige || data.Mailanzeige || ''); // Rückwärtskompatibilität
             localStorage.setItem('portal_rolle_extern', data.rolle_extern || data.Rolle_extern || '');
 
             showApp();

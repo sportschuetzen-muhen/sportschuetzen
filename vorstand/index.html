@@ -182,6 +182,14 @@
                      onclick="navTo('jahresbeitrag', this)">
                     <i class="fas fa-coins"></i> Jahresbeitrag
                 </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
+                     onclick="navTo('rechnungen', this)">
+                    <i class="fas fa-file-invoice"></i> Rechnungen
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,kassier"
+                     onclick="navTo('buchhaltung', this)">
+                    <i class="fas fa-book"></i> Buchhaltung
+                </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar"
                      onclick="navTo('mitglieder', this)">
                     <i class="fas fa-users"></i> Mitglieder
@@ -209,7 +217,7 @@
                 <div class="d-flex justify-content-between align-items-md-center flex-column flex-md-row mb-4 p-4 rounded-4 shadow-sm border border-light position-relative overflow-hidden" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(240,244,248,0.9) 100%); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
                     <div class="position-absolute" style="top:-50px; right:-50px; width:150px; height:150px; background:radial-gradient(circle, rgba(15,58,93,0.05) 0%, rgba(255,255,255,0) 70%); border-radius:50%; z-index:0; pointer-events:none;"></div>
                     <div class="position-relative" style="z-index: 1;">
-                        <h3 class="mb-1 text-primary" style="font-weight: 700; letter-spacing: -0.5px;">Willkommen zurück! 👋</h3>
+                        <h3 class="mb-1 text-primary" style="font-weight: 700; letter-spacing: -0.5px;">Willkommen zurück, <span id="dashboard-user-name"></span>! 👋</h3>
                         <div id="presence-banner" class="mt-1"></div>
                     </div>
                     <div id="last-login-banner" class="mt-2 mt-md-0 position-relative" style="z-index: 1;"></div>
@@ -285,6 +293,20 @@
                              onclick="navTo('jahresbeitrag')" style="cursor:pointer">
                             <h5>💰 Jahresbeitrag</h5>
                             <p class="small text-muted">Beiträge einsehen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('rechnungen')" style="cursor:pointer">
+                            <h5>🧾 Rechnungen</h5>
+                            <p class="small text-muted">Zentrales Rechnungs-Management & PDF</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('buchhaltung')" style="cursor:pointer">
+                            <h5>📊 Buchhaltung</h5>
+                            <p class="small text-muted">Doppelte Buchhaltung & KMU-Berichte</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
@@ -405,6 +427,28 @@
         </button>
     </div>
     <div id="jahresbeitrag-container"></div>
+</div>
+
+<!-- RECHNUNGEN -->
+<div id="view-rechnungen" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🧾 Rechnungen & PDF-Cockpit</h2>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadRechnungenData(true)">
+            🔄 Aktualisieren
+        </button>
+    </div>
+    <div id="rechnungen-container"></div>
+</div>
+
+<!-- BUCHHALTUNG -->
+<div id="view-buchhaltung" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📊 Buchhaltung & KMU-Berichte</h2>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadBuchhaltungData(true)">
+            🔄 Aktualisieren
+        </button>
+    </div>
+    <div id="buchhaltung-container"></div>
 </div>
 
 <!-- MITGLIEDER -->
@@ -607,22 +651,65 @@
 <!-- SCRIPTS – Reihenfolge wichtig! -->
 <script src="js/auth.js"></script>
 <script src="js/main.js"></script>
-<script src="js/inventar.js"></script>
+<script src="js/inventar/inventar-core.js"></script>
+<script src="js/inventar/inventar-ui.js"></script>
+<script src="js/inventar/inventar-cart.js"></script>
+<script src="js/inventar/inventar-list.js"></script>
+<script src="js/inventar/inventar-journal.js"></script>
+<script src="js/inventar/inventar-pdf.js"></script>
 <script src="js/termine.js"></script>
 <script src="js/system-mails.js"></script>
-<script src="js/umfragen.js"></script>
+<script src="js/umfragen/umfragen-core.js"></script>
+<script src="js/umfragen/umfragen-ui.js"></script>
+<script src="js/umfragen/umfragen-events.js"></script>
+<script src="js/umfragen/umfragen-eval.js"></script>
+<script src="js/umfragen/umfragen-controlling.js"></script>
+<script src="js/umfragen/umfragen-tracking.js"></script>
 <script src="js/gv.js"></script>
-<script src="js/logins.js"></script>
-<script src="js/manager.js"></script>
-<script src="js/resultate.js"></script>
-<script src="js/vermietung.js"></script>
+<script src="js/logins/logins-core.js"></script>
+<script src="js/logins/logins-ui.js"></script>
+<script src="js/logins/logins-events.js"></script>
+<script src="js/logins/logins-actions.js"></script>
+<script src="js/manager/manager-core.js"></script>
+<script src="js/manager/manager-ui.js"></script>
+<script src="js/manager/manager-dnd.js"></script>
+<script src="js/manager/manager-mail.js"></script>
+<script src="js/manager/manager-pdf.js"></script>
+<script src="js/resultate/resultate-core.js"></script>
+<script src="js/resultate/resultate-ui.js"></script>
+<script src="js/resultate/resultate-events.js"></script>
+<script src="js/resultate/resultate-actions.js"></script>
+<script src="js/vermietung/vermietung-core.js"></script>
+<script src="js/vermietung/vermietung-ui.js"></script>
+<script src="js/vermietung/vermietung-list.js"></script>
+<script src="js/vermietung/vermietung-manager.js"></script>
 <script src="js/mail.js"></script>
-<script src="js/jahresbeitrag.js"></script>
-<script src="js/mitglieder.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-core.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-calc.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-overview.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-schnellerfassung.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-import.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-bank.js"></script>
+<script src="js/mitglieder/mitglieder-core.js"></script>
+<script src="js/mitglieder/mitglieder-ui.js"></script>
+<script src="js/mitglieder/mitglieder-list.js"></script>
+<script src="js/mitglieder/mitglieder-details.js"></script>
+<script src="js/mitglieder/mitglieder-manager.js"></script>
+
+<!-- Chart.js für grafische Auswertungen -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Skript für doppelte Buchhaltung -->
+<script src="js/buchhaltung.js"></script>
+<script src="js/buchhaltung-controlling.js"></script>
+<script src="js/rechnungen.js"></script>
+
 
     
 <!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->
-<script src="js/jahresmeisterschaft.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-core.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-ui.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
