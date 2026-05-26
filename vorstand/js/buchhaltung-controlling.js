@@ -6,7 +6,9 @@
 window._bhCharts = {
   yoyChart: null,
   budgetChart: null,
-  cashflowChart: null
+  cashflowChart: null,
+  revenueStructureChart: null,
+  expenseStructureChart: null
 };
 
 // Zentraler Render-Hook für den Controlling-Tab
@@ -513,3 +515,615 @@ function bhRenderControllingTable() {
     perfBadge.className = `badge ${successRate >= 70 ? 'bg-success' : successRate >= 40 ? 'bg-warning text-dark' : 'bg-danger'} px-3 py-1.5 rounded-pill shadow-sm`;
   }
 }
+
+// =====================================================================
+// NEU: RENDERING: TAB 5 – GV-EXPORT & COCKPIT (Druckberichte, Wirtschafts-KPI & Struktur-Charts)
+// =====================================================================
+window.renderTabCockpit = function(container) {
+  if (!container) return;
+  
+  container.innerHTML = `
+    <!-- Top-Reihe: Export-Karten und Wirtschafts-Cockpit -->
+    <div class="row g-4 mb-4">
+      <div class="col-lg-7">
+        <div class="bh-report-section shadow-sm border border-light h-100" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(245,248,252,0.9) 100%);">
+          <h5 class="fw-bold text-primary mb-2">
+            <i class="fas fa-file-export me-2"></i>GV-Export & Berichtswesen (${window._bhYear})
+          </h5>
+          <p class="text-muted small mb-4">Erstelle strukturierte Exporte für Excel oder drucke den vollständigen Jahresabschluss (Bilanz & Erfolgsrechnung) formatiert für die Generalversammlung (GV).</p>
+          
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <button class="btn btn-outline-primary w-100 py-3 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3 h-100" onclick="bhPrintGVReport()" style="gap: 10px; transition: all 0.2s ease;">
+                <i class="fas fa-print fa-2x text-primary mb-1"></i>
+                <span class="small">Jahresrechnung drucken (PDF)</span>
+              </button>
+            </div>
+            <div class="col-sm-6">
+              <button class="btn btn-outline-success w-100 py-3 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3 h-100" onclick="bhExportJournalToExcel()" style="gap: 10px; transition: all 0.2s ease;">
+                <i class="fas fa-file-excel fa-2x text-success mb-1"></i>
+                <span class="small">Kassabuch exportieren (Excel)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-lg-5">
+        <div class="bh-report-section shadow-sm border border-light h-100" id="bh-economy-summary-container">
+          <h5 class="fw-bold text-primary mb-3">
+            <i class="fas fa-store me-2"></i>Betriebs- & Schützenhaus-Cockpit
+          </h5>
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+            <span class="ms-2 small text-muted">Analysiere Schützenhaus-Erfolg...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Untere Reihe: Struktur-Kreisdiagramme (Doughnuts) -->
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="bh-report-section shadow-sm border border-light h-100">
+          <h5 class="fw-bold text-primary mb-3">
+            <i class="fas fa-chart-pie me-2"></i>Vereins-Ertragsstruktur (${window._bhYear})
+          </h5>
+          <div style="position: relative; height: 260px; width: 100%;">
+            <canvas id="bhRevenueStructureChart"></canvas>
+          </div>
+          <div class="small text-muted mt-3 text-center fs-7">
+            Prozentuale Verteilung der Einnahmequellen (Mitglieder, Sponsoren, Wirtschaft, Gebäude).
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div class="bh-report-section shadow-sm border border-light h-100">
+          <h5 class="fw-bold text-primary mb-3">
+            <i class="fas fa-chart-pie me-2"></i>Vereins-Aufwandsstruktur (${window._bhYear})
+          </h5>
+          <div style="position: relative; height: 260px; width: 100%;">
+            <canvas id="bhExpenseStructureChart"></canvas>
+          </div>
+          <div class="small text-muted mt-3 text-center fs-7">
+            Prozentuale Verteilung der Hauptausgaben (Munition, Schiessbetrieb, Unterhalt, Verwaltung).
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Rendern der Charts & KPIs verzögert ausführen
+  setTimeout(() => {
+    bhRenderRevenueStructureChart();
+    bhRenderExpenseStructureChart();
+    bhRenderEconomySummary();
+  }, 100);
+};
+
+// Wirtschafts- & Bar-Cockpit: Gewinnmarge und Wirtschaftserfolg ermitteln (inkl. Vermietungen und Reinigung)
+function bhRenderEconomySummary() {
+  const container = document.getElementById('bh-economy-summary-container');
+  if (!container) return;
+
+  let totalRevenue = 0;
+  let totalPurchases = 0;
+  let totalCleaning = 0;
+
+  window._bhKontenrahmen.forEach(acc => {
+    const code = String(acc.konto).trim();
+    const balance = Number(acc._endsaldo || 0);
+
+    if (code.startsWith('365')) {
+      // Wirtschaft (3651) und Vermietung (3650) als Erfolg/Einnahmen
+      totalRevenue += balance;
+    } else if (code.startsWith('400')) {
+      // Warenaufwand / Einkauf als Aufwand
+      totalPurchases += balance;
+    } else if (code === '4010' || code === '4011' || code.startsWith('401')) {
+      // Reinigungsaufwand als Aufwand
+      totalCleaning += balance;
+    }
+  });
+
+  const netProfit = totalRevenue - totalPurchases - totalCleaning;
+  const marginPercent = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+  container.innerHTML = `
+    <h5 class="fw-bold text-primary mb-3">
+      <i class="fas fa-store me-2"></i>Betriebs- & Schützenhaus-Cockpit (${window._bhYear})
+    </h5>
+    
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 bg-light border border-light text-center">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Umsatz & Vermietung</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(totalRevenue)}</div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 border text-center" style="background-color: ${netProfit >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${netProfit >= 0 ? '#198754' : '#dc3545'} !important;">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Reingewinn Betrieb</div>
+          <div class="fw-bold mt-0.5 ${netProfit >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(netProfit)}</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="d-flex justify-content-between mb-2 small fw-semibold">
+      <span class="text-muted">Warenaufwand (Einkauf Bar):</span>
+      <span class="text-dark">${fmtChf(totalPurchases)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-2 small fw-semibold">
+      <span class="text-muted">Reinigungsaufwand (Reinigung):</span>
+      <span class="text-dark">${fmtChf(totalCleaning)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-3 pt-2 border-top small fw-bold">
+      <span class="text-muted">Betriebs-Erfolgsmarge:</span>
+      <span class="${marginPercent >= 40 ? 'text-success' : marginPercent >= 20 ? 'text-primary' : 'text-danger'}">${marginPercent.toFixed(1)}%</span>
+    </div>
+    
+    <div class="progress" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
+      <div class="progress-bar ${marginPercent >= 40 ? 'bg-success' : marginPercent >= 20 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, marginPercent))}%;" aria-valuenow="${marginPercent}" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <div class="small text-muted mt-2 text-center" style="font-size: 11px;">
+      ${marginPercent >= 40 ? '🎉 Hervorragende Betriebs-Marge!' : marginPercent >= 20 ? '👍 Solide Wirtschafts- und Miet-Rentabilität.' : '⚠️ Achtung: Hohe Einkaufs- oder Reinigungskosten drücken die Marge!'}
+    </div>
+  `;
+}
+
+// Doughnut-Diagramm 1: Ertragsstruktur
+function bhRenderRevenueStructureChart() {
+  const canvas = document.getElementById('bhRevenueStructureChart');
+  if (!canvas) return;
+
+  const revenueGroups = {
+    'Sponsoring': 0,
+    'Mitgliederbeiträge': 0,
+    'Vermietung Gebäude': 0,
+    'Bar & Festwirtschaft': 0,
+    'Übrige Erträge': 0
+  };
+
+  window._bhKontenrahmen.forEach(acc => {
+    const code = String(acc.konto).trim();
+    const balance = Number(acc._endsaldo || 0);
+    if (code.startsWith('3')) {
+      if (code.startsWith('32')) {
+        revenueGroups['Sponsoring'] += balance;
+      } else if (code.startsWith('341')) {
+        revenueGroups['Mitgliederbeiträge'] += balance;
+      } else if (code === '3650') {
+        revenueGroups['Vermietung Gebäude'] += balance;
+      } else if (code === '3651') {
+        revenueGroups['Bar & Festwirtschaft'] += balance;
+      } else {
+        revenueGroups['Übrige Erträge'] += balance;
+      }
+    }
+  });
+
+  const labels = Object.keys(revenueGroups).filter(l => revenueGroups[l] > 0);
+  const data = labels.map(l => revenueGroups[l]);
+
+  if (window._bhCharts.revenueStructureChart) window._bhCharts.revenueStructureChart.destroy();
+
+  window._bhCharts.revenueStructureChart = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: [
+          '#0f3a5d',
+          '#198754',
+          '#fd7e14',
+          '#20c997',
+          '#6c757d'
+        ],
+        borderWidth: 1.5,
+        borderColor: '#ffffff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: context => ` ${context.label}: CHF ${context.raw.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, "'")}`
+          }
+        }
+      }
+    }
+  });
+}
+
+// Doughnut-Diagramm 2: Aufwandsstruktur
+function bhRenderExpenseStructureChart() {
+  const canvas = document.getElementById('bhExpenseStructureChart');
+  if (!canvas) return;
+
+  const expenseGroups = {
+    'Munition & Nachwuchs': 0,
+    'Schiessbetrieb & Doppel': 0,
+    'Schützenhaus-Unterhalt': 0,
+    'Verwaltung & Versicherungen': 0,
+    'Übrige Aufwände': 0
+  };
+
+  window._bhKontenrahmen.forEach(acc => {
+    const code = String(acc.konto).trim();
+    const balance = Number(acc._endsaldo || 0);
+    const k = code[0];
+    if (k === '4' || k === '5' || k === '6' || k === '7' || k === '8') {
+      if (code.startsWith('42')) {
+        expenseGroups['Munition & Nachwuchs'] += balance;
+      } else if (code.startsWith('41') || code.startsWith('44')) {
+        expenseGroups['Schiessbetrieb & Doppel'] += balance;
+      } else if (code.startsWith('60') || code.startsWith('62') || code.startsWith('61')) {
+        expenseGroups['Schützenhaus-Unterhalt'] += balance;
+      } else if (code.startsWith('65') || code.startsWith('63')) {
+        expenseGroups['Verwaltung & Versicherungen'] += balance;
+      } else {
+        expenseGroups['Übrige Aufwände'] += balance;
+      }
+    }
+  });
+
+  const labels = Object.keys(expenseGroups).filter(l => expenseGroups[l] > 0);
+  const data = labels.map(l => expenseGroups[l]);
+
+  if (window._bhCharts.expenseStructureChart) window._bhCharts.expenseStructureChart.destroy();
+
+  window._bhCharts.expenseStructureChart = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: [
+          '#dc3545',
+          '#fd7e14',
+          '#6f42c1',
+          '#0d6efd',
+          '#6c757d'
+        ],
+        borderWidth: 1.5,
+        borderColor: '#ffffff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: context => ` ${context.label}: CHF ${context.raw.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, "'")}`
+          }
+        }
+      }
+    }
+  });
+}
+
+// Kassabuch-Export: Lädt das Journal als perfekt formatiertes Excel-CSV herunter
+window.bhExportJournalToExcel = function() {
+  const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
+  
+  const csvRows = [];
+  csvRows.push('ID;Beleg-Nr;Datum;Beschreibung;Soll-Konto;Soll-Bezeichnung;Haben-Konto;Haben-Bezeichnung;Betrag (CHF);Aktionstyp');
+  
+  currentYearJournal.forEach(item => {
+    const sollName = getAccountNameByCode(item.konto_soll);
+    const habenName = getAccountNameByCode(item.konto_haben);
+    
+    let desc = item.beschreibung || '';
+    if (desc.startsWith('"') && desc.endsWith('"')) {
+      desc = desc.substring(1, desc.length - 1).replace(/""/g, '"');
+    }
+    desc = `"${desc.replace(/"/g, '""')}"`;
+    
+    const row = [
+      item.id,
+      item.beleg_nr,
+      isoToDisplay(item.datum),
+      desc,
+      item.konto_soll,
+      `"${sollName.replace(/"/g, '""')}"`,
+      item.konto_haben,
+      `"${habenName.replace(/"/g, '""')}"`,
+      Number(item.betrag || 0).toFixed(2),
+      item.typ || 'Rechnung'
+    ];
+    
+    csvRows.push(row.join(';'));
+  });
+  
+  const csvContent = '\ufeff' + csvRows.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `kassabuch_journal_sportschuetzen_muhen_${window._bhYear}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// PDF/Druck-Jahresrechnung für die Generalversammlung (GV) generieren
+window.bhPrintGVReport = function() {
+  const tree = {};
+  window._bhKontenrahmen.forEach(acc => {
+    const cat = bhGetAccountCategory(acc);
+    if (!tree[cat.main]) tree[cat.main] = {};
+    if (!tree[cat.main][cat.sub]) tree[cat.main][cat.sub] = {};
+    if (!tree[cat.main][cat.sub][cat.detail]) tree[cat.main][cat.sub][cat.detail] = [];
+    tree[cat.main][cat.sub][cat.detail].push(acc);
+  });
+  
+  function getClassTotal(mainClass) {
+    if (!tree[mainClass]) return 0;
+    let total = 0;
+    Object.keys(tree[mainClass]).forEach(sub => {
+      Object.keys(tree[mainClass][sub]).forEach(detail => {
+        tree[mainClass][sub][detail].forEach(acc => {
+          total += Number(acc._endsaldo || 0);
+        });
+      });
+    });
+    return total;
+  }
+  
+  const totalAktiven = getClassTotal('Aktiven');
+  
+  const sumFremd = (tree['Passiven'] && tree['Passiven']['Kurzfristiges Fremdkapital'] ? 
+    Object.keys(tree['Passiven']['Kurzfristiges Fremdkapital']).reduce((s, d) => s + tree['Passiven']['Kurzfristiges Fremdkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0) +
+    (tree['Passiven'] && tree['Passiven']['Langfristiges Fremdkapital'] ? 
+    Object.keys(tree['Passiven']['Langfristiges Fremdkapital']).reduce((s, d) => s + tree['Passiven']['Langfristiges Fremdkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0);
+    
+  const sumEkOhneErgebnis = tree['Passiven'] && tree['Passiven']['Eigenkapital'] ? 
+    Object.keys(tree['Passiven']['Eigenkapital']).reduce((s, d) => s + tree['Passiven']['Eigenkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0;
+    
+  const sumErtrag = getClassTotal('Ertrag');
+  const sumAufwand = getClassTotal('Aufwand');
+  const gewinnVerlust = sumErtrag - sumAufwand;
+  const totalPassiven = sumFremd + sumEkOhneErgebnis + gewinnVerlust;
+
+  function getPrintRows(mainClass) {
+    let html = '';
+    if (!tree[mainClass]) return html;
+    
+    const subs = Object.keys(tree[mainClass]).sort((a,b) => {
+      if (a.includes('Umlauf')) return -1;
+      if (b.includes('Umlauf')) return 1;
+      if (a.includes('Kurzfristig')) return -1;
+      if (b.includes('Kurzfristig')) return 1;
+      return 0;
+    });
+    
+    subs.forEach(sub => {
+      html += `<tr class="section-title"><td colspan="3">${sub}</td></tr>`;
+      
+      const details = Object.keys(tree[mainClass][sub]).sort();
+      let subSum = 0;
+      
+      details.forEach(detail => {
+        const accounts = tree[mainClass][sub][detail];
+        accounts.sort((a, b) => parseInt(a.konto) - parseInt(b.konto));
+        
+        const detailSum = accounts.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
+        subSum += detailSum;
+        
+        accounts.forEach(acc => {
+          html += `
+            <tr class="detail-row">
+              <td class="code">${acc.konto}</td>
+              <td class="name">${acc.bezeichnung}</td>
+              <td class="amount">${fmtChf(acc._endsaldo)}</td>
+            </tr>
+          `;
+        });
+      });
+      
+      if (mainClass === 'Passiven' && sub === 'Eigenkapital') {
+        html += `
+          <tr class="detail-row italic">
+            <td class="code">2990</td>
+            <td class="name" style="font-weight: bold;">Jahresergebnis (Erfolgsrechnung)</td>
+            <td class="amount" style="font-weight: bold;">${fmtChf(gewinnVerlust)}</td>
+          </tr>
+        `;
+        subSum += gewinnVerlust;
+      }
+      
+      html += `
+        <tr class="subtotal-row">
+          <td colspan="2">Total ${sub}</td>
+          <td class="amount">${fmtChf(subSum)}</td>
+        </tr>
+      `;
+    });
+    return html;
+  }
+
+  function getPrintErfolgsRows(mainClass) {
+    let html = '';
+    if (!tree[mainClass]) return html;
+    const subs = Object.keys(tree[mainClass]).sort();
+    subs.forEach(sub => {
+      const details = Object.keys(tree[mainClass][sub]).sort();
+      details.forEach(detail => {
+        const accounts = tree[mainClass][sub][detail];
+        accounts.sort((a, b) => parseInt(a.konto) - parseInt(b.konto));
+        accounts.forEach(acc => {
+          html += `
+            <tr class="detail-row">
+              <td class="code">${acc.konto}</td>
+              <td class="name">${acc.bezeichnung}</td>
+              <td class="amount">${fmtChf(acc._endsaldo)}</td>
+            </tr>
+          `;
+        });
+      });
+    });
+    return html;
+  }
+
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Jahresrechnung Sportschützen Muhen - ${window._bhYear}</title>
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 40px; line-height: 1.4; }
+          .header { text-align: center; margin-bottom: 40px; border-bottom: 3px double #333; padding-bottom: 20px; }
+          .header h1 { margin: 0 0 10px 0; font-size: 26px; text-transform: uppercase; letter-spacing: 1px; }
+          .header h2 { margin: 0; font-size: 18px; color: #555; font-weight: normal; }
+          .section-header { font-size: 18px; font-weight: bold; border-bottom: 2px solid #333; margin: 30px 0 15px 0; padding-bottom: 5px; text-transform: uppercase; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 14px; }
+          th { border-bottom: 1.5px solid #333; text-align: left; padding: 6px 10px; font-weight: bold; }
+          td { padding: 6px 10px; vertical-align: top; }
+          .section-title { font-weight: bold; background-color: #f5f5f5; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; }
+          .section-title td { padding: 8px 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+          .detail-row { border-bottom: 1px solid #eee; }
+          .detail-row.italic { font-style: italic; }
+          .code { font-family: monospace; width: 60px; color: #666; }
+          .amount { text-align: right; width: 150px; font-weight: 500; }
+          .subtotal-row { font-weight: bold; border-bottom: 1.5px solid #333; border-top: 1px solid #333; }
+          .total-row { font-weight: bold; font-size: 16px; border-bottom: 3px double #333; border-top: 2px solid #333; background-color: #eaeaea; }
+          .total-row td { padding: 10px; }
+          .signature-section { margin-top: 60px; page-break-inside: avoid; }
+          .signature-grid { display: flex; justify-content: space-between; gap: 40px; margin-top: 30px; }
+          .signature-box { border-top: 1px solid #333; width: 45%; pt: 10px; font-size: 13px; text-align: center; padding-top: 10px; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+            @page { size: A4; margin: 1.5cm; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Sportschützen Muhen</h1>
+          <h2>Jahresrechnung & Finanzbericht für das Vereinsjahr ${window._bhYear}</h2>
+        </div>
+
+        <!-- 1. BILANZ -->
+        <div class="section-header">Bilanz per 31. Dezember ${window._bhYear}</div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th class="code">Konto</th>
+              <th>Aktiven (Vermögen)</th>
+              <th class="amount">Saldo (CHF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${getPrintRows('Aktiven')}
+            <tr class="total-row">
+              <td colspan="2">TOTAL AKTIVEN</td>
+              <td class="amount">${fmtChf(totalAktiven)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table>
+          <thead>
+            <tr>
+              <th class="code">Konto</th>
+              <th>Passiven (Fremd- & Eigenkapital)</th>
+              <th class="amount">Saldo (CHF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${getPrintRows('Passiven')}
+            <tr class="total-row">
+              <td colspan="2">TOTAL PASSIVEN</td>
+              <td class="amount">${fmtChf(totalPassiven)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="page-break-after: always;"></div>
+
+        <!-- 2. ERFOLGSRECHNUNG -->
+        <div class="section-header">Erfolgsrechnung vom 1. Jan. bis 31. Dez. ${window._bhYear}</div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th class="code">Konto</th>
+              <th>Ertrag (Vereinseinnahmen)</th>
+              <th class="amount">Betrag (CHF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${getPrintErfolgsRows('Ertrag')}
+            <tr class="subtotal-row">
+              <td colspan="2">Total Erträge</td>
+              <td class="amount">${fmtChf(sumErtrag)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table>
+          <thead>
+            <tr>
+              <th class="code">Konto</th>
+              <th>Aufwand (Vereinsausgaben)</th>
+              <th class="amount">Betrag (CHF)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${getPrintErfolgsRows('Aufwand')}
+            <tr class="subtotal-row">
+              <td colspan="2">Total Aufwände</td>
+              <td class="amount">${fmtChf(sumAufwand)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table>
+          <tbody>
+            <tr class="total-row" style="background-color: ${gewinnVerlust >= 0 ? '#d1e7dd' : '#f8d7da'}; color: ${gewinnVerlust >= 0 ? '#0f5132' : '#842029'};">
+              <td colspan="2">${gewinnVerlust >= 0 ? 'VEREINSGEWINN (ÜBERSCHUSS)' : 'VEREINSVERLUST (DEFIZIT)'}</td>
+              <td class="amount">${fmtChf(gewinnVerlust)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 3. UNTERSCHRIFTEN -->
+        <div class="signature-section">
+          <p>Die Jahresrechnung wurde ordnungsgemäss erstellt und wird der Generalversammlung zur Genehmigung vorgelegt.</p>
+          <div class="signature-grid">
+            <div class="signature-box">
+              <br><br>
+              <p>Der Kassier:</p>
+              <p>Daniel Hunziker</p>
+            </div>
+            <div class="signature-box">
+              <br><br>
+              <p>Die Geschäftsprüfungskommission (Revisoren):</p>
+              <p>Name Revisor 1 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Name Revisor 2</p>
+            </div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          }
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+

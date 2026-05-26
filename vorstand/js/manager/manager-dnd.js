@@ -51,7 +51,12 @@ function initDragAndDrop() {
         const touch = e.touches[0];
         moveClone(touch.clientX, touch.clientY);
         removeDropHighlights();
+        
+        // WICHTIG: Klon kurz ausblenden, damit elementFromPoint das Element darunter findet
+        touchClone.style.display = 'none';
         const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+        touchClone.style.display = 'block';
+        
         const zone = elemBelow ? elemBelow.closest('.dropzone') : null;
         if (zone) zone.classList.add('drag-over');
     }

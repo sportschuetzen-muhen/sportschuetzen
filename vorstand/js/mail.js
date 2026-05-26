@@ -24,6 +24,34 @@ window._mailSortDir = 1;
 async function loadMailData(force = false) {
   if (_mailLoaded && !force) return;
 
+  _mailSelected.clear();
+
+  // Cache-First Integration:
+  if (!force && window._mglData && window._mglData.length > 0) {
+    console.log("⚡ loadMailData: Lade Mitglieder aus globalem Cache...");
+    const seen = new Set();
+    _mailAllMembers = window._mglData.filter(m => {
+      const pn = String(m.PersonNumber || '');
+      if (!pn || seen.has(pn)) return false;
+      seen.add(pn);
+
+      // Verstorbene + Ausgetretene immer raus
+      if (m.Deceased == 1 || m.Deceased === true ||
+          String(m.Deceased).toLowerCase() === 'true') return false;
+      if (m.Vereinsaustritt) return false;
+
+      // Aktiv ODER Passiv ODER Ehrenmitglied einschliessen
+      const istAktiv  = m.IsActive  == 1 || m.IsActive  === true || String(m.IsActive).toLowerCase()  === 'true';
+      const istPassiv = m.IsPassive == 1 || m.IsPassive === true || String(m.IsPassive).toLowerCase() === 'true';
+      const istEhren  = m.IsHonoraryMember == 1 || m.IsHonoraryMember === true || String(m.IsHonoraryMember).toLowerCase() === 'true';
+      return istAktiv || istPassiv || istEhren;
+    });
+
+    _mailLoaded = true;
+    renderMailUI();
+    return;
+  }
+
   _mailLoaded     = false;
   _mailAllMembers = [];
   _mailSelected.clear();
@@ -50,13 +78,16 @@ async function loadMailData(force = false) {
       return;
     }
 
+    // Cache im globalen Objekt window._mglData aktualisieren!
+    window._mglData = Array.isArray(data.data) ? data.data : [];
+
     const seen = new Set();
-    _mailAllMembers = data.data.filter(m => {
+    _mailAllMembers = window._mglData.filter(m => {
       const pn = String(m.PersonNumber || '');
       if (!pn || seen.has(pn)) return false;
       seen.add(pn);
 
-      // Verstorbene + Ausgetretene immer raus (Tippfehler Vereinsaustritt behoben)
+      // Verstorbene + Ausgetretene immer raus
       if (m.Deceased == 1 || m.Deceased === true ||
           String(m.Deceased).toLowerCase() === 'true') return false;
       if (m.Vereinsaustritt) return false;

@@ -2,9 +2,14 @@
 
 let sysMailState = null;
 
-async function loadSystemMailsData() {
+async function loadSystemMailsData(force = false) {
   const container = document.getElementById('system-mails-container');
   if(!container) return;
+  
+  if (!force && sysMailState && document.getElementById('app-info-list')) {
+    console.log("⚡ loadSystemMailsData: Lade aus lokalem Cache...");
+    return;
+  }
   
   container.innerHTML = `
     <div class="text-center p-4 text-muted">

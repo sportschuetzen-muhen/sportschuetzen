@@ -224,6 +224,9 @@ window.renderBuchhaltung = function() {
         <button class="bh-tab-btn ${window._bhActiveTab === 'analyse' ? 'active' : ''}" onclick="bhSwitchTab('analyse')">
           <i class="fas fa-chart-pie me-1.5"></i> Budget & Jahresvergleich
         </button>
+        <button class="bh-tab-btn ${window._bhActiveTab === 'cockpit' ? 'active' : ''}" onclick="bhSwitchTab('cockpit')">
+          <i class="fas fa-print me-1.5"></i> GV-Export & Cockpit
+        </button>
       </div>
       <div class="d-flex align-items-center mb-2 mb-md-0" style="gap: 10px;">
         <select class="form-select form-select-sm" id="bh-year-select" onchange="bhChangeYear(this.value)" style="width: auto;">
@@ -318,34 +321,72 @@ async function loadBuchhaltungData(silent = false) {
   }
 }
 
-// Berechnet die Salden der Konten live im Browser aus dem Journal
+// Berechnet die Salden der Konten live im Browser aus dem Journal (inkl. automatischem Vortrag für Bilanzkonten)
 function recalculateLiveAccountBalances() {
-  const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
+  const selectedYear = Number(window._bhYear);
+  
+  // Finde das früheste Buchungsjahr im Journal. Falls leer, nimm das aktuelle Jahr.
+  const journalYears = window._bhJournal.map(j => Number(j.jahr || selectedYear));
+  const minYear = journalYears.length > 0 ? Math.min(...journalYears) : selectedYear;
   
   window._bhKontenrahmen.forEach(acc => {
-    let balanceChange = 0;
     const accountCode = String(acc.konto).trim();
+    const isAssetOrLiability = (acc.klasse == '1' || acc.klasse == '2' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('pas'));
+    const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf'));
+
+    // 1. DYNAMISCHEN ERÖFFNUNGSSALDO FÜR DAS GEWÄHLTE JAHR ERMITTELN
+    let dynamicOpeningBalance = 0;
     
-    // Für jedes Journal-Item
+    if (selectedYear <= minYear) {
+      // Erstes Jahr in der Datenbank: Nutze die statischen Werte aus Google Sheets
+      dynamicOpeningBalance = Number(acc.eroeffnungssaldo || 0);
+    } else {
+      if (isAssetOrLiability) {
+        // Bilanzkonten (Aktiven/Passiven): Startguthaben + alle Veränderungen aus den Vorjahren
+        let accumulatedPriorChanges = 0;
+        const priorJournal = window._bhJournal.filter(j => Number(j.jahr) >= minYear && Number(j.jahr) < selectedYear);
+        
+        priorJournal.forEach(entry => {
+          const soll = String(entry.konto_soll).trim();
+          const haben = String(entry.konto_haben).trim();
+          const amount = Number(entry.betrag || 0);
+          
+          if (soll === accountCode) {
+            accumulatedPriorChanges += isAssetOrExpense ? amount : -amount;
+          }
+          if (haben === accountCode) {
+            accumulatedPriorChanges += isAssetOrExpense ? -amount : amount;
+          }
+        });
+        
+        dynamicOpeningBalance = Number(acc.eroeffnungssaldo || 0) + accumulatedPriorChanges;
+      } else {
+        // Erfolgsrechnungskonten (Aufwand/Ertrag) starten jedes Jahr bei 0.00
+        dynamicOpeningBalance = 0;
+      }
+    }
+    
+    // 2. VERÄNDERUNGEN IM AKTUELLEN BUCHUNGSJAHR
+    let currentYearChange = 0;
+    const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === selectedYear);
+    
     currentYearJournal.forEach(entry => {
       const soll = String(entry.konto_soll).trim();
       const haben = String(entry.konto_haben).trim();
       const amount = Number(entry.betrag || 0);
       
-      // Soll-Buchungen erhöhen Aktiv- und Aufwandskonten (Klasse 1, 4, 5, 6, 7) und verringern Passiv- und Ertragskonten (Klasse 2, 3)
-      // Haben-Buchungen verringern Aktiv- und Aufwandskonten und erhöhen Passiv- und Ertragskonten
-      const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf'));
-      
       if (soll === accountCode) {
-        balanceChange += isAssetOrExpense ? amount : -amount;
+        currentYearChange += isAssetOrExpense ? amount : -amount;
       }
       if (haben === accountCode) {
-        balanceChange += isAssetOrExpense ? -amount : amount;
+        currentYearChange += isAssetOrExpense ? -amount : amount;
       }
     });
     
-    acc._veraenderung = balanceChange;
-    acc._endsaldo = Number(acc.eroeffnungssaldo || 0) + balanceChange;
+    // Werte im Objekt speichern
+    acc._dynamicEroeffnungssaldo = dynamicOpeningBalance;
+    acc._veraenderung = currentYearChange;
+    acc._endsaldo = dynamicOpeningBalance + currentYearChange;
   });
 }
 
@@ -442,6 +483,12 @@ function renderActiveAccountingTab() {
       renderTabAnalyse(content);
     } else {
       content.innerHTML = `<div class="alert alert-info py-4 text-center"><i class="fas fa-spinner fa-spin me-2"></i> Lade Controlling-Diagramme...</div>`;
+    }
+  } else if (window._bhActiveTab === 'cockpit') {
+    if (typeof renderTabCockpit === 'function') {
+      renderTabCockpit(content);
+    } else {
+      content.innerHTML = `<div class="alert alert-info py-4 text-center"><i class="fas fa-spinner fa-spin me-2"></i> Lade GV-Export & Cockpit...</div>`;
     }
   }
 }
@@ -953,6 +1000,11 @@ function renderTabBerichte(container) {
 // RENDERING: TAB 2 – KASSABUCH-JOURNAL (Ledger mit voller Sortierbarkeit)
 // ---------------------------------------------------------------------
 function renderTabJournal(container) {
+  // Scroll-Positionen vor dem Rendern sichern, um ein Springen der Seite/Tabelle nach dem Speichern zu verhindern
+  const tableResp = container.querySelector('.table-responsive');
+  const tableScrollTop = tableResp ? tableResp.scrollTop : 0;
+  const windowScrollTop = window.scrollY || document.documentElement.scrollTop;
+
   // Hol das Journal für das aktuelle Jahr
   let filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
   
@@ -1039,6 +1091,13 @@ function renderTabJournal(container) {
       </div>
     </div>
   `;
+
+  // Scroll-Positionen wiederherstellen
+  const tableRespNew = container.querySelector('.table-responsive');
+  if (tableRespNew && tableScrollTop) {
+    tableRespNew.scrollTop = tableScrollTop;
+  }
+  window.scrollTo(0, windowScrollTop);
 }
 
 // Hilfsfunktion: Sucht den Kontonamen anhand der Nummer
@@ -1077,8 +1136,8 @@ function renderTabKontenrahmen(container) {
       valA = Number(a[col] || 0);
       valB = Number(b[col] || 0);
     } else if (col === 'eroeffnungssaldo') {
-      valA = Number(a.eroeffnungssaldo || 0);
-      valB = Number(b.eroeffnungssaldo || 0);
+      valA = Number(a._dynamicEroeffnungssaldo || 0);
+      valB = Number(b._dynamicEroeffnungssaldo || 0);
     } else if (col === 'budget') {
       const budA = window._bhBudget.find(x => String(x.konto).trim() === String(a.konto).trim());
       const budB = window._bhBudget.find(x => String(x.konto).trim() === String(b.konto).trim());
@@ -1114,7 +1173,7 @@ function renderTabKontenrahmen(container) {
         <td><span class="bh-konto-badge">${acc.konto}</span></td>
         <td class="fw-bold text-dark">${acc.bezeichnung}</td>
         <td><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
-        <td class="text-end text-muted">${fmtChf(acc.eroeffnungssaldo)}</td>
+        <td class="text-end text-muted">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>
         <td class="text-end ${acc._veraenderung >= 0 ? 'text-success' : 'text-danger'}">
           ${acc._veraenderung >= 0 ? '+' : ''}${fmtChf(acc._veraenderung)}
         </td>
@@ -1519,8 +1578,13 @@ window.bhOpenEntryModal = function(entryId) {
       idEl.value = entryId;
       
       let formattedDate = entry.datum;
-      if (entry.datum && entry.datum.includes('.')) {
-        formattedDate = displayToIso(entry.datum);
+      if (formattedDate) {
+        const dateStr = String(formattedDate).trim();
+        if (dateStr.includes('T')) {
+          formattedDate = dateStr.split('T')[0];
+        } else if (dateStr.includes('.')) {
+          formattedDate = displayToIso(dateStr);
+        }
       }
       datumEl.value = formattedDate || '';
       
@@ -1529,7 +1593,17 @@ window.bhOpenEntryModal = function(entryId) {
       sollEl.value = entry.konto_soll || '';
       habenEl.value = entry.konto_haben || '';
       betragEl.value = Number(entry.betrag || 0).toFixed(2);
-      typEl.value = entry.typ || 'Kassa';
+      
+      let actionType = entry.typ || 'Kassa';
+      if (actionType === 'Ausgabe / Bar' || actionType === 'Kassabuch Bar' || actionType === 'Barzahlung') {
+        actionType = 'Kassa';
+      } else if (actionType === 'Überweisung Bank') {
+        actionType = 'Überweisung';
+      } else if (actionType === 'Erlös / Einnahme') {
+        actionType = 'Einnahme';
+      }
+      typEl.value = actionType;
+      
       submitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern';
     }
   } else {
@@ -1592,8 +1666,27 @@ window.bhSaveJournalEntry = async function(event) {
       const modal = bootstrap.Modal.getInstance(modalEl);
       if (modal) modal.hide();
       
-      // Daten neu laden
-      await loadBuchhaltungData(true);
+      // Lokalen Speicher sofort aktualisieren (Optimistic UI Update)
+      if (result.data) {
+        const savedEntry = result.data;
+        if (payload.id) {
+          const idx = window._bhJournal.findIndex(j => Number(j.id) === Number(savedEntry.id));
+          if (idx !== -1) {
+            window._bhJournal[idx] = savedEntry;
+          }
+        } else {
+          window._bhJournal.push(savedEntry);
+        }
+        // Sofortige Neuberechnung und UI-Update im Browser
+        recalculateLiveAccountBalances();
+        updateAccountingKPIs();
+        renderActiveAccountingTab();
+      }
+      
+      // Verzögertes Neuladen im Hintergrund (Google Sheets Schreibverzögerung abwarten)
+      setTimeout(async () => {
+        await loadBuchhaltungData(true);
+      }, 1500);
     } else {
       throw new Error(result.error || "Unerwarteter Fehler im Backend.");
     }
@@ -1621,7 +1714,17 @@ window.bhDeleteJournalEntry = async function(entryId) {
 
     if (result.success) {
       showSuccess("🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!");
-      await loadBuchhaltungData(true);
+      
+      // Lokalen Speicher sofort aktualisieren
+      window._bhJournal = window._bhJournal.filter(j => Number(j.id) !== Number(entryId));
+      recalculateLiveAccountBalances();
+      updateAccountingKPIs();
+      renderActiveAccountingTab();
+      
+      // Verzögertes Neuladen im Hintergrund (Google Sheets Schreibverzögerung abwarten)
+      setTimeout(async () => {
+        await loadBuchhaltungData(true);
+      }, 1500);
     } else {
       throw new Error(result.error || "Unerwarteter Fehler beim Löschen.");
     }

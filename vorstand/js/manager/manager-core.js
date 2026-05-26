@@ -90,7 +90,7 @@ window.appState = appState;
         .drag-handle {
             position: absolute;
             left: 0; top: 0; bottom: 0;
-            width: 22px;
+            width: 38px;
             display: flex; align-items: center; justify-content: center;
             cursor: grab;
             touch-action: none;

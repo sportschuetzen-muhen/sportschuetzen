@@ -218,7 +218,7 @@ function renderPlayerItem(player) {
            data-id="${escapeHtml(String(player.id))}"
            style="border-left: 3px solid var(--primary) !important; overflow:hidden;">
         <div class="drag-handle">⠿</div>
-        <div class="card-body p-1 px-2 pointer-events-none" style="padding-left:26px !important;">
+        <div class="card-body p-1 px-2 pointer-events-none" style="padding-left:42px !important;">
           <div class="player-row pointer-events-none">
             <span class="player-name small fw-bold pointer-events-none"
                   style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;">
