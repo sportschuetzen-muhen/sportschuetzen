@@ -6,15 +6,10 @@ let jmPendingMoves = [];
 const EDITABLE_COLS_SHOOTERS = [6, 7, 8, 14, 15, 16, 17, 27, 28]; // Veraltet: Wird jetzt dynamisch berechnet
 const EDITABLE_COLS_HEADER = [6,7,8,9,10,11,12,13,14,15,16,17, 40,41,42,43,44,45,46,47,48,49,50,51]; // Veraltet: Wird jetzt dynamisch berechnet
 
-async function loadJahresmeisterschaftData(force = false, silent = false) {
+async function loadJahresmeisterschaftData() {
     const historySelect = document.getElementById('jm-history-select');
     if (historySelect && historySelect.value) {
         jmCurrentJahr = historySelect.value;
-    }
-
-    if (!force && jmRawGrid.length > 0 && historySelect) {
-        console.log("⚡ loadJahresmeisterschaftData: Lade aus lokalem Cache...");
-        return;
     }
 
     // Dropdown sperren während des Ladens
@@ -23,14 +18,8 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
     }
 
     try {
-        let res;
-        if (silent) {
-            const data = await apiFetch('jahresmeisterschaft', { jahr: jmCurrentJahr });
-            res = await data.json();
-        } else {
-            const data = await apiFetchWithLoading('jahresmeisterschaft', { jahr: jmCurrentJahr }, { loadingMessage: 'Lade Jahresmeisterschaft...' });
-            res = await data.json();
-        }
+        const data = await apiFetchWithLoading('jahresmeisterschaft', { jahr: jmCurrentJahr }, { loadingMessage: 'Lade Jahresmeisterschaft...' });
+        const res = await data.json();
 
         if (res.error) {
             throw new Error(res.message);
@@ -53,9 +42,7 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
         if (historySelect) {
             historySelect.disabled = false;
         }
-        if (!silent) {
-            hideLoadingOverlay();
-        }
+        hideLoadingOverlay();
     }
 }
 

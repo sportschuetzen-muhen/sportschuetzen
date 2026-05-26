@@ -3,14 +3,9 @@
 let gvState = null;
 let originalGvState = null;
 
-async function loadGVData(force = false) {
+async function loadGVData() {
   const container = document.getElementById('gv-container');
   if(!container) return;
-
-  if (!force && gvState && document.getElementById('gv-list')) {
-    console.log("⚡ loadGVData: Lade aus lokalem Cache...");
-    return;
-  }
   
   container.innerHTML = `
     <div class="text-center p-4 text-muted">
@@ -193,29 +188,16 @@ async function loadGVParticipants(eventId) {
     
     const tbody = document.getElementById('gv-anmelde-body');
     if(!tbody) return;
-
-    const hasCache = window._gvParticipantsCache && window._gvParticipantsCache[eventId];
-    if (!hasCache) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
-    }
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
     
     try {
-        let pData;
-        if (hasCache) {
-            console.log("⚡ loadGVParticipants: Verwende Cache...");
-            pData = window._gvParticipantsCache[eventId];
-        } else {
-            // Wir nutzen nun die neue Backend-API "getGVStatus", die uns Ja, Nein und Offen liefert!
-            const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
-            const result = await res.json();
-            
-            if (!result.success) throw new Error(result.error || "Fehler beim Laden");
-            
-            pData = result.data || [];
-            window._gvParticipantsCache = window._gvParticipantsCache || {};
-            window._gvParticipantsCache[eventId] = pData;
-        }
+        // Wir nutzen nun die neue Backend-API "getGVStatus", die uns Ja, Nein und Offen liefert!
+        const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
+        const result = await res.json();
         
+        if (!result.success) throw new Error(result.error || "Fehler beim Laden");
+        
+        const pData = result.data || [];
         window.currentGvData = pData;
         window.gvSortDir = { name: 1, status: 1 };
         renderGvTableBody();
@@ -368,9 +350,6 @@ async function saveGVData() {
         window.clearUnsaved();
         alert("✅ Gespeichert!");
         gvState = null;
-        if (typeof adminState !== 'undefined') {
-            adminState = null;
-        }
         if (typeof initGVControllingTab === 'function') {
             initGVControllingTab();
         }

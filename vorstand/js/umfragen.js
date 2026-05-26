@@ -7,27 +7,9 @@ let membersLookup = null;
 let umfragenSortField = 'datum';
 let umfragenSortDir = -1;
 
-async function loadUmfragenData(force = false) {
+async function loadUmfragenData() {
   const container = document.getElementById('umfragen-container');
   if(!container) return;
-  
-  if (force) {
-    window._umfragenParticipantsCache = {};
-    window._gvParticipantsCache = {};
-    umfragenState = null;
-    gvState = null;
-    rawResponsesLog = [];
-    rawViewsLog = [];
-    rawUmfragenMembers = [];
-    if (typeof adminState !== 'undefined') {
-      adminState = null;
-    }
-  }
-  
-  if (!force && umfragenState && document.getElementById('umfragen-tabs')) {
-    console.log("⚡ loadUmfragenData: Lade aus lokalem Cache...");
-    return;
-  }
   
   container.innerHTML = `
     <div class="text-center p-4 text-muted">
@@ -97,7 +79,6 @@ async function loadUmfragenData(force = false) {
 
     umfragenState = Array.isArray(data) ? data : (data.events || []);
     renderUmfragenUI(container);
-    setTimeout(preloadUmfragenAllDetails, 50);
   } catch (e) {
     container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden (Google Script bereits aktualisiert?): ${escapeHtml(e.message)}</div>`;
   }
@@ -112,9 +93,7 @@ function renderUmfragenUI(container) {
         <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-umfragen-events">🗓️ Events verwalten</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-teilnehmer" onclick="loadParticipantsIfEventSelected()">👥 Auswertung & Mails</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-gruppen" onclick="loadGroupsIfEventSelected()">🎯 Gruppen-Anmeldung</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-historie" onclick="loadUmfragenHistorie()">📜 Historie & Tracking</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-personenkreise" onclick="loadUmfragenPersonenkreise()">👥 Personenkreise</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-controlling" onclick="initGVControllingTab()">&#9881;&#65039; Generalversammlungen</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-controlling" onclick="initGVControllingTab()">&#9881;&#65039; Generalversammlungen</a></li>
     </ul>
 
     <div class="tab-content">
@@ -198,125 +177,6 @@ function renderUmfragenUI(container) {
                         </div>
                         <div id="umfragen-gruppen-container" class="small">
                             <div class="text-muted">Wähle einen Schiessanlass aus, um die Gruppenbildung zu sehen.</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- TAB 5: HISTORIE & TRACKING -->
-        <div class="tab-pane fade" id="tab-umfragen-historie">
-            <div class="row g-3">
-                <div class="col-md-12">
-                    <div class="card shadow-sm border-0 p-3">
-                        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-                            <h5 class="card-title mb-0">📜 Aktivitäts-Log & Gelesen-Tracking</h5>
-                            <div class="d-flex gap-2 align-items-center">
-                                <label class="form-label mb-0 small fw-bold">Event:</label>
-                                <select class="form-select form-select-sm" id="hist-event-filter" onchange="filterHistorieData()" style="width: auto; max-width: 250px;">
-                                    <option value="">-- Alle Events --</option>
-                                </select>
-                                <input type="text" class="form-control form-control-sm" id="hist-search-input" oninput="filterHistorieData()" placeholder="🔍 Mitglied suchen..." style="width: 180px;">
-                                <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenHistorie(true)">
-                                    🔄 Aktualisieren
-                                </button>
-                            </div>
-                        </div>
-                        <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active btn-sm" id="pills-rsvp-tab" data-bs-toggle="pill" data-bs-target="#pills-rsvp" type="button" role="tab">💬 An-/Abmeldungen</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link btn-sm" id="pills-views-tab" data-bs-toggle="pill" data-bs-target="#pills-views" type="button" role="tab">👁️ Gelesen-Tracking</button>
-                            </li>
-                        </ul>
-                        <div class="tab-content" id="pills-tabContent">
-                            <div class="tab-pane fade show active" id="pills-rsvp" role="tabpanel">
-                                <div class="table-responsive" style="max-height: 500px;">
-                                    <table class="table table-sm table-striped align-middle mb-0">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>Zeitpunkt</th>
-                                                <th>Mitglied</th>
-                                                <th>Event</th>
-                                                <th class="text-center">Status</th>
-                                                <th class="text-center">Begl.</th>
-                                                <th class="text-center">Essen</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="hist-rsvp-body">
-                                            <tr><td colspan="6" class="text-center text-muted py-3">Lade Daten...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            <div class="tab-pane fade" id="pills-views" role="tabpanel">
-                                <div class="table-responsive" style="max-height: 500px;">
-                                    <table class="table table-sm table-striped align-middle mb-0">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>Zeitpunkt</th>
-                                                <th>Mitglied</th>
-                                                <th>Event / Ort</th>
-                                                <th>Aktion/Info</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="hist-views-body">
-                                            <tr><td colspan="4" class="text-center text-muted py-3">Lade Daten...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- TAB 6: PERSONENKREISE -->
-        <div class="tab-pane fade" id="tab-umfragen-personenkreise">
-            <div class="card shadow-sm border-0 p-3">
-                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-                    <h5 class="card-title mb-0">👥 Mitglieder & Personenkreise</h5>
-                    <div class="d-flex gap-2">
-                        <input type="text" class="form-control form-control-sm" id="personenkreise-search" oninput="filterPersonenkreise()" placeholder="🔍 Mitglied suchen..." style="width: 200px;">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenPersonenkreise(true)">
-                            🔄 Aktualisieren
-                        </button>
-                    </div>
-                </div>
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <div class="card h-100 border-light shadow-sm">
-                            <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center">
-                                <span class="fw-bold">🎯 Aktiv-Verteiler</span>
-                                <span class="badge bg-light text-primary" id="count-pk-aktiv">0</span>
-                            </div>
-                            <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;">
-                                <ul class="list-group list-group-flush small" id="list-pk-aktiv"></ul>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card h-100 border-light shadow-sm">
-                            <div class="card-header bg-secondary text-white py-2 d-flex justify-content-between align-items-center">
-                                <span class="fw-bold">📁 Passiv-Verteiler</span>
-                                <span class="badge bg-light text-secondary" id="count-pk-passiv">0</span>
-                            </div>
-                            <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;">
-                                <ul class="list-group list-group-flush small" id="list-pk-passiv"></ul>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card h-100 border-light shadow-sm">
-                            <div class="card-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
-                                <span class="fw-bold">👥 Alle Mitglieder</span>
-                                <span class="badge bg-light text-dark" id="count-pk-alle">0</span>
-                            </div>
-                            <div class="card-body p-0" style="max-height: 450px; overflow-y: auto;">
-                                <ul class="list-group list-group-flush small" id="list-pk-alle"></ul>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -506,14 +366,10 @@ async function ensureMembersLookup() {
     if(membersLookup !== null) return;
     membersLookup = {};
     try {
-        // Verwende den globalen Cache window._mglData, falls bereits vorverlegt geladen,
-        // um eine redundante API-Anfrage ans Backend komplett zu vermeiden!
-        let members = window._mglData || [];
-        if (members.length === 0) {
-            const res = await apiFetch('mitglieder', 'action=getAll');
-            const data = await res.json();
-            members = Array.isArray(data.data) ? data.data : [];
-        }
+        // Fetch original mitglieder list to get addresses
+        const res = await apiFetch('mitglieder', 'action=getAll');
+        const data = await res.json();
+        const members = Array.isArray(data.data) ? data.data : [];
         members.forEach(m => {
             if(m.PersonNumber) {
                 membersLookup[String(m.PersonNumber).trim()] = m;
@@ -539,27 +395,14 @@ async function loadParticipantsIfEventSelected() {
     const mailBtn = document.getElementById('btn-umfragen-mail');
     if(!listDiv) return;
 
-    const hasCache = window._umfragenParticipantsCache && window._umfragenParticipantsCache[currentEventId];
-    if (!hasCache) {
-        listDiv.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer...`;
-        if(mailBtn) mailBtn.disabled = true;
-    }
-    
+    listDiv.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer...`;
+    if(mailBtn) mailBtn.disabled = true;
     try {
         await ensureMembersLookup();
 
-        let pData;
-        if (hasCache) {
-            console.log("⚡ loadParticipantsIfEventSelected: Verwende Cache...");
-            pData = window._umfragenParticipantsCache[currentEventId];
-        } else {
-            const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentEventId)}`);
-            pData = await res.json();
-            window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
-            window._umfragenParticipantsCache[currentEventId] = pData;
-        }
+        const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentEventId)}`);
+        const pData = await res.json();
         // pData is array of {lizenz, name} // The GAS only returns Lizenz + Name
-        pData.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
         
         eventParticipants = [];
 
@@ -675,27 +518,15 @@ async function loadGroupsIfEventSelected() {
     const mailBtn = document.getElementById('btn-generate-group-mail');
     if(!container) return;
 
-    const hasCache = window._umfragenParticipantsCache && window._umfragenParticipantsCache[currentGroupEventId];
-    if (!hasCache) {
-        container.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer & bilde Gruppen...`;
-        mailBtn.disabled = true;
-    }
+    container.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> Lade Teilnehmer & bilde Gruppen...`;
+    mailBtn.disabled = true;
 
     try {
         await ensureMembersLookup();
 
-        let pData;
-        if (hasCache) {
-            console.log("⚡ loadGroupsIfEventSelected: Verwende Cache...");
-            pData = window._umfragenParticipantsCache[currentGroupEventId];
-        } else {
-            const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentGroupEventId)}`);
-            pData = await res.json();
-            window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
-            window._umfragenParticipantsCache[currentGroupEventId] = pData;
-        }
+        const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentGroupEventId)}`);
+        const pData = await res.json();
         
-        pData.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
         currentGroupParticipants = [];
 
         pData.forEach(p => {
@@ -1038,50 +869,21 @@ async function initGVControllingTab() {
   }
 
   try {
-    let loadedAdminData = null;
-    let loadedVorstandData = null;
-
-    // Verwende vorverlegte Admin-Daten aus Cache falls vorhanden
-    if (typeof adminState !== 'undefined' && adminState) {
-      console.log("⚡ initGVControllingTab: Verwende vorverlegte Admin-Daten aus Cache...");
-      loadedAdminData = JSON.parse(JSON.stringify(adminState));
-    } else {
-      const res = await apiFetch('termine', 'action=loadAdminData');
-      loadedAdminData = await res.json();
-    }
-
-    // Berechne Vorstand aus vorverlegtem Cache falls vorhanden
-    if (window._mglData && window._mglFunktionenCache) {
-      console.log("⚡ initGVControllingTab: Berechne Vorstand aus vorverlegtem Cache...");
-      const vorstandPNs = {};
-      Object.entries(window._mglFunktionenCache).forEach(([pn, funcs]) => {
-        funcs.forEach(f => {
-          if (!String(f.OfficialFunctionExitDate || '').trim()) {
-            const cat = String(f.OfficialFunctionCategory || '').toLowerCase();
-            if (!cat.includes('hausmeister') && !cat.includes('hauswart')) {
-              vorstandPNs[String(pn)] = true;
-            }
-          }
-        });
-      });
-      loadedVorstandData = window._mglData
-        .filter(m => vorstandPNs[String(m.PersonNumber)])
-        .map(m => ({
-          name: (String(m.FirstName || '') + " " + String(m.LastName || '')).trim() || m.PrimaryEmail,
-          email: String(m.PrimaryEmail || m.Email || '').trim()
-        }))
-        .filter(x => x.email);
-      loadedVorstandData.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
-      const resVorstand = await apiFetch('mitglieder', 'action=getVorstand');
+    const [resAdmin, resVorstand] = await Promise.all([
+      apiFetch('termine', 'action=loadAdminData'),
+      apiFetch('mitglieder', 'action=getVorstand')
+    ]);
+    gvState = await resAdmin.json();
+    try {
       const vorstandData = await resVorstand.json();
-      loadedVorstandData = vorstandData.success ? vorstandData.data : [];
-    }
+      if(vorstandData.success) {
+        gvState.vorstandMembers = vorstandData.data;
+      } else {
+        gvState.vorstandMembers = [];
+      }
+    } catch(e) { gvState.vorstandMembers = []; }
 
-    gvState = loadedAdminData;
-    gvState.vorstandMembers = loadedVorstandData;
     originalGvState = JSON.parse(JSON.stringify(gvState));
-
     renderGVListEmbedded();
     fetchGVEventsEmbedded();
   } catch (e) {
@@ -1224,409 +1026,21 @@ function removeGVMailEmbedded(idx, email) {
   renderGVListEmbedded();
 }
 
-function fetchGVEventsEmbedded() {
+async function fetchGVEventsEmbedded() {
   const selector = document.getElementById('gv-event-selector');
   if (!selector) return;
-  
-  // Verwende die bereits geladenen Events aus dem globalen umfragenState,
-  // anstatt unnötig erneut eine API-Anfrage ans Backend zu senden!
-  const events = umfragenState || [];
-  selector.innerHTML = '<option value="">-- Bitte wählen --</option>' +
-    events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
-      (gvState.linked_event === e.id ? ' selected' : '') + '>' +
-      escapeHtml(e.title) + ' (' + (e.datum ? e.datum.split('T')[0] : '') + ')</option>').join('');
-  if (gvState.linked_event) {
-    loadGVParticipants(gvState.linked_event);
+  try {
+    const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
+    const data = await res.json();
+    const events = Array.isArray(data) ? data : (data.events || []);
+    selector.innerHTML = '<option value="">-- Bitte waehlen --</option>' +
+      events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
+        (gvState.linked_event === e.id ? ' selected' : '') + '>' +
+        escapeHtml(e.title) + ' (' + (e.datum ? e.datum.split('T')[0] : '') + ')</option>').join('');
+    if (gvState.linked_event) {
+      loadGVParticipants(gvState.linked_event);
+    }
+  } catch (e) {
+    if (selector) selector.innerHTML = '<option value="">Fehler beim Laden</option>';
   }
-}
-
-// === TAB 5: HISTORIE & TRACKING LOGIK ===
-let rawResponsesLog = [];
-let rawViewsLog = [];
-
-function getEventIdFromLog(log) {
-    if (!log) return '';
-    // 1. Direkt prüfen
-    if (log.eventid !== undefined) return String(log.eventid);
-    if (log.event !== undefined) return String(log.event);
-    
-    // 2. Alle Keys durchsuchen (case-insensitive, Sonderzeichen ignoriert)
-    for (const key of Object.keys(log)) {
-        const normalizedKey = key.toLowerCase().trim().replace(/[-_\s]/g, '');
-        if (normalizedKey === 'eventid' || normalizedKey === 'event' || normalizedKey === 'anlassid' || normalizedKey === 'anlass') {
-            return String(log[key]);
-        }
-    }
-    
-    // 3. Fallback: Erster Key (Spalte A), falls nicht einer der bekannten Spalten
-    const firstKey = Object.keys(log)[0];
-    if (firstKey && !['lizenz', 'zeitpunkt', 'timestamp', 'info', 'teilnahme', 'attending', 'anzahl_teilnehmer', 'count', 'anzahl_essen', 'essen', 'food'].includes(firstKey.toLowerCase().trim())) {
-        return String(log[firstKey]);
-    }
-    return '';
-}
-
-async function loadUmfragenHistorie(force = false) {
-    const rsvpBody = document.getElementById('hist-rsvp-body');
-    const viewsBody = document.getElementById('hist-views-body');
-    if (!rsvpBody || !viewsBody) return;
-
-    const hasLogs = rawResponsesLog.length > 0 && rawViewsLog.length > 0;
-    if (force || !hasLogs) {
-        rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Historie...</td></tr>`;
-        viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade Gelesen-Logs...</td></tr>`;
-    }
-
-    try {
-        await ensureMembersLookup();
-
-        if (force || !hasLogs) {
-            // 1. Fetch raw logs from new API actions
-            const [resLog, resViews] = await Promise.all([
-                apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
-                apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
-            ]);
-
-            if (resLog && resLog.error) throw new Error(resLog.error);
-            if (resViews && resViews.error) throw new Error(resViews.error);
-
-            rawResponsesLog = Array.isArray(resLog) ? resLog : [];
-            rawViewsLog = Array.isArray(resViews) ? resViews : [];
-
-            // Sort by timestamp desc
-            const parseTime = (t) => t ? new Date(t).getTime() : 0;
-            rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
-            rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
-        }
-
-        // 2. Populate Event Selector
-        const filterSelect = document.getElementById('hist-event-filter');
-        if (filterSelect) {
-            // Get unique events from events in state OR in logs
-            const eventsMap = {};
-            (umfragenState || []).forEach(e => {
-                if (e.id) eventsMap[e.id] = e.title;
-            });
-            rawResponsesLog.forEach(log => {
-                const evId = getEventIdFromLog(log);
-                if (evId && !eventsMap[evId]) {
-                    eventsMap[evId] = `Unbekanntes Event (${evId})`;
-                }
-            });
-
-            // Keep selected value if any
-            const curVal = filterSelect.value;
-            filterSelect.innerHTML = '<option value="">-- Alle Events --</option>' +
-                Object.entries(eventsMap).map(([id, title]) => `<option value="${escapeHtml(id)}">${escapeHtml(title)}</option>`).join('');
-            filterSelect.value = curVal;
-        }
-
-        filterHistorieData();
-
-    } catch (e) {
-        rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</td></tr>`;
-        viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</td></tr>`;
-    }
-}
-
-function filterHistorieData() {
-    const rsvpBody = document.getElementById('hist-rsvp-body');
-    const viewsBody = document.getElementById('hist-views-body');
-    if (!rsvpBody || !viewsBody) return;
-
-    const eventFilter = document.getElementById('hist-event-filter')?.value || '';
-    const searchFilter = (document.getElementById('hist-search-input')?.value || '').toLowerCase().trim();
-
-    // Map events for name resolution
-    const eventsMap = {};
-    (umfragenState || []).forEach(e => {
-        if (e.id) eventsMap[e.id] = e.title;
-    });
-
-    const formatTimestamp = (ts) => {
-        if (!ts) return '-';
-        const d = new Date(ts);
-        if (isNaN(d.getTime())) return escapeHtml(ts);
-        return d.toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    };
-
-    // 1. Render Responses Log
-    const filteredResponses = rawResponsesLog.filter(log => {
-        const evId = getEventIdFromLog(log);
-        const matchesEvent = !eventFilter || String(evId) === eventFilter;
-
-        let name = "Lizenz " + log.lizenz;
-        let liz = String(log.lizenz || '').trim();
-        if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
-        const m = membersLookup[liz] || membersLookup[String(log.lizenz).trim()];
-        if (m) name = `${m.LastName} ${m.FirstName}`;
-
-        const matchesSearch = !searchFilter ||
-            name.toLowerCase().includes(searchFilter) ||
-            String(log.lizenz).includes(searchFilter);
-
-        return matchesEvent && matchesSearch;
-    });
-
-    if (filteredResponses.length === 0) {
-        rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">Keine Einträge für die Auswahl gefunden.</td></tr>`;
-    } else {
-        rsvpBody.innerHTML = filteredResponses.map(log => {
-            let name = "Lizenz " + log.lizenz;
-            let liz = String(log.lizenz || '').trim();
-            if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
-            const m = membersLookup[liz] || membersLookup[String(log.lizenz).trim()];
-            if (m) name = `<b>${m.LastName} ${m.FirstName}</b>`;
-
-            const evId = getEventIdFromLog(log);
-            const evTitle = eventsMap[evId] || `Event ${evId}`;
-            const attending = isTrue(log.teilnahme !== undefined ? log.teilnahme : log.attending);
-            const statusBadge = attending
-                ? `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fa-solid fa-check me-1"></i>Angemeldet</span>`
-                : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1"><i class="fa-solid fa-xmark me-1"></i>Abgemeldet</span>`;
-
-            const countVal = log.anzahl_teilnehmer !== undefined ? log.anzahl_teilnehmer : log.count;
-            const essenVal = log.anzahl_essen !== undefined ? log.anzahl_essen : log.essen;
-
-            return `<tr>
-                <td class="text-muted small">${formatTimestamp(log.timestamp)}</td>
-                <td>${name} <small class="text-muted">(${escapeHtml(log.lizenz)})</small></td>
-                <td>${escapeHtml(evTitle)}</td>
-                <td class="text-center">${statusBadge}</td>
-                <td class="text-center">${parseInt(countVal) > 1 ? `<span class="badge bg-info text-dark">+${parseInt(countVal)-1}</span>` : '-'}</td>
-                <td class="text-center">${parseInt(essenVal) > 0 ? `<span class="badge bg-warning text-dark">${parseInt(essenVal)}</span>` : '-'}</td>
-            </tr>`;
-        }).join('');
-    }
-
-    // 2. Render Views Log
-    const filteredViews = rawViewsLog.filter(view => {
-        const evId = getEventIdFromLog(view);
-        const matchesEvent = !eventFilter || String(evId) === eventFilter;
-
-        let name = "Lizenz " + view.lizenz;
-        let liz = String(view.lizenz || '').trim();
-        if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
-        const m = membersLookup[liz] || membersLookup[String(view.lizenz).trim()];
-        if (m) name = `${m.LastName} ${m.FirstName}`;
-
-        const matchesSearch = !searchFilter ||
-            name.toLowerCase().includes(searchFilter) ||
-            String(view.lizenz).includes(searchFilter);
-
-        return matchesEvent && matchesSearch;
-    });
-
-    if (filteredViews.length === 0) {
-        viewsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3">Keine Einträge für die Auswahl gefunden.</td></tr>`;
-    } else {
-        viewsBody.innerHTML = filteredViews.map(view => {
-            let name = "Lizenz " + view.lizenz;
-            let liz = String(view.lizenz || '').trim();
-            if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
-            const m = membersLookup[liz] || membersLookup[String(view.lizenz).trim()];
-            if (m) name = `<b>${m.LastName} ${m.FirstName}</b>`;
-
-            const evId = getEventIdFromLog(view);
-            let evTitle = eventsMap[evId] || `Event ${evId}`;
-            if (evId === 'APP_OPEN') evTitle = `📱 Portal geöffnet`;
-
-            return `<tr>
-                <td class="text-muted small">${formatTimestamp(view.zeitpunkt || view.timestamp)}</td>
-                <td>${name} <small class="text-muted">(${escapeHtml(view.lizenz)})</small></td>
-                <td>${escapeHtml(evTitle)}</td>
-                <td><span class="text-secondary small">${escapeHtml(view.info || 'Gesehen')}</span></td>
-            </tr>`;
-        }).join('');
-    }
-}
-
-// === TAB 6: PERSONENKREISE LOGIK ===
-let rawUmfragenMembers = [];
-
-async function loadUmfragenPersonenkreise(force = false) {
-    const listAktiv = document.getElementById('list-pk-aktiv');
-    const listPassiv = document.getElementById('list-pk-passiv');
-    const listAlle = document.getElementById('list-pk-alle');
-    if (!listAktiv || !listPassiv || !listAlle) return;
-
-    const hasMembers = rawUmfragenMembers.length > 0;
-    if (force || !hasMembers) {
-        listAktiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
-        listPassiv.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
-        listAlle.innerHTML = `<li class="list-group-item text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Lade...</li>`;
-    }
-
-    try {
-        if (force || !hasMembers) {
-            let data = [];
-            if (window._mglData && window._mglData.length > 0) {
-                console.log("⚡ loadUmfragenPersonenkreise: Verwende vorverlegte Mitglieder-Daten aus Cache...");
-                const isTrue = val => val === true || val === 1 || val === '1' || String(val).toLowerCase() === 'ja' || String(val).toLowerCase() === 'true';
-                data = window._mglData.filter(m => {
-                    if (isTrue(m.Deceased)) return false;
-                    const isAct = isTrue(m.IsActive);
-                    const isPass = isTrue(m._istPassiv) || isTrue(m.IsPassive) || String(m._kategorie || '').toLowerCase().includes('passiv');
-                    const isEhren = isTrue(m._istEhren) || isTrue(m.IsHonoraryMember) || String(m._kategorie || '').toLowerCase().includes('ehren');
-                    return isAct || isPass || isEhren;
-                }).map(m => {
-                    const isPass = isTrue(m._istPassiv) || isTrue(m.IsPassive) || String(m._kategorie || '').toLowerCase().includes('passiv');
-                    let gruppe = 'aktiv';
-                    if (isPass) {
-                        gruppe = 'passiv';
-                    }
-                    return {
-                        name: `${m.LastName || ''} ${m.FirstName || ''}`.trim() || m.PrimaryEmail || 'Unbekannt',
-                        mail: String(m.PrimaryEmail || m.AdditionalEmail || '').trim(),
-                        lizenz: String(m.PersonNumber || m.AddressNumber || '').trim(),
-                        gruppe: gruppe
-                    };
-                });
-            } else {
-                const res = await apiFetch('umfragen', 'action=getMembers');
-                data = await res.json();
-            }
-
-            rawUmfragenMembers = Array.isArray(data) ? data : [];
-        }
-        filterPersonenkreise();
-
-    } catch (e) {
-        listAktiv.innerHTML = `<li class="list-group-item text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</li>`;
-        listPassiv.innerHTML = `<li class="list-group-item text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</li>`;
-        listAlle.innerHTML = `<li class="list-group-item text-center text-danger py-3">Fehler: ${escapeHtml(e.message)}</li>`;
-    }
-}
-
-function filterPersonenkreise() {
-    const listAktiv = document.getElementById('list-pk-aktiv');
-    const listPassiv = document.getElementById('list-pk-passiv');
-    const listAlle = document.getElementById('list-pk-alle');
-    if (!listAktiv || !listPassiv || !listAlle) return;
-
-    const search = (document.getElementById('personenkreise-search')?.value || '').toLowerCase().trim();
-
-    const filtered = rawUmfragenMembers.filter(m => {
-        if (!search) return true;
-        return String(m.name || '').toLowerCase().includes(search) ||
-               String(m.lizenz || '').includes(search) ||
-               String(m.mail || '').toLowerCase().includes(search);
-    }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
-
-    const buildItem = (m) => {
-        const mailStr = m.mail ? `<div class="text-muted small mt-1"><i class="fa-regular fa-envelope me-1"></i>${escapeHtml(m.mail)}</div>` : '';
-        return `
-            <li class="list-group-item py-2 px-3 hover-item">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <div class="fw-bold text-dark">${escapeHtml(m.name)}</div>
-                        ${mailStr}
-                    </div>
-                    <span class="badge bg-light text-dark border small text-muted font-monospace">${escapeHtml(m.lizenz)}</span>
-                </div>
-            </li>
-        `;
-    };
-
-    const aktivMembers = filtered.filter(m => String(m.gruppe).toLowerCase() === 'aktiv');
-    const passivMembers = filtered.filter(m => String(m.gruppe).toLowerCase() === 'passiv');
-    const alleMembers = filtered;
-
-    // Update Counts
-    document.getElementById('count-pk-aktiv').innerText = aktivMembers.length;
-    document.getElementById('count-pk-passiv').innerText = passivMembers.length;
-    document.getElementById('count-pk-alle').innerText = alleMembers.length;
-
-    // Update Lists
-    if (aktivMembers.length === 0) {
-        listAktiv.innerHTML = `<li class="list-group-item text-center text-muted py-3">Keine aktiven Mitglieder</li>`;
-    } else {
-        listAktiv.innerHTML = aktivMembers.map(buildItem).join('');
-    }
-
-    if (passivMembers.length === 0) {
-        listPassiv.innerHTML = `<li class="list-group-item text-center text-muted py-3">Keine passiven Mitglieder</li>`;
-    } else {
-        listPassiv.innerHTML = passivMembers.map(buildItem).join('');
-    }
-
-    if (alleMembers.length === 0) {
-        listAlle.innerHTML = `<li class="list-group-item text-center text-muted py-3">Keine Mitglieder gefunden</li>`;
-    } else {
-        listAlle.innerHTML = alleMembers.map(buildItem).join('');
-    }
-}
-
-// === HINTERGRUND-PRELOADER FÜR UMFRAGEN-DETAILS ===
-async function preloadUmfragenAllDetails() {
-    console.log("🕒 Starte Hintergrund-Preloading für alle Umfragen-Details...");
-    try {
-        // 1. Adress-Lookup im Hintergrund vorverlegen
-        await ensureMembersLookup();
-
-        // 2. Historie & Tracking Logs vorverlegen
-        const hasLogs = rawResponsesLog.length > 0 && rawViewsLog.length > 0;
-        if (!hasLogs) {
-            Promise.all([
-                apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
-                apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
-            ]).then(([resLog, resViews]) => {
-                rawResponsesLog = Array.isArray(resLog) ? resLog : [];
-                rawViewsLog = Array.isArray(resViews) ? resViews : [];
-                
-                const parseTime = (t) => t ? new Date(t).getTime() : 0;
-                rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
-                rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
-                console.log("✅ Historie & Tracking Logs im Hintergrund geladen.");
-                
-                // Falls der User bereits auf dem Tab ist, Daten direkt rendern
-                if (document.getElementById('hist-rsvp-body') && document.getElementById('hist-rsvp-body').innerHTML.includes('Lade')) {
-                    filterHistorieData();
-                }
-            }).catch(err => console.warn("Hintergrund-Laden der Historie fehlgeschlagen:", err));
-        }
-
-        // 3. Teilnehmer für alle Events im Hintergrund vorverlegen
-        const events = umfragenState || [];
-        window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
-        window._gvParticipantsCache = window._gvParticipantsCache || {};
-
-        // Wir rufen die Api-Anfragen parallel auf, um eine extrem schnelle Ladezeit zu erreichen
-        const promises = events.map(async (e) => {
-            const eventId = e.id;
-            if (!eventId) return;
-
-            // Teilnehmer preloade
-            if (!window._umfragenParticipantsCache[eventId]) {
-                try {
-                    const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(eventId)}`);
-                    const pData = await res.json();
-                    window._umfragenParticipantsCache[eventId] = pData;
-                    console.log(`✅ Teilnehmer für Event ${eventId} im Hintergrund geladen.`);
-                } catch (err) {
-                    console.warn(`Fehler beim Preload der Teilnehmer für Event ${eventId}:`, err);
-                }
-            }
-
-            // GV Status preloade
-            if (!window._gvParticipantsCache[eventId]) {
-                try {
-                    const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
-                    const result = await res.json();
-                    if (result.success) {
-                        window._gvParticipantsCache[eventId] = result.data || [];
-                        console.log(`✅ GV Status für Event ${eventId} im Hintergrund geladen.`);
-                    }
-                } catch (err) {
-                    console.warn(`Fehler beim Preload des GV Status für Event ${eventId}:`, err);
-                }
-            }
-        });
-
-        await Promise.all(promises);
-        console.log("✅ Hintergrund-Preloading für Umfragen vollständig abgeschlossen!");
-
-    } catch (err) {
-        console.warn("Fehler beim Preload von Umfragen-Details:", err);
-    }
 }

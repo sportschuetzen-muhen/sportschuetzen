@@ -27,14 +27,8 @@ let resultateState = {
 const TEAM_LIMIT = 4;
 const POOL_LABEL = "Pool";
 
-function loadResultateData(force = false) {
+function loadResultateData() {
   ensureResultateShell();
-
-  if (!force && resultateState.rows.length > 0 && document.getElementById('resultate-app')) {
-    console.log("⚡ loadResultateData: Lade aus lokalem Cache...");
-    return;
-  }
-
   setStatus("Lade…", false);
   renderLoading();
 
@@ -86,7 +80,7 @@ function ensureResultateShell() {
         <div class="d-flex gap-2 flex-wrap">
           <button class="btn btn-outline-primary btn-sm" onclick="pushOneSignalGrenzland()">📣 Push</button>
           <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup_Grenzland übernehmen (nur fehlende)">📥 Von Setup laden</button>
-          <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData(true)">🔄 Laden</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData()">🔄 Laden</button>
           <button id="btn-save-resultate" class="btn btn-success btn-sm fw-bold" onclick="saveResultateData()">💾 Speichern</button>
         </div>
       </div>
