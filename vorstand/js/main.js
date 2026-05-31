@@ -1041,10 +1041,12 @@ function navTo(viewId, el) {
 
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('show');
+    document.body.classList.toggle('sidebar-open');
 }
 
 function closeSidebarMobile() {
     document.getElementById('sidebar').classList.remove('show');
+    document.body.classList.remove('sidebar-open');
 }
 
 // =========================================================

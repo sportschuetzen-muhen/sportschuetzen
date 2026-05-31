@@ -76,96 +76,136 @@ window.appState = appState;
         }
 
         /* --- Drag & Drop --- */
-        .draggable-player {
-            cursor: grab;
-            user-select: none;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
-            position: relative;
-            min-height: 48px;
-            display: flex;
-            align-items: center;
-            touch-action: manipulation;
-        }
-        /* Drag Handle */
-        .drag-handle {
+     .draggable-player {
+    cursor: grab;
+    user-select: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    position: relative;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    touch-action: manipulation; /* WICHTIG */
+}
+     /* Drag Handle – nur dieser Bereich triggert Drag */
+.drag-handle {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 22px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: grab;
+  touch-action: none;   /* NUR hier Touch-Drag, Rest scrollt */
+  color: #adb5bd;
+  font-size: 13px;
+  z-index: 1;
+}
+/* Player selbst scrollt normal */
+.draggable-player {
+  touch-action: pan-y;  /* pan-y statt manipulation/none */
+}
+
+        /* Drag Handle Icon */
+        .draggable-player::before {
+            content: '⋮⋮';
             position: absolute;
-            left: 0; top: 0; bottom: 0;
-            width: 38px;
-            display: flex; align-items: center; justify-content: center;
-            cursor: grab;
-            touch-action: none;
+            left: 6px;
             color: #adb5bd;
-            font-size: 13px;
-            z-index: 1;
-        }
-        .drag-clone {
-            position: fixed;
-            z-index: 9999 !important;
+            font-size: 14px;
             pointer-events: none;
-            opacity: 0.8;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.25) !important;
-            transform: scale(1.05);
-            width: 140px !important;
-            min-height: 40px !important;
         }
+        .draggable-player .card-body {
+            padding-left: 24px !important; /* Platz für Handle */
+            width: 100%;
+        }
+
         .dropzone {
             transition: background-color 0.2s, border-color 0.2s;
         }
         .dropzone.drag-over {
-            background-color: rgba(13, 110, 253, 0.15) !important;
-            border-color: var(--primary) !important;
-            border-style: dashed !important;
+            background-color: rgba(25, 135, 84, 0.1) !important;
+            border: 2px dashed var(--success) !important;
+            animation: pulse-border 1.2s infinite;
+        }
+        @keyframes pulse-border {
+            0% { border-color: rgba(25, 135, 84, 0.4); }
+            50% { border-color: rgba(25, 135, 84, 1); }
+            100% { border-color: rgba(25, 135, 84, 0.4); }
         }
 
-        /* --- Ghost Slots --- */
+        .zone-full {
+            background-color: #f8f9fa !important;
+            border: 1px solid #dee2e6 !important;
+        }
+
+.pool-scroll-area {
+    box-shadow: inset -3px 0 0 #dee2e6;
+}
+
+.teams-scroll-area {
+    box-shadow: inset 3px 0 0 #dee2e6;
+}
+
         .ghost-slot {
-            border: 1px dashed #ced4da;
-            background: rgba(0,0,0,0.02);
-            border-radius: 4px;
+            border: 2px dashed #cbd5e1 !important;
+            background: rgba(255,255,255,0.5);
             pointer-events: none;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        /* --- Layout & Viewport (Desktop-Split-Design) --- */
-        .manager-split {
-            display: flex;
-            height: calc(100vh - var(--toolbar-h) - 70px);
-            overflow: hidden;
-            gap: 15px;
-        }
-        .pool-scroll-area {
-            width: 260px;
-            flex-shrink: 0;
-            overflow-y: auto;
-            height: 100%;
-            padding-right: 5px;
-        }
-        .teams-scroll-area {
-            flex-grow: 1;
-            overflow-y: auto;
-            height: 100%;
-            padding-right: 5px;
-        }
-        .sidebar-stack {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        .sidebar-card {
-            display: flex;
-            flex-direction: column;
-            max-height: 100%;
-        }
-        .sidebar-card .card-body {
-            overflow-y: auto;
-            flex-grow: 1;
+        .drag-clone {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+            border-left: 4px solid var(--primary);
+            opacity: 0.95;
+            width: 220px;
+            transform: scale(1.05);
         }
 
-        /* --- Floating Action Button (FAB) --- */
+        /* --- Desktop Sidebar --- */
+        .sidebar-stack { display: flex; flex-direction: column; gap: .75rem; }
+        .sidebar-card .card-header { padding: .45rem .65rem; }
+        .sidebar-card .card-body { padding: .5rem; }
+
+        .mail-body {
+            max-height: var(--mail-max);
+            overflow: auto;
+            border: 2px dashed #ccc;
+        }
+     .pool-body {
+    overflow: visible;             /* Mobile: kein eigener Scroll-Container */
+}
+@media (min-width: 768px) {
+    .pool-body {
+        max-height: var(--pool-max);
+        overflow: auto;
+    }
+}
+
+        /* --- Skeleton Loading --- */
+        .skeleton-block {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s infinite;
+            border-radius: 4px;
+        }
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* --- Floating Action Button (FAB) Speed Dial --- */
         .fab-container {
             position: fixed;
-            bottom: 25px;
-            right: 25px;
-            z-index: 1000;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1050;
             display: flex;
             flex-direction: column-reverse;
             align-items: center;
@@ -178,88 +218,185 @@ window.appState = appState;
             background-color: var(--primary);
             color: white;
             border: none;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 12px rgba(13, 110, 253, 0.4);
+            font-size: 24px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
+            transition: transform 0.2s, background-color 0.2s;
             cursor: pointer;
-            transition: transform 0.2s;
         }
-        .fab-container.open .fab-main {
+        .fab-main.active {
             transform: rotate(45deg);
             background-color: var(--danger);
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
         }
         .fab-menu {
-            display: none;
-            flex-direction: column-reverse;
-            gap: 10px;
-            align-items: center;
-        }
-        .fab-container.open .fab-menu {
             display: flex;
+            flex-direction: column;
+            gap: 12px;
+            opacity: 0;
+            transform: translateY(20px) scale(0.8);
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .fab-container:hover .fab-menu,
+        .fab-container.open .fab-menu {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
         }
         .fab-item {
-            width: 45px;
-            height: 45px;
+            width: 48px;
+            height: 48px;
             border-radius: 50%;
-            color: white;
             border: none;
-            box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+            color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
             cursor: pointer;
             position: relative;
         }
-        .fab-item::after {
+        /* FAB Labels */
+        .fab-item::before {
             content: attr(data-label);
             position: absolute;
-            right: 55px;
-            background: #333;
+            right: 56px;
+            background: rgba(0,0,0,0.75);
             color: white;
-            padding: 3px 8px;
+            padding: 4px 10px;
             border-radius: 4px;
             font-size: 12px;
             white-space: nowrap;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            opacity: 0;
             pointer-events: none;
-            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+        .fab-item:hover::before { opacity: 1; }
+
+        @media print {
+            .no-print { display: none !important; }
+            .card { break-inside: avoid; border: 1px solid #ccc !important; box-shadow: none !important; }
+            body { background: white; }
+            .fab-container { display: none !important; }
         }
 
-        /* --- Skeleton Loaders --- */
-        .skeleton-block {
-            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-            background-size: 200% 100%;
-            animation: loading-skeleton 1.5s infinite;
-            border-radius: 8px;
-        }
-        @keyframes loading-skeleton {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
+        /* --- MOBILE SPECIFIC (< 768px) --- */
+@media (max-width: 767px) {
+  .manager-split {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 8px;
+    height: calc(100dvh - var(--toolbar-h) - 80px);
+    overflow: hidden;
+  }
+
+  /* Pool-Spalte: direkt scrollbar, simpel */
+  .pool-scroll-area {
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    height: 100%;
+    border-right: 1px solid #dee2e6;
+    padding-right: 4px;
+  }
+
+  /* sidebar-card nimmt gesamte Höhe, scrollt NICHT selbst */
+  .sidebar-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  /* pool-body: kein eigener Scroll – das macht pool-scroll-area */
+  .pool-body {
+    overflow: visible !important;
+    max-height: none !important;
+    flex: 1;
+  }
+
+  /* Teams-Spalte: scrollbar */
+  .teams-scroll-area {
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    height: 100%;
+  }
+
+  /* Kompakte Namen */
+  .pool-scroll-area .player-name {
+    font-size: 0.75rem;
+    max-width: 110px;
+  }
+  .teams-scroll-area .player-name {
+    max-width: calc(100% - 30px);
+  }
+  .player-name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pool-scroll-area .draggable-player .card-body {
+    padding: 4px 6px 4px 20px !important;
+  }
+
+  .mobile-tabs { display: none; }
+  .mobile-sticky { position: static; border-bottom: none; }
+  .sidebar-card .card-header { display: flex; }
+}
+
+        /* Desktop Hides Mobile Tabs */
+        @media (min-width: 768px) {
+            .mobile-tabs { display: none; }
+            .mobile-tab-content { display: contents; }
+            .mobile-sticky { position: sticky; top: calc(var(--toolbar-h) + .5rem); align-self: flex-start; }
         }
 
-        /* --- Mobile Responsiveness --- */
-        @media (max-width: 768px) {
-            .manager-split {
-                flex-direction: column;
-                height: auto;
-                overflow: visible;
-            }
-            .pool-scroll-area {
-                width: 100%;
-                max-height: 250px;
-                margin-bottom: 15px;
-            }
-            .teams-scroll-area {
-                height: auto;
-                overflow: visible;
-            }
-            .fab-container {
-                bottom: 80px; /* FAB über der Bottom-Nav platzieren */
-            }
-        }
+/* ── Desktop: Pool links (schmal), Teams rechts (breit) ── */
+@media (min-width: 768px) {
+  .manager-split {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 12px;
+    height: calc(100dvh - var(--toolbar-h) - 80px);
+    overflow: hidden;
+  }
+  .pool-scroll-area {
+    overflow-y: auto;
+    height: 100%;
+    border-right: 1px solid #dee2e6;
+    padding-right: 6px;
+  }
+  .teams-scroll-area {
+    overflow-y: auto;
+    height: 100%;
+  }
+  .pool-body {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  .sidebar-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-card .card-body {
+    flex: 1;
+    overflow: visible;
+  }
+
+  .pool-scroll-area .player-name {
+    font-size: 0.8rem;
+    max-width: 170px;
+  }
+  .pool-scroll-area .draggable-player .card-body {
+    padding: 5px 8px 5px 22px !important;
+  }
+}
     `;
     document.head.appendChild(style);
 })();

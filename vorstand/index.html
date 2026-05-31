@@ -8,6 +8,11 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link rel="icon" href="data:,">
 
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -26,32 +31,211 @@
     </script>
 
     <style>
-        :root { --primary: #0f3a5d; --secondary: #1e293b; --bg: #f3f4f6; }
-        body { background-color: var(--bg); font-family: 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+        :root {
+            --primary: #0f3a5d;
+            --primary-light: #eef2ff;
+            --primary-hover: #1e4b7a;
+            --secondary: #1e293b;
+            --bg: #f8fafc;
+            --card-bg: rgba(255, 255, 255, 0.85);
+            --border: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 20px -2px rgba(15, 58, 93, 0.05), 0 2px 8px -1px rgba(15, 58, 93, 0.05);
+            --shadow-lg: 0 12px 30px -4px rgba(15, 58, 93, 0.08), 0 4px 12px -2px rgba(15, 58, 93, 0.08);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
 
-        #login-screen { position: fixed; inset: 0; background: var(--primary); z-index: 2000; display: flex; justify-content: center; align-items: center; }
-        .login-card { background: white; padding: 2rem; border-radius: 1rem; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        body {
+            background-color: var(--bg);
+            font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Elevating overall visuals */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            transition: var(--transition);
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        #login-screen {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at top right, #1e4b7a, var(--primary));
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .login-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(16px);
+            padding: 2.5rem;
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+        }
 
         #app-screen { height: 100%; display: flex; flex-direction: column; }
         .main-wrapper { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 
-        .sidebar { width: 250px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; transition: 0.3s; }
-        .sidebar-header { padding: 1.5rem; border-bottom: 1px solid #eee; font-weight: bold; color: var(--primary); }
-        .nav-link { color: #555; padding: 0.8rem 1.5rem; border-left: 4px solid transparent; cursor: pointer; }
-        .nav-link:hover { background: #f8f9fa; }
-        .nav-link.active { background: #eef2ff; color: var(--primary); border-left-color: var(--primary); font-weight: bold; }
-        .nav-link i { width: 25px; }
+        /* Modernized Sidebar */
+        .sidebar {
+            width: 260px;
+            background: white;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            transition: var(--transition);
+            z-index: 1000;
+        }
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 1.15rem;
+        }
+        .nav-link {
+            color: var(--text-muted);
+            padding: 0.75rem 1.5rem;
+            border-left: 4px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            font-size: 0.925rem;
+            transition: var(--transition);
+        }
+        .nav-link:hover {
+            background: #f8fafc;
+            color: var(--primary);
+        }
+        .nav-link.active {
+            background: var(--primary-light);
+            color: var(--primary);
+            border-left-color: var(--primary);
+            font-weight: 700;
+        }
+        .nav-link i {
+            width: 25px;
+            font-size: 1.1rem;
+            transition: var(--transition);
+        }
 
-        .content { flex: 1; padding: 20px; overflow-y: auto; position: relative; }
-        .module-view { display: none; animation: fadeIn 0.3s; }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            position: relative;
+            background: var(--bg);
+        }
+        .module-view { display: none; animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
         .module-view.active { display: block; }
 
-        @media (max-width: 768px) {
-            .sidebar { position: fixed; left: -250px; height: 100%; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
-            .sidebar.show { left: 0; }
+        /* Responsive Layout Grid & Layout changes */
+        @media (min-width: 1200px) {
+            .mobile-header { display: none !important; }
+        }
+
+        /* IPAD/TABLET RESPONSIVENESS */
+        @media (min-width: 768px) and (max-width: 1199px) {
             .mobile-header { display: flex !important; }
+            .sidebar {
+                width: 70px;
+                overflow-x: hidden;
+                position: relative;
+                left: 0 !important;
+            }
+            .sidebar.show, .sidebar:hover {
+                width: 260px;
+                box-shadow: var(--shadow-lg);
+            }
+            .sidebar:not(.show):not(:hover) .nav-text,
+            .sidebar:not(.show):not(:hover) .sidebar-header-text,
+            .sidebar:not(.show):not(:hover) #user-info,
+            .sidebar:not(.show):not(:hover) #sidebar-presence-badge {
+                opacity: 0;
+                visibility: hidden;
+                height: 0;
+                padding: 0;
+                margin: 0 !important;
+                overflow: hidden;
+            }
+            .sidebar:not(.show):not(:hover) .nav-link {
+                justify-content: center;
+                padding: 0.9rem 0;
+                border-left-width: 0px;
+                border-bottom: 2px solid transparent;
+            }
+            .sidebar:not(.show):not(:hover) .nav-link.active {
+                border-bottom-color: var(--primary);
+                background: var(--primary-light);
+            }
+            .sidebar:not(.show):not(:hover) .nav-link i {
+                margin-right: 0 !important;
+                font-size: 1.25rem;
+                text-align: center;
+                width: auto;
+            }
+            .sidebar:not(.show):not(:hover) .sidebar-header {
+                text-align: center;
+                padding: 1.25rem 0.5rem;
+            }
+            .sidebar:not(.show):not(:hover) .sidebar-header i {
+                font-size: 1.5rem;
+                margin-right: 0 !important;
+            }
+            .sidebar:not(.show):not(:hover) .mt-auto {
+                padding: 10px !important;
+            }
+            .sidebar:not(.show):not(:hover) .mt-auto button {
+                padding: 8px 0;
+                font-size: 0;
+            }
+            .sidebar:not(.show):not(:hover) .mt-auto button i {
+                font-size: 1.1rem;
+                margin: 0 !important;
+            }
+        }
+
+        /* IPHONE/MOBILE RESPONSIVENESS */
+        @media (max-width: 767px) {
+            .mobile-header { display: flex !important; }
+            .sidebar {
+                position: fixed;
+                left: -280px;
+                width: 280px;
+                height: 100%;
+                z-index: 2000;
+                box-shadow: 4px 0 25px rgba(0,0,0,0.15);
+                transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .sidebar.show {
+                left: 0;
+            }
             .main-wrapper { min-height: 0; }
-            /* Modul-Header (h2 + Buttons) auf kleinen Screens umbrechen */
             .module-view > .d-flex.justify-content-between {
                 flex-wrap: wrap;
                 gap: 8px;
@@ -60,34 +244,153 @@
                 font-size: 1.2rem;
                 word-break: break-word;
             }
+            body.sidebar-open::after {
+                content: '';
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 58, 93, 0.35);
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+                z-index: 1500;
+                animation: fadeIn 0.2s ease-out;
+            }
         }
-        .mobile-header { display: none; background: white; padding: 10px 20px; align-items: center; justify-content: space-between; border-bottom: 1px solid #ddd; flex-shrink: 0; }
+
+        .mobile-header {
+            display: none;
+            background: white;
+            padding: 10px 20px;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            z-index: 1200;
+        }
+
+        /* Responsive Tables & compact styling */
+        @media (max-width: 1199px) {
+            .content table:not(.exclude-responsive), 
+            .table-responsive {
+                display: block;
+                width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            /* KPI scaling */
+            .bh-metric-card {
+                padding: 15px !important;
+                border-left-width: 4px !important;
+            }
+            .bh-metric-card h2, #view-dashboard h3 {
+                font-size: 1.35rem !important;
+            }
+        }
+
+        /* Compact elements & Touch Targets */
+        .table td, .table th {
+            padding: 8px 12px;
+            vertical-align: middle;
+        }
+        @media (max-width: 767px) {
+            .table td, .table th {
+                padding: 12px 12px;
+            }
+        }
+
+        /* Pill-Style Tabs */
+        .bh-tab-btn {
+            border: none !important;
+            background: transparent !important;
+            color: var(--text-muted) !important;
+            padding: 8px 16px !important;
+            font-weight: 600 !important;
+            font-size: 0.875rem !important;
+            border-radius: 30px !important;
+            transition: var(--transition) !important;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-right: 4px;
+        }
+        .bh-tab-btn:hover {
+            color: var(--primary) !important;
+            background: rgba(15, 58, 93, 0.05) !important;
+        }
+        .bh-tab-btn.active {
+            color: white !important;
+            background: var(--primary) !important;
+            box-shadow: 0 4px 10px rgba(15, 58, 93, 0.2) !important;
+        }
+
+        /* Sticky header & toolbars */
+        .sticky-toolbar {
+            position: sticky;
+            top: 0;
+            background: rgba(248, 250, 252, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 100;
+            padding: 10px 0;
+            margin-top: -10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* Premium input fields */
+        .search-input-wrapper {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            width: 100%;
+        }
+        .search-input-wrapper i {
+            position: absolute;
+            left: 14px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .search-input-wrapper input {
+            border-radius: 30px !important;
+            padding-left: 36px !important;
+            border: 1px solid var(--border);
+            transition: var(--transition);
+        }
+        .search-input-wrapper input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(15, 58, 93, 0.12);
+        }
+
+        /* Premium typography formatting */
+        .currency-label {
+            font-size: 0.6em;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-right: 4px;
+            text-transform: uppercase;
+        }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .d-none { display: none !important; }
         .draggable-player { touch-action: none; }
 
-	/* Animation für den Toast */
-@keyframes fadeInToast {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-}
+        @keyframes fadeInToast {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
-/* Toast Styling */
-.custom-toast {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 3000; /* Höher als Bootstrap Modals */
-    background: #0f3a5d;
-    color: white;
-    padding: 12px 24px;
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-    font-size: 14px;
-    animation: fadeInToast 0.3s ease-out;
-    border-left: 4px solid #28a745;
-}
+        .custom-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 3000;
+            background: var(--primary);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            font-size: 14px;
+            animation: fadeInToast 0.3s ease-out;
+            border-left: 4px solid var(--success);
+        }
 
     </style>
 </head>
@@ -132,78 +435,86 @@
         <!-- SIDEBAR -->
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header d-none d-md-block">
-                <i class="fas fa-bullseye me-2"></i> Muhen Portal
+                <i class="fas fa-bullseye me-2"></i> <span class="sidebar-header-text">Muhen Portal</span>
                 <div id="user-info" class="small text-muted fw-normal mt-1">Nicht angemeldet</div>
                 <div id="sidebar-presence-badge" class="mt-2"></div>
             </div>
 
             <div class="nav flex-column mt-2">
                 <div class="nav-link active" onclick="navTo('dashboard', this)">
-                    <i class="fas fa-home"></i> Übersicht
+                    <i class="fas fa-home"></i> <span class="nav-text">Übersicht</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('inventar', this)">
-                    <i class="fas fa-boxes"></i> Inventar
+                    <i class="fas fa-boxes"></i> <span class="nav-text">Inventar</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('termine', this)">
-                    <i class="fas fa-calendar-alt"></i> Termine
+                    <i class="fas fa-calendar-alt"></i> <span class="nav-text">Termine</span>
                 </div>
 
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('system-mails', this)">
-                    <i class="fas fa-envelope-open-text"></i> System-Mails
+                    <i class="fas fa-envelope-open-text"></i> <span class="nav-text">System-Mails</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('umfragen', this)">
-                    <i class="fas fa-calendar-check"></i> Anlässe & Umfragen
+                    <i class="fas fa-calendar-check"></i> <span class="nav-text">Anlässe & Umfragen</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('manager', this)">
-                    <i class="fas fa-shield-alt"></i> Team Manager
+                    <i class="fas fa-shield-alt"></i> <span class="nav-text">Team Manager</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('resultate', this)">
-                    <i class="fas fa-trophy"></i> Resultate
+                    <i class="fas fa-trophy"></i> <span class="nav-text">Resultate</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,vermieter,kassier"
                      onclick="navTo('vermietung', this)">
-                    <i class="fas fa-home"></i> Vermietung
+                    <i class="fas fa-home"></i> <span class="nav-text">Vermietung</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('jahresmeisterschaft', this)">
-                    <i class="fas fa-medal"></i> Jahresmeisterschaft KK
+                    <i class="fas fa-medal"></i> <span class="nav-text">Jahresmeisterschaft KK</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('mail', this)">
-                    <i class="fas fa-envelope"></i> Mail
+                    <i class="fas fa-envelope"></i> <span class="nav-text">Mail</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('jahresbeitrag', this)">
-                    <i class="fas fa-coins"></i> Jahresbeitrag
+                    <i class="fas fa-coins"></i> <span class="nav-text">Jahresbeitrag</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('rechnungen', this)">
-                    <i class="fas fa-file-invoice"></i> Rechnungen
+                    <i class="fas fa-file-invoice"></i> <span class="nav-text">Rechnungen</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,kassier"
                      onclick="navTo('buchhaltung', this)">
-                    <i class="fas fa-book"></i> Buchhaltung
+                    <i class="fas fa-book"></i> <span class="nav-text">Buchhaltung</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar"
                      onclick="navTo('mitglieder', this)">
-                    <i class="fas fa-users"></i> Mitglieder
+                    <i class="fas fa-users"></i> <span class="nav-text">Mitglieder</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('archiv', this)">
+                    <i class="fas fa-archive"></i> <span class="nav-text">Protokoll-Archiv</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('news', this)">
+                    <i class="fas fa-newspaper"></i> <span class="nav-text">News AI</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin"
                      onclick="navTo('logins', this)">
-                    <i class="fas fa-user-lock"></i> Logins
+                    <i class="fas fa-user-lock"></i> <span class="nav-text">Logins</span>
                 </div>
                 <div class="mt-auto border-top p-3">
                     <button class="btn btn-outline-primary w-100 btn-sm mb-2" onclick="openChangePasswordModal()">
-                        <i class="fas fa-key me-1"></i> Passwort ändern
+                        <i class="fas fa-key me-1"></i> <span class="nav-text">Passwort ändern</span>
                     </button>
                     <button class="btn btn-outline-danger w-100 btn-sm" onclick="doLogout()">
-                        <i class="fas fa-sign-out-alt me-1"></i> Abmelden
+                        <i class="fas fa-sign-out-alt me-1"></i> <span class="nav-text">Abmelden</span>
                     </button>
                 </div>
             </div>
@@ -314,6 +625,20 @@
                              onclick="navTo('mitglieder')" style="cursor:pointer">
                             <h5>👥 Mitglieder</h5>
                             <p class="small text-muted">Mitgliederliste einsehen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('archiv')" style="cursor:pointer">
+                            <h5>📁 Protokoll-Archiv</h5>
+                            <p class="small text-muted">KI-Suche im Vereins-Archiv</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('news')" style="cursor:pointer">
+                            <h5>🗞️ News AI</h5>
+                            <p class="small text-muted">KI-Berichte für Homepage erstellen</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin">
@@ -462,6 +787,64 @@
     <div id="mitglieder-container"></div>
 </div>
 
+<!-- NEWS AI -->
+<div id="view-news" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🗞️ KI-Berichte Generator</h2>
+    </div>
+    
+    <div class="card p-4 mx-auto" style="max-width: 600px;">
+        <div class="text-center mb-3">
+            <span class="badge bg-primary bg-opacity-10 text-primary px-3 py-2">Powered by Google Gemini</span>
+        </div>
+        
+        <form id="newsForm">
+            <div class="mb-3">
+                <label class="form-label fw-bold">Titel des Berichts</label>
+                <input type="text" id="news-title" class="form-control" placeholder="z.B. Erfolgreiches Feldschiessen 2026" required>
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label fw-bold">Stichworte für die KI</label>
+                <textarea id="news-keywords" class="form-control" rows="4" placeholder="z.B. Wetter war regnerisch. 30 Teilnehmer. Max Muster gewann mit 69 Punkten. Gute Stimmung." required></textarea>
+                <small class="text-muted">Je genauer die Stichworte, desto besser der Bericht.</small>
+            </div>
+            
+            <div class="mb-4">
+                <label class="form-label fw-bold">Fotos (Optional, mehrere möglich)</label>
+                <div class="border rounded p-4 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-foto').click()">
+                    <i class="fas fa-images fa-2x text-muted mb-2" id="news-upload-icon"></i>
+                    <p class="mb-0 text-muted" id="news-upload-text">Klicken zum Auswählen (Das erste Foto wird als Aufmacher/Titelbild verwendet, die restlichen im Bericht angezeigt)</p>
+                    <div id="news-preview-container" class="d-flex flex-wrap gap-2 justify-content-center mt-3" style="display:none;"></div>
+                </div>
+                <input type="file" id="news-foto" accept="image/*" multiple style="display:none">
+                
+                <div class="form-check form-switch mt-3">
+                    <input class="form-check-input" type="checkbox" id="news-use-image-content" checked>
+                    <label class="form-check-label fw-bold text-muted small" for="news-use-image-content">Titelbild in Textanalyse einbeziehen</label>
+                    <div class="form-text small text-muted" style="font-size: 0.75rem;">Aktiviert: Die Premium-KI analysiert das Titelbild und bezieht erkennbare Details (Personen, Stimmung, Auszeichnungen) direkt in den Berichtstext ein.</div>
+                </div>
+            </div>
+            
+            <div id="news-draft-container" class="mt-4" style="display:none;">
+                <label class="form-label fw-bold">Bericht Entwurf (Hier können Sie den Text anpassen)</label>
+                <div id="news-draft-editor" class="form-control" style="min-height: 250px;" contenteditable="true"></div>
+            </div>
+
+            <div class="mt-4 d-flex gap-2">
+                <button type="button" class="btn btn-outline-primary flex-grow-1 py-2 fw-bold" id="news-generate-btn">
+                    <span id="news-btn-text">KI-Entwurf generieren</span>
+                    <span class="spinner-border spinner-border-sm d-none" id="news-spinner" role="status" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="btn btn-success flex-grow-1 py-2 fw-bold d-none" id="news-publish-btn">
+                    <span id="news-publish-btn-text">Definitiv Publizieren</span>
+                    <span class="spinner-border spinner-border-sm d-none" id="news-publish-spinner" role="status" aria-hidden="true"></span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- GV & Präsenz wurde in Tab 4 von Anlässe & Umfragen integriert -->
 
 <!-- SYSTEM-MAILS -->
@@ -495,6 +878,9 @@
     </div>
     <div id="umfragen-container"></div>
 </div>
+
+<!-- PROTOKOLL-ARCHIV - wird vollständig durch archiv.js gerendert -->
+<div id="view-archiv" class="module-view"></div>
 
 <!-- LOGINS - wird vollstaendig durch logins.js gerendert -->
 <div id="view-logins" class="module-view"></div>
@@ -669,6 +1055,7 @@
 <script src="js/logins/logins-core.js"></script>
 <script src="js/logins/logins-ui.js"></script>
 <script src="js/logins/logins-events.js"></script>
+<script src="js/news.js"></script>
 <script src="js/logins/logins-actions.js"></script>
 <script src="js/manager/manager-core.js"></script>
 <script src="js/manager/manager-ui.js"></script>
@@ -710,6 +1097,10 @@
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-ui.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
+
+<!-- NEU: Skript für Protokoll-Archiv KI -->
+<script src="js/archiv.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>

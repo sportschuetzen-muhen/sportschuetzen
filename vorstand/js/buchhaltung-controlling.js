@@ -8,7 +8,8 @@ window._bhCharts = {
   budgetChart: null,
   cashflowChart: null,
   revenueStructureChart: null,
-  expenseStructureChart: null
+  expenseStructureChart: null,
+  yoyCostChart: null
 };
 
 // Zentraler Render-Hook für den Controlling-Tab
@@ -107,99 +108,92 @@ window.renderTabAnalyse = function(container) {
   }, 100);
 };
 
-// Diagramm 1: YoY Erfolgsentwicklung über alle Jahre
+// Diagramm E: Mehrjahres-Kostenstruktur-Trend (2000 - 2026)
 function bhRenderYoYChart() {
   const canvas = document.getElementById('bhYoYChart');
   if (!canvas) return;
   
   // Extrahiere alle Jahre aus dem Journal
   const jahreSet = new Set(window._bhJournal.map(j => Number(j.jahr || window._bhYear)));
-  // Mindestens das aktive Jahr anzeigen
   jahreSet.add(window._bhYear);
   const jahre = Array.from(jahreSet).sort((a,b) => a - b);
   
-  const ertraege = [];
-  const aufwaende = [];
-  const gewinne = [];
+  const schiessbetriebData = [];
+  const gebaeudeData = [];
+  const verwaltungData = [];
   
   jahre.forEach(yr => {
-    let yrErtrag = 0;
-    let yrAufwand = 0;
+    let yrSchiess = 0;
+    let yrGebaeude = 0;
+    let yrVerwaltung = 0;
     
-    // Berechne Ertrag und Aufwand pro Jahr
+    const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === yr);
+    
     window._bhKontenrahmen.forEach(acc => {
-      const codeStr = String(acc.konto).trim();
-      const firstDigit = codeStr[0];
-      const accountCode = String(acc.konto).trim();
+      const code = String(acc.konto).trim();
       
       let balanceChange = 0;
-      const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === yr);
-      
       currentYearJournal.forEach(entry => {
         const soll = String(entry.konto_soll).trim();
         const haben = String(entry.konto_haben).trim();
         const amount = Number(entry.betrag || 0);
         
-        const isAssetOrExpense = (firstDigit === '1' || firstDigit === '4' || firstDigit === '5' || firstDigit === '6' || firstDigit === '7' || firstDigit === '8');
-        
-        if (soll === accountCode) {
-          balanceChange += isAssetOrExpense ? amount : -amount;
-        }
-        if (haben === accountCode) {
-          balanceChange += isAssetOrExpense ? -amount : amount;
-        }
+        if (soll === code) balanceChange += amount;
+        if (haben === code) balanceChange -= amount;
       });
       
-      const endsaldo = Number(acc.eroeffnungssaldo || 0) + balanceChange;
+      const balance = Math.abs(balanceChange); // Expenses are positive values
       
-      if (firstDigit === '3') {
-        yrErtrag += endsaldo;
-      } else if (firstDigit === '4' || firstDigit === '5' || firstDigit === '6' || firstDigit === '7' || firstDigit === '8') {
-        yrAufwand += endsaldo;
+      if (code.startsWith('41') || code.startsWith('42') || code.startsWith('44')) {
+        yrSchiess += balance;
+      } else if ((code.startsWith('60') && code !== '6011') || code.startsWith('62') || code.startsWith('63') || code.startsWith('64')) {
+        yrGebaeude += balance; // Explicitly exclude Wasserschaden 6011!
+      } else if (code.startsWith('65') || code.startsWith('67') || code.startsWith('69') || code.startsWith('89')) {
+        yrVerwaltung += balance;
       }
     });
     
-    ertraege.push(yrErtrag);
-    aufwaende.push(yrAufwand);
-    gewinne.push(yrErtrag - yrAufwand);
+    schiessbetriebData.push(Math.max(0, yrSchiess));
+    gebaeudeData.push(Math.max(0, yrGebaeude));
+    verwaltungData.push(Math.max(0, yrVerwaltung));
   });
   
-  // Diagramm neu zeichnen
   if (window._bhCharts.yoyChart) window._bhCharts.yoyChart.destroy();
   
   window._bhCharts.yoyChart = new Chart(canvas, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels: jahre.map(y => `Jahr ${y}`),
       datasets: [
         {
-          label: 'Einnahmen (Ertrag)',
-          data: ertraege,
-          backgroundColor: 'rgba(25, 135, 84, 0.75)',
-          borderColor: '#198754',
-          borderWidth: 1.5,
-          borderRadius: 4
-        },
-        {
-          label: 'Ausgaben (Aufwand)',
-          data: aufwaende,
-          backgroundColor: 'rgba(220, 53, 69, 0.75)',
+          label: 'Munition & Schiessbetrieb',
+          data: schiessbetriebData,
           borderColor: '#dc3545',
-          borderWidth: 1.5,
-          borderRadius: 4
+          backgroundColor: 'rgba(220, 53, 69, 0.03)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
         },
         {
-          label: 'Netto-Gewinn/Verlust',
-          data: gewinne,
-          type: 'line',
-          borderColor: '#0f3a5d',
-          backgroundColor: 'rgba(15, 58, 93, 0.1)',
-          fill: true,
-          tension: 0.3,
+          label: 'Gebäude & Schützenhaus (exkl. Wasserschaden)',
+          data: gebaeudeData,
+          borderColor: '#198754',
+          backgroundColor: 'rgba(25, 135, 84, 0.03)',
           borderWidth: 3,
-          pointStyle: 'circle',
-          pointRadius: 6,
-          pointHoverRadius: 8
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
+        },
+        {
+          label: 'Verwaltung & Spesen',
+          data: verwaltungData,
+          borderColor: '#0d6efd',
+          backgroundColor: 'rgba(13, 110, 253, 0.03)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
         }
       ]
     },
@@ -523,40 +517,41 @@ window.renderTabCockpit = function(container) {
   if (!container) return;
   
   container.innerHTML = `
-    <!-- Top-Reihe: Export-Karten und Wirtschafts-Cockpit -->
+    <!-- Top-Reihe: Controlling-Kennzahlen (B & C) -->
     <div class="row g-4 mb-4">
-      <div class="col-lg-7">
-        <div class="bh-report-section shadow-sm border border-light h-100" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(245,248,252,0.9) 100%);">
-          <h5 class="fw-bold text-primary mb-2">
-            <i class="fas fa-file-export me-2"></i>GV-Export & Berichtswesen (${window._bhYear})
-          </h5>
-          <p class="text-muted small mb-4">Erstelle strukturierte Exporte für Excel oder drucke den vollständigen Jahresabschluss (Bilanz & Erfolgsrechnung) formatiert für die Generalversammlung (GV).</p>
-          
-          <div class="row g-3">
-            <div class="col-sm-6">
-              <button class="btn btn-outline-primary w-100 py-3 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3 h-100" onclick="bhPrintGVReport()" style="gap: 10px; transition: all 0.2s ease;">
-                <i class="fas fa-print fa-2x text-primary mb-1"></i>
-                <span class="small">Jahresrechnung drucken (PDF)</span>
-              </button>
-            </div>
-            <div class="col-sm-6">
-              <button class="btn btn-outline-success w-100 py-3 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3 h-100" onclick="bhExportJournalToExcel()" style="gap: 10px; transition: all 0.2s ease;">
-                <i class="fas fa-file-excel fa-2x text-success mb-1"></i>
-                <span class="small">Kassabuch exportieren (Excel)</span>
-              </button>
-            </div>
+      <!-- Card B: Mitglieder-Entwicklung & Verbandskosten-Quote -->
+      <div class="col-lg-6">
+        <div class="bh-report-section shadow-sm border border-light h-100" id="bh-membership-quote-container">
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+            <span class="ms-2 small text-muted">Lade Mitgliederquote...</span>
           </div>
         </div>
       </div>
       
-      <div class="col-lg-5">
-        <div class="bh-report-section shadow-sm border border-light h-100" id="bh-economy-summary-container">
-          <h5 class="fw-bold text-primary mb-3">
-            <i class="fas fa-store me-2"></i>Betriebs- & Schützenhaus-Cockpit
-          </h5>
+      <!-- Card C: Schützenhaus Erfolgsrechnung / Facility ROI (exkl. Wasserschaden 6011) -->
+      <div class="col-lg-6">
+        <div class="bh-report-section shadow-sm border border-light h-100" id="bh-facility-roi-container">
           <div class="text-center py-4">
             <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
-            <span class="ms-2 small text-muted">Analysiere Schützenhaus-Erfolg...</span>
+            <span class="ms-2 small text-muted">Lade Facility ROI...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Mittlere Reihe: E – Mehrjahres-Kostenstruktur-Trend (2000-2026) -->
+    <div class="row g-4 mb-4">
+      <div class="col-12">
+        <div class="bh-report-section shadow-sm border border-light">
+          <h5 class="fw-bold text-primary mb-3">
+            <i class="fas fa-chart-line me-2"></i>Mehrjahres-Kostenstruktur-Trend (2000 - 2026)
+          </h5>
+          <div style="position: relative; height: 320px; width: 100%;">
+            <canvas id="bhYoYCostChart"></canvas>
+          </div>
+          <div class="small text-muted mt-2 text-center">
+            Kostenentwicklung über alle erfassten Jahre für Schiessbetrieb, Gebäude (exkl. Wasserschaden) und Verwaltung.
           </div>
         </div>
       </div>
@@ -598,68 +593,208 @@ window.renderTabCockpit = function(container) {
   setTimeout(() => {
     bhRenderRevenueStructureChart();
     bhRenderExpenseStructureChart();
-    bhRenderEconomySummary();
+    bhRenderMembershipQuote();
+    bhRenderFacilityROI();
+    bhRenderYoYCostChart();
   }, 100);
 };
 
-// Wirtschafts- & Bar-Cockpit: Gewinnmarge und Wirtschaftserfolg ermitteln (inkl. Vermietungen und Reinigung)
-function bhRenderEconomySummary() {
-  const container = document.getElementById('bh-economy-summary-container');
+window.renderTabGVExport = function(container) {
+  if (!container) return;
+  
+  container.innerHTML = `
+    <div class="row g-4 mb-4">
+      <div class="col-12">
+        <div class="bh-report-section shadow-sm border border-light" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(245,248,252,0.9) 100%);">
+          <h5 class="fw-bold text-primary mb-2">
+            <i class="fas fa-file-export me-2"></i>GV-Export & Berichtswesen (${window._bhYear})
+          </h5>
+          <p class="text-muted small mb-4">Erstelle strukturierte Exporte für Excel oder drucke den vollständigen Jahresabschluss (Bilanz & Erfolgsrechnung) formatiert für die Generalversammlung (GV).</p>
+          
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <button class="btn btn-outline-primary w-100 py-4 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3" onclick="bhPrintGVReport()" style="gap: 12px; transition: all 0.2s ease;">
+                <i class="fas fa-print fa-3x text-primary mb-1"></i>
+                <span>Jahresrechnung drucken (PDF)</span>
+              </button>
+            </div>
+            <div class="col-sm-6">
+              <button class="btn btn-outline-success w-100 py-4 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3" onclick="bhExportJournalToExcel()" style="gap: 12px; transition: all 0.2s ease;">
+                <i class="fas fa-file-excel fa-3x text-success mb-1"></i>
+                <span>Kassabuch exportieren (Excel)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+function bhRenderMembershipQuote() {
+  const container = document.getElementById('bh-membership-quote-container');
   if (!container) return;
 
-  let totalRevenue = 0;
-  let totalPurchases = 0;
-  let totalCleaning = 0;
+  let totalMembersRevenue = 0;
+  let revenue3410 = 0;
+  let revenue3411 = 0;
+  let revenue3412 = 0;
+  let totalVerbandExpense = 0;
 
   window._bhKontenrahmen.forEach(acc => {
     const code = String(acc.konto).trim();
     const balance = Number(acc._endsaldo || 0);
 
-    if (code.startsWith('365')) {
-      // Wirtschaft (3651) und Vermietung (3650) als Erfolg/Einnahmen
-      totalRevenue += balance;
-    } else if (code.startsWith('400')) {
-      // Warenaufwand / Einkauf als Aufwand
-      totalPurchases += balance;
-    } else if (code === '4010' || code === '4011' || code.startsWith('401')) {
-      // Reinigungsaufwand als Aufwand
-      totalCleaning += balance;
+    if (code === '3410') {
+      revenue3410 = balance;
+      totalMembersRevenue += balance;
+    } else if (code === '3411') {
+      revenue3411 = balance;
+      totalMembersRevenue += balance;
+    } else if (code === '3412') {
+      revenue3412 = balance;
+      totalMembersRevenue += balance;
+    } else if (code === '4410') {
+      totalVerbandExpense += balance;
     }
   });
 
-  const netProfit = totalRevenue - totalPurchases - totalCleaning;
-  const marginPercent = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+  const retainedRevenue = totalMembersRevenue - totalVerbandExpense;
+  const quotePercent = totalMembersRevenue > 0 ? (retainedRevenue / totalMembersRevenue) * 100 : 0;
 
   container.innerHTML = `
     <h5 class="fw-bold text-primary mb-3">
-      <i class="fas fa-store me-2"></i>Betriebs- & Schützenhaus-Cockpit (${window._bhYear})
+      <i class="fas fa-users-cog me-2"></i>Mitglieder & Verbandskosten-Quote (${window._bhYear})
     </h5>
     
     <div class="row g-2 mb-3">
       <div class="col-6">
         <div class="p-2.5 rounded-3 bg-light border border-light text-center">
-          <div class="small text-muted fw-semibold" style="font-size: 10px;">Umsatz & Vermietung</div>
-          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(totalRevenue)}</div>
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Einnahmen Beiträge</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(totalMembersRevenue)}</div>
         </div>
       </div>
       <div class="col-6">
-        <div class="p-2.5 rounded-3 border text-center" style="background-color: ${netProfit >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${netProfit >= 0 ? '#198754' : '#dc3545'} !important;">
-          <div class="small text-muted fw-semibold" style="font-size: 10px;">Reingewinn Betrieb</div>
-          <div class="fw-bold mt-0.5 ${netProfit >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(netProfit)}</div>
+        <div class="p-2.5 rounded-3 border text-center" style="background-color: ${retainedRevenue >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${retainedRevenue >= 0 ? '#198754' : '#dc3545'} !important;">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Einbehaltener Betrag</div>
+          <div class="fw-bold mt-0.5 ${retainedRevenue >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(retainedRevenue)}</div>
         </div>
       </div>
     </div>
     
     <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Warenaufwand (Einkauf Bar):</span>
-      <span class="text-dark">${fmtChf(totalPurchases)}</span>
+      <span class="text-muted">Mitgliederbeiträge Aktive (3410):</span>
+      <span class="text-dark">${fmtChf(revenue3410)}</span>
     </div>
     <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Reinigungsaufwand (Reinigung):</span>
-      <span class="text-dark">${fmtChf(totalCleaning)}</span>
+      <span class="text-muted">Lizenzgebühren Aktive (3411):</span>
+      <span class="text-dark">${fmtChf(revenue3411)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-2 small fw-semibold">
+      <span class="text-muted">Mitgliederbeiträge Passive (3412):</span>
+      <span class="text-dark">${fmtChf(revenue3412)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-2 small fw-semibold pt-1 border-top">
+      <span class="text-muted">Verbandsabgaben SSV/AGSV (4410):</span>
+      <span class="text-danger">${fmtChf(totalVerbandExpense)}</span>
     </div>
     <div class="d-flex justify-content-between mb-3 pt-2 border-top small fw-bold">
-      <span class="text-muted">Betriebs-Erfolgsmarge:</span>
+      <span class="text-muted">Einbehaltungsquote (Netto):</span>
+      <span class="${quotePercent >= 60 ? 'text-success' : quotePercent >= 30 ? 'text-primary' : 'text-danger'}">${quotePercent.toFixed(1)}%</span>
+    </div>
+    
+    <div class="progress" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
+      <div class="progress-bar ${quotePercent >= 60 ? 'bg-success' : quotePercent >= 30 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, quotePercent))}%;" aria-valuenow="${quotePercent}" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <div class="small text-muted mt-2 text-center" style="font-size: 11px;">
+      ${quotePercent >= 60 ? '🎉 Sehr gute Einbehaltungsquote!' : quotePercent >= 30 ? '👍 Ausgewogenes Verhältnis der Verbandskosten.' : '⚠️ Hohe Verbandskosten im Verhältnis zu den Beiträgen!'}
+    </div>
+  `;
+}
+
+function bhRenderFacilityROI() {
+  const container = document.getElementById('bh-facility-roi-container');
+  if (!container) return;
+
+  let revenue3650 = 0;
+  let revenue3651 = 0;
+  let totalRevenue = 0;
+  
+  let expenseCleaning = 0;
+  let expenseMaintenance = 0;
+  let expenseUtilities = 0;
+  let totalExpense = 0;
+
+  window._bhKontenrahmen.forEach(acc => {
+    const code = String(acc.konto).trim();
+    const balance = Number(acc._endsaldo || 0);
+
+    if (code === '3650') {
+      revenue3650 = balance;
+      totalRevenue += balance;
+    } else if (code === '3651') {
+      revenue3651 = balance;
+      totalRevenue += balance;
+    } else if (code === '4010' || code === '4011') {
+      expenseCleaning += balance;
+      totalExpense += balance;
+    } else if (code.startsWith('60') && code !== '6011') {
+      expenseMaintenance += balance;
+      totalExpense += balance;
+    } else if (code === '6400') {
+      expenseUtilities += balance;
+      totalExpense += balance;
+    }
+  });
+
+  const netIncome = totalRevenue - totalExpense;
+  const marginPercent = totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
+
+  container.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="fw-bold text-primary mb-0">
+        <i class="fas fa-hotel me-2"></i>Schützenhaus Erfolgsrechnung / Facility ROI (${window._bhYear})
+      </h5>
+      <span class="badge bg-secondary small px-2 py-1" style="font-size: 9px; cursor: help;" title="Einmaliger Wasserschaden (Konto 6011) ist explizit ausgeblendet">exkl. Wasserschaden</span>
+    </div>
+    
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 bg-light border border-light text-center">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Einnahmen Schützenhaus</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(totalRevenue)}</div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 border text-center" style="background-color: ${netIncome >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${netIncome >= 0 ? '#198754' : '#dc3545'} !important;">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Netto-Ergebnis</div>
+          <div class="fw-bold mt-0.5 ${netIncome >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(netIncome)}</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="d-flex justify-content-between mb-2 small fw-semibold">
+      <span class="text-muted">Mieteinnahmen Schützenhaus (3650):</span>
+      <span class="text-dark">${fmtChf(revenue3650)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-2 small fw-semibold">
+      <span class="text-muted">Festwirtschaftsertrag (3651):</span>
+      <span class="text-dark">${fmtChf(revenue3651)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-2 small fw-semibold pt-1 border-top">
+      <span class="text-muted">Unterhalt Gebäude (60xx exkl. 6011):</span>
+      <span class="text-danger">${fmtChf(expenseMaintenance)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-2 small fw-semibold">
+      <span class="text-muted">Reinigungsaufwand (4010/4011):</span>
+      <span class="text-danger">${fmtChf(expenseCleaning)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-2 small fw-semibold">
+      <span class="text-muted">Nebenkosten Strom/Wasser/Gas (6400):</span>
+      <span class="text-danger">${fmtChf(expenseUtilities)}</span>
+    </div>
+    <div class="d-flex justify-content-between mb-3 pt-2 border-top small fw-bold">
+      <span class="text-muted">Facility ROI / Marge:</span>
       <span class="${marginPercent >= 40 ? 'text-success' : marginPercent >= 20 ? 'text-primary' : 'text-danger'}">${marginPercent.toFixed(1)}%</span>
     </div>
     
@@ -667,9 +802,121 @@ function bhRenderEconomySummary() {
       <div class="progress-bar ${marginPercent >= 40 ? 'bg-success' : marginPercent >= 20 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, marginPercent))}%;" aria-valuenow="${marginPercent}" aria-valuemin="0" aria-valuemax="100"></div>
     </div>
     <div class="small text-muted mt-2 text-center" style="font-size: 11px;">
-      ${marginPercent >= 40 ? '🎉 Hervorragende Betriebs-Marge!' : marginPercent >= 20 ? '👍 Solide Wirtschafts- und Miet-Rentabilität.' : '⚠️ Achtung: Hohe Einkaufs- oder Reinigungskosten drücken die Marge!'}
+      ${marginPercent >= 40 ? '🎉 Exzellenter Facility ROI!' : marginPercent >= 20 ? '👍 Gesunder Schützenhaus-Erfolg.' : '⚠️ Niedrige Marge: Bitte Kosten oder Auslastung prüfen.'}
     </div>
   `;
+}
+
+function bhRenderYoYCostChart() {
+  const canvas = document.getElementById('bhYoYCostChart');
+  if (!canvas) return;
+  
+  const jahreSet = new Set(window._bhJournal.map(j => Number(j.jahr || window._bhYear)));
+  jahreSet.add(window._bhYear);
+  const jahre = Array.from(jahreSet).sort((a,b) => a - b);
+  
+  const schiessbetriebData = [];
+  const gebaeudeData = [];
+  const verwaltungData = [];
+  
+  jahre.forEach(yr => {
+    let yrSchiess = 0;
+    let yrGebaeude = 0;
+    let yrVerwaltung = 0;
+    
+    const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === yr);
+    
+    window._bhKontenrahmen.forEach(acc => {
+      const code = String(acc.konto).trim();
+      
+      let balanceChange = 0;
+      currentYearJournal.forEach(entry => {
+        const soll = String(entry.konto_soll).trim();
+        const haben = String(entry.konto_haben).trim();
+        const amount = Number(entry.betrag || 0);
+        
+        if (soll === code) balanceChange += amount;
+        if (haben === code) balanceChange -= amount;
+      });
+      
+      const balance = Math.abs(balanceChange);
+      
+      if (code.startsWith('41') || code.startsWith('42') || code.startsWith('44')) {
+        yrSchiess += balance;
+      } else if ((code.startsWith('60') && code !== '6011') || code.startsWith('62') || code.startsWith('63') || code.startsWith('64')) {
+        yrGebaeude += balance;
+      } else if (code.startsWith('65') || code.startsWith('67') || code.startsWith('69') || code.startsWith('89')) {
+        yrVerwaltung += balance;
+      }
+    });
+    
+    schiessbetriebData.push(Math.max(0, yrSchiess));
+    gebaeudeData.push(Math.max(0, yrGebaeude));
+    verwaltungData.push(Math.max(0, yrVerwaltung));
+  });
+  
+  if (window._bhCharts.yoyCostChart) window._bhCharts.yoyCostChart.destroy();
+  
+  window._bhCharts.yoyCostChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: jahre.map(y => `Jahr ${y}`),
+      datasets: [
+        {
+          label: 'Munition & Schiessbetrieb',
+          data: schiessbetriebData,
+          borderColor: '#dc3545',
+          backgroundColor: 'rgba(220, 53, 69, 0.03)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
+        },
+        {
+          label: 'Gebäude & Schützenhaus (exkl. Wasserschaden)',
+          data: gebaeudeData,
+          borderColor: '#198754',
+          backgroundColor: 'rgba(25, 135, 84, 0.03)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
+        },
+        {
+          label: 'Verwaltung & Spesen',
+          data: verwaltungData,
+          borderColor: '#0d6efd',
+          backgroundColor: 'rgba(13, 110, 253, 0.03)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: value => 'CHF ' + value.toLocaleString('de-CH')
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          position: 'top'
+        },
+        tooltip: {
+          callbacks: {
+            label: context => ` ${context.dataset.label}: CHF ${context.raw.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, "'")}`
+          }
+        }
+      }
+    }
+  });
 }
 
 // Doughnut-Diagramm 1: Ertragsstruktur

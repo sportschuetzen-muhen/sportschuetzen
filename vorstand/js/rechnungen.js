@@ -19,6 +19,28 @@ const RECHNUNG_TYPES = [
 ];
 
 // Online/Preload Endpoint Trigger
+window._invoiceTemplates = [];
+
+// API Endpoint to fetch template positions
+window.loadInvoiceTemplatesData = async function() {
+  try {
+    const response = await apiFetch('rechnungen', 'action=getTemplates');
+    const result = await response.json();
+    if (result.success && result.data) {
+      window._invoiceTemplates = result.data || [];
+      // Sync to localStorage as fallback
+      localStorage.setItem('portal_invoice_templates', JSON.stringify(window._invoiceTemplates));
+    } else {
+      throw new Error(result.error || "GAS success was false");
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim Abrufen der Standard-Positionen vom Server, benutze LocalStorage:", err);
+    rnInitializeTemplates(); // Ensure localStorage has defaults
+    window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+  }
+};
+
+// Online/Preload Endpoint Trigger
 window.loadRechnungenData = async function(silent = false) {
   const hasCachedData = window._invoices && window._invoices.length > 0;
   
@@ -34,8 +56,12 @@ window.loadRechnungenData = async function(silent = false) {
   }
 
   try {
-    const response = await apiFetch('rechnungen', 'action=getInvoices');
-    const result = await response.json();
+    // Parallel fetching of invoices and standard positions templates
+    const [invRes, _] = await Promise.all([
+      apiFetch('rechnungen', 'action=getInvoices'),
+      loadInvoiceTemplatesData()
+    ]);
+    const result = await invRes.json();
     
     if (result.success) {
       window._invoices = result.data || [];
@@ -45,6 +71,10 @@ window.loadRechnungenData = async function(silent = false) {
     }
   } catch (err) {
     console.error("❌ Fehler beim Laden der Rechnungen:", err);
+    if (!window._invoiceTemplates || window._invoiceTemplates.length === 0) {
+      rnInitializeTemplates();
+      window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+    }
     const container = document.getElementById('rechnungen-container');
     if (container && (!silent || !hasCachedData)) {
       container.innerHTML = `
@@ -57,11 +87,119 @@ window.loadRechnungenData = async function(silent = false) {
   }
 };
 
+// Globale Template Hilfsfunktionen & Tab-Steuerung
+window._rechnungenActiveTab = 'archiv';
+
+window.rnInitializeTemplates = function() {
+  if (!localStorage.getItem('portal_invoice_templates')) {
+    const defaults = [
+      { id: 1, category: 'Vermietung', desc: 'Miete Schützenhaus Muhen', price: 150 },
+      { id: 2, category: 'Vermietung', desc: 'Miete Schützenhaus (Einheimische)', price: 120 },
+      { id: 3, category: 'Vermietung', desc: 'Reinigungspauschale Schützenhaus', price: 50 },
+      { id: 4, category: 'Konsumationen', desc: 'Wein', price: '' },
+      { id: 5, category: 'Konsumationen', desc: 'Bier gross', price: '' },
+      { id: 6, category: 'Konsumationen', desc: 'Bier klein', price: '' },
+      { id: 7, category: 'Konsumationen', desc: 'Most', price: '' },
+      { id: 8, category: 'Konsumationen', desc: 'Süssgetränke 0.5 l', price: '' },
+      { id: 9, category: 'Konsumationen', desc: 'Mineralwasser 0.5 l', price: '' },
+      { id: 10, category: 'Konsumationen', desc: 'Kaffee', price: '' },
+      { id: 11, category: 'Konsumationen', desc: 'Uschi Künzli Stundenaufwand', price: '' },
+      { id: 12, category: 'Konsumationen', desc: 'Hans-Rudolf Künzli Stundenaufwand', price: '' },
+      { id: 13, category: 'Schulsport', desc: 'Munition 10m', price: '' },
+      { id: 14, category: 'Schulsport', desc: 'Munition 50m', price: '' },
+      { id: 15, category: 'Schulsport', desc: 'Miete Schiessjacken', price: '' }
+    ];
+    localStorage.setItem('portal_invoice_templates', JSON.stringify(defaults));
+  }
+};
+
+window.rnGetDropdownMenuHtml = function(actionFuncName) {
+  let templates = window._invoiceTemplates;
+  if (!templates || templates.length === 0) {
+    rnInitializeTemplates();
+    templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+  }
+  
+  const grouped = {};
+  templates.forEach(t => {
+    const cat = t.category || 'Sonstige';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(t);
+  });
+  
+  let html = '';
+  const cats = Object.keys(grouped).sort();
+  cats.forEach((cat, idx) => {
+    if (idx > 0) html += '<li><hr class="dropdown-divider"></li>';
+    
+    let catIcon = 'fa-shopping-cart';
+    let catColor = 'text-info';
+    if (cat === 'Vermietung') { catIcon = 'fa-home'; catColor = 'text-primary'; }
+    else if (cat === 'Konsumationen') { catIcon = 'fa-wine-glass'; catColor = 'text-success'; }
+    else if (cat === 'Schulsport') { catIcon = 'fa-bullseye'; catColor = 'text-danger'; }
+    
+    html += `<li><h6 class="dropdown-header ${catColor} fw-bold"><i class="fas ${catIcon} me-1"></i> ${cat}</h6></li>`;
+    grouped[cat].forEach(t => {
+      const priceLabel = t.price ? ` (CHF ${Number(t.price).toFixed(2)})` : ' (Preis manuell)';
+      const escapedDesc = String(t.desc).replace(/'/g, "\\'");
+      html += `<li><a class="dropdown-item" href="#" onclick="${actionFuncName}('${escapedDesc}', '${t.price || ''}'); return false;">${escapeHtml(t.desc)}${priceLabel}</a></li>`;
+    });
+  });
+  
+  return html;
+};
+
 // Render-Einstiegspunkt
 window.renderRechnungen = function() {
   const container = document.getElementById('rechnungen-container');
   if (!container) return;
 
+  rnInitializeTemplates();
+
+  container.innerHTML = `
+    <!-- Tab Navigation -->
+    <div class="d-flex border-bottom mb-4 align-items-center justify-content-between flex-wrap" style="gap: 10px;">
+      <div class="d-flex" style="gap: 5px;">
+        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'archiv' ? 'active' : ''}" id="rn-tab-btn-archiv" onclick="rnSwitchTab('archiv')">
+          <i class="fas fa-file-invoice me-1.5"></i> Rechnungs-Archiv
+        </button>
+        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'templates' ? 'active' : ''}" id="rn-tab-btn-templates" onclick="rnSwitchTab('templates')">
+          <i class="fas fa-magic me-1.5"></i> Standard-Positionen verwalten
+        </button>
+      </div>
+    </div>
+    
+    <div id="rn-tab-content-container">
+      <!-- Tabs werden hier dynamisch gerendert -->
+    </div>
+  `;
+
+  renderActiveRechnungenTab();
+};
+
+window.rnSwitchTab = function(tabName) {
+  window._rechnungenActiveTab = tabName;
+  document.querySelectorAll('#rechnungen-container .bh-tab-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  const activeBtn = document.getElementById(`rn-tab-btn-${tabName}`);
+  if (activeBtn) activeBtn.classList.add('active');
+  
+  renderActiveRechnungenTab();
+};
+
+function renderActiveRechnungenTab() {
+  const content = document.getElementById('rn-tab-content-container');
+  if (!content) return;
+
+  if (window._rechnungenActiveTab === 'archiv') {
+    renderTabArchiv(content);
+  } else if (window._rechnungenActiveTab === 'templates') {
+    renderTabTemplates(content);
+  }
+}
+
+window.renderTabArchiv = function(content) {
   // 1. Berechne KPIs
   const totalCount = window._invoices.length;
   const openInvoices = window._invoices.filter(i => i.status === 'offen');
@@ -72,28 +210,27 @@ window.renderRechnungen = function() {
   const paidCount = paidInvoices.length;
   const paidSum = paidInvoices.reduce((s, i) => s + Number(i.total_amount || 0), 0);
 
-  // 2. Cockpit Grundgerüst
-  container.innerHTML = `
+  content.innerHTML = `
     <!-- KPI Header -->
     <div class="row g-3 mb-4">
       <div class="col-md-4">
         <div class="bh-metric-card danger shadow-sm">
           <div class="small text-muted fw-semibold">Offener Gesamtbetrag</div>
-          <h2 class="fw-bold mt-1 mb-0 text-danger">${fmtChf(openSum)}</h2>
+          <h2 class="fw-bold mt-1 mb-0 text-danger"><span class="currency-label">CHF</span> ${openSum.toFixed(2)}</h2>
           <div class="small text-muted mt-1">${openCount} offene Rechnungen</div>
         </div>
       </div>
       <div class="col-md-4">
         <div class="bh-metric-card success shadow-sm">
           <div class="small text-muted fw-semibold">Eingenommen (Bezahlt)</div>
-          <h2 class="fw-bold mt-1 mb-0 text-success">${fmtChf(paidSum)}</h2>
+          <h2 class="fw-bold mt-1 mb-0 text-success"><span class="currency-label">CHF</span> ${paidSum.toFixed(2)}</h2>
           <div class="small text-muted mt-1">${paidCount} bezahlte Rechnungen</div>
         </div>
       </div>
       <div class="col-md-4">
         <div class="bh-metric-card info shadow-sm">
           <div class="small text-muted fw-semibold">Gesamte Fakturierung</div>
-          <h2 class="fw-bold mt-1 mb-0 text-dark">${fmtChf(openSum + paidSum)}</h2>
+          <h2 class="fw-bold mt-1 mb-0 text-dark"><span class="currency-label">CHF</span> ${(openSum + paidSum).toFixed(2)}</h2>
           <div class="small text-muted mt-1">${totalCount} Rechnungen insgesamt</div>
         </div>
       </div>
@@ -165,6 +302,269 @@ window.renderRechnungen = function() {
   `;
 
   rnRenderTable();
+};
+
+window.renderTabTemplates = function(content) {
+  let templates = window._invoiceTemplates;
+  if (!templates || templates.length === 0) {
+    rnInitializeTemplates();
+    templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+  }
+  
+  let rowsHtml = '';
+  if (templates.length === 0) {
+    rowsHtml = `<tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine Standard-Positionen erfasst.</td></tr>`;
+  } else {
+    // Sort templates by category then description
+    const sortedTemplates = [...templates].sort((a, b) => {
+      if (a.category !== b.category) return a.category.localeCompare(b.category);
+      return a.desc.localeCompare(b.desc);
+    });
+    
+    rowsHtml = sortedTemplates.map((t) => {
+      const priceLabel = t.price ? `CHF ${Number(t.price).toFixed(2)}` : '<span class="text-muted">Flexibler Preis</span>';
+      
+      let catBadge = 'bg-light text-dark border';
+      if (t.category === 'Vermietung') catBadge = 'bg-primary-subtle text-primary border border-primary-subtle';
+      else if (t.category === 'Konsumationen') catBadge = 'bg-success-subtle text-success border border-success-subtle';
+      else if (t.category === 'Schulsport') catBadge = 'bg-danger-subtle text-danger border border-danger-subtle';
+      
+      const tIdStr = t.id ? `'${t.id}'` : 'null';
+      const escapedDesc = String(t.desc).replace(/'/g, "\\'");
+      const escapedCategory = String(t.category).replace(/'/g, "\\'");
+      
+      return `
+        <tr class="bh-account-row">
+          <td><span class="badge ${catBadge} px-2.5 py-1.5">${escapeHtml(t.category)}</span></td>
+          <td class="fw-bold text-dark">${escapeHtml(t.desc)}</td>
+          <td class="text-end font-monospace fw-bold">${priceLabel}</td>
+          <td class="text-end">
+            <button class="btn btn-xs btn-outline-warning me-1 write-protected" onclick="rnOpenTemplateModal(${tIdStr}, '${escapedCategory}', '${escapedDesc}', '${t.price || ''}')" title="Vorlage bearbeiten">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-xs btn-outline-danger write-protected" onclick="rnDeleteTemplate(${tIdStr}, '${escapedDesc}')" title="Vorlage löschen">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+  
+  content.innerHTML = `
+    <div class="card border border-light shadow-sm p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h5 class="fw-bold text-primary mb-0"><i class="fas fa-magic me-2"></i>Standard-Rechnungspositionen verwalten</h5>
+        <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenTemplateModal(null)">
+          <i class="fas fa-plus-circle me-1"></i> Position hinzufügen
+        </button>
+      </div>
+      
+      <p class="text-muted small mb-4">
+        Hier können Sie die Vorlagen verwalten, die in den Rechnungserstellungs- und Bearbeitungsdialogen unter <strong>„Standard-Positionen“</strong> zur Schnellauswahl angeboten werden.
+      </p>
+      
+      <div class="table-responsive">
+        <table class="table table-hover align-middle bh-table mb-0" style="font-size: 13.5px;">
+          <thead>
+            <tr>
+              <th style="width: 160px;">Kategorie</th>
+              <th>Dienstleistung / Ware (Beschreibung)</th>
+              <th class="text-end" style="width: 180px;">Standard-Richtpreis</th>
+              <th class="text-end" style="width: 120px;">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+};
+
+// Modal for Template Add/Edit
+window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc = '', prc = '') {
+  let modalEl = document.getElementById('rnModalTemplateEdit');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalTemplateEdit';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+  
+  const isNew = templateId === null || templateId === undefined || templateId === '';
+  const t = isNew ? { id: '', category: cat, desc: dsc, price: prc } : (window._invoiceTemplates.find(x => String(x.id) === String(templateId)) || { id: templateId, category: cat, desc: dsc, price: prc });
+  
+  const tIdParam = isNew ? 'null' : `'${t.id}'`;
+  
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold"><i class="fas fa-magic me-2"></i>${isNew ? 'Standard-Position hinzufügen' : 'Standard-Position bearbeiten'}</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form onsubmit="rnSaveTemplate(event, ${tIdParam})">
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">Kategorie</label>
+              <select class="form-select" id="rnt-category" required>
+                <option value="Vermietung" ${t.category === 'Vermietung' ? 'selected' : ''}>Schützenhaus Vermietung</option>
+                <option value="Konsumationen" ${t.category === 'Konsumationen' ? 'selected' : ''}>Konsumationen (Essen / Getränke / Arbeit)</option>
+                <option value="Schulsport" ${t.category === 'Schulsport' ? 'selected' : ''}>Schulsport / Kurse</option>
+                <option value="Sonstige" ${t.category === 'Sonstige' ? 'selected' : ''}>Sonstige / Diverse</option>
+              </select>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">Beschreibung der Dienstleistung / Ware</label>
+              <input type="text" class="form-control fw-semibold" id="rnt-desc" required value="${escapeHtml(t.desc)}" placeholder="z.B. Süssgetränk 0.5 l">
+            </div>
+            
+            <div class="mb-4">
+              <label class="form-label fw-bold small text-muted">Standard-Richtpreis (Optional)</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light text-muted">CHF</span>
+                <input type="number" step="0.05" class="form-control text-end font-monospace" id="rnt-price" value="${t.price || ''}" placeholder="0.00 (Feld leeren für flexiblen Preis)">
+              </div>
+              <div class="form-text text-muted small mt-1">Lassen Sie dieses Feld leer, wenn der Betrag bei jeder Rechnung individuell eingegeben werden soll (z.B. Getränkebezug).</div>
+            </div>
+            
+            <div class="d-grid">
+              <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm">
+                <i class="fas fa-save me-1"></i> Speichern
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+};
+
+window.rnSaveTemplate = async function(event, templateId) {
+  event.preventDefault();
+  
+  const category = document.getElementById('rnt-category').value;
+  const desc = document.getElementById('rnt-desc').value.trim();
+  const priceInput = document.getElementById('rnt-price').value;
+  const price = priceInput !== '' ? parseFloat(priceInput) : '';
+  
+  const submitBtn = event.target.querySelector('button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Speichere...';
+  }
+  
+  const isNew = templateId === null || templateId === undefined || templateId === '';
+  const newTemplate = { category, desc, price };
+  
+  // Server POST payload
+  const payload = {
+    action: 'saveTemplate',
+    templateId: isNew ? '' : String(templateId),
+    template: newTemplate
+  };
+  
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+    
+    if (result.success) {
+      showSuccess(isNew ? "🎉 Standard-Position erfolgreich hinzugefügt!" : "🎉 Standard-Position aktualisiert!");
+      const modalEl = document.getElementById('rnModalTemplateEdit');
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+      
+      // Reload from server
+      await loadInvoiceTemplatesData();
+      renderActiveRechnungenTab();
+    } else {
+      throw new Error(result.error || "GAS returned success false");
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim Speichern auf dem Server, benutze LocalStorage Fallback:", err);
+    rnInitializeTemplates();
+    let templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+    
+    if (isNew) {
+      const maxId = templates.reduce((max, t) => Math.max(max, Number(t.id || 0)), 0);
+      newTemplate.id = maxId + 1;
+      templates.push(newTemplate);
+    } else {
+      const idx = templates.findIndex(t => String(t.id) === String(templateId));
+      if (idx !== -1) {
+        templates[idx] = { ...templates[idx], ...newTemplate };
+      } else {
+        newTemplate.id = templateId;
+        templates.push(newTemplate);
+      }
+    }
+    
+    localStorage.setItem('portal_invoice_templates', JSON.stringify(templates));
+    window._invoiceTemplates = templates;
+    
+    const modalEl = document.getElementById('rnModalTemplateEdit');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+    
+    showSuccess(isNew ? "🎉 Standard-Position lokal gespeichert!" : "🎉 Standard-Position lokal aktualisiert!");
+    renderActiveRechnungenTab();
+  }
+};
+
+window.rnDeleteTemplate = async function(templateId, desc) {
+  if (!confirm(`⚠️ Möchten Sie die Standard-Position "${desc}" wirklich aus den Vorlagen löschen?`)) return;
+  
+  const isServerTpl = templateId !== null && templateId !== undefined && templateId !== '';
+  
+  if (isServerTpl) {
+    const payload = {
+      action: 'deleteTemplate',
+      templateId: String(templateId)
+    };
+    
+    showLoadingOverlay(`Lösche Standard-Position...`);
+    try {
+      const response = await apiFetch('rechnungen', payload, 'POST');
+      const result = await response.json();
+      
+      if (result.success) {
+        showSuccess("🗑️ Standard-Position erfolgreich gelöscht!");
+        await loadInvoiceTemplatesData();
+        renderActiveRechnungenTab();
+        hideLoadingOverlay();
+        return;
+      } else {
+        throw new Error(result.error || "Fehler beim Löschen auf dem Server");
+      }
+    } catch (err) {
+      console.warn("⚠️ Fehler beim Löschen auf dem Server, lösche aus LocalStorage:", err);
+    } finally {
+      hideLoadingOverlay();
+    }
+  }
+  
+  // LOCALSTORAGE FALLBACK
+  rnInitializeTemplates();
+  let templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+  
+  const idx = templates.findIndex(t => String(t.id) === String(templateId));
+  if (idx !== -1) {
+    templates.splice(idx, 1);
+  }
+  
+  localStorage.setItem('portal_invoice_templates', JSON.stringify(templates));
+  window._invoiceTemplates = templates;
+  
+  showSuccess("🗑️ Standard-Position lokal gelöscht!");
+  renderActiveRechnungenTab();
 };
 
 // Filter Handler
@@ -789,11 +1189,23 @@ window.rnOpenCreateModal = async function() {
 
             <!-- Positionen verfassen -->
             <div class="mb-4">
-              <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
-                <button type="button" class="btn btn-xs btn-outline-primary" onclick="rncAddPositionRow()">
-                  <i class="fas fa-plus"></i> Pos hinzufügen
-                </button>
+                <div class="d-flex gap-2">
+                  <!-- Standard-Vorlagen Dropdown -->
+                  <div class="dropdown">
+                    <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      <i class="fas fa-magic me-1"></i> Standard-Positionen
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
+                      ${rnGetDropdownMenuHtml('rncAddPositionRow')}
+                    </ul>
+                  </div>
+                  
+                  <button type="button" class="btn btn-xs btn-primary" onclick="rncAddPositionRow()">
+                    <i class="fas fa-plus"></i> Pos hinzufügen
+                  </button>
+                </div>
               </div>
 
               <div class="table-responsive">
@@ -1161,11 +1573,23 @@ window.rnOpenEditModal = async function(invoiceId) {
 
             <!-- Positionen verfassen -->
             <div class="mb-4">
-              <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
-                <button type="button" class="btn btn-xs btn-outline-primary" onclick="rneAddPositionRow()">
-                  <i class="fas fa-plus"></i> Pos hinzufügen
-                </button>
+                <div class="d-flex gap-2">
+                  <!-- Standard-Vorlagen Dropdown -->
+                  <div class="dropdown">
+                    <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      <i class="fas fa-magic me-1"></i> Standard-Positionen
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
+                      ${rnGetDropdownMenuHtml('rneAddPositionRow')}
+                    </ul>
+                  </div>
+                  
+                  <button type="button" class="btn btn-xs btn-primary" onclick="rneAddPositionRow()">
+                    <i class="fas fa-plus"></i> Pos hinzufügen
+                  </button>
+                </div>
               </div>
 
               <div class="table-responsive">

@@ -225,7 +225,10 @@ window.renderBuchhaltung = function() {
           <i class="fas fa-chart-pie me-1.5"></i> Budget & Jahresvergleich
         </button>
         <button class="bh-tab-btn ${window._bhActiveTab === 'cockpit' ? 'active' : ''}" onclick="bhSwitchTab('cockpit')">
-          <i class="fas fa-print me-1.5"></i> GV-Export & Cockpit
+          <i class="fas fa-store me-1.5"></i> Betriebs-Cockpit
+        </button>
+        <button class="bh-tab-btn ${window._bhActiveTab === 'gvexport' ? 'active' : ''}" onclick="bhSwitchTab('gvexport')">
+          <i class="fas fa-print me-1.5"></i> GV-Export
         </button>
       </div>
       <div class="d-flex align-items-center mb-2 mb-md-0" style="gap: 10px;">
@@ -294,6 +297,21 @@ async function loadBuchhaltungData(silent = false) {
       
       // Live-Salden der Konten im Speicher berechnen
       recalculateLiveAccountBalances();
+      
+      // Dynamische Befüllung des Jahres-Dropdowns basierend auf den vorhandenen Jahren im Journal
+      const yearSelect = document.getElementById('bh-year-select');
+      if (yearSelect) {
+        const yearsSet = new Set(window._bhJournal.map(j => Number(j.jahr || window._bhYear)));
+        yearsSet.add(2026);
+        yearsSet.add(2025);
+        const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
+        
+        let selectHTML = '';
+        sortedYears.forEach(yr => {
+          selectHTML += `<option value="${yr}" ${window._bhYear === yr ? 'selected' : ''}>Jahr: ${yr}</option>`;
+        });
+        yearSelect.innerHTML = selectHTML;
+      }
       
       // Update KPIs & Render aktiven Tab
       updateAccountingKPIs();
@@ -421,11 +439,11 @@ function updateAccountingKPIs() {
   const profCard = document.getElementById('bh-kpi-profit-card');
   const profLabel = document.getElementById('bh-kpi-profit-label');
   
-  if (aktEl) aktEl.textContent = 'CHF ' + totalAssets.toFixed(2);
-  if (pasEl) pasEl.textContent = 'CHF ' + totalLiabilities.toFixed(2);
+  if (aktEl) aktEl.innerHTML = '<span class="currency-label">CHF</span> ' + totalAssets.toFixed(2);
+  if (pasEl) pasEl.innerHTML = '<span class="currency-label">CHF</span> ' + totalLiabilities.toFixed(2);
   
   if (profEl) {
-    profEl.textContent = 'CHF ' + Math.abs(netIncome).toFixed(2);
+    profEl.innerHTML = '<span class="currency-label">CHF</span> ' + Math.abs(netIncome).toFixed(2);
     if (netIncome >= 0) {
       profEl.className = 'fw-bold mt-1 mb-0 text-success';
       if (profCard) {
@@ -488,7 +506,13 @@ function renderActiveAccountingTab() {
     if (typeof renderTabCockpit === 'function') {
       renderTabCockpit(content);
     } else {
-      content.innerHTML = `<div class="alert alert-info py-4 text-center"><i class="fas fa-spinner fa-spin me-2"></i> Lade GV-Export & Cockpit...</div>`;
+      content.innerHTML = `<div class="alert alert-info py-4 text-center"><i class="fas fa-spinner fa-spin me-2"></i> Lade Betriebs-Cockpit...</div>`;
+    }
+  } else if (window._bhActiveTab === 'gvexport') {
+    if (typeof renderTabGVExport === 'function') {
+      renderTabGVExport(content);
+    } else {
+      content.innerHTML = `<div class="alert alert-info py-4 text-center"><i class="fas fa-spinner fa-spin me-2"></i> Lade GV-Export...</div>`;
     }
   }
 }
