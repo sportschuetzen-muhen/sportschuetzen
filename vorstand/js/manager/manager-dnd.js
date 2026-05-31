@@ -16,6 +16,7 @@ function initDragAndDrop() {
         dragId = el.dataset.id;
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', dragId);
+        document.body.classList.add('body-dragging');
         setTimeout(() => el.style.opacity = '0.4', 0);
     });
 
@@ -24,6 +25,8 @@ function initDragAndDrop() {
         if (el) el.style.opacity = '1';
         removeDropHighlights();
         dragSrcEl = null;
+        dragId = null;
+        document.body.classList.remove('body-dragging');
     });
 
     document.addEventListener('dragover', (e) => {
@@ -42,6 +45,7 @@ function initDragAndDrop() {
         const zone = e.target.closest('.dropzone');
         if (zone && dragId) handleDrop(dragId, zone);
         removeDropHighlights();
+        document.body.classList.remove('body-dragging');
     });
 
     // --- MOBILE TOUCH (iOS-safe) ---
@@ -61,6 +65,26 @@ function initDragAndDrop() {
         if (zone) zone.classList.add('drag-over');
     }
 
+    function moveClone(x, y) {
+        if (touchClone) {
+            touchClone.style.left = (x - 20) + 'px';
+            touchClone.style.top  = (y - 20) + 'px';
+        }
+    }
+
+    function cleanupTouch() {
+        if (touchClone) touchClone.remove();
+        if (dragSrcEl) dragSrcEl.style.opacity = '1';
+        removeDropHighlights();
+        document.querySelectorAll('.drag-clone').forEach(el => el.remove());
+        document.querySelectorAll('.draggable-player').forEach(el => el.style.opacity = '1');
+        dragId = null; touchClone = null; dragSrcEl = null;
+        document.body.classList.remove('body-dragging');
+
+        // Listener entfernen
+        document.removeEventListener('touchmove', onTouchMove);
+    }
+
     document.addEventListener('touchstart', (e) => {
         const handle = e.target.closest('.drag-handle');
         const el = handle ? handle.closest('.draggable-player') : null;
@@ -75,6 +99,7 @@ function initDragAndDrop() {
         const touch = e.touches[0];
         moveClone(touch.clientX, touch.clientY);
         el.style.opacity = '0.4';
+        document.body.classList.add('body-dragging');
         if (navigator.vibrate) navigator.vibrate(25);
 
         // touchmove aktivieren
@@ -88,23 +113,12 @@ function initDragAndDrop() {
         const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
         const zone = elemBelow ? elemBelow.closest('.dropzone') : null;
         if (zone) handleDrop(dragId, zone);
-        if (touchClone) touchClone.remove();
-        if (dragSrcEl) dragSrcEl.style.opacity = '1';
-        removeDropHighlights();
-        document.querySelectorAll('.drag-clone').forEach(el => el.remove());
-        document.querySelectorAll('.draggable-player').forEach(el => el.style.opacity = '1');
-        dragId = null; touchClone = null; dragSrcEl = null;
-
-        // Listener entfernen
-        document.removeEventListener('touchmove', onTouchMove);
+        cleanupTouch();
     });
-}
 
-function moveClone(x, y) {
-    if (touchClone) {
-        touchClone.style.left = (x - 20) + 'px';
-        touchClone.style.top  = (y - 20) + 'px';
-    }
+    document.addEventListener('touchcancel', (e) => {
+        cleanupTouch();
+    });
 }
 
 function removeDropHighlights() {

@@ -554,7 +554,7 @@ async function startPreloadSequence() {
     };
 
     // 3. Alle anstehenden Module initial auf "loading" setzen (sofern für Rolle sichtbar)
-    const pendingModules = ['termine', 'umfragen', 'resultate', 'manager', 'system-mails', 'inventar', 'jahresmeisterschaft', 'vermietung', 'buchhaltung'];
+    const pendingModules = ['termine', 'umfragen', 'resultate', 'manager', 'system-mails', 'inventar', 'jahresmeisterschaft', 'vermietung', 'buchhaltung', 'mail', 'jahresbeitrag', 'rechnungen', 'mitglieder', 'logins'];
     pendingModules.forEach(m => {
         const link = Array.from(document.querySelectorAll('.nav-link, .card')).find(el => {
             const oc = el.getAttribute('onclick') || '';
@@ -567,6 +567,8 @@ async function startPreloadSequence() {
 
     // Phase 1 (Core - Immediate)
     await silentInitialLoad();
+    window.setPreloadStatus('mitglieder', 'success');
+    window.setPreloadStatus('jahresbeitrag', 'success');
     
     // Phase 2 (nach 2 Sekunden): Termine & Umfragen
     setTimeout(async () => {
@@ -600,16 +602,27 @@ async function startPreloadSequence() {
             await loadSystemMailsData();
             window.setPreloadStatus('system-mails', 'success');
         }
-        if (typeof loadLoginsData === 'function' && userHasRole('admin')) await loadLoginsData();
+        if (typeof loadLoginsData === 'function' && userHasRole('admin')) {
+            await loadLoginsData();
+            window.setPreloadStatus('logins', 'success');
+        }
     }, 5000);
     
-    // Phase 4 (nach 8 Sekunden): Inventar
+    // Phase 4 (nach 8 Sekunden): Inventar, Mail, Rechnungen
     setTimeout(async () => {
         if (window.hasUnsavedChanges) return;
-        console.log("🕒 Phase 4 Preload (Inventar) gestartet...");
+        console.log("🕒 Phase 4 Preload (Inventar, Mail, Rechnungen) gestartet...");
         if (typeof loadInventarData === 'function') {
             await loadInventarData();
             window.setPreloadStatus('inventar', 'success');
+        }
+        if (typeof loadMailData === 'function') {
+            await loadMailData();
+            window.setPreloadStatus('mail', 'success');
+        }
+        if (typeof loadRechnungenData === 'function') {
+            await loadRechnungenData(true);
+            window.setPreloadStatus('rechnungen', 'success');
         }
     }, 8000);
     

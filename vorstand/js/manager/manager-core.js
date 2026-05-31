@@ -76,6 +76,9 @@ window.appState = appState;
         }
 
         /* --- Drag & Drop --- */
+        body.body-dragging .dropzone * {
+            pointer-events: none !important;
+        }
      .draggable-player {
     cursor: grab;
     user-select: none;
@@ -510,7 +513,6 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
 //  TEARDOWN: called from main.js navTo() on view change
 // =========================================================
 function teardownManager() {
-    appState._dndInited = false;
     appState.isDirty = false;
     const app = document.getElementById('manager-app');
     if (app) app.remove();

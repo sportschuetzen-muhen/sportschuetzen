@@ -130,19 +130,19 @@ function initArchiv() {
                             
                             <div class="d-flex gap-2 mb-2">
                                 <label for="ingest-pdf-file" class="btn btn-sm btn-outline-primary flex-grow-1 d-flex align-items-center justify-content-center">
-                                    <i class="fas fa-file-pdf me-2"></i> Einzelnes PDF (Kontrolle)
+                                    <i class="fas fa-file-import me-2"></i> Einzel-Upload (PDF / Word)
                                     <span class="spinner-border spinner-border-sm ms-2 d-none" id="pdf-spinner" role="status" aria-hidden="true"></span>
                                 </label>
-                                <input type="file" id="ingest-pdf-file" accept="application/pdf" style="display:none" onchange="handlePdfUpload(event)">
+                                <input type="file" id="ingest-pdf-file" accept=".pdf,.docx,.doc" style="display:none" onchange="handlePdfUpload(event)">
 
-                                <label for="ingest-batch-file" class="btn btn-sm btn-outline-warning flex-grow-1 d-flex align-items-center justify-content-center" title="Mehrere PDFs auswählen">
-                                    <i class="fas fa-layer-group me-2"></i> Massen-Upload (Auto)
+                                <label for="ingest-batch-file" class="btn btn-sm btn-outline-warning flex-grow-1 d-flex align-items-center justify-content-center" title="Mehrere PDFs oder Word-Dateien auswählen">
+                                    <i class="fas fa-layer-group me-2"></i> Massen-Upload (PDF / Word)
                                     <span class="spinner-border spinner-border-sm ms-2 d-none" id="batch-spinner" role="status" aria-hidden="true"></span>
                                 </label>
-                                <input type="file" id="ingest-batch-file" accept="application/pdf" multiple style="display:none" onchange="handleBatchUpload(event)">
+                                <input type="file" id="ingest-batch-file" accept=".pdf,.docx,.doc" multiple style="display:none" onchange="handleBatchUpload(event)">
                             </div>
                             
-                            <textarea id="ingest-doc-text" class="form-control rounded-3 font-monospace" rows="10" placeholder="Kopiere den Text des Protokolls hier hinein ODER lade oben ein PDF hoch..." style="font-size: 0.85rem;" required></textarea>
+                            <textarea id="ingest-doc-text" class="form-control rounded-3 font-monospace" rows="10" placeholder="Kopiere den Text des Protokolls hier hinein ODER lade oben ein PDF/Word-Dokument hoch..." style="font-size: 0.85rem;" required></textarea>
                             <div class="form-text small text-muted">Achte darauf, dass alle wichtigen Beschlüsse, Zahlen und Namen im Text enthalten sind. Du kannst den Text hier jederzeit anpassen.</div>
                         </div>
 
@@ -421,10 +421,23 @@ async function handleIngest(event) {
     progressContainer.classList.add("d-none");
 }
 
-// === PDF UPLOAD & OCR ===
+// === PDF/WORD UPLOAD & OCR ===
 async function handlePdfUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.endsWith('.doc')) {
+        showError("Fehler: Das alte Word-Format (.doc) wird aus Kompatibilitätsgründen nicht direkt unterstützt. Bitte öffne die Datei in Word, speichere sie als '.docx' (modernes Word-Format) oder als '.pdf' ab und lade sie dann erneut hoch.");
+        event.target.value = "";
+        return;
+    }
+
+    if (!lowerName.endsWith('.pdf') && !lowerName.endsWith('.docx')) {
+        showError("Fehler: Es werden aktuell nur PDF-Dateien und moderne Word-Dokumente (.docx) unterstützt.");
+        event.target.value = "";
+        return;
+    }
 
     const textArea = document.getElementById("ingest-doc-text");
     const spinner = document.getElementById("pdf-spinner");
@@ -435,7 +448,7 @@ async function handlePdfUpload(event) {
 
     if (progressContainer) {
         progressContainer.classList.remove("d-none");
-        statusText.innerText = `Lese PDF aus: ${file.name}`;
+        statusText.innerText = `Lese Datei aus: ${file.name}`;
         if (progressBar) {
             progressBar.style.width = `50%`;
             progressBar.classList.add("progress-bar-striped", "progress-bar-animated");
@@ -443,7 +456,11 @@ async function handlePdfUpload(event) {
     }
     
     spinner.classList.remove("d-none");
-    textArea.value = "🔄 KI liest das PDF aus, bitte einen Moment Geduld...\n\nDies kann je nach Grösse des PDFs 10-20 Sekunden dauern...";
+    if (lowerName.endsWith('.docx')) {
+        textArea.value = "🔄 Word-Dokument wird direkt im Browser ausgelesen...";
+    } else {
+        textArea.value = "🔄 KI liest das PDF aus, bitte einen Moment Geduld...\n\nDies kann je nach Grösse des PDFs 10-20 Sekunden dauern...";
+    }
     document.querySelector('label[for="ingest-pdf-file"]').style.pointerEvents = "none";
     document.querySelector('label[for="ingest-pdf-file"]').style.opacity = "0.5";
     
@@ -458,60 +475,72 @@ async function handlePdfUpload(event) {
     
     if (extractedDate) {
         document.getElementById("ingest-doc-date").value = extractedDate;
-        if (dateHint) dateHint.classList.remove("d-none");
+        if (dateHint) {
+            dateHint.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Aus Dateiname erkannt. Bitte prüfen!';
+            dateHint.classList.remove("d-none");
+        }
     } else {
         if (dateHint) dateHint.classList.add("d-none");
     }
 
     try {
-        // 1. Datei lokal lesen (Promise-basiert für sauberes Catching!)
-        const base64Pdf = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = e => resolve(e.target.result.split(',')[1]);
-            reader.onerror = () => reject(new Error("Fehler beim lokalen Lesen der PDF-Datei."));
-            reader.readAsDataURL(file);
-        });
+        let extractedText = "";
 
-        // 2. Text extrahieren (via Gemini)
-        const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/extract-pdf";
-        
-        const response = await fetch(WORKER_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'extract_pdf',
-                pdfData: base64Pdf
-            })
-        });
+        if (lowerName.endsWith('.docx')) {
+            // Word-Datei parsen
+            extractedText = await extractTextFromDocx(file);
+        } else {
+            // PDF via Cloudflare parsen
+            // 1. Datei lokal lesen (Promise-basiert für sauberes Catching!)
+            const base64Pdf = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result.split(',')[1]);
+                reader.onerror = () => reject(new Error("Fehler beim lokalen Lesen der PDF-Datei."));
+                reader.readAsDataURL(file);
+            });
 
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || `HTTP Error ${response.status}`);
-        }
+            // 2. Text extrahieren (via Gemini)
+            const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/extract-pdf";
+            
+            const response = await fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'extract_pdf',
+                    pdfData: base64Pdf
+                })
+            });
 
-        const data = await response.json();
-        
-        // Text in das Textfeld einfügen
-        textArea.value = data.text;
-        
-        // Falls die KI im Text ein Datum gefunden hat, übernehmen wir das (überschreibt das Dateinamen-Datum)
-        if (data.date) {
-            document.getElementById("ingest-doc-date").value = data.date;
-            if (dateHint) {
-                dateHint.innerHTML = '<i class="fas fa-magic"></i> Datum direkt im PDF-Text gefunden! Bitte kurz prüfen.';
-                dateHint.classList.remove("d-none");
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP Error ${response.status}`);
+            }
+
+            const data = await response.json();
+            extractedText = data.text;
+            
+            // Falls die KI im Text ein Datum gefunden hat, übernehmen wir das (überschreibt das Dateinamen-Datum)
+            if (data.date) {
+                document.getElementById("ingest-doc-date").value = data.date;
+                if (dateHint) {
+                    dateHint.innerHTML = '<i class="fas fa-magic"></i> Datum direkt im PDF-Text gefunden! Bitte kurz prüfen.';
+                    dateHint.classList.remove("d-none");
+                }
             }
         }
-
+        
+        // Text in das Textfeld einfügen
+        textArea.value = extractedText;
+        
         if (progressBar) progressBar.style.width = `100%`;
-        showSuccess("PDF erfolgreich ausgelesen! Du kannst den Text jetzt überprüfen.");
+        showSuccess("Dokument erfolgreich ausgelesen! Du kannst den Text jetzt überprüfen.");
 
     } catch (err) {
-        console.error("❌ PDF OCR Fehler:", err);
-        const formattedErr = formatOcrError(err, file.name);
+        console.error("❌ Dokument-Auslese Fehler:", err);
+        const formattedErr = lowerName.endsWith('.docx') ? `• ${file.name}: ${err.message}` : formatOcrError(err, file.name);
         showError(formattedErr);
         textArea.value = "";
-        textArea.placeholder = "Kopiere den Text des Protokolls hier hinein ODER lade oben ein PDF hoch...";
+        textArea.placeholder = "Kopiere den Text des Protokolls hier hinein ODER lade oben ein PDF/Word-Dokument hoch...";
         if (progressBar) progressBar.style.width = `0%`;
     } finally {
         spinner.classList.add("d-none");
@@ -535,6 +564,42 @@ async function handleBatchUpload(event) {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
+    // Filtere nach PDF- und DOCX-Dateien und melde unzulässige Formate
+    const validFiles = [];
+    const invalidFiles = [];
+    let docFilesCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const lowerName = file.name.toLowerCase();
+        if (lowerName.endsWith('.pdf') || lowerName.endsWith('.docx')) {
+            validFiles.push(file);
+        } else if (lowerName.endsWith('.doc')) {
+            docFilesCount++;
+            invalidFiles.push(file.name);
+        } else {
+            invalidFiles.push(file.name);
+        }
+    }
+
+    if (validFiles.length === 0) {
+        if (docFilesCount > 0) {
+            showError("Fehler: Keine gültigen PDF- oder DOCX-Dateien ausgewählt. Das alte Word-Format (.doc) wird aus Kompatibilitätsgründen nicht direkt unterstützt. Bitte öffne die Datei in Word und speichere sie als '.docx' (modernes Word-Format) oder als '.pdf' ab, bevor du sie hochlädst.");
+        } else {
+            showError("Fehler: Keine gültigen PDF- oder DOCX-Dateien ausgewählt. Es werden nur .pdf und .docx Dateien unterstützt.");
+        }
+        event.target.value = "";
+        return;
+    }
+
+    if (invalidFiles.length > 0) {
+        if (docFilesCount > 0) {
+            showError(`Hinweis: ${invalidFiles.length} Datei(en) wurden ignoriert, da sie kein unterstütztes Format haben (nur PDF oder DOCX erlaubt). Davon ${docFilesCount} alte .doc-Dateien.`, 8000);
+        } else {
+            showError(`Hinweis: ${invalidFiles.length} Datei(en) wurden ignoriert, da sie keine PDF- oder DOCX-Dateien sind.`, 6000);
+        }
+    }
+
     const spinner = document.getElementById("batch-spinner");
     const progressContainer = document.getElementById("ingest-progress-container");
     const statusText = document.getElementById("ingest-status-text");
@@ -550,38 +615,49 @@ async function handleBatchUpload(event) {
     let failCount = 0;
     let failedFiles = [];
 
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+    for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const lowerName = file.name.toLowerCase();
         
-        statusText.innerText = `Verarbeite Datei ${i + 1} von ${files.length}: ${file.name}`;
-        progressBar.style.width = `${Math.round((i / files.length) * 100)}%`;
+        statusText.innerText = `Verarbeite Datei ${i + 1} von ${validFiles.length}: ${file.name}`;
+        progressBar.style.width = `${Math.round((i / validFiles.length) * 100)}%`;
 
         try {
-            // 1. Datei lokal lesen
-            const base64Pdf = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = e => resolve(e.target.result.split(',')[1]);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
+            let extractedText = "";
+            let fileDate = defaultDate;
 
-            // 2. Text extrahieren (via Gemini)
-            const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/extract-pdf";
-            const ocrRes = await fetch(WORKER_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'extract_pdf', pdfData: base64Pdf })
-            });
+            if (lowerName.endsWith('.docx')) {
+                // Word-Datei parsen
+                extractedText = await extractTextFromDocx(file);
+                fileDate = extractDateFromFilename(file.name) || defaultDate;
+            } else {
+                // PDF-Datei parsen
+                // 1. Datei lokal lesen
+                const base64Pdf = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = e => resolve(e.target.result.split(',')[1]);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
 
-            if (!ocrRes.ok) {
-                const errData = await ocrRes.json().catch(() => ({}));
-                throw new Error(`OCR Fehlgeschlagen: ${errData.error || ocrRes.status}`);
+                // 2. Text extrahieren (via Gemini)
+                const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/extract-pdf";
+                const ocrRes = await fetch(WORKER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'extract_pdf', pdfData: base64Pdf })
+                });
+
+                if (!ocrRes.ok) {
+                    const errData = await ocrRes.json().catch(() => ({}));
+                    throw new Error(`OCR Fehlgeschlagen: ${errData.error || ocrRes.status}`);
+                }
+                const ocrData = await ocrRes.json();
+                extractedText = ocrData.text;
+
+                // KI-Datum bevorzugen, dann Dateiname-Datum, dann Standarddatum
+                fileDate = ocrData.date || extractDateFromFilename(file.name) || defaultDate;
             }
-            const ocrData = await ocrRes.json();
-            const extractedText = ocrData.text;
-
-            // KI-Datum bevorzugen, dann Dateiname-Datum, dann Standarddatum
-            const fileDate = ocrData.date || extractDateFromFilename(file.name) || defaultDate;
 
             const ingestRes = await apiFetch('archiv', { action: 'ingest' }, {
                 method: 'POST',
@@ -599,12 +675,12 @@ async function handleBatchUpload(event) {
             } else {
                 failCount++;
                 console.error(`Indexierung fehlgeschlagen für ${file.name}:`, ingestData.error);
-                failedFiles.push(`Indexierung fehlgeschlagen: ${ingestData.error || 'Unbekannt'}`);
+                failedFiles.push(`• ${file.name}: Indexierung fehlgeschlagen: ${ingestData.error || 'Unbekannt'}`);
             }
 
         } catch (err) {
             console.error(`Fehler bei ${file.name}:`, err);
-            const formattedErr = formatOcrError(err, file.name);
+            const formattedErr = lowerName.endsWith('.docx') ? `• ${file.name}: ${err.message}` : formatOcrError(err, file.name);
             failedFiles.push(formattedErr);
             failCount++;
         }
@@ -655,16 +731,7 @@ async function openOriginalPdf(filename, btn) {
     btn.innerHTML = originalContent;
 }
 
-// Hilfsfunktion: HTML Escaping zur Sicherheit
-function escapeHtml(unsafe) {
-    if (!unsafe) return "";
-    return unsafe
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
+
 
 // Hilfsfunktion: Datum aus Dateinamen extrahieren
 function extractDateFromFilename(filename) {
@@ -739,4 +806,30 @@ function formatOcrError(err, filename) {
     }
     
     return `• ${filename}: ${msg}`;
+}
+
+// Hilfsfunktion: Text aus einer Word-Datei (.docx) auslesen via Mammoth.js
+function extractTextFromDocx(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const arrayBuffer = e.target.result;
+            if (typeof mammoth === "undefined") {
+                reject(new Error("Die Mammoth.js-Bibliothek ist nicht geladen."));
+                return;
+            }
+            mammoth.extractRawText({ arrayBuffer: arrayBuffer })
+                .then(function(result) {
+                    const text = result.value || "";
+                    resolve(text.trim());
+                })
+                .catch(function(err) {
+                    reject(new Error("Fehler beim Extrahieren des Texts aus der Word-Datei: " + err.message));
+                });
+        };
+        reader.onerror = function() {
+            reject(new Error("Fehler beim Lesen der Datei vom Dateisystem."));
+        };
+        reader.readAsArrayBuffer(file);
+    });
 }
