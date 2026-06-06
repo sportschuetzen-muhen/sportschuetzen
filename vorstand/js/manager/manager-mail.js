@@ -22,27 +22,24 @@ async function openMailWizard() {
     mailWizard.excludedIds = new Set();
     mailWizard.resolvedRecipients = [];
 
-    // Alle Module vorladen
+    // Alle Module vorladen (Fix #2: loadContestData mit isPreload=true verwaltet State korrekt)
     const allKeys = ['grenzland', 'mannschaft', 'gruppe'];
     const toLoad = allKeys.filter(k => !mailWizard.cachedModules[k]);
     if (toLoad.length > 0) {
         showMailModal();
         renderMailStep(); // zeigt Step 1 mit Ladestatus
-        
+
         for (const key of toLoad) {
             try {
-                await fetchContestDataForPdf(key);
-                mailWizard.cachedModules[key] = {
-                    teams: JSON.parse(JSON.stringify(appState.teams)),
-                    pool:  JSON.parse(JSON.stringify(appState.pool))
-                };
+                // isPreload=true: lädt Daten, befüllt mailWizard.cachedModules[key] via loadContestData,
+                // und stellt den vorherigen State automatisch wieder her.
+                await loadContestData(key, false, true);
             } catch(e) {
                 console.warn(`Modul ${key} konnte nicht geladen werden:`, e);
             }
         }
 
-        // State wiederherstellen
-        await loadContestData(appState.activeModule);
+        // KEIN extra loadContestData()-Aufruf nötig – isPreload stellt State bereits wieder her.
         renderMailStep();
         return;
     }

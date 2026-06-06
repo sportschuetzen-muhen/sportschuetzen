@@ -115,15 +115,11 @@ document.addEventListener('DOMContentLoaded', () => {
             publishBtn.classList.add('d-none');
 
             try {
-                const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/generate";
-                
                 const useImageContent = document.getElementById('news-use-image-content') ? document.getElementById('news-use-image-content').checked : true;
                 
-                const response = await fetch(WORKER_URL, {
+                const response = await apiFetch('news', 'action=generate', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'generate',
                         keywords: keywords,
                         images: base64Images,
                         useImageContent: useImageContent
@@ -186,13 +182,9 @@ document.addEventListener('DOMContentLoaded', () => {
             spinner.classList.remove('d-none');
 
             try {
-                const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/generate";
-                
-                const response = await fetch(WORKER_URL, {
+                const response = await apiFetch('news', 'action=publish', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'publish',
                         title: title,
                         author: author,
                         html: finalHtml, // Den manuell angepassten HTML-Text senden!

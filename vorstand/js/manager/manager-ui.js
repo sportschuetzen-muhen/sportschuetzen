@@ -138,6 +138,8 @@ function renderContestUI() {
         const ts = document.querySelector('.teams-scroll-area');
         if (ps) ps.scrollTop = poolScroll;
         if (ts) ts.scrollTop = teamsScroll;
+        // Fix #6b: Pool-Suchfilter nach re-render wiederherstellen
+        if (typeof restorePoolFilter === 'function') restorePoolFilter();
     });
 }
 
@@ -157,7 +159,7 @@ function renderTeamCard(team, config) {
             : (zone.key === 'kniend' ? '#f3e5f5' : '#fff');
         if (isFull) zoneBg = '#f8f9fa';
 
-        let contentHtml = shooters.map(s => renderPlayerItem(s, team.name)).join('');
+        let contentHtml = shooters.map(s => renderPlayerItem(s)).join('');
         for (let i = 0; i < remaining; i++) {
             contentHtml += `
                 <div class="card mb-1 ghost-slot">

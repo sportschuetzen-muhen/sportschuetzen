@@ -19,6 +19,8 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.6/piexif.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
     <!-- OneSignal Integration -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
@@ -426,7 +428,7 @@
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .d-none { display: none !important; }
-        .draggable-player { touch-action: pan-y; }
+        /* .draggable-player touch-action wird vom Manager-Modul (injectManagerStylesOnce) gesetzt */
 
         @keyframes fadeInToast {
             from { opacity: 0; transform: translateY(20px); }
@@ -560,6 +562,10 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('news', this)">
                     <i class="fas fa-newspaper"></i> <span class="nav-text">News AI</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('galerie', this)">
+                    <i class="fas fa-images"></i> <span class="nav-text">Galerie Manager</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin"
                      onclick="navTo('logins', this)">
@@ -697,6 +703,13 @@
                             <p class="small text-muted">KI-Berichte für Homepage erstellen</p>
                         </div>
                     </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('galerie')" style="cursor:pointer">
+                            <h5>🖼️ Galerie Manager</h5>
+                            <p class="small text-muted">Gesichter erkennen & EXIF-Tagging</p>
+                        </div>
+                    </div>
                     <div class="col-md-4 role-protected" data-roles="admin">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('logins')" style="cursor:pointer">
@@ -797,6 +810,16 @@
         </button>
     </div>
     <div id="mail-container"></div>
+</div>
+
+<!-- GALERIE MANAGER -->
+<div id="view-galerie" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🖼️ Galerie Manager</h2>
+    </div>
+    <div id="galerie-container">
+        <!-- Wird von galerie.js gerendert -->
+    </div>
 </div>
 
 <!-- JAHRESBEITRAG -->
@@ -1163,6 +1186,9 @@
 
 <!-- NEU: Skript für Protokoll-Archiv KI -->
 <script src="js/archiv.js"></script>
+
+<!-- NEU: Skript für Galerie Manager -->
+<script src="js/galerie.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 

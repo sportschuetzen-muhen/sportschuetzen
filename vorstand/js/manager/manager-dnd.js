@@ -31,13 +31,21 @@ function initDragAndDrop() {
 
     document.addEventListener('dragover', (e) => {
         e.preventDefault();
+    });
+
+    document.addEventListener('dragenter', (e) => {
         const zone = e.target.closest('.dropzone');
         if (zone) zone.classList.add('drag-over');
     });
 
     document.addEventListener('dragleave', (e) => {
         const zone = e.target.closest('.dropzone');
-        if (zone) zone.classList.remove('drag-over');
+        if (zone) {
+            // Safe check: e.relatedTarget must be a Node before calling zone.contains
+            if (!e.relatedTarget || !(e.relatedTarget instanceof Node) || !zone.contains(e.relatedTarget)) {
+                zone.classList.remove('drag-over');
+            }
+        }
     });
 
     document.addEventListener('drop', (e) => {
@@ -238,7 +246,13 @@ function removeTeamFromState(teamName) {
 function filterPool(val) {
     val = String(val || "").toLowerCase();
     document.querySelectorAll('.dropzone[data-target-type="pool"] .draggable-player').forEach(el => {
-        el.parentElement.style.display =
-            el.innerText.toLowerCase().includes(val) ? 'block' : 'none';
+        // Fix #6: el selbst ausblenden, nicht el.parentElement
+        el.style.display = el.innerText.toLowerCase().includes(val) ? '' : 'none';
     });
+}
+
+// Stellt den Pool-Filter nach einem re-render wieder her (wird von renderContestUI aufgerufen)
+function restorePoolFilter() {
+    const input = document.querySelector('.pool-body')?.closest('.card')?.querySelector('input[type="text"]');
+    if (input && input.value) filterPool(input.value);
 }

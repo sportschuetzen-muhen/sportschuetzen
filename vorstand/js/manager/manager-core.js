@@ -76,45 +76,38 @@ window.appState = appState;
         }
 
         /* --- Drag & Drop --- */
-        body.body-dragging .dropzone * {
-            pointer-events: none !important;
-        }
-     .draggable-player {
-    cursor: grab;
-    user-select: none;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-    position: relative;
-    min-height: 48px;
-    display: flex;
-    align-items: center;
-    touch-action: manipulation; /* WICHTIG */
-}
-     /* Drag Handle – nur dieser Bereich triggert Drag */
-.drag-handle {
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 22px;
-  display: flex; align-items: center; justify-content: center;
-  cursor: grab;
-  touch-action: none;   /* NUR hier Touch-Drag, Rest scrollt */
-  color: #adb5bd;
-  font-size: 13px;
-  z-index: 1;
-}
-/* Player selbst scrollt normal */
-.draggable-player {
-  touch-action: pan-y;  /* pan-y statt manipulation/none */
-}
-
-        /* Drag Handle Icon */
-        .draggable-player::before {
-            content: '⋮⋮';
-            position: absolute;
-            left: 6px;
-            color: #adb5bd;
-            font-size: 14px;
+        /* Nur die Player-Cards selbst bekommen pointer-events:none während Drag,
+           damit hover-Effekte auf Karten unterdrückt werden.
+           Die .dropzone-Container und .drag-handle behalten pointer-events
+           damit drop/dragover/dragenter/touchend korrekt funktionieren. */
+        body.body-dragging .draggable-player {
             pointer-events: none;
         }
+        /* Einzige Definition – touch-action: pan-y erlaubt vertikales Scrollen,
+           nur das .drag-handle sperrt Touches für DnD */
+        .draggable-player {
+            cursor: grab;
+            user-select: none;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            position: relative;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            touch-action: pan-y;
+        }
+        /* Drag Handle – nur dieser Bereich triggert Touch-Drag */
+        .drag-handle {
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 22px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: grab;
+            touch-action: none;
+            color: #adb5bd;
+            font-size: 13px;
+            z-index: 1;
+        }
+
         .draggable-player .card-body {
             padding-left: 24px !important; /* Platz für Handle */
             width: 100%;
@@ -433,6 +426,13 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
             appState.mailList = [];
             renderContestUI();
 
+            // Singleton-Guard: DnD nur einmal initialisieren
+            if (!window._managerDndInited) {
+                initDragAndDrop();
+                window._managerDndInited = true;
+                appState._dndInited = true;
+            }
+
             const sel = document.getElementById('module-selector');
             if (sel) sel.value = appState.activeModule;
         }
@@ -482,8 +482,11 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
         if (!isPreload) {
             renderContestUI();
 
-            if (!appState._dndInited) {
+            // Singleton-Guard: DnD-Listener nur EINMAL an document binden
+            // (gilt für die gesamte App-Laufzeit, unabhängig von Modul-Wechseln)
+            if (!window._managerDndInited) {
                 initDragAndDrop();
+                window._managerDndInited = true;
                 appState._dndInited = true;
             }
 
@@ -514,6 +517,10 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
 // =========================================================
 function teardownManager() {
     appState.isDirty = false;
+    // Hinweis: appState._dndInited bleibt TRUE – die document-Listener
+    // sind permanent und funktionieren auch für ein neu gerendertes Manager-DOM.
+    // Zurücksetzen würde doppelte Listener erzeugen (Bug-Fix #5 revert).
+    appState.mailList = [];
     const app = document.getElementById('manager-app');
     if (app) app.remove();
 }
@@ -659,11 +666,5 @@ async function saveContest() {
 }
 
 
-// =========================================================
-//  SMALL HELPERS
-// =========================================================
-function escapeJs(str) {
-    return String(str || "")
-        .replaceAll("\\", "\\\\")
-        .replaceAll("'", "\\'");
-}
+// escapeJs() wird von main.js bereitgestellt (vollständige Version mit ", \n, \r).
+// Keine lokale Redefinition nötig – Bug-Fix: verhindert Überschreiben der globalen Funktion.

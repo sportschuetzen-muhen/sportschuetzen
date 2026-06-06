@@ -500,13 +500,9 @@ async function handlePdfUpload(event) {
             });
 
             // 2. Text extrahieren (via Gemini)
-            const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/extract-pdf";
-            
-            const response = await fetch(WORKER_URL, {
+            const response = await apiFetch('news', 'action=extract_pdf', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    action: 'extract_pdf',
                     pdfData: base64Pdf
                 })
             });
@@ -641,11 +637,9 @@ async function handleBatchUpload(event) {
                 });
 
                 // 2. Text extrahieren (via Gemini)
-                const WORKER_URL = "https://sportschuetzen-website-worker.dan-hunziker73.workers.dev/extract-pdf";
-                const ocrRes = await fetch(WORKER_URL, {
+                const ocrRes = await apiFetch('news', 'action=extract_pdf', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'extract_pdf', pdfData: base64Pdf })
+                    body: JSON.stringify({ pdfData: base64Pdf })
                 });
 
                 if (!ocrRes.ok) {

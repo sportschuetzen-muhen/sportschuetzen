@@ -163,7 +163,7 @@ function renderContestToPdf(doc, config, opts = {}) {
         return yy - y;
     };
 
-    const teams = appState.teams;
+    const teams = opts.teams || appState.teams;
     for (let i = 0; i < teams.length; i++) {
         const team   = teams[i];
         const needed = estimateTeamHeight(team, config);
@@ -216,19 +216,13 @@ function buildPdfDoc(moduleKey) {
     const config = CONTEST_CONFIG[key];
     const doc = new jsPDF();
 
-    // Temporär Teams aus Cache laden falls anderes Modul
-    const originalTeams = appState.teams;
-    const originalModule = appState.activeModule;
-    if (moduleKey && mailWizard.cachedModules[moduleKey]) {
-        appState.teams = mailWizard.cachedModules[moduleKey].teams;
-        appState.activeModule = moduleKey;
+    // Teams aus Cache laden falls anderes Modul
+    let teams = appState.teams;
+    if (moduleKey && moduleKey !== appState.activeModule && mailWizard.cachedModules[moduleKey]) {
+        teams = mailWizard.cachedModules[moduleKey].teams;
     }
 
-    const result = renderContestToPdf(doc, config, { twoCol: true });
-
-    // Wiederherstellen
-    appState.teams = originalTeams;
-    appState.activeModule = originalModule;
+    const result = renderContestToPdf(doc, config, { twoCol: true, teams });
 
     return result;
 }
@@ -282,23 +276,46 @@ async function buildAllPdfDoc() {
         throw new Error("jsPDF nicht geladen.");
     }
 
-    const prevState = (typeof structuredClone === "function")
-        ? structuredClone(appState)
-        : JSON.parse(JSON.stringify(appState));
+    // Fix #3: Zustand sichern als Kopie der Eigenschaften
+    const savedActiveModule = appState.activeModule;
+    const savedTeams = JSON.parse(JSON.stringify(appState.teams));
+    const savedPool  = JSON.parse(JSON.stringify(appState.pool));
+    const savedIsDirty = appState.isDirty;
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const dateStr = getDateStr();
     const modules = ["grenzland", "mannschaft", "gruppe"];
 
-    for (let i = 0; i < modules.length; i++) {
-        if (i > 0) doc.addPage();
-        const config = await fetchContestDataForPdf(modules[i]);
-        renderContestToPdf(doc, config, { twoCol: true, dateStr });
+    try {
+        for (let i = 0; i < modules.length; i++) {
+            if (i > 0) doc.addPage();
+            const key = modules[i];
+            // Teams aus Cache nutzen falls vorhanden, sonst API-Fetch
+            let teams;
+            if (mailWizard.cachedModules[key]) {
+                teams = mailWizard.cachedModules[key].teams;
+            } else {
+                const config = await fetchContestDataForPdf(key);
+                teams = JSON.parse(JSON.stringify(appState.teams));
+                // In Cache speichern für spätere Nutzung
+                mailWizard.cachedModules[key] = {
+                    teams,
+                    pool: JSON.parse(JSON.stringify(appState.pool))
+                };
+            }
+            const config = CONTEST_CONFIG[key];
+            renderContestToPdf(doc, config, { twoCol: true, dateStr, teams });
+        }
+    } finally {
+        // Fix #3: Einzelne Properties wiederherstellen – keine Neuzuweisung von appState!
+        appState.activeModule = savedActiveModule;
+        appState.teams  = savedTeams;
+        appState.pool   = savedPool;
+        appState.isDirty = savedIsDirty;
     }
 
-    appState = prevState;
-
+    // UI auffrischen falls Manager-View aktiv
     const managerView = document.getElementById('view-manager');
     if (managerView && managerView.classList.contains('active')) {
         ensureManagerShell();
