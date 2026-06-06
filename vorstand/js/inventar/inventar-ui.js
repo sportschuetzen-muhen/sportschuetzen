@@ -43,6 +43,9 @@ function renderInventarUI(container) {
         onclick="localStorage.setItem('inventar-activeTab','admin'); showInventarSection('admin')">
     ➕ Admin
 </button>` : ''}
+            <button class="btn btn-outline-info ms-auto nav-btn fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
+                <i class="fas fa-sync-alt me-1"></i> Daten aktualisieren
+            </button>
         </div>
 
         <!-- SECTION: BUCHUNG -->
@@ -58,6 +61,7 @@ function renderInventarUI(container) {
                             <label class="form-label fw-bold">Aktion</label>
                             <select id="select-action" class="form-select mb-3"
                                     onchange="toggleBookingFields(); warenkorb=[]; renderWarenkorb();">
+                                <option value="verkauf" selected>💰 Verkauf</option>
                                 <option value="checkout">📤 Ausgabe</option>
                                 <option value="checkin">📥 Rückgabe</option>
                             </select>
@@ -76,7 +80,7 @@ function renderInventarUI(container) {
                             </select>
 
                             <label class="form-label fw-bold">Gegenstand</label>
-                            <select id="select-gegenstand" class="form-select mb-3"></select>
+                            <select id="select-gegenstand" class="form-select mb-3" onchange="onGegenstandSelect()"></select>
 
                             <div id="container-zustand-abgabe">
                                 <label class="form-label fw-bold text-primary">Zustand bei Abgabe</label>
@@ -89,7 +93,7 @@ function renderInventarUI(container) {
 
                             <div class="row g-2 mb-3">
                                 <div class="col-6">
-                                    <label class="form-label fw-bold small">Pfandbetrag CHF</label>
+                                    <label class="form-label fw-bold small" id="label-betrag">Pfandbetrag CHF</label>
                                     <input type="number" id="pfand-betrag" class="form-control"
                                            placeholder="0.00" step="0.01">
                                 </div>
@@ -105,6 +109,13 @@ function renderInventarUI(container) {
                                     <select id="pfand-retour" class="form-select">
                                         <option value="Nein">Nein</option>
                                         <option value="Ja">Ja</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 d-none" id="container-verkauf-methode">
+                                    <label class="form-label fw-bold small">Zahlungsart</label>
+                                    <select id="verkauf-methode" class="form-select">
+                                        <option value="Bar">Bar</option>
+                                        <option value="Twint">Twint</option>
                                     </select>
                                 </div>
                             </div>
@@ -318,19 +329,36 @@ function fillInventarDropdowns() {
     if (inventarState.config) {
         const zOpts = '<option value="">-- wählen --</option>' +
             inventarState.config.map(c => c.Transaktion_Zustand).filter(v => v)
-                .map(v => `<option value="${v}">${v}</option>`).join('');
+                .map(v => {
+                    const isOk = (v.toLowerCase() === 'ok' || v.toLowerCase() === 'i.o.');
+                    return `<option value="${v}" ${isOk ? 'selected' : ''}>${v}</option>`;
+                }).join('');
         document.getElementById('select-zustand-abgabe').innerHTML    = zOpts;
         document.getElementById('select-zustand-rueckgabe').innerHTML = zOpts;
     }
-    updateSubOptions();
+    toggleBookingFields(); // Sorgt dafür, dass UI-State zur default action (Verkauf) passt
 }
 
 function toggleBookingFields() {
-    const isCheckout = document.getElementById('select-action').value === 'checkout';
-    document.getElementById('container-zustand-abgabe').classList.toggle('d-none', !isCheckout);
-    document.getElementById('container-zustand-rueckgabe').classList.toggle('d-none', isCheckout);
+    const action = document.getElementById('select-action').value;
+    const isCheckout = action === 'checkout';
+    const isVerkauf = action === 'verkauf';
+    
+    document.getElementById('container-zustand-abgabe').classList.toggle('d-none', !isCheckout && !isVerkauf);
+    document.getElementById('container-zustand-rueckgabe').classList.toggle('d-none', isCheckout || isVerkauf);
+    
     document.getElementById('container-pfand-einnahme').classList.toggle('d-none', !isCheckout);
-    document.getElementById('container-pfand-retour').classList.toggle('d-none', isCheckout);
+    document.getElementById('container-pfand-retour').classList.toggle('d-none', action !== 'checkin');
+    document.getElementById('container-verkauf-methode').classList.toggle('d-none', !isVerkauf);
+    
+    // Label umschalten für Betrag
+    const labelBetrag = document.getElementById('label-betrag');
+    if (isVerkauf) {
+        labelBetrag.innerText = 'Verkaufspreis CHF';
+    } else {
+        labelBetrag.innerText = 'Pfandbetrag CHF';
+    }
+    
     updateSubOptions();
 }
 
@@ -348,6 +376,8 @@ function updateSubOptions() {
                       i.Aktueller_Besitzer_ID.toString() !== "0" &&
                       i.Aktueller_Besitzer_ID.toString() !== "";
         const isInCart = warenkorb.some(w => w.itemId.toString() === i.ID.toString() && w.kategorie === kat);
+        
+        // Verkauf ist NIE blockiert, Checkout nur wenn isOut, Checkin nur wenn !isOut
         const disabled = (action === 'checkout' && isOut) || (action === 'checkin' && !isOut) || isInCart;
         // Bei Rückgabe: nur Items des gewählten Mitglieds aktivieren
         const wrongOwner = action === 'checkin' && isOut && mitgliedId &&
@@ -362,6 +392,38 @@ function updateSubOptions() {
             ${label} ${statusIcon}
         </option>`;
     }).join('');
+    
+    // Initial den Kaufpreis laden, falls Verkauf gewählt ist und ein Gegenstand vorselektiert ist
+    onGegenstandSelect();
+}
+
+function onGegenstandSelect() {
+    const action = document.getElementById('select-action').value;
+    if (action !== 'verkauf') return;
+
+    const kat = document.getElementById('select-kategorie').value;
+    const itemId = document.getElementById('select-gegenstand').value;
+    if (!itemId) return;
+
+    const keyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                     "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+    const item = (inventarState[keyMap[kat]] || []).find(i => i.ID.toString() === itemId.toString());
+    
+    if (item) {
+        console.log("Ausgewählter Gegenstand:", item); // Debugging
+        
+        // Prüfen auf Kaufpreis
+        let preisRaw = item.Kaufpreis || item.Preis || item.kaufpreis || item.Verkaufspreis || 0;
+        
+        if (preisRaw && preisRaw !== "") {
+            const preis = parseFloat(preisRaw.toString().replace("'", "").replace("CHF", "").trim());
+            if (!isNaN(preis) && preis > 0) {
+                document.getElementById('pfand-betrag').value = preis.toFixed(2);
+                return;
+            }
+        }
+    }
+    document.getElementById('pfand-betrag').value = '';
 }
 
 function showJournalConfirmationAlert(message) {

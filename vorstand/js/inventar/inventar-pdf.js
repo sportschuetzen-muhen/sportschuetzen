@@ -61,7 +61,7 @@ async function urlToBase64(url) {
 // =========================================================
 //  PDF-QUITTUNG
 // =========================================================
-async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl) {
+async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl, isVerkauf = false) {
     const { jsPDF }    = window.jspdf;
     const doc          = new jsPDF();
     const mitgliedId   = data.Aktueller_Besitzer_ID || data.mitgliedId;
@@ -69,7 +69,7 @@ async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl
         .find(m => m.ID.toString() === mitgliedId.toString());
     const mitgliedName = mitglied ? `${mitglied.Nachname} ${mitglied.Vorname}` : mitgliedId;
     const isAusgabe    = data.action==='checkout' || data.Aktion==='AUSGABE';
-    const typ          = isAusgabe ? 'AUSGABE-QUITTUNG' : 'RÜCKNAHME-QUITTUNG';
+    const typ          = isVerkauf ? 'VERKAUFS-QUITTUNG' : (isAusgabe ? 'AUSGABE-QUITTUNG' : 'RÜCKNAHME-QUITTUNG');
 
     // Header
     doc.setFontSize(20); doc.setFont(undefined,'bold');
@@ -101,7 +101,7 @@ async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl
     doc.text("Kategorie",  35, y+5.5);
     doc.text("Gegenstand", 68, y+5.5);
     doc.text("Zustand",    130, y+5.5);
-    doc.text("Pfand",      165, y+5.5);
+    doc.text(isVerkauf ? "Preis" : "Betrag", 165, y+5.5);
     doc.setTextColor(0,0,0);
     y += 10;
 
@@ -141,16 +141,24 @@ async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl
         if (y > 245) { doc.addPage(); y = 20; }
     });
 
-    // Pfand-Summe
+    // Pfand-/Preis-Summe
     if (totalPfand > 0) {
         doc.setLineWidth(0.3); doc.line(130, y, 190, y); y += 5;
         doc.setFont(undefined,'bold');
-        doc.text(`Total Pfand: CHF ${totalPfand.toFixed(2)}`, 130, y);
-        const pfandStatus = isAusgabe
-            ? (items[0]?.pfandEinnahme==='Ja' ? '✓ Kassiert' : '✗ Nicht kassiert')
-            : (items[0]?.pfandRetour  ==='Ja' ? '✓ Retour bezahlt' : '✗ Noch offen');
+        doc.text(`Total ${isVerkauf ? 'Preis' : 'Betrag'}: CHF ${totalPfand.toFixed(2)}`, 130, y);
+        
+        let status = '';
+        if (isVerkauf) {
+             const methode = items[0]?.verkaufMethode || 'Unbekannt';
+             status = methode === 'Einzahlungsschein' ? 'Rechnung folgt' : `Bezahlt (${methode})`;
+        } else {
+             status = isAusgabe
+                ? (items[0]?.pfandEinnahme==='Ja' ? '✓ Kassiert' : '✗ Nicht kassiert')
+                : (items[0]?.pfandRetour  ==='Ja' ? '✓ Retour bezahlt' : '✗ Noch offen');
+        }
+        
         doc.setFont(undefined,'normal');
-        doc.text(pfandStatus, 130, y+6);
+        doc.text(status, 130, y+6);
         y += 14;
     }
     y += 8;

@@ -814,7 +814,7 @@
 <div id="view-rechnungen" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>🧾 Rechnungen & PDF-Cockpit</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadRechnungenData(true)">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadRechnungenData(false, true)">
             🔄 Aktualisieren
         </button>
     </div>
@@ -825,7 +825,7 @@
 <div id="view-buchhaltung" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>📊 Buchhaltung & KMU-Berichte</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadBuchhaltungData(true)">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadBuchhaltungData(false, true)">
             🔄 Aktualisieren
         </button>
     </div>
@@ -1141,10 +1141,17 @@
 
 <!-- Chart.js für grafische Auswertungen -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<!-- Skript für doppelte Buchhaltung -->
-<script src="js/buchhaltung.js"></script>
+<!-- Skript für doppelte Buchhaltung & Auswertungen -->
+<script src="js/buchhaltung/buchhaltung-core.js"></script>
+<script src="js/buchhaltung/buchhaltung-ui.js"></script>
+<script src="js/buchhaltung/buchhaltung-modals.js"></script>
 <script src="js/buchhaltung-controlling.js"></script>
-<script src="js/rechnungen.js"></script>
+
+<!-- Skript für Rechnungen & PDF-Cockpit -->
+<script src="js/rechnungen/rechnungen-core.js"></script>
+<script src="js/rechnungen/rechnungen-ui.js"></script>
+<script src="js/rechnungen/rechnungen-templates.js"></script>
+<script src="js/rechnungen/rechnungen-actions.js"></script>
 
 
     
