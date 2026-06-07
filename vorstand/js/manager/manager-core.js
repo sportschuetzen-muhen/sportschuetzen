@@ -80,7 +80,7 @@ window.appState = appState;
            damit hover-Effekte auf Karten unterdrückt werden.
            Die .dropzone-Container und .drag-handle behalten pointer-events
            damit drop/dragover/dragenter/touchend korrekt funktionieren. */
-        body.body-dragging .draggable-player {
+        body.body-dragging .draggable-player:not(.dragging) {
             pointer-events: none;
         }
         /* Einzige Definition – touch-action: pan-y erlaubt vertikales Scrollen,
@@ -392,6 +392,115 @@ window.appState = appState;
   .pool-scroll-area .draggable-player .card-body {
     padding: 5px 8px 5px 22px !important;
   }
+}
+
+/* ─── Mobile Tap-Dialog (Bottom Sheet) ─── */
+.tap-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 58, 93, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 9000;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+}
+.tap-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.tap-sheet {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: white;
+    border-radius: 20px 20px 0 0;
+    padding: 0 0 env(safe-area-inset-bottom, 16px);
+    z-index: 9001;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 -8px 32px rgba(15,58,93,0.18);
+    max-height: 80dvh;
+    display: flex;
+    flex-direction: column;
+}
+.tap-sheet.visible {
+    transform: translateY(0);
+}
+
+@media (min-width: 576px) {
+    .tap-sheet {
+        left: 50%;
+        right: auto;
+        width: 450px;
+        transform: translate(-50%, 100%);
+        border-radius: 20px 20px 0 0;
+    }
+    .tap-sheet.visible {
+        transform: translate(-50%, 0);
+    }
+}
+
+.tap-sheet-handle {
+    width: 44px; height: 5px;
+    background: #dee2e6;
+    border-radius: 3px;
+    margin: 12px auto 0;
+    flex-shrink: 0;
+}
+.tap-sheet-header {
+    padding: 12px 20px 8px;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+}
+.tap-sheet-body {
+    overflow-y: auto;
+    padding: 12px 16px 16px;
+    -webkit-overflow-scrolling: touch;
+}
+.tap-team-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #0f172a;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    text-align: left;
+}
+.tap-team-btn:active {
+    background: #eef2ff;
+    transform: scale(0.98);
+}
+.tap-team-btn[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #94a3b8;
+}
+.tap-team-btn.danger {
+    background: #fff5f5;
+    border-color: #fecaca;
+    color: #dc2626;
+}
+.tap-team-btn .tap-badge {
+    margin-left: auto;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #64748b;
+    background: #e2e8f0;
+    padding: 2px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
 }
     `;
     document.head.appendChild(style);

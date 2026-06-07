@@ -31,9 +31,17 @@ function warenkorbAdd() {
         .find(i => i.ID.toString() === itemId.toString());
     const label  = item ? getItemLabel(kategorie, item) : itemId;
 
+    const isOut = item && item.Aktueller_Besitzer_ID &&
+                  item.Aktueller_Besitzer_ID.toString() !== "0" &&
+                  item.Aktueller_Besitzer_ID.toString() !== "";
+
     if (action === 'checkin') {
         if (!item || item.Aktueller_Besitzer_ID.toString() !== mitgliedId.toString()) {
             alert("⚠️ Dieser Gegenstand ist nicht bei diesem Mitglied!"); return;
+        }
+    } else if (action === 'checkout' || action === 'verkauf') {
+        if (isOut) {
+            alert("⚠️ Dieser Gegenstand ist bereits ausgegeben/verkauft und nicht im Bestand!"); return;
         }
     }
 
@@ -174,7 +182,6 @@ async function handleInventarSubmit(e) {
         document.getElementById('form-ausgabe').reset();
         sigPadMitglied?.clear();
         sigPadVorstand?.clear();
-        document.getElementById('sig-mitglied-container').style.display = 'block';
 
         showJournalConfirmationAlert(`${result.transactionIds ? result.transactionIds.length : 1} Position(en) erfolgreich erfasst und Beleg im Google Drive gesichert. Bitte überprüfe die Buchung kurz unten in der Liste.`);
         localStorage.setItem('inventar-activeTab', 'journal');

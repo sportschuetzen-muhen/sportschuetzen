@@ -175,7 +175,9 @@ window.renderSubgroupRows = function(accounts, subgroupTitle) {
     
     html += `
       <tr class="bh-detail-row bh-account-row">
-        <td class="ps-4 text-muted font-monospace" style="width: 80px;">${acc.konto}</td>
+        <td class="ps-4 font-monospace" style="width: 80px;">
+          <a href="#" onclick="bhOpenKontoauszugModal('${acc.konto}'); return false;" class="text-primary fw-bold text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a>
+        </td>
         <td class="ps-3">
           ${acc.bezeichnung}
           ${proMemoriaHTML}
@@ -623,7 +625,7 @@ window.renderTabKontenrahmen = function(container) {
     
     return `
       <tr class="bh-account-row">
-        <td><span class="bh-konto-badge">${acc.konto}</span></td>
+        <td><a href="#" onclick="bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
         <td class="fw-bold text-dark">${acc.bezeichnung}</td>
         <td><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
         <td class="text-end text-muted">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>

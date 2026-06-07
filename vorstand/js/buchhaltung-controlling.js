@@ -121,16 +121,19 @@ function bhRenderYoYChart() {
   const schiessbetriebData = [];
   const gebaeudeData = [];
   const verwaltungData = [];
+  const uebrigeData = [];
   
   jahre.forEach(yr => {
     let yrSchiess = 0;
     let yrGebaeude = 0;
     let yrVerwaltung = 0;
+    let yrUebrige = 0;
     
     const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === yr);
     
     window._bhKontenrahmen.forEach(acc => {
       const code = String(acc.konto).trim();
+      const cat = bhGetAccountCategory(acc);
       
       let balanceChange = 0;
       currentYearJournal.forEach(entry => {
@@ -144,18 +147,23 @@ function bhRenderYoYChart() {
       
       const balance = Math.abs(balanceChange); // Expenses are positive values
       
-      if (code.startsWith('41') || code.startsWith('42') || code.startsWith('44')) {
-        yrSchiess += balance;
-      } else if ((code.startsWith('60') && code !== '6011') || code.startsWith('62') || code.startsWith('63') || code.startsWith('64')) {
-        yrGebaeude += balance; // Explicitly exclude Wasserschaden 6011!
-      } else if (code.startsWith('65') || code.startsWith('67') || code.startsWith('69') || code.startsWith('89')) {
-        yrVerwaltung += balance;
+      if (cat.main === 'Aufwand') {
+        if (code.startsWith('41') || code.startsWith('42') || code.startsWith('44')) {
+          yrSchiess += balance;
+        } else if ((code.startsWith('60') && code !== '6011') || code.startsWith('62') || code.startsWith('63') || code.startsWith('64')) {
+          yrGebaeude += balance; // Explicitly exclude Wasserschaden 6011!
+        } else if (code.startsWith('65') || code.startsWith('67') || code.startsWith('69') || code.startsWith('89')) {
+          yrVerwaltung += balance;
+        } else {
+          yrUebrige += balance;
+        }
       }
     });
     
     schiessbetriebData.push(Math.max(0, yrSchiess));
     gebaeudeData.push(Math.max(0, yrGebaeude));
     verwaltungData.push(Math.max(0, yrVerwaltung));
+    uebrigeData.push(Math.max(0, yrUebrige));
   });
   
   if (window._bhCharts.yoyChart) window._bhCharts.yoyChart.destroy();
@@ -190,6 +198,16 @@ function bhRenderYoYChart() {
           data: verwaltungData,
           borderColor: '#0d6efd',
           backgroundColor: 'rgba(13, 110, 253, 0.03)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
+        },
+        {
+          label: 'Übrige Aufwände',
+          data: uebrigeData,
+          borderColor: '#fd7e14',
+          backgroundColor: 'rgba(253, 126, 20, 0.03)',
           borderWidth: 3,
           tension: 0.3,
           fill: true,
@@ -230,41 +248,54 @@ function bhRenderBudgetChart() {
     'Mitglieder':  { ist: 0, soll: 0, isExpense: false },
     'Sponsoren':   { ist: 0, soll: 0, isExpense: false },
     'Vermietung':  { ist: 0, soll: 0, isExpense: false },
+    'Übriger Ertrag': { ist: 0, soll: 0, isExpense: false },
     'Schiessbetrieb': { ist: 0, soll: 0, isExpense: true },
     'Jungschützen': { ist: 0, soll: 0, isExpense: true },
     'Gebäude & SH': { ist: 0, soll: 0, isExpense: true },
-    'Verwaltung/IT': { ist: 0, soll: 0, isExpense: true }
+    'Verwaltung/IT': { ist: 0, soll: 0, isExpense: true },
+    'Übriger Aufwand': { ist: 0, soll: 0, isExpense: true }
   };
   
   window._bhKontenrahmen.forEach(acc => {
     const codeStr = String(acc.konto).trim();
     const istVal = Number(acc._endsaldo || 0);
+    const cat = bhGetAccountCategory(acc);
     
     // Budget
     const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
     const sollVal = bud ? Number(bud[activeBudgetCol] || 0) : 0;
     
-    if (codeStr.startsWith('341')) {
-      categories['Mitglieder'].ist += istVal;
-      categories['Mitglieder'].soll += sollVal;
-    } else if (codeStr.startsWith('32')) {
-      categories['Sponsoren'].ist += istVal;
-      categories['Sponsoren'].soll += sollVal;
-    } else if (codeStr.startsWith('340') || codeStr.startsWith('3650') || codeStr.startsWith('34')) {
-      categories['Vermietung'].ist += istVal;
-      categories['Vermietung'].soll += sollVal;
-    } else if (codeStr.startsWith('41') || codeStr.startsWith('44')) {
-      categories['Schiessbetrieb'].ist += istVal;
-      categories['Schiessbetrieb'].soll += sollVal;
-    } else if (codeStr.startsWith('42')) {
-      categories['Jungschützen'].ist += istVal;
-      categories['Jungschützen'].soll += sollVal;
-    } else if (codeStr.startsWith('60') || codeStr.startsWith('62')) {
-      categories['Gebäude & SH'].ist += istVal;
-      categories['Gebäude & SH'].soll += sollVal;
-    } else if (codeStr.startsWith('65')) {
-      categories['Verwaltung/IT'].ist += istVal;
-      categories['Verwaltung/IT'].soll += sollVal;
+    if (cat.main === 'Ertrag') {
+      if (codeStr.startsWith('341')) {
+        categories['Mitglieder'].ist += istVal;
+        categories['Mitglieder'].soll += sollVal;
+      } else if (codeStr.startsWith('32')) {
+        categories['Sponsoren'].ist += istVal;
+        categories['Sponsoren'].soll += sollVal;
+      } else if (codeStr.startsWith('340') || codeStr.startsWith('3650') || codeStr.startsWith('34')) {
+        categories['Vermietung'].ist += istVal;
+        categories['Vermietung'].soll += sollVal;
+      } else {
+        categories['Übriger Ertrag'].ist += istVal;
+        categories['Übriger Ertrag'].soll += sollVal;
+      }
+    } else if (cat.main === 'Aufwand') {
+      if (codeStr.startsWith('41') || codeStr.startsWith('44')) {
+        categories['Schiessbetrieb'].ist += istVal;
+        categories['Schiessbetrieb'].soll += sollVal;
+      } else if (codeStr.startsWith('42')) {
+        categories['Jungschützen'].ist += istVal;
+        categories['Jungschützen'].soll += sollVal;
+      } else if (codeStr.startsWith('60') || codeStr.startsWith('62')) {
+        categories['Gebäude & SH'].ist += istVal;
+        categories['Gebäude & SH'].soll += sollVal;
+      } else if (codeStr.startsWith('65')) {
+        categories['Verwaltung/IT'].ist += istVal;
+        categories['Verwaltung/IT'].soll += sollVal;
+      } else {
+        categories['Übriger Aufwand'].ist += istVal;
+        categories['Übriger Aufwand'].soll += sollVal;
+      }
     }
   });
   
@@ -818,16 +849,19 @@ function bhRenderYoYCostChart() {
   const schiessbetriebData = [];
   const gebaeudeData = [];
   const verwaltungData = [];
+  const uebrigeData = [];
   
   jahre.forEach(yr => {
     let yrSchiess = 0;
     let yrGebaeude = 0;
     let yrVerwaltung = 0;
+    let yrUebrige = 0;
     
     const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === yr);
     
     window._bhKontenrahmen.forEach(acc => {
       const code = String(acc.konto).trim();
+      const cat = bhGetAccountCategory(acc);
       
       let balanceChange = 0;
       currentYearJournal.forEach(entry => {
@@ -841,18 +875,23 @@ function bhRenderYoYCostChart() {
       
       const balance = Math.abs(balanceChange);
       
-      if (code.startsWith('41') || code.startsWith('42') || code.startsWith('44')) {
-        yrSchiess += balance;
-      } else if ((code.startsWith('60') && code !== '6011') || code.startsWith('62') || code.startsWith('63') || code.startsWith('64')) {
-        yrGebaeude += balance;
-      } else if (code.startsWith('65') || code.startsWith('67') || code.startsWith('69') || code.startsWith('89')) {
-        yrVerwaltung += balance;
+      if (cat.main === 'Aufwand') {
+        if (code.startsWith('41') || code.startsWith('42') || code.startsWith('44')) {
+          yrSchiess += balance;
+        } else if ((code.startsWith('60') && code !== '6011') || code.startsWith('62') || code.startsWith('63') || code.startsWith('64')) {
+          yrGebaeude += balance;
+        } else if (code.startsWith('65') || code.startsWith('67') || code.startsWith('69') || code.startsWith('89')) {
+          yrVerwaltung += balance;
+        } else {
+          yrUebrige += balance;
+        }
       }
     });
     
     schiessbetriebData.push(Math.max(0, yrSchiess));
     gebaeudeData.push(Math.max(0, yrGebaeude));
     verwaltungData.push(Math.max(0, yrVerwaltung));
+    uebrigeData.push(Math.max(0, yrUebrige));
   });
   
   if (window._bhCharts.yoyCostChart) window._bhCharts.yoyCostChart.destroy();
@@ -887,6 +926,16 @@ function bhRenderYoYCostChart() {
           data: verwaltungData,
           borderColor: '#0d6efd',
           backgroundColor: 'rgba(13, 110, 253, 0.03)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4
+        },
+        {
+          label: 'Übrige Aufwände',
+          data: uebrigeData,
+          borderColor: '#fd7e14',
+          backgroundColor: 'rgba(253, 126, 20, 0.03)',
           borderWidth: 3,
           tension: 0.3,
           fill: true,

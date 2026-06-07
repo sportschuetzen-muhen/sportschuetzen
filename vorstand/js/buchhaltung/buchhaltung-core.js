@@ -359,23 +359,24 @@ window.recalculateLiveAccountBalances = function() {
 };
 
 // Update der KPI Werte ganz oben
+// Update der KPI Werte ganz oben
 window.updateAccountingKPIs = function() {
   let totalAssets = 0;      // Klasse 1 (Aktiven)
   let totalLiabilities = 0; // Klasse 2 (Passiven)
-  let totalRevenue = 0;     // Klasse 3 (Erträge)
-  let totalExpenses = 0;    // Klasse 4, 5, 6, 7 (Aufwände)
+  let totalRevenue = 0;     // Klasse 3 & 8 (Erträge)
+  let totalExpenses = 0;    // Klasse 4, 5, 6, 7 & 8 (Aufwände)
   
   window._bhKontenrahmen.forEach(acc => {
-    const k = String(acc.klasse).trim();
+    const cat = bhGetAccountCategory(acc);
     const balance = Number(acc._endsaldo || 0);
     
-    if (k === '1' || k.toLowerCase().startsWith('akt')) {
+    if (cat.main === 'Aktiven') {
       totalAssets += balance;
-    } else if (k === '2' || k.toLowerCase().startsWith('pas')) {
+    } else if (cat.main === 'Passiven') {
       totalLiabilities += balance;
-    } else if (k === '3' || k.toLowerCase().startsWith('ert')) {
+    } else if (cat.main === 'Ertrag') {
       totalRevenue += balance;
-    } else if (k === '4' || k === '5' || k === '6' || k === '7' || k.toLowerCase().startsWith('auf')) {
+    } else if (cat.main === 'Aufwand') {
       totalExpenses += balance;
     }
   });
@@ -504,6 +505,16 @@ window.bhGetAccountCategory = function(account) {
     }
     return { main: 'Aufwand', sub, detail };
   }
+
+  if (k === '5') {
+    let sub = 'Personalaufwand';
+    let detail = 'Entschädigungen Vorstand / Übriges';
+    if (codeStr.startsWith('50')) {
+      sub = 'Personalaufwand';
+      detail = 'Entschädigungen';
+    }
+    return { main: 'Aufwand', sub, detail };
+  }
   
   if (k === '6') {
     let sub = 'Sonstiger betrieblicher Aufwand';
@@ -535,13 +546,20 @@ window.bhGetAccountCategory = function(account) {
     }
     return { main: 'Aufwand', sub, detail };
   }
+
+  if (k === '7') {
+    let sub = 'Betrieblicher Nebenerfolg';
+    let detail = 'Finanzaufwand / Nebenerfolg';
+    return { main: 'Aufwand', sub, detail };
+  }
   
   if (k === '8') {
     let sub = 'Betriebsfremder Aufwand und Ertrag';
     let detail = 'Steuern';
-    if (codeStr.startsWith('81')) {
+    if (codeStr.startsWith('80') || codeStr.startsWith('81')) {
       sub = 'Betriebsfremder Aufwand und Ertrag';
       detail = 'Betriebsfremder Ertrag';
+      return { main: 'Ertrag', sub, detail };
     } else if (codeStr.startsWith('89')) {
       sub = 'Direkte Steuern';
       detail = 'Steuern';

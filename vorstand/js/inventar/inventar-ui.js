@@ -75,7 +75,7 @@ function renderInventarUI(container) {
                                     onchange="updateSubOptions()">
                                 <option value="gewehr">Gewehr</option>
                                 <option value="schluessel">Schlüssel</option>
-                                <option value="kleidung">Kleidung</option>
+                                <option value="kleidung" selected>Kleidung</option>
                                 <option value="schiessbekleidung">Schiessbekleidung</option>
                             </select>
 
@@ -181,7 +181,7 @@ function renderInventarUI(container) {
                             onchange="renderInventoryTable()">
                         <option value="Inventar_Gewehre">Gewehre</option>
                         <option value="Inventar_Schluessel">Schlüssel</option>
-                        <option value="Inventar_Kleidung">Kleidung</option>
+                        <option value="Inventar_Kleidung" selected>Kleidung</option>
                         <option value="Inventar_Schiessbekleidung">Schiessbekleidung</option>
                         <option value="Personendaten">Mitglieder</option>
                     </select>
@@ -377,8 +377,8 @@ function updateSubOptions() {
                       i.Aktueller_Besitzer_ID.toString() !== "";
         const isInCart = warenkorb.some(w => w.itemId.toString() === i.ID.toString() && w.kategorie === kat);
         
-        // Verkauf ist NIE blockiert, Checkout nur wenn isOut, Checkin nur wenn !isOut
-        const disabled = (action === 'checkout' && isOut) || (action === 'checkin' && !isOut) || isInCart;
+        // Verkauf und Checkout sind blockiert wenn isOut, Checkin nur wenn !isOut
+        const disabled = ((action === 'checkout' || action === 'verkauf') && isOut) || (action === 'checkin' && !isOut) || isInCart;
         // Bei Rückgabe: nur Items des gewählten Mitglieds aktivieren
         const wrongOwner = action === 'checkin' && isOut && mitgliedId &&
                            i.Aktueller_Besitzer_ID.toString() !== mitgliedId.toString();

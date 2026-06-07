@@ -414,6 +414,20 @@ window.bhSaveJournalEntry = async function(event) {
     return;
   }
   
+  // Validierung des Buchungsjahres gegenüber dem Datum
+  const entryDate = new Date(payload.datum);
+  const entryYear = isNaN(entryDate.getTime()) ? null : entryDate.getFullYear();
+  if (entryYear && entryYear !== Number(window._bhYear)) {
+    const confirmMsg = `⚠️ Buchungsdatum weicht ab!\n\nDas eingegebene Datum liegt im Jahr ${entryYear}, Sie buchen jedoch im aktiven Buchungsjahr ${window._bhYear}.\n\nMöchten Sie diese Buchung trotzdem durchführen?`;
+    if (!confirm(confirmMsg)) {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchungssatz ins Journal schreiben';
+      }
+      return;
+    }
+  }
+  
   try {
     const response = await apiFetch('buchhaltung', payload, 'POST');
     const result = await response.json();
@@ -486,3 +500,188 @@ window.bhDeleteJournalEntry = async function(entryId) {
     alert("❌ Fehler beim Löschen der Buchung: " + err.message);
   }
 };
+
+// POPUP-MODAL: KONTOAUSZUG / DETAILS FÜR EIN EINZELNES KONTO ANZEIGEN
+window.bhOpenKontoauszugModal = function(kontoCode) {
+  let modalEl = document.getElementById('bhModalKontoauszug');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalKontoauszug';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  let selectedKonto = String(kontoCode || '').trim();
+  let acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === selectedKonto);
+  if (!acc && window._bhKontenrahmen.length > 0) {
+    acc = window._bhKontenrahmen[0];
+    selectedKonto = String(acc.konto).trim();
+  }
+
+  if (!acc) {
+    alert("Keine Sachkonten vorhanden!");
+    return;
+  }
+
+  const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf'));
+  const opBalance = Number(acc._dynamicEroeffnungssaldo || 0);
+
+  // Filter journal entries for the current account and year
+  const accountEntries = window._bhJournal.filter(j => 
+    Number(j.jahr) === Number(window._bhYear) && 
+    (String(j.konto_soll).trim() === selectedKonto || String(j.konto_haben).trim() === selectedKonto)
+  );
+
+  // Sort by date (chronological) and then by id
+  accountEntries.sort((a, b) => {
+    const dateA = new Date(a.datum);
+    const dateB = new Date(b.datum);
+    if (dateA < dateB) return -1;
+    if (dateA > dateB) return 1;
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+
+  let runningBalance = opBalance;
+  let totalSoll = 0;
+  let totalHaben = 0;
+
+  const rowsHtml = accountEntries.map(entry => {
+    const isSoll = String(entry.konto_soll).trim() === selectedKonto;
+    const amount = Number(entry.betrag || 0);
+    let sollVal = 0;
+    let habenVal = 0;
+
+    if (isSoll) {
+      sollVal = amount;
+      totalSoll += amount;
+      runningBalance += isAssetOrExpense ? amount : -amount;
+    } else {
+      habenVal = amount;
+      totalHaben += amount;
+      runningBalance += isAssetOrExpense ? -amount : amount;
+    }
+
+    const gegenKonto = isSoll ? String(entry.konto_haben).trim() : String(entry.konto_soll).trim();
+    const gegenKontoName = window.getAccountNameByCode ? window.getAccountNameByCode(gegenKonto) : '';
+
+    return `
+      <tr class="bh-account-row">
+        <td class="font-monospace small text-muted">${entry.id}</td>
+        <td>${window.isoToDisplay ? window.isoToDisplay(entry.datum) : entry.datum}</td>
+        <td class="fw-bold text-dark small">${entry.beleg_nr || '–'}</td>
+        <td class="small fw-semibold">${window.escapeHtml ? window.escapeHtml(entry.beschreibung) : entry.beschreibung}</td>
+        <td>
+          <span class="bh-konto-badge">${gegenKonto}</span>
+          <span class="text-muted ms-1 small d-none d-sm-inline">${gegenKontoName}</span>
+        </td>
+        <td class="text-end fw-semibold text-primary">${sollVal > 0 ? window.fmtChf(sollVal) : '–'}</td>
+        <td class="text-end fw-semibold text-success">${habenVal > 0 ? window.fmtChf(habenVal) : '–'}</td>
+        <td class="text-end fw-bold text-dark">${window.fmtChf(runningBalance)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Generate sorting list of all accounts for selector
+  const kontoOptions = window._bhKontenrahmen
+    .slice()
+    .sort((a, b) => parseInt(a.konto) - parseInt(b.konto))
+    .map(a => `<option value="${a.konto}" ${String(a.konto).trim() === selectedKonto ? 'selected' : ''}>${a.konto} - ${a.bezeichnung} (${window.bhGetAccountCategory(a).main})</option>`)
+    .join('');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
+      <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px);">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold"><i class="fas fa-file-invoice-dollar me-2"></i>Kontoauszug / Kontoblatt (${window._bhYear})</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <!-- Account selector -->
+          <div class="row g-3 mb-4 align-items-end">
+            <div class="col-md-6">
+              <label class="form-label fw-bold small text-muted">Konto auswählen</label>
+              <select class="form-select fw-bold border-2" id="bha-konto-select" onchange="bhOpenKontoauszugModal(this.value)">
+                ${kontoOptions}
+              </select>
+            </div>
+            <div class="col-md-6 text-md-end">
+              <span class="badge bg-primary px-3 py-2 fs-7 rounded-pill">
+                Klassifizierung: ${acc.klasse} - ${window.bhGetAccountCategory(acc).main}
+              </span>
+            </div>
+          </div>
+
+          <!-- KPI Header inside Modal -->
+          <div class="row g-3 mb-4">
+            <div class="col-sm-3">
+              <div class="p-3 bg-white border border-light rounded-3 text-center shadow-sm">
+                <div class="small text-muted fw-semibold" style="font-size: 11px;">Eröffnungssaldo</div>
+                <h5 class="fw-bold mt-1 mb-0 text-dark">${window.fmtChf(opBalance)}</h5>
+              </div>
+            </div>
+            <div class="col-sm-3">
+              <div class="p-3 bg-white border border-light rounded-3 text-center shadow-sm">
+                <div class="small text-muted fw-semibold text-primary" style="font-size: 11px;">Total Soll (+)</div>
+                <h5 class="fw-bold mt-1 mb-0 text-primary">${window.fmtChf(totalSoll)}</h5>
+              </div>
+            </div>
+            <div class="col-sm-3">
+              <div class="p-3 bg-white border border-light rounded-3 text-center shadow-sm">
+                <div class="small text-muted fw-semibold text-success" style="font-size: 11px;">Total Haben (-)</div>
+                <h5 class="fw-bold mt-1 mb-0 text-success">${window.fmtChf(totalHaben)}</h5>
+              </div>
+            </div>
+            <div class="col-sm-3">
+              <div class="p-3 border rounded-3 text-center shadow-sm" style="background-color: rgba(15,58,93,0.02); border-color: var(--primary) !important;">
+                <div class="small text-muted fw-semibold" style="font-size: 11px;">Endsaldo</div>
+                <h5 class="fw-bold mt-1 mb-0 text-primary">${window.fmtChf(acc._endsaldo)}</h5>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ledgers Table -->
+          <div class="table-responsive animate__animated animate__fadeIn" style="max-height: 400px;">
+            <table class="table table-hover align-middle bh-table mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">ID</th>
+                  <th style="width: 100px;">Datum</th>
+                  <th style="width: 120px;">Beleg-Nr</th>
+                  <th>Beschreibung</th>
+                  <th>Gegenkonto</th>
+                  <th class="text-end" style="width: 120px;">Soll</th>
+                  <th class="text-end" style="width: 120px;">Haben</th>
+                  <th class="text-end" style="width: 140px;">Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="table-light italic">
+                  <td colspan="5" class="fw-bold text-muted small">Eröffnungsbilanz / Saldenvortrag</td>
+                  <td class="text-end text-muted">–</td>
+                  <td class="text-end text-muted">–</td>
+                  <td class="text-end fw-bold text-muted">${window.fmtChf(opBalance)}</td>
+                </tr>
+                ${rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="8" class="text-center text-muted py-4">Keine Buchungen auf diesem Konto im Jahr ' + window._bhYear + ' vorhanden.</td></tr>'}
+                <tr class="bh-main-total-row">
+                  <td colspan="5">KUMULIERT / JAHRESSUMME</td>
+                  <td class="text-end text-primary">${window.fmtChf(totalSoll)}</td>
+                  <td class="text-end text-success">${window.fmtChf(totalHaben)}</td>
+                  <td class="text-end text-primary">${window.fmtChf(acc._endsaldo)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer bg-light border-0 py-2.5 rounded-bottom-4">
+          <button type="button" class="btn btn-secondary btn-sm fw-bold px-3 shadow-sm" data-bs-dismiss="modal">Schliessen</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const bootstrapModal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+  bootstrapModal.show();
+};
+

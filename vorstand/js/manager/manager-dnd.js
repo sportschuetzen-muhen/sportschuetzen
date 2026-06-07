@@ -1,6 +1,6 @@
 // =========================================================
 //  MODULE: MANAGER - DND (DRAG & DROP)
-//  - Desktop Drag & Drop, iOS-sichere Touch-Mechanik & State Modifier
+//  - Desktop Drag & Drop, Touch Drag & Drop & Tap-to-assign
 // =========================================================
 
 function initDragAndDrop() {
@@ -8,12 +8,32 @@ function initDragAndDrop() {
     let dragId = null;
     let touchClone = null;
 
+    // Globales Touch-Tracking, um emulierte Drag-Events auf Touchscreens zu verhindern
+    document.addEventListener('touchstart', () => {
+        window.isTouching = true;
+    }, { passive: true });
+    
+    document.addEventListener('touchend', () => {
+        setTimeout(() => {
+            window.isTouching = false;
+        }, 100);
+    }, { passive: true });
+
+    document.addEventListener('touchcancel', () => {
+        window.isTouching = false;
+    }, { passive: true });
+
     // --- DESKTOP ---
     document.addEventListener('dragstart', (e) => {
+        if (window.isTouching) {
+            e.preventDefault();
+            return;
+        }
         const el = e.target.closest('.draggable-player');
         if (!el) return;
         dragSrcEl = el;
         dragId = el.dataset.id;
+        el.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', dragId);
         document.body.classList.add('body-dragging');
@@ -22,7 +42,10 @@ function initDragAndDrop() {
 
     document.addEventListener('dragend', (e) => {
         const el = e.target.closest('.draggable-player');
-        if (el) el.style.opacity = '1';
+        if (el) {
+            el.style.opacity = '1';
+            el.classList.remove('dragging');
+        }
         removeDropHighlights();
         dragSrcEl = null;
         dragId = null;
@@ -41,7 +64,6 @@ function initDragAndDrop() {
     document.addEventListener('dragleave', (e) => {
         const zone = e.target.closest('.dropzone');
         if (zone) {
-            // Safe check: e.relatedTarget must be a Node before calling zone.contains
             if (!e.relatedTarget || !(e.relatedTarget instanceof Node) || !zone.contains(e.relatedTarget)) {
                 zone.classList.remove('drag-over');
             }
@@ -82,7 +104,10 @@ function initDragAndDrop() {
 
     function cleanupTouch() {
         if (touchClone) touchClone.remove();
-        if (dragSrcEl) dragSrcEl.style.opacity = '1';
+        if (dragSrcEl) {
+            dragSrcEl.style.opacity = '1';
+            dragSrcEl.classList.remove('dragging');
+        }
         removeDropHighlights();
         document.querySelectorAll('.drag-clone').forEach(el => el.remove());
         document.querySelectorAll('.draggable-player').forEach(el => el.style.opacity = '1');
@@ -101,6 +126,7 @@ function initDragAndDrop() {
         e.preventDefault();
         dragId = el.dataset.id;
         dragSrcEl = el;
+        el.classList.add('dragging');
         touchClone = el.cloneNode(true);
         touchClone.classList.add('drag-clone');
         document.body.appendChild(touchClone);
@@ -127,6 +153,46 @@ function initDragAndDrop() {
     document.addEventListener('touchcancel', (e) => {
         cleanupTouch();
     });
+
+    // --- MOBILE TAP DETECTION (separate from drag-handle drag) ---
+    let tapEl = null;
+    let tapT0 = 0;
+    let tapX0 = 0;
+    let tapY0 = 0;
+    let tapMoved = false;
+
+    document.addEventListener('touchstart', (e) => {
+        if (e.target.closest('.drag-handle')) return;
+        const el = e.target.closest('.draggable-player');
+        if (!el) return;
+        tapEl = el;
+        tapT0 = Date.now();
+        tapX0 = e.touches[0].clientX;
+        tapY0 = e.touches[0].clientY;
+        tapMoved = false;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!tapEl) return;
+        const dx = e.touches[0].clientX - tapX0;
+        const dy = e.touches[0].clientY - tapY0;
+        if (Math.sqrt(dx * dx + dy * dy) > 10) tapMoved = true;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+        const el = tapEl;
+        tapEl = null;
+        if (!el) return;
+        if (tapMoved) return;
+        if (Date.now() - tapT0 > 300) return;
+
+        const playerId = el.dataset.id;
+        const teamZoneEl = el.closest('[data-target-type="team"]');
+        const inTeam = !!teamZoneEl;
+        const teamName = teamZoneEl ? teamZoneEl.dataset.team : '';
+
+        handlePlayerTap(playerId, inTeam, teamName);
+    }, { passive: true });
 }
 
 function removeDropHighlights() {
@@ -246,7 +312,6 @@ function removeTeamFromState(teamName) {
 function filterPool(val) {
     val = String(val || "").toLowerCase();
     document.querySelectorAll('.dropzone[data-target-type="pool"] .draggable-player').forEach(el => {
-        // Fix #6: el selbst ausblenden, nicht el.parentElement
         el.style.display = el.innerText.toLowerCase().includes(val) ? '' : 'none';
     });
 }
