@@ -157,13 +157,23 @@ async function jbEntrySelectMember(pn) {
     }
 
     // Teilnahmen in den State einpflegen
+    let hasKK002 = false;
+    let hasKK003 = false;
+    let hasKK004 = false;
+    let hasKK005 = false;
+
     memberParts.forEach(p => {
-      if (p.teilgenommen == 1) {
+      const val = Number(p.teilgenommen || 0);
+      if (val > 0) {
         // Event Key ermitteln und in State schreiben
         if (p.eventkey === 'KK001') _jbParticipationsState.kk_grenzland = '1';
+        if (p.eventkey === 'KK002') hasKK002 = true;
+        if (p.eventkey === 'KK003') hasKK003 = true;
+        if (p.eventkey === 'KK004') hasKK004 = true;
+        if (p.eventkey === 'KK005') hasKK005 = true;
         if (p.eventkey === 'KK006') _jbParticipationsState.kk_verband = true;
         if (p.eventkey === 'KK007') _jbParticipationsState.kk_verein = true;   // KK007 = Vereinsschiessen
-        if (p.eventkey === 'KK008') _jbParticipationsState.kk_volksschiessen = '1'; // KK008 = Volksschiessen
+        if (p.eventkey === 'KK008') _jbParticipationsState.kk_volksschiessen = String(val); // KK008 = Volksschiessen
         
         // 10m
         if (p.eventkey === 'LG001') _jbParticipationsState.lg_ag_dez = true;
@@ -175,6 +185,23 @@ async function jbEntrySelectMember(pn) {
         if (p.eventkey === 'LG007') _jbParticipationsState.lg_ch_kniend = true;
       }
     });
+
+    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    const isJunior = age > 0 && age <= 20;
+
+    if (hasKK005) {
+      _jbParticipationsState.ssv_dez = 'sv';
+    } else if (isJunior && (hasKK002 || hasKK003 || hasKK004)) {
+      _jbParticipationsState.ssv_dez = 'js';
+    } else if (hasKK002 && hasKK003 && hasKK004) {
+      _jbParticipationsState.ssv_dez = 'liegend_2_3';
+    } else if (hasKK002) {
+      _jbParticipationsState.ssv_dez = 'liegend';
+    } else if (hasKK003) {
+      _jbParticipationsState.ssv_dez = '2-stellung';
+    } else if (hasKK004) {
+      _jbParticipationsState.ssv_dez = '3-stellung';
+    }
 
     jbRenderEntryForm(m);
   } catch(e) {
@@ -502,9 +529,11 @@ async function jbSaveAllBulkLocalChanges() {
   try {
     const list = [];
     const year = _jbYear;
+    const editedPNs = Object.keys(_jbLocalBulkChanges);
+    const licenses = Object.entries(_jbLocalBulkChanges).map(([pn, state]) => ({ pn, lizenz: state.lizenz }));
 
     Object.entries(_jbLocalBulkChanges).forEach(([pn, state]) => {
-      list.push({ pn, year, eventkey: 'KK008', teilgenommen: state.kk_volksschiessen !== 'keine' ? 1 : 0, quelle: 'volksschiessen' });
+      list.push({ pn, year, eventkey: 'KK008', teilgenommen: state.kk_volksschiessen === 'keine' ? 0 : Number(state.kk_volksschiessen), quelle: 'volksschiessen' });
       list.push({ pn, year, eventkey: 'KK007', teilgenommen: state.kk_verein ? 1 : 0, quelle: 'verein' });
       
       const ssv = state.ssv_dez;
@@ -530,13 +559,14 @@ async function jbSaveAllBulkLocalChanges() {
       body: JSON.stringify({
         action: 'saveParticipationsBulk',
         list: list,
+        licenses: licenses,
         user: window.currentUser || 'frontend'
       })
     });
     const saveJson = await resSave.json();
     if (!saveJson.success) throw new Error(saveJson.error);
 
-    const resCalc = await apiFetch('jahresbeitrag', `action=berechnen&year=${year}`);
+    const resCalc = await apiFetch('jahresbeitrag', `action=berechnen&year=${year}&pn=${editedPNs.join(',')}`);
     const calcJson = await resCalc.json();
     if (!calcJson.success) throw new Error(calcJson.error);
 
@@ -546,8 +576,31 @@ async function jbSaveAllBulkLocalChanges() {
     jbUpdateBulkSaveButton();
     await loadJahresbeitragData(true);
     
-    if (_jbSelectedMemberPN) {
-      jbEntrySelectMember(_jbSelectedMemberPN);
+    // Automatisch verknüpfte Rechnungen synchronisieren
+    for (const pn of editedPNs) {
+      const cleanPn = pn.trim();
+      const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === cleanPn);
+      if (updatedHeader && updatedHeader.invoiceId) {
+        const updatedM = _jbMemberMap[cleanPn] || {};
+        const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : cleanPn;
+        try {
+          console.log(`🤖 Synchronisiere Rechnung für ${cleanPn} nach Bulk-Änderung...`);
+          if (typeof ensureInvoiceCreatedRemote === 'function') {
+            await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
+          }
+        } catch (err) {
+          console.error(`⚠️ Fehler bei automatischer Rechnungs-Aktualisierung für ${cleanPn}:`, err);
+        }
+      }
+    }
+
+    // Automatisch zurück zur Beitrags-Übersicht wechseln
+    _jbActiveTab = 'overview';
+    renderJahresbeitragView();
+
+    // Rechnungen-Modul im Hintergrund zwingen, die Daten neu zu laden
+    if (typeof loadRechnungenData === 'function') {
+      loadRechnungenData(true, true);
     }
   } catch(e) {
     alert("Fehler beim Bulk-Speichern: " + e.message);

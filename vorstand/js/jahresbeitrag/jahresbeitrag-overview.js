@@ -350,12 +350,22 @@ async function jbShowPositionen(headerId) {
     }
 
     // Teilnahmen in den modalen State einpflegen
+    let hasKK002 = false;
+    let hasKK003 = false;
+    let hasKK004 = false;
+    let hasKK005 = false;
+
     memberParts.forEach(p => {
-      if (p.teilgenommen == 1) {
+      const val = Number(p.teilgenommen || 0);
+      if (val > 0) {
         if (p.eventkey === 'KK001') _jbModalParticipationsState.kk_grenzland = '1';
+        if (p.eventkey === 'KK002') hasKK002 = true;
+        if (p.eventkey === 'KK003') hasKK003 = true;
+        if (p.eventkey === 'KK004') hasKK004 = true;
+        if (p.eventkey === 'KK005') hasKK005 = true;
         if (p.eventkey === 'KK006') _jbModalParticipationsState.kk_verband = true;
         if (p.eventkey === 'KK007') _jbModalParticipationsState.kk_verein = true;   // KK007 = Vereinsschiessen
-        if (p.eventkey === 'KK008') _jbModalParticipationsState.kk_volksschiessen = '1'; // KK008 = Volksschiessen
+        if (p.eventkey === 'KK008') _jbModalParticipationsState.kk_volksschiessen = String(val); // KK008 = Volksschiessen
         if (p.eventkey === 'LG001') _jbModalParticipationsState.lg_ag_dez = true;
         if (p.eventkey === 'LG002') _jbModalParticipationsState.lg_ag_dez_auflage = true;
         if (p.eventkey === 'LG003') _jbModalParticipationsState.lg_ch_dez = true;
@@ -365,6 +375,23 @@ async function jbShowPositionen(headerId) {
         if (p.eventkey === 'LG007') _jbModalParticipationsState.lg_ch_kniend = true;
       }
     });
+
+    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    const isJunior = age > 0 && age <= 20;
+
+    if (hasKK005) {
+      _jbModalParticipationsState.ssv_dez = 'sv';
+    } else if (isJunior && (hasKK002 || hasKK003 || hasKK004)) {
+      _jbModalParticipationsState.ssv_dez = 'js';
+    } else if (hasKK002 && hasKK003 && hasKK004) {
+      _jbModalParticipationsState.ssv_dez = 'liegend_2_3';
+    } else if (hasKK002) {
+      _jbModalParticipationsState.ssv_dez = 'liegend';
+    } else if (hasKK003) {
+      _jbModalParticipationsState.ssv_dez = '2-stellung';
+    } else if (hasKK004) {
+      _jbModalParticipationsState.ssv_dez = '3-stellung';
+    }
 
     // Render das tabellarische Layout im Modal
     jbRenderModalContent(header, pos, m, name);
@@ -750,7 +777,7 @@ async function jbModalSave(headerId, pn) {
     const list = [];
     const year = _jbYear;
 
-    list.push({ pn: pnClean, year, eventkey: 'KK008', teilgenommen: _jbModalParticipationsState.kk_volksschiessen !== 'keine' ? 1 : 0, quelle: 'volksschiessen' });
+    list.push({ pn: pnClean, year, eventkey: 'KK008', teilgenommen: _jbModalParticipationsState.kk_volksschiessen === 'keine' ? 0 : Number(_jbModalParticipationsState.kk_volksschiessen), quelle: 'volksschiessen' });
     list.push({ pn: pnClean, year, eventkey: 'KK007', teilgenommen: _jbModalParticipationsState.kk_verein ? 1 : 0, quelle: 'verein' });
     
     const ssv = _jbModalParticipationsState.ssv_dez;
@@ -770,12 +797,13 @@ async function jbModalSave(headerId, pn) {
     list.push({ pn: pnClean, year, eventkey: 'LG006', teilgenommen: _jbModalParticipationsState.lg_verein ? 1 : 0 });
     list.push({ pn: pnClean, year, eventkey: 'LG007', teilgenommen: _jbModalParticipationsState.lg_ch_kniend ? 1 : 0 });
 
-    // 1. In Google Sheets speichern via Bulk-API
+    // 1. In Google Sheets speichern via Bulk-API (inkl. Lizenz & Passiv-Status)
     const resSave = await apiFetch('jahresbeitrag', '', {
       method: 'POST',
       body: JSON.stringify({
         action: 'saveParticipationsBulk',
         list: list,
+        licenses: [{ pn: pnClean, lizenz: _jbModalParticipationsState.lizenz }],
         user: window.currentUser || 'frontend'
       })
     });
@@ -796,6 +824,19 @@ async function jbModalSave(headerId, pn) {
 
     // 4. Haupt-Tabelle aktualisieren
     await loadJahresbeitragData(true);
+
+    // 5. Automatisch die Rechnung synchronisieren, falls bereits eine existiert
+    const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === pnClean);
+    if (updatedHeader && updatedHeader.invoiceId) {
+      const updatedM = _jbMemberMap[pnClean] || {};
+      const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : pnClean;
+      try {
+        console.log(`🤖 Synchronisiere Rechnung für ${pnClean} nach Änderung...`);
+        await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
+      } catch (err) {
+        console.error("⚠️ Fehler bei automatischer Rechnungs-Aktualisierung:", err);
+      }
+    }
   } catch(e) {
     alert("Fehler beim Speichern: " + e.message);
     if (btn) {
@@ -928,9 +969,9 @@ function jbGetSenderForInvoiceType(invoiceType) {
 }
 
 // Interne Hilfsfunktion: Stellt sicher, dass eine Rechnung in Rechnungen_GAS existiert.
-// Falls nicht, wird sie zuerst angelegt.
+// Falls nicht, wird sie zuerst angelegt. Falls sie existiert aber sich der Betrag geändert hat, wird sie aktualisiert.
 async function ensureInvoiceCreatedRemote(r, m, name) {
-  if (r.invoiceId) return r.invoiceId; // Bereits angelegt!
+  const invoiceId = `RE-JB-${r.year}-${r.PersonNumber}`;
   
   const cachedPos = _jbPositionsCache[r.id] || [];
   if (cachedPos.length === 0) {
@@ -940,14 +981,61 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
   const positions = cachedPos.map((p, idx) => ({
     position_nr: p.position_nr || (idx + 1),
     description: p.beschreibung || '',
+    quantity: Number(p.quantity || 1),
+    unit_price: Number(p.betrag || 0),
     amount: Number(p.betrag || 0),
-    type: p.typ || 'Debit'
+    type: p.typ || 'Debit',
+    source_field: p.sourcefield || ''
   }));
+
+  // Finde die Rechnung in unserem lokalen Cache (window._invoices)
+  const existingInv = window._invoices && window._invoices.find(i => String(i.id) === invoiceId);
   
+  if (existingInv) {
+    const diff = Math.abs(Number(existingInv.total_amount || 0) - Number(r.Gesamt || 0));
+    if (diff > 0.01) {
+      console.log(`🔄 Rechnungsbetrag hat sich geändert (${existingInv.total_amount} -> ${r.Gesamt}). Aktualisiere Rechnung ${invoiceId}…`);
+      
+      const updatePayload = {
+        action: 'updateInvoice',
+        invoice: {
+          id: invoiceId,
+          PersonNumber: r.PersonNumber,
+          name: name,
+          year: Number(r.year),
+          type: 'Jahresbeitrag',
+          total_amount: Number(r.Gesamt)
+        },
+        positions: positions,
+        recipient: {
+          vorname: m.FirstName || '',
+          nachname: m.LastName || '',
+          strasse: m.Street || '',
+          plz: m.PostCode || '',
+          ort: m.City || '',
+          email: m.PrimaryEmail || ''
+        }
+      };
+      
+      const updateRes = await rechnungenApiFetch(updatePayload);
+      if (!updateRes.success) {
+        throw new Error("Fehler beim Aktualisieren der Rechnung in Rechnungen_GAS: " + updateRes.error);
+      }
+      
+      // Caches im Hintergrund aktualisieren
+      if (typeof loadRechnungenData === 'function') {
+        loadRechnungenData(true, true);
+      }
+    }
+    r.invoiceId = invoiceId;
+    return invoiceId;
+  }
+  
+  // Rechnung neu anlegen
   const invoicePayload = {
     action: 'createInvoice',
     invoice: {
-      id: `RE-JB-${r.year}-${r.PersonNumber}`,
+      id: invoiceId,
       PersonNumber: r.PersonNumber,
       name: name,
       year: Number(r.year),
@@ -962,7 +1050,12 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     throw new Error("Fehler beim Anlegen der Rechnung in Rechnungen_GAS: " + createRes.error);
   }
   
-  r.invoiceId = `RE-JB-${r.year}-${r.PersonNumber}`;
+  // Caches im Hintergrund aktualisieren
+  if (typeof loadRechnungenData === 'function') {
+    loadRechnungenData(true, true);
+  }
+  
+  r.invoiceId = invoiceId;
   return r.invoiceId;
 }
 

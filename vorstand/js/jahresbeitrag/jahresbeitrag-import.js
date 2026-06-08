@@ -606,11 +606,40 @@ async function jbSubmitExcelImport() {
     const json = await res.json();
     if (!json.success) throw new Error(json.error);
 
+    const uniquePns = [...new Set(validList.map(x => String(x.pn).trim()))];
+    const resCalc = await apiFetch('jahresbeitrag', `action=berechnen&year=${_jbYear}&pn=${uniquePns.join(',')}`);
+    const calcJson = await resCalc.json();
+    if (!calcJson.success) throw new Error(calcJson.error);
+
     showToast(`🎉 ${json.message}`);
     document.getElementById('jbImportPreviewContainer').classList.add('d-none');
     _jbImportData = null;
 
-    await jbBerechnen();
+    // Reload Jahresbeitrag details from spreadsheet
+    await loadJahresbeitragData(true);
+
+    // Sync invoices with Rechnungen module
+    for (const pn of uniquePns) {
+      const cleanPn = pn.trim();
+      const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === cleanPn);
+      if (updatedHeader && updatedHeader.invoiceId) {
+        const updatedM = _jbMemberMap[cleanPn] || {};
+        const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : cleanPn;
+        try {
+          console.log(`🤖 Synchronisiere Rechnung für ${cleanPn} nach Excel-Import...`);
+          if (typeof ensureInvoiceCreatedRemote === 'function') {
+            await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
+          }
+        } catch (err) {
+          console.error(`⚠️ Fehler bei automatischer Rechnungs-Aktualisierung für ${cleanPn}:`, err);
+        }
+      }
+    }
+
+    // Trigger reload of invoices in the background
+    if (typeof loadRechnungenData === 'function') {
+      loadRechnungenData(true, true);
+    }
   } catch(e) {
     alert("Fehler beim Hochladen der Daten: " + e.message);
     btn.disabled = false;

@@ -24,6 +24,7 @@ window._jbBankMatchResults = window._jbBankMatchResults || [];  // Match results
 window._jbAllBeitraege = window._jbAllBeitraege || null;
 window._jbAllParticipations = window._jbAllParticipations || null;
 window._jbAllPositions = window._jbAllPositions || null;
+window._jbGebuehren = window._jbGebuehren || null;
 
 // Event-Keys Zuordnung für Wettschiessen
 const EVENT_KEYS = {
@@ -108,18 +109,22 @@ async function loadJahresbeitragData(forceReload = false) {
     </div>`;
 
   try {
-    const [beitraege, members, participations, positions, invoicesRes] = await Promise.all([
+    const [beitraege, members, participations, positions, invoicesRes, gebuehrenRes] = await Promise.all([
       apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
       apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
       apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
       apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json()),
       // TODO: Nach Worker-Redeploy auf apiFetch('rechnungen', ...) umstellen
-      fetch('https://script.google.com/macros/s/AKfycbweZdRndbQRvQN4tiGjMjzDKo2uO1dsdqfFseuvdnuBdg6xqEbHw9XdIWN8rZU-PO1A/exec?action=getInvoices')
+      fetch('https://script.google.com/macros/s/AKfycbwUxiK9LibWZ01mfeEw-C1QtzGlfH2l9f7LVfgSzUeVOcSipt-K0njnN0XRA-bdKBeL/exec?action=getInvoices')
         .then(r => r.json())
         .catch(err => {
           console.warn("⚠️ Fehler beim Abrufen der Rechnungen:", err);
           return { success: false, data: [] };
-        })
+        }),
+      apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
+        console.warn("⚠️ Fehler beim Abrufen der Gebühren:", err);
+        return { success: false, data: [] };
+      })
     ]);
 
     if (!beitraege.success) throw new Error(beitraege.error);
@@ -143,6 +148,7 @@ async function loadJahresbeitragData(forceReload = false) {
     _jbAllParticipations = participations.data || [];
     _jbAllPositions = positions.positions || [];
     window._jbAllInvoices = invoicesRes.success ? (invoicesRes.data || []) : [];
+    window._jbGebuehren = gebuehrenRes.success ? (gebuehrenRes.data || []) : [];
 
     // Für das aktive Jahr filtern
     _jbData = _jbAllBeitraege.filter(h => Number(h.year) === Number(_jbYear));

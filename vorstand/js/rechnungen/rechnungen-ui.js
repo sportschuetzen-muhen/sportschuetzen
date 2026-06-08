@@ -278,22 +278,36 @@ window.rnRenderTable = function() {
             <i class="fas fa-eye"></i>
           </button>
           
-          ${!isPaid ? `
-            <button class="btn btn-xs btn-outline-success write-protected me-1" onclick="rnOpenPaymentModal('${item.id}', ${item.total_amount})" title="Zahlung erfassen">
-              <i class="fas fa-coins"></i>
-            </button>
-            <button class="btn btn-xs btn-outline-warning write-protected me-1" onclick="rnOpenEditModal('${item.id}')" title="Rechnung bearbeiten">
-              <i class="fas fa-edit"></i>
-            </button>
-            <button class="btn btn-xs btn-outline-danger write-protected me-1" onclick="rnDeleteInvoicePrompt('${item.id}')" title="Rechnung löschen">
-              <i class="fas fa-trash-alt"></i>
-            </button>
-          ` : ''}
+          ${item.type === 'Jahresbeitrag' ? `
+            <span class="badge bg-light text-secondary border small me-1" title="Jahresbeitrag-Rechnungen werden über das Jahresbeitrag-Modul verwaltet">
+              <i class="fas fa-lock me-1"></i>JB-Gesperrt
+            </span>
+            ${!isPaid ? `
+              <button class="btn btn-xs btn-outline-success write-protected me-1" onclick="rnOpenPaymentModal('${item.id}', ${item.total_amount})" title="Zahlung erfassen">
+                <i class="fas fa-coins"></i>
+              </button>
+            ` : ''}
+          ` : `
+            ${!isPaid ? `
+              <button class="btn btn-xs btn-outline-success write-protected me-1" onclick="rnOpenPaymentModal('${item.id}', ${item.total_amount})" title="Zahlung erfassen">
+                <i class="fas fa-coins"></i>
+              </button>
+              <button class="btn btn-xs btn-outline-warning write-protected me-1" onclick="rnOpenEditModal('${item.id}')" title="Rechnung bearbeiten">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn btn-xs btn-outline-danger write-protected me-1" onclick="rnDeleteInvoicePrompt('${item.id}')" title="Rechnung löschen">
+                <i class="fas fa-trash-alt"></i>
+              </button>
+            ` : ''}
+          `}
 
           ${item.pdf_url ? `
             <a href="${item.pdf_url}" target="_blank" class="btn btn-xs btn-outline-danger me-1" title="PDF QR-Rechnung herunterladen">
               <i class="fas fa-file-pdf"></i>
             </a>
+            <button class="btn btn-xs btn-outline-secondary write-protected me-1" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}')" title="PDF neu generieren">
+              <i class="fas fa-sync"></i>
+            </button>
           ` : `
             <button class="btn btn-xs btn-outline-secondary write-protected me-1" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}')" title="PDF generieren">
               <i class="fas fa-cog fa-spin-slow"></i>

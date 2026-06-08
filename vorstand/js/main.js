@@ -671,21 +671,27 @@ async function silentInitialLoad() {
             window._jbPreloadPromise = (async () => {
                 const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
                 console.log("🔍 Fetching Jahresbeitrag APIs for year: ", year);
-                const [beitraege, members, participations, positions] = await Promise.all([
+                const [beitraege, members, participations, positions, gebuehren] = await Promise.all([
                     apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
                     apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
                     apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
-                    apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json())
+                    apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json()),
+                    apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
+                        console.warn("⚠️ Fehler beim Preload der Gebühren:", err);
+                        return { success: false, data: [] };
+                    })
                 ]);
 
                 console.log("🔍 Jahresbeitrag API success statuses:", {
                     beitraege: beitraege.success,
                     members: members.success,
                     participations: participations.success,
-                    positions: positions.success
+                    positions: positions.success,
+                    gebuehren: gebuehren ? gebuehren.success : false
                 });
 
                 if (beitraege.success && members.success && participations.success && positions.success) {
+                    window._jbGebuehren = gebuehren && gebuehren.success ? (gebuehren.data || []) : [];
                     window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
                     window._jbMemberMap = {};
                     (members.data || []).forEach(m => { 
@@ -814,14 +820,19 @@ async function runBackgroundSync() {
             const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
             console.log(`🔄 Background Sync: Lade Jahresbeitrag für alle Jahre...`);
 
-            const [beitraege, members, participations, positions] = await Promise.all([
+            const [beitraege, members, participations, positions, gebuehren] = await Promise.all([
                 apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
                 apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
                 apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json())
+                apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json()),
+                apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
+                    console.warn("⚠️ Fehler beim Background Sync der Gebühren:", err);
+                    return { success: false, data: [] };
+                })
             ]);
 
             if (beitraege.success && members.success && participations.success && positions.success) {
+                window._jbGebuehren = gebuehren && gebuehren.success ? (gebuehren.data || []) : [];
                 window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
                 window._jbMemberMap = {};
                 (members.data || []).forEach(m => { 

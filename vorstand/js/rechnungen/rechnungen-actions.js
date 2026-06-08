@@ -157,6 +157,10 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
 
   const m = window._mglData.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
 
+  const sender = typeof jbGetSenderForInvoiceType === 'function'
+    ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag')
+    : null;
+
   const payload = {
     action: 'generateInvoicePDF',
     invoiceId: invoiceId,
@@ -164,10 +168,11 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
       vorname: m.FirstName || inv.name.split(' ')[0] || '',
       nachname: m.LastName || inv.name.split(' ').slice(1).join(' ') || '',
       strasse: m.Street || m.Strasse || '',
-      plz: m.ZipCode || m.PLZ || '',
+      plz: m.PostCode || m.ZipCode || m.PLZ || '',
       ort: m.City || m.Ort || '',
-      email: m.Email || ''
-    }
+      email: m.PrimaryEmail || m.Email || ''
+    },
+    sender: sender
   };
 
   try {
@@ -194,7 +199,7 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
   if (!inv) return;
 
   const m = window._mglData.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
-  const email = m.Email || '';
+  const email = m.PrimaryEmail || m.Email || '';
 
   const targetEmail = prompt(`📧 QR-Rechnung per E-Mail an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, email || 'mitglied@sportschuetzen-muhen.ch');
   if (targetEmail === null) return;
@@ -205,6 +210,10 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
 
   showLoadingOverlay(`Erstelle QR-Rechnung und sende E-Mail an ${name}...`);
 
+  const sender = typeof jbGetSenderForInvoiceType === 'function'
+    ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag')
+    : null;
+
   const payload = {
     action: 'sendInvoiceEmail',
     invoiceId: invoiceId,
@@ -212,10 +221,11 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
       vorname: m.FirstName || inv.name.split(' ')[0] || '',
       nachname: m.LastName || inv.name.split(' ').slice(1).join(' ') || '',
       strasse: m.Street || m.Strasse || '',
-      plz: m.ZipCode || m.PLZ || '',
+      plz: m.PostCode || m.ZipCode || m.PLZ || '',
       ort: m.City || m.Ort || '',
       email: targetEmail
-    }
+    },
+    sender: sender
   };
 
   try {
