@@ -71,12 +71,34 @@ function jbRenderEntryList() {
     const statusText = m._istEhren ? '🏆 Ehren' : (m._istPassiv ? '💤 Passiv' : '🎯 Aktiv');
     const isModified = _jbLocalBulkChanges[String(m.PersonNumber)] !== undefined;
     const modifiedBadge = isModified ? `<span class="badge bg-warning text-dark ms-1" style="font-size: 9px;">Geändert</span>` : '';
+    
+    // Berechne Live-Total für die Sidebar
+    const header = _jbData.find(x => String(x.PersonNumber).trim() === String(m.PersonNumber).trim());
+    let liveTotal = header ? Number(header.Gesamt || 0) : 0;
+    if (isModified) {
+      const calc = jbCalculateLiveTotal(m, _jbLocalBulkChanges[String(m.PersonNumber)]);
+      liveTotal = calc.total;
+    }
+    const totalText = `CHF ${liveTotal.toFixed(2)}`;
+
+    let itemClass = 'list-group-item list-group-item-action py-2 px-3 border-bottom d-flex justify-content-between align-items-center';
+    let itemStyle = 'outline: none; transition: var(--transition);';
+    
+    if (activeClass) {
+      itemClass += ' active border-primary bg-primary text-white';
+    } else if (isModified) {
+      itemClass += ' border-start border-4 border-warning';
+      itemStyle += ' background-color: #fffbeb;'; // Soft pastell yellow/orange background
+    }
+
     return `
-      <button class="list-group-item list-group-item-action py-2 px-3 border-bottom d-flex justify-content-between align-items-center ${activeClass}" 
-              onclick="jbEntrySelectMember('${m.PersonNumber}')" style="outline: none;">
+      <button class="${itemClass}" style="${itemStyle}" 
+              onclick="jbEntrySelectMember('${m.PersonNumber}')">
         <div>
           <div class="fw-semibold" style="font-size: 13px;">${m.FirstName} ${m.LastName} ${modifiedBadge}</div>
-          <div class="small text-muted" style="font-size: 11px; ${activeClass ? 'color: #cbd5e1 !important;' : ''}">${m.PersonNumber}</div>
+          <div class="small text-muted" style="font-size: 11px; ${activeClass ? 'color: #cbd5e1 !important;' : ''}">
+            ${m.PersonNumber} · <strong class="${activeClass ? 'text-white' : 'text-primary'}">${totalText}</strong>
+          </div>
         </div>
         <span class="badge ${activeClass ? 'bg-white text-primary' : 'bg-secondary'} rounded-pill" style="font-size: 10px;">${statusText}</span>
       </button>
@@ -259,13 +281,13 @@ function jbRenderEntryForm(m) {
         <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
           <h6 class="text-secondary fw-bold mb-2" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-id-card me-2"></i>Lizenz & Status</h6>
           <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px;">
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'keine' ? 'btn-primary' : 'bg-transparent text-muted'}" 
+            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                     onclick="jbUpdateState('lizenz', 'keine', '${m.PersonNumber}')">Keine (Fremd)</button>
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'verein' ? 'btn-primary' : 'bg-transparent text-muted'}" 
+            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'verein' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                     onclick="jbUpdateState('lizenz', 'verein', '${m.PersonNumber}')">Eigener JB</button>
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'junior' ? 'btn-primary' : 'bg-transparent text-muted'}" 
+            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'junior' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                     onclick="jbUpdateState('lizenz', 'junior', '${m.PersonNumber}')">Jungschütze</button>
-            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'passiv' ? 'btn-primary' : 'bg-transparent text-muted'}" 
+            <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'passiv' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                     onclick="jbUpdateState('lizenz', 'passiv', '${m.PersonNumber}')">Passiv</button>
           </div>
         </div>
@@ -277,13 +299,13 @@ function jbRenderEntryForm(m) {
           <div class="mb-3">
             <label class="form-label small fw-semibold text-muted">KK Volksschiessen (KK008)</label>
             <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px;">
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === 'keine' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('kk_volksschiessen', 'keine', '${m.PersonNumber}')">Kein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '1' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('kk_volksschiessen', '1', '${m.PersonNumber}')">1 Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '2' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '2' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('kk_volksschiessen', '2', '${m.PersonNumber}')">2 Stiche</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '3' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('kk_volksschiessen', '3', '${m.PersonNumber}')">3 Stiche</button>
             </div>
           </div>
@@ -291,17 +313,17 @@ function jbRenderEntryForm(m) {
           <div class="mb-3">
             <label class="form-label small fw-semibold text-muted">SSV dez (KK002/003/004/005)</label>
             <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px; flex-wrap: wrap;">
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'keine' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('ssv_dez', 'keine', '${m.PersonNumber}')">Kein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'liegend' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'liegend' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('ssv_dez', 'liegend', '${m.PersonNumber}')">Liegend</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === '2-stellung' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === '2-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('ssv_dez', '2-stellung', '${m.PersonNumber}')">2-Stellung</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === '3-stellung' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === '3-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('ssv_dez', '3-stellung', '${m.PersonNumber}')">3-Stellung</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'liegend_2_3' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'liegend_2_3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('ssv_dez', 'liegend_2_3', '${m.PersonNumber}')">L+2+3 St.</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'js' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('ssv_dez', 'js', '${m.PersonNumber}')">JS Stich</button>
             </div>
           </div>
@@ -309,11 +331,11 @@ function jbRenderEntryForm(m) {
           <div class="mb-3">
             <label class="form-label small fw-semibold text-muted">KK Grenzland (KK001)</label>
             <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px;">
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === 'keine' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('kk_grenzland', 'keine', '${m.PersonNumber}')">Kein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === '1' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('kk_grenzland', '1', '${m.PersonNumber}')">Ein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === 'js' ? 'btn-danger' : 'bg-transparent text-muted'}" 
+              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
                       onclick="jbUpdateState('kk_grenzland', 'js', '${m.PersonNumber}')">JS Stich</button>
             </div>
           </div>
@@ -420,6 +442,7 @@ function jbUpdateState(key, val, pn) {
   _jbLocalBulkChanges[pnClean][key] = val;
 
   jbUpdateBulkSaveButton();
+  jbRenderEntryList();
 
   const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
   if (m) {

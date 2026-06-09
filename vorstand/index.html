@@ -362,6 +362,26 @@
             border-left: 4px solid var(--success);
         }
 
+        /* Custom premium toggles for contributions & faster entry */
+        .btn-toggle-active-primary {
+            background-color: var(--primary) !important;
+            color: white !important;
+            box-shadow: 0 2px 6px rgba(15, 58, 93, 0.15);
+        }
+        .btn-toggle-active-accent {
+            background-color: var(--success) !important;
+            color: white !important;
+            box-shadow: 0 2px 6px rgba(16, 185, 129, 0.15);
+        }
+        .btn-toggle-inactive {
+            background-color: transparent !important;
+            color: var(--text-muted) !important;
+        }
+        .btn-toggle-inactive:hover {
+            background-color: rgba(15, 58, 93, 0.04) !important;
+            color: var(--primary) !important;
+        }
+
     </style>
 </head>
 <body>
@@ -1101,6 +1121,32 @@
 
 <!-- NEU: Skript für Galerie Manager -->
 <script src="js/galerie.js"></script>
+
+<script>
+window.rnJumpToJahresbeitrag = async function(pn) {
+  const navLink = Array.from(document.querySelectorAll('.nav-link')).find(el => el.getAttribute('onclick')?.includes('jahresbeitrag'));
+  if (navLink && typeof navTo === 'function') {
+    navTo('jahresbeitrag', navLink);
+  }
+  
+  const checkAndOpen = () => {
+    if (window._jbData && window._jbData.length > 0 && window._jbMemberMap && window._jbMemberMap[pn]) {
+      const header = window._jbData.find(x => String(x.PersonNumber).trim() === String(pn).trim());
+      if (header) {
+        if (typeof jbShowPositionen === 'function') {
+          jbShowPositionen(header.id);
+        }
+      } else {
+        console.warn(`Jahresbeitrag Header für PN ${pn} nicht gefunden.`);
+      }
+    } else {
+      setTimeout(checkAndOpen, 100);
+    }
+  };
+  
+  checkAndOpen();
+};
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 

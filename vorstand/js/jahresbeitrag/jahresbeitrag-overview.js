@@ -484,16 +484,16 @@ function jbRenderModalContent(header, pos, m, name) {
             <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">Lizenz & Status</div>
             <div class="d-flex bg-white p-0.5 rounded border" style="gap: 3px;">
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'keine' ? 'btn-primary' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.lizenz === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('lizenz', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Keine</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'verein' ? 'btn-primary' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.lizenz === 'verein' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('lizenz', 'verein', '${header.PersonNumber}')" style="font-size: 11px;">Eigener JB</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'junior' ? 'btn-primary' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.lizenz === 'junior' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('lizenz', 'junior', '${header.PersonNumber}')" style="font-size: 11px;">Junior</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'passiv' ? 'btn-primary' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.lizenz === 'passiv' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('lizenz', 'passiv', '${header.PersonNumber}')" style="font-size: 11px;">Passiv</button>
             </div>
           </div>
@@ -503,16 +503,16 @@ function jbRenderModalContent(header, pos, m, name) {
             <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">KK Volksschiessen (KK008)</div>
             <div class="d-flex bg-white p-0.5 rounded border" style="gap: 3px;">
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === 'keine' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.kk_volksschiessen === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('kk_volksschiessen', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Kein</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === '1' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.kk_volksschiessen === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('kk_volksschiessen', '1', '${header.PersonNumber}')" style="font-size: 11px;">1 St.</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === '2' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.kk_volksschiessen === '2' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('kk_volksschiessen', '2', '${header.PersonNumber}')" style="font-size: 11px;">2 St.</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === '3' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.kk_volksschiessen === '3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('kk_volksschiessen', '3', '${header.PersonNumber}')" style="font-size: 11px;">3 St.</button>
             </div>
           </div>
@@ -522,22 +522,22 @@ function jbRenderModalContent(header, pos, m, name) {
             <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">SSV dez (KK002-KK005)</div>
             <div class="d-flex bg-white p-0.5 rounded border flex-wrap" style="gap: 3px;">
               <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'keine' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.ssv_dez === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('ssv_dez', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Kein</button>
               <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'liegend' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.ssv_dez === 'liegend' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('ssv_dez', 'liegend', '${header.PersonNumber}')" style="font-size: 11px;">Liegend</button>
               <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === '2-stellung' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.ssv_dez === '2-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('ssv_dez', '2-stellung', '${header.PersonNumber}')" style="font-size: 11px;">2-St.</button>
               <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === '3-stellung' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.ssv_dez === '3-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('ssv_dez', '3-stellung', '${header.PersonNumber}')" style="font-size: 11px;">3-St.</button>
               <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'liegend_2_3' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.ssv_dez === 'liegend_2_3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('ssv_dez', 'liegend_2_3', '${header.PersonNumber}')" style="font-size: 11px;">L+2+3</button>
               <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'js' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.ssv_dez === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('ssv_dez', 'js', '${header.PersonNumber}')" style="font-size: 11px;">JS</button>
             </div>
           </div>
@@ -547,13 +547,13 @@ function jbRenderModalContent(header, pos, m, name) {
             <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">KK Grenzland (KK001)</div>
             <div class="d-flex bg-white p-0.5 rounded border" style="gap: 3px;">
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_grenzland === 'keine' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.kk_grenzland === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('kk_grenzland', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Kein</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_grenzland === '1' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.kk_grenzland === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('kk_grenzland', '1', '${header.PersonNumber}')" style="font-size: 11px;">1 Stich</button>
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_grenzland === 'js' ? 'btn-danger text-white' : 'bg-transparent text-muted'
+                _jbModalParticipationsState.kk_grenzland === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('kk_grenzland', 'js', '${header.PersonNumber}')" style="font-size: 11px;">JS Stich</button>
             </div>
           </div>
@@ -743,17 +743,17 @@ function jbModalUpdateState(key, val, pn) {
   // Segmented Pill Buttons aktualisieren
   const buttons = document.querySelectorAll(`#jbModalTabBearbeiten button[onclick*="${key}"]`);
   buttons.forEach(btn => {
-    if (btn.getAttribute('onclick').includes(`'${val}'`)) {
-      btn.className = btn.className.replace('bg-transparent text-muted', 'btn-primary');
-      btn.className = btn.className.replace('btn-danger text-white', 'btn-danger');
-      if (!btn.className.includes('btn-primary') && !btn.className.includes('btn-danger')) {
-        if (key === 'lizenz') btn.classList.add('btn-primary');
-        else btn.classList.add('btn-danger');
+    const isTarget = btn.getAttribute('onclick').includes(`'${val}'`);
+    if (isTarget) {
+      btn.className = btn.className.replace('btn-toggle-inactive', '');
+      if (key === 'lizenz' || val === 'keine') {
+        btn.classList.add('btn-toggle-active-primary');
+      } else {
+        btn.classList.add('btn-toggle-active-accent');
       }
     } else {
-      btn.className = btn.className.replace('btn-primary', 'bg-transparent text-muted');
-      btn.className = btn.className.replace('btn-danger', 'bg-transparent text-muted');
-      btn.className = btn.className.replace('text-white', '');
+      btn.className = btn.className.replace('btn-toggle-active-primary', 'btn-toggle-inactive');
+      btn.className = btn.className.replace('btn-toggle-active-accent', 'btn-toggle-inactive');
     }
   });
 

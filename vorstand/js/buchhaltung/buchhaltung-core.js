@@ -427,6 +427,9 @@ window.bhGetAccountCategory = function(account) {
     } else if (codeStr.startsWith('114')) {
       sub = 'Umlaufvermögen';
       detail = 'Übrige kurzfristige Forderungen';
+    } else if (codeStr.startsWith('119')) {
+      sub = 'Umlaufvermögen';
+      detail = 'Transitkonten';
     } else if (codeStr.startsWith('14') || codeStr.startsWith('15')) {
       sub = 'Anlagevermögen';
       detail = 'Mobile Sachanlagen';
@@ -578,4 +581,30 @@ window.bhGetAccountCategory = function(account) {
 window.bhGetSortIndicator = function(activeCol, targetCol, asc) {
   if (activeCol !== targetCol) return '<i class="fas fa-sort text-muted ms-1 small opacity-50"></i>';
   return asc ? '<i class="fas fa-sort-up text-primary ms-1"></i>' : '<i class="fas fa-sort-down text-primary ms-1"></i>';
+};
+
+// Hilfsfunktion zur Ermittlung des Buchungstyps im Frontend
+window.getBuchungstyp = function(soll, haben) {
+  const s = String(soll || '').trim();
+  const h = String(haben || '').trim();
+  
+  if (s.startsWith('119') || h.startsWith('119')) {
+    return 'TRANSIT';
+  }
+  if (s.startsWith('3') || h.startsWith('3') || s.startsWith('80') || h.startsWith('80') || s.startsWith('81') || h.startsWith('81')) {
+    return 'ERTRAG';
+  }
+  if (s.startsWith('4') || h.startsWith('4') || s.startsWith('5') || h.startsWith('5') || s.startsWith('6') || h.startsWith('6') || s.startsWith('7') || h.startsWith('7') || s.startsWith('89') || h.startsWith('89')) {
+    return 'AUFWAND';
+  }
+  if (s.startsWith('100') || h.startsWith('100')) {
+    return 'KASSE';
+  }
+  if (s.startsWith('102') || h.startsWith('102')) {
+    return 'BANK';
+  }
+  if (s.startsWith('110') || h.startsWith('110')) {
+    return 'DEBITOR';
+  }
+  return 'TRANSIT';
 };

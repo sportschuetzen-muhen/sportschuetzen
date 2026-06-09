@@ -279,8 +279,8 @@ window.rnRenderTable = function() {
           </button>
           
           ${item.type === 'Jahresbeitrag' ? `
-            <span class="badge bg-light text-secondary border small me-1" title="Jahresbeitrag-Rechnungen werden über das Jahresbeitrag-Modul verwaltet">
-              <i class="fas fa-lock me-1"></i>JB-Gesperrt
+            <span class="badge bg-light text-secondary border small me-1" style="cursor: pointer;" onclick="rnJumpToJahresbeitrag('${item.PersonNumber}')" title="Klicken, um diesen Jahresbeitrag direkt im Jahresbeitrag-Modul zu bearbeiten">
+              <i class="fas fa-lock me-1 text-warning"></i>JB-Gesperrt
             </span>
             ${!isPaid ? `
               <button class="btn btn-xs btn-outline-success write-protected me-1" onclick="rnOpenPaymentModal('${item.id}', ${item.total_amount})" title="Zahlung erfassen">

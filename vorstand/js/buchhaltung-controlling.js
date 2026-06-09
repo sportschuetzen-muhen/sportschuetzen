@@ -633,34 +633,385 @@ window.renderTabCockpit = function(container) {
 window.renderTabGVExport = function(container) {
   if (!container) return;
   
+  // Set default export view
+  window._bhActiveExportView = window._bhActiveExportView || 'full_journal';
+  window._bhRevisorenHideTransit = window._bhRevisorenHideTransit !== undefined ? window._bhRevisorenHideTransit : true;
+  
+  const selectedYear = window._bhYear;
+  const filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(selectedYear));
+  
+  let reportTitle = '';
+  let reportHtml = '';
+  
+  if (window._bhActiveExportView === 'full_journal') {
+    reportTitle = 'Vollständiges Journal';
+    reportHtml = renderFullJournalReport(filteredJournal);
+  } else if (window._bhActiveExportView === 'revisoren_journal') {
+    reportTitle = 'Revisoren-Journal';
+    reportHtml = renderRevisorenJournalReport(filteredJournal, window._bhRevisorenHideTransit);
+  } else if (window._bhActiveExportView === 'gv_auswertung') {
+    reportTitle = 'GV-Auswertung (Erfolgsrechnung & Transit)';
+    reportHtml = renderGVAuswertungReport(filteredJournal);
+  }
+  
   container.innerHTML = `
-    <div class="row g-4 mb-4">
+    <div class="row g-4 mb-4 animate__animated animate__fadeIn">
       <div class="col-12">
-        <div class="bh-report-section shadow-sm border border-light" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(245,248,252,0.9) 100%);">
-          <h5 class="fw-bold text-primary mb-2">
-            <i class="fas fa-file-export me-2"></i>GV-Export & Berichtswesen (${window._bhYear})
-          </h5>
-          <p class="text-muted small mb-4">Erstelle strukturierte Exporte für Excel oder drucke den vollständigen Jahresabschluss (Bilanz & Erfolgsrechnung) formatiert für die Generalversammlung (GV).</p>
+        <div class="bh-report-section shadow-sm border border-light" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%);">
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap: 15px;">
+            <div>
+              <h5 class="fw-bold text-primary mb-1">
+                <i class="fas fa-file-export me-2"></i>GV-Export & Berichtswesen (${selectedYear})
+              </h5>
+              <p class="text-muted small mb-0">Erstelle Berichte und Exporte formatiert für Revisoren, den Vorstand oder die Generalversammlung.</p>
+            </div>
+            
+            <div class="d-flex align-items-center" style="gap: 10px;">
+              <button class="btn btn-sm btn-outline-primary fw-bold px-3 py-2 shadow-sm" onclick="bhPrintGVReport()" style="border-radius: 6px;">
+                <i class="fas fa-print me-1.5"></i>Bericht drucken (PDF)
+              </button>
+              <button class="btn btn-sm btn-outline-success fw-bold px-3 py-2 shadow-sm" onclick="bhExportJournalToExcel()" style="border-radius: 6px;">
+                <i class="fas fa-file-excel me-1.5"></i>CSV / Excel Export
+              </button>
+            </div>
+          </div>
           
-          <div class="row g-3">
-            <div class="col-sm-6">
-              <button class="btn btn-outline-primary w-100 py-4 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3" onclick="bhPrintGVReport()" style="gap: 12px; transition: all 0.2s ease;">
-                <i class="fas fa-print fa-3x text-primary mb-1"></i>
-                <span>Jahresrechnung drucken (PDF)</span>
-              </button>
+          <!-- View Selector Button Group -->
+          <div class="btn-group w-100 shadow-sm border border-light rounded-3 overflow-hidden" role="group" style="border-radius: 8px;">
+            <button type="button" class="btn btn-outline-primary py-2.5 fw-bold ${window._bhActiveExportView === 'full_journal' ? 'active' : ''}" onclick="bhSwitchExportView('full_journal')">
+              <i class="fas fa-receipt me-1.5"></i>A) Vollständiges Journal
+            </button>
+            <button type="button" class="btn btn-outline-primary py-2.5 fw-bold ${window._bhActiveExportView === 'revisoren_journal' ? 'active' : ''}" onclick="bhSwitchExportView('revisoren_journal')">
+              <i class="fas fa-user-check me-1.5"></i>B) Revisoren-Journal
+            </button>
+            <button type="button" class="btn btn-outline-primary py-2.5 fw-bold ${window._bhActiveExportView === 'gv_auswertung' ? 'active' : ''}" onclick="bhSwitchExportView('gv_auswertung')">
+              <i class="fas fa-file-invoice-dollar me-1.5"></i>C) GV-Auswertung (ER & Transit)
+            </button>
+          </div>
+          
+          <!-- Additional filters based on view -->
+          ${window._bhActiveExportView === 'revisoren_journal' ? `
+            <div class="mt-3 p-3 bg-light rounded-3 border d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center">
+                <i class="fas fa-filter text-primary me-2.5"></i>
+                <span class="small fw-semibold text-dark">Filteroptionen für Revisoren:</span>
+              </div>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="bh-hide-transit-checkbox" ${window._bhRevisorenHideTransit ? 'checked' : ''} onchange="bhToggleRevisorenTransit(this.checked)" style="cursor: pointer;">
+                <label class="form-check-label small fw-bold text-muted" for="bh-hide-transit-checkbox" style="cursor: pointer; user-select: none;">Transit-Detailzeilen ausblenden</label>
+              </div>
             </div>
-            <div class="col-sm-6">
-              <button class="btn btn-outline-success w-100 py-4 fw-bold shadow-sm d-flex flex-column align-items-center justify-content-center border-2 rounded-3" onclick="bhExportJournalToExcel()" style="gap: 12px; transition: all 0.2s ease;">
-                <i class="fas fa-file-excel fa-3x text-success mb-1"></i>
-                <span>Kassabuch exportieren (Excel)</span>
-              </button>
-            </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+    
+    <!-- Report Preview Area -->
+    <div class="row">
+      <div class="col-12 animate__animated animate__fadeIn">
+        <div class="bh-report-section shadow-sm border border-light bg-white p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+            <h5 class="fw-extrabold text-dark mb-0">${reportTitle} (${selectedYear})</h5>
+            <span class="text-muted small italic">Vorschau für den Ausdruck</span>
+          </div>
+          
+          <div id="bh-export-report-preview-container">
+            ${reportHtml}
           </div>
         </div>
       </div>
     </div>
   `;
 };
+
+window.bhSwitchExportView = function(view) {
+  window._bhActiveExportView = view;
+  const content = document.getElementById('bh-tab-content-container');
+  if (content && window.renderTabGVExport) {
+    window.renderTabGVExport(content);
+  }
+};
+
+window.bhToggleRevisorenTransit = function(checked) {
+  window._bhRevisorenHideTransit = checked;
+  const content = document.getElementById('bh-tab-content-container');
+  if (content && window.renderTabGVExport) {
+    window.renderTabGVExport(content);
+  }
+};
+
+function calculateTransitStats(journal, accountCode) {
+  let inflow = 0;
+  let outflow = 0;
+  journal.forEach(item => {
+    const soll = String(item.konto_soll).trim();
+    const haben = String(item.konto_haben).trim();
+    const amount = Number(item.betrag || 0);
+    if (haben === accountCode) {
+      inflow += amount;
+    }
+    if (soll === accountCode) {
+      outflow += amount;
+    }
+  });
+  return { inflow, outflow, balance: inflow - outflow };
+}
+
+function renderFullJournalReport(journal) {
+  const sortedJournal = [...journal].sort((a, b) => Number(a.id) - Number(b.id));
+  
+  const rows = sortedJournal.map(item => {
+    const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+    return `
+      <tr class="bh-account-row">
+        <td class="font-monospace text-muted small">${item.id}</td>
+        <td style="white-space:nowrap;">${isoToDisplay(item.datum)}</td>
+        <td class="font-monospace fw-bold text-dark">${item.beleg_nr}</td>
+        <td class="small fw-semibold">${escapeHtml(item.beschreibung)}</td>
+        <td>
+          <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span>
+          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
+        </td>
+        <td>
+          <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span>
+          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
+        </td>
+        <td class="text-end fw-bold text-primary">${fmtChf(item.betrag)}</td>
+        <td>
+          <span class="badge bg-primary text-white border-0 small me-1 mb-1">${bType}</span>
+          <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="table-responsive" style="max-height: 500px;">
+      <table class="table table-hover align-middle bh-table mb-0" style="font-size:13px;">
+        <thead>
+          <tr>
+            <th style="width: 50px;">ID</th>
+            <th style="width: 100px;">Datum</th>
+            <th style="width: 110px;">Beleg-Nr</th>
+            <th>Beschreibung</th>
+            <th>Soll-Konto</th>
+            <th>Haben-Konto</th>
+            <th class="text-end" style="width: 120px;">Betrag</th>
+            <th style="width: 140px;">Typen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length > 0 ? rows : '<tr><td colspan="8" class="text-center text-muted py-4">Keine Buchungssätze für dieses Jahr vorhanden.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderRevisorenJournalReport(journal, hideTransit) {
+  let displayJournal = [...journal].sort((a, b) => Number(a.id) - Number(b.id));
+  
+  if (hideTransit) {
+    displayJournal = displayJournal.filter(item => {
+      const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+      return bType !== 'TRANSIT';
+    });
+  }
+  
+  const rows = displayJournal.map(item => {
+    const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+    return `
+      <tr class="bh-account-row">
+        <td class="font-monospace text-muted small">${item.id}</td>
+        <td style="white-space:nowrap;">${isoToDisplay(item.datum)}</td>
+        <td class="font-monospace fw-bold text-dark">${item.beleg_nr}</td>
+        <td class="small fw-semibold">${escapeHtml(item.beschreibung)}</td>
+        <td>
+          <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span>
+          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
+        </td>
+        <td>
+          <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span>
+          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
+        </td>
+        <td class="text-end fw-bold text-primary">${fmtChf(item.betrag)}</td>
+        <td>
+          <span class="badge bg-primary text-white border-0 small me-1 mb-1">${bType}</span>
+          <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    ${hideTransit ? `
+      <div class="alert alert-info py-2 px-3 mb-3 small d-flex align-items-center border-0 shadow-sm" style="background-color: rgba(13,110,253,0.05); color: #0d6efd;">
+        <i class="fas fa-info-circle me-2"></i>
+        <span><strong>Hinweis:</strong> Transit-Detailbuchungen wurden ausgeblendet. Der Report zeigt nur vereinsrelevante Aufwände, Erträge und reguläre Zahlungen.</span>
+      </div>
+    ` : ''}
+    <div class="table-responsive" style="max-height: 500px;">
+      <table class="table table-hover align-middle bh-table mb-0" style="font-size:13px;">
+        <thead>
+          <tr>
+            <th style="width: 50px;">ID</th>
+            <th style="width: 100px;">Datum</th>
+            <th style="width: 110px;">Beleg-Nr</th>
+            <th>Beschreibung</th>
+            <th>Soll-Konto</th>
+            <th>Haben-Konto</th>
+            <th class="text-end" style="width: 120px;">Betrag</th>
+            <th style="width: 140px;">Typen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length > 0 ? rows : '<tr><td colspan="8" class="text-center text-muted py-4">Keine Buchungssätze vorhanden.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderGVAuswertungReport(journal) {
+  // Erfolgsrechnung Konten holen
+  const successAccounts = window._bhKontenrahmen.filter(acc => {
+    const cat = bhGetAccountCategory(acc);
+    return (cat.main === 'Ertrag' || cat.main === 'Aufwand') && Number(acc._endsaldo || 0) !== 0;
+  });
+  
+  const revenues = successAccounts.filter(acc => bhGetAccountCategory(acc).main === 'Ertrag');
+  const expenses = successAccounts.filter(acc => bhGetAccountCategory(acc).main === 'Aufwand');
+  
+  const totalRevenues = revenues.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
+  const totalExpenses = expenses.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
+  const netResult = totalRevenues - totalExpenses;
+  
+  const stats1190 = calculateTransitStats(journal, '1190');
+  const stats1191 = calculateTransitStats(journal, '1191');
+  
+  const revenueRows = revenues.map(acc => `
+    <tr class="bh-account-row">
+      <td class="font-monospace text-muted" style="width: 80px;">${acc.konto}</td>
+      <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
+      <td class="text-end fw-bold text-success">${fmtChf(acc._endsaldo)}</td>
+    </tr>
+  `).join('');
+  
+  const expenseRows = expenses.map(acc => `
+    <tr class="bh-account-row">
+      <td class="font-monospace text-muted" style="width: 80px;">${acc.konto}</td>
+      <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
+      <td class="text-end fw-bold text-danger">${fmtChf(acc._endsaldo)}</td>
+    </tr>
+  `).join('');
+  
+  return `
+    <div class="row g-4">
+      <!-- Erfolgsrechnung -->
+      <div class="col-lg-6">
+        <h6 class="fw-bold text-success border-bottom pb-2 mb-3">
+          <i class="fas fa-arrow-trend-up me-2"></i>Erträge (Verein)
+        </h6>
+        <table class="table table-sm table-hover align-middle mb-4" style="font-size: 13px;">
+          <thead>
+            <tr>
+              <th>Konto</th>
+              <th>Ertragskonto</th>
+              <th class="text-end" style="width: 120px;">Ergebnis</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${revenueRows.length > 0 ? revenueRows : '<tr><td colspan="3" class="text-center text-muted">Keine Erträge.</td></tr>'}
+            <tr class="table-light fw-bold" style="border-top: 1.5px solid #198754;">
+              <td colspan="2" class="text-success">Total Einnahmen / Erträge</td>
+              <td class="text-end text-success">${fmtChf(totalRevenues)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="col-lg-6">
+        <h6 class="fw-bold text-danger border-bottom pb-2 mb-3">
+          <i class="fas fa-arrow-trend-down me-2"></i>Aufwände (Verein)
+        </h6>
+        <table class="table table-sm table-hover align-middle mb-4" style="font-size: 13px;">
+          <thead>
+            <tr>
+              <th>Konto</th>
+              <th>Aufwandskonto</th>
+              <th class="text-end" style="width: 120px;">Ergebnis</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${expenseRows.length > 0 ? expenseRows : '<tr><td colspan="3" class="text-center text-muted">Keine Aufwände.</td></tr>'}
+            <tr class="table-light fw-bold" style="border-top: 1.5px solid #dc3545;">
+              <td colspan="2" class="text-danger">Total Ausgaben / Aufwände</td>
+              <td class="text-end text-danger">${fmtChf(totalExpenses)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Erfolgs-Zusammenfassung -->
+      <div class="col-12">
+        <div class="p-3 rounded-3 d-flex justify-content-between align-items-center border shadow-sm mb-4" style="background-color: rgba(15,58,93,0.02); gap: 15px;">
+          <div>
+            <span class="text-muted fw-semibold small">Ordentliches Vereinsergebnis:</span>
+            <h5 class="fw-bold mb-0 text-dark">
+              ${fmtChf(totalRevenues)} (Erträge) &minus; ${fmtChf(totalExpenses)} (Aufwände)
+            </h5>
+          </div>
+          <div class="text-end">
+            <span class="text-muted fw-semibold small">Vereins-Ergebnis (${window._bhYear}):</span>
+            <h4 class="fw-extrabold mb-0 ${netResult >= 0 ? 'text-success' : 'text-danger'}">
+              <i class="fas ${netResult >= 0 ? 'fa-check-circle' : 'fa-exclamation-circle'} me-1.5"></i>
+              ${netResult >= 0 ? 'Reingewinn' : 'Reinverlust'}: ${fmtChf(Math.abs(netResult))}
+            </h4>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Transitkonten separat -->
+      <div class="col-12">
+        <h6 class="fw-bold text-primary border-bottom pb-2 mb-3">
+          <i class="fas fa-arrows-alt-h me-2"></i>Transitkonten (Nicht in Erfolgsrechnung enthalten)
+        </h6>
+        <div class="table-responsive">
+          <table class="table table-bordered align-middle mb-0" style="font-size: 13px;">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 80px;">Konto</th>
+                <th>Durchlaufposten / Transitkonten</th>
+                <th class="text-end" style="width: 150px;">Eingang (Credits)</th>
+                <th class="text-end" style="width: 150px;">Ausgang (Debits)</th>
+                <th class="text-end" style="width: 150px;">Netto-Saldo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="font-monospace text-muted fw-bold">1190</td>
+                <td><strong>Meisterschaften & sonstige Teilnahmen</strong> (Startgelder, Vorschüsse, Verbandsgebühren etc.)</td>
+                <td class="text-end text-success">${fmtChf(stats1190.inflow)}</td>
+                <td class="text-end text-danger">${fmtChf(stats1190.outflow)}</td>
+                <td class="text-end fw-bold ${stats1190.balance === 0 ? 'text-dark' : 'text-primary'}">${fmtChf(stats1190.balance)}</td>
+              </tr>
+              <tr>
+                <td class="font-monospace text-muted fw-bold">1191</td>
+                <td><strong>Gruppengewinne</strong> (Geldeingänge für Mitglieder aus Meisterschaften)</td>
+                <td class="text-end text-success">${fmtChf(stats1191.inflow)}</td>
+                <td class="text-end text-danger">${fmtChf(stats1191.outflow)}</td>
+                <td class="text-end fw-bold ${stats1191.balance === 0 ? 'text-dark' : 'text-primary'}">${fmtChf(stats1191.balance)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="form-text text-muted small mt-2">
+          * Transit-Durchlaufposten stellen keinen wirksamen Gewinn oder Verlust des Vereins dar und werden daher in der Erfolgsrechnung nicht ausgewiesen.
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 function bhRenderMembershipQuote() {
   const container = document.getElementById('bh-membership-quote-container');
@@ -1107,44 +1458,87 @@ function bhRenderExpenseStructureChart() {
 
 // Kassabuch-Export: Lädt das Journal als perfekt formatiertes Excel-CSV herunter
 window.bhExportJournalToExcel = function() {
-  const currentYearJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
+  const selectedYear = window._bhYear;
+  const filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(selectedYear));
   
   const csvRows = [];
-  csvRows.push('ID;Beleg-Nr;Datum;Beschreibung;Soll-Konto;Soll-Bezeichnung;Haben-Konto;Haben-Bezeichnung;Betrag (CHF);Aktionstyp');
   
-  currentYearJournal.forEach(item => {
-    const sollName = getAccountNameByCode(item.konto_soll);
-    const habenName = getAccountNameByCode(item.konto_haben);
+  if (window._bhActiveExportView === 'gv_auswertung') {
+    // Export verdichtete Erfolgsrechnung & Transitkonten
+    csvRows.push('Konto;Bezeichnung;Klasse;Eingang (Transit);Ausgang (Transit);Saldo (CHF)');
     
-    let desc = item.beschreibung || '';
-    if (desc.startsWith('"') && desc.endsWith('"')) {
-      desc = desc.substring(1, desc.length - 1).replace(/""/g, '"');
+    // Erfolgsrechnung Konten
+    const successAccounts = window._bhKontenrahmen.filter(acc => {
+      const cat = bhGetAccountCategory(acc);
+      return (cat.main === 'Ertrag' || cat.main === 'Aufwand') && Number(acc._endsaldo || 0) !== 0;
+    });
+    
+    successAccounts.forEach(acc => {
+      const cat = bhGetAccountCategory(acc);
+      csvRows.push(`${acc.konto};"${acc.bezeichnung.replace(/"/g, '""')}";${cat.main};;;${Number(acc._endsaldo || 0).toFixed(2)}`);
+    });
+    
+    // Transitkonten
+    const stats1190 = calculateTransitStats(filteredJournal, '1190');
+    const stats1191 = calculateTransitStats(filteredJournal, '1191');
+    
+    csvRows.push(`1190;"Transit Meisterschaften & sonstige Teilnahmen";Transit;${stats1190.inflow.toFixed(2)};${stats1190.outflow.toFixed(2)};${stats1190.balance.toFixed(2)}`);
+    csvRows.push(`1191;"Transit Gruppengewinne";Transit;${stats1191.inflow.toFixed(2)};${stats1191.outflow.toFixed(2)};${stats1191.balance.toFixed(2)}`);
+    
+  } else {
+    // Export Journal (Vollständig oder Revisoren)
+    let displayJournal = [...filteredJournal].sort((a, b) => Number(a.id) - Number(b.id));
+    if (window._bhActiveExportView === 'revisoren_journal' && window._bhRevisorenHideTransit) {
+      displayJournal = displayJournal.filter(item => {
+        const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+        return bType !== 'TRANSIT';
+      });
     }
-    desc = `"${desc.replace(/"/g, '""')}"`;
     
-    const row = [
-      item.id,
-      item.beleg_nr,
-      isoToDisplay(item.datum),
-      desc,
-      item.konto_soll,
-      `"${sollName.replace(/"/g, '""')}"`,
-      item.konto_haben,
-      `"${habenName.replace(/"/g, '""')}"`,
-      Number(item.betrag || 0).toFixed(2),
-      item.typ || 'Rechnung'
-    ];
+    csvRows.push('ID;Beleg-Nr;Datum;Beschreibung;Soll-Konto;Soll-Bezeichnung;Haben-Konto;Haben-Bezeichnung;Betrag (CHF);Aktionstyp;Buchungstyp');
     
-    csvRows.push(row.join(';'));
-  });
+    displayJournal.forEach(item => {
+      const sollName = getAccountNameByCode(item.konto_soll);
+      const habenName = getAccountNameByCode(item.konto_haben);
+      const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+      
+      let desc = item.beschreibung || '';
+      if (desc.startsWith('"') && desc.endsWith('"')) {
+        desc = desc.substring(1, desc.length - 1).replace(/""/g, '"');
+      }
+      desc = `"${desc.replace(/"/g, '""')}"`;
+      
+      const row = [
+        item.id,
+        item.beleg_nr,
+        isoToDisplay(item.datum),
+        desc,
+        item.konto_soll,
+        `"${sollName.replace(/"/g, '""')}"`,
+        item.konto_haben,
+        `"${habenName.replace(/"/g, '""')}"`,
+        Number(item.betrag || 0).toFixed(2),
+        item.typ || 'Rechnung',
+        bType
+      ];
+      
+      csvRows.push(row.join(';'));
+    });
+  }
   
   const csvContent = '\ufeff' + csvRows.join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   
+  const filename = window._bhActiveExportView === 'gv_auswertung' 
+    ? `gv_auswertung_sportschuetzen_muhen_${selectedYear}.csv`
+    : window._bhActiveExportView === 'revisoren_journal'
+      ? `revisoren_journal_sportschuetzen_muhen_${selectedYear}.csv`
+      : `kassabuch_journal_sportschuetzen_muhen_${selectedYear}.csv`;
+      
   const link = document.createElement('a');
   link.setAttribute('href', url);
-  link.setAttribute('download', `kassabuch_journal_sportschuetzen_muhen_${window._bhYear}.csv`);
+  link.setAttribute('download', filename);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1152,250 +1546,253 @@ window.bhExportJournalToExcel = function() {
 
 // PDF/Druck-Jahresrechnung für die Generalversammlung (GV) generieren
 window.bhPrintGVReport = function() {
-  const tree = {};
-  window._bhKontenrahmen.forEach(acc => {
-    const cat = bhGetAccountCategory(acc);
-    if (!tree[cat.main]) tree[cat.main] = {};
-    if (!tree[cat.main][cat.sub]) tree[cat.main][cat.sub] = {};
-    if (!tree[cat.main][cat.sub][cat.detail]) tree[cat.main][cat.sub][cat.detail] = [];
-    tree[cat.main][cat.sub][cat.detail].push(acc);
-  });
+  const selectedYear = window._bhYear;
+  const filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(selectedYear));
   
-  function getClassTotal(mainClass) {
-    if (!tree[mainClass]) return 0;
-    let total = 0;
-    Object.keys(tree[mainClass]).forEach(sub => {
-      Object.keys(tree[mainClass][sub]).forEach(detail => {
-        tree[mainClass][sub][detail].forEach(acc => {
-          total += Number(acc._endsaldo || 0);
-        });
+  let reportTitle = '';
+  let contentHtml = '';
+  let customStyle = '';
+  
+  if (window._bhActiveExportView === 'full_journal' || window._bhActiveExportView === 'revisoren_journal') {
+    const isRevisoren = window._bhActiveExportView === 'revisoren_journal';
+    reportTitle = isRevisoren ? `Revisoren-Journal (${selectedYear})` : `Kassabuch-Journal (${selectedYear})`;
+    
+    let displayJournal = [...filteredJournal].sort((a, b) => Number(a.id) - Number(b.id));
+    if (isRevisoren && window._bhRevisorenHideTransit) {
+      displayJournal = displayJournal.filter(item => {
+        const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+        return bType !== 'TRANSIT';
       });
-    });
-    return total;
-  }
-  
-  const totalAktiven = getClassTotal('Aktiven');
-  
-  const sumFremd = (tree['Passiven'] && tree['Passiven']['Kurzfristiges Fremdkapital'] ? 
-    Object.keys(tree['Passiven']['Kurzfristiges Fremdkapital']).reduce((s, d) => s + tree['Passiven']['Kurzfristiges Fremdkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0) +
-    (tree['Passiven'] && tree['Passiven']['Langfristiges Fremdkapital'] ? 
-    Object.keys(tree['Passiven']['Langfristiges Fremdkapital']).reduce((s, d) => s + tree['Passiven']['Langfristiges Fremdkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0);
+    }
     
-  const sumEkOhneErgebnis = tree['Passiven'] && tree['Passiven']['Eigenkapital'] ? 
-    Object.keys(tree['Passiven']['Eigenkapital']).reduce((s, d) => s + tree['Passiven']['Eigenkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0;
-    
-  const sumErtrag = getClassTotal('Ertrag');
-  const sumAufwand = getClassTotal('Aufwand');
-  const gewinnVerlust = sumErtrag - sumAufwand;
-  const totalPassiven = sumFremd + sumEkOhneErgebnis + gewinnVerlust;
-
-  function getPrintRows(mainClass) {
-    let html = '';
-    if (!tree[mainClass]) return html;
-    
-    const subs = Object.keys(tree[mainClass]).sort((a,b) => {
-      if (a.includes('Umlauf')) return -1;
-      if (b.includes('Umlauf')) return 1;
-      if (a.includes('Kurzfristig')) return -1;
-      if (b.includes('Kurzfristig')) return 1;
-      return 0;
-    });
-    
-    subs.forEach(sub => {
-      html += `<tr class="section-title"><td colspan="3">${sub}</td></tr>`;
-      
-      const details = Object.keys(tree[mainClass][sub]).sort();
-      let subSum = 0;
-      
-      details.forEach(detail => {
-        const accounts = tree[mainClass][sub][detail];
-        accounts.sort((a, b) => parseInt(a.konto) - parseInt(b.konto));
-        
-        const detailSum = accounts.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
-        subSum += detailSum;
-        
-        accounts.forEach(acc => {
-          html += `
-            <tr class="detail-row">
-              <td class="code">${acc.konto}</td>
-              <td class="name">${acc.bezeichnung}</td>
-              <td class="amount">${fmtChf(acc._endsaldo)}</td>
-            </tr>
-          `;
-        });
-      });
-      
-      if (mainClass === 'Passiven' && sub === 'Eigenkapital') {
-        html += `
-          <tr class="detail-row italic">
-            <td class="code">2990</td>
-            <td class="name" style="font-weight: bold;">Jahresergebnis (Erfolgsrechnung)</td>
-            <td class="amount" style="font-weight: bold;">${fmtChf(gewinnVerlust)}</td>
-          </tr>
-        `;
-        subSum += gewinnVerlust;
-      }
-      
-      html += `
-        <tr class="subtotal-row">
-          <td colspan="2">Total ${sub}</td>
-          <td class="amount">${fmtChf(subSum)}</td>
+    const rows = displayJournal.map(item => {
+      const bType = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+      return `
+        <tr class="detail-row">
+          <td class="code" style="width:40px;">${item.id}</td>
+          <td style="width:80px;">${isoToDisplay(item.datum)}</td>
+          <td class="code" style="width:90px; font-weight:bold;">${item.beleg_nr}</td>
+          <td>${escapeHtml(item.beschreibung)}</td>
+          <td style="width:140px;">
+            <span class="code" style="background:#eee; padding:1px 4px; border-radius:3px;">${item.konto_soll}</span>
+            <span style="font-size:11px; color:#555;">${getAccountNameByCode(item.konto_soll)}</span>
+          </td>
+          <td style="width:140px;">
+            <span class="code" style="background:#eee; padding:1px 4px; border-radius:3px;">${item.konto_haben}</span>
+            <span style="font-size:11px; color:#555;">${getAccountNameByCode(item.konto_haben)}</span>
+          </td>
+          <td class="amount" style="width:100px; font-weight:bold;">${fmtChf(item.betrag)}</td>
+          <td style="width:110px;">
+            <span style="background:#0f3a5d; color:#fff; padding:1px 5px; font-size:10px; border-radius:3px; font-weight:bold;">${bType}</span>
+            <span style="background:#eee; padding:1px 4px; font-size:10px; border-radius:3px;">${item.typ || 'Rechnung'}</span>
+          </td>
         </tr>
       `;
+    }).join('');
+    
+    contentHtml = `
+      ${isRevisoren && window._bhRevisorenHideTransit ? `
+        <div style="background:#f0f7ff; color:#0066cc; border:1px solid #c2e0ff; padding:10px; border-radius:4px; font-size:12px; margin-bottom:15px;">
+          <strong>Hinweis:</strong> Transit-Detailbuchungen wurden ausgeblendet. Der Report zeigt nur vereinsrelevante Aufwände, Erträge und reguläre Zahlungen.
+        </div>
+      ` : ''}
+      <table>
+        <thead>
+          <tr>
+            <th class="code" style="width:40px;">ID</th>
+            <th>Datum</th>
+            <th>Beleg-Nr</th>
+            <th>Beschreibung</th>
+            <th>Soll-Konto</th>
+            <th>Haben-Konto</th>
+            <th class="amount">Betrag</th>
+            <th>Typen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length > 0 ? rows : '<tr><td colspan="8" style="text-align:center; padding:20px; color:#666;">Keine Buchungssätze vorhanden.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+    
+    customStyle = `
+      table { font-size: 11px; }
+      td { padding: 4px 6px; }
+      th { padding: 4px 6px; }
+    `;
+    
+  } else if (window._bhActiveExportView === 'gv_auswertung') {
+    reportTitle = `GV-Auswertung (Vereinsrechnung & Transit) - ${selectedYear}`;
+    
+    const successAccounts = window._bhKontenrahmen.filter(acc => {
+      const cat = bhGetAccountCategory(acc);
+      return (cat.main === 'Ertrag' || cat.main === 'Aufwand') && Number(acc._endsaldo || 0) !== 0;
     });
-    return html;
+    
+    const revenues = successAccounts.filter(acc => bhGetAccountCategory(acc).main === 'Ertrag');
+    const expenses = successAccounts.filter(acc => bhGetAccountCategory(acc).main === 'Aufwand');
+    
+    const totalRevenues = revenues.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
+    const totalExpenses = expenses.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
+    const netResult = totalRevenues - totalExpenses;
+    
+    const stats1190 = calculateTransitStats(filteredJournal, '1190');
+    const stats1191 = calculateTransitStats(filteredJournal, '1191');
+    
+    const revenueRows = revenues.map(acc => `
+      <tr class="detail-row">
+        <td class="code" style="width:80px;">${acc.konto}</td>
+        <td>${acc.bezeichnung}</td>
+        <td class="amount" style="color:#198754; font-weight:bold;">${fmtChf(acc._endsaldo)}</td>
+      </tr>
+    `).join('');
+    
+    const expenseRows = expenses.map(acc => `
+      <tr class="detail-row">
+        <td class="code" style="width:80px;">${acc.konto}</td>
+        <td>${acc.bezeichnung}</td>
+        <td class="amount" style="color:#dc3545; font-weight:bold;">${fmtChf(acc._endsaldo)}</td>
+      </tr>
+    `).join('');
+    
+    contentHtml = `
+      <div style="display: flex; gap: 30px; margin-bottom: 25px;">
+        <!-- Erträge links -->
+        <div style="width: 50%;">
+          <div class="section-header" style="color: #198754; border-bottom-color: #198754; margin-top:0;">Erträge (Vereinseinnahmen)</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="code" style="width:60px;">Konto</th>
+                <th>Konto-Bezeichnung</th>
+                <th class="amount">Saldo (CHF)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${revenueRows.length > 0 ? revenueRows : '<tr><td colspan="3" style="text-align:center; color:#666;">Keine Erträge.</td></tr>'}
+              <tr class="subtotal-row" style="color: #198754; border-top-color:#198754; border-bottom-color:#198754;">
+                <td colspan="2">Total Vereinserträge</td>
+                <td class="amount">${fmtChf(totalRevenues)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
+        <!-- Aufwände rechts -->
+        <div style="width: 50%;">
+          <div class="section-header" style="color: #dc3545; border-bottom-color: #dc3545; margin-top:0;">Aufwände (Vereinsausgaben)</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="code" style="width:60px;">Konto</th>
+                <th>Konto-Bezeichnung</th>
+                <th class="amount">Saldo (CHF)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${expenseRows.length > 0 ? expenseRows : '<tr><td colspan="3" style="text-align:center; color:#666;">Keine Aufwände.</td></tr>'}
+              <tr class="subtotal-row" style="color: #dc3545; border-top-color:#dc3545; border-bottom-color:#dc3545;">
+                <td colspan="2">Total Vereinsaufwände</td>
+                <td class="amount">${fmtChf(totalExpenses)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <!-- Netto Ergebnis-Box -->
+      <table style="margin-bottom:30px;">
+        <tbody>
+          <tr class="total-row" style="background-color: ${netResult >= 0 ? '#d1e7dd' : '#f8d7da'}; color: ${netResult >= 0 ? '#0f5132' : '#842029'}; font-size:14px;">
+            <td colspan="2" style="padding:10px;">${netResult >= 0 ? 'ORDENTLICHES VEREINSERGEBNIS (REINGEWINN)' : 'ORDENTLICHES VEREINSERGEBNIS (REINVERLUST)'}</td>
+            <td class="amount" style="padding:10px;">${fmtChf(netResult)}</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <!-- Transitkonten separat -->
+      <div class="section-header">Transitkonten (nicht erfolgswirksam)</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="code" style="width:80px;">Konto</th>
+            <th>Durchlaufposten / Transitkonten</th>
+            <th class="amount" style="width:150px;">Eingang (Credits)</th>
+            <th class="amount" style="width:150px;">Ausgang (Debits)</th>
+            <th class="amount" style="width:150px;">Netto-Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="detail-row">
+            <td class="code fw-bold">1190</td>
+            <td><strong>Transit Meisterschaften & sonstige Teilnahmen</strong> (Startgelder, Vorschüsse, Verbandsgebühren)</td>
+            <td class="amount" style="color:#198754;">${fmtChf(stats1190.inflow)}</td>
+            <td class="amount" style="color:#dc3545;">${fmtChf(stats1190.outflow)}</td>
+            <td class="amount" style="font-weight:bold;">${fmtChf(stats1190.balance)}</td>
+          </tr>
+          <tr class="detail-row">
+            <td class="code fw-bold">1191</td>
+            <td><strong>Transit Gruppengewinne</strong> (Vereinsgelder für Meisterschafts-Auszahlungen)</td>
+            <td class="amount" style="color:#198754;">${fmtChf(stats1191.inflow)}</td>
+            <td class="amount" style="color:#dc3545;">${fmtChf(stats1191.outflow)}</td>
+            <td class="amount" style="font-weight:bold;">${fmtChf(stats1191.balance)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size:11px; color:#666; font-style:italic; margin-top:5px;">
+        * Diese Transitkonten stellen Durchlaufposten dar. Sie beeinflussen weder das Nettovermögen noch den steuerbaren Reingewinn des Vereins und werden daher nicht in der Erfolgsrechnung verbucht.
+      </p>
+    `;
+    
+    customStyle = `
+      .signature-section { margin-top: 40px; }
+    `;
   }
-
-  function getPrintErfolgsRows(mainClass) {
-    let html = '';
-    if (!tree[mainClass]) return html;
-    const subs = Object.keys(tree[mainClass]).sort();
-    subs.forEach(sub => {
-      const details = Object.keys(tree[mainClass][sub]).sort();
-      details.forEach(detail => {
-        const accounts = tree[mainClass][sub][detail];
-        accounts.sort((a, b) => parseInt(a.konto) - parseInt(b.konto));
-        accounts.forEach(acc => {
-          html += `
-            <tr class="detail-row">
-              <td class="code">${acc.konto}</td>
-              <td class="name">${acc.bezeichnung}</td>
-              <td class="amount">${fmtChf(acc._endsaldo)}</td>
-            </tr>
-          `;
-        });
-      });
-    });
-    return html;
-  }
-
+  
   const printWindow = window.open('', '_blank');
   printWindow.document.write(`
     <html>
       <head>
-        <title>Jahresrechnung Sportschützen Muhen - ${window._bhYear}</title>
+        <title>${reportTitle}</title>
         <style>
-          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 40px; line-height: 1.4; }
-          .header { text-align: center; margin-bottom: 40px; border-bottom: 3px double #333; padding-bottom: 20px; }
-          .header h1 { margin: 0 0 10px 0; font-size: 26px; text-transform: uppercase; letter-spacing: 1px; }
-          .header h2 { margin: 0; font-size: 18px; color: #555; font-weight: normal; }
-          .section-header { font-size: 18px; font-weight: bold; border-bottom: 2px solid #333; margin: 30px 0 15px 0; padding-bottom: 5px; text-transform: uppercase; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 14px; }
-          th { border-bottom: 1.5px solid #333; text-align: left; padding: 6px 10px; font-weight: bold; }
-          td { padding: 6px 10px; vertical-align: top; }
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 30px; line-height: 1.4; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px double #333; padding-bottom: 15px; }
+          .header h1 { margin: 0 0 5px 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+          .header h2 { margin: 0; font-size: 16px; color: #555; font-weight: normal; }
+          .section-header { font-size: 16px; font-weight: bold; border-bottom: 2px solid #333; margin: 25px 0 12px 0; padding-bottom: 4px; text-transform: uppercase; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+          th { border-bottom: 1.5px solid #333; text-align: left; padding: 5px 8px; font-weight: bold; }
+          td { padding: 5px 8px; vertical-align: top; }
           .section-title { font-weight: bold; background-color: #f5f5f5; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; }
-          .section-title td { padding: 8px 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
           .detail-row { border-bottom: 1px solid #eee; }
-          .detail-row.italic { font-style: italic; }
-          .code { font-family: monospace; width: 60px; color: #666; }
-          .amount { text-align: right; width: 150px; font-weight: 500; }
+          .code { font-family: monospace; color: #444; }
+          .amount { text-align: right; font-weight: 500; }
           .subtotal-row { font-weight: bold; border-bottom: 1.5px solid #333; border-top: 1px solid #333; }
-          .total-row { font-weight: bold; font-size: 16px; border-bottom: 3px double #333; border-top: 2px solid #333; background-color: #eaeaea; }
-          .total-row td { padding: 10px; }
-          .signature-section { margin-top: 60px; page-break-inside: avoid; }
-          .signature-grid { display: flex; justify-content: space-between; gap: 40px; margin-top: 30px; }
-          .signature-box { border-top: 1px solid #333; width: 45%; pt: 10px; font-size: 13px; text-align: center; padding-top: 10px; }
+          .total-row { font-weight: bold; border-bottom: 3px double #333; border-top: 2px solid #333; }
+          .signature-section { margin-top: 40px; page-break-inside: avoid; }
+          .signature-grid { display: flex; justify-content: space-between; gap: 40px; margin-top: 25px; }
+          .signature-box { border-top: 1px solid #333; width: 45%; pt: 10px; font-size: 12px; text-align: center; padding-top: 8px; }
           @media print {
             body { padding: 0; }
             .no-print { display: none; }
-            @page { size: A4; margin: 1.5cm; }
+            @page { size: A4; margin: 1.2cm; }
           }
+          ${customStyle}
         </style>
       </head>
       <body>
         <div class="header">
           <h1>Sportschützen Muhen</h1>
-          <h2>Jahresrechnung & Finanzbericht für das Vereinsjahr ${window._bhYear}</h2>
+          <h2>Jahresabschluss-Bericht &bull; Vereinsjahr ${selectedYear}</h2>
         </div>
-
-        <!-- 1. BILANZ -->
-        <div class="section-header">Bilanz per 31. Dezember ${window._bhYear}</div>
         
-        <table>
-          <thead>
-            <tr>
-              <th class="code">Konto</th>
-              <th>Aktiven (Vermögen)</th>
-              <th class="amount">Saldo (CHF)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${getPrintRows('Aktiven')}
-            <tr class="total-row">
-              <td colspan="2">TOTAL AKTIVEN</td>
-              <td class="amount">${fmtChf(totalAktiven)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table>
-          <thead>
-            <tr>
-              <th class="code">Konto</th>
-              <th>Passiven (Fremd- & Eigenkapital)</th>
-              <th class="amount">Saldo (CHF)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${getPrintRows('Passiven')}
-            <tr class="total-row">
-              <td colspan="2">TOTAL PASSIVEN</td>
-              <td class="amount">${fmtChf(totalPassiven)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div style="page-break-after: always;"></div>
-
-        <!-- 2. ERFOLGSRECHNUNG -->
-        <div class="section-header">Erfolgsrechnung vom 1. Jan. bis 31. Dez. ${window._bhYear}</div>
+        <h4 style="text-align:center; text-transform:uppercase; margin-top:0; font-weight:bold; letter-spacing:0.5px;">${reportTitle}</h4>
         
-        <table>
-          <thead>
-            <tr>
-              <th class="code">Konto</th>
-              <th>Ertrag (Vereinseinnahmen)</th>
-              <th class="amount">Betrag (CHF)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${getPrintErfolgsRows('Ertrag')}
-            <tr class="subtotal-row">
-              <td colspan="2">Total Erträge</td>
-              <td class="amount">${fmtChf(sumErtrag)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table>
-          <thead>
-            <tr>
-              <th class="code">Konto</th>
-              <th>Aufwand (Vereinsausgaben)</th>
-              <th class="amount">Betrag (CHF)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${getPrintErfolgsRows('Aufwand')}
-            <tr class="subtotal-row">
-              <td colspan="2">Total Aufwände</td>
-              <td class="amount">${fmtChf(sumAufwand)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table>
-          <tbody>
-            <tr class="total-row" style="background-color: ${gewinnVerlust >= 0 ? '#d1e7dd' : '#f8d7da'}; color: ${gewinnVerlust >= 0 ? '#0f5132' : '#842029'};">
-              <td colspan="2">${gewinnVerlust >= 0 ? 'VEREINSGEWINN (ÜBERSCHUSS)' : 'VEREINSVERLUST (DEFIZIT)'}</td>
-              <td class="amount">${fmtChf(gewinnVerlust)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- 3. UNTERSCHRIFTEN -->
+        ${contentHtml}
+        
+        <!-- UNTERSCHRIFTEN -->
         <div class="signature-section">
-          <p>Die Jahresrechnung wurde ordnungsgemäss erstellt und wird der Generalversammlung zur Genehmigung vorgelegt.</p>
+          <p>Dieser Bericht wurde ordnungsgemäss aus dem Hauptbuch generiert und wird der Generalversammlung / den Revisoren vorgelegt.</p>
           <div class="signature-grid">
             <div class="signature-box">
               <br><br>

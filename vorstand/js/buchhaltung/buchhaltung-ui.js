@@ -476,6 +476,11 @@ window.renderTabJournal = function(container) {
     let valA = a[col];
     let valB = b[col];
     
+    if (col === 'buchungstyp') {
+      valA = a.buchungstyp || window.getBuchungstyp(a.konto_soll, a.konto_haben);
+      valB = b.buchungstyp || window.getBuchungstyp(b.konto_soll, b.konto_haben);
+    }
+    
     if (col === 'id' || col === 'betrag' || col === 'jahr') {
       valA = Number(valA || 0);
       valB = Number(valB || 0);
@@ -505,6 +510,7 @@ window.renderTabJournal = function(container) {
       </td>
       <td class="text-end fw-bold text-primary">${fmtChf(item.betrag)}</td>
       <td>
+        <span class="badge bg-primary text-white border-0 small me-1 mb-1 mb-sm-0">${item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben)}</span>
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
       <td class="text-end" style="white-space: nowrap;">
@@ -539,7 +545,7 @@ window.renderTabJournal = function(container) {
               <th class="bh-sort-header" onclick="bhSortJournal('konto_soll')">Soll-Konto ${bhGetSortIndicator(col, 'konto_soll', asc)}</th>
               <th class="bh-sort-header" onclick="bhSortJournal('konto_haben')">Haben-Konto ${bhGetSortIndicator(col, 'konto_haben', asc)}</th>
               <th class="bh-sort-header text-end" onclick="bhSortJournal('betrag')">Betrag ${bhGetSortIndicator(col, 'betrag', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortJournal('typ')">Typ ${bhGetSortIndicator(col, 'typ', asc)}</th>
+              <th class="bh-sort-header" onclick="bhSortJournal('buchungstyp')">Typ / Buchungstyp ${bhGetSortIndicator(col, 'buchungstyp', asc)}</th>
               <th class="text-end" style="width: 80px;">Aktion</th>
             </tr>
           </thead>
