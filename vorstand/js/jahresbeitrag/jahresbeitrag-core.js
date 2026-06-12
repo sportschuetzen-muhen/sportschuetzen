@@ -50,17 +50,19 @@ const EVENT_KEYS = {
 // ============================================================
 // EINSTIEGSPUNKT
 // ============================================================
-async function loadJahresbeitragData(forceReload = false) {
+async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
   const container = document.getElementById('jahresbeitrag-container');
   
   // Wenn kein forceReload und Preload läuft, darauf warten
   if (!forceReload && !window._jbAllBeitraege && window._jbPreloadPromise) {
     console.log("⏳ loadJahresbeitragData: Warte auf laufenden Preload im Hintergrund...");
-    container.innerHTML = `
-      <div class="text-center py-5">
-        <div class="spinner-border text-primary" role="status"></div>
-        <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten (Preload im Hintergrund)…</p>
-      </div>`;
+    if (container && showSpinner) {
+      container.innerHTML = `
+        <div class="text-center py-5">
+          <div class="spinner-border text-primary" role="status"></div>
+          <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten (Preload im Hintergrund)…</p>
+        </div>`;
+    }
     try {
       await window._jbPreloadPromise;
     } catch (e) {
@@ -102,26 +104,28 @@ async function loadJahresbeitragData(forceReload = false) {
     return;
   }
 
-  container.innerHTML = `
-    <div class="text-center py-5">
-      <div class="spinner-border text-primary" role="status"></div>
-      <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten (alle Jahre)…</p>
-    </div>`;
+  if (container && showSpinner) {
+    container.innerHTML = `
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten (alle Jahre)…</p>
+      </div>`;
+  }
 
   try {
+    const t = Date.now();
     const [beitraege, members, participations, positions, invoicesRes, gebuehrenRes] = await Promise.all([
-      apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json()),
-      // TODO: Nach Worker-Redeploy auf apiFetch('rechnungen', ...) umstellen
-      fetch('https://script.google.com/macros/s/AKfycbwUxiK9LibWZ01mfeEw-C1QtzGlfH2l9f7LVfgSzUeVOcSipt-K0njnN0XRA-bdKBeL/exec?action=getInvoices')
+      apiFetch('jahresbeitrag', `action=getBeitraege&_t=${t}`).then(r => r.json()),
+      apiFetch('jahresbeitrag', `action=getMembers&_t=${t}`).then(r => r.json()),
+      apiFetch('jahresbeitrag', `action=getParticipations&_t=${t}`).then(r => r.json()),
+      apiFetch('jahresbeitrag', `action=getPositionen&_t=${t}`).then(r => r.json()),
+      apiFetch('rechnungen', `action=getInvoices&_t=${t}`)
         .then(r => r.json())
         .catch(err => {
           console.warn("⚠️ Fehler beim Abrufen der Rechnungen:", err);
           return { success: false, data: [] };
         }),
-      apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
+      apiFetch('jahresbeitrag', `action=getGebuehren&_t=${t}`).then(r => r.json()).catch(err => {
         console.warn("⚠️ Fehler beim Abrufen der Gebühren:", err);
         return { success: false, data: [] };
       })
@@ -148,6 +152,7 @@ async function loadJahresbeitragData(forceReload = false) {
     _jbAllParticipations = participations.data || [];
     _jbAllPositions = positions.positions || [];
     window._jbAllInvoices = invoicesRes.success ? (invoicesRes.data || []) : [];
+    window._invoices = window._jbAllInvoices; // Sync both caches!
     window._jbGebuehren = gebuehrenRes.success ? (gebuehrenRes.data || []) : [];
 
     // Für das aktive Jahr filtern

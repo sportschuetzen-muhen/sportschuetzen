@@ -821,6 +821,16 @@
                 <small class="text-muted">Je genauer die Stichworte, desto besser der Bericht.</small>
             </div>
             
+            <div class="mb-3">
+                <label class="form-label fw-bold">KI-Modell & Kapazität</label>
+                <select id="news-model" class="form-select">
+                    <option value="gemini-3.5-flash" data-info="Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)" selected>Gemini 3.5 Flash (Premium - Standard)</option>
+                    <option value="gemini-1.5-flash" data-info="Gute Qualität, ausgewogenes Verhältnis zwischen Detailtreue und Geschwindigkeit.">Gemini 1.5 Flash (Ausweichmodell)</option>
+                    <option value="gemini-3.1-flash-lite" data-info="Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.">Gemini 3.1 Flash Lite (Lite - Höchste Verfügbarkeit)</option>
+                </select>
+                <div id="news-model-desc" class="form-text text-muted mt-1 small">Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)</div>
+            </div>
+            
             <div class="mb-4">
                 <label class="form-label fw-bold">Fotos (Optional, mehrere möglich)</label>
                 <div class="border rounded p-4 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-foto').click()">

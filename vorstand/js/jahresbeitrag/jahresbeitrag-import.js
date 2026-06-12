@@ -595,6 +595,8 @@ async function jbSubmitExcelImport() {
       return;
     }
 
+    showLoadingOverlay(`Importiere Excel-Daten für ${validList.length} Schützen und berechne Beiträge neu…`);
+
     const res = await apiFetch('jahresbeitrag', '', {
       method: 'POST',
       body: JSON.stringify({
@@ -616,7 +618,7 @@ async function jbSubmitExcelImport() {
     _jbImportData = null;
 
     // Reload Jahresbeitrag details from spreadsheet
-    await loadJahresbeitragData(true);
+    await loadJahresbeitragData(true, false);
 
     // Sync invoices with Rechnungen module
     for (const pn of uniquePns) {
@@ -636,12 +638,22 @@ async function jbSubmitExcelImport() {
       }
     }
 
-    // Trigger reload of invoices in the background
+    // Sync invoices cache and merge
     if (typeof loadRechnungenData === 'function') {
-      loadRechnungenData(true, true);
+      await loadRechnungenData(true, true);
+    }
+
+    if (typeof jbMergeInvoicesIntoData === 'function') {
+      jbMergeInvoicesIntoData(window._jbAllInvoices || []);
+    }
+
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
     }
   } catch(e) {
     alert("Fehler beim Hochladen der Daten: " + e.message);
+  } finally {
+    hideLoadingOverlay();
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import in Google Sheets starten';
   }

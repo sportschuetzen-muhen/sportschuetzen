@@ -65,12 +65,16 @@ if (!document.getElementById('buchhaltung-module-styles')) {
     }
     
     .bh-table th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
       background-color: #f8f9fa !important;
       color: #495057;
       font-weight: 600;
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1);
     }
     
     .bh-account-row {
@@ -449,7 +453,7 @@ window.bhGetAccountCategory = function(account) {
     } else if (codeStr.startsWith('24')) {
       sub = 'Langfristiges Fremdkapital';
       detail = 'Langfristiges Fremdkapital';
-    } else if (codeStr.startsWith('29')) {
+    } else if (codeStr.startsWith('28') || codeStr.startsWith('29')) {
       sub = 'Eigenkapital';
       detail = 'Grund-, Gesellschafter- oder Stiftungskapital';
     }

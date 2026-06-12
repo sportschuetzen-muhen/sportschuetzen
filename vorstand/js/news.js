@@ -89,6 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- KI-MODELL AUSWAHL & ERKLÄRUNG ---
+    const modelSelect = document.getElementById('news-model');
+    const modelDesc = document.getElementById('news-model-desc');
+    if (modelSelect && modelDesc) {
+        modelSelect.addEventListener('change', () => {
+            const selectedOption = modelSelect.options[modelSelect.selectedIndex];
+            const info = selectedOption.getAttribute('data-info') || '';
+            modelDesc.textContent = info;
+        });
+    }
+
     // --- DRAFT MODE: GENERIEREN ---
     const generateBtn = document.getElementById('news-generate-btn');
     const publishBtn = document.getElementById('news-publish-btn');
@@ -116,13 +127,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 const useImageContent = document.getElementById('news-use-image-content') ? document.getElementById('news-use-image-content').checked : true;
+                const selectedModel = modelSelect ? modelSelect.value : 'gemini-3.5-flash';
                 
                 const response = await apiFetch('news', 'action=generate', {
                     method: 'POST',
                     body: JSON.stringify({
                         keywords: keywords,
                         images: base64Images,
-                        useImageContent: useImageContent
+                        useImageContent: useImageContent,
+                        model: selectedModel
                     })
                 });
 
@@ -142,8 +155,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 
             } catch (err) {
                 console.error(err);
-                if (err.message === 'QUOTA_EXCEEDED') {
-                    showToast("Das Tageslimit für News-Berichte (Premium KI) ist leider erreicht. Bitte versuche es in 24 Stunden erneut.", "danger");
+                if (err.message === 'QUOTA_EXCEEDED' || err.message.includes('limit') || err.message.includes('quota') || err.message.includes('Quota exceeded') || err.message.includes('RESOURCE_EXHAUSTED')) {
+                    showToast("Kapazitätsengpass beim gewählten Modell! Bitte wähle ein alternatives Modell (z.B. Gemini 1.5 Flash oder Gemini 3.1 Flash Lite) und versuche es erneut.", "warning");
+                    if (modelSelect) {
+                        modelSelect.classList.add('border-warning');
+                        modelSelect.focus();
+                        setTimeout(() => modelSelect.classList.remove('border-warning'), 5000);
+                    }
                 } else {
                     showToast("Fehler beim Generieren: " + err.message, "danger");
                 }

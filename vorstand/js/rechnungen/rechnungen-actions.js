@@ -179,9 +179,13 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();
 
-    if (result.success && result.pdfUrl) {
+    if (result.success) {
       showSuccess("🎉 PDF erfolgreich generiert!");
-      window.open(result.pdfUrl, '_blank');
+      if (result.pdfBase64) {
+        openPdfBase64(result.pdfBase64);
+      } else if (result.pdfUrl) {
+        window.open(result.pdfUrl, '_blank');
+      }
       await loadRechnungenData(true);
     } else {
       throw new Error(result.error || "Generierung fehlgeschlagen.");

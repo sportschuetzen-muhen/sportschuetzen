@@ -671,13 +671,17 @@ async function silentInitialLoad() {
             window._jbPreloadPromise = (async () => {
                 const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
                 console.log("🔍 Fetching Jahresbeitrag APIs for year: ", year);
-                const [beitraege, members, participations, positions, gebuehren] = await Promise.all([
+                const [beitraege, members, participations, positions, gebuehren, invoices] = await Promise.all([
                     apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
                     apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
                     apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
                     apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json()),
                     apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
                         console.warn("⚠️ Fehler beim Preload der Gebühren:", err);
+                        return { success: false, data: [] };
+                    }),
+                    apiFetch('rechnungen', 'action=getInvoices').then(r => r.json()).catch(err => {
+                        console.warn("⚠️ Fehler beim Preload der Rechnungen:", err);
                         return { success: false, data: [] };
                     })
                 ]);
@@ -687,11 +691,14 @@ async function silentInitialLoad() {
                     members: members.success,
                     participations: participations.success,
                     positions: positions.success,
-                    gebuehren: gebuehren ? gebuehren.success : false
+                    gebuehren: gebuehren ? gebuehren.success : false,
+                    invoices: invoices ? invoices.success : false
                 });
 
                 if (beitraege.success && members.success && participations.success && positions.success) {
                     window._jbGebuehren = gebuehren && gebuehren.success ? (gebuehren.data || []) : [];
+                    window._jbAllInvoices = invoices && invoices.success ? (invoices.data || []) : [];
+                    window._invoices = window._jbAllInvoices; // Sync both caches!
                     window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
                     window._jbMemberMap = {};
                     (members.data || []).forEach(m => { 
@@ -703,6 +710,11 @@ async function silentInitialLoad() {
                     window._jbAllPositions = positions.positions || [];
                     
                     window._jbData = window._jbAllBeitraege.filter(h => Number(h.year) === Number(year));
+
+                    // Invoices mergen
+                    if (typeof jbMergeInvoicesIntoData === 'function') {
+                        jbMergeInvoicesIntoData(window._jbAllInvoices || []);
+                    }
 
                     window._jbParticipationsCache = {};
                     window._jbAllParticipations.forEach(p => {
@@ -820,7 +832,7 @@ async function runBackgroundSync() {
             const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
             console.log(`🔄 Background Sync: Lade Jahresbeitrag für alle Jahre...`);
 
-            const [beitraege, members, participations, positions, gebuehren] = await Promise.all([
+            const [beitraege, members, participations, positions, gebuehren, invoices] = await Promise.all([
                 apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
                 apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
                 apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
@@ -828,11 +840,17 @@ async function runBackgroundSync() {
                 apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
                     console.warn("⚠️ Fehler beim Background Sync der Gebühren:", err);
                     return { success: false, data: [] };
+                }),
+                apiFetch('rechnungen', 'action=getInvoices').then(r => r.json()).catch(err => {
+                    console.warn("⚠️ Fehler beim Background Sync der Rechnungen:", err);
+                    return { success: false, data: [] };
                 })
             ]);
 
             if (beitraege.success && members.success && participations.success && positions.success) {
                 window._jbGebuehren = gebuehren && gebuehren.success ? (gebuehren.data || []) : [];
+                window._jbAllInvoices = invoices && invoices.success ? (invoices.data || []) : [];
+                window._invoices = window._jbAllInvoices; // Sync both caches!
                 window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
                 window._jbMemberMap = {};
                 (members.data || []).forEach(m => { 
@@ -844,6 +862,11 @@ async function runBackgroundSync() {
                 window._jbAllPositions = positions.positions || [];
                 
                 window._jbData = window._jbAllBeitraege.filter(h => Number(h.year) === Number(year));
+
+                // Invoices mergen
+                if (typeof jbMergeInvoicesIntoData === 'function') {
+                    jbMergeInvoicesIntoData(window._jbAllInvoices || []);
+                }
 
                 window._jbParticipationsCache = {};
                 window._jbAllParticipations.forEach(p => {
@@ -1297,4 +1320,18 @@ async function submitChangePassword(e) {
             submitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Passwort aktualisieren';
         }
     }
+}
+
+// Opens a base64-encoded PDF in a new browser tab using a local blob URL
+function openPdfBase64(base64Str) {
+    if (!base64Str) return;
+    const byteCharacters = atob(base64Str);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], {type: 'application/pdf'});
+    const fileURL = URL.createObjectURL(blob);
+    window.open(fileURL, '_blank');
 }

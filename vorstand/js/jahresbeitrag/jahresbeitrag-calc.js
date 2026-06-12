@@ -71,9 +71,15 @@ function jbCalculateLiveTotal(m, settings) {
   }
   
   // 3. Schützenhaus (GE001)
-  // G50m Lizenzinhaber, nicht Junior, nicht Passiv
-  const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
-  if (!isJunior && hatG50mOwn && !isPassiv) {
+  let chargeGe = false;
+  if (settings && settings.schuetzenhaus !== undefined) {
+    chargeGe = !!settings.schuetzenhaus;
+  } else {
+    const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
+    chargeGe = !isJunior && hatG50mOwn && !isPassiv;
+  }
+  
+  if (chargeGe) {
     positions.push({ name: 'Schützenhaus (Infrastrukturbeitrag)', betrag: getFee('GE001', 50), typ: 'Debit' });
   }
   

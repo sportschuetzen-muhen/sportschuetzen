@@ -27,9 +27,19 @@ function renderOverviewTab(canEdit, years) {
         <option value="bezahlt">Bezahlt</option>
       </select>
       ${canEdit ? `
-      <button class="btn btn-sm btn-outline-warning ms-auto" onclick="jbBerechnen()">
-        <i class="fas fa-calculator"></i> Alle Beiträge berechnen
-      </button>` : ''}
+      <div class="ms-auto d-inline-flex gap-2 align-items-center">
+        <button class="btn btn-sm btn-outline-warning" onclick="jbBerechnen()">
+          <i class="fas fa-calculator"></i> Alle Beiträge berechnen
+        </button>
+        <button class="btn btn-sm btn-outline-secondary d-flex align-items-center" onclick="jbResetYear('calculations')" title="Löscht alle Rechnungs- und Posteneinträge des aktiven Jahres und berechnet sie basierend auf den Turnierteilnahmen neu. Erfasste Teilnahmen und manuelle Gebühren-Überschreibungen (z.B. Schützenhaus) bleiben erhalten.">
+          <i class="fas fa-history me-1"></i> Rechnungen zurücksetzen
+          <i class="fas fa-info-circle text-muted ms-1.5" style="font-size:11px;"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-danger d-flex align-items-center" onclick="jbResetYear('all')" title="Löscht sowohl die Rechnungen als auch ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen für das aktive Jahr komplett. Setzt das Jahr auf den Ausgangszustand zurück.">
+          <i class="fas fa-trash-alt me-1"></i> Alles zurücksetzen
+          <i class="fas fa-info-circle text-muted ms-1.5" style="font-size:11px;"></i>
+        </button>
+      </div>` : ''}
     </div>
 
     <!-- KPI-Karten -->
@@ -319,6 +329,12 @@ async function jbShowPositionen(headerId) {
     // 3. Hole Teilnahmen direkt aus dem lokalen Browser-Cache
     const memberParts = _jbParticipationsCache[pn] || [];
 
+    // Defaulting für Schützenhaus Infrastrukturbeitrag
+    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    const isJunior = age > 0 && age <= 20;
+    const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
+    const defaultGe = !isJunior && hatG50mOwn && !m._istPassiv;
+
     // Initialisiere den modalen State exakt analog zur Schnellerfassung
     _jbModalParticipationsState = {
       lizenz: m._istPassiv ? 'passiv' : 'verein',
@@ -333,14 +349,14 @@ async function jbShowPositionen(headerId) {
       lg_ch_dez_auflage: false,
       lg_verband: false,
       lg_verein: false,
-      lg_ch_kniend: false
+      lg_ch_kniend: false,
+      schuetzenhaus: defaultGe
     };
 
     // Lizenz-Defaulting
     const ownLiz = (m._lizenzen || []).find(l => l.istMuhen);
     if (ownLiz) {
-      const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-      _jbModalParticipationsState.lizenz = (age > 0 && age <= 20) ? 'junior' : 'verein';
+      _jbModalParticipationsState.lizenz = isJunior ? 'junior' : 'verein';
     } else if ((m._lizenzen || []).length > 0) {
       _jbModalParticipationsState.lizenz = 'fremd';
     } else if (m._istPassiv) {
@@ -357,6 +373,9 @@ async function jbShowPositionen(headerId) {
 
     memberParts.forEach(p => {
       const val = Number(p.teilgenommen || 0);
+      if (p.eventkey === 'GE001') {
+        _jbModalParticipationsState.schuetzenhaus = val > 0;
+      }
       if (val > 0) {
         if (p.eventkey === 'KK001') _jbModalParticipationsState.kk_grenzland = '1';
         if (p.eventkey === 'KK002') hasKK002 = true;
@@ -375,9 +394,6 @@ async function jbShowPositionen(headerId) {
         if (p.eventkey === 'LG007') _jbModalParticipationsState.lg_ch_kniend = true;
       }
     });
-
-    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-    const isJunior = age > 0 && age <= 20;
 
     if (hasKK005) {
       _jbModalParticipationsState.ssv_dez = 'sv';
@@ -495,6 +511,19 @@ function jbRenderModalContent(header, pos, m, name) {
               <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
                 _jbModalParticipationsState.lizenz === 'passiv' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
               }" onclick="jbModalUpdateState('lizenz', 'passiv', '${header.PersonNumber}')" style="font-size: 11px;">Passiv</button>
+            </div>
+          </div>
+
+          <!-- Infrastrukturbeitrag Schützenhaus -->
+          <div class="card p-2.5 border-0 bg-light shadow-sm mb-2 rounded-3">
+            <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">Infrastrukturbeitrag Schützenhaus</div>
+            <div class="d-flex align-items-center justify-content-between bg-white p-2 rounded border">
+              <span class="small fw-semibold text-muted">Schützenhaus-Beitrag (CHF 50.00)</span>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="modal_schuetzenhaus" ${
+                  _jbModalParticipationsState.schuetzenhaus ? 'checked' : ''
+                } onchange="jbConfirmModalSchuetzenhaus(this, '${header.PersonNumber}')">
+              </div>
             </div>
           </div>
 
@@ -730,6 +759,17 @@ function jbModalRenderLivePositions(m) {
   }
 }
 
+function jbConfirmModalSchuetzenhaus(chk, pn) {
+  const currentVal = chk.checked;
+  const prevVal = !currentVal;
+  
+  if (confirm("Möchten Sie den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?")) {
+    jbModalUpdateState('schuetzenhaus', currentVal, pn);
+  } else {
+    chk.checked = prevVal;
+  }
+}
+
 // Modal State anpassen und live neu rendern
 function jbModalUpdateState(key, val, pn) {
   const pnClean = String(pn || '').trim();
@@ -777,6 +817,7 @@ async function jbModalSave(headerId, pn) {
     const list = [];
     const year = _jbYear;
 
+    list.push({ pn: pnClean, year, eventkey: 'GE001', teilgenommen: _jbModalParticipationsState.schuetzenhaus ? 1 : 0 });
     list.push({ pn: pnClean, year, eventkey: 'KK008', teilgenommen: _jbModalParticipationsState.kk_volksschiessen === 'keine' ? 0 : Number(_jbModalParticipationsState.kk_volksschiessen), quelle: 'volksschiessen' });
     list.push({ pn: pnClean, year, eventkey: 'KK007', teilgenommen: _jbModalParticipationsState.kk_verein ? 1 : 0, quelle: 'verein' });
     
@@ -815,28 +856,84 @@ async function jbModalSave(headerId, pn) {
     const calcJson = await resCalc.json();
     if (!calcJson.success) throw new Error(calcJson.error);
 
-    showToast(`🎉 Beitrag für ${pnClean} erfolgreich aktualisiert und neu berechnet!`);
-
-    // 3. Schließe das Modal
+    // 3. Schließe das Modal sofort für eine flüssige UX
     const modalEl = document.getElementById('jbModalPositionen');
     const modal = bootstrap.Modal.getInstance(modalEl);
     if (modal) modal.hide();
+    
+    // Explizites Entfernen des Backdrops und Beendigung des Scroll-Locks, um Freezes zu verhindern
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
 
-    // 4. Haupt-Tabelle aktualisieren
-    await loadJahresbeitragData(true);
-
-    // 5. Automatisch die Rechnung synchronisieren, falls bereits eine existiert
-    const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === pnClean);
-    if (updatedHeader && updatedHeader.invoiceId) {
-      const updatedM = _jbMemberMap[pnClean] || {};
-      const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : pnClean;
-      try {
-        console.log(`🤖 Synchronisiere Rechnung für ${pnClean} nach Änderung...`);
-        await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
-      } catch (err) {
-        console.error("⚠️ Fehler bei automatischer Rechnungs-Aktualisierung:", err);
+    // Optimistisches lokales Update im Speicher
+    const header = _jbData.find(x => String(x.id) === String(headerId));
+    if (header) {
+      const m = _jbMemberMap[pnClean];
+      if (m) {
+        // Lokalen Passiv-/Aktiv-Status anpassen
+        if (_jbModalParticipationsState.lizenz === 'passiv') {
+          m._istPassiv = true;
+          m.IsPassive = 1;
+          m.IsActive = 0;
+        } else {
+          m._istPassiv = false;
+          m.IsPassive = 0;
+          m.IsActive = 1;
+        }
+        
+        // Live neu berechnen
+        const calc = jbCalculateLiveTotal(m, _jbModalParticipationsState);
+        header.Gesamt = calc.total;
+        
+        // Positions-Cache aktualisieren
+        _jbPositionsCache[headerId] = calc.positions.map((p, idx) => ({
+          headerid: headerId,
+          PersonNumber: pnClean,
+          year: _jbYear,
+          position_nr: idx + 1,
+          beschreibung: p.name,
+          betrag: p.betrag,
+          typ: p.typ,
+          sourcefield: p.sourcefield
+        }));
       }
     }
+
+    // Tabelle sofort neu zeichnen
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+    
+    showToast(`🎉 Beitrag für ${pnClean} erfolgreich aktualisiert und neu berechnet!`);
+
+    // 4. Haupt-Tabelle und Rechnungen asynchron im Hintergrund aktualisieren (kein UI-Freeze, kein Spinner)
+    (async () => {
+      try {
+        await loadJahresbeitragData(true, false); // showSpinner = false
+        const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === pnClean);
+        if (updatedHeader && updatedHeader.invoiceId) {
+          const updatedM = _jbMemberMap[pnClean] || {};
+          const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : pnClean;
+          console.log(`🤖 Synchronisiere Rechnung für ${pnClean} nach Änderung im Hintergrund...`);
+          await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
+          if (typeof jbMergeInvoicesIntoData === 'function') {
+            jbMergeInvoicesIntoData(window._jbAllInvoices || []);
+          }
+          if (typeof renderJahresbeitragView === 'function') {
+            renderJahresbeitragView();
+          }
+          showToast(`🔄 Rechnungs-PDF für ${updatedName} im Hintergrund aktualisiert!`);
+        } else {
+          if (typeof renderJahresbeitragView === 'function') {
+            renderJahresbeitragView();
+          }
+        }
+      } catch (err) {
+        console.error("⚠️ Fehler bei Hintergrund-Aktualisierung:", err);
+      }
+    })();
   } catch(e) {
     alert("Fehler beim Speichern: " + e.message);
     if (btn) {
@@ -894,7 +991,26 @@ async function jbSaveZahlung() {
     }
 
     bootstrap.Modal.getInstance(document.getElementById('jbModalZahlung')).hide();
-    await loadJahresbeitragData(true);
+    
+    // Explizites Entfernen des Backdrops und Beendigung des Scroll-Locks, um Freezes zu verhindern
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+
+    // Optimistisches lokales Update des Beleg-Status
+    const header = _jbData.find(x => String(x.id) === String(id));
+    if (header) {
+      header.status = 'bezahlt';
+      header.payment_date = datum;
+      header.payment_method = methode;
+      header.document_ref = beleg || `PAY-${id}`;
+    }
+    if (typeof renderJahresbeitragView === 'function') {
+      renderJahresbeitragView();
+    }
+
+    await loadJahresbeitragData(true, false); // showSpinner = false
   } catch(e) {
     alert('Fehler: ' + e.message);
   } finally {
@@ -988,8 +1104,9 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     source_field: p.sourcefield || ''
   }));
 
-  // Finde die Rechnung in unserem lokalen Cache (window._invoices)
-  const existingInv = window._invoices && window._invoices.find(i => String(i.id) === invoiceId);
+  // Finde die Rechnung in einem der beiden Caches
+  const invoicesList = window._invoices || window._jbAllInvoices || [];
+  const existingInv = invoicesList.find(i => String(i.id) === invoiceId);
   
   if (existingInv) {
     const diff = Math.abs(Number(existingInv.total_amount || 0) - Number(r.Gesamt || 0));
@@ -1024,7 +1141,7 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
       
       // Caches im Hintergrund aktualisieren
       if (typeof loadRechnungenData === 'function') {
-        loadRechnungenData(true, true);
+        await loadRechnungenData(true, true);
       }
     }
     r.invoiceId = invoiceId;
@@ -1052,7 +1169,7 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
   
   // Caches im Hintergrund aktualisieren
   if (typeof loadRechnungenData === 'function') {
-    loadRechnungenData(true, true);
+    await loadRechnungenData(true, true);
   }
   
   r.invoiceId = invoiceId;
@@ -1099,12 +1216,14 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
     showToast("🎉 PDF-Rechnung erfolgreich generiert!");
     
     // PDF in neuem Tab öffnen
-    if (res.pdfUrl) {
+    if (res.pdfBase64) {
+      openPdfBase64(res.pdfBase64);
+    } else if (res.pdfUrl) {
       window.open(res.pdfUrl, '_blank');
     }
     
     // Daten neu laden, um die UI zu aktualisieren (PDF-Link anzeigen)
-    await loadJahresbeitragData(true);
+    await loadJahresbeitragData(true, false);
   } catch (err) {
     alert("Fehler bei PDF-Erstellung: " + err.message);
     if (btn) {
@@ -1158,7 +1277,7 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     showToast(`✉️ E-Mail-Rechnung erfolgreich an ${name} (${email}) gesendet!`);
     
     // Daten neu laden
-    await loadJahresbeitragData(true);
+    await loadJahresbeitragData(true, false);
   } catch (err) {
     alert("Fehler bei E-Mail-Versand: " + err.message);
     if (btn) {
@@ -1180,13 +1299,52 @@ async function jbBerechnen() {
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
     alert(data.message || '✅ Fertig');
-    await loadJahresbeitragData(true);
+    await loadJahresbeitragData(true, false);
   } catch(e) {
     alert('Fehler: ' + e.message);
   } finally {
     if (btn) {
       btn.disabled = false; btn.innerHTML = '<i class="fas fa-calculator"></i> Alle Beiträge berechnen';
     }
+  }
+}
+
+async function jbResetYear(mode) {
+  const modeText = mode === 'all' 
+    ? 'alle Rechnungen, Posten SOWIE ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen' 
+    : 'alle Beitragsrechnungen und Posten (Turnierteilnahmen bleiben erhalten)';
+  
+  if (!confirm(`⚠️ ACHTUNG: Möchten Sie wirklich ${modeText} für das Beitragsjahr ${_jbYear} zurücksetzen?\n\nVorjahre bleiben unberührt. Diese Aktion kann nicht rückgängig gemacht werden!`)) {
+    return;
+  }
+  
+  // Zweite Bestätigung zur Sicherheit
+  if (!confirm(`Sind Sie absolut sicher?`)) {
+    return;
+  }
+  
+  showLoadingOverlay(`Setze das Jahr ${_jbYear} zurück (${mode === 'all' ? 'Alles' : 'Rechnungen'}) und berechne neu…`);
+  
+  try {
+    const res = await apiFetch('jahresbeitrag', '', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'resetYear',
+        year: _jbYear,
+        mode: mode,
+        user: window.currentUser || 'frontend'
+      })
+    });
+    
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    
+    showToast(`🎉 Zurücksetzen des Jahres ${_jbYear} erfolgreich abgeschlossen!`);
+    await loadJahresbeitragData(true, false);
+  } catch (e) {
+    alert("Fehler beim Zurücksetzen: " + e.message);
+  } finally {
+    hideLoadingOverlay();
   }
 }
 

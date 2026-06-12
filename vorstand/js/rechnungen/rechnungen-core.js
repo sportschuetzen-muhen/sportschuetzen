@@ -99,6 +99,7 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
     
     if (result.success) {
       window._invoices = result.data || [];
+      window._jbAllInvoices = window._invoices; // Keep jahresbeitrag cache in sync!
       window.renderRechnungen();
     } else {
       throw new Error(result.error || "API returned success: false");

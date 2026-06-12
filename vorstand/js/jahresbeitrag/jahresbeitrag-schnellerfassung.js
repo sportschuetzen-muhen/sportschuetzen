@@ -141,10 +141,12 @@ async function jbEntrySelectMember(pn) {
       return;
     }
 
-    // Direkt aus dem lokalen Browser-Cache laden
-    const memberParts = _jbParticipationsCache[pnClean] || [];
-
     // Initialisiere lokalen State für Radio-Buttons / Checkboxen
+    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    const isJunior = age > 0 && age <= 20;
+    const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
+    const defaultGe = !isJunior && hatG50mOwn && !m._istPassiv;
+
     _jbParticipationsState = {
       lizenz: m._istPassiv ? 'passiv' : 'verein', // Default
       kk_volksschiessen: 'keine',
@@ -158,7 +160,8 @@ async function jbEntrySelectMember(pn) {
       lg_ch_dez_auflage: false,
       lg_verband: false,
       lg_verein: false,
-      lg_ch_kniend: false
+      lg_ch_kniend: false,
+      schuetzenhaus: defaultGe
     };
 
     // Lizenz-Initialisierung anhand m._lizenzen
@@ -179,6 +182,7 @@ async function jbEntrySelectMember(pn) {
     }
 
     // Teilnahmen in den State einpflegen
+    const memberParts = _jbParticipationsCache[pnClean] || [];
     let hasKK002 = false;
     let hasKK003 = false;
     let hasKK004 = false;
@@ -186,6 +190,9 @@ async function jbEntrySelectMember(pn) {
 
     memberParts.forEach(p => {
       const val = Number(p.teilgenommen || 0);
+      if (p.eventkey === 'GE001') {
+        _jbParticipationsState.schuetzenhaus = val > 0;
+      }
       if (val > 0) {
         // Event Key ermitteln und in State schreiben
         if (p.eventkey === 'KK001') _jbParticipationsState.kk_grenzland = '1';
@@ -207,9 +214,6 @@ async function jbEntrySelectMember(pn) {
         if (p.eventkey === 'LG007') _jbParticipationsState.lg_ch_kniend = true;
       }
     });
-
-    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-    const isJunior = age > 0 && age <= 20;
 
     if (hasKK005) {
       _jbParticipationsState.ssv_dez = 'sv';
@@ -289,6 +293,19 @@ function jbRenderEntryForm(m) {
                     onclick="jbUpdateState('lizenz', 'junior', '${m.PersonNumber}')">Jungschütze</button>
             <button class="btn btn-sm flex-fill rounded-2 border-0 py-2 ${_jbParticipationsState.lizenz === 'passiv' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
                     onclick="jbUpdateState('lizenz', 'passiv', '${m.PersonNumber}')">Passiv</button>
+          </div>
+        </div>
+
+        <!-- Schützenhaus Infrastrukturbeitrag -->
+        <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
+          <h6 class="text-secondary fw-bold mb-2" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-home me-2 text-success"></i>Infrastrukturbeitrag Schützenhaus</h6>
+          <div class="d-flex align-items-center justify-content-between bg-light p-2 rounded-2 border">
+            <span class="small fw-semibold text-muted">Schützenhaus-Beitrag (CHF 50.00)</span>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="entry_schuetzenhaus" ${
+                _jbParticipationsState.schuetzenhaus ? 'checked' : ''
+              } onchange="jbConfirmEntrySchuetzenhaus(this, '${m.PersonNumber}')">
+            </div>
           </div>
         </div>
 
@@ -431,6 +448,17 @@ function jbRenderEntryForm(m) {
   `;
 }
 
+function jbConfirmEntrySchuetzenhaus(chk, pn) {
+  const currentVal = chk.checked;
+  const prevVal = !currentVal;
+  
+  if (confirm("Möchten Sie den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?")) {
+    jbUpdateState('schuetzenhaus', currentVal, pn);
+  } else {
+    chk.checked = prevVal;
+  }
+}
+
 // 5. State live aktualisieren
 function jbUpdateState(key, val, pn) {
   const pnClean = String(pn || '').trim();
@@ -454,6 +482,12 @@ function jbUpdateState(key, val, pn) {
 function jbEntryResetForm(pn) {
   const pnClean = String(pn || '').trim();
   
+  const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
+  const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  const isJunior = age > 0 && age <= 20;
+  const hatG50mOwn = m && (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
+  const defaultGe = m ? (!isJunior && hatG50mOwn && !m._istPassiv) : false;
+
   _jbParticipationsState = {
     lizenz: 'keine',
     kk_volksschiessen: 'keine',
@@ -467,14 +501,14 @@ function jbEntryResetForm(pn) {
     lg_ch_dez_auflage: false,
     lg_verband: false,
     lg_verein: false,
-    lg_ch_kniend: false
+    lg_ch_kniend: false,
+    schuetzenhaus: defaultGe
   };
 
   _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
   jbUpdateBulkSaveButton();
   jbRenderEntryList();
 
-  const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
   if (m) {
     jbRenderEntryForm(m);
   }
@@ -550,12 +584,14 @@ async function jbSaveAllBulkLocalChanges() {
   }
 
   try {
+    showLoadingOverlay(`Speichere Änderungen für ${count} Schützen und berechne Beiträge neu…`);
     const list = [];
     const year = _jbYear;
     const editedPNs = Object.keys(_jbLocalBulkChanges);
     const licenses = Object.entries(_jbLocalBulkChanges).map(([pn, state]) => ({ pn, lizenz: state.lizenz }));
 
     Object.entries(_jbLocalBulkChanges).forEach(([pn, state]) => {
+      list.push({ pn, year, eventkey: 'GE001', teilgenommen: state.schuetzenhaus ? 1 : 0 });
       list.push({ pn, year, eventkey: 'KK008', teilgenommen: state.kk_volksschiessen === 'keine' ? 0 : Number(state.kk_volksschiessen), quelle: 'volksschiessen' });
       list.push({ pn, year, eventkey: 'KK007', teilgenommen: state.kk_verein ? 1 : 0, quelle: 'verein' });
       
@@ -597,7 +633,7 @@ async function jbSaveAllBulkLocalChanges() {
     
     _jbLocalBulkChanges = {};
     jbUpdateBulkSaveButton();
-    await loadJahresbeitragData(true);
+    await loadJahresbeitragData(true, false);
     
     // Automatisch verknüpfte Rechnungen synchronisieren
     for (const pn of editedPNs) {
@@ -617,16 +653,23 @@ async function jbSaveAllBulkLocalChanges() {
       }
     }
 
+    // Rechnungen-Modul zwingen, die Daten neu zu laden
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
+
+    // Re-merge invoices into Jahresbeitrag data
+    if (typeof jbMergeInvoicesIntoData === 'function') {
+      jbMergeInvoicesIntoData(window._jbAllInvoices || []);
+    }
+
     // Automatisch zurück zur Beitrags-Übersicht wechseln
     _jbActiveTab = 'overview';
     renderJahresbeitragView();
-
-    // Rechnungen-Modul im Hintergrund zwingen, die Daten neu zu laden
-    if (typeof loadRechnungenData === 'function') {
-      loadRechnungenData(true, true);
-    }
   } catch(e) {
     alert("Fehler beim Bulk-Speichern: " + e.message);
+  } finally {
+    hideLoadingOverlay();
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> ' + count + ' Änderungen speichern';
