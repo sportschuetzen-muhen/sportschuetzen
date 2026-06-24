@@ -98,6 +98,70 @@ document.addEventListener('DOMContentLoaded', () => {
             const info = selectedOption.getAttribute('data-info') || '';
             modelDesc.textContent = info;
         });
+
+        // Dynamische Modelle von Google abrufen
+        window.initDynamicModels = async function(selectElement, descElement, defaultModel = 'gemini-2.5-flash', module = 'news') {
+            try {
+                const res = await apiFetch(module, 'action=list_models');
+                if (!res.ok) throw new Error("API request failed");
+                const data = await res.json();
+                if (data.success && data.models && data.models.length > 0) {
+                    const modelInfos = {
+                        'gemini-2.5-flash': 'Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)',
+                        'gemini-2.0-flash-lite': 'Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.',
+                        'gemini-2.5-pro': 'Höchste logische Qualität und beste Erkennungsrate, aber langsamer.'
+                    };
+
+                    const recommendedNames = {
+                        'gemini-2.5-flash': 'Gemini 2.5 Flash (Empfohlen / Standard)',
+                        'gemini-2.0-flash-lite': 'Gemini 2.0 Flash Lite (Lite / Höchste Kapazität)',
+                        'gemini-2.5-pro': 'Gemini 2.5 Pro (Höchste Genauigkeit)'
+                    };
+
+                    // Exclude legacy/deprecated models containing 1.5 or 1.0
+                    const activeModels = data.models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0'));
+
+                    // Sortiere Modelle: Moderne/Empfohlene Modelle (Flash/Pro/Lite) zuerst, danach andere
+                    const sortedModels = activeModels.sort((a, b) => {
+                        const hasA = (recommendedNames[a.name] || a.name.includes('flash') || a.name.includes('pro')) ? 1 : 0;
+                        const hasB = (recommendedNames[b.name] || b.name.includes('flash') || b.name.includes('pro')) ? 1 : 0;
+                        if (hasA !== hasB) return hasB - hasA;
+                        return a.name.localeCompare(b.name);
+                    });
+
+                    const prevValue = selectElement.value;
+                    selectElement.innerHTML = sortedModels.map(m => {
+                        let displayName = recommendedNames[m.name] || m.displayName || m.name;
+                        
+                        // Dynamisches Tagging für neue/unbekannte Modelle
+                        if (!recommendedNames[m.name]) {
+                            if (m.name.includes('flash-lite') || m.name.includes('lite')) {
+                                displayName = `${m.displayName || m.name} (Lite / Höchste Kapazität)`;
+                            } else if (m.name.includes('flash')) {
+                                displayName = `${m.displayName || m.name} (Schnell / Standard)`;
+                            } else if (m.name.includes('pro')) {
+                                displayName = `${m.displayName || m.name} (Premium / Höchste Präzision)`;
+                            }
+                        }
+
+                        const info = modelInfos[m.name] || m.description || 'Verfügbares Modell von Google Gemini.';
+                        const isSelected = m.name === (prevValue || defaultModel) ? 'selected' : '';
+                        return `<option value="${escapeHtml(m.name)}" data-info="${escapeHtml(info)}" ${isSelected}>${escapeHtml(displayName)}</option>`;
+                    }).join('');
+
+                    if (descElement) {
+                        const selectedOption = selectElement.options[selectElement.selectedIndex];
+                        if (selectedOption) {
+                            descElement.textContent = selectedOption.getAttribute('data-info') || '';
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn("Konnte Modelle nicht dynamisch von Google laden:", err);
+            }
+        };
+
+        window.initDynamicModels(modelSelect, modelDesc, 'gemini-2.5-flash', 'news');
     }
 
     // --- DRAFT MODE: GENERIEREN ---
@@ -127,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 const useImageContent = document.getElementById('news-use-image-content') ? document.getElementById('news-use-image-content').checked : true;
-                const selectedModel = modelSelect ? modelSelect.value : 'gemini-3.5-flash';
+                const selectedModel = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
                 
                 const response = await apiFetch('news', 'action=generate', {
                     method: 'POST',
@@ -156,7 +220,18 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
                 console.error(err);
                 if (err.message === 'QUOTA_EXCEEDED' || err.message.includes('limit') || err.message.includes('quota') || err.message.includes('Quota exceeded') || err.message.includes('RESOURCE_EXHAUSTED')) {
-                    showToast("Kapazitätsengpass beim gewählten Modell! Bitte wähle ein alternatives Modell (z.B. Gemini 1.5 Flash oder Gemini 3.1 Flash Lite) und versuche es erneut.", "warning");
+                    // Hole Alternativen aus dem Dropdown, falls vorhanden
+                    let alternatives = [];
+                    if (modelSelect) {
+                        Array.from(modelSelect.options).forEach(opt => {
+                            if (opt.value !== selectedModel) {
+                                const cleanName = opt.text.split(" (")[0];
+                                alternatives.push(cleanName);
+                            }
+                        });
+                    }
+                    const altText = alternatives.length > 0 ? ` (z. B. ${alternatives.slice(0, 3).map(a => `'${a}'`).join(' oder ')})` : "";
+                    showToast(`Kapazitätsengpass beim gewählten Modell! Bitte wähle ein alternatives Modell${altText} und versuche es erneut.`, "warning");
                     if (modelSelect) {
                         modelSelect.classList.add('border-warning');
                         modelSelect.focus();

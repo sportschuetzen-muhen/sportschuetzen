@@ -59,6 +59,7 @@ function ensureResultateShell() {
           <div class="small text-muted">Teams (R2/R3) werden von der vorherigen Runde übernommen, solange nicht manuell geändert.</div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-outline-warning btn-sm fw-semibold" onclick="openResultateOcrModal()" title="Resultate aus Foto mit KI einlesen">📸 Foto einlesen</button>
           <button class="btn btn-outline-primary btn-sm" onclick="pushOneSignalGrenzland()">📣 Push</button>
           <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup_Grenzland übernehmen (nur fehlende)">📥 Von Setup laden</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData(true)">🔄 Laden</button>
@@ -95,6 +96,89 @@ function ensureResultateShell() {
 </div>
 
         </div>
+      </div>
+
+      <!-- KI OCR Modal -->
+      <div class="modal fade" id="resultate-ocr-modal" tabindex="-1" aria-labelledby="resultateOcrModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered">
+              <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);">
+                  <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                      <h5 class="modal-title fw-bold" id="resultateOcrModalLabel"><i class="fas fa-camera me-2"></i>KI-Bilderkennung für Resultate</h5>
+                      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body p-4">
+                      <!-- Inline Error Alert -->
+                      <div id="ocr-error-alert" class="alert alert-danger d-none" role="alert">
+                          <i class="fas fa-exclamation-triangle me-2"></i>
+                          <span id="ocr-error-text"></span>
+                      </div>
+                      <div id="ocr-step-upload">
+                          <div class="row g-2 mb-2">
+                              <div class="col-6">
+                                  <label class="form-label fw-bold small text-muted">Ziel-Runde für die erkannten Resultate</label>
+                                  <select id="ocr-target-round" class="form-select">
+                                      <option value="r1">Runde 1</option>
+                                      <option value="r2">Runde 2</option>
+                                      <option value="r3">Runde 3</option>
+                                  </select>
+                              </div>
+                              <div class="col-6">
+                                  <label class="form-label fw-bold small text-muted">KI-Modell & Kapazität</label>
+                                  <select id="ocr-model" class="form-select">
+                                      <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Standard)</option>
+                                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (Lite - Höchste Verfügbarkeit)</option>
+                                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Beste Erkennungsrate)</option>
+                                  </select>
+                              </div>
+                          </div>
+                          <div id="ocr-model-desc" class="form-text text-muted mb-3 small" style="min-height: 20px;"></div>
+                          <div class="mb-4">
+                              <label class="form-label fw-bold small text-muted">Foto auswählen oder aufnehmen</label>
+                              <div class="border rounded p-4 text-center bg-light position-relative" style="cursor:pointer; border-style: dashed !important; transition: border-color 0.2s;" id="ocr-dropzone" onclick="document.getElementById('ocr-file-input').click()">
+                                  <i class="fas fa-file-image fa-3x text-muted mb-2"></i>
+                                  <p class="mb-0 text-muted fw-semibold">Bild hierhin ziehen oder klicken zum Auswählen</p>
+                                  <div id="ocr-preview-container" class="mt-3 d-none">
+                                      <img id="ocr-image-preview" src="" class="img-fluid rounded border shadow-sm" style="max-height: 250px; max-width: 100%;">
+                                  </div>
+                              </div>
+                              <input type="file" id="ocr-file-input" accept="image/*" style="display:none" onchange="onOcrFileSelected(event)">
+                          </div>
+                          <div class="d-grid">
+                              <button type="button" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="btn-start-ocr" onclick="startOcrAnalysis()" disabled>
+                                  <i class="fas fa-magic me-1"></i> Resultate erkennen
+                              </button>
+                          </div>
+                      </div>
+                      <div id="ocr-step-loading" class="text-center py-5 d-none">
+                          <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                          <h5 class="fw-bold">Analysiere Foto mit Google Gemini...</h5>
+                          <p class="text-muted small">Dies kann einige Sekunden dauern. Bitte warten.</p>
+                      </div>
+                      <div id="ocr-step-results" class="d-none">
+                          <h6 class="fw-bold mb-3"><i class="fas fa-check-circle text-success me-1"></i> Erkannte Ergebnisse prüfen</h6>
+                          <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                              <table class="table table-sm table-hover align-middle">
+                                  <thead>
+                                      <tr>
+                                          <th style="width: 40px;"></th>
+                                          <th>Schütze</th>
+                                          <th>Aktuell</th>
+                                          <th>Erkannt (anpassbar)</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody id="ocr-results-tbody">
+                                      <!-- Wird dynamisch befüllt -->
+                                  </tbody>
+                              </table>
+                          </div>
+                          <div class="d-flex justify-content-between mt-4">
+                              <button type="button" class="btn btn-outline-secondary" onclick="resetOcrModal()">Anderes Bild</button>
+                              <button type="button" class="btn btn-success fw-bold" onclick="applyOcrResults()">Ergebnisse übernehmen</button>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
       </div>
     </div>
   `;
