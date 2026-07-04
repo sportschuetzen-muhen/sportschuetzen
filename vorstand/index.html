@@ -804,65 +804,142 @@
         <h2>🗞️ KI-Berichte Generator</h2>
     </div>
     
-    <div class="card p-4 mx-auto" style="max-width: 600px;">
-        <div class="text-center mb-3">
-            <span class="badge bg-primary bg-opacity-10 text-primary px-3 py-2">Powered by Google Gemini</span>
+    <div class="card border-0 shadow-lg overflow-hidden mx-auto" style="max-width: 650px; background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
+        <div class="card-header border-0 bg-transparent p-0">
+            <ul class="nav nav-tabs nav-fill" id="newsTabs" role="tablist" style="background: #f8f9fa;">
+                <li class="nav-item">
+                    <button class="nav-link active py-3 fw-bold border-0 text-primary" id="ki-tab" data-bs-toggle="tab" data-bs-target="#ki-panel" type="button" role="tab" aria-controls="ki-panel" aria-selected="true" onclick="switchNewsMode('ki')">
+                        <i class="fas fa-robot me-2"></i>KI-Bericht erstellen
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-3 fw-bold border-0 text-muted" id="doc-tab" data-bs-toggle="tab" data-bs-target="#doc-panel" type="button" role="tab" aria-controls="doc-panel" aria-selected="false" onclick="switchNewsMode('doc')">
+                        <i class="fas fa-file-alt me-2"></i>Fertigen Text einlesen (PDF/Word)
+                    </button>
+                </li>
+            </ul>
         </div>
         
-        <form id="newsForm">
-            <div class="mb-3">
-                <label class="form-label fw-bold">Titel des Berichts</label>
-                <input type="text" id="news-title" class="form-control" placeholder="z.B. Erfolgreiches Feldschiessen 2026" required>
-            </div>
-            
-            <div class="mb-3">
-                <label class="form-label fw-bold">Stichworte für die KI</label>
-                <textarea id="news-keywords" class="form-control" rows="4" placeholder="z.B. Wetter war regnerisch. 30 Teilnehmer. Max Muster gewann mit 69 Punkten. Gute Stimmung." required></textarea>
-                <small class="text-muted">Je genauer die Stichworte, desto besser der Bericht.</small>
-            </div>
-            
-            <div class="mb-3">
-                <label class="form-label fw-bold">KI-Modell & Kapazität</label>
-                <select id="news-model" class="form-select">
-                    <option value="gemini-2.5-flash" data-info="Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)" selected>Gemini 2.5 Flash (Premium - Standard)</option>
-                    <option value="gemini-2.0-flash-lite" data-info="Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.">Gemini 2.0 Flash Lite (Lite - Höchste Verfügbarkeit)</option>
-                    <option value="gemini-2.5-pro" data-info="Höchste logische Qualität und beste Erkennungsrate, aber langsamer.">Gemini 2.5 Pro (Beste Erkennungsrate)</option>
-                </select>
-                <div id="news-model-desc" class="form-text text-muted mt-1 small">Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)</div>
-            </div>
-            
-            <div class="mb-4">
-                <label class="form-label fw-bold">Fotos (Optional, mehrere möglich)</label>
-                <div class="border rounded p-4 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-foto').click()">
-                    <i class="fas fa-images fa-2x text-muted mb-2" id="news-upload-icon"></i>
-                    <p class="mb-0 text-muted" id="news-upload-text">Klicken zum Auswählen (Das erste Foto wird als Aufmacher/Titelbild verwendet, die restlichen im Bericht angezeigt)</p>
-                    <div id="news-preview-container" class="d-flex flex-wrap gap-2 justify-content-center mt-3" style="display:none;"></div>
+        <div class="card-body p-4">
+            <form id="newsForm">
+                <!-- Gemeinsamer Titel des Berichts -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Titel des Berichts</label>
+                    <input type="text" id="news-title" class="form-control" placeholder="z.B. Erfolgreiches Feldschiessen 2026" required>
                 </div>
-                <input type="file" id="news-foto" accept="image/*" multiple style="display:none">
-                
-                <div class="form-check form-switch mt-3">
-                    <input class="form-check-input" type="checkbox" id="news-use-image-content" checked>
-                    <label class="form-check-label fw-bold text-muted small" for="news-use-image-content">Titelbild in Textanalyse einbeziehen</label>
-                    <div class="form-text small text-muted" style="font-size: 0.75rem;">Aktiviert: Die Premium-KI analysiert das Titelbild und bezieht erkennbare Details (Personen, Stimmung, Auszeichnungen) direkt in den Berichtstext ein.</div>
-                </div>
-            </div>
-            
-            <div id="news-draft-container" class="mt-4" style="display:none;">
-                <label class="form-label fw-bold">Bericht Entwurf (Hier können Sie den Text anpassen)</label>
-                <div id="news-draft-editor" class="form-control" style="min-height: 250px;" contenteditable="true"></div>
-            </div>
 
-            <div class="mt-4 d-flex gap-2">
-                <button type="button" class="btn btn-outline-primary flex-grow-1 py-2 fw-bold" id="news-generate-btn">
-                    <span id="news-btn-text">KI-Entwurf generieren</span>
-                    <span class="spinner-border spinner-border-sm d-none" id="news-spinner" role="status" aria-hidden="true"></span>
-                </button>
-                <button type="button" class="btn btn-success flex-grow-1 py-2 fw-bold d-none" id="news-publish-btn">
-                    <span id="news-publish-btn-text">Definitiv Publizieren</span>
-                    <span class="spinner-border spinner-border-sm d-none" id="news-publish-spinner" role="status" aria-hidden="true"></span>
-                </button>
-            </div>
-        </form>
+                <div class="tab-content" id="newsTabContent">
+                    <!-- Tab 1: KI Generator -->
+                    <div class="tab-pane fade show active" id="ki-panel" role="tabpanel" aria-labelledby="ki-tab">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Stichworte für die KI</label>
+                            <textarea id="news-keywords" class="form-control" rows="4" placeholder="z.B. Wetter war regnerisch. 30 Teilnehmer. Max Muster gewann mit 69 Punkten. Gute Stimmung." required></textarea>
+                            <small class="text-muted">Geben Sie Stichworte ein, aus denen die KI einen Fließtext formulieren soll.</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">KI-Modell & Kapazität</label>
+                            <select id="news-model" class="form-select">
+                                <option value="gemini-2.5-flash" data-info="Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)" selected>Gemini 2.5 Flash (Premium - Standard)</option>
+                                <option value="gemini-2.0-flash-lite" data-info="Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.">Gemini 2.0 Flash Lite (Lite - Höchste Verfügbarkeit)</option>
+                                <option value="gemini-2.5-pro" data-info="Höchste logische Qualität und beste Erkennungsrate, aber langsamer.">Gemini 2.5 Pro (Beste Erkennungsrate)</option>
+                            </select>
+                            <div id="news-model-desc" class="form-text text-muted mt-1 small">Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)</div>
+                        </div>
+                        
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="news-use-image-content" checked>
+                            <label class="form-check-label fw-bold text-muted small" for="news-use-image-content">Titelbild in Textanalyse einbeziehen</label>
+                            <div class="form-text small text-muted" style="font-size: 0.75rem;">Aktiviert: Die Premium-KI analysiert das Titelbild und bezieht erkennbare Details direkt in den Berichtstext ein.</div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: Dokument Einlesen -->
+                    <div class="tab-pane fade" id="doc-panel" role="tabpanel" aria-labelledby="doc-tab">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Dokument hochladen (.docx oder .pdf)</label>
+                            <div class="border rounded p-4 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-doc-file').click()">
+                                <i class="fas fa-file-upload fa-2x text-muted mb-2" id="news-doc-icon"></i>
+                                <p class="mb-0 text-muted" id="news-doc-text">Klicken Sie hier, um eine PDF- oder Word-Datei hochzuladen.</p>
+                                <div class="spinner-border spinner-border-sm text-primary mt-2 d-none" id="news-doc-spinner" role="status"></div>
+                            </div>
+                            <input type="file" id="news-doc-file" accept=".pdf,.docx,.doc" style="display:none">
+                            <small class="text-muted mt-1 d-block">Der Text wird eins-zu-eins ausgelesen und unten in den Entwurf eingefügt, ohne dass die KI ihn umschreibt.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gemeinsame Bilder zum Bericht -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Fotos (Optional, mehrere möglich)</label>
+                    <div class="border rounded p-4 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-foto').click()">
+                        <i class="fas fa-images fa-2x text-muted mb-2" id="news-upload-icon"></i>
+                        <p class="mb-0 text-muted" id="news-upload-text">Klicken zum Auswählen (Das erste Foto wird als Aufmacher/Titelbild verwendet, die restlichen im Bericht angezeigt)</p>
+                        <div id="news-preview-container" class="d-flex flex-wrap gap-2 justify-content-center mt-3" style="display:none;"></div>
+                    </div>
+                    <input type="file" id="news-foto" accept="image/*" multiple style="display:none">
+                </div>
+
+                <!-- Gemeinsamer Editor-Bereich für den fertigen Bericht -->
+                <div id="news-draft-container" class="mt-4" style="display:none;">
+                    <label class="form-label fw-bold">Bericht Entwurf (Hier können Sie den Text anpassen und formatieren)</label>
+                    
+                    <!-- Formatierungsleiste -->
+                    <div class="editor-toolbar d-flex flex-wrap gap-1 bg-light p-2 border rounded-top align-items-center">
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('bold')" title="Fett">
+                            <i class="fas fa-bold"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('italic')" title="Kursiv">
+                            <i class="fas fa-italic"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('underline')" title="Unterstreichen">
+                            <i class="fas fa-underline"></i>
+                        </button>
+                        
+                        <div class="vr mx-1"></div>
+                        
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertUnorderedList')" title="Aufzählung">
+                            <i class="fas fa-list-ul"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertOrderedList')" title="Nummerierung">
+                            <i class="fas fa-list-ol"></i>
+                        </button>
+                        
+                        <div class="vr mx-1"></div>
+                        
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'h3')" title="Überschrift">
+                            <i class="fas fa-heading"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'p')" title="Normaler Absatz">
+                            <i class="fas fa-paragraph"></i>
+                        </button>
+                        
+                        <div class="vr mx-1"></div>
+                        
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('createLink')" title="Link einfügen">
+                            <i class="fas fa-link"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('unlink')" title="Link entfernen">
+                            <i class="fas fa-unlink"></i>
+                        </button>
+                    </div>
+                    
+                    <div id="news-draft-editor" class="form-control" style="min-height: 250px; border-top: none; border-top-left-radius: 0; border-top-right-radius: 0;" contenteditable="true"></div>
+                </div>
+
+                <!-- Aktions-Buttons -->
+                <div class="mt-4 d-flex gap-2">
+                    <button type="button" class="btn btn-outline-primary flex-grow-1 py-2 fw-bold" id="news-generate-btn">
+                        <span id="news-btn-text">KI-Entwurf generieren</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="news-spinner" role="status" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="btn btn-success flex-grow-1 py-2 fw-bold d-none" id="news-publish-btn">
+                        <span id="news-publish-btn-text">Definitiv Publizieren</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="news-publish-spinner" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 

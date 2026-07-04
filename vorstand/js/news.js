@@ -259,6 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // HTML bereinigen (Absätze normalisieren, Divs konvertieren, leere Tags entfernen)
+            const cleanedHtml = cleanHtmlContent(finalHtml);
+
             let author = "Vorstand";
             if (window.currentUser) {
                 author = window.currentUser;
@@ -280,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({
                         title: title,
                         author: author,
-                        html: finalHtml, // Den manuell angepassten HTML-Text senden!
+                        html: cleanedHtml, // Den bereinigten HTML-Text senden!
                         images: base64Images // Jetzt werden die Bilder für den GitHub Upload gesendet
                     })
                 });
@@ -336,5 +339,274 @@ document.addEventListener('DOMContentLoaded', () => {
                 spinner.classList.add('d-none');
             }
         });
+    }
+
+    // --- NEU: TAB-UMSCHALTER (KI vs DOKUMENT) ---
+    window.switchNewsMode = function(mode) {
+        const generateBtn = document.getElementById('news-generate-btn');
+        const publishBtn = document.getElementById('news-publish-btn');
+        const draftContainer = document.getElementById('news-draft-container');
+        const keywordsTextarea = document.getElementById('news-keywords');
+        const kiTab = document.getElementById('ki-tab');
+        const docTab = document.getElementById('doc-tab');
+
+        if (mode === 'ki') {
+            if (kiTab) {
+                kiTab.classList.add('text-primary');
+                kiTab.classList.remove('text-muted');
+            }
+            if (docTab) {
+                docTab.classList.add('text-muted');
+                docTab.classList.remove('text-primary');
+            }
+            
+            // Show generate button
+            if (generateBtn) generateBtn.classList.remove('d-none');
+            
+            // Hide publish button unless there is already content in the editor
+            const draftEditor = document.getElementById('news-draft-editor');
+            if (draftContainer && publishBtn) {
+                if (draftContainer.style.display === 'none' || !draftEditor || draftEditor.innerHTML.trim() === '') {
+                    publishBtn.classList.add('d-none');
+                } else {
+                    publishBtn.classList.remove('d-none');
+                }
+            }
+            
+            // Make keywords required in KI mode
+            if (keywordsTextarea) keywordsTextarea.setAttribute('required', 'true');
+        } else {
+            if (docTab) {
+                docTab.classList.add('text-primary');
+                docTab.classList.remove('text-muted');
+            }
+            if (kiTab) {
+                kiTab.classList.add('text-muted');
+                kiTab.classList.remove('text-primary');
+            }
+
+            // Hide generate button (not needed for ready texts)
+            if (generateBtn) generateBtn.classList.add('d-none');
+            
+            // Show publish button if there is text in the editor
+            const draftEditor = document.getElementById('news-draft-editor');
+            if (publishBtn) {
+                if (draftEditor && draftEditor.innerHTML.trim() !== '') {
+                    publishBtn.classList.remove('d-none');
+                } else {
+                    publishBtn.classList.add('d-none');
+                }
+            }
+            
+            // Keywords not required in Doc mode
+            if (keywordsTextarea) keywordsTextarea.removeAttribute('required');
+        }
+    };
+
+    // --- NEU: DOKUMENT UPLOAD (PDF / WORD) ---
+    const docInput = document.getElementById('news-doc-file');
+    const docSpinner = document.getElementById('news-doc-spinner');
+    const docIcon = document.getElementById('news-doc-icon');
+    const docTextEl = document.getElementById('news-doc-text');
+    const titleInput = document.getElementById('news-title');
+
+    if (docInput) {
+        docInput.addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const filename = file.name;
+            const lowerName = filename.toLowerCase();
+
+            // Check if .doc (old Word format)
+            if (lowerName.endsWith('.doc')) {
+                showToast("Fehler: Das alte Word-Format (.doc) wird nicht direkt unterstützt. Bitte speichere die Datei in Word als '.docx' oder '.pdf' ab, bevor du sie hochlädst.", "warning");
+                docInput.value = "";
+                return;
+            }
+
+            if (!lowerName.endsWith('.docx') && !lowerName.endsWith('.pdf')) {
+                showToast("Fehler: Nur PDF- oder Word-Dateien (.docx) sind erlaubt.", "warning");
+                docInput.value = "";
+                return;
+            }
+
+            // Show loading state
+            if (docSpinner) docSpinner.classList.remove('d-none');
+            if (docIcon) docIcon.style.display = 'none';
+            if (docTextEl) docTextEl.innerText = "Lese Datei aus...";
+
+            try {
+                let extractedText = "";
+
+                if (lowerName.endsWith('.docx')) {
+                    // Extract client-side via Mammoth
+                    extractedText = await extractTextFromDocx(file);
+                } else if (lowerName.endsWith('.pdf')) {
+                    // Extract server-side via Gemini API
+                    const base64Pdf = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = ev => resolve(ev.target.result.split(',')[1]);
+                        reader.onerror = () => reject(new Error("Fehler beim lokalen Lesen der PDF-Datei."));
+                        reader.readAsDataURL(file);
+                    });
+
+                    const response = await apiFetch('news', 'action=extract_pdf', {
+                        method: 'POST',
+                        body: JSON.stringify({ pdfData: base64Pdf })
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(errData.error || `HTTP Error ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    extractedText = data.text || "";
+                }
+
+                if (!extractedText || extractedText.trim() === "") {
+                    throw new Error("Es konnte kein Text aus der Datei extrahiert werden.");
+                }
+
+                extractedText = extractedText.trim();
+
+                // Format text into HTML paragraphs
+                const paragraphs = extractedText.split('\n').map(p => p.trim()).filter(p => p !== '');
+                const htmlText = paragraphs.map(p => `<p>${escapeHtml(p)}</p>`).join('');
+
+                const draftEditor = document.getElementById('news-draft-editor');
+                const draftContainer = document.getElementById('news-draft-container');
+                const publishBtn = document.getElementById('news-publish-btn');
+
+                if (draftEditor && draftContainer) {
+                    draftEditor.innerHTML = htmlText;
+                    draftContainer.style.display = 'block';
+                    
+                    // Show publish button directly since the document text is finished
+                    if (publishBtn) publishBtn.classList.remove('d-none');
+                }
+
+                // Try to suggest a title if the title input is empty
+                if (titleInput && (!titleInput.value || titleInput.value.trim() === "")) {
+                    const suggestedTitle = suggestTitleFromText(extractedText);
+                    if (suggestedTitle) {
+                        titleInput.value = suggestedTitle;
+                        showToast("Text erfolgreich eingelesen! Titel wurde automatisch vorgeschlagen.", "success");
+                    } else {
+                        showToast("Text erfolgreich eingelesen!", "success");
+                    }
+                } else {
+                    showToast("Text erfolgreich eingelesen!", "success");
+                }
+
+            } catch (err) {
+                console.error("Dokument-Auslese Fehler:", err);
+                let userMsg = err.message;
+                if (userMsg.includes("429") || userMsg.includes("quota") || userMsg.includes("Quota exceeded") || userMsg.includes("RESOURCE_EXHAUSTED")) {
+                    userMsg = "Tageslimit der KI-Anfragen für PDF-Extraktion erreicht. Bitte wandle das PDF in Word (.docx) um oder versuche es morgen wieder.";
+                }
+                showToast("Fehler beim Einlesen des Dokuments: " + userMsg, "danger");
+            } finally {
+                // Clear loading state
+                if (docSpinner) docSpinner.classList.add('d-none');
+                if (docIcon) docIcon.style.display = 'inline-block';
+                if (docTextEl) {
+                    const draftEditor = document.getElementById('news-draft-editor');
+                    if (draftEditor && draftEditor.innerHTML.trim() !== "") {
+                        docTextEl.innerHTML = `Eingelesen: <strong class="text-success">${escapeHtml(filename)}</strong>. Erneut klicken zum Ändern.`;
+                    } else {
+                        docTextEl.innerText = "Klicken Sie hier, um eine PDF- oder Word-Datei hochzuladen.";
+                    }
+                }
+                docInput.value = "";
+            }
+        });
+    }
+
+    // Helper functions for Word extraction & title suggestion
+    function extractTextFromDocx(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                if (typeof mammoth === "undefined") {
+                    reject(new Error("Die Mammoth.js-Bibliothek ist nicht geladen."));
+                    return;
+                }
+                mammoth.extractRawText({ arrayBuffer: arrayBuffer })
+                    .then(function(result) {
+                        resolve(result.value || "");
+                    })
+                    .catch(function(err) {
+                        reject(new Error("Fehler beim Extrahieren des Texts aus der Word-Datei: " + err.message));
+                    });
+            };
+            reader.onerror = function() {
+                reject(new Error("Fehler beim Lesen der Datei vom Dateisystem."));
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    function suggestTitleFromText(text) {
+        if (!text) return "";
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        for (let i = 0; i < Math.min(4, lines.length); i++) {
+            const line = lines[i];
+            // Skip dates (e.g. 29.06.2026 or Thun 29.06.2026)
+            if (/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(line) || 
+                /^[A-Za-z]+ \d{1,2}\.\d{1,2}\.\d{2,4}$/.test(line) ||
+                /^\d{4}-\d{2}-\d{2}$/.test(line)) {
+                continue;
+            }
+            if (line.length >= 8 && line.length <= 120) {
+                return line;
+            }
+        }
+        return "";
+    }
+
+    // --- NEU: RICHTEXT FORMATIERUNG IM EDITOR ---
+    window.formatDoc = function(cmd, value = null) {
+        if (cmd === 'createLink') {
+            const url = prompt('URL für den Link eingeben (z. B. https://example.com):');
+            if (url) {
+                // Ensure protocol is present
+                let targetUrl = url.trim();
+                if (!/^https?:\/\//i.test(targetUrl) && !/^\//.test(targetUrl)) {
+                    targetUrl = 'https://' + targetUrl;
+                }
+                document.execCommand(cmd, false, targetUrl);
+            }
+        } else {
+            document.execCommand(cmd, false, value);
+        }
+        
+        // Editor wieder fokussieren
+        const editor = document.getElementById('news-draft-editor');
+        if (editor) {
+            editor.focus();
+        }
+    };
+
+    // Hilfsfunktion: Bereinigt HTML vor dem Upload (normalisiert Divs zu Paragraph-Tags und regelt Zeilenumbrüche)
+    function cleanHtmlContent(html) {
+        if (!html) return "";
+        let clean = html.trim();
+        
+        // Divs (von Chrome/Edge) zu Paragraphen
+        clean = clean.replace(/<div[^>]*>/gi, '<p>').replace(/<\/div>/gi, '</p>');
+        
+        // Mehrfache brs (von Firefox) zu Paragraphen-Grenzen konvertieren
+        clean = clean.replace(/(<br\s*\/?>\s*){2,}/gi, '</p><p>');
+        
+        // Einzelne Brs am Ende von Paragraphen entfernen
+        clean = clean.replace(/<br\s*\/?>\s*<\/p>/gi, '</p>');
+        
+        // Leere Absätze löschen (z.B. <p></p>, <p><br></p>, <p>&nbsp;</p>)
+        clean = clean.replace(/<p>\s*(<br\s*\/?>|&nbsp;)?\s*<\/p>/gi, '');
+        
+        return clean;
     }
 });
