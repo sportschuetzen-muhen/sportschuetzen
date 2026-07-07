@@ -490,7 +490,14 @@ async function sendAudioChunkToCloudflare(blob) {
         });
 
         if (!response.ok) {
-            throw new Error(`Server-Fehler: HTTP ${response.status}`);
+            let errorText = `Server-Fehler: HTTP ${response.status}`;
+            try {
+                const errJson = await response.json();
+                if (errJson && errJson.error) {
+                    errorText = `Server-Fehler: ${errJson.error}`;
+                }
+            } catch(e) {}
+            throw new Error(errorText);
         }
 
         const result = await response.json();
