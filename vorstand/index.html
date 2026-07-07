@@ -492,6 +492,10 @@
                     <i class="fas fa-archive"></i> <span class="nav-text">Protokoll-Archiv</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('meeting-recorder', this)">
+                    <i class="fas fa-microphone"></i> <span class="nav-text">Meeting-Recorder</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('news', this)">
                     <i class="fas fa-newspaper"></i> <span class="nav-text">News AI</span>
                 </div>
@@ -626,6 +630,13 @@
                              onclick="navTo('archiv')" style="cursor:pointer">
                             <h5>📁 Protokoll-Archiv</h5>
                             <p class="small text-muted">KI-Suche im Vereins-Archiv</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('meeting-recorder')" style="cursor:pointer">
+                            <h5>🎙️ Meeting-Recorder</h5>
+                            <p class="small text-muted">Sprachaufnahme & Protokoll-Erstellung</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
@@ -980,6 +991,9 @@
 <!-- PROTOKOLL-ARCHIV - wird vollständig durch archiv.js gerendert -->
 <div id="view-archiv" class="module-view"></div>
 
+<!-- MEETING-RECORDER - wird vollständig durch meeting-recorder.js gerendert -->
+<div id="view-meeting-recorder" class="module-view"></div>
+
 <!-- LOGINS - wird vollstaendig durch logins.js gerendert -->
 <div id="view-logins" class="module-view"></div>
 
@@ -1205,6 +1219,9 @@
 
 <!-- NEU: Skript für Protokoll-Archiv KI -->
 <script src="js/archiv.js"></script>
+
+<!-- NEU: Skript für Meeting-Recorder -->
+<script src="js/meeting-recorder.js"></script>
 
 <!-- NEU: Skript für Galerie Manager -->
 <script src="js/galerie.js"></script>

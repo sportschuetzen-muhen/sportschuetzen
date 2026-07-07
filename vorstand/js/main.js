@@ -1002,6 +1002,7 @@ function hasWriteAccess(module) {
         'jahresbeitrag':       ['admin', 'kassier', 'vorstand'],
         'rechnungen':          ['admin', 'kassier', 'vorstand'],
         'mitglieder':          ['admin', 'schuetzenmeister', 'aktuar', 'vorstand'],
+        'meeting-recorder':    ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
         'logins':              ['admin']
     };
 
