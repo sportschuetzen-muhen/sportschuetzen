@@ -456,7 +456,6 @@ function initMeetingRecorder() {
     // Gespeicherte Transkripte initial in den Textfeldern anzeigen
     updateTranscriptDisplay();
 }
-}
 
 // Generiert den Prompt für Gemini Advanced
 function generatePromptText(transcript) {
