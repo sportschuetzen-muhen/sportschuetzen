@@ -113,6 +113,13 @@ let mrTranscripts = []; // Array von transkribierten Textsegmenten
 let mrSelectedInterval = 600000; // Standard: 10 Minuten in ms
 let mrIntervalTimer = null;
 
+// ERWEITERTE DATENSTRUKTUREN & STATUSFELD-KONTROLLE
+let mrAudioChunks = []; // Sammelt die Rohdaten-Chunks des aktuellen Segments
+let mrIsRecordingActive = false; // Status ob Aufnahme läuft
+let mrIsRotating = false; // Flag für automatischen Segmentwechsel
+let mrSegmentCounter = 0; // Zähler für hochgeladene Segmente
+let mrLogs = []; // Lokale Historie für Aktivitätslogs
+
 // Premium CSS Styles dynamisch laden
 function injectMeetingRecorderStyles() {
     if (document.getElementById('meeting-recorder-styles')) return;
@@ -176,6 +183,22 @@ function injectMeetingRecorderStyles() {
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.5);
             border-radius: 20px;
+        }
+
+        /* Custom scrollbar for dark console */
+        #mr-log-console::-webkit-scrollbar {
+            width: 6px;
+        }
+        #mr-log-console::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+        #mr-log-console::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+        #mr-log-console::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
     `;
     document.head.appendChild(style);
@@ -242,6 +265,19 @@ function initMeetingRecorder() {
                             <button id="mr-stop-btn" class="btn btn-danger btn-lg px-4 py-3 fw-bold rounded-pill shadow" disabled>
                                 <i class="fas fa-stop me-2"></i>Beenden
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- ACTIVITY LOG CARD -->
+                    <div class="card border-0 shadow-lg p-4 mr-panel-card mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold text-primary mb-0"><i class="fas fa-terminal me-2"></i>Aktivitäts-Log</h5>
+                            <button id="mr-clear-log-btn" class="btn btn-outline-secondary btn-sm fw-bold py-1 px-2" style="font-size: 0.75rem;">
+                                <i class="fas fa-trash me-1"></i>Löschen
+                            </button>
+                        </div>
+                        <div id="mr-log-console" class="font-monospace p-3 bg-dark text-light rounded small" style="height: 180px; overflow-y: auto; font-size: 0.78rem; line-height: 1.45; border: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                            <div class="text-muted">[Bereit für Sprachaufnahme]</div>
                         </div>
                     </div>
 
@@ -339,6 +375,13 @@ function initMeetingRecorder() {
     document.getElementById('mr-copy-prompt-btn').addEventListener('click', copyPrompt);
     document.getElementById('mr-copy-transcript-btn').addEventListener('click', copyTranscript);
     document.getElementById('mr-download-transcript-btn').addEventListener('click', downloadTranscript);
+    document.getElementById('mr-clear-log-btn').addEventListener('click', () => {
+        const consoleElem = document.getElementById('mr-log-console');
+        if (consoleElem) {
+            consoleElem.innerHTML = '<div class="text-muted">[Aktivitäts-Log geleert]</div>';
+        }
+        mrLogs = [];
+    });
 
     // Tab Event Listener zum Anpassen der Farben/Klassen
     const triggerTabList = [].slice.call(document.querySelectorAll('#mr-tabs button'));
@@ -389,6 +432,51 @@ function saveSettings() {
     showToast("Einstellungen erfolgreich gespeichert!", "success");
 }
 
+// Aktivitäts-Log-Funktion für ausführliche Rückmeldungen
+function logToConsole(message, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString('de-CH');
+    
+    // In globaler Variable speichern
+    if (typeof mrLogs === 'undefined') {
+        mrLogs = [];
+    }
+    mrLogs.push({ timestamp, message, type });
+    
+    // In Browser-Konsole loggen
+    const consoleMsg = `[MeetingRecorder][${timestamp}] ${message}`;
+    if (type === 'error') console.error(consoleMsg);
+    else if (type === 'warning') console.warn(consoleMsg);
+    else console.log(consoleMsg);
+
+    // In die UI schreiben
+    const consoleElem = document.getElementById('mr-log-console');
+    if (consoleElem) {
+        let colorClass = 'text-white';
+        let prefix = 'ℹ️';
+        if (type === 'success') {
+            colorClass = 'text-success';
+            prefix = '✅';
+        } else if (type === 'warning') {
+            colorClass = 'text-warning';
+            prefix = '⚠️';
+        } else if (type === 'error') {
+            colorClass = 'text-danger';
+            prefix = '❌';
+        } else if (type === 'upload') {
+            colorClass = 'text-info';
+            prefix = '📤';
+        }
+
+        const logEntry = document.createElement('div');
+        logEntry.className = `mb-1 ${colorClass}`;
+        logEntry.innerHTML = `<span class="text-muted">[${timestamp}]</span> ${prefix} ${escapeHtml(message)}`;
+        consoleElem.appendChild(logEntry);
+        
+        // Auto-Scroll nach unten
+        consoleElem.scrollTop = consoleElem.scrollHeight;
+    }
+}
+
 // Aufnahme starten
 async function startRecording() {
     const workerUrl = localStorage.getItem('portal_whisper_worker_url') || 'https://sportschuetzen-whisper.dan-hunziker73.workers.dev/';
@@ -397,31 +485,117 @@ async function startRecording() {
         return;
     }
 
+    // Konsolen-Reset bei Neustart
+    const consoleElem = document.getElementById('mr-log-console');
+    if (consoleElem) {
+        consoleElem.innerHTML = '';
+    }
+    mrLogs = [];
+
+    logToConsole("Starte Initialisierung der Sprachaufnahme...", "info");
+    logToConsole(`Worker-Schnittstelle: ${workerUrl}`, "info");
+    logToConsole(`Segmentierungs-Intervall: ${mrSelectedInterval === 0 ? "Nur manuell bei Beenden" : (mrSelectedInterval / 60000) + " Minuten"}`, "info");
+
+    // Secure Context Check
+    if (!window.isSecureContext) {
+        logToConsole("Aufnahme blockiert: Kein sicherer Kontext (HTTPS oder localhost). Browsersicherheit verweigert Zugriff.", "error");
+        showToast("Aufnahme nicht möglich: Mikrofon-Zugriff erfordert HTTPS oder localhost.", "danger");
+        return;
+    }
+
     try {
+        logToConsole("Fordere Mikrofon-Berechtigungen an...", "info");
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
+        logToConsole("Mikrofon-Berechtigung erteilt.", "success");
+
+        // Audio Track Infos auslesen
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks && audioTracks.length > 0) {
+            const track = audioTracks[0];
+            const settings = track.getSettings();
+            logToConsole(`Audio-Quelle: "${track.label}"`, "info");
+            if (settings.sampleRate) logToConsole(`Sample-Rate: ${settings.sampleRate} Hz`, "info");
+            if (settings.channelCount) logToConsole(`Kanäle: ${settings.channelCount}`, "info");
+            if (settings.echoCancellation !== undefined) logToConsole(`Echo-Unterdrückung: ${settings.echoCancellation ? "aktiv" : "inaktiv"}`, "info");
+        }
+
         let options = { mimeType: 'audio/webm;codecs=opus' };
         if (!MediaRecorder.isTypeSupported(options.mimeType)) {
             options = { mimeType: 'audio/ogg;codecs=opus' };
         }
+        logToConsole(`Verwende Codec-Format: ${options.mimeType}`, "info");
 
         mrMediaRecorder = new MediaRecorder(stream, options);
         mrTranscripts = [];
+        mrAudioChunks = [];
+        mrSegmentCounter = 1;
+        mrIsRecordingActive = true;
+        mrIsRotating = false;
+        
         updateTranscriptDisplay();
 
-        mrMediaRecorder.ondataavailable = async (event) => {
+        // Chunks sammeln
+        mrMediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
-                await sendAudioChunkToCloudflare(event.data);
+                mrAudioChunks.push(event.data);
+                logToConsole(`Audiodaten-Chunk empfangen: ${Math.round(event.data.size / 1024)} KB`, "info");
+            }
+        };
+
+        // OnStop-Callback
+        mrMediaRecorder.onstop = async () => {
+            logToConsole(`MediaRecorder gestoppt. Segment ${mrSegmentCounter} fertiggestellt.`, "info");
+            
+            const audioBlob = new Blob(mrAudioChunks, { type: mrMediaRecorder.mimeType });
+            mrAudioChunks = []; // Chunks für nächstes Segment leeren
+            
+            const currentSegmentNumber = mrSegmentCounter;
+            
+            if (audioBlob.size > 0) {
+                logToConsole(`Segment ${currentSegmentNumber} generiert: Grösse = ${Math.round(audioBlob.size / 1024)} KB (${(audioBlob.size / (1024 * 1024)).toFixed(2)} MB), Format = ${audioBlob.type}`, "success");
+                
+                // Warnung falls das Segment sehr gross ist (> 20MB)
+                if (audioBlob.size > 20 * 1024 * 1024) {
+                    logToConsole(`Warnung: Segment ${currentSegmentNumber} ist sehr gross (${(audioBlob.size / (1024 * 1024)).toFixed(1)} MB). Dies kann zu Übertragungsfehlern bei Cloudflare führen.`, "warning");
+                }
+
+                // Asynchron an Cloudflare senden (nicht blockierend)
+                sendAudioChunkToCloudflare(audioBlob, currentSegmentNumber);
+            } else {
+                logToConsole(`Warnung: Segment ${currentSegmentNumber} war leer (keine Audiodaten vorhanden).`, "warning");
+            }
+
+            // Falls Aufnahme weiterhin aktiv ist und Rotation getriggert hat -> sofort neu starten
+            if (mrIsRecordingActive) {
+                try {
+                    mrSegmentCounter++;
+                    logToConsole(`Starte Segment ${mrSegmentCounter} Aufnahme-Session...`, "info");
+                    mrMediaRecorder.start();
+                    logToConsole(`Aufnahme für Segment ${mrSegmentCounter} läuft...`, "success");
+                } catch (err) {
+                    logToConsole(`Kritischer Fehler beim Neustart des Recorders für Segment ${mrSegmentCounter}: ${err.message}`, "error");
+                    showToast("Fehler bei der Segment-Fortführung.", "danger");
+                    stopRecording();
+                }
+            } else {
+                logToConsole("Aufnahme-Prozess vollständig beendet.", "success");
             }
         };
 
         // Aufnahmestart
+        mrMediaRecorder.start();
+        logToConsole(`Aufnahme für Segment ${mrSegmentCounter} erfolgreich gestartet.`, "success");
+
+        // Periodisches Rotieren einrichten (wenn ein Intervall gewählt wurde)
         if (mrSelectedInterval > 0) {
-            // Periodisches Triggern
-            mrMediaRecorder.start(mrSelectedInterval);
-        } else {
-            // Manuell beim Beenden
-            mrMediaRecorder.start();
+            logToConsole(`Automatischer Segmentwechsel alle ${mrSelectedInterval / 60000} Minuten eingerichtet.`, "info");
+            mrIntervalTimer = setInterval(() => {
+                if (mrMediaRecorder && mrMediaRecorder.state === "recording") {
+                    logToConsole(`Rotations-Intervall erreicht. Beende Segment ${mrSegmentCounter} und starte neues...`, "info");
+                    mrIsRotating = true;
+                    mrMediaRecorder.stop(); // Triggert dataavailable und danach onstop
+                }
+            }, mrSelectedInterval);
         }
 
         // UI Updates
@@ -444,6 +618,8 @@ async function startRecording() {
         showToast("Sprachaufnahme gestartet.", "success");
 
     } catch (err) {
+        logToConsole(`Fehler beim Zugriff auf Audio-Hardware: ${err.message}`, "error");
+        showToast("Fehler beim Starten der Aufnahme.", "danger");
         console.error(err);
         alert('Mikrofon-Zugriff verweigert oder nicht unterstützt: ' + err.message);
     }
@@ -451,80 +627,145 @@ async function startRecording() {
 
 // Aufnahme stoppen
 function stopRecording() {
+    logToConsole("Stoppe Aufnahme manuell...", "info");
+    
+    mrIsRecordingActive = false; // Signalisiert, dass nach onstop nicht neu gestartet werden soll
+
+    // Interval-Timer für Rotation stoppen
+    if (mrIntervalTimer) {
+        clearInterval(mrIntervalTimer);
+        mrIntervalTimer = null;
+        logToConsole("Rotations-Timer deaktiviert.", "info");
+    }
+
+    // Haupt-MediaRecorder stoppen
     if (mrMediaRecorder && mrMediaRecorder.state !== 'inactive') {
+        logToConsole("Schliesse laufende Audioaufzeichnung...", "info");
         mrMediaRecorder.stop();
-        mrMediaRecorder.stream.getTracks().forEach(track => track.stop());
+        
+        // Mikrofon-Tracks stoppen um Hardware freizugeben
+        mrMediaRecorder.stream.getTracks().forEach(track => {
+            logToConsole(`Deaktiviere Audio-Spur: "${track.label}"`, "info");
+            track.stop();
+        });
     }
 
     // Timer stoppen
-    clearInterval(mrRecordingTimer);
-    mrRecordingTimer = null;
+    if (mrRecordingTimer) {
+        clearInterval(mrRecordingTimer);
+        mrRecordingTimer = null;
+    }
 
     // UI Updates
     document.getElementById('mr-start-btn').disabled = false;
     document.getElementById('mr-stop-btn').disabled = true;
     
     const statusField = document.getElementById('mr-status');
-    statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-secondary"></span> Status: Beendet. Verarbeite letzte Segmente...`;
+    statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-secondary"></span> Status: Beendet. Letztes Segment wird transkribiert...`;
     statusField.classList.remove('recording-active');
     document.getElementById('mr-status-graphic').classList.remove('recording');
 
-    showToast("Aufnahme beendet. Letztes Segment wird gesendet...", "info");
+    showToast("Aufnahme beendet. Letztes Segment wird verarbeitet...", "info");
 }
 
-// Sende Audio-Segment an Cloudflare AI
-async function sendAudioChunkToCloudflare(blob) {
+// Sende Audio-Segment an Cloudflare AI (mit automatischer Retry-Logik)
+async function sendAudioChunkToCloudflare(blob, segmentNumber) {
     const workerUrl = localStorage.getItem('portal_whisper_worker_url') || 'https://sportschuetzen-whisper.dan-hunziker73.workers.dev/';
-    if (!workerUrl) return;
+    if (!workerUrl) {
+        logToConsole(`Fehler beim Senden von Segment ${segmentNumber}: Cloudflare Worker URL nicht konfiguriert.`, "error");
+        return;
+    }
 
     const statusField = document.getElementById('mr-status');
-    statusField.innerHTML = `<span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Status: Sende Segment an Cloudflare Whisper AI...`;
+    
+    const maxRetries = 3;
+    let attempt = 0;
+    let success = false;
+    let resultText = "";
 
     const formData = new FormData();
-    formData.append('file', blob, 'chunk.webm');
+    formData.append('file', blob, `segment_${segmentNumber}.webm`);
 
-    try {
-        const response = await fetch(workerUrl, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            let errorText = `Server-Fehler: HTTP ${response.status}`;
-            try {
-                const errJson = await response.json();
-                if (errJson && errJson.error) {
-                    errorText = `Server-Fehler: ${errJson.error}`;
-                }
-            } catch(e) {}
-            throw new Error(errorText);
+    while (attempt < maxRetries && !success) {
+        attempt++;
+        if (attempt > 1) {
+            const delay = Math.pow(2, attempt) * 1000; // 4s, 8s
+            logToConsole(`Verbindungsfehler bei Segment ${segmentNumber}. Starte Versuch ${attempt}/${maxRetries} in ${delay/1000} Sekunden...`, "warning");
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
 
-        const result = await response.json();
-        
-        if (result.text && result.text.trim()) {
-            mrTranscripts.push(result.text.trim());
-            updateTranscriptDisplay();
-            statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-success"></span> Status: Letztes Segment erfolgreich transkribiert.`;
-            showToast("Audio-Segment erfolgreich transkribiert.", "success");
-        } else {
-            statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-warning"></span> Status: Warnung - Segment war leer oder fehlerhaft.`;
+        logToConsole(`[Versuch ${attempt}/${maxRetries}] Sende Segment ${segmentNumber} (Grösse: ${Math.round(blob.size / 1024)} KB) an Cloudflare Whisper AI...`, "upload");
+        if (statusField && mrIsRecordingActive) {
+            statusField.innerHTML = `<span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Status: Sende Segment ${segmentNumber}...`;
         }
 
-        // Wenn Aufnahme läuft, Status wieder zurücksetzen
-        if (mrRecordingTimer) {
-            setTimeout(() => {
-                if (mrRecordingTimer) {
-                    statusField.innerHTML = `<span class="mr-pulse-dot me-1"></span> Status: Aufnahme läuft...`;
-                }
-            }, 3000);
-        }
+        const startTime = Date.now();
 
-    } catch (error) {
-        console.error(error);
-        statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-danger"></span> Status: Fehler beim Transkribieren: ${error.message}`;
-        showToast("Fehler bei der Whisper-Transkribierung.", "danger");
+        try {
+            const response = await fetch(workerUrl, {
+                method: 'POST',
+                body: formData
+            });
+
+            const latency = ((Date.now() - startTime) / 1000).toFixed(2);
+
+            if (!response.ok) {
+                let errorText = `Server-Fehler: HTTP ${response.status} (${response.statusText})`;
+                try {
+                    const errJson = await response.json();
+                    if (errJson && errJson.error) {
+                        errorText = `Server-Fehler: ${errJson.error}`;
+                    }
+                } catch(e) {}
+                throw new Error(errorText);
+            }
+
+            const result = await response.json();
+            
+            if (result.text && result.text.trim()) {
+                resultText = result.text.trim();
+                success = true;
+                logToConsole(`Segment ${segmentNumber} erfolgreich transkribiert in ${latency}s.`, "success");
+                logToConsole(`Transkript Segment ${segmentNumber}: "${resultText.substring(0, 100)}${resultText.length > 100 ? '...' : ''}"`, "info");
+            } else {
+                // Antwort erhalten, aber leerer Text
+                logToConsole(`Warnung: Segment ${segmentNumber} Antwort erhalten in ${latency}s, aber kein Text erkannt.`, "warning");
+                // Wir werten das als Erfolg (keine Wiederholung nötig), da die Audio-Daten einfach still waren.
+                success = true;
+            }
+        } catch (error) {
+            const latency = ((Date.now() - startTime) / 1000).toFixed(2);
+            logToConsole(`Fehler bei Übertragung von Segment ${segmentNumber} (Dauer: ${latency}s): ${error.message}`, "error");
+        }
     }
+
+    if (success) {
+        if (resultText) {
+            mrTranscripts.push(resultText);
+            updateTranscriptDisplay();
+            showToast(`Segment ${segmentNumber} erfolgreich transkribiert.`, "success");
+        }
+        
+        if (statusField) {
+            statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-success"></span> Status: Segment ${segmentNumber} verarbeitet.`;
+        }
+    } else {
+        logToConsole(`Kritischer Fehler: Segment ${segmentNumber} konnte nach ${maxRetries} Versuchen nicht übertragen werden. Text wurde übersprungen.`, "error");
+        showToast(`Übertragungsfehler bei Segment ${segmentNumber} nach ${maxRetries} Versuchen.`, "danger");
+        
+        if (statusField) {
+            statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-danger"></span> Status: Fehler bei Segment ${segmentNumber}.`;
+        }
+    }
+
+    // Wenn Aufnahme läuft, Status nach kurzer Verzögerung wieder zurücksetzen
+    setTimeout(() => {
+        if (mrIsRecordingActive && statusField) {
+            statusField.innerHTML = `<span class="mr-pulse-dot me-1"></span> Status: Aufnahme läuft...`;
+        } else if (!mrIsRecordingActive && statusField) {
+            statusField.innerHTML = `<span class="mr-pulse-dot me-1 bg-secondary"></span> Status: Bereit`;
+        }
+    }, 4000);
 }
 
 // Timer-Anzeige aktualisieren
