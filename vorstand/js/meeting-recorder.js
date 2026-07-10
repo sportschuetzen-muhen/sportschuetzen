@@ -216,6 +216,20 @@ function initMeetingRecorder() {
 
     injectMeetingRecorderStyles();
 
+    // Geladene Transkripte wiederherstellen falls vorhanden
+    const savedTranscripts = localStorage.getItem('mr_active_transcripts');
+    if (savedTranscripts) {
+        try {
+            mrTranscripts = JSON.parse(savedTranscripts);
+            console.log("📝 Gespeicherte Transkripte geladen:", mrTranscripts.length, "Segmente");
+        } catch (e) {
+            console.error("Fehler beim Laden von mr_active_transcripts:", e);
+            mrTranscripts = [];
+        }
+    } else {
+        mrTranscripts = [];
+    }
+
     // Default oder geladene URL
     const savedWorkerUrl = localStorage.getItem('portal_whisper_worker_url') || 'https://sportschuetzen-whisper.dan-hunziker73.workers.dev/';
     const savedInterval = parseInt(localStorage.getItem('portal_whisper_interval')) || 600000;
@@ -258,12 +272,17 @@ function initMeetingRecorder() {
                         </div>
 
                         <!-- Controls -->
-                        <div class="d-flex justify-content-center gap-3 my-4">
-                            <button id="mr-start-btn" class="btn btn-success btn-lg px-4 py-3 fw-bold rounded-pill shadow">
-                                <i class="fas fa-play me-2"></i>Aufnahme starten
-                            </button>
-                            <button id="mr-stop-btn" class="btn btn-danger btn-lg px-4 py-3 fw-bold rounded-pill shadow" disabled>
-                                <i class="fas fa-stop me-2"></i>Beenden
+                        <div class="d-flex flex-column align-items-center gap-3 my-4">
+                            <div class="d-flex justify-content-center gap-3 w-100">
+                                <button id="mr-start-btn" class="btn btn-success btn-lg px-4 py-3 fw-bold rounded-pill shadow flex-grow-1">
+                                    <i class="fas fa-play me-2"></i>Aufnahme starten
+                                </button>
+                                <button id="mr-stop-btn" class="btn btn-danger btn-lg px-4 py-3 fw-bold rounded-pill shadow flex-grow-1" disabled>
+                                    <i class="fas fa-stop me-2"></i>Beenden
+                                </button>
+                            </div>
+                            <button id="mr-reset-btn" class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold rounded-pill w-100">
+                                <i class="fas fa-trash-alt me-1"></i>Sitzung & Transkript zurücksetzen
                             </button>
                         </div>
                     </div>
@@ -323,6 +342,11 @@ function initMeetingRecorder() {
                                 </button>
                             </li>
                             <li class="nav-item">
+                                <button class="nav-link fw-bold border-0 text-muted" id="mr-protocol-tab" data-bs-toggle="tab" data-bs-target="#mr-protocol-panel" type="button" role="tab">
+                                    <i class="fas fa-robot me-2"></i>Ergebnisprotokoll (KI)
+                                </button>
+                            </li>
+                            <li class="nav-item">
                                 <button class="nav-link fw-bold border-0 text-muted" id="mr-transcript-tab" data-bs-toggle="tab" data-bs-target="#mr-transcript-panel" type="button" role="tab">
                                     <i class="fas fa-file-alt me-2"></i>Roh-Transkript
                                 </button>
@@ -344,7 +368,34 @@ function initMeetingRecorder() {
                                 </div>
                             </div>
 
-                            <!-- TAB 2: ROH-TRANSKRIPT -->
+                            <!-- TAB 2: ERGEBNISPROTOKOLL (KI) -->
+                            <div class="tab-pane fade flex-grow-1 d-flex flex-column" id="mr-protocol-panel" role="tabpanel">
+                                <p class="text-muted small mb-2">
+                                    Generiere das fertige Ergebnisprotokoll (im Schweizer Hochdeutsch ohne 'ß' und nach dem Vereins-Muster) direkt im Portal.
+                                </p>
+                                
+                                <div class="mb-3 d-flex gap-2 align-items-center">
+                                    <button id="mr-generate-protocol-btn" class="btn btn-primary fw-bold flex-grow-1">
+                                        <i class="fas fa-cogs me-1"></i>Protokoll automatisch generieren
+                                    </button>
+                                    <div id="mr-protocol-spinner" class="spinner-border text-primary d-none" role="status" style="width: 1.5rem; height: 1.5rem;">
+                                        <span class="visually-hidden">Generiere...</span>
+                                    </div>
+                                </div>
+
+                                <textarea id="mr-protocol-field" class="form-control flex-grow-1 font-monospace p-3 small" style="min-height: 320px;" placeholder="Klicke auf den Button oben, um das Protokoll aus dem bisherigen Transkript zu generieren..."></textarea>
+                                
+                                <div class="mt-3 d-flex gap-2">
+                                    <button id="mr-copy-protocol-btn" class="btn btn-outline-secondary flex-grow-1 fw-bold">
+                                        <i class="fas fa-copy me-1"></i>Kopieren
+                                    </button>
+                                    <button id="mr-download-protocol-btn" class="btn btn-outline-secondary flex-grow-1 fw-bold">
+                                        <i class="fas fa-download me-1"></i>Herunterladen
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- TAB 3: ROH-TRANSKRIPT -->
                             <div class="tab-pane fade flex-grow-1 d-flex flex-column" id="mr-transcript-panel" role="tabpanel">
                                 <p class="text-muted small mb-2">
                                     Hier erscheinen die fortlaufend transkribierten Sprachsegmente aus Whisper.
@@ -371,8 +422,12 @@ function initMeetingRecorder() {
     // Event Listeners registrieren
     document.getElementById('mr-start-btn').addEventListener('click', startRecording);
     document.getElementById('mr-stop-btn').addEventListener('click', stopRecording);
+    document.getElementById('mr-reset-btn').addEventListener('click', resetSession);
     document.getElementById('mr-save-settings-btn').addEventListener('click', saveSettings);
     document.getElementById('mr-copy-prompt-btn').addEventListener('click', copyPrompt);
+    document.getElementById('mr-generate-protocol-btn').addEventListener('click', generateProtocolAutomatically);
+    document.getElementById('mr-copy-protocol-btn').addEventListener('click', copyProtocol);
+    document.getElementById('mr-download-protocol-btn').addEventListener('click', downloadProtocol);
     document.getElementById('mr-copy-transcript-btn').addEventListener('click', copyTranscript);
     document.getElementById('mr-download-transcript-btn').addEventListener('click', downloadTranscript);
     document.getElementById('mr-clear-log-btn').addEventListener('click', () => {
@@ -397,6 +452,10 @@ function initMeetingRecorder() {
             bootstrap.Tab.getInstance(triggerEl).show();
         });
     });
+
+    // Gespeicherte Transkripte initial in den Textfeldern anzeigen
+    updateTranscriptDisplay();
+}
 }
 
 // Generiert den Prompt für Gemini Advanced
@@ -526,9 +585,9 @@ async function startRecording() {
         logToConsole(`Verwende Codec-Format: ${options.mimeType}`, "info");
 
         mrMediaRecorder = new MediaRecorder(stream, options);
-        mrTranscripts = [];
+        // Transkripte bei Start NICHT zurücksetzen (Fortsetzung bei Pause)
         mrAudioChunks = [];
-        mrSegmentCounter = 1;
+        mrSegmentCounter = mrTranscripts.length > 0 ? mrTranscripts.length + 1 : 1;
         mrIsRecordingActive = true;
         mrIsRotating = false;
         
@@ -742,6 +801,7 @@ async function sendAudioChunkToCloudflare(blob, segmentNumber) {
     if (success) {
         if (resultText) {
             mrTranscripts.push(resultText);
+            localStorage.setItem('mr_active_transcripts', JSON.stringify(mrTranscripts));
             updateTranscriptDisplay();
             showToast(`Segment ${segmentNumber} erfolgreich transkribiert.`, "success");
         }
@@ -857,4 +917,130 @@ function showToast(message, type = "success") {
     setTimeout(() => {
         toast.remove();
     }, 3000);
+}
+
+// === NEUE UX ASSISTENTEN-FUNKTIONEN ===
+
+// Sitzung und Speicher zurücksetzen
+function resetSession() {
+    if (confirm("Möchtest du das gesamte Transkript und das generierte Protokoll löschen und eine neue Sitzung starten?")) {
+        mrTranscripts = [];
+        localStorage.removeItem('mr_active_transcripts');
+        
+        // Log-Verlauf leeren
+        const consoleElem = document.getElementById('mr-log-console');
+        if (consoleElem) {
+            consoleElem.innerHTML = '<div class="text-muted">[Sitzung zurückgesetzt. Bereit für Sprachaufnahme]</div>';
+        }
+        mrLogs = [];
+        
+        // UI leeren
+        updateTranscriptDisplay();
+        
+        const protocolField = document.getElementById('mr-protocol-field');
+        if (protocolField) {
+            protocolField.value = "";
+        }
+        
+        logToConsole("Sitzung zurückgesetzt.", "info");
+        showToast("Sitzung zurückgesetzt.", "success");
+    }
+}
+
+// Protokoll automatisch über Gemini generieren
+async function generateProtocolAutomatically() {
+    const fullText = mrTranscripts.join('\n\n');
+    if (!fullText) {
+        showToast("Kein Transkript zum Generieren vorhanden.", "warning");
+        return;
+    }
+
+    const generateBtn = document.getElementById('mr-generate-protocol-btn');
+    const spinner = document.getElementById('mr-protocol-spinner');
+    const protocolField = document.getElementById('mr-protocol-field');
+
+    if (generateBtn) generateBtn.disabled = true;
+    if (spinner) spinner.classList.remove('d-none');
+    
+    logToConsole("Sende Transkript an Gemini zur Protokoll-Erstellung...", "info");
+
+    try {
+        const promptText = generatePromptText(fullText);
+        
+        const response = await apiFetch('news', 'action=generate_protocol', {
+            method: 'POST',
+            body: JSON.stringify({ prompt: promptText })
+        });
+
+        if (!response.ok) {
+            let errorText = `Fehler bei der Verbindung zur Gemini-API (HTTP ${response.status})`;
+            try {
+                const resJson = await response.json();
+                if (resJson && resJson.error) {
+                    errorText = `Gemini-API Fehler: ${resJson.error}`;
+                }
+            } catch(e) {}
+            throw new Error(errorText);
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.text) {
+            if (protocolField) {
+                protocolField.value = data.text.trim();
+            }
+            logToConsole("Ergebnisprotokoll erfolgreich generiert!", "success");
+            showToast("Protokoll erfolgreich generiert!", "success");
+            
+            // Zu Tab wechseln
+            const protocolTab = document.getElementById('mr-protocol-tab');
+            if (protocolTab) {
+                protocolTab.click();
+            }
+        } else {
+            throw new Error("Ungültiges Antwortformat von der Gemini-API erhalten.");
+        }
+    } catch (error) {
+        logToConsole(`Fehler bei der Protokoll-Generierung: ${error.message}`, "error");
+        showToast(error.message, "danger");
+    } finally {
+        if (generateBtn) generateBtn.disabled = false;
+        if (spinner) spinner.classList.add('d-none');
+    }
+}
+
+// Ergebnisprotokoll in die Zwischenablage kopieren
+function copyProtocol() {
+    const protocolField = document.getElementById('mr-protocol-field');
+    if (!protocolField || !protocolField.value.trim()) {
+        showToast("Kein Protokoll zum Kopieren vorhanden.", "warning");
+        return;
+    }
+    protocolField.select();
+    navigator.clipboard.writeText(protocolField.value);
+    showToast("Protokoll in die Zwischenablage kopiert!", "success");
+}
+
+// Ergebnisprotokoll als Textdatei herunterladen
+function downloadProtocol() {
+    const protocolField = document.getElementById('mr-protocol-field');
+    if (!protocolField || !protocolField.value.trim()) {
+        showToast("Kein Protokoll zum Herunterladen vorhanden.", "warning");
+        return;
+    }
+
+    const dateStr = new Date().toISOString().substring(0, 10);
+    const blob = new Blob([protocolField.value], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Ergebnisprotokoll_Sitzung_${dateStr}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 100);
 }
