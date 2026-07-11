@@ -11,6 +11,21 @@ window.csrfToken = null;
 
 console.log("🔐 Auth-State geladen:", { user: window.currentUser, roles: window.currentRoles });
 
+// Worker-Version abfragen und zur Diagnose im Entwicklerfenster loggen
+(async function checkWorkerVersion() {
+    try {
+        const res = await fetch(WORKER_URL + "?action=version");
+        if (res.ok) {
+            const data = await res.json();
+            console.log(`📡 Aktive Worker-Version auf Cloudflare: %c${data.version}`, "color: #198754; font-weight: bold;");
+        } else {
+            console.warn("⚠️ Worker-Versionscheck fehlgeschlagen (HTTP Status " + res.status + ")");
+        }
+    } catch (e) {
+        console.warn("⚠️ Fehler beim Abfragen der Worker-Version (Netzwerkfehler/CORS):", e.message);
+    }
+})();
+
 // =========================================================
 //  SECURITY: Passwort-Hashing (SHA-256)
 // =========================================================

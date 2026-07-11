@@ -165,6 +165,19 @@ function initArchiv() {
                         <small class="text-muted d-block mt-2" style="font-size: 0.75rem;">Dies kann einen Moment dauern. Die KI erzeugt Vektor-Embeddings für jeden Abschnitt.</small>
                     </div>
                 </div>
+
+                <!-- Liste indexierter Dokumente -->
+                <div class="card border-0 shadow-lg p-4 mt-4" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h5 class="fw-bold text-primary mb-0"><i class="fas fa-file-alt me-2"></i>Indexierte Dokumente</h5>
+                        <button class="btn btn-xs btn-outline-secondary p-1" onclick="loadIndexedDocuments()" title="Aktualisieren">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div id="indexed-docs-list" class="overflow-y-auto" style="max-height: 250px; font-size: 0.8rem;">
+                        <div class="text-muted text-center py-3">Lade Dokumente...</div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -172,6 +185,9 @@ function initArchiv() {
     // Standarddatum für Upload auf heute setzen
     const today = new Date().toISOString().split('T')[0];
     document.getElementById("ingest-doc-date").value = today;
+    
+    // Indexierte Dokumente laden
+    loadIndexedDocuments();
 }
 
 // === PRESETS / BEISPIELFRAGEN ===
@@ -408,6 +424,7 @@ async function handleIngest(event) {
             document.getElementById("ingest-doc-text").value = "";
             const dateHint = document.getElementById("date-hint");
             if (dateHint) dateHint.classList.add("d-none");
+            loadIndexedDocuments();
         } else {
             showError("Fehler beim Indexieren: " + (data.error || "Unbekannter Fehler."));
         }
@@ -826,4 +843,75 @@ function extractTextFromDocx(file) {
         };
         reader.readAsArrayBuffer(file);
     });
+}
+
+// === INDEXIERTE DOKUMENTE LADEN ===
+async function loadIndexedDocuments() {
+    const listContainer = document.getElementById("indexed-docs-list");
+    if (!listContainer) return;
+
+    try {
+        const res = await apiFetch('archiv', { action: 'getDocuments' });
+        if (!res.ok) {
+            throw new Error(`HTTP Fehler ${res.status}`);
+        }
+        const data = await res.json();
+        
+        if (data.success && data.documents && data.documents.length > 0) {
+            listContainer.innerHTML = data.documents.map(doc => {
+                const badgeClass = doc.category === 'gv' ? 'bg-info-subtle text-info border-info-subtle' :
+                                   doc.category === 'vorstand' ? 'bg-primary-subtle text-primary border-primary-subtle' :
+                                                                 'bg-secondary-subtle text-secondary border-secondary-subtle';
+                const categoryLabel = doc.category === 'gv' ? 'GV' : doc.category === 'vorstand' ? 'Vorstand' : 'Sonstiges';
+                return `
+                    <div class="d-flex justify-content-between align-items-center p-2 mb-2 border-bottom">
+                        <div class="text-truncate me-2" style="max-width: 80%;">
+                            <strong class="d-block text-dark text-truncate" title="${escapeHtml(doc.document_name)}">${escapeHtml(doc.document_name)}</strong>
+                            <small class="text-muted">${doc.protocol_date || 'Kein Datum'} &bull; <span class="badge border ${badgeClass}" style="font-size: 0.65rem; padding: 2px 4px;">${categoryLabel}</span> &bull; ${doc.chunks} Abschnitte</small>
+                        </div>
+                        <button class="btn btn-xs btn-outline-danger p-1" onclick="deleteIndexedDocument('${escapeHtml(doc.document_name)}')" title="Dokument löschen">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                `;
+            }).join("");
+        } else {
+            listContainer.innerHTML = `
+                <div class="text-muted text-center py-3">
+                    <i class="fas fa-info-circle mb-2 fa-lg d-block"></i>
+                    Noch keine Dokumente vorhanden.
+                </div>
+            `;
+        }
+    } catch (err) {
+        console.error("❌ Fehler beim Laden der indexierten Dokumente:", err);
+        listContainer.innerHTML = `<div class="text-danger text-center py-3">Fehler beim Laden: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+// === INDEXIERTES DOKUMENT LÖSCHEN ===
+async function deleteIndexedDocument(docName) {
+    if (!confirm(`Möchtest du das Dokument '${docName}' und all seine Vektoren wirklich aus dem Archiv löschen?`)) {
+        return;
+    }
+
+    try {
+        const res = await apiFetch('archiv', { action: 'deleteDocument' }, {
+            method: 'POST',
+            body: JSON.stringify({ documentName: docName })
+        });
+        if (!res.ok) {
+            throw new Error(`HTTP Fehler ${res.status}`);
+        }
+        const data = await res.json();
+        if (data.success) {
+            showSuccess(data.message || "Dokument erfolgreich gelöscht.");
+            loadIndexedDocuments();
+        } else {
+            showError("Fehler beim Löschen: " + (data.error || "Unbekannter Fehler."));
+        }
+    } catch (err) {
+        console.error("❌ Fehler beim Löschen des Dokuments:", err);
+        showError("Lösch-Fehler: " + err.message);
+    }
 }
