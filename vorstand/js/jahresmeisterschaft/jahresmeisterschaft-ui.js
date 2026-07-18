@@ -51,8 +51,8 @@ function renderJahresmeisterschaft(grid) {
     }
 
     // Spaltenindizes anpassen (dynamisch bei verschobenen Spalten durch Status)
-    const baseHeaderCols = [6,7,8,9,10,11,12,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
-    const baseShooterCols = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 27, 28, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51];
+    const baseHeaderCols = [6,7,8,33,34,35,36,37,38,39,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
+    const baseShooterCols = [6, 7, 8, 33, 34, 35, 36, 37, 38, 39, 13, 14, 15, 16, 17, 18, 27, 28, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51];
 
     const activeHeaderCols = baseHeaderCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
     const activeShooterCols = baseShooterCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
@@ -308,7 +308,7 @@ function getCompCategory(c, hasStatusCol) {
     if (normalCol === 6) return "Verbandsschiessen";
     if (normalCol === 7) return "Kantonalstich";
     if (normalCol === 8) return "Vereinswettschiessen";
-    if (normalCol >= 9 && normalCol <= 12) return "Mannschaftsschießen";
+    if ((normalCol >= 9 && normalCol <= 12) || (normalCol >= 33 && normalCol <= 39)) return "Mannschaftsschießen";
     if (normalCol === 13) return "Endschiessen";
     if (normalCol === 14) return "Auswärtiges 1";
     if (normalCol === 15) return "Auswärtiges 2";
@@ -353,8 +353,8 @@ function renderJuniorenTabContent() {
         hasStatusCol = grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
     }
 
-    const baseHeaderCols = [6,7,8,9,10,11,12,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
-    const baseShooterCols = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 27, 28, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51];
+    const baseHeaderCols = [6,7,8,33,34,35,36,37,38,39,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
+    const baseShooterCols = [6, 7, 8, 33, 34, 35, 36, 37, 38, 39, 13, 14, 15, 16, 17, 18, 27, 28, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51];
 
     const activeHeaderCols = baseHeaderCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
     const activeShooterCols = baseShooterCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
@@ -437,7 +437,11 @@ function renderJuniorenTabContent() {
         let rawTotal = parseFloat(String(grid[r][totalCol] || '').replace(/%/g, '').trim()) || 0;
         let virtualTotal = rawTotal;
 
-        visibleShooterCols.forEach(c => {
+        // Subtraction columns (Verband, Kantonal, Vereinswett, Best 4 Mannschaft (9-12), Endschiessen, Auswaertiges 1-2, Eidgenoessisches)
+        const subtractionCols = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        const activeSubtractionCols = subtractionCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
+
+        activeSubtractionCols.forEach(c => {
             const cat = getCompCategory(c, hasStatusCol);
             if (!cat) return; // skip total, streich, raw external, etc.
 
