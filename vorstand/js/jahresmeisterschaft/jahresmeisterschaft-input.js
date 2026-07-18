@@ -217,24 +217,9 @@ function handleJuniorSwitchChange(input) {
     const comp = input.dataset.comp;
     const isExcluded = !input.checked;
     
-    const grid = jmRawGrid;
-    if (!grid) return;
-    
-    let hasStatusCol = false;
-    if (grid[4]) {
-        hasStatusCol = grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
-    }
-    
-    if (!grid[1]) {
-        grid[1] = new Array(grid[2].length).fill('');
-    }
-    
-    for (let c = 0; c < grid[2].length; c++) {
-        if (getCompCategory(c, hasStatusCol) === comp) {
-            const val = isExcluded ? 'FALSE' : 'TRUE';
-            handleCellEdit(1, c, val);
-        }
-    }
+    jmJuniorExclusions[comp] = isExcluded;
+    jmExclusionsChanged = true;
+    AppState.markUnsaved();
     
     renderJuniorenTabContent();
 }

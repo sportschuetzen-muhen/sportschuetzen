@@ -1,7 +1,7 @@
 // === SUB-MODUL: JAHRESMEISTERSCHAFT - MANAGER & API & ARCHIV ===
 
 async function saveJahresmeisterschaftData() {
-    if (jmPendingUpdates.length === 0 && jmPendingMoves.length === 0) {
+    if (jmPendingUpdates.length === 0 && jmPendingMoves.length === 0 && !jmExclusionsChanged) {
         showSuccess("Keine Änderungen zum Speichern vorhanden.");
         return;
     }
@@ -23,7 +23,8 @@ async function saveJahresmeisterschaftData() {
             action: 'saveJahresmeisterschaft',
             jahr: jmCurrentJahr,
             updates: jmPendingUpdates,
-            moves: jmPendingMoves
+            moves: jmPendingMoves,
+            juniorExclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true)
         };
 
         const res = await fetch(WORKER_URL + "?module=jahresmeisterschaft", {
@@ -42,6 +43,7 @@ async function saveJahresmeisterschaftData() {
             showSuccess("Erfolgreich gespeichert!");
             jmPendingUpdates = [];
             jmPendingMoves = [];
+            jmExclusionsChanged = false;
             AppState.clearUnsaved();
             // Lade Daten neu, um Formeln (Totals/%) neu zu berechnen
             setTimeout(loadJahresmeisterschaftData, 1000);

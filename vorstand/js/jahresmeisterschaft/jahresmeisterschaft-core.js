@@ -5,6 +5,7 @@ let jmCurrentJahr = "current";
 let jmPendingUpdates = [];
 let jmPendingMoves = [];
 let jmJuniorExclusions = {};
+let jmExclusionsChanged = false;
 
 async function loadJahresmeisterschaftData(force = false, silent = false) {
     const historySelect = document.getElementById('jm-history-select');
@@ -39,6 +40,13 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
         jmRawGrid = res.rawGrid || [];
         jmPendingUpdates = [];
         jmPendingMoves = [];
+        jmJuniorExclusions = {};
+        if (Array.isArray(res.juniorExclusions)) {
+            res.juniorExclusions.forEach(k => {
+                jmJuniorExclusions[k] = true;
+            });
+        }
+        jmExclusionsChanged = false;
         AppState.clearUnsaved();
 
         renderHistoryDropdown(res.sheets);

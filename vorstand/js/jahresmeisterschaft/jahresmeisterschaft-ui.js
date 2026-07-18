@@ -317,16 +317,7 @@ function getCompCategory(c, hasStatusCol) {
 }
 
 function isCategoryExcluded(grid, category, hasStatusCol) {
-    if (!grid || !grid[1]) return false;
-    for (let c = 0; c < grid[2].length; c++) {
-        if (getCompCategory(c, hasStatusCol) === category) {
-            const val = String(grid[1][c] || '').trim().toLowerCase();
-            if (val === 'false' || val === 'nein' || val === 'x') {
-                return true;
-            }
-        }
-    }
-    return false;
+    return jmJuniorExclusions[category] === true;
 }
 
 function getColumnPercentage(grid, r, c, hasStatusCol) {
