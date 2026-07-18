@@ -244,7 +244,10 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
             <td class="fw-bold" style="width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(vorname)} ${escapeHtml(nachname)}</td>
             ${statusTd}
             ${visibleShooterCols.map((c, colIndex) => {
-                const val = s.rowData[c] || '';
+                let val = s.rowData[c] || '';
+                if (typeof val === 'string' && (val.includes('#NUM!') || val.includes('#REF!'))) {
+                    val = '';
+                }
                 const colTitle = String(grid[2][c] || '').trim().toLowerCase();
                 const isAuswaertiges = colTitle.includes('auswärts') || colTitle.includes('ausw');
                 const isPercent = colTitle.includes('%');
@@ -300,6 +303,50 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
     `;
 }
 
+function getCompCategory(c, hasStatusCol) {
+    const normalCol = (hasStatusCol && c >= 6) ? c - 1 : c;
+    if (normalCol === 6) return "Verbandsschiessen";
+    if (normalCol === 7) return "Kantonalstich";
+    if (normalCol === 8) return "Vereinswettschiessen";
+    if (normalCol >= 9 && normalCol <= 12) return "Mannschaftsschießen";
+    if (normalCol === 13) return "Endschiessen";
+    if (normalCol === 14) return "Auswärtiges 1";
+    if (normalCol === 15) return "Auswärtiges 2";
+    if (normalCol === 16) return "Eidgenössisches";
+    return null;
+}
+
+function isCategoryExcluded(grid, category, hasStatusCol) {
+    if (!grid || !grid[1]) return false;
+    for (let c = 0; c < grid[2].length; c++) {
+        if (getCompCategory(c, hasStatusCol) === category) {
+            const val = String(grid[1][c] || '').trim().toLowerCase();
+            if (val === 'false' || val === 'nein' || val === 'x') {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function getColumnPercentage(grid, r, c, hasStatusCol) {
+    const normalCol = (hasStatusCol && c >= 6) ? c - 1 : c;
+    
+    if (normalCol === 14) {
+        const pctCol = hasStatusCol ? 28 : 27;
+        return parseFloat(String(grid[r][pctCol] || '').replace(/%/g, '').trim()) || 0;
+    }
+    if (normalCol === 15) {
+        const pctCol = hasStatusCol ? 29 : 28;
+        return parseFloat(String(grid[r][pctCol] || '').replace(/%/g, '').trim()) || 0;
+    }
+    
+    const val = parseFloat(String(grid[r][c] || '').trim());
+    const maxVal = parseFloat(String(grid[3][c] || '').trim());
+    if (isNaN(val) || isNaN(maxVal) || maxVal <= 0) return 0;
+    return (val / maxVal) * 100;
+}
+
 function renderJuniorenTabContent() {
     const grid = jmRawGrid;
     if (!grid || grid.length < 10) return;
@@ -327,21 +374,17 @@ function renderJuniorenTabContent() {
         return isColumnActive(grid, c);
     });
 
-    // Dynamische Schalter ermitteln
-    const comps = [];
-    visibleShooterCols.forEach(c => {
-        const rawTitle = String(grid[2][c] || '').trim();
-        if (!rawTitle || rawTitle.toLowerCase().startsWith('spalte')) return;
-        let cleanName = rawTitle.replace(/%$/g, '').trim();
-        if (cleanName.toLowerCase().includes('mannschaft') || cleanName.toLowerCase().includes('runde')) {
-            cleanName = "Mannschaftsschießen";
-        } else if (cleanName.toLowerCase().includes('auswärts') || cleanName.toLowerCase().includes('ausw')) {
-            cleanName = "Auswärtsschießen";
-        }
-        if (!comps.includes(cleanName) && cleanName !== "Total" && cleanName !== "Streich %" && cleanName !== "Streich" && cleanName !== "Streich Resultat") {
-            comps.push(cleanName);
-        }
-    });
+    // 8 feste Kategorien definieren
+    const juniorCategories = [
+        "Verbandsschiessen",
+        "Kantonalstich",
+        "Vereinswettschiessen",
+        "Mannschaftsschießen",
+        "Endschiessen",
+        "Auswärtiges 1",
+        "Auswärtiges 2",
+        "Eidgenössisches"
+    ];
 
     // Schalter UI rendern
     let switchesHtml = `
@@ -354,11 +397,11 @@ function renderJuniorenTabContent() {
                 <div class="d-flex flex-wrap gap-4">
     `;
 
-    comps.forEach(comp => {
-        const isExcluded = jmJuniorExclusions[comp] === true;
+    juniorCategories.forEach(comp => {
+        const isExcluded = isCategoryExcluded(grid, comp, hasStatusCol);
         switchesHtml += `
             <div class="form-check form-switch form-check-inline">
-                <input class="form-check-input" type="checkbox" role="switch" id="switch-junior-${comp.replace(/\s+/g, '-')}" data-comp="${comp}" ${isExcluded ? '' : 'checked'} onchange="handleJuniorSwitchChange(this)">
+                <input class="form-check-input" type="checkbox" role="switch" id="switch-junior-${comp.replace(/\s+/g, '-')}" data-comp="${comp}" ${isExcluded ? '' : 'checked'} ${canWrite ? '' : 'disabled'} onchange="handleJuniorSwitchChange(this)">
                 <label class="form-check-label fw-semibold" for="switch-junior-${comp.replace(/\s+/g, '-')}">${escapeHtml(comp)}</label>
             </div>
         `;
@@ -396,21 +439,12 @@ function renderJuniorenTabContent() {
         let virtualTotal = rawTotal;
 
         visibleShooterCols.forEach(c => {
-            const colTitle = String(grid[2][c] || '').trim().toLowerCase();
-            const isTotal = colTitle.includes('total') || colTitle === 'tot' || colTitle === 't';
-            if (isTotal) return;
-            if (c >= limitIndex) return; // skip raw auswärts cols
+            const cat = getCompCategory(c, hasStatusCol);
+            if (!cat) return; // skip total, streich, raw external, etc.
 
-            let cleanName = String(grid[2][c] || '').trim().replace(/%$/g, '').trim();
-            if (cleanName.toLowerCase().includes('mannschaft') || cleanName.toLowerCase().includes('runde')) {
-                cleanName = "Mannschaftsschießen";
-            } else if (cleanName.toLowerCase().includes('auswärts') || cleanName.toLowerCase().includes('ausw')) {
-                cleanName = "Auswärtsschießen";
-            }
-
-            if (jmJuniorExclusions[cleanName] === true) {
-                const cellVal = parseFloat(String(grid[r][c] || '').replace(/%/g, '').trim()) || 0;
-                virtualTotal -= cellVal;
+            if (isCategoryExcluded(grid, cat, hasStatusCol)) {
+                const colPct = getColumnPercentage(grid, r, c, hasStatusCol);
+                virtualTotal -= colPct;
             }
         });
 
@@ -461,19 +495,16 @@ function renderJuniorenTabContent() {
                     <td class="text-center">${jr.jahrgang}</td>
                     <td class="text-center text-primary fw-bold">${jr.virtualTotal.toFixed(2)} %</td>
                     ${visibleShooterCols.map((c, colIndex) => {
-                        const val = jr.originalRow[c] || '';
+                        let val = jr.originalRow[c] || '';
+                        if (typeof val === 'string' && (val.includes('#NUM!') || val.includes('#REF!'))) {
+                            val = '-';
+                        }
                         const colTitle = String(grid[2][c] || '').trim().toLowerCase();
                         const isTotal = colTitle.includes('total') || colTitle === 'tot' || colTitle === 't';
                         const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
                         
-                        let cleanName = String(grid[2][c] || '').trim().replace(/%$/g, '').trim();
-                        if (cleanName.toLowerCase().includes('mannschaft') || cleanName.toLowerCase().includes('runde')) {
-                            cleanName = "Mannschaftsschießen";
-                        } else if (cleanName.toLowerCase().includes('auswärts') || cleanName.toLowerCase().includes('ausw')) {
-                            cleanName = "Auswärtsschießen";
-                        }
-
-                        const isExcluded = jmJuniorExclusions[cleanName] === true;
+                        const cat = getCompCategory(c, hasStatusCol);
+                        const isExcluded = cat && isCategoryExcluded(grid, cat, hasStatusCol);
                         const cellStyle = isExcluded ? 'text-decoration: line-through; opacity: 0.5;' : '';
                         const tdBg = isTotal ? 'background-color: #e2e6ea;' : bgStyle;
 
