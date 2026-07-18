@@ -137,11 +137,6 @@ function isColumnActive(grid, c) {
         return ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
     }
     
-    // Statusspalte (Auf-/Abstieg) ermitteln
-    let hasStatusCol = false;
-    if (grid[4]) {
-        hasStatusCol = grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
-    }
     const limitIndex = hasStatusCol ? 42 : 41; // ab und mit Spalte 42 (Index 41 / 42)
     
     if (c >= limitIndex) {

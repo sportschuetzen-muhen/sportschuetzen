@@ -51,7 +51,7 @@ function renderJahresmeisterschaft(grid) {
     }
 
     // Spaltenindizes anpassen (dynamisch bei verschobenen Spalten durch Status)
-    const baseHeaderCols = [6,7,8,33,34,35,36,37,38,39,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
+    const baseHeaderCols = [6,7,8,9,10,11,12,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
     const baseShooterCols = [6, 7, 8, 33, 34, 35, 36, 37, 38, 39, 13, 14, 15, 16, 17, 18, 27, 28, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51];
 
     const activeHeaderCols = baseHeaderCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
@@ -353,7 +353,7 @@ function renderJuniorenTabContent() {
         hasStatusCol = grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
     }
 
-    const baseHeaderCols = [6,7,8,33,34,35,36,37,38,39,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
+    const baseHeaderCols = [6,7,8,9,10,11,12,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
     const baseShooterCols = [6, 7, 8, 33, 34, 35, 36, 37, 38, 39, 13, 14, 15, 16, 17, 18, 27, 28, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51];
 
     const activeHeaderCols = baseHeaderCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
