@@ -70,7 +70,7 @@ function renderJahresmeisterschaft(grid) {
         return isColumnActive(grid, c);
     });
 
-    let html = `
+    let settingsHtml = `
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Allgemeine Einstellungen (Kopfzeilen)</h5>
@@ -151,61 +151,7 @@ function renderJahresmeisterschaft(grid) {
         <div class="tab-content" id="jmTabContent">
             <div class="tab-pane fade show active" id="ligen-pane" role="tabpanel" aria-labelledby="ligen-tab">
                 <!-- Allgemeine Einstellungen -->
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Allgemeine Einstellungen (Kopfzeilen)</h5>
-                        ${canWrite ? `<button class="btn btn-sm btn-light fw-bold text-dark animate__animated animate__fadeIn" onclick="addNewAuswaertigesSchiessen()"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schießen</button>` : ''}
-                    </div>
-                    <div class="card-body overflow-auto">
-                        <table class="table table-bordered table-sm align-middle" style="min-width: 800px; font-size: 0.85rem; table-layout: fixed;">
-                            <thead class="table-light">
-                                <tr>
-                                    <th style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};">Einstellung</th>
-                                    ${filteredHeaderCols.map((c, colIndex) => {
-                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
-                                        return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(grid[2][c] || '')}">${escapeHtml(grid[2][c] || ('Spalte '+(c+1)))}</th>`;
-                                    }).join('')}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Checkboxen (Zeile 1) -->
-                                <tr>
-                                    <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Aktiv (Checkboxen)</strong></td>
-                                    ${filteredHeaderCols.map((c, colIndex) => {
-                                        const limit = hasStatusCol ? 18 : 17;
-                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
-                                        if (c <= limit) {
-                                            const val = grid[0][c] || '';
-                                            const isChecked = ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
-                                            return `<td class="text-center" style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="checkbox" class="form-check-input write-protected" ${canWrite ? '' : 'disabled'} ${isChecked ? 'checked' : ''} onchange="handleCellEdit(0, ${c}, this.checked ? 'TRUE' : 'FALSE')"></td>`;
-                                        }
-                                        return `<td class="bg-light" style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"></td>`;
-                                    }).join('')}
-                                </tr>
-                                <!-- Titel (Zeile 3) -->
-                                <tr>
-                                    <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Wettkampf Titel</strong></td>
-                                    ${filteredHeaderCols.map((c, colIndex) => {
-                                        const val = grid[2][c] || '';
-                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
-                                        const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
-                                        return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(2, ${c}, this.value)"></td>`;
-                                    }).join('')}
-                                </tr>
-                                <!-- Max Werte (Zeile 4) -->
-                                <tr>
-                                    <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Max. Punkte</strong></td>
-                                    ${filteredHeaderCols.map((c, colIndex) => {
-                                        const val = grid[3][c] || '';
-                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
-                                        const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
-                                        return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(3, ${c}, this.value)"></td>`;
-                                    }).join('')}
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                ${settingsHtml}
                 ${ligenHtml}
             </div>
             <div class="tab-pane fade" id="junioren-pane" role="tabpanel" aria-labelledby="junioren-tab">
