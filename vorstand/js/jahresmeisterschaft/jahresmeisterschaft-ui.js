@@ -257,7 +257,7 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
                 const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
                 
-                if (isTotal || isMannschaft) {
+                if (isTotal) {
                     const totalBg = (colIndex % 2 === 1) ? 'background-color: #e2e6ea;' : '';
                     return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm fw-bold text-center" style="width: 100%; ${totalBg}" readonly value="${escapeHtml(val)}"></td>`;
                 }
@@ -411,7 +411,10 @@ function renderJuniorenTabContent() {
     }
     if (jahrgangColIdx === -1) jahrgangColIdx = 3;
 
-    const currentYear = new Date().getFullYear();
+    let currentYear = new Date().getFullYear();
+    if (jmCurrentJahr && jmCurrentJahr !== "current") {
+        currentYear = parseInt(jmCurrentJahr) || currentYear;
+    }
     const juniors = [];
     const totalCol = hasStatusCol ? 19 : 18;
 
@@ -422,8 +425,13 @@ function renderJuniorenTabContent() {
         const nachname = grid[r][1] || '';
         if (!nachname && !vorname) continue;
 
-        const jg = parseInt(grid[r][jahrgangColIdx]);
-        if (isNaN(jg) || jg <= 0 || (currentYear - jg) > 21) continue;
+        let jg = 0;
+        const rawJg = grid[r][jahrgangColIdx];
+        if (rawJg) {
+            const match = String(rawJg).match(/\b(19|20)\d{2}\b/);
+            jg = match ? parseInt(match[0]) : 0;
+        }
+        if (jg <= 0 || (currentYear - jg) > 21) continue;
 
         // Calculate virtual total
         let rawTotal = parseFloat(String(grid[r][totalCol] || '').replace(/%/g, '').trim()) || 0;
