@@ -203,22 +203,10 @@
             const r = await fetch(API_URL + "&t=" + Date.now());
             const d = await r.json();
             
-            // Filter & Sort Junioren (U21)
-            const currentYear = new Date().getFullYear();
-            const allShooters = [...arr(d.liga1), ...arr(d.liga2)];
-            const junioren = allShooters.filter(s => {
-                const j = parseInt(s.jahrgang);
-                return !isNaN(j) && j > 0 && (currentYear - j) <= 21;
-            }).map(s => ({ ...s }));
-            junioren.sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0));
-            junioren.forEach((s, idx) => {
-                s.rang = idx + 1;
-            });
-
             document.getElementById("content").innerHTML = 
                 renderLiga(1, d.liga1) + 
                 renderLiga(2, d.liga2) + 
-                renderLiga("Junioren (U21)", junioren);
+                renderLiga("Junioren (U21)", d.junioren);
             
             const tip=document.getElementById("tooltip");
             document.querySelectorAll(".max-hint").forEach(el=>{
