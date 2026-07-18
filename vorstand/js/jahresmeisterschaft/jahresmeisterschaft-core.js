@@ -118,8 +118,23 @@ function isColumnActive(grid, c) {
     if (colTitle.includes('total') || colTitle === 'tot' || colTitle === 't') {
         return true;
     }
+    // Statusspalte (Auf-/Abstieg) ermitteln
+    let hasStatusCol = false;
+    if (grid[4]) {
+        hasStatusCol = grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
+    }
+
+    const startRawMannschaft = hasStatusCol ? 34 : 33;
+    const endRawMannschaft = hasStatusCol ? 40 : 39;
+    if (c >= startRawMannschaft && c <= endRawMannschaft) {
+        const checkCol = hasStatusCol ? 10 : 9;
+        const val = grid[0][checkCol] || '';
+        return ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
+    }
+
     if (colTitle.includes('mannschaft')) {
-        return true;
+        const val = grid[0][c] || '';
+        return ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
     }
     
     // Statusspalte (Auf-/Abstieg) ermitteln
