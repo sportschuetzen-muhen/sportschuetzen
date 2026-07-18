@@ -4,6 +4,7 @@ let jmRawGrid = [];
 let jmCurrentJahr = "current";
 let jmPendingUpdates = [];
 let jmPendingMoves = [];
+let jmJuniorExclusions = {};
 
 async function loadJahresmeisterschaftData(force = false, silent = false) {
     const historySelect = document.getElementById('jm-history-select');

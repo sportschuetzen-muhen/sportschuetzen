@@ -170,9 +170,14 @@ function initArchiv() {
                 <div class="card border-0 shadow-lg p-4 mt-4" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-file-alt me-2"></i>Indexierte Dokumente</h5>
-                        <button class="btn btn-xs btn-outline-secondary p-1" onclick="loadIndexedDocuments()" title="Aktualisieren">
-                            <i class="fas fa-sync-alt"></i>
-                        </button>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-xs btn-outline-warning py-1 px-2 fw-semibold" onclick="reindexAllVectors(this)" style="font-size: 0.7rem; border-radius: 4px;" title="Aktualisiert alle Vektor-Embeddings im Hintergrund mit Dateinamen-Metadaten">
+                                <i class="fas fa-magic me-1"></i> Vektoren reparieren
+                            </button>
+                            <button class="btn btn-xs btn-outline-secondary p-1" onclick="loadIndexedDocuments()" title="Aktualisieren">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
                     </div>
                     <div id="indexed-docs-list" class="overflow-y-auto" style="max-height: 250px; font-size: 0.8rem;">
                         <div class="text-muted text-center py-3">Lade Dokumente...</div>
@@ -913,5 +918,63 @@ async function deleteIndexedDocument(docName) {
     } catch (err) {
         console.error("❌ Fehler beim Löschen des Dokuments:", err);
         showError("Lösch-Fehler: " + err.message);
+    }
+}
+
+// === ALLE VEKTOREN NEU GENERIEREN (MIGRATION) ===
+async function reindexAllVectors(btn) {
+    if (!confirm("Möchtest du alle Vektoren im Archiv neu generieren? Dies reichert die Vektoren mit dem Dokumentnamen an, damit Suchen nach Dateinamen (wie 'ZSA') besser gefunden werden. Es dauert einige Sekunden pro Dokument.")) {
+        return;
+    }
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Aktualisiere...`;
+
+    try {
+        // 1. Liste aller IDs holen
+        const listRes = await apiFetch('archiv', { action: 'getChunksList' });
+        if (!listRes.ok) throw new Error("Fehler beim Abrufen der Vektor-Liste.");
+        const listData = await listRes.json();
+
+        if (!listData.success || !listData.ids || listData.ids.length === 0) {
+            showSuccess("Keine Dokumente zum Aktualisieren vorhanden.");
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            return;
+        }
+
+        const ids = listData.ids;
+        const total = ids.length;
+        const batchSize = 30;
+        let processed = 0;
+
+        showSuccess(`Starte Vektor-Aktualisierung für ${total} Abschnitte in ${Math.ceil(total/batchSize)} Batches...`);
+
+        // 2. Batches nacheinander abarbeiten
+        for (let i = 0; i < total; i += batchSize) {
+            const batch = ids.slice(i, i + batchSize);
+            const res = await apiFetch('archiv', { action: 'reindexBatch' }, {
+                method: 'POST',
+                body: JSON.stringify({ ids: batch })
+            });
+
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || `Fehler bei Batch ${i/batchSize + 1}`);
+            }
+
+            processed += batch.length;
+            console.log(`📡 Vektor-Aktualisierung: Batch ${i/batchSize + 1} abgeschlossen (${processed}/${total})`);
+        }
+
+        showSuccess("Vektoren erfolgreich für alle " + total + " Abschnitte neu generiert!");
+        loadIndexedDocuments();
+    } catch (e) {
+        console.error("❌ Fehler bei Vektor-Aktualisierung:", e);
+        showError("Aktualisierungs-Fehler: " + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
     }
 }

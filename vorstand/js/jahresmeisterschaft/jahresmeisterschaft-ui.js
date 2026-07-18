@@ -129,10 +129,90 @@ function renderJahresmeisterschaft(grid) {
     `;
 
     // LIGA 1
-    html += buildLigaTable("Liga 1", grid, 5, 12, canWrite, hasStatusCol, statusColIndex, visibleShooterCols);
+    let ligenHtml = buildLigaTable("Liga 1", grid, 5, 12, canWrite, hasStatusCol, statusColIndex, visibleShooterCols);
     
     // LIGA 2
-    html += buildLigaTable("Liga 2", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, visibleShooterCols);
+    ligenHtml += buildLigaTable("Liga 2", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, visibleShooterCols);
+
+    // Bootstrap Tab-Layout
+    let html = `
+        <ul class="nav nav-tabs mb-4 border-bottom-0" id="jmTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-bold text-dark px-4 py-2 border-0" id="ligen-tab" data-bs-toggle="tab" data-bs-target="#ligen-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);">
+                    <i class="fas fa-list-ol me-2"></i>1. & 2. Liga
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="renderJuniorenTabContent()">
+                    <i class="fas fa-user-graduate me-2"></i>Junioren-Wertung (U21)
+                </button>
+            </li>
+        </ul>
+        <div class="tab-content" id="jmTabContent">
+            <div class="tab-pane fade show active" id="ligen-pane" role="tabpanel" aria-labelledby="ligen-tab">
+                <!-- Allgemeine Einstellungen -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Allgemeine Einstellungen (Kopfzeilen)</h5>
+                        ${canWrite ? `<button class="btn btn-sm btn-light fw-bold text-dark animate__animated animate__fadeIn" onclick="addNewAuswaertigesSchiessen()"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schießen</button>` : ''}
+                    </div>
+                    <div class="card-body overflow-auto">
+                        <table class="table table-bordered table-sm align-middle" style="min-width: 800px; font-size: 0.85rem; table-layout: fixed;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};">Einstellung</th>
+                                    ${filteredHeaderCols.map((c, colIndex) => {
+                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
+                                        return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(grid[2][c] || '')}">${escapeHtml(grid[2][c] || ('Spalte '+(c+1)))}</th>`;
+                                    }).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Checkboxen (Zeile 1) -->
+                                <tr>
+                                    <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Aktiv (Checkboxen)</strong></td>
+                                    ${filteredHeaderCols.map((c, colIndex) => {
+                                        const limit = hasStatusCol ? 18 : 17;
+                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                                        if (c <= limit) {
+                                            const val = grid[0][c] || '';
+                                            const isChecked = ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
+                                            return `<td class="text-center" style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="checkbox" class="form-check-input write-protected" ${canWrite ? '' : 'disabled'} ${isChecked ? 'checked' : ''} onchange="handleCellEdit(0, ${c}, this.checked ? 'TRUE' : 'FALSE')"></td>`;
+                                        }
+                                        return `<td class="bg-light" style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"></td>`;
+                                    }).join('')}
+                                </tr>
+                                <!-- Titel (Zeile 3) -->
+                                <tr>
+                                    <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Wettkampf Titel</strong></td>
+                                    ${filteredHeaderCols.map((c, colIndex) => {
+                                        const val = grid[2][c] || '';
+                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                                        const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                                        return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(2, ${c}, this.value)"></td>`;
+                                    }).join('')}
+                                </tr>
+                                <!-- Max Werte (Zeile 4) -->
+                                <tr>
+                                    <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Max. Punkte</strong></td>
+                                    ${filteredHeaderCols.map((c, colIndex) => {
+                                        const val = grid[3][c] || '';
+                                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                                        const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                                        return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(3, ${c}, this.value)"></td>`;
+                                    }).join('')}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                ${ligenHtml}
+            </div>
+            <div class="tab-pane fade" id="junioren-pane" role="tabpanel" aria-labelledby="junioren-tab">
+                <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Lade Junioren-Daten...</div>
+            </div>
+        </div>
+    `;
 
     document.getElementById('jahresmeisterschaft-container').innerHTML = html;
 
@@ -272,4 +352,198 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
             </div>
         </div>
     `;
+}
+
+function renderJuniorenTabContent() {
+    const grid = jmRawGrid;
+    if (!grid || grid.length < 10) return;
+
+    let canWrite = hasWriteAccess('jahresmeisterschaft');
+    if (jmCurrentJahr !== "current") {
+        canWrite = false;
+    }
+
+    // Statusspalte (Auf-/Abstieg) ermitteln
+    let hasStatusCol = false;
+    if (grid[4]) {
+        hasStatusCol = grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
+    }
+
+    const baseHeaderCols = [6,7,8,9,10,11,12,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
+    const baseShooterCols = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 27, 28, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51];
+
+    const activeHeaderCols = baseHeaderCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
+    const activeShooterCols = baseShooterCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
+
+    const limitIndex = hasStatusCol ? 42 : 41;
+    const visibleShooterCols = activeShooterCols.filter(c => {
+        if (c >= limitIndex && !hasValidTitle(grid, c)) return false;
+        return isColumnActive(grid, c);
+    });
+
+    // Dynamische Schalter ermitteln
+    const comps = [];
+    visibleShooterCols.forEach(c => {
+        const rawTitle = String(grid[2][c] || '').trim();
+        if (!rawTitle || rawTitle.toLowerCase().startsWith('spalte')) return;
+        let cleanName = rawTitle.replace(/%$/g, '').trim();
+        if (cleanName.toLowerCase().includes('mannschaft') || cleanName.toLowerCase().includes('runde')) {
+            cleanName = "Mannschaftsschießen";
+        } else if (cleanName.toLowerCase().includes('auswärts') || cleanName.toLowerCase().includes('ausw')) {
+            cleanName = "Auswärtsschießen";
+        }
+        if (!comps.includes(cleanName) && cleanName !== "Total" && cleanName !== "Streich %" && cleanName !== "Streich" && cleanName !== "Streich Resultat") {
+            comps.push(cleanName);
+        }
+    });
+
+    // Schalter UI rendern
+    let switchesHtml = `
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="fas fa-sliders-h me-2"></i>Wettkämpfe für Junioren-Wertung filtern</h5>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-3">Deaktiviere Schalter, um die entsprechenden Resultate aus dem Total der Junioren auszuschließen.</p>
+                <div class="d-flex flex-wrap gap-4">
+    `;
+
+    comps.forEach(comp => {
+        const isExcluded = jmJuniorExclusions[comp] === true;
+        switchesHtml += `
+            <div class="form-check form-switch form-check-inline">
+                <input class="form-check-input" type="checkbox" role="switch" id="switch-junior-${comp.replace(/\s+/g, '-')}" data-comp="${comp}" ${isExcluded ? '' : 'checked'} onchange="handleJuniorSwitchChange(this)">
+                <label class="form-check-label fw-semibold" for="switch-junior-${comp.replace(/\s+/g, '-')}">${escapeHtml(comp)}</label>
+            </div>
+        `;
+    });
+
+    switchesHtml += `
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Junioren filtern & Berechnen
+    let jahrgangColIdx = -1;
+    if (grid[4]) {
+        jahrgangColIdx = grid[4].findIndex(val => String(val || '').trim().toLowerCase() === 'jahrgang');
+    }
+    if (jahrgangColIdx === -1) jahrgangColIdx = 3;
+
+    const currentYear = new Date().getFullYear();
+    const juniors = [];
+    const totalCol = hasStatusCol ? 19 : 18;
+
+    for (let r = 5; r < grid.length; r++) {
+        if (r === 13 || r === 14) continue; // Excluded rows
+        if (!grid[r]) continue;
+        const vorname = grid[r][2] || '';
+        const nachname = grid[r][1] || '';
+        if (!nachname && !vorname) continue;
+
+        const jg = parseInt(grid[r][jahrgangColIdx]);
+        if (isNaN(jg) || jg <= 0 || (currentYear - jg) > 21) continue;
+
+        // Calculate virtual total
+        let rawTotal = parseFloat(String(grid[r][totalCol] || '').replace(/%/g, '').trim()) || 0;
+        let virtualTotal = rawTotal;
+
+        visibleShooterCols.forEach(c => {
+            const colTitle = String(grid[2][c] || '').trim().toLowerCase();
+            const isTotal = colTitle.includes('total') || colTitle === 'tot' || colTitle === 't';
+            if (isTotal) return;
+            if (c >= limitIndex) return; // skip raw auswärts cols
+
+            let cleanName = String(grid[2][c] || '').trim().replace(/%$/g, '').trim();
+            if (cleanName.toLowerCase().includes('mannschaft') || cleanName.toLowerCase().includes('runde')) {
+                cleanName = "Mannschaftsschießen";
+            } else if (cleanName.toLowerCase().includes('auswärts') || cleanName.toLowerCase().includes('ausw')) {
+                cleanName = "Auswärtsschießen";
+            }
+
+            if (jmJuniorExclusions[cleanName] === true) {
+                const cellVal = parseFloat(String(grid[r][c] || '').replace(/%/g, '').trim()) || 0;
+                virtualTotal -= cellVal;
+            }
+        });
+
+        juniors.push({
+            rowIndex: r,
+            vorname,
+            nachname,
+            jahrgang: jg,
+            originalRow: grid[r],
+            virtualTotal: Math.max(0, virtualTotal)
+        });
+    }
+
+    // Sort juniors
+    juniors.sort((a, b) => b.virtualTotal - a.virtualTotal);
+
+    // Junioren-Tabelle rendern
+    let tableHtml = `
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-user-graduate me-2"></i>Rangliste U21 Junioren</h5>
+            </div>
+            <div class="card-body overflow-auto">
+                <table class="table table-hover table-sm align-middle" style="min-width: 800px; font-size: 0.9rem; table-layout: fixed;">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 60px;">Rang</th>
+                            <th style="width: 200px;">Schütze</th>
+                            <th style="width: 80px;" class="text-center">Jahrgang</th>
+                            <th style="width: 100px;" class="text-center">Virtuelles Total</th>
+                            ${visibleShooterCols.map((c, colIndex) => {
+                                const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
+                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(grid[2][c] || '')}">${escapeHtml(grid[2][c] || ('Spalte '+(c+1)))}</th>`;
+                            }).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+    if (juniors.length === 0) {
+        tableHtml += `<tr><td colspan="${4 + visibleShooterCols.length}" class="text-center py-4 text-muted">Keine Junioren (U21) registriert oder aktiv.</td></tr>`;
+    } else {
+        juniors.forEach((jr, idx) => {
+            tableHtml += `
+                <tr>
+                    <td class="fw-bold text-center">${idx + 1}</td>
+                    <td class="fw-bold">${escapeHtml(jr.vorname)} ${escapeHtml(jr.nachname)}</td>
+                    <td class="text-center">${jr.jahrgang}</td>
+                    <td class="text-center text-primary fw-bold">${jr.virtualTotal.toFixed(2)} %</td>
+                    ${visibleShooterCols.map((c, colIndex) => {
+                        const val = jr.originalRow[c] || '';
+                        const colTitle = String(grid[2][c] || '').trim().toLowerCase();
+                        const isTotal = colTitle.includes('total') || colTitle === 'tot' || colTitle === 't';
+                        const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                        
+                        let cleanName = String(grid[2][c] || '').trim().replace(/%$/g, '').trim();
+                        if (cleanName.toLowerCase().includes('mannschaft') || cleanName.toLowerCase().includes('runde')) {
+                            cleanName = "Mannschaftsschießen";
+                        } else if (cleanName.toLowerCase().includes('auswärts') || cleanName.toLowerCase().includes('ausw')) {
+                            cleanName = "Auswärtsschießen";
+                        }
+
+                        const isExcluded = jmJuniorExclusions[cleanName] === true;
+                        const cellStyle = isExcluded ? 'text-decoration: line-through; opacity: 0.5;' : '';
+                        const tdBg = isTotal ? 'background-color: #e2e6ea;' : bgStyle;
+
+                        return `<td class="text-center" style="width: 90px; min-width: 90px; max-width: 90px; ${tdBg}; ${cellStyle}">${escapeHtml(val)}</td>`;
+                    }).join('')}
+                </tr>
+            `;
+        });
+    }
+
+    tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('junioren-pane').innerHTML = switchesHtml + tableHtml;
 }

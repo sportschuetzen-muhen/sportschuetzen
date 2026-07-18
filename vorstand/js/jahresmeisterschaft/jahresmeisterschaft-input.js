@@ -212,3 +212,10 @@ function clearAuswaertigesCalculator() {
     renderJahresmeisterschaft(jmRawGrid);
     showSuccess("Auswärtige Resultate erfolgreich gelöscht.");
 }
+
+function handleJuniorSwitchChange(input) {
+    const comp = input.dataset.comp;
+    const isExcluded = !input.checked;
+    jmJuniorExclusions[comp] = isExcluded;
+    renderJuniorenTabContent();
+}
