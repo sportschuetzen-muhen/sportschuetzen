@@ -382,6 +382,18 @@
             color: var(--primary) !important;
         }
 
+        /* Sticky Headers for large tables in modules */
+        .module-view .card-body.overflow-auto {
+            max-height: 65vh; /* Responsive height based on viewport */
+        }
+        .module-view .card-body.overflow-auto thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: #f8f9fa !important;
+            box-shadow: inset 0 -1px 0 var(--border);
+        }
+
     </style>
 </head>
 <body>

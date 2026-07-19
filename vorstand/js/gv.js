@@ -150,6 +150,19 @@ function renderGVList() {
       `;
     }
 
+    if (label.toLowerCase().includes('wahljahr')) {
+      const isSelectedJa = String(value).toLowerCase() === 'ja' || String(value).toLowerCase() === 'true';
+      return `
+        <div class="mb-2">
+          <label class="form-label small fw-bold mb-0">${escapeHtml(label)}</label>
+          <select class="form-select form-select-sm write-protected" onchange="gvState.platzhalter[${i}].inhalt = this.value">
+            <option value="nein" ${!isSelectedJa ? 'selected' : ''}>Nein (keine Wahlen)</option>
+            <option value="ja" ${isSelectedJa ? 'selected' : ''}>Ja (Wahljahr)</option>
+          </select>
+        </div>
+      `;
+    }
+
     const isDateField = ph === 'dd.mm.jjjj';
     const displayValue = isDateField ? isoToDisplay(value) : value;
 
