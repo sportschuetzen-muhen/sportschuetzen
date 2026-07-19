@@ -621,8 +621,12 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen) {
     if (asksEssen) {
         html += `
             <div>
-                <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Essen):</label>
+                <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Standard):</label>
                 <input type="number" id="input-essen-${eventId}" value="1" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+            </div>
+            <div style="margin-top:12px;">
+                <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Vegetarisch):</label>
+                <input type="number" id="input-vegi-${eventId}" value="0" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
             </div>
         `;
     }
@@ -645,6 +649,7 @@ window.submitRSVP = async function(eventId, attending) {
     
     let count = 1;
     let essen = 0;
+    let vegi = 0;
     
     if (attending) {
         const countInput = document.getElementById(`input-count-${eventId}`);
@@ -652,6 +657,9 @@ window.submitRSVP = async function(eventId, attending) {
         
         const essenInput = document.getElementById(`input-essen-${eventId}`);
         if (essenInput) essen = parseInt(essenInput.value) || 0;
+
+        const vegiInput = document.getElementById(`input-vegi-${eventId}`);
+        if (vegiInput) vegi = parseInt(vegiInput.value) || 0;
     }
     
     document.getElementById(`rsvp-${eventId}`).innerHTML = `<span style="font-size:0.8rem; color:white; font-weight:bold;">Verarbeite...</span>`;
@@ -659,7 +667,7 @@ window.submitRSVP = async function(eventId, attending) {
     try {
         // Sicherstellen dass Lizenz sechstellig ist
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
-        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${cleanLizenz}&attending=${attending}&count=${count}&essen=${essen}`);
+        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${cleanLizenz}&attending=${attending}&count=${count}&essen=${essen}&vegi=${vegi}`);
         const result = await resp.json();
         if (!result.success) throw new Error("Serverfehler beim Speichern");
         
