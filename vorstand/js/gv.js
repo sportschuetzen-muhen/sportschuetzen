@@ -259,13 +259,23 @@ function renderGvTableBody() {
     let countNein = 0;
     let countOffen = 0;
     let countEssen = 0;
+    let countVegi = 0;
 
     tbody.innerHTML = window.currentGvData.map(a => {
         let badgeStr = '';
         if (a.status === 'ja') {
-            badgeStr = `<span class="badge bg-success">Ja</span> ${a.essen > 0 ? '(+Essen)' : ''}`;
+            let essenInfo = '';
+            if (a.essen > 0) {
+                essenInfo = ` (+Essen: ${a.essen}`;
+                if (a.vegi > 0) {
+                    essenInfo += `, Vegi: ${a.vegi}`;
+                }
+                essenInfo += ')';
+            }
+            badgeStr = `<span class="badge bg-success">Ja</span>${essenInfo}`;
             countJa++;
             if(a.essen > 0) countEssen += Number(a.essen);
+            if(a.vegi > 0) countVegi += Number(a.vegi);
         }
         else if (a.status === 'nein') {
             badgeStr = `<span class="badge bg-danger">Nein</span>`;
@@ -290,7 +300,7 @@ function renderGvTableBody() {
                 <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-check-circle"></i> Zugesagt: ${countJa}</span>
                 <span class="text-danger fw-bold" style="font-size:0.85rem;"><i class="fas fa-times-circle"></i> Abgesagt: ${countNein}</span>
                 <span class="text-secondary fw-bold" style="font-size:0.85rem;"><i class="fas fa-question-circle"></i> Offen: ${countOffen}</span>
-                <span class="text-info fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Essen: ${countEssen}</span>
+                <span class="text-info fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Essen: ${countEssen} (Vegi: ${countVegi})</span>
             </div>
         `;
     }

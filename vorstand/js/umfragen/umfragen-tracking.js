@@ -121,6 +121,15 @@ function filterHistorieData() {
 
             const countVal = log.anzahl_teilnehmer !== undefined ? log.anzahl_teilnehmer : log.count;
             const essenVal = log.anzahl_essen !== undefined ? log.anzahl_essen : log.essen;
+            const vegiVal = log.anzahl_vegi !== undefined ? log.anzahl_vegi : (log.vegi || 0);
+
+            let essenStr = '-';
+            if (parseInt(essenVal) > 0) {
+                essenStr = `<span class="badge bg-warning text-dark" title="Standard">${parseInt(essenVal)}</span>`;
+                if (parseInt(vegiVal) > 0) {
+                    essenStr += ` <span class="badge bg-success-subtle text-success border border-success-subtle" title="Vegetarisch">Vegi: ${parseInt(vegiVal)}</span>`;
+                }
+            }
 
             return `<tr>
                 <td class="text-muted small">${formatTimestamp(log.timestamp)}</td>
@@ -128,7 +137,7 @@ function filterHistorieData() {
                 <td>${escapeHtml(evTitle)}</td>
                 <td class="text-center">${statusBadge}</td>
                 <td class="text-center">${parseInt(countVal) > 1 ? `<span class="badge bg-info text-dark">+${parseInt(countVal)-1}</span>` : '-'}</td>
-                <td class="text-center">${parseInt(essenVal) > 0 ? `<span class="badge bg-warning text-dark">${parseInt(essenVal)}</span>` : '-'}</td>
+                <td class="text-center">${essenStr}</td>
             </tr>`;
         }).join('');
     }

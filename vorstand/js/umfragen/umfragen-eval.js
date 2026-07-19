@@ -37,7 +37,7 @@ async function loadParticipantsIfEventSelected() {
 
         // Cross-Referenz Adresse
         let html = `<div class="table-responsive"><table class="table table-sm table-striped">
-            <thead><tr><th>Lizenz</th><th>Name</th><th>Adresse (aus DB)</th><th>Begl.</th><th>Essen</th></tr></thead>
+            <thead><tr><th>Lizenz</th><th>Name</th><th>Adresse (aus DB)</th><th>Begl.</th><th>Essen</th><th>Vegi</th></tr></thead>
             <tbody>`;
 
         if(pData.length === 0) {
@@ -82,6 +82,7 @@ async function loadParticipantsIfEventSelected() {
                     address: addrStr,
                     count: p.count,
                     essen: p.essen,
+                    vegi: p.vegi || 0,
                     vorname: vorname,
                     nachname: nachname,
                     jahrgang: jahrgang,
@@ -96,6 +97,7 @@ async function loadParticipantsIfEventSelected() {
                     <td><small>${escapeHtml(addrStr)}</small></td>
                     <td>${p.count > 1 ? '<span class="badge bg-info text-dark">+'+(p.count-1)+'</span>' : '-'}</td>
                     <td>${p.essen > 0 ? '<span class="badge bg-success">'+p.essen+'</span>' : '-'}</td>
+                    <td>${p.vegi > 0 ? '<span class="badge bg-warning text-dark">'+p.vegi+'</span>' : '-'}</td>
                 </tr>`;
             });
         }
