@@ -141,15 +141,6 @@ function renderGVListEmbedded() {
         '<button class="btn btn-xs btn-outline-secondary py-0" onclick="document.getElementById(\'gv-logo-edit-' + i + '\').classList.toggle(\'d-none\')"><i class="fas fa-lock-open"></i> Ändern</button></div>' +
         '<div id="gv-logo-edit-' + i + '" class="d-none mt-2"><input type="text" class="form-control form-control-sm write-protected" value="' + escapeHtml(value) + '" onchange="gvState.platzhalter[' + i + '].inhalt=this.value"></div>' +
         '</div>';
-    } else if (label.toLowerCase().includes('wahljahr')) {
-      const isSelectedJa = String(value).toLowerCase() === 'ja' || String(value).toLowerCase() === 'true';
-      fieldHtml = '<div class="mb-2">' +
-        '<label class="form-label small fw-bold mb-0">' + escapeHtml(label) + '</label>' +
-        '<select class="form-select form-select-sm write-protected" onchange="gvState.platzhalter[' + i + '].inhalt = this.value">' +
-        '<option value="nein" ' + (!isSelectedJa ? 'selected' : '') + '>Nein (keine Wahlen)</option>' +
-        '<option value="ja" ' + (isSelectedJa ? 'selected' : '') + '>Ja (Wahljahr)</option>' +
-        '</select>' +
-        '</div>';
     } else {
       const isDateField = ph === 'dd.mm.jjjj';
       const displayValue = isDateField ? isoToDisplay(value) : value;

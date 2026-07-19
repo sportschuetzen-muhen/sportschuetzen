@@ -229,7 +229,11 @@ function renderUmfragenUI(container) {
                             <h5 class="card-title mb-0">&#128640; Tools</h5>
                             <button class="btn btn-success btn-sm write-protected" onclick="saveGVData()">&#128190; GV-Stammdaten speichern</button>
                         </div>
-                        <div class="d-flex gap-2 flex-wrap">
+                        <div class="d-flex gap-2 flex-wrap align-items-center">
+                            <div class="form-check form-switch d-flex align-items-center me-2 pe-2 border-end" style="margin-bottom: 0; min-height: auto;">
+                                <input class="form-check-input me-2" type="checkbox" id="gv-wahljahr-switch-embedded" style="cursor: pointer;">
+                                <label class="form-check-label small fw-bold text-muted" for="gv-wahljahr-switch-embedded" style="cursor: pointer; user-select: none;">Wahljahr</label>
+                            </div>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">&#128196; Einladungs-PDF</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendMails')">&#128231; GV Mails senden</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">&#128276; Mahnungen senden</button>

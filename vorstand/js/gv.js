@@ -48,7 +48,11 @@ function renderGVUI(container) {
         <div class="col-md-12 write-protected">
              <div class="card p-3 mb-3">
                 <h5 class="card-title">🚀 Tools</h5>
-                <div class="d-flex gap-2 flex-wrap">
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <div class="form-check form-switch d-flex align-items-center me-2 pe-2 border-end" style="margin-bottom: 0; min-height: auto;">
+                        <input class="form-check-input me-2" type="checkbox" id="gv-wahljahr-switch" style="cursor: pointer;">
+                        <label class="form-check-label small fw-bold text-muted" for="gv-wahljahr-switch" style="cursor: pointer; user-select: none;">Wahljahr</label>
+                    </div>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">📄 Einladungs-PDF</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('importClubdesk')">📥 Clubdesk Import</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendMails')">📧 GV Mails senden</button>
@@ -145,19 +149,6 @@ function renderGVList() {
           <select class="form-select form-select-sm write-protected" onchange="addGVMail(${i}, this.value); this.value=''">
             <option value="">+ Empfänger hinzufügen</option>
             ${members.map(mm => `<option value="${escapeHtml(mm.email)}">${escapeHtml(mm.name)}</option>`).join('')}
-          </select>
-        </div>
-      `;
-    }
-
-    if (label.toLowerCase().includes('wahljahr')) {
-      const isSelectedJa = String(value).toLowerCase() === 'ja' || String(value).toLowerCase() === 'true';
-      return `
-        <div class="mb-2">
-          <label class="form-label small fw-bold mb-0">${escapeHtml(label)}</label>
-          <select class="form-select form-select-sm write-protected" onchange="gvState.platzhalter[${i}].inhalt = this.value">
-            <option value="nein" ${!isSelectedJa ? 'selected' : ''}>Nein (keine Wahlen)</option>
-            <option value="ja" ${isSelectedJa ? 'selected' : ''}>Ja (Wahljahr)</option>
           </select>
         </div>
       `;
@@ -342,6 +333,12 @@ async function runGVTool(toolName) {
         }
 
         let payload = { action: 'runTool', tool: toolName, eventId: evId, user: localStorage.getItem('portal_user') };
+
+        if (toolName === 'genPDF') {
+            const sw1 = document.getElementById('gv-wahljahr-switch');
+            const sw2 = document.getElementById('gv-wahljahr-switch-embedded');
+            payload.isElectionYear = (sw1 && sw1.checked) || (sw2 && sw2.checked) || false;
+        }
 
         // Pass participants data if it's sendSummary, sendPraesenz, or sendReminders
         if (toolName === 'sendSummary' || toolName === 'sendPraesenz' || toolName === 'sendReminders') {
