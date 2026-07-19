@@ -73,7 +73,7 @@ function renderGVUI(container) {
                 <h5 class="card-title">Präsenz / Anmeldungen (Eventplaner)</h5>
                 <div class="mb-2">
                     <label class="form-label small">Verknüpftes Event wählen:</label>
-                    <select class="form-select form-select-sm" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
+                    <select class="form-select form-select-sm gv-event-selector" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
                         <option value="">-- Lade Events... --</option>
                     </select>
                 </div>
@@ -85,11 +85,12 @@ function renderGVUI(container) {
                                 <th style="cursor: pointer;" onclick="sortGvTable('status')">Teilnahme ↕</th>
                             </tr>
                         </thead>
-                        <tbody id="gv-anmelde-body">
+                        <tbody id="gv-anmelde-body" class="gv-anmelde-body">
                             <tr><td colspan="2" class="text-center text-muted">Bitte Event auswählen</td></tr>
                         </tbody>
                     </table>
                 </div>
+                <div id="gv-anmelde-summary" class="mt-3 gv-anmelde-summary"></div>
             </div>
         </div>
     </div>
@@ -170,37 +171,53 @@ function renderGVList() {
 }
 
 async function fetchGVEvents() {
-    const selector = document.getElementById('gv-event-selector');
-    if(!selector) return;
+    const selectors = document.querySelectorAll('.gv-event-selector, #gv-event-selector');
+    if(selectors.length === 0) return;
     try {
         const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
         const data = await res.json();
         const events = Array.isArray(data) ? data : (data.events || []);
         
-        selector.innerHTML = '<option value="">-- Bitte wählen --</option>' + 
+        const html = '<option value="">-- Bitte wählen --</option>' + 
             events.map(e => `<option value="${escapeHtml(e.id)}" ${gvState.linked_event === e.id ? 'selected' : ''}>${escapeHtml(e.title)} (${e.datum ? e.datum.split('T')[0] : ''})</option>`).join('');
+            
+        selectors.forEach(selector => {
+            selector.innerHTML = html;
+        });
             
         if(gvState.linked_event) {
             loadGVParticipants(gvState.linked_event);
         }
     } catch(e) {
-        selector.innerHTML = '<option value="">Fehler beim Laden</option>';
+        selectors.forEach(selector => {
+            selector.innerHTML = '<option value="">Fehler beim Laden</option>';
+        });
     }
 }
 
 async function loadGVParticipants(eventId) {
     if(!eventId) return;
     
-    // Speichere die Auswahl im State (wird beim Speichern an backend gesendet, falls gewünscht)
+    // Speichere die Auswahl im State
     gvState.linked_event = eventId;
     window.markUnsaved();
     
-    const tbody = document.getElementById('gv-anmelde-body');
-    if(!tbody) return;
+    // Synchronisiere alle Dropdowns
+    const selectors = document.querySelectorAll('.gv-event-selector, #gv-event-selector');
+    selectors.forEach(selector => {
+        if (selector.value !== eventId) {
+            selector.value = eventId;
+        }
+    });
+    
+    const tbodies = document.querySelectorAll('.gv-anmelde-body, #gv-anmelde-body');
+    if(tbodies.length === 0) return;
 
     const hasCache = window._gvParticipantsCache && window._gvParticipantsCache[eventId];
     if (!hasCache) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
+        tbodies.forEach(tbody => {
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
+        });
     }
     
     try {
@@ -225,7 +242,9 @@ async function loadGVParticipants(eventId) {
         renderGvTableBody();
         
     } catch(e) {
-        tbody.innerHTML = `<tr><td colspan="2" class="text-danger">Fehler: ${escapeHtml(e.message)}</td></tr>`;
+        tbodies.forEach(tbody => {
+            tbody.innerHTML = `<tr><td colspan="2" class="text-danger">Fehler: ${escapeHtml(e.message)}</td></tr>`;
+        });
     }
 }
 
@@ -245,13 +264,17 @@ function sortGvTable(field) {
 }
 
 function renderGvTableBody() {
-    const tbody = document.getElementById('gv-anmelde-body');
-    if (!tbody || !window.currentGvData) return;
+    const tbodies = document.querySelectorAll('.gv-anmelde-body, #gv-anmelde-body');
+    const summaryDivs = document.querySelectorAll('.gv-anmelde-summary, #gv-anmelde-summary');
+    if (tbodies.length === 0 || !window.currentGvData) return;
     
     if(window.currentGvData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Keine Daten gefunden.</td></tr>';
-        const summaryDiv = document.getElementById('gv-anmelde-summary');
-        if(summaryDiv) summaryDiv.innerHTML = '';
+        tbodies.forEach(tb => {
+            tb.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Keine Daten gefunden.</td></tr>';
+        });
+        summaryDivs.forEach(sd => {
+            sd.innerHTML = '';
+        });
         return;
     }
     
@@ -261,16 +284,15 @@ function renderGvTableBody() {
     let countEssen = 0;
     let countVegi = 0;
 
-    tbody.innerHTML = window.currentGvData.map(a => {
+    const rowsHtml = window.currentGvData.map(a => {
         let badgeStr = '';
         if (a.status === 'ja') {
             let essenInfo = '';
-            if (a.essen > 0) {
-                essenInfo = ` (+Essen: ${a.essen}`;
-                if (a.vegi > 0) {
-                    essenInfo += `, Vegi: ${a.vegi}`;
-                }
-                essenInfo += ')';
+            if (Number(a.essen) > 0 || Number(a.vegi) > 0) {
+                let parts = [];
+                if (Number(a.essen) > 0) parts.push(`${a.essen} Std`);
+                if (Number(a.vegi) > 0) parts.push(`${a.vegi} Vegi`);
+                essenInfo = ` (+Essen: ${parts.join(', ')})`;
             }
             badgeStr = `<span class="badge bg-success">Ja</span>${essenInfo}`;
             countJa++;
@@ -293,17 +315,22 @@ function renderGvTableBody() {
         </tr>`;
     }).join('');
 
-    const summaryDiv = document.getElementById('gv-anmelde-summary');
-    if(summaryDiv) {
-        summaryDiv.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border mt-2">
-                <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-check-circle"></i> Zugesagt: ${countJa}</span>
-                <span class="text-danger fw-bold" style="font-size:0.85rem;"><i class="fas fa-times-circle"></i> Abgesagt: ${countNein}</span>
-                <span class="text-secondary fw-bold" style="font-size:0.85rem;"><i class="fas fa-question-circle"></i> Offen: ${countOffen}</span>
-                <span class="text-info fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Essen: ${countEssen} (Vegi: ${countVegi})</span>
-            </div>
-        `;
-    }
+    tbodies.forEach(tb => {
+        tb.innerHTML = rowsHtml;
+    });
+
+    const summaryHtml = `
+        <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border mt-2">
+            <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-check-circle"></i> Zugesagt: ${countJa}</span>
+            <span class="text-danger fw-bold" style="font-size:0.85rem;"><i class="fas fa-times-circle"></i> Abgesagt: ${countNein}</span>
+            <span class="text-secondary fw-bold" style="font-size:0.85rem;"><i class="fas fa-question-circle"></i> Offen: ${countOffen}</span>
+            <span class="text-info fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Essen Total: ${countEssen + countVegi} (Standard: ${countEssen}, Vegi: ${countVegi})</span>
+        </div>
+    `;
+
+    summaryDivs.forEach(sd => {
+        sd.innerHTML = summaryHtml;
+    });
 }
 
 function getGVMemberMails() {

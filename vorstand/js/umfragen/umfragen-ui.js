@@ -138,7 +138,7 @@ function renderUmfragenUI(container) {
                                                 <th>Event</th>
                                                 <th class="text-center">Status</th>
                                                 <th class="text-center">Begl.</th>
-                                                <th class="text-center">Essen</th>
+                                                <th class="text-center">Essen / Vegi</th>
                                             </tr>
                                         </thead>
                                         <tbody id="hist-rsvp-body">
@@ -253,7 +253,7 @@ function renderUmfragenUI(container) {
                         <h5 class="card-title">Praesenz / Anmeldungen (Eventplaner)</h5>
                         <div class="mb-2">
                             <label class="form-label small">Verknuepftes Event waehlen:</label>
-                            <select class="form-select form-select-sm" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
+                            <select class="form-select form-select-sm gv-event-selector" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
                                 <option value="">-- Lade Events... --</option>
                             </select>
                         </div>
@@ -265,12 +265,12 @@ function renderUmfragenUI(container) {
                                         <th style="cursor: pointer;" onclick="sortGvTable('status')">Teilnahme &#8645;</th>
                                     </tr>
                                 </thead>
-                                <tbody id="gv-anmelde-body">
+                                <tbody id="gv-anmelde-body" class="gv-anmelde-body">
                                     <tr><td colspan="2" class="text-center text-muted">Bitte Event auswaehlen</td></tr>
                                 </tbody>
                             </table>
                         </div>
-                        <div id="gv-anmelde-summary" class="mt-3"></div>
+                        <div id="gv-anmelde-summary" class="mt-3 gv-anmelde-summary"></div>
                     </div>
                 </div>
             </div>

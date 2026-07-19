@@ -205,16 +205,21 @@ function removeGVMailEmbedded(idx, email) {
 }
 
 function fetchGVEventsEmbedded() {
-  const selector = document.getElementById('gv-event-selector');
-  if (!selector) return;
+  const selectors = document.querySelectorAll('.gv-event-selector, #gv-event-selector');
+  if (selectors.length === 0) return;
   
   // Verwende die bereits geladenen Events aus dem globalen umfragenState,
   // anstatt unnötig erneut eine API-Anfrage ans Backend zu senden!
   const events = umfragenState || [];
-  selector.innerHTML = '<option value="">-- Bitte wählen --</option>' +
+  const html = '<option value="">-- Bitte wählen --</option>' +
     events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
       (gvState.linked_event === e.id ? ' selected' : '') + '>' +
       escapeHtml(e.title) + ' (' + (e.datum ? e.datum.split('T')[0] : '') + ')</option>').join('');
+      
+  selectors.forEach(selector => {
+    selector.innerHTML = html;
+  });
+  
   if (gvState.linked_event) {
     loadGVParticipants(gvState.linked_event);
   }

@@ -35,13 +35,33 @@ async function loadParticipantsIfEventSelected() {
         
         eventParticipants = [];
 
+        let sumCount = 0;
+        let sumEssen = 0;
+        let sumVegi = 0;
+        pData.forEach(p => {
+            sumCount += parseInt(p.count) || 1;
+            sumEssen += parseInt(p.essen) || 0;
+            sumVegi += parseInt(p.vegi) || 0;
+        });
+
         // Cross-Referenz Adresse
-        let html = `<div class="table-responsive"><table class="table table-sm table-striped">
+        let html = '';
+        if (pData.length > 0) {
+            html += `
+            <div class="d-flex gap-3 justify-content-center bg-light p-2 rounded border mb-3 text-center">
+                <span class="text-primary fw-bold" style="font-size:0.85rem;"><i class="fas fa-users"></i> Personen: ${sumCount}</span>
+                <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Standard-Essen: ${sumEssen}</span>
+                <span class="text-warning fw-bold" style="font-size:0.85rem;"><i class="fas fa-leaf text-success"></i> Vegi-Essen: ${sumVegi}</span>
+            </div>
+            `;
+        }
+
+        html += `<div class="table-responsive"><table class="table table-sm table-striped">
             <thead><tr><th>Lizenz</th><th>Name</th><th>Adresse (aus DB)</th><th>Begl.</th><th>Essen</th><th>Vegi</th></tr></thead>
             <tbody>`;
 
         if(pData.length === 0) {
-            html += `<tr><td colspan="5" class="text-center text-muted">Niemand hat sich bisher angemeldet.</td></tr>`;
+            html += `<tr><td colspan="6" class="text-center text-muted">Niemand hat sich bisher angemeldet.</td></tr></tbody>`;
         } else {
             pData.forEach(p => {
                 let liz = String(p.lizenz || '').trim();
@@ -100,9 +120,20 @@ async function loadParticipantsIfEventSelected() {
                     <td>${p.vegi > 0 ? '<span class="badge bg-warning text-dark">'+p.vegi+'</span>' : '-'}</td>
                 </tr>`;
             });
+
+            // Totale im Tabellenfuss (tfoot)
+            html += `</tbody>
+            <tfoot class="table-light border-top border-dark-subtle fw-bold">
+                <tr>
+                    <td colspan="3" class="text-end text-muted small">Summe / Totale:</td>
+                    <td class="text-center"><span class="badge bg-info text-dark" title="Gesamtzahl Personen">${sumCount} Pers.</span></td>
+                    <td class="text-center"><span class="badge bg-success" title="Gesamtzahl Essen">${sumEssen}</span></td>
+                    <td class="text-center"><span class="badge bg-warning text-dark" title="Gesamtzahl Vegi">${sumVegi}</span></td>
+                </tr>
+            </tfoot>`;
         }
         
-        html += `</tbody></table></div>`;
+        html += `</table></div>`;
         listDiv.innerHTML = html;
 
         if(eventParticipants.length > 0) {
