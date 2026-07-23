@@ -807,34 +807,34 @@ window.bhBankBookOne = async function(txIdx) {
   const beschreibung = (tx.partyName ? `${tx.partyName}: ` : '') + (tx.remittanceInfo || 'Bankbuchung CAMT.053');
 
   try {
-    // 1. Journal-Buchungssatz in Buchhaltung speichern
-    const paramsBh = new URLSearchParams({
+    // 1. Journal-Buchungssatz in Buchhaltung speichern (POST)
+    const payloadBh = {
       action: 'addJournalEntry',
-      jahr: String(window._bhYear || new Date().getFullYear()),
+      jahr: Number(window._bhYear || new Date().getFullYear()),
       datum: tx.bookingDate || new Date().toISOString().split('T')[0],
       beleg_nr: 'CAMT-' + (tx.bookingDate ? tx.bookingDate.replace(/-/g,'') : '00') + '-' + (txIdx + 1),
       beschreibung: beschreibung,
       konto_soll: kontoSoll,
       konto_haben: kontoHaben,
-      betrag: tx.amount,
+      betrag: Number(tx.amount || 0),
       typ: 'Bank'
-    });
+    };
 
-    const resBh = await apiFetch('buchhaltung', paramsBh.toString());
+    const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
     const jsonBh = await resBh.json();
     if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen im Journal');
 
-    // 2. Falls Jahresbeitrag: auch im Jahresbeitrags-Modul als bezahlt setzen
+    // 2. Falls Jahresbeitrag: auch im Jahresbeitrags-Modul als bezahlt setzen (POST)
     if (tx.isJahresbeitrag && tx.matchedBeitrag && tx.matchedBeitrag.id) {
       try {
-        const paramsJb = new URLSearchParams({
+        const payloadJb = {
           action: 'saveZahlung',
           headerId: tx.matchedBeitrag.id,
           datum: tx.bookingDate,
           methode: 'Überweisung',
           beleg: 'CAMT053'
-        });
-        await apiFetch('jahresbeitrag', paramsJb.toString());
+        };
+        await apiFetch('jahresbeitrag', payloadJb, 'POST');
         
         // Cache im Beitragswesen updaten
         const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(tx.matchedBeitrag.id));
