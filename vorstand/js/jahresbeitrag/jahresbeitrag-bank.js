@@ -12,6 +12,21 @@ function renderBankabgleichTab() {
   const ibanFilterChecked = window._jbBankIbanFilterOff ? '' : 'checked';
 
   return `
+    <div class="alert alert-primary d-flex align-items-center justify-content-between p-3 mb-4 rounded-3 shadow-sm border-0" style="background: linear-gradient(135deg, #e7f1ff 0%, #f0f7ff 100%);">
+      <div class="d-flex align-items-center gap-3">
+        <div class="bg-primary text-white p-2 rounded-circle">
+          <i class="fas fa-university fa-lg"></i>
+        </div>
+        <div>
+          <strong class="text-primary">Neuer zentraler Bankabgleich in der Buchhaltung verfügbar!</strong>
+          <div class="small text-muted">Erkennt sowohl <strong>Jahresbeiträge</strong> als auch <strong>alle automatischen Buchungssätze</strong> fürs Journal.</div>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-primary fw-bold ms-3" onclick="if (typeof navTo === 'function') { navTo('buchhaltung', document.querySelector('.nav-link[onclick*=\\'buchhaltung\\']')); } if (typeof bhSwitchTab === 'function') { bhSwitchTab('bankabgleich'); }">
+        <i class="fas fa-arrow-right me-1"></i>Zum Buchhaltungs-Bankabgleich
+      </button>
+    </div>
+
     <div class="card border-0 shadow-sm p-4 bg-white">
       <h4 class="mb-1 text-success"><i class="fas fa-university me-2"></i>Bankabgleich – Jahresbeiträge</h4>
       <p class="text-muted small mb-3">CAMT.053 Kontoauszug hochladen. Das System erkennt Jahresbeitragszahlungen automatisch und gleicht sie mit den Mitgliederdaten ab.</p>

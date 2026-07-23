@@ -40,8 +40,11 @@ window.renderBuchhaltung = function() {
         <button class="bh-tab-btn ${window._bhActiveTab === 'journal' ? 'active' : ''}" onclick="bhSwitchTab('journal')">
           <i class="fas fa-list-ul me-1.5"></i> Kassabuch-Journal
         </button>
+        <button class="bh-tab-btn ${window._bhActiveTab === 'bankabgleich' ? 'active' : ''}" onclick="bhSwitchTab('bankabgleich')">
+          <i class="fas fa-university me-1.5"></i> Bankabgleich (CAMT)
+        </button>
         <button class="bh-tab-btn ${window._bhActiveTab === 'konten' ? 'active' : ''}" onclick="bhSwitchTab('konten')">
-          <i class="fas fa-university me-1.5"></i> Kontenrahmen & Budget
+          <i class="fas fa-book me-1.5"></i> Kontenrahmen & Budget
         </button>
         <button class="bh-tab-btn ${window._bhActiveTab === 'analyse' ? 'active' : ''}" onclick="bhSwitchTab('analyse')">
           <i class="fas fa-chart-pie me-1.5"></i> Budget & Jahresvergleich
@@ -105,6 +108,12 @@ window.renderActiveAccountingTab = function() {
     renderTabBerichte(content);
   } else if (window._bhActiveTab === 'journal') {
     renderTabJournal(content);
+  } else if (window._bhActiveTab === 'bankabgleich') {
+    if (typeof renderTabBankabgleich === 'function') {
+      renderTabBankabgleich(content);
+    } else {
+      content.innerHTML = `<div class="alert alert-info py-4 text-center"><i class="fas fa-spinner fa-spin me-2"></i> Lade Bankabgleich (CAMT.053)...</div>`;
+    }
   } else if (window._bhActiveTab === 'konten') {
     renderTabKontenrahmen(content);
   } else if (window._bhActiveTab === 'analyse') {

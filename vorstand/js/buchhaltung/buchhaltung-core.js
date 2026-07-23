@@ -258,6 +258,10 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
       window._bhJournal = dataJournal.data || [];
       window._bhKontenrahmen = dataKonten.data || [];
       window._bhBudget = dataBudget.data || [];
+
+      if (window._bhBankTransactions && window._bhBankTransactions.length > 0 && typeof bhBankMatchAll === 'function') {
+        window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+      }
       
       recalculateLiveAccountBalances();
       
