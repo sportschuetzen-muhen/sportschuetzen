@@ -168,17 +168,46 @@ async function loadTermine() {
             }
         });
 
+        // --- ROBUSTE DATUMS-PARSING HILFSFUNKTION ---
+        const parseEventDate = (obj) => {
+            if (!obj) return null;
+            let str = (obj.datum_iso || obj.datum || '').toString().trim();
+            if (!str) return null;
+
+            // Deutsches Format: DD.MM.YYYY
+            if (str.includes('.')) {
+                const parts = str.split('.');
+                if (parts.length >= 3) {
+                    const d = parseInt(parts[0], 10);
+                    const m = parseInt(parts[1], 10) - 1;
+                    const y = parseInt(parts[2], 10);
+                    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d);
+                }
+            }
+
+            // ISO Format: YYYY-MM-DD (z.B. Google Kalender)
+            if (str.includes('-')) {
+                const datePart = str.split('T')[0];
+                const parts = datePart.split('-');
+                if (parts.length === 3) {
+                    const y = parseInt(parts[0], 10);
+                    const m = parseInt(parts[1], 10) - 1;
+                    const d = parseInt(parts[2], 10);
+                    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d);
+                }
+            }
+
+            const fallback = new Date(str);
+            return isNaN(fallback.getTime()) ? null : fallback;
+        };
+
         // --- SORTIERUNG ---
         allTermine = merged.sort((a, b) => {
-            const parse = (obj) => {
-                if (obj.datum_iso) return new Date(obj.datum_iso);
-                if (obj.datum && obj.datum.includes('.')) {
-                    const [d, m, y] = obj.datum.split('.');
-                    return new Date(y, m - 1, d);
-                }
-                return new Date(8640000000000000);
-            };
-            return parse(a) - parse(b);
+            const dA = parseEventDate(a);
+            const dB = parseEventDate(b);
+            const tA = dA ? dA.getTime() : 8640000000000000;
+            const tB = dB ? dB.getTime() : 8640000000000000;
+            return tA - tB;
         });
         // Präfixe hinzufügen BEVOR vergangene Termine gefiltert werden!
         allTermine = applyRundenPrefix(allTermine);
@@ -188,16 +217,7 @@ async function loadTermine() {
         today.setHours(0,0,0,0);
 
         allTermine = allTermine.filter(t => {
-            const parse = (obj) => {
-                if (obj.datum_iso) return new Date(obj.datum_iso);
-                if (obj.datum && obj.datum.includes('.')) {
-                    const [d, m, y] = obj.datum.split('.');
-                    return new Date(y, m - 1, d);
-                }
-                return null;
-            };
-
-            const dateObj = parse(t);
+            const dateObj = parseEventDate(t);
             if (!dateObj) return false;
 
             dateObj.setHours(0,0,0,0);
@@ -218,6 +238,33 @@ function renderTermine(data, activeLizenz) {
     const months = ["Jan.", "Feb.", "März", "April", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez."];
     const days = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
+    const parseEventDate = (obj) => {
+        if (!obj) return null;
+        let str = (obj.datum_iso || obj.datum || '').toString().trim();
+        if (!str) return null;
+        if (str.includes('.')) {
+            const parts = str.split('.');
+            if (parts.length >= 3) {
+                const d = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10) - 1;
+                const y = parseInt(parts[2], 10);
+                if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d);
+            }
+        }
+        if (str.includes('-')) {
+            const datePart = str.split('T')[0];
+            const parts = datePart.split('-');
+            if (parts.length === 3) {
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10) - 1;
+                const d = parseInt(parts[2], 10);
+                if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d);
+            }
+        }
+        const fallback = new Date(str);
+        return isNaN(fallback.getTime()) ? null : fallback;
+    };
+
     wrap.innerHTML = "";
     if (heroWrap) heroWrap.innerHTML = "";
     
@@ -234,12 +281,8 @@ function renderTermine(data, activeLizenz) {
         const mapLink = `https://www.google.com/maps/search/?api=1&query=${mapQuery}`;
         
         // Datum konvertieren
-        let dObj;
-        if (t.datum_iso) dObj = new Date(t.datum_iso);
-        else if (t.datum && t.datum.includes('.')) {
-            const [d, m, y] = t.datum.split('.');
-            dObj = new Date(y, m - 1, d);
-        } else return; // Ohne Datum kein Eintrag
+        const dObj = parseEventDate(t);
+        if (!dObj) return; // Ohne Datum kein Eintrag
 
         const weekday = days[dObj.getDay()];
         const dateDisplay = `${dObj.getDate()}. ${months[dObj.getMonth()]}`;
