@@ -508,6 +508,35 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
     }
 });
 
+// --- LOGIN HILFE MODAL HANDLER ---
+const helpToggleBtn = document.getElementById('login-help-toggle');
+const helpModal = document.getElementById('login-help-modal');
+const closeHelpBtn = document.getElementById('close-login-help');
+const confirmHelpBtn = document.getElementById('confirm-login-help');
+
+if (helpToggleBtn && helpModal) {
+    helpToggleBtn.addEventListener('click', () => {
+        helpModal.style.display = 'flex';
+    });
+}
+if (closeHelpBtn && helpModal) {
+    closeHelpBtn.addEventListener('click', () => {
+        helpModal.style.display = 'none';
+    });
+}
+if (confirmHelpBtn && helpModal) {
+    confirmHelpBtn.addEventListener('click', () => {
+        helpModal.style.display = 'none';
+    });
+}
+if (helpModal) {
+    helpModal.addEventListener('click', (e) => {
+        if (e.target === helpModal) {
+            helpModal.style.display = 'none';
+        }
+    });
+}
+
 function showApp(user) {
     const wrapper = document.getElementById('app-wrapper');
     if (wrapper) wrapper.style.display = 'block';

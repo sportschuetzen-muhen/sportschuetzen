@@ -132,7 +132,7 @@ OneSignalDeferred.push(async function (OneSignal) {
     <div class="login-box">
         <img src="icons/icon-512.png" alt="Logo" class="login-logo">
         <h2>Anmeldung</h2>
-        <p>Bitte wähle deinen Namen aus und gib zur Bestätigung deine Lizenznummer ein.</p>
+        <p>Bitte wähle deinen Namen aus und gib zur Bestätigung deine Lizenznummer oder deinen PIN ein.</p>
         <div class="form-group">
             <label for="login-user-select">Name</label>
             <select id="login-user-select">
@@ -140,11 +140,37 @@ OneSignalDeferred.push(async function (OneSignal) {
             </select>
         </div>
         <div class="form-group">
-            <label for="login-password">Lizenz-Nummer</label>
+            <label for="login-password">Lizenz-Nummer / PIN</label>
             <input type="number" id="login-password" placeholder="123456" autocomplete="off">
         </div>
-        <div id="login-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:15px; font-weight:600;">Lizenznummer inkorrekt.</div>
+        <div id="login-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:15px; font-weight:600;">Lizenznummer / PIN inkorrekt.</div>
         <button id="login-btn" class="btn-main">Einloggen</button>
+        <div style="margin-top: 15px; text-align: center;">
+            <button id="login-help-toggle" class="btn-help-link" type="button">❓ Lizenznummer / PIN vergessen?</button>
+        </div>
+    </div>
+</div>
+
+<!-- HILFE MODAL (LOGIN) -->
+<div id="login-help-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>🔑 Hilfe zur Anmeldung</h3>
+            <button id="close-login-help" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-top:0;"><b>Wo finde ich meine Lizenznummer / meinen PIN?</b></p>
+            <ul style="padding-left: 20px; font-size: 0.9rem; line-height: 1.6; color: #4a5568; margin-bottom: 15px;">
+                <li><b>Aktivmitglieder:</b> Deine 6-stellige SSV-Lizenznummer findest du in deiner Einladungs-E-Mail zur a.o. GV sowie auf Deinem Lizenz-Büchlein.</li>
+                <li><b>Passivmitglieder:</b> Passivmitglieder besitzen meist keine SSV-Lizenz. Dein persönlicher 6-stelliger PIN steht direkt in deiner Einladungs-E-Mail.</li>
+            </ul>
+            <div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 12px; border-radius: 6px; font-size: 0.85rem; color: #2b6cb0;">
+                💡 <i>Tipp:</i> Öffne die E-Mail zur Einladung der ausserordentlichen GV – dort findest du deine Zugangsdaten im grünen Info-Kasten.
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button id="confirm-login-help" class="btn-main" style="width: auto; padding: 8px 20px;">Verstanden</button>
+        </div>
     </div>
 </div>
 
