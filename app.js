@@ -267,7 +267,7 @@ function renderTermine(data, activeLizenz) {
                 if (t.frage_begleitung || t.frage_essen) {
                     bodyContent += `<button class="hero-link" style="color:var(--primary); font-weight:bold; margin-top:5px;" onclick="${onYesClick}">Details ändern</button>`;
                 }
-                bodyContent += `<button class="hero-link" style="margin-top:5px;" onclick="submitRSVP('${t.id}', false)">Absagen</button>`;
+                bodyContent += `<button class="hero-link" style="margin-top:5px;" onclick="openAbmeldeForm('${t.id}')">Absagen</button>`;
 
             } else if (hasAnswered && !isAttending) {
                 bodyContent = `<div class="hero-chip error" style="align-self:center;">❌ Abgemeldet</div><button class="hero-link" onclick="${onYesClick}">Doch Anmelden</button>`;
@@ -278,7 +278,7 @@ function renderTermine(data, activeLizenz) {
                     <p class="hero-subtitle">Bist du dabei?</p>
                     <div class="hero-actions">
                         <button class="hero-btn success" onclick="${onYesClick}">Ja, sicher</button>
-                        <button class="hero-btn error" onclick="submitRSVP('${t.id}', false)">Nein</button>
+                        <button class="hero-btn error" onclick="openAbmeldeForm('${t.id}')">Nein</button>
                     </div>`;
             }
 
@@ -643,6 +643,60 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen) {
     heroCard.innerHTML = html;
 };
 
+// --- ABMELDE-FORMULAR (ABMELDEGRUND FAKULTATIV MIT NUDGE-DESIGN) ---
+window.openAbmeldeForm = function(eventId) {
+    const heroCard = document.getElementById(`rsvp-${eventId}`);
+    if (!heroCard) return;
+
+    let html = `
+        <div class="hero-card-inner">
+            <h2 style="font-size:1.1rem; color: #1e293b; margin-bottom:6px;">❌ Abmeldung</h2>
+            <p style="font-size:0.85rem; color:#64748b; margin-bottom:12px; margin-top:0;">
+                Möchtest du uns kurz den Grund mitteilen? (Optional)
+            </p>
+
+            <!-- Quick-Chips für schnelle 1-Klick Auswahl -->
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; justify-content:center;">
+                <button type="button" class="reason-chip" onclick="setAbmeldeGrund('${eventId}', 'Ferien / Urlaub')">🏖️ Ferien</button>
+                <button type="button" class="reason-chip" onclick="setAbmeldeGrund('${eventId}', 'Beruflich verhindert')">💼 Beruflich</button>
+                <button type="button" class="reason-chip" onclick="setAbmeldeGrund('${eventId}', 'Familienanlass')">👨‍👩‍👧 Familie</button>
+                <button type="button" class="reason-chip" onclick="setAbmeldeGrund('${eventId}', 'Gesundheitlich')">🤒 Gesundheitlich</button>
+                <button type="button" class="reason-chip" onclick="setAbmeldeGrund('${eventId}', 'Terminüberschneidung')">📅 Überschneidung</button>
+            </div>
+
+            <div style="text-align:left; margin-bottom:12px;">
+                <label style="font-size:0.85rem; font-weight:bold; color:#475569;">Abmeldegrund (fakultativ):</label>
+                <textarea id="input-grund-${eventId}" rows="2" placeholder="z.B. Ferien, geschäftlich unterwegs..." style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; font-family:inherit; resize:none;"></textarea>
+            </div>
+
+            <div class="hero-actions" style="margin-top: 10px;">
+                <button class="hero-btn error" style="flex:1;" onclick="submitRSVP('${eventId}', false)">
+                    Abmeldung absenden
+                </button>
+                <button class="hero-btn" style="background:#94a3b8; color:white;" onclick="loadTermine()">
+                    Zurück
+                </button>
+            </div>
+        </div>
+    `;
+
+    heroCard.innerHTML = html;
+
+    // Automatischer Fokus auf das Textfeld
+    setTimeout(() => {
+        const input = document.getElementById(`input-grund-${eventId}`);
+        if (input) input.focus();
+    }, 100);
+};
+
+window.setAbmeldeGrund = function(eventId, text) {
+    const input = document.getElementById(`input-grund-${eventId}`);
+    if (input) {
+        input.value = text;
+        input.focus();
+    }
+};
+
 window.submitRSVP = async function(eventId, attending) {
     const user = JSON.parse(localStorage.getItem('sportschuetzen_user'));
     if (!user) return;
@@ -650,6 +704,7 @@ window.submitRSVP = async function(eventId, attending) {
     let count = 1;
     let essen = 0;
     let vegi = 0;
+    let grund = '';
     
     if (attending) {
         const countInput = document.getElementById(`input-count-${eventId}`);
@@ -660,6 +715,9 @@ window.submitRSVP = async function(eventId, attending) {
 
         const vegiInput = document.getElementById(`input-vegi-${eventId}`);
         if (vegiInput) vegi = parseInt(vegiInput.value) || 0;
+    } else {
+        const grundInput = document.getElementById(`input-grund-${eventId}`);
+        if (grundInput) grund = grundInput.value.trim();
     }
     
     document.getElementById(`rsvp-${eventId}`).innerHTML = `<span style="font-size:0.8rem; color:white; font-weight:bold;">Verarbeite...</span>`;
@@ -667,7 +725,7 @@ window.submitRSVP = async function(eventId, attending) {
     try {
         // Sicherstellen dass Lizenz sechstellig ist
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
-        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${cleanLizenz}&attending=${attending}&count=${count}&essen=${essen}&vegi=${vegi}`);
+        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${cleanLizenz}&attending=${attending}&count=${count}&essen=${essen}&vegi=${vegi}&grund=${encodeURIComponent(grund)}`);
         const result = await resp.json();
         if (!result.success) throw new Error("Serverfehler beim Speichern");
         

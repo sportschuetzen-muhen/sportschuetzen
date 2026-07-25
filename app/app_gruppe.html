@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        :root { 
+            --primary: #0f3c5c; 
+            --bg: #f4f6f8; 
+            --text: #333; 
+            --line: #e0e0e0; 
+            --hover: #e6eef5; 
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; 
+            background: var(--bg); 
+            margin: 0; 
+            padding: 15px; 
+            color: var(--text); 
+            /* Verhindert Gummiband-Effekt des Browsers, damit unser Spinner Priorität hat */
+            overscroll-behavior-y: contain; 
+        }
+
+        .subtitle { color: #666; margin-bottom: 10px; font-size: 14px; font-weight: bold; }
+        .table-wrapper { overflow-x: auto; margin-bottom: 30px; }
+        
+        .separator { display: flex; align-items: center; text-align: center; margin: 40px 0 20px; color: var(--primary); font-weight: bold; font-size: 18px; }
+        .separator::before, .separator::after { content: ''; flex: 1; border-bottom: 2px solid var(--line); }
+        .separator:not(:empty)::before { margin-right: .5em; }
+        .separator:not(:empty)::after { margin-left: .5em; }
+
+        table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.08); border-radius: 6px; overflow: hidden; }
+        th { background: var(--primary); color: #fff; font-size: 14px; height: 50px; padding: 0 10px; position: sticky; top: 0; z-index: 10; }
+        
+        .col-team { width: 55%; text-align: left; padding-left: 15px; }
+        .col-round { width: 15%; text-align: center; }
+
+        td { padding: 12px 10px; border-bottom: 1px solid var(--line); font-size: 14px; }
+        td.team { font-weight: bold; text-align: left; color: var(--primary); padding-left: 15px; }
+        .cell { text-align: center; cursor: pointer; transition: background 0.2s; font-weight: bold; }
+        
+        /* HEATMAP */
+        .hm-mid { background-color: #e6f6ec !important; color: #1f7a3a !important; }
+        .hm-high { background-color: #c3e6cb !important; color: #155724 !important; }
+        .hm-top { background-color: #ffeeba !important; color: #856404 !important; }
+
+        .detail { display: none; background: #f9f9f9; padding: 15px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); border-bottom: 2px solid var(--line); }
+        h3 { font-size: 16px; margin: 0 0 10px 0; color: var(--primary); text-align: center; }
+
+        .player-gm, .total-row-gm { display: grid; grid-template-columns: 1fr 40px 40px 70px; gap: 10px; padding: 8px 0; align-items: center; }
+        .player-gc, .total-row-gc { display: flex; justify-content: space-between; padding: 8px 0; align-items: center; }
+
+        .player-gm, .player-gc { border-bottom: 1px solid #eee; font-size: 14px; }
+        .total-row-gm, .total-row-gc { margin-top: 10px; border-top: 2px solid var(--primary); color: var(--primary); font-weight: bold; font-size: 16px; }
+
+        .trend { font-size: 12px; margin-left: 5px; font-weight: normal; }
+        .up { color: #28a745; }
+        .down { color: #dc3545; }
+        .steady { color: #6c757d; }
+
+        .name-container { display: flex; align-items: center; gap: 8px; text-align: left; overflow: hidden; }
+        .stellung { font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 10px; text-transform: uppercase; white-space: nowrap; }
+        .liegend { background: #e3f0ff; color: #1e5dbf; border: 1px solid #bcd9ff; }
+        .kniend { background: #e6f6ec; color: #1f7a3a; border: 1px solid #c3e6cb; }
+
+        /* PULL SPINNER STYLE */
+        #pull-spinner { 
+            position: fixed; top: -50px; left: 50%; transform: translateX(-50%); 
+            width: 40px; height: 40px; background: var(--primary); border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center; 
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2); z-index: 2001; transition: top 0.1s ease-out;
+        }
+        .spinner-icon { 
+            width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.3); 
+            border-top-color: #fff; border-radius: 50%; animation: spin 0.8s infinite linear; 
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="pull-spinner"><div class="spinner-icon"></div></div>
+
+    <div class="subtitle">Auf Punkte klicken für Details</div>
+    
+    <div class="separator">Gruppe</div>
+    <div id="overview-gm">Lade Daten...</div>
+    
+    <div class="separator">Grenzlandcup</div>
+    <div id="overview-gc">Lade Daten...</div>
+
+<script>
+    const WORKER_URL = "https://gruppe.dan-hunziker73.workers.dev";
+    const selectedYear = 'aktuell';
+    let rawGM = []; 
+    let rawGC = [];
+
+    // --- DATEN LADEN ---
+    async function loadAllData() {
+        try {
+            const [resGM, resGC] = await Promise.all([
+                fetch(`${WORKER_URL}?type=gruppe&jahr=${selectedYear}`).then(r => r.json()),
+                fetch(`${WORKER_URL}?type=grenzland&jahr=${selectedYear}`).then(r => r.json())
+            ]);
+            rawGM = resGM; rawGC = resGC;
+            buildTable("gm", rawGM, "overview-gm");
+            buildTable("gc", rawGC, "overview-gc");
+        } catch (e) { 
+            console.error("Fehler:", e); 
+            document.getElementById("overview-gm").innerHTML = "Fehler beim Laden.";
+        }
+    }
+
+    // --- TABELLEN BAUEN ---
+    function buildTable(type, data, targetId) {
+        if(!data || data.length === 0) return;
+        const teams = [...new Set(data.flatMap(r => [r.r1Team, r.r2Team, r.r3Team]).filter(Boolean))].sort();
+        let html = `<div class="table-wrapper"><table><tr><th class="col-team"></th><th class="col-round">R1</th><th class="col-round">R2</th><th class="col-round">R3</th></tr>`;
+        
+        teams.forEach((team, index) => {
+            html += `<tr><td class="team">${team}</td>`;
+            for(let r=1; r<=3; r++){
+                const teamRows = data.filter(p => p[`r${r}Team`] === team);
+                const sum = teamRows.reduce((a, b) => a + (type === "gm" ? (b[`r${r}P1`] + b[`r${r}P2`]) : b[`r${r}Pkt`]), 0);
+                const avg = teamRows.length > 0 ? sum / teamRows.length : 0;
+                html += `<td class="cell ${getHMClass(avg, type)}" onclick="toggleDetail('${type}', '${team.replace(/'/g,"\\'")}', ${r}, ${index})">${sum || "–"}</td>`;
+            }
+            html += `</tr><tr><td colspan="4" style="padding:0; border:0;">`;
+            for(let r=1; r<=3; r++) html += `<div id="detail-${type}-${index}-${r}" class="detail"></div>`;
+            html += `</td></tr>`;
+        });
+        document.getElementById(targetId).innerHTML = html + `</table></div>`;
+    }
+
+    // --- DETAILS ANZEIGEN ---
+    function toggleDetail(type, team, round, index) {
+        const div = document.getElementById(`detail-${type}-${index}-${round}`);
+        if(div.style.display === "block"){ div.style.display = "none"; return; }
+        
+        // Alle anderen Details schließen (optional, für bessere Übersicht)
+        document.querySelectorAll('.detail').forEach(d => d.style.display = 'none');
+
+        const list = (type === "gm" ? rawGM : rawGC).filter(p => p[`r${round}Team`] === team && (type === "gm" ? (p[`r${round}P1`]+p[`r${round}P2`]>0) : p[`r${round}Pkt`]>0));
+        let total = 0, html = `<h3>${team} – Runde ${round}</h3>`;
+
+        list.forEach(p => {
+            let val = type === "gm" ? (p[`r${round}P1`] + p[`r${round}P2`]) : p[`r${round}Pkt`];
+            let prevVal = 0;
+            if (round > 1) {
+                prevVal = type === "gm" ? (p[`r${round-1}P1`] + p[`r${round-1}P2`]) : p[`r${round-1}Pkt`];
+            }
+            total += val;
+            const trend = getTrend(val, prevVal);
+            const hm = getHMClass(val, type, p.stellung || "");
+
+            if(type === "gm") {
+                const cls = p.stellung.toLowerCase().includes("liegend") ? "liegend" : "kniend";
+                html += `<div class="player-gm"><div class="name-container"><span>${p.name}</span><span class="stellung ${cls}">${p.stellung}</span></div><div>${p[`r${round}P1`]}</div><div>${p[`r${round}P2`]}</div><div style="text-align:right;" class="${hm}"><strong>${val}</strong>${trend}</div></div>`;
+            } else {
+                html += `<div class="player-gc"><span>${p.name}</span><span style="text-align:right;" class="${hm}"><strong>${val}</strong>${trend}</span></div>`;
+            }
+        });
+        const trCls = type === "gm" ? "total-row-gm" : "total-row-gc";
+        html += `<div class="${trCls}"><span>Gesamt:</span>${type === "gm" ? '<div></div><div></div>' : ''}<span style="text-align:right;">${total}</span></div>`;
+        div.innerHTML = html; div.style.display = "block";
+    }
+
+    // --- HILFSFUNKTIONEN ---
+    function getHMClass(val, type, stellung = "") {
+        if (!val || val === 0) return "";
+        let bonus = stellung.toLowerCase().includes("kniend") ? 3 : 0;
+        if (type === "gm") {
+            if (val + bonus >= 196) return "hm-top";
+            if (val + bonus >= 191) return "hm-high";
+            if (val + bonus >= 186) return "hm-mid";
+        } else {
+            if (val >= 98) return "hm-top";
+            if (val >= 96) return "hm-high";
+            if (val >= 94) return "hm-mid";
+        }
+        return "";
+    }
+
+    function getTrend(curr, prev) {
+        if (!prev || prev === 0 || !curr || curr === 0) return "";
+        if (curr > prev) return '<span class="trend up">▲</span>';
+        if (curr < prev) return '<span class="trend down">▼</span>';
+        return '<span class="trend steady">▶</span>';
+    }
+
+    // --- PULL TO REFRESH LOGIK ---
+    let touchStart = 0;
+    const spinner = document.getElementById('pull-spinner');
+
+    document.addEventListener('touchstart', e => { 
+        touchStart = e.touches[0].pageY; 
+    }, {passive: true});
+
+    document.addEventListener('touchmove', e => {
+        const distance = e.touches[0].pageY - touchStart;
+        if (window.pageYOffset <= 0 && distance > 0) {
+            spinner.style.top = `${Math.min(distance / 2, 100) - 40}px`;
+            spinner.style.transform = `translateX(-50%) scale(${distance > 90 ? 1.2 : 1})`;
+        }
+    }, {passive: true});
+
+    document.addEventListener('touchend', e => {
+        if (window.pageYOffset <= 0 && (e.changedTouches[0].pageY - touchStart) > 90) {
+            location.reload();
+        } else {
+            spinner.style.top = '-50px';
+        }
+    }, {passive: true});
+
+    // iOS App-Wakeup Logik
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") loadAllData();
+    });
+
+    window.onload = loadAllData;
+</script>
+</body>
+</html>
