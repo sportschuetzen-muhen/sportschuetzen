@@ -10,9 +10,9 @@ function renderSchnellerfassungTab() {
       <div class="col-md-3 border-end d-flex flex-column h-100 p-2 bg-light rounded-start">
         <div class="mb-2">
           <input type="text" class="form-control form-control-sm" id="jbEntrySearch" 
-                 placeholder="🔍 Suchen (Name / ID)…" oninput="jbEntrySearchFilter(this.value)">
+                 placeholder="🔍 Suchen (Name / ID)…" oninput="jbEntrySearchFilter(this.value)" onkeydown="jbHandleSidebarKeyDown(event)">
           <div class="text-muted small mt-1 px-1" style="font-size: 11px;">
-            <i class="fas fa-info-circle me-1"></i> Tipp: Scrollen & Pfeiltasten wechseln Schütze
+            <i class="fas fa-keyboard me-1"></i> Tipp: Pfeiltasten (▲/▼) wechseln Schütze
           </div>
         </div>
 
@@ -26,11 +26,9 @@ function renderSchnellerfassungTab() {
                   onclick="jbSortSidebar('modified')" style="font-size: 10px; padding: 2px;">Geändert</button>
         </div>
         
-        <!-- Bulk Save Container -->
-        <div id="jbBulkSaveContainer" class="mb-2 d-none">
-          <button class="btn btn-success btn-sm w-100 fw-bold py-2 shadow-sm" onclick="jbSaveAllBulkLocalChanges()">
-            <i class="fas fa-cloud-upload-alt me-1"></i> <span id="jbBulkSaveCount">0</span> Änderungen speichern
-          </button>
+        <!-- Auto-Save Status Container -->
+        <div id="jbAutoSaveStatus" class="mb-2 text-center py-1.5 px-2 bg-light border rounded text-muted small" style="font-size: 11px;">
+          <i class="fas fa-shield-alt text-success me-1"></i>Auto-Save aktiv
         </div>
 
         <div class="list-group flex-fill overflow-y-auto border rounded bg-white" id="jbEntryMemberList" style="max-height: calc(100% - 135px);">
@@ -281,6 +279,18 @@ function jbRenderEntryForm(m) {
       <!-- RECHTE SPALTE: Auswahlelemente -->
       <div class="col-md-7 d-flex flex-column overflow-y-auto pr-1" style="max-height: calc(100vh - 210px);">
         
+        <!-- 0. Schnell-Presets (Vorlagen) -->
+        <div class="card p-2 border-0 shadow-sm mb-3 rounded-3 bg-light border-start border-4 border-warning">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
+            <span class="small fw-bold text-muted" style="font-size:11px;"><i class="fas fa-bolt text-warning me-1"></i>Schnell-Vorlage:</span>
+            <div class="d-flex gap-1">
+              <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold" onclick="jbApplyPreset('aktiv_a', '${m.PersonNumber}')" style="font-size:11px;">⚡ Aktiv A</button>
+              <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold" onclick="jbApplyPreset('aktiv_b', '${m.PersonNumber}')" style="font-size:11px;">⚡ Aktiv B</button>
+              <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 fw-semibold" onclick="jbApplyPreset('passiv', '${m.PersonNumber}')" style="font-size:11px;">⚡ Passiv</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 1. Lizenz & Status -->
         <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
           <h6 class="text-secondary fw-bold mb-2" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-id-card me-2"></i>Lizenz & Status</h6>
@@ -432,7 +442,98 @@ function jbRenderEntryForm(m) {
           </div>
         </div>
 
-        <!-- 4. Speichern & Aktionen -->
+        <!-- 4. Variable Zusatzpositionen (Freie Beträge) & Schloss 🔒 -->
+        <div class="card p-3 border-0 shadow-sm mb-3 rounded-3 bg-white border-start border-4 border-info">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="text-secondary fw-bold mb-0" style="font-size: 12px; text-transform: uppercase;">
+              <i class="fas fa-plus-circle me-2 text-info"></i>Variable Zusatzpositionen (Freie Beträge)
+            </h6>
+            <div>
+              <button type="button" class="btn btn-xs btn-outline-primary fw-bold me-1" onclick="jbToggleAllAktiveZusatz(true, '${m.PersonNumber}')" style="font-size: 10px;">
+                <i class="fas fa-bolt me-1"></i>⚡ Für Aktive (AN)
+              </button>
+              <button type="button" class="btn btn-xs btn-outline-secondary fw-bold" onclick="jbToggleAllAktiveZusatz(false, '${m.PersonNumber}')" style="font-size: 10px;">
+                Alle abwählen
+              </button>
+            </div>
+          </div>
+          
+          <!-- Zusatzposition 1 -->
+          <div class="p-2 bg-light rounded-2 border mb-2">
+            <div class="row g-2 align-items-center">
+              <div class="col-auto">
+                <input class="form-check-input" type="checkbox" id="z1_active_${m.PersonNumber}" ${
+                  _jbParticipationsState.z1_active ? 'checked' : ''
+                } onchange="jbUpdateState('z1_active', this.checked, '${m.PersonNumber}')">
+              </div>
+              <div class="col">
+                <input type="text" class="form-control form-control-sm" placeholder="Text (z.B. Beitrag Vereinsjacke)" 
+                       value="${escHtml(_jbParticipationsState.z1_text || 'Beitrag Vereinsjacke')}" 
+                       onchange="jbUpdateState('z1_text', this.value, '${m.PersonNumber}')">
+              </div>
+              <div class="col-3">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text px-1">CHF</span>
+                  <input type="number" step="0.05" class="form-control form-control-sm text-end" placeholder="60.00" 
+                         value="${_jbParticipationsState.z1_betrag !== undefined ? _jbParticipationsState.z1_betrag : 60}" 
+                         onchange="jbUpdateState('z1_betrag', parseFloat(this.value)||0, '${m.PersonNumber}')">
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="input-group input-group-sm" style="width: 110px;">
+                  <input type="text" id="z1_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
+                         value="${_jbParticipationsState.z1_konto || '8500'}" 
+                         ${_jbParticipationsState.z1_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
+                         onchange="jbUpdateState('z1_konto', this.value, '${m.PersonNumber}')">
+                  <button class="btn btn-outline-secondary" type="button" 
+                          onclick="jbToggleKontoLock('z1_unlocked', '${m.PersonNumber}')" 
+                          title="${_jbParticipationsState.z1_unlocked ? 'Konto sperren' : 'Konto bearbeiten'}">
+                    <i class="fas ${_jbParticipationsState.z1_unlocked ? 'fa-lock-open text-warning' : 'fa-lock'}"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zusatzposition 2 -->
+          <div class="p-2 bg-light rounded-2 border">
+            <div class="row g-2 align-items-center">
+              <div class="col-auto">
+                <input class="form-check-input" type="checkbox" id="z2_active_${m.PersonNumber}" ${
+                  _jbParticipationsState.z2_active ? 'checked' : ''
+                } onchange="jbUpdateState('z2_active', this.checked, '${m.PersonNumber}')">
+              </div>
+              <div class="col">
+                <input type="text" class="form-control form-control-sm" placeholder="Text (z.B. Eidg. Schützenfest)" 
+                       value="${escHtml(_jbParticipationsState.z2_text || 'Beitrag Eidg. Schützenfest')}" 
+                       onchange="jbUpdateState('z2_text', this.value, '${m.PersonNumber}')">
+              </div>
+              <div class="col-3">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text px-1">CHF</span>
+                  <input type="number" step="0.05" class="form-control form-control-sm text-end" placeholder="150.00" 
+                         value="${_jbParticipationsState.z2_betrag !== undefined ? _jbParticipationsState.z2_betrag : 150}" 
+                         onchange="jbUpdateState('z2_betrag', parseFloat(this.value)||0, '${m.PersonNumber}')">
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="input-group input-group-sm" style="width: 110px;">
+                  <input type="text" id="z2_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
+                         value="${_jbParticipationsState.z2_konto || '1190'}" 
+                         ${_jbParticipationsState.z2_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
+                         onchange="jbUpdateState('z2_konto', this.value, '${m.PersonNumber}')">
+                  <button class="btn btn-outline-secondary" type="button" 
+                          onclick="jbToggleKontoLock('z2_unlocked', '${m.PersonNumber}')" 
+                          title="${_jbParticipationsState.z2_unlocked ? 'Konto sperren' : 'Konto bearbeiten'}">
+                    <i class="fas ${_jbParticipationsState.z2_unlocked ? 'fa-lock-open text-warning' : 'fa-lock'}"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Speichern & Aktionen -->
         <div class="d-flex gap-2 mt-auto pt-2">
           <button class="btn btn-outline-danger" onclick="jbEntryResetForm('${m.PersonNumber}')">
             <i class="fas fa-trash-alt me-1"></i> Zurücksetzen
@@ -459,7 +560,108 @@ function jbConfirmEntrySchuetzenhaus(chk, pn) {
   }
 }
 
-// 5. State live aktualisieren
+// 5. State live aktualisieren & Auto-Save ausführen
+let _jbAutoSaveTimer = null;
+
+function jbTriggerAutoSave(pnClean) {
+  const statusEl = document.getElementById('jbAutoSaveStatus');
+  if (statusEl) {
+    statusEl.innerHTML = `<span class="text-warning fw-semibold"><i class="fas fa-spinner fa-spin me-1"></i>Speichere...</span>`;
+  }
+
+  if (_jbAutoSaveTimer) clearTimeout(_jbAutoSaveTimer);
+
+  _jbAutoSaveTimer = setTimeout(async () => {
+    try {
+      const settings = _jbLocalBulkChanges[pnClean] || _jbParticipationsState;
+      const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
+      if (!m) return;
+
+      const payload = {
+        action: 'saveParticipations',
+        year: _jbYear,
+        PersonNumber: pnClean,
+        settings: settings
+      };
+
+      await apiFetch('jahresbeitrag', payload, 'POST');
+      
+      // Memory Caches updaten
+      if (typeof jbSyncMemberToCache === 'function') {
+        jbSyncMemberToCache(pnClean, settings);
+      }
+
+      const now = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="text-success fw-bold"><i class="fas fa-check-circle me-1"></i>Auto-Gespeichert (${now})</span>`;
+      }
+    } catch(err) {
+      console.warn("Auto-Save Fehler:", err);
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="text-danger fw-semibold"><i class="fas fa-exclamation-circle me-1"></i>Speicherfehler</span>`;
+      }
+    }
+  }, 400);
+}
+
+function jbApplyPreset(presetType, pn) {
+  const pnClean = String(pn || '').trim();
+  const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
+  if (!m) return;
+
+  if (presetType === 'aktiv_a') {
+    _jbParticipationsState.lizenz = 'verein';
+    _jbParticipationsState.schuetzenhaus = true;
+    _jbParticipationsState.kk_volksschiessen = '1';
+    _jbParticipationsState.kk_verband = true;
+    _jbParticipationsState.kk_verein = true;
+  } else if (presetType === 'aktiv_b') {
+    _jbParticipationsState.lizenz = 'verein';
+    _jbParticipationsState.schuetzenhaus = true;
+    _jbParticipationsState.kk_volksschiessen = '1';
+    _jbParticipationsState.kk_verband = false;
+    _jbParticipationsState.kk_verein = true;
+  } else if (presetType === 'passiv') {
+    _jbParticipationsState.lizenz = 'passiv';
+    _jbParticipationsState.schuetzenhaus = false;
+    _jbParticipationsState.kk_volksschiessen = 'keine';
+    _jbParticipationsState.kk_verband = false;
+    _jbParticipationsState.kk_verein = false;
+  }
+
+  _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+  if (typeof jbSyncMemberToCache === 'function') {
+    jbSyncMemberToCache(pnClean, _jbParticipationsState);
+  }
+  jbRenderEntryList();
+  jbRenderEntryForm(m);
+  jbTriggerAutoSave(pnClean);
+}
+
+function jbHandleSidebarKeyDown(e) {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const search = _jbEntrySearch.toLowerCase().trim();
+    const filtered = _jbMembers.filter(m => {
+      const name = `${m.FirstName || ''} ${m.LastName || ''} ${m.PersonNumber || ''}`.toLowerCase();
+      return !search || name.includes(search);
+    });
+    if (!filtered.length) return;
+    
+    let currentIdx = filtered.findIndex(m => String(m.PersonNumber).trim() === String(_jbSelectedMemberPN).trim());
+    if (e.key === 'ArrowDown') {
+      currentIdx = currentIdx < filtered.length - 1 ? currentIdx + 1 : 0;
+    } else if (e.key === 'ArrowUp') {
+      currentIdx = currentIdx > 0 ? currentIdx - 1 : filtered.length - 1;
+    }
+    
+    const nextMem = filtered[currentIdx];
+    if (nextMem) {
+      jbEntrySelectMember(nextMem.PersonNumber);
+    }
+  }
+}
+
 function jbUpdateState(key, val, pn) {
   const pnClean = String(pn || '').trim();
   _jbParticipationsState[key] = val;
@@ -469,13 +671,18 @@ function jbUpdateState(key, val, pn) {
   }
   _jbLocalBulkChanges[pnClean][key] = val;
 
-  jbUpdateBulkSaveButton();
+  if (typeof jbSyncMemberToCache === 'function') {
+    jbSyncMemberToCache(pnClean, _jbParticipationsState);
+  }
+
   jbRenderEntryList();
 
   const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
   if (m) {
     jbRenderEntryForm(m);
   }
+
+  jbTriggerAutoSave(pnClean);
 }
 
 // 6. Formular-Reset
@@ -735,3 +942,40 @@ function jbSortSidebar(col) {
   jbApplySidebarSorting();
   jbRenderEntryList();
 }
+
+window.jbToggleKontoLock = function(key, pn) {
+  const pnClean = String(pn || '').trim();
+  const current = !!_jbParticipationsState[key];
+  jbUpdateState(key, !current, pnClean);
+};
+
+window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {
+  const textMsg = activateState ? 'für ALLE aktiven Schützen aktivieren' : 'für ALLE Schützen abwählen';
+  const ok = confirm(`Möchten Sie die Zusatzposition 1 (Beitrag Vereinsjacke) ${textMsg}?`);
+  if (!ok) return;
+
+  _jbMembers.forEach(m => {
+    const isEhren = m._istEhren || false;
+    const isPassiv = m._istPassiv || false;
+    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+    const isJunior = age > 0 && age <= 20;
+
+    // Nur für Aktive (oder beim Abwählen für alle)
+    if (!activateState || (!isPassiv && !isEhren && !isJunior)) {
+      const pnClean = String(m.PersonNumber || '').trim();
+      if (!_jbLocalBulkChanges[pnClean]) {
+        _jbLocalBulkChanges[pnClean] = {};
+      }
+      _jbLocalBulkChanges[pnClean].z1_active = activateState;
+      if (activateState) {
+        if (!_jbLocalBulkChanges[pnClean].z1_text) _jbLocalBulkChanges[pnClean].z1_text = _jbParticipationsState.z1_text || 'Beitrag Vereinsjacke';
+        if (_jbLocalBulkChanges[pnClean].z1_betrag === undefined) _jbLocalBulkChanges[pnClean].z1_betrag = _jbParticipationsState.z1_betrag !== undefined ? _jbParticipationsState.z1_betrag : 60;
+        if (!_jbLocalBulkChanges[pnClean].z1_konto) _jbLocalBulkChanges[pnClean].z1_konto = _jbParticipationsState.z1_konto || '8500';
+      }
+    }
+  });
+
+  _jbParticipationsState.z1_active = activateState;
+  jbUpdateState('z1_active', activateState, currentPn);
+  showToast(`⚡ Zusatzposition 1 ${activateState ? 'für alle aktiven Schützen aktiviert' : 'abgewählt'}.`, 'success');
+};

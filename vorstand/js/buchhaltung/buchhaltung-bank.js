@@ -7,37 +7,97 @@ window._bhBankTransactions = window._bhBankTransactions || [];
 window._bhBankMatchResults = window._bhBankMatchResults || [];
 window._bhBankActiveFilter = window._bhBankActiveFilter || 'all';
 
-// Aus localStorage geladene Benutzer-Buchungsregeln
+// Synchroner / Asynchroner Abruf der Bank-Regeln (Server-Sync + LocalStorage Fallback)
 window.getBhBankRules = function() {
   try {
-    const stored = localStorage.getItem('bh_bank_rules');
-    return stored ? JSON.parse(stored) : getBhDefaultRules();
+    let rules = [];
+    if (window._bhBankServerRules && Array.isArray(window._bhBankServerRules) && window._bhBankServerRules.length > 0) {
+      rules = window._bhBankServerRules;
+    } else {
+      const stored = localStorage.getItem('bh_bank_rules');
+      rules = stored ? JSON.parse(stored) : getBhDefaultRules();
+    }
+
+    // Auto-Fix für alte RaiseNow Regel-Einträge
+    rules = rules.map(r => {
+      if (/raisenow/i.test(r.pattern || r.label || '')) {
+        return {
+          ...r,
+          label: 'RaiseNow TWINT',
+          prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)',
+          soll: '1020',
+          haben: '3651'
+        };
+      }
+      return r;
+    });
+
+    return rules;
   } catch (e) {
     return getBhDefaultRules();
   }
 };
 
 window.saveBhBankRules = function(rules) {
+  window._bhBankServerRules = rules;
   try {
     localStorage.setItem('bh_bank_rules', JSON.stringify(rules));
   } catch (e) {
-    console.error('Fehler beim Speichern der Bank-Regeln:', e);
+    console.error('Fehler beim lokalen Speichern der Bank-Regeln:', e);
   }
+
+  // Übermittlung an das zentrale Google Sheet
+  try {
+    apiFetch('buchhaltung', { action: 'saveBankRules', rules: rules }, 'POST')
+      .then(res => res.json())
+      .then(json => {
+        if (json && json.success) {
+          console.log('✅ Bank-Regeln erfolgreich im zentralen Google Sheet gespeichert.');
+        }
+      })
+      .catch(err => {
+        console.warn('⚠️ Hinweis: Zentrale Regel-Speicherung im Sheet:', err);
+      });
+  } catch (err) {
+    console.warn('⚠️ Hinweis: apiFetch Fehler beim Speichern der Regeln:', err);
+  }
+};
+
+// Beim Modulstart zentrale Regeln aus Google Sheet abrufen
+window.fetchBhBankServerRules = function() {
+  try {
+    apiFetch('buchhaltung', { action: 'getBankRules' }, 'GET')
+      .then(res => res.json())
+      .then(json => {
+        if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          window._bhBankServerRules = json.data;
+          localStorage.setItem('bh_bank_rules', JSON.stringify(json.data));
+          console.log('✅ Bank-Regeln erfolgreich aus dem zentralen Google Sheet geladen.');
+          if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+            window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+            bhBankRenderResults(window._bhBankActiveFilter);
+          }
+        }
+      })
+      .catch(_ => {});
+  } catch (_) {}
 };
 
 function getBhDefaultRules() {
   return [
-    { pattern: 'bankspesen', soll: '6900', haben: '1020', label: 'Bankspesen / Finanzaufwand' },
-    { pattern: 'kontoführung', soll: '6900', haben: '1020', label: 'Bankspesen / Kontoführung' },
-    { pattern: 'zins', soll: '1020', haben: '6950', label: 'Zinsertrag / Bank' },
-    { pattern: 'schützenverband', soll: '6500', haben: '1020', label: 'Verbandsbeiträge' },
-    { pattern: 'agksv', soll: '6500', haben: '1020', label: 'Verbandsbeiträge (AGKSV)' },
-    { pattern: 'ssv', soll: '6500', haben: '1020', label: 'Verbandsbeiträge (SSV)' },
-    { pattern: 'munition', soll: '4200', haben: '1020', label: 'Munitionsaufwand' },
-    { pattern: 'helvetia', soll: '6200', haben: '1020', label: 'Versicherungsprämie' },
-    { pattern: 'gva', soll: '6200', haben: '1020', label: 'Gebäudeversicherung' },
-    { pattern: 'sponsoring', soll: '1020', haben: '3600', label: 'Sponsoring-Ertrag' },
-    { pattern: 'spende', soll: '1020', haben: '3600', label: 'Spenden-Ertrag' }
+    { pattern: 'raisenow', soll: '1020', haben: '3651', label: 'RaiseNow TWINT', prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)' },
+    { pattern: 'vermietung', soll: '1020', haben: '3650', label: 'Vermietung Schützenhaus', prefix: 'Vermietung Schützenhaus' },
+    { pattern: 'bankspesen', soll: '6900', haben: '1020', label: 'Bankspesen / Finanzaufwand', prefix: 'Bankspesen / Finanzaufwand' },
+    { pattern: 'kontoführung', soll: '6900', haben: '1020', label: 'Bankspesen / Kontoführung', prefix: 'Bankspesen / Kontoführung' },
+    { pattern: 'zins', soll: '1020', haben: '6950', label: 'Zinsertrag / Bank', prefix: 'Zinsertrag / Bank' },
+    { pattern: 'schützenverband', soll: '6500', haben: '1020', label: 'Verbandsbeiträge', prefix: 'Verbandsbeiträge (SSV)' },
+    { pattern: 'agksv', soll: '6500', haben: '1020', label: 'Verbandsbeiträge (AGKSV)', prefix: 'Verbandsbeiträge (AGKSV)' },
+    { pattern: 'ssv', soll: '6500', haben: '1020', label: 'Verbandsbeiträge (SSV)', prefix: 'Verbandsbeiträge (SSV)' },
+    { pattern: 'munition', soll: '4200', haben: '1020', label: 'Munitionsaufwand', prefix: 'Munitionsaufwand' },
+    { pattern: 'helvetia', soll: '6200', haben: '1020', label: 'Versicherungsprämie', prefix: 'Versicherungsprämie Helvetia' },
+    { pattern: 'gva', soll: '6200', haben: '1020', label: 'Gebäudeversicherung', prefix: 'Gebäudeversicherung GVA' },
+    { pattern: 'sponsoring', soll: '1020', haben: '3600', label: 'Sponsoring-Ertrag', prefix: 'Sponsoring-Ertrag' },
+    { pattern: 'spende', soll: '1020', haben: '3600', label: 'Spenden-Ertrag', prefix: 'Spenden-Ertrag' }
   ];
 }
 
@@ -46,6 +106,10 @@ function getBhDefaultRules() {
 // ---------------------------------------------------------------------
 window.renderTabBankabgleich = function(container) {
   if (!container) return;
+
+  if (typeof window.fetchBhBankServerRules === 'function') {
+    window.fetchBhBankServerRules();
+  }
 
   const hasResults = window._bhBankMatchResults && window._bhBankMatchResults.length > 0;
   const results = window._bhBankMatchResults || [];
@@ -111,7 +175,13 @@ window.renderTabBankabgleich = function(container) {
 
       <!-- Filter- & Action-Bar -->
       <div id="bhBankFilterBar" class="${hasResults ? 'd-flex gap-2 mb-3 flex-wrap align-items-center' : 'd-none'}">
-        <button class="btn btn-sm btn-outline-secondary active" id="bhBankFilterAll" onclick="bhBankFilter('all')">
+        <button class="btn btn-sm btn-outline-primary active" id="bhBankFilterOffen" onclick="bhBankFilter('offen')">
+          <i class="fas fa-hourglass-half me-1"></i>Offen (${results.filter(r => !r.alreadyBooked).length})
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" id="bhBankFilterBooked" onclick="bhBankFilter('booked')">
+          <i class="fas fa-check-double me-1"></i>Bereits gebucht (${results.filter(r => r.alreadyBooked).length})
+        </button>
+        <button class="btn btn-sm btn-outline-dark" id="bhBankFilterAll" onclick="bhBankFilter('all')">
           Alle (${results.length})
         </button>
         <button class="btn btn-sm btn-outline-success" id="bhBankFilterJb" onclick="bhBankFilter('jb')">
@@ -238,10 +308,12 @@ function bhBankRenderResults(filter) {
   const rows = window._bhBankMatchResults || [];
   if (!rows.length) return;
 
-  const activeFilter = filter || window._bhBankActiveFilter || 'all';
+  const activeFilter = filter || window._bhBankActiveFilter || 'offen';
   window._bhBankActiveFilter = activeFilter;
 
   let filtered = [...rows];
+  if (activeFilter === 'offen')  filtered = rows.filter(r => !r.alreadyBooked);
+  if (activeFilter === 'booked') filtered = rows.filter(r => r.alreadyBooked);
   if (activeFilter === 'jb')     filtered = rows.filter(r => r.isJahresbeitrag);
   if (activeFilter === 'rules')  filtered = rows.filter(r => !r.isJahresbeitrag && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
   if (activeFilter === 'unklar') filtered = rows.filter(r => r.matchScore === 0 && !r.alreadyBooked);
@@ -313,6 +385,10 @@ function bhBankRenderResults(filter) {
       statusBadge = '<span class="badge bg-warning text-dark" title="❓ OFFEN: Keine automatische Regel gefunden. Bitte Soll- und Haben-Konto wählen."><i class="fas fa-question-circle me-1"></i>Offen</span>';
     }
 
+    if (r.isVerbandsschiessen && !r.alreadyBooked && !r.isWrongYear) {
+      statusBadge += `<br><span class="badge bg-warning text-dark mt-1" style="font-size:10px;" title="${escHtml(r.splitHint)}"><i class="fas fa-exclamation-triangle me-1"></i>Wettschiessen / Split</span>`;
+    }
+
     let matchInfo = '';
     if (r.isJahresbeitrag && r.matchedMember) {
       const m = r.matchedMember;
@@ -331,11 +407,15 @@ function bhBankRenderResults(filter) {
     if (r.isWrongYear) {
       actionButtons = `<span class="badge bg-light text-danger border px-2 py-1.5" title="🔒 Transaktion aus ${r.txYear} kann nicht im Buchhaltungsjahr ${window._bhYear} gebucht werden. Bitte oben Jahr umschalten!"><i class="fas fa-ban me-1"></i>Jahr ${r.txYear}</span>`;
     } else if (canEdit && !r.alreadyBooked) {
+      const splitBtnClass = r.isVerbandsschiessen ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary';
       actionButtons = `
-        <button class="btn btn-sm btn-success py-1 px-2" onclick="bhBankBookOne(${realI})" title="Buchungssatz ausführen und ins Kassabuch eintragen">
+        <button class="btn btn-sm btn-success py-1 px-2 me-1" onclick="bhBankBookOne(${realI})" title="Buchungssatz ausführen und ins Kassabuch eintragen">
           <i class="fas fa-check me-1"></i>Buchen
         </button>
-        <button class="btn btn-sm btn-outline-secondary py-1 px-2 ms-1" onclick="bhBankSaveRuleModal(${realI})" title="Dauerhafte automatische Regel für diesen Absender/Text merken">
+        <button class="btn btn-sm ${splitBtnClass} py-1 px-2 me-1" onclick="bhBankOpenSplitModal(${realI})" title="Betrag in mehrere Zeilen aufteilen (z.B. 1190 Transit & 4210 Nachwuchsförderung)">
+          <i class="fas fa-columns me-1"></i>Split
+        </button>
+        <button class="btn btn-sm btn-outline-secondary py-1 px-2" onclick="bhBankSaveRuleModal(${realI})" title="Dauerhafte automatische Regel für diesen Absender/Text merken">
           <i class="fas fa-plus-circle"></i>
         </button>
       `;
@@ -360,8 +440,8 @@ function bhBankRenderResults(filter) {
         <td class="text-end fw-bold ${amountClass}" style="white-space:nowrap;">
           ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
         </td>
-        <td style="max-width: 220px;">
-          <small class="text-muted d-block text-truncate" title="${escHtml(r.remittanceInfo)}">
+        <td style="min-width: 250px;">
+          <small class="text-dark d-block" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo)}">
             ${escHtml(r.remittanceInfo || '–')}
           </small>
         </td>
@@ -382,7 +462,7 @@ function bhBankRenderResults(filter) {
     const isCurrent = window._bhBankSortCol === colKey;
     const icon = isCurrent ? (window._bhBankSortAsc ? ' <i class="fas fa-sort-up text-primary"></i>' : ' <i class="fas fa-sort-down text-primary"></i>') : ' <i class="fas fa-sort opacity-25"></i>';
     const alignClass = alignRight ? 'text-end' : '';
-    return `<th class="${alignClass}" style="cursor:pointer; user-select:none;" onclick="bhBankSortTable('${colKey}')" title="Klicken zum Sortieren nach ${label}">${label}${icon}</th>`;
+    return `<th class="${alignClass}" style="cursor:pointer; user-select:none; position:relative;" onclick="bhBankSortTable('${colKey}')" title="Klicken zum Sortieren / Rand ziehen zum Anpassen der Breite">${label}${icon}</th>`;
   }
 
   let datalistOptions = kontenrahmen.map(k => {
@@ -394,7 +474,7 @@ function bhBankRenderResults(filter) {
       ${datalistOptions}
     </datalist>
     <div class="table-responsive">
-      <table class="table table-hover table-sm align-middle mb-0" style="font-size: 13px;">
+      <table id="bhBankTable" class="table table-hover table-sm align-middle mb-0" style="font-size: 13px;">
         <thead class="table-dark sticky-top">
           <tr>
             ${sortHeaderHTML('date', 'Datum')}
@@ -413,6 +493,59 @@ function bhBankRenderResults(filter) {
     </div>
     <div class="text-muted small mt-2 px-1">${filtered.length} von ${rows.length} Buchungen angezeigt</div>
   `;
+
+  setTimeout(() => {
+    bhMakeTableResizable(document.getElementById('bhBankTable'));
+  }, 50);
+}
+
+// ---------------------------------------------------------------------
+// Spaltenbreiten ziehbar/anpassbar machen (Column Resizing)
+// ---------------------------------------------------------------------
+function bhMakeTableResizable(table) {
+  if (!table) return;
+  const ths = table.querySelectorAll('thead th');
+  ths.forEach(th => {
+    if (th.querySelector('.bh-col-resizer')) return;
+
+    th.style.position = 'relative';
+    const resizer = document.createElement('div');
+    resizer.className = 'bh-col-resizer';
+    resizer.style.cssText = 'position:absolute; top:0; right:0; width:7px; cursor:col-resize; height:100%; user-select:none; z-index:5;';
+
+    resizer.addEventListener('mouseenter', () => { resizer.style.backgroundColor = '#0d6efd'; });
+    resizer.addEventListener('mouseleave', () => { resizer.style.backgroundColor = 'transparent'; });
+
+    let startX = 0;
+    let startWidth = 0;
+
+    const onMouseDown = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      startX = e.pageX;
+      startWidth = th.offsetWidth;
+      resizer.style.backgroundColor = '#0d6efd';
+
+      const onMouseMove = (ev) => {
+        const diff = ev.pageX - startX;
+        const newWidth = Math.max(60, startWidth + diff);
+        th.style.width = newWidth + 'px';
+        th.style.minWidth = newWidth + 'px';
+      };
+
+      const onMouseUp = () => {
+        resizer.style.backgroundColor = 'transparent';
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    };
+
+    resizer.addEventListener('mousedown', onMouseDown);
+    th.appendChild(resizer);
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -593,12 +726,24 @@ function bhBankMatchAll(transactions) {
 
     if (journalHistory && journalHistory.length > 0) {
       const isAlreadyInJournal = journalHistory.some(j => {
-        const sameAmount = Math.abs(Number(j.betrag || 0) - tx.amount) < 0.01;
+        const amountDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
+        const sameAmountExact = amountDiff < 0.05; // Betragstoleranz bis 5 Rappen (z.B. Zinsen 3.91 vs 3.90)
+
         const jIso = toNormalizedIsoDate(j.datum);
         const txIso = toNormalizedIsoDate(tx.bookingDate);
-        const sameDate = jIso && txIso && jIso === txIso;
 
-        if (!sameAmount || !sameDate) return false;
+        let daysDiff = 999;
+        if (jIso && txIso) {
+          const dJ = new Date(jIso);
+          const dTx = new Date(txIso);
+          if (!isNaN(dJ) && !isNaN(dTx)) {
+            daysDiff = Math.abs((dTx - dJ) / (1000 * 60 * 60 * 24));
+          }
+        }
+
+        const closeDate = daysDiff <= 7; // Toleranzfenster von max. 7 Tagen zwischen Belegdatum & Bank-Wertstellung
+
+        if (!sameAmountExact || !closeDate) return false;
 
         const desc = normalizeString(j.beschreibung || '');
         const party = normalizeString(tx.partyName || '');
@@ -611,7 +756,7 @@ function bhBankMatchAll(transactions) {
                                (rmt && desc.includes(rmt)) || 
                                (ref && desc.includes(ref));
 
-        return samePartyOrRef || true; // Betrag & Datum stimmen überein
+        return samePartyOrRef || true; // Betrag & nahe beieinander liegendes Datum stimmen überein
       });
 
       if (isAlreadyInJournal) {
@@ -680,13 +825,38 @@ function bhBankMatchAll(transactions) {
       }
     }
 
-    // 2. STUFE: Benutzer-Regeln (Rules)
+    // 1b. STUFE: AUTOMATISCHE VERMIETUNGS-REGEL & SYSTEM-PATTERNS (V-YYYY-XXXX, Miete, Mietvertrag)
     if (!isJahresbeitrag) {
+      const vMatch = (tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i) || (tx.partyName || '').match(/v-\d{4}-\d{3,4}/i);
+      const isMieteText = /miet/i.test(cleanRemittance) || /miet/i.test(cleanParty);
+
+      if (tx.isCredit && (vMatch || isMieteText)) {
+        matchType = 'rule';
+        const vCode = vMatch ? vMatch[0].toUpperCase() : '';
+        matchRuleName = vCode ? `Vermietung ${vCode}` : 'Vermietung Schützenhaus';
+        suggestedSoll = '1020'; // Bank / Wirtschaftskonto
+        suggestedHaben = '3650'; // Mieterträge Schützenhaus
+        matchLabel = vCode ? `Vermietung ${vCode}` : 'Mietertrag Schützenhaus';
+        matchScore = 2;
+      } else if (tx.isCredit && /raisenow/i.test(cleanRemittance)) {
+        matchType = 'rule';
+        matchRuleName = 'RaiseNow Payout';
+        suggestedSoll = '1020';
+        suggestedHaben = '3651';
+        matchLabel = 'Gutschrift RaiseNow';
+        matchScore = 2;
+      }
+    }
+
+    // 2. STUFE: Benutzer-Regeln (Rules)
+    let matchRulePrefix = '';
+    if (!isJahresbeitrag && matchType === 'unknown') {
       for (const r of userRules) {
         const p = r.pattern.toLowerCase();
         if (cleanRemittance.includes(p) || cleanParty.includes(p)) {
           matchType = 'rule';
           matchRuleName = r.label;
+          matchRulePrefix = r.prefix || r.label;
           suggestedSoll = r.soll;
           suggestedHaben = r.haben;
           matchLabel = `Regel: ${r.label}`;
@@ -727,10 +897,19 @@ function bhBankMatchAll(transactions) {
     const activeYear = Number(window._bhYear || new Date().getFullYear());
     const isWrongYear = txYear !== activeYear;
 
+    // Erkennung von Verbandsschiessen / Wettschiessen (Splitbuchungs-Empfehlung)
+    const cleanTextAll = ((tx.remittanceInfo || '') + ' ' + (tx.partyName || '')).toLowerCase();
+    const isVerbandsschiessen = /verbandsschiessen|vereinswettschiessen|wettschiessen|agksv|ssv|schützenverband|feldschiessen|kantonalstich|dmm/i.test(cleanTextAll);
+    const splitHint = isVerbandsschiessen 
+      ? '⚠️ Wettschiessen / Verbandsabrechnung! Enthält evtl. Junioren-Anteile (Konto 4210 Nachwuchsförderung) und Erwachsene (Transit 1190). Split-Buchung empfohlen.'
+      : '';
+
     return {
       ...tx,
       txYear,
       isWrongYear,
+      isVerbandsschiessen,
+      splitHint,
       alreadyBooked: tx.alreadyBooked || alreadyBooked,
       bookedDate: tx.bookedDate || bookedDate,
       isJahresbeitrag,
@@ -740,6 +919,7 @@ function bhBankMatchAll(transactions) {
       alreadyPaidJb,
       matchType,
       matchRuleName,
+      matchRulePrefix,
       suggestedSoll,
       suggestedHaben,
       matchLabel
@@ -764,11 +944,19 @@ function escHtml(s) {
 // Filter-Steuerung
 // ---------------------------------------------------------------------
 window.bhBankFilter = function(filter) {
-  ['bhBankFilterAll','bhBankFilterJb','bhBankFilterRules','bhBankFilterUnklar'].forEach(id => {
+  ['bhBankFilterOffen','bhBankFilterBooked','bhBankFilterAll','bhBankFilterJb','bhBankFilterRules','bhBankFilterUnklar'].forEach(id => {
     const btn = document.getElementById(id);
-    if (btn) btn.classList.remove('active', 'btn-dark');
+    if (btn) btn.classList.remove('active', 'btn-dark', 'btn-primary', 'btn-secondary');
   });
-  const activeBtn = document.getElementById(filter === 'jb' ? 'bhBankFilterJb' : (filter === 'rules' ? 'bhBankFilterRules' : (filter === 'unklar' ? 'bhBankFilterUnklar' : 'bhBankFilterAll')));
+  const idMap = {
+    offen: 'bhBankFilterOffen',
+    booked: 'bhBankFilterBooked',
+    all: 'bhBankFilterAll',
+    jb: 'bhBankFilterJb',
+    rules: 'bhBankFilterRules',
+    unklar: 'bhBankFilterUnklar'
+  };
+  const activeBtn = document.getElementById(idMap[filter] || 'bhBankFilterOffen');
   if (activeBtn) activeBtn.classList.add('active');
 
   bhBankRenderResults(filter);
@@ -777,7 +965,7 @@ window.bhBankFilter = function(filter) {
 // ---------------------------------------------------------------------
 // Einzelne Buchung durchführen
 // ---------------------------------------------------------------------
-window.bhBankBookOne = async function(txIdx) {
+window.bhBankBookOne = async function(txIdx, customBelegNr) {
   const tx = window._bhBankMatchResults[txIdx];
   if (!tx) return;
 
@@ -804,15 +992,87 @@ window.bhBankBookOne = async function(txIdx) {
     return;
   }
 
-  const beschreibung = (tx.partyName ? `${tx.partyName}: ` : '') + (tx.remittanceInfo || 'Bankbuchung CAMT.053');
+  let beschreibung = '';
+  const vMatch = (tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i) || (tx.partyName || '').match(/v-\d{4}-\d{3,4}/i);
+  const isMieteText = /miet/i.test(tx.remittanceInfo || '') || /miet/i.test(tx.partyName || '');
+  const isRaiseNow = /raisenow/i.test(tx.remittanceInfo || '') || /raisenow/i.test(tx.partyName || '') || kontoHaben === '3651';
+
+  if (vMatch || isMieteText || kontoHaben === '3650') {
+    const vCode = vMatch ? ` (${vMatch[0].toUpperCase()})` : '';
+    const party = tx.partyName ? `: ${tx.partyName}` : '';
+    const cleanRmt = (tx.remittanceInfo || '').replace(/v-\d{4}-\d{3,4}/i, '').replace(/miete/i, '').replace(/mietvertrag/i, '').trim();
+    beschreibung = `Vermietung Schützenhaus${vCode}${party}${cleanRmt ? ' - ' + cleanRmt : ''}`;
+  } else if (isRaiseNow) {
+    let extractedDate = '';
+    const rmt = tx.remittanceInfo || '';
+
+    // 1. Datumsbereich YYYYMMDD - YYYYMMDD (z.B. 20260525 - 20260531 -> 25.05. - 31.05.2026)
+    const rangeMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\s*-\s*(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+    if (rangeMatch) {
+      const [, y1, m1, d1, y2, m2, d2] = rangeMatch;
+      if (y1 === y2 && m1 === m2) {
+        extractedDate = `${d1}.${m1}. - ${d2}.${m2}.${y2}`;
+      } else {
+        extractedDate = `${d1}.${m1}.${y1} - ${d2}.${m2}.${y2}`;
+      }
+    }
+
+    // 2. Einzelnes Datum YYYYMMDD (z.B. 20260531 -> 31.05.2026)
+    if (!extractedDate) {
+      const singleIsoMatch = rmt.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+      if (singleIsoMatch) {
+        const [, y, m, d] = singleIsoMatch;
+        extractedDate = `${d}.${m}.${y}`;
+      }
+    }
+
+    // 3. Schweizer Format DD.MM.YYYY
+    if (!extractedDate) {
+      const swissMatch = rmt.match(/\b(\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2})?)\b/);
+      if (swissMatch) {
+        extractedDate = swissMatch[1];
+      }
+    }
+
+    beschreibung = `Wirtschaftseinnahme TWINT (RaiseNow${extractedDate ? ' vom ' + extractedDate : ''})`;
+  } else if (tx.isJahresbeitrag && tx.matchedMember) {
+    const m = tx.matchedMember;
+    const refTxt = tx.matchedBeitrag ? ` (Rechnung ${tx.matchedBeitrag.id})` : '';
+    beschreibung = `Jahresbeitrag ${window._bhYear}: ${m.FirstName} ${m.LastName}${refTxt}`;
+  } else if (tx.matchType === 'rule') {
+    let prefix = (tx.matchRulePrefix || tx.matchRuleName || '').trim();
+    let party  = (tx.partyName || '').trim();
+    let rmt    = (tx.remittanceInfo || '').trim();
+
+    // Redundanz-Filter: Doppelte Absender- / Zahlungsbegriffe entfernen
+    if (rmt.toLowerCase().replace(/^(zahlung|gutschrift|überweisung|auszahlung)\s+/, '') === party.toLowerCase()) {
+      rmt = '';
+    }
+    if (party && prefix.toLowerCase().includes(party.toLowerCase())) {
+      party = '';
+    }
+
+    const details = [party, rmt].filter(Boolean).join(' - ');
+    beschreibung = `${prefix}${details ? ': ' + details : ''}`;
+  } else {
+    beschreibung = (tx.partyName ? `${tx.partyName}: ` : '') + (tx.remittanceInfo || 'Bankbuchung CAMT.053');
+  }
 
   try {
     // 1. Journal-Buchungssatz in Buchhaltung speichern (POST)
+    const year = Number(window._bhYear || new Date().getFullYear());
+    let belegNr = customBelegNr;
+    if (!belegNr) {
+      const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === year && String(j.beleg_nr || '').startsWith('BK-'));
+      const nextSeq = String(existingBankBelege.length + 1).padStart(3, '0');
+      belegNr = `BK-${year}-${nextSeq}`;
+    }
+
     const payloadBh = {
       action: 'addJournalEntry',
-      jahr: Number(window._bhYear || new Date().getFullYear()),
+      jahr: year,
       datum: tx.bookingDate || new Date().toISOString().split('T')[0],
-      beleg_nr: 'CAMT-' + (tx.bookingDate ? tx.bookingDate.replace(/-/g,'') : '00') + '-' + (txIdx + 1),
+      beleg_nr: belegNr,
       beschreibung: beschreibung,
       konto_soll: kontoSoll,
       konto_haben: kontoHaben,
@@ -848,6 +1108,20 @@ window.bhBankBookOne = async function(txIdx) {
     window._bhBankMatchResults[txIdx].alreadyBooked = true;
     window._bhBankMatchResults[txIdx].bookedDate = new Date().toLocaleDateString('de-CH');
 
+    // Sofort lokal im Kassabuch-Journal registrieren für 100%ige Sofort-Sperre
+    window._bhJournal = window._bhJournal || [];
+    window._bhJournal.push({
+      id: (jsonBh.data && jsonBh.data.id) ? jsonBh.data.id : Date.now(),
+      jahr: year,
+      datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+      beleg_nr: belegNr,
+      beschreibung: beschreibung,
+      konto_soll: kontoSoll,
+      konto_haben: kontoHaben,
+      betrag: Number(tx.amount || 0),
+      typ: 'Bank'
+    });
+
     showToast(`✅ Buchungssatz über CHF ${tx.amount.toFixed(2)} gebucht!`, 'success');
 
     // Live Neu-Laden des Hauptbuchs
@@ -880,10 +1154,14 @@ window.bhBankBookAll = async function() {
   const ok = confirm(`${toBook.length} eindeutige Bank-Buchungen jetzt automatisch ins Journal eintragen?`);
   if (!ok) return;
 
+  const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === activeYear && String(j.beleg_nr || '').startsWith('BK-'));
+  let nextSeqCounter = existingBankBelege.length + 1;
+
   let count = 0;
   for (const { r, i } of toBook) {
     try {
-      await bhBankBookOne(i);
+      const belegNr = `BK-${activeYear}-${String(nextSeqCounter++).padStart(3, '0')}`;
+      await bhBankBookOne(i, belegNr);
       count++;
     } catch (_) {}
   }
@@ -892,7 +1170,135 @@ window.bhBankBookAll = async function() {
 };
 
 // ---------------------------------------------------------------------
-// Regel merken (Modal & Speicher-Logik)
+// Regel Editor Modal (Erstellen / Bearbeiten)
+// ---------------------------------------------------------------------
+window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
+  const rules = window.getBhBankRules();
+  const isEdit = typeof editIdx === 'number' && editIdx >= 0;
+  const existingRule = isEdit ? rules[editIdx] : null;
+
+  const rule = existingRule || prefillObj || {
+    pattern: '',
+    label: '',
+    prefix: '',
+    soll: '1020',
+    haben: '3000'
+  };
+
+  let modalEl = document.getElementById('bhModalRuleEditor');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalRuleEditor';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  modalEl.style.zIndex = '1065';
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered" style="z-index: 1066;">
+      <div class="modal-content border-0 rounded-4 shadow-lg">
+        <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas ${isEdit ? 'fa-edit' : 'fa-plus-circle'} me-2"></i>
+            ${isEdit ? 'Buchhaltungsregel bearbeiten' : 'Neue Buchhaltungsregel erstellen'}
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <form onsubmit="bhBankSaveRuleSubmit(event, ${isEdit ? editIdx : -1})">
+          <div class="modal-body p-4">
+            <div class="mb-3">
+              <label class="form-label fw-bold small">Regel-Bezeichnung (System-Name)</label>
+              <input type="text" id="bhr-label" class="form-control form-control-sm" placeholder="z.B. Berchtold Fleisch AG" value="${escHtml(rule.label)}" required>
+              <div class="form-text small">Wird im Status-Badge als Regelname angezeigt.</div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold small">Journal-Präfix / Buchungstext (Vorangestellt im Kassabuch)</label>
+              <input type="text" id="bhr-prefix" class="form-control form-control-sm" placeholder="z.B. Einkauf Lebensmittel Berchtold" value="${escHtml(rule.prefix || rule.label)}">
+              <div class="form-text small">Dieser Text wird bei der Buchung im Kassabuch-Journal vorangestellt.</div>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label fw-bold small">Suchmuster (Text / Absender)</label>
+              <input type="text" id="bhr-pattern" class="form-control form-control-sm" placeholder="z.B. Berchtold, Raiffeisen, Helvetia" value="${escHtml(rule.pattern)}" required>
+              <div class="form-text small">Transaktionen mit diesem Suchbegriff im Absender oder Text werden automatisch erkannt.</div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label fw-bold small">Soll-Konto</label>
+                <input type="text" id="bhr-soll" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Soll-Konto..." value="${escHtml(rule.soll)}" required autocomplete="off">
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-bold small">Haben-Konto</label>
+                <input type="text" id="bhr-haben" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Haben-Konto..." value="${escHtml(rule.haben)}" required autocomplete="off">
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer border-0 bg-light rounded-bottom-4">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="submit" class="btn btn-sm btn-primary px-3 fw-bold">
+              <i class="fas fa-save me-1"></i> ${isEdit ? 'Änderungen speichern' : 'Regel erstellen'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+};
+
+window.bhBankSaveRuleSubmit = function(e, editIdx) {
+  e.preventDefault();
+
+  const label   = document.getElementById('bhr-label').value.trim();
+  const pattern = document.getElementById('bhr-pattern').value.trim();
+  const prefix  = document.getElementById('bhr-prefix').value.trim() || label;
+  const rawSoll = document.getElementById('bhr-soll').value.trim();
+  const rawHaben= document.getElementById('bhr-haben').value.trim();
+
+  const soll  = rawSoll.split('|')[0].trim();
+  const haben = rawHaben.split('|')[0].trim();
+
+  if (!label || !pattern || !soll || !haben) {
+    alert('Bitte füllen Sie alle Pflichtfelder aus.');
+    return;
+  }
+
+  const rules = window.getBhBankRules();
+
+  if (editIdx >= 0 && editIdx < rules.length) {
+    rules[editIdx] = { pattern, label, prefix, soll, haben };
+    showToast(`✅ Regel "${label}" erfolgreich aktualisiert!`, 'success');
+  } else {
+    rules.push({ pattern, label, prefix, soll, haben });
+    showToast(`✅ Neue Regel "${label}" gespeichert!`, 'success');
+  }
+
+  window.saveBhBankRules(rules);
+
+  const editorModalEl = document.getElementById('bhModalRuleEditor');
+  if (editorModalEl) bootstrap.Modal.getInstance(editorModalEl)?.hide();
+
+  // Live Neu-Match durchführen
+  if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+    window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+    bhBankRenderResults(window._bhBankActiveFilter);
+  }
+
+  // Falls das Verwalten-Modal offen ist, Ansicht neu rendern
+  const manageModalEl = document.getElementById('bhModalManageRules');
+  if (manageModalEl && manageModalEl.classList.contains('show')) {
+    bhBankManageRulesModal();
+  }
+};
+
+// ---------------------------------------------------------------------
+// Regel merken aus Zeilen-Button (+)
 // ---------------------------------------------------------------------
 window.bhBankSaveRuleModal = function(txIdx) {
   const tx = window._bhBankMatchResults[txIdx];
@@ -906,30 +1312,13 @@ window.bhBankSaveRuleModal = function(txIdx) {
   const sollVal  = sollEl ? sollEl.value : tx.suggestedSoll;
   const habenVal = habenEl ? habenEl.value : tx.suggestedHaben;
 
-  const pattern = prompt(
-    `Neue automatische Buchungsregel erstellen:\n\nSystem durchsucht Zahler/Text nach diesem Begriff:`,
-    defaultPattern
-  );
-
-  if (!pattern) return;
-
-  const label = prompt('Kurze Beschreibung der Regel (z.B. "Bankspesen Raiffeisen"):', pattern);
-  if (!label) return;
-
-  const rules = window.getBhBankRules();
-  rules.push({
-    pattern: pattern.trim(),
+  bhBankOpenRuleEditorModal(-1, {
+    pattern: defaultPattern,
+    label: tx.partyName || defaultPattern,
+    prefix: tx.partyName || defaultPattern,
     soll: sollVal,
-    haben: habenVal,
-    label: label.trim()
+    haben: habenVal
   });
-
-  window.saveBhBankRules(rules);
-  showToast(`✅ Regel "${label}" erfolgreich gespeichert!`, 'success');
-
-  // Neu-Match durchführen
-  window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
-  bhBankRenderResults(window._bhBankActiveFilter);
 };
 
 // ---------------------------------------------------------------------
@@ -947,46 +1336,75 @@ window.bhBankManageRulesModal = function() {
     document.body.appendChild(modalEl);
   }
 
-  const rulesRows = rules.map((r, i) => `
+  function extractCleanKontoNr(val) {
+    if (!val) return '–';
+    const str = String(val).trim();
+    const match = str.match(/\b\d{4}\b/);
+    if (match) return match[0];
+    return str.split('|')[0].trim().substring(0, 8);
+  }
+
+  const rulesRows = rules.length ? rules.map((r, i) => {
+    const sollNr  = extractCleanKontoNr(r.soll);
+    const habenNr = extractCleanKontoNr(r.haben);
+    return `
+      <tr>
+        <td><span class="fw-bold text-primary">${escHtml(r.label)}</span></td>
+        <td><code class="text-dark bg-light px-2 py-1 rounded border">${escHtml(r.pattern)}</code></td>
+        <td><span class="text-dark small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
+        <td><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
+        <td><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
+        <td class="text-end" style="white-space: nowrap;">
+          <button class="btn btn-sm btn-outline-primary py-1 px-2 me-1" onclick="bhBankOpenRuleEditorModal(${i})" title="Regel bearbeiten">
+            <i class="fas fa-edit me-1"></i>Bearbeiten
+          </button>
+          <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="bhBankDeleteRule(${i})" title="Regel löschen">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('') : `
     <tr>
-      <td><code>${escHtml(r.pattern)}</code></td>
-      <td>${escHtml(r.label)}</td>
-      <td><span class="badge bg-primary">${escHtml(r.soll)}</span></td>
-      <td><span class="badge bg-success">${escHtml(r.haben)}</span></td>
-      <td class="text-end">
-        <button class="btn btn-sm btn-outline-danger py-0" onclick="bhBankDeleteRule(${i})">
-          <i class="fas fa-trash"></i>
-        </button>
+      <td colspan="6" class="text-center text-muted py-4">
+        <i class="fas fa-magic fa-2x mb-2" style="opacity:0.3;"></i>
+        <p class="mb-0">Noch keine Benutzer-Regeln definiert.</p>
       </td>
     </tr>
-  `).join('');
+  `;
 
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 rounded-4 shadow">
-        <div class="modal-header bg-dark text-white border-0 py-3">
-          <h5 class="modal-title fw-bold"><i class="fas fa-cog me-2"></i>Automatische Buchungsregeln</h5>
+        <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold"><i class="fas fa-sliders-h me-2"></i>Automatische Buchungsregeln verwalten</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-4">
-          <p class="text-muted small mb-3">Diese Regeln werden beim Import von CAMT.053 Dateien automatisch angewendet.</p>
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen.</p>
+            <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
+              <i class="fas fa-plus me-1"></i>Neue Regel erstellen
+            </button>
+          </div>
           <div class="table-responsive">
-            <table class="table table-hover table-sm">
+            <table class="table table-hover table-sm align-middle mb-0" style="table-layout: fixed; width: 100%;">
               <thead class="table-light">
                 <tr>
-                  <th>Such-Muster</th>
-                  <th>Beschreibung</th>
-                  <th>Soll</th>
-                  <th>Haben</th>
-                  <th class="text-end">Aktion</th>
+                  <th style="width: 22%;">Bezeichnung</th>
+                  <th style="width: 15%;">Suchmuster</th>
+                  <th style="width: 32%;">Journal-Text / Präfix</th>
+                  <th style="width: 8%;">Soll</th>
+                  <th style="width: 8%;">Haben</th>
+                  <th style="width: 15%;" class="text-end">Aktionen</th>
                 </tr>
               </thead>
               <tbody>${rulesRows}</tbody>
             </table>
           </div>
         </div>
-        <div class="modal-footer border-0">
-          <button class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
+        <div class="modal-footer border-0 bg-light rounded-bottom-4">
+          <button class="btn btn-sm btn-secondary px-4 fw-bold" data-bs-dismiss="modal">Schliessen</button>
         </div>
       </div>
     </div>
@@ -997,15 +1415,327 @@ window.bhBankManageRulesModal = function() {
 
 window.bhBankDeleteRule = function(idx) {
   const rules = window.getBhBankRules();
+  const r = rules[idx];
+  const ok = confirm(`Regel "${r ? r.label : ''}" wirklich löschen?`);
+  if (!ok) return;
+
   rules.splice(idx, 1);
   window.saveBhBankRules(rules);
 
-  const modalEl = document.getElementById('bhModalManageRules');
-  if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
-
   showToast('Regel gelöscht.', 'info');
-  if (window._bhBankTransactions.length > 0) {
+
+  if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
     window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
     bhBankRenderResults(window._bhBankActiveFilter);
+  }
+
+  const manageModalEl = document.getElementById('bhModalManageRules');
+  if (manageModalEl && manageModalEl.classList.contains('show')) {
+    bhBankManageRulesModal();
+  }
+};
+
+// =====================================================================
+// SPLIT-BUCHUNG MODAL & VERARBEITUNG
+// =====================================================================
+window.bhBankOpenSplitModal = function(txIdx) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  window._bhSplitCurrentTxIndex = txIdx;
+  const isCredit = tx.isCredit;
+  const partyOrInfo = (tx.partyName || tx.remittanceInfo || 'Abrechnung Wettschiessen').trim();
+
+  // Preset 2 Split-Zeilen
+  window._bhSplitCurrentRows = [
+    {
+      beschreibung: `${partyOrInfo} (Erwachsene / Transit 1190)`,
+      betrag: Number(tx.amount || 0),
+      kontoSoll: isCredit ? '1020' : '1190',
+      kontoHaben: isCredit ? '1190' : '1020'
+    },
+    {
+      beschreibung: `${partyOrInfo} (Junioren / Nachwuchsförderung)`,
+      betrag: 0,
+      kontoSoll: isCredit ? '1020' : '4210',
+      kontoHaben: isCredit ? '4210' : '1020'
+    }
+  ];
+
+  let modalEl = document.getElementById('bhBankSplitModal');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhBankSplitModal';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  bhBankRenderSplitModalContent(tx);
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+};
+
+function bhBankRenderSplitModalContent(tx) {
+  const modalEl = document.getElementById('bhBankSplitModal');
+  if (!modalEl) return;
+
+  const totalAmount = Number(tx.amount || 0);
+  const splitRows = window._bhSplitCurrentRows || [];
+  const currentSum = splitRows.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+  const diff = totalAmount - currentSum;
+  const isBalanced = Math.abs(diff) < 0.01;
+
+  const kontenrahmen = window._bhKontenrahmen || [];
+
+  function makeKontoSelectHTML(id, selectedVal) {
+    const matched = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
+    const displayVal = matched ? `${matched.konto} | ${matched.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Konto..." value="${escHtml(displayVal)}" autocomplete="off">`;
+  }
+
+  let tableRowsHtml = splitRows.map((r, i) => {
+    return `
+      <tr>
+        <td class="text-center font-monospace fw-bold small" style="width:30px;">#${i + 1}</td>
+        <td>
+          <input type="text" class="form-control form-control-sm" id="bh-split-desc-${i}" value="${escHtml(r.beschreibung)}" placeholder="Beschreibung...">
+        </td>
+        <td style="width: 140px;">
+          <input type="number" step="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-split-amt-${i}" value="${Number(r.betrag || 0).toFixed(2)}" oninput="bhBankUpdateSplitFromInputs()">
+        </td>
+        <td style="width: 170px;">
+          ${makeKontoSelectHTML(`bh-split-soll-${i}`, r.kontoSoll)}
+        </td>
+        <td style="width: 170px;">
+          ${makeKontoSelectHTML(`bh-split-haben-${i}`, r.kontoHaben)}
+        </td>
+        <td class="text-center" style="width:40px;">
+          ${splitRows.length > 1 ? `<button class="btn btn-sm btn-outline-danger py-0 px-1.5" onclick="bhBankRemoveSplitRow(${i})"><i class="fas fa-times"></i></button>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content shadow-lg border-0 rounded-4">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-columns me-2"></i>Split-Buchung durchführen
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert bg-light border-start border-4 border-warning shadow-sm mb-4">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+              <div>
+                <span class="badge bg-warning text-dark me-2">CAMT Transaktion</span>
+                <strong>${formatSwissDate(tx.bookingDate)}</strong> &middot; ${escHtml(tx.partyName || 'Bank-Transaktion')}
+                <div class="small text-muted mt-1">${escHtml(tx.remittanceInfo || '')}</div>
+              </div>
+              <div class="text-end">
+                <span class="text-muted small d-block">Gesamtbetrag Bank</span>
+                <span class="fs-4 fw-bold ${tx.isCredit ? 'text-success' : 'text-danger'}">
+                  ${tx.isCredit ? '+' : '-'} CHF ${totalAmount.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="fw-bold mb-0 text-primary"><i class="fas fa-list me-1"></i>Split-Positionen (Kontoaufteilung)</h6>
+            <button class="btn btn-sm btn-outline-primary" onclick="bhBankAddSplitRow()">
+              <i class="fas fa-plus me-1"></i>Zeile hinzufügen
+            </button>
+          </div>
+
+          <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle table-bordered">
+              <thead class="table-light small">
+                <tr>
+                  <th style="width:30px;">#</th>
+                  <th>Buchungstext / Beschreibung</th>
+                  <th style="width:140px;" class="text-end">Betrag (CHF)</th>
+                  <th style="width:170px;">Soll-Konto</th>
+                  <th style="width:170px;">Haben-Konto</th>
+                  <th style="width:40px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRowsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Live Balance Banner -->
+          <div class="card p-3 border-0 ${isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>
+                <span class="fw-bold"><i class="fas ${isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2"></i>Status Aufteilung:</span>
+                Summe Split-Zeilen: <strong>CHF ${currentSum.toFixed(2)}</strong> von <strong>CHF ${totalAmount.toFixed(2)}</strong>
+              </div>
+              <div class="fw-bold fs-6">
+                ${isBalanced ? '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>' : `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${diff.toFixed(2)}</span>`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-success fw-bold px-4" ${!isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
+            <i class="fas fa-save me-1"></i>Split-Buchung speichern (${splitRows.length} Zeilen)
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+window.bhBankUpdateSplitFromInputs = function() {
+  const rows = window._bhSplitCurrentRows || [];
+  rows.forEach((r, i) => {
+    const descEl = document.getElementById(`bh-split-desc-${i}`);
+    const amtEl = document.getElementById(`bh-split-amt-${i}`);
+    const sollEl = document.getElementById(`bh-split-soll-${i}`);
+    const habenEl = document.getElementById(`bh-split-haben-${i}`);
+
+    if (descEl) r.beschreibung = descEl.value;
+    if (amtEl) r.betrag = parseFloat(amtEl.value) || 0;
+    if (sollEl) r.kontoSoll = String(sollEl.value || '').split('|')[0].trim();
+    if (habenEl) r.kontoHaben = String(habenEl.value || '').split('|')[0].trim();
+  });
+
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[window._bhSplitCurrentTxIndex];
+  if (tx) bhBankRenderSplitModalContent(tx);
+};
+
+window.bhBankAddSplitRow = function() {
+  bhBankUpdateSplitFromInputs();
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[window._bhSplitCurrentTxIndex];
+  const isCredit = tx ? tx.isCredit : false;
+
+  (window._bhSplitCurrentRows = window._bhSplitCurrentRows || []).push({
+    beschreibung: (tx ? (tx.partyName || tx.remittanceInfo || 'Split-Position') : 'Split-Position'),
+    betrag: 0,
+    kontoSoll: isCredit ? '1020' : '1190',
+    kontoHaben: isCredit ? '1190' : '1020'
+  });
+
+  if (tx) bhBankRenderSplitModalContent(tx);
+};
+
+window.bhBankRemoveSplitRow = function(idx) {
+  bhBankUpdateSplitFromInputs();
+  if (window._bhSplitCurrentRows && window._bhSplitCurrentRows.length > 1) {
+    window._bhSplitCurrentRows.splice(idx, 1);
+  }
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[window._bhSplitCurrentTxIndex];
+  if (tx) bhBankRenderSplitModalContent(tx);
+};
+
+window.bhBankSaveSplitBooking = async function(txIdx) {
+  bhBankUpdateSplitFromInputs();
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[txIdx];
+  if (!tx) return;
+
+  const splitRows = window._bhSplitCurrentRows || [];
+  const totalAmount = Number(tx.amount || 0);
+  const currentSum = splitRows.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+
+  if (Math.abs(totalAmount - currentSum) >= 0.01) {
+    alert(`⚠️ Die Summe der Split-Zeilen (CHF ${currentSum.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${totalAmount.toFixed(2)}).`);
+    return;
+  }
+
+  // Validierung der einzelnen Zeilen
+  for (let i = 0; i < splitRows.length; i++) {
+    const r = splitRows[i];
+    if (!r.beschreibung.trim()) {
+      alert(`Bitte Beschreibung für Zeile #${i+1} eingeben.`);
+      return;
+    }
+    if (!r.kontoSoll || !r.kontoHaben) {
+      alert(`Bitte Soll- und Haben-Konto für Zeile #${i+1} angeben.`);
+      return;
+    }
+    if (r.kontoSoll === r.kontoHaben) {
+      alert(`Soll- und Haben-Konto für Zeile #${i+1} dürfen nicht identisch sein.`);
+      return;
+    }
+  }
+
+  const year = Number(window._bhYear || new Date().getFullYear());
+  const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === year && String(j.beleg_nr || '').startsWith('BK-'));
+  const baseBelegSeq = String(existingBankBelege.length + 1).padStart(3, '0');
+
+  try {
+    let successCount = 0;
+
+    for (let i = 0; i < splitRows.length; i++) {
+      const r = splitRows[i];
+      if (Number(r.betrag) === 0) continue; // 0 CHF Zeilen überspringen
+
+      const subChar = String.fromCharCode(97 + i); // a, b, c...
+      const belegNr = `BK-${year}-${baseBelegSeq}${subChar}`;
+
+      const payloadBh = {
+        action: 'addJournalEntry',
+        jahr: year,
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: belegNr,
+        beschreibung: r.beschreibung,
+        konto_soll: r.kontoSoll,
+        konto_haben: r.kontoHaben,
+        betrag: Number(r.betrag),
+        typ: 'Bank-Split'
+      };
+
+      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+      const jsonBh = await resBh.json();
+      if (!jsonBh.success) throw new Error(jsonBh.error || `Fehler beim Buchen der Split-Zeile #${i+1}`);
+
+      window._bhJournal = window._bhJournal || [];
+      window._bhJournal.push({
+        id: (jsonBh.data && jsonBh.data.id) ? jsonBh.data.id : Date.now() + i,
+        jahr: year,
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: belegNr,
+        beschreibung: r.beschreibung,
+        konto_soll: r.kontoSoll,
+        konto_haben: r.kontoHaben,
+        betrag: Number(r.betrag),
+        typ: 'Bank-Split'
+      });
+
+      successCount++;
+    }
+
+    // Transaktion als gebucht markieren
+    window._bhBankMatchResults[txIdx].alreadyBooked = true;
+    window._bhBankMatchResults[txIdx].bookedDate = new Date().toLocaleDateString('de-CH');
+
+    // Modal schliessen
+    const modalEl = document.getElementById('bhBankSplitModal');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+
+    if (typeof showToast === 'function') {
+      showToast(`✅ Split-Buchung erfolgreich! ${successCount} Buchungssätze ins Kassabuch eingetragen.`, 'success');
+    } else {
+      alert(`✅ Split-Buchung erfolgreich! ${successCount} Buchungssätze eingetragen.`);
+    }
+
+    bhBankRenderResults(window._bhBankActiveFilter);
+  } catch (err) {
+    alert('❌ Fehler bei der Split-Buchung: ' + err.message);
   }
 };

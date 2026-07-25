@@ -316,3 +316,34 @@ function jbChangeYear(year) {
   
   renderJahresbeitragView();
 }
+
+// Synchronisiert lokale Änderungen sofort in die Caches aller Tabs
+window.jbSyncMemberToCache = function(pn, settings) {
+  pn = String(pn).trim();
+  const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber).trim() === pn);
+  if (!m) return;
+
+  if (typeof jbCalculateLiveTotal !== 'function') return;
+  const calc = jbCalculateLiveTotal(m, settings);
+
+  // 1. Header in _jbData & _jbAllBeitraege updaten
+  let header = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
+  if (header) {
+    header.Gesamt = calc.total;
+  }
+  if (_jbAllBeitraege) {
+    const allHeader = _jbAllBeitraege.find(x => String(x.PersonNumber).trim() === pn && Number(x.year) === Number(_jbYear));
+    if (allHeader) allHeader.Gesamt = calc.total;
+  }
+
+  // 2. Positions-Cache updaten
+  if (header && header.id && _jbPositionsCache) {
+    _jbPositionsCache[header.id] = calc.positions.map((p, idx) => ({
+      headerid: header.id,
+      position_nr: idx + 1,
+      name: p.name,
+      betrag: p.betrag,
+      typ: p.typ
+    }));
+  }
+};

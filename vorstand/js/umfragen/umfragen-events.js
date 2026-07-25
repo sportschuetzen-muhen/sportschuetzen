@@ -57,6 +57,9 @@ function renderUmfragenEventsList() {
              <td class="text-center align-middle">
                 <input type="checkbox" class="form-check-input" ${isTrue(e.frage_essen) ? 'checked' : ''} onchange="umfragenState[${idx}].frage_essen=this.checked; window.markUnsaved()" ${!canWrite?'disabled':''}>
             </td>
+             <td class="text-center align-middle">
+                <input type="checkbox" class="form-check-input" ${isTrue(e.frage_grund) ? 'checked' : ''} onchange="umfragenState[${idx}].frage_grund=this.checked; window.markUnsaved()" ${!canWrite?'disabled':''}>
+            </td>
             
             <td class="align-middle">
                 <button class="btn btn-link text-danger p-0" onclick="removeUmfrageEvent(${idx})" ${!canWrite ? 'disabled':''}>🗑️</button>
@@ -85,7 +88,8 @@ function addUmfrageEvent() {
         aktiv: true,
         showparticipants: false,
         frage_begleitung: false,
-        frage_essen: false
+        frage_essen: false,
+        frage_grund: true
     });
     renderUmfragenEventsList();
 }

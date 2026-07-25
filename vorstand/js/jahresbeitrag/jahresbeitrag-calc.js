@@ -132,6 +132,26 @@ function jbCalculateLiveTotal(m, settings) {
   if (settings.lg_verein)         positions.push({ name: '10m Vereinsschiessen', betrag: getFee('LG006', 14), typ: 'Debit' });
   if (settings.lg_ch_kniend)      positions.push({ name: '10m CH Kniendmeisterschaft', betrag: getFee('LG007', 20), typ: 'Debit' });
   
+  // 4b. Variable Zusatzpositionen (z.B. Beitrag Vereinsjacke, Eidg. Schützenfest)
+  if (settings.z1_active && settings.z1_text && Number(settings.z1_betrag) !== 0) {
+    positions.push({
+      name: settings.z1_text,
+      betrag: Number(settings.z1_betrag || 0),
+      konto: settings.z1_konto || '8500',
+      locked: settings.z1_locked !== false,
+      typ: 'Debit'
+    });
+  }
+  if (settings.z2_active && settings.z2_text && Number(settings.z2_betrag) !== 0) {
+    positions.push({
+      name: settings.z2_text,
+      betrag: Number(settings.z2_betrag || 0),
+      konto: settings.z2_konto || '1190',
+      locked: settings.z2_locked !== false,
+      typ: 'Debit'
+    });
+  }
+  
   // 5. Rabatte
   let isVorstand = m._istVorstand || false;
   let isHausmeister = (m._kategorie || '').toLowerCase().includes('hausmeister');

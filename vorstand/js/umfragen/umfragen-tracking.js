@@ -63,6 +63,50 @@ async function loadUmfragenHistorie(force = false) {
     }
 }
 
+let _histRsvpSortCol = 'timestamp';
+let _histRsvpSortAsc = false;
+let _histViewsSortCol = 'timestamp';
+let _histViewsSortAsc = false;
+
+function parseTimestampDate(ts) {
+    if (!ts) return null;
+    if (ts instanceof Date) return ts;
+    let d = new Date(ts);
+    if (!isNaN(d.getTime())) return d;
+
+    // Schweizer Format: DD.MM.YYYY HH:mm:ss oder DD.MM.YYYY
+    if (typeof ts === 'string' && ts.includes('.')) {
+        const parts = ts.trim().split(/[\s,T]+/);
+        const dateParts = parts[0].split('.');
+        if (dateParts.length === 3) {
+            const day = parseInt(dateParts[0], 10);
+            const month = parseInt(dateParts[1], 10) - 1;
+            const year = parseInt(dateParts[2], 10);
+            let hours = 0, minutes = 0, seconds = 0;
+            if (parts[1]) {
+                const timeParts = parts[1].split(':');
+                hours = parseInt(timeParts[0], 10) || 0;
+                minutes = parseInt(timeParts[1], 10) || 0;
+                seconds = parseInt(timeParts[2], 10) || 0;
+            }
+            d = new Date(year, month, day, hours, minutes, seconds);
+            if (!isNaN(d.getTime())) return d;
+        }
+    }
+    return null;
+}
+
+function sortHistorieTable(tabType, colKey) {
+    if (tabType === 'rsvp') {
+        if (_histRsvpSortCol === colKey) _histRsvpSortAsc = !_histRsvpSortAsc;
+        else { _histRsvpSortCol = colKey; _histRsvpSortAsc = true; }
+    } else {
+        if (_histViewsSortCol === colKey) _histViewsSortAsc = !_histViewsSortAsc;
+        else { _histViewsSortCol = colKey; _histViewsSortAsc = true; }
+    }
+    filterHistorieData();
+}
+
 function filterHistorieData() {
     const rsvpBody = document.getElementById('hist-rsvp-body');
     const viewsBody = document.getElementById('hist-views-body');
@@ -78,14 +122,13 @@ function filterHistorieData() {
     });
 
     const formatTimestamp = (ts) => {
-        if (!ts) return '-';
-        const d = new Date(ts);
-        if (isNaN(d.getTime())) return escapeHtml(ts);
-        return d.toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const d = parseTimestampDate(ts);
+        if (!d) return ts ? escapeHtml(String(ts)) : '-';
+        return d.toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 
-    // 1. Responses Log rendern
-    const filteredResponses = rawResponsesLog.filter(log => {
+    // 1. Responses Log filtern & sortieren
+    let filteredResponses = rawResponsesLog.filter(log => {
         const evId = getEventIdFromLog(log);
         const matchesEvent = !eventFilter || String(evId) === eventFilter;
 
@@ -102,6 +145,41 @@ function filterHistorieData() {
         return matchesEvent && matchesSearch;
     });
 
+    // Sortierung anwenden
+    filteredResponses.sort((a, b) => {
+        let valA, valB;
+        if (_histRsvpSortCol === 'timestamp') {
+            const dA = parseTimestampDate(a.timestamp);
+            const dB = parseTimestampDate(b.timestamp);
+            valA = dA ? dA.getTime() : 0;
+            valB = dB ? dB.getTime() : 0;
+        } else if (_histRsvpSortCol === 'name') {
+            const getMemberName = (l) => {
+                let liz = String(l.lizenz || '').trim();
+                if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
+                const m = membersLookup[liz] || membersLookup[String(l.lizenz).trim()];
+                return m ? `${m.LastName} ${m.FirstName}` : String(l.lizenz);
+            };
+            valA = getMemberName(a).toLowerCase();
+            valB = getMemberName(b).toLowerCase();
+        } else if (_histRsvpSortCol === 'event') {
+            valA = (eventsMap[getEventIdFromLog(a)] || '').toLowerCase();
+            valB = (eventsMap[getEventIdFromLog(b)] || '').toLowerCase();
+        } else if (_histRsvpSortCol === 'status') {
+            valA = isTrue(a.teilnahme !== undefined ? a.teilnahme : a.attending) ? 1 : 0;
+            valB = isTrue(b.teilnahme !== undefined ? b.teilnahme : b.attending) ? 1 : 0;
+        } else if (_histRsvpSortCol === 'count') {
+            valA = parseInt(a.anzahl_teilnehmer !== undefined ? a.anzahl_teilnehmer : a.count) || 1;
+            valB = parseInt(b.anzahl_teilnehmer !== undefined ? b.anzahl_teilnehmer : b.count) || 1;
+        } else if (_histRsvpSortCol === 'essen') {
+            valA = parseInt(a.anzahl_essen !== undefined ? a.anzahl_essen : a.essen) || 0;
+            valB = parseInt(b.anzahl_essen !== undefined ? b.anzahl_essen : b.essen) || 0;
+        }
+        if (valA < valB) return _histRsvpSortAsc ? -1 : 1;
+        if (valA > valB) return _histRsvpSortAsc ? 1 : -1;
+        return 0;
+    });
+
     if (filteredResponses.length === 0) {
         rsvpBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">Keine Einträge für die Auswahl gefunden.</td></tr>`;
     } else {
@@ -115,9 +193,14 @@ function filterHistorieData() {
             const evId = getEventIdFromLog(log);
             const evTitle = eventsMap[evId] || `Event ${evId}`;
             const attending = isTrue(log.teilnahme !== undefined ? log.teilnahme : log.attending);
-            const statusBadge = attending
+            const grundText = (log.grund || log.reason || '').trim();
+            let statusBadge = attending
                 ? `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fa-solid fa-check me-1"></i>Angemeldet</span>`
                 : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1"><i class="fa-solid fa-xmark me-1"></i>Abgemeldet</span>`;
+
+            if (!attending && grundText) {
+                statusBadge += `<br><small class="text-danger-emphasis fst-italic mt-1 d-block">💬 ${escapeHtml(grundText)}</small>`;
+            }
 
             const countVal = log.anzahl_teilnehmer !== undefined ? log.anzahl_teilnehmer : log.count;
             const essenVal = log.anzahl_essen !== undefined ? log.anzahl_essen : log.essen;

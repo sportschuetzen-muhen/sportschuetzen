@@ -116,7 +116,33 @@ function renderInventarUI(container) {
                                     <select id="verkauf-methode" class="form-select">
                                         <option value="Bar">Bar</option>
                                         <option value="Twint">Twint</option>
+                                        <option value="Einzahlungsschein">Einzahlungsschein (QR-Rechnung)</option>
                                     </select>
+                                </div>
+                                <div class="col-12 d-none mt-2" id="container-verkauf-konto">
+                                    <label class="form-label fw-bold small text-primary mb-1">
+                                      <i class="fas fa-book me-1"></i>Haben-Konto (Buchhaltung)
+                                    </label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" id="verkauf-konto" class="form-control font-monospace" 
+                                               value="3200" readonly style="background-color: #e9ecef;"
+                                               onchange="document.getElementById('label-verwendungs-konto').innerText = this.value || '3200';">
+                                        <button class="btn btn-outline-secondary" type="button" id="btn-verkauf-konto-lock" 
+                                                onclick="toggleVerkaufKontoLock()" title="Konto-Sperre aufheben">
+                                            <i class="fas fa-lock" id="icon-verkauf-konto-lock"></i>
+                                        </button>
+                                    </div>
+                                    <div class="form-text small" style="font-size: 10px;">
+                                        Standard: <code>3200</code> (Ertrag Kleiderverkauf). Bei Vereinsjacken z.B. <code>8500</code>.
+                                    </div>
+                                </div>
+                                <div class="col-12 d-none mt-2" id="container-verkauf-info-banner">
+                                    <div class="alert alert-info py-2 px-3 mb-0 border-0 rounded-3 shadow-xs" style="font-size: 11px; background-color: #e0f2fe; color: #0369a1;">
+                                        <i class="fas fa-sync-alt me-1 fw-bold text-primary"></i>
+                                        <strong>Automatische Buchhaltung & Rechnungs-Erstellung:</strong><br>
+                                        • <strong>Bar / Twint:</strong> Bucht automatisch im Kassabuch (Soll 1000/1020 an Haben <span id="label-verwendungs-konto" class="fw-bold">3200</span>).<br>
+                                        • <strong>Einzahlungsschein:</strong> Erstellt automatisch eine QR-Rechnung und versendet sie per E-Mail.
+                                    </div>
                                 </div>
                             </div>
 
@@ -350,6 +376,8 @@ function toggleBookingFields() {
     document.getElementById('container-pfand-einnahme').classList.toggle('d-none', !isCheckout);
     document.getElementById('container-pfand-retour').classList.toggle('d-none', action !== 'checkin');
     document.getElementById('container-verkauf-methode').classList.toggle('d-none', !isVerkauf);
+    document.getElementById('container-verkauf-konto')?.classList.toggle('d-none', !isVerkauf);
+    document.getElementById('container-verkauf-info-banner')?.classList.toggle('d-none', !isVerkauf);
     
     // Label umschalten für Betrag
     const labelBetrag = document.getElementById('label-betrag');
@@ -361,6 +389,22 @@ function toggleBookingFields() {
     
     updateSubOptions();
 }
+
+window.toggleVerkaufKontoLock = function() {
+    const input = document.getElementById('verkauf-konto');
+    const icon = document.getElementById('icon-verkauf-konto-lock');
+    if (!input || !icon) return;
+
+    if (input.hasAttribute('readonly')) {
+        input.removeAttribute('readonly');
+        input.style.backgroundColor = '#ffffff';
+        icon.className = 'fas fa-lock-open text-warning';
+    } else {
+        input.setAttribute('readonly', 'readonly');
+        input.style.backgroundColor = '#e9ecef';
+        icon.className = 'fas fa-lock';
+    }
+};
 
 function updateSubOptions() {
     if (!inventarState) return;

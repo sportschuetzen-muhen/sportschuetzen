@@ -271,9 +271,12 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
 
         // 2. BAR / TWINT IN BUCHHALTUNG VERBUCHEN
         if (barTwintItems.length > 0) {
+            const userKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
+            const customKontoHaben = userKonto || '3200';
+
             for (let w of barTwintItems) {
                 const kontoSoll = w.verkaufMethode === 'Twint' ? '1020' : '1000'; // 1020 Bank/Twint, 1000 Kasse
-                const kontoHaben = '3200'; // Ertrag Kleiderverkauf (Annahme)
+                const kontoHaben = customKontoHaben;
                 
                 const bhPayload = {
                     action: 'addJournalEntry',

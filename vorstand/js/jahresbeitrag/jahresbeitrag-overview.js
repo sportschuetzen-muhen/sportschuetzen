@@ -435,6 +435,15 @@ function jbRenderModalContent(header, pos, m, name) {
   // 1. RECHNUNDSPOSTEN TAB CONTENT
   const tabPostenHTML = `
     <div id="jbModalTabPosten" class="jb-modal-tab-content">
+      <div class="d-flex justify-content-between align-items-center mb-3 bg-light p-2 rounded border">
+        <div>
+          <span class="badge bg-secondary me-1">${header.PersonNumber}</span>
+          <strong class="text-primary fs-6">${name}</strong>
+        </div>
+        <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')">
+          <i class="fas fa-edit me-1"></i>In Schnellerfassung bearbeiten
+        </button>
+      </div>
       <div class="table-responsive">
         <table class="table table-hover table-sm">
           <thead class="table-light">
@@ -459,6 +468,17 @@ function jbRenderModalContent(header, pos, m, name) {
         </div>` : ''}
     </div>
   `;
+
+window.jbSwitchToSchnellerfassung = function(pn) {
+  const modalEl = document.getElementById('jbModalPositionen');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+  _jbActiveTab = 'entry';
+  _jbSelectedMemberPN = String(pn).trim();
+  renderJahresbeitragView();
+};
 
   // 2. BEARBEITEN TAB CONTENT
   const calc = jbCalculateLiveTotal(m, _jbModalParticipationsState);

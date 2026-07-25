@@ -53,6 +53,9 @@ window.renderRechnungen = function() {
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'archiv' ? 'active' : ''}" id="rn-tab-btn-archiv" onclick="rnSwitchTab('archiv')">
           <i class="fas fa-file-invoice me-1.5"></i> Rechnungs-Archiv
         </button>
+        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'offen' ? 'active' : ''}" id="rn-tab-btn-offen" onclick="rnSwitchTab('offen')">
+          <i class="fas fa-list-ol me-1.5"></i> Offene Posten (Nebenrechnung)
+        </button>
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'templates' ? 'active' : ''}" id="rn-tab-btn-templates" onclick="rnSwitchTab('templates')">
           <i class="fas fa-magic me-1.5"></i> Standard-Positionen verwalten
         </button>
@@ -86,6 +89,8 @@ window.renderActiveRechnungenTab = function() {
     renderTabArchiv(content);
   } else if (window._rechnungenActiveTab === 'templates') {
     renderTabTemplates(content);
+  } else if (window._rechnungenActiveTab === 'offen') {
+    renderTabOffenePosten(content);
   }
 };
 
@@ -444,4 +449,153 @@ window.rnOpenDetailsModal = async function(invoiceId) {
         Fehler beim Abrufen der Rechnungsdetails: ${err.message}
       </div>`;
   }
+};
+
+// =====================================================================
+// TAB: OFFENE POSTEN (NEBENRECHNUNG PER MITGLIED)
+// =====================================================================
+window.renderTabOffenePosten = function(content) {
+  if (!content) return;
+
+  const openInvoices = (window._invoices || []).filter(i => {
+    const st = String(i.status || '').toLowerCase();
+    return st === 'offen' || st === 'teilweise';
+  });
+  
+  // Group open invoices by PersonNumber / Name
+  const memberGroup = {};
+  openInvoices.forEach(inv => {
+    const key = inv.PersonNumber ? String(inv.PersonNumber).trim() : (inv.name || 'Unbekannt').trim();
+    if (!memberGroup[key]) {
+      memberGroup[key] = {
+        key: key,
+        personNumber: inv.PersonNumber || '–',
+        name: inv.name || 'Unbekannt',
+        invoices: [],
+        totalOpen: 0
+      };
+    }
+    memberGroup[key].invoices.push(inv);
+    memberGroup[key].totalOpen += Number(inv.total_amount || 0);
+  });
+
+  const memberList = Object.values(memberGroup).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const totalOpenSum = memberList.reduce((s, m) => s + m.totalOpen, 0);
+  const totalOpenCount = openInvoices.length;
+
+  let memberRowsHtml = '';
+  if (memberList.length === 0) {
+    memberRowsHtml = `
+      <tr>
+        <td colspan="5" class="text-center text-muted py-5">
+          <i class="fas fa-check-circle fa-3x text-success mb-3" style="opacity:0.5;"></i>
+          <h5>Keine offenen Posten!</h5>
+          <p class="small text-muted">Alle erfassten Rechnungen wurden vollständig beglichen.</p>
+        </td>
+      </tr>
+    `;
+  } else {
+    memberRowsHtml = memberList.map((m, idx) => {
+      const invDetailsHtml = m.invoices.map(i => {
+        return `<span class="badge bg-light text-dark border me-1 mb-1">
+          #${escapeHtml(i.id)} (${escapeHtml(i.type || 'Rechnung')}) &middot; CHF ${Number(i.total_amount || 0).toFixed(2)}
+        </span>`;
+      }).join('');
+
+      return `
+        <tr>
+          <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
+          <td>
+            <div class="fw-bold text-primary">${escapeHtml(m.name)}</div>
+            <small class="text-muted">Mitglieds-Nr: ${escapeHtml(m.personNumber)}</small>
+          </td>
+          <td>
+            <div class="small mb-1"><span class="badge bg-danger text-white me-1">${m.invoices.length} Rechnung(en)</span></div>
+            <div>${invDetailsHtml}</div>
+          </td>
+          <td class="text-end fw-bold text-danger fs-6">
+            CHF ${m.totalOpen.toFixed(2)}
+          </td>
+          <td class="text-center" style="width:100px;">
+            <button class="btn btn-sm btn-outline-secondary" onclick="rnSwitchTab('archiv'); window._invoicesFilterStatus='offen'; renderActiveRechnungenTab();" title="Im Rechnungs-Archiv anzeigen">
+              <i class="fas fa-search me-1"></i>Details
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  content.innerHTML = `
+    <!-- Top Info & Print Header -->
+    <div class="card border-0 shadow-sm p-4 bg-white rounded-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+        <div>
+          <h4 class="mb-1 text-primary fw-bold">
+            <i class="fas fa-list-ol me-2"></i>Nebenrechnung: Offene Posten per Stichtag
+          </h4>
+          <p class="text-muted small mb-0">
+            Übersicht aller ausstehenden Rechnungsbeträge pro Mitglied. Dient als Abstimmungs-Grundlage per 31.12. für die Revisoren (ohne Debitorenbuchung im Hauptjournal).
+          </p>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-primary" onclick="window.print()">
+            <i class="fas fa-print me-1.5"></i>Liste Drucken / PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- Summary KPI Row -->
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <div class="bh-metric-card danger shadow-sm">
+            <div class="small text-muted fw-semibold">Offene Gesamtsumme</div>
+            <h2 class="fw-bold mt-1 mb-0 text-danger">CHF ${totalOpenSum.toFixed(2)}</h2>
+            <div class="small text-muted mt-1">Ausstehende Forderungen insgesamt</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="bh-metric-card info shadow-sm">
+            <div class="small text-muted fw-semibold">Säumige Mitglieder</div>
+            <h2 class="fw-bold mt-1 mb-0 text-info">${memberList.length} Personen</h2>
+            <div class="small text-muted mt-1">Mit mind. 1 offenen Rechnung</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="bh-metric-card info shadow-sm">
+            <div class="small text-muted fw-semibold">Offene Rechnungsdokumente</div>
+            <h2 class="fw-bold mt-1 mb-0 text-dark">${totalOpenCount} Dokumente</h2>
+            <div class="small text-muted mt-1">Status 'offen' oder 'teilweise'</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Offene Posten Tabelle -->
+      <div class="table-responsive">
+        <table class="table table-hover align-middle border">
+          <thead class="table-light small">
+            <tr>
+              <th style="width:40px;" class="text-center">#</th>
+              <th>Mitglied / Person</th>
+              <th>Offene Rechnungen</th>
+              <th class="text-end">Offener Gesamtsaldo</th>
+              <th style="width:100px;" class="text-center">Aktion</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${memberRowsHtml}
+          </tbody>
+          ${memberList.length > 0 ? `
+            <tfoot class="table-light fw-bold">
+              <tr>
+                <td colspan="3" class="text-end">TOTAL OFFENE POSTEN (PER STICHTAG):</td>
+                <td class="text-end text-danger fs-6">CHF ${totalOpenSum.toFixed(2)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          ` : ''}
+        </table>
+      </div>
+    </div>
+  `;
 };

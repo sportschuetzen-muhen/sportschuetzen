@@ -29,8 +29,9 @@ function renderUmfragenUI(container) {
                             <th class="text-center" onclick="sortUmfragenEvents('schiessanlass')">Schiess-<br>anlass 🎯 ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('aktiv')">Aktiv ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('showparticipants')">Teilnehmer<br>sichtbar ⇅</th>
-                            <th class="text-center" style="cursor:default;">Frage:<br>Begleitung</th>
-                            <th class="text-center" style="cursor:default;">Frage:<br>Essen</th>
+                            <th class="text-center" onclick="sortUmfragenEvents('frage_begleitung')">Frage:<br>Begleitung ⇅</th>
+                            <th class="text-center" onclick="sortUmfragenEvents('frage_essen')">Frage:<br>Essen ⇅</th>
+                            <th class="text-center" onclick="sortUmfragenEvents('frage_grund')">Frage:<br>Abmeldegrund 💬 ⇅</th>
                             <th style="cursor:default;"></th>
                         </tr>
                     </thead>
@@ -132,13 +133,13 @@ function renderUmfragenUI(container) {
                                 <div class="table-responsive" style="max-height: 500px;">
                                     <table class="table table-sm table-striped align-middle mb-0">
                                         <thead class="table-light">
-                                            <tr>
-                                                <th>Zeitpunkt</th>
-                                                <th>Mitglied</th>
-                                                <th>Event</th>
-                                                <th class="text-center">Status</th>
-                                                <th class="text-center">Begl.</th>
-                                                <th class="text-center">Essen / Vegi</th>
+                                            <tr style="cursor:pointer; user-select:none;">
+                                                <th onclick="sortHistorieTable('rsvp', 'timestamp')">Zeitpunkt ⇅</th>
+                                                <th onclick="sortHistorieTable('rsvp', 'name')">Mitglied ⇅</th>
+                                                <th onclick="sortHistorieTable('rsvp', 'event')">Event ⇅</th>
+                                                <th class="text-center" onclick="sortHistorieTable('rsvp', 'status')">Status / Grund ⇅</th>
+                                                <th class="text-center" onclick="sortHistorieTable('rsvp', 'count')">Begl. ⇅</th>
+                                                <th class="text-center" onclick="sortHistorieTable('rsvp', 'essen')">Essen / Vegi ⇅</th>
                                             </tr>
                                         </thead>
                                         <tbody id="hist-rsvp-body">
@@ -151,11 +152,11 @@ function renderUmfragenUI(container) {
                                 <div class="table-responsive" style="max-height: 500px;">
                                     <table class="table table-sm table-striped align-middle mb-0">
                                         <thead class="table-light">
-                                            <tr>
-                                                <th>Zeitpunkt</th>
-                                                <th>Mitglied</th>
-                                                <th>Event / Ort</th>
-                                                <th>Aktion/Info</th>
+                                            <tr style="cursor:pointer; user-select:none;">
+                                                <th onclick="sortHistorieTable('views', 'timestamp')">Zeitpunkt ⇅</th>
+                                                <th onclick="sortHistorieTable('views', 'name')">Mitglied ⇅</th>
+                                                <th onclick="sortHistorieTable('views', 'event')">Event / Ort ⇅</th>
+                                                <th onclick="sortHistorieTable('views', 'info')">Aktion/Info ⇅</th>
                                             </tr>
                                         </thead>
                                         <tbody id="hist-views-body">

@@ -300,7 +300,8 @@ function renderGvTableBody() {
             if(a.vegi > 0) countVegi += Number(a.vegi);
         }
         else if (a.status === 'nein') {
-            badgeStr = `<span class="badge bg-danger">Nein</span>`;
+            const grundText = a.grund || a.reason ? ` <small class="text-muted fst-italic">💬 (${escapeHtml(a.grund || a.reason)})</small>` : '';
+            badgeStr = `<span class="badge bg-danger">Nein</span>${grundText}`;
             countNein++;
         }
         else {
