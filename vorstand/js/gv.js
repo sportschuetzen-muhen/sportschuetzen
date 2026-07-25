@@ -179,7 +179,7 @@ async function fetchGVEvents() {
         const events = Array.isArray(data) ? data : (data.events || []);
         
         const html = '<option value="">-- Bitte wählen --</option>' + 
-            events.map(e => `<option value="${escapeHtml(e.id)}" ${gvState.linked_event === e.id ? 'selected' : ''}>${escapeHtml(e.title)} (${e.datum ? e.datum.split('T')[0] : ''})</option>`).join('');
+            events.map(e => `<option value="${escapeHtml(e.id)}" ${gvState.linked_event === e.id ? 'selected' : ''}>${escapeHtml(e.title)} (${formatSwissDate(e.datum)})</option>`).join('');
             
         selectors.forEach(selector => {
             selector.innerHTML = html;
@@ -362,7 +362,25 @@ function removeGVMail(idx, email) {
 }
 
 async function runGVTool(toolName) {
-    if(!confirm('Tool "'+toolName+'" starten?')) return;
+    if (toolName === 'sendMails') {
+        let hasDoc = false;
+        if (window.gvState && Array.isArray(window.gvState.platzhalter)) {
+            const item = window.gvState.platzhalter.find(p => p[0] === 'Aktuelle_GV_Einladung_Dokument_ID' || p.Platzhaltername === 'Aktuelle_GV_Einladung_Dokument_ID');
+            if (item && (item[1] || item.Inhalt || '').trim()) {
+                hasDoc = true;
+            }
+        }
+        if (!hasDoc) {
+            if (!confirm("⚠️ Achtung: Es ist kein Einladungs-PDF als Anhang hinterlegt.\n\nMöchtest du die Einladungs-Mails trotzdem OHNE PDF-Anhang versenden?")) {
+                return;
+            }
+        } else {
+            if (!confirm("Möchtest du die GV-Einladungs-Mails inkl. PDF-Anhang jetzt versenden?")) return;
+        }
+    } else {
+        if(!confirm('Tool "'+toolName+'" starten?')) return;
+    }
+
     try {
         let evId = "";
         const dropdown = document.getElementById('gv-event-selector');

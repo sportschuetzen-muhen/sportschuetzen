@@ -33,7 +33,7 @@ function renderUmfragenEventsList() {
         <tr>
             <td class="text-muted small align-middle">${escapeHtml(e.id || '-')}</td>
             <td><input type="text" class="form-control form-control-sm" value="${escapeHtml(e.title || '')}" onchange="umfragenState[${idx}].title=this.value; window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
-            <td><input type="date" class="form-control form-control-sm" value="${e.datum ? e.datum.split('T')[0] : ''}" onchange="umfragenState[${idx}].datum=this.value; window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
+            <td><input type="date" class="form-control form-control-sm" value="${formatISODate(e.datum)}" onchange="umfragenState[${idx}].datum=this.value; window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
             <td>
                 <select class="form-select form-select-sm" onchange="umfragenState[${idx}].gruppe=this.value; window.markUnsaved()" ${!canWrite?'disabled':''}>
                     <option value="aktiv" ${(e.gruppe === 'aktiv' || !e.gruppe) ? 'selected' : ''}>Aktiv</option>

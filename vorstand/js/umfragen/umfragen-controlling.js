@@ -214,7 +214,7 @@ function fetchGVEventsEmbedded() {
   const html = '<option value="">-- Bitte wählen --</option>' +
     events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
       (gvState.linked_event === e.id ? ' selected' : '') + '>' +
-      escapeHtml(e.title) + ' (' + (e.datum ? e.datum.split('T')[0] : '') + ')</option>').join('');
+      escapeHtml(e.title) + ' (' + formatSwissDate(e.datum) + ')</option>').join('');
       
   selectors.forEach(selector => {
     selector.innerHTML = html;

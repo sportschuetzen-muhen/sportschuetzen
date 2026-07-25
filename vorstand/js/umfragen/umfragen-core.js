@@ -17,6 +17,52 @@ function isTrue(val) {
     return false;
 }
 
+function formatSwissDate(dateVal) {
+    if (!dateVal) return '-';
+    let str = dateVal.toString().trim();
+    if (!str) return '-';
+
+    if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(str)) return str;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const p = str.split('-');
+        return `${p[2]}.${p[1]}.${p[0]}`;
+    }
+
+    let d = new Date(str);
+    if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}.${month}.${year}`;
+    }
+
+    return str;
+}
+
+function formatISODate(dateVal) {
+    if (!dateVal) return '';
+    let str = dateVal.toString().trim();
+    if (!str) return '';
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+    if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(str)) {
+        const p = str.split('.');
+        return `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+    }
+
+    let d = new Date(str);
+    if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    return str.split('T')[0];
+}
+
 async function loadUmfragenData(force = false) {
   const container = document.getElementById('umfragen-container');
   if(!container) return;
