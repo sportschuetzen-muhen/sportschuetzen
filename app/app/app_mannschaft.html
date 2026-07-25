@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sportschützen Muhen</title>
+    
+    <link rel="manifest" href="/sportschuetzen/manifest.json">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+    <meta name="theme-color" content="#0f3c5c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Muhen">
+
+    <style>
+        :root {
+            --primary: #0f3c5c;
+            --bg: #f4f6f8;
+            --text: #333;
+            --line: #e0e0e0;
+            --hover: #e6eef5;
+            /* Heatmap Farben */
+            --low: #f8f9fa;
+            --mid: #e6f6ec;
+            --high: #c3e6cb;
+            --top: #ffeeba;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            margin: 0;
+            padding: 10px;
+            color: var(--text);
+            overscroll-behavior-y: contain; /* Verhindert Browser-Refresh beim Ziehen */
+        }
+
+        .subtitle { color: #666; margin-bottom: 12px; font-size: 13px; padding-left: 5px; }
+
+        /* TABELLE: STABILES %-LAYOUT */
+        .table-wrapper { width: 100%; overflow: hidden; }
+
+        table {
+            width: 100%;
+            table-layout: fixed; /* Zwingt Spaltenbreiten */
+            border-collapse: collapse;
+            background: #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        thead th {
+            background: var(--primary);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 12px 0;
+            text-align: center;
+        }
+
+        td {
+            padding: 12px 0;
+            text-align: center;
+            border-bottom: 1px solid var(--line);
+            font-size: 14px;
+        }
+
+        /* Spalten-Verteilung: Team 28%, 7 Runden teilen sich den Rest */
+        .team-header, .team { 
+            width: 28%; 
+            text-align: left; 
+            padding-left: 10px; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            white-space: nowrap; 
+        }
+        .round, .cell { width: 10.28%; font-weight: bold; }
+
+        .cell { cursor: pointer; color: var(--primary); transition: background 0.2s; }
+
+        /* HEATMAP KLASSEN */
+        .hm-low { background-color: var(--low); }
+        .hm-mid { background-color: var(--mid); color: #1f7a3a !important; }
+        .hm-high { background-color: var(--high); color: #155724 !important; }
+        .hm-top { background-color: var(--top); color: #856404 !important; }
+
+        /* DETAIL ANSICHT UNTER DER ZEILE */
+        .detail { 
+            display: none; 
+            background: #fdfdfd; 
+            padding: 15px; 
+            border-bottom: 2px solid var(--primary); 
+            animation: fadeIn 0.2s ease-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+        h3 { font-size: 15px; margin: 0 0 12px 0; color: var(--primary); }
+        .player-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+        .total-row { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 2px solid var(--primary); font-weight: bold; font-size: 15px; }
+
+        /* PULL-TO-REFRESH SPINNER */
+        #pull-spinner {
+            position: fixed; top: -50px; left: 50%; transform: translateX(-50%);
+            width: 40px; height: 40px; background: var(--primary); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; z-index: 9999; 
+            transition: top 0.1s linear;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        .spinner-icon { width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s infinite linear; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="pull-spinner"><div class="spinner-icon"></div></div>
+    <div class="subtitle" id="sub-title">Lade Mannschaftsdaten...</div>
+    <div id="overview"></div>
+
+<script>
+    const WORKER_URL = "https://gruppe.dan-hunziker73.workers.dev";
+    const selectedYear = 'aktuell'; 
+    let raw = []; let teams = [];
+
+    // Pull-to-Refresh Logik
+    let touchStart = 0;
+    document.addEventListener('touchstart', e => { touchStart = e.touches[0].pageY; }, {passive: true});
+    document.addEventListener('touchmove', e => {
+        let dist = e.touches[0].pageY - touchStart;
+        if (window.scrollY <= 0 && dist > 0) {
+            document.getElementById('pull-spinner').style.top = Math.min(dist/2.5, 60) + 'px';
+        }
+    }, {passive: true});
+    document.addEventListener('touchend', e => {
+        if (window.scrollY <= 0 && (e.changedTouches[0].pageY - touchStart) > 130) {
+            location.reload();
+        } else {
+            document.getElementById('pull-spinner').style.top = '-50px';
+        }
+    }, {passive: true});
+
+    // Heatmap Logik
+    function getHeatmapClass(val) {
+        if (!val || val === 0) return "";
+        if (val >= 197) return "hm-top";
+        if (val >= 191) return "hm-high";
+        if (val >= 185) return "hm-mid";
+        return "hm-low";
+    }
+
+    async function loadData() {
+        try {
+            // Cache-Busting hinzugefügt (?t=...), damit Push-Nachrichten immer frische Daten erzwingen
+            const response = await fetch(`${WORKER_URL}?type=mannschaft&jahr=${selectedYear}&t=${Date.now()}`);
+            raw = await response.json(); 
+            
+            teams = [...new Set(raw.flatMap(r => {
+                let t = [];
+                for(let i=1; i<=7; i++) if(r[`r${i}Team`]) t.push(r[`r${i}Team`]);
+                return t;
+            }))].sort();
+
+            document.getElementById('sub-title').textContent = 'Mannschaft – Klick für Details';
+            buildTable();
+        } catch {
+            document.getElementById("overview").innerHTML = "<p style='padding:20px;'>Fehler beim Laden.</p>";
+        }
+    }
+
+    function buildTable() {
+        let html = `<div class="table-wrapper"><table><thead><tr>
+            <th class="team-header">Team</th>`;
+        for (let r = 1; r <= 7; r++) html += `<th class="round">R${r}</th>`;
+        html += `</tr></thead><tbody>`;
+        
+        teams.forEach((team, tIdx) => {
+            html += `<tr><td class="team">${team}</td>`;
+            for (let r = 1; r <= 7; r++) {
+                const teamData = raw.filter(p => p[`r${r}Team`] === team && p[`r${r}Pkt`] > 0);
+                const sum = teamData.reduce((a, b) => a + b[`r${r}Pkt`], 0);
+                const avg = teamData.length > 0 ? sum / teamData.length : 0;
+                const hmClass = getHeatmapClass(avg);
+
+                html += `<td class="cell ${hmClass}" onclick="toggleDetail('${team.replace(/'/g,"\\'")}',${r},${tIdx})">${sum || "–"}</td>`;
+            }
+            html += `</tr><tr><td colspan="8" style="padding:0; border:0;">`;
+            for (let r = 1; r <= 7; r++) {
+                html += `<div id="det-${tIdx}-${r}" class="detail"></div>`;
+            }
+            html += `</td></tr>`;
+        });
+        document.getElementById("overview").innerHTML = html + `</tbody></table></div>`;
+    }
+
+    function toggleDetail(team, round, tIdx) {
+        const targetId = `det-${tIdx}-${round}`;
+        const targetDiv = document.getElementById(targetId);
+        const isCurrentlyOpen = targetDiv.style.display === 'block';
+
+        document.querySelectorAll('.detail').forEach(d => d.style.display = 'none');
+        
+        if (!isCurrentlyOpen) {
+            const list = raw.filter(p => p[`r${round}Team`] === team && p[`r${round}Pkt`] > 0);
+            if (list.length === 0) return;
+
+            let total = 0;
+            let html = `<h3>${team} – Runde ${round}</h3>`;
+            list.forEach(p => {
+                const val = p[`r${round}Pkt`];
+                total += val;
+                const pClass = getHeatmapClass(val);
+                html += `<div class="player-row"><span>${p.name}</span><span class="${pClass}" style="padding:2px 6px; border-radius:4px; font-weight:bold;">${val}</span></div>`;
+            });
+            html += `<div class="total-row"><span>Gesamt</span><span>${total}</span></div>`;
+            targetDiv.innerHTML = html;
+            targetDiv.style.display = 'block';
+        }
+    }
+
+    // Speziell für iOS: Erkennt das "Aufwachen" der App (Visibility Change)
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            console.log("App wurde in den Vordergrund geholt - lade Daten neu.");
+            if (typeof loadData === "function") {
+                loadData();
+            }
+        }
+    });
+
+    window.onload = loadData;
+
+</script>
+</body>
+</html>
