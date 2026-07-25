@@ -324,6 +324,9 @@ input, select {
 }
 
 /* Modal Styling */
+#login-help-modal {
+    z-index: 10005 !important;
+}
 .modal-overlay {
     position: fixed;
     top: 0; left: 0; width: 100%; height: 100%;

@@ -123,7 +123,7 @@ OneSignalDeferred.push(async function (OneSignal) {
 </script>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 
 <body>
@@ -146,17 +146,17 @@ OneSignalDeferred.push(async function (OneSignal) {
         <div id="login-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:15px; font-weight:600;">Lizenznummer / PIN inkorrekt.</div>
         <button id="login-btn" class="btn-main">Einloggen</button>
         <div style="margin-top: 15px; text-align: center;">
-            <button id="login-help-toggle" class="btn-help-link" type="button">❓ Lizenznummer / PIN vergessen?</button>
+            <button id="login-help-toggle" class="btn-help-link" type="button" onclick="openLoginHelp()">❓ Lizenznummer / PIN vergessen?</button>
         </div>
     </div>
 </div>
 
 <!-- HILFE MODAL (LOGIN) -->
-<div id="login-help-modal" class="modal-overlay" style="display:none;">
+<div id="login-help-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeLoginHelp()">
     <div class="modal-card">
         <div class="modal-header">
             <h3>🔑 Hilfe zur Anmeldung</h3>
-            <button id="close-login-help" class="modal-close-btn">&times;</button>
+            <button id="close-login-help" class="modal-close-btn" type="button" onclick="closeLoginHelp()">&times;</button>
         </div>
         <div class="modal-body">
             <p style="margin-top:0;"><b>Wo finde ich meine Lizenznummer / meinen PIN?</b></p>
@@ -169,7 +169,7 @@ OneSignalDeferred.push(async function (OneSignal) {
             </div>
         </div>
         <div class="modal-footer">
-            <button id="confirm-login-help" class="btn-main" style="width: auto; padding: 8px 20px;">Verstanden</button>
+            <button id="confirm-login-help" class="btn-main" type="button" style="width: auto; padding: 8px 20px;" onclick="closeLoginHelp()">Verstanden</button>
         </div>
     </div>
 </div>
@@ -226,7 +226,7 @@ OneSignalDeferred.push(async function (OneSignal) {
 
 </div>
 
-<script src="app.js?v=6" defer></script>
+<script src="app.js?v=8" defer></script>
 
 <!-- Participant Modal -->
 <div id="participant-modal" class="modal-overlay">
