@@ -4,12 +4,38 @@
 window._mglViewMode = window._mglViewMode || 'grid';
 
 // Neue Filterleisten-Variablen
-window._mglFilterLizenz = window._mglFilterLizenz || 'nur-aktive';
 window._mglFilterType = window._mglFilterType || 'alle';
-window._mglFilterKat = window._mglFilterKat || '';
+window._mglSubFilterLiz = window._mglSubFilterLiz || 'alle';
 
 function mglRenderListe(data) {
   const canEdit = (window.currentRoles || []).some(r => ['admin', 'vorstand', 'schuetzenmeister'].includes(r));
+
+  // Aufbau der progressiv eingeblendeten Unter-Chips für Lizenzen
+  const subFiltersHtml = window._mglFilterType === 'mit-lizenz' 
+    ? `
+    <div class="d-flex flex-wrap gap-1 align-items-center mb-3 p-2 rounded-3 border border-light" style="background: rgba(15, 58, 93, 0.03);">
+      <span class="text-muted small me-2" style="font-weight: 600;">Disziplin / Typ:</span>
+      <div class="mgl-pill-tab btn-sm ${window._mglSubFilterLiz === 'alle' ? 'active' : ''}" onclick="mglSetSubFilterLiz('alle')">
+        Alle Lizenzen
+      </div>
+      <div class="mgl-pill-tab btn-sm ${window._mglSubFilterLiz === 'g50m' ? 'active' : ''}" onclick="mglSetSubFilterLiz('g50m')">
+        Gewehr 50m (KK)
+      </div>
+      <div class="mgl-pill-tab btn-sm ${window._mglSubFilterLiz === 'g10m' ? 'active' : ''}" onclick="mglSetSubFilterLiz('g10m')">
+        Gewehr 10m (LG)
+      </div>
+      <div class="mgl-pill-tab btn-sm ${window._mglSubFilterLiz === 'doppel' ? 'active' : ''}" onclick="mglSetSubFilterLiz('doppel')" title="Mit aktiven Lizenzen in beiden Disziplinen (50m & 10m)">
+        Mehrfachlizenz (KK & LG)
+      </div>
+      <div class="mgl-pill-tab btn-sm ${window._mglSubFilterLiz === 'a-liz' ? 'active' : ''}" onclick="mglSetSubFilterLiz('a-liz')">
+        A-Lizenzen
+      </div>
+      <div class="mgl-pill-tab btn-sm ${window._mglSubFilterLiz === 'b-liz' ? 'active' : ''}" onclick="mglSetSubFilterLiz('b-liz')">
+        B-Lizenzen
+      </div>
+    </div>
+    `
+    : '';
 
   document.getElementById('mglTabContent').innerHTML = `
     <!-- FILTER- UND AKTIONEN-BAR -->
@@ -21,29 +47,6 @@ function mglRenderListe(data) {
                id="mglSearch" placeholder="Name, E-Mail, Lizenz-Nr..."
                oninput="mglFilter()">
       </div>
-
-      <!-- Segmenttasten für Lizenz-Filter (Alle / Mit / Ohne) -->
-      <div class="btn-group btn-group-sm" role="group">
-        <button type="button" class="btn btn-outline-primary ${window._mglFilterLizenz === 'alle' ? 'active' : ''}" onclick="mglSetLizenzFilter('alle')">
-          Alle
-        </button>
-        <button type="button" class="btn btn-outline-primary ${window._mglFilterLizenz === 'nur-aktive' ? 'active' : ''}" onclick="mglSetLizenzFilter('nur-aktive')" title="Nur Mitglieder mit aktiven SSV-Lizenzen">
-          Mit Lizenz
-        </button>
-        <button type="button" class="btn btn-outline-primary ${window._mglFilterLizenz === 'ohne-aktive' ? 'active' : ''}" onclick="mglSetLizenzFilter('ohne-aktive')" title="Nur Mitglieder ohne aktive SSV-Lizenzen">
-          Ohne Lizenz
-        </button>
-      </div>
-
-      <!-- Spezifische Gewehr-Kategorie-Filter -->
-      <select class="form-select form-select-sm" style="width:145px" id="mglFilterKat" onchange="mglSetKatFilter(this.value)">
-        <option value="" ${window._mglFilterKat === '' ? 'selected' : ''}>Alle Lizenzen</option>
-        <option value="Aktiv-A G50m" ${window._mglFilterKat === 'Aktiv-A G50m' ? 'selected' : ''}>Aktiv-A G50m</option>
-        <option value="Aktiv-B G50m" ${window._mglFilterKat === 'Aktiv-B G50m' ? 'selected' : ''}>Aktiv-B G50m</option>
-        <option value="Aktiv-A G10m" ${window._mglFilterKat === 'Aktiv-A G10m' ? 'selected' : ''}>Aktiv-A G10m</option>
-        <option value="Aktiv-B G10m" ${window._mglFilterKat === 'Aktiv-B G10m' ? 'selected' : ''}>Aktiv-B G10m</option>
-        <option value="Schüler-intern" ${window._mglFilterKat === 'Schüler-intern' ? 'selected' : ''}>Schüler-intern</option>
-      </select>
 
       <!-- Sortierung (Feld) -->
       <div class="d-flex align-items-center gap-1">
@@ -78,14 +81,17 @@ function mglRenderListe(data) {
       </button>` : ''}
     </div>
 
-    <!-- Filter Chips Row -->
+    <!-- Filter Chips Row (Hauptkategorien) -->
     <div class="d-flex flex-wrap gap-1 align-items-center mb-3">
       <span class="text-muted small me-2" style="font-weight: 600;">Status:</span>
       <div class="mgl-pill-tab ${window._mglFilterType === 'alle' ? 'active' : ''}" onclick="mglSetTypeFilter('alle')">
         Alle
       </div>
-      <div class="mgl-pill-tab ${window._mglFilterType === 'aktiv' ? 'active' : ''}" onclick="mglSetTypeFilter('aktiv')">
-        Aktiv
+      <div class="mgl-pill-tab ${window._mglFilterType === 'mit-lizenz' ? 'active' : ''}" onclick="mglSetTypeFilter('mit-lizenz')">
+        Aktiv mit Lizenz
+      </div>
+      <div class="mgl-pill-tab ${window._mglFilterType === 'ohne-lizenz' ? 'active' : ''}" onclick="mglSetTypeFilter('ohne-lizenz')">
+        Aktiv ohne Lizenz
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'passiv' ? 'active' : ''}" onclick="mglSetTypeFilter('passiv')">
         Passiv
@@ -97,8 +103,16 @@ function mglRenderListe(data) {
         Vorstand
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'inaktiv' ? 'active' : ''}" onclick="mglSetTypeFilter('inaktiv')">
-        Inaktiv
+        Austritte
       </div>
+      <div class="mgl-pill-tab ${window._mglFilterType === 'verstorben' ? 'active' : ''}" onclick="mglSetTypeFilter('verstorben')">
+        Verstorben
+      </div>
+    </div>
+
+    <!-- Dynamische Unter-Chips Area -->
+    <div id="mglSubFiltersArea">
+      ${subFiltersHtml}
     </div>
 
     <!-- HIER WERDEN DIE ELEMENTE GERENDERT -->
@@ -113,20 +127,17 @@ function mglSetViewMode(mode) {
   mglFilter();
 }
 
-function mglSetLizenzFilter(val) {
-  window._mglFilterLizenz = val;
-  mglRenderListe(_mglData); // Aktualisiert aktive Zustände in der Filterleiste
-  mglFilter();
-}
-
 function mglSetTypeFilter(val) {
   window._mglFilterType = val;
-  mglRenderListe(_mglData); // Aktualisiert aktive Zustände der Chips
+  // Unterfilter zurücksetzen
+  window._mglSubFilterLiz = 'alle';
+  mglRenderListe(_mglData); // Zeichnet Filterbar & Unterfilter neu
   mglFilter();
 }
 
-function mglSetKatFilter(val) {
-  window._mglFilterKat = val;
+function mglSetSubFilterLiz(val) {
+  window._mglSubFilterLiz = val;
+  mglRenderListe(_mglData); // Aktualisiert aktiven Zustand der Unterchips
   mglFilter();
 }
 
@@ -308,9 +319,8 @@ function mglRenderRows(data) {
 
 function mglFilter() {
   const search = (document.getElementById('mglSearch')?.value || '').toLowerCase().trim();
-  const kat = window._mglFilterKat || '';
   const typeMode = window._mglFilterType || 'alle';
-  const lizenzMode = window._mglFilterLizenz || 'nur-aktive';
+  const subLizMode = window._mglSubFilterLiz || 'alle';
 
   let filtered = _mglData.filter(m => {
     const fullName = `${m.FirstName || ''} ${m.LastName || ''}`.toLowerCase();
@@ -331,22 +341,50 @@ function mglFilter() {
     const isDeceased = m.Deceased == 1 || m.Deceased === true || m.Deceased === '1';
     const hasFn = Number(m._aktiveFunktionenCount || 0) > 0;
 
-    const matchLizenz =
-      lizenzMode === 'alle' ||
-      (lizenzMode === 'nur-aktive' && aktiveLiz > 0) ||
-      (lizenzMode === 'ohne-aktive' && aktiveLiz === 0);
-
+    // Aufteilung der Vereinsmitglieder in exklusive Gruppen
     const matchStatus =
-      typeMode === 'alle' ||
-      (typeMode === 'inaktiv' && !isAktiv && !isDeceased) ||
-      (typeMode === 'aktiv' && isAktiv && !isPassiv && !isEhren && !isDeceased) ||
-      (typeMode === 'passiv' && isPassiv && !isDeceased) ||
-      (typeMode === 'ehren' && isEhren && !isDeceased) ||
-      (typeMode === 'vorstand' && hasFn && !isDeceased);
+      typeMode === 'alle' 
+        ? (!isDeceased && (isAktiv || isPassiv || isEhren))
+        : typeMode === 'mit-lizenz' 
+          ? (!isDeceased && isAktiv && aktiveLiz > 0)
+        : typeMode === 'ohne-lizenz' 
+          ? (!isDeceased && isAktiv && aktiveLiz === 0)
+        : typeMode === 'passiv' 
+          ? (!isDeceased && isPassiv)
+        : typeMode === 'ehren' 
+          ? (!isDeceased && isEhren)
+        : typeMode === 'vorstand' 
+          ? (!isDeceased && hasFn)
+        : typeMode === 'inaktiv' 
+          ? (!isDeceased && !isAktiv && !isPassiv)
+        : typeMode === 'verstorben' 
+          ? isDeceased
+          : true;
 
-    const matchKat = !kat || String(m._kategorie || '').includes(kat) || (m._kategorien && m._kategorien.includes(kat));
+    // Feinere Lizenzunterteilung bei "Aktiv mit Lizenz"
+    let matchSubLiz = true;
+    if (typeMode === 'mit-lizenz' && subLizMode !== 'alle') {
+      const pId = String(m.PersonNumber || '').trim();
+      const licensesList = window._mglLizenzenCache?.[pId] || [];
+      const activeLicenses = licensesList.filter(l => (l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !l.ExitDate);
 
-    return matchSearch && matchLizenz && matchStatus && matchKat;
+      const hasG50 = activeLicenses.some(l => String(l.MembershipCategory || '').includes('G50m'));
+      const hasG10 = activeLicenses.some(l => String(l.MembershipCategory || '').includes('G10m'));
+
+      if (subLizMode === 'g50m') {
+        matchSubLiz = hasG50;
+      } else if (subLizMode === 'g10m') {
+        matchSubLiz = hasG10;
+      } else if (subLizMode === 'doppel') {
+        matchSubLiz = hasG50 && hasG10; // Beides aktiv vorhanden
+      } else if (subLizMode === 'a-liz') {
+        matchSubLiz = activeLicenses.some(l => String(l.MembershipCategory || '').includes('Aktiv-A'));
+      } else if (subLizMode === 'b-liz') {
+        matchSubLiz = activeLicenses.some(l => String(l.MembershipCategory || '').includes('Aktiv-B'));
+      }
+    }
+
+    return matchSearch && matchStatus && matchSubLiz;
   });
 
   filtered = mglSortData(filtered);

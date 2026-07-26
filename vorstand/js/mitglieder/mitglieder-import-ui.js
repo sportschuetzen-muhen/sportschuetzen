@@ -85,6 +85,14 @@ function mglRenderImport() {
           </div>
         </div>
 
+        <!-- Info-Banner zur Erklärung der Checkboxen -->
+        <div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center" style="font-size: 0.85rem;">
+          <i class="fas fa-info-circle me-2 text-info" style="font-size: 1.1rem;"></i>
+          <div>
+            <strong>Hinweis:</strong> Nur Mutationen mit einem <strong>aktivierten blauen Häkchen</strong> werden beim Klick auf <em>"Änderungen anwenden"</em> in die Google-Datenbank übernommen. Nicht ausgewählte Mutationen werden verworfen.
+          </div>
+        </div>
+
         <div class="table-responsive rounded-3 border">
           <table class="table table-hover table-import-preview mb-0">
             <thead class="table-dark">
