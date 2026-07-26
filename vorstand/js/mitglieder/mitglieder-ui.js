@@ -93,6 +93,9 @@ function renderMitgliederView(data) {
       <div class="mgl-pill-tab ${analyseTabActive}" onclick="mglSwitchTab('analyse')">
         <i class="fas fa-chart-pie me-1"></i> Mitglieder-Analyse
       </div>
+      <div class="mgl-pill-tab ${_mglActiveTab === 'import' ? 'active' : ''}" onclick="mglSwitchTab('import')">
+        <i class="fas fa-file-upload me-1"></i> SSV-Import
+      </div>
     </div>
 
     <!-- TAB-INHALTE -->
@@ -173,8 +176,10 @@ function renderMitgliederView(data) {
   // Render correct tab
   if (_mglActiveTab === 'liste') {
     mglRenderListe(data);
-  } else {
+  } else if (_mglActiveTab === 'analyse') {
     mglRenderAnalyse(data);
+  } else if (_mglActiveTab === 'import') {
+    mglRenderImport();
   }
 }
 
