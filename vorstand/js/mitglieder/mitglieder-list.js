@@ -210,6 +210,8 @@ function mglRenderRows(data) {
                          onclick="mglOpenDetail('${pn}'); return false;">
                         ${name}
                       </a>
+                      ${(m.Vereinsaustritt && window._mglFilterType === 'inaktiv') ? `<div class="text-danger small mt-1" style="font-size:0.75rem;"><i class="fas fa-sign-out-alt me-1"></i>Austritt: ${mglFmtDate(m.Vereinsaustritt)}</div>` : ''}
+                      ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
                     </td>
                     <td class="small">${email}</td>
                     <td class="small">${phone}</td>
@@ -280,6 +282,8 @@ function mglRenderRows(data) {
                       <div class="text-muted small font-monospace d-flex align-items-center mt-1" style="font-size: 0.72rem;">
                         <span>Nr: ${addrNum}</span>
                       </div>
+                      ${(m.Vereinsaustritt && window._mglFilterType === 'inaktiv') ? `<div class="text-danger small mt-1" style="font-size:0.75rem;"><i class="fas fa-sign-out-alt me-1"></i>Austritt: ${mglFmtDate(m.Vereinsaustritt)}</div>` : ''}
+                      ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
                     </div>
                   </div>
 
