@@ -194,6 +194,16 @@ function mglRenderRows(data) {
                   const birthDateStr = mglFmtDate(m.BirthDate);
                   const copyIcon = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(pn)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(pn)}'); event.stopPropagation();" title="Lizenznummer kopieren"></i>`;
 
+                  // Vorstand Funktionen anzeigen
+                  let fnHtml = '';
+                  if (window._mglFilterType === 'vorstand') {
+                    const activeFns = (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+                    const fnList = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
+                    if (fnList) {
+                      fnHtml = `<div class="text-primary small mt-1" style="font-size:0.75rem;"><i class="fas fa-briefcase me-1"></i>${escapeHtml(fnList)}</div>`;
+                    }
+                  }
+
                   return `<tr>
                     <td class="small">
                       <div class="fw-bold text-dark font-monospace" style="font-size:0.9rem">${addrNum}</div>
@@ -212,6 +222,7 @@ function mglRenderRows(data) {
                       </a>
                       ${(m.Vereinsaustritt && window._mglFilterType === 'inaktiv') ? `<div class="text-danger small mt-1" style="font-size:0.75rem;"><i class="fas fa-sign-out-alt me-1"></i>Austritt: ${mglFmtDate(m.Vereinsaustritt)}</div>` : ''}
                       ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
+                      ${fnHtml}
                     </td>
                     <td class="small">${email}</td>
                     <td class="small">${phone}</td>
@@ -256,6 +267,16 @@ function mglRenderRows(data) {
           const initials = `${(m.FirstName || '').charAt(0)}${(m.LastName || '').charAt(0)}`.trim() || '??';
           const addrNum = String(m.AddressNumber || '').padStart(6, '0');
 
+          // Vorstand Funktionen anzeigen
+          let fnHtml = '';
+          if (window._mglFilterType === 'vorstand') {
+            const activeFns = (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+            const fnList = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
+            if (fnList) {
+              fnHtml = `<div class="text-primary small mt-1" style="font-size:0.75rem;"><i class="fas fa-briefcase me-1"></i>${escapeHtml(fnList)}</div>`;
+            }
+          }
+
           const emailBtn = email 
             ? `<a href="mailto:${email}" class="btn btn-sm btn-light border rounded-circle flex-shrink-0" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;" title="${email}" onclick="event.stopPropagation();">
                 <i class="fas fa-envelope text-muted"></i>
@@ -284,6 +305,7 @@ function mglRenderRows(data) {
                       </div>
                       ${(m.Vereinsaustritt && window._mglFilterType === 'inaktiv') ? `<div class="text-danger small mt-1" style="font-size:0.75rem;"><i class="fas fa-sign-out-alt me-1"></i>Austritt: ${mglFmtDate(m.Vereinsaustritt)}</div>` : ''}
                       ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
+                      ${fnHtml}
                     </div>
                   </div>
 

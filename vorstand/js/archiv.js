@@ -29,170 +29,273 @@ function initArchiv() {
         return;
     }
 
-    // HTML-Struktur mit Premium-Glassmorphismus und modernem Grid
+    // HTML-Struktur mit Tabs & Modern Design
     container.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2 class="fw-bold text-primary mb-0" style="letter-spacing: -0.5px;">
-                <i class="fas fa-archive me-2 text-primary"></i>Protokoll-Archiv & KI-Assistent
-            </h2>
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <div>
+                <h2 class="fw-bold text-primary mb-1" style="letter-spacing: -0.5px;">
+                    <i class="fas fa-box-archive me-2 text-primary"></i>Vereins-Archiv & KI
+                </h2>
+                <p class="text-muted small mb-0">Zentrales Vereinsarchiv mit Google Drive Anbindung & KI-Verarbeitung</p>
+            </div>
             <div class="badge bg-primary-light text-primary px-3 py-2 rounded-pill fw-semibold" id="archiv-badge">
-                <i class="fas fa-robot me-1"></i> Cloudflare Workers AI
+                <i class="fab fa-google-drive me-1 text-warning"></i> Drive + Paperless AI
             </div>
         </div>
 
-        <div class="archiv-wrapper row g-4">
-            <!-- LINKE SPALTE: CHATBOT-INTERFACE -->
-            <div class="col-lg-8">
-                <div class="card border-0 shadow-lg p-0 overflow-hidden" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
-                    <!-- Chat Header -->
-                    <div class="p-3 border-bottom d-flex align-items-center justify-content-between" style="background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: white;">
-                        <div class="d-flex align-items-center">
-                            <div class="position-relative me-3">
-                                <div class="bg-white text-primary rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
-                                    <i class="fas fa-bullseye fa-lg text-primary animate-pulse"></i>
-                                </div>
-                                <span class="position-absolute bottom-0 end-0 bg-success border border-white border-2 rounded-circle" style="width: 12px; height: 12px;"></span>
-                            </div>
-                            <div>
-                                <h6 class="mb-0 fw-bold">Vereins-Archivar</h6>
-                                <small class="opacity-75">Durchsucht alle Protokolle & GV-Beschlüsse</small>
-                            </div>
+        <!-- TAB NAVIGATION -->
+        <ul class="nav nav-pills custom-tabs mb-4 p-1.5 rounded-pill bg-white shadow-sm border" style="max-width: max-content;">
+            <li class="nav-item">
+                <button class="nav-link fw-bold px-4 py-2.5 rounded-pill text-secondary" id="tab-btn-ki" onclick="switchArchivTab('ki')">
+                    <i class="fas fa-robot me-2 text-primary"></i>KI-Archiv-Assistent
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link active fw-bold px-4 py-2.5 rounded-pill bg-primary text-white" id="tab-btn-gdrive" onclick="switchArchivTab('gdrive')">
+                    <i class="fab fa-google-drive me-2 text-warning"></i>Google Drive Archiv
+                </button>
+            </li>
+        </ul>
+
+        <div class="archiv-wrapper">
+            <!-- TAB 2: GOOGLE DRIVE ARCHIV (ORDNER-EXPLORER) -->
+            <div id="archiv-tab-gdrive" class="tab-pane-content">
+                <div class="card border-0 shadow-lg p-4 mb-4" style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border-radius: 20px;">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3">
+                        <div>
+                            <h5 class="fw-bold text-primary mb-1">
+                                <i class="fab fa-google-drive me-2 text-warning"></i>Google Drive Ordner-Explorer
+                            </h5>
+                            <small class="text-muted">Greife direkt auf die Vereinsdokumente und Protokolle im Google Drive zu.</small>
                         </div>
-                        <button class="btn btn-sm btn-link text-white opacity-75 hover-opacity-100 text-decoration-none" onclick="clearChat()">
-                            <i class="fas fa-trash-alt me-1"></i> Verlauf leeren
-                        </button>
-                    </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <input type="radio" class="btn-check" name="gdrive-view" id="gdrive-view-list" checked onchange="renderGDriveIframe()">
+                                <label class="btn btn-outline-secondary px-3" for="gdrive-view-list"><i class="fas fa-list me-1"></i>Liste</label>
 
-                    <!-- Chat Messages Area -->
-                    <div id="chat-messages-container" class="p-4 overflow-y-auto" style="height: 480px; background: rgba(248, 250, 252, 0.5);">
-                        <div class="chat-message bot-msg d-flex mb-3">
-                            <div class="avatar-small me-2 bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; flex-shrink: 0;">
-                                <i class="fas fa-robot fa-xs"></i>
+                                <input type="radio" class="btn-check" name="gdrive-view" id="gdrive-view-grid" onchange="renderGDriveIframe()">
+                                <label class="btn btn-outline-secondary px-3" for="gdrive-view-grid"><i class="fas fa-th-large me-1"></i>Raster</label>
                             </div>
-                            <div class="msg-bubble p-3 rounded-4 shadow-sm" style="background: white; border: 1px solid var(--border); max-width: 80%; border-top-left-radius: 4px;">
-                                <p class="mb-0 small fw-medium">Grüezi! Ich bin euer digitaler Archiv-Assistent. Ich kann alle eingelesenen GV- und Vorstandsprotokolle nach Stichworten, Beschlüssen oder geschichtlichen Fragen durchsuchen.</p>
-                                <hr class="my-2 opacity-25">
-                                <p class="mb-0 small text-muted"><strong>Tipp:</strong> Klicke unten auf eine der Beispielfragen oder tippe deine eigene Frage ein.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Schnellwahltasten / Suggestions -->
-                    <div class="px-4 py-2 border-top bg-light d-flex flex-wrap gap-2 align-items-center">
-                        <span class="small text-muted fw-bold me-1"><i class="fas fa-lightbulb me-1"></i>Beispiele:</span>
-                        <button class="btn btn-xs btn-outline-secondary rounded-pill py-1 px-3 fs-7" onclick="askPreset('Wer ist aktuell im Vorstand vertreten?')">Wer ist im Vorstand?</button>
-                        <button class="btn btn-xs btn-outline-secondary rounded-pill py-1 px-3 fs-7" onclick="askPreset('Wann wurde das Schützenhaus renoviert?')">Renovation Schützenhaus</button>
-                        <button class="btn btn-xs btn-outline-secondary rounded-pill py-1 px-3 fs-7" onclick="askPreset('Wie hoch ist der aktuelle Mitgliederbeitrag?')">Mitgliederbeitrag</button>
-                    </div>
-
-                    <!-- Chat Input Area -->
-                    <div class="p-3 border-top bg-white">
-                        <div class="input-group">
-                            <input type="text" id="archiv-chat-input" class="form-control border-end-0 py-2.5 px-3 rounded-start-pill" placeholder="Stelle eine Frage zum Vereinsarchiv..." style="border: 1px solid var(--border);" onkeydown="handleChatKey(event)">
-                            <button class="btn btn-primary px-4 rounded-end-pill d-flex align-items-center" onclick="sendUserMessage()" id="archiv-send-btn">
-                                <span>Senden</span> <i class="fas fa-paper-plane ms-2"></i>
+                            <button class="btn btn-sm btn-outline-primary rounded-3 px-3" onclick="openGDriveExternal()">
+                                <i class="fas fa-external-link-alt me-1"></i> In Drive öffnen
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- INPUT FELD FÜR ORDNER-ID / LINK -->
+                    <div class="p-3 rounded-3 bg-light border mb-4">
+                        <label class="form-label small fw-bold text-muted mb-1">
+                            <i class="fas fa-link me-1 text-primary"></i> Google Drive Ordner-ID oder Link konfigurieren
+                        </label>
+                        <div class="input-group">
+                            <input type="text" id="gdrive-folder-input" class="form-control rounded-start-3" placeholder="z. B. 1a2b3c4d5e6f7... oder https://drive.google.com/drive/folders/..." style="font-size: 0.875rem;">
+                            <button class="btn btn-primary px-4 fw-bold rounded-end-3" onclick="loadGDriveFolder()">
+                                <i class="fas fa-sync-alt me-1"></i> Ordner laden & speichern
+                            </button>
+                        </div>
+                        <div class="form-text small text-muted mt-1">
+                            <i class="fas fa-info-circle text-info me-1"></i>
+                            Kopiere einfach den Link deines Vereinsarchiv-Ordners aus Google Drive hier hinein. Der Ordner sollte auf <em>"Jeder mit dem Link kann ansehen"</em> freigegeben sein.
+                        </div>
+                    </div>
+
+                    <!-- CONTAINER FÜR EMBEDDED IFRAME -->
+                    <div id="gdrive-iframe-container" class="position-relative">
+                        <div class="text-center p-5 text-muted">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 small">Lade Google Drive Ordner...</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- RECHTE SPALTE: INGESTION (PROTOKOLLE EINLESEN) -->
-            <div class="col-lg-4">
-                <div class="card border-0 shadow-lg p-4 h-100" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
-                    <h5 class="fw-bold text-primary mb-3"><i class="fas fa-cloud-upload-alt me-2"></i>Neues Protokoll einlesen</h5>
-                    <p class="small text-muted mb-4">Hier kannst du Protokolle oder Beschlüsse in die KI einlesen. Der Text wird automatisch zerkleinert, vektorisiert und in der Cloudflare Vectorize-Datenbank indexiert.</p>
-
-                    <form id="ingest-form" onsubmit="handleIngest(event)">
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold text-muted">Dokumentname</label>
-                            <input type="text" id="ingest-doc-name" class="form-control rounded-3" placeholder="z. B. GV_Protokoll_2025.pdf" required>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-6 mb-3">
-                                <label class="form-label small fw-bold text-muted">Datum</label>
-                                <input type="date" id="ingest-doc-date" class="form-control rounded-3" required>
-                                <div id="date-hint" class="form-text text-warning small d-none mt-1"><i class="fas fa-exclamation-triangle"></i> Aus Dateiname erkannt. Bitte prüfen!</div>
+            <!-- TAB 1: KI-ARCHIV-ASSISTENT (LIVE INTERFACE) -->
+            <div id="archiv-tab-ki" class="tab-pane-content d-none">
+                <div class="row g-4">
+                    <!-- CHATBOT-INTERFACE -->
+                    <div class="col-lg-12">
+                        <div class="card border-0 shadow-lg p-0 overflow-hidden" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
+                            <!-- Chat Header -->
+                            <div class="p-3 border-bottom d-flex align-items-center justify-content-between" style="background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: white;">
+                                <div class="d-flex align-items-center">
+                                    <div class="position-relative me-3">
+                                        <div class="bg-white text-primary rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+                                            <i class="fas fa-robot fa-lg text-primary animate-pulse"></i>
+                                        </div>
+                                        <span class="position-absolute bottom-0 end-0 bg-success border border-white border-2 rounded-circle" style="width: 12px; height: 12px;"></span>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-0 fw-bold">Vereins-Archivar (Groq Llama 3.3 70B & Paperless RAG)</h6>
+                                        <small class="opacity-75">Volltext & KI-Suche in allen GV- & Vorstandsprotokollen</small>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-link text-white opacity-75 hover-opacity-100 text-decoration-none" onclick="clearChat()">
+                                    <i class="fas fa-trash-alt me-1"></i> Verlauf leeren
+                                </button>
                             </div>
-                            <div class="col-6 mb-3">
-                                <label class="form-label small fw-bold text-muted">Kategorie</label>
-                                <select id="ingest-doc-cat" class="form-select rounded-3">
-                                    <option value="gv">GV Protokoll</option>
-                                    <option value="vorstand">Vorstand</option>
-                                    <option value="sonstiges">Sonstiges</option>
-                                </select>
+
+                            <!-- Chat Messages Area -->
+                            <div id="chat-messages-container" class="p-4 overflow-y-auto" style="height: 480px; background: rgba(248, 250, 252, 0.5);">
+                                <div class="chat-message bot-msg d-flex mb-3">
+                                    <div class="avatar-small me-2 bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; flex-shrink: 0;">
+                                        <i class="fas fa-robot fa-xs"></i>
+                                    </div>
+                                    <div class="msg-bubble p-3 rounded-4 shadow-sm" style="background: white; border: 1px solid var(--border); max-width: 85%; border-top-left-radius: 4px;">
+                                        <p class="mb-0 small fw-medium">Grüezi! Ich bin euer intelligenter KI-Archiv-Assistent. Ich durchsuche alle eingelesenen Protokolle und Dokumente mit <strong>Groq Llama-3.3-70b</strong>.</p>
+                                        <hr class="my-2 opacity-25">
+                                        <p class="mb-0 small text-muted"><strong>Tipp:</strong> Stelle eine Frage zu Beschlüssen, Personen, Jahreszahlen oder Verträgen des Vereins.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Schnellwahltasten / Suggestions -->
+                            <div class="px-4 py-2 border-top bg-light d-flex flex-wrap gap-2 align-items-center">
+                                <span class="small text-muted fw-bold me-1"><i class="fas fa-lightbulb me-1"></i>Beispiele:</span>
+                                <button class="btn btn-xs btn-outline-secondary rounded-pill py-1 px-3 fs-7" onclick="askPreset('Wer ist aktuell im Vorstand vertreten?')">Wer ist im Vorstand?</button>
+                                <button class="btn btn-xs btn-outline-secondary rounded-pill py-1 px-3 fs-7" onclick="askPreset('Was wurde bezüglich des Wasserschadens in der Schützenstube beschlossen?')">Wasserschaden Schützenstube</button>
+                                <button class="btn btn-xs btn-outline-secondary rounded-pill py-1 px-3 fs-7" onclick="askPreset('Wie hoch ist der aktuelle Mitgliederbeitrag?')">Mitgliederbeitrag</button>
+                            </div>
+
+                            <!-- Chat Input Area -->
+                            <div class="p-3 border-top bg-white">
+                                <div class="input-group">
+                                    <input type="text" id="archiv-chat-input" class="form-control border-end-0 py-2.5 px-3 rounded-start-pill" placeholder="Stelle eine Frage zum Vereinsarchiv..." style="border: 1px solid var(--border);" onkeydown="handleChatKey(event)">
+                                    <button class="btn btn-primary px-4 rounded-end-pill d-flex align-items-center" onclick="sendUserMessage()" id="archiv-send-btn">
+                                        <span>Senden</span> <i class="fas fa-paper-plane ms-2"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
-
-                        <div class="mb-4">
-                            <label class="form-label small fw-bold text-muted">Protokoll-Text</label>
-                            
-                            <div class="d-flex gap-2 mb-2">
-                                <label for="ingest-pdf-file" class="btn btn-sm btn-outline-primary flex-grow-1 d-flex align-items-center justify-content-center">
-                                    <i class="fas fa-file-import me-2"></i> Einzel-Upload (PDF / Word)
-                                    <span class="spinner-border spinner-border-sm ms-2 d-none" id="pdf-spinner" role="status" aria-hidden="true"></span>
-                                </label>
-                                <input type="file" id="ingest-pdf-file" accept=".pdf,.docx,.doc" style="display:none" onchange="handlePdfUpload(event)">
-
-                                <label for="ingest-batch-file" class="btn btn-sm btn-outline-warning flex-grow-1 d-flex align-items-center justify-content-center" title="Mehrere PDFs oder Word-Dateien auswählen">
-                                    <i class="fas fa-layer-group me-2"></i> Massen-Upload (PDF / Word)
-                                    <span class="spinner-border spinner-border-sm ms-2 d-none" id="batch-spinner" role="status" aria-hidden="true"></span>
-                                </label>
-                                <input type="file" id="ingest-batch-file" accept=".pdf,.docx,.doc" multiple style="display:none" onchange="handleBatchUpload(event)">
-                            </div>
-                            
-                            <textarea id="ingest-doc-text" class="form-control rounded-3 font-monospace" rows="10" placeholder="Kopiere den Text des Protokolls hier hinein ODER lade oben ein PDF/Word-Dokument hoch..." style="font-size: 0.85rem;" required></textarea>
-                            <div class="form-text small text-muted">Achte darauf, dass alle wichtigen Beschlüsse, Zahlen und Namen im Text enthalten sind. Du kannst den Text hier jederzeit anpassen.</div>
-                        </div>
-
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm d-flex align-items-center justify-content-center" id="ingest-submit-btn">
-                                <i class="fas fa-cogs me-2"></i> Protokoll indexieren
-                            </button>
-                        </div>
-                    </form>
-
-                    <!-- Ingestion Status / Progress -->
-                    <div id="ingest-progress-container" class="mt-4 p-3 border rounded-3 bg-light d-none">
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <span class="small fw-bold text-muted" id="ingest-status-text">Indexiere Daten...</span>
-                            <div class="spinner-border spinner-border-sm text-success" role="status"></div>
-                        </div>
-                        <div class="progress" style="height: 6px;">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 100%"></div>
-                        </div>
-                        <small class="text-muted d-block mt-2" style="font-size: 0.75rem;">Dies kann einen Moment dauern. Die KI erzeugt Vektor-Embeddings für jeden Abschnitt.</small>
-                    </div>
-                </div>
-
-                <!-- Liste indexierter Dokumente -->
-                <div class="card border-0 shadow-lg p-4 mt-4" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <h5 class="fw-bold text-primary mb-0"><i class="fas fa-file-alt me-2"></i>Indexierte Dokumente</h5>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-xs btn-outline-warning py-1 px-2 fw-semibold" onclick="reindexAllVectors(this)" style="font-size: 0.7rem; border-radius: 4px;" title="Aktualisiert alle Vektor-Embeddings im Hintergrund mit Dateinamen-Metadaten">
-                                <i class="fas fa-magic me-1"></i> Vektoren reparieren
-                            </button>
-                            <button class="btn btn-xs btn-outline-secondary p-1" onclick="loadIndexedDocuments()" title="Aktualisieren">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div id="indexed-docs-list" class="overflow-y-auto" style="max-height: 250px; font-size: 0.8rem;">
-                        <div class="text-muted text-center py-3">Lade Dokumente...</div>
                     </div>
                 </div>
             </div>
         </div>
     `;
 
-    // Standarddatum für Upload auf heute setzen
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById("ingest-doc-date").value = today;
+    // Standard-Tab laden (Google Drive)
+    switchArchivTab('gdrive');
+}
+
+// === TAB SWITCHER & GOOGLE DRIVE VIEWER LOGIK ===
+function switchArchivTab(tabName) {
+    const tabKi = document.getElementById("archiv-tab-ki");
+    const tabGdrive = document.getElementById("archiv-tab-gdrive");
+    const btnKi = document.getElementById("tab-btn-ki");
+    const btnGdrive = document.getElementById("tab-btn-gdrive");
+
+    if (tabName === 'gdrive') {
+        if (tabKi) tabKi.classList.add("d-none");
+        if (tabGdrive) tabGdrive.classList.remove("d-none");
+        if (btnKi) {
+            btnKi.classList.remove("active", "bg-primary", "text-white");
+            btnKi.classList.add("text-secondary");
+        }
+        if (btnGdrive) {
+            btnGdrive.classList.add("active", "bg-primary", "text-white");
+            btnGdrive.classList.remove("text-secondary");
+        }
+        initGDriveViewer();
+    } else {
+        if (tabGdrive) tabGdrive.classList.add("d-none");
+        if (tabKi) tabKi.classList.remove("d-none");
+        if (btnGdrive) {
+            btnGdrive.classList.remove("active", "bg-primary", "text-white");
+            btnGdrive.classList.add("text-secondary");
+        }
+        if (btnKi) {
+            btnKi.classList.add("active", "bg-primary", "text-white");
+            btnKi.classList.remove("text-secondary");
+        }
+    }
+}
+
+function extractGDriveFolderId(input) {
+    if (!input) return "";
+    input = input.trim();
+    const match = input.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+        return match[1];
+    }
+    const matchQuery = input.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchQuery && matchQuery[1]) {
+        return matchQuery[1];
+    }
+    return input;
+}
+
+function initGDriveViewer() {
+    const savedId = localStorage.getItem("gdrive_archiv_folder_id") || "";
+    const savedView = localStorage.getItem("gdrive_archiv_view_mode") || "list";
+    const inputEl = document.getElementById("gdrive-folder-input");
+    if (inputEl && !inputEl.value && savedId) {
+        inputEl.value = savedId;
+    }
     
-    // Indexierte Dokumente laden
-    loadIndexedDocuments();
+    if (savedView === 'grid') {
+        const gridRadio = document.getElementById("gdrive-view-grid");
+        if (gridRadio) gridRadio.checked = true;
+    } else {
+        const listRadio = document.getElementById("gdrive-view-list");
+        if (listRadio) listRadio.checked = true;
+    }
+
+    renderGDriveIframe();
+}
+
+function loadGDriveFolder() {
+    const inputEl = document.getElementById("gdrive-folder-input");
+    if (!inputEl) return;
+    
+    const rawVal = inputEl.value.trim();
+    const folderId = extractGDriveFolderId(rawVal);
+    
+    if (!folderId) {
+        if (typeof showError === "function") showError("Bitte eine gültige Google Drive Ordner-ID oder einen Ordner-Link eingeben.");
+        return;
+    }
+    
+    localStorage.setItem("gdrive_archiv_folder_id", folderId);
+    inputEl.value = folderId;
+    renderGDriveIframe();
+    if (typeof showSuccess === "function") showSuccess("Google Drive Ordner erfolgreich geladen & gespeichert!");
+}
+
+function renderGDriveIframe() {
+    const iframeContainer = document.getElementById("gdrive-iframe-container");
+    if (!iframeContainer) return;
+
+    const folderId = localStorage.getItem("gdrive_archiv_folder_id") || "";
+    const isGrid = document.getElementById("gdrive-view-grid")?.checked;
+    const viewMode = isGrid ? "grid" : "list";
+    localStorage.setItem("gdrive_archiv_view_mode", viewMode);
+
+    if (!folderId) {
+        iframeContainer.innerHTML = `
+            <div class="text-center p-5 text-muted border border-2 border-dashed rounded-4 bg-light">
+                <i class="fab fa-google-drive fa-3x mb-3 text-warning opacity-75"></i>
+                <h5 class="fw-bold">Kein Google Drive Ordner konfiguriert</h5>
+                <p class="small text-muted mb-0">Füge oben die Google Drive Ordner-ID oder den Link zu deinem Vereinsarchiv ein und klicke auf "Ordner laden".</p>
+            </div>
+        `;
+        return;
+    }
+
+    const embedUrl = `https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(folderId)}#${viewMode}`;
+    iframeContainer.innerHTML = `
+        <iframe src="${embedUrl}" 
+                style="width: 100%; height: 680px; border: 0; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); background: #ffffff;" 
+                allowfullscreen>
+        </iframe>
+    `;
+}
+
+function openGDriveExternal() {
+    const folderId = localStorage.getItem("gdrive_archiv_folder_id") || "";
+    if (folderId) {
+        window.open(`https://drive.google.com/drive/folders/${folderId}`, '_blank');
+    } else {
+        window.open('https://drive.google.com/', '_blank');
+    }
 }
 
 // === PRESETS / BEISPIELFRAGEN ===
