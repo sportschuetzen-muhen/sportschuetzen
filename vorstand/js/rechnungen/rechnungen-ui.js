@@ -59,6 +59,9 @@ window.renderRechnungen = function() {
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'templates' ? 'active' : ''}" id="rn-tab-btn-templates" onclick="rnSwitchTab('templates')">
           <i class="fas fa-magic me-1.5"></i> Standard-Positionen verwalten
         </button>
+        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'layouts' ? 'active' : ''}" id="rn-tab-btn-layouts" onclick="rnSwitchTab('layouts')">
+          <i class="fas fa-sliders-h me-1.5"></i> Layouts & Texte
+        </button>
       </div>
     </div>
     
@@ -91,6 +94,10 @@ window.renderActiveRechnungenTab = function() {
     renderTabTemplates(content);
   } else if (window._rechnungenActiveTab === 'offen') {
     renderTabOffenePosten(content);
+  } else if (window._rechnungenActiveTab === 'layouts') {
+    if (typeof renderTabLayouts === 'function') {
+      renderTabLayouts(content);
+    }
   }
 };
 
@@ -319,9 +326,15 @@ window.rnRenderTable = function() {
             </button>
           `}
 
-          <button class="btn btn-xs btn-outline-info write-protected" onclick="rnSendMailPrompt('${item.id}', '${escapeJs(item.name)}')" title="Per E-Mail versenden">
+          <button class="btn btn-xs btn-outline-info write-protected me-1" onclick="rnSendMailPrompt('${item.id}', '${escapeJs(item.name)}')" title="Per E-Mail versenden">
             <i class="fas fa-envelope"></i>
           </button>
+
+          ${!isPaid ? `
+            <button class="btn btn-xs btn-outline-warning write-protected" onclick="rnSendMahnungPrompt('${item.id}', '${escapeJs(item.name)}')" title="Zahlungserinnerung / Mahnung versenden">
+              <i class="fas fa-exclamation-triangle"></i>
+            </button>
+          ` : ''}
         </td>
       </tr>
     `;
@@ -454,12 +467,28 @@ window.rnOpenDetailsModal = async function(invoiceId) {
 // =====================================================================
 // TAB: OFFENE POSTEN (NEBENRECHNUNG PER MITGLIED)
 // =====================================================================
+window._rechnungenOffenePostenFilter = 'Jahresbeitrag';
+
+window.rnFilterOffenePostenType = function(type) {
+  window._rechnungenOffenePostenFilter = type;
+  const content = document.getElementById('rn-tab-content-container');
+  if (content) window.renderTabOffenePosten(content);
+};
+
 window.renderTabOffenePosten = function(content) {
   if (!content) return;
 
+  const currentFilter = window._rechnungenOffenePostenFilter || 'Jahresbeitrag';
+
   const openInvoices = (window._invoices || []).filter(i => {
     const st = String(i.status || '').toLowerCase();
-    return st === 'offen' || st === 'teilweise';
+    const isUnpaid = st === 'offen' || st === 'teilweise' || st === 'gemahnt';
+    if (!isUnpaid) return false;
+
+    const t = String(i.type || '').toLowerCase();
+    if (currentFilter === 'Jahresbeitrag') return t.includes('jahresbeitrag');
+    if (currentFilter === 'Vermietung') return t.includes('vermietung') || t.includes('schulsport') || t.includes('sonstige') || t.includes('sponsoring');
+    return true; // 'alle'
   });
   
   // Group open invoices by PersonNumber / Name
@@ -489,8 +518,8 @@ window.renderTabOffenePosten = function(content) {
       <tr>
         <td colspan="5" class="text-center text-muted py-5">
           <i class="fas fa-check-circle fa-3x text-success mb-3" style="opacity:0.5;"></i>
-          <h5>Keine offenen Posten!</h5>
-          <p class="small text-muted">Alle erfassten Rechnungen wurden vollständig beglichen.</p>
+          <h5>Keine offenen Posten in dieser Kategorie!</h5>
+          <p class="small text-muted">Alle Rechnungen für den gewählten Filter wurden vollständig beglichen.</p>
         </td>
       </tr>
     `;
@@ -502,11 +531,15 @@ window.renderTabOffenePosten = function(content) {
         </span>`;
       }).join('');
 
+      const mgl = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.personNumber));
+      const nieMahnen = mgl && (mgl.Niemahnen === '1' || mgl.Niemahnen === true || mgl.Niemahnen === 1);
+      const nieMahnenBadge = nieMahnen ? `<span class="badge bg-secondary ms-1" style="font-size:10px;"><i class="fas fa-ban me-1"></i>Nie mahnen</span>` : '';
+
       return `
         <tr>
           <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
           <td>
-            <div class="fw-bold text-primary">${escapeHtml(m.name)}</div>
+            <div class="fw-bold text-primary mb-0">${escapeHtml(m.name)} ${nieMahnenBadge}</div>
             <small class="text-muted">Mitglieds-Nr: ${escapeHtml(m.personNumber)}</small>
           </td>
           <td>
@@ -516,7 +549,7 @@ window.renderTabOffenePosten = function(content) {
           <td class="text-end fw-bold text-danger fs-6">
             CHF ${m.totalOpen.toFixed(2)}
           </td>
-          <td class="text-center" style="width:100px;">
+          <td class="text-center" style="width:120px;">
             <button class="btn btn-sm btn-outline-secondary" onclick="rnSwitchTab('archiv'); window._invoicesFilterStatus='offen'; renderActiveRechnungenTab();" title="Im Rechnungs-Archiv anzeigen">
               <i class="fas fa-search me-1"></i>Details
             </button>
@@ -535,7 +568,7 @@ window.renderTabOffenePosten = function(content) {
             <i class="fas fa-list-ol me-2"></i>Nebenrechnung: Offene Posten per Stichtag
           </h4>
           <p class="text-muted small mb-0">
-            Übersicht aller ausstehenden Rechnungsbeträge pro Mitglied. Dient als Abstimmungs-Grundlage per 31.12. für die Revisoren (ohne Debitorenbuchung im Hauptjournal).
+            Übersicht aller ausstehenden Rechnungsbeträge pro Mitglied / Empfänger für die Generalversammlung & Revision.
           </p>
         </div>
         <div class="d-flex gap-2">
@@ -545,27 +578,41 @@ window.renderTabOffenePosten = function(content) {
         </div>
       </div>
 
+      <!-- Filter Buttons Row -->
+      <div class="d-flex gap-2 mb-4 flex-wrap bg-light p-2 rounded-3 border">
+        <span class="small text-muted fw-bold align-self-center me-2"><i class="fas fa-filter me-1"></i>Kategorie:</span>
+        <button class="btn btn-xs ${currentFilter === 'Jahresbeitrag' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Jahresbeitrag')">
+          <i class="fas fa-id-card me-1"></i> Nur Jahresbeiträge (Mitglieder)
+        </button>
+        <button class="btn btn-xs ${currentFilter === 'Vermietung' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Vermietung')">
+          <i class="fas fa-home me-1"></i> Miete & Externe
+        </button>
+        <button class="btn btn-xs ${currentFilter === 'alle' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('alle')">
+          <i class="fas fa-list me-1"></i> Alle Posten
+        </button>
+      </div>
+
       <!-- Summary KPI Row -->
       <div class="row g-3 mb-4">
         <div class="col-md-4">
           <div class="bh-metric-card danger shadow-sm">
             <div class="small text-muted fw-semibold">Offene Gesamtsumme</div>
             <h2 class="fw-bold mt-1 mb-0 text-danger">CHF ${totalOpenSum.toFixed(2)}</h2>
-            <div class="small text-muted mt-1">Ausstehende Forderungen insgesamt</div>
+            <div class="small text-muted mt-1">Ausstehende Forderungen (${currentFilter})</div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="bh-metric-card info shadow-sm">
-            <div class="small text-muted fw-semibold">Säumige Mitglieder</div>
+            <div class="small text-muted fw-semibold">Säumige Empfänger</div>
             <h2 class="fw-bold mt-1 mb-0 text-info">${memberList.length} Personen</h2>
             <div class="small text-muted mt-1">Mit mind. 1 offenen Rechnung</div>
           </div>
         </div>
         <div class="col-md-4">
           <div class="bh-metric-card info shadow-sm">
-            <div class="small text-muted fw-semibold">Offene Rechnungsdokumente</div>
+            <div class="small text-muted fw-semibold">Offene Dokumente</div>
             <h2 class="fw-bold mt-1 mb-0 text-dark">${totalOpenCount} Dokumente</h2>
-            <div class="small text-muted mt-1">Status 'offen' oder 'teilweise'</div>
+            <div class="small text-muted mt-1">Status 'offen' oder 'gemahnt'</div>
           </div>
         </div>
       </div>
@@ -576,10 +623,10 @@ window.renderTabOffenePosten = function(content) {
           <thead class="table-light small">
             <tr>
               <th style="width:40px;" class="text-center">#</th>
-              <th>Mitglied / Person</th>
+              <th>Mitglied / Empfänger</th>
               <th>Offene Rechnungen</th>
               <th class="text-end">Offener Gesamtsaldo</th>
-              <th style="width:100px;" class="text-center">Aktion</th>
+              <th style="width:120px;" class="text-center">Aktion</th>
             </tr>
           </thead>
           <tbody>
@@ -588,7 +635,7 @@ window.renderTabOffenePosten = function(content) {
           ${memberList.length > 0 ? `
             <tfoot class="table-light fw-bold">
               <tr>
-                <td colspan="3" class="text-end">TOTAL OFFENE POSTEN (PER STICHTAG):</td>
+                <td colspan="3" class="text-end">TOTAL OFFENE POSTEN:</td>
                 <td class="text-end text-danger fs-6">CHF ${totalOpenSum.toFixed(2)}</td>
                 <td></td>
               </tr>

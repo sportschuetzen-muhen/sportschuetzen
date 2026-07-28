@@ -61,7 +61,7 @@ window.rnOpenPaymentModal = function(invoiceId, amount) {
                 </label>
               </div>
               <div class="form-text text-muted small mt-1">
-                <strong>Option EIN (Standard):</strong> Verbucht die Zahlung automatisch im Journal (Soll Bank \`1020\` an Haben Debitoren \`1100\`).<br>
+                <strong>Option EIN (Standard):</strong> Verbucht die Zahlung automatisch im Journal (Soll Bank `1020` / Kassa `1000` an Haben Ertragskonto, z. B. `3400` Miete / `3000` Beitragsertrag).<br>
                 <span class="text-danger"><strong>Option AUS:</strong> Ändert nur den Rechnungsstatus im Cockpit (Ideal für bereits von Hand im Kassabuch erfasste Rechnungen!).</span>
               </div>
             </div>
@@ -411,7 +411,7 @@ window.rnOpenCreateModal = async function() {
             <!-- Submit -->
             <div class="d-grid mt-4">
               <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" id="rnc-submit-btn">
-                <i class="fas fa-check-circle me-1"></i> QR-Rechnung erstellen & Soll-Buchen
+                <i class="fas fa-check-circle me-1"></i> QR-Rechnung erstellen
               </button>
             </div>
           </form>
@@ -779,15 +779,10 @@ window.rnOpenEditModal = async function(invoiceId) {
               </div>
             </div>
 
-            <div class="alert alert-info text-start small mb-4 py-2 border-0" style="background-color: rgba(13, 110, 253, 0.08); border-radius: 12px; font-weight: 500;">
-              <i class="fas fa-info-circle me-1 text-primary"></i>
-              <strong>Hinweis:</strong> Falls sich der Gesamtbetrag ändert, passe bitte den Soll-Buchungssatz (Beleg: ${inv.id}) manuell in der Buchhaltung an.
-            </div>
-
             <!-- Submit -->
             <div class="d-grid mt-4">
               <button type="submit" class="btn btn-warning py-2.5 fw-bold rounded-3 shadow-sm" id="rne-submit-btn">
-                <i class="fas fa-save me-1"></i> Änderungen speichern & Buchen
+                <i class="fas fa-save me-1"></i> Änderungen speichern
               </button>
             </div>
           </form>
@@ -1017,5 +1012,68 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
       window.renderRechnungen();
     }
     alert("❌ Fehler beim Löschen der Rechnung (Revert durchgeführt): " + err.message);
+  }
+};
+
+// MAHNUNG PROMPT & SEND
+window.rnSendMahnungPrompt = async function(invoiceId, name) {
+  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) return;
+
+  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  const nieMahnen = m && (m.Niemahnen === '1' || m.Niemahnen === true || m.Niemahnen === 1);
+
+  if (nieMahnen) {
+    if (!confirm(`⚠️ WICHTIGER HINWEIS:\n\nFür ${name} ist in den Mitgliederstammdaten die Option "Nie mahnen" aktiviert!\n\nMöchtest du trotzdem eine Zahlungserinnerung / Mahnung versenden?`)) {
+      return;
+    }
+  }
+
+  const email = m.PrimaryEmail || m.Email || '';
+
+  const targetEmail = prompt(`⚠️ Zahlungserinnerung / Mahnung an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, email || 'mitglied@sportschuetzen-muhen.ch');
+  if (targetEmail === null) return;
+  if (!targetEmail.includes('@')) {
+    alert("❌ Ungültige E-Mail-Adresse.");
+    return;
+  }
+
+  showLoadingOverlay(`Erstelle Mahnungs-PDF und sende E-Mail an ${name}...`);
+
+  const sender = typeof jbGetSenderForInvoiceType === 'function'
+    ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag')
+    : null;
+
+  const payload = {
+    action: 'sendMahnung',
+    invoiceId: invoiceId,
+    recipient: {
+      vorname: m.FirstName || inv.name.split(' ')[0] || '',
+      nachname: m.LastName || inv.name.split(' ').slice(1).join(' ') || '',
+      strasse: m.Street || m.Strasse || '',
+      plz: m.PostCode || m.ZipCode || m.PLZ || '',
+      ort: m.City || m.Ort || '',
+      email: targetEmail
+    },
+    sender: sender
+  };
+
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+
+    if (result.success) {
+      // Optimistic Status Update
+      inv.status = 'gemahnt';
+      window.renderRechnungen();
+      showSuccess(`🎉 Mahnung / Zahlungserinnerung erfolgreich an ${targetEmail} versandt!`);
+      await loadRechnungenData(true);
+    } else {
+      throw new Error(result.error || "Mahnungs-Versand fehlgeschlagen.");
+    }
+  } catch (err) {
+    alert("❌ Mahnung Fehler: " + err.message);
+  } finally {
+    hideLoadingOverlay();
   }
 };

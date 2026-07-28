@@ -20,6 +20,7 @@ const RECHNUNG_TYPES = [
 
 // Online/Preload Endpoint Trigger
 window._invoiceTemplates = [];
+window._invoiceLayouts = {};
 window._rechnungenActiveTab = 'archiv';
 
 // API Endpoint to fetch template positions
@@ -38,6 +39,39 @@ window.loadInvoiceTemplatesData = async function() {
     console.warn("⚠️ Fehler beim Abrufen der Standard-Positionen vom Server, benutze LocalStorage:", err);
     rnInitializeTemplates(); // Ensure localStorage has defaults
     window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+  }
+};
+
+// API Endpoint to fetch layout configuration
+window.loadInvoiceLayoutsData = async function() {
+  try {
+    const response = await apiFetch('rechnungen', 'action=getLayouts');
+    const result = await response.json();
+    if (result.success && result.data) {
+      const map = {};
+      (result.data || []).forEach(item => {
+        if (item.type) map[item.type] = item;
+      });
+      if (typeof rnGetDefaultLayouts === 'function') {
+        window._invoiceLayouts = { ...rnGetDefaultLayouts(), ...map };
+      } else {
+        window._invoiceLayouts = map;
+      }
+      localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
+    } else {
+      throw new Error(result.error || "GAS success was false");
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim Abrufen der Layout-Texte vom Server, benutze LocalStorage / Defaults:", err);
+    if (typeof rnGetDefaultLayouts === 'function') {
+      window._invoiceLayouts = rnGetDefaultLayouts();
+    }
+    try {
+      const stored = localStorage.getItem('portal_invoice_layouts');
+      if (stored) {
+        window._invoiceLayouts = { ...window._invoiceLayouts, ...JSON.parse(stored) };
+      }
+    } catch (_) {}
   }
 };
 
@@ -65,10 +99,11 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
   }
 
   try {
-    // Parallel fetching of invoices and standard positions templates
-    const [invRes, _] = await Promise.all([
+    // Parallel fetching of invoices, standard positions templates and layout configs
+    const [invRes, _a, _b] = await Promise.all([
       apiFetch('rechnungen', 'action=getInvoices'),
-      loadInvoiceTemplatesData()
+      loadInvoiceTemplatesData(),
+      loadInvoiceLayoutsData()
     ]);
     
     // Prüfe Content-Type – wenn HTML kommt, ist das Script nicht korrekt deployed/erreichbar
