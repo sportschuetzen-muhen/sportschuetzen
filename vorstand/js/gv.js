@@ -488,9 +488,11 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
         statusEl.innerHTML = `<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade ${files.length} Datei(en) hoch nach Google Drive...</span>`;
     }
 
-    const label = (window.gvState && window.gvState.platzhalter && window.gvState.platzhalter[idx])
-        ? (window.gvState.platzhalter[idx].bezeichnung_app || window.gvState.platzhalter[idx].platzhaltername || '')
-        : '';
+    const item = (window.gvState && window.gvState.platzhalter && window.gvState.platzhalter[idx])
+        ? window.gvState.platzhalter[idx]
+        : null;
+
+    const label = item ? (item.bezeichnung_app || item.platzhaltername || '') : '';
     const isMulti = label.toLowerCase().includes('anhänge');
 
     let uploadedIds = [];
@@ -521,7 +523,7 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
 
             if (data.success && data.fileId) {
                 uploadedIds.push(data.fileId);
-                uploadedNames.push(file.name);
+                uploadedNames.push(data.fileName || file.name);
             } else {
                 errors.push(`${file.name}: ${data.error || 'Fehler'}`);
             }
@@ -531,31 +533,50 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
     }
 
     if (uploadedIds.length > 0) {
-        let currentValues = [];
-        if (inputEl && inputEl.value.trim()) {
-            currentValues = inputEl.value.split(',').map(x => x.trim()).filter(Boolean);
+        let currentIds = [];
+        let currentNames = [];
+
+        if (item && item.inhalt) {
+            currentIds = item.inhalt.split(',').map(x => x.trim()).filter(Boolean);
+        } else if (inputEl && inputEl.value.trim()) {
+            currentIds = inputEl.value.split(',').map(x => x.trim()).filter(Boolean);
+        }
+
+        const existingNamesStr = item ? (item.erklaerung || item.erklärung || item.erkl_rung || '') : '';
+        if (existingNamesStr) {
+            currentNames = existingNamesStr.split(';').map(x => x.trim()).filter(Boolean);
         }
 
         if (isMulti) {
-            uploadedIds.forEach(id => {
-                if (!currentValues.includes(id)) currentValues.push(id);
+            uploadedIds.forEach((id, nIdx) => {
+                if (!currentIds.includes(id)) {
+                    currentIds.push(id);
+                    currentNames.push(uploadedNames[nIdx]);
+                }
             });
         } else {
-            currentValues = [uploadedIds[uploadedIds.length - 1]];
+            currentIds = [uploadedIds[uploadedIds.length - 1]];
+            currentNames = [uploadedNames[uploadedNames.length - 1]];
         }
 
-        const finalString = currentValues.join(', ');
+        const finalIdsString = currentIds.join(', ');
+        const finalNamesString = currentNames.join('; ');
 
-        if (window.gvState && Array.isArray(window.gvState.platzhalter) && window.gvState.platzhalter[idx]) {
-            window.gvState.platzhalter[idx].inhalt = finalString;
+        if (item) {
+            item.inhalt = finalIdsString;
+            item.erklaerung = finalNamesString;
+            item.erklärung = finalNamesString;
+            item.erkl_rung = finalNamesString;
         }
         if (inputEl) {
-            inputEl.value = finalString;
+            inputEl.value = finalIdsString;
         }
         if (typeof window.markUnsaved === 'function') window.markUnsaved();
 
         if (statusEl) {
-            let msg = `<span class="text-success"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen!</span>`;
+            const badgesHtml = renderGVFileBadges(idx, finalIdsString, finalNamesString, inputId, statusId);
+            let msg = `${badgesHtml}
+            <div class="text-success small mt-1"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen! ➔ Klicke oben auf <strong>"GV-Stammdaten speichern"</strong>.</div>`;
             if (errors.length > 0) {
                 msg += `<div class="text-warning small me-1">Warnung: Einige Dateien schlugen fehl (${escapeHtml(errors.join('; '))})</div>`;
             }
@@ -563,5 +584,54 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
         }
     } else if (errors.length > 0 && statusEl) {
         statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload fehlgeschlagen: ${escapeHtml(errors.join('; '))}</span>`;
+    }
+}
+
+function renderGVFileBadges(idx, idsString, namesString, inputId, statusId) {
+    const ids = (idsString || '').split(',').map(x => x.trim()).filter(Boolean);
+    const names = (namesString || '').split(';').map(x => x.trim()).filter(Boolean);
+    if (ids.length === 0) return '';
+
+    return '<div class="d-flex flex-wrap gap-1 mt-1 mb-1">' + ids.map((id, fIdx) => {
+        const name = names[fIdx] || ('Datei ' + (fIdx + 1));
+        return `<span class="badge bg-light text-dark border p-1.5 d-inline-flex align-items-center me-1 mb-1" style="font-size:0.82rem;">
+            <i class="fas fa-file-pdf text-danger me-1"></i>
+            <strong class="me-1" title="ID: ${escapeHtml(id)}">${escapeHtml(name)}</strong>
+            <span class="text-danger ms-1 write-protected" style="cursor:pointer;font-weight:bold;" title="Datei entfernen" onclick="removeGVAttachment(${idx}, '${escapeJs(id)}', '${inputId}', '${statusId}')">&times;</span>
+        </span>`;
+    }).join('') + '</div>';
+}
+
+function removeGVAttachment(idx, fileIdToRemove, inputId, statusId) {
+    if (!window.gvState || !window.gvState.platzhalter || !window.gvState.platzhalter[idx]) return;
+    const item = window.gvState.platzhalter[idx];
+
+    let ids = (item.inhalt || '').split(',').map(x => x.trim()).filter(Boolean);
+    let names = (item.erklaerung || item.erklärung || item.erkl_rung || '').split(';').map(x => x.trim()).filter(Boolean);
+
+    const remIdx = ids.indexOf(fileIdToRemove);
+    if (remIdx !== -1) {
+        ids.splice(remIdx, 1);
+        if (names[remIdx] !== undefined) {
+            names.splice(remIdx, 1);
+        }
+    }
+
+    const finalIds = ids.join(', ');
+    const finalNames = names.join('; ');
+
+    item.inhalt = finalIds;
+    item.erklaerung = finalNames;
+    item.erklärung = finalNames;
+    item.erkl_rung = finalNames;
+
+    const inputEl = document.getElementById(inputId);
+    if (inputEl) inputEl.value = finalIds;
+
+    if (typeof window.markUnsaved === 'function') window.markUnsaved();
+
+    const statusEl = document.getElementById(statusId);
+    if (statusEl) {
+        statusEl.innerHTML = renderGVFileBadges(idx, finalIds, finalNames, inputId, statusId);
     }
 }

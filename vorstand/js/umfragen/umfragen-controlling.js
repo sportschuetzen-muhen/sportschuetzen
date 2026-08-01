@@ -151,6 +151,7 @@ function renderGVListEmbedded() {
       }
 
       if (isDocAttachment) {
+        const fileBadges = typeof renderGVFileBadges === 'function' ? renderGVFileBadges(i, value, p.erklaerung || p.erklärung || p.erkl_rung || '', 'gv-doc-input-emb-' + i, 'gv-doc-status-emb-' + i) : '';
         fieldHtml = '<div class="mb-3">' +
           '<label class="form-label small fw-bold mb-1">' + escapeHtml(label) + '</label>' +
           '<div class="input-group input-group-sm">' +
@@ -161,7 +162,7 @@ function renderGVListEmbedded() {
           '<i class="fas fa-cloud-upload-alt me-1"></i> Upload</button>' +
           '</div>' +
           '<input type="file" id="gv-file-upload-emb-' + i + '" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" multiple onchange="uploadGVDocumentFile(this.files, ' + i + ', \'gv-doc-input-emb-' + i + '\', \'gv-doc-status-emb-' + i + '\')">' +
-          '<div id="gv-doc-status-emb-' + i + '" class="small mt-1 text-muted"></div>' +
+          '<div id="gv-doc-status-emb-' + i + '" class="small mt-1 text-muted">' + fileBadges + '</div>' +
           hint +
           '</div>';
       } else {
