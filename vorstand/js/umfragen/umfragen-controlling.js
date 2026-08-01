@@ -160,7 +160,7 @@ function renderGVListEmbedded() {
           '<button class="btn btn-outline-primary write-protected" type="button" onclick="document.getElementById(\'gv-file-upload-emb-' + i + '\').click()">' +
           '<i class="fas fa-cloud-upload-alt me-1"></i> Upload</button>' +
           '</div>' +
-          '<input type="file" id="gv-file-upload-emb-' + i + '" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" onchange="uploadGVDocumentFile(this.files[0], ' + i + ', \'gv-doc-input-emb-' + i + '\', \'gv-doc-status-emb-' + i + '\')">' +
+          '<input type="file" id="gv-file-upload-emb-' + i + '" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" multiple onchange="uploadGVDocumentFile(this.files, ' + i + ', \'gv-doc-input-emb-' + i + '\', \'gv-doc-status-emb-' + i + '\')">' +
           '<div id="gv-doc-status-emb-' + i + '" class="small mt-1 text-muted"></div>' +
           hint +
           '</div>';

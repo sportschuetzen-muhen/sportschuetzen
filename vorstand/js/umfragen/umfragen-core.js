@@ -29,6 +29,16 @@ function formatSwissDate(dateVal) {
         return `${p[2]}.${p[1]}.${p[0]}`;
     }
 
+    if (str.includes('T')) {
+        let d = new Date(str);
+        if (!isNaN(d.getTime())) {
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+    }
+
     let d = new Date(str);
     if (!isNaN(d.getTime())) {
         const day = String(d.getDate()).padStart(2, '0');

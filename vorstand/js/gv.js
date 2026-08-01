@@ -176,7 +176,7 @@ function renderGVList() {
               <i class="fas fa-cloud-upload-alt me-1"></i> Upload
             </button>
           </div>
-          <input type="file" id="gv-file-upload-${i}" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" onchange="uploadGVDocumentFile(this.files[0], ${i}, 'gv-doc-input-${i}', 'gv-doc-status-${i}')">
+          <input type="file" id="gv-file-upload-${i}" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" multiple onchange="uploadGVDocumentFile(this.files, ${i}, 'gv-doc-input-${i}', 'gv-doc-status-${i}')">
           <div id="gv-doc-status-${i}" class="small mt-1 text-muted"></div>
           ${hint}
         </div>
@@ -473,58 +473,95 @@ async function saveGVData() {
   }
 }
 
-async function uploadGVDocumentFile(file, idx, inputId, statusId) {
-    if (!file) return;
+async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
+    if (!fileOrFileList) return;
+    const files = (fileOrFileList instanceof FileList || Array.isArray(fileOrFileList))
+        ? Array.from(fileOrFileList)
+        : [fileOrFileList];
+
+    if (files.length === 0) return;
+
     const inputEl = document.getElementById(inputId);
     const statusEl = document.getElementById(statusId);
-    
+
     if (statusEl) {
-        statusEl.innerHTML = '<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade Datei hoch nach Google Drive...</span>';
+        statusEl.innerHTML = `<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade ${files.length} Datei(en) hoch nach Google Drive...</span>`;
     }
-    
-    try {
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            const base64 = e.target.result.split(',')[1];
-            try {
-                const res = await apiFetch('termine', '', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'uploadGVDocument',
-                        fileName: file.name,
-                        mimeType: file.type || 'application/pdf',
-                        base64: base64,
-                        user: localStorage.getItem('portal_user') || 'Admin'
-                    })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    const fileIdentifier = data.fileId || data.fileUrl;
-                    if (window.gvState && Array.isArray(window.gvState.platzhalter) && window.gvState.platzhalter[idx]) {
-                        window.gvState.platzhalter[idx].inhalt = fileIdentifier;
-                    }
-                    if (inputEl) {
-                        inputEl.value = fileIdentifier;
-                    }
-                    if (typeof window.markUnsaved === 'function') window.markUnsaved();
-                    if (statusEl) {
-                        statusEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(file.name)}' hochgeladen! ID: <code>${escapeHtml(data.fileId)}</code></span>`;
-                    }
-                } else {
-                    if (statusEl) {
-                        statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Fehler: ${escapeHtml(data.error || 'Upload fehlgeschlagen')}</span>`;
-                    }
-                }
-            } catch(err) {
-                if (statusEl) {
-                    statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Netzwerkfehler beim Upload</span>`;
-                }
+
+    const label = (window.gvState && window.gvState.platzhalter && window.gvState.platzhalter[idx])
+        ? (window.gvState.platzhalter[idx].bezeichnung_app || window.gvState.platzhalter[idx].platzhaltername || '')
+        : '';
+    const isMulti = label.toLowerCase().includes('anhänge');
+
+    let uploadedIds = [];
+    let uploadedNames = [];
+    let errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+
+            const res = await apiFetch('termine', '', {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'uploadGVDocument',
+                    fileName: file.name,
+                    mimeType: file.type || 'application/pdf',
+                    base64: base64,
+                    user: localStorage.getItem('portal_user') || 'Admin'
+                })
+            });
+            const data = await res.json();
+
+            if (data.success && data.fileId) {
+                uploadedIds.push(data.fileId);
+                uploadedNames.push(file.name);
+            } else {
+                errors.push(`${file.name}: ${data.error || 'Fehler'}`);
             }
-        };
-        reader.readAsDataURL(file);
-    } catch(err) {
-        if (statusEl) {
-            statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Fehler beim Lesen der Datei</span>`;
+        } catch(err) {
+            errors.push(`${file.name}: ${err.message || 'Netzwerkfehler'}`);
         }
+    }
+
+    if (uploadedIds.length > 0) {
+        let currentValues = [];
+        if (inputEl && inputEl.value.trim()) {
+            currentValues = inputEl.value.split(',').map(x => x.trim()).filter(Boolean);
+        }
+
+        if (isMulti) {
+            uploadedIds.forEach(id => {
+                if (!currentValues.includes(id)) currentValues.push(id);
+            });
+        } else {
+            currentValues = [uploadedIds[uploadedIds.length - 1]];
+        }
+
+        const finalString = currentValues.join(', ');
+
+        if (window.gvState && Array.isArray(window.gvState.platzhalter) && window.gvState.platzhalter[idx]) {
+            window.gvState.platzhalter[idx].inhalt = finalString;
+        }
+        if (inputEl) {
+            inputEl.value = finalString;
+        }
+        if (typeof window.markUnsaved === 'function') window.markUnsaved();
+
+        if (statusEl) {
+            let msg = `<span class="text-success"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen!</span>`;
+            if (errors.length > 0) {
+                msg += `<div class="text-warning small me-1">Warnung: Einige Dateien schlugen fehl (${escapeHtml(errors.join('; '))})</div>`;
+            }
+            statusEl.innerHTML = msg;
+        }
+    } else if (errors.length > 0 && statusEl) {
+        statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload fehlgeschlagen: ${escapeHtml(errors.join('; '))}</span>`;
     }
 }
