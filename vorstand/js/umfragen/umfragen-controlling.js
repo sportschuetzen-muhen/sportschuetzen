@@ -144,17 +144,35 @@ function renderGVListEmbedded() {
     } else {
       const isDateField = ph === 'dd.mm.jjjj';
       const displayValue = isDateField ? isoToDisplay(value) : value;
+      const isDocAttachment = ['dokument', 'anhänge', 'einladung', 'protokoll', 'jahresbericht'].some(t => label.toLowerCase().includes(t));
       let hint = '';
       if (label.toLowerCase().includes('anhänge')) {
           hint = '<div class="form-text text-info" style="font-size:0.75rem;"><i class="fas fa-info-circle"></i> Bei mehreren Anhängen diese mit Komma trennen.</div>';
       }
-      fieldHtml = '<div class="mb-2">' +
-        '<label class="form-label small fw-bold mb-0">' + escapeHtml(label) + '</label>' +
-        '<input type="text" class="form-control form-control-sm write-protected"' +
-        ' value="' + escapeHtml(displayValue) + '" placeholder="' + escapeHtml(ph) + '"' +
-        ' onchange="gvState.platzhalter[' + i + '].inhalt = ' + (isDateField ? 'displayToIso(this.value)' : 'this.value') + '">' +
-        hint +
-        '</div>';
+
+      if (isDocAttachment) {
+        fieldHtml = '<div class="mb-3">' +
+          '<label class="form-label small fw-bold mb-1">' + escapeHtml(label) + '</label>' +
+          '<div class="input-group input-group-sm">' +
+          '<input type="text" id="gv-doc-input-emb-' + i + '" class="form-control form-control-sm write-protected"' +
+          ' value="' + escapeHtml(displayValue) + '" placeholder="' + escapeHtml(ph || 'Drive ID / Link eintragen oder Datei uploaden...') + '"' +
+          ' onchange="gvState.platzhalter[' + i + '].inhalt = this.value">' +
+          '<button class="btn btn-outline-primary write-protected" type="button" onclick="document.getElementById(\'gv-file-upload-emb-' + i + '\').click()">' +
+          '<i class="fas fa-cloud-upload-alt me-1"></i> Upload</button>' +
+          '</div>' +
+          '<input type="file" id="gv-file-upload-emb-' + i + '" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" onchange="uploadGVDocumentFile(this.files[0], ' + i + ', \'gv-doc-input-emb-' + i + '\', \'gv-doc-status-emb-' + i + '\')">' +
+          '<div id="gv-doc-status-emb-' + i + '" class="small mt-1 text-muted"></div>' +
+          hint +
+          '</div>';
+      } else {
+        fieldHtml = '<div class="mb-2">' +
+          '<label class="form-label small fw-bold mb-0">' + escapeHtml(label) + '</label>' +
+          '<input type="text" class="form-control form-control-sm write-protected"' +
+          ' value="' + escapeHtml(displayValue) + '" placeholder="' + escapeHtml(ph) + '"' +
+          ' onchange="gvState.platzhalter[' + i + '].inhalt = ' + (isDateField ? 'displayToIso(this.value)' : 'this.value') + '">' +
+          hint +
+          '</div>';
+      }
     }
 
     if (isTermin(label)) {

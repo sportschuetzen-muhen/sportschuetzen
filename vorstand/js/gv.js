@@ -157,6 +157,31 @@ function renderGVList() {
 
     const isDateField = ph === 'dd.mm.jjjj';
     const displayValue = isDateField ? isoToDisplay(value) : value;
+    const isDocAttachment = ['dokument', 'anhänge', 'einladung', 'protokoll', 'jahresbericht'].some(t => label.toLowerCase().includes(t));
+
+    if (isDocAttachment) {
+      let hint = '';
+      if (label.toLowerCase().includes('anhänge')) {
+        hint = '<div class="form-text text-info" style="font-size:0.75rem;"><i class="fas fa-info-circle"></i> Bei mehreren Anhängen diese mit Komma trennen.</div>';
+      }
+      return `
+        <div class="mb-3">
+          <label class="form-label small fw-bold mb-1">${escapeHtml(label)}</label>
+          <div class="input-group input-group-sm">
+            <input type="text" id="gv-doc-input-${i}" class="form-control form-control-sm write-protected"
+              value="${escapeHtml(displayValue)}"
+              placeholder="${escapeHtml(ph || 'Drive ID / Link eintragen oder Datei uploaden...')}"
+              onchange="gvState.platzhalter[${i}].inhalt = this.value">
+            <button class="btn btn-outline-primary write-protected" type="button" onclick="document.getElementById('gv-file-upload-${i}').click()">
+              <i class="fas fa-cloud-upload-alt me-1"></i> Upload
+            </button>
+          </div>
+          <input type="file" id="gv-file-upload-${i}" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" onchange="uploadGVDocumentFile(this.files[0], ${i}, 'gv-doc-input-${i}', 'gv-doc-status-${i}')">
+          <div id="gv-doc-status-${i}" class="small mt-1 text-muted"></div>
+          ${hint}
+        </div>
+      `;
+    }
 
     return `
       <div class="mb-2">
@@ -446,4 +471,60 @@ async function saveGVData() {
   } catch(e) {
     alert("Netzwerk/Skript-Fehler: " + e);
   }
+}
+
+async function uploadGVDocumentFile(file, idx, inputId, statusId) {
+    if (!file) return;
+    const inputEl = document.getElementById(inputId);
+    const statusEl = document.getElementById(statusId);
+    
+    if (statusEl) {
+        statusEl.innerHTML = '<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade Datei hoch nach Google Drive...</span>';
+    }
+    
+    try {
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const base64 = e.target.result.split(',')[1];
+            try {
+                const res = await apiFetch('termine', '', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'uploadGVDocument',
+                        fileName: file.name,
+                        mimeType: file.type || 'application/pdf',
+                        base64: base64,
+                        user: localStorage.getItem('portal_user') || 'Admin'
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const fileIdentifier = data.fileId || data.fileUrl;
+                    if (window.gvState && Array.isArray(window.gvState.platzhalter) && window.gvState.platzhalter[idx]) {
+                        window.gvState.platzhalter[idx].inhalt = fileIdentifier;
+                    }
+                    if (inputEl) {
+                        inputEl.value = fileIdentifier;
+                    }
+                    if (typeof window.markUnsaved === 'function') window.markUnsaved();
+                    if (statusEl) {
+                        statusEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(file.name)}' hochgeladen! ID: <code>${escapeHtml(data.fileId)}</code></span>`;
+                    }
+                } else {
+                    if (statusEl) {
+                        statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Fehler: ${escapeHtml(data.error || 'Upload fehlgeschlagen')}</span>`;
+                    }
+                }
+            } catch(err) {
+                if (statusEl) {
+                    statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Netzwerkfehler beim Upload</span>`;
+                }
+            }
+        };
+        reader.readAsDataURL(file);
+    } catch(err) {
+        if (statusEl) {
+            statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Fehler beim Lesen der Datei</span>`;
+        }
+    }
 }
