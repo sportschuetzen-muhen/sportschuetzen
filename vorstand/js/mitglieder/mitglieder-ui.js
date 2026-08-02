@@ -96,6 +96,9 @@ function renderMitgliederView(data) {
       <div class="mgl-pill-tab ${_mglActiveTab === 'import' ? 'active' : ''}" onclick="mglSwitchTab('import')">
         <i class="fas fa-file-upload me-1"></i> SSV-Import
       </div>
+      <div class="mgl-pill-tab ${_mglActiveTab === 'sync' ? 'active' : ''}" onclick="mglSwitchTab('sync')">
+        <i class="fas fa-sync-alt me-1"></i> System-Sync
+      </div>
     </div>
 
     <!-- TAB-INHALTE -->
@@ -180,6 +183,8 @@ function renderMitgliederView(data) {
     mglRenderAnalyse(data);
   } else if (_mglActiveTab === 'import') {
     mglRenderImport();
+  } else if (_mglActiveTab === 'sync') {
+    mglRenderSync();
   }
 }
 

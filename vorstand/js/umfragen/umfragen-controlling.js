@@ -27,7 +27,13 @@ async function initGVControllingTab() {
       loadedAdminData = JSON.parse(JSON.stringify(adminState));
     } else {
       const res = await apiFetch('termine', 'action=loadAdminData');
-      loadedAdminData = await res.json();
+      const text = await res.text();
+      try {
+        loadedAdminData = JSON.parse(text);
+      } catch (err) {
+        console.error("Non-JSON Server response:", text);
+        throw new Error("Ungültige Antwort vom Server (Google Apps Script). Bitte prüfe das Deployment in Google Apps Script.");
+      }
     }
 
     // Berechne Vorstand aus vorverlegtem Cache falls vorhanden
@@ -149,11 +155,23 @@ function renderGVListEmbedded() {
       if (label.toLowerCase().includes('anhänge')) {
           hint = '<div class="form-text text-info" style="font-size:0.75rem;"><i class="fas fa-info-circle"></i> Bei mehreren Anhängen diese mit Komma trennen.</div>';
       }
-
       if (isDocAttachment) {
         const fileBadges = typeof renderGVFileBadges === 'function' ? renderGVFileBadges(i, value, p.erklaerung || p.erklärung || p.erkl_rung || '', 'gv-doc-input-emb-' + i, 'gv-doc-status-emb-' + i) : '';
+        
+        let docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-paperclip text-primary me-1"></i> Wird beim Mailversand als Anhang mitgeschickt.</div>';
+        const lLower = label.toLowerCase();
+        if (lLower.includes('einladung')) {
+            docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-file-pdf text-danger me-1"></i> Haupt-Einladungsdokument (PDF oder Google Doc) als E-Mail-Anhang.</div>';
+        } else if (lLower.includes('anhänge')) {
+            docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-paperclip text-primary me-1"></i> Weitere Beilagen (z. B. Statuten-Entwurf, Reglemente). Kommagetrennt für mehrere Dateien.</div>';
+        } else if (lLower.includes('protokoll')) {
+            docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-file-word text-info me-1"></i> Protokoll der Vorjahres-GV (Word .docx oder PDF) als E-Mail-Anhang.</div>';
+        } else if (lLower.includes('jahresbericht')) {
+            docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-file-alt text-success me-1"></i> Jahresbericht des Präsidenten als E-Mail-Anhang.</div>';
+        }
+
         fieldHtml = '<div class="mb-3">' +
-          '<label class="form-label small fw-bold mb-1">' + escapeHtml(label) + '</label>' +
+          '<label class="form-label small fw-bold mb-1">' + escapeHtml(label) + ' <span class="badge bg-primary text-white ms-1" style="font-size:0.65rem;"><i class="fas fa-paperclip me-1"></i> E-Mail-Anhang</span></label>' +
           '<div class="input-group input-group-sm">' +
           '<input type="text" id="gv-doc-input-emb-' + i + '" class="form-control form-control-sm write-protected"' +
           ' value="' + escapeHtml(displayValue) + '" placeholder="' + escapeHtml(ph || 'Drive ID / Link eintragen oder Datei uploaden...') + '"' +
@@ -163,7 +181,7 @@ function renderGVListEmbedded() {
           '</div>' +
           '<input type="file" id="gv-file-upload-emb-' + i + '" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" multiple onchange="uploadGVDocumentFile(this.files, ' + i + ', \'gv-doc-input-emb-' + i + '\', \'gv-doc-status-emb-' + i + '\')">' +
           '<div id="gv-doc-status-emb-' + i + '" class="small mt-1 text-muted">' + fileBadges + '</div>' +
-          hint +
+          docHint +
           '</div>';
       } else {
         fieldHtml = '<div class="mb-2">' +
@@ -198,6 +216,9 @@ function renderGVListEmbedded() {
     </div>
     <div class="mb-4">
         <h6 class="border-bottom pb-1 text-primary">Dokumente & Anhänge</h6>
+        <div class="alert alert-info py-2 px-3 mb-3 small border-0 text-dark" style="background:#eef6ff; border-left: 4px solid #0d6efd !important;">
+          <i class="fas fa-paperclip text-primary me-1"></i> <strong>E-Mail-Anhänge:</strong> Alle hier hochgeladenen Dokumente (Einladung, Zusatz-Anhänge, Protokoll, Jahresbericht) werden beim Versenden der GV-Einladung automatisch als E-Mail-Anhänge an die Mitglieder verschickt.
+        </div>
         ${htmlDocs}
     </div>
     <div class="mb-2">

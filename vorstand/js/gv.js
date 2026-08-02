@@ -3,6 +3,18 @@
 let gvState = null;
 let originalGvState = null;
 
+function getGVState() {
+  if (typeof gvState !== 'undefined' && gvState) {
+    window.gvState = gvState;
+    return gvState;
+  }
+  if (window.gvState) {
+    gvState = window.gvState;
+    return window.gvState;
+  }
+  return null;
+}
+
 async function loadGVData(force = false) {
   const container = document.getElementById('gv-container');
   if(!container) return;
@@ -24,7 +36,14 @@ async function loadGVData(force = false) {
       apiFetch('termine', 'action=loadAdminData'),
       apiFetch('mitglieder', 'action=getVorstand')
     ]);
-    gvState = await resAdmin.json();
+    const textAdmin = await resAdmin.text();
+    try {
+      gvState = JSON.parse(textAdmin);
+    } catch(err) {
+      console.error("Non-JSON Server response in loadGVData:", textAdmin);
+      throw new Error("Ungültige Antwort vom Server (Google Apps Script). Bitte prüfe das Deployment in Google Apps Script.");
+    }
+    window.gvState = gvState;
     try {
       const vorstandData = await resVorstand.json();
       if(vorstandData.success) {
@@ -160,13 +179,21 @@ function renderGVList() {
     const isDocAttachment = ['dokument', 'anhänge', 'einladung', 'protokoll', 'jahresbericht'].some(t => label.toLowerCase().includes(t));
 
     if (isDocAttachment) {
-      let hint = '';
-      if (label.toLowerCase().includes('anhänge')) {
-        hint = '<div class="form-text text-info" style="font-size:0.75rem;"><i class="fas fa-info-circle"></i> Bei mehreren Anhängen diese mit Komma trennen.</div>';
+      let docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-paperclip text-primary me-1"></i> Wird beim Mailversand als Anhang mitgeschickt.</div>';
+      const lLower = label.toLowerCase();
+      if (lLower.includes('einladung')) {
+          docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-file-pdf text-danger me-1"></i> Haupt-Einladungsdokument (PDF oder Google Doc) als E-Mail-Anhang.</div>';
+      } else if (lLower.includes('anhänge')) {
+          docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-paperclip text-primary me-1"></i> Weitere Beilagen (z. B. Statuten-Entwurf, Reglemente). Kommagetrennt für mehrere Dateien.</div>';
+      } else if (lLower.includes('protokoll')) {
+          docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-file-word text-info me-1"></i> Protokoll der Vorjahres-GV (Word .docx oder PDF) als E-Mail-Anhang.</div>';
+      } else if (lLower.includes('jahresbericht')) {
+          docHint = '<div class="form-text text-muted" style="font-size:0.75rem;"><i class="fas fa-file-alt text-success me-1"></i> Jahresbericht des Präsidenten als E-Mail-Anhang.</div>';
       }
+
       return `
         <div class="mb-3">
-          <label class="form-label small fw-bold mb-1">${escapeHtml(label)}</label>
+          <label class="form-label small fw-bold mb-1">${escapeHtml(label)} <span class="badge bg-primary text-white ms-1" style="font-size:0.65rem;"><i class="fas fa-paperclip me-1"></i> E-Mail-Anhang</span></label>
           <div class="input-group input-group-sm">
             <input type="text" id="gv-doc-input-${i}" class="form-control form-control-sm write-protected"
               value="${escapeHtml(displayValue)}"
@@ -178,7 +205,7 @@ function renderGVList() {
           </div>
           <input type="file" id="gv-file-upload-${i}" class="d-none" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg" multiple onchange="uploadGVDocumentFile(this.files, ${i}, 'gv-doc-input-${i}', 'gv-doc-status-${i}')">
           <div id="gv-doc-status-${i}" class="small mt-1 text-muted"></div>
-          ${hint}
+          ${docHint}
         </div>
       `;
     }
@@ -389,10 +416,16 @@ function removeGVMail(idx, email) {
 async function runGVTool(toolName) {
     if (toolName === 'sendMails') {
         let hasDoc = false;
-        if (window.gvState && Array.isArray(window.gvState.platzhalter)) {
-            const item = window.gvState.platzhalter.find(p => p[0] === 'Aktuelle_GV_Einladung_Dokument_ID' || p.Platzhaltername === 'Aktuelle_GV_Einladung_Dokument_ID');
-            if (item && (item[1] || item.Inhalt || '').trim()) {
-                hasDoc = true;
+        const state = getGVState();
+        if (state && Array.isArray(state.platzhalter)) {
+            const item = state.platzhalter.find(p => {
+                const name = String(p.platzhaltername || p.Platzhaltername || p[0] || '').toLowerCase();
+                const appName = String(p.bezeichnung_app || p.Bezeichnung_App || '').toLowerCase();
+                return name.includes('aktuelle_gv_einladung_dokument_id') || name.includes('einladung_dokument') || appName.includes('einladung');
+            });
+            if (item) {
+                const val = String(item.inhalt || item.Inhalt || item[1] || '').trim();
+                if (val) hasDoc = true;
             }
         }
         if (!hasDoc) {
@@ -436,17 +469,21 @@ async function runGVTool(toolName) {
     } catch(e) { alert("Netzwerkfehler: " + e); }
 }
 
-async function saveGVData() {
-  if(!confirm("GV-Aenderungen speichern?")) return;
+async function saveGVData(silent = false) {
+  if (!silent && !confirm("GV-Aenderungen speichern?")) return;
   const user = localStorage.getItem('portal_user') || "Admin";
-  // The server expects all payload parts, so we send the whole state
+  const stateToSave = getGVState();
+  if (!stateToSave || !stateToSave.platzhalter) {
+    if (!silent) alert("Fehler: Keine GV-Daten vorhanden.");
+    return;
+  }
   const payload = {
     action: "saveAdminData",
     user: user,
-    termine: gvState.termine,
-    platzhalter: gvState.platzhalter,
-    app_info: gvState.app_info,
-    dropdowns: gvState.dropdowns,
+    termine: stateToSave.termine,
+    platzhalter: stateToSave.platzhalter,
+    app_info: stateToSave.app_info,
+    dropdowns: stateToSave.dropdowns,
     logDetails: "GV-Daten aktualisiert"
   };
   try {
@@ -455,21 +492,14 @@ async function saveGVData() {
     let data;
     try { data = JSON.parse(text); } catch(e) { data = { error: "Ungueltige Server-Antwort" }; }
     
-    if(data.status === 'success' || data.success) {
-        window.clearUnsaved();
-        alert("✅ Gespeichert!");
-        gvState = null;
-        if (typeof adminState !== 'undefined') {
-            adminState = null;
-        }
-        if (typeof initGVControllingTab === 'function') {
-            initGVControllingTab();
-        }
+    if (data.status === 'success' || data.success) {
+        if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
+        if (!silent) alert("✅ Gespeichert!");
     } else {
-        alert("Fehler beim Speichern: " + (data.error || data.message || "Unbekannt"));
+        if (!silent) alert("Fehler beim Speichern: " + (data.error || data.message || "Unbekannt"));
     }
   } catch(e) {
-    alert("Netzwerk/Skript-Fehler: " + e);
+    if (!silent) alert("Netzwerk/Skript-Fehler: " + e);
   }
 }
 
@@ -484,12 +514,18 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
     const inputEl = document.getElementById(inputId);
     const statusEl = document.getElementById(statusId);
 
+    // Reset hidden file input so re-selecting the same file always triggers onchange
+    const fileInputId = inputId.replace('gv-doc-input', 'gv-file-upload');
+    const fileInputEl = document.getElementById(fileInputId);
+    if (fileInputEl) fileInputEl.value = '';
+
     if (statusEl) {
         statusEl.innerHTML = `<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade ${files.length} Datei(en) hoch nach Google Drive...</span>`;
     }
 
-    const item = (window.gvState && window.gvState.platzhalter && window.gvState.platzhalter[idx])
-        ? window.gvState.platzhalter[idx]
+    const state = getGVState();
+    const item = (state && Array.isArray(state.platzhalter) && state.platzhalter[idx])
+        ? state.platzhalter[idx]
         : null;
 
     const label = item ? (item.bezeichnung_app || item.platzhaltername || '') : '';
@@ -571,16 +607,20 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
         if (inputEl) {
             inputEl.value = finalIdsString;
         }
-        if (typeof window.markUnsaved === 'function') window.markUnsaved();
 
         if (statusEl) {
             const badgesHtml = renderGVFileBadges(idx, finalIdsString, finalNamesString, inputId, statusId);
-            let msg = `${badgesHtml}
-            <div class="text-success small mt-1"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen! ➔ Klicke oben auf <strong>"GV-Stammdaten speichern"</strong>.</div>`;
-            if (errors.length > 0) {
-                msg += `<div class="text-warning small me-1">Warnung: Einige Dateien schlugen fehl (${escapeHtml(errors.join('; '))})</div>`;
-            }
-            statusEl.innerHTML = msg;
+            statusEl.innerHTML = `${badgesHtml}
+            <div class="text-primary small mt-1"><i class="fas fa-spinner fa-spin me-1"></i> Speichere automatisch in Google Sheets...</div>`;
+        }
+
+        // Automatisches Speichern in Google Sheets im Hintergrund!
+        await saveGVData(true);
+
+        if (statusEl) {
+            const badgesHtml = renderGVFileBadges(idx, finalIdsString, finalNamesString, inputId, statusId);
+            statusEl.innerHTML = `${badgesHtml}
+            <div class="text-success small mt-1"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen & in Google Sheets gespeichert!</div>`;
         }
     } else if (errors.length > 0 && statusEl) {
         statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload fehlgeschlagen: ${escapeHtml(errors.join('; '))}</span>`;
@@ -602,9 +642,10 @@ function renderGVFileBadges(idx, idsString, namesString, inputId, statusId) {
     }).join('') + '</div>';
 }
 
-function removeGVAttachment(idx, fileIdToRemove, inputId, statusId) {
-    if (!window.gvState || !window.gvState.platzhalter || !window.gvState.platzhalter[idx]) return;
-    const item = window.gvState.platzhalter[idx];
+async function removeGVAttachment(idx, fileIdToRemove, inputId, statusId) {
+    const state = getGVState();
+    if (!state || !state.platzhalter || !state.platzhalter[idx]) return;
+    const item = state.platzhalter[idx];
 
     let ids = (item.inhalt || '').split(',').map(x => x.trim()).filter(Boolean);
     let names = (item.erklaerung || item.erklärung || item.erkl_rung || '').split(';').map(x => x.trim()).filter(Boolean);
@@ -628,10 +669,10 @@ function removeGVAttachment(idx, fileIdToRemove, inputId, statusId) {
     const inputEl = document.getElementById(inputId);
     if (inputEl) inputEl.value = finalIds;
 
-    if (typeof window.markUnsaved === 'function') window.markUnsaved();
-
     const statusEl = document.getElementById(statusId);
     if (statusEl) {
         statusEl.innerHTML = renderGVFileBadges(idx, finalIds, finalNames, inputId, statusId);
     }
+
+    await saveGVData(true);
 }
