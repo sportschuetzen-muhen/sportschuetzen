@@ -300,7 +300,10 @@ function renderTermine(data, activeLizenz) {
             
             let onYesClick = `submitRSVP('${t.id}', true)`;
             if (t.frage_begleitung || t.frage_essen) {
-                onYesClick = `openRSVPForm('${t.id}', ${!!t.frage_begleitung}, ${!!t.frage_essen})`;
+                const cCount = (t.count !== undefined && t.count !== null && t.count !== "") ? Number(t.count) : 1;
+                const cEssen = (t.essen !== undefined && t.essen !== null && t.essen !== "") ? Number(t.essen) : ((t.food !== undefined && t.food !== null && t.food !== "") ? Number(t.food) : 1);
+                const cVegi = (t.vegi !== undefined && t.vegi !== null && t.vegi !== "") ? Number(t.vegi) : 0;
+                onYesClick = `openRSVPForm('${t.id}', ${!!t.frage_begleitung}, ${!!t.frage_essen}, ${cCount}, ${cEssen}, ${cVegi})`;
             }
 
             let bodyContent = '';
@@ -471,10 +474,33 @@ async function initLogin() {
             try {
                 let r = await fetch(`${EVENTPLANER_URL}?action=getMembers&type=member`);
                 if(!r.ok) throw new Error("Backend nicht erreichbar");
-                allUsers = await r.json();
+                const resData = await r.json();
+                if (Array.isArray(resData) && resData.length > 0) {
+                    allUsers = resData;
+                } else {
+                    throw new Error("Leeres Array vom Worker");
+                }
             } catch(e) {
-                console.error("Backend nicht erreichbar, kein Fallback verfügbar:", e);
-                allUsers = [];
+                console.warn("Worker Fallback -> Lade direkt aus Members100...", e);
+                try {
+                    const fallbackUrl = "https://script.google.com/macros/s/AKfycbyiJBjqfLWYuQeY89s2lKS4DoI6UY45uVAIImTK8vHzhTbDLyKFwcL6RYOrWatMdA8A/exec?action=getMembers&type=member";
+                    let r2 = await fetch(fallbackUrl);
+                    let raw2 = await r2.json();
+                    if (Array.isArray(raw2)) {
+                        allUsers = raw2.map(m => ({
+                            id: String(m.AddressNumber || m.PersonNumber || '').padStart(6, '0'),
+                            personnumber: String(m.PersonNumber || ''),
+                            addressnumber: String(m.AddressNumber || '').padStart(6, '0'),
+                            lizenz: String(m.AddressNumber || '').padStart(6, '0'),
+                            firstname: m.FirstName || '',
+                            lastname: m.LastName || '',
+                            type: 'member'
+                        }));
+                    }
+                } catch(e2) {
+                    console.error("Backend nicht erreichbar:", e2);
+                    allUsers = [];
+                }
             }
             
             if (!Array.isArray(allUsers)) allUsers = [];
@@ -522,7 +548,12 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
     try {
         // SICHERER BACKEND-LOGIN
         const resp = await fetch(`${EVENTPLANER_URL}?action=checkLogin&user=${userId}&pw=${inputHash}`);
-        const result = await resp.json();
+        let result;
+        try {
+            result = await resp.json();
+        } catch (_) {
+            throw new Error("Fehler beim Lesen der Server-Antwort.");
+        }
 
         if (result.success) {
             const nameParts = result.name.split(' ');
@@ -540,11 +571,12 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
             document.getElementById('login-overlay').style.display = 'none';
             showApp(userData);
         } else {
-            errorDiv.textContent = result.error || "Login fehlgeschlagen.";
+            errorDiv.textContent = result.error || "Login fehlgeschlagen. Bitte PIN überprüfen.";
             errorDiv.style.display = 'block';
         }
     } catch (e) {
-        errorDiv.textContent = "Verbindungsfehler zum Backend.";
+        console.error("Login Fehler:", e);
+        errorDiv.textContent = (e.message && e.message !== "Failed to fetch") ? e.message : "Verbindungsfehler zum Backend. Bitte versuche es erneut.";
         errorDiv.style.display = 'block';
     } finally {
         document.getElementById('login-btn').textContent = "Einloggen";
@@ -653,7 +685,7 @@ window.addEventListener('load', () => {
 });
 
 // --- RSVP API ---
-window.openRSVPForm = function(eventId, asksBegleitung, asksEssen) {
+window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount = 1, currentEssen = 1, currentVegi = 0) {
     const heroCard = document.getElementById(`rsvp-${eventId}`);
     if (!heroCard) return;
 
@@ -667,7 +699,7 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen) {
         html += `
             <div>
                 <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Personen (inkl. dir):</label>
-                <input type="number" id="input-count-${eventId}" value="1" min="1" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                <input type="number" id="input-count-${eventId}" value="${currentCount}" min="1" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
             </div>
         `;
     }
@@ -676,11 +708,11 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen) {
         html += `
             <div>
                 <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Standard):</label>
-                <input type="number" id="input-essen-${eventId}" value="1" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                <input type="number" id="input-essen-${eventId}" value="${currentEssen}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
             </div>
             <div style="margin-top:12px;">
                 <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Vegetarisch):</label>
-                <input type="number" id="input-vegi-${eventId}" value="0" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                <input type="number" id="input-vegi-${eventId}" value="${currentVegi}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
             </div>
         `;
     }
