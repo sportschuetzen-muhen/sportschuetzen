@@ -481,6 +481,13 @@ async function mglExecuteSyncDirect(targetKey) {
 
     if (!data.success) throw new Error(data.error || 'Fehler beim Ausführen des Syncs');
 
+    if (data.results && Array.isArray(data.results)) {
+      const failed = data.results.filter(r => r.success === false);
+      if (failed.length > 0) {
+        throw new Error(failed.map(f => `${f.targetKey || 'Sync'}: ${f.error}`).join('\n'));
+      }
+    }
+
     alert('✅ Synchronisation erfolgreich abgeschlossen!');
   } catch(err) {
     alert('❌ Fehler beim Sync: ' + err.message);
