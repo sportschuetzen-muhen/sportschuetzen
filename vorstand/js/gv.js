@@ -73,7 +73,6 @@ function renderGVUI(container) {
                         <label class="form-check-label small fw-bold text-muted" for="gv-wahljahr-switch" style="cursor: pointer; user-select: none;">Wahljahr</label>
                     </div>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">📄 Einladungs-PDF</button>
-                    <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('importClubdesk')">📥 Clubdesk Import</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendMails')">📧 GV Mails senden</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">🔔 Mahnungen senden</button>
                     <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendSummary')">📊 Übersicht senden</button>
