@@ -255,16 +255,25 @@ window.rnRenderTable = function() {
   }
 
   tbody.innerHTML = list.map(item => {
-    const isPaid = item.status === 'bezahlt';
-    const statusClass = isPaid ? 'bg-success' : (item.status === 'offen' ? 'bg-warning text-dark' : 'bg-secondary');
+    const st = String(item.status || '').toLowerCase();
+    const isPaid = st === 'bezahlt';
+    const statusClass = isPaid ? 'bg-success' : (st === 'offen' ? 'bg-warning text-dark' : (st === 'gemahnt' ? 'bg-danger' : 'bg-secondary'));
     
     // Frist prüfen (für überfällig)
     let extraBadge = '';
-    if (item.status === 'offen') {
-      const createdDate = item.created_at ? new Date(displayToIso(item.created_at.split(' ')[0])) : null;
-      if (createdDate) {
-        const diffTime = Math.abs(new Date() - createdDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (st === 'offen' || st === 'gemahnt') {
+      let createdDate = null;
+      if (item.created_at) {
+        const datePart = String(item.created_at).split(' ')[0];
+        if (datePart.includes('.')) {
+          const p = datePart.split('.');
+          if (p.length === 3) createdDate = new Date(`${p[2]}-${p[1]}-${p[0]}`);
+        } else if (datePart.includes('-')) {
+          createdDate = new Date(datePart);
+        }
+      }
+      if (createdDate && !isNaN(createdDate.getTime())) {
+        const diffDays = Math.ceil(Math.abs(new Date() - createdDate) / (1000 * 60 * 60 * 24));
         if (diffDays > 30) {
           extraBadge = `<span class="badge bg-danger ms-1 animate__animated animate__flash animate__infinite animate__slower" style="font-size:9px;">Mahnfrist!</span>`;
         }

@@ -284,7 +284,8 @@ async function mglCheckSyncDiff(targetKey) {
     try {
       data = JSON.parse(rawText);
     } catch (_) {
-      throw new Error('Das Google Apps Script Backend (Members100_GAS) wurde noch nicht neu bereitgestellt/veröffentlicht. Bitte im Google Apps Script Editor "Bereitstellen -> Neue Bereitstellung" ausführen.');
+      const cleanSnippet = rawText.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+      throw new Error('Das Google Apps Script Backend (Members100_GAS) muss in Google Apps Script noch neu veröffentlicht werden ("Bereitstellen -> Neue Bereitstellung").\n\nServer-Antwort: ' + (cleanSnippet || 'Ungültiges Format'));
     }
 
     if (!data.success) throw new Error(data.error || 'Fehler beim Laden des Diff-Previews');

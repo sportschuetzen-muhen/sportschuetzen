@@ -15,9 +15,9 @@ async function initGalerieManager() {
     container.innerHTML = `
         <div class="row">
             <div class="col-md-12 mb-3" id="galerie-upload-area">
-                <div class="card p-4 text-center" id="galerie-dropzone" style="border: 2px dashed var(--border); cursor: pointer;">
-                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-2"></i>
-                    <h5>Bilder hochladen</h5>
+                <div class="card p-4 text-center shadow-sm" id="galerie-dropzone" style="border: 2px dashed #3b82f6; cursor: pointer; background: #f8fafc;">
+                    <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-2"></i>
+                    <h5>Bilder hochladen & für Vereins-Immich taggen</h5>
                     <p class="text-muted small">Klicke hier oder ziehe mehrere JPEG-Bilder hinein</p>
                     <input type="file" id="galerie-file-input" class="d-none" accept="image/jpeg, image/jpg" multiple>
                 </div>
@@ -28,15 +28,51 @@ async function initGalerieManager() {
                     <div class="card-header bg-white border-bottom">
                         <h6 class="mb-0">Warteschlange (<span id="queue-count">0</span>)</h6>
                     </div>
-                    <div class="card-body p-2" id="queue-list" style="overflow-y: auto; max-height: 60vh;">
+                    <div class="card-body p-2" id="queue-list" style="overflow-y: auto; max-height: 50vh;">
                     </div>
-                    <div class="card-footer bg-white border-top p-2">
-                        <button class="btn btn-success w-100 btn-sm" onclick="downloadAllTags()">📥 Alle als ZIP laden</button>
+                    <div class="card-footer bg-white border-top p-2 d-flex flex-column gap-2">
+                        <button class="btn btn-primary w-100 btn-sm fw-bold" onclick="uploadAllToImmich()">🚀 Alle in Immich hochladen & taggen</button>
+                        <button class="btn btn-outline-secondary w-100 btn-sm" onclick="downloadAllTags()">📥 Lokale ZIP laden</button>
                     </div>
                 </div>
             </div>
 
             <div class="col-md-9 d-none" id="galerie-workspace-area">
+                <!-- Immich Tag-Auswahl für Vereins-Fotos -->
+                <div class="card shadow-sm border-0 mb-3 bg-light">
+                    <div class="card-header bg-white border-bottom py-2">
+                        <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-tags me-2"></i>Immich Vereins-Tags zuweisen</h6>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold mb-1">📅 Jahr</label>
+                                <select id="immich-tag-jahr" class="form-select form-select-sm">
+                                    <option value="">-- Jahr wählen --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold mb-1">🏆 Anlass</label>
+                                <select id="immich-tag-anlass" class="form-select form-select-sm">
+                                    <option value="">-- Anlass wählen --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold mb-1">🎯 Tätigkeit</label>
+                                <select id="immich-tag-taetigkeit" class="form-select form-select-sm">
+                                    <option value="">-- Tätigkeit wählen --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold mb-1">🌐 Status / Sichtbarkeit</label>
+                                <select id="immich-tag-status" class="form-select form-select-sm">
+                                    <option value="">-- Status wählen --</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-body p-2 text-center" style="background: #f1f5f9;">
                         <div style="display: inline-block; position: relative;">
@@ -52,10 +88,15 @@ async function initGalerieManager() {
                 </div>
                 
                 <div class="card shadow-sm border-0">
-                    <div class="card-body">
-                        <h6 class="mb-2">Personen auf diesem Bild:</h6>
-                        <div id="galerie-tags-list" class="d-flex flex-wrap gap-2 mb-3"></div>
-                        <button class="btn btn-primary btn-sm" onclick="saveExifAndDownloadCurrent()">💾 Aktuelles Bild speichern</button>
+                    <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h6 class="mb-1">Erkannte Personen:</h6>
+                            <div id="galerie-tags-list" class="d-flex flex-wrap gap-2"></div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary btn-sm fw-bold" onclick="uploadCurrentToImmich()">🚀 In Vereins-Immich hochladen</button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="saveExifAndDownloadCurrent()">💾 Lokale Kopie speichern</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -88,6 +129,131 @@ async function initGalerieManager() {
 
     setupGalerieEvents();
     loadMembersForList();
+    loadImmichTagsForSelector();
+}
+
+let availableImmichTags = [];
+
+async function loadImmichTagsForSelector() {
+    try {
+        const res = await apiFetch('immich', 'action=getTags');
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.tags) {
+                availableImmichTags = data.tags;
+                populateImmichTagDropdowns();
+            }
+        }
+    } catch (e) {
+        console.error("Konnte Immich-Tags nicht laden:", e);
+    }
+}
+
+function populateImmichTagDropdowns() {
+    const jahrSelect = document.getElementById('immich-tag-jahr');
+    const anlassSelect = document.getElementById('immich-tag-anlass');
+    const taetigkeitSelect = document.getElementById('immich-tag-taetigkeit');
+    const statusSelect = document.getElementById('immich-tag-status');
+
+    if (!jahrSelect) return;
+
+    // Clear options
+    jahrSelect.innerHTML = '<option value="">-- Jahr wählen --</option>';
+    anlassSelect.innerHTML = '<option value="">-- Anlass wählen --</option>';
+    taetigkeitSelect.innerHTML = '<option value="">-- Tätigkeit wählen --</option>';
+    statusSelect.innerHTML = '<option value="">-- Status wählen --</option>';
+
+    // Find parent tag IDs
+    const jahrParent = availableImmichTags.find(t => t.value === 'Jahr');
+    const anlassParent = availableImmichTags.find(t => t.value === 'Anlass');
+    const taetigkeitParent = availableImmichTags.find(t => t.value === 'Tätigkeit');
+    const statusParent = availableImmichTags.find(t => t.value === 'Status & Datenschutz');
+
+    availableImmichTags.forEach(t => {
+        if (t.parentId === (jahrParent?.id) || (t.value.match(/^(199\d|20[0-2]\d)$/))) {
+            jahrSelect.innerHTML += `<option value="${t.id}">${t.value}</option>`;
+        } else if (t.parentId === (anlassParent?.id)) {
+            anlassSelect.innerHTML += `<option value="${t.id}">${t.value}</option>`;
+        } else if (t.parentId === (taetigkeitParent?.id)) {
+            taetigkeitSelect.innerHTML += `<option value="${t.id}">${t.value}</option>`;
+        } else if (t.parentId === (statusParent?.id)) {
+            statusSelect.innerHTML += `<option value="${t.id}">${t.value}</option>`;
+        }
+    });
+}
+
+function getSelectedImmichTagIds() {
+    const tagIds = [];
+    ['immich-tag-jahr', 'immich-tag-anlass', 'immich-tag-taetigkeit', 'immich-tag-status'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.value) tagIds.push(el.value);
+    });
+    return tagIds;
+}
+
+async function uploadCurrentToImmich() {
+    if (!originalBase64 || !filesQueue[currentFileIndex]) return;
+    const qItem = filesQueue[currentFileIndex];
+    const tagIds = getSelectedImmichTagIds();
+
+    showToast(`Lade ${qItem.file.name} in Vereins-Immich hoch...`, "info");
+
+    try {
+        const res = await apiFetch('immich', 'action=uploadAsset', {
+            method: 'POST',
+            body: JSON.stringify({
+                filename: qItem.file.name,
+                base64Data: originalBase64,
+                tagIds: tagIds
+            })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            showToast(` Erfogreich in Immich hochgeladen & getaggt! (ID: ${data.assetId.substring(0, 8)})`, "success");
+        } else {
+            throw new Error(data.error || "Upload fehlgeschlagen");
+        }
+    } catch (e) {
+        console.error("Immich Upload Fehler:", e);
+        showToast(`Fehler beim Upload: ${e.message}`, "danger");
+    }
+}
+
+async function uploadAllToImmich() {
+    if (filesQueue.length === 0) return;
+    const tagIds = getSelectedImmichTagIds();
+    showToast(`Starte Immich Batch-Upload für ${filesQueue.length} Bilder...`, "info");
+
+    let successCount = 0;
+    for (let i = 0; i < filesQueue.length; i++) {
+        const qItem = filesQueue[i];
+        if (!qItem.base64) {
+            await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = (e) => { qItem.base64 = e.target.result; resolve(); };
+                reader.readAsDataURL(qItem.file);
+            });
+        }
+
+        try {
+            const res = await apiFetch('immich', 'action=uploadAsset', {
+                method: 'POST',
+                body: JSON.stringify({
+                    filename: qItem.file.name,
+                    base64Data: qItem.base64,
+                    tagIds: tagIds
+                })
+            });
+            const data = await res.json();
+            if (data.success) successCount++;
+        } catch (e) {
+            console.error(`Fehler bei ${qItem.file.name}:`, e);
+        }
+    }
+
+    showToast(`🎉 ${successCount} von ${filesQueue.length} Bildern in Immich hochgeladen & getaggt!`, "success");
+}
 }
 
 async function loadFaceApiModels() {

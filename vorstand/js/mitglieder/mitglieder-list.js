@@ -54,6 +54,7 @@ function mglRenderListe(data) {
           <option value="LastName" ${window._mglSort.field === 'LastName' ? 'selected' : ''}>Name</option>
           <option value="AddressNumber" ${window._mglSort.field === 'AddressNumber' ? 'selected' : ''}>Mitglied-Nr.</option>
           <option value="PersonNumber" ${window._mglSort.field === 'PersonNumber' ? 'selected' : ''}>Lizenz-Nr.</option>
+          <option value="BirthDate" ${window._mglSort.field === 'BirthDate' ? 'selected' : ''}>Geburtsdatum</option>
           <option value="_mitgliedsjahre" ${window._mglSort.field === '_mitgliedsjahre' ? 'selected' : ''}>Mitgliedsjahre</option>
           <option value="_aktiveLizenzenCount" ${window._mglSort.field === '_aktiveLizenzenCount' ? 'selected' : ''}>Anzahl Lizenzen</option>
           <option value="_aktiveFunktionenCount" ${window._mglSort.field === '_aktiveFunktionenCount' ? 'selected' : ''}>Anzahl Funktionen</option>
@@ -168,6 +169,7 @@ function mglRenderRows(data) {
                 <tr>
                   <th class="mgl-clickable-sort" onclick="mglSetSort('AddressNumber')">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
                   <th class="mgl-clickable-sort" onclick="mglSetSort('LastName')">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
+                  <th class="mgl-clickable-sort" onclick="mglSetSort('BirthDate')">Geburtsdatum <span class="mgl-sort-ind">${mglSortIndicator('BirthDate')}</span></th>
                   <th>E-Mail</th>
                   <th>Telefon</th>
                   <th class="mgl-clickable-sort" onclick="mglSetSort('_kategorie')">Kategorie <span class="mgl-sort-ind">${mglSortIndicator('_kategorie')}</span></th>
@@ -211,9 +213,6 @@ function mglRenderRows(data) {
                         <span class="font-monospace">Liz: ${pn}</span>
                         ${copyIcon}
                       </div>
-                      <div class="text-muted mt-1" style="font-size:0.75rem">
-                        <i class="fa-regular fa-calendar-days text-muted me-1" style="font-size:0.7rem"></i>${birthDateStr}
-                      </div>
                     </td>
                     <td>
                       <a href="#" class="text-decoration-none fw-semibold"
@@ -224,6 +223,7 @@ function mglRenderRows(data) {
                       ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
                       ${fnHtml}
                     </td>
+                    <td class="small text-nowrap">${birthDateStr}</td>
                     <td class="small">${email}</td>
                     <td class="small">${phone}</td>
                     <td>${katBadge}</td>
@@ -421,7 +421,7 @@ function mglFilter() {
 
   // Spaltensortierungsanzeigen aktualisieren (falls Tabellenansicht)
   if (window._mglViewMode === 'table') {
-    ['AddressNumber', 'LastName', '_kategorie', '_aktiveLizenzenCount', '_aktiveFunktionenCount'].forEach(field => {
+    ['AddressNumber', 'LastName', 'BirthDate', '_kategorie', '_aktiveLizenzenCount', '_aktiveFunktionenCount'].forEach(field => {
       const el = document.querySelector(`[onclick="mglSetSort('${field}')"] .mgl-sort-ind`);
       if (el) el.textContent = mglSortIndicator(field);
     });
@@ -453,7 +453,7 @@ function mglSetSort(field) {
     _mglSort.dir = _mglSort.dir === 'asc' ? 'desc' : 'asc';
   } else {
     _mglSort.field = field;
-    _mglSort.dir = (field === 'LastName' || field === '_kategorie') ? 'asc' : 'desc';
+    _mglSort.dir = (field === 'LastName' || field === '_kategorie' || field === 'BirthDate') ? 'asc' : 'desc';
   }
 
   // UI-Controls synchronisieren
@@ -486,6 +486,11 @@ function mglSortData(data) {
     if (field === 'LastName') {
       va = `${a.LastName || ''} ${a.FirstName || ''}`.toLowerCase();
       vb = `${b.LastName || ''} ${b.FirstName || ''}`.toLowerCase();
+    } else if (field === 'BirthDate') {
+      const da = a.BirthDate ? new Date(a.BirthDate).getTime() : 0;
+      const db = b.BirthDate ? new Date(b.BirthDate).getTime() : 0;
+      va = isNaN(da) ? 0 : da;
+      vb = isNaN(db) ? 0 : db;
     } else if (typeof va === 'string' || typeof vb === 'string') {
       va = String(va || '').toLowerCase();
       vb = String(vb || '').toLowerCase();

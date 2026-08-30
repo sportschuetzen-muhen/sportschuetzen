@@ -125,7 +125,7 @@ function initArchiv() {
                                         <span class="position-absolute bottom-0 end-0 bg-success border border-white border-2 rounded-circle" style="width: 12px; height: 12px;"></span>
                                     </div>
                                     <div>
-                                        <h6 class="mb-0 fw-bold">Vereins-Archivar (Groq Llama 3.3 70B & Paperless RAG)</h6>
+                                        <h6 class="mb-0 fw-bold">Vereins-Archivar (Groq Qwen 3.6 27B & Paperless RAG)</h6>
                                         <small class="opacity-75">Volltext & KI-Suche in allen GV- & Vorstandsprotokollen</small>
                                     </div>
                                 </div>
@@ -141,7 +141,7 @@ function initArchiv() {
                                         <i class="fas fa-robot fa-xs"></i>
                                     </div>
                                     <div class="msg-bubble p-3 rounded-4 shadow-sm" style="background: white; border: 1px solid var(--border); max-width: 85%; border-top-left-radius: 4px;">
-                                        <p class="mb-0 small fw-medium">Grüezi! Ich bin euer intelligenter KI-Archiv-Assistent. Ich durchsuche alle eingelesenen Protokolle und Dokumente mit <strong>Groq Llama-3.3-70b</strong>.</p>
+                                        <p class="mb-0 small fw-medium">Grüezi! Ich bin euer intelligenter KI-Archiv-Assistent. Ich durchsuche alle eingelesenen Protokolle und Dokumente mit <strong>Groq Qwen 3.6 27B</strong>.</p>
                                         <hr class="my-2 opacity-25">
                                         <p class="mb-0 small text-muted"><strong>Tipp:</strong> Stelle eine Frage zu Beschlüssen, Personen, Jahreszahlen oder Verträgen des Vereins.</p>
                                     </div>

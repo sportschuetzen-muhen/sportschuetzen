@@ -95,7 +95,7 @@ window.rnSavePayment = async function(event, invoiceId) {
   let oldInv = null;
   if (invIndex !== -1) {
     oldInv = { ...window._invoices[invIndex] };
-    window._invoices[invIndex].status = 'Bezahlt';
+    window._invoices[invIndex].status = 'bezahlt';
     window._invoices[invIndex].zahlungsdatum = datum;
     window._invoices[invIndex].zahlungsmethode = methode;
     window._invoices[invIndex].beleg_nr = beleg || `PAY-${invoiceId}`;
@@ -447,7 +447,7 @@ window.rnHandleMemberSelect = function(val) {
     if (m) {
       document.getElementById('rnc-person-number').value = m.PersonNumber || '';
       document.getElementById('rnc-name').value = `${m.LastName} ${m.FirstName}`;
-      document.getElementById('rnc-email').value = m.Email || '';
+      document.getElementById('rnc-email').value = m.PrimaryEmail || m.Email || '';
       document.getElementById('rnc-strasse').value = m.Street || m.Strasse || '';
       document.getElementById('rnc-plz').value = m.ZipCode || m.PLZ || '';
       document.getElementById('rnc-ort').value = m.City || m.Ort || '';
@@ -560,7 +560,7 @@ window.rnSaveCreateInvoice = async function(event) {
     year: Number(document.getElementById('rnc-year').value),
     type: document.getElementById('rnc-type').value,
     total_amount: 0,
-    status: 'Offen',
+    status: 'offen',
     datum: new Date().toISOString().split('T')[0]
   };
 

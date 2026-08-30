@@ -49,7 +49,7 @@ function renderUmfragenUI(container) {
                         <label class="form-label fw-bold">Event Auswählen</label>
                         <select class="form-select" id="umfragen-event-selector" onchange="selectEventForParticipants(this.value)">
                             <option value="">-- Bitte wählen --</option>
-                            ${(umfragenState || []).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.title || 'Ohne Titel')} (${formatSwissDate(e.datum)})${isTrue(e.schiessanlass) ? ' 🎯' : ''}</option>`).join('')}
+                            ${(umfragenState || []).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.title || 'Ohne Titel')} (${formatSwissDateWithWeekday(e.datum)})${isTrue(e.schiessanlass) ? ' 🎯' : ''}</option>`).join('')}
                         </select>
                     </div>
                 </div>
@@ -58,6 +58,9 @@ function renderUmfragenUI(container) {
                         <div class="d-flex justify-content-between align-items-center mb-2">
                              <h5 class="card-title mb-0">Angemeldete Teilnehmer ("Ja")</h5>
                              <div class="d-flex gap-2">
+                                  <button class="btn btn-sm btn-outline-secondary" id="btn-umfragen-ics" onclick="downloadSelectedEventICS()" disabled title="Kalendereintrag (.ics) mit 1 Tag & 1 Std. Erinnerung">
+                                      📅 Kalendereintrag (.ics)
+                                  </button>
                                   <button class="btn btn-sm btn-primary" id="btn-umfragen-mail" onclick="generateMailForParticipants()" disabled>
                                       📧 Mail an Teilnehmer
                                   </button>
@@ -79,7 +82,7 @@ function renderUmfragenUI(container) {
                         <label class="form-label fw-bold">Schiessanlass wählen</label>
                         <select class="form-select" id="umfragen-gruppen-event-selector" onchange="selectEventForGroups(this.value)">
                             <option value="">-- Bitte wählen --</option>
-                            ${(umfragenState || []).filter(e => isTrue(e.schiessanlass)).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.title)} (${formatSwissDate(e.datum)})</option>`).join('')}
+                            ${(umfragenState || []).filter(e => isTrue(e.schiessanlass)).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.title)} (${formatSwissDateWithWeekday(e.datum)})</option>`).join('')}
                         </select>
                         <div class="mt-3 small text-muted">
                             <i class="fas fa-info-circle"></i> Nur Events, die als 🎯 <b>Schiessanlass</b> markiert sind, erscheinen hier.

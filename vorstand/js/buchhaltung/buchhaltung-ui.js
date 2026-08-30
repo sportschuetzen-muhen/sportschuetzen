@@ -231,19 +231,10 @@ window.renderTabBerichte = function(container) {
   }
   
   const totalAktiven = getClassTotal('Aktiven');
-  
-  const sumFremd = (tree['Passiven'] && tree['Passiven']['Kurzfristiges Fremdkapital'] ? 
-    Object.keys(tree['Passiven']['Kurzfristiges Fremdkapital']).reduce((s, d) => s + tree['Passiven']['Kurzfristiges Fremdkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0) +
-    (tree['Passiven'] && tree['Passiven']['Langfristiges Fremdkapital'] ? 
-    Object.keys(tree['Passiven']['Langfristiges Fremdkapital']).reduce((s, d) => s + tree['Passiven']['Langfristiges Fremdkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0);
-    
-  const sumEkOhneErgebnis = tree['Passiven'] && tree['Passiven']['Eigenkapital'] ? 
-    Object.keys(tree['Passiven']['Eigenkapital']).reduce((s, d) => s + tree['Passiven']['Eigenkapital'][d].reduce((sm, a) => sm + Number(a._endsaldo || 0), 0), 0) : 0;
-    
   const sumErtrag = getClassTotal('Ertrag');
   const sumAufwand = getClassTotal('Aufwand');
   const gewinnVerlust = sumErtrag - sumAufwand;
-  const totalPassiven = sumFremd + sumEkOhneErgebnis + gewinnVerlust;
+  const totalPassiven = getClassTotal('Passiven') + gewinnVerlust;
 
   function renderClassHTML(mainClass) {
     let html = '';
@@ -666,6 +657,9 @@ window.renderTabKontenrahmen = function(container) {
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:10px;">
         <h4 class="fw-bold text-primary mb-0"><i class="fas fa-university me-2"></i>KMU-Kontenrahmen & Budget (${window._bhYear})</h4>
         <div class="d-flex align-items-center" style="gap: 10px;">
+          <button class="btn btn-sm btn-outline-success fw-bold shadow-sm me-1" onclick="bhOpenBudgetMatrixModal()">
+            <i class="fas fa-calculator me-1"></i> Budget-Matrix Editor
+          </button>
           <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenKontoModal(null)">
             <i class="fas fa-plus-circle me-1"></i> Konto hinzufügen
           </button>

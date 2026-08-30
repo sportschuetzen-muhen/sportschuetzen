@@ -138,11 +138,25 @@ async function loadParticipantsIfEventSelected() {
 
         if(eventParticipants.length > 0) {
             if(mailBtn) mailBtn.disabled = false;
+            const icsBtn = document.getElementById('btn-umfragen-ics');
+            if(icsBtn) icsBtn.disabled = false;
         }
 
     } catch(e) {
         listDiv.innerHTML = `<div class="text-danger">Fehler: ${escapeHtml(e.message)}</div>`;
     }
+}
+
+function downloadSelectedEventICS() {
+    if (!currentEventId) return;
+    const ev = (umfragenState || []).find(e => String(e.id) === String(currentEventId));
+    if (!ev) {
+        alert("Bitte zuerst einen Event auswählen.");
+        return;
+    }
+    const title = ev.title || 'Sportschützen Event';
+    const dateVal = ev.datum || ev.datum_iso;
+    downloadEventICS(title, dateVal, '19:00', 'Schützenhaus Muhen', 'Vereinsanlass Sportschützen Muhen (Erinnerung 1 Tag & 1 Std. vorher)');
 }
 
 function generateMailForParticipants() {
@@ -156,11 +170,31 @@ function generateMailForParticipants() {
         return;
     }
 
-    const bcc = emails.join(",");
-    const subject = encodeURIComponent("Infos zum Event");
-    const body = encodeURIComponent("Hallo zusammen,\n\n");
+    const currentEv = (umfragenState || []).find(e => String(e.id) === String(currentEventId));
+    const evTitle = currentEv ? (currentEv.title || 'Event') : 'Event';
+    const evDatumRaw = currentEv ? (currentEv.datum || currentEv.datum_iso) : '';
+    const evDatumText = formatSwissDateWithWeekday(evDatumRaw);
 
-    const mailmailto = `mailto:?bcc=${bcc}&subject=${subject}&body=${body}`;
+    const calUrl = currentEv ? generateGoogleCalendarUrl(evTitle, evDatumRaw, '19:00', 'Schützenhaus Muhen', 'Sportschützen Muhen Anlass') : '';
+
+    const bcc = emails.join(",");
+    const subject = encodeURIComponent(`Infos zum Anlass: ${evTitle} am ${evDatumText}`);
+    
+    let textBody = `Hallo zusammen,\n\n`;
+    textBody += `Hier sind die Informationen zum Anlass "${evTitle}":\n\n`;
+    textBody += `📅 Wann: ${evDatumText}\n`;
+    textBody += `📍 Wo: Schützenhaus Muhen\n\n`;
+    if (calUrl && calUrl !== '#') {
+        textBody += `📅 Kalendereintrag (Google Calendar, inkl. 1 Tag & 1 Std. Erinnerung):\n${calUrl}\n\n`;
+    }
+    textBody += `🔑 HINWEIS ZUM APP-LOGIN:\n`;
+    textBody += `1. Beim Öffnen der App werden die Teilnehmer geladen (Anzeige: "Lade Teilnehmer...").\n`;
+    textBody += `2. Sobald das Laden abgeschlossen ist, steht im Auswahlfeld "-- Bitte wählen --". Erst dann wähle deinen Namen aus.\n`;
+    textBody += `3. Gib deine 6-stellige PIN ein.\n`;
+    textBody += `💡 Wichtig: Die PIN ist immer 6-stellig! Wer eine 4- oder 5-stellige Nummer hat, gibt vorher bitte die Null(en) am Anfang ein (z. B. 012345 statt 12345).\n\n`;
+    textBody += `Sportliche Grüsse\nSportschützen Muhen`;
+
+    const mailmailto = `mailto:?bcc=${bcc}&subject=${subject}&body=${encodeURIComponent(textBody)}`;
     window.location.href = mailmailto;
 }
 

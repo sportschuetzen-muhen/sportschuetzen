@@ -20,7 +20,10 @@ window._bhProMemoriaGewehreCount = 0;
 
 // Währungsformatierungs-Hilfsfunktion
 window.fmtChf = window.fmtChf || function(val) {
-  return 'CHF ' + Number(val || 0).toFixed(2);
+  const num = Number(val || 0);
+  const parts = num.toFixed(2).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+  return 'CHF ' + parts.join('.');
 };
 
 // CSS dynamisch für Buchhaltung injizieren
@@ -313,8 +316,9 @@ window.recalculateLiveAccountBalances = function() {
   
   window._bhKontenrahmen.forEach(acc => {
     const accountCode = String(acc.konto).trim();
-    const isAssetOrLiability = (acc.klasse == '1' || acc.klasse == '2' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('pas'));
-    const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf'));
+    const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
+    const isAssetOrLiability = (acc.klasse == '1' || acc.klasse == '2' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('pas') || cat.main === 'Aktiven' || cat.main === 'Passiven');
+    const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && accountCode.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
 
     let dynamicOpeningBalance = 0;
     
@@ -367,7 +371,6 @@ window.recalculateLiveAccountBalances = function() {
 };
 
 // Update der KPI Werte ganz oben
-// Update der KPI Werte ganz oben
 window.updateAccountingKPIs = function() {
   let totalAssets = 0;      // Klasse 1 (Aktiven)
   let totalLiabilities = 0; // Klasse 2 (Passiven)
@@ -390,6 +393,7 @@ window.updateAccountingKPIs = function() {
   });
   
   const netIncome = totalRevenue - totalExpenses;
+  const totalPassivenWithIncome = totalLiabilities + netIncome;
   
   const aktEl = document.getElementById('bh-kpi-aktiven');
   const pasEl = document.getElementById('bh-kpi-passiven');
@@ -397,11 +401,11 @@ window.updateAccountingKPIs = function() {
   const profCard = document.getElementById('bh-kpi-profit-card');
   const profLabel = document.getElementById('bh-kpi-profit-label');
   
-  if (aktEl) aktEl.innerHTML = '<span class="currency-label">CHF</span> ' + totalAssets.toFixed(2);
-  if (pasEl) pasEl.innerHTML = '<span class="currency-label">CHF</span> ' + totalLiabilities.toFixed(2);
+  if (aktEl) aktEl.innerHTML = '<span class="currency-label">CHF</span> ' + fmtChf(totalAssets).replace('CHF ', '');
+  if (pasEl) pasEl.innerHTML = '<span class="currency-label">CHF</span> ' + fmtChf(totalPassivenWithIncome).replace('CHF ', '');
   
   if (profEl) {
-    profEl.innerHTML = '<span class="currency-label">CHF</span> ' + Math.abs(netIncome).toFixed(2);
+    profEl.innerHTML = '<span class="currency-label">CHF</span> ' + fmtChf(Math.abs(netIncome)).replace('CHF ', '');
     if (netIncome >= 0) {
       profEl.className = 'fw-bold mt-1 mb-0 text-success';
       if (profCard) {

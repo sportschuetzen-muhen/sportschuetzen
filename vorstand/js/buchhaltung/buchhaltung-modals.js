@@ -24,7 +24,8 @@ window.bhOpenKontoModal = function(kontoCode) {
     if (acc) {
       const prevYearJournal = window._bhJournal.filter(j => Number(j.jahr) === prevYear);
       let balanceChange = 0;
-      const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf'));
+      const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
+      const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && String(acc.konto).trim().startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
       
       prevYearJournal.forEach(entry => {
         const soll = String(entry.konto_soll).trim();
@@ -210,7 +211,7 @@ window.bhSaveKonto = async function(event) {
       const modal = bootstrap.Modal.getInstance(modalEl);
       if (modal) modal.hide();
       
-      await loadBuchhaltungData(true);
+      await loadBuchhaltungData(true, true);
     } else {
       throw new Error(result.error || "Fehler beim Speichern im Backend.");
     }
@@ -455,7 +456,7 @@ window.bhSaveJournalEntry = async function(event) {
       }
       
       setTimeout(async () => {
-        await loadBuchhaltungData(true);
+        await loadBuchhaltungData(true, true);
       }, 1500);
     } else {
       throw new Error(result.error || "Unerwarteter Fehler im Backend.");
@@ -491,7 +492,7 @@ window.bhDeleteJournalEntry = async function(entryId) {
       renderActiveAccountingTab();
       
       setTimeout(async () => {
-        await loadBuchhaltungData(true);
+        await loadBuchhaltungData(true, true);
       }, 1500);
     } else {
       throw new Error(result.error || "Unerwarteter Fehler beim Löschen.");
@@ -525,7 +526,8 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
     return;
   }
 
-  const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf'));
+  const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
+  const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && selectedKonto.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
   const opBalance = Number(acc._dynamicEroeffnungssaldo || 0);
 
   // Filter journal entries for the current account and year
@@ -534,12 +536,22 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
     (String(j.konto_soll).trim() === selectedKonto || String(j.konto_haben).trim() === selectedKonto)
   );
 
+  function parseDateMs(dtStr) {
+    if (!dtStr) return 0;
+    const s = String(dtStr).trim();
+    if (s.includes('.')) {
+      const p = s.split('.');
+      if (p.length === 3) return new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`).getTime() || 0;
+    }
+    return new Date(s).getTime() || 0;
+  }
+
   // Sort by date (chronological) and then by id
   accountEntries.sort((a, b) => {
-    const dateA = new Date(a.datum);
-    const dateB = new Date(b.datum);
-    if (dateA < dateB) return -1;
-    if (dateA > dateB) return 1;
+    const timeA = parseDateMs(a.datum);
+    const timeB = parseDateMs(b.datum);
+    if (timeA < timeB) return -1;
+    if (timeA > timeB) return 1;
     return Number(a.id || 0) - Number(b.id || 0);
   });
 
@@ -683,5 +695,222 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
 
   const bootstrapModal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
   bootstrapModal.show();
+};
+
+// POPUP-MODAL: MASSEN-BUDGETIERUNG & BUDGET-MATRIX EDITOR
+window.bhOpenBudgetMatrixModal = function() {
+  let modalEl = document.getElementById('bhModalBudgetMatrix');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalBudgetMatrix';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const prevYear = Number(window._bhYear) - 1;
+  const currentYear = Number(window._bhYear);
+
+  // Filter accounts for Erfolgsrechnung (Ertrag & Aufwand) and sort by konto
+  const successAccounts = window._bhKontenrahmen
+    .slice()
+    .filter(acc => {
+      const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
+      return cat.main === 'Ertrag' || cat.main === 'Aufwand';
+    })
+    .sort((a, b) => parseInt(a.konto) - parseInt(b.konto));
+
+  // Compute prior year actuals & budgets
+  const priorJournal = window._bhJournal.filter(j => Number(j.jahr) === prevYear);
+
+  const rowsHtml = successAccounts.map(acc => {
+    const kCode = String(acc.konto).trim();
+    const cat = window.bhGetAccountCategory(acc);
+
+    // Calculate prev year actual
+    let balanceChange = 0;
+    const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && kCode.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aufwand');
+    
+    priorJournal.forEach(entry => {
+      const soll = String(entry.konto_soll).trim();
+      const haben = String(entry.konto_haben).trim();
+      const amount = Number(entry.betrag || 0);
+      if (soll === kCode) balanceChange += isAssetOrExpense ? amount : -amount;
+      if (haben === kCode) balanceChange += isAssetOrExpense ? -amount : amount;
+    });
+
+    const prevActual = Math.round(Number(acc.eroeffnungssaldo || 0) + balanceChange);
+
+    // Prev year budget
+    const prevBudObj = window._bhBudget.find(b => String(b.konto).trim() === kCode);
+    const prevBudget = prevBudObj ? Math.round(Number(prevBudObj['budget_' + prevYear] || 0)) : 0;
+
+    // Current year budget
+    const currBudObj = window._bhBudget.find(b => String(b.konto).trim() === kCode);
+    const currentBudget = currBudObj ? Math.round(Number(currBudObj['budget_' + currentYear] || 0)) : 0;
+
+    const badgeClass = cat.main === 'Ertrag' ? 'bg-success' : 'bg-danger';
+
+    return `
+      <tr class="bh-account-row align-middle" data-konto="${kCode}" data-prev-actual="${prevActual}" data-prev-budget="${prevBudget}">
+        <td class="font-monospace fw-bold text-primary" style="width: 80px;">${acc.konto}</td>
+        <td>
+          <div class="fw-bold text-dark">${window.escapeHtml ? window.escapeHtml(acc.bezeichnung) : acc.bezeichnung}</div>
+          <span class="badge ${badgeClass} opacity-75" style="font-size:10px;">${cat.main}</span>
+        </td>
+        <td class="text-end fw-semibold text-muted font-monospace">${window.fmtChf(prevActual)}</td>
+        <td class="text-end fw-semibold text-secondary font-monospace">${prevBudget > 0 ? window.fmtChf(prevBudget) : '–'}</td>
+        <td style="width: 200px;">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text bg-light font-monospace" style="font-size: 11px;">CHF</span>
+            <input type="number" step="1" class="form-control form-control-sm fw-bold text-end bhm-budget-input" id="bhm-budget-${kCode}" value="${currentBudget}" data-konto="${kCode}">
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
+      <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%);">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <div class="d-flex align-items-center justify-content-between w-100 me-3">
+            <h5 class="modal-title fw-bold mb-0">
+              <i class="fas fa-calculator me-2"></i>Massen-Budgetierung & Schnell-Editor (${currentYear})
+            </h5>
+            <span class="badge bg-white text-primary fw-bold px-3 py-1.5 rounded-pill fs-7">
+              ${successAccounts.length} Erfolgsrechnungskonten
+            </span>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        
+        <div class="modal-body p-4">
+          <!-- Toolbar with Quick Copy buttons -->
+          <div class="p-3 bg-light rounded-3 border mb-4 d-flex justify-content-between align-items-center flex-wrap" style="gap: 10px;">
+            <div class="d-flex align-items-center" style="gap: 10px;">
+              <i class="fas fa-magic text-primary"></i>
+              <span class="small fw-semibold text-dark">Schnell-Übernahme von Vorjahreswerten (${prevYear}):</span>
+            </div>
+            <div class="d-flex" style="gap: 8px;">
+              <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhCopyBudgetFromPrevActual()">
+                <i class="fas fa-copy me-1"></i> Vorjahres-Ist (${prevYear}) kopieren
+              </button>
+              <button class="btn btn-sm btn-outline-secondary fw-bold shadow-sm" onclick="bhCopyBudgetFromPrevBudget()">
+                <i class="fas fa-history me-1"></i> Vorjahres-Budget (${prevYear}) kopieren
+              </button>
+            </div>
+          </div>
+
+          <!-- Table matrix -->
+          <div class="table-responsive" style="max-height: 480px;">
+            <table class="table table-hover align-middle bh-table mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 80px;">Konto</th>
+                  <th>Bezeichnung / Klasse</th>
+                  <th class="text-end" style="width: 150px;">Vorjahres-Ist (${prevYear})</th>
+                  <th class="text-end" style="width: 150px;">Vorjahres-Budget (${prevYear})</th>
+                  <th class="text-end" style="width: 200px;">Budget (${currentYear})</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="5" class="text-center text-muted py-4">Keine Erfolgsrechnungskonten gefunden.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="modal-footer bg-light border-0 py-3 rounded-bottom-4 justify-content-between">
+          <button type="button" class="btn btn-secondary btn-sm fw-bold px-3 shadow-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-success fw-bold px-4 py-2 shadow-sm" id="bhm-save-btn" onclick="bhSaveAllBudgets()">
+            <i class="fas fa-save me-1.5"></i> Gesamtes Budget ${currentYear} speichern
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+  modal.show();
+};
+
+// Übernimmt Vorjahres-Ist für alle Eingabefelder
+window.bhCopyBudgetFromPrevActual = function() {
+  const rows = document.querySelectorAll('#bhModalBudgetMatrix tbody tr');
+  rows.forEach(tr => {
+    const prevAct = tr.getAttribute('data-prev-actual') || 0;
+    const input = tr.querySelector('.bhm-budget-input');
+    if (input) input.value = prevAct;
+  });
+  if (typeof showToast === 'function') showToast("📋 Vorjahres-Ist in alle Budgetfelder übernommen!", "info");
+};
+
+// Übernimmt Vorjahres-Budget für alle Eingabefelder
+window.bhCopyBudgetFromPrevBudget = function() {
+  const rows = document.querySelectorAll('#bhModalBudgetMatrix tbody tr');
+  rows.forEach(tr => {
+    const prevBud = tr.getAttribute('data-prev-budget') || 0;
+    const input = tr.querySelector('.bhm-budget-input');
+    if (input) input.value = prevBud;
+  });
+  if (typeof showToast === 'function') showToast("📋 Vorjahres-Budget in alle Budgetfelder übernommen!", "info");
+};
+
+// Speichert alle Budgetwerte im Backend
+window.bhSaveAllBudgets = async function() {
+  const saveBtn = document.getElementById('bhm-save-btn');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Speichere Budget...';
+  }
+
+  const inputs = document.querySelectorAll('.bhm-budget-input');
+  const currentYear = window._bhYear;
+  let successCount = 0;
+
+  try {
+    const savePromises = Array.from(inputs).map(inp => {
+      const kCode = inp.getAttribute('data-konto');
+      const val = Number(inp.value || 0);
+      const acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === String(kCode).trim());
+      
+      const payload = {
+        action: 'saveBudget',
+        konto: kCode,
+        bezeichnung: acc ? acc.bezeichnung : '',
+        jahr: currentYear,
+        betrag: val
+      };
+      
+      return apiFetch('buchhaltung', payload, 'POST')
+        .then(r => r.json())
+        .then(res => { if (res.success) successCount++; });
+    });
+
+    await Promise.all(savePromises);
+
+    if (typeof showToast === 'function') {
+      showToast(`🎉 Budget ${currentYear} für ${successCount} Konten erfolgreich gespeichert!`, 'success');
+    } else {
+      alert(`🎉 Budget ${currentYear} für ${successCount} Konten erfolgreich gespeichert!`);
+    }
+
+    const modalEl = document.getElementById('bhModalBudgetMatrix');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+
+    await loadBuchhaltungData(true, true);
+  } catch (err) {
+    alert("❌ Fehler beim Speichern des Budgets: " + err.message);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<i class="fas fa-save me-1.5"></i> Gesamtes Budget ${currentYear} speichern`;
+    }
+  }
 };
 

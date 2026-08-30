@@ -274,13 +274,15 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const userKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
             const customKontoHaben = userKonto || '3200';
 
+            let seqCounter = 1;
             for (let w of barTwintItems) {
                 const kontoSoll = w.verkaufMethode === 'Twint' ? '1020' : '1000'; // 1020 Bank/Twint, 1000 Kasse
                 const kontoHaben = customKontoHaben;
+                const uniqueBeleg = `VK-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
                 
                 const bhPayload = {
                     action: 'addJournalEntry',
-                    beleg_nr: `VK-${new Date().getFullYear()}`,
+                    beleg_nr: uniqueBeleg,
                     beschreibung: `Kleiderverkauf (${w.verkaufMethode}): ${w.label}`,
                     konto_soll: kontoSoll,
                     konto_haben: kontoHaben,
@@ -290,7 +292,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                 };
 
                 console.log("Buche Verkauf in Buchhaltung...", bhPayload);
-                const resBh = await apiFetch('buchhaltung', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bhPayload) });
+                const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) {
                     console.error("Fehler beim Buchen:", resultBh.error);
@@ -300,7 +302,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     if (feeAmount > 0) {
                         const feePayload = {
                             action: 'addJournalEntry',
-                            beleg_nr: `VK-${new Date().getFullYear()}`,
+                            beleg_nr: `${uniqueBeleg}-FEE`,
                             beschreibung: `Twint/RaiseNow Gebühr (1.3%): ${w.label}`,
                             konto_soll: '6840', // Bankspesen
                             konto_haben: kontoSoll, // Twint-Transitkonto (z.B. 1020)
@@ -309,7 +311,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                             jahr: new Date().getFullYear()
                         };
                         console.log("Buche Twint-Gebühren...", feePayload);
-                        const resFee = await apiFetch('buchhaltung', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(feePayload) });
+                        const resFee = await apiFetch('buchhaltung', feePayload, 'POST');
                         const resultFee = await resFee.json();
                         if (!resultFee.success) console.error("Fehler bei Gebührenbuchung:", resultFee.error);
                     }

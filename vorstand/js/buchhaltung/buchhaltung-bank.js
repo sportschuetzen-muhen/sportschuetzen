@@ -820,7 +820,7 @@ function bhBankMatchAll(transactions) {
         alreadyPaidJb = bestBeit ? (bestBeit.status === 'bezahlt') : false;
         matchType = 'jb';
         suggestedSoll = '1020'; // Bank
-        suggestedHaben = '3000'; // Mitgliederbeiträge
+        suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
         matchLabel = 'Jahresbeitrag Mitglied';
       }
     }
@@ -1182,7 +1182,7 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
     label: '',
     prefix: '',
     soll: '1020',
-    haben: '3000'
+    haben: '3410'
   };
 
   let modalEl = document.getElementById('bhModalRuleEditor');

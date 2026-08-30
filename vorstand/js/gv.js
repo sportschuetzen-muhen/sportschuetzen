@@ -131,7 +131,10 @@ function renderGVList() {
     return '';
   };
 
-  const isBudget = (label) => String(label || '').toLowerCase().includes('budget');
+  const isMultiLine = (label) => {
+    const l = String(label || '').toLowerCase();
+    return l.includes('budget') || l.includes('einladungstext') || l.includes('beschreibung');
+  };
   const isMailField = (label) => String(label || '').toLowerCase().includes('mail');
 
   // Reuse logic from terming.js to format email
@@ -142,7 +145,7 @@ function renderGVList() {
     const ph = pickPlaceholder(label);
     const value = p.inhalt || '';
 
-    if (isBudget(label)) {
+    if (isMultiLine(label)) {
       return `
         <div class="mb-3">
           <label class="form-label small fw-bold mb-1">${escapeHtml(label)}</label>

@@ -71,10 +71,9 @@ let _histViewsSortAsc = false;
 function parseTimestampDate(ts) {
     if (!ts) return null;
     if (ts instanceof Date) return ts;
-    let d = new Date(ts);
-    if (!isNaN(d.getTime())) return d;
 
-    // Schweizer Format: DD.MM.YYYY HH:mm:ss oder DD.MM.YYYY
+    // 1. Falls Schweizer Format mit Punkten (DD.MM.YYYY) vorliegt, manuell parsen,
+    // um US-Fehlinterpretationen durch "new Date()" (z.B. 12.08. als 8. Dezember) zu verhindern.
     if (typeof ts === 'string' && ts.includes('.')) {
         const parts = ts.trim().split(/[\s,T]+/);
         const dateParts = parts[0].split('.');
@@ -89,10 +88,15 @@ function parseTimestampDate(ts) {
                 minutes = parseInt(timeParts[1], 10) || 0;
                 seconds = parseInt(timeParts[2], 10) || 0;
             }
-            d = new Date(year, month, day, hours, minutes, seconds);
+            const d = new Date(year, month, day, hours, minutes, seconds);
             if (!isNaN(d.getTime())) return d;
         }
     }
+
+    // 2. Fallback auf Standard-Parser für ISO-Strings etc.
+    let d = new Date(ts);
+    if (!isNaN(d.getTime())) return d;
+
     return null;
 }
 
@@ -241,6 +245,40 @@ function filterHistorieData() {
             String(view.lizenz).includes(searchFilter);
 
         return matchesEvent && matchesSearch;
+    });
+
+    // Sortierung anwenden
+    filteredViews.sort((a, b) => {
+        let valA, valB;
+        if (_histViewsSortCol === 'timestamp') {
+            const dA = parseTimestampDate(a.zeitpunkt || a.timestamp);
+            const dB = parseTimestampDate(b.zeitpunkt || b.timestamp);
+            valA = dA ? dA.getTime() : 0;
+            valB = dB ? dB.getTime() : 0;
+        } else if (_histViewsSortCol === 'name') {
+            const getMemberName = (l) => {
+                let liz = String(l.lizenz || '').trim();
+                if (liz.length <= 6 && liz.length > 0) liz = liz.padStart(6, '0');
+                const m = membersLookup[liz] || membersLookup[String(l.lizenz).trim()];
+                return m ? `${m.LastName} ${m.FirstName}` : String(l.lizenz);
+            };
+            valA = getMemberName(a).toLowerCase();
+            valB = getMemberName(b).toLowerCase();
+        } else if (_histViewsSortCol === 'event') {
+            const getEventTitle = (l) => {
+                const evId = getEventIdFromLog(l);
+                if (evId === 'APP_OPEN') return 'portal geöffnet';
+                return (eventsMap[evId] || '').toLowerCase();
+            };
+            valA = getEventTitle(a);
+            valB = getEventTitle(b);
+        } else if (_histViewsSortCol === 'info') {
+            valA = String(a.info || 'Gesehen').toLowerCase();
+            valB = String(b.info || 'Gesehen').toLowerCase();
+        }
+        if (valA < valB) return _histViewsSortAsc ? -1 : 1;
+        if (valA > valB) return _histViewsSortAsc ? 1 : -1;
+        return 0;
     });
 
     if (filteredViews.length === 0) {

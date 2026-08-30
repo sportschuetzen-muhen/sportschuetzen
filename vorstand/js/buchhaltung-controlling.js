@@ -145,13 +145,13 @@ function bhRenderYoYChart() {
         if (haben === code) balanceChange -= amount;
       });
       
-      const balance = Math.abs(balanceChange); // Expenses are positive values
+      const balance = balanceChange;
       
       if (cat.main === 'Aufwand') {
         if (code.startsWith('41') || code.startsWith('42') || code.startsWith('44')) {
           yrSchiess += balance;
         } else if ((code.startsWith('60') && code !== '6011') || code.startsWith('62') || code.startsWith('63') || code.startsWith('64')) {
-          yrGebaeude += balance; // Explicitly exclude Wasserschaden 6011!
+          yrGebaeude += balance;
         } else if (code.startsWith('65') || code.startsWith('67') || code.startsWith('69') || code.startsWith('89')) {
           yrVerwaltung += balance;
         } else {
@@ -754,7 +754,7 @@ function calculateTransitStats(journal, accountCode) {
       outflow += amount;
     }
   });
-  return { inflow, outflow, balance: inflow - outflow };
+  return { inflow, outflow, balance: outflow - inflow };
 }
 
 function renderFullJournalReport(journal) {
@@ -873,6 +873,8 @@ function renderRevisorenJournalReport(journal, hideTransit) {
 }
 
 function renderGVAuswertungReport(journal) {
+  const activeBudgetCol = `budget_${window._bhYear}`;
+  
   // Erfolgsrechnung Konten holen
   const successAccounts = window._bhKontenrahmen.filter(acc => {
     const cat = bhGetAccountCategory(acc);
@@ -886,24 +888,56 @@ function renderGVAuswertungReport(journal) {
   const totalExpenses = expenses.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
   const netResult = totalRevenues - totalExpenses;
   
+  const totalBudgetRevenues = revenues.reduce((sum, acc) => {
+    const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
+    return sum + (bud ? Number(bud[activeBudgetCol] || 0) : 0);
+  }, 0);
+
+  const totalBudgetExpenses = expenses.reduce((sum, acc) => {
+    const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
+    return sum + (bud ? Number(bud[activeBudgetCol] || 0) : 0);
+  }, 0);
+  
   const stats1190 = calculateTransitStats(journal, '1190');
   const stats1191 = calculateTransitStats(journal, '1191');
   
-  const revenueRows = revenues.map(acc => `
-    <tr class="bh-account-row">
-      <td class="font-monospace text-muted" style="width: 80px;">${acc.konto}</td>
-      <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
-      <td class="text-end fw-bold text-success">${fmtChf(acc._endsaldo)}</td>
-    </tr>
-  `).join('');
+  const revenueRows = revenues.map(acc => {
+    const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
+    const budgetVal = bud ? Number(bud[activeBudgetCol] || 0) : 0;
+    const istVal = Number(acc._endsaldo || 0);
+    const diff = istVal - budgetVal;
+    const diffColor = diff >= 0 ? 'text-success' : 'text-danger';
+    const diffSign = diff >= 0 ? '+' : '';
+
+    return `
+      <tr class="bh-account-row">
+        <td class="font-monospace text-muted" style="width: 70px;">${acc.konto}</td>
+        <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
+        <td class="text-end fw-bold text-success">${fmtChf(istVal)}</td>
+        <td class="text-end text-muted">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
+        <td class="text-end fw-bold ${diffColor}">${budgetVal > 0 ? diffSign + fmtChf(diff) : '–'}</td>
+      </tr>
+    `;
+  }).join('');
   
-  const expenseRows = expenses.map(acc => `
-    <tr class="bh-account-row">
-      <td class="font-monospace text-muted" style="width: 80px;">${acc.konto}</td>
-      <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
-      <td class="text-end fw-bold text-danger">${fmtChf(acc._endsaldo)}</td>
-    </tr>
-  `).join('');
+  const expenseRows = expenses.map(acc => {
+    const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
+    const budgetVal = bud ? Number(bud[activeBudgetCol] || 0) : 0;
+    const istVal = Number(acc._endsaldo || 0);
+    const diff = istVal - budgetVal;
+    const diffColor = diff <= 0 ? 'text-success' : 'text-danger';
+    const diffSign = diff >= 0 ? '+' : '';
+
+    return `
+      <tr class="bh-account-row">
+        <td class="font-monospace text-muted" style="width: 70px;">${acc.konto}</td>
+        <td class="fw-semibold text-dark">${acc.bezeichnung}</td>
+        <td class="text-end fw-bold text-danger">${fmtChf(istVal)}</td>
+        <td class="text-end text-muted">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
+        <td class="text-end fw-bold ${diffColor}">${budgetVal > 0 ? diffSign + fmtChf(diff) : '–'}</td>
+      </tr>
+    `;
+  }).join('');
   
   return `
     <div class="row g-4">
@@ -917,14 +951,18 @@ function renderGVAuswertungReport(journal) {
             <tr>
               <th>Konto</th>
               <th>Ertragskonto</th>
-              <th class="text-end" style="width: 120px;">Ergebnis</th>
+              <th class="text-end" style="width: 110px;">Rechnung (Ist)</th>
+              <th class="text-end" style="width: 110px;">Budget (Soll)</th>
+              <th class="text-end" style="width: 110px;">Abweichung</th>
             </tr>
           </thead>
           <tbody>
-            ${revenueRows.length > 0 ? revenueRows : '<tr><td colspan="3" class="text-center text-muted">Keine Erträge.</td></tr>'}
+            ${revenueRows.length > 0 ? revenueRows : '<tr><td colspan="5" class="text-center text-muted">Keine Erträge.</td></tr>'}
             <tr class="table-light fw-bold" style="border-top: 1.5px solid #198754;">
               <td colspan="2" class="text-success">Total Einnahmen / Erträge</td>
               <td class="text-end text-success">${fmtChf(totalRevenues)}</td>
+              <td class="text-end text-muted">${totalBudgetRevenues > 0 ? fmtChf(totalBudgetRevenues) : '–'}</td>
+              <td class="text-end ${totalRevenues >= totalBudgetRevenues ? 'text-success' : 'text-danger'}">${totalBudgetRevenues > 0 ? (totalRevenues >= totalBudgetRevenues ? '+' : '') + fmtChf(totalRevenues - totalBudgetRevenues) : '–'}</td>
             </tr>
           </tbody>
         </table>
@@ -939,14 +977,18 @@ function renderGVAuswertungReport(journal) {
             <tr>
               <th>Konto</th>
               <th>Aufwandskonto</th>
-              <th class="text-end" style="width: 120px;">Ergebnis</th>
+              <th class="text-end" style="width: 110px;">Rechnung (Ist)</th>
+              <th class="text-end" style="width: 110px;">Budget (Soll)</th>
+              <th class="text-end" style="width: 110px;">Abweichung</th>
             </tr>
           </thead>
           <tbody>
-            ${expenseRows.length > 0 ? expenseRows : '<tr><td colspan="3" class="text-center text-muted">Keine Aufwände.</td></tr>'}
+            ${expenseRows.length > 0 ? expenseRows : '<tr><td colspan="5" class="text-center text-muted">Keine Aufwände.</td></tr>'}
             <tr class="table-light fw-bold" style="border-top: 1.5px solid #dc3545;">
               <td colspan="2" class="text-danger">Total Ausgaben / Aufwände</td>
               <td class="text-end text-danger">${fmtChf(totalExpenses)}</td>
+              <td class="text-end text-muted">${totalBudgetExpenses > 0 ? fmtChf(totalBudgetExpenses) : '–'}</td>
+              <td class="text-end ${totalExpenses <= totalBudgetExpenses ? 'text-success' : 'text-danger'}">${totalBudgetExpenses > 0 ? (totalExpenses >= totalBudgetExpenses ? '+' : '') + fmtChf(totalExpenses - totalBudgetExpenses) : '–'}</td>
             </tr>
           </tbody>
         </table>
