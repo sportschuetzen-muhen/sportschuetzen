@@ -1,4 +1,4 @@
-// News AI - Logik
+// News KI - Logik
 document.addEventListener('DOMContentLoaded', () => {
     const fotoInput = document.getElementById('news-foto');
     const previewContainer = document.getElementById('news-preview-container');
@@ -388,6 +388,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Hide generate button (not needed for ready texts)
             if (generateBtn) generateBtn.classList.add('d-none');
             
+            // Im Fertigtext-Modus den Editor direkt einblenden, damit man sofort per Strg+V einfügen oder schreiben kann
+            if (draftContainer) draftContainer.style.display = 'block';
+
             // Show publish button if there is text in the editor
             const draftEditor = document.getElementById('news-draft-editor');
             if (publishBtn) {
@@ -402,6 +405,23 @@ document.addEventListener('DOMContentLoaded', () => {
             if (keywordsTextarea) keywordsTextarea.removeAttribute('required');
         }
     };
+
+    // Live-Überwachung des Editors für den Veröffentlichen-Button
+    const editorEl = document.getElementById('news-draft-editor');
+    if (editorEl) {
+        editorEl.addEventListener('input', () => {
+            const pubBtn = document.getElementById('news-publish-btn');
+            const docTabBtn = document.getElementById('doc-tab');
+            const isDocMode = docTabBtn && docTabBtn.classList.contains('text-primary');
+            if (pubBtn && isDocMode) {
+                if (editorEl.innerText.trim() !== '') {
+                    pubBtn.classList.remove('d-none');
+                } else {
+                    pubBtn.classList.add('d-none');
+                }
+            }
+        });
+    }
 
     // --- NEU: DOKUMENT UPLOAD (PDF / WORD) ---
     const docInput = document.getElementById('news-doc-file');
@@ -420,13 +440,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Check if .doc (old Word format)
             if (lowerName.endsWith('.doc')) {
-                showToast("Fehler: Das alte Word-Format (.doc) wird nicht direkt unterstützt. Bitte speichere die Datei in Word als '.docx' oder '.pdf' ab, bevor du sie hochlädst.", "warning");
+                showToast("Das alte Word-Format (.doc) wird nicht unterstützt. Bitte speichere die Datei in Word als '.docx' ab.", "warning");
                 docInput.value = "";
                 return;
             }
 
-            if (!lowerName.endsWith('.docx') && !lowerName.endsWith('.pdf')) {
-                showToast("Fehler: Nur PDF- oder Word-Dateien (.docx) sind erlaubt.", "warning");
+            // Reject PDF explicitly with explanatory note
+            if (lowerName.endsWith('.pdf')) {
+                showToast("PDF-Dateien werden nicht unterstützt, da PDFs keine Formatierungen (Fett, Kursiv, Absätze) übernehmen. Bitte verwende Word (.docx) oder kopiere den Text direkt per Strg+V ein.", "warning");
+                docInput.value = "";
+                return;
+            }
+
+            if (!lowerName.endsWith('.docx')) {
+                showToast("Nur Word-Dateien (.docx) sind erlaubt. Alternativ kannst du den Text unten direkt per Strg+V einfügen.", "warning");
                 docInput.value = "";
                 return;
             }
@@ -434,53 +461,23 @@ document.addEventListener('DOMContentLoaded', () => {
             // Show loading state
             if (docSpinner) docSpinner.classList.remove('d-none');
             if (docIcon) docIcon.style.display = 'none';
-            if (docTextEl) docTextEl.innerText = "Lese Datei aus...";
+            if (docTextEl) docTextEl.innerText = "Lese Word-Datei aus...";
 
             try {
-                let extractedText = "";
+                // Extract client-side via Mammoth mit Erhalt von Fett, Kursiv, Überschriften, Aufzählungen
+                const finalHtml = await extractHtmlFromDocx(file);
+                const plainTextForTitle = finalHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
-                if (lowerName.endsWith('.docx')) {
-                    // Extract client-side via Mammoth
-                    extractedText = await extractTextFromDocx(file);
-                } else if (lowerName.endsWith('.pdf')) {
-                    // Extract server-side via Gemini API
-                    const base64Pdf = await new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = ev => resolve(ev.target.result.split(',')[1]);
-                        reader.onerror = () => reject(new Error("Fehler beim lokalen Lesen der PDF-Datei."));
-                        reader.readAsDataURL(file);
-                    });
-
-                    const response = await apiFetch('news', 'action=extract_pdf', {
-                        method: 'POST',
-                        body: JSON.stringify({ pdfData: base64Pdf })
-                    });
-
-                    if (!response.ok) {
-                        const errData = await response.json().catch(() => ({}));
-                        throw new Error(errData.error || `HTTP Error ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    extractedText = data.text || "";
+                if (!finalHtml || finalHtml.trim() === "") {
+                    throw new Error("Es konnte kein Text aus der Word-Datei extrahiert werden.");
                 }
-
-                if (!extractedText || extractedText.trim() === "") {
-                    throw new Error("Es konnte kein Text aus der Datei extrahiert werden.");
-                }
-
-                extractedText = extractedText.trim();
-
-                // Format text into HTML paragraphs
-                const paragraphs = extractedText.split('\n').map(p => p.trim()).filter(p => p !== '');
-                const htmlText = paragraphs.map(p => `<p>${escapeHtml(p)}</p>`).join('');
 
                 const draftEditor = document.getElementById('news-draft-editor');
                 const draftContainer = document.getElementById('news-draft-container');
                 const publishBtn = document.getElementById('news-publish-btn');
 
                 if (draftEditor && draftContainer) {
-                    draftEditor.innerHTML = htmlText;
+                    draftEditor.innerHTML = finalHtml;
                     draftContainer.style.display = 'block';
                     
                     // Show publish button directly since the document text is finished
@@ -489,24 +486,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Try to suggest a title if the title input is empty
                 if (titleInput && (!titleInput.value || titleInput.value.trim() === "")) {
-                    const suggestedTitle = suggestTitleFromText(extractedText);
+                    const suggestedTitle = suggestTitleFromText(plainTextForTitle);
                     if (suggestedTitle) {
                         titleInput.value = suggestedTitle;
-                        showToast("Text erfolgreich eingelesen! Titel wurde automatisch vorgeschlagen.", "success");
+                        showToast("Word-Text erfolgreich mit Formatierung eingelesen! Titel vorgeschlagen.", "success");
                     } else {
-                        showToast("Text erfolgreich eingelesen!", "success");
+                        showToast("Word-Text erfolgreich mit Formatierung eingelesen!", "success");
                     }
                 } else {
-                    showToast("Text erfolgreich eingelesen!", "success");
+                    showToast("Word-Text erfolgreich mit Formatierung eingelesen!", "success");
                 }
 
             } catch (err) {
                 console.error("Dokument-Auslese Fehler:", err);
-                let userMsg = err.message;
-                if (userMsg.includes("429") || userMsg.includes("quota") || userMsg.includes("Quota exceeded") || userMsg.includes("RESOURCE_EXHAUSTED")) {
-                    userMsg = "Tageslimit der KI-Anfragen für PDF-Extraktion erreicht. Bitte wandle das PDF in Word (.docx) um oder versuche es morgen wieder.";
-                }
-                showToast("Fehler beim Einlesen des Dokuments: " + userMsg, "danger");
+                showToast("Fehler beim Einlesen der Word-Datei: " + err.message, "danger");
             } finally {
                 // Clear loading state
                 if (docSpinner) docSpinner.classList.add('d-none');
@@ -516,7 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (draftEditor && draftEditor.innerHTML.trim() !== "") {
                         docTextEl.innerHTML = `Eingelesen: <strong class="text-success">${escapeHtml(filename)}</strong>. Erneut klicken zum Ändern.`;
                     } else {
-                        docTextEl.innerText = "Klicken Sie hier, um eine PDF- oder Word-Datei hochzuladen.";
+                        docTextEl.innerText = "Klicken Sie hier, um eine Word-Datei (.docx) hochzuladen.";
                     }
                 }
                 docInput.value = "";
@@ -525,7 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Helper functions for Word extraction & title suggestion
-    function extractTextFromDocx(file) {
+    function extractHtmlFromDocx(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -534,12 +527,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     reject(new Error("Die Mammoth.js-Bibliothek ist nicht geladen."));
                     return;
                 }
-                mammoth.extractRawText({ arrayBuffer: arrayBuffer })
+                mammoth.convertToHtml({ arrayBuffer: arrayBuffer })
                     .then(function(result) {
                         resolve(result.value || "");
                     })
                     .catch(function(err) {
-                        reject(new Error("Fehler beim Extrahieren des Texts aus der Word-Datei: " + err.message));
+                        reject(new Error("Fehler beim Konvertieren der Word-Datei: " + err.message));
                     });
             };
             reader.onerror = function() {

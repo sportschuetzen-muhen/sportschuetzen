@@ -132,10 +132,10 @@ function renderAdminFields(target) {
         "Personendaten":              ["PersonNumber","Vorname","Nachname","email","BirthDate","Status"],
         "Inventar_Gewehre":           ["Hersteller","Modell","Laufnummer","Diopter","Ringkorn",
                                        "Zubehoer","Spezielles","Distanz","Eigentümer_ID",
-                                       "Gespendet_ID","Kauf_Spender_Jahr","Verkaeufer_ID"],
-        "Inventar_Schluessel":        ["Bezeichnung","Nummer"],
-        "Inventar_Kleidung":          ["Typ","Groesse","Kaufdatum"],
-        "Inventar_Schiessbekleidung": ["Typ","Groesse","Kaufdatum"]
+                                       "Gespendet_ID","Kauf_Spender_Jahr","Verkaeufer_ID","Kaufpreis","Depotbetrag"],
+        "Inventar_Schluessel":        ["Bezeichnung","Nummer","Depotbetrag"],
+        "Inventar_Kleidung":          ["Typ","Groesse","Kaufdatum","Kaufpreis","Depotbetrag"],
+        "Inventar_Schiessbekleidung": ["Typ","Groesse","Kaufdatum","Kaufpreis","Depotbetrag"]
     };
     const dropdownMapping = {
         "Status":      "MG_Status",

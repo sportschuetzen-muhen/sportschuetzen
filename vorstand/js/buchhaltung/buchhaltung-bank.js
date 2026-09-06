@@ -549,6 +549,48 @@ function bhMakeTableResizable(table) {
 }
 
 // ---------------------------------------------------------------------
+// Ermittelt das Buchhaltungskonto (z.B. 1020, 1021, 1022) anhand der IBAN aus der XML-Datei
+// ---------------------------------------------------------------------
+function bhBankGetAccountForIban(iban, fallbackKonto = '1020') {
+  if (!iban) return fallbackKonto;
+  const cleanIban = String(iban).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  if (!cleanIban) return fallbackKonto;
+
+  const kontenrahmen = window._bhKontenrahmen || [];
+
+  // 1. Suche im geladenen Kontenrahmen nach der IBAN in der Kontobezeichnung
+  for (const acc of kontenrahmen) {
+    const kCode = String(acc.konto).trim();
+    if (!kCode.startsWith('10')) continue; // Nur liquide Konten (10xx)
+
+    const cleanBezeichnung = String(acc.bezeichnung || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    if (cleanBezeichnung.includes(cleanIban)) {
+      return kCode;
+    }
+    // Auch Teilvergleich (ohne CH-Ländercode) prüfen
+    if (cleanIban.length >= 12 && cleanBezeichnung.includes(cleanIban.slice(4))) {
+      return kCode;
+    }
+  }
+
+  // 2. Bekannte Vereins-Bankkonten als stabiler Fallback
+  // CH28 8080 8005 3321 8786 1 -> 1021 Wirtschaftskonto
+  if (cleanIban.includes('533218786') || cleanIban.startsWith('CH28')) {
+    return '1021';
+  }
+  // CH06 8080 8003 6331 3189 2 -> 1020 Zahlungskonto / Vereinskonto
+  if (cleanIban.includes('36331') || cleanIban.startsWith('CH06')) {
+    return '1020';
+  }
+  // CH81 8080 8003 0788 5129 9 -> 1022 Sparkonto
+  if (cleanIban.includes('07885129') || cleanIban.startsWith('CH81')) {
+    return '1022';
+  }
+
+  return fallbackKonto;
+}
+
+// ---------------------------------------------------------------------
 // CAMT.053 File Handler & Parser
 function bhBankGetAccountsInfoHTML() {
   const txs = window._bhBankTransactions || [];
@@ -557,7 +599,12 @@ function bhBankGetAccountsInfoHTML() {
   const accounts = [...new Set(txs.map(t => t.accountIban).filter(Boolean))];
   if (!accounts.length) return '1 Konto erkannt';
 
-  return accounts.map(iban => `<code class="fw-bold bg-white text-dark border px-1.5 py-0.5 rounded me-1">${escHtml(iban)}</code>`).join(' ');
+  return accounts.map(iban => {
+    const kCode = bhBankGetAccountForIban(iban);
+    const acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === String(kCode).trim());
+    const accName = acc ? acc.bezeichnung : '';
+    return `<span class="badge bg-white text-dark border px-2 py-1 me-1 shadow-sm" title="${escHtml(accName)}"><i class="fas fa-university text-primary me-1"></i><strong>${escHtml(kCode)}</strong> (${escHtml(iban)})</span>`;
+  }).join(' ');
 }
 
 // ---------------------------------------------------------------------
@@ -773,8 +820,11 @@ function bhBankMatchAll(transactions) {
     let matchType = 'unknown'; // 'jb' | 'rule' | 'journal' | 'heuristic' | 'unknown'
     let matchRuleName = '';
 
-    let suggestedSoll = isCreditDefault(tx.isCredit) ? '1020' : '';
-    let suggestedHaben = isCreditDefault(tx.isCredit) ? '' : '1020';
+    // Bank-Konto dynamisch anhand der erkannten XML-IBAN ermitteln (z.B. 1021 für Wirtschaftskonto, 1020 für Vereinskonto, 1022 für Sparkonto)
+    const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+
+    let suggestedSoll = isCreditDefault(tx.isCredit) ? txBankKonto : '';
+    let suggestedHaben = isCreditDefault(tx.isCredit) ? '' : txBankKonto;
     let matchLabel = 'Manuelle Buchung';
 
     function isCreditDefault(isCred) { return isCred; }
@@ -819,7 +869,7 @@ function bhBankMatchAll(transactions) {
         matchedBeitrag = bestBeit;
         alreadyPaidJb = bestBeit ? (bestBeit.status === 'bezahlt') : false;
         matchType = 'jb';
-        suggestedSoll = '1020'; // Bank
+        suggestedSoll = txBankKonto; // Bank
         suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
         matchLabel = 'Jahresbeitrag Mitglied';
       }
@@ -834,14 +884,14 @@ function bhBankMatchAll(transactions) {
         matchType = 'rule';
         const vCode = vMatch ? vMatch[0].toUpperCase() : '';
         matchRuleName = vCode ? `Vermietung ${vCode}` : 'Vermietung Schützenhaus';
-        suggestedSoll = '1020'; // Bank / Wirtschaftskonto
+        suggestedSoll = txBankKonto; // Dynamisch das erkannte Bankkonto (z.B. 1021 Wirtschaftskonto)
         suggestedHaben = '3650'; // Mieterträge Schützenhaus
         matchLabel = vCode ? `Vermietung ${vCode}` : 'Mietertrag Schützenhaus';
         matchScore = 2;
       } else if (tx.isCredit && /raisenow/i.test(cleanRemittance)) {
         matchType = 'rule';
         matchRuleName = 'RaiseNow Payout';
-        suggestedSoll = '1020';
+        suggestedSoll = txBankKonto;
         suggestedHaben = '3651';
         matchLabel = 'Gutschrift RaiseNow';
         matchScore = 2;
@@ -857,8 +907,17 @@ function bhBankMatchAll(transactions) {
           matchType = 'rule';
           matchRuleName = r.label;
           matchRulePrefix = r.prefix || r.label;
-          suggestedSoll = r.soll;
-          suggestedHaben = r.haben;
+          
+          // Bankkonto dynamisch anpassen: falls in der Regel ein Bankkonto (1020, 1021, 1022) als Gegenkonto
+          // hinterlegt ist, verwenden wir das tatsächlich erkannte Bankkonto dieser Transaktion.
+          const isBankKonto = (code) => ['1020', '1021', '1022'].includes(String(code).trim());
+          if (tx.isCredit) {
+            suggestedSoll = isBankKonto(r.soll) ? txBankKonto : r.soll;
+            suggestedHaben = r.haben;
+          } else {
+            suggestedSoll = r.soll;
+            suggestedHaben = isBankKonto(r.haben) ? txBankKonto : r.haben;
+          }
           matchLabel = `Regel: ${r.label}`;
           matchScore = 2;
           break;
@@ -875,8 +934,14 @@ function bhBankMatchAll(transactions) {
 
       if (matchHist) {
         matchType = 'journal';
-        suggestedSoll = matchHist.konto_soll;
-        suggestedHaben = matchHist.konto_haben;
+        const isBankKonto = (code) => ['1020', '1021', '1022'].includes(String(code).trim());
+        if (tx.isCredit) {
+          suggestedSoll = isBankKonto(matchHist.konto_soll) ? txBankKonto : matchHist.konto_soll;
+          suggestedHaben = matchHist.konto_haben;
+        } else {
+          suggestedSoll = matchHist.konto_soll;
+          suggestedHaben = isBankKonto(matchHist.konto_haben) ? txBankKonto : matchHist.konto_haben;
+        }
         matchLabel = 'Aus Journal-Historie';
         matchScore = 1;
       }
@@ -885,11 +950,11 @@ function bhBankMatchAll(transactions) {
     // 4. STUFE: Smart Defaults nach Vorzeichen
     if (!suggestedSoll || !suggestedHaben) {
       if (tx.isCredit) {
-        suggestedSoll = suggestedSoll || '1020'; // Bank
+        suggestedSoll = suggestedSoll || txBankKonto; // Bank
         suggestedHaben = suggestedHaben || '3900'; // Übriger Ertrag
       } else {
         suggestedSoll = suggestedSoll || '6000'; // Raum/Unterhalt Aufwand
-        suggestedHaben = suggestedHaben || '1020'; // Bank
+        suggestedHaben = suggestedHaben || txBankKonto; // Bank
       }
     }
 
@@ -1447,19 +1512,21 @@ window.bhBankOpenSplitModal = function(txIdx) {
   const isCredit = tx.isCredit;
   const partyOrInfo = (tx.partyName || tx.remittanceInfo || 'Abrechnung Wettschiessen').trim();
 
+  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+
   // Preset 2 Split-Zeilen
   window._bhSplitCurrentRows = [
     {
       beschreibung: `${partyOrInfo} (Erwachsene / Transit 1190)`,
       betrag: Number(tx.amount || 0),
-      kontoSoll: isCredit ? '1020' : '1190',
-      kontoHaben: isCredit ? '1190' : '1020'
+      kontoSoll: isCredit ? txBankKonto : '1190',
+      kontoHaben: isCredit ? '1190' : txBankKonto
     },
     {
       beschreibung: `${partyOrInfo} (Junioren / Nachwuchsförderung)`,
       betrag: 0,
-      kontoSoll: isCredit ? '1020' : '4210',
-      kontoHaben: isCredit ? '4210' : '1020'
+      kontoSoll: isCredit ? txBankKonto : '4210',
+      kontoHaben: isCredit ? '4210' : txBankKonto
     }
   ];
 
@@ -1618,12 +1685,13 @@ window.bhBankAddSplitRow = function() {
   const txs = window._bhBankMatchResults || [];
   const tx = txs[window._bhSplitCurrentTxIndex];
   const isCredit = tx ? tx.isCredit : false;
+  const txBankKonto = tx ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
 
   (window._bhSplitCurrentRows = window._bhSplitCurrentRows || []).push({
     beschreibung: (tx ? (tx.partyName || tx.remittanceInfo || 'Split-Position') : 'Split-Position'),
     betrag: 0,
-    kontoSoll: isCredit ? '1020' : '1190',
-    kontoHaben: isCredit ? '1190' : '1020'
+    kontoSoll: isCredit ? txBankKonto : '1190',
+    kontoHaben: isCredit ? '1190' : txBankKonto
   });
 
   if (tx) bhBankRenderSplitModalContent(tx);

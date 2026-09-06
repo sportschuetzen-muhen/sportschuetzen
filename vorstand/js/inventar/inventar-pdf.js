@@ -149,12 +149,13 @@ async function generateQuittungPDF(data, transId, sigMitgliedUrl, sigVorstandUrl
         
         let status = '';
         if (isVerkauf) {
-             const methode = items[0]?.verkaufMethode || 'Unbekannt';
-             status = methode === 'Einzahlungsschein' ? 'Rechnung folgt' : `Bezahlt (${methode})`;
+             const methode = items[0]?.verkaufMethode || 'Bar';
+             status = methode === 'Einzahlungsschein' ? 'Rechnung folgt (QR)' : `Bezahlt (${methode})`;
         } else {
+             const methode = isAusgabe ? (items[0]?.pfandMethode || 'Bar') : (items[0]?.pfandRetourMethode || 'Bar retour');
              status = isAusgabe
-                ? (items[0]?.pfandEinnahme==='Ja' ? '✓ Kassiert' : '✗ Nicht kassiert')
-                : (items[0]?.pfandRetour  ==='Ja' ? '✓ Retour bezahlt' : '✗ Noch offen');
+                ? (items[0]?.pfandEinnahme === 'Ja' ? `✓ Pfand kassiert (${methode})` : '✗ Nicht kassiert')
+                : (items[0]?.pfandRetour   === 'Ja' ? `✓ Pfand erstattet (${methode})` : '✗ Nicht erstattet');
         }
         
         doc.setFont(undefined,'normal');

@@ -72,7 +72,7 @@ async function loadTermineData(force = false) {
     </div>
   `;
 
-  showTermineOverlay(true, 'Lade Termine & Stammdaten…');
+  showTermineOverlay(true, 'Lade Jahresprogramm & Stammdaten…');
 
   try {
     const res = await apiFetch('termine', 'action=loadAdminData');

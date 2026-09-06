@@ -37,6 +37,7 @@ function renderOffeneAusleihen() {
         (inventarState[key] || []).forEach(item => {
             const besitzer = item.Aktueller_Besitzer_ID;
             if (!besitzer || besitzer.toString()==="0" || besitzer.toString()==="") return;
+            if ((item.Status || '').toLowerCase() === 'verkauft') return;
 
             const mitglied  = getInventarNameFromId(besitzer);
             const itemLabel = getItemLabel(keyMap[key], item);
@@ -56,7 +57,7 @@ function renderOffeneAusleihen() {
             });
             const seit     = trans?.Zeitstempel ? formatCH(trans.Zeitstempel) : '-';
             const seitDate = trans?.Zeitstempel ? new Date(trans.Zeitstempel) : new Date(0);
-            rows.push({ mitglied, kategorie:keyMap[key], itemLabel, seit, seitDate, pfandStr });
+            rows.push({ mitglied, kategorie:keyMap[key], itemLabel, seit, seitDate, pfandStr, besitzer, katKey: keyMap[key], itemId: item.ID });
         });
     });
 
@@ -84,11 +85,12 @@ function renderOffeneAusleihen() {
                         ${sh('Gegenstand','gegen')}
                         ${sh('Seit','seit')}
                         <th>Pfand</th>
+                        <th class="text-center">Aktion</th>
                     </tr></thead>
                     <tbody>`;
 
     if (rows.length === 0) {
-        html += `<tr><td colspan="5" class="text-muted text-center py-3">✅ Keine offenen Ausleihen</td></tr>`;
+        html += `<tr><td colspan="6" class="text-muted text-center py-3">✅ Keine offenen Ausleihen</td></tr>`;
     } else {
         rows.forEach(r => {
             html += `<tr>
@@ -97,12 +99,31 @@ function renderOffeneAusleihen() {
                 <td>${r.itemLabel}</td>
                 <td>${r.seit}</td>
                 <td class="fw-bold">${r.pfandStr}</td>
+                <td class="text-center">
+                    <button class="btn btn-xs btn-outline-success fw-bold py-0.5 px-2"
+                            onclick="startCheckinFromJournal('${r.besitzer}', '${r.katKey}', '${r.itemId}')"
+                            title="Rückgabe erfassen">
+                        <i class="fas fa-undo me-1"></i>Rückgabe
+                    </button>
+                </td>
             </tr>`;
         });
     }
     html += `</tbody></table></div></div>`;
     journalSection.insertAdjacentHTML('afterbegin', html);
 }
+
+window.startCheckinFromJournal = function(mitgliedId, kat, itemId) {
+    localStorage.setItem('inventar-activeTab', 'ausgabe');
+    showInventarSection('ausgabe');
+    document.getElementById('select-action').value = 'checkin';
+    toggleBookingFields();
+    document.getElementById('select-mitglied').value = mitgliedId;
+    document.getElementById('select-kategorie').value = kat;
+    updateSubOptions();
+    document.getElementById('select-gegenstand').value = itemId;
+    onGegenstandSelect();
+};
 
 // ── Material-Bewegungen ──
 function sortTransaktionen(col) {
@@ -184,10 +205,19 @@ function renderTransaktionenTable() {
             const date       = formatCH(t.Zeitstempel);
             const mitglied   = getInventarNameFromId(t.Aktueller_Besitzer_ID);
             const aktion     = (t.Aktion||"").toUpperCase();
-            const istAusgabe = aktion==='AUSGABE'||aktion==='CHECKOUT';
-            const aktionBadge= istAusgabe
-                ? '<span class="badge bg-primary">Ausgabe</span>'
-                : '<span class="badge bg-success">Rückgabe</span>';
+            const istVerkauf = aktion === 'VERKAUF';
+            const istAusgabe = aktion === 'AUSGABE' || aktion === 'CHECKOUT';
+            let aktionBadge  = '<span class="badge bg-success">Rückgabe</span>';
+            if (istVerkauf) {
+                const methodeStr = t.Zahlungsart ? ` <span class="badge bg-light text-dark border ms-1">${t.Zahlungsart}</span>` : '';
+                aktionBadge  = `<span class="badge bg-info text-dark fw-bold">Verkauf</span>${methodeStr}`;
+            } else if (istAusgabe) {
+                const pfandStr = parseFloat(t.Pfandbetrag) > 0 ? ` <span class="badge bg-warning text-dark border ms-1" title="Pfand: CHF ${parseFloat(t.Pfandbetrag).toFixed(2)} (${t.Zahlungsart || '-'})">Pfand CHF ${parseFloat(t.Pfandbetrag).toFixed(2)}</span>` : '';
+                aktionBadge  = `<span class="badge bg-primary">Ausgabe</span>${pfandStr}`;
+            } else if (parseFloat(t.Pfandbetrag) > 0) {
+                const retourStr = ` <span class="badge bg-light text-dark border ms-1">Pfand-Retour</span>`;
+                aktionBadge  = `<span class="badge bg-success">Rückgabe</span>${retourStr}`;
+            }
             const kat        = t.Kategorie || '-';
             const gegenstand = getItemLabelFromTrans(t);
 

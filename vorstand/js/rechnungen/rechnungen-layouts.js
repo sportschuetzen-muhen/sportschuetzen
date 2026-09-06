@@ -52,6 +52,24 @@ window.rnGetDefaultLayouts = function() {
       mail_subject: 'Rechnung {rechnungsnummer} | Sportschützen Muhen',
       mail_body: 'Guten Tag {vorname} {nachname},\n\nanbei erhalten Sie die Rechnung {rechnungsnummer} über CHF {gesamtbetrag}.\n\nDen QR-Zahlteil finden Sie im PDF-Anhang.\n\nFreundliche Grüsse\nSportschützen Muhen'
     },
+    'Materialverkauf': {
+      type: 'Materialverkauf',
+      title: 'Rechnung – Material- & Kleiderbezug',
+      intro: 'Guten Tag {vorname} {nachname},\n\nvielen Dank für deinen Materialbezug aus unserem Vereinsinventar. Nachfolgend stellen wir dir die bezogenen Artikel in Rechnung.',
+      outro: 'Vielen Dank für deine Unterstützung unseres Vereins.\n\nSportliche Grüsse\nSportschützen Muhen',
+      notice: 'Zahlbar innert 30 Tagen mit beiliegendem QR-Einzahlungsschein.',
+      mail_subject: 'Rechnung {rechnungsnummer} – Materialverkauf | Sportschützen Muhen',
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar.\n\nAnbei senden wir dir die Rechnung {rechnungsnummer} über CHF {gesamtbetrag} inkl. QR-Einzahlungsschein.\n\nBitte überweise den Betrag innert 30 Tagen.\n\nSportliche Grüsse\nSportschützen Muhen'
+    },
+    'Depot / Pfand': {
+      type: 'Depot / Pfand',
+      title: 'Rechnung – Depot / Kaution für Vereinsmaterial',
+      intro: 'Guten Tag {vorname} {nachname},\n\nanbei erhältst du die Rechnung für das hinterlegte Depot / Pfand für das bezogene Vereinsmaterial.',
+      outro: 'Dieses Depot wird dir bei unversehrter Rückgabe des Materials vollumfänglich zurückerstattet.\n\nSportliche Grüsse\nSportschützen Muhen',
+      notice: 'Zahlbar innert 30 Tagen mit beiliegendem QR-Einzahlungsschein.',
+      mail_subject: 'Rechnung {rechnungsnummer} – Depot / Kaution | Sportschützen Muhen',
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nanbei senden wir dir die Rechnung {rechnungsnummer} über CHF {gesamtbetrag} für das hinterlegte Depot / Pfand für das bezogene Vereinsmaterial.\n\nDieses Depot wird dir bei unversehrter Rückgabe des Materials vollumfänglich zurückerstattet.\n\nSportliche Grüsse\nSportschützen Muhen'
+    },
     'Mahnung': {
       type: 'Mahnung',
       title: 'Zahlungserinnerung / Mahnung zur Rechnung {rechnungsnummer}',
@@ -84,6 +102,8 @@ window.renderTabLayouts = function(content) {
   const types = [
     { key: 'Jahresbeitrag', label: 'Jahresbeitrag', icon: 'fa-id-card' },
     { key: 'Vermietung', label: 'Vermietung', icon: 'fa-home' },
+    { key: 'Materialverkauf', label: 'Materialverkauf', icon: 'fa-tshirt' },
+    { key: 'Depot / Pfand', label: 'Depot / Pfand', icon: 'fa-hand-holding-usd' },
     { key: 'Schulsport', label: 'Schulsport', icon: 'fa-bullseye' },
     { key: 'Sponsoring', label: 'Sponsoring / Gönner', icon: 'fa-handshake' },
     { key: 'Sonstige', label: 'Sonstige / Diverse', icon: 'fa-file-alt' },

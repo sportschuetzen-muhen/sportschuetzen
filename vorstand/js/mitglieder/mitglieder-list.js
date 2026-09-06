@@ -75,6 +75,11 @@ function mglRenderListe(data) {
         </button>
       </div>
 
+      <!-- Excel-Export Button -->
+      <button class="btn btn-sm btn-outline-success ms-md-2" onclick="mglOpenExportModal()" title="Mitgliederdaten als Excel / CSV exportieren">
+        <i class="fas fa-file-excel me-1"></i> Excel-Export
+      </button>
+
       <!-- Button Neues Mitglied -->
       ${canEdit ? `
       <button class="btn btn-sm btn-primary ms-auto" onclick="mglNeuesMitglied()">

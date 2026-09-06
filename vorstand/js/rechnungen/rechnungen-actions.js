@@ -351,6 +351,8 @@ window.rnOpenCreateModal = async function() {
                 <select class="form-select" id="rnc-type" required>
                   <option value="Vermietung" selected>Vermietung</option>
                   <option value="Jahresbeitrag">Jahresbeitrag / Mitglieder</option>
+                  <option value="Materialverkauf">Materialverkauf</option>
+                  <option value="Depot / Pfand">Depot / Pfand</option>
                   <option value="Schulsport">Schulsport</option>
                   <option value="Sponsoring">Sponsoring / Gönner</option>
                   <option value="Sonstige">Sonstige / Diverse</option>

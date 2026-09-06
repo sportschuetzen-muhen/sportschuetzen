@@ -1,5 +1,20 @@
 // === SUB-MODUL: UMFRAGEN & ANMELDUNGEN - GENERALVERSAMMLUNGEN ===
 
+let gvState = null;
+let originalGvState = null;
+
+function getGVState() {
+  if (typeof gvState !== 'undefined' && gvState) {
+    window.gvState = gvState;
+    return gvState;
+  }
+  if (window.gvState) {
+    gvState = window.gvState;
+    return window.gvState;
+  }
+  return null;
+}
+
 /**
  * Wird aufgerufen, wenn Tab 4 "Erweitertes Controlling" geöffnet wird.
  * Lädt die GV-Stammdaten (falls noch nicht geladen) und baut die UI auf.
@@ -262,5 +277,730 @@ function fetchGVEventsEmbedded() {
   
   if (gvState.linked_event) {
     loadGVParticipants(gvState.linked_event);
+  }
+}
+
+async function loadGVParticipants(eventId) {
+    if(!eventId) return;
+    
+    // Speichere die Auswahl im State
+    if (!gvState) gvState = getGVState() || {};
+    gvState.linked_event = eventId;
+    window.markUnsaved();
+    
+    // Synchronisiere alle Dropdowns
+    const selectors = document.querySelectorAll('.gv-event-selector, #gv-event-selector');
+    selectors.forEach(selector => {
+        if (selector.value !== eventId) {
+            selector.value = eventId;
+        }
+    });
+    
+    const tbodies = document.querySelectorAll('.gv-anmelde-body, #gv-anmelde-body');
+    if(tbodies.length === 0) return;
+
+    const hasCache = window._gvParticipantsCache && window._gvParticipantsCache[eventId];
+    if (!hasCache) {
+        tbodies.forEach(tbody => {
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center"><div class="spinner-border spinner-border-sm text-primary"></div></td></tr>';
+        });
+    }
+    
+    try {
+        let pData;
+        if (hasCache) {
+            console.log("⚡ loadGVParticipants: Verwende Cache...");
+            pData = window._gvParticipantsCache[eventId];
+        } else {
+            // Wir nutzen die Backend-API "getGVStatus", die uns Ja, Nein und Offen liefert
+            const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
+            const result = await res.json();
+            
+            if (!result.success) throw new Error(result.error || "Fehler beim Laden");
+            
+            pData = result.data || [];
+            window._gvParticipantsCache = window._gvParticipantsCache || {};
+            window._gvParticipantsCache[eventId] = pData;
+        }
+        
+        window.currentGvData = pData;
+        window.gvSortDir = { name: 1, status: 1 };
+        renderGvTableBody();
+        
+    } catch(e) {
+        tbodies.forEach(tbody => {
+            tbody.innerHTML = `<tr><td colspan="2" class="text-danger">Fehler: ${escapeHtml(e.message)}</td></tr>`;
+        });
+    }
+}
+
+function sortGvTable(field) {
+    if (!window.currentGvData) return;
+    window.gvSortDir = window.gvSortDir || { name: 1, status: 1 };
+    window.gvSortDir[field] = (window.gvSortDir[field] || 1) * -1;
+    const dir = window.gvSortDir[field];
+    
+    window.currentGvData.sort((a, b) => {
+        let valA = String(a[field] || '').toLowerCase();
+        let valB = String(b[field] || '').toLowerCase();
+        if (valA < valB) return -1 * dir;
+        if (valA > valB) return 1 * dir;
+        return 0;
+    });
+    renderGvTableBody();
+}
+
+function renderGvTableBody() {
+    const tbodies = document.querySelectorAll('.gv-anmelde-body, #gv-anmelde-body');
+    const summaryDivs = document.querySelectorAll('.gv-anmelde-summary, #gv-anmelde-summary');
+    if (tbodies.length === 0 || !window.currentGvData) return;
+    
+    if(window.currentGvData.length === 0) {
+        tbodies.forEach(tb => {
+            tb.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Keine Daten gefunden.</td></tr>';
+        });
+        summaryDivs.forEach(sd => {
+            sd.innerHTML = '';
+        });
+        return;
+    }
+    
+    let countJa = 0;
+    let countNein = 0;
+    let countOffen = 0;
+    let countEssen = 0;
+    let countVegi = 0;
+
+    const rowsHtml = window.currentGvData.map(a => {
+        let badgeStr = '';
+        if (a.status === 'ja') {
+            let essenInfo = '';
+            if (Number(a.essen) > 0 || Number(a.vegi) > 0) {
+                let parts = [];
+                if (Number(a.essen) > 0) parts.push(`${a.essen} Std`);
+                if (Number(a.vegi) > 0) parts.push(`${a.vegi} Vegi`);
+                essenInfo = ` (+Essen: ${parts.join(', ')})`;
+            }
+            badgeStr = `<span class="badge bg-success">Ja</span>${essenInfo}`;
+            countJa++;
+            if(Number(a.essen) > 0) countEssen += Number(a.essen);
+            if(Number(a.vegi) > 0) countVegi += Number(a.vegi);
+        }
+        else if (a.status === 'nein') {
+            const rawReason = (a.grund || a.reason || '').toString().trim();
+            const grundText = rawReason ? ` <small class="text-muted fst-italic">💬 (${escapeHtml(rawReason)})</small>` : '';
+            badgeStr = `<span class="badge bg-danger">Nein</span>${grundText}`;
+            countNein++;
+        }
+        else {
+            badgeStr = `<span class="badge bg-secondary">Offen</span>`;
+            countOffen++;
+        }
+        
+        return `
+        <tr>
+            <td>${escapeHtml(a.name)}</td>
+            <td>${badgeStr}</td>
+        </tr>`;
+    }).join('');
+
+    tbodies.forEach(tb => {
+        tb.innerHTML = rowsHtml;
+    });
+
+    const essenSummaryBadge = (countEssen + countVegi > 0)
+        ? `<span class="text-info fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Essen Total: ${countEssen + countVegi} (Standard: ${countEssen}, Vegi: ${countVegi})</span>`
+        : '';
+
+    const summaryHtml = `
+        <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border mt-2">
+            <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-check-circle"></i> Zugesagt: ${countJa}</span>
+            <span class="text-danger fw-bold" style="font-size:0.85rem;"><i class="fas fa-times-circle"></i> Abgesagt: ${countNein}</span>
+            <span class="text-secondary fw-bold" style="font-size:0.85rem;"><i class="fas fa-question-circle"></i> Offen: ${countOffen}</span>
+            ${essenSummaryBadge}
+        </div>
+    `;
+
+    summaryDivs.forEach(sd => {
+        sd.innerHTML = summaryHtml;
+    });
+}
+
+function getGVMemberMails() {
+  if (gvState && gvState.vorstandMembers && gvState.vorstandMembers.length > 0) {
+    return gvState.vorstandMembers;
+  }
+  const arr = (gvState && gvState.members ? gvState.members : []).map(m => ({
+    name: (m.nachname + " " + m.vorname).trim() || m.name || m.email,
+    email: m.e_mail || m.email || m.mailadresse
+  })).filter(x => x.email);
+  arr.sort((a,b) => a.name.localeCompare(b.name));
+  return arr;
+}
+
+async function runGVTool(toolName) {
+    if (toolName === 'sendMails') {
+        let hasDoc = false;
+        const state = getGVState();
+        if (state && Array.isArray(state.platzhalter)) {
+            const item = state.platzhalter.find(p => {
+                const name = String(p.platzhaltername || p.Platzhaltername || p[0] || '').toLowerCase();
+                const appName = String(p.bezeichnung_app || p.Bezeichnung_App || '').toLowerCase();
+                return name.includes('aktuelle_gv_einladung_dokument_id') || name.includes('einladung_dokument') || appName.includes('einladung');
+            });
+            if (item) {
+                const val = String(item.inhalt || item.Inhalt || item[1] || '').trim();
+                if (val) hasDoc = true;
+            }
+        }
+        if (!hasDoc) {
+            if (!confirm("⚠️ Achtung: Es ist kein Einladungs-PDF als Anhang hinterlegt.\n\nMöchtest du die Einladungs-Mails trotzdem OHNE PDF-Anhang versenden?")) {
+                return;
+            }
+        } else {
+            if (!confirm("Möchtest du die GV-Einladungs-Mails inkl. PDF-Anhang jetzt versenden?")) return;
+        }
+    } else {
+        if(!confirm('Tool "'+toolName+'" starten?')) return;
+    }
+
+    try {
+        let evId = "";
+        const dropdown = document.getElementById('gv-event-selector');
+        if(dropdown && dropdown.value) {
+            evId = dropdown.value;
+        }
+
+        let payload = { action: 'runTool', tool: toolName, eventId: evId, user: localStorage.getItem('portal_user') };
+
+        if (toolName === 'genPDF') {
+            const sw1 = document.getElementById('gv-wahljahr-switch');
+            const sw2 = document.getElementById('gv-wahljahr-switch-embedded');
+            payload.isElectionYear = (sw1 && sw1.checked) || (sw2 && sw2.checked) || false;
+        }
+
+        if (toolName === 'sendSummary' || toolName === 'sendPraesenz' || toolName === 'sendReminders') {
+            if (window.currentGvData) {
+                payload.participants = window.currentGvData;
+            }
+        }
+
+        const res = await apiFetch('termine', '', {
+            method: 'POST', body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        alert(data.success ? "✅ " + data.msg : "❌ Fehler: " + data.error);
+    } catch(e) { alert("Netzwerkfehler: " + e); }
+}
+
+async function saveGVData(silent = false) {
+  if (!silent && !confirm("GV-Aenderungen speichern?")) return;
+  const user = localStorage.getItem('portal_user') || "Admin";
+  const stateToSave = getGVState();
+  if (!stateToSave || !stateToSave.platzhalter) {
+    if (!silent) alert("Fehler: Keine GV-Daten vorhanden.");
+    return;
+  }
+  const payload = {
+    action: "saveAdminData",
+    user: user,
+    termine: stateToSave.termine,
+    platzhalter: stateToSave.platzhalter,
+    app_info: stateToSave.app_info,
+    dropdowns: stateToSave.dropdowns,
+    logDetails: "GV-Daten aktualisiert"
+  };
+  try {
+    const res = await apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) { data = { error: "Ungueltige Server-Antwort" }; }
+    
+    if (data.status === 'success' || data.success) {
+        if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
+        if (!silent) alert("✅ Gespeichert!");
+    } else {
+        if (!silent) alert("Fehler beim Speichern: " + (data.error || data.message || "Unbekannt"));
+    }
+  } catch(e) {
+    if (!silent) alert("Netzwerk/Skript-Fehler: " + e);
+  }
+}
+
+async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
+    if (!fileOrFileList) return;
+    const files = (fileOrFileList instanceof FileList || Array.isArray(fileOrFileList))
+        ? Array.from(fileOrFileList)
+        : [fileOrFileList];
+
+    if (files.length === 0) return;
+
+    const inputEl = document.getElementById(inputId);
+    const statusEl = document.getElementById(statusId);
+
+    const fileInputId = inputId.replace('gv-doc-input', 'gv-file-upload');
+    const fileInputEl = document.getElementById(fileInputId);
+    if (fileInputEl) fileInputEl.value = '';
+
+    if (statusEl) {
+        statusEl.innerHTML = `<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade ${files.length} Datei(en) hoch nach Google Drive...</span>`;
+    }
+
+    const state = getGVState();
+    const item = (state && Array.isArray(state.platzhalter) && state.platzhalter[idx])
+        ? state.platzhalter[idx]
+        : null;
+
+    const label = item ? (item.bezeichnung_app || item.platzhaltername || '') : '';
+    const isMulti = label.toLowerCase().includes('anhänge');
+
+    let uploadedIds = [];
+    let uploadedNames = [];
+    let errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+
+            const res = await apiFetch('termine', '', {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'uploadGVDocument',
+                    fileName: file.name,
+                    mimeType: file.type || 'application/pdf',
+                    base64: base64,
+                    user: localStorage.getItem('portal_user') || 'Admin'
+                })
+            });
+            const data = await res.json();
+
+            if (data.success && data.fileId) {
+                uploadedIds.push(data.fileId);
+                uploadedNames.push(data.fileName || file.name);
+            } else {
+                errors.push(`${file.name}: ${data.error || 'Fehler'}`);
+            }
+        } catch(err) {
+            errors.push(`${file.name}: ${err.message || 'Netzwerkfehler'}`);
+        }
+    }
+
+    if (uploadedIds.length > 0) {
+        let currentIds = [];
+        let currentNames = [];
+
+        if (item && item.inhalt) {
+            currentIds = item.inhalt.split(',').map(x => x.trim()).filter(Boolean);
+        } else if (inputEl && inputEl.value.trim()) {
+            currentIds = inputEl.value.split(',').map(x => x.trim()).filter(Boolean);
+        }
+
+        const existingNamesStr = item ? (item.erklaerung || item.erklärung || item.erkl_rung || '') : '';
+        if (existingNamesStr) {
+            currentNames = existingNamesStr.split(';').map(x => x.trim()).filter(Boolean);
+        }
+
+        if (isMulti) {
+            uploadedIds.forEach((id, nIdx) => {
+                if (!currentIds.includes(id)) {
+                    currentIds.push(id);
+                    currentNames.push(uploadedNames[nIdx]);
+                }
+            });
+        } else {
+            currentIds = [uploadedIds[uploadedIds.length - 1]];
+            currentNames = [uploadedNames[uploadedNames.length - 1]];
+        }
+
+        const finalIdsString = currentIds.join(', ');
+        const finalNamesString = currentNames.join('; ');
+
+        if (item) {
+            item.inhalt = finalIdsString;
+            item.erklaerung = finalNamesString;
+            item.erklärung = finalNamesString;
+            item.erkl_rung = finalNamesString;
+        }
+        if (inputEl) {
+            inputEl.value = finalIdsString;
+        }
+
+        if (statusEl) {
+            const badgesHtml = renderGVFileBadges(idx, finalIdsString, finalNamesString, inputId, statusId);
+            statusEl.innerHTML = `${badgesHtml}
+            <div class="text-primary small mt-1"><i class="fas fa-spinner fa-spin me-1"></i> Speichere automatisch in Google Sheets...</div>`;
+        }
+
+        await saveGVData(true);
+
+        if (statusEl) {
+            const badgesHtml = renderGVFileBadges(idx, finalIdsString, finalNamesString, inputId, statusId);
+            statusEl.innerHTML = `${badgesHtml}
+            <div class="text-success small mt-1"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen & in Google Sheets gespeichert!</div>`;
+        }
+    } else if (errors.length > 0 && statusEl) {
+        statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload fehlgeschlagen: ${escapeHtml(errors.join('; '))}</span>`;
+    }
+}
+
+function renderGVFileBadges(idx, idsString, namesString, inputId, statusId) {
+    const ids = (idsString || '').split(',').map(x => x.trim()).filter(Boolean);
+    const names = (namesString || '').split(';').map(x => x.trim()).filter(Boolean);
+    if (ids.length === 0) return '';
+
+    return '<div class="d-flex flex-wrap gap-1 mt-1 mb-1">' + ids.map((id, fIdx) => {
+        const name = names[fIdx] || ('Datei ' + (fIdx + 1));
+        return `<span class="badge bg-light text-dark border p-1.5 d-inline-flex align-items-center me-1 mb-1" style="font-size:0.82rem;">
+            <i class="fas fa-file-pdf text-danger me-1"></i>
+            <strong class="me-1" title="ID: ${escapeHtml(id)}">${escapeHtml(name)}</strong>
+            <span class="text-danger ms-1 write-protected" style="cursor:pointer;font-weight:bold;" title="Datei entfernen" onclick="removeGVAttachment(${idx}, '${escapeJs(id)}', '${inputId}', '${statusId}')">&times;</span>
+        </span>`;
+    }).join('') + '</div>';
+}
+
+async function removeGVAttachment(idx, fileIdToRemove, inputId, statusId) {
+    const state = getGVState();
+    if (!state || !state.platzhalter || !state.platzhalter[idx]) return;
+    const item = state.platzhalter[idx];
+
+    let ids = (item.inhalt || '').split(',').map(x => x.trim()).filter(Boolean);
+    let names = (item.erklaerung || item.erklärung || item.erkl_rung || '').split(';').map(x => x.trim()).filter(Boolean);
+
+    const remIdx = ids.indexOf(fileIdToRemove);
+    if (remIdx !== -1) {
+        ids.splice(remIdx, 1);
+        if (names[remIdx] !== undefined) {
+            names.splice(remIdx, 1);
+        }
+    }
+
+    const finalIds = ids.join(', ');
+    const finalNames = names.join('; ');
+
+    item.inhalt = finalIds;
+    item.erklaerung = finalNames;
+    item.erklärung = finalNames;
+    item.erkl_rung = finalNames;
+
+    const inputEl = document.getElementById(inputId);
+    if (inputEl) inputEl.value = finalIds;
+
+    const statusEl = document.getElementById(statusId);
+    if (statusEl) {
+        statusEl.innerHTML = renderGVFileBadges(idx, finalIds, finalNames, inputId, statusId);
+    }
+
+    await saveGVData(true);
+}
+
+// === GV EINLADUNGS-MAIL ASSISTENT & TEXT-GENERATOR ===
+
+function getGVMailTextFromState() {
+  const state = getGVState();
+  if (!state || !Array.isArray(state.platzhalter)) return "";
+  const item = state.platzhalter.find(p => {
+    const name = String(p.platzhaltername || p.Platzhaltername || p[0] || '').toLowerCase();
+    const appName = String(p.bezeichnung_app || p.Bezeichnung_App || '').toLowerCase();
+    return name.includes('mail_einladungstext') || appName.includes('einladungstext');
+  });
+  return item ? (item.inhalt || item.Inhalt || item[1] || '') : '';
+}
+
+function setGVMailTextInState(text) {
+  if (!gvState) gvState = getGVState() || {};
+  if (!Array.isArray(gvState.platzhalter)) gvState.platzhalter = [];
+
+  let item = gvState.platzhalter.find(p => {
+    const name = String(p.platzhaltername || p.Platzhaltername || p[0] || '').toLowerCase();
+    const appName = String(p.bezeichnung_app || p.Bezeichnung_App || '').toLowerCase();
+    return name.includes('mail_einladungstext') || appName.includes('einladungstext');
+  });
+
+  if (item) {
+    item.inhalt = text;
+  } else {
+    gvState.platzhalter.push({
+      platzhaltername: "{{Mail_Einladungstext}}",
+      bezeichnung_app: "Mail Einladungstext",
+      inhalt: text
+    });
+  }
+  window.markUnsaved();
+}
+
+function openGVMailWizard() {
+  const state = getGVState();
+  if (!state) {
+    alert("GV-Daten sind noch nicht geladen. Bitte kurz warten oder Seite neu laden.");
+    return;
+  }
+
+  // Linked Event ermitteln
+  let evTitle = "Generalversammlung";
+  let evDatum = "";
+  let evZeit = "19:30";
+  
+  if (state.linked_event && Array.isArray(umfragenState)) {
+    const ev = umfragenState.find(e => String(e.id) === String(state.linked_event));
+    if (ev) {
+      evTitle = ev.title || evTitle;
+      evDatum = formatSwissDateWithWeekday(ev.datum);
+    }
+  }
+
+  // Fallback aus Platzhaltern
+  if (!evDatum && Array.isArray(state.platzhalter)) {
+    const datumItem = state.platzhalter.find(p => String(p.platzhaltername || p.bezeichnung_app || '').toLowerCase().includes('datum'));
+    if (datumItem) evDatum = datumItem.inhalt || '';
+    const zeitItem = state.platzhalter.find(p => String(p.platzhaltername || p.bezeichnung_app || '').toLowerCase().includes('zeit'));
+    if (zeitItem) evZeit = zeitItem.inhalt || '19:30';
+  }
+
+  const titleEl = document.getElementById('gv-modal-event-title');
+  if (titleEl) titleEl.innerText = evTitle;
+
+  const detailsEl = document.getElementById('gv-modal-event-details');
+  if (detailsEl) detailsEl.innerHTML = `📅 <b>Wann:</b> ${escapeHtml(evDatum || 'Datum gemäss Einladung')} um ${escapeHtml(evZeit)} Uhr &nbsp;|&nbsp; 📍 <b>Wo:</b> Schützenhaus Muhen`;
+
+  // Anhang Status prüfen
+  let hasDoc = false;
+  let docNames = [];
+  if (Array.isArray(state.platzhalter)) {
+    const docItem = state.platzhalter.find(p => {
+      const name = String(p.platzhaltername || p.bezeichnung_app || '').toLowerCase();
+      return name.includes('einladung_dokument') || name.includes('aktuelle_gv_einladung');
+    });
+    if (docItem && docItem.inhalt && docItem.inhalt.trim()) {
+      hasDoc = true;
+      docNames.push(docItem.erklaerung || 'Einladungs-PDF');
+    }
+  }
+
+  const statusEl = document.getElementById('gv-modal-attachment-status');
+  if (statusEl) {
+    if (hasDoc) {
+      statusEl.innerHTML = `<span class="badge bg-success py-1.5 px-2.5"><i class="fas fa-check-circle me-1"></i> ${escapeHtml(docNames.join(', '))} angehängt</span>`;
+    } else {
+      statusEl.innerHTML = `<span class="badge bg-warning text-dark py-1.5 px-2.5"><i class="fas fa-exclamation-triangle me-1"></i> Achtung: Kein Einladungs-PDF hinterlegt</span>`;
+    }
+  }
+
+  // Text laden
+  const savedText = getGVMailTextFromState();
+  const textInput = document.getElementById('gv-custom-mailtext');
+  if (textInput) {
+    textInput.value = savedText || "wir laden dich herzlich zur ordentlichen Generalversammlung der Sportschützen Muhen ein. Alle relevanten Unterlagen, Jahresberichte und die Traktandenliste findest du direkt im Anhang dieser E-Mail sowie in der Web-App:";
+  }
+
+  updateGVMailPreview();
+
+  const modalEl = document.getElementById('gv-mail-modal');
+  if (modalEl && typeof bootstrap !== 'undefined') {
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+}
+
+function applyGVMailTemplate(type) {
+  const textInput = document.getElementById('gv-custom-mailtext');
+  if (!textInput) return;
+
+  if (type === 'standard') {
+    textInput.value = "wir laden dich herzlich zur ordentlichen Generalversammlung der Sportschützen Muhen ein. Alle relevanten Unterlagen, Jahresberichte und die Traktandenliste findest du direkt im Anhang dieser E-Mail sowie in der Web-App:";
+  } else if (type === 'festlich') {
+    textInput.value = "ein sportlich erfolgreiches und geselliges Vereinsjahr liegt hinter uns! Wir freuen uns sehr, dich zur diesjährigen Generalversammlung begrüssen zu dürfen und gemeinsam auf die Höhepunkte zurückzublicken sowie das neue Vereinsjahr einzuläuten:";
+  } else if (type === 'wahljahr') {
+    textInput.value = "wir laden dich herzlich zur ordentlichen Generalversammlung ein. In diesem Vereinsjahr stehen zukunftsweisende Gesamterneuerungswahlen des Vorstands sowie wichtige Weichenstellungen auf der Traktandenliste. Deine Stimme und Teilnahme sind uns besonders wichtig:";
+  }
+
+  updateGVMailPreview();
+  if (typeof showToast === 'function') showToast("Vorlage übernommen!", "info");
+}
+
+function updateGVMailPreview() {
+  const textInput = document.getElementById('gv-custom-mailtext');
+  const previewBody = document.getElementById('gv-mail-preview-body');
+  if (!previewBody) return;
+
+  const rawText = textInput ? textInput.value : "";
+  const formattedText = escapeHtml(rawText).replace(/\n/g, "<br>");
+
+  const state = getGVState();
+  let evTitle = "Generalversammlung";
+  if (state && state.linked_event && Array.isArray(umfragenState)) {
+    const ev = umfragenState.find(e => String(e.id) === String(state.linked_event));
+    if (ev && ev.title) evTitle = ev.title;
+  }
+
+  previewBody.innerHTML = `
+    <div style="background: #ffffff; border: 1px solid #dee2e6; border-radius: 8px; padding: 18px; font-family: Arial, sans-serif; color: #2d3748; line-height: 1.6;">
+      <div style="display: flex; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #edf2f7;">
+        <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png" width="36" height="36" style="border-radius: 6px; margin-right: 12px;">
+        <div style="font-weight: bold; font-size: 14px; color: #1a365d;">Sportschützen Muhen – Einladung</div>
+      </div>
+      <div style="font-size: 15px; font-weight: bold; margin-bottom: 10px; color: #1a202c;">Hallo [Vorname],</div>
+      <p style="margin-bottom: 15px; font-size: 14px;">${formattedText || '<span class="text-muted fst-italic">[Hier erscheint dein Begleittext]</span>'}</p>
+      
+      <div style="background-color: #f8fafc; border-left: 4px solid #0d6efd; padding: 12px 16px; border-radius: 6px; margin-bottom: 15px;">
+        <div style="font-weight: bold; color: #c53030; font-size: 15px; margin-bottom: 4px;">🎯 ${escapeHtml(evTitle)}</div>
+        <div style="font-size: 13px; margin-bottom: 2px;">📅 <b>Wann:</b> gemäss Programm / 📍 <b>Wo:</b> Schützenhaus Muhen</div>
+        <div style="font-size: 13px;">📄 <b>Dokumente:</b> Einladung, Protokoll & Jahresbericht im E-Mail-Anhang</div>
+      </div>
+
+      <div style="background-color: #ebf8ff; padding: 10px 14px; border-radius: 6px; border-left: 4px solid #3182ce; font-size: 13px;">
+        📱 <b>Rückmeldung:</b> Bitte gib uns deine Zu- oder Absage direkt in der Vereins-Web-App ein.
+      </div>
+    </div>
+  `;
+}
+
+async function enhanceGVMailTextWithAI() {
+  const textInput = document.getElementById('gv-custom-mailtext');
+  if (!textInput || !textInput.value.trim()) {
+    if (typeof showToast === 'function') showToast("Bitte zuerst Stichworte oder einen Text eingeben.", "warning");
+    return;
+  }
+
+  const btn = document.getElementById('btn-gv-ai-enhance');
+  const btnText = document.getElementById('gv-ai-btn-text');
+  const spinner = document.getElementById('gv-ai-spinner');
+
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.classList.add('d-none');
+  if (spinner) spinner.classList.remove('d-none');
+
+  try {
+    const promptKeywords = `Schreibe einen herzlichen, professionellen und motivierenden Begleittext für die E-Mail-Einladung zur Generalversammlung unseres Schützenvereins (Sportschützen Muhen). Beziehe dich auf diese Notizen: "${textInput.value.trim()}". Schreibe 1-2 Absätze. Keine Anrede (die wird automatisch gesetzt), kein Betreff, nur der direkte Fliesstext.`;
+
+    const res = await apiFetch('news', 'action=generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        keywords: promptKeywords,
+        images: [],
+        useImageContent: false,
+        model: 'gemini-2.5-flash'
+      })
+    });
+
+    if (!res.ok) throw new Error("KI-Service nicht erreichbar");
+    const data = await res.json();
+    if (data.html) {
+      const cleanText = data.html
+        .replace(/<p[^>]*>/gi, '')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .trim();
+      
+      textInput.value = cleanText;
+      updateGVMailPreview();
+      if (typeof showToast === 'function') showToast("Text erfolgreich mit KI verfeinert!", "success");
+    }
+  } catch (err) {
+    console.warn("KI-Optimierung Fehler:", err);
+    if (typeof showToast === 'function') showToast("KI-Optimierung nicht verfügbar: " + err.message, "warning");
+  } finally {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.classList.remove('d-none');
+    if (spinner) spinner.classList.add('d-none');
+  }
+}
+
+async function saveGVMailTextOnly() {
+  const textInput = document.getElementById('gv-custom-mailtext');
+  const text = textInput ? textInput.value.trim() : "";
+  if (!text) {
+    if (typeof showToast === 'function') showToast("Der Text ist leer.", "warning");
+    return;
+  }
+
+  setGVMailTextInState(text);
+  await saveGVData(false);
+  if (typeof showToast === 'function') showToast("Einladungstext in Google Sheets gespeichert!", "success");
+}
+
+async function executeGVMailSend() {
+  const textInput = document.getElementById('gv-custom-mailtext');
+  const text = textInput ? textInput.value.trim() : "";
+
+  if (!text) {
+    if (typeof showToast === 'function') showToast("Bitte einen Begleittext für die Einladung eingeben.", "warning");
+    return;
+  }
+
+  // Anhang prüfen
+  const state = getGVState();
+  let hasDoc = false;
+  if (state && Array.isArray(state.platzhalter)) {
+    const item = state.platzhalter.find(p => {
+      const name = String(p.platzhaltername || p.bezeichnung_app || '').toLowerCase();
+      return name.includes('einladung_dokument') || name.includes('aktuelle_gv_einladung');
+    });
+    if (item && item.inhalt && item.inhalt.trim()) hasDoc = true;
+  }
+
+  if (!hasDoc) {
+    if (!confirm("⚠️ Achtung: Es ist kein Einladungs-PDF als Anhang hinterlegt.\n\nMöchtest du die Einladungs-Mails trotzdem OHNE PDF-Anhang an alle Mitglieder versenden?")) {
+      return;
+    }
+  } else {
+    if (!confirm("Möchtest du die GV-Einladungs-Mails mit diesem Begleittext jetzt an alle Mitglieder versenden?")) {
+      return;
+    }
+  }
+
+  const sendBtn = document.getElementById('btn-gv-send-now');
+  const sendBtnText = document.getElementById('gv-send-btn-text');
+  const spinner = document.getElementById('gv-send-spinner');
+
+  if (sendBtn) sendBtn.disabled = true;
+  if (sendBtnText) sendBtnText.classList.add('d-none');
+  if (spinner) spinner.classList.remove('d-none');
+
+  try {
+    // 1. Text im State & Sheets sichern
+    setGVMailTextInState(text);
+    await saveGVData(true);
+
+    // 2. Mails versenden via Google Apps Script
+    let evId = "";
+    const dropdown = document.getElementById('gv-event-selector');
+    if (dropdown && dropdown.value) evId = dropdown.value;
+
+    const payload = {
+      action: 'runTool',
+      tool: 'sendMails',
+      eventId: evId,
+      customText: text,
+      user: localStorage.getItem('portal_user') || 'Admin'
+    };
+
+    const res = await apiFetch('termine', '', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      alert("✅ " + (data.msg || "GV-Einladungs-Mails wurden erfolgreich versendet!"));
+      const modalEl = document.getElementById('gv-mail-modal');
+      if (modalEl && typeof bootstrap !== 'undefined') {
+        const inst = bootstrap.Modal.getInstance(modalEl);
+        if (inst) inst.hide();
+      }
+    } else {
+      alert("❌ Fehler beim Versenden: " + (data.error || "Unbekannter Fehler"));
+    }
+  } catch (err) {
+    alert("Netzwerk-/Serverfehler: " + err.message);
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+    if (sendBtnText) sendBtnText.classList.remove('d-none');
+    if (spinner) spinner.classList.add('d-none');
   }
 }

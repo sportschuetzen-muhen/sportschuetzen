@@ -18,7 +18,13 @@ async function initGalerieManager() {
                 <div class="card p-4 text-center shadow-sm" id="galerie-dropzone" style="border: 2px dashed #3b82f6; cursor: pointer; background: #f8fafc;">
                     <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-2"></i>
                     <h5>Bilder hochladen & für Vereins-Immich taggen</h5>
-                    <p class="text-muted small">Klicke hier oder ziehe mehrere JPEG-Bilder hinein</p>
+                    <p class="text-muted small mb-3">Klicke hier oder ziehe mehrere JPEG-Bilder hinein</p>
+                    <div class="d-flex justify-content-center gap-2">
+                        <a href="https://immich-muhen.danfamily.uk" target="_blank" rel="noopener noreferrer" 
+                           class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-xs" onclick="event.stopPropagation()">
+                            <i class="fas fa-images me-1"></i> Direkt zu Immich Alben & Personen ↗
+                        </a>
+                    </div>
                     <input type="file" id="galerie-file-input" class="d-none" accept="image/jpeg, image/jpg" multiple>
                 </div>
             </div>
@@ -253,7 +259,6 @@ async function uploadAllToImmich() {
     }
 
     showToast(`🎉 ${successCount} von ${filesQueue.length} Bildern in Immich hochgeladen & getaggt!`, "success");
-}
 }
 
 async function loadFaceApiModels() {
@@ -737,14 +742,5 @@ async function downloadAllTags() {
 
 // Alte Funktionen (saveExifAndDownload, resetGalerie, loadMembersForDatalist) entfernt, da Queue-Logik verwendet wird.
 
-// Init when module is opened
-document.addEventListener('DOMContentLoaded', () => {
-    // Falls das Menü "Galerie Manager" geklickt wird
-    const originalNavTo = window.navTo;
-    window.navTo = function(viewId, element) {
-        if (originalNavTo) originalNavTo(viewId, element);
-        if (viewId === 'galerie') {
-            initGalerieManager();
-        }
-    };
-});
+// Global für navTo verfügbar machen
+window.initGalerieManager = initGalerieManager;

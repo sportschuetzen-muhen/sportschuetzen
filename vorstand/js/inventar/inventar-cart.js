@@ -46,10 +46,14 @@ function warenkorbAdd() {
     }
 
         const verkaufMethode = document.getElementById('verkauf-methode') ? document.getElementById('verkauf-methode').value : null;
+        const pfandMethode = action === 'checkout' ? (pfandEin === 'Nein' ? '-' : pfandEin) : (action === 'checkin' ? pfandRet : null);
 
         warenkorb.push({ itemId, kategorie, label,
                          zustandAbgabe: zustandA, zustandRueckgabe: zustandR,
-                         pfandBetrag: pfand, pfandEinnahme: pfandEin, pfandRetour: pfandRet,
+                         pfandBetrag: pfand, pfandEinnahme: pfandEin === 'Nein' ? 'Nein' : 'Ja',
+                         pfandMethode: pfandMethode,
+                         pfandRetour: pfandRet === 'Nein' ? 'Nein' : 'Ja',
+                         pfandRetourMethode: pfandRet,
                          verkaufMethode: (action === 'verkauf' ? verkaufMethode : null) });
         renderWarenkorb();
         document.getElementById('pfand-betrag').value = '';
@@ -84,17 +88,25 @@ function renderWarenkorb() {
                 <th>Kat.</th><th>Gegenstand</th><th>Zustand</th><th>${action === 'verkauf' ? 'Preis' : 'Pfand'}</th><th></th>
             </tr></thead>
             <tbody>
-                ${warenkorb.map((w, i) => `
+                ${warenkorb.map((w, i) => {
+                    let methodeInfo = '';
+                    if (w.pfandBetrag > 0) {
+                        if (action === 'verkauf') methodeInfo = ` (${w.verkaufMethode || 'Bar'})`;
+                        else if (action === 'checkout') methodeInfo = ` (${w.pfandMethode || 'Bar'})`;
+                        else if (action === 'checkin') methodeInfo = ` (${w.pfandRetourMethode || 'Bar retour'})`;
+                    }
+                    return `
                     <tr>
                         <td><span class="badge bg-secondary">${w.kategorie}</span></td>
                         <td><small>${w.label}</small></td>
                         <td><small>${action==='checkout' || action==='verkauf' ? w.zustandAbgabe : w.zustandRueckgabe}</small></td>
-                        <td><small>${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)} ${action==='verkauf' ? '('+w.verkaufMethode+')' : ''}` : '-'}</small></td>
+                        <td><small>${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)}${methodeInfo}` : '-'}</small></td>
                         <td>
                             <button class="btn btn-sm btn-outline-danger py-0"
                                     onclick="warenkorbRemove(${i})">✕</button>
                         </td>
-                    </tr>`).join('')}
+                    </tr>`;
+                }).join('')}
             </tbody>
             ${warenkorb.length > 1 ? `
             <tfoot>
@@ -112,7 +124,10 @@ function renderWarenkorb() {
 // =========================================================
 async function handleInventarSubmit(e) {
     e.preventDefault();
+    if (window._isInventarSubmitting) return;
     if (warenkorb.length === 0) { alert("Warenkorb ist leer."); return; }
+    
+    window._isInventarSubmitting = true;
     setInventarBusy(true);
 
     const action     = document.getElementById('select-action').value;
@@ -121,7 +136,7 @@ async function handleInventarSubmit(e) {
     const mailAdresse = localStorage.getItem('portal_mailadresse') || localStorage.getItem('portal_mailanzeige') || "";
     const emailToUse = mailAdresse.includes('@') ? mailAdresse : "sportschuetzen.muhen@gmail.com";
 
-    const payloadAction = (action === 'checkout' || action === 'verkauf') ? 'AUSGABE' : 'CHECKIN';
+    const payloadAction = action === 'verkauf' ? 'VERKAUF' : (action === 'checkout' ? 'AUSGABE' : 'CHECKIN');
     
     let bemerkungen = document.getElementById('trans-bemerkungen').value;
     if (action === 'verkauf') {
@@ -132,6 +147,7 @@ async function handleInventarSubmit(e) {
     const payload = {
         action:                action === 'verkauf' ? 'checkout' : action,
         Aktion:                payloadAction,
+        isVerkauf:             action === 'verkauf',
         Aktueller_Besitzer_ID: mitgliedId,
         mitgliedId:            mitgliedId,
         Bemerkungen:           bemerkungen,
@@ -147,7 +163,11 @@ async function handleInventarSubmit(e) {
             pfandBetrag:      w.pfandBetrag,
             pfandEinnahme:    w.pfandEinnahme,
             pfandRetour:      w.pfandRetour,
-            label:            w.label
+            pfandMethode:     w.pfandMethode,
+            pfandRetourMethode: w.pfandRetourMethode,
+            label:            w.label,
+            verkaufMethode:   w.verkaufMethode,
+            zahlungsart:      action === 'verkauf' ? w.verkaufMethode : (action === 'checkout' ? w.pfandMethode : w.pfandRetourMethode)
         }))
     };
 
@@ -172,9 +192,14 @@ async function handleInventarSubmit(e) {
             );
         }
 
-        // --- VERKAUF NACHBEARBEITUNG ---
+        // --- NACHBEARBEITUNG (Rechnung/Buchhaltung) ---
         if (action === 'verkauf') {
             await verarbeiteVerkaufNachbereitung(warenkorb, mitgliedId);
+        } else if (action === 'checkout') {
+            await verarbeitePfandRechnungen(warenkorb, mitgliedId);
+            await verarbeitePfandBuchhaltung(warenkorb, 'checkout');
+        } else if (action === 'checkin') {
+            await verarbeitePfandBuchhaltung(warenkorb, 'checkin');
         }
 
         warenkorb = [];
@@ -194,6 +219,7 @@ async function handleInventarSubmit(e) {
         console.error("Buchungsfehler:", err);
         alert("❌ Fehler bei der Buchung: " + err.message);
     } finally {
+        window._isInventarSubmitting = false;
         setInventarBusy(false);
     }
 }
@@ -211,6 +237,12 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const nextRand = String(Math.floor(1000 + Math.random() * 9000));
             const invoiceId = `INV-${new Date().getFullYear()}-${nextRand}`;
             const m = (inventarState.mitglieder || []).find(x => String(x.ID) === String(mitgliedId)) || {};
+            const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
+
+            const memberEmail = (m.email || m.Email || mglMaster.PrimaryEmail || mglMaster.email || '').trim();
+            const memberStrasse = mglMaster.Street || m.Strasse || '';
+            const memberPlz = mglMaster.PostCode || m.PLZ || '';
+            const memberOrt = mglMaster.City || m.Ort || '';
             
             let totalAmount = 0;
             const positions = invoiceItems.map((w, index) => {
@@ -226,10 +258,10 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
 
             const invoiceHeader = {
                 id: invoiceId,
-                PersonNumber: m.ID || '',
-                name: `${m.Nachname || ''} ${m.Vorname || ''}`.trim(),
+                PersonNumber: m.PersonNumber || m.ID || '',
+                name: `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim(),
                 year: new Date().getFullYear(),
-                type: 'Sonstige',
+                type: 'Materialverkauf',
                 total_amount: totalAmount,
                 status: 'Offen'
             };
@@ -239,12 +271,12 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                 invoice: invoiceHeader,
                 positions: positions,
                 recipient: {
-                    vorname: m.Vorname || '',
-                    nachname: m.Nachname || '',
-                    strasse: m.Strasse || '',
-                    plz: m.PLZ || '',
-                    ort: m.Ort || '',
-                    email: m.Email || ''
+                    vorname: m.Vorname || mglMaster.FirstName || '',
+                    nachname: m.Nachname || mglMaster.LastName || '',
+                    strasse: memberStrasse,
+                    plz: memberPlz,
+                    ort: memberOrt,
+                    email: memberEmail
                 }
             };
 
@@ -253,8 +285,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const resultRechnung = await resRechnung.json();
             
             if (resultRechnung.success) {
-                // Rechnung per Mail versenden
-                if (m.Email && m.Email.includes('@')) {
+                // Rechnung per Mail versenden (sofern gültige E-Mail-Adresse vorhanden)
+                if (memberEmail && memberEmail.includes('@')) {
                     const mailPayload = {
                         action: 'sendInvoiceEmail',
                         invoiceId: invoiceId,
@@ -269,52 +301,33 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             }
         }
 
-        // 2. BAR / TWINT IN BUCHHALTUNG VERBUCHEN
-        if (barTwintItems.length > 0) {
+        // 2. NUR BAR IN BUCHHALTUNG VERBUCHEN
+        // (Twint wird NICHT sofort gebucht, da Twint erst Tage später als Netto-Sammelüberweisung auf der Bank eingeht)
+        const barItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Bar');
+        if (barItems.length > 0) {
             const userKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
             const customKontoHaben = userKonto || '3200';
 
             let seqCounter = 1;
-            for (let w of barTwintItems) {
-                const kontoSoll = w.verkaufMethode === 'Twint' ? '1020' : '1000'; // 1020 Bank/Twint, 1000 Kasse
-                const kontoHaben = customKontoHaben;
+            for (let w of barItems) {
                 const uniqueBeleg = `VK-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
                 
                 const bhPayload = {
                     action: 'addJournalEntry',
                     beleg_nr: uniqueBeleg,
-                    beschreibung: `Kleiderverkauf (${w.verkaufMethode}): ${w.label}`,
-                    konto_soll: kontoSoll,
-                    konto_haben: kontoHaben,
+                    beschreibung: `Materialverkauf (Bar): ${w.label}`,
+                    konto_soll: '1000', // Kasse
+                    konto_haben: customKontoHaben, // z.B. 3200 Ertrag Materialverkauf
                     betrag: w.pfandBetrag,
                     typ: 'Verkauf',
                     jahr: new Date().getFullYear()
                 };
 
-                console.log("Buche Verkauf in Buchhaltung...", bhPayload);
+                console.log("Buche Bar-Verkauf in Buchhaltung...", bhPayload);
                 const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) {
                     console.error("Fehler beim Buchen:", resultBh.error);
-                } else if (w.verkaufMethode === 'Twint') {
-                    // Automatische Twint-Gebühren Buchung (RaiseNow 1.3%)
-                    const feeAmount = parseFloat((w.pfandBetrag * 0.013).toFixed(2));
-                    if (feeAmount > 0) {
-                        const feePayload = {
-                            action: 'addJournalEntry',
-                            beleg_nr: `${uniqueBeleg}-FEE`,
-                            beschreibung: `Twint/RaiseNow Gebühr (1.3%): ${w.label}`,
-                            konto_soll: '6840', // Bankspesen
-                            konto_haben: kontoSoll, // Twint-Transitkonto (z.B. 1020)
-                            betrag: feeAmount,
-                            typ: 'Spesen',
-                            jahr: new Date().getFullYear()
-                        };
-                        console.log("Buche Twint-Gebühren...", feePayload);
-                        const resFee = await apiFetch('buchhaltung', feePayload, 'POST');
-                        const resultFee = await resFee.json();
-                        if (!resultFee.success) console.error("Fehler bei Gebührenbuchung:", resultFee.error);
-                    }
                 }
             }
         }
@@ -322,4 +335,144 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
         console.error("Fehler in der Verkaufs-Nachbereitung:", err);
     }
 }
+
+// =========================================================
+//  PFAND / DEPOT: KAUTIONSKONTO IN BUCHHALTUNG VERBUCHEN
+// =========================================================
+async function verarbeitePfandBuchhaltung(cart, action) {
+    try {
+        if (action === 'checkout') {
+            // Bar-Pfand erhalten: Soll 1000 (Kasse) an Haben 2030 (Kautionen / Depots)
+            const barPfand = cart.filter(w => (w.pfandMethode === 'Bar' || w.pfandEinnahme === 'Ja') && w.pfandMethode !== 'Twint' && w.pfandMethode !== 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
+            let seqCounter = 1;
+            for (let w of barPfand) {
+                const betrag = parseFloat(w.pfandBetrag) || 0;
+                const uniqueBeleg = `DEP-IN-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
+                const bhPayload = {
+                    action: 'addJournalEntry',
+                    beleg_nr: uniqueBeleg,
+                    beschreibung: `Pfand Kasse (Eingang): ${w.label}`,
+                    konto_soll: '1000', // Kasse
+                    konto_haben: '2030', // Kautionen / Depots (Passivkonto)
+                    betrag: betrag,
+                    typ: 'Kaution',
+                    jahr: new Date().getFullYear()
+                };
+                console.log("Buche Bar-Pfand Eingang auf Kautionskonto 2030...", bhPayload);
+                const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
+                const resultBh = await resBh.json();
+                if (!resultBh.success) console.error("Fehler beim Buchen des Pfands:", resultBh.error);
+            }
+        } else if (action === 'checkin') {
+            // Bar-Pfand zurückbezahlt: Soll 2030 (Kautionen / Depots) an Haben 1000 (Kasse)
+            const barRetour = cart.filter(w => (w.pfandRetourMethode === 'Bar' || w.pfandRetour === 'Ja') && w.pfandRetourMethode !== 'Twint' && w.pfandRetourMethode !== 'Banküberweisung');
+            let seqCounter = 1;
+            for (let w of barRetour) {
+                let betrag = parseFloat(w.pfandBetrag) || 0;
+                if (betrag === 0 && inventarState?.pfand) {
+                    const op = inventarState.pfand.find(p => String(p.Inventar_ID) === String(w.itemId) && (p.Status || '').toLowerCase() === 'offen');
+                    if (op) betrag = parseFloat(op.Betrag) || 0;
+                }
+                if (betrag <= 0) continue;
+
+                const uniqueBeleg = `DEP-OUT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
+                const bhPayload = {
+                    action: 'addJournalEntry',
+                    beleg_nr: uniqueBeleg,
+                    beschreibung: `Pfand Rückzahlung (Bar): ${w.label}`,
+                    konto_soll: '2030', // Kautionen / Depots (Passivkonto)
+                    konto_haben: '1000', // Kasse
+                    betrag: betrag,
+                    typ: 'Kaution',
+                    jahr: new Date().getFullYear()
+                };
+                console.log("Buche Bar-Pfand Rückzahlung von Kautionskonto 2030...", bhPayload);
+                const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
+                const resultBh = await resBh.json();
+                if (!resultBh.success) console.error("Fehler beim Buchen der Pfand-Rückgabe:", resultBh.error);
+            }
+        }
+    } catch (err) {
+        console.error("Fehler in verarbeitePfandBuchhaltung:", err);
+    }
+}
+
+// =========================================================
+//  PFAND / DEPOT RECHNUNG GENERIEREN (falls QR-Rechnung gewählt)
+// =========================================================
+async function verarbeitePfandRechnungen(cart, mitgliedId) {
+    try {
+        const invoicePfandItems = cart.filter(w => w.pfandMethode === 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
+        if (invoicePfandItems.length === 0) return;
+
+        const nextRand = String(Math.floor(1000 + Math.random() * 9000));
+        const invoiceId = `DEP-${new Date().getFullYear()}-${nextRand}`;
+        const m = (inventarState.mitglieder || []).find(x => String(x.ID) === String(mitgliedId)) || {};
+        const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
+
+        const memberEmail = (m.email || m.Email || mglMaster.PrimaryEmail || mglMaster.email || '').trim();
+        const memberStrasse = mglMaster.Street || m.Strasse || '';
+        const memberPlz = mglMaster.PostCode || m.PLZ || '';
+        const memberOrt = mglMaster.City || m.Ort || '';
+
+        let totalAmount = 0;
+        const positions = invoicePfandItems.map((w, index) => {
+            const betrag = parseFloat(w.pfandBetrag) || 0;
+            totalAmount += betrag;
+            return {
+                position_nr: index + 1,
+                description: `Depot / Kaution: ${w.label} (wird bei Rückgabe erstattet)`,
+                quantity: 1,
+                unit_price: betrag,
+                amount: betrag
+            };
+        });
+
+        const invoiceHeader = {
+            id: invoiceId,
+            PersonNumber: m.PersonNumber || m.ID || '',
+            name: `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim(),
+            year: new Date().getFullYear(),
+            type: 'Depot / Pfand',
+            total_amount: totalAmount,
+            status: 'Offen'
+        };
+
+        const payloadRechnung = {
+            action: 'createInvoice',
+            invoice: invoiceHeader,
+            positions: positions,
+            recipient: {
+                vorname: m.Vorname || mglMaster.FirstName || '',
+                nachname: m.Nachname || mglMaster.LastName || '',
+                strasse: memberStrasse,
+                plz: memberPlz,
+                ort: memberOrt,
+                email: memberEmail
+            }
+        };
+
+        console.log("Erstelle QR-Rechnung für Pfand/Depot...", payloadRechnung);
+        const resRechnung = await apiFetch('rechnungen', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloadRechnung) });
+        const resultRechnung = await resRechnung.json();
+
+        if (resultRechnung.success) {
+            if (memberEmail && memberEmail.includes('@')) {
+                const mailPayload = {
+                    action: 'sendInvoiceEmail',
+                    invoiceId: invoiceId,
+                    recipient: payloadRechnung.recipient
+                };
+                console.log("Sende Pfand-Rechnung per E-Mail...", mailPayload);
+                await apiFetch('rechnungen', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mailPayload) });
+            }
+        } else {
+            console.error("Fehler beim Erstellen der Pfand-Rechnung:", resultRechnung.error);
+            alert("⚠️ Die QR-Rechnung für das Depot konnte nicht automatisch erstellt werden. Bitte manuell im Modul Rechnungen nachholen.");
+        }
+    } catch (err) {
+        console.error("Fehler in verarbeitePfandRechnungen:", err);
+    }
+}
+
 

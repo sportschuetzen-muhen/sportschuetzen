@@ -452,7 +452,7 @@
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('termine', this)">
-                    <i class="fas fa-calendar-alt"></i> <span class="nav-text">Termine</span>
+                    <i class="fas fa-calendar-alt"></i> <span class="nav-text">Jahresprogramm</span>
                 </div>
 
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
@@ -509,7 +509,7 @@
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('news', this)">
-                    <i class="fas fa-newspaper"></i> <span class="nav-text">News AI</span>
+                    <i class="fas fa-newspaper"></i> <span class="nav-text">News KI</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('galerie', this)">
@@ -555,7 +555,7 @@
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('termine')" style="cursor:pointer">
-                            <h5>📅 Termine</h5>
+                            <h5>📅 Jahresprogramm</h5>
                             <p class="small text-muted">Termine, Anlässe & Orte</p>
                         </div>
                     </div>
@@ -654,7 +654,7 @@
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('news')" style="cursor:pointer">
-                            <h5>🗞️ News AI</h5>
+                            <h5>🗞️ News KI</h5>
                             <p class="small text-muted">KI-Berichte für Homepage erstellen</p>
                         </div>
                     </div>
@@ -689,7 +689,7 @@
             <!-- TERMINE -->
             <div id="view-termine" class="module-view">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2>Termine & Stammdaten</h2>
+                    <h2>📅 Jahresprogramm</h2>
                     <div class="btn-group">
                         <button class="btn btn-sm btn-success write-protected" onclick="saveTermineData()">
                             💾 Speichern
@@ -769,8 +769,18 @@
 
 <!-- GALERIE MANAGER -->
 <div id="view-galerie" class="module-view">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>🖼️ Galerie Manager</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h2 class="mb-0">🖼️ Galerie Manager</h2>
+            <div class="text-muted small">Vereins-Fotos erfassen, taggen & mit Immich synchronisieren</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="https://immich-muhen.danfamily.uk" target="_blank" rel="noopener noreferrer" 
+               class="btn btn-primary btn-sm fw-bold shadow-sm d-inline-flex align-items-center gap-2 px-3 py-1.5"
+               style="background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none;">
+                <i class="fas fa-external-link-alt"></i> Immich Web-App öffnen ↗
+            </a>
+        </div>
     </div>
     <div id="galerie-container">
         <!-- Wird von galerie.js gerendert -->
@@ -837,7 +847,7 @@
                 </li>
                 <li class="nav-item">
                     <button class="nav-link py-3 fw-bold border-0 text-muted" id="doc-tab" data-bs-toggle="tab" data-bs-target="#doc-panel" type="button" role="tab" aria-controls="doc-panel" aria-selected="false" onclick="switchNewsMode('doc')">
-                        <i class="fas fa-file-alt me-2"></i>Fertigen Text einlesen (PDF/Word)
+                        <i class="fas fa-file-word me-2"></i>Fertigen Text einfügen / Word (.docx)
                     </button>
                 </li>
             </ul>
@@ -877,17 +887,23 @@
                         </div>
                     </div>
 
-                    <!-- Tab 2: Dokument Einlesen -->
+                    <!-- Tab 2: Word Einlesen oder direkt einfügen -->
                     <div class="tab-pane fade" id="doc-panel" role="tabpanel" aria-labelledby="doc-tab">
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Dokument hochladen (.docx oder .pdf)</label>
-                            <div class="border rounded p-4 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-doc-file').click()">
-                                <i class="fas fa-file-upload fa-2x text-muted mb-2" id="news-doc-icon"></i>
-                                <p class="mb-0 text-muted" id="news-doc-text">Klicken Sie hier, um eine PDF- oder Word-Datei hochzuladen.</p>
+                            <label class="form-label fw-bold">Option A: Word-Dokument hochladen (.docx)</label>
+                            <div class="border rounded p-3 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-doc-file').click()">
+                                <i class="fas fa-file-word fa-2x text-primary mb-2" id="news-doc-icon"></i>
+                                <p class="mb-0 text-muted small" id="news-doc-text">Klicken Sie hier, um eine Word-Datei (.docx) hochzuladen.</p>
                                 <div class="spinner-border spinner-border-sm text-primary mt-2 d-none" id="news-doc-spinner" role="status"></div>
                             </div>
-                            <input type="file" id="news-doc-file" accept=".pdf,.docx,.doc" style="display:none">
-                            <small class="text-muted mt-1 d-block">Der Text wird eins-zu-eins ausgelesen und unten in den Entwurf eingefügt, ohne dass die KI ihn umschreibt.</small>
+                            <input type="file" id="news-doc-file" accept=".docx" style="display:none">
+                            <div class="text-danger small mt-1" style="font-size: 0.78rem;">
+                                <i class="fas fa-exclamation-triangle me-1"></i><strong>Hinweis:</strong> PDF-Dateien werden <u>nicht unterstützt</u>, da PDFs keine Formatierungen (Fett, Kursiv, Überschriften) übernehmen. Bitte nur Word (.docx) oder direktes Einfügen (Option B) nutzen.
+                            </div>
+                        </div>
+                        <div class="alert alert-info py-2 px-3 small border-0 mb-0">
+                            <i class="fas fa-keyboard me-1"></i> <strong>Option B: Direktes Einfügen (Copy & Paste):</strong><br>
+                            Kopiere deinen Text einfach (z. B. aus Word mit Strg+C) und füge ihn unten direkt in den <strong>Bericht-Entwurf</strong> ein (Strg+V). Fett, Kursiv und Absätze werden 1:1 übernommen!
                         </div>
                     </div>
                 </div>
@@ -1057,6 +1073,88 @@
     </div>
 </div>
 
+<!-- GV Einladungs-Mail Assistent Modal -->
+<div class="modal fade" id="gv-mail-modal" tabindex="-1" aria-labelledby="gvMailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow">
+            <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                <h5 class="modal-title fw-bold" id="gvMailModalLabel">
+                    <i class="fas fa-envelope-open-text me-2"></i>GV-Einladungs-Mails versenden
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- Status & Übersicht Card -->
+                <div class="card bg-light border-0 p-3 mb-3 rounded-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-7">
+                            <div class="fw-bold text-dark fs-6" id="gv-modal-event-title">Generalversammlung</div>
+                            <div class="small text-muted" id="gv-modal-event-details">📅 Lade Event-Details...</div>
+                        </div>
+                        <div class="col-md-5 text-md-end">
+                            <div id="gv-modal-attachment-status" class="small"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Text-Vorlagen & Assistent -->
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <label class="form-label fw-bold mb-0">
+                        <i class="fas fa-edit me-1 text-primary"></i> Begleittext der Einladungs-Mail
+                    </label>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGVMailTemplate('standard')" title="Standard Vorlage">📋 Standard</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGVMailTemplate('festlich')" title="Herzlich & Feierlich">✨ Festlich</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGVMailTemplate('wahljahr')" title="Fokus auf Wahlen">🗳️ Wahljahr</button>
+                    </div>
+                </div>
+
+                <textarea id="gv-custom-mailtext" class="form-control mb-2" rows="4" 
+                          placeholder="Begleittext für die E-Mail an alle Mitglieder..."
+                          oninput="updateGVMailPreview()"></textarea>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <small class="text-muted">
+                        Dieser Text wird in die E-Mail direkt unter der persönlichen Anrede <em>„Hallo [Vorname],“</em> eingefügt.
+                    </small>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-gv-ai-enhance" onclick="enhanceGVMailTextWithAI()">
+                        <i class="fas fa-magic me-1"></i> <span id="gv-ai-btn-text">Mit KI verfeinern</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="gv-ai-spinner" role="status"></span>
+                    </button>
+                </div>
+
+                <!-- Live E-Mail Vorschau Accordion -->
+                <div class="accordion mb-2" id="gvMailAccordion">
+                    <div class="accordion-item border rounded-3">
+                        <h2 class="accordion-header" id="headingPreview">
+                            <button class="accordion-button collapsed py-2 px-3 fw-bold small text-muted" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePreview" aria-expanded="false" aria-controls="collapsePreview">
+                                <i class="fas fa-eye me-2 text-primary"></i> E-Mail Live-Vorschau anzeigen (wie das Mitglied sie sieht)
+                            </button>
+                        </h2>
+                        <div id="collapsePreview" class="accordion-collapse collapse" aria-labelledby="headingPreview" data-bs-parent="#gvMailAccordion">
+                            <div class="accordion-body bg-light p-3" id="gv-mail-preview-body" style="font-size: 0.9rem;">
+                                <!-- Live Vorschau -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0 d-flex justify-content-between rounded-bottom-4">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-success" onclick="saveGVMailTextOnly()">
+                        💾 Text speichern
+                    </button>
+                    <button type="button" class="btn btn-primary fw-bold px-4" id="btn-gv-send-now" onclick="executeGVMailSend()">
+                        <i class="fas fa-paper-plane me-2"></i> <span id="gv-send-btn-text">Jetzt versenden</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="gv-send-spinner" role="status"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Welcome Security & Presence Modal -->
 <div class="modal fade" id="welcome-security-modal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1175,7 +1273,6 @@
 <script src="js/umfragen/umfragen-eval.js"></script>
 <script src="js/umfragen/umfragen-controlling.js"></script>
 <script src="js/umfragen/umfragen-tracking.js"></script>
-<script src="js/gv.js"></script>
 <script src="js/logins/logins-core.js"></script>
 <script src="js/logins/logins-ui.js"></script>
 <script src="js/logins/logins-events.js"></script>
@@ -1208,6 +1305,7 @@
 <script src="js/mitglieder/mitglieder-manager.js"></script>
 <script src="js/mitglieder/mitglieder-import-ui.js"></script>
 <script src="js/mitglieder/mitglieder-sync-ui.js"></script>
+<script src="js/mitglieder/mitglieder-export.js"></script>
 
 <!-- Chart.js für grafische Auswertungen -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

@@ -1070,8 +1070,7 @@ function navTo(viewId, el) {
     if (viewId === 'resultate' && typeof loadResultateData === 'function') loadResultateData();
     if (viewId === 'manager'   && typeof loadContestData   === 'function') loadContestData();
     if (viewId === 'vermietung' && typeof loadVermietungData === 'function') loadVermietungData();
-    // NEU: GV & Mails & Logins
-    if (viewId === 'gv' && typeof loadGVData === 'function') loadGVData();
+    // NEU: Mails & Logins
     if (viewId === 'system-mails' && typeof loadSystemMailsData === 'function') loadSystemMailsData();
     if (viewId === 'umfragen' && typeof loadUmfragenData === 'function') loadUmfragenData();
     if (viewId === 'logins' && typeof loadLoginsData === 'function') loadLoginsData();
@@ -1084,6 +1083,7 @@ function navTo(viewId, el) {
     if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadRechnungenData();
     if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadMitgliederData();
     if (viewId === 'buchhaltung'   && typeof renderBuchhaltung     === 'function') renderBuchhaltung();
+    if (viewId === 'galerie'       && typeof initGalerieManager    === 'function') initGalerieManager();
 
 }
 

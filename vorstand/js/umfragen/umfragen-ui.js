@@ -239,7 +239,7 @@ function renderUmfragenUI(container) {
                                 <label class="form-check-label small fw-bold text-muted" for="gv-wahljahr-switch-embedded" style="cursor: pointer; user-select: none;">Wahljahr</label>
                             </div>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">&#128196; Einladungs-PDF</button>
-                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendMails')">&#128231; GV Mails senden</button>
+                            <button class="btn btn-primary btn-sm fw-bold shadow-sm" onclick="openGVMailWizard()">📧 GV Mails senden</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">&#128276; Mahnungen senden</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendSummary')">&#128202; Uebersicht senden</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendPraesenz')">&#128221; Praesenzliste senden</button>

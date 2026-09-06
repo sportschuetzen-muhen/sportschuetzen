@@ -69,6 +69,8 @@ function renderInventarUI(container) {
                             <label class="form-label fw-bold">Mitglied</label>
                             <select id="select-mitglied" class="form-select mb-3"
                                     onchange="updateSubOptions()" required></select>
+                            
+                            <div id="container-mitglied-ausleihen" class="d-none mb-3"></div>
 
                             <label class="form-label fw-bold">Kategorie</label>
                             <select id="select-kategorie" class="form-select mb-3"
@@ -98,17 +100,21 @@ function renderInventarUI(container) {
                                            placeholder="0.00" step="0.01">
                                 </div>
                                 <div class="col-6" id="container-pfand-einnahme">
-                                    <label class="form-label fw-bold small">Einnahme</label>
+                                    <label class="form-label fw-bold small">Pfand Einnahme</label>
                                     <select id="pfand-einnahme" class="form-select">
-                                        <option value="Nein">Nein</option>
-                                        <option value="Ja">Ja</option>
+                                        <option value="Bar" selected>Ja – Bar (Pfand-Kasse)</option>
+                                        <option value="Twint">Ja – Twint</option>
+                                        <option value="Einzahlungsschein">Ja – QR-Rechnung (Einzahlungsschein)</option>
+                                        <option value="Nein">Nein (noch nicht bezahlt)</option>
                                     </select>
                                 </div>
                                 <div class="col-6 d-none" id="container-pfand-retour">
-                                    <label class="form-label fw-bold small">Retour bezahlt</label>
+                                    <label class="form-label fw-bold small">Pfand Retour</label>
                                     <select id="pfand-retour" class="form-select">
-                                        <option value="Nein">Nein</option>
-                                        <option value="Ja">Ja</option>
+                                        <option value="Bar" selected>Ja – Bar retour</option>
+                                        <option value="Twint">Ja – Twint retour</option>
+                                        <option value="Banküberweisung">Ja – Banküberweisung</option>
+                                        <option value="Nein">Nein (nicht ausbezahlt)</option>
                                     </select>
                                 </div>
                                 <div class="col-6 d-none" id="container-verkauf-methode">
@@ -415,36 +421,171 @@ function updateSubOptions() {
                      "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
     const items  = inventarState[keyMap[kat]] || [];
 
-    document.getElementById('select-gegenstand').innerHTML = items.map(i => {
-        const isOut = i.Aktueller_Besitzer_ID &&
+    // --- UX-HIGHLIGHT: Ausgeliehenes Material des Mitglieds anzeigen ---
+    const containerHoldings = document.getElementById('container-mitglied-ausleihen');
+    if (containerHoldings) {
+        if (action === 'checkin' && mitgliedId) {
+            let memberItems = [];
+            const allKeyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                                "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+            Object.keys(allKeyMap).forEach(k => {
+                (inventarState[allKeyMap[k]] || []).forEach(item => {
+                    if (item.Aktueller_Besitzer_ID && String(item.Aktueller_Besitzer_ID) === String(mitgliedId) && (item.Status || '').toLowerCase() !== 'verkauft') {
+                        memberItems.push({ kat: k, item: item, label: getItemLabel(k, item) });
+                    }
+                });
+            });
+
+            if (memberItems.length === 0) {
+                containerHoldings.className = 'mb-3';
+                containerHoldings.innerHTML = `
+                    <div class="alert alert-info py-2 px-3 small mb-0 border-0 rounded-3 shadow-xs">
+                        <i class="fas fa-check-circle me-1 text-success"></i>Dieses Mitglied hat aktuell <b>keine offenen Ausleihen</b>.
+                    </div>`;
+            } else {
+                containerHoldings.className = 'mb-3';
+                containerHoldings.innerHTML = `
+                    <div class="card border border-primary border-opacity-25 shadow-xs p-2.5 rounded-3 bg-white">
+                        <div class="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom">
+                            <span class="small fw-bold text-primary">
+                                <i class="fas fa-box-open me-1"></i>Aktuell ausgeliehen (${memberItems.length}):
+                            </span>
+                            ${memberItems.length > 1 ? `
+                            <button type="button" class="btn btn-xs btn-outline-primary fw-bold py-0.5 px-2" 
+                                    onclick="addAllMemberItemsToReturnCart('${mitgliedId}')" style="font-size: 11px;">
+                                <i class="fas fa-bolt me-1"></i>Alle retournieren
+                            </button>` : ''}
+                        </div>
+                        <div class="list-group list-group-flush">
+                            ${memberItems.map(m => {
+                                const openPfand = (inventarState?.pfand || []).find(p => 
+                                    String(p.Mitglied_ID) === String(mitgliedId) && 
+                                    String(p.Inventar_ID) === String(m.item.ID) && 
+                                    (p.Status||'').toLowerCase() === 'offen'
+                                );
+                                const pfandInfo = openPfand ? `CHF ${parseFloat(openPfand.Betrag).toFixed(2)} (${openPfand.Zahlungsart||'Bar'})` : (m.item.Depotbetrag ? `CHF ${parseFloat(m.item.Depotbetrag).toFixed(2)}` : 'Kein Pfand');
+                                const isInCart = warenkorb.some(w => w.itemId.toString() === m.item.ID.toString() && w.kategorie === m.kat);
+                                return `
+                                <div class="d-flex justify-content-between align-items-center py-1.5 small border-bottom border-light">
+                                    <div>
+                                        <span class="badge bg-secondary me-1 text-uppercase" style="font-size: 9px;">${m.kat}</span>
+                                        <strong>${m.label}</strong>
+                                        <div class="text-muted" style="font-size: 10px;">Pfand: <span class="fw-semibold text-dark">${pfandInfo}</span></div>
+                                    </div>
+                                    <button type="button" class="btn btn-sm ${isInCart ? 'btn-success disabled' : 'btn-outline-primary'} py-0 px-2" 
+                                            style="font-size: 11px;" 
+                                            onclick="quickSelectMemberItem('${m.kat}', '${m.item.ID}')">
+                                        ${isInCart ? '✓ Im Korb' : '📥 Wählen'}
+                                    </button>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+            }
+        } else {
+            containerHoldings.className = 'd-none mb-3';
+            containerHoldings.innerHTML = '';
+        }
+    }
+
+    // Sortierung: Bei Rückgabe die Gegenstände dieses Mitglieds ganz oben anzeigen!
+    const sortedItems = [...items].sort((a, b) => {
+        if (action === 'checkin' && mitgliedId) {
+            const aMine = String(a.Aktueller_Besitzer_ID) === String(mitgliedId);
+            const bMine = String(b.Aktueller_Besitzer_ID) === String(mitgliedId);
+            if (aMine && !bMine) return -1;
+            if (!aMine && bMine) return 1;
+        }
+        return 0;
+    });
+
+    document.getElementById('select-gegenstand').innerHTML = sortedItems.map(i => {
+        const isVerkauft = (i.Status || '').toLowerCase() === 'verkauft';
+        const isMine = action === 'checkin' && mitgliedId && String(i.Aktueller_Besitzer_ID) === String(mitgliedId);
+        const isOut = (i.Aktueller_Besitzer_ID &&
                       i.Aktueller_Besitzer_ID.toString() !== "0" &&
-                      i.Aktueller_Besitzer_ID.toString() !== "";
+                      i.Aktueller_Besitzer_ID.toString() !== "") || isVerkauft;
         const isInCart = warenkorb.some(w => w.itemId.toString() === i.ID.toString() && w.kategorie === kat);
         
-        // Verkauf und Checkout sind blockiert wenn isOut, Checkin nur wenn !isOut
-        const disabled = ((action === 'checkout' || action === 'verkauf') && isOut) || (action === 'checkin' && !isOut) || isInCart;
+        // Verkauf und Checkout sind blockiert wenn isOut oder isVerkauft, Checkin nur wenn !isOut bzw. !isVerkauft
+        const disabled = ((action === 'checkout' || action === 'verkauf') && isOut) || 
+                         (action === 'checkin' && (!isOut || isVerkauft)) || 
+                         isInCart;
         // Bei Rückgabe: nur Items des gewählten Mitglieds aktivieren
-        const wrongOwner = action === 'checkin' && isOut && mitgliedId &&
-                           i.Aktueller_Besitzer_ID.toString() !== mitgliedId.toString();
+        const wrongOwner = action === 'checkin' && isOut && !isVerkauft && mitgliedId && !isMine;
         const label = getItemLabel(kat, i);
         
-        let statusIcon = isOut ? '🔴' : '🟢';
+        let statusIcon = isVerkauft ? '❌ (Verkauft)' : (isOut ? (isMine ? '⭐ (Bei Mitglied)' : '🔴') : '🟢');
         if (isInCart) statusIcon = '🛒';
 
-        return `<option value="${i.ID}"
+        return `<option value="${i.ID}" ${isMine ? 'class="fw-bold text-primary"' : ''}
             ${(disabled || wrongOwner) ? 'disabled style="color:#ccc"' : ''}>
             ${label} ${statusIcon}
         </option>`;
     }).join('');
     
-    // Initial den Kaufpreis laden, falls Verkauf gewählt ist und ein Gegenstand vorselektiert ist
+    // Initial den Betrag laden (Kaufpreis bei Verkauf ODER Depotbetrag bei Ausleihe)
     onGegenstandSelect();
 }
 
+window.quickSelectMemberItem = function(kat, itemId) {
+    document.getElementById('select-kategorie').value = kat;
+    updateSubOptions();
+    document.getElementById('select-gegenstand').value = itemId;
+    onGegenstandSelect();
+};
+
+window.addAllMemberItemsToReturnCart = function(mitgliedId) {
+    const allKeyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                        "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+    let addedCount = 0;
+    Object.keys(allKeyMap).forEach(k => {
+        (inventarState[allKeyMap[k]] || []).forEach(item => {
+            if (item.Aktueller_Besitzer_ID && String(item.Aktueller_Besitzer_ID) === String(mitgliedId) && (item.Status || '').toLowerCase() !== 'verkauft') {
+                const itemId = item.ID.toString();
+                if (!warenkorb.some(w => w.itemId.toString() === itemId && w.kategorie === k)) {
+                    const label = getItemLabel(k, item);
+                    const openPfand = (inventarState?.pfand || []).find(p => 
+                        String(p.Mitglied_ID) === String(mitgliedId) && 
+                        String(p.Inventar_ID) === String(itemId) && 
+                        (p.Status||'').toLowerCase() === 'offen'
+                    );
+                    let pfand = 0;
+                    let retourMethode = 'Bar';
+                    if (openPfand && parseFloat(openPfand.Betrag) > 0) {
+                        pfand = parseFloat(openPfand.Betrag);
+                        const art = (openPfand.Zahlungsart || '').toLowerCase();
+                        if (art.includes('twint')) retourMethode = 'Twint';
+                        else if (art.includes('einzahlungsschein') || art.includes('rechnung')) retourMethode = 'Banküberweisung';
+                    } else if (item.Depotbetrag) {
+                        pfand = parseFloat(item.Depotbetrag) || 0;
+                    }
+                    warenkorb.push({
+                        itemId: itemId,
+                        kategorie: k,
+                        label: label,
+                        zustandAbgabe: 'i.O.',
+                        zustandRueckgabe: 'i.O.',
+                        pfandBetrag: pfand,
+                        pfandEinnahme: 'Nein',
+                        pfandMethode: null,
+                        pfandRetour: 'Ja',
+                        pfandRetourMethode: retourMethode,
+                        verkaufMethode: null
+                    });
+                    addedCount++;
+                }
+            }
+        });
+    });
+    if (addedCount > 0) {
+        renderWarenkorb();
+        updateSubOptions();
+    }
+};
+
 function onGegenstandSelect() {
     const action = document.getElementById('select-action').value;
-    if (action !== 'verkauf') return;
-
     const kat = document.getElementById('select-kategorie').value;
     const itemId = document.getElementById('select-gegenstand').value;
     if (!itemId) return;
@@ -454,16 +595,54 @@ function onGegenstandSelect() {
     const item = (inventarState[keyMap[kat]] || []).find(i => i.ID.toString() === itemId.toString());
     
     if (item) {
-        console.log("Ausgewählter Gegenstand:", item); // Debugging
-        
-        // Prüfen auf Kaufpreis
-        let preisRaw = item.Kaufpreis || item.Preis || item.kaufpreis || item.Verkaufspreis || 0;
-        
-        if (preisRaw && preisRaw !== "") {
-            const preis = parseFloat(preisRaw.toString().replace("'", "").replace("CHF", "").trim());
-            if (!isNaN(preis) && preis > 0) {
-                document.getElementById('pfand-betrag').value = preis.toFixed(2);
+        if (action === 'verkauf') {
+            // 1. Verkauf: Kaufpreis / Verkaufspreis vorblenden
+            let preisRaw = item.Kaufpreis || item.Preis || item.kaufpreis || item.Verkaufspreis || 0;
+            if (preisRaw && preisRaw !== "") {
+                const preis = parseFloat(preisRaw.toString().replace("'", "").replace("CHF", "").trim());
+                if (!isNaN(preis) && preis > 0) {
+                    document.getElementById('pfand-betrag').value = preis.toFixed(2);
+                    return;
+                }
+            }
+        } else if (action === 'checkout') {
+            // 2. Ausleihe (Option B): Depotbetrag vorblenden
+            let depotRaw = item.Depotbetrag || item.Depot || item.depot || item.Pfandbetrag || item.Pfand || 0;
+            if (depotRaw && depotRaw !== "") {
+                const depot = parseFloat(depotRaw.toString().replace("'", "").replace("CHF", "").trim());
+                if (!isNaN(depot) && depot > 0) {
+                    document.getElementById('pfand-betrag').value = depot.toFixed(2);
+                    return;
+                }
+            }
+        } else if (action === 'checkin') {
+            // 3. Rückgabe: Nachschlagen, ob ein offenes Pfand für dieses Mitglied & Item existiert
+            const mitgliedId = document.getElementById('select-mitglied').value;
+            const openPfand = (inventarState?.pfand || []).find(p => 
+                String(p.Mitglied_ID) === String(mitgliedId) && 
+                String(p.Inventar_ID) === String(itemId) && 
+                (p.Status || '').toLowerCase() === 'offen'
+            );
+            if (openPfand && parseFloat(openPfand.Betrag) > 0) {
+                document.getElementById('pfand-betrag').value = parseFloat(openPfand.Betrag).toFixed(2);
+                const retSelect = document.getElementById('pfand-retour');
+                if (retSelect) {
+                    const art = (openPfand.Zahlungsart || '').toLowerCase();
+                    if (art.includes('twint')) retSelect.value = 'Twint';
+                    else if (art.includes('einzahlungsschein') || art.includes('rechnung')) retSelect.value = 'Banküberweisung';
+                    else retSelect.value = 'Bar';
+                }
                 return;
+            } else {
+                // Fallback: hinterlegter Depotbetrag des Gegenstands
+                let depotRaw = item.Depotbetrag || item.Depot || 0;
+                if (depotRaw) {
+                    const depot = parseFloat(depotRaw.toString().replace("'", "").replace("CHF", "").trim());
+                    if (!isNaN(depot) && depot > 0) {
+                        document.getElementById('pfand-betrag').value = depot.toFixed(2);
+                        return;
+                    }
+                }
             }
         }
     }

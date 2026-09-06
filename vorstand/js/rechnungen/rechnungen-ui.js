@@ -171,6 +171,8 @@ window.renderTabArchiv = function(content) {
               <option value="alle">Alle Typen</option>
               <option value="Jahresbeitrag">Jahresbeitrag</option>
               <option value="Vermietung">Vermietung</option>
+              <option value="Materialverkauf">Materialverkauf</option>
+              <option value="Depot / Pfand">Depot / Pfand</option>
               <option value="Schulsport">Schulsport</option>
               <option value="Sponsoring">Sponsoring / Gönner</option>
               <option value="Sonstige">Sonstige / Diverse</option>
@@ -595,6 +597,12 @@ window.renderTabOffenePosten = function(content) {
         </button>
         <button class="btn btn-xs ${currentFilter === 'Vermietung' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Vermietung')">
           <i class="fas fa-home me-1"></i> Miete & Externe
+        </button>
+        <button class="btn btn-xs ${currentFilter === 'Materialverkauf' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Materialverkauf')">
+          <i class="fas fa-tshirt me-1"></i> Materialverkauf
+        </button>
+        <button class="btn btn-xs ${currentFilter === 'Depot / Pfand' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Depot / Pfand')">
+          <i class="fas fa-hand-holding-usd me-1"></i> Depot / Pfand
         </button>
         <button class="btn btn-xs ${currentFilter === 'alle' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('alle')">
           <i class="fas fa-list me-1"></i> Alle Posten
