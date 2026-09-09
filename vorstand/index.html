@@ -56,11 +56,12 @@
             --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        body {
+        html, body {
             background-color: var(--bg);
             font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
             color: var(--text-main);
-            height: 100vh;
+            height: 100%;
+            height: 100dvh;
             overflow: hidden;
             -webkit-font-smoothing: antialiased;
         }
@@ -150,7 +151,9 @@
         .content {
             flex: 1;
             padding: 24px;
+            padding-bottom: calc(100px + env(safe-area-inset-bottom));
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             position: relative;
             background: var(--bg);
         }
@@ -165,6 +168,11 @@
         /* IPAD/TABLET RESPONSIVENESS — vollständig ausgeblendet wie Mobile */
         @media (min-width: 768px) and (max-width: 1199px) {
             .mobile-header { display: flex !important; }
+            .main-wrapper { min-height: 0; flex: 1; overflow: hidden; }
+            .content {
+                padding: 20px;
+                padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
+            }
             .sidebar {
                 position: fixed;
                 left: -280px;
@@ -192,6 +200,10 @@
         /* IPHONE/MOBILE RESPONSIVENESS */
         @media (max-width: 767px) {
             .mobile-header { display: flex !important; }
+            .content {
+                padding: 12px;
+                padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
+            }
             .sidebar {
                 position: fixed;
                 left: -280px;
@@ -841,12 +853,12 @@
         <div class="card-header border-0 bg-transparent p-0">
             <ul class="nav nav-tabs nav-fill" id="newsTabs" role="tablist" style="background: #f8f9fa;">
                 <li class="nav-item">
-                    <button class="nav-link active py-3 fw-bold border-0 text-primary" id="ki-tab" data-bs-toggle="tab" data-bs-target="#ki-panel" type="button" role="tab" aria-controls="ki-panel" aria-selected="true" onclick="switchNewsMode('ki')">
+                    <button class="nav-link active py-3 fw-bold border-0 text-primary" id="ki-tab" type="button" role="tab" aria-controls="ki-panel" aria-selected="true" onclick="switchNewsMode('ki')">
                         <i class="fas fa-robot me-2"></i>KI-Bericht erstellen
                     </button>
                 </li>
                 <li class="nav-item">
-                    <button class="nav-link py-3 fw-bold border-0 text-muted" id="doc-tab" data-bs-toggle="tab" data-bs-target="#doc-panel" type="button" role="tab" aria-controls="doc-panel" aria-selected="false" onclick="switchNewsMode('doc')">
+                    <button class="nav-link py-3 fw-bold border-0 text-muted" id="doc-tab" type="button" role="tab" aria-controls="doc-panel" aria-selected="false" onclick="switchNewsMode('doc')">
                         <i class="fas fa-file-word me-2"></i>Fertigen Text einfügen / Word (.docx)
                     </button>
                 </li>
@@ -863,7 +875,7 @@
 
                 <div class="tab-content" id="newsTabContent">
                     <!-- Tab 1: KI Generator -->
-                    <div class="tab-pane fade show active" id="ki-panel" role="tabpanel" aria-labelledby="ki-tab">
+                    <div class="tab-pane active" id="ki-panel" role="tabpanel" aria-labelledby="ki-tab">
                         <div class="mb-3">
                             <label class="form-label fw-bold">Stichworte für die KI</label>
                             <textarea id="news-keywords" class="form-control" rows="4" placeholder="z.B. Wetter war regnerisch. 30 Teilnehmer. Max Muster gewann mit 69 Punkten. Gute Stimmung." required></textarea>
@@ -888,7 +900,7 @@
                     </div>
 
                     <!-- Tab 2: Word Einlesen oder direkt einfügen -->
-                    <div class="tab-pane fade" id="doc-panel" role="tabpanel" aria-labelledby="doc-tab">
+                    <div class="tab-pane" id="doc-panel" role="tabpanel" aria-labelledby="doc-tab" style="display: none;">
                         <div class="mb-3">
                             <label class="form-label fw-bold">Option A: Word-Dokument hochladen (.docx)</label>
                             <div class="border rounded p-3 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-doc-file').click()">

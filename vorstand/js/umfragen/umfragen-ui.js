@@ -7,11 +7,11 @@ function renderUmfragenUI(container) {
   container.innerHTML = `
     <ul class="nav nav-tabs mb-3" id="umfragen-tabs">
         <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-umfragen-events">🗓️ Events verwalten</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-teilnehmer" onclick="loadParticipantsIfEventSelected()">👥 Auswertung & Mails</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-gruppen" onclick="loadGroupsIfEventSelected()">🎯 Gruppen-Anmeldung</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-historie" onclick="loadUmfragenHistorie()">📜 Historie & Tracking</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-personenkreise" onclick="loadUmfragenPersonenkreise()">👥 Personenkreise</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-controlling" onclick="initGVControllingTab()">⚙️ Generalversammlungen</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-teilnehmer" onclick="loadParticipantsIfEventSelected()">👥 Vereinsanlässe Auswertung</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-gruppen" onclick="loadGroupsIfEventSelected()">🎯 Gruppenschiessen Anmeldung</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-historie" onclick="loadUmfragenHistorie()">📜 Rückmeldungen & Status komplett</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-personenkreise" onclick="loadUmfragenPersonenkreise()">👥 Einladungskreise</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-controlling" onclick="initGVControllingTab()">⚙️ GV-Planung & Auswertung</a></li>
     </ul>
 
     <div class="tab-content">
@@ -19,19 +19,20 @@ function renderUmfragenUI(container) {
         <div class="tab-pane fade show active" id="tab-umfragen-events">
             <button class="btn btn-sm btn-success mb-2 write-protected" onclick="addUmfrageEvent()">+ Neuer Event</button>
             <div class="table-responsive bg-white border rounded">
-                <table class="table table-sm table-hover mb-0" style="min-width: 800px;">
+                <table class="table table-sm table-hover mb-0" style="min-width: 980px;">
                     <thead class="table-light">
                         <tr style="cursor:pointer; user-select:none;">
                             <th onclick="sortUmfragenEvents('id')">ID ⇅</th>
                             <th onclick="sortUmfragenEvents('title')">Titel ⇅</th>
                             <th onclick="sortUmfragenEvents('datum')">Datum ⇅</th>
                             <th onclick="sortUmfragenEvents('gruppe')">Personenkreis ⇅</th>
-                            <th class="text-center" onclick="sortUmfragenEvents('schiessanlass')">Schiess-<br>anlass 🎯 ⇅</th>
+                            <th class="text-center" onclick="sortUmfragenEvents('schiessanlass')" title="Auswärtiges Gruppenschiessen mit Terminauswahl (Poll) & 5er-Teams. Begleitung, Essen und Abmeldegrund entfallen hier.">Ext. Gruppen-<br>schiessen 🎯 ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('aktiv')">Aktiv ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('showparticipants')">Teilnehmer<br>sichtbar ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('frage_begleitung')">Frage:<br>Begleitung ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('frage_essen')">Frage:<br>Essen ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('frage_grund')">Frage:<br>Abmeldegrund 💬 ⇅</th>
+                            <th style="cursor:default; min-width: 175px;">Dokument / Link 📄</th>
                             <th style="cursor:default;"></th>
                         </tr>
                     </thead>
@@ -49,7 +50,7 @@ function renderUmfragenUI(container) {
                         <label class="form-label fw-bold">Event Auswählen</label>
                         <select class="form-select" id="umfragen-event-selector" onchange="selectEventForParticipants(this.value)">
                             <option value="">-- Bitte wählen --</option>
-                            ${(umfragenState || []).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.title || 'Ohne Titel')} (${formatSwissDateWithWeekday(e.datum)})${isTrue(e.schiessanlass) ? ' 🎯' : ''}</option>`).join('')}
+                            ${(umfragenState || []).filter(e => !isTrue(e.schiessanlass)).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.title || 'Ohne Titel')} (${formatSwissDateWithWeekday(e.datum)})</option>`).join('')}
                         </select>
                     </div>
                 </div>
@@ -79,13 +80,13 @@ function renderUmfragenUI(container) {
             <div class="row g-3">
                 <div class="col-md-4">
                     <div class="card shadow-sm border-0 p-3">
-                        <label class="form-label fw-bold">Schiessanlass wählen</label>
+                        <label class="form-label fw-bold">Gruppenschiessen wählen</label>
                         <select class="form-select" id="umfragen-gruppen-event-selector" onchange="selectEventForGroups(this.value)">
                             <option value="">-- Bitte wählen --</option>
                             ${(umfragenState || []).filter(e => isTrue(e.schiessanlass)).map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.title)} (${formatSwissDateWithWeekday(e.datum)})</option>`).join('')}
                         </select>
                         <div class="mt-3 small text-muted">
-                            <i class="fas fa-info-circle"></i> Nur Events, die als 🎯 <b>Schiessanlass</b> markiert sind, erscheinen hier.
+                            <i class="fas fa-info-circle"></i> Nur Events, die als 🎯 <b>Ext. Gruppenschiessen</b> markiert sind, erscheinen hier.
                         </div>
                     </div>
                 </div>
@@ -254,28 +255,138 @@ function renderUmfragenUI(container) {
                 </div>
                 <div class="col-md-6">
                     <div class="card p-3">
-                        <h5 class="card-title">Praesenz / Anmeldungen (Eventplaner)</h5>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title mb-0">Praesenz / Anmeldungen (Eventplaner)</h5>
+                            <button class="btn btn-outline-secondary btn-sm py-0 px-2" title="Teilnehmerliste neu laden" onclick="reloadGVParticipants()">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
                         <div class="mb-2">
-                            <label class="form-label small">Verknuepftes Event waehlen:</label>
+                            <label class="form-label small mb-1 fw-bold">Verknuepftes Event waehlen:</label>
                             <select class="form-select form-select-sm gv-event-selector" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
                                 <option value="">-- Lade Events... --</option>
                             </select>
                         </div>
+
+                        <!-- Such- und Filterleiste -->
+                        <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                            <div class="input-group input-group-sm flex-grow-1" style="min-width: 150px;">
+                                <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                                <input type="text" class="form-control border-start-0 ps-0" id="gv-search-input" placeholder="Mitglied suchen..." oninput="filterGvTable()">
+                            </div>
+                            <div class="btn-group btn-group-sm" role="group" id="gv-status-filter-group">
+                                <button type="button" class="btn btn-outline-secondary btn-sm active" id="gv-filter-alle" onclick="setGvStatusFilter('alle', this)">Alle</button>
+                                <button type="button" class="btn btn-outline-success btn-sm" id="gv-filter-ja" onclick="setGvStatusFilter('ja', this)">Ja</button>
+                                <button type="button" class="btn btn-outline-danger btn-sm" id="gv-filter-nein" onclick="setGvStatusFilter('nein', this)">Nein</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="gv-filter-offen" onclick="setGvStatusFilter('offen', this)">Offen</button>
+                            </div>
+                        </div>
+
                         <div class="table-responsive" style="max-height: 430px;">
-                            <table class="table table-sm table-striped">
-                                <thead>
+                            <table class="table table-sm table-striped align-middle mb-0">
+                                <thead class="table-light sticky-top">
                                     <tr>
                                         <th style="cursor: pointer;" onclick="sortGvTable('name')">Name &#8645;</th>
                                         <th style="cursor: pointer;" onclick="sortGvTable('status')">Teilnahme &#8645;</th>
+                                        <th class="text-end" style="width: 135px;">Aktion</th>
                                     </tr>
                                 </thead>
                                 <tbody id="gv-anmelde-body" class="gv-anmelde-body">
-                                    <tr><td colspan="2" class="text-center text-muted">Bitte Event auswaehlen</td></tr>
+                                    <tr><td colspan="3" class="text-center text-muted">Bitte Event auswaehlen</td></tr>
                                 </tbody>
                             </table>
                         </div>
                         <div id="gv-anmelde-summary" class="mt-3 gv-anmelde-summary"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Manuelle GV-Teilnahme / E-Mail-Abmeldung erfassen -->
+    <div class="modal fade" id="gv-manual-rsvp-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow">
+                <div class="modal-header bg-dark text-white py-2">
+                    <h6 class="modal-title mb-0" id="gv-rsvp-modal-title"><i class="fas fa-user-check me-2 text-primary"></i>GV-Teilnahme verwalten</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                </div>
+                <div class="modal-body p-3">
+                    <input type="hidden" id="gv-rsvp-member-lizenz" value="">
+                    <input type="hidden" id="gv-rsvp-member-name" value="">
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                        <div>
+                            <div class="fw-bold fs-6 text-dark" id="gv-rsvp-display-name">-</div>
+                            <div class="text-muted small" id="gv-rsvp-display-meta">Lizenz / PIN: -</div>
+                        </div>
+                        <div id="gv-rsvp-current-badge"></div>
+                    </div>
+
+                    <label class="form-label fw-bold small text-muted text-uppercase mb-2">Teilnahmestatus festlegen:</label>
+                    <div class="btn-group w-100 mb-3" role="group">
+                        <input type="radio" class="btn-check" name="gv-rsvp-status-radio" id="gv-radio-nein" value="nein" onchange="onGvStatusRadioChanged('nein')">
+                        <label class="btn btn-outline-danger btn-sm fw-bold py-2" for="gv-radio-nein">
+                            <i class="fas fa-times-circle me-1"></i> Abgemeldet (Nein)
+                        </label>
+
+                        <input type="radio" class="btn-check" name="gv-rsvp-status-radio" id="gv-radio-ja" value="ja" onchange="onGvStatusRadioChanged('ja')">
+                        <label class="btn btn-outline-success btn-sm fw-bold py-2" for="gv-radio-ja">
+                            <i class="fas fa-check-circle me-1"></i> Angemeldet (Ja)
+                        </label>
+
+                        <input type="radio" class="btn-check" name="gv-rsvp-status-radio" id="gv-radio-offen" value="offen" onchange="onGvStatusRadioChanged('offen')">
+                        <label class="btn btn-outline-secondary btn-sm py-2" for="gv-radio-offen" title="Eintrag entfernen und wieder auf unentschieden setzen">
+                            <i class="fas fa-undo me-1"></i> Offen
+                        </label>
+                    </div>
+
+                    <!-- BEREICH: ABMELDUNG (NEIN) -->
+                    <div id="gv-rsvp-section-nein" class="p-3 bg-light rounded border mb-3">
+                        <label class="form-label small fw-bold text-danger mb-1">
+                            <i class="fas fa-comment-dots me-1"></i> Abmeldegrund:
+                        </label>
+                        <select class="form-select form-select-sm mb-2" id="gv-rsvp-reason-preset" onchange="onGvReasonPresetChanged(this.value)">
+                            <option value="Abmeldung via E-Mail">✉️ Abmeldung via E-Mail (Standard)</option>
+                            <option value="Abmeldung telefonisch / persönlich">📞 Abmeldung telefonisch / persönlich</option>
+                            <option value="Ferien / Auslandabwesend">✈️ Ferien / Auslandabwesend</option>
+                            <option value="Beruflich verhindert">💼 Beruflich verhindert</option>
+                            <option value="Krankheitsbedingt / Unfall">🩹 Krankheitsbedingt / Unfall</option>
+                            <option value="Familienanlass">👨‍👩‍👦 Familienanlass</option>
+                            <option value="custom">✏️ Eigene Begründung eingeben...</option>
+                        </select>
+                        <input type="text" class="form-control form-control-sm" id="gv-rsvp-reason-custom" placeholder="Details oder individuelle Bemerkung..." value="Abmeldung via E-Mail">
+                    </div>
+
+                    <!-- BEREICH: ANMELDUNG (JA) -->
+                    <div id="gv-rsvp-section-ja" class="p-3 bg-light rounded border mb-3 d-none">
+                        <div class="row g-2 mb-2">
+                            <div class="col-4">
+                                <label class="form-label small fw-bold mb-1">Personen:</label>
+                                <input type="number" class="form-control form-control-sm text-center" id="gv-rsvp-count" value="1" min="1" max="10">
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small fw-bold mb-1">Standard-Essen:</label>
+                                <input type="number" class="form-control form-control-sm text-center" id="gv-rsvp-essen" value="1" min="0" max="10">
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small fw-bold mb-1">Vegi-Essen:</label>
+                                <input type="number" class="form-control form-control-sm text-center" id="gv-rsvp-vegi" value="0" min="0" max="10">
+                            </div>
+                        </div>
+                        <div class="form-text small text-muted"><i class="fas fa-info-circle me-1"></i> Essen für das Mitglied und allfällige Begleitpersonen.</div>
+                    </div>
+
+                    <!-- BEREICH: OFFEN -->
+                    <div id="gv-rsvp-section-offen" class="alert alert-warning small py-2 px-3 mb-3 d-none">
+                        <i class="fas fa-exclamation-triangle me-1"></i> Der bestehende Eintrag wird aus dem Eventplaner gelöscht. Das Mitglied gilt danach wieder als <b>„Offen“</b> (noch nicht geantwortet) und würde beim Mahnlauf wieder berücksichtigt werden.
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-sm btn-primary px-3 fw-bold" id="gv-rsvp-save-btn" onclick="submitGvManualRSVP()">
+                        <i class="fas fa-save me-1"></i> Speichern
+                    </button>
                 </div>
             </div>
         </div>

@@ -17,6 +17,61 @@ function isTrue(val) {
     return false;
 }
 
+// === POLL-OPTIONEN PARSER (Tolerant für echtes JSON und Sheet-Map-Formate) ===
+function parsePollOptions(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map(item => {
+      if (typeof item === 'string') {
+        const p = parsePollOptions(item);
+        return p[0] || null;
+      }
+      return item;
+    }).filter(Boolean);
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    return [raw];
+  }
+
+  const str = String(raw).trim();
+  if (!str || str === '[]' || str === '{}') return [];
+
+  // 1. Reguläres JSON.parse
+  try {
+    const jsonRes = JSON.parse(str);
+    if (Array.isArray(jsonRes)) return jsonRes;
+    if (typeof jsonRes === 'object' && jsonRes !== null) return [jsonRes];
+  } catch(e) {}
+
+  // 2. Fallback für Map/Key-Value Formate wie {start=10:24, datum=2026-09-15, id=omttnl8qz, ende=12:24}
+  try {
+    const matches = str.match(/\{[^}]+\}/g);
+    if (matches && matches.length > 0) {
+      const result = [];
+      matches.forEach(item => {
+        const clean = item.replace(/[{}]/g, '').trim();
+        const obj = {};
+        clean.split(',').forEach(part => {
+          const eqIdx = part.indexOf('=');
+          if (eqIdx > -1) {
+            const k = part.substring(0, eqIdx).trim();
+            const v = part.substring(eqIdx + 1).trim();
+            if (k) obj[k] = v;
+          }
+        });
+        if (Object.keys(obj).length > 0) {
+          if (!obj.id) obj.id = 'opt_' + Math.random().toString(36).substring(2, 9);
+          result.push(obj);
+        }
+      });
+      if (result.length > 0) return result;
+    }
+  } catch(fallbackErr) {}
+
+  return [];
+}
+window.parsePollOptions = parsePollOptions;
+
 function formatSwissDate(dateVal) {
     if (!dateVal) return '-';
     let str = dateVal.toString().trim();
@@ -284,7 +339,11 @@ async function loadUmfragenData(force = false) {
     
     if(data.error) throw new Error(data.error);
 
-    umfragenState = Array.isArray(data) ? data : (data.events || []);
+    const rawEvents = Array.isArray(data) ? data : (data.events || []);
+    umfragenState = rawEvents.map(e => ({
+      ...e,
+      options: parsePollOptions(e.options)
+    }));
     renderUmfragenUI(container);
     setTimeout(preloadUmfragenAllDetails, 50);
   } catch (e) {

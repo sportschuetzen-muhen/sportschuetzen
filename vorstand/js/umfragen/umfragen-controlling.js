@@ -263,9 +263,8 @@ function fetchGVEventsEmbedded() {
   const selectors = document.querySelectorAll('.gv-event-selector, #gv-event-selector');
   if (selectors.length === 0) return;
   
-  // Verwende die bereits geladenen Events aus dem globalen umfragenState,
-  // anstatt unnötig erneut eine API-Anfrage ans Backend zu senden!
-  const events = umfragenState || [];
+  // Nur Events, die KEIN externes Gruppenschiessen sind (z.B. GV, Vereinsanlässe)
+  const events = (umfragenState || []).filter(e => !isTrue(e.schiessanlass));
   const html = '<option value="">-- Bitte wählen --</option>' +
     events.map(e => '<option value="' + escapeHtml(e.id) + '"' +
       (gvState.linked_event === e.id ? ' selected' : '') + '>' +
@@ -334,6 +333,77 @@ async function loadGVParticipants(eventId) {
     }
 }
 
+window.gvStatusFilter = 'alle';
+window.gvSearchQuery = '';
+
+function reloadGVParticipants() {
+    const dropdown = document.getElementById('gv-event-selector') || document.querySelector('.gv-event-selector');
+    const evId = dropdown ? dropdown.value : (gvState ? gvState.linked_event : null);
+    if (evId) {
+        if (window._gvParticipantsCache) delete window._gvParticipantsCache[evId];
+        loadGVParticipants(evId);
+    }
+}
+
+function setGvStatusFilter(status, btn) {
+    window.gvStatusFilter = status;
+    const group = document.getElementById('gv-status-filter-group');
+    if (group) {
+        group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    }
+    if (btn) btn.classList.add('active');
+    renderGvTableBody();
+}
+
+function filterGvTable() {
+    const input = document.getElementById('gv-search-input');
+    window.gvSearchQuery = input ? input.value.trim().toLowerCase() : '';
+    renderGvTableBody();
+}
+
+function resolveGvMemberLizenz(item) {
+    if (!item) return '';
+    if (item.lizenz && String(item.lizenz).trim()) {
+        let liz = String(item.lizenz).trim();
+        return liz.length <= 6 ? liz.padStart(6, '0') : liz;
+    }
+
+    if (window._mglData && Array.isArray(window._mglData)) {
+        const itemFull = String(item.name || '').trim().toLowerCase();
+        const itemVor = String(item.vorname || '').trim().toLowerCase();
+        const itemNach = String(item.nachname || '').trim().toLowerCase();
+        
+        const matched = window._mglData.find(m => {
+            const mNach = String(m.LastName || '').trim().toLowerCase();
+            const mVor = String(m.FirstName || '').trim().toLowerCase();
+            const mFull = `${mNach} ${mVor}`.trim();
+            const mFullAlt = `${mVor} ${mNach}`.trim();
+            
+            if (itemVor && itemNach && mVor === itemVor && mNach === itemNach) return true;
+            if (itemFull && (mFull === itemFull || mFullAlt === itemFull)) return true;
+            return false;
+        });
+
+        if (matched) {
+            const pin = String(matched.AddressNumber || matched.PersonNumber || '').trim();
+            if (pin) return pin.length <= 6 ? pin.padStart(6, '0') : pin;
+        }
+    }
+
+    if (typeof membersLookup !== 'undefined' && membersLookup) {
+        for (const key of Object.keys(membersLookup)) {
+            const m = membersLookup[key];
+            const mFull = `${m.LastName || ''} ${m.FirstName || ''}`.trim().toLowerCase();
+            if (mFull === String(item.name || '').trim().toLowerCase()) {
+                const pin = String(m.AddressNumber || m.PersonNumber || key).trim();
+                return pin.length <= 6 ? pin.padStart(6, '0') : pin;
+            }
+        }
+    }
+
+    return '';
+}
+
 function sortGvTable(field) {
     if (!window.currentGvData) return;
     window.gvSortDir = window.gvSortDir || { name: 1, status: 1 };
@@ -355,9 +425,9 @@ function renderGvTableBody() {
     const summaryDivs = document.querySelectorAll('.gv-anmelde-summary, #gv-anmelde-summary');
     if (tbodies.length === 0 || !window.currentGvData) return;
     
-    if(window.currentGvData.length === 0) {
+    if (window.currentGvData.length === 0) {
         tbodies.forEach(tb => {
-            tb.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Keine Daten gefunden.</td></tr>';
+            tb.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Keine Daten gefunden.</td></tr>';
         });
         summaryDivs.forEach(sd => {
             sd.innerHTML = '';
@@ -365,55 +435,128 @@ function renderGvTableBody() {
         return;
     }
     
+    // 1. Totale immer über den gesamten Datensatz berechnen
     let countJa = 0;
     let countNein = 0;
     let countOffen = 0;
     let countEssen = 0;
     let countVegi = 0;
 
-    const rowsHtml = window.currentGvData.map(a => {
-        let badgeStr = '';
-        if (a.status === 'ja') {
-            let essenInfo = '';
-            if (Number(a.essen) > 0 || Number(a.vegi) > 0) {
-                let parts = [];
-                if (Number(a.essen) > 0) parts.push(`${a.essen} Std`);
-                if (Number(a.vegi) > 0) parts.push(`${a.vegi} Vegi`);
-                essenInfo = ` (+Essen: ${parts.join(', ')})`;
-            }
-            badgeStr = `<span class="badge bg-success">Ja</span>${essenInfo}`;
+    window.currentGvData.forEach(a => {
+        const st = String(a.status || '').toLowerCase().trim();
+        if (st === 'ja' || st === 'true' || st === '1') {
             countJa++;
-            if(Number(a.essen) > 0) countEssen += Number(a.essen);
-            if(Number(a.vegi) > 0) countVegi += Number(a.vegi);
-        }
-        else if (a.status === 'nein') {
-            const rawReason = (a.grund || a.reason || '').toString().trim();
-            const grundText = rawReason ? ` <small class="text-muted fst-italic">💬 (${escapeHtml(rawReason)})</small>` : '';
-            badgeStr = `<span class="badge bg-danger">Nein</span>${grundText}`;
+            if (Number(a.essen) > 0) countEssen += Number(a.essen);
+            if (Number(a.vegi) > 0) countVegi += Number(a.vegi);
+        } else if (st === 'nein' || st === 'false' || st === '0') {
             countNein++;
-        }
-        else {
-            badgeStr = `<span class="badge bg-secondary">Offen</span>`;
+        } else {
             countOffen++;
         }
-        
-        return `
-        <tr>
-            <td>${escapeHtml(a.name)}</td>
-            <td>${badgeStr}</td>
-        </tr>`;
-    }).join('');
-
-    tbodies.forEach(tb => {
-        tb.innerHTML = rowsHtml;
     });
+
+    // 2. Filter-Buttons beschriften mit Zähler
+    const btnAlle = document.getElementById('gv-filter-alle');
+    const btnJa = document.getElementById('gv-filter-ja');
+    const btnNein = document.getElementById('gv-filter-nein');
+    const btnOffen = document.getElementById('gv-filter-offen');
+    if (btnAlle) btnAlle.innerText = `Alle (${window.currentGvData.length})`;
+    if (btnJa) btnJa.innerText = `Ja (${countJa})`;
+    if (btnNein) btnNein.innerText = `Nein (${countNein})`;
+    if (btnOffen) btnOffen.innerText = `Offen (${countOffen})`;
+
+    // 3. Daten filtern nach Suchtext und Status
+    const query = (window.gvSearchQuery || '').toLowerCase().trim();
+    const activeFilter = window.gvStatusFilter || 'alle';
+
+    const filteredData = window.currentGvData.filter(a => {
+        const st = String(a.status || '').toLowerCase().trim();
+        const normSt = (st === 'ja' || st === 'true' || st === '1') ? 'ja' : ((st === 'nein' || st === 'false' || st === '0') ? 'nein' : 'offen');
+        
+        if (activeFilter !== 'alle' && normSt !== activeFilter) return false;
+
+        if (query) {
+            const nameStr = String(a.name || '').toLowerCase();
+            const grundStr = String(a.grund || a.reason || '').toLowerCase();
+            if (!nameStr.includes(query) && !grundStr.includes(query)) return false;
+        }
+        return true;
+    });
+
+    if (filteredData.length === 0) {
+        tbodies.forEach(tb => {
+            tb.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Keine passenden Einträge für diese Filterkriterien.</td></tr>';
+        });
+    } else {
+        const rowsHtml = filteredData.map(a => {
+            const st = String(a.status || '').toLowerCase().trim();
+            const isJa = (st === 'ja' || st === 'true' || st === '1');
+            const isNein = (st === 'nein' || st === 'false' || st === '0');
+
+            let badgeStr = '';
+            if (isJa) {
+                let essenInfo = '';
+                if (Number(a.essen) > 0 || Number(a.vegi) > 0) {
+                    let parts = [];
+                    if (Number(a.essen) > 0) parts.push(`${a.essen} Std`);
+                    if (Number(a.vegi) > 0) parts.push(`${a.vegi} Vegi`);
+                    essenInfo = ` <span class="text-dark small ms-1">(Essen: ${parts.join(', ')})</span>`;
+                }
+                badgeStr = `<span class="badge bg-success">Ja</span>${essenInfo}`;
+            } else if (isNein) {
+                const rawReason = (a.grund || a.reason || '').toString().trim();
+                const grundText = rawReason ? ` <small class="text-muted fst-italic">💬 (${escapeHtml(rawReason)})</small>` : '';
+                badgeStr = `<span class="badge bg-danger">Nein</span>${grundText}`;
+            } else {
+                badgeStr = `<span class="badge bg-secondary">Offen</span>`;
+            }
+
+            const escName = escapeJs(a.name);
+            
+            // Aktionsbuttons
+            let actionBtns = '';
+            if (!isJa && !isNein) {
+                // Status Offen: Schnelle Abmeldung (Mail) + Bearbeiten
+                actionBtns = `
+                    <div class="d-flex justify-content-end gap-1">
+                        <button type="button" class="btn btn-outline-danger btn-xs py-0 px-1.5 write-protected" style="font-size:0.75rem;" title="Direkt als E-Mail-Abmeldung erfassen" onclick="openGvQuickAbmelden('${escName}')">
+                            <i class="fas fa-envelope-open-text me-1"></i>Abmelden
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-1 write-protected" style="font-size:0.75rem;" title="Teilnahme manuell erfassen" onclick="openGvEditModal('${escName}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </div>
+                `;
+            } else {
+                // Bereits beantwortet: Ändern Button
+                actionBtns = `
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-outline-primary btn-xs py-0 px-2 write-protected" style="font-size:0.75rem;" title="Antwort / Essen / Grund anpassen" onclick="openGvEditModal('${escName}')">
+                            <i class="fas fa-edit me-1"></i>Ändern
+                        </button>
+                    </div>
+                `;
+            }
+
+            return `
+            <tr>
+                <td><strong>${escapeHtml(a.name)}</strong></td>
+                <td>${badgeStr}</td>
+                <td class="text-end">${actionBtns}</td>
+            </tr>`;
+        }).join('');
+
+        tbodies.forEach(tb => {
+            tb.innerHTML = rowsHtml;
+        });
+    }
 
     const essenSummaryBadge = (countEssen + countVegi > 0)
         ? `<span class="text-info fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Essen Total: ${countEssen + countVegi} (Standard: ${countEssen}, Vegi: ${countVegi})</span>`
         : '';
 
     const summaryHtml = `
-        <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border mt-2">
+        <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded border mt-2 flex-wrap gap-2">
             <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-check-circle"></i> Zugesagt: ${countJa}</span>
             <span class="text-danger fw-bold" style="font-size:0.85rem;"><i class="fas fa-times-circle"></i> Abgesagt: ${countNein}</span>
             <span class="text-secondary fw-bold" style="font-size:0.85rem;"><i class="fas fa-question-circle"></i> Offen: ${countOffen}</span>
@@ -424,6 +567,199 @@ function renderGvTableBody() {
     summaryDivs.forEach(sd => {
         sd.innerHTML = summaryHtml;
     });
+}
+
+function openGvQuickAbmelden(memberName) {
+    openGvEditModal(memberName, 'nein', 'Abmeldung via E-Mail');
+}
+
+function openGvEditModal(memberName, forceStatus = null, forceReason = null) {
+    if (!window.currentGvData) return;
+    const member = window.currentGvData.find(m => String(m.name).trim() === String(memberName).trim());
+    if (!member) {
+        alert("Mitglied konnte nicht gefunden werden: " + memberName);
+        return;
+    }
+
+    const modalEl = document.getElementById('gv-manual-rsvp-modal');
+    if (!modalEl) return;
+
+    // Lizenz ermitteln
+    const lizenz = resolveGvMemberLizenz(member);
+
+    document.getElementById('gv-rsvp-member-name').value = member.name;
+    document.getElementById('gv-rsvp-member-lizenz').value = lizenz;
+    document.getElementById('gv-rsvp-display-name').innerText = member.name;
+    document.getElementById('gv-rsvp-display-meta').innerText = lizenz ? `Lizenz / PIN: ${lizenz}` : 'Lizenz: nicht in DB gefunden';
+
+    // Badge für aktuellen Status
+    const curBadge = document.getElementById('gv-rsvp-current-badge');
+    const curSt = String(member.status || '').toLowerCase().trim();
+    if (curSt === 'ja' || curSt === 'true' || curSt === '1') {
+        curBadge.innerHTML = '<span class="badge bg-success">Aktuell: Ja</span>';
+    } else if (curSt === 'nein' || curSt === 'false' || curSt === '0') {
+        curBadge.innerHTML = '<span class="badge bg-danger">Aktuell: Nein</span>';
+    } else {
+        curBadge.innerHTML = '<span class="badge bg-secondary">Aktuell: Offen</span>';
+    }
+
+    // Status vorbelegen
+    let targetStatus = forceStatus || (curSt === 'ja' || curSt === 'nein' ? curSt : 'nein');
+    
+    // Radios setzen
+    const radioNein = document.getElementById('gv-radio-nein');
+    const radioJa = document.getElementById('gv-radio-ja');
+    const radioOffen = document.getElementById('gv-radio-offen');
+
+    if (targetStatus === 'ja') radioJa.checked = true;
+    else if (targetStatus === 'offen') radioOffen.checked = true;
+    else radioNein.checked = true;
+
+    onGvStatusRadioChanged(targetStatus);
+
+    // Grund vorbelegen
+    const presetSelect = document.getElementById('gv-rsvp-reason-preset');
+    const customInput = document.getElementById('gv-rsvp-reason-custom');
+    const initialReason = forceReason || (member.grund || member.reason || 'Abmeldung via E-Mail');
+
+    let matchedPreset = false;
+    for (let opt of presetSelect.options) {
+        if (opt.value === initialReason) {
+            presetSelect.value = opt.value;
+            matchedPreset = true;
+            break;
+        }
+    }
+    if (!matchedPreset && initialReason) {
+        presetSelect.value = 'custom';
+    }
+    customInput.value = initialReason;
+
+    // Essenswahl vorbelegen
+    document.getElementById('gv-rsvp-count').value = Number(member.count) || 1;
+    document.getElementById('gv-rsvp-essen').value = member.essen !== undefined && member.essen !== "" ? Number(member.essen) : 1;
+    document.getElementById('gv-rsvp-vegi').value = member.vegi !== undefined && member.vegi !== "" ? Number(member.vegi) : 0;
+
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
+function onGvStatusRadioChanged(status) {
+    const secNein = document.getElementById('gv-rsvp-section-nein');
+    const secJa = document.getElementById('gv-rsvp-section-ja');
+    const secOffen = document.getElementById('gv-rsvp-section-offen');
+
+    if (secNein) secNein.classList.toggle('d-none', status !== 'nein');
+    if (secJa) secJa.classList.toggle('d-none', status !== 'ja');
+    if (secOffen) secOffen.classList.toggle('d-none', status !== 'offen');
+}
+
+function onGvReasonPresetChanged(presetVal) {
+    const customInput = document.getElementById('gv-rsvp-reason-custom');
+    if (!customInput) return;
+    if (presetVal !== 'custom') {
+        customInput.value = presetVal;
+    } else {
+        customInput.value = '';
+        customInput.focus();
+    }
+}
+
+async function submitGvManualRSVP() {
+    const name = document.getElementById('gv-rsvp-member-name').value;
+    const lizenz = document.getElementById('gv-rsvp-member-lizenz').value;
+    const saveBtn = document.getElementById('gv-rsvp-save-btn');
+    const modalEl = document.getElementById('gv-manual-rsvp-modal');
+
+    const state = getGVState();
+    const eventId = state ? state.linked_event : null;
+
+    if (!eventId) {
+        alert("Fehler: Kein verknüpftes GV-Event ausgewählt.");
+        return;
+    }
+    if (!lizenz) {
+        alert(`Fehler: Für '${name}' konnte keine Lizenznummer / PIN gefunden werden. Bitte prüfe die Mitglieder-Datenbank.`);
+        return;
+    }
+
+    const selectedRadio = document.querySelector('input[name="gv-rsvp-status-radio"]:checked');
+    const statusVal = selectedRadio ? selectedRadio.value : 'nein';
+
+    let attendingParam = 'false';
+    let countVal = 1;
+    let essenVal = 0;
+    let vegiVal = 0;
+    let grundVal = '';
+
+    if (statusVal === 'ja') {
+        attendingParam = 'true';
+        countVal = parseInt(document.getElementById('gv-rsvp-count').value, 10) || 1;
+        essenVal = parseInt(document.getElementById('gv-rsvp-essen').value, 10) || 0;
+        vegiVal = parseInt(document.getElementById('gv-rsvp-vegi').value, 10) || 0;
+    } else if (statusVal === 'nein') {
+        attendingParam = 'false';
+        grundVal = document.getElementById('gv-rsvp-reason-custom').value.trim() || 'Abmeldung';
+    } else if (statusVal === 'offen') {
+        attendingParam = 'offen'; // bzw. delete
+    }
+
+    const originalBtnText = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Speichern...';
+
+    try {
+        const payload = {
+            action: 'setRSVP',
+            eventid: String(eventId),
+            lizenz: lizenz,
+            attending: attendingParam,
+            count: countVal,
+            essen: essenVal,
+            vegi: vegiVal,
+            grund: grundVal
+        };
+
+        const res = await apiFetch('umfragen', payload, 'POST');
+        const data = await res.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        // Lokalen State in window.currentGvData aktualisieren
+        if (window.currentGvData) {
+            const memberItem = window.currentGvData.find(m => String(m.name).trim() === String(name).trim());
+            if (memberItem) {
+                memberItem.status = (statusVal === 'offen') ? 'offen' : statusVal;
+                memberItem.grund = grundVal;
+                memberItem.count = countVal;
+                memberItem.essen = essenVal;
+                memberItem.vegi = vegiVal;
+                memberItem.lizenz = lizenz;
+            }
+        }
+
+        // Cache aktualisieren / invalidieren
+        if (window._gvParticipantsCache && window._gvParticipantsCache[eventId]) {
+            window._gvParticipantsCache[eventId] = window.currentGvData;
+        }
+
+        renderGvTableBody();
+
+        bootstrap.Modal.getInstance(modalEl)?.hide();
+
+        const toastMsg = (statusVal === 'nein')
+            ? `✅ '${name}' erfolgreich als abgemeldet erfasst (${grundVal}).`
+            : ((statusVal === 'ja') ? `✅ '${name}' erfolgreich angemeldet!` : `✅ Status von '${name}' auf 'Offen' zurückgesetzt.`);
+        
+        console.log("GV Manual RSVP success:", toastMsg);
+
+    } catch (err) {
+        alert("Fehler beim Speichern der Teilnahme: " + err.message);
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalBtnText;
+    }
 }
 
 function getGVMemberMails() {

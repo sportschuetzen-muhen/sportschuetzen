@@ -1018,9 +1018,14 @@ function navTo(viewId, el) {
         window.clearUnsaved();
     }
 
-    // 1. Nav-Links
-    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    if (el) el.classList.add('active');
+    // 1. Nav-Links (nur in Sidebar, um Sub-Tabs in Modulen nicht zu beeinflussen)
+    document.querySelectorAll('#sidebar .nav-link').forEach(l => l.classList.remove('active'));
+    if (el && el.classList.contains('nav-link')) {
+        el.classList.add('active');
+    } else {
+        const sidebarLink = document.querySelector(`#sidebar .nav-link[onclick*="'${viewId}'"]`);
+        if (sidebarLink) sidebarLink.classList.add('active');
+    }
 
     // 2. Teardowns (VOR dem View-Wechsel)
     if (viewId !== 'manager'  && typeof teardownManager  === 'function') teardownManager();
@@ -1084,6 +1089,7 @@ function navTo(viewId, el) {
     if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadMitgliederData();
     if (viewId === 'buchhaltung'   && typeof renderBuchhaltung     === 'function') renderBuchhaltung();
     if (viewId === 'galerie'       && typeof initGalerieManager    === 'function') initGalerieManager();
+    if (viewId === 'news'          && typeof initNewsView          === 'function') initNewsView();
 
 }
 

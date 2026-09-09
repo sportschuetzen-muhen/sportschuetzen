@@ -9,7 +9,10 @@ function ensureTermineStylesOnce() {
   s.id = 'termine-inline-style';
   s.textContent = `
     /* Alles scoped aufs Termine-Modul */
-    #termine-container { position: relative; }
+    #termine-container { 
+      position: relative; 
+      padding-bottom: 90px;
+    }
 
     #termine-container .termine-overlay {
       position: absolute; inset: 0;
@@ -22,6 +25,12 @@ function ensureTermineStylesOnce() {
     #termine-container .row-provisorisch { background: #fff3cd; } 
     #termine-container .row-warn { background: #fff8e1; }       
     #termine-container .row-abgesagt { opacity: .6; text-decoration: line-through; }
+
+    @media (max-width: 1199px) {
+      #termine-container {
+        padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+      }
+    }
   `;
   document.head.appendChild(s);
 }

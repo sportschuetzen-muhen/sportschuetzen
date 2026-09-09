@@ -328,6 +328,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 icon.style.display = 'inline-block';
                 text.style.display = 'block';
                 base64Images = [];
+                const docTextEl = document.getElementById('news-doc-text');
+                if (docTextEl) {
+                    docTextEl.innerText = "Klicken Sie hier, um eine Word-Datei (.docx) hochzuladen.";
+                }
+                window.switchNewsMode('ki');
                 
             } catch (err) {
                 console.error(err);
@@ -341,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- NEU: TAB-UMSCHALTER (KI vs DOKUMENT) ---
+    // --- TAB-UMSCHALTER (KI vs DOKUMENT) - ZUVERLÄSSIG & DETERMINISTISCH ---
     window.switchNewsMode = function(mode) {
         const generateBtn = document.getElementById('news-generate-btn');
         const publishBtn = document.getElementById('news-publish-btn');
@@ -349,50 +354,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const keywordsTextarea = document.getElementById('news-keywords');
         const kiTab = document.getElementById('ki-tab');
         const docTab = document.getElementById('doc-tab');
+        const kiPanel = document.getElementById('ki-panel');
+        const docPanel = document.getElementById('doc-panel');
+        const draftEditor = document.getElementById('news-draft-editor');
 
         if (mode === 'ki') {
+            // Tab Buttons anpassen
             if (kiTab) {
-                kiTab.classList.add('text-primary');
+                kiTab.classList.add('active', 'text-primary');
                 kiTab.classList.remove('text-muted');
+                kiTab.setAttribute('aria-selected', 'true');
             }
             if (docTab) {
+                docTab.classList.remove('active', 'text-primary');
                 docTab.classList.add('text-muted');
-                docTab.classList.remove('text-primary');
+                docTab.setAttribute('aria-selected', 'false');
             }
             
-            // Show generate button
+            // Tab Pane 1 anzeigen, Tab Pane 2 ausblenden
+            if (kiPanel) {
+                kiPanel.classList.add('active', 'show');
+                kiPanel.style.display = 'block';
+            }
+            if (docPanel) {
+                docPanel.classList.remove('active', 'show');
+                docPanel.style.display = 'none';
+            }
+            
+            // KI-Generieren Button anzeigen
             if (generateBtn) generateBtn.classList.remove('d-none');
             
-            // Hide publish button unless there is already content in the editor
-            const draftEditor = document.getElementById('news-draft-editor');
-            if (draftContainer && publishBtn) {
-                if (draftContainer.style.display === 'none' || !draftEditor || draftEditor.innerHTML.trim() === '') {
-                    publishBtn.classList.add('d-none');
-                } else {
-                    publishBtn.classList.remove('d-none');
-                }
-            }
-            
-            // Make keywords required in KI mode
-            if (keywordsTextarea) keywordsTextarea.setAttribute('required', 'true');
-        } else {
-            if (docTab) {
-                docTab.classList.add('text-primary');
-                docTab.classList.remove('text-muted');
-            }
-            if (kiTab) {
-                kiTab.classList.add('text-muted');
-                kiTab.classList.remove('text-primary');
-            }
-
-            // Hide generate button (not needed for ready texts)
-            if (generateBtn) generateBtn.classList.add('d-none');
-            
-            // Im Fertigtext-Modus den Editor direkt einblenden, damit man sofort per Strg+V einfügen oder schreiben kann
-            if (draftContainer) draftContainer.style.display = 'block';
-
-            // Show publish button if there is text in the editor
-            const draftEditor = document.getElementById('news-draft-editor');
+            // Publizieren-Button nur zeigen wenn bereits Text im Entwurf vorhanden ist
             if (publishBtn) {
                 if (draftEditor && draftEditor.innerHTML.trim() !== '') {
                     publishBtn.classList.remove('d-none');
@@ -401,8 +393,77 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // Keywords not required in Doc mode
+            // Im KI-Modus: Stichworte sind Pflicht
+            if (keywordsTextarea) keywordsTextarea.setAttribute('required', 'true');
+        } else {
+            // Tab Buttons anpassen
+            if (docTab) {
+                docTab.classList.add('active', 'text-primary');
+                docTab.classList.remove('text-muted');
+                docTab.setAttribute('aria-selected', 'true');
+            }
+            if (kiTab) {
+                kiTab.classList.remove('active', 'text-primary');
+                kiTab.classList.add('text-muted');
+                kiTab.setAttribute('aria-selected', 'false');
+            }
+
+            // Tab Pane 2 anzeigen, Tab Pane 1 ausblenden
+            if (docPanel) {
+                docPanel.classList.add('active', 'show');
+                docPanel.style.display = 'block';
+            }
+            if (kiPanel) {
+                kiPanel.classList.remove('active', 'show');
+                kiPanel.style.display = 'none';
+            }
+
+            // KI-Generieren Button im Fertigtext-Modus ausblenden
+            if (generateBtn) generateBtn.classList.add('d-none');
+            
+            // Im Fertigtext-Modus den Editor direkt einblenden für Strg+V oder Word-Import
+            if (draftContainer) draftContainer.style.display = 'block';
+
+            // Publizieren-Button anzeigen falls schon Text vorhanden ist
+            if (publishBtn) {
+                if (draftEditor && draftEditor.innerHTML.trim() !== '') {
+                    publishBtn.classList.remove('d-none');
+                } else {
+                    publishBtn.classList.add('d-none');
+                }
+            }
+            
+            // Stichworte im Dokumenten-Modus nicht verpflichtend
             if (keywordsTextarea) keywordsTextarea.removeAttribute('required');
+        }
+    };
+
+    // Zusätzliche Event-Listener für saubere Tab-Klicks registrieren
+    const kiTabBtn = document.getElementById('ki-tab');
+    const docTabBtn = document.getElementById('doc-tab');
+    if (kiTabBtn) {
+        kiTabBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.switchNewsMode('ki');
+        });
+    }
+    if (docTabBtn) {
+        docTabBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.switchNewsMode('doc');
+        });
+    }
+
+    // Initialisierungs-Helfer beim Aufruf des Moduls
+    window.initNewsView = function() {
+        const docTab = document.getElementById('doc-tab');
+        const isDocActive = docTab && docTab.classList.contains('active');
+        window.switchNewsMode(isDocActive ? 'doc' : 'ki');
+
+        const modelSelect = document.getElementById('news-model');
+        const modelDesc = document.getElementById('news-model-desc');
+        if (modelSelect && modelSelect.options.length <= 3 && typeof window.initDynamicModels === 'function') {
+            window.initDynamicModels(modelSelect, modelDesc, 'gemini-2.5-flash', 'news');
         }
     };
 
