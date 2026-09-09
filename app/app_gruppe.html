@@ -16,7 +16,9 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; 
             background: var(--bg); 
             margin: 0; 
-            padding: 15px; 
+            padding: 15px;
+            padding-bottom: calc(100px + env(safe-area-inset-bottom));
+            -webkit-overflow-scrolling: touch;
             color: var(--text); 
             /* Verhindert Gummiband-Effekt des Browsers, damit unser Spinner Priorität hat */
             overscroll-behavior-y: contain; 

@@ -1,8 +1,9 @@
 const WORKER_TERMINE_URL = "https://termine.dan-hunziker73.workers.dev?action=getTermine";
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzi9BVdewuF-HTXB1ruwdap5C1pLyobj6XZsgJV6XFLVQDLUU3jPYvx727tzC1y3NM/exec";
 const EVENTPLANER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev";
+const GOOGLE_SCRIPT_URL = `${EVENTPLANER_URL}?action=getHausKalender`;
 
 let allTermine = [];
+const pollResultsCache = {};
 let touchStart = 0;
 const spinner = document.getElementById('pull-spinner');
 
@@ -130,6 +131,22 @@ async function loadTermine() {
             safeFetch(`${EVENTPLANER_URL}?action=getRSVPEvents&lizenz=${activeLizenz}`)
         ]);
 
+        // Poll-Ergebnisse im Hintergrund vorladen für blitzschnelle Anzeige
+        const pollEvents = (resRSVP || []).filter(t => t.options && t.options.length > 0);
+        if (pollEvents.length > 0) {
+            await Promise.all(pollEvents.map(async pe => {
+                try {
+                    const r = await fetch(`${EVENTPLANER_URL}?action=getPollResults&eventid=${encodeURIComponent(pe.id)}`);
+                    if (r.ok) {
+                        const data = await r.json();
+                        if (data && !data.error) {
+                            pollResultsCache[pe.id] = data;
+                        }
+                    }
+                } catch(e) {}
+            }));
+        }
+
         let rawData = [
             ...resWorker.map(t => ({...t, typ: 'verein'})),
             ...resGoogle.map(t => ({...t, typ: 'extern'})),
@@ -139,7 +156,9 @@ async function loadTermine() {
                 isRSVP: true, 
                 titel: t.title,
                 frage_begleitung: t.frage_begleitung,
-                frage_essen: t.frage_essen
+                frage_essen: t.frage_essen,
+                options: t.options || [],
+                optionids: t.optionids || ''
             }))
         ];
 
@@ -231,6 +250,61 @@ async function loadTermine() {
     }
 }
 
+
+// --- DOKUMENT-URL HILFSFUNKTIONEN (AUCH FÜR DRIVE-IDs) ---
+function resolveDocUrl(raw) {
+    if (!raw) return '';
+    let str = String(raw).trim();
+    if (!str) return '';
+    // Falls bereits vollständige URL
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+        return str;
+    }
+    // Falls reine Google Drive File-ID (z.B. 17XXN4QbHa1Dv2RLnjbs9awhoO0yGcSru)
+    return `https://drive.google.com/file/d/${str}/view?usp=sharing`;
+}
+
+function buildDocButtonsHtml(t) {
+    if (!t.dokument_url) return '';
+    const urls = String(t.dokument_url).split(',').map(u => u.trim()).filter(Boolean);
+    if (urls.length === 0) return '';
+
+    const isPoll = t.options && t.options.length > 0;
+    let html = `<div style="margin-top: 8px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%;">`;
+    urls.forEach((u, idx) => {
+        const fullUrl = resolveDocUrl(u);
+        let label = isPoll ? '📄 Schiessplan / Dokument öffnen' : '📄 Dokument / Beilage';
+        if (urls.length > 1) {
+            if (!isPoll && idx === 0) label = '📄 1. Einladung zur GV';
+            else if (!isPoll && idx === 1) label = '📄 2. Protokoll GV';
+            else if (!isPoll && idx === 2) label = '📄 3. Jahresbericht';
+            else if (isPoll && idx === 0) label = '📄 1. Schiessplan / Beilage';
+            else label = `📄 Beilage ${idx + 1}`;
+        }
+        html += `
+            <a href="${fullUrl}" target="_blank" rel="noopener" class="hero-doc-btn" style="margin: 0; width: 85%; max-width: 280px; box-sizing: border-box;">
+                ${label}
+            </a>
+        `;
+    });
+    html += `</div>`;
+    return html;
+}
+
+function buildDetailsHtml(t) {
+    if (!t.details) return '';
+    return `
+        <div style="margin-top: 10px; margin-bottom: 10px; width: 100%;">
+            <button class="hero-details-toggle" type="button" onclick="const content = document.getElementById('details-content-${t.id}'); content.style.display = content.style.display === 'none' ? 'block' : 'none'; this.textContent = content.style.display === 'none' ? '📝 Details & Infos anzeigen' : '✕ Details ausblenden';">
+                📝 Details & Infos anzeigen
+            </button>
+            <div id="details-content-${t.id}" class="hero-details-content" style="display: none;">
+                ${t.details}
+            </div>
+        </div>
+    `;
+}
+
 function renderTermine(data, activeLizenz) {
     const wrap = document.getElementById("termine");
     const heroWrap = document.getElementById("hero-rsvps");
@@ -289,6 +363,12 @@ function renderTermine(data, activeLizenz) {
         const yearVal = dObj.getFullYear();
         const subLine = (yearVal !== currentYear) ? `${weekday} '${yearVal.toString().substring(2)}` : weekday;
 
+        // POLL-KARTE (Auswaertsschiessen mit Optionen)
+        if (t.isRSVP && t.options && t.options.length > 0 && heroWrap) {
+            renderPollCard(t, heroWrap);
+            return;
+        }
+
         // HERO CARD RENDERING
         if (t.isRSVP && heroWrap) {
             const hasAnswered = t.attending === true || t.attending === "true" || t.attending === false || t.attending === "false";
@@ -306,25 +386,74 @@ function renderTermine(data, activeLizenz) {
                 onYesClick = `openRSVPForm('${t.id}', ${!!t.frage_begleitung}, ${!!t.frage_essen}, ${cCount}, ${cEssen}, ${cVegi})`;
             }
 
+            let onNoClick = `openAbmeldeForm('${t.id}')`;
+            if (t.frage_grund === false || t.frage_grund === "false") {
+                onNoClick = `submitRSVP('${t.id}', false)`;
+            }
+
+            let docButton = '';
+            if (t.dokument_url) {
+                const urls = t.dokument_url.split(',').map(u => u.trim()).filter(Boolean);
+                docButton = `<div style="margin-top: 5px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%;">`;
+                urls.forEach((url, idx) => {
+                    let label = `📄 Dokument / Beilage`;
+                    if (urls.length > 1) {
+                        if (idx === 0) label = `📄 1. Einladung zur GV`;
+                        else if (idx === 1) label = `📄 2. Protokoll GV`;
+                        else if (idx === 2) label = `📄 3. Jahresbericht`;
+                        else label = `📄 Beilage ${idx + 1}`;
+                    } else {
+                        label = `📄 Einladung / Dokument öffnen`;
+                    }
+                    docButton += `
+                        <a href="${url}" target="_blank" class="hero-doc-btn" style="margin: 0; width: 85%; max-width: 280px; box-sizing: border-box;">
+                             ${label}
+                        </a>
+                    `;
+                });
+                docButton += `</div>`;
+            }
+
+            let detailsBlock = '';
+            if (t.details) {
+                detailsBlock = `
+                    <div style="margin-top: 10px; margin-bottom: 10px; width: 100%;">
+                        <button class="hero-details-toggle" type="button" onclick="const content = document.getElementById('details-content-${t.id}'); content.style.display = content.style.display === 'none' ? 'block' : 'none'; this.textContent = content.style.display === 'none' ? '📝 Details & Traktanden anzeigen' : '✕ Details ausblenden';">
+                            📝 Details & Traktanden anzeigen
+                        </button>
+                        <div id="details-content-${t.id}" class="hero-details-content" style="display: none;">
+                            ${t.details}
+                        </div>
+                    </div>
+                `;
+            }
+
             let bodyContent = '';
             
             if (isAttending) {
                 bodyContent = `<div class="hero-chip success" style="margin-bottom:0; align-self:center;">✅ Angemeldet</div>`;
+                if (t.dokument_url) bodyContent += docButton;
+                if (t.details) bodyContent += detailsBlock;
                 if (t.frage_begleitung || t.frage_essen) {
                     bodyContent += `<button class="hero-link" style="color:var(--primary); font-weight:bold; margin-top:5px;" onclick="${onYesClick}">Details ändern</button>`;
                 }
-                bodyContent += `<button class="hero-link" style="margin-top:5px;" onclick="openAbmeldeForm('${t.id}')">Absagen</button>`;
+                bodyContent += `<button class="hero-link" style="margin-top:5px;" onclick="${onNoClick}">Absagen</button>`;
 
             } else if (hasAnswered && !isAttending) {
-                bodyContent = `<div class="hero-chip error" style="align-self:center;">❌ Abgemeldet</div><button class="hero-link" onclick="${onYesClick}">Doch Anmelden</button>`;
+                bodyContent = `<div class="hero-chip error" style="align-self:center;">❌ Abgemeldet</div>`;
+                if (t.dokument_url) bodyContent += docButton;
+                if (t.details) bodyContent += detailsBlock;
+                bodyContent += `<button class="hero-link" onclick="${onYesClick}">Doch Anmelden</button>`;
             } else {
                 bodyContent = `
                     <h3 style="margin-top:0; color:#1e293b; font-size:1.2rem;">${t.titel}</h3>
                     <p style="color:#64748b; font-size:0.9rem; font-weight:600; margin-bottom:15px;">📅 ${dateDisplay} ${yearVal !== currentYear ? yearVal : ''}</p>
+                    ${docButton}
+                    ${detailsBlock}
                     <p class="hero-subtitle">Bist du dabei?</p>
                     <div class="hero-actions">
                         <button class="hero-btn success" onclick="${onYesClick}">Ja, sicher</button>
-                        <button class="hero-btn error" onclick="openAbmeldeForm('${t.id}')">Nein</button>
+                        <button class="hero-btn error" onclick="${onNoClick}">Nein</button>
                     </div>`;
             }
 
@@ -380,6 +509,14 @@ function renderTermine(data, activeLizenz) {
                 </div>
                 ${t.status === 'provisorisch' ? '<span class="badge-prov">Provisorisch</span>' : ''}
                 ${isExtern ? '<span class="badge-extern">Haus belegt</span>' : ''}
+                ${t.dokument_url ? `
+                    <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:5px;">
+                        ${t.dokument_url.split(',').map((url, idx, arr) => `
+                            <a href="${url.trim()}" target="_blank" class="badge-doc">
+                                📄 ${arr.length > 1 ? `Dokument ${idx + 1}` : 'Dokument / Einladung'}
+                            </a>
+                        `).join('')}
+                    </div>` : ''}
             </div>
         </div>`;
     });
@@ -819,6 +956,300 @@ window.submitRSVP = async function(eventId, attending) {
     } catch(e) { 
         console.error(e);
         alert("Fehler: Deine Antwort konnte nicht gespeichert werden. Bitte versuche es erneut.");
+    }
+};
+
+
+// ============================================================
+// POLL-KARTE: Auswärtsschiessen mit Mehrfach-Checkboxen & Telegram-Style Bars
+// ============================================================
+
+function renderPollCard(t, heroWrap) {
+    const months = ["Jan.", "Feb.", "März", "April", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez."];
+    const days   = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+    function fmtOption(opt) {
+        if (!opt.datum) return opt.label || '?';
+        const d = new Date(opt.datum + 'T12:00:00');
+        const weekday = days[d.getDay()];
+        const dateStr = `${d.getDate()}. ${months[d.getMonth()]}`;
+        const timeStr = (opt.start && opt.ende) ? ` ${opt.start} - ${opt.ende} Uhr` : (opt.start ? ` ${opt.start} Uhr` : '');
+        return `${weekday} ${dateStr}${timeStr}`;
+    }
+
+    const votedIds = t.optionids ? String(t.optionids).split(',').map(s => s.trim()).filter(Boolean) : [];
+    const hasVoted = votedIds.length > 0;
+    const isAbsent = (t.attending === false || t.attending === 'false') && !hasVoted;
+    const isEditing = !!t.isEditing;
+
+    // Results-Modus anzeigen wenn bereits abgestimmt oder abgemeldet, und nicht im Editiermodus
+    const showResults = (hasVoted || isAbsent) && !isEditing;
+
+    const dateRange = (() => {
+        if (!t.options || t.options.length === 0) return '';
+        const dates = t.options.filter(o => o.datum).map(o => new Date(o.datum + 'T12:00:00'));
+        if (dates.length === 0) return '';
+        const minD = new Date(Math.min(...dates.map(d => d.getTime())));
+        const maxD = new Date(Math.max(...dates.map(d => d.getTime())));
+        if (minD.toDateString() === maxD.toDateString()) return `${minD.getDate()}. ${months[minD.getMonth()]}`;
+        return `${minD.getDate()}. ${months[minD.getMonth()]} – ${maxD.getDate()}. ${months[maxD.getMonth()]}`;
+    })();
+
+    const cardId = `rsvp-${t.id}`;
+    const results = pollResultsCache[t.id] || null;
+
+    let cardHtml = '';
+
+    if (showResults) {
+        // --- RESULTS VIEW (Telegram & Doodle Style) ---
+        const statusClass = isAbsent ? 'absent' : 'success';
+        const statusText = isAbsent 
+            ? '❌ Du hast für diese Termine abgesagt' 
+            : `✅ Deine Auswahl ist erfasst (${votedIds.length} Termin${votedIds.length !== 1 ? 'e' : ''} ausgewählt)`;
+
+        const counts = (results && results.counts) || {};
+        const names  = (results && results.names) || {};
+        const total  = (results && results.totalVoted) || 0;
+
+        const resultsListHtml = (t.options || []).map((opt, i) => {
+            const optId = String(opt.id || i);
+            const label = fmtOption(opt);
+            const isMyChoice = votedIds.includes(optId);
+            const voteCount = counts[optId] || 0;
+            const pct = total > 0 ? Math.round((voteCount / total) * 100) : 0;
+            const voterList = (names[optId] || []).map(n => {
+                const s = String(n).trim();
+                if (/^\d+$/.test(s)) {
+                    const curUser = JSON.parse(localStorage.getItem('sportschuetzen_user') || '{}');
+                    if (curUser && curUser.lizenz && String(curUser.lizenz).padStart(6, '0') === s.padStart(6, '0')) {
+                        return curUser.firstname || curUser.vorname || curUser.name || n;
+                    }
+                    const u = (allUsers || []).find(x => String(x.lizenz || x.id || '').padStart(6, '0') === s.padStart(6, '0'));
+                    if (u) return u.firstname || u.vorname || u.name || n;
+                }
+                return n;
+            }).join(', ');
+
+            return `
+            <div class="poll-result-item ${isMyChoice ? 'my-choice' : ''}">
+                <div class="poll-result-header">
+                    <div class="poll-result-title">
+                        <span>${label}</span>
+                        ${isMyChoice ? '<span class="poll-my-badge">Deine Wahl</span>' : ''}
+                    </div>
+                    <div class="poll-result-percent">
+                        ${pct}% <small>(${voteCount} ${voteCount === 1 ? 'Stimme' : 'Stimmen'})</small>
+                    </div>
+                </div>
+                <div class="poll-bar-track">
+                    <div class="poll-bar-fill ${isMyChoice ? 'own-vote' : ''}" style="width: ${pct}%;"></div>
+                </div>
+                ${voterList ? `<div class="poll-voter-names">👥 ${voterList}</div>` : ''}
+            </div>`;
+        }).join('');
+
+        cardHtml = `
+        <div class="poll-card compact" id="${cardId}">
+            <div class="compact-header" onclick="window.togglePollDetails('${t.id}')">
+                <div class="compact-info">
+                    <strong>${t.titel}</strong>
+                    <span>🗳️ Umfrage • 📅 ${dateRange} ${total > 0 ? `• ${total} Teilnehmer` : ''}</span>
+                </div>
+                <div class="hero-chip ${isAbsent ? 'error' : 'success'}" style="margin:0; padding:6px 12px; font-size:1.2rem;">
+                    ${isAbsent ? '❌' : '✅'}
+                </div>
+            </div>
+            <div class="compact-body" id="poll-body-${t.id}" style="display:none; padding:16px;">
+                <div class="poll-status-banner ${statusClass}">
+                    ${statusText}
+                </div>
+                ${buildDocButtonsHtml(t)}
+                ${buildDetailsHtml(t)}
+
+                <div class="poll-results-list" id="poll-results-list-${t.id}">
+                    ${resultsListHtml}
+                </div>
+
+                <div class="poll-results-actions">
+                    <button type="button" class="poll-btn-edit" onclick="window.reopenPollVote('${t.id}')">
+                        ✏️ Auswahl ändern
+                    </button>
+                    ${!isAbsent 
+                        ? `<button type="button" class="poll-btn-absagen" onclick="submitPollAbsent('${t.id}')">Absagen</button>` 
+                        : `<button type="button" class="poll-btn-edit" onclick="window.reopenPollVote('${t.id}')">Doch teilnehmen</button>`
+                    }
+                </div>
+            </div>
+        </div>`;
+
+    } else {
+        // --- VOTING MODE (Neue Abstimmung oder Bearbeitungsmodus) ---
+        const optionsHtml = (t.options || []).map((opt, i) => {
+            const optId = String(opt.id || i);
+            const label = fmtOption(opt);
+            const isChecked = votedIds.includes(optId);
+
+            return `
+            <label class="poll-select-card ${isChecked ? 'selected' : ''}" for="poll-opt-${t.id}-${i}">
+                <div class="poll-select-header">
+                    <input type="checkbox" id="poll-opt-${t.id}-${i}" name="poll-${t.id}" value="${optId}"
+                        ${isChecked ? 'checked' : ''}
+                        onchange="this.closest('.poll-select-card').classList.toggle('selected', this.checked)">
+                    <span class="poll-select-label">${label}</span>
+                </div>
+            </label>`;
+        }).join('');
+
+        cardHtml = `
+        <div class="poll-card" id="${cardId}">
+            <div class="poll-top-badge">🗳️ Terminumfrage</div>
+            <h3 class="poll-title">${t.titel}</h3>
+            <div class="poll-meta">📅 ${dateRange}</div>
+            
+            <div class="poll-prompt-box">
+                Welche Termine passen dir? (Mehrfachauswahl möglich)
+            </div>
+            ${buildDocButtonsHtml(t)}
+            ${buildDetailsHtml(t)}
+
+            <div class="poll-voting-list" id="poll-options-${t.id}">
+                ${optionsHtml}
+            </div>
+
+            <div class="poll-voting-actions">
+                <button type="button" class="poll-btn-submit" onclick="submitPollVote('${t.id}')">
+                    ${isEditing ? 'Auswahl aktualisieren' : 'Antwort senden'}
+                </button>
+                ${isEditing ? `
+                    <button type="button" class="poll-btn-cancel" onclick="window.cancelPollEdit('${t.id}')">
+                        Abbrechen
+                    </button>
+                ` : ''}
+                <button type="button" class="poll-btn-cant" onclick="submitPollAbsent('${t.id}')">
+                    Keiner dieser Termine passt mir (Absagen)
+                </button>
+            </div>
+        </div>`;
+    }
+
+    heroWrap.insertAdjacentHTML('beforeend', cardHtml);
+
+    // Falls Ergebnisse noch nicht im Cache waren und wir im Results-Mode sind, asynchron nachladen
+    if (showResults && !results) {
+        fetchPollResultsAsync(t.id, (freshResults) => {
+            pollResultsCache[t.id] = freshResults;
+            const cardEl = document.getElementById(cardId);
+            if (cardEl) {
+                const wasOpen = document.getElementById(`poll-body-${t.id}`)?.style.display === 'block';
+                const tempWrap = document.createElement('div');
+                renderPollCard(t, tempWrap);
+                if (tempWrap.firstElementChild) {
+                    cardEl.replaceWith(tempWrap.firstElementChild);
+                    if (wasOpen) {
+                        const newBody = document.getElementById(`poll-body-${t.id}`);
+                        if (newBody) newBody.style.display = 'block';
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Hilfsfunktion: Poll-Ergebnisse asynchron laden
+async function fetchPollResultsAsync(eventId, callback) {
+    try {
+        const res = await fetch(`${EVENTPLANER_URL}?action=getPollResults&eventid=${encodeURIComponent(eventId)}`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && !data.error) callback(data);
+        }
+    } catch(e) {
+        console.warn('Poll-Ergebnisse konnten nicht geladen werden:', e);
+    }
+}
+
+window.togglePollDetails = function(eventId) {
+    const body = document.getElementById(`poll-body-${eventId}`);
+    if (!body) return;
+    body.style.display = (body.style.display === 'none' || !body.style.display) ? 'block' : 'none';
+};
+
+window.reopenPollVote = function(eventId) {
+    const t = allTermine.find(x => String(x.id) === String(eventId));
+    if (!t) return;
+    const card = document.getElementById(`rsvp-${eventId}`);
+    if (!card) return;
+
+    const tempWrap = document.createElement('div');
+    renderPollCard({ ...t, isEditing: true }, tempWrap);
+    if (tempWrap.firstElementChild) {
+        card.replaceWith(tempWrap.firstElementChild);
+    }
+};
+
+window.cancelPollEdit = function(eventId) {
+    const t = allTermine.find(x => String(x.id) === String(eventId));
+    if (!t) return;
+    const card = document.getElementById(`rsvp-${eventId}`);
+    if (!card) return;
+
+    const tempWrap = document.createElement('div');
+    renderPollCard({ ...t, isEditing: false }, tempWrap);
+    if (tempWrap.firstElementChild) {
+        card.replaceWith(tempWrap.firstElementChild);
+    }
+};
+
+window.submitPollVote = async function(eventId) {
+    const user = JSON.parse(localStorage.getItem('sportschuetzen_user'));
+    if (!user) return;
+
+    const checkboxes = document.querySelectorAll(`#rsvp-${eventId} input[type="checkbox"]:checked`);
+    const selectedIds = Array.from(checkboxes).map(cb => cb.value).filter(Boolean);
+
+    if (selectedIds.length === 0) {
+        alert('Bitte wähle mindestens einen Termin aus, oder klicke auf "Keiner dieser Termine passt mir".');
+        return;
+    }
+
+    const btn = document.querySelector(`#rsvp-${eventId} .poll-btn-submit`) || document.querySelector(`#rsvp-${eventId} .poll-submit-btn`);
+    if (btn) { btn.textContent = 'Speichere...'; btn.disabled = true; }
+
+    try {
+        const cleanLizenz = String(user.lizenz).padStart(6, '0');
+        const optionids = encodeURIComponent(selectedIds.join(','));
+        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${encodeURIComponent(eventId)}&lizenz=${cleanLizenz}&attending=true&count=1&essen=0&vegi=0&grund=&optionids=${optionids}`);
+        const result = await resp.json();
+        if (!result.success) throw new Error('Serverfehler');
+        
+        // Cache leeren für Event, damit frische Daten geladen werden
+        delete pollResultsCache[eventId];
+        loadTermine();
+    } catch(e) {
+        console.error(e);
+        alert('Fehler beim Speichern. Bitte erneut versuchen.');
+        if (btn) { btn.textContent = 'Antwort senden'; btn.disabled = false; }
+    }
+};
+
+window.submitPollAbsent = async function(eventId) {
+    const user = JSON.parse(localStorage.getItem('sportschuetzen_user'));
+    if (!user) return;
+
+    const card = document.getElementById(`rsvp-${eventId}`);
+    if (card) card.innerHTML = '<span style="font-size:0.85rem; color:#64748b; padding:10px; display:block; text-align:center;">Speichere...</span>';
+
+    try {
+        const cleanLizenz = String(user.lizenz).padStart(6, '0');
+        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${encodeURIComponent(eventId)}&lizenz=${cleanLizenz}&attending=false&count=1&essen=0&vegi=0&grund=Kein+Termin+passt&optionids=`);
+        const result = await resp.json();
+        if (!result.success) throw new Error('Serverfehler');
+
+        delete pollResultsCache[eventId];
+        loadTermine();
+    } catch(e) {
+        console.error(e);
+        alert('Fehler beim Speichern.');
     }
 };
 
