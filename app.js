@@ -125,26 +125,53 @@ async function loadTermine() {
         const userObj = JSON.parse(localStorage.getItem('sportschuetzen_user') || '{}');
         const activeLizenz = userObj.lizenz ? String(userObj.lizenz).padStart(6, '0') : '';
 
+        // --- STALE-WHILE-REVALIDATE: Sofort aus Cache anzeigen (<100ms) ---
+        if ((!allTermine || allTermine.length === 0)) {
+            try {
+                const cachedStr = localStorage.getItem('sportschuetzen_termine_cache');
+                if (cachedStr) {
+                    const cachedData = JSON.parse(cachedStr);
+                    if (Array.isArray(cachedData) && cachedData.length > 0) {
+                        allTermine = cachedData;
+                        renderTermine(allTermine, activeLizenz);
+                    }
+                }
+            } catch(e) {}
+        }
+
         const [resWorker, resGoogle, resRSVP] = await Promise.all([
             safeFetch(WORKER_TERMINE_URL),
             safeFetch(GOOGLE_SCRIPT_URL),
             safeFetch(`${EVENTPLANER_URL}?action=getRSVPEvents&lizenz=${activeLizenz}`)
         ]);
 
-        // Poll-Ergebnisse im Hintergrund vorladen für blitzschnelle Anzeige
+        // Poll-Ergebnisse ECHT im Hintergrund vorladen (OHNE await - blockiert das Rendern NICHT!)
         const pollEvents = (resRSVP || []).filter(t => t.options && t.options.length > 0);
         if (pollEvents.length > 0) {
-            await Promise.all(pollEvents.map(async pe => {
-                try {
-                    const r = await fetch(`${EVENTPLANER_URL}?action=getPollResults&eventid=${encodeURIComponent(pe.id)}`);
-                    if (r.ok) {
-                        const data = await r.json();
+            pollEvents.forEach(pe => {
+                fetch(`${EVENTPLANER_URL}?action=getPollResults&eventid=${encodeURIComponent(pe.id)}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => {
                         if (data && !data.error) {
                             pollResultsCache[pe.id] = data;
+                            // Falls bereits eine Poll-Karte im DOM gerendert ist, Resultate sofort auffrischen
+                            const cardEl = document.getElementById(`rsvp-${pe.id}`) || document.getElementById(`poll-card-${pe.id}`);
+                            if (cardEl && pe.attending !== null && pe.attending !== undefined) {
+                                const wasOpen = document.getElementById(`poll-body-${pe.id}`)?.style.display === 'block';
+                                const tempWrap = document.createElement('div');
+                                renderPollCard(pe, tempWrap);
+                                if (tempWrap.firstElementChild) {
+                                    cardEl.replaceWith(tempWrap.firstElementChild);
+                                    if (wasOpen) {
+                                        const newBody = document.getElementById(`poll-body-${pe.id}`);
+                                        if (newBody) newBody.style.display = 'block';
+                                    }
+                                }
+                            }
                         }
-                    }
-                } catch(e) {}
-            }));
+                    })
+                    .catch(() => {});
+            });
         }
 
         let rawData = [
@@ -243,10 +270,17 @@ async function loadTermine() {
             return dateObj >= today;
         });
 
+        // Frische Daten im Cache für den nächsten Sofortstart ablegen
+        try {
+            localStorage.setItem('sportschuetzen_termine_cache', JSON.stringify(allTermine));
+        } catch(e) {}
+
         renderTermine(allTermine, activeLizenz);
 
     } catch (e) { 
-        wrap.innerHTML = "Fehler beim Laden."; 
+        if (!allTermine || allTermine.length === 0) {
+            wrap.innerHTML = "Fehler beim Laden."; 
+        }
     }
 }
 
