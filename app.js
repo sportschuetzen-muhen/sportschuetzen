@@ -1,11 +1,25 @@
+
 const WORKER_TERMINE_URL = "https://termine.dan-hunziker73.workers.dev?action=getTermine";
 const EVENTPLANER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev";
 const GOOGLE_SCRIPT_URL = `${EVENTPLANER_URL}?action=getHausKalender`;
 
 let allTermine = [];
 const pollResultsCache = {};
+const participantsCache = {};
 let touchStart = 0;
 const spinner = document.getElementById('pull-spinner');
+
+function prefetchParticipants(eventId) {
+    if (!eventId || participantsCache[eventId]) return;
+    fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${encodeURIComponent(eventId)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (Array.isArray(data)) {
+                participantsCache[eventId] = data;
+            }
+        })
+        .catch(() => {});
+}
 
 // --- EVENT LISTENER ---
 
@@ -492,6 +506,7 @@ function renderTermine(data, activeLizenz) {
             }
 
             if (t.showParticipants) {
+                prefetchParticipants(t.id);
                 bodyContent += `<button class="hero-link participants" onclick="showParticipants('${t.id}')">👥 Teilnehmer anzeigen</button>`;
             }
 
@@ -641,6 +656,32 @@ async function initLogin() {
             // Aber wir könnten das Feld später vorbefüllen falls nötig.
         }
 
+        // Dropdown-Hilfsfunktion
+        const populateDropdown = (users) => {
+            const select = document.getElementById('login-user-select');
+            if (!select || !Array.isArray(users) || users.length === 0) return;
+            const curVal = select.value;
+            select.innerHTML = '<option value="">Bitte wählen...</option>';
+            users.forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u.id;
+                const vName = u.firstname || '';
+                const nName = u.lastname || '';
+                opt.textContent = (u.type === 'admin' ? `⭐ ${vName}` : `${nName} ${vName}`).trim();
+                select.appendChild(opt);
+            });
+            if (curVal) select.value = curVal;
+        };
+
+        // Sofort aus lokalem Cache laden (< 5 ms)
+        try {
+            const cachedMembers = JSON.parse(localStorage.getItem('sportschuetzen_members_cache') || '[]');
+            if (Array.isArray(cachedMembers) && cachedMembers.length > 0) {
+                allUsers = cachedMembers;
+                populateDropdown(allUsers);
+            }
+        } catch(e) {}
+
         try {
             try {
                 let r = await fetch(`${EVENTPLANER_URL}?action=getMembers&type=member`);
@@ -648,6 +689,8 @@ async function initLogin() {
                 const resData = await r.json();
                 if (Array.isArray(resData) && resData.length > 0) {
                     allUsers = resData;
+                    try { localStorage.setItem('sportschuetzen_members_cache', JSON.stringify(allUsers)); } catch(_) {}
+                    populateDropdown(allUsers);
                 } else {
                     throw new Error("Leeres Array vom Worker");
                 }
@@ -1290,21 +1333,44 @@ window.submitPollAbsent = async function(eventId) {
 window.showParticipants = async function(eventId) {
     const modal = document.getElementById('participant-modal');
     const list = document.getElementById('participant-list');
+    
+    const renderList = (data) => {
+        list.innerHTML = (Array.isArray(data) && data.length > 0)
+            ? data.map(n => {
+                const name = (n.vorname || n.nachname)
+                    ? `${n.nachname || ''} ${n.vorname || ''}`.trim()
+                    : (n.name || `Lizenz ${n.lizenz || '?'}`);
+                return `<li><span>${name}</span> <span class="status-yes">✅</span></li>`;
+              }).join('') 
+            : '<li>Noch keine Anmeldungen.</li>';
+    };
+
+    // 1. SOFORT AUS CACHE ANZEIGEN (0 ms)
+    if (participantsCache[eventId]) {
+        renderList(participantsCache[eventId]);
+        modal.style.display = 'flex';
+        // Revalidate im Hintergrund
+        fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${encodeURIComponent(eventId)}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(fresh => {
+                if (Array.isArray(fresh)) {
+                    participantsCache[eventId] = fresh;
+                    renderList(fresh);
+                }
+            })
+            .catch(() => {});
+        return;
+    }
+
     list.innerHTML = '<li>Lade Teilnehmer...</li>';
     modal.style.display = 'flex';
     
     try {
-        const res = await fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${eventId}`);
+        const res = await fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${encodeURIComponent(eventId)}`);
         if(res.ok) {
             const data = await res.json();
-            list.innerHTML = data.length 
-                ? data.map(n => {
-                    const name = (n.vorname || n.nachname)
-                        ? `${n.nachname || ''} ${n.vorname || ''}`.trim()
-                        : (n.name || `Lizenz ${n.lizenz || '?'}`);
-                    return `<li><span>${name}</span> <span class="status-yes">✅</span></li>`;
-                  }).join('') 
-                : '<li>Noch keine Anmeldungen.</li>';
+            participantsCache[eventId] = data;
+            renderList(data);
         } else throw new Error();
     } catch(e) { list.innerHTML = '<li style="color:red;">Fehler beim Laden.</li>'; }
 };
