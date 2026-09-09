@@ -18,7 +18,11 @@ function renderUmfragenUI(container) {
         <!-- TAB 1: EVENTS VERWALTEN -->
         <div class="tab-pane fade show active" id="tab-umfragen-events">
             <button class="btn btn-sm btn-success mb-2 write-protected" onclick="addUmfrageEvent()">+ Neuer Event</button>
-            <div class="table-responsive bg-white border rounded">
+            <!-- Mobile Ansicht: Touch-optimierte Karten -->
+            <div id="umfragen-events-cards" class="d-md-none"></div>
+
+            <!-- Desktop & Tablet Ansicht: 12-Spalten-Tabelle -->
+            <div class="table-responsive bg-white border rounded d-none d-md-block">
                 <table class="table table-sm table-hover mb-0" style="min-width: 980px;">
                     <thead class="table-light">
                         <tr style="cursor:pointer; user-select:none;">
