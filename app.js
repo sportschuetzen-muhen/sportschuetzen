@@ -6,6 +6,7 @@ const GOOGLE_SCRIPT_URL = `${EVENTPLANER_URL}?action=getHausKalender`;
 let allTermine = [];
 const pollResultsCache = {};
 const participantsCache = {};
+const openPolls = new Set();
 let touchStart = 0;
 const spinner = document.getElementById('pull-spinner');
 
@@ -159,6 +160,11 @@ async function loadTermine() {
             safeFetch(`${EVENTPLANER_URL}?action=getRSVPEvents&lizenz=${activeLizenz}`)
         ]);
 
+        // Titel-Normalisierung sofort sicherstellen (verhindert 'undefined')
+        (resRSVP || []).forEach(t => {
+            if (!t.titel && t.title) t.titel = t.title;
+        });
+
         // Poll-Ergebnisse ECHT im Hintergrund vorladen (OHNE await - blockiert das Rendern NICHT!)
         const pollEvents = (resRSVP || []).filter(t => t.options && t.options.length > 0);
         if (pollEvents.length > 0) {
@@ -169,17 +175,16 @@ async function loadTermine() {
                         if (data && !data.error) {
                             pollResultsCache[pe.id] = data;
                             // Falls bereits eine Poll-Karte im DOM gerendert ist, Resultate sofort auffrischen
+                            const fullEvent = allTermine.find(x => String(x.id) === String(pe.id)) || pe;
+                            if (!fullEvent.titel && fullEvent.title) fullEvent.titel = fullEvent.title;
                             const cardEl = document.getElementById(`rsvp-${pe.id}`) || document.getElementById(`poll-card-${pe.id}`);
-                            if (cardEl && pe.attending !== null && pe.attending !== undefined) {
-                                const wasOpen = document.getElementById(`poll-body-${pe.id}`)?.style.display === 'block';
+                            if (cardEl && fullEvent.attending !== null && fullEvent.attending !== undefined) {
+                                const wasOpen = openPolls.has(String(pe.id)) || document.getElementById(`poll-body-${pe.id}`)?.style.display === 'block';
+                                if (wasOpen) openPolls.add(String(pe.id));
                                 const tempWrap = document.createElement('div');
-                                renderPollCard(pe, tempWrap);
+                                renderPollCard(fullEvent, tempWrap);
                                 if (tempWrap.firstElementChild) {
                                     cardEl.replaceWith(tempWrap.firstElementChild);
-                                    if (wasOpen) {
-                                        const newBody = document.getElementById(`poll-body-${pe.id}`);
-                                        if (newBody) newBody.style.display = 'block';
-                                    }
                                 }
                             }
                         }
@@ -1074,6 +1079,8 @@ function renderPollCard(t, heroWrap) {
 
     const cardId = `rsvp-${t.id}`;
     const results = pollResultsCache[t.id] || null;
+    const eventTitle = t.titel || t.title || 'Terminumfrage';
+    const isOpen = openPolls.has(String(t.id));
 
     let cardHtml = '';
 
@@ -1129,14 +1136,14 @@ function renderPollCard(t, heroWrap) {
         <div class="poll-card compact" id="${cardId}">
             <div class="compact-header" onclick="window.togglePollDetails('${t.id}')">
                 <div class="compact-info">
-                    <strong>${t.titel}</strong>
+                    <strong>${eventTitle}</strong>
                     <span>🗳️ Umfrage • 📅 ${dateRange} ${total > 0 ? `• ${total} Teilnehmer` : ''}</span>
                 </div>
                 <div class="hero-chip ${isAbsent ? 'error' : 'success'}" style="margin:0; padding:6px 12px; font-size:1.2rem;">
                     ${isAbsent ? '❌' : '✅'}
                 </div>
             </div>
-            <div class="compact-body" id="poll-body-${t.id}" style="display:none; padding:16px;">
+            <div class="compact-body" id="poll-body-${t.id}" style="display:${isOpen ? 'block' : 'none'}; padding:16px;">
                 <div class="poll-status-banner ${statusClass}">
                     ${statusText}
                 </div>
@@ -1180,7 +1187,7 @@ function renderPollCard(t, heroWrap) {
         cardHtml = `
         <div class="poll-card" id="${cardId}">
             <div class="poll-top-badge">🗳️ Terminumfrage</div>
-            <h3 class="poll-title">${t.titel}</h3>
+            <h3 class="poll-title">${eventTitle}</h3>
             <div class="poll-meta">📅 ${dateRange}</div>
             
             <div class="poll-prompt-box">
@@ -1248,10 +1255,14 @@ async function fetchPollResultsAsync(eventId, callback) {
 window.togglePollDetails = function(eventId) {
     const body = document.getElementById(`poll-body-${eventId}`);
     if (!body) return;
-    body.style.display = (body.style.display === 'none' || !body.style.display) ? 'block' : 'none';
+    const willOpen = (body.style.display === 'none' || !body.style.display);
+    body.style.display = willOpen ? 'block' : 'none';
+    if (willOpen) openPolls.add(String(eventId));
+    else openPolls.delete(String(eventId));
 };
 
 window.reopenPollVote = function(eventId) {
+    openPolls.add(String(eventId));
     const t = allTermine.find(x => String(x.id) === String(eventId));
     if (!t) return;
     const card = document.getElementById(`rsvp-${eventId}`);
@@ -1278,6 +1289,7 @@ window.cancelPollEdit = function(eventId) {
 };
 
 window.submitPollVote = async function(eventId) {
+    openPolls.add(String(eventId));
     const user = JSON.parse(localStorage.getItem('sportschuetzen_user'));
     if (!user) return;
 
@@ -1310,6 +1322,7 @@ window.submitPollVote = async function(eventId) {
 };
 
 window.submitPollAbsent = async function(eventId) {
+    openPolls.add(String(eventId));
     const user = JSON.parse(localStorage.getItem('sportschuetzen_user'));
     if (!user) return;
 
