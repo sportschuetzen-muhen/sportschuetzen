@@ -193,43 +193,97 @@ async function loadTermine() {
             });
         }
 
-        let rawData = [
-            ...resWorker.map(t => ({...t, typ: 'verein'})),
-            ...resGoogle.map(t => ({...t, typ: 'extern'})),
-            ...resRSVP.map(t => ({
-                ...t, 
-                typ: 'verein', 
-                isRSVP: true, 
-                titel: t.title,
-                frage_begleitung: t.frage_begleitung,
-                frage_essen: t.frage_essen,
-                options: t.options || [],
-                optionids: t.optionids || ''
-            }))
-        ];
+        // --- 1. DUBLETTEN-PRÜFUNG: VEREIN VS. HAUSKALENDER ---
+        // Vereinsdaten haben Vorrang vor Belegungen aus dem Hauskalender.
+        const normalizeDateStr = (obj) => {
+            if (!obj) return '';
+            const str = (obj.datum_iso || obj.datum || '').toString().trim();
+            if (!str) return '';
+            if (str.includes('.')) {
+                const p = str.split('.');
+                if (p.length >= 3) {
+                    return `${p[2].trim()}-${p[1].trim().padStart(2, '0')}-${p[0].trim().padStart(2, '0')}`;
+                }
+            }
+            return str.split('T')[0].trim();
+        };
 
-        // --- INVASIVE DUBLETTEN-PRÜFUNG ---
-        // Wir verhindern, dass Termine, die in beiden Quellen stehen, doppelt erscheinen.
+        const normalizeTitle = (str) => {
+            return (str || '').toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+        };
+
         const merged = [];
-        const seen = new Set();
 
-        rawData.forEach(t => {
-            // Eindeutiger Key: Datum + Titel-Anfang
-            const dKey = t.datum_iso || t.datum;
-            const tKey = t.titel.substring(0, 15).toLowerCase();
-            const uniqueKey = `${dKey}_${tKey}`;
+        // Zuerst alle Vereinstermine aus dem Jahresprogramm übernehmen
+        (resWorker || []).forEach(t => {
+            merged.push({ ...t, typ: 'verein' });
+        });
 
-            if (!seen.has(uniqueKey)) {
-                merged.push(t);
-                seen.add(uniqueKey);
-            } else if (t.typ === 'verein') {
-                // Falls bereits vorhanden, aber der aktuelle vom Verein ist, 
-                // überschreiben wir den externen (Vereinsdaten sind meist präziser)
-                const idx = merged.findIndex(m => 
-                    (m.datum_iso || m.datum) === dKey && 
-                    m.titel.substring(0, 15).toLowerCase() === tKey
+        // Hauskalender hinzufügen, ausser derselbe Termin existiert bereits im Vereinsprogramm
+        (resGoogle || []).forEach(ext => {
+            const extDate = normalizeDateStr(ext);
+            const extTitle = normalizeTitle(ext.titel);
+
+            const isDuplicate = merged.some(v => {
+                const vDate = normalizeDateStr(v);
+                const vTitle = normalizeTitle(v.titel);
+                return vDate && vDate === extDate && (
+                    vTitle.includes(extTitle.substring(0, 10)) || 
+                    extTitle.includes(vTitle.substring(0, 10))
                 );
-                if (idx !== -1) merged[idx] = t;
+            });
+
+            if (!isDuplicate) {
+                merged.push({ ...ext, typ: 'extern' });
+            }
+        });
+
+        // --- 2. RSVP-VERKNÜPFUNG (EVENTPLANER) ---
+        // Verknüpft RSVP-Infos (Zu-/Absagen, Essen) mit bestehenden Terminen, ohne Details (Uhrzeit, Ort) zu verlieren
+        (resRSVP || []).forEach(r => {
+            const rDate = normalizeDateStr(r);
+            const rTitle = normalizeTitle(r.title || r.titel);
+
+            // Prüfen, ob ein passender Termin im Vereinsprogramm existiert
+            const existing = merged.find(m => {
+                if (m.typ !== 'verein') return false;
+                const mDate = normalizeDateStr(m);
+                const mTitle = normalizeTitle(m.titel);
+                return mDate && mDate === rDate && (
+                    mTitle.includes(rTitle.substring(0, 10)) || 
+                    rTitle.includes(mTitle.substring(0, 10))
+                );
+            });
+
+            if (existing) {
+                // Bestehenden Termin mit RSVP-Daten anreichern
+                existing.isRSVP = true;
+                existing.id = r.id; // RSVP-ID für Formular-Aktionen beibehalten
+                existing.frage_begleitung = r.frage_begleitung;
+                existing.frage_essen = r.frage_essen;
+                existing.frage_grund = r.frage_grund;
+                existing.options = r.options || [];
+                existing.optionids = r.optionids || '';
+                existing.attending = r.attending;
+                existing.count = r.count;
+                existing.essen = r.essen;
+                existing.vegi = r.vegi;
+                existing.grund = r.grund;
+                existing.showParticipants = r.showParticipants;
+                if (r.details) existing.details = r.details;
+                if (r.dokument_url) existing.dokument_url = r.dokument_url;
+            } else {
+                // Falls der RSVP-Termin nur im Eventplaner existiert (z.B. Auswärtsschiessen-Umfrage)
+                merged.push({
+                    ...r,
+                    typ: 'verein',
+                    isRSVP: true,
+                    titel: r.title || r.titel,
+                    frage_begleitung: r.frage_begleitung,
+                    frage_essen: r.frage_essen,
+                    options: r.options || [],
+                    optionids: r.optionids || ''
+                });
             }
         });
 
@@ -541,8 +595,6 @@ function renderTermine(data, activeLizenz) {
                     </div>
                 </div>`;
             }
-
-            return; // Beende Schleife für diesen Termin, weil er NICHT in die normale Liste soll
         }
 
         normalCount++;
@@ -563,6 +615,11 @@ function renderTermine(data, activeLizenz) {
                 </div>
                 ${t.status === 'provisorisch' ? '<span class="badge-prov">Provisorisch</span>' : ''}
                 ${isExtern ? '<span class="badge-extern">Haus belegt</span>' : ''}
+                ${t.isRSVP ? `
+                    <span class="badge-prov" style="cursor:pointer; background:${t.attending === true || t.attending === 'true' ? '#dcfce7; color:#15803d; border-color:#bbf7d0;' : (t.attending === false || t.attending === 'false' ? '#fee2e2; color:#b91c1c; border-color:#fecaca;' : '#e0f2fe; color:#0369a1; border-color:#bae6fd;')} font-size:0.75rem; font-weight:600; padding:2px 8px; border-radius:10px;" onclick="document.getElementById('rsvp-${t.id}')?.scrollIntoView({behavior:'smooth'})">
+                        ${t.attending === true || t.attending === 'true' ? '✅ Angemeldet' : (t.attending === false || t.attending === 'false' ? '❌ Abgemeldet' : '📩 Anmeldung')}
+                    </span>
+                ` : ''}
                 ${t.dokument_url ? `
                     <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:5px;">
                         ${t.dokument_url.split(',').map((url, idx, arr) => `
