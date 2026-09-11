@@ -1157,12 +1157,20 @@ function bhBankMatchAll(transactions) {
     }
 
     // 2. STUFE: Benutzer-Regeln (Rules)
-    // Spezifischere Regeln (sowohl Empfänger als auch Verwendungszweck gesetzt) priorisieren
+    // Spezifischere Regeln (sowohl Empfänger als auch Verwendungszweck und/oder Betrag gesetzt) priorisieren
     let matchRulePrefix = '';
     if (!isJahresbeitrag && matchType === 'unknown') {
       const sortedRules = [...userRules].sort((a, b) => {
-        const aSpec = ((a.pattern_party || (a.scope === 'party' ? a.pattern : '')) && (a.pattern_text || (a.scope === 'text' ? a.pattern : ''))) ? 2 : 1;
-        const bSpec = ((b.pattern_party || (b.scope === 'party' ? b.pattern : '')) && (b.pattern_text || (b.scope === 'text' ? b.pattern : ''))) ? 2 : 1;
+        let aSpec = 0;
+        if (a.pattern_party || (a.scope === 'party' ? a.pattern : '')) aSpec += 1;
+        if (a.pattern_text  || (a.scope === 'text'  ? a.pattern : '')) aSpec += 1;
+        if (a.amount_mode && a.amount_mode !== 'any') aSpec += 2;
+
+        let bSpec = 0;
+        if (b.pattern_party || (b.scope === 'party' ? b.pattern : '')) bSpec += 1;
+        if (b.pattern_text  || (b.scope === 'text'  ? b.pattern : '')) bSpec += 1;
+        if (b.amount_mode && b.amount_mode !== 'any') bSpec += 2;
+
         return bSpec - aSpec;
       });
 
@@ -1186,6 +1194,30 @@ function bhBankMatchAll(transactions) {
             isMatch = cleanRemittance.includes(legacyP);
           } else {
             isMatch = cleanRemittance.includes(legacyP) || cleanParty.includes(legacyP);
+          }
+        }
+
+        // Betragsprüfung (optional: exakt, grösser als, kleiner als, von ... bis)
+        const amtMode = r.amount_mode || 'any';
+        if (isMatch && amtMode && amtMode !== 'any') {
+          const txAmt = Math.abs(Number(tx.amount) || 0);
+          const minAmt = Number(r.amount_min || 0);
+          const maxAmt = Number(r.amount_max || 0);
+          let amtMatches = true;
+
+          if (amtMode === 'exact') {
+            amtMatches = Math.abs(txAmt - minAmt) < 0.01;
+          } else if (amtMode === 'gt') {
+            amtMatches = txAmt > minAmt;
+          } else if (amtMode === 'lt') {
+            const limit = (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? maxAmt : minAmt;
+            amtMatches = txAmt < limit;
+          } else if (amtMode === 'range') {
+            amtMatches = txAmt >= minAmt && txAmt <= maxAmt;
+          }
+
+          if (!amtMatches) {
+            isMatch = false;
           }
         }
 
@@ -1668,6 +1700,35 @@ window.bhBankBookAll = async function() {
 // ---------------------------------------------------------------------
 // Regel Editor Modal (Erstellen / Bearbeiten)
 // ---------------------------------------------------------------------
+window.bhUpdateRuleAmountInputs = function() {
+  const mode = document.getElementById('bhr-amount-mode')?.value || 'any';
+  const minWrap = document.getElementById('bhr-amount-min-wrap');
+  const maxWrap = document.getElementById('bhr-amount-max-wrap');
+  const minLabel = document.getElementById('bhr-amount-min-label');
+  if (!minWrap || !maxWrap) return;
+
+  if (mode === 'any') {
+    minWrap.style.display = 'none';
+    maxWrap.style.display = 'none';
+  } else if (mode === 'exact') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'none';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-equals me-1 text-primary"></i>Exakter Betrag (CHF)';
+  } else if (mode === 'gt') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'none';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-greater-than me-1 text-primary"></i>Grösser als (&gt;) (CHF)';
+  } else if (mode === 'lt') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'none';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-less-than me-1 text-primary"></i>Kleiner als (&lt;) (CHF)';
+  } else if (mode === 'range') {
+    minWrap.style.display = 'block';
+    maxWrap.style.display = 'block';
+    if (minLabel) minLabel.innerHTML = '<i class="fas fa-arrow-right me-1 text-primary"></i>Von Betrag (CHF)';
+  }
+};
+
 window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
   const rules = window.getBhBankRules();
   const isEdit = typeof editIdx === 'number' && editIdx >= 0;
@@ -1681,7 +1742,10 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
     prefix: '',
     soll: '1020',
     haben: '3410',
-    scope: 'all'
+    scope: 'all',
+    amount_mode: 'any',
+    amount_min: '',
+    amount_max: ''
   };
 
   const partyVal = rule.pattern_party !== undefined ? rule.pattern_party : (rule.scope === 'party' ? rule.pattern : (rule.scope === 'all' ? rule.pattern : ''));
@@ -1697,6 +1761,8 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
   }
 
   modalEl.style.zIndex = '1065';
+
+  const amtMode = rule.amount_mode || 'any';
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered" style="z-index: 1066;">
@@ -1739,9 +1805,35 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
               </div>
             </div>
 
+            <!-- Betragseinschränkung (optional: beliebig, exakt, grösser als, kleiner als, von...bis) -->
+            <div class="row g-2 mb-3 align-items-end bg-light p-2 rounded-3 border">
+              <div class="col-md-5">
+                <label class="form-label fw-bold small text-dark mb-1">
+                  <i class="fas fa-coins me-1 text-warning"></i>Betragseinschränkung
+                </label>
+                <select id="bhr-amount-mode" class="form-select form-select-sm" onchange="bhUpdateRuleAmountInputs()">
+                  <option value="any" ${amtMode === 'any' ? 'selected' : ''}>Beliebiger Betrag (Standard)</option>
+                  <option value="exact" ${amtMode === 'exact' ? 'selected' : ''}>Exakter Betrag (=)</option>
+                  <option value="range" ${amtMode === 'range' ? 'selected' : ''}>Betragsbereich (von ... bis)</option>
+                  <option value="gt" ${amtMode === 'gt' ? 'selected' : ''}>Grösser als (&gt;)</option>
+                  <option value="lt" ${amtMode === 'lt' ? 'selected' : ''}>Kleiner als (&lt;)</option>
+                </select>
+              </div>
+              <div class="col-md-4" id="bhr-amount-min-wrap" style="display: ${amtMode === 'any' ? 'none' : 'block'};">
+                <label id="bhr-amount-min-label" class="form-label fw-bold small mb-1">
+                  ${amtMode === 'lt' ? 'Kleiner als (<) (CHF)' : (amtMode === 'gt' ? 'Grösser als (>) (CHF)' : (amtMode === 'range' ? 'Von Betrag (CHF)' : 'Exakter Betrag (CHF)'))}
+                </label>
+                <input type="number" step="0.01" min="0" id="bhr-amount-min" class="form-control form-control-sm font-monospace" placeholder="0.00" value="${(rule.amount_min !== undefined && rule.amount_min !== null && rule.amount_min !== '') ? rule.amount_min : ''}">
+              </div>
+              <div class="col-md-3" id="bhr-amount-max-wrap" style="display: ${amtMode === 'range' ? 'block' : 'none'};">
+                <label class="form-label fw-bold small mb-1">Bis Betrag (CHF)</label>
+                <input type="number" step="0.01" min="0" id="bhr-amount-max" class="form-control form-control-sm font-monospace" placeholder="0.00" value="${(rule.amount_max !== undefined && rule.amount_max !== null && rule.amount_max !== '') ? rule.amount_max : ''}">
+              </div>
+            </div>
+
             <div class="alert alert-light border py-1.5 px-2.5 mb-3 small text-muted">
               <i class="fas fa-info-circle me-1 text-info"></i>
-              Mindestens ein Suchbegriff muss gesetzt sein. Sind <strong>beide</strong> gesetzt, greift die Regel nur, wenn beide zutreffen (höchste Präzision!).
+              Mindestens ein Kriterium (Empfänger, Text oder Betrag) muss gesetzt sein. Sind mehrere Kriterien gesetzt, greift die Regel nur, wenn alle zutreffen.
             </div>
 
             <div class="row g-2 mb-3">
@@ -1780,11 +1872,20 @@ window.bhBankSaveRuleSubmit = function(e, editIdx) {
   const rawSoll      = document.getElementById('bhr-soll').value.trim();
   const rawHaben     = document.getElementById('bhr-haben').value.trim();
 
+  const amountMode   = document.getElementById('bhr-amount-mode')?.value || 'any';
+  const rawAmountMin = document.getElementById('bhr-amount-min')?.value.trim();
+  const rawAmountMax = document.getElementById('bhr-amount-max')?.value.trim();
+
+  const amountMin = (rawAmountMin !== '' && !isNaN(Number(rawAmountMin))) ? Number(rawAmountMin) : '';
+  const amountMax = (rawAmountMax !== '' && !isNaN(Number(rawAmountMax))) ? Number(rawAmountMax) : '';
+
   const soll  = rawSoll.split('|')[0].trim();
   const haben = rawHaben.split('|')[0].trim();
 
-  if (!label || (!patternParty && !patternText) || !soll || !haben) {
-    alert('Bitte Regel-Bezeichnung, mindestens einen Suchbegriff (Empfänger oder Verwendungszweck) sowie Soll- und Haben-Konto angeben.');
+  const hasAnyFilter = Boolean(patternParty || patternText || (amountMode !== 'any' && amountMin !== ''));
+
+  if (!label || !hasAnyFilter || !soll || !haben) {
+    alert('Bitte Regel-Bezeichnung, mindestens ein Filterkriterium (Empfänger, Verwendungszweck oder Betrag) sowie Soll- und Haben-Konto angeben.');
     return;
   }
 
@@ -1799,7 +1900,10 @@ window.bhBankSaveRuleSubmit = function(e, editIdx) {
     soll,
     haben,
     pattern: legacyPattern,
-    scope: legacyScope
+    scope: legacyScope,
+    amount_mode: amountMode,
+    amount_min: amountMin,
+    amount_max: amountMax
   };
 
   const rules = window.getBhBankRules();
@@ -1845,6 +1949,7 @@ window.bhBankSaveRuleModal = function(txIdx) {
 
   const sollVal  = sollEl ? sollEl.value : tx.suggestedSoll;
   const habenVal = habenEl ? habenEl.value : tx.suggestedHaben;
+  const txAmt    = (tx.amount !== undefined && tx.amount !== null) ? Number(tx.amount).toFixed(2) : '';
 
   bhBankOpenRuleEditorModal(-1, {
     label: party || remittance || 'Neue Regel',
@@ -1854,7 +1959,10 @@ window.bhBankSaveRuleModal = function(txIdx) {
     pattern: party || remittance,
     scope: party ? 'party' : 'text',
     soll: sollVal,
-    haben: habenVal
+    haben: habenVal,
+    amount_mode: 'any',
+    amount_min: txAmt,
+    amount_max: ''
   });
 };
 
@@ -1918,11 +2026,26 @@ window.bhBankManageRulesModal = function() {
       ? `<code class="text-success bg-light px-2 py-0.5 rounded border small fw-bold">${escHtml(textVal)}</code>`
       : (legacyVal ? `<span class="badge bg-light text-muted border">Überall</span>` : '<span class="text-muted small">–</span>');
 
+    // Betragsbedingung Formatierung
+    const amtMode = r.amount_mode || 'any';
+    let amtHtml = '<span class="text-muted small">Beliebig</span>';
+    if (amtMode === 'exact' && r.amount_min !== '' && r.amount_min !== undefined) {
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Exakt gleich">= CHF ${Number(r.amount_min).toFixed(2)}</span>`;
+    } else if (amtMode === 'gt' && r.amount_min !== '' && r.amount_min !== undefined) {
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Grösser als">&gt; CHF ${Number(r.amount_min).toFixed(2)}</span>`;
+    } else if (amtMode === 'lt' && ((r.amount_min !== '' && r.amount_min !== undefined) || (r.amount_max !== '' && r.amount_max !== undefined))) {
+      const val = (r.amount_max !== '' && r.amount_max !== undefined) ? r.amount_max : r.amount_min;
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Kleiner als">&lt; CHF ${Number(val).toFixed(2)}</span>`;
+    } else if (amtMode === 'range' && (r.amount_min !== '' || r.amount_max !== '')) {
+      amtHtml = `<span class="badge bg-light text-dark border font-monospace" title="Betragsbereich">CHF ${Number(r.amount_min || 0).toFixed(2)} – ${Number(r.amount_max || 0).toFixed(2)}</span>`;
+    }
+
     return `
       <tr>
         <td><span class="fw-bold text-dark">${escHtml(r.label)}</span></td>
         <td>${partyHtml}</td>
         <td>${textHtml}</td>
+        <td>${amtHtml}</td>
         <td><span class="text-muted small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
         <td><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
         <td><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
@@ -1938,7 +2061,7 @@ window.bhBankManageRulesModal = function() {
     `;
   }).join('') : `
     <tr>
-      <td colspan="7" class="text-center text-muted py-4">
+      <td colspan="8" class="text-center text-muted py-4">
         <i class="fas fa-magic fa-2x mb-2" style="opacity:0.3;"></i>
         <p class="mb-0">Noch keine Benutzer-Regeln definiert.</p>
       </td>
@@ -1961,7 +2084,7 @@ window.bhBankManageRulesModal = function() {
         </div>
         <div class="modal-body p-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen (getrennte Kriterien für Empfänger/Zahler und Verwendungszweck).</p>
+            <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen (getrennte Kriterien für Empfänger/Zahler, Verwendungszweck und optionale Betragsfilter).</p>
             <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
               <i class="fas fa-plus me-1"></i>Neue Regel erstellen
             </button>
@@ -1970,13 +2093,14 @@ window.bhBankManageRulesModal = function() {
             <table class="table table-hover table-sm align-middle mb-0" style="table-layout: fixed; width: 100%;">
               <thead class="table-light sticky-top">
                 <tr>
-                  <th style="width: 20%;">Bezeichnung</th>
-                  <th style="width: 17%;"><i class="fas fa-user me-1 text-primary"></i>Empfänger / Zahler</th>
-                  <th style="width: 17%;"><i class="fas fa-file-alt me-1 text-success"></i>Verwendungszweck</th>
-                  <th style="width: 20%;">Journal-Text / Präfix</th>
-                  <th style="width: 7%;">Soll</th>
-                  <th style="width: 7%;">Haben</th>
-                  <th style="width: 12%;" class="text-end">Aktionen</th>
+                  <th style="width: 17%;">Bezeichnung</th>
+                  <th style="width: 15%;"><i class="fas fa-user me-1 text-primary"></i>Empfänger / Zahler</th>
+                  <th style="width: 15%;"><i class="fas fa-file-alt me-1 text-success"></i>Verwendungszweck</th>
+                  <th style="width: 14%;"><i class="fas fa-coins me-1 text-warning"></i>Betrag</th>
+                  <th style="width: 17%;">Journal-Text / Präfix</th>
+                  <th style="width: 6%;">Soll</th>
+                  <th style="width: 6%;">Haben</th>
+                  <th style="width: 10%;" class="text-end">Aktionen</th>
                 </tr>
               </thead>
               <tbody>${rulesRows}</tbody>
