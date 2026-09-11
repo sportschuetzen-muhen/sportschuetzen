@@ -503,35 +503,77 @@ window.bhDeleteJournalEntry = async function(entryId) {
 };
 
 // POPUP-MODAL: KONTOAUSZUG / DETAILS FÜR EIN EINZELNES KONTO ANZEIGEN
-window.bhOpenKontoauszugModal = function(kontoCode) {
-  let modalEl = document.getElementById('bhModalKontoauszug');
-  if (!modalEl) {
-    modalEl = document.createElement('div');
-    modalEl.id = 'bhModalKontoauszug';
-    modalEl.className = 'modal fade';
-    modalEl.tabIndex = -1;
-    modalEl.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(modalEl);
-  }
+window._bhKontoauszugSortCol = window._bhKontoauszugSortCol || 'datum';
+window._bhKontoauszugSortAsc = window._bhKontoauszugSortAsc !== undefined ? window._bhKontoauszugSortAsc : true;
+window._bhKontoauszugIsFullscreen = window._bhKontoauszugIsFullscreen || false;
 
-  let selectedKonto = String(kontoCode || '').trim();
-  let acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === selectedKonto);
-  if (!acc && window._bhKontenrahmen.length > 0) {
-    acc = window._bhKontenrahmen[0];
-    selectedKonto = String(acc.konto).trim();
+window.bhSortKontoauszug = function(col) {
+  if (window._bhKontoauszugSortCol === col) {
+    window._bhKontoauszugSortAsc = !window._bhKontoauszugSortAsc;
+  } else {
+    window._bhKontoauszugSortCol = col;
+    window._bhKontoauszugSortAsc = true;
   }
+  const selectEl = document.getElementById('bha-konto-select');
+  const konto = selectEl ? selectEl.value : null;
+  bhOpenKontoauszugModal(konto);
+};
 
-  if (!acc) {
-    alert("Keine Sachkonten vorhanden!");
-    return;
+window.bhToggleKontoauszugFullscreen = function() {
+  window._bhKontoauszugIsFullscreen = !window._bhKontoauszugIsFullscreen;
+  const dialog = document.getElementById('bhModalKontoauszugDialog');
+  const icon = document.getElementById('bhKontoauszugFsIcon');
+  const tableWrap = document.getElementById('bhKontoauszugTableWrap');
+  if (!dialog) return;
+
+  if (window._bhKontoauszugIsFullscreen) {
+    dialog.classList.add('modal-fullscreen');
+    dialog.classList.remove('modal-xl');
+    if (icon) icon.className = 'fas fa-compress';
+    if (tableWrap) tableWrap.style.maxHeight = 'calc(100vh - 330px)';
+  } else {
+    dialog.classList.remove('modal-fullscreen');
+    dialog.classList.add('modal-xl');
+    if (icon) icon.className = 'fas fa-expand';
+    if (tableWrap) tableWrap.style.maxHeight = '480px';
   }
+};
 
+window.bhNavigateKontoauszug = function(delta) {
+  const selectEl = document.getElementById('bha-konto-select');
+  if (!selectEl) return;
+  const newIndex = selectEl.selectedIndex + delta;
+  if (newIndex >= 0 && newIndex < selectEl.options.length) {
+    selectEl.selectedIndex = newIndex;
+    bhOpenKontoauszugModal(selectEl.value);
+  }
+};
+
+window.bhFilterKontoauszug = function(val) {
+  const query = (val || '').toLowerCase().trim();
+  const rows = document.querySelectorAll('#bhKontoauszugTableBody tr.bh-account-row');
+  let count = 0;
+  rows.forEach(r => {
+    const text = r.textContent.toLowerCase();
+    const match = !query || text.includes(query);
+    r.style.display = match ? '' : 'none';
+    if (match) count++;
+  });
+  const badge = document.getElementById('bhKontoauszugCountBadge');
+  if (badge) {
+    badge.textContent = query ? `${count} von ${rows.length} Buchungen` : `${rows.length} Buchungen`;
+  }
+};
+
+window.bhExportKontoauszugCsv = function(kontoCode) {
+  const acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === String(kontoCode).trim());
+  if (!acc) return;
+  const selectedKonto = String(acc.konto).trim();
   const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
   const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && selectedKonto.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
   const opBalance = Number(acc._dynamicEroeffnungssaldo || 0);
 
-  // Filter journal entries for the current account and year
-  const accountEntries = window._bhJournal.filter(j => 
+  const entries = (window._bhJournal || []).filter(j => 
     Number(j.jahr) === Number(window._bhYear) && 
     (String(j.konto_soll).trim() === selectedKonto || String(j.konto_haben).trim() === selectedKonto)
   );
@@ -546,12 +588,95 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
     return new Date(s).getTime() || 0;
   }
 
-  // Sort by date (chronological) and then by id
+  entries.sort((a, b) => {
+    const timeA = parseDateMs(a.datum);
+    const timeB = parseDateMs(b.datum);
+    if (timeA !== timeB) return timeA - timeB;
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+
+  let running = opBalance;
+  let csv = `Konto: ${acc.konto} - ${acc.bezeichnung} (${cat.main}) - Jahr: ${window._bhYear}\n`;
+  csv += `Eröffnungssaldo: ${opBalance.toFixed(2)}\n\n`;
+  csv += `ID;Datum;Beleg-Nr;Beschreibung;Gegenkonto;Gegenkonto-Name;Soll;Haben;Saldo\n`;
+  csv += `0;01.01.${window._bhYear};-;Eröffnungsbilanz / Saldenvortrag;-;-;-;-;${opBalance.toFixed(2)}\n`;
+
+  entries.forEach(e => {
+    const isSoll = String(e.konto_soll).trim() === selectedKonto;
+    const amount = Number(e.betrag || 0);
+    const sollVal = isSoll ? amount : 0;
+    const habenVal = isSoll ? 0 : amount;
+    running += isAssetOrExpense ? (isSoll ? amount : -amount) : (isSoll ? -amount : amount);
+    const gegen = isSoll ? String(e.konto_haben).trim() : String(e.konto_soll).trim();
+    const gegenName = window.getAccountNameByCode ? window.getAccountNameByCode(gegen) : '';
+    const descClean = String(e.beschreibung || '').replace(/;/g, ',');
+
+    csv += `${e.id || ''};${e.datum || ''};${e.beleg_nr || ''};"${descClean}";${gegen};"${gegenName}";${sollVal > 0 ? sollVal.toFixed(2) : ''};${habenVal > 0 ? habenVal.toFixed(2) : ''};${running.toFixed(2)}\n`;
+  });
+
+  const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Kontoblatt_${acc.konto}_${window._bhYear}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+window.bhPrintKontoauszug = function() {
+  window.print();
+};
+
+window.bhOpenKontoauszugModal = function(kontoCode) {
+  let modalEl = document.getElementById('bhModalKontoauszug');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalKontoauszug';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  let selectedKonto = String(kontoCode || '').trim();
+  let acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === selectedKonto);
+  if (!acc && (window._bhKontenrahmen || []).length > 0) {
+    acc = window._bhKontenrahmen[0];
+    selectedKonto = String(acc.konto).trim();
+  }
+
+  if (!acc) {
+    alert("Keine Sachkonten vorhanden!");
+    return;
+  }
+
+  const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
+  const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && selectedKonto.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
+  const opBalance = Number(acc._dynamicEroeffnungssaldo || 0);
+
+  // Filter journal entries for the current account and year
+  const accountEntries = (window._bhJournal || []).filter(j => 
+    Number(j.jahr) === Number(window._bhYear) && 
+    (String(j.konto_soll).trim() === selectedKonto || String(j.konto_haben).trim() === selectedKonto)
+  );
+
+  function parseDateMs(dtStr) {
+    if (!dtStr) return 0;
+    const s = String(dtStr).trim();
+    if (s.includes('.')) {
+      const p = s.split('.');
+      if (p.length === 3) return new Date(`${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`).getTime() || 0;
+    }
+    return new Date(s).getTime() || 0;
+  }
+
+  // 1. Zuerst chronologisch sortieren, um Salden & Totale exakt aufzubauen
   accountEntries.sort((a, b) => {
     const timeA = parseDateMs(a.datum);
     const timeB = parseDateMs(b.datum);
-    if (timeA < timeB) return -1;
-    if (timeA > timeB) return 1;
+    if (timeA !== timeB) return timeA - timeB;
     return Number(a.id || 0) - Number(b.id || 0);
   });
 
@@ -559,7 +684,7 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
   let totalSoll = 0;
   let totalHaben = 0;
 
-  const rowsHtml = accountEntries.map(entry => {
+  const computedEntries = accountEntries.map(entry => {
     const isSoll = String(entry.konto_soll).trim() === selectedKonto;
     const amount = Number(entry.betrag || 0);
     let sollVal = 0;
@@ -578,19 +703,68 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
     const gegenKonto = isSoll ? String(entry.konto_haben).trim() : String(entry.konto_soll).trim();
     const gegenKontoName = window.getAccountNameByCode ? window.getAccountNameByCode(gegenKonto) : '';
 
+    return {
+      ...entry,
+      isSoll,
+      amount,
+      sollVal,
+      habenVal,
+      runningBalance,
+      gegenKonto,
+      gegenKontoName
+    };
+  });
+
+  // 2. Jetzt nach Benutzer-Sortierung anordnen
+  const sortCol = window._bhKontoauszugSortCol || 'datum';
+  const asc = window._bhKontoauszugSortAsc !== undefined ? window._bhKontoauszugSortAsc : true;
+
+  computedEntries.sort((a, b) => {
+    let res = 0;
+    if (sortCol === 'id') {
+      res = Number(a.id || 0) - Number(b.id || 0);
+    } else if (sortCol === 'datum') {
+      res = parseDateMs(a.datum) - parseDateMs(b.datum);
+      if (res === 0) res = Number(a.id || 0) - Number(b.id || 0);
+    } else if (sortCol === 'beleg') {
+      res = (a.beleg_nr || '').localeCompare(b.beleg_nr || '', 'de');
+    } else if (sortCol === 'beschreibung') {
+      res = (a.beschreibung || '').localeCompare(b.beschreibung || '', 'de');
+    } else if (sortCol === 'gegenkonto') {
+      res = (a.gegenKonto || '').localeCompare(b.gegenKonto || '', 'de');
+    } else if (sortCol === 'soll') {
+      res = (a.sollVal || 0) - (b.sollVal || 0);
+    } else if (sortCol === 'haben') {
+      res = (a.habenVal || 0) - (b.habenVal || 0);
+    } else if (sortCol === 'saldo') {
+      res = (a.runningBalance || 0) - (b.runningBalance || 0);
+    }
+    return asc ? res : -res;
+  });
+
+  function sortIndicator(col) {
+    if (sortCol === col) {
+      return asc 
+        ? '<i class="fas fa-sort-up ms-1 text-primary"></i>'
+        : '<i class="fas fa-sort-down ms-1 text-primary"></i>';
+    }
+    return '<i class="fas fa-sort ms-1 text-muted opacity-50"></i>';
+  }
+
+  const rowsHtml = computedEntries.map(entry => {
     return `
-      <tr class="bh-account-row">
+      <tr class="bh-account-row" onclick="this.classList.toggle('bh-row-selected')" title="Klicken zum dauerhaften Hervorheben dieser Zeile">
         <td class="font-monospace small text-muted">${entry.id}</td>
-        <td>${window.isoToDisplay ? window.isoToDisplay(entry.datum) : entry.datum}</td>
-        <td class="fw-bold text-dark small">${entry.beleg_nr || '–'}</td>
-        <td class="small fw-semibold">${window.escapeHtml ? window.escapeHtml(entry.beschreibung) : entry.beschreibung}</td>
+        <td><span class="fw-semibold">${window.isoToDisplay ? window.isoToDisplay(entry.datum) : entry.datum}</span></td>
+        <td><span class="badge bg-light text-dark border font-monospace" style="font-size:11px;" title="Klicken zum Kopieren" onclick="event.stopPropagation(); navigator.clipboard.writeText('${entry.beleg_nr || ''}'); window.showToast ? window.showToast('Beleg-Nr kopiert: ${entry.beleg_nr || ''}', 'info') : null;">${entry.beleg_nr || '–'}</span></td>
+        <td class="small fw-semibold text-dark">${window.escapeHtml ? window.escapeHtml(entry.beschreibung) : entry.beschreibung}</td>
         <td>
-          <span class="bh-konto-badge">${gegenKonto}</span>
-          <span class="text-muted ms-1 small d-none d-sm-inline">${gegenKontoName}</span>
+          <span class="bh-konto-badge">${entry.gegenKonto}</span>
+          <span class="text-muted ms-1 small d-none d-md-inline">${entry.gegenKontoName || ''}</span>
         </td>
-        <td class="text-end fw-semibold text-primary">${sollVal > 0 ? window.fmtChf(sollVal) : '–'}</td>
-        <td class="text-end fw-semibold text-success">${habenVal > 0 ? window.fmtChf(habenVal) : '–'}</td>
-        <td class="text-end fw-bold text-dark">${window.fmtChf(runningBalance)}</td>
+        <td class="text-end fw-semibold text-primary">${entry.sollVal > 0 ? window.fmtChf(entry.sollVal) : '–'}</td>
+        <td class="text-end fw-semibold text-success">${entry.habenVal > 0 ? window.fmtChf(entry.habenVal) : '–'}</td>
+        <td class="text-end fw-bold text-dark">${window.fmtChf(entry.runningBalance)}</td>
       </tr>
     `;
   }).join('');
@@ -602,51 +776,77 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
     .map(a => `<option value="${a.konto}" ${String(a.konto).trim() === selectedKonto ? 'selected' : ''}>${a.konto} - ${a.bezeichnung} (${window.bhGetAccountCategory(a).main})</option>`)
     .join('');
 
+  const isFs = window._bhKontoauszugIsFullscreen;
+  const dialogSizeClass = isFs ? 'modal-fullscreen' : 'modal-xl';
+
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable ${dialogSizeClass}" id="bhModalKontoauszugDialog">
       <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px);">
-        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold"><i class="fas fa-file-invoice-dollar me-2"></i>Kontoauszug / Kontoblatt (${window._bhYear})</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-header bg-primary text-white border-0 py-2.5 rounded-top-4 d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h5 class="modal-title fw-bold mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Kontoauszug / Kontoblatt (${window._bhYear})</h5>
+            <span class="badge bg-white text-primary fw-bold" id="bhKontoauszugCountBadge">${computedEntries.length} Buchungen</span>
+          </div>
+          <div class="d-flex align-items-center gap-1">
+            <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-2.5" onclick="bhToggleKontoauszugFullscreen()" title="Vollbild umschalten (Vergrössern / Verkleinern)">
+              <i class="fas ${isFs ? 'fa-compress' : 'fa-expand'}" id="bhKontoauszugFsIcon"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
         </div>
         <div class="modal-body p-4">
-          <!-- Account selector -->
-          <div class="row g-3 mb-4 align-items-end">
-            <div class="col-md-6">
-              <label class="form-label fw-bold small text-muted">Konto auswählen</label>
-              <select class="form-select fw-bold border-2" id="bha-konto-select" onchange="bhOpenKontoauszugModal(this.value)">
-                ${kontoOptions}
-              </select>
+          <!-- Account selector & Live-Filter -->
+          <div class="row g-3 mb-3 align-items-end">
+            <div class="col-lg-6">
+              <label class="form-label fw-bold small text-muted mb-1">Konto auswählen & blättern</label>
+              <div class="input-group">
+                <button class="btn btn-outline-secondary border-2" type="button" onclick="bhNavigateKontoauszug(-1)" title="Vorheriges Konto">
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+                <select class="form-select fw-bold border-2" id="bha-konto-select" onchange="bhOpenKontoauszugModal(this.value)">
+                  ${kontoOptions}
+                </select>
+                <button class="btn btn-outline-secondary border-2" type="button" onclick="bhNavigateKontoauszug(1)" title="Nächstes Konto">
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+              </div>
             </div>
-            <div class="col-md-6 text-md-end">
-              <span class="badge bg-primary px-3 py-2 fs-7 rounded-pill">
-                Klassifizierung: ${acc.klasse} - ${window.bhGetAccountCategory(acc).main}
+            <div class="col-lg-4">
+              <label class="form-label fw-bold small text-muted mb-1">Live-Filter / Schnellsuche</label>
+              <div class="input-group">
+                <span class="input-group-text bg-white border-2"><i class="fas fa-search text-muted"></i></span>
+                <input type="text" id="bhKontoauszugSearch" class="form-control border-2" placeholder="Text, Beleg, Betrag filtern..." oninput="bhFilterKontoauszug(this.value)" autocomplete="off">
+              </div>
+            </div>
+            <div class="col-lg-2 text-lg-end">
+              <span class="badge bg-primary px-3 py-2 fs-7 rounded-pill text-wrap">
+                ${acc.klasse} - ${window.bhGetAccountCategory(acc).main}
               </span>
             </div>
           </div>
 
           <!-- KPI Header inside Modal -->
-          <div class="row g-3 mb-4">
+          <div class="row g-3 mb-3">
             <div class="col-sm-3">
-              <div class="p-3 bg-white border border-light rounded-3 text-center shadow-sm">
+              <div class="p-2.5 bg-white border border-light rounded-3 text-center shadow-sm">
                 <div class="small text-muted fw-semibold" style="font-size: 11px;">Eröffnungssaldo</div>
                 <h5 class="fw-bold mt-1 mb-0 text-dark">${window.fmtChf(opBalance)}</h5>
               </div>
             </div>
             <div class="col-sm-3">
-              <div class="p-3 bg-white border border-light rounded-3 text-center shadow-sm">
+              <div class="p-2.5 bg-white border border-light rounded-3 text-center shadow-sm">
                 <div class="small text-muted fw-semibold text-primary" style="font-size: 11px;">Total Soll (+)</div>
                 <h5 class="fw-bold mt-1 mb-0 text-primary">${window.fmtChf(totalSoll)}</h5>
               </div>
             </div>
             <div class="col-sm-3">
-              <div class="p-3 bg-white border border-light rounded-3 text-center shadow-sm">
+              <div class="p-2.5 bg-white border border-light rounded-3 text-center shadow-sm">
                 <div class="small text-muted fw-semibold text-success" style="font-size: 11px;">Total Haben (-)</div>
                 <h5 class="fw-bold mt-1 mb-0 text-success">${window.fmtChf(totalHaben)}</h5>
               </div>
             </div>
             <div class="col-sm-3">
-              <div class="p-3 border rounded-3 text-center shadow-sm" style="background-color: rgba(15,58,93,0.02); border-color: var(--primary) !important;">
+              <div class="p-2.5 border rounded-3 text-center shadow-sm" style="background-color: rgba(15,58,93,0.02); border-color: var(--primary) !important;">
                 <div class="small text-muted fw-semibold" style="font-size: 11px;">Endsaldo</div>
                 <h5 class="fw-bold mt-1 mb-0 text-primary">${window.fmtChf(acc._endsaldo)}</h5>
               </div>
@@ -654,21 +854,37 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
           </div>
 
           <!-- Ledgers Table -->
-          <div class="table-responsive animate__animated animate__fadeIn" style="max-height: 400px;">
+          <div class="table-responsive animate__animated animate__fadeIn border rounded-3 shadow-sm bg-white" id="bhKontoauszugTableWrap" style="max-height: ${isFs ? 'calc(100vh - 330px)' : '480px'}; overflow-y: auto;">
             <table class="table table-hover align-middle bh-table mb-0">
-              <thead>
+              <thead class="table-light sticky-top" style="z-index: 2;">
                 <tr>
-                  <th style="width: 50px;">ID</th>
-                  <th style="width: 100px;">Datum</th>
-                  <th style="width: 120px;">Beleg-Nr</th>
-                  <th>Beschreibung</th>
-                  <th>Gegenkonto</th>
-                  <th class="text-end" style="width: 120px;">Soll</th>
-                  <th class="text-end" style="width: 120px;">Haben</th>
-                  <th class="text-end" style="width: 140px;">Saldo</th>
+                  <th style="width: 65px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('id')" title="Klicken zum Sortieren nach ID">
+                    ID ${sortIndicator('id')}
+                  </th>
+                  <th style="width: 115px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('datum')" title="Klicken zum Sortieren nach Datum">
+                    Datum ${sortIndicator('datum')}
+                  </th>
+                  <th style="width: 130px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('beleg')" title="Klicken zum Sortieren nach Beleg-Nr">
+                    Beleg-Nr ${sortIndicator('beleg')}
+                  </th>
+                  <th style="cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('beschreibung')" title="Klicken zum Sortieren nach Beschreibung">
+                    Beschreibung ${sortIndicator('beschreibung')}
+                  </th>
+                  <th style="width: 220px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('gegenkonto')" title="Klicken zum Sortieren nach Gegenkonto">
+                    Gegenkonto ${sortIndicator('gegenkonto')}
+                  </th>
+                  <th class="text-end" style="width: 120px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('soll')" title="Klicken zum Sortieren nach Soll">
+                    Soll ${sortIndicator('soll')}
+                  </th>
+                  <th class="text-end" style="width: 120px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('haben')" title="Klicken zum Sortieren nach Haben">
+                    Haben ${sortIndicator('haben')}
+                  </th>
+                  <th class="text-end" style="width: 140px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('saldo')" title="Klicken zum Sortieren nach Saldo">
+                    Saldo ${sortIndicator('saldo')}
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="bhKontoauszugTableBody">
                 <tr class="table-light italic">
                   <td colspan="5" class="fw-bold text-muted small">Eröffnungsbilanz / Saldenvortrag</td>
                   <td class="text-end text-muted">–</td>
@@ -676,18 +892,30 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
                   <td class="text-end fw-bold text-muted">${window.fmtChf(opBalance)}</td>
                 </tr>
                 ${rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="8" class="text-center text-muted py-4">Keine Buchungen auf diesem Konto im Jahr ' + window._bhYear + ' vorhanden.</td></tr>'}
-                <tr class="bh-main-total-row">
-                  <td colspan="5">KUMULIERT / JAHRESSUMME</td>
-                  <td class="text-end text-primary">${window.fmtChf(totalSoll)}</td>
-                  <td class="text-end text-success">${window.fmtChf(totalHaben)}</td>
-                  <td class="text-end text-primary">${window.fmtChf(acc._endsaldo)}</td>
+                <tr class="bh-main-total-row sticky-bottom bg-white" style="border-top: 2px solid #dee2e6;">
+                  <td colspan="5" class="fw-bold">KUMULIERT / JAHRESSUMME</td>
+                  <td class="text-end fw-bold text-primary">${window.fmtChf(totalSoll)}</td>
+                  <td class="text-end fw-bold text-success">${window.fmtChf(totalHaben)}</td>
+                  <td class="text-end fw-bold text-primary">${window.fmtChf(acc._endsaldo)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
-        <div class="modal-footer bg-light border-0 py-2.5 rounded-bottom-4">
-          <button type="button" class="btn btn-secondary btn-sm fw-bold px-3 shadow-sm" data-bs-dismiss="modal">Schliessen</button>
+        <div class="modal-footer bg-light border-0 py-2.5 rounded-bottom-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div class="small text-muted">
+            <i class="fas fa-info-circle text-primary me-1"></i>
+            <strong>Tipp:</strong> Klicke auf eine Zeile zum <strong>dauerhaften Markieren</strong>. Spaltentitel zum <strong>Sortieren</strong>.
+          </div>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-success btn-sm fw-bold px-3 shadow-sm" onclick="bhExportKontoauszugCsv('${selectedKonto}')" title="Als CSV für Excel exportieren">
+              <i class="fas fa-file-csv me-1"></i>CSV Export
+            </button>
+            <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 shadow-sm" onclick="bhPrintKontoauszug()" title="Kontoblatt drucken / als PDF speichern">
+              <i class="fas fa-print me-1"></i>Drucken
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm fw-bold px-3 shadow-sm" data-bs-dismiss="modal">Schliessen</button>
+          </div>
         </div>
       </div>
     </div>

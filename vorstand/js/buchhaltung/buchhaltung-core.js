@@ -82,9 +82,15 @@ if (!document.getElementById('buchhaltung-module-styles')) {
     
     .bh-account-row {
       transition: background-color 0.15s ease;
+      cursor: pointer;
     }
     .bh-account-row:hover {
-      background-color: rgba(0,0,0,0.015) !important;
+      background-color: rgba(13, 110, 253, 0.07) !important;
+    }
+    .bh-account-row.bh-row-selected {
+      background-color: #e7f1ff !important;
+      box-shadow: inset 4px 0 0 #0d6efd !important;
+      font-weight: 500;
     }
     
     .bh-konto-badge {

@@ -18,19 +18,33 @@ window.getBhBankRules = function() {
       rules = stored ? JSON.parse(stored) : getBhDefaultRules();
     }
 
-    // Auto-Fix für alte RaiseNow Regel-Einträge
+    // Auto-Fix für alte RaiseNow Regel-Einträge und Default-Scope
     rules = rules.map(r => {
+      let updated = { ...r, scope: r.scope || 'all' };
       if (/raisenow/i.test(r.pattern || r.label || '')) {
-        return {
-          ...r,
+        updated = {
+          ...updated,
           label: 'RaiseNow TWINT',
           prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)',
           soll: '1020',
-          haben: '3651'
+          haben: '3651',
+          scope: 'all'
         };
       }
-      return r;
+      return updated;
     });
+
+    // Falls AGSV noch nicht in den Regeln ist, als Standardregel ergänzen
+    if (!rules.some(r => /agsv/i.test(r.pattern || ''))) {
+      rules.push({
+        pattern: 'agsv',
+        soll: '4410',
+        haben: '1020',
+        label: 'Verbandsbeiträge (AGSV)',
+        prefix: 'AGSV Verbandsabrechnung',
+        scope: 'party'
+      });
+    }
 
     return rules;
   } catch (e) {
@@ -85,19 +99,20 @@ window.fetchBhBankServerRules = function() {
 
 function getBhDefaultRules() {
   return [
-    { pattern: 'raisenow', soll: '1020', haben: '3651', label: 'RaiseNow TWINT', prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)' },
-    { pattern: 'vermietung', soll: '1020', haben: '3650', label: 'Vermietung Schützenhaus', prefix: 'Vermietung Schützenhaus' },
-    { pattern: 'bankspesen', soll: '6900', haben: '1020', label: 'Bankspesen / Finanzaufwand', prefix: 'Bankspesen / Finanzaufwand' },
-    { pattern: 'kontoführung', soll: '6900', haben: '1020', label: 'Bankspesen / Kontoführung', prefix: 'Bankspesen / Kontoführung' },
-    { pattern: 'zins', soll: '1020', haben: '6950', label: 'Zinsertrag / Bank', prefix: 'Zinsertrag / Bank' },
-    { pattern: 'schützenverband', soll: '6500', haben: '1020', label: 'Verbandsbeiträge', prefix: 'Verbandsbeiträge (SSV)' },
-    { pattern: 'agksv', soll: '6500', haben: '1020', label: 'Verbandsbeiträge (AGKSV)', prefix: 'Verbandsbeiträge (AGKSV)' },
-    { pattern: 'ssv', soll: '6500', haben: '1020', label: 'Verbandsbeiträge (SSV)', prefix: 'Verbandsbeiträge (SSV)' },
-    { pattern: 'munition', soll: '4200', haben: '1020', label: 'Munitionsaufwand', prefix: 'Munitionsaufwand' },
-    { pattern: 'helvetia', soll: '6200', haben: '1020', label: 'Versicherungsprämie', prefix: 'Versicherungsprämie Helvetia' },
-    { pattern: 'gva', soll: '6200', haben: '1020', label: 'Gebäudeversicherung', prefix: 'Gebäudeversicherung GVA' },
-    { pattern: 'sponsoring', soll: '1020', haben: '3600', label: 'Sponsoring-Ertrag', prefix: 'Sponsoring-Ertrag' },
-    { pattern: 'spende', soll: '1020', haben: '3600', label: 'Spenden-Ertrag', prefix: 'Spenden-Ertrag' }
+    { pattern: 'raisenow', soll: '1020', haben: '3651', label: 'RaiseNow TWINT', prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)', scope: 'all' },
+    { pattern: 'vermietung', soll: '1020', haben: '3650', label: 'Vermietung Schützenhaus', prefix: 'Vermietung Schützenhaus', scope: 'text' },
+    { pattern: 'bankspesen', soll: '6900', haben: '1020', label: 'Bankspesen / Finanzaufwand', prefix: 'Bankspesen / Finanzaufwand', scope: 'all' },
+    { pattern: 'kontoführung', soll: '6900', haben: '1020', label: 'Bankspesen / Kontoführung', prefix: 'Bankspesen / Kontoführung', scope: 'all' },
+    { pattern: 'zins', soll: '1020', haben: '6950', label: 'Zinsertrag / Bank', prefix: 'Zinsertrag / Bank', scope: 'all' },
+    { pattern: 'agsv', soll: '4410', haben: '1020', label: 'Verbandsbeiträge (AGSV)', prefix: 'AGSV Verbandsabrechnung', scope: 'party' },
+    { pattern: 'agksv', soll: '4410', haben: '1020', label: 'Verbandsbeiträge (AGKSV)', prefix: 'Verbandsbeiträge (AGKSV)', scope: 'party' },
+    { pattern: 'ssv', soll: '4410', haben: '1020', label: 'Verbandsbeiträge (SSV)', prefix: 'Verbandsbeiträge (SSV)', scope: 'party' },
+    { pattern: 'schützenverband', soll: '4410', haben: '1020', label: 'Verbandsbeiträge', prefix: 'Verbandsbeiträge (SSV)', scope: 'party' },
+    { pattern: 'munition', soll: '4200', haben: '1020', label: 'Munitionsaufwand', prefix: 'Munitionsaufwand', scope: 'all' },
+    { pattern: 'helvetia', soll: '6200', haben: '1020', label: 'Versicherungsprämie', prefix: 'Versicherungsprämie Helvetia', scope: 'party' },
+    { pattern: 'gva', soll: '6200', haben: '1020', label: 'Gebäudeversicherung', prefix: 'Gebäudeversicherung GVA', scope: 'party' },
+    { pattern: 'sponsoring', soll: '1020', haben: '3600', label: 'Sponsoring-Ertrag', prefix: 'Sponsoring-Ertrag', scope: 'text' },
+    { pattern: 'spende', soll: '1020', haben: '3600', label: 'Spenden-Ertrag', prefix: 'Spenden-Ertrag', scope: 'text' }
   ];
 }
 
@@ -549,6 +564,14 @@ function bhMakeTableResizable(table) {
 }
 
 // ---------------------------------------------------------------------
+// Prüft, ob ein Konto ein Bank-/Geldkonto ist (10xx, z.B. 1020, 1021, 1022, 1000)
+// ---------------------------------------------------------------------
+function isBankKontoCode(code) {
+  const c = String(code || '').trim();
+  return c.startsWith('102') || c === '1000' || c === '1010';
+}
+
+// ---------------------------------------------------------------------
 // Ermittelt das Buchhaltungskonto (z.B. 1020, 1021, 1022) anhand der IBAN aus der XML-Datei
 // ---------------------------------------------------------------------
 function bhBankGetAccountForIban(iban, fallbackKonto = '1020') {
@@ -902,22 +925,40 @@ function bhBankMatchAll(transactions) {
     let matchRulePrefix = '';
     if (!isJahresbeitrag && matchType === 'unknown') {
       for (const r of userRules) {
-        const p = r.pattern.toLowerCase();
-        if (cleanRemittance.includes(p) || cleanParty.includes(p)) {
+        const p = (r.pattern || '').toLowerCase().trim();
+        if (!p) continue;
+
+        let isMatch = false;
+        const scope = r.scope || 'all';
+        if (scope === 'party') {
+          isMatch = cleanParty.includes(p);
+        } else if (scope === 'text') {
+          isMatch = cleanRemittance.includes(p);
+        } else {
+          isMatch = cleanRemittance.includes(p) || cleanParty.includes(p);
+        }
+
+        if (isMatch) {
           matchType = 'rule';
           matchRuleName = r.label;
           matchRulePrefix = r.prefix || r.label;
           
-          // Bankkonto dynamisch anpassen: falls in der Regel ein Bankkonto (1020, 1021, 1022) als Gegenkonto
-          // hinterlegt ist, verwenden wir das tatsächlich erkannte Bankkonto dieser Transaktion.
-          const isBankKonto = (code) => ['1020', '1021', '1022'].includes(String(code).trim());
+          // Eindeutige Ermittlung des Gegenkontos:
+          // Unabhängig davon, wie die Regel erfasst wurde (ob Soll oder Haben das Bankkonto war):
+          // Bei Gutschrift (Geldeingang): Soll = Bank (txBankKonto), Haben = Gegenkonto
+          // Bei Belastung (Geldausgang): Soll = Gegenkonto, Haben = Bank (txBankKonto)
+          const rBankInSoll = isBankKontoCode(r.soll);
+          const rBankInHaben = isBankKontoCode(r.haben);
+          const gegenKonto = rBankInSoll ? r.haben : (rBankInHaben ? r.soll : (tx.isCredit ? r.haben : r.soll));
+
           if (tx.isCredit) {
-            suggestedSoll = isBankKonto(r.soll) ? txBankKonto : r.soll;
-            suggestedHaben = r.haben;
+            suggestedSoll = txBankKonto;
+            suggestedHaben = gegenKonto;
           } else {
-            suggestedSoll = r.soll;
-            suggestedHaben = isBankKonto(r.haben) ? txBankKonto : r.haben;
+            suggestedSoll = gegenKonto;
+            suggestedHaben = txBankKonto;
           }
+
           matchLabel = `Regel: ${r.label}`;
           matchScore = 2;
           break;
@@ -926,21 +967,42 @@ function bhBankMatchAll(transactions) {
     }
 
     // 3. STUFE: Historisches Journal-Learning
+    // WICHTIGE SICHERHEIT: Ausgang (Belastung) gleicht NUR mit früheren Ausgängen ab!
+    // Eingang (Gutschrift) gleicht NUR mit früheren Eingängen ab!
     if (!isJahresbeitrag && matchType === 'unknown' && journalHistory.length > 0) {
-      const matchHist = journalHistory.find(j => {
-        const desc = (j.beschreibung || '').toLowerCase();
-        return desc && (cleanRemittance.includes(desc) || cleanParty.includes(desc) || desc.includes(cleanParty));
+      // Passende Historien-Pools bilden:
+      const historyPool = journalHistory.filter(j => {
+        if (tx.isCredit) {
+          return isBankKontoCode(j.konto_soll); // Frühere Gutschriften (Bank war im Soll)
+        } else {
+          return isBankKontoCode(j.konto_haben); // Frühere Belastungen (Bank war im Haben)
+        }
+      });
+
+      // Von neu nach alt durchsuchen (neueste Buchungen haben Priorität)
+      const matchHist = [...historyPool].reverse().find(j => {
+        const desc = (j.beschreibung || '').toLowerCase().trim();
+        if (!desc || desc.length < 3) return false;
+
+        // Bevorzugt nach Empfänger/Zahler suchen
+        if (cleanParty && (desc.includes(cleanParty) || (cleanParty.length >= 4 && cleanParty.includes(desc)))) {
+          return true;
+        }
+        // Oder im Verwendungszweck (nur bei mindestens 4 Zeichen)
+        if (cleanRemittance && desc.length >= 4 && (cleanRemittance.includes(desc) || desc.includes(cleanRemittance))) {
+          return true;
+        }
+        return false;
       });
 
       if (matchHist) {
         matchType = 'journal';
-        const isBankKonto = (code) => ['1020', '1021', '1022'].includes(String(code).trim());
         if (tx.isCredit) {
-          suggestedSoll = isBankKonto(matchHist.konto_soll) ? txBankKonto : matchHist.konto_soll;
+          suggestedSoll = txBankKonto;
           suggestedHaben = matchHist.konto_haben;
         } else {
           suggestedSoll = matchHist.konto_soll;
-          suggestedHaben = isBankKonto(matchHist.konto_haben) ? txBankKonto : matchHist.konto_haben;
+          suggestedHaben = txBankKonto;
         }
         matchLabel = 'Aus Journal-Historie';
         matchScore = 1;
@@ -955,6 +1017,31 @@ function bhBankMatchAll(transactions) {
       } else {
         suggestedSoll = suggestedSoll || '6000'; // Raum/Unterhalt Aufwand
         suggestedHaben = suggestedHaben || txBankKonto; // Bank
+      }
+    }
+
+    // ABSOLUTER GARANTIE-CHECK: Bankkonto darf NIEMALS auf der verkehrten Seite stehen!
+    // Belastung (tx.isCredit === false) -> Bank (1020) MUSS im HABEN stehen!
+    // Gutschrift (tx.isCredit === true)  -> Bank (1020) MUSS im SOLL stehen!
+    if (tx.isCredit) {
+      if (isBankKontoCode(suggestedHaben) && !isBankKontoCode(suggestedSoll)) {
+        const tmp = suggestedSoll;
+        suggestedSoll = suggestedHaben;
+        suggestedHaben = tmp;
+      }
+      if (!isBankKontoCode(suggestedSoll)) {
+        suggestedHaben = suggestedHaben || suggestedSoll || '3900';
+        suggestedSoll = txBankKonto;
+      }
+    } else {
+      if (isBankKontoCode(suggestedSoll) && !isBankKontoCode(suggestedHaben)) {
+        const tmp = suggestedHaben;
+        suggestedHaben = suggestedSoll;
+        suggestedSoll = tmp;
+      }
+      if (!isBankKontoCode(suggestedHaben)) {
+        suggestedSoll = suggestedSoll || suggestedHaben || '6000';
+        suggestedHaben = txBankKonto;
       }
     }
 
@@ -1287,8 +1374,18 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
             
             <div class="mb-3">
               <label class="form-label fw-bold small">Suchmuster (Text / Absender)</label>
-              <input type="text" id="bhr-pattern" class="form-control form-control-sm" placeholder="z.B. Berchtold, Raiffeisen, Helvetia" value="${escHtml(rule.pattern)}" required>
-              <div class="form-text small">Transaktionen mit diesem Suchbegriff im Absender oder Text werden automatisch erkannt.</div>
+              <input type="text" id="bhr-pattern" class="form-control form-control-sm" placeholder="z.B. AGSV, Berchtold, Raiffeisen, Helvetia" value="${escHtml(rule.pattern)}" required>
+              <div class="form-text small">Transaktionen mit diesem Suchbegriff werden automatisch zugeordnet.</div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold small"><i class="fas fa-filter me-1 text-primary"></i>Suchbereich (Wo soll gesucht werden?)</label>
+              <select id="bhr-scope" class="form-select form-select-sm">
+                <option value="party" ${(rule.scope === 'party' || (!rule.scope && isEdit)) ? 'selected' : ''}>Nur Empfänger / Zahler (Name im CAMT)</option>
+                <option value="text" ${rule.scope === 'text' ? 'selected' : ''}>Nur Verwendungszweck / Buchungstext</option>
+                <option value="all" ${(rule.scope === 'all' || !rule.scope) ? 'selected' : ''}>Überall (Empfänger/Zahler & Verwendungszweck)</option>
+              </select>
+              <div class="form-text small">Trennt sauber zwischen Zahlungsempfänger/Zahler und dem Überweisungstext.</div>
             </div>
 
             <div class="row g-2 mb-3">
@@ -1323,6 +1420,7 @@ window.bhBankSaveRuleSubmit = function(e, editIdx) {
   const label   = document.getElementById('bhr-label').value.trim();
   const pattern = document.getElementById('bhr-pattern').value.trim();
   const prefix  = document.getElementById('bhr-prefix').value.trim() || label;
+  const scope   = document.getElementById('bhr-scope')?.value || 'all';
   const rawSoll = document.getElementById('bhr-soll').value.trim();
   const rawHaben= document.getElementById('bhr-haben').value.trim();
 
@@ -1337,10 +1435,10 @@ window.bhBankSaveRuleSubmit = function(e, editIdx) {
   const rules = window.getBhBankRules();
 
   if (editIdx >= 0 && editIdx < rules.length) {
-    rules[editIdx] = { pattern, label, prefix, soll, haben };
+    rules[editIdx] = { pattern, label, prefix, soll, haben, scope };
     showToast(`✅ Regel "${label}" erfolgreich aktualisiert!`, 'success');
   } else {
-    rules.push({ pattern, label, prefix, soll, haben });
+    rules.push({ pattern, label, prefix, soll, haben, scope });
     showToast(`✅ Neue Regel "${label}" gespeichert!`, 'success');
   }
 
@@ -1369,7 +1467,9 @@ window.bhBankSaveRuleModal = function(txIdx) {
   const tx = window._bhBankMatchResults[txIdx];
   if (!tx) return;
 
-  const defaultPattern = (tx.partyName || tx.remittanceInfo || '').trim();
+  const hasParty = Boolean((tx.partyName || '').trim());
+  const defaultPattern = hasParty ? tx.partyName.trim() : (tx.remittanceInfo || '').trim();
+  const defaultScope = hasParty ? 'party' : 'text';
 
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
   const habenEl = document.getElementById(`bh-haben-${txIdx}`);
@@ -1382,7 +1482,8 @@ window.bhBankSaveRuleModal = function(txIdx) {
     label: tx.partyName || defaultPattern,
     prefix: tx.partyName || defaultPattern,
     soll: sollVal,
-    haben: habenVal
+    haben: habenVal,
+    scope: defaultScope
   });
 };
 
@@ -1412,10 +1513,19 @@ window.bhBankManageRulesModal = function() {
   const rulesRows = rules.length ? rules.map((r, i) => {
     const sollNr  = extractCleanKontoNr(r.soll);
     const habenNr = extractCleanKontoNr(r.haben);
+    let scopeBadge = '<span class="badge bg-light text-secondary border">Überall</span>';
+    if (r.scope === 'party') {
+      scopeBadge = '<span class="badge bg-info text-dark border" title="Sucht gezielt nur beim Empfänger oder Zahler"><i class="fas fa-user me-1"></i>Empfänger</span>';
+    } else if (r.scope === 'text') {
+      scopeBadge = '<span class="badge bg-secondary text-white border" title="Sucht gezielt nur im Buchungstext"><i class="fas fa-file-alt me-1"></i>Text</span>';
+    }
     return `
       <tr>
         <td><span class="fw-bold text-primary">${escHtml(r.label)}</span></td>
-        <td><code class="text-dark bg-light px-2 py-1 rounded border">${escHtml(r.pattern)}</code></td>
+        <td>
+          <code class="text-dark bg-light px-2 py-1 rounded border">${escHtml(r.pattern)}</code>
+          <div class="mt-1">${scopeBadge}</div>
+        </td>
         <td><span class="text-dark small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
         <td><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
         <td><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
