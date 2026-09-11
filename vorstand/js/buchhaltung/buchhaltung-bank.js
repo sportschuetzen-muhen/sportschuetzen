@@ -20,7 +20,17 @@ window.getBhBankRules = function() {
 
     // Auto-Fix für alte RaiseNow Regel-Einträge und Migration für getrennte Suchfelder (party / text)
     rules = rules.map(r => {
-      let updated = { ...r };
+      let updated = {
+        ...r,
+        label: String(r.label || ''),
+        pattern_party: String(r.pattern_party !== undefined && r.pattern_party !== null ? r.pattern_party : ''),
+        pattern_text: String(r.pattern_text !== undefined && r.pattern_text !== null ? r.pattern_text : ''),
+        pattern: String(r.pattern !== undefined && r.pattern !== null ? r.pattern : ''),
+        prefix: String(r.prefix || r.label || ''),
+        soll: String(r.soll || '').split('|')[0].trim(),
+        haben: String(r.haben || '').split('|')[0].trim(),
+        scope: String(r.scope || 'all')
+      };
       // Fallback/Migration: Falls neue Felder noch fehlen, aber altes pattern existiert
       if (!updated.pattern_party && !updated.pattern_text && updated.pattern) {
         if (updated.scope === 'party') {
@@ -177,7 +187,12 @@ window.renderTabBankabgleich = function(container) {
             <strong>Buchungssätze</strong> für alle Kontoaktivitäten.
           </p>
         </div>
-        <div>
+        <div class="d-flex align-items-center gap-2">
+          ${hasResults ? `
+            <button class="btn btn-sm btn-outline-danger" onclick="bhBankClearTransactions()" title="Aktuell geladene Transaktionen verwerfen und Auszug neu hochladen">
+              <i class="fas fa-trash-alt me-1"></i> Auszug leeren
+            </button>
+          ` : ''}
           <button class="btn btn-sm btn-outline-secondary" onclick="bhBankManageRulesModal()">
             <i class="fas fa-cog me-1"></i> Buchungsregeln verwalten
           </button>
@@ -876,14 +891,12 @@ window.bhBankHandleFiles = async function(files) {
       const xmlText = await file.text();
       const txs = bhBankParseCAMT053(xmlText);
 
-      // Duplicate message ID check per file
+      // Message-ID für Duplikatskontrolle festhalten
       const firstMsgId = txs.length > 0 ? txs[0].fileMsgId : '';
       if (firstMsgId) {
         try {
           const processedMsgIds = JSON.parse(localStorage.getItem('bh_processed_camt_msgids') || '[]');
-          if (processedMsgIds.includes(firstMsgId)) {
-            showToast(`⚠️ Datei "${file.name}" (ID: ${firstMsgId}) wurde bereits früher geladen.`, 'warning');
-          } else {
+          if (!processedMsgIds.includes(firstMsgId)) {
             processedMsgIds.push(firstMsgId);
             localStorage.setItem('bh_processed_camt_msgids', JSON.stringify(processedMsgIds.slice(-50)));
           }
@@ -922,6 +935,20 @@ window.bhBankHandleFiles = async function(files) {
 
   const inp = document.getElementById('bhBankXmlInput');
   if (inp) inp.value = '';
+};
+
+window.bhBankClearTransactions = function() {
+  if (!confirm('Möchtest du die aktuell geladenen Kontoauszugs-Transaktionen wirklich leeren, um den Auszug frisch einzulesen?')) return;
+  window._bhBankTransactions = [];
+  window._bhBankMatchResults = [];
+  try {
+    localStorage.removeItem('bh_processed_camt_msgids');
+  } catch(_) {}
+  const container = document.getElementById('bh-tab-content-container');
+  if (container) {
+    renderTabBankabgleich(container);
+  }
+  showToast('Bankauszug geleert. Du kannst die CAMT-Datei nun neu einlesen.', 'info');
 };
 
 function bhBankParseCAMT053(xmlText) {
@@ -1162,22 +1189,34 @@ function bhBankMatchAll(transactions) {
     if (!isJahresbeitrag && matchType === 'unknown') {
       const sortedRules = [...userRules].sort((a, b) => {
         let aSpec = 0;
-        if (a.pattern_party || (a.scope === 'party' ? a.pattern : '')) aSpec += 1;
-        if (a.pattern_text  || (a.scope === 'text'  ? a.pattern : '')) aSpec += 1;
+        const aParty = String(a.pattern_party || (a.scope === 'party' ? a.pattern : '') || '').trim();
+        const aText  = String(a.pattern_text  || (a.scope === 'text'  ? a.pattern : '') || '').trim();
+        if (aParty) aSpec += 1;
+        if (aText) aSpec += 1;
         if (a.amount_mode && a.amount_mode !== 'any') aSpec += 2;
 
         let bSpec = 0;
-        if (b.pattern_party || (b.scope === 'party' ? b.pattern : '')) bSpec += 1;
-        if (b.pattern_text  || (b.scope === 'text'  ? b.pattern : '')) bSpec += 1;
+        const bParty = String(b.pattern_party || (b.scope === 'party' ? b.pattern : '') || '').trim();
+        const bText  = String(b.pattern_text  || (b.scope === 'text'  ? b.pattern : '') || '').trim();
+        if (bParty) bSpec += 1;
+        if (bText) bSpec += 1;
         if (b.amount_mode && b.amount_mode !== 'any') bSpec += 2;
 
         return bSpec - aSpec;
       });
 
       for (const r of sortedRules) {
-        const pParty = (r.pattern_party || (r.scope === 'party' ? r.pattern : '')).toLowerCase().trim();
-        const pText  = (r.pattern_text  || (r.scope === 'text'  ? r.pattern : '')).toLowerCase().trim();
-        const legacyP = (r.pattern || '').toLowerCase().trim();
+        const rawParty = (r.pattern_party !== undefined && r.pattern_party !== null && String(r.pattern_party).trim() !== '')
+          ? r.pattern_party
+          : (r.scope === 'party' ? r.pattern : '');
+        const rawText  = (r.pattern_text !== undefined && r.pattern_text !== null && String(r.pattern_text).trim() !== '')
+          ? r.pattern_text
+          : (r.scope === 'text' ? r.pattern : '');
+        const rawLegacy = r.pattern || '';
+
+        const pParty = String(rawParty || '').toLowerCase().trim();
+        const pText  = String(rawText || '').toLowerCase().trim();
+        const legacyP = String(rawLegacy || '').toLowerCase().trim();
 
         let isMatch = false;
 
@@ -1187,7 +1226,7 @@ function bhBankMatchAll(transactions) {
           // Wenn beide Kriterien gesetzt sind, müssen beide matchen. Wenn nur eines gesetzt ist, reicht dieses eine.
           isMatch = matchParty && matchText;
         } else if (legacyP) {
-          const scope = r.scope || 'all';
+          const scope = String(r.scope || 'all');
           if (scope === 'party') {
             isMatch = cleanParty.includes(legacyP);
           } else if (scope === 'text') {
