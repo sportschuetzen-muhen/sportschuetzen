@@ -20,10 +20,19 @@ function escapeJs(str) {
         .replace(/\r/g, '\\r');
 }
 
-// Converts ISO date (YYYY-MM-DD) → display format (DD.MM.YYYY)
+// Converts ISO date (YYYY-MM-DD or ISO timestamp) → display format (DD.MM.YYYY)
 function isoToDisplay(val) {
     if (!val) return '';
     const s = String(val).trim();
+    if (s.includes('T')) {
+        const dt = new Date(s);
+        if (!isNaN(dt.getTime())) {
+            const d = String(dt.getDate()).padStart(2, '0');
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const y = dt.getFullYear();
+            return `${d}.${m}.${y}`;
+        }
+    }
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
         const [y, m, d] = s.split('T')[0].split('-');
         return `${d}.${m}.${y}`;
@@ -35,6 +44,15 @@ function isoToDisplay(val) {
 function displayToIso(val) {
     if (!val) return '';
     const s = String(val).trim();
+    if (s.includes('T')) {
+        const dt = new Date(s);
+        if (!isNaN(dt.getTime())) {
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const d = String(dt.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+    }
     if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s)) {
         const [d, m, y] = s.split('.');
         return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;

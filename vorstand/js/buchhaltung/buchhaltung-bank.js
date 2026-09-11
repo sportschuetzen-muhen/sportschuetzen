@@ -84,9 +84,22 @@ window.fetchBhBankServerRules = function() {
       .then(res => res.json())
       .then(json => {
         if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const oldRulesJson = localStorage.getItem('bh_bank_rules') || '';
+          const newRulesJson = JSON.stringify(json.data);
           window._bhBankServerRules = json.data;
-          localStorage.setItem('bh_bank_rules', JSON.stringify(json.data));
+          localStorage.setItem('bh_bank_rules', newRulesJson);
           console.log('✅ Bank-Regeln erfolgreich aus dem zentralen Google Sheet geladen.');
+          
+          // Wenn sich die Regeln nicht geändert haben, ist kein störendes Re-Rendern nötig!
+          if (oldRulesJson === newRulesJson) return;
+
+          // Falls der Nutzer gerade aktiv in einem Feld tippt, Re-Matching nicht mit Fokusverlust durchführen
+          const active = document.activeElement;
+          if (active && active.classList && active.classList.contains('bh-konto-input')) {
+            console.log('Fokus aktiv in Konto-Eingabe, verzögere Hintergrund-Re-Matching...');
+            return;
+          }
+
           if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
             window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
             bhBankRenderResults(window._bhBankActiveFilter);
@@ -298,6 +311,15 @@ window.bhBankSortTable = function(col) {
 function formatSwissDate(val) {
   if (!val) return '';
   const s = String(val).trim();
+  if (s.includes('T')) {
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) {
+      const d = String(dt.getDate()).padStart(2, '0');
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const y = dt.getFullYear();
+      return `${d}.${m}.${y}`;
+    }
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
     const [y, m, d] = s.split('T')[0].split('-');
     return `${d}.${m}.${y}`;
@@ -308,6 +330,15 @@ function formatSwissDate(val) {
 function toNormalizedIsoDate(val) {
   if (!val) return '';
   const s = String(val).trim();
+  if (s.includes('T')) {
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.split('T')[0];
   if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(s)) {
     const [d, m, y] = s.split('.');
@@ -617,6 +648,21 @@ function bhBankRenderResults(filter) {
     return `<option value="${String(k.konto).trim()} | ${escHtml(k.bezeichnung)}"></option>`;
   }).join('');
 
+  // Aktiven Fokus und Eingabewert merken, falls der Nutzer gerade ein Konto editiert
+  const activeEl = document.activeElement;
+  let focusedInputId = null;
+  let focusedInputVal = null;
+  let selStart = null;
+  let selEnd = null;
+  if (activeEl && activeEl.id && activeEl.classList && activeEl.classList.contains('bh-konto-input')) {
+    focusedInputId = activeEl.id;
+    focusedInputVal = activeEl.value;
+    try {
+      selStart = activeEl.selectionStart;
+      selEnd = activeEl.selectionEnd;
+    } catch (_) {}
+  }
+
   container.innerHTML = `
     <datalist id="bh-konten-datalist">
       ${datalistOptions}
@@ -644,6 +690,25 @@ function bhBankRenderResults(filter) {
 
   setTimeout(() => {
     bhMakeTableResizable(document.getElementById('bhBankTable'));
+    
+    // 1. Falls der Nutzer vor dem Re-Render in einem Feld war: Fokus und Cursor nahtlos wiederherstellen!
+    if (focusedInputId) {
+      const restored = document.getElementById(focusedInputId);
+      if (restored) {
+        if (focusedInputVal !== null && focusedInputVal !== restored.value) {
+          restored.value = focusedInputVal;
+        }
+        restored.focus();
+        try {
+          if (selStart !== null && selEnd !== null) {
+            restored.setSelectionRange(selStart, selEnd);
+          }
+        } catch (_) {}
+        return; // Priorität für aktive Nutzereingabe
+      }
+    }
+
+    // 2. Automatischer Sprung zur nächsten offenen Zeile nach erfolgreichem Buchen
     if (window._bhFocusNextAfterBooking !== undefined) {
       const nextIdx = window._bhFocusNextAfterBooking;
       window._bhFocusNextAfterBooking = undefined;
@@ -878,7 +943,15 @@ function bhBankParseCAMT053(xmlText) {
     const isCredit = cdtDbtInd === 'CRDT';
 
     const amount      = parseFloat(getTagText(ntry, 'Amt') || '0');
-    const bookingDate = getTagText(getFirstChild(ntry, 'BookgDt'), 'Dt');
+    
+    // Buchungsdatum (BookgDt) & Valutadatum (ValDt) auslesen
+    const bookgDtNode = getFirstChild(ntry, 'BookgDt');
+    const valDtNode   = getFirstChild(ntry, 'ValDt');
+    const rawBookgDt  = getTagText(bookgDtNode, 'Dt') || getTagText(bookgDtNode, 'DtTm');
+    const rawValDt    = getTagText(valDtNode, 'Dt') || getTagText(valDtNode, 'DtTm');
+    const bookingDate = (rawBookgDt || rawValDt || '').split('T')[0];
+    const valutaDate  = (rawValDt || '').split('T')[0];
+
     const addtlInfo   = getTagText(ntry, 'AddtlNtryInf');
 
     const txDtls = getFirstChild(ntry, 'TxDtls');
@@ -906,6 +979,7 @@ function bhBankParseCAMT053(xmlText) {
       isCredit,
       amount,
       bookingDate,
+      valutaDate,
       partyName,
       partyPLZ,
       partyCity: partyCity || (adrLine ? adrLine.split(' ').slice(-1)[0] : ''),

@@ -292,7 +292,15 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
       
       const content = document.getElementById('bh-tab-content-container');
       if (content) {
-        renderActiveAccountingTab();
+        // Falls der Nutzer im Tab "Bankabgleich" gerade in ein Eingabefeld klickt/tippt,
+        // darf der gesamte Tab-Inhalt nicht mitten in der Interaktion zerstört werden!
+        const active = document.activeElement;
+        const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA');
+        if (isTyping && window._bhActiveTab === 'bank') {
+          console.log('⚡ loadBuchhaltungData: Nutzer editiert gerade ein Feld im Bankabgleich, überspringe Tab-Neuaufbau.');
+        } else {
+          renderActiveAccountingTab();
+        }
       }
     } else {
       throw new Error(dataJournal.error || dataKonten.error || dataBudget.error || "Unerwarteter API Fehler.");
