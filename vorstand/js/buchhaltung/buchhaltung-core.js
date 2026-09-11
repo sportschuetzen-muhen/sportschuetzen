@@ -226,21 +226,24 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
   }
   
   try {
-    const [resJournal, resKonten, resBudget] = await Promise.all([
+    const [resJournal, resKonten, resBudget, resRules] = await Promise.all([
       apiFetch('buchhaltung', 'action=getJournal'),
       apiFetch('buchhaltung', 'action=getKontenrahmen'),
-      apiFetch('buchhaltung', 'action=getBudget')
+      apiFetch('buchhaltung', 'action=getBudget'),
+      apiFetch('buchhaltung', 'action=getBankRules')
     ]);
 
     const txtJournal = await resJournal.text();
     const txtKonten = await resKonten.text();
     const txtBudget = await resBudget.text();
+    const txtRules = await resRules.text();
 
-    let dataJournal, dataKonten, dataBudget;
+    let dataJournal, dataKonten, dataBudget, dataRules;
     try {
       dataJournal = JSON.parse(txtJournal);
       dataKonten = JSON.parse(txtKonten);
       dataBudget = JSON.parse(txtBudget);
+      dataRules = JSON.parse(txtRules);
     } catch (_) {
       console.error('❌ Buchhaltung API: HTML statt JSON erhalten.');
       const content = document.getElementById('bh-tab-content-container');
@@ -267,6 +270,13 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
       window._bhJournal = dataJournal.data || [];
       window._bhKontenrahmen = dataKonten.data || [];
       window._bhBudget = dataBudget.data || [];
+
+      if (dataRules && dataRules.success && Array.isArray(dataRules.data)) {
+        window._bhBankServerRules = dataRules.data;
+        try {
+          localStorage.setItem('bh_bank_rules', JSON.stringify(dataRules.data));
+        } catch(_) {}
+      }
 
       if (window._bhBankTransactions && window._bhBankTransactions.length > 0 && typeof bhBankMatchAll === 'function') {
         window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);

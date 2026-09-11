@@ -11,15 +11,15 @@ window._bhBankActiveFilter = window._bhBankActiveFilter || 'all';
 window.getBhBankRules = function() {
   try {
     let rules = [];
-    if (window._bhBankServerRules && Array.isArray(window._bhBankServerRules) && window._bhBankServerRules.length > 0) {
+    if (window._bhBankServerRules && Array.isArray(window._bhBankServerRules)) {
       rules = window._bhBankServerRules;
     } else {
       const stored = localStorage.getItem('bh_bank_rules');
-      rules = stored ? JSON.parse(stored) : getBhDefaultRules();
+      rules = stored ? JSON.parse(stored) : [];
     }
 
-    // Auto-Fix für alte RaiseNow Regel-Einträge und Migration für getrennte Suchfelder (party / text)
-    rules = rules.map(r => {
+    // Saubere Typisierung und Absicherung aller Felder
+    return rules.map(r => {
       let updated = {
         ...r,
         label: String(r.label || ''),
@@ -29,52 +29,25 @@ window.getBhBankRules = function() {
         prefix: String(r.prefix || r.label || ''),
         soll: String(r.soll || '').split('|')[0].trim(),
         haben: String(r.haben || '').split('|')[0].trim(),
-        scope: String(r.scope || 'all')
+        scope: String(r.scope || 'all'),
+        amount_mode: String(r.amount_mode || 'any'),
+        amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : '',
+        amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : ''
       };
-      // Fallback/Migration: Falls neue Felder noch fehlen, aber altes pattern existiert
+      // Fallback/Migration: Falls neue getrennte Felder noch fehlen, aber altes pattern existiert
       if (!updated.pattern_party && !updated.pattern_text && updated.pattern) {
         if (updated.scope === 'party') {
           updated.pattern_party = updated.pattern;
         } else if (updated.scope === 'text') {
           updated.pattern_text = updated.pattern;
         } else {
-          // Scope 'all' oder nicht definiert: Fallback belassen
           updated.pattern_party = updated.pattern;
         }
       }
-      if (/raisenow/i.test(updated.pattern_party || updated.pattern_text || updated.pattern || updated.label || '')) {
-        updated = {
-          ...updated,
-          label: 'RaiseNow TWINT',
-          prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)',
-          pattern_party: 'RaiseNow',
-          pattern_text: '',
-          pattern: 'raisenow',
-          soll: '1020',
-          haben: '3651',
-          scope: 'party'
-        };
-      }
       return updated;
     });
-
-    // Falls AGSV noch nicht in den Regeln ist, als Standardregel ergänzen
-    if (!rules.some(r => /agsv/i.test(r.pattern_party || r.pattern || ''))) {
-      rules.push({
-        pattern_party: 'agsv',
-        pattern_text: '',
-        pattern: 'agsv',
-        soll: '4410',
-        haben: '1020',
-        label: 'Verbandsbeiträge (AGSV)',
-        prefix: 'AGSV Verbandsabrechnung',
-        scope: 'party'
-      });
-    }
-
-    return rules;
   } catch (e) {
-    return getBhDefaultRules();
+    return [];
   }
 };
 
@@ -109,12 +82,12 @@ window.fetchBhBankServerRules = function() {
     apiFetch('buchhaltung', { action: 'getBankRules' }, 'GET')
       .then(res => res.json())
       .then(json => {
-        if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+        if (json && json.success && Array.isArray(json.data)) {
           const oldRulesJson = localStorage.getItem('bh_bank_rules') || '';
           const newRulesJson = JSON.stringify(json.data);
           window._bhBankServerRules = json.data;
           localStorage.setItem('bh_bank_rules', newRulesJson);
-          console.log('✅ Bank-Regeln erfolgreich aus dem zentralen Google Sheet geladen.');
+          console.log(`✅ ${json.data.length} Bank-Regeln erfolgreich aus dem zentralen Google Sheet geladen.`);
           
           // Wenn sich die Regeln nicht geändert haben, ist kein störendes Re-Rendern nötig!
           if (oldRulesJson === newRulesJson) return;
@@ -137,22 +110,7 @@ window.fetchBhBankServerRules = function() {
 };
 
 function getBhDefaultRules() {
-  return [
-    { pattern: 'raisenow', soll: '1020', haben: '3651', label: 'RaiseNow TWINT', prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)', scope: 'all' },
-    { pattern: 'vermietung', soll: '1020', haben: '3650', label: 'Vermietung Schützenhaus', prefix: 'Vermietung Schützenhaus', scope: 'text' },
-    { pattern: 'bankspesen', soll: '6900', haben: '1020', label: 'Bankspesen / Finanzaufwand', prefix: 'Bankspesen / Finanzaufwand', scope: 'all' },
-    { pattern: 'kontoführung', soll: '6900', haben: '1020', label: 'Bankspesen / Kontoführung', prefix: 'Bankspesen / Kontoführung', scope: 'all' },
-    { pattern: 'zins', soll: '1020', haben: '6950', label: 'Zinsertrag / Bank', prefix: 'Zinsertrag / Bank', scope: 'all' },
-    { pattern: 'agsv', soll: '4410', haben: '1020', label: 'Verbandsbeiträge (AGSV)', prefix: 'AGSV Verbandsabrechnung', scope: 'party' },
-    { pattern: 'agksv', soll: '4410', haben: '1020', label: 'Verbandsbeiträge (AGKSV)', prefix: 'Verbandsbeiträge (AGKSV)', scope: 'party' },
-    { pattern: 'ssv', soll: '4410', haben: '1020', label: 'Verbandsbeiträge (SSV)', prefix: 'Verbandsbeiträge (SSV)', scope: 'party' },
-    { pattern: 'schützenverband', soll: '4410', haben: '1020', label: 'Verbandsbeiträge', prefix: 'Verbandsbeiträge (SSV)', scope: 'party' },
-    { pattern: 'munition', soll: '4200', haben: '1020', label: 'Munitionsaufwand', prefix: 'Munitionsaufwand', scope: 'all' },
-    { pattern: 'helvetia', soll: '6200', haben: '1020', label: 'Versicherungsprämie', prefix: 'Versicherungsprämie Helvetia', scope: 'party' },
-    { pattern: 'gva', soll: '6200', haben: '1020', label: 'Gebäudeversicherung', prefix: 'Gebäudeversicherung GVA', scope: 'party' },
-    { pattern: 'sponsoring', soll: '1020', haben: '3600', label: 'Sponsoring-Ertrag', prefix: 'Sponsoring-Ertrag', scope: 'text' },
-    { pattern: 'spende', soll: '1020', haben: '3600', label: 'Spenden-Ertrag', prefix: 'Spenden-Ertrag', scope: 'text' }
-  ];
+  return [];
 }
 
 // ---------------------------------------------------------------------
