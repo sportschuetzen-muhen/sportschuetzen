@@ -209,7 +209,7 @@ window.renderTabBankabgleich = function(container) {
           <i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})
         </button>
         
-        <button class="btn btn-sm btn-success ms-auto fw-bold shadow-sm" onclick="bhBankBookAll()">
+        <button class="btn btn-sm btn-success ms-auto fw-bold shadow-sm" id="bhBtnBookAll" onclick="bhBankBookAll()">
           <i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen
         </button>
       </div>
@@ -316,6 +316,139 @@ function toNormalizedIsoDate(val) {
   return s;
 }
 
+// ---------------------------------------------------------------------
+// Hilfsfunktion: Sucht im Kontenrahmen nach passenden Sachkonten (Nummer, Name, Wörter)
+// ---------------------------------------------------------------------
+function bhFindMatchingKonten(query) {
+  if (!query) return [];
+  const q = String(query).toLowerCase().trim();
+  const konten = window._bhKontenrahmen || [];
+  
+  // 1. Exakte Kontonummer (z.B. "6701" oder "1020")
+  const exactCode = konten.find(k => String(k.konto).trim() === q);
+  if (exactCode) return [exactCode];
+
+  // 2. Kontonummer beginnt mit q (z.B. "67" -> 6700, 6701...)
+  const codeStarts = konten.filter(k => String(k.konto).trim().startsWith(q));
+  
+  // 3. Bezeichnung beginnt mit q (z.B. "gesc" -> Geschenke...)
+  const nameStarts = konten.filter(k => (k.bezeichnung || '').toLowerCase().startsWith(q));
+  
+  // 4. Wort in Bezeichnung beginnt mit q (z.B. "helfer" -> ... & Helfer-Essen)
+  const wordStarts = konten.filter(k => {
+    if (nameStarts.includes(k)) return false;
+    const words = (k.bezeichnung || '').toLowerCase().split(/[\s,./\-&]+/);
+    return words.some(w => w.startsWith(q));
+  });
+
+  // 5. Bezeichnung enthält q
+  const nameContains = konten.filter(k => 
+    !nameStarts.includes(k) && !wordStarts.includes(k) && (k.bezeichnung || '').toLowerCase().includes(q)
+  );
+  
+  // 6. Code enthält q
+  const codeContains = konten.filter(k => 
+    !codeStarts.includes(k) && String(k.konto).includes(q)
+  );
+
+  return [...codeStarts, ...nameStarts, ...wordStarts, ...nameContains, ...codeContains];
+}
+
+// Tastatur-Erfassung (Power-User UX): [Enter] & [Tab] übernehmen automatisch den Treffer
+if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
+  window._bhKontoInputListenersAttached = true;
+
+  // 1. Beim Fokussieren Text komplett markieren (ermöglicht sofortiges Überschreiben ohne Backspace)
+  document.addEventListener('focusin', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
+      setTimeout(() => {
+        try { e.target.select(); } catch (_) {}
+      }, 30);
+    }
+  });
+
+  // 2. Während des Tippens: Visuelles Feedback, wenn genau 1 Treffer übrig ist
+  document.addEventListener('input', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
+      const input = e.target;
+      const val = input.value.trim();
+      if (!val || val.includes('|')) {
+        input.classList.remove('is-valid');
+        return;
+      }
+      const matches = bhFindMatchingKonten(val);
+      if (matches.length === 1) {
+        input.classList.add('is-valid');
+        input.title = `💡 1 Treffer: ${matches[0].konto} | ${matches[0].bezeichnung} (Drücke [Enter] oder [Tab] zum Übernehmen)`;
+      } else {
+        input.classList.remove('is-valid');
+      }
+    }
+  });
+
+  // 3. Tastaturbedienung: Enter & Tab übernehmen automatisch den besten/letzten Treffer und springen weiter
+  document.addEventListener('keydown', function(e) {
+    if (!e.target || !e.target.classList || !e.target.classList.contains('bh-konto-input')) return;
+    const input = e.target;
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = input.value.trim();
+      const matches = bhFindMatchingKonten(val);
+      if (matches.length > 0) {
+        input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
+        input.classList.remove('is-valid');
+        input.dispatchEvent(new Event('change'));
+      }
+
+      // Smarter Fokus-Sprung für blitzschnelles Arbeiten ohne Maus:
+      // Vom Soll-Konto direkt ins Haben-Konto
+      if (input.id && input.id.startsWith('bh-soll-')) {
+        const realI = input.id.replace('bh-soll-', '');
+        const habenInput = document.getElementById('bh-haben-' + realI);
+        if (habenInput) {
+          habenInput.focus();
+          habenInput.select();
+        }
+      } 
+      // Vom Haben-Konto direkt auf den "Buchen"-Button dieser Zeile
+      else if (input.id && input.id.startsWith('bh-haben-')) {
+        const tr = input.closest('tr');
+        const bookBtn = tr ? tr.querySelector('button.btn-success') : null;
+        if (bookBtn) {
+          bookBtn.focus();
+        }
+      }
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+      const val = input.value.trim();
+      if (val && !val.includes('|')) {
+        const matches = bhFindMatchingKonten(val);
+        if (matches.length > 0) {
+          input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
+          input.classList.remove('is-valid');
+          input.dispatchEvent(new Event('change'));
+        }
+      }
+    }
+  });
+
+  // 4. Verlassen des Feldes (Blur): Unvollständige Eingabe (z.B. "gesc") automatisch auflösen
+  document.addEventListener('focusout', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
+      const input = e.target;
+      const val = input.value.trim();
+      if (val && !val.includes('|')) {
+        const matches = bhFindMatchingKonten(val);
+        if (matches.length > 0) {
+          input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
+          input.classList.remove('is-valid');
+          input.dispatchEvent(new Event('change'));
+        }
+      }
+    }
+  });
+}
+
 function bhBankRenderResults(filter) {
   const container = document.getElementById('bhBankResultsContainer');
   if (!container) return;
@@ -368,7 +501,7 @@ function bhBankRenderResults(filter) {
     const matchedKonto = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
     const displayVal = matchedKonto ? `${matchedKonto.konto} | ${matchedKonto.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
 
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input" placeholder="Ziffern/Name..." value="${escHtml(displayVal)}" style="font-size:12px; min-width:150px;" autocomplete="off">`;
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input" placeholder="Ziffern/Name..." value="${escHtml(displayVal)}" style="font-size:12px; min-width:160px;" autocomplete="off" title="Tippe Suchbegriff und drücke [Enter] oder [Tab] zum automatischen Übernehmen">`;
   }
 
   const realIdxMap = filtered.map(r => rows.indexOf(r));
@@ -511,7 +644,19 @@ function bhBankRenderResults(filter) {
 
   setTimeout(() => {
     bhMakeTableResizable(document.getElementById('bhBankTable'));
-  }, 50);
+    if (window._bhFocusNextAfterBooking !== undefined) {
+      const nextIdx = window._bhFocusNextAfterBooking;
+      window._bhFocusNextAfterBooking = undefined;
+      let target = document.getElementById('bh-soll-' + nextIdx);
+      if (!target) {
+        target = document.querySelector('#bhBankTable tbody tr:not(.table-secondary) input.bh-konto-input[id^="bh-soll-"]');
+      }
+      if (target) {
+        target.focus();
+        try { target.select(); } catch (_) {}
+      }
+    }
+  }, 60);
 }
 
 // ---------------------------------------------------------------------
@@ -1121,6 +1266,12 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
   const tx = window._bhBankMatchResults[txIdx];
   if (!tx) return;
 
+  // 1. Doppel-Klick- & Parallel-Schutz (Re-entrancy Guard)
+  if (tx._isBooking || tx.alreadyBooked) {
+    console.warn(`[Bankabgleich] Transaktion #${txIdx} wird bereits gebucht oder ist bereits im Journal.`);
+    return;
+  }
+
   if (tx.isWrongYear) {
     alert(`⚠️ Buchung gesperrt:\n\nDiese Transaktion stammt aus dem Jahr ${tx.txYear}, oben im Portal ist aber das Buchhaltungsjahr ${window._bhYear} gewählt.\n\nBitte wechseln Sie oben das Buchhaltungsjahr auf ${tx.txYear}, um diese Transaktion in das entsprechende Jahr zu buchen.`);
     return;
@@ -1128,12 +1279,22 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
 
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
   const habenEl = document.getElementById(`bh-haben-${txIdx}`);
+  const rowTr   = sollEl ? sollEl.closest('tr') : null;
+  const bookBtn = rowTr ? rowTr.querySelector('button.btn-success') : null;
+
+  function resolveKontoCode(val) {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (s.includes('|')) return s.split('|')[0].trim();
+    if (/^\d{4}$/.test(s)) return s;
+    const matches = bhFindMatchingKonten(s);
+    return matches.length > 0 ? String(matches[0].konto).trim() : s;
+  }
 
   const rawSoll  = sollEl ? sollEl.value : tx.suggestedSoll;
   const rawHaben = habenEl ? habenEl.value : tx.suggestedHaben;
-
-  const kontoSoll  = String(rawSoll || '').split('|')[0].trim();
-  const kontoHaben = String(rawHaben || '').split('|')[0].trim();
+  const kontoSoll  = resolveKontoCode(rawSoll);
+  const kontoHaben = resolveKontoCode(rawHaben);
 
   if (!kontoSoll || !kontoHaben) {
     alert('Bitte wählen Sie Soll- und Haben-Konto aus.');
@@ -1142,6 +1303,13 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
   if (kontoSoll === kontoHaben) {
     alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
     return;
+  }
+
+  // Sofortige visuelle Rückmeldung: Button deaktivieren & Ladespinner anzeigen
+  tx._isBooking = true;
+  if (bookBtn) {
+    bookBtn.disabled = true;
+    bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Bucht...';
   }
 
   let beschreibung = '';
@@ -1257,6 +1425,7 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
     }
 
     // Status im UI updaten
+    tx._isBooking = false;
     window._bhBankMatchResults[txIdx].alreadyBooked = true;
     window._bhBankMatchResults[txIdx].bookedDate = new Date().toLocaleDateString('de-CH');
 
@@ -1274,7 +1443,17 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
       typ: 'Bank'
     });
 
+    // Sofort Button dauerhaft deaktivieren & Kennzeichnen (noch vor dem Re-Render)
+    if (bookBtn) {
+      bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
+      bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
+      bookBtn.disabled = true;
+    }
+
     showToast(`✅ Buchungssatz über CHF ${tx.amount.toFixed(2)} gebucht!`, 'success');
+
+    // Nächste ungebuchte Zeile nach dem Neuladen automatisch fokussieren
+    window._bhFocusNextAfterBooking = txIdx + 1;
 
     // Live Neu-Laden des Hauptbuchs
     if (typeof loadBuchhaltungData === 'function') {
@@ -1283,6 +1462,11 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
       bhBankRenderResults(window._bhBankActiveFilter);
     }
   } catch(err) {
+    tx._isBooking = false;
+    if (bookBtn) {
+      bookBtn.disabled = false;
+      bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Buchen';
+    }
     alert('Fehler beim Buchen: ' + err.message);
   }
 };
@@ -1291,12 +1475,15 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
 // Batch-Buchung aller sicheren Treffer
 // ---------------------------------------------------------------------
 window.bhBankBookAll = async function() {
+  if (window._bhIsBookingAll) return;
+  const allBtn = document.getElementById('bhBtnBookAll') || document.querySelector('button[onclick="bhBankBookAll()"]');
+
   const results = window._bhBankMatchResults || [];
   const activeYear = Number(window._bhYear || new Date().getFullYear());
   
   const toBook = results
     .map((r, i) => ({ r, i }))
-    .filter(({ r }) => !r.alreadyBooked && !r.isWrongYear && (r.isJahresbeitrag || r.matchScore >= 2));
+    .filter(({ r }) => !r.alreadyBooked && !r._isBooking && !r.isWrongYear && (r.isJahresbeitrag || r.matchScore >= 2));
 
   if (!toBook.length) {
     showToast(`Keine eindeutigen, ungebuchten Transaktionen für das Buchungsjahr ${activeYear} vorhanden.`, 'warning');
@@ -1306,19 +1493,36 @@ window.bhBankBookAll = async function() {
   const ok = confirm(`${toBook.length} eindeutige Bank-Buchungen jetzt automatisch ins Journal eintragen?`);
   if (!ok) return;
 
-  const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === activeYear && String(j.beleg_nr || '').startsWith('BK-'));
-  let nextSeqCounter = existingBankBelege.length + 1;
-
-  let count = 0;
-  for (const { r, i } of toBook) {
-    try {
-      const belegNr = `BK-${activeYear}-${String(nextSeqCounter++).padStart(3, '0')}`;
-      await bhBankBookOne(i, belegNr);
-      count++;
-    } catch (_) {}
+  window._bhIsBookingAll = true;
+  if (allBtn) {
+    allBtn.disabled = true;
+    allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Buche 0/${toBook.length}...`;
   }
 
-  showToast(`⚡ ${count} von ${toBook.length} Buchungen erfolgreich ausgeführt!`, 'success');
+  try {
+    const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === activeYear && String(j.beleg_nr || '').startsWith('BK-'));
+    let nextSeqCounter = existingBankBelege.length + 1;
+
+    let count = 0;
+    for (const { r, i } of toBook) {
+      try {
+        if (allBtn) {
+          allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Buche ${count + 1}/${toBook.length}...`;
+        }
+        const belegNr = `BK-${activeYear}-${String(nextSeqCounter++).padStart(3, '0')}`;
+        await bhBankBookOne(i, belegNr);
+        count++;
+      } catch (_) {}
+    }
+
+    showToast(`⚡ ${count} von ${toBook.length} Buchungen erfolgreich ausgeführt!`, 'success');
+  } finally {
+    window._bhIsBookingAll = false;
+    if (allBtn) {
+      allBtn.disabled = false;
+      allBtn.innerHTML = '<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen';
+    }
+  }
 };
 
 // ---------------------------------------------------------------------
@@ -1849,6 +2053,14 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
     }
   }
 
+  const saveBtn = document.querySelector('#bhBankSplitModal .modal-footer button.btn-success');
+  if (window._bhIsSavingSplit) return;
+  window._bhIsSavingSplit = true;
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Speichere...';
+  }
+
   const year = Number(window._bhYear || new Date().getFullYear());
   const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === year && String(j.beleg_nr || '').startsWith('BK-'));
   const baseBelegSeq = String(existingBankBelege.length + 1).padStart(3, '0');
@@ -1915,5 +2127,11 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
     bhBankRenderResults(window._bhBankActiveFilter);
   } catch (err) {
     alert('❌ Fehler bei der Split-Buchung: ' + err.message);
+  } finally {
+    window._bhIsSavingSplit = false;
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<i class="fas fa-save me-1"></i>Split-Buchung speichern (${splitRows.length} Zeilen)`;
+    }
   }
 };
