@@ -374,9 +374,20 @@ window.bhOpenEntryModal = function(entryId) {
     titleEl.innerHTML = `<i class="fas fa-receipt me-2"></i>Neue Journalbuchung erfassen`;
     idEl.value = '';
     
-    const maxJournalId = window._bhJournal.reduce((max, current) => Math.max(max, Number(current.id || 0)), 0);
-    const nextNumber = String(maxJournalId + 1).padStart(3, '0');
-    belegEl.value = `BEL-${window._bhYear}-${nextNumber}`;
+    const y = Number(window._bhYear || new Date().getFullYear());
+    const regex = new RegExp(`^BEL-${y}-(\\d+)`, 'i');
+    let maxSeq = 0;
+    (window._bhJournal || []).forEach(j => {
+      if (Number(j.jahr) === y && j.beleg_nr) {
+        const m = String(j.beleg_nr).match(regex);
+        if (m) {
+          const num = parseInt(m[1], 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        }
+      }
+    });
+    const nextNumber = String(maxSeq + 1).padStart(3, '0');
+    belegEl.value = `BEL-${y}-${nextNumber}`;
   }
   
   const modal = new bootstrap.Modal(modalEl);

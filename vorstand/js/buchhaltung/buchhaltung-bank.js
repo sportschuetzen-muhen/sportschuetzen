@@ -1260,6 +1260,34 @@ window.bhBankFilter = function(filter) {
 };
 
 // ---------------------------------------------------------------------
+// Eindeutige, lückenlose Belegnummern für Bankbuchungen generieren (BK-YYYY-XXX)
+// ---------------------------------------------------------------------
+function bhGetNextBankBelegSeq(year) {
+  const y = Number(year || new Date().getFullYear());
+  const regex = new RegExp(`^BK-${y}-(\\d+)`, 'i');
+  let maxSeq = 0;
+  
+  (window._bhJournal || []).forEach(j => {
+    if (Number(j.jahr) === y && j.beleg_nr) {
+      const m = String(j.beleg_nr).match(regex);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+  });
+
+  const nextSeq = Math.max(maxSeq, window._bhLastAssignedBankSeq || 0) + 1;
+  window._bhLastAssignedBankSeq = nextSeq;
+  return nextSeq;
+}
+
+function bhGetNextBankBelegNr(year) {
+  const seq = bhGetNextBankBelegSeq(year);
+  return `BK-${year}-${String(seq).padStart(3, '0')}`;
+}
+
+// ---------------------------------------------------------------------
 // Einzelne Buchung durchführen
 // ---------------------------------------------------------------------
 window.bhBankBookOne = async function(txIdx, customBelegNr) {
@@ -1381,12 +1409,7 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
   try {
     // 1. Journal-Buchungssatz in Buchhaltung speichern (POST)
     const year = Number(window._bhYear || new Date().getFullYear());
-    let belegNr = customBelegNr;
-    if (!belegNr) {
-      const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === year && String(j.beleg_nr || '').startsWith('BK-'));
-      const nextSeq = String(existingBankBelege.length + 1).padStart(3, '0');
-      belegNr = `BK-${year}-${nextSeq}`;
-    }
+    const belegNr = customBelegNr || bhGetNextBankBelegNr(year);
 
     const payloadBh = {
       action: 'addJournalEntry',
@@ -1500,16 +1523,13 @@ window.bhBankBookAll = async function() {
   }
 
   try {
-    const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === activeYear && String(j.beleg_nr || '').startsWith('BK-'));
-    let nextSeqCounter = existingBankBelege.length + 1;
-
     let count = 0;
     for (const { r, i } of toBook) {
       try {
         if (allBtn) {
           allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Buche ${count + 1}/${toBook.length}...`;
         }
-        const belegNr = `BK-${activeYear}-${String(nextSeqCounter++).padStart(3, '0')}`;
+        const belegNr = bhGetNextBankBelegNr(activeYear);
         await bhBankBookOne(i, belegNr);
         count++;
       } catch (_) {}
@@ -2062,8 +2082,8 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
   }
 
   const year = Number(window._bhYear || new Date().getFullYear());
-  const existingBankBelege = (window._bhJournal || []).filter(j => Number(j.jahr) === year && String(j.beleg_nr || '').startsWith('BK-'));
-  const baseBelegSeq = String(existingBankBelege.length + 1).padStart(3, '0');
+  const baseSeq = bhGetNextBankBelegSeq(year);
+  const baseBelegSeq = String(baseSeq).padStart(3, '0');
 
   try {
     let successCount = 0;
