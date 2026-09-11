@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Resultate - Sportschützen Muhen</title>
+    <meta name="description" content="Aktuelle und historische Wettkampfresultate, Gruppenmeisterschaft, Mannschaftsmeisterschaft und Jahresmeisterschaft der Sportschützen Muhen.">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .hero-mini {
+            min-height: 35vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            padding-top: 80px;
+        }
+    </style>
+</head>
+<body>
+    <site-header active="resultate"></site-header>
+
+    <main>
+        <!-- Mini Hero -->
+        <section class="hero-mini">
+            <div class="hero-overlay"></div>
+            <div class="container hero-content">
+                <h1 class="fade-in-up">Wettkampf <span class="text-red">Resultate</span></h1>
+                <p class="fade-in-up delay-1">Verfolgen Sie die aktuellen Leistungen, Zwischenstände und historischen Rekorde unserer Vereinsmitglieder in allen Ligen.</p>
+            </div>
+        </section>
+
+        <!-- Dynamic Year Dropdown & Tabs Container -->
+        <section style="padding: 2rem 0 6rem 0;">
+            <div class="container">
+                
+                <!-- Dynamic Archive Selector Card -->
+                <div class="glass-card archive-selector-card fade-in-up delay-1">
+                    <div>
+                        <label for="jahr-select">📅 Saison & Archiv auswählen</label>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Die Tabellen laden automatisch die Daten des ausgewählten Jahres.</p>
+                    </div>
+                    <select id="jahr-select" class="select-control">
+                        <!-- Dynamically filled by JavaScript -->
+                    </select>
+                </div>
+
+                <!-- Tabs Navigation mit ARIA-Unterstützung -->
+                <div class="dashboard-tabs fade-in-up delay-2" role="tablist" aria-label="Wettkampf-Kategorien">
+                    <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-jm" id="tab-btn-jm" data-tab="tab-jm">🏆 Jahresmeisterschaft</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-gruppe" id="tab-btn-gruppe" data-tab="tab-gruppe">👥 Gruppe & Grenzland</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-mannschaft" id="tab-btn-mannschaft" data-tab="tab-mannschaft">🎯 Mannschaft</button>
+                </div>
+
+                <p class="dashboard-subtitle fade-in-up delay-2" id="info-subtitle">Tippe auf einen Schützen oder ein Feld für detaillierte Einzelresultate.</p>
+
+                <!-- TAB CONTENT A: JAHRESMEISTERSCHAFT -->
+                <div id="tab-jm" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-jm">
+                    <div class="results-grid-2">
+                        <!-- Liga 1 -->
+                        <div class="results-card">
+                            <h3>Liga 1</h3>
+                            <div class="table-responsive">
+                                <table class="table-results" id="table-liga1">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="col-rang">Rang</th>
+                                            <th scope="col" class="col-name">Name</th>
+                                            <th scope="col" class="col-total">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-liga1">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Liga 2 -->
+                        <div class="results-card">
+                            <h3>Liga 2</h3>
+                            <div class="table-responsive">
+                                <table class="table-results" id="table-liga2">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="col-rang">Rang</th>
+                                            <th scope="col" class="col-name">Name</th>
+                                            <th scope="col" class="col-total">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-liga2">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB CONTENT B: GRUPPE & GRENZLAND -->
+                <div id="tab-gruppe" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-gruppe">
+                    <div class="results-grid-2">
+                        <!-- Gruppenmeisterschaft -->
+                        <div class="results-card">
+                            <h3>Gruppenmeisterschaft (GM)</h3>
+                            <div class="table-responsive">
+                                <table class="table-results" id="table-gm">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" style="text-align: left; padding-left: 10px;">Team</th>
+                                            <th scope="col" class="col-round-sm">R1</th>
+                                            <th scope="col" class="col-round-sm">R2</th>
+                                            <th scope="col" class="col-round-sm">R3</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-gm">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Grenzlandcup -->
+                        <div class="results-card">
+                            <h3>Grenzlandcup (GC)</h3>
+                            <div class="table-responsive">
+                                <table class="table-results" id="table-gc">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" style="text-align: left; padding-left: 10px;">Team</th>
+                                            <th scope="col" class="col-round-sm">R1</th>
+                                            <th scope="col" class="col-round-sm">R2</th>
+                                            <th scope="col" class="col-round-sm">R3</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-gc">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB CONTENT C: MANNSCHAFT -->
+                <div id="tab-mannschaft" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-mannschaft">
+                    <div class="results-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.5rem;">
+                            <h3 style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">Mannschaftsmeisterschaft (SSV)</h3>
+                            <!-- Mobile View Switch Indicator -->
+                            <span class="mobile-hint text-muted" style="font-size: 0.85rem;"><i class="fa-solid fa-mobile-screen"></i> Mobile Card-Ansicht aktiv</span>
+                        </div>
+
+                        <!-- Desktop Table View -->
+                        <div class="table-responsive desktop-only-table">
+                            <table class="table-results" id="table-mannschaft" style="table-layout: fixed; min-width: 600px;">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" style="width: 30%; text-align: left; padding-left: 15px;">Team</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R1</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R2</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R3</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R4</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R5</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R6</th>
+                                        <th scope="col" style="width: 10%; text-align: center;">R7</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-mannschaft">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Adaptive Mobile Cards View (Kein horizontales Scrollen mehr!) -->
+                        <div id="mobile-mannschaft-container" class="mobile-mannschaft-cards" style="display: none;">
+                            <!-- Dynamisch befüllt für kleine Bildschirme -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <site-footer></site-footer>
+
+    <script src="js/components.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/resultate.js"></script>
+</body>
+</html>
