@@ -494,7 +494,30 @@ window.renderTabJournal = function(container) {
     return 0;
   });
   
-  const journalRows = filteredJournal.map(item => `
+  const journalRows = filteredJournal.map(item => {
+    const rawTyp = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
+    const bTyp = String(rawTyp || '').toUpperCase().trim();
+    const isAufwand = bTyp === 'AUFWAND';
+    const isErtrag  = bTyp === 'ERTRAG';
+
+    let amountClass = 'text-secondary';
+    let amountSign  = '';
+    let badgeClass  = 'bg-secondary text-white';
+
+    if (isAufwand) {
+      amountClass = 'text-danger';
+      amountSign  = '- ';
+      badgeClass  = 'bg-danger text-white';
+    } else if (isErtrag) {
+      amountClass = 'text-success';
+      amountSign  = '+ ';
+      badgeClass  = 'bg-success text-white';
+    } else if (bTyp === 'TRANSIT') {
+      amountClass = 'text-muted';
+      badgeClass  = 'bg-secondary text-white';
+    }
+
+    return `
     <tr class="bh-account-row">
       <td class="fw-semibold text-muted small">${item.id}</td>
       <td>${isoToDisplay(item.datum)}</td>
@@ -508,9 +531,9 @@ window.renderTabJournal = function(container) {
         <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span> 
         <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
       </td>
-      <td class="text-end fw-bold text-primary">${fmtChf(item.betrag)}</td>
+      <td class="text-end fw-bold ${amountClass}" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
       <td>
-        <span class="badge bg-primary text-white border-0 small me-1 mb-1 mb-sm-0">${item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben)}</span>
+        <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${bTyp || 'BUCHUNG'}</span>
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
       <td class="text-end" style="white-space: nowrap;">
@@ -522,7 +545,8 @@ window.renderTabJournal = function(container) {
         </button>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
   
   container.innerHTML = `
     <div class="bh-report-section border border-light shadow-sm">

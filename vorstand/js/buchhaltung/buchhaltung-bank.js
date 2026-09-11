@@ -378,30 +378,46 @@ function bhFindMatchingKonten(query) {
 if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
   window._bhKontoInputListenersAttached = true;
 
-  // 1. Beim Fokussieren Text komplett markieren (ermöglicht sofortiges Überschreiben ohne Backspace)
+  // 1. Tastatur-Erkennung: Markieren nur bei Tastatur-Navigation (Tab/Enter), NIE beim Mausklick/Scrollen
+  let _isKeyboardNav = false;
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' || e.key === 'Enter') {
+      _isKeyboardNav = true;
+    }
+  }, true);
+  document.addEventListener('mousedown', function() {
+    _isKeyboardNav = false;
+  }, true);
+
   document.addEventListener('focusin', function(e) {
     if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
-      setTimeout(() => {
-        try { e.target.select(); } catch (_) {}
-      }, 30);
+      if (_isKeyboardNav) {
+        setTimeout(() => {
+          try { e.target.select(); } catch (_) {}
+        }, 30);
+      }
     }
   });
 
-  // 2. Während des Tippens: Visuelles Feedback, wenn genau 1 Treffer übrig ist
+  // 2. Während des Tippens: Stabiles visuelles Feedback OHNE Layout-Verschiebung / ohne is-valid-Icon
   document.addEventListener('input', function(e) {
     if (e.target && e.target.classList && e.target.classList.contains('bh-konto-input')) {
       const input = e.target;
       const val = input.value.trim();
       if (!val || val.includes('|')) {
-        input.classList.remove('is-valid');
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
         return;
       }
       const matches = bhFindMatchingKonten(val);
       if (matches.length === 1) {
-        input.classList.add('is-valid');
+        input.style.borderColor = '#198754';
+        input.style.boxShadow = '0 0 0 0.2rem rgba(25, 135, 84, 0.25)';
         input.title = `💡 1 Treffer: ${matches[0].konto} | ${matches[0].bezeichnung} (Drücke [Enter] oder [Tab] zum Übernehmen)`;
       } else {
-        input.classList.remove('is-valid');
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
+        input.title = 'Tippe Suchbegriff und drücke [Enter] oder [Tab] zum automatischen Übernehmen';
       }
     }
   });
@@ -417,7 +433,8 @@ if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
       const matches = bhFindMatchingKonten(val);
       if (matches.length > 0) {
         input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
-        input.classList.remove('is-valid');
+        input.style.borderColor = '';
+        input.style.boxShadow = '';
         input.dispatchEvent(new Event('change'));
       }
 
@@ -427,8 +444,8 @@ if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
         const realI = input.id.replace('bh-soll-', '');
         const habenInput = document.getElementById('bh-haben-' + realI);
         if (habenInput) {
-          habenInput.focus();
-          habenInput.select();
+          habenInput.focus({ preventScroll: true });
+          try { habenInput.select(); } catch (_) {}
         }
       } 
       // Vom Haben-Konto direkt auf den "Buchen"-Button dieser Zeile
@@ -436,7 +453,7 @@ if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
         const tr = input.closest('tr');
         const bookBtn = tr ? tr.querySelector('button.btn-success') : null;
         if (bookBtn) {
-          bookBtn.focus();
+          bookBtn.focus({ preventScroll: true });
         }
       }
     } else if (e.key === 'Tab' && !e.shiftKey) {
@@ -445,7 +462,8 @@ if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
         const matches = bhFindMatchingKonten(val);
         if (matches.length > 0) {
           input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
-          input.classList.remove('is-valid');
+          input.style.borderColor = '';
+          input.style.boxShadow = '';
           input.dispatchEvent(new Event('change'));
         }
       }
@@ -461,13 +479,23 @@ if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
         const matches = bhFindMatchingKonten(val);
         if (matches.length > 0) {
           input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
-          input.classList.remove('is-valid');
+          input.style.borderColor = '';
+          input.style.boxShadow = '';
           input.dispatchEvent(new Event('change'));
         }
       }
     }
   });
 }
+
+window._bhUpdateTxRemittance = function(idx, val) {
+  const rows = window._bhBankMatchResults || [];
+  if (rows[idx]) {
+    rows[idx].remittanceInfo = val;
+    rows[idx]._customRemittance = val;
+    rows[idx]._customRemittanceEdited = true;
+  }
+};
 
 function bhBankRenderResults(filter) {
   const container = document.getElementById('bhBankResultsContainer');
@@ -608,10 +636,19 @@ function bhBankRenderResults(filter) {
         <td class="text-end fw-bold ${amountClass}" style="white-space:nowrap;">
           ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
         </td>
-        <td style="min-width: 250px;">
-          <small class="text-dark d-block" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo)}">
-            ${escHtml(r.remittanceInfo || '–')}
-          </small>
+        <td style="min-width: 220px;">
+          ${(r.alreadyBooked || r.isWrongYear) ? `
+            <small class="text-muted d-block" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
+              ${escHtml(r.remittanceInfo || '–')}
+            </small>
+          ` : `
+            <input type="text" id="bh-rmt-${realI}" class="form-control form-control-sm bh-rmt-input"
+              value="${escHtml(r.remittanceInfo || '')}"
+              placeholder="Verwendungszweck / Buchungstext..."
+              title="Klicken zum Anpassen des Verwendungszwecks / Buchungstextes"
+              style="font-size: 12px; min-width: 210px;"
+              oninput="window._bhUpdateTxRemittance(${realI}, this.value)">
+          `}
         </td>
         <td>${statusBadge}</td>
         <td>${matchInfo}</td>
@@ -637,13 +674,17 @@ function bhBankRenderResults(filter) {
     return `<option value="${String(k.konto).trim()} | ${escHtml(k.bezeichnung)}"></option>`;
   }).join('');
 
-  // Aktiven Fokus und Eingabewert merken, falls der Nutzer gerade ein Konto editiert
+  // Aktiven Fokus, Position und Eingabewert merken
+  const prevScrollY = window.scrollY;
+  const oldTableContainer = container.querySelector('.table-responsive');
+  const prevScrollLeft = oldTableContainer ? oldTableContainer.scrollLeft : 0;
+
   const activeEl = document.activeElement;
   let focusedInputId = null;
   let focusedInputVal = null;
   let selStart = null;
   let selEnd = null;
-  if (activeEl && activeEl.id && activeEl.classList && activeEl.classList.contains('bh-konto-input')) {
+  if (activeEl && activeEl.id && activeEl.classList && (activeEl.classList.contains('bh-konto-input') || activeEl.classList.contains('bh-rmt-input'))) {
     focusedInputId = activeEl.id;
     focusedInputVal = activeEl.value;
     try {
@@ -677,17 +718,26 @@ function bhBankRenderResults(filter) {
     <div class="text-muted small mt-2 px-1">${filtered.length} von ${rows.length} Buchungen angezeigt</div>
   `;
 
+  // Scrollposition sofort stabilisieren
+  if (window.scrollY !== prevScrollY) {
+    window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+  }
+  const newTableContainer = container.querySelector('.table-responsive');
+  if (newTableContainer && prevScrollLeft) {
+    newTableContainer.scrollLeft = prevScrollLeft;
+  }
+
   setTimeout(() => {
     bhMakeTableResizable(document.getElementById('bhBankTable'));
     
-    // 1. Falls der Nutzer vor dem Re-Render in einem Feld war: Fokus und Cursor nahtlos wiederherstellen!
+    // 1. Falls der Nutzer vor dem Re-Render in einem Feld war: Fokus und Cursor nahtlos wiederherstellen OHNE Scroll-Sprung!
     if (focusedInputId) {
       const restored = document.getElementById(focusedInputId);
       if (restored) {
         if (focusedInputVal !== null && focusedInputVal !== restored.value) {
           restored.value = focusedInputVal;
         }
-        restored.focus();
+        restored.focus({ preventScroll: true });
         try {
           if (selStart !== null && selEnd !== null) {
             restored.setSelectionRange(selStart, selEnd);
@@ -697,17 +747,13 @@ function bhBankRenderResults(filter) {
       }
     }
 
-    // 2. Automatischer Sprung zur nächsten offenen Zeile nach erfolgreichem Buchen
+    // 2. Automatischer Sprung zur nächsten offenen Zeile nach erfolgreichem Buchen (sanft ohne Schlingern)
     if (window._bhFocusNextAfterBooking !== undefined) {
       const nextIdx = window._bhFocusNextAfterBooking;
       window._bhFocusNextAfterBooking = undefined;
-      let target = document.getElementById('bh-soll-' + nextIdx);
-      if (!target) {
-        target = document.querySelector('#bhBankTable tbody tr:not(.table-secondary) input.bh-konto-input[id^="bh-soll-"]');
-      }
+      const target = document.getElementById('bh-soll-' + nextIdx);
       if (target) {
-        target.focus();
-        try { target.select(); } catch (_) {}
+        target.focus({ preventScroll: true });
       }
     }
   }, 60);
@@ -985,6 +1031,7 @@ function bhBankParseCAMT053(xmlText) {
       partyPLZ,
       partyCity: partyCity || (adrLine ? adrLine.split(' ').slice(-1)[0] : ''),
       remittanceInfo,
+      _originalRemittanceInfo: remittanceInfo,
       creditorReference,
       fileMsgId,
       accountIban,
@@ -1487,12 +1534,27 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
     bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Bucht...';
   }
 
-  let beschreibung = '';
-  const vMatch = (tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i) || (tx.partyName || '').match(/v-\d{4}-\d{3,4}/i);
-  const isMieteText = /miet/i.test(tx.remittanceInfo || '') || /miet/i.test(tx.partyName || '');
-  const isRaiseNow = /raisenow/i.test(tx.remittanceInfo || '') || /raisenow/i.test(tx.partyName || '') || kontoHaben === '3651';
+  const rmtEl = document.getElementById(`bh-rmt-${txIdx}`);
+  if (rmtEl) {
+    const rmtVal = rmtEl.value.trim();
+    if (rmtVal !== (tx._originalRemittanceInfo || '')) {
+      tx._customRemittanceEdited = true;
+      tx._customRemittance = rmtVal;
+      tx.remittanceInfo = rmtVal;
+    }
+  }
 
-  if (vMatch || isMieteText || kontoHaben === '3650') {
+  let beschreibung = '';
+  // Falls der Nutzer den Text im Verwendungszweck-Feld manuell angepasst hat:
+  if (tx._customRemittanceEdited && tx._customRemittance) {
+    const party = (tx.partyName || '').trim();
+    const customTxt = tx._customRemittance.trim();
+    if (party && !customTxt.toLowerCase().includes(party.toLowerCase())) {
+      beschreibung = `${party}: ${customTxt}`;
+    } else {
+      beschreibung = customTxt;
+    }
+  } else if (vMatch || isMieteText || kontoHaben === '3650') {
     const vCode = vMatch ? ` (${vMatch[0].toUpperCase()})` : '';
     const party = tx.partyName ? `: ${tx.partyName}` : '';
     const cleanRmt = (tx.remittanceInfo || '').replace(/v-\d{4}-\d{3,4}/i, '').replace(/miete/i, '').replace(/mietvertrag/i, '').trim();
@@ -1939,7 +2001,8 @@ window.bhBankSaveRuleModal = function(txIdx) {
   if (!tx) return;
 
   const party = (tx.partyName || '').trim();
-  const remittance = (tx.remittanceInfo || '').trim();
+  const rmtEl = document.getElementById(`bh-rmt-${txIdx}`);
+  const remittance = (rmtEl ? rmtEl.value : (tx.remittanceInfo || '')).trim();
 
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
   const habenEl = document.getElementById(`bh-haben-${txIdx}`);
@@ -2199,14 +2262,15 @@ function bhBankRenderSplitModalContent(tx) {
   }
 
   let tableRowsHtml = splitRows.map((r, i) => {
+    const amtVal = (r.betrag !== undefined && r.betrag !== null) ? r.betrag : '';
     return `
       <tr>
         <td class="text-center font-monospace fw-bold small" style="width:30px;">#${i + 1}</td>
         <td>
-          <input type="text" class="form-control form-control-sm" id="bh-split-desc-${i}" value="${escHtml(r.beschreibung)}" placeholder="Beschreibung...">
+          <input type="text" class="form-control form-control-sm" id="bh-split-desc-${i}" value="${escHtml(r.beschreibung)}" placeholder="Beschreibung..." oninput="bhBankUpdateSplitLiveBalance()">
         </td>
         <td style="width: 140px;">
-          <input type="number" step="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-split-amt-${i}" value="${Number(r.betrag || 0).toFixed(2)}" oninput="bhBankUpdateSplitFromInputs()">
+          <input type="number" step="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-split-amt-${i}" value="${amtVal}" placeholder="0.00" oninput="bhBankUpdateSplitLiveBalance()">
         </td>
         <td style="width: 170px;">
           ${makeKontoSelectHTML(`bh-split-soll-${i}`, r.kontoSoll)}
@@ -2273,13 +2337,13 @@ function bhBankRenderSplitModalContent(tx) {
           </div>
 
           <!-- Live Balance Banner -->
-          <div class="card p-3 border-0 ${isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3">
+          <div id="bh-split-banner" class="card p-3 border-0 ${isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div>
-                <span class="fw-bold"><i class="fas ${isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2"></i>Status Aufteilung:</span>
-                Summe Split-Zeilen: <strong>CHF ${currentSum.toFixed(2)}</strong> von <strong>CHF ${totalAmount.toFixed(2)}</strong>
+                <span class="fw-bold"><i id="bh-split-banner-icon" class="fas ${isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2"></i>Status Aufteilung:</span>
+                Summe Split-Zeilen: <strong>CHF <span id="bh-split-current-sum">${currentSum.toFixed(2)}</span></strong> von <strong>CHF ${totalAmount.toFixed(2)}</strong>
               </div>
-              <div class="fw-bold fs-6">
+              <div class="fw-bold fs-6" id="bh-split-diff-status">
                 ${isBalanced ? '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>' : `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${diff.toFixed(2)}</span>`}
               </div>
             </div>
@@ -2288,7 +2352,7 @@ function bhBankRenderSplitModalContent(tx) {
 
         <div class="modal-footer bg-light">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-          <button type="button" class="btn btn-success fw-bold px-4" ${!isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
+          <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4" ${!isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
             <i class="fas fa-save me-1"></i>Split-Buchung speichern (${splitRows.length} Zeilen)
           </button>
         </div>
@@ -2296,6 +2360,55 @@ function bhBankRenderSplitModalContent(tx) {
     </div>
   `;
 }
+
+window.bhBankUpdateSplitLiveBalance = function() {
+  const rows = window._bhSplitCurrentRows || [];
+  rows.forEach((r, i) => {
+    const descEl = document.getElementById(`bh-split-desc-${i}`);
+    const amtEl = document.getElementById(`bh-split-amt-${i}`);
+    const sollEl = document.getElementById(`bh-split-soll-${i}`);
+    const habenEl = document.getElementById(`bh-split-haben-${i}`);
+
+    if (descEl) r.beschreibung = descEl.value;
+    if (amtEl) r.betrag = amtEl.value !== '' ? (parseFloat(amtEl.value) || 0) : 0;
+    if (sollEl) r.kontoSoll = String(sollEl.value || '').split('|')[0].trim();
+    if (habenEl) r.kontoHaben = String(habenEl.value || '').split('|')[0].trim();
+  });
+
+  const txs = window._bhBankMatchResults || [];
+  const tx = txs[window._bhSplitCurrentTxIndex];
+  if (!tx) return;
+
+  const totalAmount = Number(tx.amount || 0);
+  const currentSum = rows.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+  const diff = totalAmount - currentSum;
+  const isBalanced = Math.abs(diff) < 0.01;
+
+  const sumEl = document.getElementById('bh-split-current-sum');
+  if (sumEl) sumEl.textContent = currentSum.toFixed(2);
+
+  const diffStatusEl = document.getElementById('bh-split-diff-status');
+  if (diffStatusEl) {
+    diffStatusEl.innerHTML = isBalanced 
+      ? '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>' 
+      : `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${diff.toFixed(2)}</span>`;
+  }
+
+  const bannerEl = document.getElementById('bh-split-banner');
+  if (bannerEl) {
+    bannerEl.className = `card p-3 border-0 ${isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3`;
+  }
+
+  const iconEl = document.getElementById('bh-split-banner-icon');
+  if (iconEl) {
+    iconEl.className = `fas ${isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2`;
+  }
+
+  const saveBtn = document.getElementById('bh-split-save-btn');
+  if (saveBtn) {
+    saveBtn.disabled = !isBalanced;
+  }
+};
 
 window.bhBankUpdateSplitFromInputs = function() {
   const rows = window._bhSplitCurrentRows || [];
@@ -2306,14 +2419,10 @@ window.bhBankUpdateSplitFromInputs = function() {
     const habenEl = document.getElementById(`bh-split-haben-${i}`);
 
     if (descEl) r.beschreibung = descEl.value;
-    if (amtEl) r.betrag = parseFloat(amtEl.value) || 0;
+    if (amtEl) r.betrag = amtEl.value !== '' ? (parseFloat(amtEl.value) || 0) : 0;
     if (sollEl) r.kontoSoll = String(sollEl.value || '').split('|')[0].trim();
     if (habenEl) r.kontoHaben = String(habenEl.value || '').split('|')[0].trim();
   });
-
-  const txs = window._bhBankMatchResults || [];
-  const tx = txs[window._bhSplitCurrentTxIndex];
-  if (tx) bhBankRenderSplitModalContent(tx);
 };
 
 window.bhBankAddSplitRow = function() {

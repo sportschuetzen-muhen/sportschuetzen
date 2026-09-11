@@ -230,6 +230,43 @@ window.bhDeleteKonto = function(kontoCode) {
   alert(`Sachkonto ${kontoCode} kann nicht gelöscht werden, da es mit historischen Transaktionen verknüpft sein könnte. Falls es ungenutzt ist, wenden Sie sich bitte an den Systemadministrator.`);
 };
 
+// Automatische Belegnummern-Generierung nach Konto (Kasse_2026-001, B_Zahl_2026-xxx, etc.)
+window.bhGetNextJournalBelegNr = function(year, prefix = 'Kasse_') {
+  const y = Number(year || window._bhYear || new Date().getFullYear());
+  const cleanPrefix = String(prefix || 'BEL-').replace(/[-_]$/, '');
+  const regex = new RegExp(`^${cleanPrefix}[-_]${y}[-_](\\d+)`, 'i');
+  let maxSeq = 0;
+  (window._bhJournal || []).forEach(j => {
+    if (Number(j.jahr) === y && j.beleg_nr) {
+      const m = String(j.beleg_nr).match(regex);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+  });
+  const delimiter = (cleanPrefix.startsWith('B_') || cleanPrefix === 'Kasse') ? '_' : '-';
+  return `${cleanPrefix}${delimiter}${y}-${String(maxSeq + 1).padStart(3, '0')}`;
+};
+
+window.bhDetermineAutoBelegPrefix = function(soll, haben, typ) {
+  const s = String(soll || '').trim();
+  const h = String(haben || '').trim();
+  const t = String(typ || '').trim();
+
+  // Prio 1: Bankkonten (Zahlungskonto 1020, Wirtschaft 1021, Anteilschein/Geno 1022)
+  // Bei Geldtransfer Kasse <-> Bank hat die Bank Prio, da der Bankauszug der externe Hauptbeleg ist
+  if (s === '1020' || h === '1020') return 'B_Zahl_';
+  if (s === '1021' || h === '1021') return 'B_Wirt_';
+  if (s === '1022' || h === '1022') return 'B_Geno_';
+
+  // Prio 2: Kasse (Konto 1000 oder Aktionstyp Kassa)
+  if (s === '1000' || h === '1000' || t === 'Kassa') return 'Kasse_';
+
+  // Prio 3: Allgemeine manuelle Belege (z.B. Umbuchungen, Abschreibungen)
+  return 'BEL-';
+};
+
 // POPUP-MODAL: MANUELLE BUCHUNG ERFASSEN ODER BEARBEITEN
 window.bhOpenEntryModal = function(entryId) {
   let modalEl = document.getElementById('bhModalNewEntry');
@@ -265,7 +302,7 @@ window.bhOpenEntryModal = function(entryId) {
               </div>
               <div class="col-6">
                 <label class="form-label fw-bold small text-muted">Belegnummer</label>
-                <input type="text" class="form-control fw-bold" id="bhe-beleg" required placeholder="z.B. BEL-2026-001">
+                <input type="text" class="form-control fw-bold" id="bhe-beleg" required placeholder="z.B. Kasse_2026-001">
               </div>
             </div>
             
@@ -374,20 +411,24 @@ window.bhOpenEntryModal = function(entryId) {
     titleEl.innerHTML = `<i class="fas fa-receipt me-2"></i>Neue Journalbuchung erfassen`;
     idEl.value = '';
     
-    const y = Number(window._bhYear || new Date().getFullYear());
-    const regex = new RegExp(`^BEL-${y}-(\\d+)`, 'i');
-    let maxSeq = 0;
-    (window._bhJournal || []).forEach(j => {
-      if (Number(j.jahr) === y && j.beleg_nr) {
-        const m = String(j.beleg_nr).match(regex);
-        if (m) {
-          const num = parseInt(m[1], 10);
-          if (!isNaN(num) && num > maxSeq) maxSeq = num;
-        }
-      }
-    });
-    const nextNumber = String(maxSeq + 1).padStart(3, '0');
-    belegEl.value = `BEL-${y}-${nextNumber}`;
+    belegEl.dataset.userEdited = 'false';
+    belegEl.oninput = () => {
+      belegEl.dataset.userEdited = 'true';
+    };
+
+    const updateAutoBeleg = () => {
+      if (idEl.value) return;
+      if (belegEl.dataset.userEdited === 'true') return;
+      const pfx = window.bhDetermineAutoBelegPrefix(sollEl.value, habenEl.value, typEl.value);
+      const y = Number(window._bhYear || new Date().getFullYear());
+      belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
+    };
+
+    sollEl.onchange = updateAutoBeleg;
+    habenEl.onchange = updateAutoBeleg;
+    typEl.onchange = updateAutoBeleg;
+
+    updateAutoBeleg();
   }
   
   const modal = new bootstrap.Modal(modalEl);
