@@ -61,7 +61,7 @@ window.rnOpenPaymentModal = function(invoiceId, amount) {
                 </label>
               </div>
               <div class="form-text text-muted small mt-1">
-                <strong>Option EIN (Standard):</strong> Verbucht die Zahlung automatisch im Journal (Soll Bank `1020` / Kassa `1000` an Haben Ertragskonto, z. B. `3400` Miete / `3000` Beitragsertrag).<br>
+                <strong>Option EIN (Standard):</strong> Verbucht die Zahlung automatisch im Journal (Soll Bank <code>1020</code> / Kassa <code>1000</code> an Haben Ertragskonto, z. B. <code>3400</code> Miete / <code>3000</code> Beitragsertrag).<br>
                 <span class="text-danger"><strong>Option AUS:</strong> Ändert nur den Rechnungsstatus im Cockpit (Ideal für bereits von Hand im Kassabuch erfasste Rechnungen!).</span>
               </div>
             </div>
@@ -77,7 +77,7 @@ window.rnOpenPaymentModal = function(invoiceId, amount) {
     </div>
   `;
 
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 };
 
@@ -155,7 +155,7 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     return;
   }
 
-  const m = window._mglData.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
 
   const sender = typeof jbGetSenderForInvoiceType === 'function'
     ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag')
@@ -202,7 +202,7 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
   const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
   if (!inv) return;
 
-  const m = window._mglData.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
   const email = m.PrimaryEmail || m.Email || '';
 
   const targetEmail = prompt(`📧 QR-Rechnung per E-Mail an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, email || 'mitglied@sportschuetzen-muhen.ch');
@@ -250,7 +250,7 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
 };
 
 // CREATE MANUALLY INVOICE MODAL
-window.rnOpenCreateModal = async function() {
+window.rnOpenCreateModal = async function(btnEl) {
   let modalEl = document.getElementById('rnModalCreateInvoice');
   if (!modalEl) {
     modalEl = document.createElement('div');
@@ -261,16 +261,28 @@ window.rnOpenCreateModal = async function() {
     document.body.appendChild(modalEl);
   }
 
-  // Externe Kontakte laden
-  window._externalContacts = [];
-  try {
-    const response = await apiFetch('rechnungen', 'action=getContacts');
-    const result = await response.json();
-    if (result.success) {
-      window._externalContacts = result.data || [];
+  // Externe Kontakte laden (falls nicht bereits geladen)
+  if (!window._externalContacts || window._externalContacts.length === 0) {
+    let origText = '';
+    if (btnEl) {
+      origText = btnEl.innerHTML;
+      btnEl.disabled = true;
+      btnEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Laden...';
     }
-  } catch (err) {
-    console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
+    try {
+      const response = await apiFetch('rechnungen', 'action=getContacts');
+      const result = await response.json();
+      if (result.success) {
+        window._externalContacts = result.data || [];
+      }
+    } catch (err) {
+      console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = origText;
+      }
+    }
   }
 
   const memberOptions = (window._mglData || []).map(m => 
@@ -374,7 +386,7 @@ window.rnOpenCreateModal = async function() {
                       <i class="fas fa-magic me-1"></i> Standard-Positionen
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
-                      ${rnGetDropdownMenuHtml('rncAddPositionRow')}
+                      ${(typeof window.rnGetDropdownMenuHtml === 'function' ? window.rnGetDropdownMenuHtml('rncAddPositionRow') : '')}
                     </ul>
                   </div>
                   
@@ -425,9 +437,11 @@ window.rnOpenCreateModal = async function() {
   const nextRand = String(Math.floor(1000 + Math.random() * 9000));
   document.getElementById('rnc-invoice-id').value = `INV-${window._bhYear}-${nextRand}`;
 
-  rncAddPositionRow("Miete Schützenhaus Muhen", 150);
+  if (typeof window.rncAddPositionRow === 'function') {
+    window.rncAddPositionRow("Miete Schützenhaus Muhen", 150);
+  }
 
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 };
 
@@ -445,7 +459,7 @@ window.rnHandleMemberSelect = function(val) {
 
   if (val.startsWith('MBR:')) {
     const personNumber = val.replace('MBR:', '');
-    const m = window._mglData.find(x => String(x.PersonNumber) === String(personNumber));
+    const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(personNumber));
     if (m) {
       document.getElementById('rnc-person-number').value = m.PersonNumber || '';
       document.getElementById('rnc-name').value = `${m.LastName} ${m.FirstName}`;
@@ -472,7 +486,19 @@ window.rnHandleMemberSelect = function(val) {
 
 // POSITION ROW DYNAMIC FUNCTIONS
 let rncPosCounter = 0;
-window.rncAddPositionRow = function(desc = "", unitPrice = "", qty = 1) {
+function rncRecalculateTotal() {
+  const amts = document.querySelectorAll('.rnc-pos-amt');
+  let sum = 0;
+  amts.forEach(el => sum += Number(el.value || 0));
+
+  const totalEl = document.getElementById('rnc-total-sum');
+  if (totalEl) {
+    totalEl.textContent = fmtChf(sum);
+  }
+}
+window.rncRecalculateTotal = rncRecalculateTotal;
+
+function rncAddPositionRow(desc = "", unitPrice = "", qty = 1) {
   rncPosCounter++;
   const tbody = document.getElementById('rnc-positions-tbody');
   if (!tbody) return;
@@ -509,9 +535,10 @@ window.rncAddPositionRow = function(desc = "", unitPrice = "", qty = 1) {
   `;
   tbody.appendChild(tr);
   rncRecalculateTotal();
-};
+}
+window.rncAddPositionRow = rncAddPositionRow;
 
-window.rncRecalculateRowTotal = function(rowId) {
+function rncRecalculateRowTotal(rowId) {
   const row = document.getElementById(rowId);
   if (!row) return;
   const qty = Number(row.querySelector('.rnc-pos-qty').value || 1);
@@ -521,9 +548,10 @@ window.rncRecalculateRowTotal = function(rowId) {
     amtEl.value = (qty * unitPrice).toFixed(2);
   }
   rncRecalculateTotal();
-};
+}
+window.rncRecalculateRowTotal = rncRecalculateRowTotal;
 
-window.rncRemovePositionRow = function(rowId) {
+function rncRemovePositionRow(rowId) {
   const row = document.getElementById(rowId);
   if (row) {
     row.remove();
@@ -531,18 +559,8 @@ window.rncRemovePositionRow = function(rowId) {
     idxs.forEach((el, index) => el.textContent = index + 1);
     rncRecalculateTotal();
   }
-};
-
-window.rncRecalculateTotal = function() {
-  const amts = document.querySelectorAll('.rnc-pos-amt');
-  let sum = 0;
-  amts.forEach(el => sum += Number(el.value || 0));
-
-  const totalEl = document.getElementById('rnc-total-sum');
-  if (totalEl) {
-    totalEl.textContent = fmtChf(sum);
-  }
-};
+}
+window.rncRemovePositionRow = rncRemovePositionRow;
 
 // SAVE NEW MANUALLY INVOICE
 window.rnSaveCreateInvoice = async function(event) {
@@ -670,7 +688,7 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
   hideLoadingOverlay();
 
-  const m = window._mglData.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -745,7 +763,7 @@ window.rnOpenEditModal = async function(invoiceId) {
                       <i class="fas fa-magic me-1"></i> Standard-Positionen
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
-                      ${rnGetDropdownMenuHtml('rneAddPositionRow')}
+                      ${(typeof window.rnGetDropdownMenuHtml === 'function' ? window.rnGetDropdownMenuHtml('rneAddPositionRow') : '')}
                     </ul>
                   </div>
                   
@@ -794,7 +812,18 @@ window.rnOpenEditModal = async function(invoiceId) {
   `;
 
   let rnePosCounter = 0;
-  window.rneAddPositionRow = function(desc = "", unitPrice = "", qty = 1) {
+  function rneRecalculateTotal() {
+    const amts = document.querySelectorAll('.rne-pos-amt');
+    let sum = 0;
+    amts.forEach(el => sum += Number(el.value || 0));
+    const totalEl = document.getElementById('rne-total-sum');
+    if (totalEl) {
+      totalEl.textContent = fmtChf(sum);
+    }
+  }
+  window.rneRecalculateTotal = rneRecalculateTotal;
+
+  function rneAddPositionRow(desc = "", unitPrice = "", qty = 1) {
     rnePosCounter++;
     const tbody = document.getElementById('rne-positions-tbody');
     if (!tbody) return;
@@ -831,9 +860,10 @@ window.rnOpenEditModal = async function(invoiceId) {
     `;
     tbody.appendChild(tr);
     rneRecalculateTotal();
-  };
+  }
+  window.rneAddPositionRow = rneAddPositionRow;
 
-  window.rneRecalculateRowTotal = function(rowId) {
+  function rneRecalculateRowTotal(rowId) {
     const row = document.getElementById(rowId);
     if (!row) return;
     const qty = Number(row.querySelector('.rne-pos-qty').value || 1);
@@ -843,9 +873,10 @@ window.rnOpenEditModal = async function(invoiceId) {
       amtEl.value = (qty * unitPrice).toFixed(2);
     }
     rneRecalculateTotal();
-  };
+  }
+  window.rneRecalculateRowTotal = rneRecalculateRowTotal;
 
-  window.rneRemovePositionRow = function(rowId) {
+  function rneRemovePositionRow(rowId) {
     const row = document.getElementById(rowId);
     if (row) {
       row.remove();
@@ -853,27 +884,22 @@ window.rnOpenEditModal = async function(invoiceId) {
       idxs.forEach((el, index) => el.textContent = index + 1);
       rneRecalculateTotal();
     }
-  };
-
-  window.rneRecalculateTotal = function() {
-    const amts = document.querySelectorAll('.rne-pos-amt');
-    let sum = 0;
-    amts.forEach(el => sum += Number(el.value || 0));
-    const totalEl = document.getElementById('rne-total-sum');
-    if (totalEl) {
-      totalEl.textContent = fmtChf(sum);
-    }
-  };
+  }
+  window.rneRemovePositionRow = rneRemovePositionRow;
 
   if (positions.length > 0) {
     positions.forEach(p => {
-      rneAddPositionRow(p.description || '', p.unit_price || p.amount || 0, p.quantity || 1);
+      if (typeof window.rneAddPositionRow === 'function') {
+        window.rneAddPositionRow(p.description || '', p.unit_price || p.amount || 0, p.quantity || 1);
+      }
     });
   } else {
-    rneAddPositionRow();
+    if (typeof window.rneAddPositionRow === 'function') {
+      window.rneAddPositionRow();
+    }
   }
 
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 };
 

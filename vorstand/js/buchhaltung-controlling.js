@@ -245,60 +245,91 @@ function bhRenderBudgetChart() {
   
   // Gruppiere nach Major-Sparten
   const categories = {
-    'Mitglieder':  { ist: 0, soll: 0, isExpense: false },
-    'Sponsoren':   { ist: 0, soll: 0, isExpense: false },
-    'Vermietung':  { ist: 0, soll: 0, isExpense: false },
-    'Übriger Ertrag': { ist: 0, soll: 0, isExpense: false },
-    'Schiessbetrieb': { ist: 0, soll: 0, isExpense: true },
-    'Jungschützen': { ist: 0, soll: 0, isExpense: true },
-    'Gebäude & SH': { ist: 0, soll: 0, isExpense: true },
-    'Verwaltung/IT': { ist: 0, soll: 0, isExpense: true },
-    'Übriger Aufwand': { ist: 0, soll: 0, isExpense: true }
+    'Mitglieder & Beiträge':     { ist: 0, soll: 0, isExpense: false },
+    'Sponsoren & Spenden':       { ist: 0, soll: 0, isExpense: false },
+    'Vermietung Schützenhaus':   { ist: 0, soll: 0, isExpense: false },
+    'Übriger Ertrag':            { ist: 0, soll: 0, isExpense: false },
+    'Schiessbetrieb & Munition': { ist: 0, soll: 0, isExpense: true },
+    'Nachwuchs & Jungschützen':  { ist: 0, soll: 0, isExpense: true },
+    'Gebäude & Unterhalt':       { ist: 0, soll: 0, isExpense: true },
+    'Verwaltung & Verband':      { ist: 0, soll: 0, isExpense: true },
+    'Übriger Aufwand':           { ist: 0, soll: 0, isExpense: true }
   };
   
+  const processedKonten = new Set();
+
   window._bhKontenrahmen.forEach(acc => {
     const codeStr = String(acc.konto).trim();
-    const istVal = Number(acc._endsaldo || 0);
+    processedKonten.add(codeStr);
+    const istVal = Math.abs(Number(acc._endsaldo || 0));
     const cat = bhGetAccountCategory(acc);
     
-    // Budget
-    const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
+    // Budget direkt über Kontonummer matchen
+    const bud = (window._bhBudget || []).find(b => String(b.konto).trim() === codeStr);
     const sollVal = bud ? Number(bud[activeBudgetCol] || 0) : 0;
     
     if (cat.main === 'Ertrag') {
-      if (codeStr.startsWith('341')) {
-        categories['Mitglieder'].ist += istVal;
-        categories['Mitglieder'].soll += sollVal;
+      if (codeStr.startsWith('341') || codeStr.startsWith('342') || codeStr.startsWith('340') || codeStr.startsWith('34')) {
+        categories['Mitglieder & Beiträge'].ist += istVal;
+        categories['Mitglieder & Beiträge'].soll += sollVal;
       } else if (codeStr.startsWith('32')) {
-        categories['Sponsoren'].ist += istVal;
-        categories['Sponsoren'].soll += sollVal;
-      } else if (codeStr.startsWith('340') || codeStr.startsWith('3650') || codeStr.startsWith('34')) {
-        categories['Vermietung'].ist += istVal;
-        categories['Vermietung'].soll += sollVal;
+        categories['Sponsoren & Spenden'].ist += istVal;
+        categories['Sponsoren & Spenden'].soll += sollVal;
+      } else if (codeStr.startsWith('3650') || /vermiet/i.test(acc.bezeichnung || '')) {
+        categories['Vermietung Schützenhaus'].ist += istVal;
+        categories['Vermietung Schützenhaus'].soll += sollVal;
       } else {
         categories['Übriger Ertrag'].ist += istVal;
         categories['Übriger Ertrag'].soll += sollVal;
       }
     } else if (cat.main === 'Aufwand') {
-      if (codeStr.startsWith('41') || codeStr.startsWith('44')) {
-        categories['Schiessbetrieb'].ist += istVal;
-        categories['Schiessbetrieb'].soll += sollVal;
+      if (codeStr.startsWith('41') || codeStr.startsWith('44') || codeStr.startsWith('40')) {
+        categories['Schiessbetrieb & Munition'].ist += istVal;
+        categories['Schiessbetrieb & Munition'].soll += sollVal;
       } else if (codeStr.startsWith('42')) {
-        categories['Jungschützen'].ist += istVal;
-        categories['Jungschützen'].soll += sollVal;
-      } else if (codeStr.startsWith('60') || codeStr.startsWith('62')) {
-        categories['Gebäude & SH'].ist += istVal;
-        categories['Gebäude & SH'].soll += sollVal;
-      } else if (codeStr.startsWith('65')) {
-        categories['Verwaltung/IT'].ist += istVal;
-        categories['Verwaltung/IT'].soll += sollVal;
+        categories['Nachwuchs & Jungschützen'].ist += istVal;
+        categories['Nachwuchs & Jungschützen'].soll += sollVal;
+      } else if (codeStr.startsWith('60') || codeStr.startsWith('62') || codeStr.startsWith('64')) {
+        categories['Gebäude & Unterhalt'].ist += istVal;
+        categories['Gebäude & Unterhalt'].soll += sollVal;
+      } else if (codeStr.startsWith('65') || codeStr.startsWith('69')) {
+        categories['Verwaltung & Verband'].ist += istVal;
+        categories['Verwaltung & Verband'].soll += sollVal;
       } else {
         categories['Übriger Aufwand'].ist += istVal;
         categories['Übriger Aufwand'].soll += sollVal;
       }
     }
   });
-  
+
+  // Auch reine Budget-Einträge ohne bisherige Kontenrahmen-Buchungen berücksichtigen
+  (window._bhBudget || []).forEach(bud => {
+    const codeStr = String(bud.konto).trim();
+    if (!codeStr || processedKonten.has(codeStr)) return;
+    const sollVal = Number(bud[activeBudgetCol] || 0);
+    if (sollVal <= 0) return;
+
+    if (codeStr.startsWith('341') || codeStr.startsWith('342') || codeStr.startsWith('34')) {
+      categories['Mitglieder & Beiträge'].soll += sollVal;
+    } else if (codeStr.startsWith('32')) {
+      categories['Sponsoren & Spenden'].soll += sollVal;
+    } else if (codeStr.startsWith('3650')) {
+      categories['Vermietung Schützenhaus'].soll += sollVal;
+    } else if (codeStr.startsWith('3')) {
+      categories['Übriger Ertrag'].soll += sollVal;
+    } else if (codeStr.startsWith('41') || codeStr.startsWith('44') || codeStr.startsWith('40')) {
+      categories['Schiessbetrieb & Munition'].soll += sollVal;
+    } else if (codeStr.startsWith('42')) {
+      categories['Nachwuchs & Jungschützen'].soll += sollVal;
+    } else if (codeStr.startsWith('60') || codeStr.startsWith('62') || codeStr.startsWith('64')) {
+      categories['Gebäude & Unterhalt'].soll += sollVal;
+    } else if (codeStr.startsWith('65') || codeStr.startsWith('69')) {
+      categories['Verwaltung & Verband'].soll += sollVal;
+    } else {
+      categories['Übriger Aufwand'].soll += sollVal;
+    }
+  });
+
   const labels = Object.keys(categories);
   const dataIst = labels.map(l => categories[l].ist);
   const dataSoll = labels.map(l => categories[l].soll);
@@ -429,42 +460,93 @@ function bhRenderControllingTable() {
   
   const activeBudgetCol = `budget_${window._bhYear}`;
   
-  // Wir aggregieren Konten in Major-Controlling-Kategorien
-  const categories = {
-    '3410 - Mitgliederbeiträge': { key: '3410', ist: 0, soll: 0, isExpense: false },
-    '3200 - Sponsoring & Gönner': { key: '3200', ist: 0, soll: 0, isExpense: false },
-    '3650 - Vermietungen Gebäude': { key: '3650', ist: 0, soll: 0, isExpense: false },
-    '4000 - Wirtschaft Munition': { key: '4000', ist: 0, soll: 0, isExpense: true },
-    '4110 - Unterhalt KK-Anlagen': { key: '4110', ist: 0, soll: 0, isExpense: true },
-    '4200 - Jungschützen & Munition': { key: '4200', ist: 0, soll: 0, isExpense: true },
-    '6000 - Schützenhaus-Unterhalt': { key: '6000', ist: 0, soll: 0, isExpense: true },
-    '6500 - Verwaltung & Informatik': { key: '6500', ist: 0, soll: 0, isExpense: true }
-  };
+  // Sammle alle eindeutigen Konten aus Kontenrahmen und Budget
+  const accountMap = new Map();
   
-  window._bhKontenrahmen.forEach(acc => {
+  // 1. Aus Kontenrahmen erfassen
+  (window._bhKontenrahmen || []).forEach(acc => {
     const code = String(acc.konto).trim();
-    const istVal = Number(acc._endsaldo || 0);
+    if (!code) return;
+    const cat = bhGetAccountCategory(acc);
+    const isExpense = cat.main === 'Aufwand';
+    const isRevenue = cat.main === 'Ertrag';
+    const isOperating = isExpense || isRevenue;
     
-    const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
-    const sollVal = bud ? Number(bud[activeBudgetCol] || 0) : 0;
+    // Berechne Ist-Wert für das aktive Jahr
+    const istVal = Math.abs(Number(acc._endsaldo || 0));
     
-    // Genaues Matching aufbauen
-    Object.keys(categories).forEach(catName => {
-      const prefix = categories[catName].key;
-      // Entweder exakter Match oder Gruppenpräfix (z.B. alle 42er Konten)
-      if (code === prefix || (prefix.endsWith('00') && code.startsWith(prefix.substring(0, 2)))) {
-        categories[catName].ist += istVal;
-        categories[catName].soll += sollVal;
-      }
+    accountMap.set(code, {
+      konto: code,
+      bezeichnung: acc.bezeichnung || '',
+      catMain: cat.main,
+      isExpense: isExpense,
+      isOperating: isOperating,
+      ist: istVal,
+      soll: 0,
+      hasBudgetEntry: false
     });
+  });
+  
+  // 2. Aus Budget verknüpfen (oder neu anlegen falls im Kontenrahmen noch nicht vorhanden)
+  (window._bhBudget || []).forEach(bud => {
+    const code = String(bud.konto).trim();
+    if (!code) return;
+    const sollVal = Number(bud[activeBudgetCol] || 0);
+    
+    let item = accountMap.get(code);
+    if (!item) {
+      // Wenn Konto nicht im Kontenrahmen existiert, aus Budget ableiten
+      const dummyAcc = { konto: code, bezeichnung: bud.bezeichnung || '' };
+      const cat = bhGetAccountCategory(dummyAcc);
+      const isExpense = cat.main === 'Aufwand';
+      const isRevenue = cat.main === 'Ertrag';
+      
+      item = {
+        konto: code,
+        bezeichnung: bud.bezeichnung || `Konto ${code}`,
+        catMain: cat.main,
+        isExpense: isExpense,
+        isOperating: isExpense || isRevenue,
+        ist: 0,
+        soll: sollVal,
+        hasBudgetEntry: true
+      };
+      accountMap.set(code, item);
+    } else {
+      item.soll = sollVal;
+      item.hasBudgetEntry = true;
+      // Falls Bezeichnung im Kontenrahmen leer war, aber im Budget vorhanden
+      if (!item.bezeichnung && bud.bezeichnung) {
+        item.bezeichnung = bud.bezeichnung;
+      }
+    }
+  });
+
+  // 3. Filtere Konten:
+  // Wir listen alle Konten auf, die entweder:
+  // - Ein definiertes Budget haben (soll > 0 oder explizit in der Budget-Tabelle geführt)
+  // - ODER tatsächliche Buchungen aufweisen (ist > 0)
+  const relevantItems = Array.from(accountMap.values()).filter(item => {
+    if (!item.isOperating) {
+      // Bilanz-/Transitkonten (z.B. 1190) nur auflisten, wenn explizit im Budget oder gebucht
+      return item.hasBudgetEntry || item.ist > 0;
+    }
+    return item.soll > 0 || item.ist > 0 || item.hasBudgetEntry;
+  });
+
+  // Sortierung: Ertrag zuerst, dann Aufwand, danach Bilanz/Transit; innerhalb nach Kontonummer aufsteigend
+  relevantItems.sort((a, b) => {
+    const orderA = a.catMain === 'Ertrag' ? 1 : a.catMain === 'Aufwand' ? 2 : 3;
+    const orderB = b.catMain === 'Ertrag' ? 1 : b.catMain === 'Aufwand' ? 2 : 3;
+    if (orderA !== orderB) return orderA - orderB;
+    return Number(a.konto) - Number(b.konto);
   });
   
   let rowsHTML = '';
   let successfulBudgetsCount = 0;
   let totalBudgetsTracked = 0;
   
-  Object.keys(categories).forEach(catName => {
-    const item = categories[catName];
+  relevantItems.forEach(item => {
     const diff = item.ist - item.soll;
     
     // Prozentuale Zielerreichung / Ausschöpfung berechnen
@@ -479,22 +561,33 @@ function bhRenderControllingTable() {
     
     if (item.isExpense) {
       // Bei Ausgaben ist weniger als Budget gut! (Ausschöpfung <= 100%)
-      if (percent <= 100) {
-        isSuccess = true;
-        colorClass = 'bg-success'; // Emerald Green
+      if (item.soll > 0) {
+        if (percent <= 100) {
+          isSuccess = true;
+          colorClass = 'bg-success'; // Im Budget
+        } else {
+          colorClass = 'bg-danger'; // Überzogen!
+        }
       } else {
-        colorClass = 'bg-danger'; // Alarm Red (Überzogen!)
+        colorClass = item.ist > 0 ? 'bg-warning' : 'bg-secondary';
+      }
+    } else if (item.catMain === 'Ertrag') {
+      // Bei Einnahmen ist mehr als Budget gut! (Erreichung >= 100%)
+      if (item.soll > 0) {
+        if (percent >= 100) {
+          isSuccess = true;
+          colorClass = 'bg-success';
+        } else if (percent > 0) {
+          colorClass = 'bg-info'; // Laufend
+        } else {
+          colorClass = 'bg-danger'; // Noch keine Einnahmen
+        }
+      } else {
+        colorClass = item.ist > 0 ? 'bg-success' : 'bg-secondary';
       }
     } else {
-      // Bei Einnahmen ist mehr als Budget gut! (Erreichung >= 100%)
-      if (percent >= 100) {
-        isSuccess = true;
-        colorClass = 'bg-success';
-      } else if (percent > 0) {
-        colorClass = 'bg-info'; // Blau (Laufend)
-      } else {
-        colorClass = 'bg-danger'; // Rot (Noch keine Erreichung)
-      }
+      // Transit / Bilanzkonto
+      colorClass = 'bg-secondary';
     }
     
     if (item.soll > 0) {
@@ -502,21 +595,42 @@ function bhRenderControllingTable() {
       if (isSuccess) successfulBudgetsCount++;
     }
     
-    const progressPercent = Math.min(100, percent);
-    const badgeText = item.soll > 0 ? `${percent.toFixed(0)}%` : '–';
+    const progressPercent = item.soll > 0 ? Math.min(100, Math.max(0, percent)) : 0;
+    const badgeText = item.soll > 0 ? `${percent.toFixed(0)}%` : (item.hasBudgetEntry ? '0%' : '–');
+    
+    // Typ-Badge
+    let typeBadge = '';
+    if (item.catMain === 'Ertrag') {
+      typeBadge = '<span class="badge bg-success bg-opacity-75 text-white">Ertrag</span>';
+    } else if (item.catMain === 'Aufwand') {
+      typeBadge = '<span class="badge bg-danger bg-opacity-75 text-white">Aufwand</span>';
+    } else {
+      typeBadge = `<span class="badge bg-secondary bg-opacity-75 text-white">${escapeHtml(item.catMain || 'Transit')}</span>`;
+    }
+
+    // Differenz-Farbe
+    let diffColorClass = 'text-muted';
+    let diffPrefix = '';
+    if (item.soll > 0 || item.ist > 0) {
+      if (diff > 0) {
+        diffPrefix = '+';
+        diffColorClass = item.isExpense ? 'text-danger' : 'text-success';
+      } else if (diff < 0) {
+        diffColorClass = item.isExpense ? 'text-success' : 'text-danger';
+      }
+    }
     
     rowsHTML += `
       <tr class="bh-account-row">
-        <td class="fw-bold text-dark">${catName}</td>
-        <td>
-          <span class="badge ${item.isExpense ? 'bg-danger text-white' : 'bg-success text-white'} bg-opacity-75">
-            ${item.isExpense ? 'Aufwand' : 'Ertrag'}
-          </span>
+        <td class="fw-bold text-dark">
+          <span class="badge bg-light text-primary border me-2">${escapeHtml(item.konto)}</span>
+          ${escapeHtml(item.bezeichnung || 'Ohne Bezeichnung')}
         </td>
+        <td>${typeBadge}</td>
         <td class="text-end fw-semibold">${fmtChf(item.ist)}</td>
-        <td class="text-end text-muted">${item.soll > 0 ? fmtChf(item.soll) : '–'}</td>
-        <td class="text-end fw-bold ${diff >= 0 ? (item.isExpense ? 'text-danger' : 'text-success') : (item.isExpense ? 'text-success' : 'text-danger')}">
-          ${diff >= 0 ? '+' : ''}${fmtChf(diff)}
+        <td class="text-end text-muted">${item.soll > 0 ? fmtChf(item.soll) : (item.hasBudgetEntry ? 'CHF 0.00' : '–')}</td>
+        <td class="text-end fw-bold ${diffColorClass}">
+          ${diffPrefix}${fmtChf(diff)}
         </td>
         <td>
           <div class="d-flex align-items-center" style="gap: 10px;">
@@ -530,14 +644,19 @@ function bhRenderControllingTable() {
     `;
   });
   
-  tbody.innerHTML = rowsHTML || '<tr><td colspan="6" class="text-center text-muted">Keine Controlling-Daten verfügbar.</td></tr>';
+  tbody.innerHTML = rowsHTML || '<tr><td colspan="6" class="text-center text-muted py-4">Keine budgetierten oder aktiven Konten für dieses Jahr gefunden.</td></tr>';
   
   // Performance-Indikator Badge oben aktualisieren
   const perfBadge = document.getElementById('bh-controlling-perf-badge');
-  if (perfBadge && totalBudgetsTracked > 0) {
-    const successRate = (successfulBudgetsCount / totalBudgetsTracked) * 100;
-    perfBadge.textContent = `${successfulBudgetsCount} von ${totalBudgetsTracked} Zielen im Budget (${successRate.toFixed(0)}% optimal)`;
-    perfBadge.className = `badge ${successRate >= 70 ? 'bg-success' : successRate >= 40 ? 'bg-warning text-dark' : 'bg-danger'} px-3 py-1.5 rounded-pill shadow-sm`;
+  if (perfBadge) {
+    if (totalBudgetsTracked > 0) {
+      const successRate = (successfulBudgetsCount / totalBudgetsTracked) * 100;
+      perfBadge.textContent = `${successfulBudgetsCount} von ${totalBudgetsTracked} Zielen im Budget (${successRate.toFixed(0)}% optimal)`;
+      perfBadge.className = `badge ${successRate >= 70 ? 'bg-success' : successRate >= 40 ? 'bg-warning text-dark' : 'bg-danger'} px-3 py-1.5 rounded-pill shadow-sm`;
+    } else {
+      perfBadge.textContent = 'Keine Budget-Werte erfasst';
+      perfBadge.className = 'badge bg-secondary px-3 py-1.5 rounded-pill shadow-sm';
+    }
   }
 }
 

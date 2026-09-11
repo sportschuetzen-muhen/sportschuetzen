@@ -142,7 +142,7 @@ window.renderTabArchiv = function(content) {
     <div class="bh-report-section border border-light shadow-sm mb-4">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:15px;">
         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-filter me-2"></i>Filter & Rechnungs-Archiv</h5>
-        <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenCreateModal()">
+        <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenCreateModal(this)">
           <i class="fas fa-plus-circle me-1"></i> Rechnung erstellen
         </button>
       </div>

@@ -21,7 +21,21 @@ const RECHNUNG_TYPES = [
 // Online/Preload Endpoint Trigger
 window._invoiceTemplates = [];
 window._invoiceLayouts = {};
+window._externalContacts = [];
 window._rechnungenActiveTab = 'archiv';
+
+// API Endpoint to fetch external contacts
+window.loadInvoiceContactsData = async function() {
+  try {
+    const response = await apiFetch('rechnungen', 'action=getContacts');
+    const result = await response.json();
+    if (result.success && result.data) {
+      window._externalContacts = result.data || [];
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim Abrufen der externen Kontakte:", err);
+  }
+};
 
 // API Endpoint to fetch template positions
 window.loadInvoiceTemplatesData = async function() {
@@ -99,11 +113,12 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
   }
 
   try {
-    // Parallel fetching of invoices, standard positions templates and layout configs
-    const [invRes, _a, _b] = await Promise.all([
+    // Parallel fetching of invoices, standard positions templates, layout configs and contacts
+    const [invRes, _a, _b, _c] = await Promise.all([
       apiFetch('rechnungen', 'action=getInvoices'),
       loadInvoiceTemplatesData(),
-      loadInvoiceLayoutsData()
+      loadInvoiceLayoutsData(),
+      loadInvoiceContactsData()
     ]);
     
     // Prüfe Content-Type – wenn HTML kommt, ist das Script nicht korrekt deployed/erreichbar
@@ -157,7 +172,8 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
 };
 
 // Standard-Vorlagen initialisieren
-window.rnInitializeTemplates = function() {
+function rnInitializeTemplates() {
+  if (typeof localStorage === 'undefined') return;
   if (!localStorage.getItem('portal_invoice_templates')) {
     const defaults = [
       { id: 1, category: 'Vermietung', desc: 'Miete Schützenhaus Muhen', price: 150 },
@@ -178,7 +194,8 @@ window.rnInitializeTemplates = function() {
     ];
     localStorage.setItem('portal_invoice_templates', JSON.stringify(defaults));
   }
-};
+}
+window.rnInitializeTemplates = rnInitializeTemplates;
 
 // Filter Handlers
 window.rnChangeFilterStatus = function(val) {
