@@ -18,25 +18,41 @@ window.getBhBankRules = function() {
       rules = stored ? JSON.parse(stored) : getBhDefaultRules();
     }
 
-    // Auto-Fix für alte RaiseNow Regel-Einträge und Default-Scope
+    // Auto-Fix für alte RaiseNow Regel-Einträge und Migration für getrennte Suchfelder (party / text)
     rules = rules.map(r => {
-      let updated = { ...r, scope: r.scope || 'all' };
-      if (/raisenow/i.test(r.pattern || r.label || '')) {
+      let updated = { ...r };
+      // Fallback/Migration: Falls neue Felder noch fehlen, aber altes pattern existiert
+      if (!updated.pattern_party && !updated.pattern_text && updated.pattern) {
+        if (updated.scope === 'party') {
+          updated.pattern_party = updated.pattern;
+        } else if (updated.scope === 'text') {
+          updated.pattern_text = updated.pattern;
+        } else {
+          // Scope 'all' oder nicht definiert: Fallback belassen
+          updated.pattern_party = updated.pattern;
+        }
+      }
+      if (/raisenow/i.test(updated.pattern_party || updated.pattern_text || updated.pattern || updated.label || '')) {
         updated = {
           ...updated,
           label: 'RaiseNow TWINT',
           prefix: 'Wirtschaftseinnahme TWINT (RaiseNow)',
+          pattern_party: 'RaiseNow',
+          pattern_text: '',
+          pattern: 'raisenow',
           soll: '1020',
           haben: '3651',
-          scope: 'all'
+          scope: 'party'
         };
       }
       return updated;
     });
 
     // Falls AGSV noch nicht in den Regeln ist, als Standardregel ergänzen
-    if (!rules.some(r => /agsv/i.test(r.pattern || ''))) {
+    if (!rules.some(r => /agsv/i.test(r.pattern_party || r.pattern || ''))) {
       rules.push({
+        pattern_party: 'agsv',
+        pattern_text: '',
         pattern: 'agsv',
         soll: '4410',
         haben: '1020',
@@ -1141,20 +1157,36 @@ function bhBankMatchAll(transactions) {
     }
 
     // 2. STUFE: Benutzer-Regeln (Rules)
+    // Spezifischere Regeln (sowohl Empfänger als auch Verwendungszweck gesetzt) priorisieren
     let matchRulePrefix = '';
     if (!isJahresbeitrag && matchType === 'unknown') {
-      for (const r of userRules) {
-        const p = (r.pattern || '').toLowerCase().trim();
-        if (!p) continue;
+      const sortedRules = [...userRules].sort((a, b) => {
+        const aSpec = ((a.pattern_party || (a.scope === 'party' ? a.pattern : '')) && (a.pattern_text || (a.scope === 'text' ? a.pattern : ''))) ? 2 : 1;
+        const bSpec = ((b.pattern_party || (b.scope === 'party' ? b.pattern : '')) && (b.pattern_text || (b.scope === 'text' ? b.pattern : ''))) ? 2 : 1;
+        return bSpec - aSpec;
+      });
+
+      for (const r of sortedRules) {
+        const pParty = (r.pattern_party || (r.scope === 'party' ? r.pattern : '')).toLowerCase().trim();
+        const pText  = (r.pattern_text  || (r.scope === 'text'  ? r.pattern : '')).toLowerCase().trim();
+        const legacyP = (r.pattern || '').toLowerCase().trim();
 
         let isMatch = false;
-        const scope = r.scope || 'all';
-        if (scope === 'party') {
-          isMatch = cleanParty.includes(p);
-        } else if (scope === 'text') {
-          isMatch = cleanRemittance.includes(p);
-        } else {
-          isMatch = cleanRemittance.includes(p) || cleanParty.includes(p);
+
+        if (pParty || pText) {
+          const matchParty = !pParty || cleanParty.includes(pParty);
+          const matchText  = !pText  || cleanRemittance.includes(pText);
+          // Wenn beide Kriterien gesetzt sind, müssen beide matchen. Wenn nur eines gesetzt ist, reicht dieses eine.
+          isMatch = matchParty && matchText;
+        } else if (legacyP) {
+          const scope = r.scope || 'all';
+          if (scope === 'party') {
+            isMatch = cleanParty.includes(legacyP);
+          } else if (scope === 'text') {
+            isMatch = cleanRemittance.includes(legacyP);
+          } else {
+            isMatch = cleanRemittance.includes(legacyP) || cleanParty.includes(legacyP);
+          }
         }
 
         if (isMatch) {
@@ -1334,11 +1366,20 @@ window.bhBankFilter = function(filter) {
 };
 
 // ---------------------------------------------------------------------
-// Eindeutige, lückenlose Belegnummern für Bankbuchungen generieren (BK-YYYY-XXX)
+// Eindeutige, lückenlose Belegnummern nach Bankkonto (z.B. B_Zahl_2026-001, B_Wirt_2026-001, B_Geno_2026-001)
 // ---------------------------------------------------------------------
-function bhGetNextBankBelegSeq(year) {
+function getBankBelegPrefix(kontoCode) {
+  const c = String(kontoCode || '').trim();
+  if (c === '1021') return 'B_Wirt_';
+  if (c === '1020') return 'B_Zahl_';
+  if (c === '1022') return 'B_Geno_';
+  return 'BK_';
+}
+
+function bhGetNextBankBelegSeq(year, bankKonto = '1020') {
   const y = Number(year || new Date().getFullYear());
-  const regex = new RegExp(`^BK-${y}-(\\d+)`, 'i');
+  const prefix = getBankBelegPrefix(bankKonto);
+  const regex = new RegExp(`^(?:${prefix}|BK[-_])${y}[-_](\\d+)`, 'i');
   let maxSeq = 0;
   
   (window._bhJournal || []).forEach(j => {
@@ -1351,14 +1392,17 @@ function bhGetNextBankBelegSeq(year) {
     }
   });
 
-  const nextSeq = Math.max(maxSeq, window._bhLastAssignedBankSeq || 0) + 1;
-  window._bhLastAssignedBankSeq = nextSeq;
+  const stateKey = `${prefix}${y}`;
+  window._bhLastAssignedBankSeqs = window._bhLastAssignedBankSeqs || {};
+  const nextSeq = Math.max(maxSeq, window._bhLastAssignedBankSeqs[stateKey] || 0) + 1;
+  window._bhLastAssignedBankSeqs[stateKey] = nextSeq;
   return nextSeq;
 }
 
-function bhGetNextBankBelegNr(year) {
-  const seq = bhGetNextBankBelegSeq(year);
-  return `BK-${year}-${String(seq).padStart(3, '0')}`;
+function bhGetNextBankBelegNr(year, bankKonto = '1020') {
+  const prefix = getBankBelegPrefix(bankKonto);
+  const seq = bhGetNextBankBelegSeq(year, bankKonto);
+  return `${prefix}${year}-${String(seq).padStart(3, '0')}`;
 }
 
 // ---------------------------------------------------------------------
@@ -1483,7 +1527,8 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
   try {
     // 1. Journal-Buchungssatz in Buchhaltung speichern (POST)
     const year = Number(window._bhYear || new Date().getFullYear());
-    const belegNr = customBelegNr || bhGetNextBankBelegNr(year);
+    const txBankKonto = isBankKontoCode(kontoSoll) ? kontoSoll : (isBankKontoCode(kontoHaben) ? kontoHaben : (tx.accountIban ? bhBankGetAccountForIban(tx.accountIban) : '1020'));
+    const belegNr = customBelegNr || bhGetNextBankBelegNr(year, txBankKonto);
 
     const payloadBh = {
       action: 'addJournalEntry',
@@ -1603,7 +1648,8 @@ window.bhBankBookAll = async function() {
         if (allBtn) {
           allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Buche ${count + 1}/${toBook.length}...`;
         }
-        const belegNr = bhGetNextBankBelegNr(activeYear);
+        const txBankKonto = isBankKontoCode(r.suggestedSoll) ? r.suggestedSoll : (isBankKontoCode(r.suggestedHaben) ? r.suggestedHaben : bhBankGetAccountForIban(r.accountIban, '1020'));
+        const belegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
         await bhBankBookOne(i, belegNr);
         count++;
       } catch (_) {}
@@ -1628,12 +1674,18 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
   const existingRule = isEdit ? rules[editIdx] : null;
 
   const rule = existingRule || prefillObj || {
+    pattern_party: '',
+    pattern_text: '',
     pattern: '',
     label: '',
     prefix: '',
     soll: '1020',
-    haben: '3410'
+    haben: '3410',
+    scope: 'all'
   };
+
+  const partyVal = rule.pattern_party !== undefined ? rule.pattern_party : (rule.scope === 'party' ? rule.pattern : (rule.scope === 'all' ? rule.pattern : ''));
+  const textVal  = rule.pattern_text  !== undefined ? rule.pattern_text  : (rule.scope === 'text'  ? rule.pattern : '');
 
   let modalEl = document.getElementById('bhModalRuleEditor');
   if (!modalEl) {
@@ -1660,30 +1712,36 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
           <div class="modal-body p-4">
             <div class="mb-3">
               <label class="form-label fw-bold small">Regel-Bezeichnung (System-Name)</label>
-              <input type="text" id="bhr-label" class="form-control form-control-sm" placeholder="z.B. Berchtold Fleisch AG" value="${escHtml(rule.label)}" required>
+              <input type="text" id="bhr-label" class="form-control form-control-sm" placeholder="z.B. AGSV Gruppenmeisterschaft oder Berchtold Fleisch AG" value="${escHtml(rule.label)}" required>
               <div class="form-text small">Wird im Status-Badge als Regelname angezeigt.</div>
             </div>
 
             <div class="mb-3">
               <label class="form-label fw-bold small">Journal-Präfix / Buchungstext (Vorangestellt im Kassabuch)</label>
-              <input type="text" id="bhr-prefix" class="form-control form-control-sm" placeholder="z.B. Einkauf Lebensmittel Berchtold" value="${escHtml(rule.prefix || rule.label)}">
+              <input type="text" id="bhr-prefix" class="form-control form-control-sm" placeholder="z.B. AGSV Gruppenmeisterschaft" value="${escHtml(rule.prefix || rule.label)}">
               <div class="form-text small">Dieser Text wird bei der Buchung im Kassabuch-Journal vorangestellt.</div>
             </div>
             
-            <div class="mb-3">
-              <label class="form-label fw-bold small">Suchmuster (Text / Absender)</label>
-              <input type="text" id="bhr-pattern" class="form-control form-control-sm" placeholder="z.B. AGSV, Berchtold, Raiffeisen, Helvetia" value="${escHtml(rule.pattern)}" required>
-              <div class="form-text small">Transaktionen mit diesem Suchbegriff werden automatisch zugeordnet.</div>
+            <div class="row g-2 mb-2">
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-primary">
+                  <i class="fas fa-user me-1"></i>Suchbegriff: Empfänger / Zahler
+                </label>
+                <input type="text" id="bhr-pattern-party" class="form-control form-control-sm" placeholder="z.B. AGSV, Berchtold, Swisscom..." value="${escHtml(partyVal)}">
+                <div class="form-text small">Wird im Absender/Empfänger gesucht (kann leer bleiben).</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-success">
+                  <i class="fas fa-file-alt me-1"></i>Suchbegriff: Verwendungszweck
+                </label>
+                <input type="text" id="bhr-pattern-text" class="form-control form-control-sm" placeholder="z.B. Gruppenmeisterschaft, Munition..." value="${escHtml(textVal)}">
+                <div class="form-text small">Wird im Buchungstext/Mitteilung gesucht (kann leer bleiben).</div>
+              </div>
             </div>
 
-            <div class="mb-3">
-              <label class="form-label fw-bold small"><i class="fas fa-filter me-1 text-primary"></i>Suchbereich (Wo soll gesucht werden?)</label>
-              <select id="bhr-scope" class="form-select form-select-sm">
-                <option value="party" ${(rule.scope === 'party' || (!rule.scope && isEdit)) ? 'selected' : ''}>Nur Empfänger / Zahler (Name im CAMT)</option>
-                <option value="text" ${rule.scope === 'text' ? 'selected' : ''}>Nur Verwendungszweck / Buchungstext</option>
-                <option value="all" ${(rule.scope === 'all' || !rule.scope) ? 'selected' : ''}>Überall (Empfänger/Zahler & Verwendungszweck)</option>
-              </select>
-              <div class="form-text small">Trennt sauber zwischen Zahlungsempfänger/Zahler und dem Überweisungstext.</div>
+            <div class="alert alert-light border py-1.5 px-2.5 mb-3 small text-muted">
+              <i class="fas fa-info-circle me-1 text-info"></i>
+              Mindestens ein Suchbegriff muss gesetzt sein. Sind <strong>beide</strong> gesetzt, greift die Regel nur, wenn beide zutreffen (höchste Präzision!).
             </div>
 
             <div class="row g-2 mb-3">
@@ -1715,28 +1773,42 @@ window.bhBankOpenRuleEditorModal = function(editIdx, prefillObj) {
 window.bhBankSaveRuleSubmit = function(e, editIdx) {
   e.preventDefault();
 
-  const label   = document.getElementById('bhr-label').value.trim();
-  const pattern = document.getElementById('bhr-pattern').value.trim();
-  const prefix  = document.getElementById('bhr-prefix').value.trim() || label;
-  const scope   = document.getElementById('bhr-scope')?.value || 'all';
-  const rawSoll = document.getElementById('bhr-soll').value.trim();
-  const rawHaben= document.getElementById('bhr-haben').value.trim();
+  const label        = document.getElementById('bhr-label').value.trim();
+  const patternParty = document.getElementById('bhr-pattern-party').value.trim();
+  const patternText  = document.getElementById('bhr-pattern-text').value.trim();
+  const prefix       = document.getElementById('bhr-prefix').value.trim() || label;
+  const rawSoll      = document.getElementById('bhr-soll').value.trim();
+  const rawHaben     = document.getElementById('bhr-haben').value.trim();
 
   const soll  = rawSoll.split('|')[0].trim();
   const haben = rawHaben.split('|')[0].trim();
 
-  if (!label || !pattern || !soll || !haben) {
-    alert('Bitte füllen Sie alle Pflichtfelder aus.');
+  if (!label || (!patternParty && !patternText) || !soll || !haben) {
+    alert('Bitte Regel-Bezeichnung, mindestens einen Suchbegriff (Empfänger oder Verwendungszweck) sowie Soll- und Haben-Konto angeben.');
     return;
   }
+
+  const legacyPattern = patternParty || patternText;
+  const legacyScope = (patternParty && !patternText) ? 'party' : (!patternParty && patternText ? 'text' : 'all');
+
+  const ruleObj = {
+    label,
+    pattern_party: patternParty,
+    pattern_text: patternText,
+    prefix,
+    soll,
+    haben,
+    pattern: legacyPattern,
+    scope: legacyScope
+  };
 
   const rules = window.getBhBankRules();
 
   if (editIdx >= 0 && editIdx < rules.length) {
-    rules[editIdx] = { pattern, label, prefix, soll, haben, scope };
+    rules[editIdx] = ruleObj;
     showToast(`✅ Regel "${label}" erfolgreich aktualisiert!`, 'success');
   } else {
-    rules.push({ pattern, label, prefix, soll, haben, scope });
+    rules.push(ruleObj);
     showToast(`✅ Neue Regel "${label}" gespeichert!`, 'success');
   }
 
@@ -1765,9 +1837,8 @@ window.bhBankSaveRuleModal = function(txIdx) {
   const tx = window._bhBankMatchResults[txIdx];
   if (!tx) return;
 
-  const hasParty = Boolean((tx.partyName || '').trim());
-  const defaultPattern = hasParty ? tx.partyName.trim() : (tx.remittanceInfo || '').trim();
-  const defaultScope = hasParty ? 'party' : 'text';
+  const party = (tx.partyName || '').trim();
+  const remittance = (tx.remittanceInfo || '').trim();
 
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
   const habenEl = document.getElementById(`bh-haben-${txIdx}`);
@@ -1776,18 +1847,41 @@ window.bhBankSaveRuleModal = function(txIdx) {
   const habenVal = habenEl ? habenEl.value : tx.suggestedHaben;
 
   bhBankOpenRuleEditorModal(-1, {
-    pattern: defaultPattern,
-    label: tx.partyName || defaultPattern,
-    prefix: tx.partyName || defaultPattern,
+    label: party || remittance || 'Neue Regel',
+    prefix: party || remittance || '',
+    pattern_party: party,
+    pattern_text: '',
+    pattern: party || remittance,
+    scope: party ? 'party' : 'text',
     soll: sollVal,
-    haben: habenVal,
-    scope: defaultScope
+    haben: habenVal
   });
 };
 
 // ---------------------------------------------------------------------
-// Regeln verwalten Modal
+// Regeln verwalten Modal & Vollbild-Toggle
 // ---------------------------------------------------------------------
+window._bhManageRulesIsFullscreen = window._bhManageRulesIsFullscreen || false;
+window.bhToggleManageRulesFullscreen = function() {
+  window._bhManageRulesIsFullscreen = !window._bhManageRulesIsFullscreen;
+  const dialog = document.getElementById('bhModalManageRulesDialog');
+  const icon = document.getElementById('bhManageRulesFsIcon');
+  const tableWrap = document.getElementById('bhManageRulesTableWrap');
+  if (!dialog) return;
+
+  if (window._bhManageRulesIsFullscreen) {
+    dialog.classList.add('modal-fullscreen');
+    dialog.classList.remove('modal-xl');
+    if (icon) icon.className = 'fas fa-compress';
+    if (tableWrap) tableWrap.style.maxHeight = 'calc(100vh - 220px)';
+  } else {
+    dialog.classList.remove('modal-fullscreen');
+    dialog.classList.add('modal-xl');
+    if (icon) icon.className = 'fas fa-expand';
+    if (tableWrap) tableWrap.style.maxHeight = '520px';
+  }
+};
+
 window.bhBankManageRulesModal = function() {
   const rules = window.getBhBankRules();
 
@@ -1811,20 +1905,25 @@ window.bhBankManageRulesModal = function() {
   const rulesRows = rules.length ? rules.map((r, i) => {
     const sollNr  = extractCleanKontoNr(r.soll);
     const habenNr = extractCleanKontoNr(r.haben);
-    let scopeBadge = '<span class="badge bg-light text-secondary border">Überall</span>';
-    if (r.scope === 'party') {
-      scopeBadge = '<span class="badge bg-info text-dark border" title="Sucht gezielt nur beim Empfänger oder Zahler"><i class="fas fa-user me-1"></i>Empfänger</span>';
-    } else if (r.scope === 'text') {
-      scopeBadge = '<span class="badge bg-secondary text-white border" title="Sucht gezielt nur im Buchungstext"><i class="fas fa-file-alt me-1"></i>Text</span>';
-    }
+
+    const partyVal = r.pattern_party !== undefined ? r.pattern_party : (r.scope === 'party' ? r.pattern : '');
+    const textVal  = r.pattern_text  !== undefined ? r.pattern_text  : (r.scope === 'text'  ? r.pattern : '');
+    const legacyVal = (!partyVal && !textVal) ? (r.pattern || '') : '';
+
+    let partyHtml = partyVal
+      ? `<code class="text-primary bg-light px-2 py-0.5 rounded border small fw-bold">${escHtml(partyVal)}</code>`
+      : (legacyVal ? `<code class="text-secondary bg-light px-2 py-0.5 rounded border small">${escHtml(legacyVal)}</code>` : '<span class="text-muted small">–</span>');
+
+    let textHtml = textVal
+      ? `<code class="text-success bg-light px-2 py-0.5 rounded border small fw-bold">${escHtml(textVal)}</code>`
+      : (legacyVal ? `<span class="badge bg-light text-muted border">Überall</span>` : '<span class="text-muted small">–</span>');
+
     return `
       <tr>
-        <td><span class="fw-bold text-primary">${escHtml(r.label)}</span></td>
-        <td>
-          <code class="text-dark bg-light px-2 py-1 rounded border">${escHtml(r.pattern)}</code>
-          <div class="mt-1">${scopeBadge}</div>
-        </td>
-        <td><span class="text-dark small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
+        <td><span class="fw-bold text-dark">${escHtml(r.label)}</span></td>
+        <td>${partyHtml}</td>
+        <td>${textHtml}</td>
+        <td><span class="text-muted small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
         <td><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
         <td><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
         <td class="text-end" style="white-space: nowrap;">
@@ -1839,37 +1938,45 @@ window.bhBankManageRulesModal = function() {
     `;
   }).join('') : `
     <tr>
-      <td colspan="6" class="text-center text-muted py-4">
+      <td colspan="7" class="text-center text-muted py-4">
         <i class="fas fa-magic fa-2x mb-2" style="opacity:0.3;"></i>
         <p class="mb-0">Noch keine Benutzer-Regeln definiert.</p>
       </td>
     </tr>
   `;
 
+  const isFs = window._bhManageRulesIsFullscreen;
+
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div id="bhModalManageRulesDialog" class="modal-dialog ${isFs ? 'modal-fullscreen' : 'modal-xl'} modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 rounded-4 shadow">
         <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4">
           <h5 class="modal-title fw-bold"><i class="fas fa-sliders-h me-2"></i>Automatische Buchungsregeln verwalten</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          <div class="d-flex align-items-center ms-auto">
+            <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-2.5 me-2" onclick="bhToggleManageRulesFullscreen()" title="Vollbild umschalten (Vergrössern / Verkleinern)">
+              <i id="bhManageRulesFsIcon" class="fas ${isFs ? 'fa-compress' : 'fa-expand'}"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
         </div>
         <div class="modal-body p-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen.</p>
+            <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen (getrennte Kriterien für Empfänger/Zahler und Verwendungszweck).</p>
             <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
               <i class="fas fa-plus me-1"></i>Neue Regel erstellen
             </button>
           </div>
-          <div class="table-responsive">
+          <div id="bhManageRulesTableWrap" class="table-responsive" style="max-height: ${isFs ? 'calc(100vh - 220px)' : '520px'}; overflow-y: auto;">
             <table class="table table-hover table-sm align-middle mb-0" style="table-layout: fixed; width: 100%;">
-              <thead class="table-light">
+              <thead class="table-light sticky-top">
                 <tr>
-                  <th style="width: 22%;">Bezeichnung</th>
-                  <th style="width: 15%;">Suchmuster</th>
-                  <th style="width: 32%;">Journal-Text / Präfix</th>
-                  <th style="width: 8%;">Soll</th>
-                  <th style="width: 8%;">Haben</th>
-                  <th style="width: 15%;" class="text-end">Aktionen</th>
+                  <th style="width: 20%;">Bezeichnung</th>
+                  <th style="width: 17%;"><i class="fas fa-user me-1 text-primary"></i>Empfänger / Zahler</th>
+                  <th style="width: 17%;"><i class="fas fa-file-alt me-1 text-success"></i>Verwendungszweck</th>
+                  <th style="width: 20%;">Journal-Text / Präfix</th>
+                  <th style="width: 7%;">Soll</th>
+                  <th style="width: 7%;">Haben</th>
+                  <th style="width: 12%;" class="text-end">Aktionen</th>
                 </tr>
               </thead>
               <tbody>${rulesRows}</tbody>
@@ -2156,7 +2263,9 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
   }
 
   const year = Number(window._bhYear || new Date().getFullYear());
-  const baseSeq = bhGetNextBankBelegSeq(year);
+  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+  const baseSeq = bhGetNextBankBelegSeq(year, txBankKonto);
+  const prefix = getBankBelegPrefix(txBankKonto);
   const baseBelegSeq = String(baseSeq).padStart(3, '0');
 
   try {
@@ -2167,7 +2276,7 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
       if (Number(r.betrag) === 0) continue; // 0 CHF Zeilen überspringen
 
       const subChar = String.fromCharCode(97 + i); // a, b, c...
-      const belegNr = `BK-${year}-${baseBelegSeq}${subChar}`;
+      const belegNr = `${prefix}${year}-${baseBelegSeq}${subChar}`;
 
       const payloadBh = {
         action: 'addJournalEntry',
