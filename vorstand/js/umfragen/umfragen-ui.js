@@ -404,12 +404,24 @@ async function ensureMembersLookup() {
     membersLookup = {};
     try {
         // Verwende den globalen Cache window._mglData, falls bereits vorverlegt geladen,
-        // um eine redundante API-Anfrage ans Backend komplett zu vermeiden!
         let members = window._mglData || [];
+        if (members.length === 0 && window.AppCache) {
+            const cached = window.AppCache.get('mitglieder');
+            if (cached && Array.isArray(cached.data)) {
+                members = cached.data;
+            }
+        }
         if (members.length === 0) {
             const res = await apiFetch('mitglieder', 'action=getAll');
-            const data = await res.json();
-            members = Array.isArray(data.data) ? data.data : [];
+            if (res.ok) {
+                const text = await res.text();
+                try {
+                    const data = JSON.parse(text);
+                    members = Array.isArray(data.data) ? data.data : [];
+                } catch (jsonErr) {
+                    console.warn("⚠️ ensureMembersLookup: Server lieferte kein JSON:", text.slice(0, 100));
+                }
+            }
         }
         members.forEach(m => {
             if(m.PersonNumber) {

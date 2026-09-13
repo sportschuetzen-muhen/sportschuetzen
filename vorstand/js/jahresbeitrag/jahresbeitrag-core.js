@@ -148,9 +148,12 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
     });
 
     // In globalen Caches speichern
-    _jbAllBeitraege = beitraege.data || [];
-    _jbAllParticipations = participations.data || [];
-    _jbAllPositions = positions.positions || [];
+    window._jbAllBeitraege = beitraege.data || [];
+    window._jbAllParticipations = participations.data || [];
+    window._jbAllPositions = positions.positions || [];
+    _jbAllBeitraege = window._jbAllBeitraege;
+    _jbAllParticipations = window._jbAllParticipations;
+    _jbAllPositions = window._jbAllPositions;
     window._jbAllInvoices = invoicesRes.success ? (invoicesRes.data || []) : [];
     window._invoices = window._jbAllInvoices; // Sync both caches!
     window._jbGebuehren = gebuehrenRes.success ? (gebuehrenRes.data || []) : [];

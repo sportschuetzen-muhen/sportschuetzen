@@ -1283,13 +1283,24 @@ async function pingPresence() {
     try {
         const sessId = getSessionId();
         const res = await apiFetch('logins', `action=ping&user=${encodeURIComponent(window.currentUser)}&sessionId=${sessId}`);
-        const data = await res.json();
+        if (!res.ok) {
+            console.warn("⚠️ Presence-Ping HTTP Status nicht OK:", res.status);
+            return;
+        }
+        const text = await res.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            console.warn("⚠️ Presence-Ping: Server lieferte kein JSON (vorübergehendes Backend-Problem):", text.slice(0, 100));
+            return;
+        }
         console.log("🔍 pingPresence response data:", data);
         if (data.success && Array.isArray(data.onlineUsers)) {
             updatePresenceUI(data.onlineUsers);
         }
     } catch (e) {
-        console.error("❌ Fehler beim Presence-Ping:", e);
+        console.warn("⚠️ Fehler beim Presence-Ping (Netzwerkfehler):", e.message);
     }
 }
 

@@ -345,7 +345,8 @@ async function loadUmfragenData(force = false) {
       options: parsePollOptions(e.options)
     }));
     renderUmfragenUI(container);
-    setTimeout(preloadUmfragenAllDetails, 50);
+    // HINWEIS: preloadUmfragenAllDetails deaktiviert, da Teilnehmer und Historie on-demand geladen werden
+    // setTimeout(preloadUmfragenAllDetails, 50);
   } catch (e) {
     container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden (Google Script bereits aktualisiert?): ${escapeHtml(e.message)}</div>`;
   }
