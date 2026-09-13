@@ -29,12 +29,27 @@ async function loadMitgliederData(forceReload = false) {
   }
 
   // Wenn Caches bereits geladen sind und kein forceReload erzwungen wird,
-  // laden wir direkt und instant aus dem lokalen Speicher!
-  if (!forceReload && _mglData && _mglData.length > 0) {
-    console.log("⚡ loadMitgliederData: Lade aus lokalem Cache...");
-    renderMitgliederView(_mglData);
-    mglFilter();
-    return;
+  // laden wir direkt und instant aus dem RAM oder AppCache!
+  if (!forceReload) {
+    if (_mglData && _mglData.length > 0) {
+      console.log("⚡ loadMitgliederData: Lade aus RAM-Cache...");
+      renderMitgliederView(_mglData);
+      mglFilter();
+      return;
+    }
+    if (window.AppCache) {
+      const cached = window.AppCache.get('mitglieder');
+      if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+        console.log("⚡ loadMitgliederData: Lade ohne Netzwerk-Wartezeit aus AppCache (localStorage)...");
+        _mglData = cached.data;
+        _mglLizenzenCache = cached.lizenzen || {};
+        _mglFunktionenCache = cached.funktionen || {};
+        _mglHistoryCache = cached.historie || {};
+        renderMitgliederView(_mglData);
+        mglFilter();
+        return;
+      }
+    }
   }
 
   container.innerHTML = `
@@ -132,6 +147,14 @@ async function loadMitgliederData(forceReload = false) {
     }
 
     _mglData = Array.isArray(data.data) ? data.data : [];
+    if (window.AppCache) {
+      window.AppCache.set('mitglieder', {
+        data: _mglData,
+        lizenzen: _mglLizenzenCache,
+        funktionen: _mglFunktionenCache,
+        historie: _mglHistoryCache
+      }, 120);
+    }
     renderMitgliederView(_mglData);
     mglFilter();
   } catch (e) {

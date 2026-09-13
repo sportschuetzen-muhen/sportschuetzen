@@ -67,9 +67,29 @@ async function loadTermineData(force = false) {
   const container = document.getElementById('termine-container');
   if (!container) return;
 
-  if (!force && adminState && document.getElementById('termine-ui')?.children.length > 0) {
-    console.log("⚡ loadTermineData: Lade aus lokalem Cache...");
-    return;
+  if (!force) {
+    if (adminState && document.getElementById('termine-ui')?.children.length > 0) {
+      console.log("⚡ loadTermineData: Lade aus RAM-Cache...");
+      return;
+    }
+    if (window.AppCache) {
+      const cached = window.AppCache.get('termine');
+      if (cached && typeof cached === 'object') {
+        console.log("⚡ loadTermineData: Lade ohne Netzwerk-Wartezeit aus AppCache...");
+        adminState = cached;
+        originalAdminState = JSON.parse(JSON.stringify(adminState));
+        container.innerHTML = `
+          <div id="termine-shell">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="small text-muted" id="last-sync">Zuletzt aktualisiert: Lokal (AppCache)</div>
+            </div>
+            <div id="termine-ui"></div>
+          </div>
+        `;
+        renderTermineUI(document.getElementById('termine-ui'));
+        return;
+      }
+    }
   }
 
   container.innerHTML = `
@@ -93,6 +113,10 @@ async function loadTermineData(force = false) {
     }
 
     originalAdminState = JSON.parse(JSON.stringify(adminState));
+
+    if (window.AppCache) {
+      window.AppCache.set('termine', adminState, 120);
+    }
 
     renderTermineUI(document.getElementById('termine-ui'));
 
@@ -385,8 +409,11 @@ async function saveTermineData() {
             body: JSON.stringify(payload)
         });
         window.clearUnsaved();
+        if (window.AppCache) {
+            window.AppCache.invalidate('termine');
+        }
         alert("✅ Gespeichert!");
-        loadTermineData();
+        await loadTermineData(true);
     } catch(e) {
         alert("Fehler beim Speichern: " + e);
     }

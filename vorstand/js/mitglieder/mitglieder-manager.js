@@ -33,6 +33,15 @@ async function mglSaveVerein(pn) {
       });
     }
 
+    if (window.AppCache) {
+      window.AppCache.set('mitglieder', {
+        data: _mglData,
+        lizenzen: _mglLizenzenCache,
+        funktionen: _mglFunktionenCache,
+        historie: _mglHistoryCache
+      }, 120);
+    }
+
     btn.innerHTML = '<i class="fas fa-check text-success"></i> Gespeichert!';
     setTimeout(() => {
       btn.disabled = false;
@@ -87,7 +96,10 @@ async function mglSaveNeu() {
 
     bootstrap.Modal.getInstance(document.getElementById('mglModalNeu')).hide();
     alert(`✅ Mitglied erstellt (${data.PersonNumber})`);
-    await loadMitgliederData();
+    if (window.AppCache) {
+      window.AppCache.invalidate('mitglieder');
+    }
+    await loadMitgliederData(true);
   } catch (e) {
     alert('Fehler: ' + e.message);
   } finally {

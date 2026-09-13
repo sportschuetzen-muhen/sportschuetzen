@@ -999,7 +999,8 @@ async function jbSaveZahlung() {
           invoiceId: r.invoiceId,
           datum: datum,
           methode: methode,
-          beleg: beleg || `PAY-${r.invoiceId}`
+          beleg: beleg || `PAY-${r.invoiceId}`,
+          skipBooking: true // Buchung erfolgt via Splitbuchung in Schritt 3
         };
         const payRes = await rechnungenApiFetch(payPayload);
         if (!payRes.success) {
@@ -1007,6 +1008,47 @@ async function jbSaveZahlung() {
         }
       } catch (payErr) {
         console.warn("⚠️ Fehler bei Zahlungssynchronisierung mit Rechnungen_GAS:", payErr);
+      }
+    }
+
+    // 3. In Buchhaltung_GAS verbuchen via Splitbuchung
+    if (typeof window.jbGetSplitBookings === 'function') {
+      try {
+        const isBar = String(methode || '').toLowerCase().includes('bar');
+        const bankKonto = isBar ? '1000' : '1020';
+        const member = _jbMemberMap ? _jbMemberMap[String(r?.PersonNumber)] : null;
+        const splits = window.jbGetSplitBookings({
+          headerId: id,
+          member: member,
+          paidAmount: Number(r?.Gesamt || 0),
+          bookingDate: datum,
+          belegNr: beleg || `PAY-${id}`,
+          bankAccount: bankKonto,
+          year: Number(r?.year || new Date().getFullYear())
+        });
+        if (splits && splits.length > 0) {
+          const payload = splits.length > 1 ? {
+            action: 'addJournalEntries',
+            jahr: Number(r?.year || new Date().getFullYear()),
+            datum: datum,
+            beleg_nr: beleg || `PAY-${id}`,
+            entries: splits,
+            typ: isBar ? 'Kassa' : 'Bank'
+          } : {
+            action: 'addJournalEntry',
+            jahr: Number(r?.year || new Date().getFullYear()),
+            datum: datum,
+            beleg_nr: beleg || `PAY-${id}`,
+            beschreibung: splits[0].beschreibung,
+            konto_soll: splits[0].konto_soll,
+            konto_haben: splits[0].konto_haben,
+            betrag: splits[0].betrag,
+            typ: isBar ? 'Kassa' : 'Bank'
+          };
+          await apiFetch('buchhaltung', payload, 'POST');
+        }
+      } catch (bhErr) {
+        console.warn("⚠️ Fehler bei Buchhaltung Splitbuchung:", bhErr);
       }
     }
 

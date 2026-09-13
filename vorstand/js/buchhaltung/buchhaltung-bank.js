@@ -123,7 +123,7 @@ window.renderTabBankabgleich = function(container) {
     window.fetchBhBankServerRules();
   }
 
-  // Sicherstellen, dass Rechnungsdaten geladen sind
+  // Sicherstellen, dass Rechnungsdaten und Beitrags-Gebühren geladen sind
   if ((!window._invoices || window._invoices.length === 0) && typeof window.loadRechnungenData === 'function') {
     window.loadRechnungenData(true).then(() => {
       if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
@@ -131,6 +131,18 @@ window.renderTabBankabgleich = function(container) {
         bhBankRenderResults(window._bhBankActiveFilter);
       }
     }).catch(() => {});
+  }
+  if (!window._jbGebuehren || window._jbGebuehren.length === 0) {
+    apiFetch('jahresbeitrag', 'action=getGebuehren')
+      .then(r => r.json())
+      .then(json => { if (json && json.success) window._jbGebuehren = json.data || []; })
+      .catch(() => {});
+  }
+  if (!window._jbAllPositions || window._jbAllPositions.length === 0) {
+    apiFetch('jahresbeitrag', 'action=getPositionen')
+      .then(r => r.json())
+      .then(json => { if (json && json.success) window._jbAllPositions = json.positions || []; })
+      .catch(() => {});
   }
 
   const hasResults = window._bhBankMatchResults && window._bhBankMatchResults.length > 0;
@@ -681,6 +693,24 @@ function bhBankRenderResults(filter) {
         </td>
         <td style="min-width: 150px;">
           ${makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben')}
+          ${(() => {
+            if ((r.isJahresbeitrag || (r.isInvoice && String(r.matchedInvoice?.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
+              const hId = r.matchedBeitrag ? r.matchedBeitrag.id : (r.matchedInvoice ? r.matchedInvoice.id : null);
+              const mObj = r.matchedMember || (r.matchedInvoice ? { FirstName: r.matchedInvoice.name, LastName: '', PersonNumber: r.matchedInvoice.PersonNumber } : {});
+              const splits = window.jbGetSplitBookings({
+                headerId: hId,
+                member: mObj,
+                paidAmount: r.amount,
+                bankAccount: isBankKontoCode(r.suggestedSoll) ? r.suggestedSoll : '1020',
+                year: Number(window._bhYear || new Date().getFullYear())
+              });
+              if (splits && splits.length > 1) {
+                const summary = window.jbFormatSplitSummary(splits);
+                return `<div class="mt-1"><span class="badge bg-primary text-white border border-primary py-1 px-2" style="font-size:10px; cursor:help;" title="${escHtml(summary)}"><i class="fas fa-layer-group me-1"></i>Split (${splits.length} Posten)</span></div>`;
+              }
+            }
+            return '';
+          })()}
         </td>
         ${canEdit ? `<td><div class="d-flex align-items-center">${actionButtons}</div></td>` : ''}
       </tr>
@@ -1765,21 +1795,52 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
     const txBankKonto = isBankKontoCode(kontoSoll) ? kontoSoll : (isBankKontoCode(kontoHaben) ? kontoHaben : (tx.accountIban ? bhBankGetAccountForIban(tx.accountIban) : '1020'));
     const belegNr = customBelegNr || bhGetNextBankBelegNr(year, txBankKonto);
 
-    const payloadBh = {
-      action: 'addJournalEntry',
-      jahr: year,
-      datum: tx.bookingDate || new Date().toISOString().split('T')[0],
-      beleg_nr: belegNr,
-      beschreibung: beschreibung,
-      konto_soll: kontoSoll,
-      konto_haben: kontoHaben,
-      betrag: Number(tx.amount || 0),
-      typ: 'Bank'
-    };
+    let splitEntries = [];
+    if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
+      const hId = tx.matchedBeitrag ? tx.matchedBeitrag.id : (tx.matchedInvoice ? tx.matchedInvoice.id : null);
+      const mObj = tx.matchedMember || (tx.matchedInvoice ? { FirstName: tx.matchedInvoice.name, LastName: '', PersonNumber: tx.matchedInvoice.PersonNumber } : {});
+      splitEntries = window.jbGetSplitBookings({
+        headerId: hId,
+        member: mObj,
+        paidAmount: Number(tx.amount || 0),
+        bookingDate: tx.bookingDate || new Date().toISOString().split('T')[0],
+        belegNr: belegNr,
+        bankAccount: txBankKonto,
+        year: year
+      });
+    }
 
-    const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-    const jsonBh = await resBh.json();
-    if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen im Journal');
+    let jsonBh = null;
+    const isSplit = splitEntries && splitEntries.length > 1;
+
+    if (isSplit) {
+      const payloadBh = {
+        action: 'addJournalEntries',
+        jahr: year,
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: belegNr,
+        entries: splitEntries,
+        typ: 'Bank'
+      };
+      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+      jsonBh = await resBh.json();
+      if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen der Splitbuchung im Journal');
+    } else {
+      const payloadBh = {
+        action: 'addJournalEntry',
+        jahr: year,
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: belegNr,
+        beschreibung: beschreibung,
+        konto_soll: kontoSoll,
+        konto_haben: kontoHaben,
+        betrag: Number(tx.amount || 0),
+        typ: 'Bank'
+      };
+      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+      jsonBh = await resBh.json();
+      if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen im Journal');
+    }
 
     // 2. Falls eine Rechnung erkannt wurde: im Rechnungs-Modul als bezahlt markieren (POST mit skipBooking: true)
     if (tx.matchedInvoice && tx.matchedInvoice.id) {
@@ -1834,17 +1895,23 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
 
     // Sofort lokal im Kassabuch-Journal registrieren für 100%ige Sofort-Sperre
     window._bhJournal = window._bhJournal || [];
-    window._bhJournal.push({
-      id: (jsonBh.data && jsonBh.data.id) ? jsonBh.data.id : Date.now(),
-      jahr: year,
-      datum: tx.bookingDate || new Date().toISOString().split('T')[0],
-      beleg_nr: belegNr,
-      beschreibung: beschreibung,
-      konto_soll: kontoSoll,
-      konto_haben: kontoHaben,
-      betrag: Number(tx.amount || 0),
-      typ: 'Bank'
-    });
+    if (isSplit && Array.isArray(jsonBh.data)) {
+      jsonBh.data.forEach(entry => {
+        window._bhJournal.push(entry);
+      });
+    } else {
+      window._bhJournal.push({
+        id: (jsonBh.data && jsonBh.data.id) ? jsonBh.data.id : Date.now(),
+        jahr: year,
+        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
+        beleg_nr: belegNr,
+        beschreibung: beschreibung,
+        konto_soll: kontoSoll,
+        konto_haben: kontoHaben,
+        betrag: Number(tx.amount || 0),
+        typ: 'Bank'
+      });
+    }
 
     // Sofort Button dauerhaft deaktivieren & Kennzeichnen (noch vor dem Re-Render)
     if (bookBtn) {
@@ -1854,7 +1921,11 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
     }
 
     // Einzelbuchung bestätigen: unten rechts (bottom-end), damit es nie mit dem Batch-Banner oben kollidiert!
-    showToast(`✅ Buchungssatz über CHF ${tx.amount.toFixed(2)} gebucht!`, 'success', 'bottom-end', 2500);
+    if (isSplit) {
+      showToast(`✅ Splitbuchung über CHF ${tx.amount.toFixed(2)} (${splitEntries.length} Posten) gebucht!`, 'success', 'bottom-end', 3000);
+    } else {
+      showToast(`✅ Buchungssatz über CHF ${tx.amount.toFixed(2)} gebucht!`, 'success', 'bottom-end', 2500);
+    }
 
     // Nächste ungebuchte Zeile nach dem Neuladen automatisch fokussieren
     window._bhFocusNextAfterBooking = txIdx + 1;

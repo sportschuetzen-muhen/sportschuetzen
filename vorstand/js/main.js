@@ -134,6 +134,56 @@ const AppState = {
 };
 
 // =========================================================
+//  SMART STORAGE CACHE MANAGER (Versioniert & TTL-gesteuert)
+// =========================================================
+const AppCache = {
+    VERSION: 1,
+    PREFIX: 'portal_cache_v1_',
+
+    set(key, data, ttlMinutes = 120) {
+        try {
+            const entry = {
+                version: this.VERSION,
+                timestamp: Date.now(),
+                ttlMs: ttlMinutes * 60 * 1000,
+                data: data
+            };
+            localStorage.setItem(this.PREFIX + key, JSON.stringify(entry));
+        } catch (e) {
+            console.warn("⚠️ AppCache.set fehlgeschlagen (evtl. Quota voll):", e);
+        }
+    },
+
+    get(key) {
+        try {
+            const raw = localStorage.getItem(this.PREFIX + key);
+            if (!raw) return null;
+            const entry = JSON.parse(raw);
+            // Versionsprüfung
+            if (!entry || entry.version !== this.VERSION) {
+                this.invalidate(key);
+                return null;
+            }
+            // TTL-Prüfung
+            if (Date.now() - entry.timestamp > entry.ttlMs) {
+                this.invalidate(key);
+                return null;
+            }
+            return entry.data;
+        } catch (e) {
+            return null;
+        }
+    },
+
+    invalidate(key) {
+        try {
+            localStorage.removeItem(this.PREFIX + key);
+        } catch (e) {}
+    }
+};
+window.AppCache = AppCache;
+
+// =========================================================
 //  EINHEITLICHE FEHLERBEHANDLUNG
 // =========================================================
 function getOrCreateToastContainer(position = 'top-end') {
@@ -582,11 +632,10 @@ function showApp() {
     // 2. Online-Präsenz pingen
     startPresencePingTimer();
 
-    // Asynchronen Background Sync starten (alle 5 Minuten)
-    startBackgroundSyncTimer();
-
-    // Gestaffelte, priorisierte Ladereihenfolge im Hintergrund anstoßen (silenter Pre-fetch)
-    setTimeout(startPreloadSequence, 100);
+    // HINWEIS: Massen-Preload und 5-Minuten Background-Sync im Startpfad deaktiviert für sofortige Ladezeit (< 1s).
+    // Module laden on-demand beim Klick (Lazy Loading via navTo) und nutzen selektiven AppCache.
+    // startBackgroundSyncTimer();
+    // setTimeout(startPreloadSequence, 100);
 }
 
 async function startPreloadSequence() {

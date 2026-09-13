@@ -438,6 +438,10 @@ async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {
       }
     }
 
+    // Splitbuchung ins Journal der Buchhaltung schreiben
+    const tx = _jbBankMatchResults[txIdx];
+    await jbBankSyncToBuchhaltung(headerId, tx ? tx.matchedMember : null, tx ? tx.amount : 0, dateStr, 'CAMT053');
+
     showToast(`✅ Zahlung für ${memberName} gebucht!`, 'success');
     jbBankRenderResults(window._jbBankActiveFilter);
     const banner = document.getElementById('bankStatsBanner');
@@ -728,6 +732,10 @@ async function jbBankBookOne(headerId, dateStr, resultIdx) {
       }
     }
 
+    // Splitbuchung ins Journal der Buchhaltung schreiben
+    const tx = _jbBankMatchResults[idx];
+    await jbBankSyncToBuchhaltung(headerId, tx ? tx.matchedMember : null, tx ? tx.amount : 0, dateStr, 'CAMT053');
+
     showToast('✅ Zahlung erfolgreich gebucht!', 'success');
     jbBankRenderResults(window._jbBankActiveFilter);
     const banner = document.getElementById('bankStatsBanner');
@@ -777,6 +785,8 @@ async function jbBankBookAll() {
           }
           booked++;
         }
+        // Splitbuchung für jeden gebuchten Beitrag ins Journal schreiben
+        await jbBankSyncToBuchhaltung(r.matchedBeitrag.id, r.matchedMember, r.amount, r.bookingDate, 'CAMT053');
       }
     } catch(_) {}
   }
@@ -785,4 +795,43 @@ async function jbBankBookAll() {
   jbBankRenderResults(window._jbBankActiveFilter);
   const banner = document.getElementById('bankStatsBanner');
   if (banner) banner.innerHTML = jbBankStatsBannerHTML();
+}
+
+// Hilfsfunktion zum Synchronisieren der Splitbuchung in die Buchhaltung
+async function jbBankSyncToBuchhaltung(headerId, member, amount, dateStr, belegNr) {
+  if (typeof window.jbGetSplitBookings !== 'function') return;
+  try {
+    const splits = window.jbGetSplitBookings({
+      headerId: headerId,
+      member: member,
+      paidAmount: Number(amount || 0),
+      bookingDate: dateStr,
+      belegNr: belegNr || 'CAMT053',
+      bankAccount: '1020',
+      year: new Date(dateStr).getFullYear()
+    });
+    if (splits && splits.length > 0) {
+      const payload = splits.length > 1 ? {
+        action: 'addJournalEntries',
+        jahr: new Date(dateStr).getFullYear(),
+        datum: dateStr,
+        beleg_nr: belegNr || 'CAMT053',
+        entries: splits,
+        typ: 'Bank'
+      } : {
+        action: 'addJournalEntry',
+        jahr: new Date(dateStr).getFullYear(),
+        datum: dateStr,
+        beleg_nr: belegNr || 'CAMT053',
+        beschreibung: splits[0].beschreibung,
+        konto_soll: splits[0].konto_soll,
+        konto_haben: splits[0].konto_haben,
+        betrag: splits[0].betrag,
+        typ: 'Bank'
+      };
+      await apiFetch('buchhaltung', payload, 'POST');
+    }
+  } catch (e) {
+    console.warn('⚠️ Buchhaltung Split-Sync:', e);
+  }
 }

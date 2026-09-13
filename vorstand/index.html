@@ -745,9 +745,6 @@
             <div id="view-inventar" class="module-view">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2>Inventar Verwaltung</h2>
-                    <button class="btn btn-sm btn-primary write-protected" onclick="loadInventarData()">
-                        🔄 Aktualisieren
-                    </button>
                 </div>
                 <div id="inventar-container"></div>
             </div>
@@ -756,14 +753,9 @@
             <div id="view-termine" class="module-view">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2>📅 Jahresprogramm</h2>
-                    <div class="btn-group">
-                        <button class="btn btn-sm btn-success write-protected" onclick="saveTermineData()">
-                            💾 Speichern
-                        </button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="loadTermineData()">
-                            🔄 Laden
-                        </button>
-                    </div>
+                    <button class="btn btn-sm btn-success write-protected" onclick="saveTermineData()">
+                        💾 Speichern
+                    </button>
                 </div>
                 <!-- Container filled by js/termine.js -->
                 <div id="termine-container"></div>
@@ -783,9 +775,6 @@
             <div id="view-vermietung" class="module-view">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2>🏠 Vermietung Cockpit</h2>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="loadVermietungData()">
-                        🔄 Aktualisieren
-                    </button>
                 </div>
                 <div id="vermietung-container"></div>
             </div>
@@ -815,9 +804,6 @@
                         <button class="btn btn-sm btn-success write-protected" onclick="saveJahresmeisterschaftData()">
                             💾 Speichern
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresmeisterschaftData()">
-                            🔄 Aktualisieren
-                        </button>
                     </div>
                 </div>
                 <div id="jahresmeisterschaft-container"></div>
@@ -826,9 +812,6 @@
 <div id="view-mail" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>📧 Mail</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadMailData()">
-            🔄 Aktualisieren
-        </button>
     </div>
     <div id="mail-container"></div>
 </div>
@@ -857,9 +840,6 @@
 <div id="view-jahresbeitrag" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>💰 Jahresbeitrag</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadJahresbeitragData(true)">
-            🔄 Aktualisieren
-        </button>
     </div>
     <div id="jahresbeitrag-container"></div>
 </div>
@@ -868,9 +848,6 @@
 <div id="view-rechnungen" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>🧾 Rechnungen & PDF-Cockpit</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadRechnungenData(false, true)">
-            🔄 Aktualisieren
-        </button>
     </div>
     <div id="rechnungen-container"></div>
 </div>
@@ -879,9 +856,6 @@
 <div id="view-buchhaltung" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>📊 Buchhaltung & KMU-Berichte</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadBuchhaltungData(false, true)">
-            🔄 Aktualisieren
-        </button>
     </div>
     <div id="buchhaltung-container"></div>
 </div>
@@ -890,9 +864,6 @@
 <div id="view-mitglieder" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>👥 Mitglieder</h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="loadMitgliederData(true)">
-            🔄 Aktualisieren
-        </button>
     </div>
     <div id="mitglieder-container"></div>
 </div>
@@ -1054,14 +1025,9 @@
 <div id="view-system-mails" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>✉️ System-Mails (App Info)</h2>
-        <div class="btn-group">
-             <button class="btn btn-sm btn-success write-protected" onclick="saveSystemMailsData()">
-                💾 Speichern
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadSystemMailsData()">
-                🔄 Laden
-            </button>
-        </div>
+        <button class="btn btn-sm btn-success write-protected" onclick="saveSystemMailsData()">
+            💾 Speichern
+        </button>
     </div>
     <div id="system-mails-container"></div>
 </div>
@@ -1070,14 +1036,9 @@
 <div id="view-umfragen" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>📊 Umfragen & Anmeldungen</h2>
-        <div class="btn-group">
-            <button class="btn btn-sm btn-success write-protected" onclick="saveUmfragenData()">
-                💾 Speichern
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadUmfragenData(true)">
-                🔄 Laden
-            </button>
-        </div>
+        <button class="btn btn-sm btn-success write-protected" onclick="saveUmfragenData()">
+            💾 Speichern
+        </button>
     </div>
     <div id="umfragen-container"></div>
 </div>
@@ -1360,6 +1321,7 @@
 <script src="js/mail.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-core.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-calc.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-accounting.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-overview.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-schnellerfassung.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-import.js"></script>
