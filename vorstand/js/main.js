@@ -136,49 +136,139 @@ const AppState = {
 // =========================================================
 //  EINHEITLICHE FEHLERBEHANDLUNG
 // =========================================================
-function showError(message, duration = 5000) {
-    AppState.setError(message);
+function getOrCreateToastContainer(position = 'top-end') {
+    const pos = (position === 'bottom' || position === 'bottom-end') ? 'bottom-end' : 
+                (position === 'bottom-center' || position === 'bottom-middle') ? 'bottom-center' :
+                (position === 'top-center' || position === 'top-middle') ? 'top-center' : 'top-end';
     
-    // Toast erstellen
+    let id = 'app-toast-container-' + pos;
+    let container = document.getElementById(id);
+    if (!container) {
+        container = document.createElement('div');
+        container.id = id;
+        container.style.zIndex = '10050';
+        container.style.pointerEvents = 'none';
+        if (pos === 'bottom-end') {
+            container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        } else if (pos === 'bottom-center') {
+            container.className = 'toast-container position-fixed bottom-0 start-50 translate-middle-x p-3';
+        } else if (pos === 'top-center') {
+            container.className = 'toast-container position-fixed top-0 start-50 translate-middle-x p-3';
+        } else {
+            container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        }
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+function showError(message, duration = 5000, position = 'top-end') {
+    AppState.setError(message);
+    const container = getOrCreateToastContainer(position);
     const toast = document.createElement('div');
-    toast.className = 'toast-container position-fixed top-0 end-0 p-3';
-    toast.style.zIndex = '9999';
+    toast.className = 'toast show bg-danger text-white shadow-lg mb-2 border-0';
+    toast.style.pointerEvents = 'auto';
+    toast.setAttribute('role', 'alert');
     toast.innerHTML = `
-        <div class="toast show bg-danger text-white" role="alert">
-            <div class="toast-body d-flex align-items-center">
-                <i class="fas fa-exclamation-circle me-2"></i>
-                <span>${escapeHtml(message)}</span>
-                <button type="button" class="btn-close btn-close-white ms-auto" onclick="this.closest('.toast').remove(); AppState.clearError();"></button>
-            </div>
+        <div class="toast-body d-flex align-items-center">
+            <i class="fas fa-exclamation-circle me-2 fs-5"></i>
+            <span class="fw-medium">${escapeHtml(message)}</span>
+            <button type="button" class="btn-close btn-close-white ms-auto" onclick="this.closest('.toast').remove(); AppState.clearError();"></button>
         </div>`;
-    document.body.appendChild(toast);
+    container.appendChild(toast);
     
     if (duration > 0) {
         setTimeout(() => {
-            toast.remove();
-            AppState.clearError();
+            if (toast.parentNode) {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toast.remove();
+                    AppState.clearError();
+                }, 250);
+            }
         }, duration);
     }
+    return toast;
 }
 
-function showSuccess(message, duration = 3000) {
+function showSuccess(message, duration = 3000, position = 'top-end') {
+    const container = getOrCreateToastContainer(position);
     const toast = document.createElement('div');
-    toast.className = 'toast-container position-fixed top-0 end-0 p-3';
-    toast.style.zIndex = '9999';
+    toast.className = 'toast show bg-success text-white shadow-lg mb-2 border-0';
+    toast.style.pointerEvents = 'auto';
+    toast.setAttribute('role', 'alert');
     toast.innerHTML = `
-        <div class="toast show bg-success text-white" role="alert">
-            <div class="toast-body d-flex align-items-center">
-                <i class="fas fa-check-circle me-2"></i>
-                <span>${escapeHtml(message)}</span>
-                <button type="button" class="btn-close btn-close-white ms-auto" onclick="this.closest('.toast').remove();"></button>
-            </div>
+        <div class="toast-body d-flex align-items-center">
+            <i class="fas fa-check-circle me-2 fs-5"></i>
+            <span class="fw-medium">${escapeHtml(message)}</span>
+            <button type="button" class="btn-close btn-close-white ms-auto" onclick="this.closest('.toast').remove();"></button>
         </div>`;
-    document.body.appendChild(toast);
+    container.appendChild(toast);
     
     if (duration > 0) {
-        setTimeout(() => toast.remove(), duration);
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 250);
+            }
+        }, duration);
+    }
+    return toast;
+}
+
+function showToast(message, type = 'success', position = 'top-end', duration = 3000) {
+    if (type === 'danger' || type === 'error') {
+        return showError(message, duration, position);
+    } else if (type === 'warning') {
+        const container = getOrCreateToastContainer(position);
+        const toast = document.createElement('div');
+        toast.className = 'toast show bg-warning text-dark shadow-lg mb-2 border-0';
+        toast.style.pointerEvents = 'auto';
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="toast-body d-flex align-items-center">
+                <i class="fas fa-exclamation-triangle me-2 fs-5 text-dark"></i>
+                <span class="fw-medium">${escapeHtml(message)}</span>
+                <button type="button" class="btn-close ms-auto" onclick="this.closest('.toast').remove();"></button>
+            </div>`;
+        container.appendChild(toast);
+        if (duration > 0) {
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.classList.remove('show');
+                    setTimeout(() => toast.remove(), 250);
+                }
+            }, duration);
+        }
+        return toast;
+    } else if (type === 'info') {
+        const container = getOrCreateToastContainer(position);
+        const toast = document.createElement('div');
+        toast.className = 'toast show bg-info text-dark shadow-lg mb-2 border-0';
+        toast.style.pointerEvents = 'auto';
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="toast-body d-flex align-items-center">
+                <i class="fas fa-info-circle me-2 fs-5 text-dark"></i>
+                <span class="fw-medium">${escapeHtml(message)}</span>
+                <button type="button" class="btn-close ms-auto" onclick="this.closest('.toast').remove();"></button>
+            </div>`;
+        container.appendChild(toast);
+        if (duration > 0) {
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.classList.remove('show');
+                    setTimeout(() => toast.remove(), 250);
+                }
+            }, duration);
+        }
+        return toast;
+    } else {
+        return showSuccess(message, duration, position);
     }
 }
+window.showToast = showToast;
+window.showToastImpl = showToast;
 
 // =========================================================
 //  VALIDIERUNG

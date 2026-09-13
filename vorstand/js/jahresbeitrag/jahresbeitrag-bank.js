@@ -429,7 +429,14 @@ async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {
       _jbBankMatchResults[txIdx].alreadyPaidDate = dateStr;
     }
     const cached = (_jbAllBeitraege || []).find(h => String(h.id) === String(headerId));
-    if (cached) { cached.status = 'bezahlt'; cached.payment_date = dateStr; cached.payment_method = 'Überweisung'; }
+    if (cached) {
+      cached.status = 'bezahlt'; cached.payment_date = dateStr; cached.payment_method = 'Überweisung';
+      const cachedInv = (window._invoices || []).find(i => String(i.PersonNumber) === String(cached.PersonNumber) && String(i.type || '').toLowerCase().includes('jahresbeitrag'));
+      if (cachedInv) {
+        cachedInv.status = 'bezahlt'; cachedInv.payment_date = dateStr; cachedInv.payment_method = 'Überweisung';
+        try { apiFetch('rechnungen', { action: 'saveZahlung', invoiceId: cachedInv.id, datum: dateStr, methode: 'Überweisung', beleg: 'CAMT053', skipBooking: true }, 'POST').catch(() => {}); } catch (_) {}
+      }
+    }
 
     showToast(`✅ Zahlung für ${memberName} gebucht!`, 'success');
     jbBankRenderResults(window._jbBankActiveFilter);
@@ -711,7 +718,14 @@ async function jbBankBookOne(headerId, dateStr, resultIdx) {
     if (_jbBankMatchResults[idx] && _jbBankMatchResults[idx].matchedBeitrag) {
       const bid = String(_jbBankMatchResults[idx].matchedBeitrag.id);
       const cached = (_jbAllBeitraege || []).find(h => String(h.id) === bid);
-      if (cached) { cached.status = 'bezahlt'; cached.payment_date = dateStr; cached.payment_method = 'Überweisung'; }
+      if (cached) {
+        cached.status = 'bezahlt'; cached.payment_date = dateStr; cached.payment_method = 'Überweisung';
+        const cachedInv = (window._invoices || []).find(i => String(i.PersonNumber) === String(cached.PersonNumber) && String(i.type || '').toLowerCase().includes('jahresbeitrag'));
+        if (cachedInv) {
+          cachedInv.status = 'bezahlt'; cachedInv.payment_date = dateStr; cachedInv.payment_method = 'Überweisung';
+          try { apiFetch('rechnungen', { action: 'saveZahlung', invoiceId: cachedInv.id, datum: dateStr, methode: 'Überweisung', beleg: 'CAMT053', skipBooking: true }, 'POST').catch(() => {}); } catch (_) {}
+        }
+      }
     }
 
     showToast('✅ Zahlung erfolgreich gebucht!', 'success');
@@ -754,8 +768,15 @@ async function jbBankBookAll() {
         _jbBankMatchResults[i].alreadyPaidDate = r.bookingDate;
         const bid = String(r.matchedBeitrag.id);
         const cached = (_jbAllBeitraege || []).find(h => String(h.id) === bid);
-        if (cached) { cached.status = 'bezahlt'; cached.payment_date = r.bookingDate; cached.payment_method = 'Überweisung'; }
-        booked++;
+        if (cached) {
+          cached.status = 'bezahlt'; cached.payment_date = r.bookingDate; cached.payment_method = 'Überweisung';
+          const cachedInv = (window._invoices || []).find(i => String(i.PersonNumber) === String(cached.PersonNumber) && String(i.type || '').toLowerCase().includes('jahresbeitrag'));
+          if (cachedInv) {
+            cachedInv.status = 'bezahlt'; cachedInv.payment_date = r.bookingDate; cachedInv.payment_method = 'Überweisung';
+            try { apiFetch('rechnungen', { action: 'saveZahlung', invoiceId: cachedInv.id, datum: r.bookingDate, methode: 'Überweisung', beleg: 'CAMT053', skipBooking: true }, 'POST').catch(() => {}); } catch (_) {}
+          }
+          booked++;
+        }
       }
     } catch(_) {}
   }

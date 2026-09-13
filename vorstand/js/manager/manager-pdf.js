@@ -28,6 +28,9 @@ function truncateToWidth(doc, text, maxWidth) {
 }
 
 function showToast(message, type = 'success') {
+    if (typeof window.showToastImpl === 'function') {
+        return window.showToastImpl(message, type, 'bottom-center');
+    }
     const existing = document.getElementById('manager-toast');
     if (existing) existing.remove();
     const bg = type === 'success' ? '#198754' : '#dc3545';
@@ -43,6 +46,7 @@ function showToast(message, type = 'success') {
     toast.textContent = message;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2500);
+    return toast;
 }
 
 function estimateTeamHeight(team, config) {

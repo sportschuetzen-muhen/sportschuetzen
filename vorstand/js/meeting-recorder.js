@@ -890,14 +890,15 @@ function downloadTranscript() {
 }
 
 // Helper: Custom Toasts für konsistentes Feedback
-function showToast(message, type = "success") {
+function showToast(message, type = "success", position = "top-end", duration = 3000) {
+    if (typeof window.showToastImpl === "function") {
+        return window.showToastImpl(message, type, position, duration);
+    }
     // Falls vorhanden, nutze das globale showSuccess/showError aus main.js
     if (type === "success" && typeof showSuccess === "function") {
-        showSuccess(message);
-        return;
+        return showSuccess(message, duration, position);
     } else if (type === "danger" && typeof showError === "function") {
-        showError(message);
-        return;
+        return showError(message, duration, position);
     }
 
     // Fallback: Eigener simpler Toast
@@ -915,7 +916,8 @@ function showToast(message, type = "success") {
     document.body.appendChild(toast);
     setTimeout(() => {
         toast.remove();
-    }, 3000);
+    }, duration || 3000);
+    return toast;
 }
 
 // === NEUE UX ASSISTENTEN-FUNKTIONEN ===

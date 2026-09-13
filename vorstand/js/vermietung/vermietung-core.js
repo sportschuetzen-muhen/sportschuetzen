@@ -99,6 +99,9 @@ function getStatusLabel(status) {
 
 // Zeigt Toasts als modern gestyltes Info-Fenster unten rechts an
 function showToast(msg) {
+    if (typeof window.showToastImpl === 'function') {
+        return window.showToastImpl(msg, 'success', 'bottom-end');
+    }
     const oldToast = document.querySelector('.custom-toast');
     if (oldToast) oldToast.remove();
 
@@ -113,4 +116,5 @@ function showToast(msg) {
         toast.style.transition = 'opacity 0.5s';
         setTimeout(() => toast.remove(), 500);
     }, 4000);
+    return toast;
 }
