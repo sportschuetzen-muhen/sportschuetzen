@@ -289,8 +289,8 @@ window.rnOpenCreateModal = async function(btnEl) {
     `<option value="MBR:${m.PersonNumber}">${m.LastName} ${m.FirstName} (Nr: ${m.PersonNumber})</option>`
   ).join('');
 
-  const externalOptions = (window._externalContacts || []).map((c, idx) => 
-    `<option value="EXT:${idx}">${c.name} (Extern - ${c.email || 'keine Mail'})</option>`
+  const externalOptions = (window._externalContacts || []).map(c => 
+    `<option value="EXT:${c.id}">${escapeHtml(c.name)} (Extern ID: ${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`
   ).join('');
 
   modalEl.innerHTML = `
@@ -302,6 +302,7 @@ window.rnOpenCreateModal = async function(btnEl) {
         </div>
         <div class="modal-body p-4">
           <form id="rn-create-form" onsubmit="rnSaveCreateInvoice(event)">
+            <input type="hidden" id="rnc-contact-id" value="">
             
             <!-- Empfänger-Auswahl -->
             <div class="row g-3 mb-3 pb-3 border-bottom">
@@ -409,7 +410,7 @@ window.rnOpenCreateModal = async function(btnEl) {
                     </tr>
                   </thead>
                   <tbody id="rnc-positions-tbody">
-                    <!-- Standardmäßig eine Zeile eintragen -->
+                    <!-- Wird dynamisch gefüllt -->
                   </tbody>
                   <tfoot>
                     <tr class="table-light fw-extrabold text-primary" style="font-size:14px;">
@@ -425,7 +426,7 @@ window.rnOpenCreateModal = async function(btnEl) {
             <!-- Submit -->
             <div class="d-grid mt-4">
               <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" id="rnc-submit-btn">
-                <i class="fas fa-check-circle me-1"></i> QR-Rechnung erstellen
+                <i class="fas fa-check-circle me-1"></i> Rechnung verbindlich erstellen
               </button>
             </div>
           </form>
@@ -447,6 +448,9 @@ window.rnOpenCreateModal = async function(btnEl) {
 
 // AUTOCOMPLETE SELECTOR HANDLER
 window.rnHandleMemberSelect = function(val) {
+  const contactIdEl = document.getElementById('rnc-contact-id');
+  if (contactIdEl) contactIdEl.value = '';
+
   if (!val) {
     document.getElementById('rnc-person-number').value = '';
     document.getElementById('rnc-name').value = '';
@@ -470,10 +474,11 @@ window.rnHandleMemberSelect = function(val) {
       document.getElementById('rnc-type').value = 'Jahresbeitrag';
     }
   } else if (val.startsWith('EXT:')) {
-    const idx = parseInt(val.replace('EXT:', ''), 10);
-    const c = window._externalContacts[idx];
+    const extId = val.replace('EXT:', '').trim();
+    const c = (window._externalContacts || []).find(x => String(x.id).trim() === extId);
     if (c) {
-      document.getElementById('rnc-person-number').value = '';
+      if (contactIdEl) contactIdEl.value = c.id;
+      document.getElementById('rnc-person-number').value = 'EXT-' + c.id;
       document.getElementById('rnc-name').value = c.name || '';
       document.getElementById('rnc-email').value = c.email || '';
       document.getElementById('rnc-strasse').value = c.strasse || '';
@@ -572,16 +577,25 @@ window.rnSaveCreateInvoice = async function(event) {
   const strasse = document.getElementById('rnc-strasse').value.trim();
   const plz = document.getElementById('rnc-plz').value.trim();
   const ort = document.getElementById('rnc-ort').value.trim();
+  const contactId = document.getElementById('rnc-contact-id') ? document.getElementById('rnc-contact-id').value.trim() : '';
   
+  let personNumber = document.getElementById('rnc-person-number').value.trim();
+  if (!personNumber && contactId) {
+    personNumber = 'EXT-' + contactId;
+  }
+
+  const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+
   const invoiceHeader = {
     id: invoiceId,
-    PersonNumber: document.getElementById('rnc-person-number').value.trim(),
+    PersonNumber: personNumber,
     name: name,
     year: Number(document.getElementById('rnc-year').value),
     type: document.getElementById('rnc-type').value,
     total_amount: 0,
     status: 'offen',
-    datum: new Date().toISOString().split('T')[0]
+    created_at: nowStr,
+    updated_at: nowStr
   };
 
   const posRows = document.querySelectorAll('#rnc-positions-tbody tr');
@@ -612,7 +626,40 @@ window.rnSaveCreateInvoice = async function(event) {
 
   // 1. Optimistic Update
   window._invoices.unshift(invoiceHeader);
-  window.renderRechnungen(); // Render table instantly!
+
+  // Falls externer Kontakt, Kontaktdaten auch lokal in _externalContacts aktualisieren
+  if (!document.getElementById('rnc-person-number').value.trim() || String(document.getElementById('rnc-person-number').value.trim()).startsWith('EXT')) {
+    const extIdx = contactId ? window._externalContacts.findIndex(c => String(c.id).trim() === String(contactId).trim()) : -1;
+    if (extIdx !== -1) {
+      window._externalContacts[extIdx] = {
+        ...window._externalContacts[extIdx],
+        name: name,
+        email: email,
+        strasse: strasse,
+        plz: plz,
+        ort: ort
+      };
+    } else {
+      window._externalContacts.push({
+        id: contactId || (window._externalContacts.length + 1),
+        name: name,
+        email: email,
+        strasse: strasse,
+        plz: plz,
+        ort: ort
+      });
+    }
+  }
+
+  // Tab & Filter zurücksetzen, damit die Rechnung sofort sichtbar ist
+  window._rechnungenActiveTab = 'archiv';
+  window._invoicesFilterStatus = 'alle';
+  window._invoicesFilterType = 'alle';
+  if (typeof rnRenderTable === 'function') {
+    rnRenderTable();
+  } else {
+    window.renderRechnungen();
+  }
 
   // Close modal instantly
   const modalEl = document.getElementById('rnModalCreateInvoice');
@@ -623,11 +670,22 @@ window.rnSaveCreateInvoice = async function(event) {
 
   showSuccess(`🎉 Rechnung ${invoiceId} erfolgreich erstellt (Hintergrund-Synchronisation läuft)...`);
 
+  // Sofort zur neu erstellten Zeile scrollen und hervorheben
+  setTimeout(() => {
+    const rowEl = document.getElementById(`rn-row-${invoiceId}`);
+    if (rowEl) {
+      rowEl.classList.add('table-success');
+      rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      setTimeout(() => rowEl.classList.remove('table-success'), 3000);
+    }
+  }, 100);
+
   const payload = {
     action: 'createInvoice',
     invoice: invoiceHeader,
     positions: positions,
     recipient: {
+      id: contactId,
       vorname: name.split(' ')[0] || '',
       nachname: name.split(' ').slice(1).join(' ') || '',
       strasse: strasse,
@@ -645,10 +703,11 @@ window.rnSaveCreateInvoice = async function(event) {
       throw new Error(result.error || "Fehler beim Anlegen im Backend.");
     }
     
-    // Lazy sync after 1500ms
+    // Server-Sync mit forceReload = true!
     setTimeout(async () => {
-      await loadRechnungenData(true);
-    }, 1500);
+      await loadRechnungenData(true, true);
+      await loadInvoiceContactsData();
+    }, 1200);
   } catch (err) {
     console.error("❌ Optimistic Create Invoice failed:", err);
     // Revert optimistic update!
@@ -688,7 +747,37 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
   hideLoadingOverlay();
 
-  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  let recipient = (data && data.recipient) ? data.recipient : null;
+  let contactId = '';
+  let email = '';
+  let strasse = '';
+  let plz = '';
+  let ort = '';
+
+  const isMember = inv.PersonNumber && !String(inv.PersonNumber).startsWith('EXT');
+  if (isMember) {
+    const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+    email = m.Email || m.PrimaryEmail || '';
+    strasse = m.Street || m.Strasse || '';
+    plz = m.ZipCode || m.PLZ || '';
+    ort = m.City || m.Ort || '';
+  } else {
+    // Externe Kontakte: streng nach ID (oder Fallback auf Name)
+    const extId = String(inv.PersonNumber || '').replace('EXT-', '').replace('EXT:', '').trim();
+    if (!recipient && extId) {
+      recipient = (window._externalContacts || []).find(c => String(c.id).trim() === extId);
+    }
+    if (!recipient && inv.name) {
+      recipient = (window._externalContacts || []).find(c => String(c.name).trim().toLowerCase() === String(inv.name).trim().toLowerCase());
+    }
+    if (recipient) {
+      contactId = recipient.id || extId;
+      email = recipient.email || '';
+      strasse = recipient.strasse || '';
+      plz = recipient.plz || '';
+      ort = recipient.ort || '';
+    }
+  }
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -699,6 +788,7 @@ window.rnOpenEditModal = async function(invoiceId) {
         </div>
         <div class="modal-body p-4">
           <form id="rn-edit-form" onsubmit="rnSaveEditInvoice(event, '${inv.id}')">
+            <input type="hidden" id="rne-contact-id" value="${escapeHtml(contactId)}">
             
             <!-- Adressdaten -->
             <div class="row g-3 mb-3">
@@ -712,22 +802,22 @@ window.rnOpenEditModal = async function(invoiceId) {
               </div>
               <div class="col-md-4">
                 <label class="form-label fw-bold small text-muted">E-Mail</label>
-                <input type="email" class="form-control" id="rne-email" value="${escapeHtml(m.Email || '')}">
+                <input type="email" class="form-control" id="rne-email" value="${escapeHtml(email)}">
               </div>
             </div>
 
             <div class="row g-3 mb-4">
               <div class="col-md-6">
                 <label class="form-label fw-bold small text-muted">Strasse, Nr.</label>
-                <input type="text" class="form-control" id="rne-strasse" value="${escapeHtml(m.Street || m.Strasse || '')}">
+                <input type="text" class="form-control" id="rne-strasse" value="${escapeHtml(strasse)}">
               </div>
               <div class="col-md-2">
                 <label class="form-label fw-bold small text-muted">PLZ</label>
-                <input type="text" class="form-control font-monospace" id="rne-plz" value="${escapeHtml(m.ZipCode || m.PLZ || '')}">
+                <input type="text" class="form-control font-monospace" id="rne-plz" value="${escapeHtml(plz)}">
               </div>
               <div class="col-md-4">
                 <label class="form-label fw-bold small text-muted">Ort</label>
-                <input type="text" class="form-control" id="rne-ort" value="${escapeHtml(m.City || m.Ort || '')}">
+                <input type="text" class="form-control" id="rne-ort" value="${escapeHtml(ort)}">
               </div>
             </div>
 
@@ -912,14 +1002,22 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   const strasse = document.getElementById('rne-strasse').value.trim();
   const plz = document.getElementById('rne-plz').value.trim();
   const ort = document.getElementById('rne-ort').value.trim();
+  const contactId = document.getElementById('rne-contact-id') ? document.getElementById('rne-contact-id').value.trim() : '';
+
+  let personNumber = document.getElementById('rne-person-number').value.trim();
+  if (!personNumber && contactId) {
+    personNumber = 'EXT-' + contactId;
+  }
+  const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
   
   const invoiceHeader = {
     id: invoiceId,
-    PersonNumber: document.getElementById('rne-person-number').value.trim(),
+    PersonNumber: personNumber,
     name: name,
     year: Number(document.getElementById('rne-year').value),
     type: document.getElementById('rne-type').value,
-    total_amount: 0
+    total_amount: 0,
+    updated_at: nowStr
   };
 
   const posRows = document.querySelectorAll('#rne-positions-tbody tr');
@@ -957,6 +1055,21 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
     window.renderRechnungen(); // Render table instantly!
   }
 
+  // Falls externer Kontakt, Kontaktdaten auch lokal in _externalContacts aktualisieren
+  if (contactId || !document.getElementById('rne-person-number').value.trim() || String(document.getElementById('rne-person-number').value.trim()).startsWith('EXT')) {
+    const extIdx = contactId ? window._externalContacts.findIndex(c => String(c.id).trim() === String(contactId).trim()) : -1;
+    if (extIdx !== -1) {
+      window._externalContacts[extIdx] = {
+        ...window._externalContacts[extIdx],
+        name: name,
+        email: email,
+        strasse: strasse,
+        plz: plz,
+        ort: ort
+      };
+    }
+  }
+
   // Close modal instantly
   const modalEl = document.getElementById('rnModalEditInvoice');
   if (modalEl) {
@@ -971,6 +1084,7 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
     invoice: invoiceHeader,
     positions: positions,
     recipient: {
+      id: contactId,
       vorname: name.split(' ')[0] || '',
       nachname: name.split(' ').slice(1).join(' ') || '',
       strasse: strasse,
@@ -988,10 +1102,11 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
       throw new Error(result.error || "Fehler beim Aktualisieren im Backend.");
     }
     
-    // Lazy sync after 1500ms
+    // Server-Sync mit forceReload = true!
     setTimeout(async () => {
-      await loadRechnungenData(true);
-    }, 1500);
+      await loadRechnungenData(true, true);
+      await loadInvoiceContactsData();
+    }, 1200);
   } catch (err) {
     console.error("❌ Optimistic Edit Invoice failed:", err);
     // Revert optimistic update!
@@ -1095,12 +1210,155 @@ window.rnSendMahnungPrompt = async function(invoiceId, name) {
       inv.status = 'gemahnt';
       window.renderRechnungen();
       showSuccess(`🎉 Mahnung / Zahlungserinnerung erfolgreich an ${targetEmail} versandt!`);
-      await loadRechnungenData(true);
+      await loadRechnungenData(true, true);
     } else {
       throw new Error(result.error || "Mahnungs-Versand fehlgeschlagen.");
     }
   } catch (err) {
     alert("❌ Mahnung Fehler: " + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+// =====================================================================
+// EXTERNE KONTAKTE VERWALTUNG (CRUD STRENG NACH ID)
+// =====================================================================
+window.rnOpenContactModal = function(contactId = null) {
+  let modalEl = document.getElementById('rnModalContact');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalContact';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  let contact = null;
+  if (contactId) {
+    contact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header ${contact ? 'bg-warning text-dark' : 'bg-primary text-white'} border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas ${contact ? 'fa-user-edit' : 'fa-user-plus'} me-2"></i>
+            ${contact ? 'Externen Kontakt bearbeiten' : 'Neuer externer Kontakt'}
+          </h5>
+          <button type="button" class="btn-close ${contact ? '' : 'btn-close-white'}" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="rn-contact-form" onsubmit="rnSaveContactForm(event)">
+            <input type="hidden" id="rnc-crud-id" value="${contact ? contact.id : ''}">
+            
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">ID (Primärschlüssel)</label>
+              <input type="text" class="form-control font-monospace bg-light" readonly value="${contact ? contact.id : '(wird automatisch vergeben)'}">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">Name, Vorname / Organisation *</label>
+              <input type="text" class="form-control fw-bold text-dark" id="rnc-crud-name" required value="${escapeHtml(contact ? contact.name || '' : '')}" placeholder="z.B. Müller Hans oder Gemeinde Muhen">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">E-Mail</label>
+              <input type="email" class="form-control" id="rnc-crud-email" value="${escapeHtml(contact ? contact.email || '' : '')}" placeholder="hans@beispiel.ch">
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">Strasse, Nr.</label>
+              <input type="text" class="form-control" id="rnc-crud-strasse" value="${escapeHtml(contact ? contact.strasse || '' : '')}" placeholder="Hauptstrasse 12">
+            </div>
+            
+            <div class="row g-2 mb-3">
+              <div class="col-4">
+                <label class="form-label fw-bold small text-muted">PLZ</label>
+                <input type="text" class="form-control font-monospace" id="rnc-crud-plz" value="${escapeHtml(contact ? contact.plz || '' : '')}" placeholder="5037">
+              </div>
+              <div class="col-8">
+                <label class="form-label fw-bold small text-muted">Ort</label>
+                <input type="text" class="form-control" id="rnc-crud-ort" value="${escapeHtml(contact ? contact.ort || '' : '')}" placeholder="Muhen">
+              </div>
+            </div>
+            
+            <div class="mb-4">
+              <label class="form-label fw-bold small text-muted">Telefon</label>
+              <input type="text" class="form-control" id="rnc-crud-telefon" value="${escapeHtml(contact ? contact.telefon || '' : '')}" placeholder="+41 79 000 00 00">
+            </div>
+            
+            <div class="d-grid">
+              <button type="submit" class="btn ${contact ? 'btn-warning' : 'btn-primary'} py-2.5 fw-bold rounded-3 shadow-sm">
+                <i class="fas fa-save me-1"></i> ${contact ? 'Änderungen speichern' : 'Kontakt anlegen'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+};
+
+window.rnSaveContactForm = async function(event) {
+  event.preventDefault();
+  const id = document.getElementById('rnc-crud-id').value.trim();
+  const name = document.getElementById('rnc-crud-name').value.trim();
+  const email = document.getElementById('rnc-crud-email').value.trim();
+  const strasse = document.getElementById('rnc-crud-strasse').value.trim();
+  const plz = document.getElementById('rnc-crud-plz').value.trim();
+  const ort = document.getElementById('rnc-crud-ort').value.trim();
+  const telefon = document.getElementById('rnc-crud-telefon').value.trim();
+
+  const contactObj = { id, name, email, strasse, plz, ort, telefon };
+
+  const modalEl = document.getElementById('rnModalContact');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  showLoadingOverlay('Speichere externen Kontakt...');
+  try {
+    const res = await apiFetch('rechnungen', { action: 'saveContact', contact: contactObj }, 'POST');
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error || 'Fehler beim Speichern');
+    
+    showSuccess(result.message || 'Kontakt erfolgreich gespeichert.');
+    await loadInvoiceContactsData();
+    if (window._rechnungenActiveTab === 'kontakte') {
+      renderActiveRechnungenTab();
+    }
+  } catch (err) {
+    alert('❌ Fehler: ' + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+window.rnDeleteContactPrompt = async function(contactId) {
+  const c = (window._externalContacts || []).find(x => String(x.id).trim() === String(contactId).trim());
+  const label = c ? `${c.name} (ID: ${c.id})` : `ID ${contactId}`;
+  if (!confirm(`Möchten Sie den externen Kontakt "${label}" wirklich löschen?`)) return;
+
+  showLoadingOverlay('Lösche Kontakt...');
+  try {
+    const res = await apiFetch('rechnungen', { action: 'deleteContact', id: contactId }, 'POST');
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error || 'Fehler beim Löschen');
+
+    showSuccess('Kontakt gelöscht.');
+    window._externalContacts = window._externalContacts.filter(x => String(x.id).trim() !== String(contactId).trim());
+    if (window._rechnungenActiveTab === 'kontakte') {
+      renderActiveRechnungenTab();
+    }
+  } catch (err) {
+    alert('❌ Fehler: ' + err.message);
   } finally {
     hideLoadingOverlay();
   }

@@ -1544,6 +1544,12 @@ window.bhBankBookOne = async function(txIdx, customBelegNr) {
     }
   }
 
+  const cleanRemittance = (tx.remittanceInfo || '').toLowerCase();
+  const cleanParty = (tx.partyName || '').toLowerCase();
+  const vMatch = (tx.remittanceInfo || '').match(/v-\d{4}-\d{3,4}/i) || (tx.partyName || '').match(/v-\d{4}-\d{3,4}/i);
+  const isMieteText = /miet/i.test(cleanRemittance) || /miet/i.test(cleanParty);
+  const isRaiseNow = /raisenow/i.test(cleanRemittance);
+
   let beschreibung = '';
   // Falls der Nutzer den Text im Verwendungszweck-Feld manuell angepasst hat:
   if (tx._customRemittanceEdited && tx._customRemittance) {

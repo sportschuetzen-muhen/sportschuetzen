@@ -4,7 +4,7 @@
 
 // Globale State-Variablen für Rechnungen
 window._invoices = [];
-window._invoicesSearchCol = 'id';
+window._invoicesSearchCol = 'created_at';
 window._invoicesSearchAsc = false;
 window._invoicesFilterStatus = 'alle';
 window._invoicesFilterType = 'alle';

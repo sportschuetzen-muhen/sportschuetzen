@@ -53,6 +53,9 @@ window.renderRechnungen = function() {
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'archiv' ? 'active' : ''}" id="rn-tab-btn-archiv" onclick="rnSwitchTab('archiv')">
           <i class="fas fa-file-invoice me-1.5"></i> Rechnungs-Archiv
         </button>
+        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'kontakte' ? 'active' : ''}" id="rn-tab-btn-kontakte" onclick="rnSwitchTab('kontakte')">
+          <i class="fas fa-address-book me-1.5"></i> Externe Kontakte
+        </button>
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'offen' ? 'active' : ''}" id="rn-tab-btn-offen" onclick="rnSwitchTab('offen')">
           <i class="fas fa-list-ol me-1.5"></i> Offene Posten (Nebenrechnung)
         </button>
@@ -90,6 +93,8 @@ window.renderActiveRechnungenTab = function() {
 
   if (window._rechnungenActiveTab === 'archiv') {
     renderTabArchiv(content);
+  } else if (window._rechnungenActiveTab === 'kontakte') {
+    renderTabContacts(content);
   } else if (window._rechnungenActiveTab === 'templates') {
     renderTabTemplates(content);
   } else if (window._rechnungenActiveTab === 'offen') {
@@ -184,12 +189,13 @@ window.renderTabArchiv = function(content) {
 
     <!-- Tabelle -->
     <div class="bh-report-section border border-light shadow-sm">
-      <div class="table-responsive" style="max-height: 520px;">
+      <div class="table-responsive" id="rn-table-scroll-wrap">
         <table class="table table-hover align-middle bh-table mb-0" id="rn-invoices-table">
           <thead>
             <tr>
               <th class="bh-sort-header" onclick="rnSortInvoices('id')">Rechnungs-ID ${rnGetSortIndicator('id')}</th>
               <th class="bh-sort-header" onclick="rnSortInvoices('name')">Empfänger ${rnGetSortIndicator('name')}</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('created_at')">Datum ${rnGetSortIndicator('created_at')}</th>
               <th class="bh-sort-header" onclick="rnSortInvoices('year')">Jahr ${rnGetSortIndicator('year')}</th>
               <th class="bh-sort-header" onclick="rnSortInvoices('type')">Typ ${rnGetSortIndicator('type')}</th>
               <th class="bh-sort-header text-center" onclick="rnSortInvoices('status')" style="width: 100px;">Status ${rnGetSortIndicator('status')}</th>
@@ -240,6 +246,21 @@ window.rnRenderTable = function() {
     if (col === 'total_amount' || col === 'year') {
       valA = Number(valA || 0);
       valB = Number(valB || 0);
+    } else if (col === 'created_at') {
+      const parseD = (dStr) => {
+        if (!dStr) return 0;
+        const str = String(dStr).trim();
+        if (str.includes('.')) {
+          const parts = str.split(' ');
+          const dateParts = parts[0].split('.');
+          const timeParts = parts[1] ? parts[1].split(':') : [0, 0];
+          return new Date(dateParts[2], (dateParts[1] || 1) - 1, dateParts[0] || 1, timeParts[0] || 0, timeParts[1] || 0).getTime();
+        }
+        const t = new Date(str).getTime();
+        return isNaN(t) ? 0 : t;
+      };
+      valA = parseD(valA);
+      valB = parseD(valB);
     } else {
       valA = String(valA || '').toLowerCase();
       valB = String(valB || '').toLowerCase();
@@ -252,7 +273,7 @@ window.rnRenderTable = function() {
 
   // 3. Tabellenzeilen generieren
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine passenden Rechnungen gefunden.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine passenden Rechnungen gefunden.</td></tr>`;
     return;
   }
 
@@ -277,18 +298,31 @@ window.rnRenderTable = function() {
       if (createdDate && !isNaN(createdDate.getTime())) {
         const diffDays = Math.ceil(Math.abs(new Date() - createdDate) / (1000 * 60 * 60 * 24));
         if (diffDays > 30) {
-          extraBadge = `<span class="badge bg-danger ms-1 animate__animated animate__flash animate__infinite animate__slower" style="font-size:9px;">Mahnfrist!</span>`;
+          extraBadge = `<span class="badge bg-danger ms-1" style="font-size:9px;"><i class="fas fa-exclamation-circle me-0.5"></i>Mahnfrist!</span>`;
         }
       }
     }
 
+    let numberLabel = '';
+    if (item.PersonNumber) {
+      if (String(item.PersonNumber).startsWith('EXT')) {
+        const cId = String(item.PersonNumber).replace('EXT-', '').replace('EXT:', '');
+        numberLabel = `<div class="text-muted" style="font-size:10px;"><i class="fas fa-address-card me-1 text-info"></i>Kontakt ID: ${escapeHtml(cId)}</div>`;
+      } else {
+        numberLabel = `<div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${escapeHtml(item.PersonNumber)}</div>`;
+      }
+    }
+
+    const createdDisplay = item.created_at ? escapeHtml(String(item.created_at).split(' ')[0]) : '–';
+
     return `
-      <tr class="bh-account-row">
+      <tr class="bh-account-row" id="rn-row-${item.id}">
         <td><span class="bh-konto-badge bh-konto-soll-badge">${item.id}</span></td>
         <td>
           <div class="fw-bold text-dark mb-0">${escapeHtml(item.name)}</div>
-          ${item.PersonNumber ? `<div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${item.PersonNumber}</div>` : ''}
+          ${numberLabel}
         </td>
+        <td class="text-muted font-monospace small">${createdDisplay}</td>
         <td class="text-muted font-monospace">${item.year}</td>
         <td><span class="badge bg-light text-dark border small">${item.type}</span></td>
         <td class="text-center">
@@ -333,7 +367,7 @@ window.rnRenderTable = function() {
             </button>
           ` : `
             <button class="btn btn-xs btn-outline-secondary write-protected me-1" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}')" title="PDF generieren">
-              <i class="fas fa-cog fa-spin-slow"></i>
+              <i class="fas fa-cog"></i>
             </button>
           `}
 
@@ -663,3 +697,142 @@ window.renderTabOffenePosten = function(content) {
     </div>
   `;
 };
+
+// =====================================================================
+// TAB: EXTERNE KONTAKTE (STRENG NACH ID)
+// =====================================================================
+window._contactsSearchQuery = '';
+
+window.rnFilterContacts = function(query) {
+  window._contactsSearchQuery = (query || '').toLowerCase().trim();
+  const tbody = document.getElementById('rn-contacts-tbody');
+  if (tbody) {
+    tbody.innerHTML = rnRenderContactsRows();
+  }
+};
+
+window.rnRenderContactsRows = function() {
+  const list = window._externalContacts || [];
+  const q = window._contactsSearchQuery || '';
+
+  const filtered = list.filter(c => {
+    if (!q) return true;
+    const sId = String(c.id || '').toLowerCase();
+    const sName = String(c.name || '').toLowerCase();
+    const sEmail = String(c.email || '').toLowerCase();
+    const sOrt = String(c.ort || '').toLowerCase();
+    const sStrasse = String(c.strasse || '').toLowerCase();
+    return sId.includes(q) || sName.includes(q) || sEmail.includes(q) || sOrt.includes(q) || sStrasse.includes(q);
+  });
+
+  if (filtered.length === 0) {
+    return `
+      <tr>
+        <td colspan="7" class="text-center text-muted py-5">
+          <i class="fas fa-address-book fa-3x mb-3 text-secondary opacity-50"></i>
+          <h5>Keine externen Kontakte gefunden</h5>
+          <p class="small text-muted mb-0">${q ? 'Kein Kontakt entspricht den Suchkriterien.' : 'Noch keine externen Kontakte erfasst. Klicken Sie auf "+ Neuer Kontakt", um einen anzulegen.'}</p>
+        </td>
+      </tr>
+    `;
+  }
+
+  return filtered.map((c, idx) => {
+    const fullAddress = [c.strasse, [c.plz, c.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    return `
+      <tr>
+        <td class="text-center fw-bold text-muted small" style="width: 40px;">${idx + 1}</td>
+        <td style="width: 80px;">
+          <span class="badge bg-light text-primary border font-monospace px-2 py-1">ID: ${escapeHtml(c.id)}</span>
+        </td>
+        <td>
+          <div class="fw-bold text-dark">${escapeHtml(c.name)}</div>
+          <small class="text-muted font-monospace">EXT-${escapeHtml(c.id)}</small>
+        </td>
+        <td>
+          ${c.email ? `<a href="mailto:${escapeHtml(c.email)}" class="text-decoration-none text-primary"><i class="fas fa-envelope me-1 small"></i>${escapeHtml(c.email)}</a>` : '<span class="text-muted">–</span>'}
+        </td>
+        <td>
+          ${fullAddress ? `<i class="fas fa-map-marker-alt me-1 text-muted small"></i>${escapeHtml(fullAddress)}` : '<span class="text-muted">–</span>'}
+        </td>
+        <td>
+          ${c.telefon ? `<i class="fas fa-phone me-1 text-muted small"></i>${escapeHtml(c.telefon)}` : '<span class="text-muted">–</span>'}
+        </td>
+        <td class="text-end" style="width: 180px;">
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-primary" onclick="rnOpenCreateModal(); setTimeout(() => { const sel = document.getElementById('rnc-member-select'); if(sel) { sel.value = 'EXT:${c.id}'; rnHandleMemberSelect(sel.value); } }, 200);" title="Rechnung an diesen Kontakt erstellen">
+              <i class="fas fa-file-invoice-dollar"></i>
+            </button>
+            <button class="btn btn-outline-secondary" onclick="rnOpenContactModal('${c.id}')" title="Kontakt bearbeiten">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-outline-danger" onclick="rnDeleteContactPrompt('${c.id}')" title="Kontakt löschen">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+};
+
+window.renderTabContacts = function(content) {
+  if (!content) return;
+
+  const totalContacts = (window._externalContacts || []).length;
+
+  content.innerHTML = `
+    <div class="card border-0 shadow-sm p-4 bg-white rounded-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+          <h4 class="mb-1 text-primary fw-bold">
+            <i class="fas fa-address-book me-2"></i>Externe Kontakte (Rechnungsempfänger)
+          </h4>
+          <p class="text-muted small mb-0">
+            Verwaltung von externen Rechnungsempfängern, Mietern, Firmen und Sponsoren. Die Zuordnung erfolgt strikt über die Kontakt-ID.
+          </p>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary fw-bold" onclick="rnOpenContactModal()">
+            <i class="fas fa-plus me-1.5"></i> Neuer Kontakt erfassen
+          </button>
+        </div>
+      </div>
+
+      <!-- Suche und Zähler -->
+      <div class="row g-3 mb-3 align-items-center">
+        <div class="col-md-5">
+          <div class="input-group">
+            <span class="input-group-text bg-light text-muted"><i class="fas fa-search"></i></span>
+            <input type="text" class="form-control" placeholder="Kontakt suchen (ID, Name, Ort, E-Mail)..." value="${escapeHtml(window._contactsSearchQuery || '')}" oninput="rnFilterContacts(this.value)">
+          </div>
+        </div>
+        <div class="col-md-7 text-md-end text-muted small">
+          <span class="badge bg-secondary me-2">${totalContacts} Kontakt(e) erfasst</span>
+          <span>Stammdaten-Tabelle: <code>kontakte_extern</code></span>
+        </div>
+      </div>
+
+      <!-- Tabelle -->
+      <div class="table-responsive border rounded-3">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small">
+            <tr>
+              <th style="width: 40px;" class="text-center">#</th>
+              <th style="width: 80px;">ID</th>
+              <th>Name / Firma</th>
+              <th>E-Mail</th>
+              <th>Adresse</th>
+              <th>Telefon</th>
+              <th style="width: 180px;" class="text-end">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody id="rn-contacts-tbody">
+            ${rnRenderContactsRows()}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+};
+
