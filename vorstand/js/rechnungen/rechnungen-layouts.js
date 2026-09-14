@@ -143,21 +143,42 @@ window.renderTabLayouts = function(content) {
             
             <!-- Shortcodes Helper Bar -->
             <div class="bg-light p-3 rounded-3 mb-4 border shadow-sm">
-              <div class="d-flex justify-content-between align-items-center mb-1.5">
+              <div class="d-flex justify-content-between align-items-center mb-2">
                 <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)</label>
                 <small class="text-muted" style="font-size: 11px;">Wird an der aktuellen Cursor-Position eingefügt</small>
               </div>
-              <div class="d-flex gap-1.5 flex-wrap">
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{vorname}')">{vorname}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{nachname}')">{nachname}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{anrede}')">{anrede}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{firma}')">{firma}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{abteilung}')">{abteilung}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsnummer}')">{rechnungsnummer}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsjahr}')">{rechnungsjahr}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{gesamtbetrag}')">{gesamtbetrag}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsdatum}')">{rechnungsdatum}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{iban}')">{iban}</button>
+              
+              <div class="mb-2">
+                <span class="text-muted small fw-bold me-1" style="font-size: 10px; text-transform: uppercase;">Empfänger:</span>
+                <div class="d-inline-flex gap-1 flex-wrap">
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{vorname}')">{vorname}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{nachname}')">{nachname}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{anrede}')">{anrede}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{firma}')">{firma}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{abteilung}')">{abteilung}</button>
+                </div>
+              </div>
+
+              <div class="mb-2">
+                <span class="text-muted small fw-bold me-1" style="font-size: 10px; text-transform: uppercase;">Rechnungsdaten:</span>
+                <div class="d-inline-flex gap-1 flex-wrap">
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsnummer}')">{rechnungsnummer}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsjahr}')">{rechnungsjahr}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{gesamtbetrag}')">{gesamtbetrag}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsdatum}')">{rechnungsdatum}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{iban}')">{iban}</button>
+                </div>
+              </div>
+
+              <div>
+                <span class="text-muted small fw-bold me-1" style="font-size: 10px; text-transform: uppercase;">Absender & Gruss:</span>
+                <div class="d-inline-flex gap-1 flex-wrap">
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{absender_vorname}')">{absender_vorname}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{absender_nachname}')">{absender_nachname}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{absender_funktion}')">{absender_funktion}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{absender_verein}')">{absender_verein}</button>
+                  <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{absender_email}')">{absender_email}</button>
+                </div>
               </div>
             </div>
 
@@ -322,7 +343,12 @@ window.rnUpdateLayoutPreview = function() {
       .replace(/{rechnungsjahr}/g, '2026')
       .replace(/{gesamtbetrag}/g, '150.00')
       .replace(/{rechnungsdatum}/g, new Date().toLocaleDateString('de-CH'))
-      .replace(/{iban}/g, 'CH06 8080 8003 6331 3189 2');
+      .replace(/{iban}/g, 'CH06 8080 8003 6331 3189 2')
+      .replace(/{absender_vorname}/g, 'Daniel')
+      .replace(/{absender_nachname}/g, 'Hunziker')
+      .replace(/{absender_funktion}/g, 'Vizepräsident')
+      .replace(/{absender_verein}/g, 'Sportschützen Muhen')
+      .replace(/{absender_email}/g, 'sportschuetzen.muhen@gmail.com');
   };
 
   const prevTitle = document.getElementById('prev-title');
