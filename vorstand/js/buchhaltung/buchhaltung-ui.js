@@ -73,7 +73,7 @@ window.renderBuchhaltung = function() {
     </div>
   `;
   
-  loadBuchhaltungData(false);
+  return loadBuchhaltungData(false);
 };
 
 // Schaltet Tabs um
@@ -609,6 +609,14 @@ window.bhFilterJournal = function(query) {
   });
 };
 
+// Zeilen-Klick Handler für Kontenrahmen
+window.bhHandleAccountRowClick = function(event, konto, rowIndex) {
+  if (event.target.closest('a, button, input, select')) return;
+  if (typeof window.bhOpenKontoModal === 'function') {
+    window.bhOpenKontoModal(konto, rowIndex);
+  }
+};
+
 // RENDERING: TAB 3 – KONTENRAHMEN & BUDGET
 window.renderTabKontenrahmen = function(container) {
   let sortedKonten = [...window._bhKontenrahmen];
@@ -654,8 +662,8 @@ window.renderTabKontenrahmen = function(container) {
     if (cat.main === 'Abschluss') { classLabel = 'Abschluss'; classColor = 'bg-dark'; }
     
     return `
-      <tr class="bh-account-row">
-        <td><a href="#" onclick="bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
+      <tr class="bh-account-row" onclick="bhHandleAccountRowClick(event, '${acc.konto}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${acc.konto}">
+        <td><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
         <td class="fw-bold text-dark">${acc.bezeichnung}</td>
         <td><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
         <td class="text-end text-muted">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>
@@ -665,10 +673,10 @@ window.renderTabKontenrahmen = function(container) {
         <td class="text-end fw-bold text-primary">${fmtChf(acc._endsaldo)}</td>
         <td class="text-end fw-semibold text-secondary">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
         <td class="text-end" style="white-space: nowrap;">
-          <button class="bh-edit-btn" onclick="bhOpenKontoModal('${acc.konto}')" title="Konto bearbeiten">
+          <button class="bh-edit-btn" onclick="event.stopPropagation(); bhOpenKontoModal('${acc.konto}', ${acc._rowIndex || 'null'})" title="Konto bearbeiten">
             <i class="fas fa-edit"></i>
           </button>
-          <button class="bh-edit-btn text-danger ms-1" onclick="bhDeleteKonto('${acc.konto}')" title="Konto löschen">
+          <button class="bh-edit-btn text-danger ms-1" onclick="event.stopPropagation(); bhDeleteKonto('${acc.konto}')" title="Konto löschen">
             <i class="fas fa-trash-alt"></i>
           </button>
         </td>

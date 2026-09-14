@@ -234,8 +234,9 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
 
         // 1. RECHNUNGEN GENERIEREN
         if (invoiceItems.length > 0) {
-            const nextRand = String(Math.floor(1000 + Math.random() * 9000));
-            const invoiceId = `INV-${new Date().getFullYear()}-${nextRand}`;
+            const invoiceId = (typeof window.generateSafeInvoiceId === 'function')
+                ? window.generateSafeInvoiceId('MV', new Date().getFullYear())
+                : `MV-${String(new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
             const m = (inventarState.mitglieder || []).find(x => String(x.ID) === String(mitgliedId)) || {};
             const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
 
@@ -405,8 +406,9 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         const invoicePfandItems = cart.filter(w => w.pfandMethode === 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
         if (invoicePfandItems.length === 0) return;
 
-        const nextRand = String(Math.floor(1000 + Math.random() * 9000));
-        const invoiceId = `DEP-${new Date().getFullYear()}-${nextRand}`;
+        const invoiceId = (typeof window.generateSafeInvoiceId === 'function')
+            ? window.generateSafeInvoiceId('DP', new Date().getFullYear())
+            : `DP-${String(new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
         const m = (inventarState.mitglieder || []).find(x => String(x.ID) === String(mitgliedId)) || {};
         const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
 

@@ -341,8 +341,8 @@ window.recalculateLiveAccountBalances = function() {
   window._bhKontenrahmen.forEach(acc => {
     const accountCode = String(acc.konto).trim();
     const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
-    const isAssetOrLiability = (acc.klasse == '1' || acc.klasse == '2' || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('pas') || cat.main === 'Aktiven' || cat.main === 'Passiven');
-    const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && accountCode.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
+    const isAssetOrLiability = (cat.main === 'Aktiven' || cat.main === 'Passiven');
+    const isAssetOrExpense = (cat.main === 'Aktiven' || cat.main === 'Aufwand');
 
     let dynamicOpeningBalance = 0;
     
@@ -446,12 +446,36 @@ window.updateAccountingKPIs = function() {
   }
 };
 
-// Swiss KMU Gliederungs-Zuordnung
+// Swiss KMU Gliederungs-Zuordnung unter Berücksichtigung der Google Tabelle (Kontenrahmen)
 window.bhGetAccountCategory = function(account) {
-  const codeStr = String(account.konto).trim();
-  const k = codeStr[0]; // Klasse
+  if (!account) return { main: 'Unbekannt', sub: 'Sonstige', detail: 'Sonstige Konten' };
+
+  const codeStr = String(account.konto || '').trim();
+  const rawKlasse = String(account.klasse || '').trim();
+  const kLower = rawKlasse.toLowerCase();
+  const bezLower = String(account.bezeichnung || '').toLowerCase();
   
-  if (k === '1') {
+  // 1. Zuerst die explizite Klassifizierung aus der Google Tabelle prüfen
+  let explicitMain = null;
+  if (kLower.startsWith('akt') || rawKlasse === '1') explicitMain = 'Aktiven';
+  else if (kLower.startsWith('pas') || rawKlasse === '2') explicitMain = 'Passiven';
+  else if (kLower.startsWith('ert') || rawKlasse === '3') explicitMain = 'Ertrag';
+  else if (kLower.startsWith('auf') || ['4', '5', '6', '7'].includes(rawKlasse)) explicitMain = 'Aufwand';
+  else if (kLower.startsWith('abs') || rawKlasse === '9') explicitMain = 'Abschluss';
+
+  // Klasse 8 Fallback / Erkennung (In KMU Klasse 8 gibt es Aufwand & Ertrag)
+  if (!explicitMain && (rawKlasse === '8' || codeStr.startsWith('8'))) {
+    if (bezLower.includes('ertrag') || codeStr.startsWith('81') || codeStr.startsWith('857')) {
+      explicitMain = 'Ertrag';
+    } else {
+      explicitMain = 'Aufwand';
+    }
+  }
+
+  const k = codeStr[0]; // 1. Ziffer der Kontonummer
+  
+  // Bestimme Hauptkategorie, Subkategorie und Detail basierend auf Schweizer KMU
+  if (explicitMain === 'Aktiven' || (!explicitMain && k === '1')) {
     let sub = 'Umlaufvermögen';
     let detail = 'Übrige kurzfristige Forderungen';
     if (codeStr.startsWith('10')) {
@@ -473,7 +497,7 @@ window.bhGetAccountCategory = function(account) {
     return { main: 'Aktiven', sub, detail };
   }
   
-  if (k === '2') {
+  if (explicitMain === 'Passiven' || (!explicitMain && k === '2')) {
     let sub = 'Kurzfristiges Fremdkapital';
     let detail = 'Verbindlichkeiten aus Lieferungen und Leistungen';
     if (codeStr.startsWith('200') || codeStr.startsWith('2000')) {
@@ -492,7 +516,7 @@ window.bhGetAccountCategory = function(account) {
     return { main: 'Passiven', sub, detail };
   }
   
-  if (k === '3') {
+  if (explicitMain === 'Ertrag' || (!explicitMain && k === '3')) {
     let sub = 'Dienstleistungen';
     let detail = 'Beiträge Mitglieder';
     if (codeStr.startsWith('341')) {
@@ -510,6 +534,9 @@ window.bhGetAccountCategory = function(account) {
     } else if (codeStr.startsWith('34')) {
       sub = 'Dienstleistungen';
       detail = 'Dienstleistungen Erträge';
+    } else if (k === '8' || codeStr.startsWith('8')) {
+      sub = 'Betriebsfremder, ausserordentlicher Ertrag';
+      detail = codeStr.startsWith('81') ? 'Finanzertrag / Zinsertrag' : (account.bezeichnung || 'Ausserordentlicher Ertrag');
     } else {
       sub = 'Übrige Erlöse aus Lieferungen und Leistungen';
       detail = 'Diverse betriebliche Erträge';
@@ -592,25 +619,36 @@ window.bhGetAccountCategory = function(account) {
     return { main: 'Aufwand', sub, detail };
   }
   
-  if (k === '8') {
+  if (explicitMain === 'Aufwand' || (!explicitMain && k === '8')) {
     let sub = 'Betriebsfremder Aufwand und Ertrag';
-    let detail = 'Steuern';
-    if (codeStr.startsWith('80') || codeStr.startsWith('81')) {
-      sub = 'Betriebsfremder Aufwand und Ertrag';
-      detail = 'Betriebsfremder Ertrag';
-      return { main: 'Ertrag', sub, detail };
-    } else if (codeStr.startsWith('89')) {
+    let detail = 'Betriebsfremder Aufwand';
+    if (codeStr.startsWith('89')) {
       sub = 'Direkte Steuern';
+      detail = 'Kantons- und Gemeindesteuern';
+    } else if (codeStr.startsWith('87')) {
+      sub = 'Steuern & Abgaben';
       detail = 'Steuern';
+    } else if (codeStr.startsWith('80')) {
+      sub = 'Anlagenunterhalt';
+      detail = 'Unterhalt & Umgebung';
+    } else if (codeStr.startsWith('83')) {
+      sub = 'Versicherungen';
+      detail = 'Sach- & Haftpflicht';
+    } else if (codeStr.startsWith('84')) {
+      sub = 'Energie';
+      detail = 'Energie & Wasser';
+    } else if (codeStr.startsWith('85')) {
+      sub = 'Verwaltung';
+      detail = 'Verwaltungsaufwand';
     }
     return { main: 'Aufwand', sub, detail };
   }
   
-  if (k === '9') {
+  if (explicitMain === 'Abschluss' || (!explicitMain && k === '9')) {
     return { main: 'Abschluss', sub: 'Abschluss', detail: 'Erfolgsrechnung' };
   }
   
-  return { main: 'Unbekannt', sub: 'Sonstige', detail: 'Sonstige Konten' };
+  return { main: explicitMain || 'Unbekannt', sub: 'Sonstige', detail: 'Sonstige Konten' };
 };
 
 // Generiert Sortier-Symbole
@@ -627,10 +665,28 @@ window.getBuchungstyp = function(soll, haben) {
   if (s.startsWith('119') || h.startsWith('119')) {
     return 'TRANSIT';
   }
-  if (s.startsWith('3') || h.startsWith('3') || s.startsWith('80') || h.startsWith('80') || s.startsWith('81') || h.startsWith('81')) {
+
+  // Zuerst im geladenen Kontenrahmen nachsehen
+  const konten = window._bhKontenrahmen || [];
+  const accS = konten.find(a => String(a.konto).trim() === s);
+  const accH = konten.find(a => String(a.konto).trim() === h);
+
+  if (accS || accH) {
+    const catS = accS ? window.bhGetAccountCategory(accS) : null;
+    const catH = accH ? window.bhGetAccountCategory(accH) : null;
+    if ((catS && catS.main === 'Ertrag') || (catH && catH.main === 'Ertrag')) {
+      return 'ERTRAG';
+    }
+    if ((catS && catS.main === 'Aufwand') || (catH && catH.main === 'Aufwand')) {
+      return 'AUFWAND';
+    }
+  }
+
+  // Fallback anhand Kontonummern
+  if (s.startsWith('3') || h.startsWith('3') || s.startsWith('81') || h.startsWith('81') || s.startsWith('857') || h.startsWith('857')) {
     return 'ERTRAG';
   }
-  if (s.startsWith('4') || h.startsWith('4') || s.startsWith('5') || h.startsWith('5') || s.startsWith('6') || h.startsWith('6') || s.startsWith('7') || h.startsWith('7') || s.startsWith('89') || h.startsWith('89')) {
+  if (s.startsWith('4') || h.startsWith('4') || s.startsWith('5') || h.startsWith('5') || s.startsWith('6') || h.startsWith('6') || s.startsWith('7') || h.startsWith('7') || s.startsWith('8') || h.startsWith('8')) {
     return 'AUFWAND';
   }
   if (s.startsWith('100') || h.startsWith('100')) {

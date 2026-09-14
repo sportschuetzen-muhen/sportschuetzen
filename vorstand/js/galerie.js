@@ -12,6 +12,10 @@ let mitgliederList = [];
 
 async function initGalerieManager() {
     const container = document.getElementById('galerie-container');
+    if (!container) return;
+    if (container.querySelector('#galerie-upload-area')) {
+        return; // Bereits initialisiert - Zustand und Upload-Workspace dauerhaft beibehalten
+    }
     container.innerHTML = `
         <div class="row">
             <div class="col-md-12 mb-3" id="galerie-upload-area">
@@ -39,6 +43,7 @@ async function initGalerieManager() {
                     <div class="card-footer bg-white border-top p-2 d-flex flex-column gap-2">
                         <button class="btn btn-primary w-100 btn-sm fw-bold" onclick="uploadAllToImmich()">🚀 Alle in Immich hochladen & taggen</button>
                         <button class="btn btn-outline-secondary w-100 btn-sm" onclick="downloadAllTags()">📥 Lokale ZIP laden</button>
+                        <button class="btn btn-outline-danger w-100 btn-sm" onclick="clearGalerieQueue()">🗑️ Warteschlange leeren</button>
                     </div>
                 </div>
             </div>
@@ -141,6 +146,10 @@ async function initGalerieManager() {
 let availableImmichTags = [];
 
 async function loadImmichTagsForSelector() {
+    if (availableImmichTags && availableImmichTags.length > 0) {
+        populateImmichTagDropdowns();
+        return;
+    }
     try {
         const res = await apiFetch('immich', 'action=getTags');
         if (res.ok) {
@@ -259,7 +268,30 @@ async function uploadAllToImmich() {
     }
 
     showToast(`🎉 ${successCount} von ${filesQueue.length} Bildern in Immich hochgeladen & getaggt!`, "success");
+    if (successCount > 0 && successCount === filesQueue.length) {
+        // Erfolgreicher Upload abgeschlossen -> RAM freigeben
+        clearGalerieQueue();
+    }
 }
+
+function clearGalerieQueue() {
+    filesQueue = [];
+    currentFileIndex = 0;
+    originalBase64 = null;
+    currentDetections = [];
+    faceTags = [];
+    const queueSidebar = document.getElementById('galerie-queue-sidebar');
+    const workspaceArea = document.getElementById('galerie-workspace-area');
+    const uploadArea = document.getElementById('galerie-upload-area');
+    if (queueSidebar) queueSidebar.classList.add('d-none');
+    if (workspaceArea) workspaceArea.classList.add('d-none');
+    if (uploadArea) uploadArea.classList.remove('d-none');
+    const queueCount = document.getElementById('queue-count');
+    if (queueCount) queueCount.innerText = '0';
+    const queueList = document.getElementById('queue-list');
+    if (queueList) queueList.innerHTML = '';
+}
+window.clearGalerieQueue = clearGalerieQueue;
 
 async function loadFaceApiModels() {
     if (faceApiLoaded) return;
@@ -648,6 +680,13 @@ function updateTagsList() {
 
 async function loadMembersForList() {
     try {
+        if (window.AppCache && AppCache.get('mitglieder')) {
+            const cached = AppCache.get('mitglieder');
+            if (Array.isArray(cached) && cached.length > 0) {
+                mitgliederList = cached.map(m => `${m.FirstName || ''} ${m.LastName || ''}`.trim()).sort();
+                return;
+            }
+        }
         const res = await apiFetch('mitglieder', 'action=getAll');
         if (res.ok) {
             const data = await res.json();

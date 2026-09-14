@@ -7,13 +7,13 @@ function loadResultateData(force = false) {
 
   if (!force && resultateState.rows.length > 0 && document.getElementById('resultate-app')) {
     console.log("⚡ loadResultateData: Lade aus lokalem Cache...");
-    return;
+    return Promise.resolve();
   }
 
   setStatus("Lade…", false);
   renderLoading();
 
-  apiFetch("manager", "action=getResultateData&sheetName=aktuell_Grenzland")
+  return apiFetch("manager", "action=getResultateData&sheetName=aktuell_Grenzland")
     .then(r => r.text())
     .then(txt => {
       let data;

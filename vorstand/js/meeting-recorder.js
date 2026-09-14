@@ -926,6 +926,10 @@ function showToast(message, type = "success", position = "top-end", duration = 3
 function resetSession() {
     if (confirm("Möchtest du das gesamte Transkript und das generierte Protokoll löschen und eine neue Sitzung starten?")) {
         mrTranscripts = [];
+        mrAudioChunks = [];
+        mrSegmentCounter = 0;
+        mrElapsedTime = 0;
+        updateTimerDisplay();
         localStorage.removeItem('mr_active_transcripts');
         
         // Log-Verlauf leeren
@@ -1045,3 +1049,6 @@ function downloadProtocol() {
         URL.revokeObjectURL(url);
     }, 100);
 }
+
+// Global für navTo verfügbar machen
+window.initMeetingRecorder = initMeetingRecorder;

@@ -1081,3 +1081,6 @@ async function reindexAllVectors(btn) {
         btn.innerHTML = originalText;
     }
 }
+
+// Global für navTo verfügbar machen
+window.initArchiv = initArchiv;

@@ -435,8 +435,9 @@ window.rnOpenCreateModal = async function(btnEl) {
     </div>
   `;
 
-  const nextRand = String(Math.floor(1000 + Math.random() * 9000));
-  document.getElementById('rnc-invoice-id').value = `INV-${window._bhYear}-${nextRand}`;
+  document.getElementById('rnc-invoice-id').value = (typeof window.generateSafeInvoiceId === 'function')
+    ? window.generateSafeInvoiceId('RE', window._bhYear)
+    : `RE-${String(window._bhYear || new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
 
   if (typeof window.rncAddPositionRow === 'function') {
     window.rncAddPositionRow("Miete Schützenhaus Muhen", 150);

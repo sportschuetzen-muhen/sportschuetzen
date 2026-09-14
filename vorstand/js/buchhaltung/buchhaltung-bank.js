@@ -536,6 +536,21 @@ function bhBankRenderResults(filter) {
   if (activeFilter === 'rules')  filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
   if (activeFilter === 'unklar') filtered = rows.filter(r => r.matchScore === 0 && !r.alreadyBooked);
 
+  // Button "Alle sicheren Buchungen ausführen" mit exakter Anzahl aktualisieren
+  const allBtn = document.getElementById('bhBtnBookAll');
+  if (allBtn && !window._bhIsBookingAll) {
+    const safeCount = rows.filter(r => 
+      !r.alreadyBooked && !r._isBooking && !r.isWrongYear &&
+      (
+        (r.isInvoice && r.matchedInvoice && r.matchedInvoice.id && r.matchScore >= 2 && !r.alreadyPaidInvoice) ||
+        (r.isJahresbeitrag && r.matchedMember && r.matchedBeitrag && r.matchedBeitrag.id && r.matchScore >= 2 && !r.alreadyPaidJb) ||
+        (r.matchType === 'rule' && r.matchScore >= 2)
+      )
+    ).length;
+    allBtn.innerHTML = `<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen${safeCount > 0 ? ` (${safeCount})` : ''}`;
+    allBtn.disabled = safeCount === 0;
+  }
+
   // Sortierung auf alle Spalten anwenden
   const col = window._bhBankSortCol || 'date';
   const asc = window._bhBankSortAsc;
@@ -1186,10 +1201,14 @@ function bhBankMatchAll(transactions) {
       let bestInv = null;
       let bestInvScore = 0;
 
+      // Vorfilterung für sicheres Matching: Datumsmuster (z.B. 02.02.2026, 2.2.26, 2026-02-02) und isolierte 4-stellige Jahreszahlen aus Verwendungszweck ausblenden
+      const rmtNoDates = cleanRemittance
+        .replace(/\b\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b/g, ' ')
+        .replace(/\b20\d{2}\b/g, ' ');
+
       for (const inv of invoices) {
         const invIdRaw = String(inv.id || '').trim();
         const invIdClean = invIdRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const invNumOnly = invIdRaw.replace(/[^0-9]/g, '');
         const invTotal = Number(inv.total_amount || 0);
         const invName = normalizeString(inv.name || '');
         const invPn = String(inv.PersonNumber || '').replace(/[^0-9]/g, '');
@@ -1197,13 +1216,24 @@ function bhBankMatchAll(transactions) {
 
         let score = 0;
 
-        // 1. Exakte Rechnungs-ID im Text oder Referenz (z.B. "INV-2026-0001", "RE-JB-2026-0042")
+        // 1. Exakte Rechnungs-ID im Text oder Referenz (z.B. "RE-26-7K4M", "MV-26-8N2W", "DP-26-5M7T", "RE-JB-2026-0042", "V-2026-0012")
         const cleanRmtNoSpace = cleanRemittance.replace(/[^a-z0-9]/g, '');
         const cleanRefNoSpace = cleanRef.replace(/[^a-z0-9]/g, '');
         if (invIdClean && (cleanRmtNoSpace.includes(invIdClean) || cleanRefNoSpace.includes(invIdClean))) {
-          score += 4;
-        } else if (invNumOnly && invNumOnly.length >= 4 && (cleanRemittance.includes(invNumOnly) || cleanRef.includes(invNumOnly))) {
-          score += 2.5;
+          score += 4.5; // Volltreffer bei exakter ID
+        } else {
+          // 1b. Eindeutiger Kennungsteil / Suffix (z.B. "7K4M" aus "RE-26-7K4M" oder "8N2W" aus "MV-26-8N2W")
+          const idParts = invIdRaw.split('-');
+          const suffix = idParts.length > 1 ? idParts[idParts.length - 1].toLowerCase().trim() : '';
+
+          // Suffix muss mindestens 3 Zeichen haben und darf keine reine Jahreszahl (z.B. 2026) sein
+          if (suffix && suffix.length >= 3 && !/^20\d{2}$/.test(suffix)) {
+            const suffixRegex = new RegExp(`\\b${suffix}\\b`, 'i');
+            if (suffixRegex.test(rmtNoDates) || cleanRef.includes(suffix)) {
+              const hasKeyword = /(?:rechnung|re-?nr|inv|ref|beleg|nr)/i.test(cleanRemittance);
+              score += hasKeyword ? 2.5 : 2.0;
+            }
+          }
         }
 
         // 2. QR-Referenz-Endung auf PersonNumber
@@ -1229,8 +1259,8 @@ function bhBankMatchAll(transactions) {
           }
         }
 
-        // 5. Bevorzuge noch offene Rechnungen
-        if (inv.status !== 'bezahlt' && score >= 1.5) {
+        // 5. Bevorzuge noch offene Rechnungen (nur wenn mindestens ein Identifikator wie Name, ID oder Suffix gematcht hat)
+        if (inv.status !== 'bezahlt' && score >= 2.0) {
           score += 1;
         }
 
@@ -1249,20 +1279,23 @@ function bhBankMatchAll(transactions) {
         
         // Habenkonto nach Rechnungstyp auflösen
         const invType = String(bestInv.type || '').toLowerCase();
-        if (invType.includes('jahresbeitrag')) {
+        const invIdUpper = String(bestInv.id || '').toUpperCase();
+        if (invType.includes('jahresbeitrag') || invIdUpper.startsWith('JB-') || invIdUpper.startsWith('RE-JB-')) {
           suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
           isJahresbeitrag = true;
           matchedBeitrag = beitraege.find(b => String(b.PersonNumber) === String(bestInv.PersonNumber) || String(b.id) === String(bestInv.id)) || null;
           matchedMember = members.find(m => String(m.PersonNumber) === String(bestInv.PersonNumber)) || null;
           alreadyPaidJb = alreadyPaidInvoice || (matchedBeitrag && matchedBeitrag.status === 'bezahlt');
-        } else if (invType.includes('vermietung') || invType.includes('miete')) {
+        } else if (invType.includes('vermietung') || invType.includes('miete') || invIdUpper.startsWith('VT-') || invIdUpper.startsWith('V-')) {
           suggestedHaben = '3650'; // Mieterträge Schützenhaus
         } else if (invType.includes('schulsport')) {
           suggestedHaben = '3420'; // Nachwuchsförderung
         } else if (invType.includes('sponsor') || invType.includes('gönner')) {
           suggestedHaben = '3800'; // Sponsoring / Spenden
-        } else if (invType.includes('munition') || invType.includes('material')) {
-          suggestedHaben = '3800';
+        } else if (invType.includes('munition') || invType.includes('material') || invIdUpper.startsWith('MV-')) {
+          suggestedHaben = '3800'; // Material-/Munitionsverkauf
+        } else if (invType.includes('depot') || invType.includes('pfand') || invType.includes('kaution') || invIdUpper.startsWith('DP-')) {
+          suggestedHaben = '2000'; // Kaution / Verbindlichkeiten
         } else {
           suggestedHaben = '3650';
         }
@@ -1660,7 +1693,9 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
   }
 
   if (tx.isWrongYear) {
-    alert(`⚠️ Buchung gesperrt:\n\nDiese Transaktion stammt aus dem Jahr ${tx.txYear}, oben im Portal ist aber das Buchhaltungsjahr ${window._bhYear} gewählt.\n\nBitte wechseln Sie oben das Buchhaltungsjahr auf ${tx.txYear}, um diese Transaktion in das entsprechende Jahr zu buchen.`);
+    if (!isBatch) {
+      alert(`⚠️ Buchung gesperrt:\n\nDiese Transaktion stammt aus dem Jahr ${tx.txYear}, oben im Portal ist aber das Buchhaltungsjahr ${window._bhYear} gewählt.\n\nBitte wechseln Sie oben das Buchhaltungsjahr auf ${tx.txYear}, um diese Transaktion in das entsprechende Jahr zu buchen.`);
+    }
     return;
   }
 
@@ -1680,16 +1715,39 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
 
   const rawSoll  = sollEl ? sollEl.value : tx.suggestedSoll;
   const rawHaben = habenEl ? habenEl.value : tx.suggestedHaben;
-  const kontoSoll  = resolveKontoCode(rawSoll);
-  const kontoHaben = resolveKontoCode(rawHaben);
+  let kontoSoll  = resolveKontoCode(rawSoll);
+  let kontoHaben = resolveKontoCode(rawHaben);
 
   if (!kontoSoll || !kontoHaben) {
-    alert('Bitte wählen Sie Soll- und Haben-Konto aus.');
-    return;
+    if (!isBatch) alert('Bitte wählen Sie Soll- und Haben-Konto aus.');
+    throw new Error('Bitte wählen Sie Soll- und Haben-Konto aus.');
   }
   if (kontoSoll === kontoHaben) {
-    alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
-    return;
+    if (!isBatch) alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
+    throw new Error('Soll- und Haben-Konto dürfen nicht identisch sein.');
+  }
+
+  // AUTOMATISCHER SICHERHEITS-CHECK: Verhindern, dass Bankkonto auf der falschen Seite gebucht wird!
+  // Belastung (tx.isCredit === false, z.B. Aufwand): Bank MUSS im Haben stehen!
+  // Gutschrift (tx.isCredit === true, z.B. Ertrag):  Bank MUSS im Soll stehen!
+  if (!tx.isCredit) {
+    if (isBankKontoCode(kontoSoll) && !isBankKontoCode(kontoHaben)) {
+      console.warn(`[Bankabgleich] Belastung erfordert Bank im Haben. Vertausche Soll (${kontoSoll}) und Haben (${kontoHaben}).`);
+      const tempKonto = kontoSoll;
+      kontoSoll = kontoHaben;
+      kontoHaben = tempKonto;
+      if (sollEl) sollEl.value = kontoSoll;
+      if (habenEl) habenEl.value = kontoHaben;
+    }
+  } else {
+    if (isBankKontoCode(kontoHaben) && !isBankKontoCode(kontoSoll)) {
+      console.warn(`[Bankabgleich] Gutschrift erfordert Bank im Soll. Vertausche Soll (${kontoSoll}) und Haben (${kontoHaben}).`);
+      const tempKonto = kontoSoll;
+      kontoSoll = kontoHaben;
+      kontoHaben = tempKonto;
+      if (sollEl) sollEl.value = kontoSoll;
+      if (habenEl) habenEl.value = kontoHaben;
+    }
   }
 
   // Sofortige visuelle Rückmeldung: Button deaktivieren & Ladespinner anzeigen
@@ -1964,16 +2022,40 @@ window.bhBankBookAll = async function() {
   const results = window._bhBankMatchResults || [];
   const activeYear = Number(window._bhYear || new Date().getFullYear());
   
+  // Strikter und präziser Sicherheitsfilter:
+  // 1. Nicht bereits gebucht, nicht in Bearbeitung, passendes Kalenderjahr
+  // 2. Rechnungen: Eindeutige ID, Score >= 2 und noch nicht bezahlt
+  // 3. Jahresbeiträge: Mitglied & Beitrag eindeutig zugeordnet, noch nicht bezahlt, Score >= 2
+  // 4. Buchungsregeln: Benutzer- oder System-Regel mit Score >= 2
   const toBook = results
     .map((r, i) => ({ r, i }))
-    .filter(({ r }) => !r.alreadyBooked && !r._isBooking && !r.isWrongYear && (r.isJahresbeitrag || r.isInvoice || r.matchScore >= 2));
+    .filter(({ r }) => {
+      if (r.alreadyBooked || r._isBooking || r.isWrongYear) return false;
+
+      // 1. Eindeutig zugeordnete offene Rechnung
+      if (r.isInvoice && r.matchedInvoice && r.matchedInvoice.id && r.matchScore >= 2 && !r.alreadyPaidInvoice) {
+        return true;
+      }
+
+      // 2. Eindeutig zugeordneter offener Jahresbeitrag (Mitglied + Beitrag vorhanden)
+      if (r.isJahresbeitrag && r.matchedMember && r.matchedBeitrag && r.matchedBeitrag.id && r.matchScore >= 2 && !r.alreadyPaidJb) {
+        return true;
+      }
+
+      // 3. Eindeutige Buchungsregel (System-Regel oder benutzerdefinierte Regel mit MatchScore >= 2)
+      if (r.matchType === 'rule' && r.matchScore >= 2) {
+        return true;
+      }
+
+      return false;
+    });
 
   if (!toBook.length) {
     showToast(`Keine eindeutigen, ungebuchten Transaktionen für das Buchungsjahr ${activeYear} vorhanden.`, 'warning', 'top-end');
     return;
   }
 
-  const ok = confirm(`${toBook.length} eindeutige Bank-Buchungen jetzt automatisch ins Journal eintragen?`);
+  const ok = confirm(`${toBook.length} eindeutige Bank-Buchungen jetzt automatisch ins Journal eintragen?\n\nDie entsprechenden Rechnungen und Jahresbeiträge werden parallel als bezahlt markiert.`);
   if (!ok) return;
 
   window._bhIsBookingAll = true;
@@ -1982,29 +2064,60 @@ window.bhBankBookAll = async function() {
     allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Buche 0/${toBook.length}...`;
   }
 
+  // 1. Belegnummern im Vorfeld lückenlos und deterministisch vergeben
+  toBook.forEach(({ r }) => {
+    const txBankKonto = isBankKontoCode(r.suggestedSoll) 
+      ? r.suggestedSoll 
+      : (isBankKontoCode(r.suggestedHaben) 
+          ? r.suggestedHaben 
+          : bhBankGetAccountForIban(r.accountIban, '1020'));
+    r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+  });
+
   // Oben rechts das persistente Batch-Banner anzeigen (wird während des Durchlaufs live aktualisiert)
-  const batchToast = showToast(`⏳ 0 von ${toBook.length} Buchungen werden gespeichert...`, 'info', 'top-end', 0);
+  const batchToast = showToast(`⏳ 0 von ${toBook.length} Buchungen werden verarbeitet...`, 'info', 'top-end', 0);
+
+  const updateProgressUI = (completed, total) => {
+    if (allBtn) {
+      allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Buche ${completed}/${total}...`;
+    }
+    if (batchToast) {
+      const span = batchToast.querySelector('span');
+      if (span) span.textContent = `⏳ ${completed} von ${total} Buchungen werden verarbeitet...`;
+    }
+  };
 
   try {
-    let count = 0;
-    for (const { r, i } of toBook) {
-      try {
-        if (allBtn) {
-          allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Buche ${count + 1}/${toBook.length}...`;
+    const CONCURRENCY = 3;
+    let completedCount = 0;
+    let successCount = 0;
+    let queueIdx = 0;
+
+    const worker = async () => {
+      while (queueIdx < toBook.length) {
+        const itemIdx = queueIdx++;
+        const { r, i } = toBook[itemIdx];
+        try {
+          await bhBankBookOne(i, r._batchBelegNr, true);
+          successCount++;
+        } catch (err) {
+          console.error(`Fehler beim Batch-Buchen von Transaktion #${i}:`, err);
+        } finally {
+          completedCount++;
+          updateProgressUI(completedCount, toBook.length);
         }
-        if (batchToast) {
-          const span = batchToast.querySelector('span');
-          if (span) span.textContent = `⏳ ${count + 1} von ${toBook.length} Buchungen werden gespeichert...`;
-        }
-        const txBankKonto = isBankKontoCode(r.suggestedSoll) ? r.suggestedSoll : (isBankKontoCode(r.suggestedHaben) ? r.suggestedHaben : bhBankGetAccountForIban(r.accountIban, '1020'));
-        const belegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
-        await bhBankBookOne(i, belegNr, true);
-        count++;
-      } catch (_) {}
+      }
+    };
+
+    const workers = [];
+    const numWorkers = Math.min(CONCURRENCY, toBook.length);
+    for (let w = 0; w < numWorkers; w++) {
+      workers.push(worker());
     }
+    await Promise.all(workers);
 
     if (batchToast && batchToast.parentNode) batchToast.remove();
-    showToast(`⚡ ${count} von ${toBook.length} Buchungen erfolgreich ausgeführt!`, 'success', 'top-end', 5000);
+    showToast(`⚡ ${successCount} von ${toBook.length} Buchungen erfolgreich ausgeführt!`, 'success', 'top-end', 5000);
 
     // Jetzt 1x am Schluss Hauptbuch und UI komplett synchronisieren
     if (typeof loadBuchhaltungData === 'function') {
@@ -2204,8 +2317,28 @@ window.bhBankSaveRuleSubmit = function(e, editIdx) {
   const amountMin = (rawAmountMin !== '' && !isNaN(Number(rawAmountMin))) ? Number(rawAmountMin) : '';
   const amountMax = (rawAmountMax !== '' && !isNaN(Number(rawAmountMax))) ? Number(rawAmountMax) : '';
 
-  const soll  = rawSoll.split('|')[0].trim();
-  const haben = rawHaben.split('|')[0].trim();
+  let soll  = rawSoll.split('|')[0].trim();
+  let haben = rawHaben.split('|')[0].trim();
+
+  // Soll/Haben Harmonisierung für Aufwände / Erträge:
+  // Bei Aufwand (4xxx, 5xxx, 6xxx, 7xxx, 89xx): Soll = Aufwand, Haben = Bank
+  // Bei Ertrag (3xxx, 80xx, 81xx): Soll = Bank, Haben = Ertrag
+  const isSollBank = isBankKontoCode(soll);
+  const isHabenBank = isBankKontoCode(haben);
+  const isSollAufwand = /^[4567]|^89/.test(soll);
+  const isHabenAufwand = /^[4567]|^89/.test(haben);
+  const isSollErtrag = /^3|^80|^81/.test(soll);
+  const isHabenErtrag = /^3|^80|^81/.test(haben);
+
+  if (isSollBank && isHabenAufwand) {
+    const tmp = soll;
+    soll = haben;
+    haben = tmp;
+  } else if (isHabenBank && isSollErtrag) {
+    const tmp = soll;
+    soll = haben;
+    haben = tmp;
+  }
 
   const hasAnyFilter = Boolean(patternParty || patternText || (amountMode !== 'any' && amountMin !== ''));
 

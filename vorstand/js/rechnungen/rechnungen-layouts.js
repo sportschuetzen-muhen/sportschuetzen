@@ -308,7 +308,7 @@ window.rnUpdateLayoutPreview = function() {
     return String(text || '')
       .replace(/{vorname}/g, 'Max')
       .replace(/{nachname}/g, 'Muster')
-      .replace(/{rechnungsnummer}/g, 'INV-2026-1001')
+      .replace(/{rechnungsnummer}/g, 'RE-26-7K4M')
       .replace(/{rechnungsjahr}/g, '2026')
       .replace(/{gesamtbetrag}/g, '150.00')
       .replace(/{rechnungsdatum}/g, new Date().toLocaleDateString('de-CH'))

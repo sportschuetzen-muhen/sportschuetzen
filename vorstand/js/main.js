@@ -632,187 +632,277 @@ function showApp() {
     // 2. Online-Präsenz pingen
     startPresencePingTimer();
 
-    // HINWEIS: Massen-Preload und 5-Minuten Background-Sync im Startpfad deaktiviert für sofortige Ladezeit (< 1s).
-    // Module laden on-demand beim Klick (Lazy Loading via navTo) und nutzen selektiven AppCache.
-    // startBackgroundSyncTimer();
-    // setTimeout(startPreloadSequence, 100);
-}
-
-async function startPreloadSequence() {
-    console.log("🚀 Gestaffeltes Bulk-Loading im Hintergrund gestartet...");
-    
-    // 1. CSS für Preload-Status-Indikatoren dynamisch injizieren (absolute Positionierung)
-    if (!document.getElementById('preload-spinner-styles')) {
-        const style = document.createElement('style');
-        style.id = 'preload-spinner-styles';
-        style.textContent = `
-            .preload-status {
-                position: absolute;
-                right: 15px;
-                top: 50%;
-                transform: translateY(-50%);
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                flex-shrink: 0;
-            }
-            .preload-spinner {
-                width: 8px;
-                height: 8px;
-                border: 1.5px solid rgba(13, 110, 253, 0.2);
-                border-top-color: #0d6efd;
-                border-radius: 50%;
-                animation: preload-spin 0.8s linear infinite;
-            }
-            .preload-success {
-                color: #198754;
-                font-size: 10px;
-                animation: preload-fade 1.5s forwards;
-            }
-            @keyframes preload-spin {
-                to { transform: rotate(360deg); }
-            }
-            @keyframes preload-fade {
-                0% { opacity: 1; }
-                70% { opacity: 1; }
-                100% { opacity: 0; }
-            }
-        `;
-        document.head.appendChild(style);
+    // Sequentielles Hintergrund-Laden: Startet nach 12s Idle auf dem Dashboard,
+    // sofern der Nutzer nicht vorher selbst ein Modul anklickt.
+    if (window.bgModuleLoader) {
+        window.bgModuleLoader.scheduleNext(12000);
     }
-
-    // 2. Status-Helper deklarieren
-    window.setPreloadStatus = function(viewId, status) {
-        const link = Array.from(document.querySelectorAll('.nav-link, .card')).find(el => {
-            const oc = el.getAttribute('onclick') || '';
-            return oc.includes(`navTo('${viewId}'`) || oc.includes(`navTo("${viewId}"`);
-        });
-        if (!link) return;
-
-        // Sicherstellen, dass das relative Positionieren für absolute Kinder aktiv ist
-        link.style.position = 'relative';
-
-        const oldStatus = link.querySelector('.preload-status');
-        if (oldStatus) oldStatus.remove();
-
-        if (status === 'loading') {
-            const span = document.createElement('span');
-            span.className = 'preload-status preload-spinner';
-            span.title = 'Daten werden im Hintergrund geladen...';
-            link.appendChild(span);
-        } else if (status === 'success') {
-            const span = document.createElement('span');
-            span.className = 'preload-status preload-success';
-            span.innerHTML = '<i class="fas fa-check"></i>';
-            span.title = 'Daten erfolgreich im Hintergrund geladen';
-            link.appendChild(span);
-            setTimeout(() => span.remove(), 1600);
-        }
-    };
-
-    // 3. Alle anstehenden Module initial auf "loading" setzen (sofern für Rolle sichtbar)
-    const pendingModules = ['termine', 'umfragen', 'resultate', 'manager', 'system-mails', 'inventar', 'jahresmeisterschaft', 'vermietung', 'buchhaltung', 'mail', 'jahresbeitrag', 'rechnungen', 'mitglieder', 'logins'];
-    pendingModules.forEach(m => {
-        const link = Array.from(document.querySelectorAll('.nav-link, .card')).find(el => {
-            const oc = el.getAttribute('onclick') || '';
-            return oc.includes(`navTo('${m}'`) || oc.includes(`navTo("${m}"`);
-        });
-        if (link && !link.classList.contains('d-none')) {
-            window.setPreloadStatus(m, 'loading');
-        }
-    });
-
-    // Phase 1 (Core - Immediate)
-    await silentInitialLoad();
-    window.setPreloadStatus('mitglieder', 'success');
-    window.setPreloadStatus('jahresbeitrag', 'success');
-    
-    // Phase 2 (nach 2 Sekunden): Termine & Umfragen
-    setTimeout(async () => {
-        if (window.hasUnsavedChanges) return;
-        console.log("🕒 Phase 2 Preload (Termine, Umfragen) gestartet...");
-        if (typeof loadTermineData === 'function') {
-            await loadTermineData();
-            window.setPreloadStatus('termine', 'success');
-        }
-        if (typeof loadUmfragenData === 'function') {
-            await loadUmfragenData();
-            window.setPreloadStatus('umfragen', 'success');
-        }
-    }, 2000);
-    
-    // Phase 3 (nach 5 Sekunden): Resultate, Team Manager, System-Mails, Logins
-    setTimeout(async () => {
-        if (window.hasUnsavedChanges) return;
-        console.log("🕒 Phase 3 Preload (Resultate, Team Manager, System-Mails, Logins) gestartet...");
-        if (typeof loadResultateData === 'function') {
-            await loadResultateData();
-            window.setPreloadStatus('resultate', 'success');
-        }
-        if (typeof loadContestData === 'function') {
-            await loadContestData('grenzland', false, true);
-            await loadContestData('mannschaft', false, true);
-            await loadContestData('gruppe', false, true);
-            window.setPreloadStatus('manager', 'success');
-        }
-        if (typeof loadSystemMailsData === 'function') {
-            await loadSystemMailsData();
-            window.setPreloadStatus('system-mails', 'success');
-        }
-        if (typeof loadLoginsData === 'function' && userHasRole('admin')) {
-            await loadLoginsData();
-            window.setPreloadStatus('logins', 'success');
-        }
-    }, 5000);
-    
-    // Phase 4 (nach 8 Sekunden): Inventar, Mail, Rechnungen
-    setTimeout(async () => {
-        if (window.hasUnsavedChanges) return;
-        console.log("🕒 Phase 4 Preload (Inventar, Mail, Rechnungen) gestartet...");
-        if (typeof loadInventarData === 'function') {
-            await loadInventarData();
-            window.setPreloadStatus('inventar', 'success');
-        }
-        if (typeof loadMailData === 'function') {
-            await loadMailData();
-            window.setPreloadStatus('mail', 'success');
-        }
-        if (typeof loadRechnungenData === 'function') {
-            await loadRechnungenData(true);
-            window.setPreloadStatus('rechnungen', 'success');
-        }
-    }, 8000);
-    
-    // Phase 5 (nach 11 Sekunden): Jahresmeisterschaft KK
-    setTimeout(async () => {
-        if (window.hasUnsavedChanges) return;
-        console.log("🕒 Phase 5 Preload (Jahresmeisterschaft KK) gestartet...");
-        if (typeof loadJahresmeisterschaftData === 'function') {
-            await loadJahresmeisterschaftData(false, true);
-            window.setPreloadStatus('jahresmeisterschaft', 'success');
-        }
-    }, 11000);
-    
-    // Phase 6 (nach 14 Sekunden): Vermietung
-    setTimeout(async () => {
-        if (window.hasUnsavedChanges) return;
-        console.log("🕒 Phase 6 Preload (Vermietung) gestartet...");
-        if (typeof loadVermietungData === 'function') {
-            await loadVermietungData();
-            window.setPreloadStatus('vermietung', 'success');
-        }
-    }, 14000);
-    
-    // Phase 7 (nach 15 Sekunden): Buchhaltung
-    setTimeout(async () => {
-        if (window.hasUnsavedChanges) return;
-        console.log("🕒 Phase 7 Preload (Buchhaltung) gestartet...");
-        if (typeof loadBuchhaltungData === 'function' && (userHasRole('admin') || userHasRole('kassier'))) {
-            await loadBuchhaltungData(true);
-            window.setPreloadStatus('buchhaltung', 'success');
-        }
-    }, 15000);
 }
+
+// =========================================================
+//  PRELOAD STATUS INDIKATOREN (Subtiler Spinner / Checkmark)
+// =========================================================
+function ensurePreloadStyles() {
+    if (document.getElementById('preload-spinner-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'preload-spinner-styles';
+    style.textContent = `
+        .preload-status {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            pointer-events: none;
+        }
+        .preload-spinner {
+            width: 9px;
+            height: 9px;
+            border: 1.5px solid rgba(13, 110, 253, 0.25);
+            border-top-color: #0d6efd;
+            border-radius: 50%;
+            animation: preload-spin 0.8s linear infinite;
+        }
+        .preload-success {
+            color: #198754;
+            font-size: 11px;
+            animation: preload-fade 1.6s forwards;
+        }
+        @keyframes preload-spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes preload-fade {
+            0% { opacity: 1; transform: scale(1); }
+            70% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(0.8); }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+window.setPreloadStatus = function(viewId, status) {
+    ensurePreloadStyles();
+    const link = Array.from(document.querySelectorAll('#sidebar .nav-link, .card')).find(el => {
+        const oc = el.getAttribute('onclick') || '';
+        return oc.includes(`navTo('${viewId}'`) || oc.includes(`navTo("${viewId}"`);
+    });
+    if (!link) return;
+
+    link.style.position = 'relative';
+
+    const oldStatus = link.querySelector('.preload-status');
+    if (oldStatus) oldStatus.remove();
+
+    if (status === 'loading') {
+        const span = document.createElement('span');
+        span.className = 'preload-status preload-spinner';
+        span.title = 'Daten werden im Hintergrund nachgeladen...';
+        link.appendChild(span);
+    } else if (status === 'success') {
+        const span = document.createElement('span');
+        span.className = 'preload-status preload-success';
+        span.innerHTML = '<i class="fas fa-check"></i>';
+        span.title = 'Daten im Hintergrund geladen';
+        link.appendChild(span);
+        setTimeout(() => span.remove(), 1600);
+    }
+};
+
+// =========================================================
+//  SEQUENTIELLER HINTERGRUND-MODUL-MANAGER (Pacing & GAS-Delivery)
+// =========================================================
+const bgModuleLoader = {
+    // 10 Sekunden Pause zwischen Modulen, nachdem GAS geliefert hat
+    intervalMs: 10000,
+    loadedSet: new Set(),
+    isRunning: false,
+    isUserActiveLoading: false,
+    nextTimerId: null,
+
+    modules: [
+        {
+            id: 'termine',
+            label: 'Jahresprogramm',
+            load: () => (typeof loadTermineData === 'function' ? loadTermineData(false) : Promise.resolve()),
+            isLoaded: () => typeof adminState !== 'undefined' && adminState !== null && document.getElementById('termine-ui')?.children.length > 0
+        },
+        {
+            id: 'umfragen',
+            label: 'Anlässe & Umfragen',
+            load: () => (typeof loadUmfragenData === 'function' ? loadUmfragenData(false) : Promise.resolve()),
+            isLoaded: () => typeof umfragenState !== 'undefined' && umfragenState !== null && document.getElementById('umfragen-tabs') !== null
+        },
+        {
+            id: 'system-mails',
+            label: 'System-Mails',
+            load: () => (typeof loadSystemMailsData === 'function' ? loadSystemMailsData(false) : Promise.resolve()),
+            isLoaded: () => typeof sysMailState !== 'undefined' && sysMailState !== null && document.getElementById('app-info-list') !== null
+        },
+        {
+            id: 'resultate',
+            label: 'Resultate',
+            load: () => (typeof loadResultateData === 'function' ? loadResultateData(false) : Promise.resolve()),
+            isLoaded: () => typeof resultateState !== 'undefined' && resultateState && resultateState.rows && resultateState.rows.length > 0
+        },
+        {
+            id: 'manager',
+            label: 'Team Manager',
+            load: async () => {
+                if (typeof loadContestData === 'function') {
+                    await loadContestData('grenzland', false, true);
+                    await loadContestData('mannschaft', false, true);
+                    await loadContestData('gruppe', false, true);
+                }
+            },
+            isLoaded: () => typeof mailWizard !== 'undefined' && mailWizard && mailWizard.cachedModules && mailWizard.cachedModules['grenzland']
+        },
+        {
+            id: 'vermietung',
+            label: 'Vermietung',
+            load: () => (typeof loadVermietungData === 'function' ? loadVermietungData(false) : Promise.resolve()),
+            isLoaded: () => typeof vermietungDaten !== 'undefined' && Array.isArray(vermietungDaten) && vermietungDaten.length > 0
+        },
+        {
+            id: 'jahresmeisterschaft',
+            label: 'Jahresmeisterschaft KK',
+            load: () => (typeof loadJahresmeisterschaftData === 'function' ? loadJahresmeisterschaftData(false, true) : Promise.resolve()),
+            isLoaded: () => typeof jmRawGrid !== 'undefined' && Array.isArray(jmRawGrid) && jmRawGrid.length > 0
+        },
+        {
+            id: 'mail',
+            label: 'Mail',
+            load: () => (typeof loadMailData === 'function' ? loadMailData(false) : Promise.resolve()),
+            isLoaded: () => typeof _mailLoaded !== 'undefined' && _mailLoaded === true
+        },
+        {
+            id: 'jahresbeitrag',
+            label: 'Jahresbeitrag',
+            load: () => (typeof loadJahresbeitragData === 'function' ? loadJahresbeitragData(false, false) : Promise.resolve()),
+            isLoaded: () => typeof window._jbAllBeitraege !== 'undefined' && window._jbAllBeitraege !== null && window._jbAllBeitraege.length > 0
+        },
+        {
+            id: 'rechnungen',
+            label: 'Rechnungen',
+            load: () => (typeof loadRechnungenData === 'function' ? loadRechnungenData(true) : Promise.resolve()),
+            isLoaded: () => typeof window._invoices !== 'undefined' && window._invoices !== null && window._invoices.length > 0
+        },
+        {
+            id: 'mitglieder',
+            label: 'Mitglieder',
+            load: () => (typeof loadMitgliederData === 'function' ? loadMitgliederData(false) : Promise.resolve()),
+            isLoaded: () => typeof window._mglData !== 'undefined' && window._mglData !== null && window._mglData.length > 0
+        },
+        {
+            id: 'buchhaltung',
+            label: 'Buchhaltung',
+            load: () => (typeof window.loadBuchhaltungData === 'function' ? window.loadBuchhaltungData(true) : Promise.resolve()),
+            isLoaded: () => typeof window._bhJournalData !== 'undefined' && window._bhJournalData !== null && window._bhJournalData.length > 0
+        },
+        {
+            id: 'inventar',
+            label: 'Inventar',
+            load: () => (typeof loadInventarData === 'function' ? loadInventarData(false) : Promise.resolve()),
+            isLoaded: () => typeof inventarState !== 'undefined' && inventarState !== null && document.getElementById('inventar-container')?.querySelector('.nav-btn') !== null
+        },
+        {
+            id: 'logins',
+            label: 'Logins',
+            load: () => (typeof loadLoginsData === 'function' && userHasRole('admin') ? loadLoginsData(false) : Promise.resolve()),
+            isLoaded: () => typeof window._loginsData !== 'undefined' && window._loginsData !== null && window._loginsData.length > 0
+        }
+    ],
+
+    // Prüft, ob Benutzer für dieses Modul berechtigt ist
+    isAccessible: function(viewId) {
+        const link = document.querySelector(`#sidebar .nav-link[onclick*="'${viewId}'"]`);
+        if (!link) return false;
+        if (link.classList.contains('d-none')) return false;
+        return true;
+    },
+
+    // Prüft, ob das Modul bereits geladen ist
+    isLoaded: function(mod) {
+        if (this.loadedSet.has(mod.id)) return true;
+        try {
+            if (typeof mod.isLoaded === 'function' && mod.isLoaded()) {
+                this.loadedSet.add(mod.id);
+                return true;
+            }
+        } catch (e) {
+            console.warn(`Fehler bei isLoaded Prüfung für ${mod.id}:`, e);
+        }
+        return false;
+    },
+
+    // Markiert Modul als geladen
+    markLoaded: function(viewId) {
+        this.loadedSet.add(viewId);
+    },
+
+    // Wird aufgerufen, wenn der Benutzer ein Modul manuell geladen hat
+    onUserModuleLoaded: function(viewId) {
+        console.log(`📌 Modul "${viewId}" fertig geladen. Prüfe verbleibende Module für Hintergrund-Laden...`);
+        this.markLoaded(viewId);
+        this.isUserActiveLoading = false;
+        // Nach Fertigstellung des manuellen Moduls 1s kurz warten, dann Warteschlange starten
+        this.scheduleNext(1000);
+    },
+
+    // Plant den nächsten Hintergrundschritt mit Verzögerung ein
+    scheduleNext: function(delayMs) {
+        if (this.nextTimerId) {
+            clearTimeout(this.nextTimerId);
+            this.nextTimerId = null;
+        }
+        const delay = typeof delayMs === 'number' ? delayMs : this.intervalMs;
+        this.nextTimerId = setTimeout(() => {
+            this.step();
+        }, delay);
+    },
+
+    // Führt das nächste noch nicht geladene Modul aus
+    step: async function() {
+        if (this.isRunning) return;
+        if (this.isUserActiveLoading) {
+            this.scheduleNext(3000);
+            return;
+        }
+        if (window.hasUnsavedChanges) {
+            console.log("⏸️ Hintergrund-Laden pausiert: Ungespeicherte Änderungen vorhanden");
+            this.scheduleNext(10000);
+            return;
+        }
+
+        // Finde nächstes berechtigtes, ungeladenes Modul
+        const nextMod = this.modules.find(m => this.isAccessible(m.id) && !this.isLoaded(m));
+        if (!nextMod) {
+            console.log("🎉 Alle berechtigten Module sind im Hintergrund vorgeladen!");
+            return;
+        }
+
+        this.isRunning = true;
+        console.log(`⏳ Hintergrund-Laden: Starte Modul "${nextMod.label || nextMod.id}"...`);
+        window.setPreloadStatus(nextMod.id, 'loading');
+
+        try {
+            await nextMod.load();
+            this.markLoaded(nextMod.id);
+            window.setPreloadStatus(nextMod.id, 'success');
+            console.log(`✅ Hintergrund-Laden: Modul "${nextMod.label || nextMod.id}" geliefert. Nächstes Modul in ${Math.round(this.intervalMs / 1000)}s...`);
+        } catch (err) {
+            console.warn(`⚠️ Hintergrund-Laden fehlgeschlagen für ${nextMod.id}:`, err);
+            window.setPreloadStatus(nextMod.id, '');
+        } finally {
+            this.isRunning = false;
+            // Sobald GAS geliefert hat, nach Intervall (10s) das nächste anstossen
+            this.scheduleNext(this.intervalMs);
+        }
+    }
+};
+window.bgModuleLoader = bgModuleLoader;
 
 // =========================================================
 //  ASYNCHRONER BACKGROUND SYNC (5-Minuten-Timer)
@@ -1175,6 +1265,11 @@ function navTo(viewId, el) {
         window.clearUnsaved();
     }
 
+    // Wenn der Nutzer manuell navigiert, Vorrang gewähren
+    if (window.bgModuleLoader) {
+        window.bgModuleLoader.isUserActiveLoading = true;
+    }
+
     // 1. Nav-Links (nur in Sidebar, um Sub-Tabs in Modulen nicht zu beeinflussen)
     document.querySelectorAll('#sidebar .nav-link').forEach(l => l.classList.remove('active'));
     if (el && el.classList.contains('nav-link')) {
@@ -1226,28 +1321,50 @@ function navTo(viewId, el) {
 
     closeSidebarMobile();
 
-    // 4. Module laden
-    if (viewId === 'inventar'  && typeof loadInventarData  === 'function') loadInventarData();
-    if (viewId === 'termine'   && typeof loadTermineData   === 'function') loadTermineData();
-    if (viewId === 'resultate' && typeof loadResultateData === 'function') loadResultateData();
-    if (viewId === 'manager'   && typeof loadContestData   === 'function') loadContestData();
-    if (viewId === 'vermietung' && typeof loadVermietungData === 'function') loadVermietungData();
-    // NEU: Mails & Logins
-    if (viewId === 'system-mails' && typeof loadSystemMailsData === 'function') loadSystemMailsData();
-    if (viewId === 'umfragen' && typeof loadUmfragenData === 'function') loadUmfragenData();
-    if (viewId === 'logins' && typeof loadLoginsData === 'function') loadLoginsData();
+    // 4. Module laden und Ladeabschluss überwachen
+    let loadPromise = null;
+    try {
+        if (viewId === 'inventar'  && typeof loadInventarData  === 'function') loadPromise = loadInventarData();
+        else if (viewId === 'termine'   && typeof loadTermineData   === 'function') loadPromise = loadTermineData();
+        else if (viewId === 'resultate' && typeof loadResultateData === 'function') loadPromise = loadResultateData();
+        else if (viewId === 'manager'   && typeof loadContestData   === 'function') loadPromise = loadContestData();
+        else if (viewId === 'vermietung' && typeof loadVermietungData === 'function') loadPromise = loadVermietungData();
+        else if (viewId === 'system-mails' && typeof loadSystemMailsData === 'function') loadPromise = loadSystemMailsData();
+        else if (viewId === 'umfragen' && typeof loadUmfragenData === 'function') loadPromise = loadUmfragenData();
+        else if (viewId === 'logins' && typeof loadLoginsData === 'function') loadPromise = loadLoginsData();
+        else if (viewId === 'jahresmeisterschaft' && typeof loadJahresmeisterschaftData === 'function') loadPromise = loadJahresmeisterschaftData();
+        else if (viewId === 'jahresmeisterschaft-kk' && typeof loadJahresmeisterschaftKKData === 'function') loadPromise = loadJahresmeisterschaftKKData();
+        else if (viewId === 'mail'          && typeof loadMailData          === 'function') loadPromise = loadMailData();
+        else if (viewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') loadPromise = loadJahresbeitragData();
+        else if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadPromise = loadRechnungenData();
+        else if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadPromise = loadMitgliederData();
+        else if (viewId === 'buchhaltung'      && typeof renderBuchhaltung     === 'function') loadPromise = renderBuchhaltung();
+        else if (viewId === 'galerie'          && typeof initGalerieManager    === 'function') loadPromise = initGalerieManager();
+        else if (viewId === 'news'             && typeof initNewsView          === 'function') loadPromise = initNewsView();
+        else if (viewId === 'meeting-recorder' && typeof initMeetingRecorder   === 'function') loadPromise = initMeetingRecorder();
+        else if (viewId === 'archiv'           && typeof initArchiv            === 'function') loadPromise = initArchiv();
+    } catch (err) {
+        console.error(`Fehler beim Laden von Modul ${viewId}:`, err);
+    }
 
-    // NEU: Jahresmeisterschaften laden
-    if (viewId === 'jahresmeisterschaft' && typeof loadJahresmeisterschaftData === 'function') loadJahresmeisterschaftData();
-    if (viewId === 'jahresmeisterschaft-kk' && typeof loadJahresmeisterschaftKKData === 'function') loadJahresmeisterschaftKKData();
-    if (viewId === 'mail'          && typeof loadMailData          === 'function') loadMailData();
-    if (viewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') loadJahresbeitragData();
-    if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadRechnungenData();
-    if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadMitgliederData();
-    if (viewId === 'buchhaltung'   && typeof renderBuchhaltung     === 'function') renderBuchhaltung();
-    if (viewId === 'galerie'       && typeof initGalerieManager    === 'function') initGalerieManager();
-    if (viewId === 'news'          && typeof initNewsView          === 'function') initNewsView();
-
+    // Nach erfolgreichem Laden das Hintergrund-Laden der verbleibenden Module anstossen
+    if (viewId !== 'dashboard') {
+        Promise.resolve(loadPromise).then(() => {
+            if (window.bgModuleLoader) {
+                window.bgModuleLoader.onUserModuleLoaded(viewId);
+            }
+        }).catch(err => {
+            console.warn(`Fehler beim Laden von ${viewId}:`, err);
+            if (window.bgModuleLoader) {
+                window.bgModuleLoader.isUserActiveLoading = false;
+                window.bgModuleLoader.scheduleNext(5000);
+            }
+        });
+    } else {
+        if (window.bgModuleLoader) {
+            window.bgModuleLoader.isUserActiveLoading = false;
+        }
+    }
 }
 
 function toggleSidebar() {

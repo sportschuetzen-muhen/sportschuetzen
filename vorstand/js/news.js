@@ -99,13 +99,20 @@ document.addEventListener('DOMContentLoaded', () => {
             modelDesc.textContent = info;
         });
 
-        // Dynamische Modelle von Google abrufen
+        // Dynamische Modelle von Google abrufen (mit Session-Cache)
         window.initDynamicModels = async function(selectElement, descElement, defaultModel = 'gemini-2.5-flash', module = 'news') {
             try {
-                const res = await apiFetch(module, 'action=list_models');
-                if (!res.ok) throw new Error("API request failed");
-                const data = await res.json();
-                if (data.success && data.models && data.models.length > 0) {
+                let models = window._cachedGeminiModels;
+                if (!models) {
+                    const res = await apiFetch(module, 'action=list_models');
+                    if (!res.ok) throw new Error("API request failed");
+                    const data = await res.json();
+                    if (data.success && data.models && data.models.length > 0) {
+                        models = data.models;
+                        window._cachedGeminiModels = models;
+                    }
+                }
+                if (models && models.length > 0) {
                     const modelInfos = {
                         'gemini-2.5-flash': 'Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)',
                         'gemini-2.0-flash-lite': 'Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.',
@@ -119,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
 
                     // Exclude legacy/deprecated models containing 1.5 or 1.0
-                    const activeModels = data.models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0'));
+                    const activeModels = models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0'));
 
                     // Sortiere Modelle: Moderne/Empfohlene Modelle (Flash/Pro/Lite) zuerst, danach andere
                     const sortedModels = activeModels.sort((a, b) => {
@@ -161,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        window.initDynamicModels(modelSelect, modelDesc, 'gemini-2.5-flash', 'news');
+        // Kein vorzeitiger Abruf bei DOMContentLoaded - lädt erst bei initNewsView (Lazy Loading)
     }
 
     // --- DRAFT MODE: GENERIEREN ---

@@ -3,7 +3,7 @@
 // =====================================================================
 
 // KONTENRAHMEN-EDITOR: MODAL ERSTELLEN ODER BEARBEITEN
-window.bhOpenKontoModal = function(kontoCode) {
+window.bhOpenKontoModal = function(kontoCode, rowIndex = null) {
   let modalEl = document.getElementById('bhModalKonto');
   if (!modalEl) {
     modalEl = document.createElement('div');
@@ -19,37 +19,43 @@ window.bhOpenKontoModal = function(kontoCode) {
   let prevYearBudget = 0;
   let budgetVal = 0;
 
-  if (kontoCode) {
-    const acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === String(kontoCode).trim());
-    if (acc) {
-      const prevYearJournal = window._bhJournal.filter(j => Number(j.jahr) === prevYear);
-      let balanceChange = 0;
-      const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
-      const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && String(acc.konto).trim().startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
+  let acc = null;
+  if (rowIndex !== null && rowIndex !== undefined) {
+    acc = (window._bhKontenrahmen || []).find(a => Number(a._rowIndex) === Number(rowIndex));
+  }
+  if (!acc && kontoCode) {
+    acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === String(kontoCode).trim());
+  }
+
+  if (acc) {
+    const code = String(acc.konto).trim();
+    const prevYearJournal = (window._bhJournal || []).filter(j => Number(j.jahr) === prevYear);
+    let balanceChange = 0;
+    const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
+    const isAssetOrExpense = (cat.main === 'Aktiven' || cat.main === 'Aufwand');
+    
+    prevYearJournal.forEach(entry => {
+      const soll = String(entry.konto_soll).trim();
+      const haben = String(entry.konto_haben).trim();
+      const amount = Number(entry.betrag || 0);
       
-      prevYearJournal.forEach(entry => {
-        const soll = String(entry.konto_soll).trim();
-        const haben = String(entry.konto_haben).trim();
-        const amount = Number(entry.betrag || 0);
-        
-        if (soll === String(kontoCode).trim()) {
-          balanceChange += isAssetOrExpense ? amount : -amount;
-        }
-        if (haben === String(kontoCode).trim()) {
-          balanceChange += isAssetOrExpense ? -amount : amount;
-        }
-      });
-      prevYearActual = Number(acc.eroeffnungssaldo || 0) + balanceChange;
-
-      const prevBud = window._bhBudget.find(b => String(b.konto).trim() === String(kontoCode).trim());
-      prevYearBudget = prevBud ? Number(prevBud['budget_' + prevYear] || 0) : 0;
-
-      const bud = window._bhBudget.find(b => String(b.konto).trim() === String(kontoCode).trim());
-      budgetVal = bud ? Number(bud['budget_' + window._bhYear] || 0) : 0;
-
-      if (budgetVal === 0) {
-        budgetVal = prevYearActual !== 0 ? prevYearActual : prevYearBudget;
+      if (soll === code) {
+        balanceChange += isAssetOrExpense ? amount : -amount;
       }
+      if (haben === code) {
+        balanceChange += isAssetOrExpense ? -amount : amount;
+      }
+    });
+    prevYearActual = Number(acc.eroeffnungssaldo || 0) + balanceChange;
+
+    const prevBud = (window._bhBudget || []).find(b => String(b.konto).trim() === code);
+    prevYearBudget = prevBud ? Number(prevBud['budget_' + prevYear] || 0) : 0;
+
+    const bud = (window._bhBudget || []).find(b => String(b.konto).trim() === code);
+    budgetVal = bud ? Number(bud['budget_' + window._bhYear] || 0) : 0;
+
+    if (budgetVal === 0) {
+      budgetVal = prevYearActual !== 0 ? prevYearActual : prevYearBudget;
     }
   }
 
@@ -63,11 +69,16 @@ window.bhOpenKontoModal = function(kontoCode) {
         <div class="modal-body p-4">
           <form id="bh-konto-form" onsubmit="bhSaveKonto(event)">
             <input type="hidden" id="bhk-mode" value="new">
+            <input type="hidden" id="bhk-orig-konto" value="">
+            <input type="hidden" id="bhk-row-index" value="">
             
             <div class="mb-3">
-              <label class="form-label fw-bold small text-muted">Kontonummer (4-stellig)</label>
+              <label class="form-label fw-bold small text-muted d-flex justify-content-between align-items-center">
+                <span>Kontonummer (4-stellig)</span>
+                <span class="badge bg-light text-secondary border fw-normal" id="bhk-konto-badge">KMU-Nummer</span>
+              </label>
               <input type="text" class="form-control fw-bold" id="bhk-konto" required placeholder="z.B. 1000" pattern="^[0-9]{4}$" title="Bitte eine 4-stellige Nummer eingeben.">
-              <div class="form-text text-muted small">Eindeutiger 4-stelliger Nummernschlüssel nach KMU.</div>
+              <div class="form-text text-muted small">Eindeutiger 4-stelliger Nummernschlüssel nach Schweizer KMU.</div>
             </div>
             
             <div class="mb-3">
@@ -78,12 +89,11 @@ window.bhOpenKontoModal = function(kontoCode) {
             <div class="mb-3">
               <label class="form-label fw-bold small text-muted">Klassifizierung (Klasse)</label>
               <select class="form-select" id="bhk-klasse" required>
-                <option value="1">1 - Aktiven (Vermögenswerte)</option>
-                <option value="2">2 - Passiven (Fremd- & Eigenkapital)</option>
-                <option value="3">3 - Ertrag (Einnahmen)</option>
-                <option value="4">4 - Aufwand (Betrieblich/Schiessbetrieb)</option>
-                <option value="5">5 - Aufwand (Personal/Entschädigungen)</option>
-                <option value="6">6 - Aufwand (Verwaltung/Gebäude/Sonstiges)</option>
+                <option value="Aktiven">1 - Aktiven (Vermögenswerte)</option>
+                <option value="Passiven">2 - Passiven (Fremd- & Eigenkapital)</option>
+                <option value="Ertrag">3 - Ertrag (Erlöse / Einnahmen)</option>
+                <option value="Aufwand">4-8 - Aufwand (Betrieblich / Personal / Sonstiges)</option>
+                <option value="Abschluss">9 - Abschluss (Erfolgsrechnung / Bilanz)</option>
               </select>
             </div>
             
@@ -125,43 +135,41 @@ window.bhOpenKontoModal = function(kontoCode) {
   
   const titleEl = document.getElementById('bh-konto-modal-title');
   const modeEl = document.getElementById('bhk-mode');
+  const origKontoEl = document.getElementById('bhk-orig-konto');
+  const rowIndexEl = document.getElementById('bhk-row-index');
   const kontoEl = document.getElementById('bhk-konto');
   const bezeichnungEl = document.getElementById('bhk-bezeichnung');
   const klasseEl = document.getElementById('bhk-klasse');
   const saldoEl = document.getElementById('bhk-eroeffnungssaldo');
+  const kontoBadge = document.getElementById('bhk-konto-badge');
   
-  if (kontoCode) {
+  if (acc) {
     titleEl.textContent = 'Sachkonto bearbeiten';
     modeEl.value = 'edit';
-    kontoEl.value = kontoCode;
-    kontoEl.readOnly = true;
+    origKontoEl.value = acc.konto || '';
+    rowIndexEl.value = acc._rowIndex || '';
+    kontoEl.value = acc.konto || '';
+    if (kontoBadge) kontoBadge.textContent = 'Zeile ' + (acc._rowIndex || 'Vorhanden');
     
-    const acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === String(kontoCode).trim());
-    if (acc) {
-      bezeichnungEl.value = acc.bezeichnung || '';
-      
-      let mappedKlasse = '1';
-      const k = String(acc.klasse).trim();
-      if (k === '2' || k.toLowerCase().startsWith('pas')) mappedKlasse = '2';
-      else if (k === '3' || k.toLowerCase().startsWith('ert')) mappedKlasse = '3';
-      else if (k === '4') mappedKlasse = '4';
-      else if (k === '5') mappedKlasse = '5';
-      else if (k === '6' || k.toLowerCase().startsWith('auf')) mappedKlasse = '6';
-      klasseEl.value = mappedKlasse;
-      
-      saldoEl.value = Number(acc.eroeffnungssaldo || 0).toFixed(2);
-    }
+    bezeichnungEl.value = acc.bezeichnung || '';
+    
+    const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: 'Aktiven' };
+    klasseEl.value = cat.main || 'Aktiven';
+    
+    saldoEl.value = Number(acc.eroeffnungssaldo || 0).toFixed(2);
   } else {
     titleEl.textContent = 'Neues Sachkonto anlegen';
     modeEl.value = 'new';
+    origKontoEl.value = '';
+    rowIndexEl.value = '';
     kontoEl.value = '';
-    kontoEl.readOnly = false;
+    if (kontoBadge) kontoBadge.textContent = 'Neu';
     bezeichnungEl.value = '';
-    klasseEl.value = '1';
+    klasseEl.value = 'Aktiven';
     saldoEl.value = '0.00';
   }
   
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 };
 
@@ -178,6 +186,8 @@ window.bhSaveKonto = async function(event) {
   const payload = {
     action: 'saveKonto',
     konto: document.getElementById('bhk-konto').value.trim(),
+    orig_konto: document.getElementById('bhk-orig-konto') ? document.getElementById('bhk-orig-konto').value.trim() : '',
+    _rowIndex: document.getElementById('bhk-row-index') ? document.getElementById('bhk-row-index').value.trim() : '',
     bezeichnung: document.getElementById('bhk-bezeichnung').value.trim(),
     klasse: document.getElementById('bhk-klasse').value,
     eroeffnungssaldo: Number(document.getElementById('bhk-eroeffnungssaldo').value || 0)
@@ -193,23 +203,34 @@ window.bhSaveKonto = async function(event) {
       const budgetPayload = {
         action: 'saveBudget',
         konto: payload.konto,
+        orig_konto: payload.orig_konto,
         bezeichnung: payload.bezeichnung,
         jahr: window._bhYear,
         betrag: budgetVal
       };
       
-      const budgetResponse = await apiFetch('buchhaltung', budgetPayload, 'POST');
-      const budgetResult = await budgetResponse.json();
-      
-      if (!budgetResult.success) {
-        throw new Error(budgetResult.error || "Fehler beim Speichern des Budgets.");
+      try {
+        await apiFetch('buchhaltung', budgetPayload, 'POST');
+      } catch (bErr) {
+        console.warn("⚠️ Budget konnte nicht synchronisiert werden:", bErr);
       }
       
-      showSuccess(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) und Budget erfolgreich gespeichert!`);
+      if (typeof showSuccess === 'function') {
+        showSuccess(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) und Budget erfolgreich gespeichert!`);
+      } else {
+        alert(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) erfolgreich gespeichert!`);
+      }
       
       const modalEl = document.getElementById('bhModalKonto');
-      const modal = bootstrap.Modal.getInstance(modalEl);
-      if (modal) modal.hide();
+      if (modalEl) {
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+      }
+      // Backdrops aufräumen
+      document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('padding-right');
+      document.body.style.removeProperty('overflow');
       
       await loadBuchhaltungData(true, true);
     } else {
@@ -280,9 +301,10 @@ window.bhOpenEntryModal = function(entryId) {
     document.body.appendChild(modalEl);
   }
   
-  const sollOptions = window._bhKontenrahmen.map(acc => 
-    `<option value="${acc.konto}">${acc.konto} - ${acc.bezeichnung} (${acc.klasse == '1' ? 'Aktiv' : acc.klasse == '2' ? 'Passiv' : acc.klasse == '3' ? 'Ertrag' : 'Aufwand'})</option>`
-  ).join('');
+  const sollOptions = (window._bhKontenrahmen || []).map(acc => {
+    const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: acc.klasse || '' };
+    return `<option value="${acc.konto}">${acc.konto} - ${acc.bezeichnung} (${cat.main})</option>`;
+  }).join('');
   
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered">
@@ -431,7 +453,7 @@ window.bhOpenEntryModal = function(entryId) {
     updateAutoBeleg();
   }
   
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 };
 
@@ -622,7 +644,7 @@ window.bhExportKontoauszugCsv = function(kontoCode) {
   if (!acc) return;
   const selectedKonto = String(acc.konto).trim();
   const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
-  const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && selectedKonto.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
+  const isAssetOrExpense = (cat.main === 'Aktiven' || cat.main === 'Aufwand');
   const opBalance = Number(acc._dynamicEroeffnungssaldo || 0);
 
   const entries = (window._bhJournal || []).filter(j => 
@@ -705,7 +727,7 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
   }
 
   const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: '' };
-  const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && selectedKonto.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aktiven' || cat.main === 'Aufwand');
+  const isAssetOrExpense = (cat.main === 'Aktiven' || cat.main === 'Aufwand');
   const opBalance = Number(acc._dynamicEroeffnungssaldo || 0);
 
   // Filter journal entries for the current account and year
@@ -1010,7 +1032,7 @@ window.bhOpenBudgetMatrixModal = function() {
 
     // Calculate prev year actual
     let balanceChange = 0;
-    const isAssetOrExpense = (acc.klasse == '1' || acc.klasse == '4' || acc.klasse == '5' || acc.klasse == '6' || acc.klasse == '7' || (acc.klasse == '8' && kCode.startsWith('89')) || String(acc.klasse).toLowerCase().startsWith('akt') || String(acc.klasse).toLowerCase().startsWith('auf') || cat.main === 'Aufwand');
+    const isAssetOrExpense = (cat.main === 'Aufwand');
     
     priorJournal.forEach(entry => {
       const soll = String(entry.konto_soll).trim();

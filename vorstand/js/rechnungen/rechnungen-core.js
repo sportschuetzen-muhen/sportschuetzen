@@ -18,6 +18,35 @@ const RECHNUNG_TYPES = [
   { value: 'Sonstige', label: 'Sonstige / Diverse' }
 ];
 
+/**
+ * Generiert eine CAMT-konforme, eindeutige Rechnungsnummer im Format [PREFIX]-[YY]-[CODE]
+ * Verwendet das Crockford Base32-Alphabet (31 Zeichen) ohne 0, O, o, 1, I, l und ohne Umlaute/Sonderzeichen.
+ * Beispiel: RE-26-7K4M, MV-26-8N2W, DP-26-5M7T
+ * @param {string} prefix - z. B. 'RE' (Standard), 'MV' (Materialverkauf), 'DP' (Depot), 'JB' (Jahresbeitrag)
+ * @param {number|string} [year] - z. B. 2026 oder 26 (Standard: aktuelles Buchungsjahr)
+ * @returns {string} Eindeutige Rechnungsnummer
+ */
+window.generateSafeInvoiceId = function(prefix = 'RE', year = null) {
+  const y = Number(year || window._bhYear || new Date().getFullYear());
+  const shortYear = String(y).slice(-2);
+  const cleanAlphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // 31 Zeichen ohne 0, O, 1, I, L
+
+  const existingInvoices = window._invoices || window._jbAllInvoices || [];
+  const existingIds = new Set(existingInvoices.map(i => String(i.id || '').toUpperCase().trim()));
+
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    let code = '';
+    for (let i = 0; i < 4; i++) {
+      code += cleanAlphabet[Math.floor(Math.random() * cleanAlphabet.length)];
+    }
+    const candidateId = `${prefix.toUpperCase().trim()}-${shortYear}-${code}`;
+    if (!existingIds.has(candidateId)) {
+      return candidateId;
+    }
+  }
+  return `${prefix.toUpperCase().trim()}-${shortYear}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
+};
+
 // Online/Preload Endpoint Trigger
 window._invoiceTemplates = [];
 window._invoiceLayouts = {};
