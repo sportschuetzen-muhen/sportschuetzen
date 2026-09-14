@@ -720,34 +720,75 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
 
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error || `HTTP Error ${response.status}`);
-            }
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && (data.instagramCaption || data.facebookPost)) {
+                    const igCaptionEl = document.getElementById('news-ig-caption');
+                    const fbPostEl = document.getElementById('news-fb-post');
+                    const badgeIg = document.getElementById('badge-ig-status');
+                    const badgeFb = document.getElementById('badge-fb-status');
 
-            const data = await response.json();
+                    if (igCaptionEl && data.instagramCaption) {
+                        igCaptionEl.value = data.instagramCaption;
+                        if (badgeIg) badgeIg.classList.remove('d-none');
+                    }
+                    if (fbPostEl && data.facebookPost) {
+                        fbPostEl.value = data.facebookPost;
+                        if (badgeFb) badgeFb.classList.remove('d-none');
+                    }
+                    window.updateNewsCounters();
+                    window.switchDraftChannel('ig');
+                    showToast("✨ Social-Media-Texte für Instagram & Facebook erfolgreich erstellt!", "success");
+                    return;
+                }
+            }
+            throw new Error("Worker lieferte noch keine Social-Daten.");
+        } catch (err) {
+            console.warn("Backend generate-social nicht erreichbar oder lieferte Fehler, nutze intelligenten Sofort-Konverter:", err);
+            
+            // Intelligenter lokaler Konverter als Ausfallsicherung
+            const cleanText = (contentHtml ? cleanHtmlContent(contentHtml) : textOnly)
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&auml;/g, 'ä').replace(/&ouml;/g, 'ö').replace(/&uuml;/g, 'ü')
+                .replace(/&Auml;/g, 'Ä').replace(/&Ouml;/g, 'Ö').replace(/&Uuml;/g, 'Ü')
+                .replace(/\s+/g, ' ')
+                .trim();
+            
+            const mainHeadline = (title || "NEUIGKEITEN DER SPORTSCHÜTZEN MUHEN").toUpperCase();
+            const sentences = cleanText.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 10);
+            
+            // 1. Instagram Caption (Smartphone-optimiert)
+            let igText = `${mainHeadline} 🎯🏆\n\n`;
+            if (sentences.length > 0) {
+                igText += `${sentences.slice(0, 3).join(' ')}\n\n`;
+            }
+            igText += `👉 Den vollständigen Bericht und alle Fotos findet ihr über den Link in unserer Bio!\n\n`;
+            igText += `#sportschützen #muhen #schiesssport #kleinkaliber #sportschützenmuhen #schützenverein`;
+
+            // 2. Facebook Post
+            let fbText = `${title || 'Aktuelles aus dem Verein'}\n\n`;
+            if (sentences.length > 0) {
+                fbText += `${sentences.slice(0, 4).join(' ')}\n\n`;
+            }
+            fbText += `👉 Den vollständigen Bericht und Ranglisten findet ihr auf unserer Webseite:\nhttps://www.sportschuetzen-muhen.ch`;
+
             const igCaptionEl = document.getElementById('news-ig-caption');
             const fbPostEl = document.getElementById('news-fb-post');
             const badgeIg = document.getElementById('badge-ig-status');
             const badgeFb = document.getElementById('badge-fb-status');
 
-            if (igCaptionEl && data.instagramCaption) {
-                igCaptionEl.value = data.instagramCaption;
+            if (igCaptionEl) {
+                igCaptionEl.value = igText;
                 if (badgeIg) badgeIg.classList.remove('d-none');
             }
-            if (fbPostEl && data.facebookPost) {
-                fbPostEl.value = data.facebookPost;
+            if (fbPostEl) {
+                fbPostEl.value = fbText;
                 if (badgeFb) badgeFb.classList.remove('d-none');
             }
             window.updateNewsCounters();
-
-            // Automatisch zur Instagram-Vorschau wechseln
             window.switchDraftChannel('ig');
-            showToast("✨ Social-Media-Texte für Instagram & Facebook erfolgreich erstellt!", "success");
-
-        } catch (err) {
-            console.error(err);
-            showToast("Fehler bei der Social-Texte-Erstellung: " + err.message, "danger");
+            showToast("✨ Social-Media-Texte aus aktuellem Entwurf aufbereitet!", "success");
         } finally {
             if (socialBtn) socialBtn.disabled = false;
             if (btnText) btnText.classList.remove('d-none');

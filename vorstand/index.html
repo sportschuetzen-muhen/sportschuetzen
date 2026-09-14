@@ -1055,9 +1055,14 @@
 
                     <!-- KANAL 2: INSTAGRAM (Smartphone-optimiert) -->
                     <div id="draft-panel-ig" class="channel-panel" style="display: none;">
-                        <div class="bg-light p-2 border rounded-top d-flex justify-content-between align-items-center">
+                        <div class="bg-light p-2 border rounded-top d-flex flex-wrap justify-content-between align-items-center gap-1">
                             <span class="small fw-bold text-muted"><i class="fab fa-instagram text-danger me-1"></i> Instagram Caption (Smartphone-Feed)</span>
-                            <span id="news-ig-counter" class="badge bg-secondary">0 / 2200</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 small" onclick="generateSocialFromDoc()" title="Social-Texte jetzt mit KI aus dem aktuellen Web-Bericht generieren">
+                                    <i class="fas fa-magic me-1"></i>Aus Web-Text generieren
+                                </button>
+                                <span id="news-ig-counter" class="badge bg-secondary">0 / 2200</span>
+                            </div>
                         </div>
                         <textarea id="news-ig-caption" class="form-control rounded-0" rows="9" placeholder="Instagram-Caption... (Wird von der KI automatisch generiert oder hier angepasst)" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"></textarea>
                         <div class="bg-white border border-top-0 rounded-bottom p-2 small">
@@ -1077,9 +1082,14 @@
 
                     <!-- KANAL 3: FACEBOOK (Post & Webseiten-Link) -->
                     <div id="draft-panel-fb" class="channel-panel" style="display: none;">
-                        <div class="bg-light p-2 border rounded-top d-flex justify-content-between align-items-center">
+                        <div class="bg-light p-2 border rounded-top d-flex flex-wrap justify-content-between align-items-center gap-1">
                             <span class="small fw-bold text-muted"><i class="fab fa-facebook text-primary me-1"></i> Facebook Beitrag</span>
-                            <span id="news-fb-counter" class="badge bg-secondary">0 Zeichen</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 small" onclick="generateSocialFromDoc()" title="Social-Texte jetzt mit KI aus dem aktuellen Web-Bericht generieren">
+                                    <i class="fas fa-magic me-1"></i>Aus Web-Text generieren
+                                </button>
+                                <span id="news-fb-counter" class="badge bg-secondary">0 Zeichen</span>
+                            </div>
                         </div>
                         <textarea id="news-fb-post" class="form-control rounded-0" rows="9" placeholder="Facebook-Beitrag... (Wird von der KI automatisch generiert oder hier angepasst)"></textarea>
                         <div class="bg-white border border-top-0 rounded-bottom p-2 small text-muted" style="font-size: 0.75rem;">
