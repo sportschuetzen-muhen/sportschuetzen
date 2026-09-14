@@ -938,9 +938,20 @@
                                 <i class="fas fa-exclamation-triangle me-1"></i><strong>Hinweis:</strong> PDF-Dateien werden <u>nicht unterstützt</u>, da PDFs keine Formatierungen (Fett, Kursiv, Überschriften) übernehmen. Bitte nur Word (.docx) oder direktes Einfügen (Option B) nutzen.
                             </div>
                         </div>
-                        <div class="alert alert-info py-2 px-3 small border-0 mb-0">
+                        <div class="alert alert-info py-2 px-3 small border-0 mb-2">
                             <i class="fas fa-keyboard me-1"></i> <strong>Option B: Direktes Einfügen (Copy & Paste):</strong><br>
                             Kopiere deinen Text einfach (z. B. aus Word mit Strg+C) und füge ihn unten direkt in den <strong>Bericht-Entwurf</strong> ein (Strg+V). Fett, Kursiv und Absätze werden 1:1 übernommen!
+                        </div>
+
+                        <!-- Neuer Button: Social-Media Texte aus dem Web-Text generieren -->
+                        <div class="mt-2 p-2 border rounded bg-white text-center">
+                            <button type="button" class="btn btn-outline-info w-100 py-2 fw-semibold" id="news-generate-social-btn" onclick="generateSocialFromDoc()">
+                                <i class="fas fa-magic me-1"></i> <span id="news-social-btn-text">✨ Social-Texte mit KI generieren (Instagram & Facebook)</span>
+                                <span class="spinner-border spinner-border-sm d-none" id="news-social-spinner" role="status" aria-hidden="true"></span>
+                            </button>
+                            <div class="form-text small text-muted mt-1" style="font-size: 0.74rem;">
+                                Die KI liest deinen eingefügten Text und formuliert massgeschneiderte, Smartphone-optimierte Beiträge für Instagram und Facebook.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -977,51 +988,104 @@
                     <div id="news-preview-container" class="row g-2 mt-2" style="display:none;"></div>
                 </div>
 
-                <!-- Gemeinsamer Editor-Bereich für den fertigen Bericht -->
+                <!-- Gemeinsamer Editor-Bereich mit Kanal-Tabs (Webseite / Instagram / Facebook) -->
                 <div id="news-draft-container" class="mt-4" style="display:none;">
-                    <label class="form-label fw-bold">Bericht Entwurf (Hier können Sie den Text anpassen und formatieren)</label>
-                    
-                    <!-- Formatierungsleiste -->
-                    <div class="editor-toolbar d-flex flex-wrap gap-1 bg-light p-2 border rounded-top align-items-center">
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('bold')" title="Fett">
-                            <i class="fas fa-bold"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('italic')" title="Kursiv">
-                            <i class="fas fa-italic"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('underline')" title="Unterstreichen">
-                            <i class="fas fa-underline"></i>
-                        </button>
-                        
-                        <div class="vr mx-1"></div>
-                        
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertUnorderedList')" title="Aufzählung">
-                            <i class="fas fa-list-ul"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertOrderedList')" title="Nummerierung">
-                            <i class="fas fa-list-ol"></i>
-                        </button>
-                        
-                        <div class="vr mx-1"></div>
-                        
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'h3')" title="Überschrift">
-                            <i class="fas fa-heading"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'p')" title="Normaler Absatz">
-                            <i class="fas fa-paragraph"></i>
-                        </button>
-                        
-                        <div class="vr mx-1"></div>
-                        
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('createLink')" title="Link einfügen">
-                            <i class="fas fa-link"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('unlink')" title="Link entfernen">
-                            <i class="fas fa-unlink"></i>
-                        </button>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="fas fa-file-pen text-primary me-1"></i> Beitrags-Entwürfe anpassen
+                        </label>
+                        <div class="btn-group btn-group-sm" role="group" id="draftChannelTabs">
+                            <button type="button" class="btn btn-primary active fw-semibold" id="tab-channel-web" onclick="switchDraftChannel('web')">
+                                <i class="fas fa-globe me-1"></i> Webseite
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary fw-semibold" id="tab-channel-ig" onclick="switchDraftChannel('ig')">
+                                <i class="fab fa-instagram text-danger me-1"></i> Instagram <span class="badge bg-danger rounded-pill ms-1 d-none" id="badge-ig-status">Bereit</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary fw-semibold" id="tab-channel-fb" onclick="switchDraftChannel('fb')">
+                                <i class="fab fa-facebook text-primary me-1"></i> Facebook <span class="badge bg-primary rounded-pill ms-1 d-none" id="badge-fb-status">Bereit</span>
+                            </button>
+                        </div>
                     </div>
                     
-                    <div id="news-draft-editor" class="form-control" style="min-height: 250px; border-top: none; border-top-left-radius: 0; border-top-right-radius: 0;" contenteditable="true"></div>
+                    <!-- KANAL 1: WEBSEITE (HTML mit Rich-Text-Editor) -->
+                    <div id="draft-panel-web" class="channel-panel">
+                        <!-- Formatierungsleiste -->
+                        <div class="editor-toolbar d-flex flex-wrap gap-1 bg-light p-2 border rounded-top align-items-center">
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('bold')" title="Fett">
+                                <i class="fas fa-bold"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('italic')" title="Kursiv">
+                                <i class="fas fa-italic"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('underline')" title="Unterstreichen">
+                                <i class="fas fa-underline"></i>
+                            </button>
+                            
+                            <div class="vr mx-1"></div>
+                            
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertUnorderedList')" title="Aufzählung">
+                                <i class="fas fa-list-ul"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertOrderedList')" title="Nummerierung">
+                                <i class="fas fa-list-ol"></i>
+                            </button>
+                            
+                            <div class="vr mx-1"></div>
+                            
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'h3')" title="Überschrift">
+                                <i class="fas fa-heading"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'p')" title="Normaler Absatz">
+                                <i class="fas fa-paragraph"></i>
+                            </button>
+                            
+                            <div class="vr mx-1"></div>
+                            
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('createLink')" title="Link einfügen">
+                                <i class="fas fa-link"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('unlink')" title="Link entfernen">
+                                <i class="fas fa-unlink"></i>
+                            </button>
+                        </div>
+                        
+                        <div id="news-draft-editor" class="form-control" style="min-height: 250px; border-top: none; border-top-left-radius: 0; border-top-right-radius: 0;" contenteditable="true"></div>
+                        <div class="form-text small text-muted mt-1">Dieser HTML-Bericht wird auf der Vereins-Webseite im Magazin-Layout publiziert.</div>
+                    </div>
+
+                    <!-- KANAL 2: INSTAGRAM (Smartphone-optimiert) -->
+                    <div id="draft-panel-ig" class="channel-panel" style="display: none;">
+                        <div class="bg-light p-2 border rounded-top d-flex justify-content-between align-items-center">
+                            <span class="small fw-bold text-muted"><i class="fab fa-instagram text-danger me-1"></i> Instagram Caption (Smartphone-Feed)</span>
+                            <span id="news-ig-counter" class="badge bg-secondary">0 / 2200</span>
+                        </div>
+                        <textarea id="news-ig-caption" class="form-control rounded-0" rows="9" placeholder="Instagram-Caption... (Wird von der KI automatisch generiert oder hier angepasst)" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"></textarea>
+                        <div class="bg-white border border-top-0 rounded-bottom p-2 small">
+                            <div class="text-muted mb-2" style="font-size: 0.75rem;">
+                                <i class="fas fa-mobile-screen me-1 text-primary"></i> <strong>Mobile-Regeln:</strong> Die ersten 1-2 Zeilen sind vor dem «... mehr»-Knick sichtbar. Links im Text sind auf Instagram nicht anklickbar (daher «👉 Link in Bio»).
+                            </div>
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                <span class="text-muted me-1" style="font-size: 0.72rem;">Hashtags anfügen:</span>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#sportschützen')">#sportschützen</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#muhen')">#muhen</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#schiesssport')">#schiesssport</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#kleinkaliber')">#kleinkaliber</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#sportschützenmuhen')">#sportschützenmuhen</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- KANAL 3: FACEBOOK (Post & Webseiten-Link) -->
+                    <div id="draft-panel-fb" class="channel-panel" style="display: none;">
+                        <div class="bg-light p-2 border rounded-top d-flex justify-content-between align-items-center">
+                            <span class="small fw-bold text-muted"><i class="fab fa-facebook text-primary me-1"></i> Facebook Beitrag</span>
+                            <span id="news-fb-counter" class="badge bg-secondary">0 Zeichen</span>
+                        </div>
+                        <textarea id="news-fb-post" class="form-control rounded-0" rows="9" placeholder="Facebook-Beitrag... (Wird von der KI automatisch generiert oder hier angepasst)"></textarea>
+                        <div class="bg-white border border-top-0 rounded-bottom p-2 small text-muted" style="font-size: 0.75rem;">
+                            <i class="fas fa-link text-primary me-1"></i> <strong>Tipp:</strong> Links werden auf Facebook für Mobil- und Desktop-Nutzer als anklickbare Vorschau dargestellt.
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Social Media & Veröffentlichungs-Optionen -->

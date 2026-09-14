@@ -281,11 +281,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await response.json();
                 
                 // Entwurf anzeigen
-                draftEditor.innerHTML = data.html;
+                draftEditor.innerHTML = data.html || "";
+                
+                // Social-Media Entwürfe befüllen
+                const igCaptionEl = document.getElementById('news-ig-caption');
+                const fbPostEl = document.getElementById('news-fb-post');
+                const badgeIg = document.getElementById('badge-ig-status');
+                const badgeFb = document.getElementById('badge-fb-status');
+
+                if (igCaptionEl && data.instagramCaption) {
+                    igCaptionEl.value = data.instagramCaption;
+                    if (badgeIg) badgeIg.classList.remove('d-none');
+                }
+                if (fbPostEl && data.facebookPost) {
+                    fbPostEl.value = data.facebookPost;
+                    if (badgeFb) badgeFb.classList.remove('d-none');
+                }
+                if (typeof window.updateNewsCounters === 'function') {
+                    window.updateNewsCounters();
+                }
+
+                if (typeof window.switchDraftChannel === 'function') {
+                    window.switchDraftChannel('web');
+                }
+
                 draftContainer.style.display = 'block';
                 publishBtn.classList.remove('d-none'); // Jetzt Publizieren Button einblenden
                 
-                showToast("Entwurf generiert! Bitte prüfen und ggf. anpassen.", "success");
+                showToast("Entwurf & Social-Media-Texte generiert! Bitte prüfen und ggf. anpassen.", "success");
                 
             } catch (err) {
                 console.error(err);
@@ -351,6 +374,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const postToInstagram = document.getElementById('news-post-instagram') ? document.getElementById('news-post-instagram').checked : true;
             const postToFacebook = document.getElementById('news-post-facebook') ? document.getElementById('news-post-facebook').checked : true;
 
+            const igCaption = document.getElementById('news-ig-caption') ? document.getElementById('news-ig-caption').value : '';
+            const fbPost = document.getElementById('news-fb-post') ? document.getElementById('news-fb-post').value : '';
+
             try {
                 const response = await apiFetch('news', 'action=publish', {
                     method: 'POST',
@@ -358,6 +384,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         title: title,
                         author: author,
                         html: cleanedHtml, // Den bereinigten HTML-Text senden!
+                        instagramCaption: igCaption,
+                        facebookPost: fbPost,
                         images: base64Images, // Jetzt werden die Bilder für den GitHub Upload gesendet
                         postToWebsite: postToWebsite,
                         postToInstagram: postToInstagram,
@@ -575,6 +603,158 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- KANAL-UMSCHALTER IM ENTWURF (WEB / INSTAGRAM / FACEBOOK) ---
+    window.switchDraftChannel = function(channel) {
+        const tabWeb = document.getElementById('tab-channel-web');
+        const tabIg = document.getElementById('tab-channel-ig');
+        const tabFb = document.getElementById('tab-channel-fb');
+        const panelWeb = document.getElementById('draft-panel-web');
+        const panelIg = document.getElementById('draft-panel-ig');
+        const panelFb = document.getElementById('draft-panel-fb');
+
+        [tabWeb, tabIg, tabFb].forEach(btn => {
+            if (btn) {
+                btn.classList.remove('btn-primary', 'active');
+                btn.classList.add('btn-outline-secondary');
+            }
+        });
+        [panelWeb, panelIg, panelFb].forEach(p => {
+            if (p) p.style.display = 'none';
+        });
+
+        if (channel === 'ig') {
+            if (tabIg) {
+                tabIg.classList.remove('btn-outline-secondary');
+                tabIg.classList.add('btn-primary', 'active');
+            }
+            if (panelIg) panelIg.style.display = 'block';
+        } else if (channel === 'fb') {
+            if (tabFb) {
+                tabFb.classList.remove('btn-outline-secondary');
+                tabFb.classList.add('btn-primary', 'active');
+            }
+            if (panelFb) panelFb.style.display = 'block';
+        } else {
+            if (tabWeb) {
+                tabWeb.classList.remove('btn-outline-secondary');
+                tabWeb.classList.add('btn-primary', 'active');
+            }
+            if (panelWeb) panelWeb.style.display = 'block';
+        }
+        if (typeof window.updateNewsCounters === 'function') {
+            window.updateNewsCounters();
+        }
+    };
+
+    // Zeichenzähler für Instagram & Facebook
+    window.updateNewsCounters = function() {
+        const igCaptionEl = document.getElementById('news-ig-caption');
+        const igCounter = document.getElementById('news-ig-counter');
+        if (igCaptionEl && igCounter) {
+            const len = igCaptionEl.value.length;
+            igCounter.textContent = `${len} / 2200`;
+            if (len > 2100) {
+                igCounter.className = 'badge bg-danger';
+            } else {
+                igCounter.className = 'badge bg-secondary';
+            }
+        }
+        const fbPostEl = document.getElementById('news-fb-post');
+        const fbCounter = document.getElementById('news-fb-counter');
+        if (fbPostEl && fbCounter) {
+            fbCounter.textContent = `${fbPostEl.value.length} Zeichen`;
+        }
+    };
+
+    // Hashtags an Instagram Caption anfügen
+    window.appendNewsHashtag = function(tag) {
+        const igCaptionEl = document.getElementById('news-ig-caption');
+        if (!igCaptionEl) return;
+        if (igCaptionEl.value.includes(tag)) return;
+        igCaptionEl.value = igCaptionEl.value.trim() ? `${igCaptionEl.value.trim()} ${tag}` : tag;
+        window.updateNewsCounters();
+        igCaptionEl.focus();
+    };
+
+    // Live-Überwachung für Social-Media Eingabefelder
+    const igInputEl = document.getElementById('news-ig-caption');
+    if (igInputEl) {
+        igInputEl.addEventListener('input', window.updateNewsCounters);
+    }
+    const fbInputEl = document.getElementById('news-fb-post');
+    if (fbInputEl) {
+        fbInputEl.addEventListener('input', window.updateNewsCounters);
+    }
+
+    // --- REITER 2: SOCIAL MEDIA TEXTE AUS DEM BERICHT GENERIEREN (KI) ---
+    window.generateSocialFromDoc = async function() {
+        const draftEditor = document.getElementById('news-draft-editor');
+        const titleInput = document.getElementById('news-title');
+        const btnText = document.getElementById('news-social-btn-text');
+        const spinner = document.getElementById('news-social-spinner');
+        const socialBtn = document.getElementById('news-generate-social-btn');
+        const modelSelect = document.getElementById('news-model');
+
+        const contentHtml = draftEditor ? draftEditor.innerHTML.trim() : '';
+        const textOnly = draftEditor ? draftEditor.innerText.trim() : '';
+
+        if (!textOnly) {
+            showToast("Bitte füge zuerst einen Text in den Entwurf ein oder lade eine Word-Datei hoch.", "warning");
+            return;
+        }
+
+        const title = titleInput ? titleInput.value.trim() : '';
+        const selectedModel = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
+
+        if (socialBtn) socialBtn.disabled = true;
+        if (btnText) btnText.classList.add('d-none');
+        if (spinner) spinner.classList.remove('d-none');
+
+        try {
+            const response = await apiFetch('news', 'action=generate-social', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: title,
+                    html: contentHtml,
+                    model: selectedModel
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP Error ${response.status}`);
+            }
+
+            const data = await response.json();
+            const igCaptionEl = document.getElementById('news-ig-caption');
+            const fbPostEl = document.getElementById('news-fb-post');
+            const badgeIg = document.getElementById('badge-ig-status');
+            const badgeFb = document.getElementById('badge-fb-status');
+
+            if (igCaptionEl && data.instagramCaption) {
+                igCaptionEl.value = data.instagramCaption;
+                if (badgeIg) badgeIg.classList.remove('d-none');
+            }
+            if (fbPostEl && data.facebookPost) {
+                fbPostEl.value = data.facebookPost;
+                if (badgeFb) badgeFb.classList.remove('d-none');
+            }
+            window.updateNewsCounters();
+
+            // Automatisch zur Instagram-Vorschau wechseln
+            window.switchDraftChannel('ig');
+            showToast("✨ Social-Media-Texte für Instagram & Facebook erfolgreich erstellt!", "success");
+
+        } catch (err) {
+            console.error(err);
+            showToast("Fehler bei der Social-Texte-Erstellung: " + err.message, "danger");
+        } finally {
+            if (socialBtn) socialBtn.disabled = false;
+            if (btnText) btnText.classList.remove('d-none');
+            if (spinner) spinner.classList.add('d-none');
+        }
+    };
+
     // --- NEU: DOKUMENT UPLOAD (PDF / WORD) ---
     const docInput = document.getElementById('news-doc-file');
     const docSpinner = document.getElementById('news-doc-spinner');
@@ -631,6 +811,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (draftEditor && draftContainer) {
                     draftEditor.innerHTML = finalHtml;
                     draftContainer.style.display = 'block';
+                    if (typeof window.switchDraftChannel === 'function') {
+                        window.switchDraftChannel('web');
+                    }
                     
                     // Show publish button directly since the document text is finished
                     if (publishBtn) publishBtn.classList.remove('d-none');
