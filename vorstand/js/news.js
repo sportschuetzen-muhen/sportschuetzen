@@ -259,9 +259,10 @@ document.addEventListener('DOMContentLoaded', () => {
             draftContainer.style.display = 'none';
             publishBtn.classList.add('d-none');
 
+            const selectedModel = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
+
             try {
                 const useImageContent = document.getElementById('news-use-image-content') ? document.getElementById('news-use-image-content').checked : true;
-                const selectedModel = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
                 
                 const response = await apiFetch('news', 'action=generate', {
                     method: 'POST',

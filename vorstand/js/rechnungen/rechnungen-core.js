@@ -303,23 +303,74 @@ window.rnGetRecipientForInvoice = function(inv) {
     contact = contacts.find(c => String(c.id).trim() === extId);
   }
   if (!contact && inv.name) {
-    contact = contacts.find(c => String(c.name || '').trim().toLowerCase() === String(inv.name || '').trim().toLowerCase());
+    contact = contacts.find(c => {
+      const matchName = String(c.firma || c.name || (c.vorname ? c.vorname + ' ' + c.nachname : '')).trim().toLowerCase();
+      return matchName === String(inv.name || '').trim().toLowerCase();
+    });
   }
 
-  const rawName = (contact && contact.name) ? contact.name.trim() : String(inv.name || '').trim();
+  if (contact) {
+    const isFirma = contact.typ === 'firma' || Boolean(contact.firma);
+    return {
+      id: contact.id,
+      typ: contact.typ || (isFirma ? 'firma' : 'privat'),
+      kategorie: contact.kategorie || 'Privat',
+      firma: contact.firma || '',
+      abteilung: contact.abteilung || '',
+      anrede: contact.anrede || '',
+      vorname: contact.vorname || '',
+      nachname: contact.nachname || '',
+      name: isFirma ? (contact.firma || contact.name) : ((contact.vorname || '') + ' ' + (contact.nachname || '')).trim() || contact.name || inv.name,
+      strasse: contact.strasse || '',
+      adresszusatz: contact.adresszusatz || '',
+      plz: String(contact.plz || ''),
+      ort: contact.ort || '',
+      land: contact.land || 'CH',
+      email: contact.email || '',
+      telefon: contact.telefon || '',
+      bemerkungen: contact.bemerkungen || ''
+    };
+  }
+
+  const rawName = String(inv.name || '').trim();
   const nameParts = rawName.split(/\s+/);
   const vorname = nameParts.length > 1 ? nameParts[0] : rawName;
   const nachname = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
 
   return {
-    id: contact ? contact.id : extId,
+    id: extId || '',
+    typ: 'privat',
+    kategorie: 'Privat',
+    firma: '',
+    abteilung: '',
+    anrede: '',
     vorname: vorname || '',
     nachname: nachname || '',
-    strasse: (contact && contact.strasse) || '',
-    plz: (contact && contact.plz) || '',
-    ort: (contact && contact.ort) || '',
-    email: (contact && contact.email) || ''
+    name: rawName,
+    strasse: '',
+    adresszusatz: '',
+    plz: '',
+    ort: '',
+    land: 'CH',
+    email: '',
+    telefon: '',
+    bemerkungen: ''
   };
+};
+
+/**
+ * Gibt den formatierten Anzeigenamen eines externen Kontakts zurück.
+ */
+window.rnGetContactDisplayName = function(c) {
+  if (!c) return '';
+  if (c.typ === 'firma' || c.firma) {
+    const contactPerson = [c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ');
+    return c.firma + (contactPerson ? ` (${contactPerson})` : '');
+  }
+  if (c.nachname || c.vorname) {
+    return [c.nachname, c.vorname].filter(Boolean).join(' ');
+  }
+  return c.name || `Kontakt #${c.id}`;
 };
 
 /**

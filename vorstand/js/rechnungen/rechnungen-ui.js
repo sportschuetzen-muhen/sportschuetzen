@@ -719,47 +719,91 @@ window.rnRenderContactsRows = function() {
     if (!q) return true;
     const sId = String(c.id || '').toLowerCase();
     const sName = String(c.name || '').toLowerCase();
+    const sFirma = String(c.firma || '').toLowerCase();
+    const sVorname = String(c.vorname || '').toLowerCase();
+    const sNachname = String(c.nachname || '').toLowerCase();
     const sEmail = String(c.email || '').toLowerCase();
     const sOrt = String(c.ort || '').toLowerCase();
     const sStrasse = String(c.strasse || '').toLowerCase();
-    return sId.includes(q) || sName.includes(q) || sEmail.includes(q) || sOrt.includes(q) || sStrasse.includes(q);
+    const sKat = String(c.kategorie || '').toLowerCase();
+    return sId.includes(q) || sName.includes(q) || sFirma.includes(q) || sVorname.includes(q) || 
+           sNachname.includes(q) || sEmail.includes(q) || sOrt.includes(q) || sStrasse.includes(q) || sKat.includes(q);
   });
 
   if (filtered.length === 0) {
     return `
       <tr>
-        <td colspan="7" class="text-center text-muted py-5">
+        <td colspan="8" class="text-center text-muted py-5">
           <i class="fas fa-address-book fa-3x mb-3 text-secondary opacity-50"></i>
           <h5>Keine externen Kontakte gefunden</h5>
-          <p class="small text-muted mb-0">${q ? 'Kein Kontakt entspricht den Suchkriterien.' : 'Noch keine externen Kontakte erfasst. Klicken Sie auf "+ Neuer Kontakt", um einen anzulegen.'}</p>
+          <p class="small text-muted mb-0">${q ? 'Kein Kontakt entspricht den Suchkriterien.' : 'Noch keine externen Kontakte erfasst. Klicken Sie auf "+ Neuer Kontakt erfassen", um einen anzulegen.'}</p>
         </td>
       </tr>
     `;
   }
 
   return filtered.map((c, idx) => {
-    const fullAddress = [c.strasse, [c.plz, c.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    const isFirma = c.typ === 'firma' || Boolean(c.firma);
+    const category = c.kategorie || (isFirma ? 'Firma' : 'Privat');
+    
+    // Title & Subtitle
+    let mainTitle = '';
+    let subTitle = '';
+    if (isFirma) {
+      mainTitle = escapeHtml(c.firma || c.name || 'Unbenannte Organisation');
+      const cpParts = [c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ');
+      if (cpParts || c.abteilung) {
+        subTitle = `<span class="text-muted"><i class="fas fa-user-tie me-1"></i>${escapeHtml(cpParts)}${c.abteilung ? ` · <span class="badge bg-light text-secondary border">${escapeHtml(c.abteilung)}</span>` : ''}</span>`;
+      }
+    } else {
+      const nameParts = [c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ');
+      mainTitle = escapeHtml(nameParts || c.name || 'Unbenannte Person');
+    }
+
+    // Address construction
+    const addressParts = [
+      c.strasse,
+      c.adresszusatz,
+      [c.plz, c.ort].filter(Boolean).join(' ') + (c.land && c.land !== 'CH' ? ` (${c.land})` : '')
+    ].filter(Boolean);
+    const fullAddress = addressParts.join(', ');
+
+    // Category badge color
+    let catBadgeClass = 'bg-secondary';
+    if (category === 'Sponsor') catBadgeClass = 'bg-warning text-dark';
+    else if (category === 'Gönner') catBadgeClass = 'bg-info text-dark';
+    else if (category === 'Gemeinde') catBadgeClass = 'bg-primary';
+    else if (category === 'Mieter') catBadgeClass = 'bg-success';
+    else if (category === 'Lieferant') catBadgeClass = 'bg-dark';
+
     return `
       <tr>
         <td class="text-center fw-bold text-muted small" style="width: 40px;">${idx + 1}</td>
-        <td style="width: 80px;">
-          <span class="badge bg-light text-primary border font-monospace px-2 py-1">ID: ${escapeHtml(c.id)}</span>
+        <td style="width: 90px;">
+          <span class="badge bg-light text-primary border font-monospace px-2 py-1">EXT-${escapeHtml(c.id)}</span>
+        </td>
+        <td style="width: 120px;">
+          <span class="badge ${isFirma ? 'bg-indigo text-white bg-opacity-75' : 'bg-light text-dark border'} me-1">
+            <i class="fas ${isFirma ? 'fa-building' : 'fa-user'} me-1"></i>${isFirma ? 'Firma' : 'Privat'}
+          </span>
+          <span class="badge ${catBadgeClass} small">${escapeHtml(category)}</span>
         </td>
         <td>
-          <div class="fw-bold text-dark">${escapeHtml(c.name)}</div>
-          <small class="text-muted font-monospace">EXT-${escapeHtml(c.id)}</small>
+          <div class="fw-bold text-dark">${mainTitle}</div>
+          ${subTitle ? `<div class="small mt-0.5">${subTitle}</div>` : ''}
+          ${c.bemerkungen ? `<div class="small text-muted fst-italic mt-0.5"><i class="fas fa-sticky-note me-1 text-warning"></i>${escapeHtml(c.bemerkungen)}</div>` : ''}
         </td>
         <td>
-          ${c.email ? `<a href="mailto:${escapeHtml(c.email)}" class="text-decoration-none text-primary"><i class="fas fa-envelope me-1 small"></i>${escapeHtml(c.email)}</a>` : '<span class="text-muted">–</span>'}
+          ${c.email ? `<a href="mailto:${escapeHtml(c.email)}" class="text-decoration-none text-primary fw-medium"><i class="fas fa-envelope me-1 small"></i>${escapeHtml(c.email)}</a>` : '<span class="text-muted">–</span>'}
         </td>
         <td>
-          ${fullAddress ? `<i class="fas fa-map-marker-alt me-1 text-muted small"></i>${escapeHtml(fullAddress)}` : '<span class="text-muted">–</span>'}
+          ${fullAddress ? `<small class="text-secondary"><i class="fas fa-map-marker-alt me-1 text-muted"></i>${escapeHtml(fullAddress)}</small>` : '<span class="text-muted">–</span>'}
         </td>
         <td>
-          ${c.telefon ? `<i class="fas fa-phone me-1 text-muted small"></i>${escapeHtml(c.telefon)}` : '<span class="text-muted">–</span>'}
+          ${c.telefon ? `<small class="text-secondary"><i class="fas fa-phone me-1 text-muted"></i>${escapeHtml(c.telefon)}</small>` : '<span class="text-muted">–</span>'}
         </td>
-        <td class="text-end" style="width: 180px;">
-          <div class="btn-group btn-group-sm">
+        <td class="text-end" style="width: 150px;">
+          <div class="btn-group btn-group-sm shadow-sm">
             <button class="btn btn-outline-primary" onclick="rnOpenCreateModal(); setTimeout(() => { const sel = document.getElementById('rnc-member-select'); if(sel) { sel.value = 'EXT:${c.id}'; rnHandleMemberSelect(sel.value); } }, 200);" title="Rechnung an diesen Kontakt erstellen">
               <i class="fas fa-file-invoice-dollar"></i>
             </button>
@@ -789,11 +833,11 @@ window.renderTabContacts = function(content) {
             <i class="fas fa-address-book me-2"></i>Externe Kontakte (Rechnungsempfänger)
           </h4>
           <p class="text-muted small mb-0">
-            Verwaltung von externen Rechnungsempfängern, Mietern, Firmen und Sponsoren. Die Zuordnung erfolgt strikt über die Kontakt-ID.
+            Zentrale Verwaltung externer Kontakte (Sponsoren, Mieter, Firmen, Behörden & Privatpersonen) mit QR-Rechnung- und Briefkopf-Konformität.
           </p>
         </div>
         <div class="d-flex gap-2">
-          <button class="btn btn-primary fw-bold" onclick="rnOpenContactModal()">
+          <button class="btn btn-primary fw-bold px-3 py-2 rounded-3 shadow-sm" onclick="rnOpenContactModal()">
             <i class="fas fa-plus me-1.5"></i> Neuer Kontakt erfassen
           </button>
         </div>
@@ -802,29 +846,30 @@ window.renderTabContacts = function(content) {
       <!-- Suche und Zähler -->
       <div class="row g-3 mb-3 align-items-center">
         <div class="col-md-5">
-          <div class="input-group">
-            <span class="input-group-text bg-light text-muted"><i class="fas fa-search"></i></span>
-            <input type="text" class="form-control" placeholder="Kontakt suchen (ID, Name, Ort, E-Mail)..." value="${escapeHtml(window._contactsSearchQuery || '')}" oninput="rnFilterContacts(this.value)">
+          <div class="input-group shadow-sm">
+            <span class="input-group-text bg-light text-muted border-end-0"><i class="fas fa-search"></i></span>
+            <input type="text" class="form-control border-start-0" placeholder="Suchen nach Firma, Name, Ort, E-Mail, Kategorie..." value="${escapeHtml(window._contactsSearchQuery || '')}" oninput="rnFilterContacts(this.value)">
           </div>
         </div>
         <div class="col-md-7 text-md-end text-muted small">
-          <span class="badge bg-secondary me-2">${totalContacts} Kontakt(e) erfasst</span>
-          <span>Stammdaten-Tabelle: <code>kontakte_extern</code></span>
+          <span class="badge bg-primary px-2.5 py-1.5 me-2">${totalContacts} Kontakt(e) erfasst</span>
+          <span>Tabelle: <code>kontakte_extern</code></span>
         </div>
       </div>
 
       <!-- Tabelle -->
-      <div class="table-responsive border rounded-3">
+      <div class="table-responsive border rounded-3 shadow-sm">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small">
             <tr>
               <th style="width: 40px;" class="text-center">#</th>
-              <th style="width: 80px;">ID</th>
-              <th>Name / Firma</th>
+              <th style="width: 90px;">ID</th>
+              <th style="width: 120px;">Typ / Kat.</th>
+              <th>Name / Firma & Kontaktperson</th>
               <th>E-Mail</th>
               <th>Adresse</th>
               <th>Telefon</th>
-              <th style="width: 180px;" class="text-end">Aktionen</th>
+              <th style="width: 150px;" class="text-end">Aktionen</th>
             </tr>
           </thead>
           <tbody id="rn-contacts-tbody">

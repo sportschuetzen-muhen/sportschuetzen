@@ -304,9 +304,12 @@ window.rnOpenCreateModal = async function(btnEl) {
     `<option value="MBR:${m.PersonNumber}">${m.LastName} ${m.FirstName} (Nr: ${m.PersonNumber})</option>`
   ).join('');
 
-  const externalOptions = (window._externalContacts || []).map(c => 
-    `<option value="EXT:${c.id}">${escapeHtml(c.name)} (Extern ID: ${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`
-  ).join('');
+  const externalOptions = (window._externalContacts || []).map(c => {
+    const isFirma = c.typ === 'firma' || Boolean(c.firma);
+    const label = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `Kontakt #${c.id}`);
+    const kat = c.kategorie ? ` [${c.kategorie}]` : '';
+    return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
+  }).join('');
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -495,12 +498,23 @@ window.rnHandleMemberSelect = function(val) {
     if (c) {
       if (contactIdEl) contactIdEl.value = c.id;
       document.getElementById('rnc-person-number').value = 'EXT-' + c.id;
-      document.getElementById('rnc-name').value = c.name || '';
+      
+      const isFirma = c.typ === 'firma' || Boolean(c.firma);
+      const displayName = isFirma ? (c.firma || c.name) : ((c.vorname ? c.vorname + ' ' + c.nachname : '') || c.name);
+      
+      document.getElementById('rnc-name').value = displayName || '';
       document.getElementById('rnc-email').value = c.email || '';
-      document.getElementById('rnc-strasse').value = c.strasse || '';
+      document.getElementById('rnc-strasse').value = [c.strasse, c.adresszusatz].filter(Boolean).join(', ') || '';
       document.getElementById('rnc-plz').value = c.plz || '';
       document.getElementById('rnc-ort').value = c.ort || '';
-      document.getElementById('rnc-type').value = 'Vermietung';
+      
+      const typeEl = document.getElementById('rnc-type');
+      if (typeEl) {
+        if (c.kategorie === 'Sponsor') typeEl.value = 'Sponsoring';
+        else if (c.kategorie === 'Gönner') typeEl.value = 'Gönnerbeitrag';
+        else if (c.kategorie === 'Mieter') typeEl.value = 'Vermietung';
+        else typeEl.value = 'Vermietung';
+      }
     }
   }
 };
@@ -1288,13 +1302,16 @@ window.rnOpenContactModal = function(contactId = null) {
     contact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
   }
 
+  const isFirma = contact ? (contact.typ === 'firma' || Boolean(contact.firma)) : false;
+  const currentCategory = (contact && contact.kategorie) ? contact.kategorie : (isFirma ? 'Sponsor' : 'Privat');
+
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content border-0 rounded-4 shadow">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 rounded-4 shadow-lg">
         <div class="modal-header ${contact ? 'bg-warning text-dark' : 'bg-primary text-white'} border-0 py-3 rounded-top-4">
           <h5 class="modal-title fw-bold">
             <i class="fas ${contact ? 'fa-user-edit' : 'fa-user-plus'} me-2"></i>
-            ${contact ? 'Externen Kontakt bearbeiten' : 'Neuer externer Kontakt'}
+            ${contact ? 'Externen Kontakt bearbeiten' : 'Neuer externer Kontakt erfassen'}
           </h5>
           <button type="button" class="btn-close ${contact ? '' : 'btn-close-white'}" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
@@ -1302,45 +1319,140 @@ window.rnOpenContactModal = function(contactId = null) {
           <form id="rn-contact-form" onsubmit="rnSaveContactForm(event)">
             <input type="hidden" id="rnc-crud-id" value="${contact ? contact.id : ''}">
             
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-muted">ID (Primärschlüssel)</label>
-              <input type="text" class="form-control font-monospace bg-light" readonly value="${contact ? contact.id : '(wird automatisch vergeben)'}">
-            </div>
-            
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-muted">Name, Vorname / Organisation *</label>
-              <input type="text" class="form-control fw-bold text-dark" id="rnc-crud-name" required value="${escapeHtml(contact ? contact.name || '' : '')}" placeholder="z.B. Müller Hans oder Gemeinde Muhen">
-            </div>
-            
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-muted">E-Mail</label>
-              <input type="email" class="form-control" id="rnc-crud-email" value="${escapeHtml(contact ? contact.email || '' : '')}" placeholder="hans@beispiel.ch">
-            </div>
-            
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-muted">Strasse, Nr.</label>
-              <input type="text" class="form-control" id="rnc-crud-strasse" value="${escapeHtml(contact ? contact.strasse || '' : '')}" placeholder="Hauptstrasse 12">
-            </div>
-            
-            <div class="row g-2 mb-3">
-              <div class="col-4">
-                <label class="form-label fw-bold small text-muted">PLZ</label>
-                <input type="text" class="form-control font-monospace" id="rnc-crud-plz" value="${escapeHtml(contact ? contact.plz || '' : '')}" placeholder="5037">
+            <!-- Kontakt-Typ Umschaltung -->
+            <div class="card bg-light border-0 rounded-3 p-3 mb-3">
+              <div class="row align-items-center g-2">
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-muted mb-1">Kontaktart *</label>
+                  <div class="btn-group w-100 shadow-sm" role="group">
+                    <input type="radio" class="btn-check" name="rnc_typ_toggle" id="rnc-type-privat" value="privat" ${!isFirma ? 'checked' : ''} onchange="rnToggleContactType('privat')">
+                    <label class="btn btn-outline-primary fw-bold" for="rnc-type-privat">
+                      <i class="fas fa-user me-1.5"></i> Privatperson
+                    </label>
+
+                    <input type="radio" class="btn-check" name="rnc_typ_toggle" id="rnc-type-firma" value="firma" ${isFirma ? 'checked' : ''} onchange="rnToggleContactType('firma')">
+                    <label class="btn btn-outline-primary fw-bold" for="rnc-type-firma">
+                      <i class="fas fa-building me-1.5"></i> Firma / Organisation
+                    </label>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-muted mb-1">Kategorie / Segment</label>
+                  <select class="form-select shadow-sm" id="rnc-crud-kategorie" onchange="rnUpdateContactLivePreview()">
+                    <option value="Privat" ${currentCategory === 'Privat' ? 'selected' : ''}>👤 Privatperson</option>
+                    <option value="Sponsor" ${currentCategory === 'Sponsor' ? 'selected' : ''}>⭐ Sponsor / Werbepartner</option>
+                    <option value="Gönner" ${currentCategory === 'Gönner' ? 'selected' : ''}>🤝 Gönner / Spender</option>
+                    <option value="Gemeinde" ${currentCategory === 'Gemeinde' ? 'selected' : ''}>🏛️ Gemeinde / Behörde</option>
+                    <option value="Mieter" ${currentCategory === 'Mieter' ? 'selected' : ''}>🏠 Mieter Schützenhaus</option>
+                    <option value="Lieferant" ${currentCategory === 'Lieferant' ? 'selected' : ''}>📦 Lieferant / Partner</option>
+                    <option value="Verband" ${currentCategory === 'Verband' ? 'selected' : ''}>🎯 Verband / Verein</option>
+                    <option value="Sonstige" ${currentCategory === 'Sonstige' ? 'selected' : ''}>📌 Sonstige</option>
+                  </select>
+                </div>
               </div>
-              <div class="col-8">
-                <label class="form-label fw-bold small text-muted">Ort</label>
-                <input type="text" class="form-control" id="rnc-crud-ort" value="${escapeHtml(contact ? contact.ort || '' : '')}" placeholder="Muhen">
+            </div>
+
+            <!-- FIRMENFELDER -->
+            <div id="rnc-firma-section" style="${isFirma ? '' : 'display:none;'}">
+              <div class="row g-3 mb-3">
+                <div class="col-md-7">
+                  <label class="form-label fw-bold small text-muted">Firma / Organisationsname *</label>
+                  <input type="text" class="form-control fw-bold text-dark" id="rnc-crud-firma" value="${escapeHtml(contact ? contact.firma || contact.name || '' : '')}" placeholder="z.B. Müller Holzbau AG oder Gemeinde Muhen" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label fw-bold small text-muted">Abteilung / Zusatz (optional)</label>
+                  <input type="text" class="form-control" id="rnc-crud-abteilung" value="${escapeHtml(contact ? contact.abteilung || '' : '')}" placeholder="z.B. Finanzverwaltung oder Sponsoring" oninput="rnUpdateContactLivePreview()">
+                </div>
               </div>
             </div>
-            
-            <div class="mb-4">
-              <label class="form-label fw-bold small text-muted">Telefon</label>
-              <input type="text" class="form-control" id="rnc-crud-telefon" value="${escapeHtml(contact ? contact.telefon || '' : '')}" placeholder="+41 79 000 00 00">
+
+            <!-- ANSPRECHPERSON / NAME -->
+            <div class="card border rounded-3 p-3 mb-3 bg-white">
+              <div class="fw-bold small text-primary mb-2">
+                <i class="fas fa-id-card me-1.5"></i>
+                <span id="rnc-person-section-title">${isFirma ? 'Ansprechperson / Kontaktperson (optional)' : 'Persönliche Angaben (Privatperson)'}</span>
+              </div>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label fw-bold small text-muted">Anrede</label>
+                  <select class="form-select" id="rnc-crud-anrede" onchange="rnUpdateContactLivePreview()">
+                    <option value="" ${!contact || !contact.anrede ? 'selected' : ''}>– Keine –</option>
+                    <option value="Herr" ${contact && contact.anrede === 'Herr' ? 'selected' : ''}>Herr</option>
+                    <option value="Frau" ${contact && contact.anrede === 'Frau' ? 'selected' : ''}>Frau</option>
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold small text-muted">Vorname</label>
+                  <input type="text" class="form-control" id="rnc-crud-vorname" value="${escapeHtml(contact ? contact.vorname || (contact.name ? contact.name.split(' ')[0] : '') : '')}" placeholder="Hans" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label fw-bold small text-muted">Nachname *</label>
+                  <input type="text" class="form-control fw-bold" id="rnc-crud-nachname" value="${escapeHtml(contact ? contact.nachname || (contact.name ? contact.name.split(' ').slice(1).join(' ') : '') : '')}" placeholder="Meier" oninput="rnUpdateContactLivePreview()">
+                </div>
+              </div>
             </div>
-            
+
+            <!-- ADRESSE -->
+            <div class="card border rounded-3 p-3 mb-3 bg-white">
+              <div class="fw-bold small text-primary mb-2">
+                <i class="fas fa-map-marker-alt me-1.5"></i> Postadresse (QR-Rechnung & Briefkopf konform)
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-md-8">
+                  <label class="form-label fw-bold small text-muted">Strasse & Hausnummer *</label>
+                  <input type="text" class="form-control" id="rnc-crud-strasse" required value="${escapeHtml(contact ? contact.strasse || '' : '')}" placeholder="Hauptstrasse 12" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold small text-muted">Adresszusatz / c/o / Postfach</label>
+                  <input type="text" class="form-control" id="rnc-crud-adresszusatz" value="${escapeHtml(contact ? contact.adresszusatz || '' : '')}" placeholder="z.B. Postfach 45" oninput="rnUpdateContactLivePreview()">
+                </div>
+              </div>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label fw-bold small text-muted">PLZ *</label>
+                  <input type="text" class="form-control font-monospace" id="rnc-crud-plz" required value="${escapeHtml(contact ? contact.plz || '' : '')}" placeholder="5037" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-muted">Ort *</label>
+                  <input type="text" class="form-control" id="rnc-crud-ort" required value="${escapeHtml(contact ? contact.ort || '' : '')}" placeholder="Muhen" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label fw-bold small text-muted">Land</label>
+                  <input type="text" class="form-control font-monospace text-uppercase" id="rnc-crud-land" value="${escapeHtml(contact ? contact.land || 'CH' : 'CH')}" placeholder="CH" oninput="rnUpdateContactLivePreview()">
+                </div>
+              </div>
+            </div>
+
+            <!-- KONTAKTDATEN & BEMERKUNGEN -->
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-muted"><i class="fas fa-envelope me-1"></i>E-Mail (Rechnungsversand)</label>
+                <input type="email" class="form-control" id="rnc-crud-email" value="${escapeHtml(contact ? contact.email || '' : '')}" placeholder="rechnung@beispiel.ch">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-muted"><i class="fas fa-phone me-1"></i>Telefon / Mobil</label>
+                <input type="text" class="form-control" id="rnc-crud-telefon" value="${escapeHtml(contact ? contact.telefon || '' : '')}" placeholder="+41 62 123 45 67">
+              </div>
+              <div class="col-md-12">
+                <label class="form-label fw-bold small text-muted"><i class="fas fa-sticky-note me-1"></i>Bemerkungen / Notizen / Vereinbarungen</label>
+                <input type="text" class="form-control" id="rnc-crud-bemerkungen" value="${escapeHtml(contact ? contact.bemerkungen || '' : '')}" placeholder="z.B. Sponsoringvertrag 2026/2027; Rabatt 10%">
+              </div>
+            </div>
+
+            <!-- LIVE ADRESSVORSCHAU -->
+            <div class="card bg-light border-primary border-opacity-25 rounded-3 p-3 mb-4">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-bold small text-primary"><i class="fas fa-eye me-1.5"></i>Live-Vorschau Rechnungsanschrift (PDF & QR)</span>
+                <span class="badge bg-light text-muted border font-monospace small">ID: ${contact ? 'EXT-' + contact.id : '(Neu)'}</span>
+              </div>
+              <div id="rnc-live-preview-box" class="p-2.5 bg-white rounded-2 border font-monospace text-dark small" style="white-space: pre-line; line-height: 1.4;">
+                <!-- Wird dynamisch befüllt -->
+              </div>
+            </div>
+
             <div class="d-grid">
-              <button type="submit" class="btn ${contact ? 'btn-warning' : 'btn-primary'} py-2.5 fw-bold rounded-3 shadow-sm">
-                <i class="fas fa-save me-1"></i> ${contact ? 'Änderungen speichern' : 'Kontakt anlegen'}
+              <button type="submit" class="btn ${contact ? 'btn-warning' : 'btn-primary'} py-2.5 fw-bold rounded-3 shadow">
+                <i class="fas fa-save me-1.5"></i> ${contact ? 'Änderungen speichern' : 'Kontakt verbindlich anlegen'}
               </button>
             </div>
           </form>
@@ -1349,21 +1461,111 @@ window.rnOpenContactModal = function(contactId = null) {
     </div>
   `;
 
+  window.rnToggleContactType = function(type) {
+    const isF = type === 'firma';
+    const fSec = document.getElementById('rnc-firma-section');
+    const pTitle = document.getElementById('rnc-person-section-title');
+    const firmaInput = document.getElementById('rnc-crud-firma');
+    const nachnameInput = document.getElementById('rnc-crud-nachname');
+
+    if (fSec) fSec.style.display = isF ? '' : 'none';
+    if (pTitle) pTitle.textContent = isF ? 'Ansprechperson / Kontaktperson (optional)' : 'Persönliche Angaben (Privatperson)';
+    
+    if (firmaInput) {
+      if (isF) firmaInput.setAttribute('required', 'required');
+      else firmaInput.removeAttribute('required');
+    }
+    if (nachnameInput) {
+      if (!isF) nachnameInput.setAttribute('required', 'required');
+      else nachnameInput.removeAttribute('required');
+    }
+
+    rnUpdateContactLivePreview();
+  };
+
+  window.rnUpdateContactLivePreview = function() {
+    const isF = document.getElementById('rnc-type-firma')?.checked;
+    const firma = document.getElementById('rnc-crud-firma')?.value.trim() || '';
+    const abteilung = document.getElementById('rnc-crud-abteilung')?.value.trim() || '';
+    const anrede = document.getElementById('rnc-crud-anrede')?.value.trim() || '';
+    const vorname = document.getElementById('rnc-crud-vorname')?.value.trim() || '';
+    const nachname = document.getElementById('rnc-crud-nachname')?.value.trim() || '';
+    const strasse = document.getElementById('rnc-crud-strasse')?.value.trim() || 'Musterstrasse 1';
+    const zusatz = document.getElementById('rnc-crud-adresszusatz')?.value.trim() || '';
+    const plz = document.getElementById('rnc-crud-plz')?.value.trim() || '5037';
+    const ort = document.getElementById('rnc-crud-ort')?.value.trim() || 'Muhen';
+    const land = document.getElementById('rnc-crud-land')?.value.trim() || 'CH';
+
+    const lines = [];
+    if (isF) {
+      lines.push(firma || '[Firmenname / Organisation]');
+      if (nachname || vorname) {
+        const pName = [anrede, vorname, nachname].filter(Boolean).join(' ');
+        lines.push(`z.Hd. ${pName}${abteilung ? ` (${abteilung})` : ''}`);
+      } else if (abteilung) {
+        lines.push(abteilung);
+      }
+    } else {
+      const pName = [anrede, vorname, nachname].filter(Boolean).join(' ');
+      lines.push(pName || '[Vorname Nachname]');
+    }
+
+    lines.push(strasse);
+    if (zusatz) lines.push(zusatz);
+    lines.push(`${plz} ${ort}${land && land !== 'CH' ? ` (${land})` : ''}`);
+
+    const previewEl = document.getElementById('rnc-live-preview-box');
+    if (previewEl) {
+      previewEl.textContent = lines.join('\n');
+    }
+  };
+
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
+  rnUpdateContactLivePreview();
 };
 
 window.rnSaveContactForm = async function(event) {
   event.preventDefault();
   const id = document.getElementById('rnc-crud-id').value.trim();
-  const name = document.getElementById('rnc-crud-name').value.trim();
-  const email = document.getElementById('rnc-crud-email').value.trim();
+  const typ = document.getElementById('rnc-type-firma')?.checked ? 'firma' : 'privat';
+  const kategorie = document.getElementById('rnc-crud-kategorie').value.trim();
+  const firma = document.getElementById('rnc-crud-firma') ? document.getElementById('rnc-crud-firma').value.trim() : '';
+  const abteilung = document.getElementById('rnc-crud-abteilung') ? document.getElementById('rnc-crud-abteilung').value.trim() : '';
+  const anrede = document.getElementById('rnc-crud-anrede').value.trim();
+  const vorname = document.getElementById('rnc-crud-vorname').value.trim();
+  const nachname = document.getElementById('rnc-crud-nachname').value.trim();
   const strasse = document.getElementById('rnc-crud-strasse').value.trim();
+  const adresszusatz = document.getElementById('rnc-crud-adresszusatz').value.trim();
   const plz = document.getElementById('rnc-crud-plz').value.trim();
   const ort = document.getElementById('rnc-crud-ort').value.trim();
+  const land = document.getElementById('rnc-crud-land').value.trim() || 'CH';
+  const email = document.getElementById('rnc-crud-email').value.trim();
   const telefon = document.getElementById('rnc-crud-telefon').value.trim();
+  const bemerkungen = document.getElementById('rnc-crud-bemerkungen').value.trim();
 
-  const contactObj = { id, name, email, strasse, plz, ort, telefon };
+  // Name für Fallback/Legacy
+  const name = typ === 'firma' ? (firma || [vorname, nachname].join(' ').trim()) : [vorname, nachname].join(' ').trim() || firma;
+
+  const contactObj = {
+    id,
+    typ,
+    kategorie,
+    firma,
+    abteilung,
+    anrede,
+    vorname,
+    nachname,
+    name,
+    strasse,
+    adresszusatz,
+    plz,
+    ort,
+    land,
+    email,
+    telefon,
+    bemerkungen
+  };
 
   const modalEl = document.getElementById('rnModalContact');
   if (modalEl) {
@@ -1391,8 +1593,8 @@ window.rnSaveContactForm = async function(event) {
 
 window.rnDeleteContactPrompt = async function(contactId) {
   const c = (window._externalContacts || []).find(x => String(x.id).trim() === String(contactId).trim());
-  const label = c ? `${c.name} (ID: ${c.id})` : `ID ${contactId}`;
-  if (!confirm(`Möchten Sie den externen Kontakt "${label}" wirklich löschen?`)) return;
+  const label = c ? (window.rnGetContactDisplayName ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `ID ${c.id}`)) : `ID ${contactId}`;
+  if (!confirm(`Möchten Sie den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`)) return;
 
   showLoadingOverlay('Lösche Kontakt...');
   try {
