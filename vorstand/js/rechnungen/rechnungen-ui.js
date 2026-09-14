@@ -512,7 +512,7 @@ window.rnOpenDetailsModal = async function(invoiceId) {
 // =====================================================================
 // TAB: OFFENE POSTEN (NEBENRECHNUNG PER MITGLIED)
 // =====================================================================
-window._rechnungenOffenePostenFilter = 'Jahresbeitrag';
+window._rechnungenOffenePostenFilter = 'alle';
 
 window.rnFilterOffenePostenType = function(type) {
   window._rechnungenOffenePostenFilter = type;
@@ -523,7 +523,18 @@ window.rnFilterOffenePostenType = function(type) {
 window.renderTabOffenePosten = function(content) {
   if (!content) return;
 
-  const currentFilter = window._rechnungenOffenePostenFilter || 'Jahresbeitrag';
+  const currentFilter = window._rechnungenOffenePostenFilter || 'alle';
+
+  const categoryLabels = {
+    'alle': 'Alle Posten',
+    'Jahresbeitrag': 'Jahresbeiträge (Mitglieder)',
+    'Vermietung': 'Vermietung',
+    'Materialverkauf': 'Materialverkauf',
+    'Depot / Pfand': 'Depot / Pfand',
+    'Schulsport': 'Schulsport',
+    'Sponsoring': 'Sponsoring / Gönner',
+    'Sonstige': 'Sonstige / Diverse'
+  };
 
   const openInvoices = (window._invoices || []).filter(i => {
     const st = String(i.status || '').toLowerCase();
@@ -532,7 +543,13 @@ window.renderTabOffenePosten = function(content) {
 
     const t = String(i.type || '').toLowerCase();
     if (currentFilter === 'Jahresbeitrag') return t.includes('jahresbeitrag');
-    if (currentFilter === 'Vermietung') return t.includes('vermietung') || t.includes('schulsport') || t.includes('sonstige') || t.includes('sponsoring');
+    if (currentFilter === 'Vermietung') return t.includes('vermietung');
+    if (currentFilter === 'Materialverkauf') return t.includes('material');
+    if (currentFilter === 'Depot / Pfand' || currentFilter === 'Depot') return t.includes('depot') || t.includes('pfand');
+    if (currentFilter === 'Schulsport') return t.includes('schulsport');
+    if (currentFilter === 'Sponsoring') return t.includes('sponsoring') || t.includes('gönner') || t.includes('goenner');
+    if (currentFilter === 'Sonstige') return t.includes('sonstige') || t.includes('diverse');
+    if (currentFilter === 'alle') return true;
     return true; // 'alle'
   });
   
@@ -623,23 +640,32 @@ window.renderTabOffenePosten = function(content) {
         </div>
       </div>
 
-      <!-- Filter Buttons Row -->
-      <div class="d-flex gap-2 mb-4 flex-wrap bg-light p-2 rounded-3 border">
-        <span class="small text-muted fw-bold align-self-center me-2"><i class="fas fa-filter me-1"></i>Kategorie:</span>
-        <button class="btn btn-xs ${currentFilter === 'Jahresbeitrag' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Jahresbeitrag')">
-          <i class="fas fa-id-card me-1"></i> Nur Jahresbeiträge (Mitglieder)
+      <!-- Filter Buttons Row (Alle 7 Rechnungstypen + Alle Posten) -->
+      <div class="d-flex gap-1.5 mb-4 flex-wrap bg-light p-2 rounded-3 border align-items-center">
+        <span class="small text-muted fw-bold me-2"><i class="fas fa-filter me-1"></i>Kategorie:</span>
+        <button class="btn btn-xs ${currentFilter === 'alle' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('alle')">
+          <i class="fas fa-list me-1"></i> Alle Posten
         </button>
-        <button class="btn btn-xs ${currentFilter === 'Vermietung' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Vermietung')">
-          <i class="fas fa-home me-1"></i> Miete & Externe
+        <button class="btn btn-xs ${currentFilter === 'Jahresbeitrag' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Jahresbeitrag')">
+          <i class="fas fa-id-card me-1"></i> Jahresbeiträge
         </button>
-        <button class="btn btn-xs ${currentFilter === 'Materialverkauf' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Materialverkauf')">
+        <button class="btn btn-xs ${currentFilter === 'Vermietung' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Vermietung')">
+          <i class="fas fa-home me-1"></i> Vermietung
+        </button>
+        <button class="btn btn-xs ${currentFilter === 'Materialverkauf' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Materialverkauf')">
           <i class="fas fa-tshirt me-1"></i> Materialverkauf
         </button>
-        <button class="btn btn-xs ${currentFilter === 'Depot / Pfand' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Depot / Pfand')">
+        <button class="btn btn-xs ${currentFilter === 'Depot / Pfand' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Depot / Pfand')">
           <i class="fas fa-hand-holding-usd me-1"></i> Depot / Pfand
         </button>
-        <button class="btn btn-xs ${currentFilter === 'alle' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('alle')">
-          <i class="fas fa-list me-1"></i> Alle Posten
+        <button class="btn btn-xs ${currentFilter === 'Schulsport' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Schulsport')">
+          <i class="fas fa-bullseye me-1"></i> Schulsport
+        </button>
+        <button class="btn btn-xs ${currentFilter === 'Sponsoring' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Sponsoring')">
+          <i class="fas fa-handshake me-1"></i> Sponsoring / Gönner
+        </button>
+        <button class="btn btn-xs ${currentFilter === 'Sonstige' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="rnFilterOffenePostenType('Sonstige')">
+          <i class="fas fa-file-alt me-1"></i> Sonstige / Diverse
         </button>
       </div>
 
@@ -649,7 +675,7 @@ window.renderTabOffenePosten = function(content) {
           <div class="bh-metric-card danger shadow-sm">
             <div class="small text-muted fw-semibold">Offene Gesamtsumme</div>
             <h2 class="fw-bold mt-1 mb-0 text-danger">CHF ${totalOpenSum.toFixed(2)}</h2>
-            <div class="small text-muted mt-1">Ausstehende Forderungen (${currentFilter})</div>
+            <div class="small text-muted mt-1">Ausstehende Forderungen (${categoryLabels[currentFilter] || currentFilter})</div>
           </div>
         </div>
         <div class="col-md-4">
