@@ -155,24 +155,31 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     return;
   }
 
-  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
 
-  const sender = typeof jbGetSenderForInvoiceType === 'function'
-    ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag')
-    : null;
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+
+  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
   const payload = {
     action: 'generateInvoicePDF',
     invoiceId: invoiceId,
-    recipient: {
-      vorname: m.FirstName || inv.name.split(' ')[0] || '',
-      nachname: m.LastName || inv.name.split(' ').slice(1).join(' ') || '',
-      strasse: m.Street || m.Strasse || '',
-      plz: m.PostCode || m.ZipCode || m.PLZ || '',
-      ort: m.City || m.Ort || '',
-      email: m.PrimaryEmail || m.Email || ''
-    },
-    sender: sender
+    recipient: recipient,
+    sender: sender,
+    layout: layout
   };
 
   try {
@@ -202,34 +209,42 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
   const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
   if (!inv) return;
 
-  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
-  const email = m.PrimaryEmail || m.Email || '';
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
 
-  const targetEmail = prompt(`📧 QR-Rechnung per E-Mail an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, email || 'mitglied@sportschuetzen-muhen.ch');
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+
+  const initialEmail = recipient.email || '';
+  const targetEmail = prompt(`📧 QR-Rechnung per E-Mail an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, initialEmail);
   if (targetEmail === null) return;
   if (!targetEmail.includes('@')) {
     alert("❌ Ungültige E-Mail-Adresse.");
     return;
   }
+  recipient.email = targetEmail;
 
   showLoadingOverlay(`Erstelle QR-Rechnung und sende E-Mail an ${name}...`);
 
-  const sender = typeof jbGetSenderForInvoiceType === 'function'
-    ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag')
-    : null;
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+
+  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
   const payload = {
     action: 'sendInvoiceEmail',
     invoiceId: invoiceId,
-    recipient: {
-      vorname: m.FirstName || inv.name.split(' ')[0] || '',
-      nachname: m.LastName || inv.name.split(' ').slice(1).join(' ') || '',
-      strasse: m.Street || m.Strasse || '',
-      plz: m.PostCode || m.ZipCode || m.PLZ || '',
-      ort: m.City || m.Ort || '',
-      email: targetEmail
-    },
-    sender: sender
+    recipient: recipient,
+    sender: sender,
+    layout: layout
   };
 
   try {
@@ -731,24 +746,40 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
 
   showLoadingOverlay(`Lade Rechnung ${invoiceId}...`);
-  let inv, positions;
+  let inv = null;
+  let positions = [];
+  let data = null;
+  let recipient = null;
+
   try {
     const res = await apiFetch('rechnungen', { action: 'getInvoiceDetails', invoiceId });
-    const data = await res.json();
+    data = await res.json();
     if (data.success) {
       inv = data.invoice;
       positions = data.positions || [];
+      recipient = data.recipient || null;
     } else {
       throw new Error(data.error || "Unerwarteter Fehler.");
     }
   } catch (err) {
-    hideLoadingOverlay();
-    alert("❌ Fehler beim Laden der Rechnungsdetails: " + err.message);
-    return;
+    console.warn("⚠️ getInvoiceDetails Server-Fehler, versuche lokalen Fallback:", err);
+    // Fallback: Aus lokalem Cache laden
+    inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+    if (!inv) {
+      hideLoadingOverlay();
+      alert("❌ Fehler beim Laden der Rechnungsdetails: " + err.message);
+      return;
+    }
+    positions = [{
+      position_nr: 1,
+      description: inv.type || 'Rechnungsposition',
+      quantity: 1,
+      unit_price: inv.total_amount || 0,
+      amount: inv.total_amount || 0
+    }];
   }
   hideLoadingOverlay();
 
-  let recipient = (data && data.recipient) ? data.recipient : null;
   let contactId = '';
   let email = '';
   let strasse = '';
@@ -757,7 +788,12 @@ window.rnOpenEditModal = async function(invoiceId) {
 
   const isMember = inv.PersonNumber && !String(inv.PersonNumber).startsWith('EXT');
   if (isMember) {
-    const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+    let members = window._mglData || [];
+    if (members.length === 0 && window.AppCache) {
+      const cached = window.AppCache.get('mitglieder');
+      if (cached && Array.isArray(cached.data)) members = cached.data;
+    }
+    const m = members.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
     email = m.Email || m.PrimaryEmail || '';
     strasse = m.Street || m.Strasse || '';
     plz = m.ZipCode || m.PLZ || '';
@@ -833,6 +869,8 @@ window.rnOpenEditModal = async function(invoiceId) {
                 <select class="form-select" id="rne-type" required>
                   <option value="Vermietung" ${inv.type === 'Vermietung' ? 'selected' : ''}>Vermietung</option>
                   <option value="Jahresbeitrag" ${inv.type === 'Jahresbeitrag' ? 'selected' : ''}>Jahresbeitrag / Mitglieder</option>
+                  <option value="Materialverkauf" ${inv.type === 'Materialverkauf' ? 'selected' : ''}>Materialverkauf</option>
+                  <option value="Depot / Pfand" ${inv.type === 'Depot / Pfand' ? 'selected' : ''}>Depot / Pfand</option>
                   <option value="Schulsport" ${inv.type === 'Schulsport' ? 'selected' : ''}>Schulsport</option>
                   <option value="Sponsoring" ${inv.type === 'Sponsoring' ? 'selected' : ''}>Sponsoring / Gönner</option>
                   <option value="Sonstige" ${inv.type === 'Sonstige' ? 'selected' : ''}>Sonstige / Diverse</option>
@@ -1173,33 +1211,42 @@ window.rnSendMahnungPrompt = async function(invoiceId, name) {
     }
   }
 
-  const email = m.PrimaryEmail || m.Email || '';
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
 
-  const targetEmail = prompt(`⚠️ Zahlungserinnerung / Mahnung an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, email || 'mitglied@sportschuetzen-muhen.ch');
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+
+  const initialEmail = recipient.email || '';
+  const targetEmail = prompt(`⚠️ Zahlungserinnerung / Mahnung an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, initialEmail);
   if (targetEmail === null) return;
   if (!targetEmail.includes('@')) {
     alert("❌ Ungültige E-Mail-Adresse.");
     return;
   }
+  recipient.email = targetEmail;
 
   showLoadingOverlay(`Erstelle Mahnungs-PDF und sende E-Mail an ${name}...`);
 
-  const sender = typeof jbGetSenderForInvoiceType === 'function'
-    ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag')
-    : null;
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender(inv.type || 'Mahnung')
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Mahnung') : null);
+
+  const layout = (window._invoiceLayouts && window._invoiceLayouts['Mahnung']) || null;
 
   const payload = {
     action: 'sendMahnung',
     invoiceId: invoiceId,
-    recipient: {
-      vorname: m.FirstName || inv.name.split(' ')[0] || '',
-      nachname: m.LastName || inv.name.split(' ').slice(1).join(' ') || '',
-      strasse: m.Street || m.Strasse || '',
-      plz: m.PostCode || m.ZipCode || m.PLZ || '',
-      ort: m.City || m.Ort || '',
-      email: targetEmail
-    },
-    sender: sender
+    recipient: recipient,
+    sender: sender,
+    layout: layout
   };
 
   try {

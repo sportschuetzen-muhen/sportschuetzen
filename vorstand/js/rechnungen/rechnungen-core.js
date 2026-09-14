@@ -150,6 +150,11 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
       loadInvoiceContactsData()
     ]);
     
+    // Mitgliederdaten im Hintergrund laden für Adress- und Absenderabgleich, falls noch nicht im RAM
+    if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
+      loadMitgliederData(false).catch(e => console.warn("Mitglieder Preload:", e));
+    }
+    
     // Prüfe Content-Type – wenn HTML kommt, ist das Script nicht korrekt deployed/erreichbar
     const rawText = await invRes.text();
     let result;
@@ -259,4 +264,136 @@ window.rnGetSortIndicator = function(targetCol) {
   const asc = window._invoicesSearchAsc;
   if (col !== targetCol) return '<i class="fas fa-sort text-muted ms-1 small opacity-50"></i>';
   return asc ? '<i class="fas fa-sort-up text-primary ms-1"></i>' : '<i class="fas fa-sort-down text-primary ms-1"></i>';
+};
+
+/**
+ * Ermittelt die Empfängerdaten (Name, Adresse, E-Mail) einer Rechnung,
+ * unabhängig davon, ob es sich um ein Vereinsmitglied oder einen externen Kontakt handelt.
+ */
+window.rnGetRecipientForInvoice = function(inv) {
+  if (!inv) return { vorname: '', nachname: '', strasse: '', plz: '', ort: '', email: '' };
+
+  const isMember = inv.PersonNumber && !String(inv.PersonNumber).startsWith('EXT');
+  if (isMember) {
+    let members = window._mglData || [];
+    if (members.length === 0 && window.AppCache) {
+      const cached = window.AppCache.get('mitglieder');
+      if (cached && Array.isArray(cached.data)) members = cached.data;
+    }
+    const m = members.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) 
+           || (window._jbMemberMap && window._jbMemberMap[String(inv.PersonNumber)]) 
+           || {};
+    const firstName = m.FirstName || (inv.name ? inv.name.split(' ')[0] : '');
+    const lastName = m.LastName || (inv.name ? inv.name.split(' ').slice(1).join(' ') : '');
+    return {
+      vorname: firstName || '',
+      nachname: lastName || '',
+      strasse: m.Street || m.Strasse || '',
+      plz: String(m.PostCode || m.ZipCode || m.PLZ || ''),
+      ort: m.City || m.Ort || '',
+      email: m.PrimaryEmail || m.Email || ''
+    };
+  }
+
+  // Externer Kontakt
+  const extId = String(inv.PersonNumber || '').replace('EXT-', '').replace('EXT:', '').trim();
+  let contact = null;
+  const contacts = window._externalContacts || [];
+  if (extId) {
+    contact = contacts.find(c => String(c.id).trim() === extId);
+  }
+  if (!contact && inv.name) {
+    contact = contacts.find(c => String(c.name || '').trim().toLowerCase() === String(inv.name || '').trim().toLowerCase());
+  }
+
+  const rawName = (contact && contact.name) ? contact.name.trim() : String(inv.name || '').trim();
+  const nameParts = rawName.split(/\s+/);
+  const vorname = nameParts.length > 1 ? nameParts[0] : rawName;
+  const nachname = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+  return {
+    id: contact ? contact.id : extId,
+    vorname: vorname || '',
+    nachname: nachname || '',
+    strasse: (contact && contact.strasse) || '',
+    plz: (contact && contact.plz) || '',
+    ort: (contact && contact.ort) || '',
+    email: (contact && contact.email) || ''
+  };
+};
+
+/**
+ * Ermittelt die Absenderdaten für Rechnungen & Mails basierend auf dem aktuell eingeloggten Benutzer.
+ * 1. Anhand Anzeigename wird der Abgleich mit der Mitglieder-DB gemacht (auch E-Mail von dort).
+ * 2. Als Rolle / Funktion wird 'Rolle_extern' aus login_daten hinterlegt.
+ * 3. Fallback wenn nichts gefunden wird:
+ *    Sportschützen Muhen, 5037 Muhen, sportschuetzen.muhen@gmail.com (Gruss: Sportschützen Muhen / Vorstand)
+ */
+window.rnGetLoggedInSender = function(invoiceType = null) {
+  const loggedInName = String(window.currentUser || localStorage.getItem('portal_user') || '').trim();
+  const loggedInRoleExtern = String(localStorage.getItem('portal_rolle_extern') || '').trim();
+
+  // Standard-Fallback laut Anforderung
+  const fallbackSender = {
+    verein:   'Sportschützen Muhen',
+    vorname:  '',
+    nachname: '',
+    strasse:  '',
+    plz:      '5037',
+    ort:      'Muhen',
+    mobil:    '',
+    email:    'sportschuetzen.muhen@gmail.com',
+    funktion: 'Vorstand'
+  };
+
+  if (!loggedInName) {
+    return fallbackSender;
+  }
+
+  // Mitgliederliste laden (RAM oder AppCache)
+  let members = window._mglData || [];
+  if (members.length === 0 && window.AppCache) {
+    const cached = window.AppCache.get('mitglieder');
+    if (cached && Array.isArray(cached.data)) members = cached.data;
+  }
+
+  // Abgleich mit Mitglieder-DB anhand des Anzeigenamens
+  const cleanLogin = loggedInName.toLowerCase();
+  const member = members.find(m => {
+    const fn = String(m.FirstName || '').trim().toLowerCase();
+    const ln = String(m.LastName || '').trim().toLowerCase();
+    return `${fn} ${ln}` === cleanLogin || `${ln} ${fn}` === cleanLogin || fn === cleanLogin || ln === cleanLogin;
+  });
+
+  if (member) {
+    return {
+      verein:   'Sportschützen Muhen',
+      vorname:  member.FirstName || '',
+      nachname: member.LastName || '',
+      strasse:  member.Street || member.Strasse || '',
+      plz:      String(member.PostCode || member.ZipCode || member.PLZ || '5037'),
+      ort:      member.City || member.Ort || 'Muhen',
+      mobil:    member.PrivateMobilePhone || member.BusinessMobilePhone || '',
+      email:    member.PrimaryEmail || member.Email || 'sportschuetzen.muhen@gmail.com',
+      funktion: loggedInRoleExtern || 'Vorstand'
+    };
+  }
+
+  // Falls der Name Daniel Hunziker ist und Mitgliederdaten noch nicht geladen waren
+  if (cleanLogin.includes('hunziker') && cleanLogin.includes('daniel')) {
+    return {
+      verein:   'Sportschützen Muhen',
+      vorname:  'Daniel',
+      nachname: 'Hunziker',
+      strasse:  'Rebweg 12',
+      plz:      '5101',
+      ort:      'Hunzenschwil',
+      mobil:    '+41 79 578 51 68',
+      email:    'dan.hunziker@me.com',
+      funktion: loggedInRoleExtern || 'Vizepräsident'
+    };
+  }
+
+  // Falls nicht in Mitglieder-DB gematcht werden konnte: Verwende Fallback
+  return fallbackSender;
 };

@@ -1258,6 +1258,13 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
     
     // 2. PDF Generierung anstossen
+    const sender = (typeof rnGetLoggedInSender === 'function')
+      ? rnGetLoggedInSender('Jahresbeitrag')
+      : jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag');
+
+    const layout = (window._invoiceLayouts && window._invoiceLayouts['Jahresbeitrag'])
+      || (typeof rnGetDefaultLayouts === 'function' ? rnGetDefaultLayouts()['Jahresbeitrag'] : null);
+
     const pdfPayload = {
       action: 'generateInvoicePDF',
       invoiceId: invoiceId,
@@ -1269,7 +1276,8 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
         ort: m.City || '',
         email: m.PrimaryEmail || ''
       },
-      sender: jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag')
+      sender: sender,
+      layout: layout
     };
     
     const res = await rechnungenApiFetch(pdfPayload);
@@ -1319,6 +1327,13 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
     
     // 2. E-Mail Versand anstossen
+    const sender = (typeof rnGetLoggedInSender === 'function')
+      ? rnGetLoggedInSender('Jahresbeitrag')
+      : jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag');
+
+    const layout = (window._invoiceLayouts && window._invoiceLayouts['Jahresbeitrag'])
+      || (typeof rnGetDefaultLayouts === 'function' ? rnGetDefaultLayouts()['Jahresbeitrag'] : null);
+
     const emailPayload = {
       action: 'sendInvoiceEmail',
       invoiceId: invoiceId,
@@ -1330,7 +1345,8 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
         ort: m.City || '',
         email: email
       },
-      sender: jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag')
+      sender: sender,
+      layout: layout
     };
     
     const res = await rechnungenApiFetch(emailPayload);
