@@ -513,9 +513,16 @@ window.rnOpenDetailsModal = async function(invoiceId) {
 // TAB: OFFENE POSTEN (NEBENRECHNUNG PER MITGLIED)
 // =====================================================================
 window._rechnungenOffenePostenFilter = 'alle';
+window._rechnungenOpViewMode = 'single'; // 'single' (jede Rechnung einzeln) oder 'grouped' (nach Empfänger)
 
 window.rnFilterOffenePostenType = function(type) {
   window._rechnungenOffenePostenFilter = type;
+  const content = document.getElementById('rn-tab-content-container');
+  if (content) window.renderTabOffenePosten(content);
+};
+
+window.rnToggleOpViewMode = function(mode) {
+  window._rechnungenOpViewMode = mode;
   const content = document.getElementById('rn-tab-content-container');
   if (content) window.renderTabOffenePosten(content);
 };
@@ -524,6 +531,7 @@ window.renderTabOffenePosten = function(content) {
   if (!content) return;
 
   const currentFilter = window._rechnungenOffenePostenFilter || 'alle';
+  const viewMode = window._rechnungenOpViewMode || 'single';
 
   const categoryLabels = {
     'alle': 'Alle Posten',
@@ -571,22 +579,73 @@ window.renderTabOffenePosten = function(content) {
   });
 
   const memberList = Object.values(memberGroup).sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  const totalOpenSum = memberList.reduce((s, m) => s + m.totalOpen, 0);
+  const totalOpenSum = openInvoices.reduce((s, inv) => s + Number(inv.total_amount || 0), 0);
   const totalOpenCount = openInvoices.length;
 
-  let memberRowsHtml = '';
-  if (memberList.length === 0) {
-    memberRowsHtml = `
+  let tableRowsHtml = '';
+  if (openInvoices.length === 0) {
+    tableRowsHtml = `
       <tr>
-        <td colspan="5" class="text-center text-muted py-5">
+        <td colspan="${viewMode === 'single' ? 8 : 5}" class="text-center text-muted py-5">
           <i class="fas fa-check-circle fa-3x text-success mb-3" style="opacity:0.5;"></i>
           <h5>Keine offenen Posten in dieser Kategorie!</h5>
           <p class="small text-muted">Alle Rechnungen für den gewählten Filter wurden vollständig beglichen.</p>
         </td>
       </tr>
     `;
+  } else if (viewMode === 'single') {
+    // Einzelne Rechnungen anzeigen (jede Rechnung als eigene Zeile)
+    tableRowsHtml = openInvoices.map((inv, idx) => {
+      const st = String(inv.status || '').toLowerCase();
+      const statusClass = st === 'gemahnt' ? 'bg-danger text-white' : 'bg-warning text-dark';
+      
+      let numberLabel = '';
+      if (inv.PersonNumber) {
+        if (String(inv.PersonNumber).startsWith('EXT')) {
+          const cId = String(inv.PersonNumber).replace('EXT-', '').replace('EXT:', '');
+          numberLabel = `<div class="text-muted" style="font-size:10px;"><i class="fas fa-address-card me-1 text-info"></i>Kontakt ID: ${escapeHtml(cId)}</div>`;
+        } else {
+          numberLabel = `<div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${escapeHtml(inv.PersonNumber)}</div>`;
+        }
+      }
+
+      const mgl = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber));
+      const nieMahnen = mgl && (mgl.Niemahnen === '1' || mgl.Niemahnen === true || mgl.Niemahnen === 1);
+      const nieMahnenBadge = nieMahnen ? `<span class="badge bg-secondary ms-1" style="font-size:9px;"><i class="fas fa-ban me-1"></i>Nie mahnen</span>` : '';
+
+      const createdDisplay = inv.created_at ? escapeHtml(String(inv.created_at).split(' ')[0]) : '–';
+
+      return `
+        <tr>
+          <td class="text-center fw-bold text-muted small" style="width:40px;">${idx + 1}</td>
+          <td>
+            <span class="bh-konto-badge bh-konto-soll-badge">#${escapeHtml(inv.id)}</span>
+          </td>
+          <td>
+            <div class="fw-bold text-primary mb-0">${escapeHtml(inv.name || 'Unbekannt')} ${nieMahnenBadge}</div>
+            ${numberLabel}
+          </td>
+          <td class="text-muted small font-monospace">${createdDisplay}</td>
+          <td>
+            <span class="badge bg-light text-dark border">${escapeHtml(inv.type || 'Rechnung')}</span>
+          </td>
+          <td class="text-center">
+            <span class="badge ${statusClass} px-2.5 py-1.5 rounded-pill small">${escapeHtml(inv.status || 'offen')}</span>
+          </td>
+          <td class="text-end fw-bold text-danger fs-6 font-monospace">
+            CHF ${Number(inv.total_amount || 0).toFixed(2)}
+          </td>
+          <td class="text-center" style="width:110px;">
+            <button class="btn btn-xs btn-outline-primary" onclick="rnOpenDetailsModal('${inv.id}')" title="Rechnungsdetails anzeigen">
+              <i class="fas fa-eye me-1"></i>Details
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
   } else {
-    memberRowsHtml = memberList.map((m, idx) => {
+    // Nach Empfänger gruppierte Ansicht
+    tableRowsHtml = memberList.map((m, idx) => {
       const invDetailsHtml = m.invoices.map(i => {
         return `<span class="badge bg-light text-dark border me-1 mb-1">
           #${escapeHtml(i.id)} (${escapeHtml(i.type || 'Rechnung')}) &middot; CHF ${Number(i.total_amount || 0).toFixed(2)}
@@ -608,11 +667,11 @@ window.renderTabOffenePosten = function(content) {
             <div class="small mb-1"><span class="badge bg-danger text-white me-1">${m.invoices.length} Rechnung(en)</span></div>
             <div>${invDetailsHtml}</div>
           </td>
-          <td class="text-end fw-bold text-danger fs-6">
+          <td class="text-end fw-bold text-danger fs-6 font-monospace">
             CHF ${m.totalOpen.toFixed(2)}
           </td>
-          <td class="text-center" style="width:120px;">
-            <button class="btn btn-sm btn-outline-secondary" onclick="rnSwitchTab('archiv'); window._invoicesFilterStatus='offen'; renderActiveRechnungenTab();" title="Im Rechnungs-Archiv anzeigen">
+          <td class="text-center" style="width:110px;">
+            <button class="btn btn-xs btn-outline-secondary" onclick="rnSwitchTab('archiv'); window._invoicesFilterStatus='offen'; renderActiveRechnungenTab();" title="Im Rechnungs-Archiv anzeigen">
               <i class="fas fa-search me-1"></i>Details
             </button>
           </td>
@@ -630,10 +689,18 @@ window.renderTabOffenePosten = function(content) {
             <i class="fas fa-list-ol me-2"></i>Nebenrechnung: Offene Posten per Stichtag
           </h4>
           <p class="text-muted small mb-0">
-            Übersicht aller ausstehenden Rechnungsbeträge pro Mitglied / Empfänger für die Generalversammlung & Revision.
+            Übersicht aller ausstehenden Rechnungsbeträge für die Generalversammlung & Revision.
           </p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <div class="btn-group btn-group-sm me-1" role="group">
+            <button type="button" class="btn ${viewMode === 'single' ? 'btn-primary active fw-bold' : 'btn-outline-secondary'}" onclick="rnToggleOpViewMode('single')" title="Jede offene Rechnung einzeln auflisten">
+              <i class="fas fa-file-invoice me-1"></i>Einzel-Posten (${openInvoices.length})
+            </button>
+            <button type="button" class="btn ${viewMode === 'grouped' ? 'btn-primary active fw-bold' : 'btn-outline-secondary'}" onclick="rnToggleOpViewMode('grouped')" title="Nach Person/Empfänger zusammenfassen">
+              <i class="fas fa-users me-1"></i>Nach Empfänger (${memberList.length})
+            </button>
+          </div>
           <button class="btn btn-sm btn-outline-primary" onclick="window.print()">
             <i class="fas fa-print me-1.5"></i>Liste Drucken / PDF
           </button>
@@ -698,22 +765,35 @@ window.renderTabOffenePosten = function(content) {
       <div class="table-responsive">
         <table class="table table-hover align-middle border">
           <thead class="table-light small">
-            <tr>
-              <th style="width:40px;" class="text-center">#</th>
-              <th>Mitglied / Empfänger</th>
-              <th>Offene Rechnungen</th>
-              <th class="text-end">Offener Gesamtsaldo</th>
-              <th style="width:120px;" class="text-center">Aktion</th>
-            </tr>
+            ${viewMode === 'single' ? `
+              <tr>
+                <th style="width:40px;" class="text-center">#</th>
+                <th style="width:140px;">Rechnungs-ID</th>
+                <th>Empfänger / Mitglied</th>
+                <th style="width:110px;">Datum</th>
+                <th style="width:140px;">Kategorie</th>
+                <th style="width:100px;" class="text-center">Status</th>
+                <th style="width:140px;" class="text-end">Offener Betrag</th>
+                <th style="width:110px;" class="text-center">Aktion</th>
+              </tr>
+            ` : `
+              <tr>
+                <th style="width:40px;" class="text-center">#</th>
+                <th style="width:250px;">Mitglied / Empfänger</th>
+                <th>Offene Rechnungen</th>
+                <th style="width:160px;" class="text-end">Offener Gesamtsaldo</th>
+                <th style="width:110px;" class="text-center">Aktion</th>
+              </tr>
+            `}
           </thead>
           <tbody>
-            ${memberRowsHtml}
+            ${tableRowsHtml}
           </tbody>
-          ${memberList.length > 0 ? `
+          ${openInvoices.length > 0 ? `
             <tfoot class="table-light fw-bold">
               <tr>
-                <td colspan="3" class="text-end">TOTAL OFFENE POSTEN:</td>
-                <td class="text-end text-danger fs-6">CHF ${totalOpenSum.toFixed(2)}</td>
+                <td colspan="${viewMode === 'single' ? '6' : '3'}" class="text-end">TOTAL OFFENE POSTEN (${openInvoices.length} Rechnungen):</td>
+                <td class="text-end text-danger fs-6 font-monospace">CHF ${totalOpenSum.toFixed(2)}</td>
                 <td></td>
               </tr>
             </tfoot>
