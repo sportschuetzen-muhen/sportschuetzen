@@ -1,55 +1,95 @@
 // News KI - Logik
 document.addEventListener('DOMContentLoaded', () => {
     const fotoInput = document.getElementById('news-foto');
+    const cameraInput = document.getElementById('news-foto-camera');
     const previewContainer = document.getElementById('news-preview-container');
-    const icon = document.getElementById('news-upload-icon');
-    const text = document.getElementById('news-upload-text');
+    const countBadge = document.getElementById('news-foto-count');
     let base64Images = [];
 
+    async function handleFilesSelected(filesList) {
+        const files = Array.from(filesList || []);
+        if (!files || files.length === 0) return;
+
+        showToast(`${files.length} Foto(s) werden verarbeitet...`, "info");
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            try {
+                const base64 = await resizeAndEncodeImage(file);
+                base64Images.push(base64);
+            } catch(err) {
+                console.error("Fehler beim Verarbeiten des Bildes:", err);
+            }
+        }
+        renderNewsPhotoPreviews();
+    }
+
     if (fotoInput) {
-        fotoInput.addEventListener('change', async function(e) {
-            const files = Array.from(e.target.files);
-            if (!files || files.length === 0) {
-                base64Images = [];
-                if (previewContainer) previewContainer.style.display = 'none';
-                icon.style.display = 'inline-block';
-                text.style.display = 'block';
-                return;
-            }
-
-            icon.style.display = 'none';
-            text.style.display = 'none';
-            if (previewContainer) {
-                previewContainer.style.display = 'flex';
-                previewContainer.innerHTML = '';
-            }
-            base64Images = [];
-
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                try {
-                    const base64 = await resizeAndEncodeImage(file);
-                    base64Images.push(base64);
-                    
-                    if (previewContainer) {
-                        const img = document.createElement('img');
-                        img.src = base64;
-                        img.className = 'img-fluid rounded';
-                        img.style.maxHeight = '120px';
-                        img.style.objectFit = 'cover';
-                        // Highlight first image
-                        if (i === 0) {
-                            img.style.border = '3px solid var(--primary)';
-                            img.title = 'Aufmacher / Titelbild';
-                        }
-                        previewContainer.appendChild(img);
-                    }
-                } catch(err) {
-                    console.error("Error processing image:", err);
-                }
-            }
+        fotoInput.addEventListener('change', (e) => {
+            handleFilesSelected(e.target.files);
+            fotoInput.value = '';
         });
     }
+
+    if (cameraInput) {
+        cameraInput.addEventListener('change', (e) => {
+            handleFilesSelected(e.target.files);
+            cameraInput.value = '';
+        });
+    }
+
+    function renderNewsPhotoPreviews() {
+        if (!previewContainer) return;
+        if (countBadge) {
+            countBadge.textContent = `${base64Images.length} ${base64Images.length === 1 ? 'Foto' : 'Fotos'}`;
+            countBadge.className = `badge ${base64Images.length > 0 ? 'bg-primary' : 'bg-secondary'}`;
+        }
+
+        if (base64Images.length === 0) {
+            previewContainer.style.display = 'none';
+            previewContainer.innerHTML = '';
+            return;
+        }
+
+        previewContainer.style.display = 'flex';
+        previewContainer.innerHTML = base64Images.map((b64, idx) => {
+            const isCover = (idx === 0);
+            return `
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="card h-100 ${isCover ? 'border-primary border-2 shadow-sm' : 'border'}">
+                        <div class="position-relative">
+                            <img src="${b64}" class="card-img-top" style="height: 130px; object-fit: cover;" alt="Foto ${idx + 1}">
+                            ${isCover ? '<span class="badge bg-primary position-absolute top-0 start-0 m-1 shadow-sm"><i class="fas fa-star me-1"></i>Titelbild</span>' : ''}
+                            <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 py-0 px-2 shadow-sm" onclick="removeNewsPhoto(${idx})" title="Foto entfernen">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                        <div class="card-body p-2 text-center bg-white">
+                            ${isCover 
+                                ? '<span class="text-primary fw-bold small"><i class="fas fa-check-circle me-1"></i>Aufmacher & IG</span>' 
+                                : `<button type="button" class="btn btn-sm btn-outline-primary w-100 py-0 small" onclick="setCoverPhoto(${idx})" title="Als Aufmacher und Instagram-Bild festlegen">
+                                    <i class="fas fa-star me-1"></i>Als Titelbild
+                                   </button>`
+                            }
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    window.setCoverPhoto = function(idx) {
+        if (idx <= 0 || idx >= base64Images.length) return;
+        const chosen = base64Images.splice(idx, 1)[0];
+        base64Images.unshift(chosen);
+        renderNewsPhotoPreviews();
+        showToast("Titelbild geändert! Dieses Foto wird für Instagram und als Aufmacher verwendet.", "success");
+    };
+
+    window.removeNewsPhoto = function(idx) {
+        if (idx < 0 || idx >= base64Images.length) return;
+        base64Images.splice(idx, 1);
+        renderNewsPhotoPreviews();
+    };
 
     function resizeAndEncodeImage(file) {
         return new Promise((resolve, reject) => {
@@ -58,32 +98,55 @@ document.addEventListener('DOMContentLoaded', () => {
                 const img = new Image();
                 img.onload = function() {
                     const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 1000;
-                    const MAX_HEIGHT = 1000;
+                    const MAX_DIM = 1200;
                     let width = img.width;
                     let height = img.height;
 
                     if (width > height) {
-                        if (width > MAX_WIDTH) {
-                            height *= MAX_WIDTH / width;
-                            width = MAX_WIDTH;
+                        if (width > MAX_DIM) {
+                            height = Math.round(height * (MAX_DIM / width));
+                            width = MAX_DIM;
                         }
                     } else {
-                        if (height > MAX_HEIGHT) {
-                            width *= MAX_HEIGHT / height;
-                            height = MAX_HEIGHT;
+                        if (height > MAX_DIM) {
+                            width = Math.round(width * (MAX_DIM / height));
+                            height = MAX_DIM;
                         }
                     }
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Instagram-Kompatibilität für Seitenverhältnis (Min: 4:5 = 0.8, Max: 1.91:1)
+                    // Smartphone-Fotos (z. B. 9:16) werden seitlich zentriert aufgefüllt
+                    const currentRatio = width / height;
+                    if (currentRatio < 0.8) {
+                        const targetWidth = Math.round(height * 0.8);
+                        canvas.width = targetWidth;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, targetWidth, height);
+                        const offsetX = Math.round((targetWidth - width) / 2);
+                        ctx.drawImage(img, offsetX, 0, width, height);
+                    } else if (currentRatio > 1.91) {
+                        const targetHeight = Math.round(width / 1.91);
+                        canvas.width = width;
+                        canvas.height = targetHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, width, targetHeight);
+                        const offsetY = Math.round((targetHeight - height) / 2);
+                        ctx.drawImage(img, 0, offsetY, width, height);
+                    } else {
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                    }
                     
-                    resolve(canvas.toDataURL('image/jpeg', 0.8));
-                }
+                    resolve(canvas.toDataURL('image/jpeg', 0.85));
+                };
                 img.onerror = reject;
                 img.src = event.target.result;
-            }
+            };
             reader.onerror = reject;
             reader.readAsDataURL(file);
         });
@@ -309,39 +372,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const resData = await response.json();
                 
-                if (resData.socialLog && resData.socialLog.length > 0) {
-                    let logDetails = "";
-                    let hasError = false;
-                    resData.socialLog.forEach(log => {
-                        if (log.includes("Fehler") || log.includes("Verbindungsfehler")) {
-                            hasError = true;
-                            logDetails += `\n❌ ${log}`;
-                        } else {
-                            logDetails += `\n✅ ${log}`;
-                        }
-                    });
+                // Detailliertes Veröffentlichungs-Protokoll rendern
+                const resultBox = document.getElementById('news-publish-result');
+                let hasError = false;
 
-                    if (hasError) {
-                        showToast(`Bericht publiziert, aber Social Media fehlgeschlagen:${logDetails}`, "warning");
+                if (resultBox) {
+                    resultBox.classList.remove('d-none');
+                    let htmlList = '';
+                    
+                    if (resData.socialLog && resData.socialLog.length > 0) {
+                        resData.socialLog.forEach(log => {
+                            const isErr = log.includes("Fehler") || log.includes("Verbindungsfehler");
+                            const isDeact = log.includes("Deaktiviert") || log.includes("Übersprungen");
+                            if (isErr) hasError = true;
+                            const badge = isErr ? '<span class="badge bg-danger me-2">Fehler</span>' : (isDeact ? '<span class="badge bg-secondary me-2">Übersprungen</span>' : '<span class="badge bg-success me-2">Erfolgreich</span>');
+                            htmlList += `<li class="list-group-item d-flex align-items-center">${badge}<span>${escapeHtml(log)}</span></li>`;
+                        });
                     } else {
-                        showToast(`Bericht und Social Media erfolgreich publiziert:${logDetails}`, "success");
+                        htmlList = '<li class="list-group-item text-success fw-bold">✅ Bericht erfolgreich verarbeitet.</li>';
                     }
+
+                    resultBox.innerHTML = `
+                        <div class="card border-${hasError ? 'warning' : 'success'} shadow-sm">
+                            <div class="card-header bg-${hasError ? 'warning text-dark' : 'success text-white'} fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-bullhorn me-2"></i>Veröffentlichungs-Protokoll</span>
+                                <button type="button" class="btn-close ${hasError ? '' : 'btn-close-white'}" onclick="document.getElementById('news-publish-result').classList.add('d-none')"></button>
+                            </div>
+                            <ul class="list-group list-group-flush">
+                                ${htmlList}
+                            </ul>
+                        </div>
+                    `;
+                    resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+
+                if (hasError) {
+                    showToast("Bericht verarbeitet, aber Social-Media-Fehler aufgetreten. Siehe Protokoll.", "warning");
                 } else {
                     showToast("Bericht erfolgreich publiziert!", "success");
                 }
                 
-                // Reset form
+                // Formular & Bilder zurücksetzen
                 document.getElementById('newsForm').reset();
                 draftContainer.style.display = 'none';
                 draftEditor.innerHTML = '';
                 publishBtn.classList.add('d-none');
-                if (previewContainer) {
-                    previewContainer.style.display = 'none';
-                    previewContainer.innerHTML = '';
-                }
-                icon.style.display = 'inline-block';
-                text.style.display = 'block';
                 base64Images = [];
+                renderNewsPhotoPreviews();
                 const docTextEl = document.getElementById('news-doc-text');
                 if (docTextEl) {
                     docTextEl.innerText = "Klicken Sie hier, um eine Word-Datei (.docx) hochzuladen.";
@@ -674,7 +751,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Leere Absätze löschen (z.B. <p></p>, <p><br></p>, <p>&nbsp;</p>)
         clean = clean.replace(/<p>\s*(<br\s*\/?>|&nbsp;)?\s*<\/p>/gi, '');
-
+        
         return clean;
     }
 
