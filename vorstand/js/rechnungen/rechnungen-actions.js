@@ -325,17 +325,17 @@ window.rnOpenCreateModal = async function(btnEl) {
             <!-- Empfänger-Auswahl -->
             <div class="row g-3 mb-3 pb-3 border-bottom">
               <div class="col-md-12">
-                <label class="form-label fw-bold small text-muted">Empfänger auswählen (Mitglieder & Externe)</label>
+                <label class="form-label fw-bold small text-muted">Empfänger auswählen (Externe Kontakte & Mitglieder)</label>
                 <select class="form-select fw-bold text-primary" id="rnc-member-select" onchange="rnHandleMemberSelect(this.value)">
                   <option value="" selected>-- Manuelle Erfassung / Neuer externer Empfänger --</option>
-                  <optgroup label="Vereinsmitglieder">
-                    ${memberOptions}
-                  </optgroup>
                   ${window._externalContacts.length > 0 ? `
-                  <optgroup label="Gespeicherte externe Kontakte">
+                  <optgroup label="Gespeicherte externe Kontakte (Sponsoren, Mieter, Firmen, Privat)">
                     ${externalOptions}
                   </optgroup>
                   ` : ''}
+                  <optgroup label="Vereinsmitglieder">
+                    ${memberOptions}
+                  </optgroup>
                 </select>
               </div>
             </div>
@@ -343,16 +343,16 @@ window.rnOpenCreateModal = async function(btnEl) {
             <!-- Adressdaten -->
             <div class="row g-3 mb-3">
               <div class="col-md-3">
-                <label class="form-label fw-bold small text-muted">Mitglieds-Nr</label>
-                <input type="text" class="form-control font-monospace" id="rnc-person-number" placeholder="Optional">
+                <label class="form-label fw-bold small text-muted">Empfänger-ID / Mgl-Nr</label>
+                <input type="text" class="form-control font-monospace" id="rnc-person-number" placeholder="z.B. EXT-1">
               </div>
               <div class="col-md-5">
-                <label class="form-label fw-bold small text-muted">Name, Vorname (Empfänger)</label>
-                <input type="text" class="form-control" id="rnc-name" required placeholder="z.B. Müller Hans">
+                <label class="form-label fw-bold small text-muted">Empfänger (Name / Firma)</label>
+                <input type="text" class="form-control" id="rnc-name" required placeholder="z.B. Mittelland AG oder Hans Müller">
               </div>
               <div class="col-md-4">
                 <label class="form-label fw-bold small text-muted">E-Mail</label>
-                <input type="email" class="form-control" id="rnc-email" placeholder="z.B. hans@mueller.ch">
+                <input type="email" class="form-control" id="rnc-email" placeholder="z.B. rechnung@firma.ch">
               </div>
             </div>
 
@@ -710,19 +710,32 @@ window.rnSaveCreateInvoice = async function(event) {
     }
   }, 100);
 
-  const payload = {
-    action: 'createInvoice',
-    invoice: invoiceHeader,
-    positions: positions,
-    recipient: {
-      id: contactId,
-      vorname: name.split(' ')[0] || '',
-      nachname: name.split(' ').slice(1).join(' ') || '',
+  let recipientPayload = null;
+  if (contactId) {
+    const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
+    if (existingContact) {
+      recipientPayload = { ...existingContact };
+    }
+  }
+  if (!recipientPayload) {
+    recipientPayload = {
+      id: contactId || '',
+      name: name,
+      firma: name,
+      vorname: '',
+      nachname: '',
       strasse: strasse,
       plz: plz,
       ort: ort,
       email: email
-    }
+    };
+  }
+
+  const payload = {
+    action: 'createInvoice',
+    invoice: invoiceHeader,
+    positions: positions,
+    recipient: recipientPayload
   };
 
   try {
@@ -844,11 +857,11 @@ window.rnOpenEditModal = async function(invoiceId) {
             <!-- Adressdaten -->
             <div class="row g-3 mb-3">
               <div class="col-md-3">
-                <label class="form-label fw-bold small text-muted">Mitglieds-Nr</label>
+                <label class="form-label fw-bold small text-muted">Empfänger-ID / Mgl-Nr</label>
                 <input type="text" class="form-control font-monospace bg-light" id="rne-person-number" readonly value="${inv.PersonNumber || ''}">
               </div>
               <div class="col-md-5">
-                <label class="form-label fw-bold small text-muted">Name, Vorname (Empfänger)</label>
+                <label class="form-label fw-bold small text-muted">Empfänger (Name / Firma)</label>
                 <input type="text" class="form-control" id="rne-name" required value="${escapeHtml(inv.name || '')}">
               </div>
               <div class="col-md-4">
@@ -1383,11 +1396,11 @@ window.rnOpenContactModal = function(contactId = null) {
                 </div>
                 <div class="col-md-4">
                   <label class="form-label fw-bold small text-muted">Vorname</label>
-                  <input type="text" class="form-control" id="rnc-crud-vorname" value="${escapeHtml(contact ? contact.vorname || (contact.name ? contact.name.split(' ')[0] : '') : '')}" placeholder="Hans" oninput="rnUpdateContactLivePreview()">
+                  <input type="text" class="form-control" id="rnc-crud-vorname" value="${escapeHtml(contact ? contact.vorname || '' : '')}" placeholder="Hans" oninput="rnUpdateContactLivePreview()">
                 </div>
                 <div class="col-md-5">
                   <label class="form-label fw-bold small text-muted">Nachname *</label>
-                  <input type="text" class="form-control fw-bold" id="rnc-crud-nachname" value="${escapeHtml(contact ? contact.nachname || (contact.name ? contact.name.split(' ').slice(1).join(' ') : '') : '')}" placeholder="Meier" oninput="rnUpdateContactLivePreview()">
+                  <input type="text" class="form-control fw-bold" id="rnc-crud-nachname" value="${escapeHtml(contact ? contact.nachname || (!isFirma ? contact.name || '' : '') : '')}" placeholder="Meier" oninput="rnUpdateContactLivePreview()">
                 </div>
               </div>
             </div>

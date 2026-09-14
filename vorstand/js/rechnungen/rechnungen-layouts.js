@@ -440,6 +440,7 @@ window.rnSaveLayout = async function(event, type) {
 
     if (result.success) {
       showSuccess(`🎉 Layout & Texte für '${type}' erfolgreich gespeichert!`);
+      await loadInvoiceLayoutsData();
     } else {
       throw new Error(result.error || "GAS returned success false");
     }
