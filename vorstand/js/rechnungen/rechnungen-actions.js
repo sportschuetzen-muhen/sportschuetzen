@@ -325,9 +325,14 @@ window.rnOpenCreateModal = async function(btnEl) {
             <!-- Empfänger-Auswahl -->
             <div class="row g-3 mb-3 pb-3 border-bottom">
               <div class="col-md-12">
-                <label class="form-label fw-bold small text-muted">Empfänger auswählen (Externe Kontakte & Mitglieder)</label>
-                <select class="form-select fw-bold text-primary" id="rnc-member-select" onchange="rnHandleMemberSelect(this.value)">
-                  <option value="" selected>-- Manuelle Erfassung / Neuer externer Empfänger --</option>
+                <div class="d-flex justify-content-between align-items-center mb-1.5 flex-wrap gap-2">
+                  <label class="form-label fw-bold small text-muted mb-0">Empfänger auswählen *</label>
+                  <button type="button" class="btn btn-xs btn-outline-primary fw-bold" onclick="rnOpenContactModal()">
+                    <i class="fas fa-user-plus me-1"></i> + Neuer externer Kontakt erfassen
+                  </button>
+                </div>
+                <select class="form-select fw-bold text-primary shadow-sm" id="rnc-member-select" required onchange="rnHandleMemberSelect(this.value)">
+                  <option value="" selected>-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>
                   ${window._externalContacts.length > 0 ? `
                   <optgroup label="Gespeicherte externe Kontakte (Sponsoren, Mieter, Firmen, Privat)">
                     ${externalOptions}
@@ -340,34 +345,63 @@ window.rnOpenCreateModal = async function(btnEl) {
               </div>
             </div>
 
-            <!-- Adressdaten -->
-            <div class="row g-3 mb-3">
-              <div class="col-md-3">
-                <label class="form-label fw-bold small text-muted">Empfänger-ID / Mgl-Nr</label>
-                <input type="text" class="form-control font-monospace" id="rnc-person-number" placeholder="z.B. EXT-1">
+            <!-- Adressdaten (Gesperrt / Readonly Master-Kärtchen) -->
+            <div id="rnc-recipient-box" class="p-3 bg-light rounded-3 border mb-4 shadow-2xs">
+              <div id="rnc-empty-hint" class="text-muted small text-center py-2">
+                <i class="fas fa-info-circle me-1 text-primary"></i> Bitte wählen Sie oben einen Empfänger aus oder erfassen Sie einen neuen Kontakt.
               </div>
-              <div class="col-md-5">
-                <label class="form-label fw-bold small text-muted">Empfänger (Name / Firma)</label>
-                <input type="text" class="form-control" id="rnc-name" required placeholder="z.B. Mittelland AG oder Hans Müller">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-bold small text-muted">E-Mail</label>
-                <input type="email" class="form-control" id="rnc-email" placeholder="z.B. rechnung@firma.ch">
-              </div>
-            </div>
+              
+              <div id="rnc-details-wrap" style="display:none;">
+                <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom flex-wrap gap-2">
+                  <div class="d-flex gap-1.5 align-items-center">
+                    <span class="badge bg-primary px-2 py-1" id="rnc-badge-type"></span>
+                    <span class="badge bg-secondary px-2 py-1" id="rnc-badge-kat"></span>
+                  </div>
+                  <button type="button" class="btn btn-xs btn-outline-secondary" id="rnc-edit-contact-btn" style="display:none;" onclick="rnEditCurrentSelectedContact()">
+                    <i class="fas fa-edit me-1"></i> Kontakt in Stammdaten bearbeiten
+                  </button>
+                </div>
 
-            <div class="row g-3 mb-4">
-              <div class="col-md-6">
-                <label class="form-label fw-bold small text-muted">Strasse, Nr.</label>
-                <input type="text" class="form-control" id="rnc-strasse" placeholder="z.B. Hauptstrasse 22">
-              </div>
-              <div class="col-md-2">
-                <label class="form-label fw-bold small text-muted">PLZ</label>
-                <input type="text" class="form-control font-monospace" id="rnc-plz" placeholder="5037">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-bold small text-muted">Ort</label>
-                <input type="text" class="form-control" id="rnc-ort" placeholder="Muhen">
+                <div class="row g-2">
+                  <div class="col-md-3">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Empfänger-ID / Mgl-Nr</label>
+                    <input type="text" class="form-control form-control-sm font-monospace bg-white" id="rnc-person-number" readonly>
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Empfänger (Name / Firma)</label>
+                    <input type="text" class="form-control form-control-sm fw-bold bg-white" id="rnc-name" readonly required>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">E-Mail</label>
+                    <input type="email" class="form-control form-control-sm bg-white" id="rnc-email" readonly>
+                  </div>
+
+                  <div class="col-md-6" id="rnc-contact-person-col" style="display:none;">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Ansprechperson / Kontaktperson</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-contact-person" readonly>
+                  </div>
+                  <div class="col-md-6" id="rnc-abteilung-col" style="display:none;">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Abteilung / Zusatz</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-abteilung" readonly>
+                  </div>
+
+                  <div class="col-md-5">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Strasse & Hausnummer</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-strasse" readonly>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Adresszusatz / Postfach</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-adresszusatz" readonly>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">PLZ</label>
+                    <input type="text" class="form-control form-control-sm font-monospace bg-white" id="rnc-plz" readonly>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Ort (Land)</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-ort" readonly>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -443,7 +477,7 @@ window.rnOpenCreateModal = async function(btnEl) {
 
             <!-- Submit -->
             <div class="d-grid mt-4">
-              <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" id="rnc-submit-btn">
+              <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" id="rnc-submit-btn" disabled>
                 <i class="fas fa-check-circle me-1"></i> Rechnung verbindlich erstellen
               </button>
             </div>
@@ -465,29 +499,64 @@ window.rnOpenCreateModal = async function(btnEl) {
   modal.show();
 };
 
-// AUTOCOMPLETE SELECTOR HANDLER
+window.rnEditCurrentSelectedContact = function() {
+  const contactId = document.getElementById('rnc-contact-id')?.value;
+  if (contactId) {
+    window.rnOpenContactModal(contactId);
+  }
+};
+
+// AUTOCOMPLETE SELECTOR HANDLER (READONLY MASTER BINDING)
 window.rnHandleMemberSelect = function(val) {
   const contactIdEl = document.getElementById('rnc-contact-id');
   if (contactIdEl) contactIdEl.value = '';
 
+  const emptyHint = document.getElementById('rnc-empty-hint');
+  const detailsWrap = document.getElementById('rnc-details-wrap');
+  const editBtn = document.getElementById('rnc-edit-contact-btn');
+  const cpCol = document.getElementById('rnc-contact-person-col');
+  const abtCol = document.getElementById('rnc-abteilung-col');
+  const badgeType = document.getElementById('rnc-badge-type');
+  const badgeKat = document.getElementById('rnc-badge-kat');
+  const submitBtn = document.getElementById('rnc-submit-btn');
+
   if (!val) {
+    if (emptyHint) emptyHint.style.display = '';
+    if (detailsWrap) detailsWrap.style.display = 'none';
+    if (editBtn) editBtn.style.display = 'none';
+    if (submitBtn) submitBtn.disabled = true;
+
     document.getElementById('rnc-person-number').value = '';
     document.getElementById('rnc-name').value = '';
     document.getElementById('rnc-email').value = '';
     document.getElementById('rnc-strasse').value = '';
     document.getElementById('rnc-plz').value = '';
     document.getElementById('rnc-ort').value = '';
+    if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = '';
+    if (document.getElementById('rnc-contact-person')) document.getElementById('rnc-contact-person').value = '';
+    if (document.getElementById('rnc-abteilung')) document.getElementById('rnc-abteilung').value = '';
     return;
   }
+
+  if (submitBtn) submitBtn.disabled = false;
+  if (emptyHint) emptyHint.style.display = 'none';
+  if (detailsWrap) detailsWrap.style.display = '';
 
   if (val.startsWith('MBR:')) {
     const personNumber = val.replace('MBR:', '');
     const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(personNumber));
     if (m) {
+      if (editBtn) editBtn.style.display = 'none';
+      if (badgeType) badgeType.textContent = '👤 Vereinsmitglied';
+      if (badgeKat) badgeKat.textContent = m.Status || 'Aktiv';
+      if (cpCol) cpCol.style.display = 'none';
+      if (abtCol) abtCol.style.display = 'none';
+
       document.getElementById('rnc-person-number').value = m.PersonNumber || '';
       document.getElementById('rnc-name').value = `${m.LastName} ${m.FirstName}`;
       document.getElementById('rnc-email').value = m.PrimaryEmail || m.Email || '';
       document.getElementById('rnc-strasse').value = m.Street || m.Strasse || '';
+      if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = '';
       document.getElementById('rnc-plz').value = m.ZipCode || m.PLZ || '';
       document.getElementById('rnc-ort').value = m.City || m.Ort || '';
       document.getElementById('rnc-type').value = 'Jahresbeitrag';
@@ -497,17 +566,33 @@ window.rnHandleMemberSelect = function(val) {
     const c = (window._externalContacts || []).find(x => String(x.id).trim() === extId);
     if (c) {
       if (contactIdEl) contactIdEl.value = c.id;
-      document.getElementById('rnc-person-number').value = 'EXT-' + c.id;
+      if (editBtn) editBtn.style.display = '';
       
       const isFirma = c.typ === 'firma' || Boolean(c.firma);
-      const displayName = isFirma ? (c.firma || c.name) : ((c.vorname ? c.vorname + ' ' + c.nachname : '') || c.name);
+      if (badgeType) badgeType.textContent = isFirma ? '🏢 Firma / Organisation' : '👤 Privatperson';
+      if (badgeKat) badgeKat.textContent = c.kategorie || 'Extern';
+
+      const displayName = isFirma ? (c.firma || c.name) : ([c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ') || c.name);
       
+      document.getElementById('rnc-person-number').value = 'EXT-' + c.id;
       document.getElementById('rnc-name').value = displayName || '';
       document.getElementById('rnc-email').value = c.email || '';
-      document.getElementById('rnc-strasse').value = [c.strasse, c.adresszusatz].filter(Boolean).join(', ') || '';
+      document.getElementById('rnc-strasse').value = c.strasse || '';
+      if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = c.adresszusatz || '';
       document.getElementById('rnc-plz').value = c.plz || '';
-      document.getElementById('rnc-ort').value = c.ort || '';
+      document.getElementById('rnc-ort').value = c.ort ? `${c.ort}${c.land && c.land !== 'CH' ? ` (${c.land})` : ''}` : '';
       
+      // Ansprechperson & Abteilung anzeigen
+      const cpName = isFirma ? [c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ') : '';
+      if (cpCol) {
+        cpCol.style.display = cpName ? '' : 'none';
+        if (document.getElementById('rnc-contact-person')) document.getElementById('rnc-contact-person').value = cpName;
+      }
+      if (abtCol) {
+        abtCol.style.display = c.abteilung ? '' : 'none';
+        if (document.getElementById('rnc-abteilung')) document.getElementById('rnc-abteilung').value = c.abteilung || '';
+      }
+
       const typeEl = document.getElementById('rnc-type');
       if (typeEl) {
         if (c.kategorie === 'Sponsor') typeEl.value = 'Sponsoring';
@@ -1594,6 +1679,43 @@ window.rnSaveContactForm = async function(event) {
     
     showSuccess(result.message || 'Kontakt erfolgreich gespeichert.');
     await loadInvoiceContactsData();
+
+    const savedId = result.id || id;
+
+    // Falls das "Neue Rechnung"-Modal geöffnet ist: Dropdown aktualisieren & Kontakt direkt anwählen
+    const memberSelectEl = document.getElementById('rnc-member-select');
+    if (memberSelectEl) {
+      const memberOptions = (window._mglData || []).map(m => 
+        `<option value="MBR:${m.PersonNumber}">${m.LastName} ${m.FirstName} (Nr: ${m.PersonNumber})</option>`
+      ).join('');
+
+      const externalOptions = (window._externalContacts || []).map(c => {
+        const isFirma = c.typ === 'firma' || Boolean(c.firma);
+        const label = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `Kontakt #${c.id}`);
+        const kat = c.kategorie ? ` [${c.kategorie}]` : '';
+        return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
+      }).join('');
+
+      memberSelectEl.innerHTML = `
+        <option value="">-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>
+        ${window._externalContacts.length > 0 ? `
+        <optgroup label="Gespeicherte externe Kontakte (Sponsoren, Mieter, Firmen, Privat)">
+          ${externalOptions}
+        </optgroup>
+        ` : ''}
+        <optgroup label="Vereinsmitglieder">
+          ${memberOptions}
+        </optgroup>
+      `;
+
+      if (savedId) {
+        memberSelectEl.value = `EXT:${savedId}`;
+        if (typeof window.rnHandleMemberSelect === 'function') {
+          window.rnHandleMemberSelect(`EXT:${savedId}`);
+        }
+      }
+    }
+
     if (window._rechnungenActiveTab === 'kontakte') {
       renderActiveRechnungenTab();
     }
