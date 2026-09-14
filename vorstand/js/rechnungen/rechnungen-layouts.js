@@ -137,45 +137,52 @@ window.renderTabLayouts = function(content) {
 
       <div class="row g-4">
         <!-- Linke Spalte: Editor Formular -->
+        <!-- Linke Spalte: Editor Formular -->
         <div class="col-lg-7">
           <form id="rn-layout-form" onsubmit="rnSaveLayout(event, '${currentType}')">
             
             <!-- Shortcodes Helper Bar -->
-            <div class="bg-light p-3 rounded-3 mb-4 border">
-              <label class="form-label fw-bold small text-primary mb-1.5"><i class="fas fa-code me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)</label>
+            <div class="bg-light p-3 rounded-3 mb-4 border shadow-sm">
+              <div class="d-flex justify-content-between align-items-center mb-1.5">
+                <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)</label>
+                <small class="text-muted" style="font-size: 11px;">Wird an der aktuellen Cursor-Position eingefügt</small>
+              </div>
               <div class="d-flex gap-1.5 flex-wrap">
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onclick="rnInsertShortcode('{vorname}')">{vorname}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onclick="rnInsertShortcode('{nachname}')">{nachname}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onclick="rnInsertShortcode('{rechnungsnummer}')">{rechnungsnummer}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onclick="rnInsertShortcode('{rechnungsjahr}')">{rechnungsjahr}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onclick="rnInsertShortcode('{gesamtbetrag}')">{gesamtbetrag}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onclick="rnInsertShortcode('{rechnungsdatum}')">{rechnungsdatum}</button>
-                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onclick="rnInsertShortcode('{iban}')">{iban}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{vorname}')">{vorname}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{nachname}')">{nachname}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{anrede}')">{anrede}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{firma}')">{firma}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{abteilung}')">{abteilung}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsnummer}')">{rechnungsnummer}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsjahr}')">{rechnungsjahr}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{gesamtbetrag}')">{gesamtbetrag}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{rechnungsdatum}')">{rechnungsdatum}</button>
+                <button type="button" class="btn btn-xs btn-white border shadow-xs text-dark" onmousedown="event.preventDefault()" onclick="rnInsertShortcode('{iban}')">{iban}</button>
               </div>
             </div>
 
             <!-- Brief-Kopf & Titel -->
             <div class="mb-3">
               <label class="form-label fw-bold small text-muted">Rechnungstitel / Betreffzeile (PDF)</label>
-              <input type="text" class="form-control fw-bold text-primary" id="rnl-title" required value="${escapeHtml(layout.title || '')}" oninput="rnUpdateLayoutPreview()">
+              <input type="text" class="form-control fw-bold text-primary" id="rnl-title" required value="${escapeHtml(layout.title || '')}" onfocus="window._rnLastFocusedLayoutField = this" onclick="window._rnLastFocusedLayoutField = this" oninput="rnUpdateLayoutPreview()">
             </div>
 
             <!-- Einleitungstext -->
             <div class="mb-3">
               <label class="form-label fw-bold small text-muted">Einleitungstext (vor den Positionen)</label>
-              <textarea class="form-control" id="rnl-intro" rows="4" required oninput="rnUpdateLayoutPreview()">${escapeHtml(layout.intro || '')}</textarea>
+              <textarea class="form-control" id="rnl-intro" rows="4" required onfocus="window._rnLastFocusedLayoutField = this" onclick="window._rnLastFocusedLayoutField = this" oninput="rnUpdateLayoutPreview()">${escapeHtml(layout.intro || '')}</textarea>
             </div>
 
             <!-- Schlusstext -->
             <div class="mb-3">
               <label class="form-label fw-bold small text-muted">Schlusstext & Dankesworte (nach den Positionen)</label>
-              <textarea class="form-control" id="rnl-outro" rows="3" required oninput="rnUpdateLayoutPreview()">${escapeHtml(layout.outro || '')}</textarea>
+              <textarea class="form-control" id="rnl-outro" rows="3" required onfocus="window._rnLastFocusedLayoutField = this" onclick="window._rnLastFocusedLayoutField = this" oninput="rnUpdateLayoutPreview()">${escapeHtml(layout.outro || '')}</textarea>
             </div>
 
             <!-- Zahlungsziel & Hinweise -->
             <div class="mb-4">
               <label class="form-label fw-bold small text-muted">Zahlungsziel & Fußzeilen-Hinweis</label>
-              <input type="text" class="form-control" id="rnl-notice" value="${escapeHtml(layout.notice || '')}" oninput="rnUpdateLayoutPreview()">
+              <input type="text" class="form-control" id="rnl-notice" value="${escapeHtml(layout.notice || '')}" onfocus="window._rnLastFocusedLayoutField = this" onclick="window._rnLastFocusedLayoutField = this" oninput="rnUpdateLayoutPreview()">
             </div>
 
             <hr class="my-4">
@@ -184,13 +191,13 @@ window.renderTabLayouts = function(content) {
             <!-- E-Mail Betreff -->
             <div class="mb-3">
               <label class="form-label fw-bold small text-muted">E-Mail Betreffzeile</label>
-              <input type="text" class="form-control fw-semibold" id="rnl-mail-subject" value="${escapeHtml(layout.mail_subject || '')}" oninput="rnUpdateLayoutPreview()">
+              <input type="text" class="form-control fw-semibold" id="rnl-mail-subject" value="${escapeHtml(layout.mail_subject || '')}" onfocus="window._rnLastFocusedLayoutField = this" onclick="window._rnLastFocusedLayoutField = this" oninput="rnUpdateLayoutPreview()">
             </div>
 
             <!-- E-Mail Text -->
             <div class="mb-4">
               <label class="form-label fw-bold small text-muted">E-Mail Nachrichtentext</label>
-              <textarea class="form-control font-monospace" id="rnl-mail-body" rows="5" oninput="rnUpdateLayoutPreview()">${escapeHtml(layout.mail_body || '')}</textarea>
+              <textarea class="form-control font-monospace" id="rnl-mail-body" rows="5" onfocus="window._rnLastFocusedLayoutField = this" onclick="window._rnLastFocusedLayoutField = this" oninput="rnUpdateLayoutPreview()">${escapeHtml(layout.mail_body || '')}</textarea>
             </div>
 
             <div class="d-grid">
@@ -308,6 +315,9 @@ window.rnUpdateLayoutPreview = function() {
     return String(text || '')
       .replace(/{vorname}/g, 'Max')
       .replace(/{nachname}/g, 'Muster')
+      .replace(/{anrede}/g, 'Herr')
+      .replace(/{firma}/g, 'Musterfirma AG')
+      .replace(/{abteilung}/g, 'Finanzen')
       .replace(/{rechnungsnummer}/g, 'RE-26-7K4M')
       .replace(/{rechnungsjahr}/g, '2026')
       .replace(/{gesamtbetrag}/g, '150.00')
@@ -331,17 +341,18 @@ window.rnUpdateLayoutPreview = function() {
 };
 
 window.rnInsertShortcode = function(code) {
-  let activeEl = document.activeElement;
-  if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA')) {
+  let activeEl = window._rnLastFocusedLayoutField || document.activeElement;
+  if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA') || !document.getElementById('rn-layout-form')?.contains(activeEl)) {
     activeEl = document.getElementById('rnl-intro');
   }
   if (activeEl) {
-    const start = activeEl.selectionStart || 0;
-    const end = activeEl.selectionEnd || 0;
-    const val = activeEl.value;
+    const start = activeEl.selectionStart !== undefined ? activeEl.selectionStart : activeEl.value.length;
+    const end = activeEl.selectionEnd !== undefined ? activeEl.selectionEnd : activeEl.value.length;
+    const val = activeEl.value || '';
     activeEl.value = val.substring(0, start) + code + val.substring(end);
     activeEl.focus();
     activeEl.selectionStart = activeEl.selectionEnd = start + code.length;
+    window._rnLastFocusedLayoutField = activeEl;
     rnUpdateLayoutPreview();
   }
 };
