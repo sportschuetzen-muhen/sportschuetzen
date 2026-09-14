@@ -1003,6 +1003,47 @@
                     <div id="news-draft-editor" class="form-control" style="min-height: 250px; border-top: none; border-top-left-radius: 0; border-top-right-radius: 0;" contenteditable="true"></div>
                 </div>
 
+                <!-- Social Media & Veröffentlichungs-Optionen -->
+                <div class="mt-4 p-3 bg-light rounded border">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="fas fa-share-nodes text-primary me-1"></i> Kanäle für Veröffentlichung
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-info py-0 px-2" id="news-check-social-btn" onclick="checkSocialMediaStatus()" title="Verbindung zu Instagram & Facebook testen">
+                            <i class="fas fa-plug me-1"></i>Status prüfen
+                        </button>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="news-post-website" checked>
+                                <label class="form-check-label fw-semibold" for="news-post-website">
+                                    <i class="fas fa-globe text-primary me-1"></i> Vereins-Webseite
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="news-post-instagram" checked>
+                                <label class="form-check-label fw-semibold" for="news-post-instagram">
+                                    <i class="fab fa-instagram text-danger me-1"></i> Instagram
+                                </label>
+                                <div class="form-text text-muted small" style="font-size: 0.72rem;">@sportschuetzen.muhen (erfordert 1 Foto)</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="news-post-facebook" checked>
+                                <label class="form-check-label fw-semibold" for="news-post-facebook">
+                                    <i class="fab fa-facebook text-primary me-1"></i> Facebook
+                                </label>
+                                <div class="form-text text-muted small" style="font-size: 0.72rem;">Sportschützen Muhen (Seite)</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="news-social-status-info" class="mt-2 small d-none"></div>
+                </div>
+
                 <!-- Aktions-Buttons -->
                 <div class="mt-4 d-flex gap-2">
                     <button type="button" class="btn btn-outline-primary flex-grow-1 py-2 fw-bold" id="news-generate-btn">

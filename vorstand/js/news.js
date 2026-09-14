@@ -284,6 +284,10 @@ document.addEventListener('DOMContentLoaded', () => {
             btnText.classList.add('d-none');
             spinner.classList.remove('d-none');
 
+            const postToWebsite = document.getElementById('news-post-website') ? document.getElementById('news-post-website').checked : true;
+            const postToInstagram = document.getElementById('news-post-instagram') ? document.getElementById('news-post-instagram').checked : true;
+            const postToFacebook = document.getElementById('news-post-facebook') ? document.getElementById('news-post-facebook').checked : true;
+
             try {
                 const response = await apiFetch('news', 'action=publish', {
                     method: 'POST',
@@ -291,7 +295,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         title: title,
                         author: author,
                         html: cleanedHtml, // Den bereinigten HTML-Text senden!
-                        images: base64Images // Jetzt werden die Bilder für den GitHub Upload gesendet
+                        images: base64Images, // Jetzt werden die Bilder für den GitHub Upload gesendet
+                        postToWebsite: postToWebsite,
+                        postToInstagram: postToInstagram,
+                        postToFacebook: postToFacebook
                     })
                 });
 
@@ -668,6 +675,54 @@ document.addEventListener('DOMContentLoaded', () => {
         // Leere Absätze löschen (z.B. <p></p>, <p><br></p>, <p>&nbsp;</p>)
         clean = clean.replace(/<p>\s*(<br\s*\/?>|&nbsp;)?\s*<\/p>/gi, '');
         
-        return clean;
     }
+
+    // --- SOCIAL MEDIA VERBINDUNGSTEST (INSTAGRAM & FACEBOOK) ---
+    window.checkSocialMediaStatus = async function() {
+        const btn = document.getElementById('news-check-social-btn');
+        const infoDiv = document.getElementById('news-social-status-info');
+        if (!infoDiv) return;
+
+        if (btn) btn.disabled = true;
+        infoDiv.classList.remove('d-none');
+        infoDiv.innerHTML = '<div class="alert alert-info py-2 px-3 mb-0"><span class="spinner-border spinner-border-sm text-primary me-2"></span>Prüfe Meta-Verbindung (Instagram & Facebook)...</div>';
+
+        try {
+            const res = await apiFetch('news', 'action=test_social');
+            if (!res.ok) throw new Error("HTTP Fehler " + res.status);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || "Unbekannter Fehler");
+
+            const r = data.results;
+            let html = '<div class="alert alert-secondary py-2 px-3 mb-0">';
+            html += `<div><strong>Token-Status:</strong> ${r.metaTokenValid ? '<span class="text-success fw-bold">🟢 Gültig</span>' : '<span class="text-danger fw-bold">🔴 Ungültig / Abgelaufen</span>'}`;
+            if (r.tokenExpires) {
+                html += ` <small class="text-muted">(Ablauf: ${r.tokenExpires})</small>`;
+            }
+            html += '</div>';
+
+            html += `<div class="mt-1"><strong>Instagram:</strong> `;
+            if (r.instagram && r.instagram.connected) {
+                html += `<span class="text-success fw-bold">🟢 Verbunden als @${escapeHtml(r.instagram.username || '')}</span> <span class="text-muted">(${escapeHtml(r.instagram.name || '')})</span>`;
+            } else {
+                html += `<span class="text-danger fw-bold">🔴 Nicht verbunden</span> <small class="text-danger">(${escapeHtml(r.instagram ? r.instagram.error || 'Fehler' : 'Keine Daten')})</small>`;
+            }
+            html += '</div>';
+
+            html += `<div class="mt-1"><strong>Facebook:</strong> `;
+            if (r.facebook && r.facebook.connected) {
+                html += `<span class="text-success fw-bold">🟢 Verbunden mit Seite "${escapeHtml(r.facebook.name || '')}"</span>`;
+            } else {
+                html += `<span class="text-danger fw-bold">🔴 Nicht verbunden</span> <small class="text-danger">(${escapeHtml(r.facebook ? r.facebook.error || 'Fehler' : 'Keine Daten')})</small>`;
+            }
+            html += '</div>';
+
+            html += '</div>';
+            infoDiv.innerHTML = html;
+        } catch (err) {
+            infoDiv.innerHTML = `<div class="alert alert-danger py-2 px-3 mb-0">❌ Verbindungstest fehlgeschlagen: ${escapeHtml(err.message)}</div>`;
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    };
 });
