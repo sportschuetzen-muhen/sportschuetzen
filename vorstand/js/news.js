@@ -267,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // HTML bereinigen (Absätze normalisieren, Divs konvertieren, leere Tags entfernen)
-            const cleanedHtml = cleanHtmlContent(finalHtml);
+            const cleanedHtml = cleanHtmlContent(finalHtml) || finalHtml;
 
             let author = "Vorstand";
             if (window.currentUser) {
@@ -674,7 +674,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Leere Absätze löschen (z.B. <p></p>, <p><br></p>, <p>&nbsp;</p>)
         clean = clean.replace(/<p>\s*(<br\s*\/?>|&nbsp;)?\s*<\/p>/gi, '');
-        
+
+        return clean;
     }
 
     // --- SOCIAL MEDIA VERBINDUNGSTEST (INSTAGRAM & FACEBOOK) ---
