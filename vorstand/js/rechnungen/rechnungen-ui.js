@@ -236,13 +236,19 @@ window.rnRenderTable = function() {
       String(i.PersonNumber).toLowerCase().includes(query);
 
     const st = String(i.status || '').toLowerCase();
-    const mStufe = Number(i.mahnstufe || 0) || (st === 'gemahnt' ? 1 : 0);
+    let mStufe = Number(i.mahnstufe || 0);
+    if (!mStufe) {
+      if (st === 'gemahnt') mStufe = 1;
+      else if (st === '2' || st.includes('2. mahnung') || st.includes('stufe 2')) mStufe = 2;
+      else if (st === '3' || st.includes('3. mahnung') || st.includes('stufe 3') || st.includes('letzte')) mStufe = 3;
+      else if (st.includes('mahn') || st.includes('erinnerung')) mStufe = 1;
+    }
 
     let matchesStatus = true;
     if (window._invoicesFilterStatus === 'offen') {
       matchesStatus = (st !== 'bezahlt');
     } else if (window._invoicesFilterStatus === 'gemahnt') {
-      matchesStatus = (st === 'gemahnt' || mStufe > 0);
+      matchesStatus = (st === 'gemahnt' || mStufe > 0 || st.includes('mahn') || st === '2' || st === '3');
     } else if (window._invoicesFilterStatus === 'bezahlt') {
       matchesStatus = (st === 'bezahlt');
     }
@@ -296,13 +302,19 @@ window.rnRenderTable = function() {
   tbody.innerHTML = list.map(item => {
     const st = String(item.status || '').toLowerCase();
     const isPaid = st === 'bezahlt';
-    const mStufe = Number(item.mahnstufe || 0) || (st === 'gemahnt' ? 1 : 0);
+    let mStufe = Number(item.mahnstufe || 0);
+    if (!mStufe) {
+      if (st === 'gemahnt') mStufe = 1;
+      else if (st === '2' || st.includes('2. mahnung') || st.includes('stufe 2')) mStufe = 2;
+      else if (st === '3' || st.includes('3. mahnung') || st.includes('stufe 3') || st.includes('letzte')) mStufe = 3;
+      else if (st.includes('mahn') || st.includes('erinnerung')) mStufe = 1;
+    }
     
     // Differenzierte Statusanzeige nach Schweizer 3-Stufen-Mahnwesen
     let statusBadge = '';
     if (isPaid) {
       statusBadge = '<span class="badge bg-success px-2.5 py-1.5 rounded-pill small"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>';
-    } else if (st === 'gemahnt' || mStufe > 0) {
+    } else if (st === 'gemahnt' || mStufe > 0 || st.includes('mahn') || st === '2' || st === '3') {
       if (mStufe === 1) {
         statusBadge = '<span class="badge bg-warning text-dark px-2.5 py-1.5 rounded-pill small" title="1. Zahlungserinnerung versendet"><i class="fas fa-bell me-1"></i>Erinnerung (1/3)</span>';
       } else if (mStufe === 2) {
@@ -519,7 +531,7 @@ window.rnOpenDetailsModal = async function(invoiceId) {
           <div class="p-3 rounded-3 border mb-3 bg-light">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <strong class="small text-dark"><i class="fas fa-history me-1.5 text-warning"></i>Mahnstatus & Historie</strong>
-              <span class="badge ${inv.mahnstufe == 1 ? 'bg-warning text-dark' : (inv.mahnstufe == 2 ? 'bg-orange text-white' : 'bg-danger text-white')} rounded-pill">
+              <span class="badge ${inv.mahnstufe == 1 ? 'bg-warning text-dark' : (inv.mahnstufe == 2 ? 'text-white' : 'bg-danger text-white')} rounded-pill" ${inv.mahnstufe == 2 ? 'style="background-color: #fd7e14;"' : ''}>
                 ${inv.mahnstufe == 1 ? 'Stufe 1 (Zahlungserinnerung)' : (inv.mahnstufe == 2 ? 'Stufe 2 (2. Mahnung)' : (inv.mahnstufe == 3 ? 'Stufe 3 (Letzte Mahnung)' : 'Gemahnt'))}
               </span>
             </div>

@@ -699,12 +699,24 @@ window.rnSaveCreateInvoice = async function(event) {
     personNumber = 'EXT-' + contactId;
   }
 
+  // Wenn es sich um eine Firma handelt, soll stets und ausschliesslich der Firmenname verwendet werden
+  let finalInvoiceName = name;
+  if (contactId) {
+    const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
+    if (existingContact) {
+      const isFirma = existingContact.typ === 'firma' || Boolean(existingContact.firma);
+      if (isFirma && existingContact.firma) {
+        finalInvoiceName = String(existingContact.firma).trim();
+      }
+    }
+  }
+
   const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
 
   const invoiceHeader = {
     id: invoiceId,
     PersonNumber: personNumber,
-    name: name,
+    name: finalInvoiceName,
     year: Number(document.getElementById('rnc-year').value),
     type: document.getElementById('rnc-type').value,
     total_amount: 0,
@@ -1418,7 +1430,7 @@ window.rnOpenMahnungModal = async function(invoiceId, name) {
               <div class="col-md-4 text-md-end">
                 <div class="text-muted small">Aktueller Mahnstatus</div>
                 ${curStufe > 0 ? `
-                  <span class="badge ${curStufe === 1 ? 'bg-warning text-dark' : (curStufe === 2 ? 'bg-orange text-white' : 'bg-danger text-white')} px-2 py-1 rounded-pill">
+                  <span class="badge ${curStufe === 1 ? 'bg-warning text-dark' : (curStufe === 2 ? 'text-white' : 'bg-danger text-white')} px-2 py-1 rounded-pill" ${curStufe === 2 ? 'style="background-color: #fd7e14;"' : ''}>
                     Stufe ${curStufe} (${escapeHtml(inv.mahn_datum || 'gemahnt')})
                   </span>
                 ` : `
@@ -1530,6 +1542,17 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
   const stufeEl = document.querySelector('input[name="rnMahnstufeRadio"]:checked');
   const targetStufe = stufeEl ? Number(stufeEl.value) : 1;
 
+  const stufenLabels = {
+    1: '1. Zahlungserinnerung',
+    2: '2. Mahnung',
+    3: '3. / Letzte Mahnung vor Betreibung'
+  };
+  const stufenTitle = stufenLabels[targetStufe] || `Mahnung (Stufe ${targetStufe})`;
+
+  if (!confirm(`Möchtest du wirklich die "${stufenTitle}" für Rechnung ${invoiceId} (${inv.name || ''}) per E-Mail an "${targetEmail}" versenden?`)) {
+    return;
+  }
+
   const recipient = (typeof rnGetRecipientForInvoice === 'function')
     ? rnGetRecipientForInvoice(inv)
     : {
@@ -1546,7 +1569,7 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
     if (mInstance) mInstance.hide();
   }
 
-  showLoadingOverlay(`Erstelle Mahnungs-PDF (Stufe ${targetStufe}) und sende E-Mail an ${inv.name}...`);
+  showLoadingOverlay(`Erstelle Mahnungs-PDF (${stufenTitle}) und sende E-Mail an ${inv.name}...`);
 
   const sender = (typeof rnGetLoggedInSender === 'function')
     ? rnGetLoggedInSender('Mahnung ' + targetStufe)
@@ -1569,17 +1592,30 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
     const result = await response.json();
 
     if (result.success) {
-      // Optimistic Status Update
+      // 1. Loading Overlay SOFORT ausblenden
+      hideLoadingOverlay();
+
+      // 2. Optimistic Status Update in RAM-Datenbank
+      const nowStr = result.mahn_datum || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
       inv.status = 'gemahnt';
       inv.mahnstufe = targetStufe;
-      inv.mahn_datum = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+      inv.mahn_datum = nowStr;
       window.renderRechnungen();
-      showSuccess(`🎉 Mahnung (Stufe ${targetStufe}) erfolgreich an ${targetEmail} versandt!`);
-      await loadRechnungenData(true, true);
+
+      // 3. Sichtbare Erfolgsbestätigung für den Anwender ausgeben
+      showSuccess(`🎉 ${stufenTitle} für Rechnung ${invoiceId} erfolgreich an ${targetEmail} versandt!`, 4000);
+
+      // 4. Sanfter Reload im Hintergrund nach Pufferzeit (kein UI-Flickern)
+      setTimeout(async () => {
+        try {
+          await loadRechnungenData(true, true);
+        } catch (_) {}
+      }, 1000);
     } else {
       throw new Error(result.error || "Mahnungs-Versand fehlgeschlagen.");
     }
   } catch (err) {
+    hideLoadingOverlay();
     alert("❌ Mahnung Fehler: " + err.message);
   } finally {
     hideLoadingOverlay();
@@ -1845,6 +1881,7 @@ window.rnExecuteBatchMahnung = async function() {
     const result = await response.json();
 
     if (result.success) {
+      hideLoadingOverlay();
       // Optimistic update
       const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
       items.forEach(itm => {
@@ -1856,12 +1893,17 @@ window.rnExecuteBatchMahnung = async function() {
         }
       });
       window.renderRechnungen();
-      showSuccess(`🎉 ${result.message || 'Sammel-Mahnlauf erfolgreich abgeschlossen!'}`);
-      await loadRechnungenData(true, true);
+      showSuccess(`🎉 ${result.message || 'Sammel-Mahnlauf erfolgreich abgeschlossen!'}`, 4000);
+      setTimeout(async () => {
+        try {
+          await loadRechnungenData(true, true);
+        } catch (_) {}
+      }, 1000);
     } else {
       throw new Error(result.error || "Sammel-Mahnlauf fehlgeschlagen.");
     }
   } catch (err) {
+    hideLoadingOverlay();
     alert("❌ Sammel-Mahnlauf Fehler: " + err.message);
   } finally {
     hideLoadingOverlay();
