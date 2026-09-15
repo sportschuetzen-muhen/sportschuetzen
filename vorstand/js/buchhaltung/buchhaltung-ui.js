@@ -462,6 +462,9 @@ window.renderTabBerichte = function(container) {
 };
 
 // RENDERING: TAB 2 – KASSABUCH-JOURNAL
+window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
+window._bhLastCheckedJournalId = null;
+
 window.renderTabJournal = function(container) {
   const tableResp = container.querySelector('.table-responsive');
   const tableScrollTop = tableResp ? tableResp.scrollTop : 0;
@@ -469,6 +472,12 @@ window.renderTabJournal = function(container) {
 
   let filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
   
+  // Bereinige Selektion von nicht mehr existierenden IDs
+  const currentIds = new Set(filteredJournal.map(j => Number(j.id)));
+  window._bhSelectedJournalIds.forEach(id => {
+    if (!currentIds.has(Number(id))) window._bhSelectedJournalIds.delete(id);
+  });
+
   const col = window._bhJournalSortCol;
   const asc = window._bhJournalSortAsc;
   
@@ -493,12 +502,22 @@ window.renderTabJournal = function(container) {
     if (valA > valB) return asc ? 1 : -1;
     return 0;
   });
+
+  // Berechne Summe der ausgewählten Buchungen
+  let selectedTotal = 0;
+  filteredJournal.forEach(item => {
+    if (window._bhSelectedJournalIds.has(Number(item.id))) {
+      selectedTotal += Number(item.betrag || 0);
+    }
+  });
+  const selectedCount = window._bhSelectedJournalIds.size;
   
   const journalRows = filteredJournal.map(item => {
     const rawTyp = item.buchungstyp || window.getBuchungstyp(item.konto_soll, item.konto_haben);
     const bTyp = String(rawTyp || '').toUpperCase().trim();
     const isAufwand = bTyp === 'AUFWAND';
     const isErtrag  = bTyp === 'ERTRAG';
+    const isSelected = window._bhSelectedJournalIds.has(Number(item.id));
 
     let amountClass = 'text-secondary';
     let amountSign  = '';
@@ -518,7 +537,10 @@ window.renderTabJournal = function(container) {
     }
 
     return `
-    <tr class="bh-account-row">
+    <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''}" data-journal-id="${item.id}" onclick="bhHandleJournalRowClick(event, ${item.id})">
+      <td class="text-center" style="width: 40px;" onclick="event.stopPropagation()">
+        <input type="checkbox" class="form-check-input cursor-pointer bh-journal-check" data-id="${item.id}" ${isSelected ? 'checked' : ''} onchange="bhToggleJournalRow(${item.id}, this.checked, event)" title="Zeile auswählen">
+      </td>
       <td class="fw-semibold text-muted small">${item.id}</td>
       <td>${isoToDisplay(item.datum)}</td>
       <td class="fw-bold text-dark small">${item.beleg_nr}</td>
@@ -536,7 +558,7 @@ window.renderTabJournal = function(container) {
         <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${bTyp || 'BUCHUNG'}</span>
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
-      <td class="text-end" style="white-space: nowrap;">
+      <td class="text-end" style="white-space: nowrap;" onclick="event.stopPropagation()">
         <button class="bh-edit-btn" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten">
           <i class="fas fa-edit"></i>
         </button>
@@ -557,11 +579,35 @@ window.renderTabJournal = function(container) {
           <span class="badge bg-secondary p-2 rounded-2">${filteredJournal.length} Buchungen</span>
         </div>
       </div>
+
+      <!-- Kontextuelle Batch-Aktionsleiste für Mehrfachauswahl -->
+      <div id="bh-journal-batch-bar" class="alert alert-primary d-flex justify-content-between align-items-center py-2 px-3 mb-3 rounded-3 shadow-sm border-primary ${selectedCount > 0 ? '' : 'd-none'}" style="background: #e7f1ff; border-left: 4px solid #0d6efd;">
+        <div class="d-flex align-items-center flex-wrap" style="gap: 12px;">
+          <span class="fw-bold text-primary">
+            <i class="fas fa-check-square me-1.5"></i>
+            <span id="bh-journal-selected-count">${selectedCount}</span> Buchung(en) ausgewählt
+          </span>
+          <span class="badge bg-white text-dark border px-2 py-1 shadow-sm font-monospace" id="bh-journal-selected-sum">
+            Total: CHF ${fmtChf(selectedTotal)}
+          </span>
+        </div>
+        <div class="d-flex align-items-center" style="gap: 8px;">
+          <button type="button" class="btn btn-sm btn-outline-secondary bg-white" onclick="bhClearJournalSelection()">
+            <i class="fas fa-times me-1"></i>Auswahl aufheben
+          </button>
+          <button type="button" class="btn btn-sm btn-danger shadow-sm fw-semibold" onclick="bhConfirmDeleteSelectedJournalEntries()">
+            <i class="fas fa-trash-alt me-1"></i>Ausgewählte löschen (<span id="bh-journal-btn-count">${selectedCount}</span>)
+          </button>
+        </div>
+      </div>
       
       <div class="table-responsive" style="max-height: 520px;">
         <table class="table table-hover align-middle bh-table mb-0">
           <thead>
             <tr>
+              <th style="width: 40px;" class="text-center">
+                <input type="checkbox" class="form-check-input cursor-pointer" id="bh-journal-select-all" onchange="bhToggleJournalSelectAll(this.checked)" title="Alle sichtbaren auswählen">
+              </th>
               <th class="bh-sort-header" onclick="bhSortJournal('id')">ID ${bhGetSortIndicator(col, 'id', asc)}</th>
               <th class="bh-sort-header" onclick="bhSortJournal('datum')">Datum ${bhGetSortIndicator(col, 'datum', asc)}</th>
               <th class="bh-sort-header" onclick="bhSortJournal('beleg_nr')">Beleg-Nr ${bhGetSortIndicator(col, 'beleg_nr', asc)}</th>
@@ -574,7 +620,7 @@ window.renderTabJournal = function(container) {
             </tr>
           </thead>
           <tbody id="bh-journal-tbody">
-            ${journalRows.length > 0 ? journalRows : '<tr><td colspan="9" class="text-center text-muted py-4">Keine Buchungssätze für dieses Jahr vorhanden.</td></tr>'}
+            ${journalRows.length > 0 ? journalRows : '<tr><td colspan="10" class="text-center text-muted py-4">Keine Buchungssätze für dieses Jahr vorhanden.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -586,6 +632,166 @@ window.renderTabJournal = function(container) {
     tableRespNew.scrollTop = tableScrollTop;
   }
   window.scrollTo(0, windowScrollTop);
+  bhUpdateJournalMasterCheckbox();
+};
+
+// Hilfsfunktion: Aktualisiert die visuelle Darstellung der Selektion (Aktionsleiste & Master-Checkbox)
+window.bhUpdateJournalSelectionUI = function() {
+  const batchBar = document.getElementById('bh-journal-batch-bar');
+  const countEl = document.getElementById('bh-journal-selected-count');
+  const btnCountEl = document.getElementById('bh-journal-btn-count');
+  const sumEl = document.getElementById('bh-journal-selected-sum');
+  
+  const selectedCount = window._bhSelectedJournalIds.size;
+  
+  if (selectedCount > 0) {
+    let total = 0;
+    (window._bhJournal || []).forEach(j => {
+      if (window._bhSelectedJournalIds.has(Number(j.id))) {
+        total += Number(j.betrag || 0);
+      }
+    });
+    
+    if (batchBar) batchBar.classList.remove('d-none');
+    if (countEl) countEl.textContent = selectedCount;
+    if (btnCountEl) btnCountEl.textContent = selectedCount;
+    if (sumEl) sumEl.textContent = 'Total: CHF ' + fmtChf(total);
+  } else {
+    if (batchBar) batchBar.classList.add('d-none');
+  }
+  
+  bhUpdateJournalMasterCheckbox();
+};
+
+// Master-Checkbox (Tri-State: checked, indeterminate, unchecked)
+window.bhUpdateJournalMasterCheckbox = function() {
+  const masterCheck = document.getElementById('bh-journal-select-all');
+  if (!masterCheck) return;
+  
+  const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
+  if (visibleRows.length === 0) {
+    masterCheck.checked = false;
+    masterCheck.indeterminate = false;
+    return;
+  }
+  
+  let visibleCheckedCount = 0;
+  visibleRows.forEach(row => {
+    const id = Number(row.getAttribute('data-journal-id'));
+    if (window._bhSelectedJournalIds.has(id)) {
+      visibleCheckedCount++;
+    }
+  });
+  
+  if (visibleCheckedCount === 0) {
+    masterCheck.checked = false;
+    masterCheck.indeterminate = false;
+  } else if (visibleCheckedCount === visibleRows.length) {
+    masterCheck.checked = true;
+    masterCheck.indeterminate = false;
+  } else {
+    masterCheck.checked = false;
+    masterCheck.indeterminate = true;
+  }
+};
+
+// Klick auf Tabellenzeile zum Auswählen
+window.bhHandleJournalRowClick = function(event, id) {
+  if (event.target.closest('a, button, input, select')) return;
+  const numId = Number(id);
+  const isSelected = window._bhSelectedJournalIds.has(numId);
+  bhToggleJournalRow(numId, !isSelected, event);
+};
+
+// Einzelne Zeile toggeln (inklusive Shift + Klick Bereichsauswahl)
+window.bhToggleJournalRow = function(id, isChecked, event) {
+  const numId = Number(id);
+  const rows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
+  
+  // Shift + Klick Bereichsauswahl
+  if (event && event.shiftKey && window._bhLastCheckedJournalId !== null && window._bhLastCheckedJournalId !== numId) {
+    const lastIndex = rows.findIndex(r => Number(r.getAttribute('data-journal-id')) === window._bhLastCheckedJournalId);
+    const currIndex = rows.findIndex(r => Number(r.getAttribute('data-journal-id')) === numId);
+    
+    if (lastIndex !== -1 && currIndex !== -1) {
+      const start = Math.min(lastIndex, currIndex);
+      const end = Math.max(lastIndex, currIndex);
+      
+      for (let i = start; i <= end; i++) {
+        const rId = Number(rows[i].getAttribute('data-journal-id'));
+        if (isChecked) {
+          window._bhSelectedJournalIds.add(rId);
+        } else {
+          window._bhSelectedJournalIds.delete(rId);
+        }
+        const cb = rows[i].querySelector('.bh-journal-check');
+        if (cb) cb.checked = isChecked;
+        if (isChecked) {
+          rows[i].classList.add('bh-row-selected');
+        } else {
+          rows[i].classList.remove('bh-row-selected');
+        }
+      }
+      window._bhLastCheckedJournalId = numId;
+      bhUpdateJournalSelectionUI();
+      return;
+    }
+  }
+  
+  if (isChecked) {
+    window._bhSelectedJournalIds.add(numId);
+  } else {
+    window._bhSelectedJournalIds.delete(numId);
+  }
+  window._bhLastCheckedJournalId = numId;
+  
+  const targetRow = document.querySelector(`#bh-journal-tbody tr[data-journal-id="${numId}"]`);
+  if (targetRow) {
+    const cb = targetRow.querySelector('.bh-journal-check');
+    if (cb) cb.checked = isChecked;
+    if (isChecked) {
+      targetRow.classList.add('bh-row-selected');
+    } else {
+      targetRow.classList.remove('bh-row-selected');
+    }
+  }
+  
+  bhUpdateJournalSelectionUI();
+};
+
+// "Alle sichtbaren auswählen" Umschalter
+window.bhToggleJournalSelectAll = function(isChecked) {
+  const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
+  
+  visibleRows.forEach(row => {
+    const id = Number(row.getAttribute('data-journal-id'));
+    const cb = row.querySelector('.bh-journal-check');
+    if (cb) cb.checked = isChecked;
+    
+    if (isChecked) {
+      window._bhSelectedJournalIds.add(id);
+      row.classList.add('bh-row-selected');
+    } else {
+      window._bhSelectedJournalIds.delete(id);
+      row.classList.remove('bh-row-selected');
+    }
+  });
+  
+  bhUpdateJournalSelectionUI();
+};
+
+// Auswahl vollständig leeren
+window.bhClearJournalSelection = function() {
+  window._bhSelectedJournalIds.clear();
+  window._bhLastCheckedJournalId = null;
+  
+  document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]').forEach(row => {
+    row.classList.remove('bh-row-selected');
+    const cb = row.querySelector('.bh-journal-check');
+    if (cb) cb.checked = false;
+  });
+  
+  bhUpdateJournalSelectionUI();
 };
 
 // Hilfsfunktion: Sucht den Kontonamen anhand der Nummer
@@ -597,7 +803,7 @@ window.getAccountNameByCode = function(code) {
 // Live filter im Journal
 window.bhFilterJournal = function(query) {
   const q = String(query).toLowerCase().trim();
-  const rows = document.querySelectorAll('#bh-journal-tbody tr');
+  const rows = document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]');
   
   rows.forEach(row => {
     const text = row.textContent.toLowerCase();
@@ -607,6 +813,8 @@ window.bhFilterJournal = function(query) {
       row.classList.add('d-none');
     }
   });
+  
+  bhUpdateJournalMasterCheckbox();
 };
 
 // Zeilen-Klick Handler für Kontenrahmen

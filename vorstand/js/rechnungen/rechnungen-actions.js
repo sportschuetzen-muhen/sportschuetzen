@@ -1309,24 +1309,40 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
   }
 };
 
-// MAHNUNG PROMPT & SEND
-window.rnSendMahnungPrompt = async function(invoiceId, name) {
+// =====================================================================
+// 3-STUFIGES MAHNWESEN (MANUELL & AUTOMATISCHER SAMMEL-MAHNLAUF)
+// =====================================================================
+
+// Hilfsfunktion: Datumsdifferenz in Tagen berechnen
+function rnGetDaysSince(dateStr) {
+  if (!dateStr) return null;
+  let d = null;
+  const clean = String(dateStr).split(' ')[0].trim();
+  if (clean.includes('.')) {
+    const p = clean.split('.');
+    if (p.length === 3) d = new Date(`${p[2]}-${p[1]}-${p[0]}`);
+  } else if (clean.includes('-')) {
+    d = new Date(clean);
+  }
+  if (!d || isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// 1. MANUELLE MAHNUNG: DIALOG ÖFFNEN
+window.rnOpenMahnungModal = async function(invoiceId, name) {
   const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
-  if (!inv) return;
-
-  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
-  const nieMahnen = m && (m.Niemahnen === '1' || m.Niemahnen === true || m.Niemahnen === 1);
-
-  if (nieMahnen) {
-    if (!confirm(`⚠️ WICHTIGER HINWEIS:\n\nFür ${name} ist in den Mitgliederstammdaten die Option "Nie mahnen" aktiviert!\n\nMöchtest du trotzdem eine Zahlungserinnerung / Mahnung versenden?`)) {
-      return;
-    }
+  if (!inv) {
+    alert("❌ Rechnung nicht gefunden: " + invoiceId);
+    return;
   }
 
   // Externe Kontakte laden, falls noch nicht im Speicher
   if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
     try { await loadInvoiceContactsData(); } catch (_) {}
   }
+
+  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  const nieMahnen = m && (m.Niemahnen === '1' || m.Niemahnen === true || m.Niemahnen === 1);
 
   const recipient = (typeof rnGetRecipientForInvoice === 'function')
     ? rnGetRecipientForInvoice(inv)
@@ -1337,25 +1353,212 @@ window.rnSendMahnungPrompt = async function(invoiceId, name) {
       };
 
   const initialEmail = recipient.email || '';
-  const targetEmail = prompt(`⚠️ Zahlungserinnerung / Mahnung an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, initialEmail);
-  if (targetEmail === null) return;
-  if (!targetEmail.includes('@')) {
-    alert("❌ Ungültige E-Mail-Adresse.");
+  const curStufe = Number(inv.mahnstufe || 0) || (inv.status === 'gemahnt' ? 1 : 0);
+  const recommendedStufe = Math.min(3, curStufe + 1);
+
+  const daysSinceCreated = rnGetDaysSince(inv.created_at);
+  const daysSinceLastMahnung = rnGetDaysSince(inv.mahn_datum);
+
+  let modalEl = document.getElementById('rnModalSendMahnung');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalSendMahnung';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const stufenLabels = {
+    1: { name: '1. Zahlungserinnerung', frist: '14 Tage Frist', fee: 'CHF 0.–', color: 'warning', icon: 'fa-bell' },
+    2: { name: '2. Mahnung', frist: '10 Tage Frist', fee: 'CHF 0.–', color: 'orange', icon: 'fa-exclamation-triangle' },
+    3: { name: '3. / Letzte Mahnung', frist: '7 Tage Frist (Rechtsfolge)', fee: 'CHF 20.– (optional)', color: 'danger', icon: 'fa-radiation' }
+  };
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-exclamation-triangle me-2 text-danger"></i>Mahnwesen – Rechnung ${escapeHtml(inv.id)}
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          ${nieMahnen ? `
+            <div class="alert alert-danger d-flex align-items-center mb-3 py-2 px-3 rounded-3">
+              <i class="fas fa-hand-paper fa-2x me-3"></i>
+              <div>
+                <strong>⚠️ VETO-HINWEIS: Option "Nie mahnen" ist aktiv!</strong><br>
+                <span class="small">Für ${escapeHtml(name)} ist in den Mitgliederstammdaten eine Mahnsperre hinterlegt. Mahnungen sollten nur nach ausdrücklicher Vorstandsrücksprache versendet werden.</span>
+              </div>
+            </div>
+          ` : ''}
+
+          ${daysSinceLastMahnung !== null && daysSinceLastMahnung < 10 ? `
+            <div class="alert alert-warning py-2 px-3 rounded-3 small mb-3">
+              <i class="fas fa-clock me-1 text-danger"></i>
+              <strong>Kurzer Mahnabstand:</strong> Die letzte Mahnung wurde erst vor <strong>${daysSinceLastMahnung} Tagen</strong> versendet (am ${escapeHtml(inv.mahn_datum || 'kürzlich')}). Empfohlen wird ein Mindestabstand von 10–14 Tagen.
+            </div>
+          ` : ''}
+
+          <!-- Rechnungsübersicht Kärtchen -->
+          <div class="bg-light p-3 rounded-3 border mb-3">
+            <div class="row g-2 align-items-center">
+              <div class="col-md-5">
+                <div class="text-muted small">Empfänger / Debitor</div>
+                <div class="fw-bold text-dark fs-6">${escapeHtml(inv.name)}</div>
+                <div class="text-muted small">${inv.PersonNumber ? (String(inv.PersonNumber).startsWith('EXT') ? 'Kontakt ' + escapeHtml(inv.PersonNumber) : 'Mgl-Nr: ' + escapeHtml(inv.PersonNumber)) : ''}</div>
+              </div>
+              <div class="col-md-3">
+                <div class="text-muted small">Rechnungsbetrag</div>
+                <div class="fw-bold text-primary font-monospace fs-6">${fmtChf(inv.total_amount)}</div>
+                <div class="text-muted small">${inv.type || 'Rechnung'} · ${inv.year}</div>
+              </div>
+              <div class="col-md-4 text-md-end">
+                <div class="text-muted small">Aktueller Mahnstatus</div>
+                ${curStufe > 0 ? `
+                  <span class="badge ${curStufe === 1 ? 'bg-warning text-dark' : (curStufe === 2 ? 'bg-orange text-white' : 'bg-danger text-white')} px-2 py-1 rounded-pill">
+                    Stufe ${curStufe} (${escapeHtml(inv.mahn_datum || 'gemahnt')})
+                  </span>
+                ` : `
+                  <span class="badge bg-secondary px-2 py-1 rounded-pill">Noch nicht gemahnt</span>
+                `}
+                <div class="text-muted small mt-1">Rechnung erstellt: ${escapeHtml(String(inv.created_at || '–').split(' ')[0])}${daysSinceCreated !== null ? ` (${daysSinceCreated} Tage her)` : ''}</div>
+              </div>
+            </div>
+          </div>
+
+          <form id="rn-mahnung-form" onsubmit="rnExecuteSendMahnung(event, '${inv.id}')">
+            <!-- Stufenauswahl -->
+            <label class="form-label fw-bold text-dark mb-2">Zu versendende Mahnstufe auswählen:</label>
+            <div class="row g-2 mb-3">
+              ${[1, 2, 3].map(st => {
+                const info = stufenLabels[st];
+                const isRec = st === recommendedStufe;
+                const isChecked = st === recommendedStufe ? 'checked' : '';
+                return `
+                  <div class="col-md-4">
+                    <label class="card h-100 p-2.5 border rounded-3 text-start position-relative shadow-2xs cursor-pointer ${isRec ? 'border-primary bg-primary-subtle' : 'border-secondary-subtle'}" style="cursor: pointer;">
+                      <div class="d-flex align-items-center mb-1">
+                        <input class="form-check-input me-2 mt-0" type="radio" name="rnMahnstufeRadio" id="rnStufe${st}" value="${st}" ${isChecked} onchange="rnUpdateMahnungPreview(${st})">
+                        <span class="fw-bold small text-dark">${info.name}</span>
+                      </div>
+                      <div class="text-muted ps-4" style="font-size: 11px;">
+                        <div><i class="fas fa-hourglass-half me-1"></i>${info.frist}</div>
+                        <div><i class="fas fa-coins me-1"></i>Gebühr: ${info.fee}</div>
+                      </div>
+                      ${isRec ? `<span class="badge bg-primary position-absolute top-0 end-0 m-1" style="font-size:9px;">Empfohlen</span>` : ''}
+                    </label>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- E-Mail Adresse -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted mb-1">Empfänger E-Mail-Adresse *</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="fas fa-envelope text-primary"></i></span>
+                <input type="email" class="form-control" id="rn-mahnung-email" required value="${escapeHtml(initialEmail)}" placeholder="empfaenger@beispiel.ch">
+              </div>
+              <div class="form-text small">An diese Adresse wird das Mahnungs-PDF mit QR-Zahlteil versendet.</div>
+            </div>
+
+            <!-- Vorlagen-Vorschau (Collapsible / Dynamic) -->
+            <div class="card border rounded-3 p-3 bg-light mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-bold small text-primary"><i class="fas fa-eye me-1"></i>Text-Vorschau</span>
+                <span class="badge bg-secondary" id="rn-preview-stufe-badge">Stufe ${recommendedStufe}</span>
+              </div>
+              <div class="small fw-semibold text-dark mb-1" id="rn-preview-subject">...</div>
+              <div class="small text-muted font-monospace bg-white p-2 rounded border" id="rn-preview-body" style="max-height: 110px; overflow-y: auto; white-space: pre-wrap; font-size: 11px;">...</div>
+            </div>
+
+            <!-- Aktionen -->
+            <div class="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
+              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Abbrechen</button>
+              <button type="submit" class="btn btn-warning fw-bold px-4 shadow-sm" id="rn-mahnung-submit-btn">
+                <i class="fas fa-paper-plane me-1.5"></i> Mahnung jetzt versenden
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+
+  // Vorschautext initialisieren
+  rnUpdateMahnungPreview(recommendedStufe);
+};
+
+// Hilfsfunktion: Live-Vorschautext im Mahn-Modal aktualisieren
+window.rnUpdateMahnungPreview = function(stufe) {
+  const badgeEl = document.getElementById('rn-preview-stufe-badge');
+  const subjEl = document.getElementById('rn-preview-subject');
+  const bodyEl = document.getElementById('rn-preview-body');
+  if (!badgeEl || !subjEl || !bodyEl) return;
+
+  badgeEl.textContent = `Stufe ${stufe}`;
+  const key = `Mahnung ${stufe}`;
+  const l = (window._invoiceLayouts && (window._invoiceLayouts[key] || window._invoiceLayouts['Mahnung']))
+    || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[key] || rnGetDefaultLayouts()['Mahnung']) : null);
+
+  if (l) {
+    subjEl.textContent = `Betreff: ${l.mail_subject || 'Zahlungserinnerung'}`;
+    bodyEl.textContent = l.mail_body || l.intro || '...';
+  }
+};
+
+// 2. MANUELLE MAHNUNG: VERSAND AUSFÜHREN
+window.rnExecuteSendMahnung = async function(event, invoiceId) {
+  event.preventDefault();
+
+  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) return;
+
+  const emailInput = document.getElementById('rn-mahnung-email');
+  const targetEmail = emailInput ? emailInput.value.trim() : '';
+  if (!targetEmail || !targetEmail.includes('@')) {
+    alert("❌ Bitte geben Sie eine gültige E-Mail-Adresse ein.");
     return;
   }
+
+  const stufeEl = document.querySelector('input[name="rnMahnstufeRadio"]:checked');
+  const targetStufe = stufeEl ? Number(stufeEl.value) : 1;
+
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
   recipient.email = targetEmail;
 
-  showLoadingOverlay(`Erstelle Mahnungs-PDF und sende E-Mail an ${name}...`);
+  // Modal schliessen
+  const modalEl = document.getElementById('rnModalSendMahnung');
+  if (modalEl) {
+    const mInstance = bootstrap.Modal.getInstance(modalEl);
+    if (mInstance) mInstance.hide();
+  }
+
+  showLoadingOverlay(`Erstelle Mahnungs-PDF (Stufe ${targetStufe}) und sende E-Mail an ${inv.name}...`);
 
   const sender = (typeof rnGetLoggedInSender === 'function')
-    ? rnGetLoggedInSender(inv.type || 'Mahnung')
-    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Mahnung') : null);
+    ? rnGetLoggedInSender('Mahnung ' + targetStufe)
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType('Mahnung') : null);
 
-  const layout = (window._invoiceLayouts && window._invoiceLayouts['Mahnung']) || null;
+  const layoutKey = `Mahnung ${targetStufe}`;
+  const layout = (window._invoiceLayouts && (window._invoiceLayouts[layoutKey] || window._invoiceLayouts['Mahnung'])) || null;
 
   const payload = {
     action: 'sendMahnung',
     invoiceId: invoiceId,
+    mahnstufe: targetStufe,
     recipient: recipient,
     sender: sender,
     layout: layout
@@ -1368,14 +1571,298 @@ window.rnSendMahnungPrompt = async function(invoiceId, name) {
     if (result.success) {
       // Optimistic Status Update
       inv.status = 'gemahnt';
+      inv.mahnstufe = targetStufe;
+      inv.mahn_datum = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
       window.renderRechnungen();
-      showSuccess(`🎉 Mahnung / Zahlungserinnerung erfolgreich an ${targetEmail} versandt!`);
+      showSuccess(`🎉 Mahnung (Stufe ${targetStufe}) erfolgreich an ${targetEmail} versandt!`);
       await loadRechnungenData(true, true);
     } else {
       throw new Error(result.error || "Mahnungs-Versand fehlgeschlagen.");
     }
   } catch (err) {
     alert("❌ Mahnung Fehler: " + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+// Abwärtskompatibler Alias
+window.rnSendMahnungPrompt = window.rnOpenMahnungModal;
+
+// =====================================================================
+// 3. AUTOMATISCHER SAMMEL-MAHNLAUF (BATCH-MAHNUNG)
+// =====================================================================
+
+// Ermittelt alle Rechnungen, die fällig für eine Mahnung sind
+window.rnGetDueDunningInvoices = function() {
+  const invoices = window._invoices || [];
+  const candidates = [];
+
+  invoices.forEach(inv => {
+    const st = String(inv.status || '').toLowerCase();
+    if (st === 'bezahlt' || st === 'storniert') return;
+
+    const curStufe = Number(inv.mahnstufe || 0) || (st === 'gemahnt' ? 1 : 0);
+    const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+    const nieMahnen = m && (m.Niemahnen === '1' || m.Niemahnen === true || m.Niemahnen === 1);
+
+    const daysSinceCreated = rnGetDaysSince(inv.created_at);
+    const daysSinceLastMahnung = rnGetDaysSince(inv.mahn_datum);
+
+    let isDue = false;
+    let nextStufe = 1;
+    let reason = '';
+
+    if (curStufe === 0) {
+      // Stufe 1 fällig, wenn Rechnung älter als 30 Tage ist
+      if (daysSinceCreated !== null && daysSinceCreated >= 30) {
+        isDue = true;
+        nextStufe = 1;
+        reason = `Rechnung seit ${daysSinceCreated} Tagen unbezahlt (Frist 30 Tage überschritten)`;
+      }
+    } else if (curStufe === 1) {
+      // Stufe 2 fällig, wenn Erinnerung mindestens 14 Tage her ist
+      if (daysSinceLastMahnung !== null && daysSinceLastMahnung >= 14) {
+        isDue = true;
+        nextStufe = 2;
+        reason = `Zahlungserinnerung vor ${daysSinceLastMahnung} Tagen versendet (Frist 14 Tage)`;
+      }
+    } else if (curStufe === 2) {
+      // Stufe 3 fällig, wenn 2. Mahnung mindestens 10 Tage her ist
+      if (daysSinceLastMahnung !== null && daysSinceLastMahnung >= 10) {
+        isDue = true;
+        nextStufe = 3;
+        reason = `2. Mahnung vor ${daysSinceLastMahnung} Tagen versendet (Frist 10 Tage)`;
+      }
+    }
+
+    if (isDue) {
+      const recipient = (typeof rnGetRecipientForInvoice === 'function')
+        ? rnGetRecipientForInvoice(inv)
+        : { email: '' };
+
+      candidates.push({
+        invoice: inv,
+        curStufe: curStufe,
+        nextStufe: nextStufe,
+        reason: reason,
+        nieMahnen: nieMahnen,
+        email: recipient.email || '',
+        daysOverdue: curStufe === 0 ? (daysSinceCreated - 30) : (daysSinceLastMahnung - (curStufe === 1 ? 14 : 10))
+      });
+    }
+  });
+
+  return candidates;
+};
+
+// Modal für Sammel-Mahnlauf öffnen
+window.rnOpenBatchMahnungModal = async function() {
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
+
+  const candidates = window.rnGetDueDunningInvoices();
+
+  let modalEl = document.getElementById('rnModalBatchMahnung');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalBatchMahnung';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const stufenPills = {
+    1: '<span class="badge bg-warning text-dark px-2 py-1"><i class="fas fa-bell me-1"></i>Stufe 1 (Erinnerung)</span>',
+    2: '<span class="badge text-white px-2 py-1" style="background-color:#fd7e14;"><i class="fas fa-exclamation-triangle me-1"></i>Stufe 2 (2. Mahnung)</span>',
+    3: '<span class="badge bg-danger text-white px-2 py-1"><i class="fas fa-radiation me-1"></i>Stufe 3 (Letzte Mahnung)</span>'
+  };
+
+  const candidateRowsHtml = candidates.length > 0 ? candidates.map((c, idx) => {
+    const inv = c.invoice;
+    const canSend = !c.nieMahnen && c.email && c.email.includes('@');
+    const isChecked = canSend ? 'checked' : '';
+
+    return `
+      <tr class="${c.nieMahnen ? 'table-danger' : (!c.email ? 'table-warning' : '')}">
+        <td class="text-center">
+          <input type="checkbox" class="form-check-input rn-batch-check" id="rn-batch-item-${idx}" data-invoice-id="${inv.id}" data-next-stufe="${c.nextStufe}" data-email="${escapeHtml(c.email)}" ${isChecked} ${!canSend ? 'disabled' : ''} onchange="rnUpdateBatchSelectedCount()">
+        </td>
+        <td>
+          <div class="fw-bold text-dark">${escapeHtml(inv.name)}</div>
+          <div class="text-muted font-monospace small">${inv.id} · ${inv.type}</div>
+        </td>
+        <td class="text-end fw-bold font-monospace text-primary">${fmtChf(inv.total_amount)}</td>
+        <td>
+          ${stufenPills[c.nextStufe] || ''}
+          <div class="text-muted" style="font-size:10px;">${escapeHtml(c.reason)}</div>
+        </td>
+        <td>
+          ${c.email ? `<span class="small font-monospace text-dark">${escapeHtml(c.email)}</span>` : `<span class="badge bg-secondary">Keine E-Mail</span>`}
+          ${c.nieMahnen ? `<div class="badge bg-danger mt-1">⚠️ "Nie mahnen" aktiv</div>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('') : `
+    <tr>
+      <td colspan="5" class="text-center text-muted py-4">
+        <i class="fas fa-check-circle text-success fa-2x mb-2"></i><br>
+        <strong>Grossartig!</strong> Es sind aktuell keine offenen Rechnungen für eine Mahnung fällig.
+      </td>
+    </tr>
+  `;
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-bullhorn me-2"></i>Automatischer Sammel-Mahnlauf (Fällige Mahnungen prüfen)
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert alert-info py-2.5 px-3 rounded-3 small mb-3">
+            <i class="fas fa-info-circle me-1.5"></i>
+            Das System hat alle Rechnungen nach Schweizer Standardregeln geprüft:
+            <strong>Stufe 1</strong> nach 30 Tagen Fälligkeit · 
+            <strong>Stufe 2</strong> nach weiteren 14 Tagen · 
+            <strong>Stufe 3</strong> nach weiteren 10 Tagen. 
+            Mitglieder mit Sperre <em>"Nie mahnen"</em> werden automatisch geschützt.
+          </div>
+
+          <div class="table-responsive border rounded-3 mb-3" style="max-height: 420px; overflow-y: auto;">
+            <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+              <thead class="table-light sticky-top">
+                <tr>
+                  <th style="width: 40px;" class="text-center">
+                    <input type="checkbox" class="form-check-input" id="rn-batch-select-all" checked onchange="rnToggleBatchSelectAll(this.checked)">
+                  </th>
+                  <th>Empfänger / Rechnung</th>
+                  <th class="text-end" style="width: 130px;">Offener Betrag</th>
+                  <th>Vorgeschlagene Mahnung</th>
+                  <th>E-Mail & Prüfstatus</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${candidateRowsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-2 border-top">
+            <div class="text-muted small">
+              <span id="rn-batch-selected-label">0</span> Rechnungen für den Versand ausgewählt.
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Schliessen</button>
+              <button type="button" class="btn btn-warning fw-bold px-4 shadow-sm" id="rn-batch-submit-btn" onclick="rnExecuteBatchMahnung()" ${candidates.length === 0 ? 'disabled' : ''}>
+                <i class="fas fa-paper-plane me-1.5"></i> Ausgewählte Mahnungen jetzt versenden
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+
+  rnUpdateBatchSelectedCount();
+};
+
+// Hilfsfunktion: Select-All Checkbox im Batch-Mahnlauf
+window.rnToggleBatchSelectAll = function(isChecked) {
+  const checkboxes = document.querySelectorAll('.rn-batch-check:not(:disabled)');
+  checkboxes.forEach(cb => cb.checked = isChecked);
+  rnUpdateBatchSelectedCount();
+};
+
+// Hilfsfunktion: Zähler der ausgewählten Mahnungen aktualisieren
+window.rnUpdateBatchSelectedCount = function() {
+  const checkedBoxes = document.querySelectorAll('.rn-batch-check:checked');
+  const count = checkedBoxes.length;
+  const label = document.getElementById('rn-batch-selected-label');
+  const btn = document.getElementById('rn-batch-submit-btn');
+
+  if (label) label.textContent = count;
+  if (btn) {
+    btn.disabled = count === 0;
+    btn.innerHTML = `<i class="fas fa-paper-plane me-1.5"></i> ${count} Mahnung${count === 1 ? '' : 'en'} jetzt versenden`;
+  }
+};
+
+// 4. AUTOMATISCHER SAMMEL-MAHNLAUF: AUSFÜHRUNG
+window.rnExecuteBatchMahnung = async function() {
+  const checkedBoxes = document.querySelectorAll('.rn-batch-check:checked');
+  if (checkedBoxes.length === 0) {
+    alert("❌ Bitte wählen Sie mindestens eine Rechnung für den Mahnlauf aus.");
+    return;
+  }
+
+  if (!confirm(`Möchtest du wirklich ${checkedBoxes.length} Mahnungen generieren und per E-Mail versenden?`)) {
+    return;
+  }
+
+  const items = [];
+  checkedBoxes.forEach(cb => {
+    const invId = cb.getAttribute('data-invoice-id');
+    const stufe = Number(cb.getAttribute('data-next-stufe') || 1);
+    const email = cb.getAttribute('data-email');
+    const inv = window._invoices.find(i => String(i.id) === String(invId));
+    if (inv) {
+      const recipient = (typeof rnGetRecipientForInvoice === 'function')
+        ? rnGetRecipientForInvoice(inv)
+        : { email: email };
+      recipient.email = email;
+
+      items.push({
+        invoiceId: invId,
+        mahnstufe: stufe,
+        recipient: recipient
+      });
+    }
+  });
+
+  // Modal schliessen
+  const modalEl = document.getElementById('rnModalBatchMahnung');
+  if (modalEl) {
+    const mInstance = bootstrap.Modal.getInstance(modalEl);
+    if (mInstance) mInstance.hide();
+  }
+
+  showLoadingOverlay(`Verarbeite Sammel-Mahnlauf (${items.length} Mahnungen werden erstellt und versendet)...`);
+
+  try {
+    const response = await apiFetch('rechnungen', {
+      action: 'sendBatchMahnung',
+      items: items
+    }, 'POST');
+    const result = await response.json();
+
+    if (result.success) {
+      // Optimistic update
+      const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+      items.forEach(itm => {
+        const inv = window._invoices.find(i => String(i.id) === String(itm.invoiceId));
+        if (inv) {
+          inv.status = 'gemahnt';
+          inv.mahnstufe = itm.mahnstufe;
+          inv.mahn_datum = nowStr;
+        }
+      });
+      window.renderRechnungen();
+      showSuccess(`🎉 ${result.message || 'Sammel-Mahnlauf erfolgreich abgeschlossen!'}`);
+      await loadRechnungenData(true, true);
+    } else {
+      throw new Error(result.error || "Sammel-Mahnlauf fehlgeschlagen.");
+    }
+  } catch (err) {
+    alert("❌ Sammel-Mahnlauf Fehler: " + err.message);
   } finally {
     hideLoadingOverlay();
   }

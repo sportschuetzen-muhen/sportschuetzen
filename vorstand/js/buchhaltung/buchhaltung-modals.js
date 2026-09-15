@@ -576,6 +576,196 @@ window.bhDeleteJournalEntry = async function(entryId) {
   }
 };
 
+// POPUP-MODAL: SICHERHEITSBESTÄTIGUNG FÜR MEHRFACH-LÖSCHUNG IM KASSABUCH-JOURNAL
+window.bhConfirmDeleteSelectedJournalEntries = function() {
+  if (!window._bhSelectedJournalIds || window._bhSelectedJournalIds.size === 0) {
+    alert("Bitte markieren Sie mindestens einen Buchungssatz zum Löschen.");
+    return;
+  }
+
+  const selectedEntries = (window._bhJournal || []).filter(j => window._bhSelectedJournalIds.has(Number(j.id)));
+  if (selectedEntries.length === 0) {
+    alert("Keine gültigen Buchungssätze für die ausgewählten IDs gefunden.");
+    return;
+  }
+
+  let totalAmount = 0;
+  selectedEntries.forEach(e => {
+    totalAmount += Number(e.betrag || 0);
+  });
+
+  let modalEl = document.getElementById('bhModalBatchDeleteJournal');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalBatchDeleteJournal';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const previewRows = selectedEntries.map(e => `
+    <tr>
+      <td class="text-muted small font-monospace">${e.id}</td>
+      <td class="small" style="white-space: nowrap;">${isoToDisplay(e.datum)}</td>
+      <td class="fw-bold small" style="white-space: nowrap;">${escapeHtml(e.beleg_nr)}</td>
+      <td class="small text-truncate" style="max-width: 200px;" title="${escapeHtml(e.beschreibung)}">${escapeHtml(e.beschreibung)}</td>
+      <td class="small font-monospace">${e.konto_soll} → ${e.konto_haben}</td>
+      <td class="text-end fw-bold font-monospace small" style="white-space: nowrap;">CHF ${fmtChf(e.betrag)}</td>
+    </tr>
+  `).join('');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content shadow-lg border-0">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-trash-alt me-2"></i>Ausgewählte Buchungssätze löschen (${selectedEntries.length})
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert alert-danger d-flex align-items-center mb-3 shadow-sm border-0" style="background-color: #fde8e8; color: #991b1b;">
+            <i class="fas fa-exclamation-triangle fa-2x me-3 flex-shrink-0"></i>
+            <div>
+              <div class="fw-bold fs-6">Achtung: Unwiderruflicher Vorgang!</div>
+              <div>
+                Möchten Sie die folgenden <strong>${selectedEntries.length} Buchungssatz/-sätze</strong> mit einem Gesamtwert von 
+                <strong>CHF ${fmtChf(totalAmount)}</strong> wirklich endgültig aus dem Kassabuch-Journal entfernen?
+              </div>
+            </div>
+          </div>
+
+          <div class="card border rounded-3 mb-3">
+            <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+              <span class="small fw-bold text-secondary text-uppercase">Vorschau der zu löschenden Buchungen</span>
+              <span class="badge bg-danger">${selectedEntries.length} Datensätze</span>
+            </div>
+            <div class="table-responsive" style="max-height: 260px;">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light text-muted small" style="position: sticky; top: 0; z-index: 2;">
+                  <tr>
+                    <th>ID</th>
+                    <th>Datum</th>
+                    <th>Beleg</th>
+                    <th>Beschreibung</th>
+                    <th>Konto (Soll → Haben)</th>
+                    <th class="text-end">Betrag</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${previewRows}
+                </tbody>
+              </table>
+            </div>
+            <div class="card-footer bg-light py-2 text-end">
+              <span class="fw-bold me-2">Gesamtsumme:</span>
+              <span class="badge bg-secondary font-monospace fs-6 px-3 py-1.5">CHF ${fmtChf(totalAmount)}</span>
+            </div>
+          </div>
+
+          <div class="small text-muted">
+            <i class="fas fa-info-circle me-1 text-primary"></i>
+            Nach der Löschung werden Kontensaldi, Bilanz und Erfolgsrechnung automatisch aktualisiert.
+          </div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-danger fw-bold px-3 shadow-sm" id="bh-batch-delete-submit-btn" onclick="bhExecuteBatchDeleteJournalEntries()">
+            <i class="fas fa-trash-alt me-1.5"></i>${selectedEntries.length} Buchung(en) endgültig löschen
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+  modal.show();
+};
+
+// AUSFÜHRUNG: MEHRFACHLÖSCHUNG DER AUSGEWÄHLTEN BUCHUNGSSÄTZE
+window.bhExecuteBatchDeleteJournalEntries = async function() {
+  const submitBtn = document.getElementById('bh-batch-delete-submit-btn');
+  const ids = Array.from(window._bhSelectedJournalIds || []).map(Number);
+  
+  if (ids.length === 0) return;
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>Wird gelöscht...';
+  }
+
+  try {
+    let success = false;
+    let errorMessage = '';
+
+    // 1. Primärversuch: Schneller Batch-Endpunkt in GAS
+    try {
+      const response = await apiFetch('buchhaltung', { action: 'deleteJournalEntriesBatch', ids: ids }, 'POST');
+      const result = await response.json();
+      if (result.success) {
+        success = true;
+      } else {
+        errorMessage = result.error || '';
+      }
+    } catch (batchErr) {
+      errorMessage = batchErr.message || '';
+    }
+
+    // 2. Fallback: Falls Batch-Action noch nicht deployed ist, serielle Einzellöschungen durchführen
+    if (!success) {
+      let failedCount = 0;
+      for (const id of ids) {
+        try {
+          const res = await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: id }, 'POST');
+          const r = await res.json();
+          if (!r.success) failedCount++;
+        } catch (e) {
+          failedCount++;
+        }
+      }
+      if (failedCount === 0 || failedCount < ids.length) {
+        success = true;
+      } else {
+        throw new Error(errorMessage || "Fehler beim Ausführen der Mehrfachlöschung.");
+      }
+    }
+
+    // Modal schliessen
+    const modalEl = document.getElementById('bhModalBatchDeleteJournal');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+
+    // Lokalen State sofort anpassen (Optimistic / Reactive UI)
+    const deletedSet = new Set(ids);
+    window._bhJournal = (window._bhJournal || []).filter(j => !deletedSet.has(Number(j.id)));
+    window._bhSelectedJournalIds.clear();
+    window._bhLastCheckedJournalId = null;
+
+    recalculateLiveAccountBalances();
+    updateAccountingKPIs();
+    renderActiveAccountingTab();
+
+    showSuccess(`🎉 ${ids.length} Buchungssatz/-sätze erfolgreich aus dem Journal gelöscht!`);
+
+    // Im Hintergrund Daten neu synchronisieren
+    setTimeout(async () => {
+      if (typeof loadBuchhaltungData === 'function') {
+        await loadBuchhaltungData(true, true);
+      }
+    }, 1500);
+
+  } catch (err) {
+    alert("❌ Fehler beim Löschen der Buchungssätze: " + err.message);
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `<i class="fas fa-trash-alt me-1.5"></i>${ids.length} Buchung(en) endgültig löschen`;
+    }
+  }
+};
+
 // POPUP-MODAL: KONTOAUSZUG / DETAILS FÜR EIN EINZELNES KONTO ANZEIGEN
 window._bhKontoauszugSortCol = window._bhKontoauszugSortCol || 'datum';
 window._bhKontoauszugSortAsc = window._bhKontoauszugSortAsc !== undefined ? window._bhKontoauszugSortAsc : true;

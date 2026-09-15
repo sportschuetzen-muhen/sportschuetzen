@@ -1617,13 +1617,19 @@ async function submitChangePassword(e) {
 // Opens a base64-encoded PDF in a new browser tab using a local blob URL
 function openPdfBase64(base64Str) {
     if (!base64Str) return;
-    const byteCharacters = atob(base64Str);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    try {
+        // Bereinige eventuelle data: URIs sowie Zeilenumbrüche/Whitespace (z. B. von Google Apps Script RFC 2045)
+        const cleanBase64 = String(base64Str).replace(/^data:application\/pdf;base64,/, '').replace(/\s+/g, '');
+        const byteCharacters = atob(cleanBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'application/pdf'});
+        const fileURL = URL.createObjectURL(blob);
+        window.open(fileURL, '_blank');
+    } catch (err) {
+        console.error("❌ openPdfBase64 Fehler beim Dekodieren:", err);
     }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], {type: 'application/pdf'});
-    const fileURL = URL.createObjectURL(blob);
-    window.open(fileURL, '_blank');
 }

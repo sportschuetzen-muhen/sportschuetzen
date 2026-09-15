@@ -147,9 +147,14 @@ window.renderTabArchiv = function(content) {
     <div class="bh-report-section border border-light shadow-sm mb-4">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:15px;">
         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-filter me-2"></i>Filter & Rechnungs-Archiv</h5>
-        <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenCreateModal(this)">
-          <i class="fas fa-plus-circle me-1"></i> Rechnung erstellen
-        </button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-warning fw-bold shadow-sm write-protected" onclick="rnOpenBatchMahnungModal()" title="Alle fälligen offenen Rechnungen prüfen und per Klick gesammelt mahnen">
+            <i class="fas fa-bullhorn me-1"></i> Fällige Mahnungen prüfen (Mahnlauf)
+          </button>
+          <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenCreateModal(this)">
+            <i class="fas fa-plus-circle me-1"></i> Rechnung erstellen
+          </button>
+        </div>
       </div>
 
       <div class="row g-3">
@@ -164,7 +169,8 @@ window.renderTabArchiv = function(content) {
             <span class="input-group-text bg-light text-muted">Status</span>
             <select class="form-select" id="rn-filter-status" onchange="rnChangeFilterStatus(this.value)">
               <option value="alle">Alle Status</option>
-              <option value="offen">Offen</option>
+              <option value="offen">Offen (alle unbezahlten)</option>
+              <option value="gemahnt">Gemahnt (Stufe 1–3)</option>
               <option value="bezahlt">Bezahlt</option>
             </select>
           </div>
@@ -229,7 +235,17 @@ window.rnRenderTable = function() {
       String(i.document_ref).toLowerCase().includes(query) ||
       String(i.PersonNumber).toLowerCase().includes(query);
 
-    const matchesStatus = window._invoicesFilterStatus === 'alle' || i.status === window._invoicesFilterStatus;
+    const st = String(i.status || '').toLowerCase();
+    const mStufe = Number(i.mahnstufe || 0) || (st === 'gemahnt' ? 1 : 0);
+
+    let matchesStatus = true;
+    if (window._invoicesFilterStatus === 'offen') {
+      matchesStatus = (st !== 'bezahlt');
+    } else if (window._invoicesFilterStatus === 'gemahnt') {
+      matchesStatus = (st === 'gemahnt' || mStufe > 0);
+    } else if (window._invoicesFilterStatus === 'bezahlt') {
+      matchesStatus = (st === 'bezahlt');
+    }
 
     const matchesType = window._invoicesFilterType === 'alle' || 
       String(i.type).toLowerCase().includes(window._invoicesFilterType.toLowerCase());
@@ -280,11 +296,27 @@ window.rnRenderTable = function() {
   tbody.innerHTML = list.map(item => {
     const st = String(item.status || '').toLowerCase();
     const isPaid = st === 'bezahlt';
-    const statusClass = isPaid ? 'bg-success' : (st === 'offen' ? 'bg-warning text-dark' : (st === 'gemahnt' ? 'bg-danger' : 'bg-secondary'));
+    const mStufe = Number(item.mahnstufe || 0) || (st === 'gemahnt' ? 1 : 0);
     
+    // Differenzierte Statusanzeige nach Schweizer 3-Stufen-Mahnwesen
+    let statusBadge = '';
+    if (isPaid) {
+      statusBadge = '<span class="badge bg-success px-2.5 py-1.5 rounded-pill small"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>';
+    } else if (st === 'gemahnt' || mStufe > 0) {
+      if (mStufe === 1) {
+        statusBadge = '<span class="badge bg-warning text-dark px-2.5 py-1.5 rounded-pill small" title="1. Zahlungserinnerung versendet"><i class="fas fa-bell me-1"></i>Erinnerung (1/3)</span>';
+      } else if (mStufe === 2) {
+        statusBadge = '<span class="badge text-white px-2.5 py-1.5 rounded-pill small" style="background-color: #fd7e14;" title="2. Mahnung versendet"><i class="fas fa-exclamation-triangle me-1"></i>2. Mahnung (2/3)</span>';
+      } else {
+        statusBadge = '<span class="badge bg-danger text-white px-2.5 py-1.5 rounded-pill small" title="3. und letzte Mahnung vor Betreibung"><i class="fas fa-radiation me-1"></i>Letzte Mahnung (3/3)</span>';
+      }
+    } else {
+      statusBadge = '<span class="badge bg-secondary px-2.5 py-1.5 rounded-pill small">Offen</span>';
+    }
+
     // Frist prüfen (für überfällig)
     let extraBadge = '';
-    if (st === 'offen' || st === 'gemahnt') {
+    if (!isPaid) {
       let createdDate = null;
       if (item.created_at) {
         const datePart = String(item.created_at).split(' ')[0];
@@ -297,8 +329,8 @@ window.rnRenderTable = function() {
       }
       if (createdDate && !isNaN(createdDate.getTime())) {
         const diffDays = Math.ceil(Math.abs(new Date() - createdDate) / (1000 * 60 * 60 * 24));
-        if (diffDays > 30) {
-          extraBadge = `<span class="badge bg-danger ms-1" style="font-size:9px;"><i class="fas fa-exclamation-circle me-0.5"></i>Mahnfrist!</span>`;
+        if (diffDays > 30 && mStufe === 0) {
+          extraBadge = `<span class="badge bg-danger ms-1" style="font-size:9px;" title="Überfällig seit ${diffDays - 30} Tagen"><i class="fas fa-clock me-0.5"></i>Fällig (${diffDays}d)</span>`;
         }
       }
     }
@@ -326,7 +358,7 @@ window.rnRenderTable = function() {
         <td class="text-muted font-monospace">${item.year}</td>
         <td><span class="badge bg-light text-dark border small">${item.type}</span></td>
         <td class="text-center">
-          <span class="badge ${statusClass} px-2.5 py-1.5 rounded-pill small">${item.status}</span>
+          ${statusBadge}
           ${extraBadge}
         </td>
         <td class="text-end fw-bold text-primary font-monospace">${fmtChf(item.total_amount)}</td>
@@ -376,7 +408,7 @@ window.rnRenderTable = function() {
           </button>
 
           ${!isPaid ? `
-            <button class="btn btn-xs btn-outline-warning write-protected" onclick="rnSendMahnungPrompt('${item.id}', '${escapeJs(item.name)}')" title="Zahlungserinnerung / Mahnung versenden">
+            <button class="btn btn-xs btn-outline-warning write-protected" onclick="rnOpenMahnungModal('${item.id}', '${escapeJs(item.name)}')" title="Zahlungserinnerung / Mahnung (Stufe 1–3) verwalten & senden">
               <i class="fas fa-exclamation-triangle"></i>
             </button>
           ` : ''}
@@ -482,6 +514,35 @@ window.rnOpenDetailsModal = async function(invoiceId) {
             </table>
           </div>
         </div>
+
+        ${(inv.mahnstufe > 0 || inv.status === 'gemahnt' || inv.mahn_historie) ? `
+          <div class="p-3 rounded-3 border mb-3 bg-light">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <strong class="small text-dark"><i class="fas fa-history me-1.5 text-warning"></i>Mahnstatus & Historie</strong>
+              <span class="badge ${inv.mahnstufe == 1 ? 'bg-warning text-dark' : (inv.mahnstufe == 2 ? 'bg-orange text-white' : 'bg-danger text-white')} rounded-pill">
+                ${inv.mahnstufe == 1 ? 'Stufe 1 (Zahlungserinnerung)' : (inv.mahnstufe == 2 ? 'Stufe 2 (2. Mahnung)' : (inv.mahnstufe == 3 ? 'Stufe 3 (Letzte Mahnung)' : 'Gemahnt'))}
+              </span>
+            </div>
+            <div class="small text-muted mb-2">Letzte Mahnung: ${escapeHtml(inv.mahn_datum || '–')}</div>
+            ${(() => {
+              let hist = [];
+              try {
+                if (inv.mahn_historie) hist = typeof inv.mahn_historie === 'string' ? JSON.parse(inv.mahn_historie) : inv.mahn_historie;
+              } catch (_) {}
+              if (!Array.isArray(hist) || hist.length === 0) return '';
+              return `
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered bg-white mb-0" style="font-size:11px;">
+                    <thead class="table-light"><tr><th>Stufe</th><th>Datum</th><th>Versendet an</th></tr></thead>
+                    <tbody>
+                      ${hist.map(h => `<tr><td><strong>Stufe ${h.stufe}</strong></td><td class="font-monospace">${escapeHtml(h.datum)}</td><td>${escapeHtml(h.email || '–')}</td></tr>`).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `;
+            })()}
+          </div>
+        ` : ''}
 
         ${inv.status === 'bezahlt' ? `
           <div class="bg-success-subtle p-3 rounded-3 border border-success border-opacity-25 d-flex justify-content-between align-items-center">

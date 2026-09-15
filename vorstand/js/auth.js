@@ -85,13 +85,14 @@ async function apiFetch(module, paramsOrObj, options) {
 
     if (method === 'POST') {
         let bodyContent = "";
+        const actionParam = (paramsOrObj && typeof paramsOrObj === 'object' && paramsOrObj.action) ? `&action=${encodeURIComponent(paramsOrObj.action)}` : '';
         if (options && typeof options === 'object' && options.body) {
             // Wenn body explizit übergeben wird, hängen wir qs an die URL an
-            url = WORKER_URL + "?module=" + module + (qs ? "&" + qs : "");
+            url = WORKER_URL + "?module=" + module + actionParam + (qs ? "&" + qs : "");
             bodyContent = options.body;
         } else {
-            // Ansonsten ist qs der Body und URL bleibt ohne qs
-            url = WORKER_URL + "?module=" + module;
+            // Ansonsten ist paramsOrObj der Body; action bleibt zur Sicherheit in der URL
+            url = WORKER_URL + "?module=" + module + actionParam;
             bodyContent = (typeof paramsOrObj === 'object') ? JSON.stringify(paramsOrObj) : String(paramsOrObj || '');
         }
         fetchOptions.body = bodyContent;

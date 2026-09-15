@@ -72,12 +72,39 @@ window.rnGetDefaultLayouts = function() {
     },
     'Mahnung': {
       type: 'Mahnung',
-      title: 'Zahlungserinnerung / Mahnung zur Rechnung {rechnungsnummer}',
+      title: 'Zahlungserinnerung zur Rechnung {rechnungsnummer}',
       intro: 'Sehr geehrte Damen und Herren, lieber {vorname},\n\nbei der Überprüfung unserer Buchhaltung haben wir festgestellt, dass für untenstehende Rechnung noch kein Zahlungseingang verzeichnet werden konnte. Wir bitten dich höflich, den Betrag baldmöglichst zu begleichen.',
       outro: 'Falls sich deine Zahlung mit diesem Schreiben gekreuzt hat, betrachte diese Erinnerung bitte als gegenstandslos. Vielen Dank.\n\nMit freundlichen Grüssen\nSportschützen Muhen',
-      notice: 'Zahlbar innert 10 Tagen. Den QR-Zahlteil findest du untenstehend.',
+      notice: 'Zahlbar innert 14 Tagen. Den QR-Zahlteil findest du untenstehend.',
       mail_subject: 'Zahlungserinnerung Rechnung {rechnungsnummer} | Sportschützen Muhen',
-      mail_body: 'Guten Tag {vorname} {nachname},\n\nfür untenstehende Rechnung konnten wir bis heute noch keinen Zahlungseingang feststellen:\n\nRechnungsnummer: {rechnungsnummer}\nAusstehender Betrag: CHF {gesamtbetrag}\n\nWir bitten Sie höflich, die Überweisung innert 10 Tagen vorzunehmen. Den QR-Einzahlungsschein finden Sie im angehängten PDF.\n\nFalls die Zahlung bereits erfolgt ist, danken wir Ihnen und bitten Sie, dieses Schreiben zu entschuldigen.\n\nFreundliche Grüsse\nSportschützen Muhen'
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nfür untenstehende Rechnung konnten wir bis heute noch keinen Zahlungseingang feststellen:\n\nRechnungsnummer: {rechnungsnummer}\nAusstehender Betrag: CHF {gesamtbetrag}\n\nWir bitten Sie höflich, die Überweisung innert 14 Tagen vorzunehmen. Den QR-Einzahlungsschein finden Sie im angehängten PDF.\n\nFalls die Zahlung bereits erfolgt ist, danken wir Ihnen und bitten Sie, dieses Schreiben zu entschuldigen.\n\nFreundliche Grüsse\nSportschützen Muhen'
+    },
+    'Mahnung 1': {
+      type: 'Mahnung 1',
+      title: 'Zahlungserinnerung zur Rechnung {rechnungsnummer}',
+      intro: 'Sehr geehrte Damen und Herren, lieber {vorname},\n\nbei der Durchsicht unserer Buchhaltung haben wir festgestellt, dass für die unten aufgeführte Rechnung noch kein Zahlungseingang verbucht werden konnte. Sicherlich ist dies im Alltagsstress lediglich untergegangen.',
+      outro: 'Sollte sich deine Zahlung mit dieser Erinnerung gekreuzt haben, betrachte dieses Schreiben bitte als gegenstandslos. Herzlichen Dank für deine Unterstützung!\n\nSportliche Grüsse\nSportschützen Muhen',
+      notice: 'Zahlbar innert 14 Tagen mit beiliegendem QR-Einzahlungsschein.',
+      mail_subject: 'Zahlungserinnerung: Rechnung {rechnungsnummer} | Sportschützen Muhen',
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nbei der Überprüfung unserer Buchhaltung haben wir festgestellt, dass für folgende Rechnung noch kein Zahlungseingang vorliegt:\n\nRechnungsnummer: {rechnungsnummer}\nAusstehender Betrag: CHF {gesamtbetrag}\n\nWir bitten dich höflich, den Betrag innert 14 Tagen zu begleichen. Den QR-Einzahlungsschein findest du im Anhang.\n\nFalls du den Betrag bereits überwiesen hast, betrachte diese E-Mail bitte als gegenstandslos.\n\nSportliche Grüsse\nSportschützen Muhen'
+    },
+    'Mahnung 2': {
+      type: 'Mahnung 2',
+      title: '2. Mahnung zur Rechnung {rechnungsnummer}',
+      intro: 'Sehr geehrte Damen und Herren, lieber {vorname},\n\ntrotz unserer Zahlungserinnerung konnten wir für die untenstehende Rechnung bis heute leider noch keinen Zahlungseingang feststellen.',
+      outro: 'Wir bitten dich, den offenen Betrag nun umgehend und ohne weiteren Verzug zu überweisen. Bei allfälligen Fragen oder Unklarheiten stehen wir dir gerne zur Verfügung.\n\nMit freundlichen Grüssen\nSportschützen Muhen',
+      notice: 'Dringend zahlbar innert 10 Tagen mit beiliegendem QR-Einzahlungsschein.',
+      mail_subject: '2. Mahnung: Rechnung {rechnungsnummer} dringend | Sportschützen Muhen',
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nauf unsere bisherige Zahlungserinnerung konnten wir leider noch keinen Zahlungseingang verzeichnen:\n\nRechnungsnummer: {rechnungsnummer}\nAusstehender Betrag: CHF {gesamtbetrag}\n\nWir bitten Sie/dich hiermit ausdrücklich, die Zahlung innert 10 Tagen vorzunehmen. Den QR-Einzahlungsschein finden Sie/findest du im angehängten PDF.\n\nMit freundlichen Grüssen\nSportschützen Muhen'
+    },
+    'Mahnung 3': {
+      type: 'Mahnung 3',
+      title: '3. und letzte Mahnung zur Rechnung {rechnungsnummer}',
+      intro: 'Sehr geehrte Damen und Herren, lieber {vorname},\n\ntrotz wiederholter Zahlungserinnerung und Mahnung ist der Rechnungsbetrag für die untenstehende Rechnung noch immer nicht bei uns eingegangen.',
+      outro: 'Wir setzen dir hiermit eine letzte Zahlungsfrist. Sollte der Betrag bis zum Ablauf der Frist nicht auf unserem Konto gutgeschrieben sein, sehen wir uns gezwungen, ohne weitere Vorankündigung die Betreibung (SchKG) einzuleiten sowie statutarische Massnahmen (Lizenzsperre/Ausschluss) zu prüfen.\n\nMit förmlichen Grüssen\nSportschützen Muhen',
+      notice: 'Letzte Zahlungsfrist: Zahlbar innert 7 Tagen. Den QR-Zahlteil findest du untenstehend.',
+      mail_subject: '3. und LETZTE Mahnung vor rechtlichen Schritten: Rechnung {rechnungsnummer}',
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nfür die unten aufgeführte Rechnung konnte trotz mehrfacher Mahnung kein Zahlungseingang verbucht werden:\n\nRechnungsnummer: {rechnungsnummer}\nFälliger Betrag: CHF {gesamtbetrag}\n\nWir fordern Sie/dich hiermit letztmalig auf, den ausstehenden Betrag innert 7 Tagen zu überweisen.\n\nNach ungenutztem Ablauf dieser Frist werden wir ohne weiteren Verzug das rechtliche Betreibungsverfahren einleiten. Allfällige Mahn- und Verzugskosten gehen zu Ihren/deinen Lasten.\n\nVorstand Sportschützen Muhen'
     }
   };
 };
@@ -107,7 +134,9 @@ window.renderTabLayouts = function(content) {
     { key: 'Schulsport', label: 'Schulsport', icon: 'fa-bullseye' },
     { key: 'Sponsoring', label: 'Sponsoring / Gönner', icon: 'fa-handshake' },
     { key: 'Sonstige', label: 'Sonstige / Diverse', icon: 'fa-file-alt' },
-    { key: 'Mahnung', label: 'Mahnung / Erinnerung', icon: 'fa-exclamation-triangle' }
+    { key: 'Mahnung 1', label: '1. Zahlungserinnerung', icon: 'fa-bell text-warning' },
+    { key: 'Mahnung 2', label: '2. Mahnung', icon: 'fa-exclamation-triangle text-orange' },
+    { key: 'Mahnung 3', label: '3. Letzte Mahnung', icon: 'fa-radiation text-danger' }
   ];
 
   const navTabsHtml = types.map(t => `
