@@ -1883,14 +1883,67 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
 };
 
 // ---------------------------------------------------------------------
-// Einzelne Buchung durchführen
+// Einzelne Buchung durchführen (mit sequentieller Request-Queue)
 // ---------------------------------------------------------------------
+window._bhBookingPromiseQueue = window._bhBookingPromiseQueue || Promise.resolve();
+window._bhBookingQueueCount = window._bhBookingQueueCount || 0;
+
 window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
+  if (isBatch) {
+    return await _bhBankBookOneInternal(txIdx, customBelegNr, true);
+  }
+
+  const tx = window._bhBankMatchResults[txIdx];
+  if (!tx || tx._isBooking || tx.alreadyBooked) return;
+
+  // Sofortige Sperre gegen Mehrfachklick auf denselben Button
+  tx._isBooking = true;
+
+  const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
+  const rowTr   = sollEl ? sollEl.closest('tr') : null;
+  const bookBtn = rowTr ? rowTr.querySelector('button.btn-success') : null;
+
+  if (bookBtn) {
+    bookBtn.disabled = true;
+    if (window._bhBookingQueueCount > 0) {
+      bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Wartet...';
+    } else {
+      bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
+    }
+  }
+
+  window._bhBookingQueueCount++;
+
+  const runTask = async () => {
+    try {
+      if (bookBtn && bookBtn.innerHTML.includes('Wartet...')) {
+        bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
+      }
+      await _bhBankBookOneInternal(txIdx, customBelegNr, false);
+    } finally {
+      window._bhBookingQueueCount = Math.max(0, (window._bhBookingQueueCount || 1) - 1);
+      // Erst neu laden, wenn keine weiteren Klicks in der Warteschlange hängen
+      if (window._bhBookingQueueCount === 0) {
+        if (typeof loadBuchhaltungData === 'function') {
+          loadBuchhaltungData(true, true);
+        } else {
+          bhBankRenderResults(window._bhBankActiveFilter);
+        }
+      }
+    }
+  };
+
+  // Streng sequentiell an die Queue hängen, damit HTTP-Requests nie zeitgleich bei GAS eintreffen
+  window._bhBookingPromiseQueue = window._bhBookingPromiseQueue.then(runTask, runTask);
+  return window._bhBookingPromiseQueue;
+};
+
+async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
   const prepared = window.bhBankPrepareBookingItem(txIdx, customBelegNr, isBatch);
   if (!prepared) return;
   const { tx, belegNr, bookingDate, entries, bookBtn, matchedInvoice, matchedBeitrag, isJahresbeitrag } = prepared;
 
-  // Sofortige visuelle Rückmeldung: Button deaktivieren & Ladespinner anzeigen
+  // Visuelle Rückmeldung
   tx._isBooking = true;
   if (bookBtn) {
     bookBtn.disabled = true;
@@ -2007,15 +2060,6 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
 
     // Nächste ungebuchte Zeile nach dem Neuladen automatisch fokussieren
     window._bhFocusNextAfterBooking = txIdx + 1;
-
-    // Live Neu-Laden des Hauptbuchs (im Batch-Modus nur einmal ganz am Schluss aufrufen)
-    if (!isBatch) {
-      if (typeof loadBuchhaltungData === 'function') {
-        loadBuchhaltungData(true, true);
-      } else {
-        bhBankRenderResults(window._bhBankActiveFilter);
-      }
-    }
   } catch(err) {
     tx._isBooking = false;
     if (bookBtn) {
@@ -2030,7 +2074,7 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
     }
     throw err;
   }
-};
+}
 
 // ---------------------------------------------------------------------
 // Batch-Buchung aller sicheren Treffer (1x atomarer Commit)
