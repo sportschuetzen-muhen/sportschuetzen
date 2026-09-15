@@ -2084,14 +2084,12 @@ window.rnOpenContactModal = function(contactId = null) {
     const lines = [];
     if (isF) {
       lines.push(firma || '[Firmenname / Organisation]');
-      if (nachname || vorname) {
-        const pName = [anrede, vorname, nachname].filter(Boolean).join(' ');
-        lines.push(`z.Hd. ${pName}${abteilung ? ` (${abteilung})` : ''}`);
-      } else if (abteilung) {
-        lines.push(abteilung);
-      }
+      if (abteilung) lines.push(abteilung);
+      const cpName = [anrede, vorname, nachname].filter(Boolean).join(' ');
+      if (cpName) lines.push(cpName);
     } else {
-      const pName = [anrede, vorname, nachname].filter(Boolean).join(' ');
+      if (anrede) lines.push(anrede);
+      const pName = [vorname, nachname].filter(Boolean).join(' ');
       lines.push(pName || '[Vorname Nachname]');
     }
 

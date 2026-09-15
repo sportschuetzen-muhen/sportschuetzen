@@ -233,9 +233,14 @@ window.renderTabBankabgleich = function(container) {
           <i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})
         </button>
         
-        <button class="btn btn-sm btn-success ms-auto fw-bold shadow-sm" id="bhBtnBookAll" onclick="bhBankBookAll()">
-          <i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen
-        </button>
+        <div class="ms-auto d-flex gap-2 align-items-center">
+          <button class="btn btn-sm btn-primary fw-bold shadow-sm d-none" id="bhBtnBookSelected" onclick="bhBankBookSelected()" title="Alle im Stapel vorgemerkten Buchungen in einem Schritt ausführen">
+            <i class="fas fa-layer-group me-1"></i><span id="bhBtnBookSelectedText">0 Buchungen verbuchen</span>
+          </button>
+          <button class="btn btn-sm btn-success fw-bold shadow-sm" id="bhBtnBookAll" onclick="bhBankBookAll()">
+            <i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen
+          </button>
+        </div>
       </div>
 
       <!-- Ergebnistabelle Container -->
@@ -551,6 +556,11 @@ function bhBankRenderResults(filter) {
     allBtn.disabled = safeCount === 0;
   }
 
+  // Button "Ausgewählte Buchungen verbuchen" aktualisieren
+  if (typeof bhBankUpdateSelectedBtn === 'function') {
+    bhBankUpdateSelectedBtn();
+  }
+
   // Sortierung auf alle Spalten anwenden
   const col = window._bhBankSortCol || 'date';
   const asc = window._bhBankSortAsc;
@@ -599,23 +609,15 @@ function bhBankRenderResults(filter) {
     if (r.isWrongYear) {
       statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 FALSCHES BUCHUNGSJAHR: Diese Transaktion stammt aus ${r.txYear}, oben ist Buchhaltungsjahr ${window._bhYear} gewählt. Bitte oben Jahr umschalten!"><i class="fas fa-calendar-times me-1"></i>Jahr ${r.txYear} (Falsches Jahr)</span>`;
     } else if (r.alreadyBooked) {
-      statusBadge = '<span class="badge bg-secondary opacity-75" title="🔒 GSCHÜTZT: Diese Buchung existiert bereits im Kassabuch-Journal. Sie ist vor Doppelbuchung geschützt."><i class="fas fa-check-double me-1"></i>Bereits im Journal</span>';
-    } else if (r.isInvoice && r.matchedInvoice) {
-      if (r.alreadyPaidInvoice) {
-        statusBadge = '<span class="badge bg-success opacity-75" title="🔒 RECHNUNG BEZAHLT: Diese Rechnung wurde bereits als bezahlt markiert."><i class="fas fa-check me-1"></i>Rechnung bezahlt</span>';
-      } else if (r.matchScore >= 2) {
-        statusBadge = `<span class="badge bg-success" title="✅ RECHNUNGS-TREFFER: Rechnung ${escHtml(r.matchedInvoice.id)} (${escHtml(r.matchedInvoice.name)}) erkannt. Klicke \'Buchen\' um Einnahme ins Journal einzutragen und Rechnung als bezahlt abzuhaken."><i class="fas fa-file-invoice-dollar me-1"></i>Rechnung Treffer</span>`;
-      } else {
-        statusBadge = `<span class="badge bg-warning text-dark" title="⚠️ UNSICHERE RECHNUNG: Rechnungs-ID oder Name weicht leicht ab. Bitte prüfen."><i class="fas fa-exclamation-triangle me-1"></i>Rechnung prüfen</span>`;
-      }
+      statusBadge = `<span class="badge bg-light text-secondary border" title="🔒 Transaktion wurde am ${escHtml(r.bookedDate || 'früher')} im Kassabuch erfasst."><i class="fas fa-check-double text-success me-1"></i>Bereits gebucht</span>`;
+    } else if (r.alreadyPaidInvoice) {
+      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Rechnung bezahlt</span>`;
+    } else if (r.alreadyPaidJb) {
+      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Beitrag bezahlt</span>`;
+    } else if (r.isInvoice) {
+      statusBadge = `<span class="badge bg-success" title="✅ RECHNUNGS-TREFFER: Eindeutige Rechnungs-Nr. oder QR-Referenz gefunden. Buchungssatz ist vorbereitet."><i class="fas fa-check-circle me-1"></i>Rechnung ${escHtml(r.matchedInvoice?.id || '')}</span>`;
     } else if (r.isJahresbeitrag) {
-      if (r.alreadyPaidJb) {
-        statusBadge = '<span class="badge bg-success opacity-75" title="🔒 BEITRAG ERLEDIGT: Der Jahresbeitrag für dieses Mitglied wurde für dieses Jahr bereits verbucht."><i class="fas fa-check me-1"></i>Beitrag bezahlt</span>';
-      } else if (r.matchScore >= 2) {
-        statusBadge = '<span class="badge bg-success" title="✅ BEITRAGS-TREFFER: Eindeutig erkanntes Mitglied. Klicke \'Buchen\' um Beitrag abzuhaken und ins Journal einzutragen."><i class="fas fa-user-check me-1"></i>Beitrag Treffer</span>';
-      } else {
-        statusBadge = '<span class="badge bg-warning text-dark" title="⚠️ UNSICHERER BEITRAG: Namens- oder Betragsabweichung. Bitte Mitglied und Konto prüfen."><i class="fas fa-exclamation-triangle me-1"></i>Unsicherer Beitrag</span>';
-      }
+      statusBadge = '<span class="badge bg-success" title="✅ JAHRESBEITRAG: Mitglied und offener Jahresbeitrag eindeutig erkannt."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag</span>';
     } else if (r.matchType === 'rule') {
       statusBadge = `<span class="badge bg-info text-dark" title="⚡ REGEL-TREFFER: Durch benutzerdefinierte Regel \'${escHtml(r.matchRuleName)}\' erkannt. Konten sind vorausgefüllt. Bereit zum Buchen."><i class="fas fa-magic me-1"></i>Regel: ${escHtml(r.matchRuleName)}</span>`;
     } else if (r.matchType === 'journal') {
@@ -655,9 +657,14 @@ function bhBankRenderResults(filter) {
       actionButtons = `<span class="badge bg-light text-danger border px-2 py-1.5" title="🔒 Transaktion aus ${r.txYear} kann nicht im Buchhaltungsjahr ${window._bhYear} gebucht werden. Bitte oben Jahr umschalten!"><i class="fas fa-ban me-1"></i>Jahr ${r.txYear}</span>`;
     } else if (canEdit && !r.alreadyBooked) {
       const splitBtnClass = r.isVerbandsschiessen ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary';
+      const isQueued = !!r._inBookingQueue;
+      const bookBtnClass = isQueued ? 'btn-primary text-white fw-bold shadow-sm' : 'btn-success';
+      const bookBtnIcon = isQueued ? 'fa-check-circle' : 'fa-check';
+      const bookBtnLabel = isQueued ? 'Im Stapel' : 'Buchen';
+      const bookBtnTitle = isQueued ? 'Klicken, um aus Buchungsstapel zu entfernen (Shift+Klick für Sofortbuchung)' : 'In den Buchungsstapel legen (Shift+Klick für Sofortbuchung)';
       actionButtons = `
-        <button class="btn btn-sm btn-success py-1 px-2 me-1" onclick="bhBankBookOne(${realI})" title="Buchungssatz ausführen und ins Kassabuch eintragen">
-          <i class="fas fa-check me-1"></i>Buchen
+        <button class="btn btn-sm ${bookBtnClass} py-1 px-2 me-1" id="bh-book-btn-${realI}" onclick="bhBankToggleQueue(${realI}, event)" title="${bookBtnTitle}">
+          <i class="fas ${bookBtnIcon} me-1"></i>${bookBtnLabel}
         </button>
         <button class="btn btn-sm ${splitBtnClass} py-1 px-2 me-1" onclick="bhBankOpenSplitModal(${realI})" title="Betrag in mehrere Zeilen aufteilen (z.B. 1190 Transit & 4210 Nachwuchsförderung)">
           <i class="fas fa-columns me-1"></i>Split
@@ -672,7 +679,11 @@ function bhBankRenderResults(filter) {
 
     const amountClass = isCredit ? 'text-success' : 'text-danger';
     const amountSign  = isCredit ? '+' : '-';
-    const rowBg = (r.alreadyBooked || r.isWrongYear) ? 'table-secondary text-muted' : ((r.isJahresbeitrag || r.isInvoice) ? 'table-light' : '');
+    const rowBg = (r.alreadyBooked || r.isWrongYear) 
+      ? 'table-secondary text-muted' 
+      : (r._inBookingQueue 
+          ? 'table-primary border-primary' 
+          : ((r.isJahresbeitrag || r.isInvoice) ? 'table-light' : ''));
 
     return `
       <tr class="${rowBg}" ${(r.alreadyBooked || r.isWrongYear) ? 'style="opacity:0.65;"' : ''}>
@@ -2282,6 +2293,252 @@ window.bhBankBookAll = async function() {
       allBtn.disabled = false;
       allBtn.innerHTML = '<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen';
     }
+  }
+};
+
+// ---------------------------------------------------------------------
+// Buchungsstapel (Warenkorb-Prinzip) für ausgewählte Buchungen
+// ---------------------------------------------------------------------
+window.bhBankToggleQueue = function(txIdx, evt) {
+  if (evt && evt.shiftKey) {
+    return window.bhBankBookOne(txIdx);
+  }
+
+  const tx = (window._bhBankMatchResults || [])[txIdx];
+  if (!tx || tx.alreadyBooked || tx._isBooking || tx.isWrongYear) return;
+
+  if (!tx._inBookingQueue) {
+    const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
+    const habenEl = document.getElementById(`bh-haben-${txIdx}`);
+    const rawSoll  = sollEl ? sollEl.value : tx.suggestedSoll;
+    const rawHaben = habenEl ? habenEl.value : tx.suggestedHaben;
+    if (!rawSoll || !rawHaben) {
+      showToast('⚠️ Bitte vor dem Vormerken Soll- und Haben-Konto für diese Zeile auswählen.', 'warning', 'top-end', 3000);
+      if (!rawSoll && sollEl) sollEl.focus();
+      else if (!rawHaben && habenEl) habenEl.focus();
+      return;
+    }
+  }
+
+  tx._inBookingQueue = !tx._inBookingQueue;
+
+  // DOM visuell aktualisieren ohne Tabelle neu aufzubauen
+  const btn = document.getElementById(`bh-book-btn-${txIdx}`);
+  const row = btn ? btn.closest('tr') : null;
+  if (btn) {
+    if (tx._inBookingQueue) {
+      btn.className = 'btn btn-sm btn-primary text-white fw-bold py-1 px-2 me-1 shadow-sm';
+      btn.innerHTML = '<i class="fas fa-check-circle me-1"></i>Im Stapel';
+      btn.title = 'Klicken, um aus Buchungsstapel zu entfernen (Shift+Klick für Sofortbuchung)';
+      if (row) row.classList.add('table-primary', 'border-primary');
+    } else {
+      btn.className = 'btn btn-sm btn-success py-1 px-2 me-1';
+      btn.innerHTML = '<i class="fas fa-check me-1"></i>Buchen';
+      btn.title = 'In den Buchungsstapel legen (Shift+Klick für Sofortbuchung)';
+      if (row) row.classList.remove('table-primary', 'border-primary');
+    }
+  }
+
+  window.bhBankUpdateSelectedBtn();
+};
+
+window.bhBankUpdateSelectedBtn = function() {
+  const results = window._bhBankMatchResults || [];
+  const queued = results.filter(r => r._inBookingQueue && !r.alreadyBooked && !r._isBooking && !r.isWrongYear);
+  const btn = document.getElementById('bhBtnBookSelected');
+  if (!btn) return;
+
+  if (queued.length === 0) {
+    btn.classList.add('d-none');
+    return;
+  }
+
+  const totalAmount = queued.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  btn.classList.remove('d-none');
+  btn.innerHTML = `<i class="fas fa-layer-group me-1"></i>${queued.length} ${queued.length === 1 ? 'Buchung' : 'Buchungen'} verbuchen <span class="badge bg-white text-primary ms-1">CHF ${totalAmount.toFixed(2)}</span>`;
+};
+
+window.bhBankBookSelected = async function() {
+  if (window._bhIsBookingSelected || window._bhIsBookingAll) return;
+  const selBtn = document.getElementById('bhBtnBookSelected');
+
+  const results = window._bhBankMatchResults || [];
+  const activeYear = Number(window._bhYear || new Date().getFullYear());
+
+  const toBook = results
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r._inBookingQueue && !r.alreadyBooked && !r._isBooking && !r.isWrongYear);
+
+  if (!toBook.length) {
+    showToast('Keine Buchungen im Buchungsstapel ausgewählt.', 'warning', 'top-end');
+    return;
+  }
+
+  const totalAmount = toBook.reduce((sum, { r }) => sum + (Number(r.amount) || 0), 0);
+  const ok = confirm(`${toBook.length} vorgemerkte Bank-Buchung(en) jetzt zusammenhängend in einem Schritt ins Journal eintragen?\n\nGesamtbetrag: CHF ${totalAmount.toFixed(2)}`);
+  if (!ok) return;
+
+  window._bhIsBookingSelected = true;
+  if (selBtn) {
+    selBtn.disabled = true;
+    selBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bereite Buchungen vor...`;
+  }
+
+  const batchToast = showToast(`⏳ Bereite ${toBook.length} Buchungen aus dem Stapel vor...`, 'info', 'top-end', 0);
+
+  try {
+    // 1. Belegnummern deterministisch vergeben
+    toBook.forEach(({ r }) => {
+      const txBankKonto = isBankKontoCode(r.suggestedSoll) 
+        ? r.suggestedSoll 
+        : (isBankKontoCode(r.suggestedHaben) 
+            ? r.suggestedHaben 
+            : bhBankGetAccountForIban(r.accountIban, '1020'));
+      r._batchBelegNr = bhGetNextBankBelegNr(activeYear, txBankKonto);
+    });
+
+    // 2. Alle Buchungspakete lokal zusammenstellen
+    const preparedList = [];
+    const allJournalEntries = [];
+
+    for (const { r, i } of toBook) {
+      try {
+        const prepared = window.bhBankPrepareBookingItem(i, r._batchBelegNr, true);
+        if (prepared) {
+          preparedList.push(prepared);
+          allJournalEntries.push(...prepared.entries);
+          r._isBooking = true;
+          if (prepared.bookBtn) {
+            prepared.bookBtn.disabled = true;
+            prepared.bookBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Bucht...';
+          }
+        }
+      } catch (valErr) {
+        throw new Error(`Fehler bei Transaktion "${r.partyName || 'Zeile ' + (i+1)}": ${valErr.message}`);
+      }
+    }
+
+    if (allJournalEntries.length === 0) {
+      throw new Error('Keine gültigen Buchungssätze generiert.');
+    }
+
+    // 3. 1x atomarer Sammel-Commit an Buchhaltung_GAS
+    if (selBtn) {
+      selBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Übertrage ${allJournalEntries.length} Buchungssätze...`;
+    }
+    if (batchToast) {
+      const span = batchToast.querySelector('span');
+      if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze in einem Commit an GAS...`;
+    }
+
+    const payloadBh = {
+      action: 'addJournalEntries',
+      jahr: activeYear,
+      entries: allJournalEntries,
+      typ: 'Bank'
+    };
+    const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+    const jsonBh = await resBh.json();
+    if (!jsonBh.success) {
+      throw new Error(jsonBh.error || 'Fehler beim Sammel-Buchen im Journal');
+    }
+
+    // Lokales Journal direkt mit den bestätigten Datensätzen aktualisieren
+    window._bhJournal = window._bhJournal || [];
+    const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
+    serverEntries.forEach(entry => window._bhJournal.push(entry));
+
+    // Alle vorbereiteten Transaktionen im UI als gebucht markieren & aus Stapel entfernen
+    const todayStr = new Date().toLocaleDateString('de-CH');
+    preparedList.forEach(({ tx, txIdx, bookBtn }) => {
+      tx._isBooking = false;
+      tx._inBookingQueue = false;
+      window._bhBankMatchResults[txIdx].alreadyBooked = true;
+      window._bhBankMatchResults[txIdx].bookedDate = todayStr;
+      if (bookBtn) {
+        bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
+        bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
+        bookBtn.disabled = true;
+      }
+    });
+
+    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) parallel absetzen
+    const secondaryTasks = [];
+
+    preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, isJahresbeitrag }) => {
+      // a) Rechnungs-Zahlung
+      if (matchedInvoice && matchedInvoice.id) {
+        secondaryTasks.push((async () => {
+          try {
+            await apiFetch('rechnungen', {
+              action: 'saveZahlung',
+              invoiceId: matchedInvoice.id,
+              datum: bookingDate,
+              methode: 'Überweisung',
+              beleg: belegNr,
+              skipBooking: true
+            }, 'POST');
+            const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
+            if (cachedInv) {
+              cachedInv.status = 'bezahlt';
+              cachedInv.payment_date = bookingDate;
+              cachedInv.payment_method = 'Überweisung';
+              cachedInv.document_ref = belegNr;
+            }
+          } catch (invErr) {
+            console.warn('⚠️ Fehler beim Aktualisieren der Rechnung:', invErr);
+          }
+        })());
+      }
+
+      // b) Jahresbeitrags-Zahlung
+      if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
+        secondaryTasks.push((async () => {
+          try {
+            await apiFetch('jahresbeitrag', {
+              action: 'saveZahlung',
+              headerId: matchedBeitrag.id,
+              datum: bookingDate,
+              methode: 'Überweisung',
+              beleg: belegNr
+            }, 'POST');
+            const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
+            if (cachedJb) {
+              cachedJb.status = 'bezahlt';
+              cachedJb.payment_date = bookingDate;
+            }
+          } catch (jbErr) {
+            console.warn('⚠️ Fehler beim Aktualisieren des Jahresbeitrags:', jbErr);
+          }
+        })());
+      }
+    });
+
+    if (secondaryTasks.length > 0) {
+      if (batchToast) {
+        const span = batchToast.querySelector('span');
+        if (span) span.textContent = `⏳ Aktualisiere Status von ${secondaryTasks.length} Rechnungen / Beiträgen...`;
+      }
+      await Promise.allSettled(secondaryTasks);
+    }
+
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 5000);
+
+    // Jetzt 1x am Schluss Hauptbuch und UI komplett synchronisieren
+    if (typeof loadBuchhaltungData === 'function') {
+      await loadBuchhaltungData(true, true);
+    } else {
+      bhBankRenderResults(window._bhBankActiveFilter);
+    }
+  } catch (err) {
+    console.error('Fehler beim Stapel-Buchen:', err);
+    showToast(`Fehler beim Stapel-Buchen: ${err.message || err}`, 'error', 'top-end', 6000);
+    toBook.forEach(({ r }) => { r._isBooking = false; });
+  } finally {
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    window._bhIsBookingSelected = false;
+    window.bhBankUpdateSelectedBtn();
   }
 };
 

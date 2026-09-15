@@ -279,8 +279,10 @@ window.renderTabLayouts = function(content) {
 
               <!-- Empfänger Adresse Block -->
               <div class="mb-3 p-2 bg-light rounded border border-light" style="max-width: 220px;">
+                Herr<br>
                 <strong>Max Muster</strong><br>
                 Hauptstrasse 42<br>
+                Postfach 12<br>
                 5037 Muhen
               </div>
 
