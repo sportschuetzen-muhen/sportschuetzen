@@ -539,6 +539,12 @@ window._bhUpdateTxRemittance = function(idx, val) {
   const isEdited = !!(tx._originalRemittanceInfo && val.trim() !== tx._originalRemittanceInfo.trim());
   tx._customRemittanceEdited = isEdited;
 
+  if (window._bhBankTransactions && window._bhBankTransactions[idx]) {
+    window._bhBankTransactions[idx].remittanceInfo = val;
+    window._bhBankTransactions[idx]._customRemittance = val;
+    window._bhBankTransactions[idx]._customRemittanceEdited = isEdited;
+  }
+
   const origEl = document.getElementById(`bh-rmt-orig-${idx}`);
   if (origEl) {
     if (isEdited) {
@@ -572,6 +578,16 @@ window._bhUpdateTxKonto = function(idx, type, val) {
   } else if (type === 'haben') {
     tx.suggestedHaben = code;
     tx._customHabenEdited = true;
+  }
+
+  if (window._bhBankTransactions && window._bhBankTransactions[idx]) {
+    if (type === 'soll') {
+      window._bhBankTransactions[idx].suggestedSoll = code;
+      window._bhBankTransactions[idx]._customSollEdited = true;
+    } else if (type === 'haben') {
+      window._bhBankTransactions[idx].suggestedHaben = code;
+      window._bhBankTransactions[idx]._customHabenEdited = true;
+    }
   }
 };
 
@@ -677,47 +693,75 @@ function bhBankRenderResults(filter) {
     const isCredit = r.isCredit;
 
     let statusBadge = '';
+    const isRowEditable = !r.alreadyBooked && !r.isWrongYear;
+
     if (r.isWrongYear) {
       statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 FALSCHES BUCHUNGSJAHR: Diese Transaktion stammt aus ${r.txYear}, oben ist Buchhaltungsjahr ${window._bhYear} gewählt. Bitte oben Jahr umschalten!"><i class="fas fa-calendar-times me-1"></i>Jahr ${r.txYear}</span>`;
     } else if (r.alreadyBooked) {
       statusBadge = `<span class="badge bg-light text-secondary border" title="🔒 Transaktion wurde am ${escHtml(r.bookedDate || 'früher')} im Kassabuch erfasst."><i class="fas fa-check-double text-success me-1"></i>Gebucht</span>`;
     } else if (r.alreadyPaidInvoice) {
-      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt</span>`;
+      statusBadge = `<span class="badge bg-secondary opacity-75" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert. Klicken zum Ändern oder Aufheben."><i class="fas fa-info-circle me-1"></i>Bezahlt <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.alreadyPaidJb) {
-      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt</span>`;
+      statusBadge = `<span class="badge bg-secondary opacity-75" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert. Klicken zum Ändern oder Aufheben."><i class="fas fa-info-circle me-1"></i>Bezahlt <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.isInvoice) {
-      statusBadge = `<span class="badge bg-success" title="✅ RECHNUNGS-TREFFER: ${escHtml(r.matchedInvoice?.id || '')} (${escHtml(r.matchedInvoice?.name || '')})"><i class="fas fa-file-invoice me-1"></i>Rechnung</span>`;
+      statusBadge = `<span class="badge bg-success" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="✅ RECHNUNGS-TREFFER: ${escHtml(r.matchedInvoice?.id || '')} (${escHtml(r.matchedInvoice?.name || '')}). Klicken zum Ändern oder Aufheben."><i class="fas fa-file-invoice me-1"></i>Rechnung <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.isJahresbeitrag) {
-      statusBadge = '<span class="badge bg-success" title="✅ JAHRESBEITRAG: Mitglied und offener Jahresbeitrag eindeutig erkannt."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag</span>';
+      statusBadge = `<span class="badge bg-success" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="✅ JAHRESBEITRAG: Mitglied und offener Beitrag erkannt. Klicken zum Ändern oder Aufheben."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.matchType === 'rule') {
-      statusBadge = `<span class="badge bg-info text-dark" title="⚡ REGEL-TREFFER: ${escHtml(r.matchRuleName)}"><i class="fas fa-magic me-1"></i>Regel</span>`;
+      statusBadge = `<span class="badge bg-info text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="⚡ REGEL-TREFFER: ${escHtml(r.matchRuleName)}. Klicken zum Ändern oder Aufheben."><i class="fas fa-magic me-1"></i>Regel <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.matchType === 'journal') {
-      statusBadge = '<span class="badge bg-primary text-white" title="💡 HISTORIE-TREFFER: Noch NICHT gebucht! Kontenvorschlag basiert auf deinen früheren Buchungen."><i class="fas fa-history me-1"></i>Historie</span>';
+      statusBadge = `<span class="badge bg-primary text-white" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="💡 HISTORIE-TREFFER: Noch NICHT gebucht! Klicken zum Ändern oder Zuordnen."><i class="fas fa-history me-1"></i>Historie <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.matchType === 'heuristic') {
-      statusBadge = '<span class="badge bg-light text-dark border" title="💡 SMART VORSCHLAG: Noch NICHT gebucht. Basiskonten nach Vorzeichen vorausgefüllt."><i class="fas fa-lightbulb me-1"></i>Vorschlag</span>';
+      statusBadge = `<span class="badge bg-light text-dark border" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="💡 SMART VORSCHLAG: Noch NICHT gebucht. Klicken zum Zuordnen."><i class="fas fa-lightbulb me-1"></i>Vorschlag <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else {
-      statusBadge = '<span class="badge bg-warning text-dark" title="❓ OFFEN: Keine automatische Regel gefunden. Bitte Soll- und Haben-Konto wählen."><i class="fas fa-question-circle me-1"></i>Offen</span>';
+      statusBadge = `<span class="badge bg-warning text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="❓ OFFEN: Keine automatische Zuordnung. Klicken zum Zuordnen."><i class="fas fa-question-circle me-1"></i>Offen <i class="fas fa-link ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     }
 
     if (r.isVerbandsschiessen && !r.alreadyBooked && !r.isWrongYear) {
       statusBadge += `<br><span class="badge bg-warning text-dark mt-1" style="font-size:10px;" title="${escHtml(r.splitHint)}"><i class="fas fa-exclamation-triangle me-1"></i>Wettschiessen / Split</span>`;
     }
 
-    let matchInfo = '';
+    let matchContent = '';
     if (r.isInvoice && r.matchedInvoice) {
       const inv = r.matchedInvoice;
-      matchInfo = `<div class="fw-semibold text-success" style="font-size:12px;">
+      matchContent = `<div class="fw-semibold text-success" style="font-size:12px;">
         <i class="fas fa-file-invoice me-1"></i>${escHtml(inv.id)}: ${escHtml(inv.name)}
       </div>
       <div class="text-muted" style="font-size:10px;">Typ: ${escHtml(inv.type || 'Rechnung')} · Soll: CHF ${Number(inv.total_amount || 0).toFixed(2)}</div>`;
     } else if (r.isJahresbeitrag && r.matchedMember) {
       const m = r.matchedMember;
-      matchInfo = `<div class="fw-semibold text-primary" style="font-size:12px;">
+      matchContent = `<div class="fw-semibold text-primary" style="font-size:12px;">
         <i class="fas fa-user me-1"></i>${escHtml(m.FirstName)} ${escHtml(m.LastName)}
       </div>
       <div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${m.PersonNumber || '–'}</div>`;
     } else {
-      matchInfo = `<div class="text-muted" style="font-size:11px;">${escHtml(r.matchLabel || 'Manuelle Buchung')}</div>`;
+      matchContent = `<div class="text-muted" style="font-size:11px;">${escHtml(r.matchLabel || 'Manuelle Buchung')}</div>`;
+    }
+
+    let matchInfo = '';
+    if (!isRowEditable) {
+      matchInfo = matchContent;
+    } else {
+      matchInfo = `
+        <div class="d-flex align-items-center justify-content-between gap-1">
+          <div class="text-truncate">${matchContent}</div>
+          <div class="dropdown flex-shrink-0">
+            <button class="btn btn-xs btn-outline-secondary py-0 px-1 dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false" title="Status & Zuordnung ändern">
+              <i class="fas fa-pen small"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="font-size: 12px; z-index: 1055;">
+              ${(r.isJahresbeitrag || r.isInvoice) ? `
+                <li><a class="dropdown-item text-danger fw-semibold" href="javascript:void(0)" onclick="bhBankRemoveJbAssignment(${realI})"><i class="fas fa-times-circle me-2"></i>Status Jahresbeitrag entfernen (Manuell)</a></li>
+                <li><hr class="dropdown-divider my-1"></li>
+              ` : ''}
+              <li><a class="dropdown-item ${r.isJahresbeitrag ? '' : 'text-success fw-semibold'}" href="javascript:void(0)" onclick="bhBankOpenAssignModal(${realI}, 'member')"><i class="fas fa-id-card me-2"></i>${r.isJahresbeitrag ? 'Anderes Mitglied zuordnen...' : 'Als Jahresbeitrag zuordnen...'}</a></li>
+              <li><a class="dropdown-item" href="javascript:void(0)" onclick="bhBankOpenAssignModal(${realI}, 'invoice')"><i class="fas fa-file-invoice me-2"></i>Rechnung zuordnen...</a></li>
+              <li><hr class="dropdown-divider my-1"></li>
+              <li><a class="dropdown-item text-secondary" href="javascript:void(0)" onclick="bhBankOpenAssignModal(${realI})"><i class="fas fa-sliders-h me-2"></i>Status &amp; Zuordnung anpassen...</a></li>
+            </ul>
+          </div>
+        </div>
+      `;
     }
 
     const sollSelectId = `bh-soll-${realI}`;
@@ -742,6 +786,9 @@ function bhBankRenderResults(filter) {
         </button>
         <button class="btn btn-sm btn-outline-secondary py-1 px-2" onclick="bhBankSaveRuleModal(${realI})" title="Dauerhafte automatische Regel für diesen Absender/Text merken">
           <i class="fas fa-plus-circle"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary py-1 px-2" onclick="bhBankOpenAssignModal(${realI})" title="Status & Zuordnung anpassen (Jahresbeitrag / Rechnung / Manuell)">
+          <i class="fas fa-tag"></i>
         </button>
       `;
     } else if (r.alreadyBooked) {
@@ -1314,173 +1361,220 @@ function bhBankMatchAll(transactions) {
 
     function isCreditDefault(isCred) { return isCred; }
 
-    // 1. STUFE: Rechnungs- & Beitrags-Matching (nur bei Gutschriften)
-    if (tx.isCredit) {
-      const bankName = normalizeString(tx.partyName || '');
-      const txAmt = tx.amount;
+    // 0b. STUFE: Prüfung auf manuelle Benutzer-Übersteuerung (Status / Zuordnung manuell geändert)
+    let hasCustomOverride = false;
+    if (tx._customMatchOverride === 'manual') {
+      hasCustomOverride = true;
+      isInvoice = false;
+      matchedInvoice = null;
+      alreadyPaidInvoice = false;
+      isJahresbeitrag = false;
+      matchedMember = null;
+      matchedBeitrag = null;
+      alreadyPaidJb = false;
+      matchType = (tx.alreadyBooked || alreadyBooked) ? 'journal' : 'unknown';
+      matchLabel = 'Manuelle Buchung';
+      matchScore = 0;
+      if (!tx._customSollEdited) suggestedSoll = tx.isCredit ? txBankKonto : '';
+      if (!tx._customHabenEdited) suggestedHaben = tx.isCredit ? '' : txBankKonto;
+    } else if (tx._customMatchOverride === 'jahresbeitrag') {
+      hasCustomOverride = true;
+      isJahresbeitrag = true;
+      matchedMember = tx.matchedMember;
+      matchedBeitrag = tx.matchedBeitrag;
+      alreadyPaidJb = tx.alreadyPaidJb || (tx.matchedBeitrag && tx.matchedBeitrag.status === 'bezahlt');
+      matchType = (tx.alreadyBooked || alreadyBooked) ? 'journal' : 'jb';
+      matchLabel = tx.matchLabel || (tx.matchedMember ? `Jahresbeitrag (${tx.matchedMember.FirstName} ${tx.matchedMember.LastName})` : 'Jahresbeitrag Mitglied');
+      matchScore = 2;
+      if (!tx._customSollEdited) suggestedSoll = txBankKonto;
+      if (!tx._customHabenEdited) suggestedHaben = '3410';
+    } else if (tx._customMatchOverride === 'invoice') {
+      hasCustomOverride = true;
+      isInvoice = true;
+      matchedInvoice = tx.matchedInvoice;
+      alreadyPaidInvoice = tx.alreadyPaidInvoice;
+      isJahresbeitrag = tx.isJahresbeitrag;
+      matchedMember = tx.matchedMember;
+      matchedBeitrag = tx.matchedBeitrag;
+      alreadyPaidJb = tx.alreadyPaidJb;
+      matchType = (tx.alreadyBooked || alreadyBooked) ? 'journal' : 'invoice';
+      matchLabel = tx.matchLabel || (tx.matchedInvoice ? `Rechnung ${tx.matchedInvoice.id}` : 'Rechnung');
+      matchScore = 2;
+      if (!tx._customSollEdited) suggestedSoll = txBankKonto;
+      if (!tx._customHabenEdited) suggestedHaben = tx.suggestedHaben || '3650';
+    }
 
-      // A. Rechnungs-Matching aus Modul Rechnungen (_invoices)
-      let bestInv = null;
-      let bestInvScore = 0;
+    if (!hasCustomOverride) {
+      // 1. STUFE: Rechnungs- & Beitrags-Matching (nur bei Gutschriften)
+      if (tx.isCredit) {
+        const bankName = normalizeString(tx.partyName || '');
+        const txAmt = tx.amount;
 
-      // Vorfilterung für sicheres Matching: Datumsmuster (z.B. 02.02.2026, 2.2.26, 2026-02-02) und isolierte 4-stellige Jahreszahlen aus Verwendungszweck ausblenden
-      const rmtNoDates = cleanRemittance
-        .replace(/\b\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b/g, ' ')
-        .replace(/\b20\d{2}\b/g, ' ');
+        // A. Rechnungs-Matching aus Modul Rechnungen (_invoices)
+        let bestInv = null;
+        let bestInvScore = 0;
 
-      for (const inv of invoices) {
-        const invIdRaw = String(inv.id || '').trim();
-        const invIdClean = invIdRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const invTotal = Number(inv.total_amount || 0);
-        const invName = normalizeString(inv.name || '');
-        const invPn = String(inv.PersonNumber || '').replace(/[^0-9]/g, '');
-        const sameAmount = Math.abs(invTotal - txAmt) < 0.05;
+        // Vorfilterung für sicheres Matching: Datumsmuster (z.B. 02.02.2026, 2.2.26, 2026-02-02) und isolierte 4-stellige Jahreszahlen aus Verwendungszweck ausblenden
+        const rmtNoDates = cleanRemittance
+          .replace(/\b\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b/g, ' ')
+          .replace(/\b20\d{2}\b/g, ' ');
 
-        let score = 0;
-
-        // 1. Exakte Rechnungs-ID im Text oder Referenz (z.B. "RE-26-7K4M", "MV-26-8N2W", "DP-26-5M7T", "RE-JB-2026-0042", "V-2026-0012")
-        const cleanRmtNoSpace = cleanRemittance.replace(/[^a-z0-9]/g, '');
-        const cleanRefNoSpace = cleanRef.replace(/[^a-z0-9]/g, '');
-        if (invIdClean && (cleanRmtNoSpace.includes(invIdClean) || cleanRefNoSpace.includes(invIdClean))) {
-          score += 4.5; // Volltreffer bei exakter ID
-        } else {
-          // 1b. Eindeutiger Kennungsteil / Suffix (z.B. "7K4M" aus "RE-26-7K4M" oder "8N2W" aus "MV-26-8N2W")
-          const idParts = invIdRaw.split('-');
-          const suffix = idParts.length > 1 ? idParts[idParts.length - 1].toLowerCase().trim() : '';
-
-          // Suffix muss mindestens 3 Zeichen haben und darf keine reine Jahreszahl (z.B. 2026) sein
-          if (suffix && suffix.length >= 3 && !/^20\d{2}$/.test(suffix)) {
-            const suffixRegex = new RegExp(`\\b${suffix}\\b`, 'i');
-            if (suffixRegex.test(rmtNoDates) || cleanRef.includes(suffix)) {
-              const hasKeyword = /(?:rechnung|re-?nr|inv|ref|beleg|nr)/i.test(cleanRemittance);
-              score += hasKeyword ? 2.5 : 2.0;
-            }
-          }
-        }
-
-        // 2. QR-Referenz-Endung auf PersonNumber
-        if (cleanRef && invPn && cleanRef.replace(/[^0-9]/g, '').endsWith(invPn)) {
-          score += 2;
-        }
-
-        // 3. Exakter Betrag
-        if (sameAmount) {
-          score += 1.5;
-        }
-
-        // 4. Namensabgleich (Vor-/Nachname oder Firma)
-        if (invName && bankName) {
-          if (bankName.includes(invName) || invName.includes(bankName)) {
-            score += 2;
-          } else {
-            const parts = invName.split(/\s+/).filter(p => p.length > 2);
-            let partMatches = 0;
-            parts.forEach(p => { if (bankName.includes(p)) partMatches++; });
-            if (partMatches >= 2) score += 1.5;
-            else if (partMatches === 1) score += 0.8;
-          }
-        }
-
-        // 5. Bevorzuge noch offene Rechnungen (nur wenn mindestens ein Identifikator wie Name, ID oder Suffix gematcht hat)
-        if (inv.status !== 'bezahlt' && score >= 2.0) {
-          score += 1;
-        }
-
-        if (score > bestInvScore) {
-          bestInvScore = score;
-          bestInv = inv;
-        }
-      }
-
-      if (bestInv && bestInvScore >= 2.5) {
-        isInvoice = true;
-        matchedInvoice = bestInv;
-        alreadyPaidInvoice = (bestInv.status === 'bezahlt');
-        matchType = 'invoice';
-        suggestedSoll = txBankKonto;
-        
-        // Habenkonto nach Rechnungstyp auflösen
-        const invType = String(bestInv.type || '').toLowerCase();
-        const invIdUpper = String(bestInv.id || '').toUpperCase();
-        if (invType.includes('jahresbeitrag') || invIdUpper.startsWith('JB-') || invIdUpper.startsWith('RE-JB-')) {
-          suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
-          isJahresbeitrag = true;
-          matchedBeitrag = beitraege.find(b => String(b.PersonNumber) === String(bestInv.PersonNumber) || String(b.id) === String(bestInv.id)) || null;
-          matchedMember = members.find(m => String(m.PersonNumber) === String(bestInv.PersonNumber)) || null;
-          alreadyPaidJb = alreadyPaidInvoice || (matchedBeitrag && matchedBeitrag.status === 'bezahlt');
-        } else if (invType.includes('vermietung') || invType.includes('miete') || invIdUpper.startsWith('VT-') || invIdUpper.startsWith('V-')) {
-          suggestedHaben = '3650'; // Mieterträge Schützenhaus
-        } else if (invType.includes('schulsport')) {
-          suggestedHaben = '3420'; // Nachwuchsförderung
-        } else if (invType.includes('sponsor') || invType.includes('gönner')) {
-          suggestedHaben = '3800'; // Sponsoring / Spenden
-        } else if (invType.includes('munition') || invType.includes('material') || invIdUpper.startsWith('MV-')) {
-          suggestedHaben = '3800'; // Material-/Munitionsverkauf
-        } else if (invType.includes('depot') || invType.includes('pfand') || invType.includes('kaution') || invIdUpper.startsWith('DP-')) {
-          suggestedHaben = '2000'; // Kaution / Verbindlichkeiten
-        } else {
-          suggestedHaben = '3650';
-        }
-
-        matchScore = bestInvScore >= 3.5 ? 2 : 1;
-        matchLabel = `Rechnung ${bestInv.id} (${bestInv.type || 'Diverse'}): ${bestInv.name}`;
-      }
-
-      // B. Falls keine Rechnung direkt gefunden, prüfe Jahresbeiträge über Mitgliederstamm
-      if (!isInvoice) {
-        const jbKeywords = [/jahresbeitra/i, /mitgliederbeitra/i, /vereinsbeitra/i, /\bjb\b/i, /beitra\s*g/i];
-        const textHasJb = jbKeywords.some(r => r.test(cleanRemittance));
-
-        let bestScore = 0;
-        let bestMem = null;
-        let bestBeit = null;
-
-        for (const m of members) {
-          const b = beitraege.find(x => String(x.PersonNumber) === String(m.PersonNumber)) || null;
-          const mLast  = normalizeString(m.LastName  || '');
-          const mFirst = normalizeString(m.FirstName || '');
-          const mGesamt = b ? Number(b.Gesamt || 0) : (m._istPassiv ? 20 : 0);
+        for (const inv of invoices) {
+          const invIdRaw = String(inv.id || '').trim();
+          const invIdClean = invIdRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const invTotal = Number(inv.total_amount || 0);
+          const invName = normalizeString(inv.name || '');
+          const invPn = String(inv.PersonNumber || '').replace(/[^0-9]/g, '');
+          const sameAmount = Math.abs(invTotal - txAmt) < 0.05;
 
           let score = 0;
-          if (Math.abs(mGesamt - tx.amount) < 0.01) score += 1;
-          if (bankName.includes(mLast) && mLast.length > 1) score += 1;
-          if (bankName.includes(mFirst) && mFirst.length > 1) score += 0.5;
 
-          const cleanMpn = String(m.PersonNumber || '').trim().replace(/^0+/, '');
-          if (cleanRef && cleanMpn && cleanRef.replace(/[^0-9]/g, '').endsWith(cleanMpn)) {
+          // 1. Exakte Rechnungs-ID im Text oder Referenz (z.B. "RE-26-7K4M", "MV-26-8N2W", "DP-26-5M7T", "RE-JB-2026-0042", "V-2026-0012")
+          const cleanRmtNoSpace = cleanRemittance.replace(/[^a-z0-9]/g, '');
+          const cleanRefNoSpace = cleanRef.replace(/[^a-z0-9]/g, '');
+          if (invIdClean && (cleanRmtNoSpace.includes(invIdClean) || cleanRefNoSpace.includes(invIdClean))) {
+            score += 4.5; // Volltreffer bei exakter ID
+          } else {
+            // 1b. Eindeutiger Kennungsteil / Suffix (z.B. "7K4M" aus "RE-26-7K4M" oder "8N2W" aus "MV-26-8N2W")
+            const idParts = invIdRaw.split('-');
+            const suffix = idParts.length > 1 ? idParts[idParts.length - 1].toLowerCase().trim() : '';
+
+            // Suffix muss mindestens 3 Zeichen haben und darf keine reine Jahreszahl (z.B. 2026) sein
+            if (suffix && suffix.length >= 3 && !/^20\d{2}$/.test(suffix)) {
+              const suffixRegex = new RegExp(`\\b${suffix}\\b`, 'i');
+              if (suffixRegex.test(rmtNoDates) || cleanRef.includes(suffix)) {
+                const hasKeyword = /(?:rechnung|re-?nr|inv|ref|beleg|nr)/i.test(cleanRemittance);
+                score += hasKeyword ? 2.5 : 2.0;
+              }
+            }
+          }
+
+          // 2. QR-Referenz-Endung auf PersonNumber
+          if (cleanRef && invPn && cleanRef.replace(/[^0-9]/g, '').endsWith(invPn)) {
             score += 2;
           }
 
-          if (score > bestScore) {
-            bestScore = score;
-            bestMem = m;
-            bestBeit = b;
+          // 3. Exakter Betrag
+          if (sameAmount) {
+            score += 1.5;
+          }
+
+          // 4. Namensabgleich (Vor-/Nachname oder Firma)
+          if (invName && bankName) {
+            if (bankName.includes(invName) || invName.includes(bankName)) {
+              score += 2;
+            } else {
+              const parts = invName.split(/\s+/).filter(p => p.length > 2);
+              let partMatches = 0;
+              parts.forEach(p => { if (bankName.includes(p)) partMatches++; });
+              if (partMatches >= 2) score += 1.5;
+              else if (partMatches === 1) score += 0.8;
+            }
+          }
+
+          // 5. Bevorzuge noch offene Rechnungen (nur wenn mindestens ein Identifikator wie Name, ID oder Suffix gematcht hat)
+          if (inv.status !== 'bezahlt' && score >= 2.0) {
+            score += 1;
+          }
+
+          if (score > bestInvScore) {
+            bestInvScore = score;
+            bestInv = inv;
           }
         }
 
-        if (textHasJb || cleanRef || bestScore >= 2) {
-          isJahresbeitrag = true;
-          matchScore = bestScore >= 2 ? 2 : 1;
-          matchedMember = bestMem;
-          matchedBeitrag = bestBeit;
-          alreadyPaidJb = bestBeit ? (bestBeit.status === 'bezahlt') : false;
-          matchType = 'jb';
-          suggestedSoll = txBankKonto; // Bank
-          suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
-          matchLabel = 'Jahresbeitrag Mitglied';
+        if (bestInv && bestInvScore >= 2.5) {
+          isInvoice = true;
+          matchedInvoice = bestInv;
+          alreadyPaidInvoice = (bestInv.status === 'bezahlt');
+          matchType = 'invoice';
+          if (!tx._customSollEdited) suggestedSoll = txBankKonto;
+          
+          // Habenkonto nach Rechnungstyp auflösen
+          if (!tx._customHabenEdited) {
+            const invType = String(bestInv.type || '').toLowerCase();
+            const invIdUpper = String(bestInv.id || '').toUpperCase();
+            if (invType.includes('jahresbeitrag') || invIdUpper.startsWith('JB-') || invIdUpper.startsWith('RE-JB-')) {
+              suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
+              isJahresbeitrag = true;
+              matchedBeitrag = beitraege.find(b => String(b.PersonNumber) === String(bestInv.PersonNumber) || String(b.id) === String(bestInv.id)) || null;
+              matchedMember = members.find(m => String(m.PersonNumber) === String(bestInv.PersonNumber)) || null;
+              alreadyPaidJb = alreadyPaidInvoice || (matchedBeitrag && matchedBeitrag.status === 'bezahlt');
+            } else if (invType.includes('vermietung') || invType.includes('miete') || invIdUpper.startsWith('VT-') || invIdUpper.startsWith('V-')) {
+              suggestedHaben = '3650'; // Mieterträge Schützenhaus
+            } else if (invType.includes('schulsport')) {
+              suggestedHaben = '3420'; // Nachwuchsförderung
+            } else if (invType.includes('sponsor') || invType.includes('gönner')) {
+              suggestedHaben = '3800'; // Sponsoring / Spenden
+            } else if (invType.includes('munition') || invType.includes('material') || invIdUpper.startsWith('MV-')) {
+              suggestedHaben = '3800'; // Material-/Munitionsverkauf
+            } else if (invType.includes('depot') || invType.includes('pfand') || invType.includes('kaution') || invIdUpper.startsWith('DP-')) {
+              suggestedHaben = '2000'; // Kaution / Verbindlichkeiten
+            } else {
+              suggestedHaben = '3650';
+            }
+          }
 
-          // Falls eine Rechnung im Rechnungsmodul für diesen Beitrag existiert:
-          if (bestMem) {
-            const relInv = invoices.find(inv => String(inv.PersonNumber) === String(bestMem.PersonNumber) && String(inv.type || '').toLowerCase().includes('jahresbeitrag'));
-            if (relInv) {
-              matchedInvoice = relInv;
-              isInvoice = true;
-              alreadyPaidInvoice = (relInv.status === 'bezahlt');
+          matchScore = bestInvScore >= 3.5 ? 2 : 1;
+          matchLabel = `Rechnung ${bestInv.id} (${bestInv.type || 'Diverse'}): ${bestInv.name}`;
+        }
+
+        // B. Falls keine Rechnung direkt gefunden, prüfe Jahresbeiträge über Mitgliederstamm
+        if (!isInvoice) {
+          const jbKeywords = [/jahresbeitra/i, /mitgliederbeitra/i, /vereinsbeitra/i, /\bjb\b/i, /beitra\s*g/i];
+          const textHasJb = jbKeywords.some(r => r.test(cleanRemittance));
+
+          let bestScore = 0;
+          let bestMem = null;
+          let bestBeit = null;
+
+          for (const m of members) {
+            const b = beitraege.find(x => String(x.PersonNumber) === String(m.PersonNumber)) || null;
+            const mLast  = normalizeString(m.LastName  || '');
+            const mFirst = normalizeString(m.FirstName || '');
+            const mGesamt = b ? Number(b.Gesamt || 0) : (m._istPassiv ? 20 : 0);
+
+            let score = 0;
+            if (Math.abs(mGesamt - tx.amount) < 0.01) score += 1;
+            if (bankName.includes(mLast) && mLast.length > 1) score += 1;
+            if (bankName.includes(mFirst) && mFirst.length > 1) score += 0.5;
+
+            const cleanMpn = String(m.PersonNumber || '').trim().replace(/^0+/, '');
+            if (cleanRef && cleanMpn && cleanRef.replace(/[^0-9]/g, '').endsWith(cleanMpn)) {
+              score += 2;
+            }
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestMem = m;
+              bestBeit = b;
+            }
+          }
+
+          const hasMemberMatch = (bestScore >= 2) || (textHasJb && bestMem && bestScore >= 1) || (cleanRef && bestScore >= 2);
+          if (hasMemberMatch && bestMem) {
+            isJahresbeitrag = true;
+            matchScore = bestScore >= 2 ? 2 : 1;
+            matchedMember = bestMem;
+            matchedBeitrag = bestBeit;
+            alreadyPaidJb = bestBeit ? (bestBeit.status === 'bezahlt') : false;
+            matchType = 'jb';
+            if (!tx._customSollEdited) suggestedSoll = txBankKonto; // Bank
+            if (!tx._customHabenEdited) suggestedHaben = '3410'; // Mitgliederbeiträge Aktive
+            matchLabel = `Jahresbeitrag (${bestMem.FirstName} ${bestMem.LastName})`;
+
+            // Falls eine Rechnung im Rechnungsmodul für diesen Beitrag existiert:
+            if (bestMem) {
+              const relInv = invoices.find(inv => String(inv.PersonNumber) === String(bestMem.PersonNumber) && String(inv.type || '').toLowerCase().includes('jahresbeitrag'));
+              if (relInv) {
+                matchedInvoice = relInv;
+                isInvoice = true;
+                alreadyPaidInvoice = (relInv.status === 'bezahlt');
+              }
             }
           }
         }
       }
-    }
 
     // 1b. STUFE: AUTOMATISCHE VERMIETUNGS-REGEL & SYSTEM-PATTERNS (V-YYYY-XXXX, Miete, Mietvertrag)
     if (!isJahresbeitrag && !isInvoice) {
@@ -1663,6 +1757,7 @@ function bhBankMatchAll(transactions) {
         suggestedHaben = suggestedHaben || txBankKonto; // Bank
       }
     }
+    } // Ende if (!hasCustomOverride)
 
     // ABSOLUTER GARANTIE-CHECK: Bankkonto darf NIEMALS auf der verkehrten Seite stehen!
     // Belastung (tx.isCredit === false) -> Bank (1020) MUSS im HABEN stehen!
@@ -1702,6 +1797,7 @@ function bhBankMatchAll(transactions) {
 
     return {
       ...tx,
+      _customMatchOverride: tx._customMatchOverride,
       txYear,
       isWrongYear,
       isVerbandsschiessen,
@@ -1964,7 +2060,7 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   const bookingDate = tx.bookingDate || new Date().toISOString().split('T')[0];
 
   let entries = [];
-  if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
+  if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx._customHabenEdited || tx.suggestedHaben === '3410') && typeof window.jbGetSplitBookings === 'function') {
     const hId = tx.matchedBeitrag ? tx.matchedBeitrag.id : (tx.matchedInvoice ? tx.matchedInvoice.id : null);
     const mObj = tx.matchedMember || (tx.matchedInvoice ? { FirstName: tx.matchedInvoice.name, LastName: '', PersonNumber: tx.matchedInvoice.PersonNumber } : {});
     const split = window.jbGetSplitBookings({
@@ -3598,4 +3694,405 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
       saveBtn.innerHTML = `<i class="fas fa-save me-1"></i>Split-Buchung speichern (${splitRows.length} Zeilen)`;
     }
   }
+};
+
+// =====================================================================
+// MODAL & FUNKTIONEN: STATUS & ZUORDNUNG ANPASSEN (Jahresbeitrag / Manuell)
+// =====================================================================
+
+window.bhBankRemoveJbAssignment = function(txIdx) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  tx._customMatchOverride = 'manual';
+  tx.isJahresbeitrag = false;
+  tx.matchedMember = null;
+  tx.matchedBeitrag = null;
+  tx.alreadyPaidJb = false;
+  tx.isInvoice = false;
+  tx.matchedInvoice = null;
+  tx.alreadyPaidInvoice = false;
+  tx.matchType = tx.alreadyBooked ? 'journal' : 'unknown';
+  tx.matchLabel = 'Manuelle Buchung';
+  tx.matchScore = 0;
+
+  // Wenn Haben-Konto automatisch auf 3410 (Mitgliederbeiträge) gesetzt war, leeren
+  if (!tx._customHabenEdited && tx.suggestedHaben === '3410') {
+    tx.suggestedHaben = '';
+  }
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    Object.assign(window._bhBankTransactions[txIdx], {
+      _customMatchOverride: 'manual',
+      isJahresbeitrag: false,
+      matchedMember: null,
+      matchedBeitrag: null,
+      alreadyPaidJb: false,
+      isInvoice: false,
+      matchedInvoice: null,
+      alreadyPaidInvoice: false,
+      matchType: tx.matchType,
+      matchLabel: 'Manuelle Buchung',
+      matchScore: 0,
+      suggestedHaben: tx.suggestedHaben
+    });
+  }
+
+  const modalEl = document.getElementById('bhModalAssign');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof showToast === 'function') {
+    showToast('✅ Status "Jahresbeitrag" entfernt. Buchung kann nun frei manuell verbucht werden.', 'info');
+  }
+};
+
+window.bhBankApplyJbAssignment = function(txIdx, personNumber) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  const members = window._jbMembers || [];
+  const beitraege = (window._jbAllBeitraege || []).filter(h => Number(h.year) === Number(window._bhYear || new Date().getFullYear()));
+  const mem = members.find(m => String(m.PersonNumber) === String(personNumber));
+  if (!mem) {
+    if (typeof showToast === 'function') showToast('Bitte ein Mitglied auswählen.', 'warning');
+    return;
+  }
+
+  const beitrag = beitraege.find(b => String(b.PersonNumber) === String(mem.PersonNumber)) || null;
+
+  tx._customMatchOverride = 'jahresbeitrag';
+  tx.isJahresbeitrag = true;
+  tx.matchedMember = mem;
+  tx.matchedBeitrag = beitrag;
+  tx.alreadyPaidJb = beitrag ? (beitrag.status === 'bezahlt') : false;
+  tx.isInvoice = false;
+  tx.matchedInvoice = null;
+  tx.alreadyPaidInvoice = false;
+  tx.matchType = tx.alreadyBooked ? 'journal' : 'jb';
+  tx.matchLabel = `Jahresbeitrag (${mem.FirstName} ${mem.LastName})`;
+  tx.matchScore = 2;
+
+  const txBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
+  if (!tx._customSollEdited) tx.suggestedSoll = txBankKonto;
+  if (!tx._customHabenEdited) tx.suggestedHaben = '3410';
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    Object.assign(window._bhBankTransactions[txIdx], {
+      _customMatchOverride: 'jahresbeitrag',
+      isJahresbeitrag: true,
+      matchedMember: mem,
+      matchedBeitrag: beitrag,
+      alreadyPaidJb: tx.alreadyPaidJb,
+      isInvoice: false,
+      matchedInvoice: null,
+      alreadyPaidInvoice: false,
+      matchType: tx.matchType,
+      matchLabel: tx.matchLabel,
+      matchScore: 2,
+      suggestedSoll: tx.suggestedSoll,
+      suggestedHaben: tx.suggestedHaben
+    });
+  }
+
+  const modalEl = document.getElementById('bhModalAssign');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof showToast === 'function') {
+    showToast(`✅ Transaktion als Jahresbeitrag von ${mem.FirstName} ${mem.LastName} zugeordnet.`, 'success');
+  }
+};
+
+window.bhBankApplyInvoiceAssignment = function(txIdx, invoiceId) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  const invoices = window._invoices || window._jbAllInvoices || [];
+  const inv = invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) {
+    if (typeof showToast === 'function') showToast('Bitte eine Rechnung auswählen.', 'warning');
+    return;
+  }
+
+  tx._customMatchOverride = 'invoice';
+  tx.isInvoice = true;
+  tx.matchedInvoice = inv;
+  tx.alreadyPaidInvoice = (inv.status === 'bezahlt');
+
+  const invType = String(inv.type || '').toLowerCase();
+  const invIdUpper = String(inv.id || '').toUpperCase();
+  if (invType.includes('jahresbeitrag') || invIdUpper.startsWith('JB-') || invIdUpper.startsWith('RE-JB-')) {
+    tx.isJahresbeitrag = true;
+    const members = window._jbMembers || [];
+    const beitraege = window._jbAllBeitraege || [];
+    tx.matchedBeitrag = beitraege.find(b => String(b.PersonNumber) === String(inv.PersonNumber) || String(b.id) === String(inv.id)) || null;
+    tx.matchedMember = members.find(m => String(m.PersonNumber) === String(inv.PersonNumber)) || null;
+    tx.alreadyPaidJb = tx.alreadyPaidInvoice || (tx.matchedBeitrag && tx.matchedBeitrag.status === 'bezahlt');
+    if (!tx._customHabenEdited) tx.suggestedHaben = '3410';
+  } else {
+    tx.isJahresbeitrag = false;
+    tx.matchedBeitrag = null;
+    tx.matchedMember = null;
+    tx.alreadyPaidJb = false;
+    if (!tx._customHabenEdited) {
+      if (invType.includes('vermietung') || invType.includes('miete')) tx.suggestedHaben = '3650';
+      else if (invType.includes('schulsport')) tx.suggestedHaben = '3420';
+      else if (invType.includes('sponsor') || invType.includes('gönner')) tx.suggestedHaben = '3800';
+      else tx.suggestedHaben = '3650';
+    }
+  }
+
+  tx.matchType = tx.alreadyBooked ? 'journal' : 'invoice';
+  tx.matchLabel = `Rechnung ${inv.id} (${inv.type || 'Diverse'}): ${inv.name}`;
+  tx.matchScore = 2;
+
+  const txBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
+  if (!tx._customSollEdited) tx.suggestedSoll = txBankKonto;
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    Object.assign(window._bhBankTransactions[txIdx], {
+      _customMatchOverride: 'invoice',
+      isInvoice: true,
+      matchedInvoice: inv,
+      alreadyPaidInvoice: tx.alreadyPaidInvoice,
+      isJahresbeitrag: tx.isJahresbeitrag,
+      matchedBeitrag: tx.matchedBeitrag,
+      matchedMember: tx.matchedMember,
+      alreadyPaidJb: tx.alreadyPaidJb,
+      matchType: tx.matchType,
+      matchLabel: tx.matchLabel,
+      matchScore: 2,
+      suggestedSoll: tx.suggestedSoll,
+      suggestedHaben: tx.suggestedHaben
+    });
+  }
+
+  const modalEl = document.getElementById('bhModalAssign');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof showToast === 'function') {
+    showToast(`✅ Transaktion Rechnung ${inv.id} (${inv.name}) zugeordnet.`, 'success');
+  }
+};
+
+window.bhBankFilterAssignMemberList = function(txIdx) {
+  const q = normalizeString(document.getElementById('bhAssignMemberSearch')?.value || '');
+  const sel = document.getElementById('bhAssignMemberSelect');
+  if (!sel) return;
+
+  const members = window._jbMembers || [];
+  const beitraege = (window._jbAllBeitraege || []).filter(h => Number(h.year) === Number(window._bhYear || new Date().getFullYear()));
+  const tx = (window._bhBankMatchResults || [])[txIdx];
+  const currentMemPn = tx && tx.matchedMember ? String(tx.matchedMember.PersonNumber) : '';
+
+  const filteredMems = members.filter(m => {
+    if (!q) return true;
+    const name = normalizeString(`${m.FirstName} ${m.LastName} ${m.PersonNumber}`);
+    return name.includes(q);
+  });
+
+  if (filteredMems.length === 0) {
+    sel.innerHTML = '<option value="" disabled>Keine Mitglieder gefunden</option>';
+    return;
+  }
+
+  sel.innerHTML = filteredMems.map(m => {
+    const b = beitraege.find(x => String(x.PersonNumber) === String(m.PersonNumber));
+    const amt = b ? Number(b.Gesamt || 0) : 0;
+    const isSel = String(m.PersonNumber) === currentMemPn;
+    const bStatus = b ? (b.status === 'bezahlt' ? ' (bereits bezahlt)' : ` (Offen: CHF ${amt.toFixed(2)})`) : '';
+    return `<option value="${escHtml(m.PersonNumber)}" ${isSel ? 'selected' : ''}>${escHtml(m.LastName)} ${escHtml(m.FirstName)} [Nr. ${escHtml(m.PersonNumber)}]${bStatus}</option>`;
+  }).join('');
+};
+
+window.bhBankApplyJbFromModal = function(txIdx) {
+  const sel = document.getElementById('bhAssignMemberSelect');
+  if (!sel || !sel.value) {
+    if (typeof showToast === 'function') showToast('Bitte wähle ein Mitglied aus der Liste aus.', 'warning');
+    return;
+  }
+  bhBankApplyJbAssignment(txIdx, sel.value);
+};
+
+window.bhBankApplyInvoiceFromModal = function(txIdx) {
+  const sel = document.getElementById('bhAssignInvoiceSelect');
+  if (!sel || !sel.value) {
+    if (typeof showToast === 'function') showToast('Bitte wähle eine Rechnung aus der Liste aus.', 'warning');
+    return;
+  }
+  bhBankApplyInvoiceAssignment(txIdx, sel.value);
+};
+
+window.bhBankOpenAssignModal = function(txIdx, initialTab = 'auto') {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  let modalEl = document.getElementById('bhModalAssign');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalAssign';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const invoices = window._invoices || window._jbAllInvoices || [];
+  const currentInvId = tx.matchedInvoice ? String(tx.matchedInvoice.id) : '';
+
+  const isCredit = tx.isCredit;
+  const amtClass = isCredit ? 'text-success' : 'text-danger';
+  const amtSign  = isCredit ? '+' : '-';
+
+  let invoiceOptions = '<option value="">-- Offene Rechnung auswählen --</option>';
+  invoices.forEach(inv => {
+    const isSel = String(inv.id) === currentInvId;
+    const invAmt = Number(inv.total_amount || 0).toFixed(2);
+    invoiceOptions += `<option value="${escHtml(inv.id)}" ${isSel ? 'selected' : ''}>${escHtml(inv.id)}: ${escHtml(inv.name)} (CHF ${invAmt}, ${escHtml(inv.status || 'offen')})</option>`;
+  });
+
+  let currentStatusBadge = '';
+  if (tx.isJahresbeitrag) {
+    currentStatusBadge = `<span class="badge bg-success me-1"><i class="fas fa-check-circle me-1"></i>Jahresbeitrag</span>`;
+  } else if (tx.isInvoice) {
+    currentStatusBadge = `<span class="badge bg-success me-1"><i class="fas fa-file-invoice me-1"></i>Rechnung</span>`;
+  } else if (tx.matchType === 'rule') {
+    currentStatusBadge = `<span class="badge bg-info text-dark me-1"><i class="fas fa-magic me-1"></i>Regel</span>`;
+  } else {
+    currentStatusBadge = `<span class="badge bg-warning text-dark me-1"><i class="fas fa-question-circle me-1"></i>Offen / Manuell</span>`;
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content shadow-lg border-0 rounded-4">
+        <div class="modal-header bg-primary text-white py-3">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-sliders-h me-2"></i>Status &amp; Zuordnung anpassen
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+        </div>
+        <div class="modal-body p-4">
+          <!-- Transaktions-Info -->
+          <div class="card bg-light border-0 p-3 mb-4 rounded-3">
+            <div class="row g-2 small">
+              <div class="col-6 col-md-3">
+                <span class="text-muted d-block">Buchungsdatum:</span>
+                <strong>${formatSwissDate(tx.bookingDate)}</strong>
+              </div>
+              <div class="col-6 col-md-3">
+                <span class="text-muted d-block">Betrag:</span>
+                <strong class="${amtClass}">${amtSign} CHF ${Number(tx.amount || 0).toFixed(2)}</strong>
+              </div>
+              <div class="col-12 col-md-6">
+                <span class="text-muted d-block">Zahler / Empfänger:</span>
+                <strong class="text-truncate d-block" title="${escHtml(tx.partyName || '–')}">${escHtml(tx.partyName || '–')}</strong>
+              </div>
+              <div class="col-12">
+                <span class="text-muted d-block">Verwendungszweck:</span>
+                <span class="text-muted font-monospace small d-block" style="white-space:normal; word-break:break-word;">${escHtml(tx.remittanceInfo || '–')}</span>
+              </div>
+              <div class="col-12 mt-2 pt-2 border-top">
+                <span class="text-muted">Aktueller Status:</span>
+                ${currentStatusBadge}
+                <span class="text-secondary small fw-semibold ms-1">${escHtml(tx.matchLabel || 'Manuelle Buchung')}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- OPTION 1: Status Jahresbeitrag entfernen / Manuelle Buchung -->
+          <div class="card border rounded-3 p-3 mb-3 ${(tx.isJahresbeitrag || tx.isInvoice || tx.matchType === 'rule') ? 'border-danger bg-light' : 'border-secondary'}">
+            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
+              <div>
+                <h6 class="fw-bold text-dark mb-1">
+                  <i class="fas fa-times-circle text-danger me-2"></i>Kein Jahresbeitrag (Manuell buchen)
+                </h6>
+                <p class="small text-muted mb-0">
+                  Entfernt die Erkennung als Jahresbeitrag oder Rechnung. Die Buchung wird als reguläre Kontobuchung behandelt (keine automatischen Split-Beiträge, kein Statusupdate im Jahresbeitrags-Modul).
+                </p>
+              </div>
+              <button type="button" class="btn btn-outline-danger btn-sm text-nowrap fw-bold px-3 py-1.5 flex-shrink-0" onclick="bhBankRemoveJbAssignment(${txIdx})">
+                <i class="fas fa-unlink me-1"></i>Status auf 'Manuell' setzen
+              </button>
+            </div>
+          </div>
+
+          <!-- OPTION 2: Als Jahresbeitrag einem Mitglied zuordnen -->
+          <div class="card border rounded-3 p-3 mb-3 ${tx.isJahresbeitrag ? 'border-success' : ''}">
+            <h6 class="fw-bold text-primary mb-1">
+              <i class="fas fa-id-card me-2"></i>Als Jahresbeitrag einem Mitglied zuordnen
+            </h6>
+            <p class="small text-muted mb-2">
+              Wähle das Mitglied aus. Beim Verbuchen wird der offene Jahresbeitrag im Beitrags-Modul automatisch als bezahlt markiert und der Buchungssatz gemäss Gebührenreglement gesplittet.
+            </p>
+            <div class="row g-2">
+              <div class="col-12 col-md-8">
+                <div class="input-group input-group-sm mb-1">
+                  <span class="input-group-text"><i class="fas fa-search"></i></span>
+                  <input type="text" id="bhAssignMemberSearch" class="form-control" placeholder="Name oder Nr. tippen..." oninput="bhBankFilterAssignMemberList(${txIdx})">
+                </div>
+                <select id="bhAssignMemberSelect" class="form-select form-select-sm" size="5" style="font-size:12px;">
+                  <!-- Dynamisch befüllt -->
+                </select>
+              </div>
+              <div class="col-12 col-md-4 d-flex flex-column justify-content-end">
+                <button type="button" class="btn btn-success btn-sm w-100 fw-bold py-2 shadow-sm" onclick="bhBankApplyJbFromModal(${txIdx})">
+                  <i class="fas fa-check-circle me-1"></i>Als Jahresbeitrag zuordnen
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- OPTION 3: Rechnung zuordnen -->
+          <div class="card border rounded-3 p-3">
+            <h6 class="fw-bold text-dark mb-1">
+              <i class="fas fa-file-invoice me-2"></i>Rechnung aus Rechnungsmodul zuordnen
+            </h6>
+            <p class="small text-muted mb-2">
+              Ordne diese Zahlung einer bestehenden Vereinsrechnung zu.
+            </p>
+            <div class="row g-2 align-items-center">
+              <div class="col-12 col-md-8">
+                <select id="bhAssignInvoiceSelect" class="form-select form-select-sm" style="font-size:12px;">
+                  ${invoiceOptions}
+                </select>
+              </div>
+              <div class="col-12 col-md-4">
+                <button type="button" class="btn btn-primary btn-sm w-100 fw-bold py-1.5" onclick="bhBankApplyInvoiceFromModal(${txIdx})">
+                  <i class="fas fa-link me-1"></i>Rechnung zuweisen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-light border-0 py-2.5 rounded-bottom-4">
+          <button type="button" class="btn btn-secondary btn-sm fw-semibold px-3" data-bs-dismiss="modal">Abbrechen</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+
+  window.bhBankFilterAssignMemberList(txIdx);
+
+  setTimeout(() => {
+    const searchInp = document.getElementById('bhAssignMemberSearch');
+    if (searchInp && initialTab === 'member') searchInp.focus();
+  }, 300);
 };
