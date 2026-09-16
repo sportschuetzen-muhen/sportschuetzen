@@ -524,6 +524,30 @@ window._bhUpdateTxRemittance = function(idx, val) {
   }
 };
 
+window._bhUpdateTxKonto = function(idx, type, val) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[idx];
+  if (!tx) return;
+
+  function resolveCode(v) {
+    if (!v) return '';
+    const s = String(v).trim();
+    if (s.includes('|')) return s.split('|')[0].trim();
+    if (/^\d{4}$/.test(s)) return s;
+    const matches = typeof bhFindMatchingKonten === 'function' ? bhFindMatchingKonten(s) : [];
+    return matches.length > 0 ? String(matches[0].konto).trim() : s;
+  }
+
+  const code = resolveCode(val);
+  if (type === 'soll') {
+    tx.suggestedSoll = code;
+    tx._customSollEdited = true;
+  } else if (type === 'haben') {
+    tx.suggestedHaben = code;
+    tx._customHabenEdited = true;
+  }
+};
+
 function bhBankRenderResults(filter) {
   const container = document.getElementById('bhBankResultsContainer');
   if (!container) return;
@@ -605,11 +629,17 @@ function bhBankRenderResults(filter) {
   const canEdit = (window.currentRoles || []).some(r => ['admin','kassier','schuetzenmeister'].includes(r));
   const kontenrahmen = window._bhKontenrahmen || [];
 
-  function makeKontoSelectHTML(id, selectedVal, accountClassHint) {
+  function makeKontoSelectHTML(id, selectedVal, type, isLocked = false) {
     const matchedKonto = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
     const displayVal = matchedKonto ? `${matchedKonto.konto} | ${matchedKonto.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
 
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input" placeholder="Ziffern/Name..." value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:140px;" autocomplete="off" title="${escHtml(displayVal || 'Tippe Suchbegriff und drücke [Enter] zum Auswählen')}">`;
+    if (isLocked) {
+      return `<div class="font-monospace small px-2 py-1 rounded bg-light border text-truncate text-secondary" style="max-width:180px;" title="${escHtml(displayVal || '–')}">${escHtml(displayVal || '–')}</div>`;
+    }
+
+    const realIdx = id.startsWith('bh-soll-') ? id.replace('bh-soll-', '') : id.replace('bh-haben-', '');
+
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input" placeholder="Ziffern/Name..." value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:140px;" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Tippe Suchbegriff und drücke [Enter] zum Auswählen')}">`;
   }
 
   const realIdxMap = filtered.map(r => rows.indexOf(r));
@@ -733,10 +763,10 @@ function bhBankRenderResults(filter) {
         <td>${statusBadge}</td>
         <td>${matchInfo}</td>
         <td style="min-width: 140px;">
-          ${makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll')}
+          ${makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
         </td>
         <td style="min-width: 140px;">
-          ${makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben')}
+          ${makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', r.alreadyBooked || r.isWrongYear)}
           ${(() => {
             if ((r.isJahresbeitrag || (r.isInvoice && String(r.matchedInvoice?.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
               const hId = r.matchedBeitrag ? r.matchedBeitrag.id : (r.matchedInvoice ? r.matchedInvoice.id : null);
@@ -1160,27 +1190,24 @@ function bhBankMatchAll(transactions) {
     // 0. STUFE: DUPLIKATS-PRÜFUNG GEGEN DAS BESTEHENDE KASSABUCH-JOURNAL
     let alreadyBooked = false;
     let bookedDate = '';
+    let matchedJournalEntry = null;
 
     if (journalHistory && journalHistory.length > 0) {
-      const isAlreadyInJournal = journalHistory.some(j => {
+      // 1. Priorisiere Journal-Eintrag mit passendem Betrag, Datum UND Beschreibung/Zahler
+      matchedJournalEntry = journalHistory.find(j => {
         const amountDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
-        const sameAmountExact = amountDiff < 0.05; // Betragstoleranz bis 5 Rappen (z.B. Zinsen 3.91 vs 3.90)
+        if (amountDiff >= 0.05) return false;
 
         const jIso = toNormalizedIsoDate(j.datum);
         const txIso = toNormalizedIsoDate(tx.bookingDate);
-
-        let daysDiff = 999;
         if (jIso && txIso) {
           const dJ = new Date(jIso);
           const dTx = new Date(txIso);
           if (!isNaN(dJ) && !isNaN(dTx)) {
-            daysDiff = Math.abs((dTx - dJ) / (1000 * 60 * 60 * 24));
+            const daysDiff = Math.abs((dTx - dJ) / (1000 * 60 * 60 * 24));
+            if (daysDiff > 7) return false;
           }
         }
-
-        const closeDate = daysDiff <= 7; // Toleranzfenster von max. 7 Tagen zwischen Belegdatum & Bank-Wertstellung
-
-        if (!sameAmountExact || !closeDate) return false;
 
         const desc = normalizeString(j.beschreibung || '');
         const party = normalizeString(tx.partyName || '');
@@ -1189,16 +1216,33 @@ function bhBankMatchAll(transactions) {
 
         if (!party && !rmt && !ref) return true;
 
-        const samePartyOrRef = (party && (desc.includes(party) || party.includes(desc))) || 
-                               (rmt && desc.includes(rmt)) || 
-                               (ref && desc.includes(ref));
-
-        return samePartyOrRef || true; // Betrag & nahe beieinander liegendes Datum stimmen überein
+        return (party && (desc.includes(party) || party.includes(desc))) || 
+               (rmt && desc.includes(rmt)) || 
+               (ref && desc.includes(ref));
       });
 
-      if (isAlreadyInJournal) {
+      // 2. Fallback: Falls kein Text-Treffer, aber Betrag und Datum exakt übereinstimmen
+      if (!matchedJournalEntry) {
+        matchedJournalEntry = journalHistory.find(j => {
+          const amountDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
+          if (amountDiff >= 0.05) return false;
+          const jIso = toNormalizedIsoDate(j.datum);
+          const txIso = toNormalizedIsoDate(tx.bookingDate);
+          if (jIso && txIso) {
+            const dJ = new Date(jIso);
+            const dTx = new Date(txIso);
+            if (!isNaN(dJ) && !isNaN(dTx)) {
+              const daysDiff = Math.abs((dTx - dJ) / (1000 * 60 * 60 * 24));
+              if (daysDiff <= 7) return true;
+            }
+          }
+          return false;
+        });
+      }
+
+      if (matchedJournalEntry) {
         alreadyBooked = true;
-        bookedDate = formatSwissDate(tx.bookingDate);
+        bookedDate = formatSwissDate(matchedJournalEntry.datum || tx.bookingDate);
       }
     }
 
@@ -1216,9 +1260,16 @@ function bhBankMatchAll(transactions) {
     // Bank-Konto dynamisch anhand der erkannten XML-IBAN ermitteln (z.B. 1021 für Wirtschaftskonto, 1020 für Vereinskonto, 1022 für Sparkonto)
     const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
 
-    let suggestedSoll = isCreditDefault(tx.isCredit) ? txBankKonto : '';
-    let suggestedHaben = isCreditDefault(tx.isCredit) ? '' : txBankKonto;
+    let suggestedSoll = tx._customSollEdited ? tx.suggestedSoll : (isCreditDefault(tx.isCredit) ? txBankKonto : '');
+    let suggestedHaben = tx._customHabenEdited ? tx.suggestedHaben : (isCreditDefault(tx.isCredit) ? '' : txBankKonto);
     let matchLabel = 'Manuelle Buchung';
+
+    if (alreadyBooked && matchedJournalEntry) {
+      suggestedSoll = String(matchedJournalEntry.konto_soll || '').trim() || suggestedSoll;
+      suggestedHaben = String(matchedJournalEntry.konto_haben || '').trim() || suggestedHaben;
+      matchLabel = `Im Journal gebucht (${matchedJournalEntry.beleg_nr || 'Kassabuch'})`;
+      matchType = 'journal';
+    }
 
     function isCreditDefault(isCred) { return isCred; }
 
@@ -1616,6 +1667,7 @@ function bhBankMatchAll(transactions) {
       splitHint,
       alreadyBooked: tx.alreadyBooked || alreadyBooked,
       bookedDate: tx.bookedDate || bookedDate,
+      matchedJournalEntry: tx.matchedJournalEntry || matchedJournalEntry,
       isInvoice,
       matchedInvoice,
       alreadyPaidInvoice,
@@ -1624,7 +1676,7 @@ function bhBankMatchAll(transactions) {
       matchedMember,
       matchedBeitrag,
       alreadyPaidJb,
-      matchType,
+      matchType: (tx.alreadyBooked || alreadyBooked) ? 'journal' : matchType,
       matchRuleName,
       matchRulePrefix,
       suggestedSoll,
@@ -1743,10 +1795,12 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     return matches.length > 0 ? String(matches[0].konto).trim() : s;
   }
 
-  const rawSoll  = sollEl ? sollEl.value : tx.suggestedSoll;
-  const rawHaben = habenEl ? habenEl.value : tx.suggestedHaben;
-  let kontoSoll  = resolveKontoCode(rawSoll);
-  let kontoHaben = resolveKontoCode(rawHaben);
+  const rawSoll  = (sollEl && sollEl.value) ? sollEl.value : tx.suggestedSoll;
+  const rawHaben = (habenEl && habenEl.value) ? habenEl.value : tx.suggestedHaben;
+  let kontoSoll  = resolveKontoCode(rawSoll) || tx.suggestedSoll;
+  let kontoHaben = resolveKontoCode(rawHaben) || tx.suggestedHaben;
+  tx.suggestedSoll = kontoSoll;
+  tx.suggestedHaben = kontoHaben;
 
   if (!kontoSoll || !kontoHaben) {
     if (!isBatch) alert('Bitte wählen Sie Soll- und Haben-Konto aus.');
@@ -2325,8 +2379,14 @@ window.bhBankToggleQueue = function(txIdx, evt) {
   if (!tx._inBookingQueue) {
     const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
     const habenEl = document.getElementById(`bh-haben-${txIdx}`);
-    const rawSoll  = sollEl ? sollEl.value : tx.suggestedSoll;
-    const rawHaben = habenEl ? habenEl.value : tx.suggestedHaben;
+    if (sollEl && typeof window._bhUpdateTxKonto === 'function') {
+      window._bhUpdateTxKonto(txIdx, 'soll', sollEl.value);
+    }
+    if (habenEl && typeof window._bhUpdateTxKonto === 'function') {
+      window._bhUpdateTxKonto(txIdx, 'haben', habenEl.value);
+    }
+    const rawSoll  = tx.suggestedSoll;
+    const rawHaben = tx.suggestedHaben;
     if (!rawSoll || !rawHaben) {
       showToast('⚠️ Bitte vor dem Vormerken Soll- und Haben-Konto für diese Zeile auswählen.', 'warning', 'top-end', 3000);
       if (!rawSoll && sollEl) sollEl.focus();
