@@ -566,7 +566,10 @@ window.renderTabJournal = function(container) {
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
       <td class="text-end" style="white-space: nowrap;" onclick="event.stopPropagation()">
-        <button class="bh-edit-btn" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten">
+        <button class="bh-edit-btn text-primary" onclick="bhPrintJournalBeleg(${item.id})" title="Kassenbeleg drucken / als PDF ablegen">
+          <i class="fas fa-print"></i>
+        </button>
+        <button class="bh-edit-btn ms-1" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten">
           <i class="fas fa-edit"></i>
         </button>
         <button class="bh-edit-btn text-danger ms-1" onclick="bhDeleteJournalEntry(${item.id})" title="Buchung löschen">
@@ -610,6 +613,9 @@ window.renderTabJournal = function(container) {
           </span>
         </div>
         <div class="d-flex align-items-center" style="gap: 8px;">
+          <button type="button" class="btn btn-sm btn-primary shadow-sm fw-semibold" onclick="bhPrintSelectedJournalBelege()" title="Ausgewählte Buchungen als Sammelbeleg drucken / als PDF speichern">
+            <i class="fas fa-print me-1"></i>Sammelbeleg drucken (<span id="bh-journal-btn-print-count">${selectedCount}</span>)
+          </button>
           <button type="button" class="btn btn-sm btn-outline-secondary bg-white" onclick="bhClearJournalSelection()">
             <i class="fas fa-times me-1"></i>Auswahl aufheben
           </button>
@@ -634,7 +640,7 @@ window.renderTabJournal = function(container) {
               <th class="bh-sort-header" onclick="bhSortJournal('konto_haben')">Haben-Konto ${bhGetSortIndicator(col, 'konto_haben', asc)}</th>
               <th class="bh-sort-header text-end" onclick="bhSortJournal('betrag')">Betrag ${bhGetSortIndicator(col, 'betrag', asc)}</th>
               <th class="bh-sort-header" onclick="bhSortJournal('buchungstyp')">Typ / Buchungstyp ${bhGetSortIndicator(col, 'buchungstyp', asc)}</th>
-              <th class="text-end" style="width: 80px;">Aktion</th>
+              <th class="text-end" style="width: 105px;">Aktion</th>
             </tr>
           </thead>
           <tbody id="bh-journal-tbody">
@@ -658,6 +664,7 @@ window.bhUpdateJournalSelectionUI = function() {
   const batchBar = document.getElementById('bh-journal-batch-bar');
   const countEl = document.getElementById('bh-journal-selected-count');
   const btnCountEl = document.getElementById('bh-journal-btn-count');
+  const btnPrintCountEl = document.getElementById('bh-journal-btn-print-count');
   const sumEl = document.getElementById('bh-journal-selected-sum');
   
   const selectedCount = window._bhSelectedJournalIds.size;
@@ -673,12 +680,24 @@ window.bhUpdateJournalSelectionUI = function() {
     if (batchBar) batchBar.classList.remove('d-none');
     if (countEl) countEl.textContent = selectedCount;
     if (btnCountEl) btnCountEl.textContent = selectedCount;
+    if (btnPrintCountEl) btnPrintCountEl.textContent = selectedCount;
     if (sumEl) sumEl.textContent = 'Total: CHF ' + fmtChf(total);
   } else {
     if (batchBar) batchBar.classList.add('d-none');
   }
   
   bhUpdateJournalMasterCheckbox();
+};
+
+window.bhPrintSelectedJournalBelege = function() {
+  const selectedIds = Array.from(window._bhSelectedJournalIds || []);
+  if (selectedIds.length === 0) {
+    alert('Bitte mindestens eine Buchung auswählen.');
+    return;
+  }
+  if (typeof bhPrintJournalBeleg === 'function') {
+    bhPrintJournalBeleg(selectedIds);
+  }
 };
 
 // Master-Checkbox (Tri-State: checked, indeterminate, unchecked)

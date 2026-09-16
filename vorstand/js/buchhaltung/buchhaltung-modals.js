@@ -306,78 +306,181 @@ window.bhOpenEntryModal = function(entryId) {
     return `<option value="${acc.konto}">${acc.konto} - ${acc.bezeichnung} (${cat.main})</option>`;
   }).join('');
   
+  const isEdit = Boolean(entryId);
+
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog ${isEdit ? 'modal-dialog-centered' : 'modal-lg modal-dialog-centered'}">
       <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px);">
         <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold" id="bhe-modal-title"><i class="fas fa-receipt me-2"></i>Neue Journalbuchung erfassen</h5>
+          <h5 class="modal-title fw-bold" id="bhe-modal-title">
+            <i class="fas fa-receipt me-2"></i>${isEdit ? `Buchungssatz bearbeiten (ID: ${entryId})` : 'Journalbuchung erfassen'}
+          </h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-4">
-          <form id="bh-new-entry-form" onsubmit="bhSaveJournalEntry(event)">
-            <input type="hidden" id="bhe-id" value="">
-            
-            <div class="row g-3 mb-3">
-              <div class="col-6">
-                <label class="form-label fw-bold small text-muted">Buchungsdatum</label>
-                <input type="date" class="form-control" id="bhe-datum" required value="${new Date().toISOString().split('T')[0]}">
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-bold small text-muted">Belegnummer</label>
-                <input type="text" class="form-control fw-bold" id="bhe-beleg" required placeholder="z.B. Kasse_2026-001">
-              </div>
-            </div>
-            
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-muted">Buchungstext (Beschreibung)</label>
-              <input type="text" class="form-control" id="bhe-beschreibung" required placeholder="z.B. Munitionskauf Kaliber .22">
-            </div>
-            
-            <div class="row g-3 mb-3">
-              <div class="col-6">
-                <label class="form-label fw-bold small text-muted text-primary"><i class="fas fa-long-arrow-alt-right me-1"></i> Soll-Konto (Empfänger)</label>
-                <select class="form-select" id="bhe-soll" required>
-                  <option value="" disabled selected>Konto wählen...</option>
-                  ${sollOptions}
-                </select>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-bold small text-muted text-success"><i class="fas fa-long-arrow-alt-left me-1"></i> Haben-Konto (Quelle)</label>
-                <select class="form-select" id="bhe-haben" required>
-                  <option value="" disabled selected>Konto wählen...</option>
-                  ${sollOptions}
-                </select>
-              </div>
-            </div>
-            
-            <div class="row g-3 mb-4">
-              <div class="col-6">
-                <label class="form-label fw-bold small text-muted">Buchungsbetrag (CHF)</label>
-                <div class="input-group">
-                  <span class="input-group-text bg-light fw-bold text-muted">CHF</span>
-                  <input type="number" step="0.01" min="0.01" class="form-control fw-extrabold text-primary" id="bhe-betrag" required placeholder="0.00">
+          ${!isEdit ? `
+            <!-- Tab-Auswahl: Einzelbuchung vs. Kassen-Sammelbeleg -->
+            <ul class="nav nav-pills nav-fill mb-3 p-1 bg-light rounded-3 border" id="bhe-entry-tabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-bold py-1.5" id="bhe-tab-single-btn" data-bs-toggle="pill" data-bs-target="#bhe-tab-single" type="button" role="tab">
+                  <i class="fas fa-file-alt me-1.5"></i>Einzelbuchung
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold py-1.5" id="bhe-tab-sammel-btn" data-bs-toggle="pill" data-bs-target="#bhe-tab-sammel" type="button" role="tab" onclick="bhInitKassaSammelbeleg()">
+                  <i class="fas fa-layer-group me-1.5"></i>Kassen-Sammelbeleg (Mehrere Positionen)
+                </button>
+              </li>
+            </ul>
+          ` : ''}
+
+          <div class="tab-content" id="bhe-tab-content">
+            <!-- TAB 1: EINZELBUCHUNG -->
+            <div class="tab-pane fade show active" id="bhe-tab-single" role="tabpanel">
+              <form id="bh-new-entry-form" onsubmit="bhSaveJournalEntry(event, false)">
+                <input type="hidden" id="bhe-id" value="">
+                
+                <div class="row g-3 mb-3">
+                  <div class="col-6">
+                    <label class="form-label fw-bold small text-muted">Buchungsdatum</label>
+                    <input type="date" class="form-control" id="bhe-datum" required value="${new Date().toISOString().split('T')[0]}">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label fw-bold small text-muted">Belegnummer</label>
+                    <input type="text" class="form-control fw-bold font-monospace" id="bhe-beleg" required placeholder="z.B. Kasse_2026-001">
+                  </div>
                 </div>
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-bold small text-muted">Aktionstyp</label>
-                <select class="form-select" id="bhe-typ">
-                  <option value="Kassa" selected>Ausgabe / Bar</option>
-                  <option value="Überweisung">Überweisung Bank</option>
-                  <option value="Einnahme">Erlös / Einnahme</option>
-                  <option value="Umbuchung">Umbuchung</option>
-                  <option value="Rechnung">Rechnung</option>
-                  <option value="Zahlung">Zahlung</option>
-                </select>
-              </div>
+                
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Buchungstext (Beschreibung)</label>
+                  <input type="text" class="form-control" id="bhe-beschreibung" required placeholder="z.B. Munitionskauf Kaliber .22">
+                </div>
+                
+                <div class="row g-3 mb-3">
+                  <div class="col-6">
+                    <label class="form-label fw-bold small text-muted text-primary"><i class="fas fa-long-arrow-alt-right me-1"></i> Soll-Konto (Empfänger)</label>
+                    <select class="form-select" id="bhe-soll" required>
+                      <option value="" disabled selected>Konto wählen...</option>
+                      ${sollOptions}
+                    </select>
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label fw-bold small text-muted text-success"><i class="fas fa-long-arrow-alt-left me-1"></i> Haben-Konto (Quelle)</label>
+                    <select class="form-select" id="bhe-haben" required>
+                      <option value="" disabled selected>Konto wählen...</option>
+                      ${sollOptions}
+                    </select>
+                  </div>
+                </div>
+                
+                <div class="row g-3 mb-4">
+                  <div class="col-6">
+                    <label class="form-label fw-bold small text-muted">Buchungsbetrag (CHF)</label>
+                    <div class="input-group">
+                      <span class="input-group-text bg-light fw-bold text-muted">CHF</span>
+                      <input type="number" step="0.01" min="0.01" class="form-control fw-extrabold text-primary" id="bhe-betrag" required placeholder="0.00">
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label fw-bold small text-muted">Aktionstyp</label>
+                    <select class="form-select" id="bhe-typ">
+                      <option value="Kassa" selected>Ausgabe / Bar</option>
+                      <option value="Überweisung">Überweisung Bank</option>
+                      <option value="Einnahme">Erlös / Einnahme</option>
+                      <option value="Umbuchung">Umbuchung</option>
+                      <option value="Rechnung">Rechnung</option>
+                      <option value="Zahlung">Zahlung</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div class="d-flex gap-2">
+                  <button type="submit" class="btn btn-success flex-grow-1 py-2.5 fw-bold rounded-3 shadow-sm" id="bhe-submit-btn">
+                    <i class="fas fa-check-circle me-1"></i> ${isEdit ? 'Änderungen speichern' : 'Buchung speichern'}
+                  </button>
+                  <button type="button" class="btn btn-outline-primary py-2.5 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event)" title="Buchung speichern und direkt Kassenbeleg drucken">
+                    <i class="fas fa-print me-1"></i> Speichern & Beleg drucken
+                  </button>
+                </div>
+              </form>
             </div>
-            
-            <div class="d-grid">
-              <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" id="bhe-submit-btn">
-                <i class="fas fa-check-circle me-1"></i> Buchungssatz ins Journal schreiben
-              </button>
+
+            ${!isEdit ? `
+            <!-- TAB 2: KASSEN-SAMMELBELEG (MEHRERE POSITIONEN) -->
+            <div class="tab-pane fade" id="bhe-tab-sammel" role="tabpanel">
+              <form id="bh-sammel-form" onsubmit="bhSaveKassaSammelbeleg(event, false)">
+                <div class="row g-2 mb-3">
+                  <div class="col-md-4">
+                    <label class="form-label fw-bold small text-muted">Belegdatum</label>
+                    <input type="date" class="form-control form-control-sm" id="bh-ks-datum" required value="${new Date().toISOString().split('T')[0]}">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fw-bold small text-muted">Stamm-Belegnummer</label>
+                    <input type="text" class="form-control form-control-sm fw-bold font-monospace" id="bh-ks-beleg" required placeholder="z.B. Kasse_2026-001">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fw-bold small text-muted">Art der Kassenbewegung</label>
+                    <select class="form-select form-select-sm fw-semibold" id="bh-ks-art" onchange="bhUpdateKassaSammelArt()">
+                      <option value="ausgabe" selected>Barausgabe (Geld aus Kasse)</option>
+                      <option value="einnahme">Bareinnahme (Geld in Kasse)</option>
+                      <option value="frei">Freie Kontierung (Soll & Haben)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Gesamttitel / Anlass (Belegkopf)</label>
+                  <input type="text" class="form-control form-control-sm" id="bh-ks-titel" required placeholder="z.B. Abrechnung Eröffnungsschiessen 2026 oder Materialeinkauf">
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-list-ol me-1"></i>Positionen des Sammelbelegs</label>
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0.5 px-2 fw-semibold" onclick="bhAddKassaSammelRow()">
+                    <i class="fas fa-plus me-1"></i>Position hinzufügen
+                  </button>
+                </div>
+
+                <div class="table-responsive border rounded-3 mb-3 bg-white" style="max-height: 280px;">
+                  <table class="table table-sm table-hover align-middle mb-0" id="bh-ks-table">
+                    <thead class="table-light small">
+                      <tr id="bh-ks-thead-tr">
+                        <th style="width: 30px;" class="text-center">#</th>
+                        <th>Beschreibung / Positionstext</th>
+                        <th style="width: 260px;">Aufwandskonto (Soll)</th>
+                        <th style="width: 120px;" class="text-end">Betrag (CHF)</th>
+                        <th style="width: 35px;"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="bh-ks-tbody">
+                      <!-- Dynamische Zeilen via bhRenderKassaSammelRows -->
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Zusammenfassung / Saldo -->
+                <div class="card p-2.5 mb-3 bg-light border-0 rounded-3">
+                  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="small fw-semibold text-muted">
+                      <span id="bh-ks-pos-count">0</span> Position(en) erfasst &middot; Kassenkonto: <strong class="text-dark">1000 Kasse</strong>
+                    </span>
+                    <span class="fs-6 fw-bold text-primary">
+                      Total Beleg: CHF <span id="bh-ks-total-sum">0.00</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                  <button type="submit" class="btn btn-success flex-grow-1 py-2 fw-bold rounded-3 shadow-sm" id="bh-ks-save-btn">
+                    <i class="fas fa-save me-1"></i> Sammelbeleg buchen
+                  </button>
+                  <button type="button" class="btn btn-primary py-2 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true)" id="bh-ks-save-print-btn">
+                    <i class="fas fa-print me-1"></i> Buchen & Beleg drucken
+                  </button>
+                </div>
+              </form>
             </div>
-            
-          </form>
+            ` : ''}
+          </div>
         </div>
       </div>
     </div>
@@ -397,7 +500,6 @@ window.bhOpenEntryModal = function(entryId) {
   if (entryId) {
     const entry = window._bhJournal.find(j => Number(j.id) === Number(entryId));
     if (entry) {
-      titleEl.innerHTML = `<i class="fas fa-edit me-2"></i>Buchungssatz bearbeiten (ID: ${entryId})`;
       idEl.value = entryId;
       
       let formattedDate = entry.datum;
@@ -430,7 +532,6 @@ window.bhOpenEntryModal = function(entryId) {
       submitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern';
     }
   } else {
-    titleEl.innerHTML = `<i class="fas fa-receipt me-2"></i>Neue Journalbuchung erfassen`;
     idEl.value = '';
     
     belegEl.dataset.userEdited = 'false';
@@ -457,9 +558,626 @@ window.bhOpenEntryModal = function(entryId) {
   modal.show();
 };
 
+// =====================================================================
+// KASSEN-SAMMELBELEG VERWALTUNG & LOGIK
+// =====================================================================
+window.bhInitKassaSammelbeleg = function() {
+  const y = Number(window._bhYear || new Date().getFullYear());
+  const belegEl = document.getElementById('bh-ks-beleg');
+  if (belegEl && !belegEl.value) {
+    belegEl.value = window.bhGetNextJournalBelegNr(y, 'Kasse_');
+  }
+  if (!window._bhKassaSammelRows || window._bhKassaSammelRows.length === 0) {
+    window._bhKassaSammelRows = [
+      { text: '', konto: '', kontoSoll: '', kontoHaben: '', betrag: '' },
+      { text: '', konto: '', kontoSoll: '', kontoHaben: '', betrag: '' }
+    ];
+  }
+  bhRenderKassaSammelRows();
+};
+
+window.bhUpdateKassaSammelArt = function() {
+  bhSyncKassaSammelFromInputs();
+  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'ausgabe';
+  const tr = document.getElementById('bh-ks-thead-tr');
+  if (tr) {
+    if (art === 'frei') {
+      tr.innerHTML = `
+        <th style="width: 30px;" class="text-center">#</th>
+        <th>Beschreibung / Positionstext</th>
+        <th style="width: 190px;">Soll-Konto</th>
+        <th style="width: 190px;">Haben-Konto</th>
+        <th style="width: 120px;" class="text-end">Betrag (CHF)</th>
+        <th style="width: 35px;"></th>
+      `;
+    } else {
+      const thLabel = art === 'einnahme' ? 'Ertragskonto (Haben)' : 'Aufwandskonto (Soll)';
+      tr.innerHTML = `
+        <th style="width: 30px;" class="text-center">#</th>
+        <th>Beschreibung / Positionstext</th>
+        <th style="width: 260px;">${thLabel}</th>
+        <th style="width: 120px;" class="text-end">Betrag (CHF)</th>
+        <th style="width: 35px;"></th>
+      `;
+    }
+  }
+  bhRenderKassaSammelRows();
+};
+
+window.bhSyncKassaSammelFromInputs = function() {
+  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'ausgabe';
+  const isFrei = (art === 'frei');
+  const rows = window._bhKassaSammelRows || [];
+
+  rows.forEach((r, i) => {
+    const textEl = document.getElementById(`bh-ks-text-${i}`);
+    const amtEl = document.getElementById(`bh-ks-amt-${i}`);
+    if (textEl) r.text = textEl.value;
+    if (amtEl) r.betrag = amtEl.value;
+
+    if (isFrei) {
+      const sollEl = document.getElementById(`bh-ks-soll-${i}`);
+      const habenEl = document.getElementById(`bh-ks-haben-${i}`);
+      if (sollEl) r.kontoSoll = sollEl.value;
+      if (habenEl) r.kontoHaben = habenEl.value;
+    } else {
+      const kontoEl = document.getElementById(`bh-ks-konto-${i}`);
+      if (kontoEl) r.konto = kontoEl.value;
+    }
+  });
+};
+
+window.bhAddKassaSammelRow = function() {
+  bhSyncKassaSammelFromInputs();
+  (window._bhKassaSammelRows = window._bhKassaSammelRows || []).push({
+    text: '',
+    konto: '',
+    kontoSoll: '',
+    kontoHaben: '',
+    betrag: ''
+  });
+  bhRenderKassaSammelRows();
+};
+
+window.bhRemoveKassaSammelRow = function(idx) {
+  bhSyncKassaSammelFromInputs();
+  if (window._bhKassaSammelRows && window._bhKassaSammelRows.length > 1) {
+    window._bhKassaSammelRows.splice(idx, 1);
+  }
+  bhRenderKassaSammelRows();
+};
+
+window.bhRenderKassaSammelRows = function() {
+  const tbody = document.getElementById('bh-ks-tbody');
+  if (!tbody) return;
+
+  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'ausgabe';
+  const isFrei = (art === 'frei');
+  const rows = window._bhKassaSammelRows || [];
+
+  const makeKontoOptions = (selectedVal) => {
+    return (window._bhKontenrahmen || []).map(acc => {
+      const isSel = String(acc.konto).trim() === String(selectedVal || '').trim();
+      return `<option value="${acc.konto}" ${isSel ? 'selected' : ''}>${acc.konto} | ${acc.bezeichnung}</option>`;
+    }).join('');
+  };
+
+  tbody.innerHTML = rows.map((r, i) => {
+    let kontoCells = '';
+    if (isFrei) {
+      kontoCells = `
+        <td>
+          <select class="form-select form-select-sm" id="bh-ks-soll-${i}" onchange="bhUpdateKassaSammelLiveTotal()">
+            <option value="" disabled ${!r.kontoSoll ? 'selected' : ''}>Soll-Konto...</option>
+            ${makeKontoOptions(r.kontoSoll)}
+          </select>
+        </td>
+        <td>
+          <select class="form-select form-select-sm" id="bh-ks-haben-${i}" onchange="bhUpdateKassaSammelLiveTotal()">
+            <option value="" disabled ${!r.kontoHaben ? 'selected' : ''}>Haben-Konto...</option>
+            ${makeKontoOptions(r.kontoHaben)}
+          </select>
+        </td>
+      `;
+    } else {
+      const labelPlaceholder = art === 'einnahme' ? 'Ertragskonto wählen...' : 'Aufwandskonto wählen...';
+      kontoCells = `
+        <td>
+          <select class="form-select form-select-sm" id="bh-ks-konto-${i}" onchange="bhUpdateKassaSammelLiveTotal()">
+            <option value="" disabled ${!r.konto ? 'selected' : ''}>${labelPlaceholder}</option>
+            ${makeKontoOptions(r.konto)}
+          </select>
+        </td>
+      `;
+    }
+
+    return `
+      <tr>
+        <td class="text-center fw-bold small text-muted">${i + 1}</td>
+        <td>
+          <input type="text" class="form-control form-control-sm" id="bh-ks-text-${i}" value="${escapeHtml(r.text || '')}" placeholder="z.B. Einkauf Getränke, Reinigung, etc." oninput="bhUpdateKassaSammelLiveTotal()">
+        </td>
+        ${kontoCells}
+        <td>
+          <input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-ks-amt-${i}" value="${r.betrag || ''}" placeholder="0.00" oninput="bhUpdateKassaSammelLiveTotal()">
+        </td>
+        <td class="text-center">
+          ${rows.length > 1 ? `<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1.5" onclick="bhRemoveKassaSammelRow(${i})"><i class="fas fa-times"></i></button>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  bhUpdateKassaSammelLiveTotal();
+};
+
+window.bhUpdateKassaSammelLiveTotal = function() {
+  bhSyncKassaSammelFromInputs();
+  const rows = window._bhKassaSammelRows || [];
+  let total = 0;
+  let count = 0;
+
+  rows.forEach(r => {
+    const a = parseFloat(r.betrag);
+    if (!isNaN(a) && a > 0) {
+      total += a;
+      count++;
+    }
+  });
+
+  const sumEl = document.getElementById('bh-ks-total-sum');
+  if (sumEl) sumEl.textContent = (typeof fmtChf === 'function') ? fmtChf(total) : total.toFixed(2);
+
+  const countEl = document.getElementById('bh-ks-pos-count');
+  if (countEl) countEl.textContent = rows.length;
+};
+
+window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
+  if (event) event.preventDefault();
+  bhSyncKassaSammelFromInputs();
+
+  const datumEl = document.getElementById('bh-ks-datum');
+  const belegEl = document.getElementById('bh-ks-beleg');
+  const titelEl = document.getElementById('bh-ks-titel');
+  const artEl = document.getElementById('bh-ks-art');
+
+  const datum = datumEl ? datumEl.value : new Date().toISOString().split('T')[0];
+  const baseBeleg = belegEl ? belegEl.value.trim() : '';
+  const titel = titelEl ? titelEl.value.trim() : '';
+  const art = artEl ? artEl.value : 'ausgabe';
+
+  if (!baseBeleg) {
+    alert('Bitte Belegnummer angeben.');
+    if (belegEl) belegEl.focus();
+    return;
+  }
+  if (!titel) {
+    alert('Bitte Gesamttitel / Anlass angeben.');
+    if (titelEl) titelEl.focus();
+    return;
+  }
+
+  const rows = window._bhKassaSammelRows || [];
+  const validRows = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const amt = parseFloat(r.betrag);
+    if (!r.text.trim() && isNaN(amt)) continue; // leere Zeile überspringen
+
+    if (!r.text.trim()) {
+      alert(`Bitte Beschreibung für Position #${i + 1} angeben.`);
+      return;
+    }
+    if (isNaN(amt) || amt <= 0) {
+      alert(`Bitte gültigen Betrag (> 0) für Position #${i + 1} angeben.`);
+      return;
+    }
+
+    if (art === 'frei') {
+      if (!r.kontoSoll || !r.kontoHaben) {
+        alert(`Bitte Soll- und Haben-Konto für Position #${i + 1} wählen.`);
+        return;
+      }
+      if (r.kontoSoll === r.kontoHaben) {
+        alert(`Soll- und Haben-Konto für Position #${i + 1} dürfen nicht identisch sein.`);
+        return;
+      }
+      validRows.push({
+        text: r.text.trim(),
+        soll: r.kontoSoll,
+        haben: r.kontoHaben,
+        betrag: amt
+      });
+    } else {
+      if (!r.konto) {
+        alert(`Bitte Gegenkonto für Position #${i + 1} auswählen.`);
+        return;
+      }
+      if (r.konto === '1000') {
+        alert(`Gegenkonto für Position #${i + 1} darf nicht das Kassenkonto 1000 sein.`);
+        return;
+      }
+      validRows.push({
+        text: r.text.trim(),
+        soll: (art === 'ausgabe') ? r.konto : '1000',
+        haben: (art === 'ausgabe') ? '1000' : r.konto,
+        betrag: amt
+      });
+    }
+  }
+
+  if (validRows.length === 0) {
+    alert('Bitte mindestens eine gültige Position mit Text, Gegenkonto und Betrag erfassen.');
+    return;
+  }
+
+  const saveBtn = document.getElementById('bh-ks-save-btn');
+  const printBtn = document.getElementById('bh-ks-save-print-btn');
+  if (saveBtn) saveBtn.disabled = true;
+  if (printBtn) printBtn.disabled = true;
+  if (saveBtn) saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Speichere Sammelbeleg...';
+
+  const year = Number(window._bhYear || new Date().getFullYear());
+  const savedEntries = [];
+
+  try {
+    for (let i = 0; i < validRows.length; i++) {
+      const vr = validRows[i];
+      const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
+      const belegNr = `${baseBeleg}${subSuffix}`;
+      const desc = validRows.length > 1 ? `${titel} (${vr.text})` : `${titel} - ${vr.text}`;
+
+      const payload = {
+        action: 'addJournalEntry',
+        jahr: year,
+        datum: datum,
+        beleg_nr: belegNr,
+        beschreibung: desc,
+        konto_soll: vr.soll,
+        konto_haben: vr.haben,
+        betrag: vr.betrag,
+        typ: 'Kassa'
+      };
+
+      const res = await apiFetch('buchhaltung', payload, 'POST');
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || `Fehler bei Position #${i + 1}`);
+      }
+
+      const newEntry = (json.data && json.data.id) ? json.data : {
+        id: Date.now() + i,
+        jahr: year,
+        datum: datum,
+        beleg_nr: belegNr,
+        beschreibung: desc,
+        konto_soll: vr.soll,
+        konto_haben: vr.haben,
+        betrag: vr.betrag,
+        typ: 'Kassa'
+      };
+
+      window._bhJournal = window._bhJournal || [];
+      window._bhJournal.push(newEntry);
+      savedEntries.push(newEntry);
+    }
+
+    if (typeof showSuccess === 'function') {
+      showSuccess(`🎉 Kassen-Sammelbeleg mit ${savedEntries.length} Positionen erfolgreich gebucht!`);
+    }
+
+    const modalEl = document.getElementById('bhModalNewEntry');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+
+    if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
+    if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
+    if (typeof renderActiveAccountingTab === 'function') renderActiveAccountingTab();
+
+    if (printAfter && savedEntries.length > 0) {
+      bhPrintJournalBeleg(savedEntries, titel);
+    }
+
+    setTimeout(async () => {
+      if (typeof loadBuchhaltungData === 'function') await loadBuchhaltungData(true, true);
+    }, 1500);
+
+  } catch (err) {
+    alert('❌ Fehler beim Buchen des Sammelbelegs: ' + err.message);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="fas fa-save me-1"></i> Sammelbeleg buchen';
+    }
+    if (printBtn) {
+      printBtn.disabled = false;
+      printBtn.innerHTML = '<i class="fas fa-print me-1"></i> Buchen & Beleg drucken';
+    }
+  }
+};
+
+window.bhSaveAndPrintSingleJournalEntry = function(event) {
+  bhSaveJournalEntry(event, true);
+};
+
+// =====================================================================
+// DRUCKFUNKTION FÜR KASSEN- UND SAMMELBELEGE (A4 PRINT-TEMPLATE)
+// =====================================================================
+window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
+  let entries = [];
+  if (!entriesOrIds) return;
+  if (Array.isArray(entriesOrIds)) {
+    entries = entriesOrIds.map(item => {
+      if (typeof item === 'object' && item !== null) return item;
+      return (window._bhJournal || []).find(j => Number(j.id) === Number(item));
+    }).filter(Boolean);
+  } else if (typeof entriesOrIds === 'object') {
+    entries = [entriesOrIds];
+  } else {
+    const found = (window._bhJournal || []).find(j => Number(j.id) === Number(entriesOrIds));
+    if (found) entries = [found];
+  }
+
+  if (entries.length === 0) {
+    alert('Keine Buchungsdaten zum Drucken gefunden.');
+    return;
+  }
+
+  const belegNrs = Array.from(new Set(entries.map(e => e.beleg_nr).filter(Boolean)));
+  const belegNrDisplay = belegNrs.join(', ') || 'Ohne Belegnummer';
+  
+  const belegDatum = entries[0].datum ? (typeof isoToDisplay === 'function' ? isoToDisplay(entries[0].datum) : entries[0].datum) : new Date().toLocaleDateString('de-CH');
+  const totalAmount = entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
+  const title = customTitle || (entries.length === 1 ? entries[0].beschreibung : `Kassenabrechnung (${entries.length} Positionen)`);
+  
+  const kontenrahmen = window._bhKontenrahmen || [];
+  function getKontoLabel(code) {
+    const matched = kontenrahmen.find(k => String(k.konto).trim() === String(code).trim());
+    return matched ? `${matched.konto} ${matched.bezeichnung}` : String(code || '–');
+  }
+
+  const tableRowsHtml = entries.map((e, idx) => `
+    <tr>
+      <td style="text-align: center; font-weight: bold; width: 35px;">${idx + 1}</td>
+      <td style="font-family: monospace; font-size: 11px; width: 130px;">${escapeHtml(e.beleg_nr || '–')}</td>
+      <td><strong>${escapeHtml(e.beschreibung || '')}</strong></td>
+      <td style="font-size: 11.5px;">${escapeHtml(getKontoLabel(e.konto_soll))}</td>
+      <td style="font-size: 11.5px;">${escapeHtml(getKontoLabel(e.konto_haben))}</td>
+      <td style="text-align: right; font-weight: bold; white-space: nowrap; width: 110px;">CHF ${typeof fmtChf === 'function' ? fmtChf(e.betrag) : Number(e.betrag).toFixed(2)}</td>
+    </tr>
+  `).join('');
+
+  const printWindow = window.open('', '_blank', 'width=950,height=800');
+  if (!printWindow) {
+    alert('Popup-Blocker aktiv! Bitte Popups für diese Seite erlauben, um den Beleg zu drucken.');
+    return;
+  }
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="de">
+    <head>
+      <meta charset="utf-8">
+      <title>Kassenbeleg_${belegNrs[0] || 'Druck'}</title>
+      <style>
+        * { box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          color: #212529;
+          background: #fff;
+          margin: 0;
+          padding: 25px;
+          font-size: 13px;
+          line-height: 1.4;
+        }
+        .header-container {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          border-bottom: 2px solid #0d6efd;
+          padding-bottom: 12px;
+          margin-bottom: 20px;
+        }
+        .club-title {
+          font-size: 20px;
+          font-weight: 800;
+          color: #0b5ed7;
+          margin: 0 0 4px 0;
+          letter-spacing: 0.5px;
+        }
+        .club-sub {
+          font-size: 12px;
+          color: #6c757d;
+          margin: 0;
+        }
+        .doc-title-badge {
+          text-align: right;
+        }
+        .doc-title {
+          font-size: 18px;
+          font-weight: 800;
+          margin: 0 0 4px 0;
+          color: #212529;
+          text-transform: uppercase;
+        }
+        .beleg-badge {
+          display: inline-block;
+          background: #e7f1ff;
+          color: #0d6efd;
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-weight: bold;
+          font-family: monospace;
+          font-size: 13px;
+          border: 1px solid #b6d4fe;
+        }
+        .meta-box {
+          display: flex;
+          gap: 20px;
+          background: #f8f9fa;
+          border: 1px solid #dee2e6;
+          border-radius: 6px;
+          padding: 12px 16px;
+          margin-bottom: 20px;
+        }
+        .meta-item { flex: 1; }
+        .meta-label {
+          font-size: 10px;
+          text-transform: uppercase;
+          color: #6c757d;
+          font-weight: bold;
+          margin-bottom: 2px;
+        }
+        .meta-value {
+          font-size: 14px;
+          font-weight: 600;
+          color: #212529;
+        }
+        table.beleg-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+        }
+        table.beleg-table th {
+          background: #f1f4f9;
+          color: #495057;
+          border: 1px solid #dee2e6;
+          padding: 8px 10px;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        table.beleg-table td {
+          border: 1px solid #dee2e6;
+          padding: 8px 10px;
+        }
+        .total-row td {
+          background: #f8f9fa;
+          border-top: 2px solid #0d6efd;
+          font-size: 15px;
+          font-weight: 800;
+        }
+        .signature-section {
+          margin-top: 35px;
+          display: flex;
+          gap: 25px;
+          justify-content: space-between;
+        }
+        .sig-box {
+          flex: 1;
+          border-top: 1px solid #495057;
+          padding-top: 8px;
+          font-size: 11px;
+          color: #495057;
+        }
+        .sig-title {
+          font-weight: bold;
+          color: #212529;
+          font-size: 12px;
+          margin-bottom: 25px;
+        }
+        .receipt-attach-zone {
+          margin-top: 35px;
+          border: 2px dashed #ced4da;
+          border-radius: 6px;
+          padding: 25px;
+          text-align: center;
+          color: #adb5bd;
+          font-size: 12px;
+          background: #fafbfc;
+        }
+        @media print {
+          body { padding: 10px; font-size: 12px; }
+          .receipt-attach-zone { page-break-inside: avoid; }
+          @page { size: A4 portrait; margin: 15mm; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header-container">
+        <div>
+          <h1 class="club-title">Sportschützen Muhen</h1>
+          <p class="club-sub">Kassabuch &middot; Belegwesen Vereinsrechnung</p>
+        </div>
+        <div class="doc-title-badge">
+          <div class="doc-title">Kassenbeleg</div>
+          <div class="beleg-badge">${escapeHtml(belegNrDisplay)}</div>
+        </div>
+      </div>
+
+      <div class="meta-box">
+        <div class="meta-item">
+          <div class="meta-label">Belegdatum</div>
+          <div class="meta-value">${belegDatum}</div>
+        </div>
+        <div class="meta-item" style="flex: 2;">
+          <div class="meta-label">Betreff / Verwendungszweck</div>
+          <div class="meta-value">${escapeHtml(title)}</div>
+        </div>
+        <div class="meta-item" style="text-align: right;">
+          <div class="meta-label">Total Betrag</div>
+          <div class="meta-value" style="color: #0b5ed7; font-size: 16px;">CHF ${typeof fmtChf === 'function' ? fmtChf(totalAmount) : totalAmount.toFixed(2)}</div>
+        </div>
+      </div>
+
+      <table class="beleg-table">
+        <thead>
+          <tr>
+            <th style="width: 35px; text-align: center;">#</th>
+            <th style="width: 130px;">Beleg-Nr</th>
+            <th>Beschreibung / Buchungstext</th>
+            <th>Soll-Konto</th>
+            <th>Haben-Konto</th>
+            <th style="text-align: right; width: 110px;">Betrag</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+          <tr class="total-row">
+            <td colspan="5" style="text-align: right; text-transform: uppercase;">Total Abrechnung:</td>
+            <td style="text-align: right; color: #0b5ed7;">CHF ${typeof fmtChf === 'function' ? fmtChf(totalAmount) : totalAmount.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="signature-section">
+        <div class="sig-box">
+          <div class="sig-title">Verbucht / Kassier:</div>
+          <div>Daniel Hunziker &middot; Datum: ${belegDatum}</div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-title">Auszahlung erhalten / Belegsteller:</div>
+          <div>Name / Datum / Unterschrift: ...........................................</div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-title">Geprüft GPK / Revision:</div>
+          <div>Datum / Visum: ................................................................</div>
+        </div>
+      </div>
+
+      <div class="receipt-attach-zone">
+        ✂ Original-Kassenbons, Quittungen oder Belege hier anheften / aufkleben
+      </div>
+
+      <script>
+        window.onload = function() {
+          setTimeout(function() {
+            window.print();
+          }, 350);
+        };
+      <\/script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+
 // POST-Request zum Speichern/Aktualisieren des Buchungssatzes
-window.bhSaveJournalEntry = async function(event) {
-  event.preventDefault();
+window.bhSaveJournalEntry = async function(event, printAfter = false) {
+  if (event) event.preventDefault();
   
   const submitBtn = document.getElementById('bhe-submit-btn');
   if (submitBtn) {
@@ -484,7 +1202,7 @@ window.bhSaveJournalEntry = async function(event) {
     alert("❌ Fehler: Soll- und Haben-Konto dürfen nicht identisch sein (Gegenkonto erforderlich)!");
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchungssatz ins Journal schreiben';
+      submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
     }
     return;
   }
@@ -497,7 +1215,7 @@ window.bhSaveJournalEntry = async function(event) {
     if (!confirm(confirmMsg)) {
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchungssatz ins Journal schreiben';
+        submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
       }
       return;
     }
@@ -514,8 +1232,9 @@ window.bhSaveJournalEntry = async function(event) {
       const modal = bootstrap.Modal.getInstance(modalEl);
       if (modal) modal.hide();
       
+      let savedEntry = null;
       if (result.data) {
-        const savedEntry = result.data;
+        savedEntry = result.data;
         if (payload.id) {
           const idx = window._bhJournal.findIndex(j => Number(j.id) === Number(savedEntry.id));
           if (idx !== -1) {
@@ -529,6 +1248,10 @@ window.bhSaveJournalEntry = async function(event) {
         renderActiveAccountingTab();
       }
       
+      if (printAfter && (savedEntry || payload)) {
+        bhPrintJournalBeleg([savedEntry || payload]);
+      }
+
       setTimeout(async () => {
         await loadBuchhaltungData(true, true);
       }, 1500);
@@ -540,7 +1263,7 @@ window.bhSaveJournalEntry = async function(event) {
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchungssatz ins Journal schreiben';
+      submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
     }
   }
 };

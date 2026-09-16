@@ -3194,22 +3194,75 @@ window.bhBankOpenSplitModal = function(txIdx) {
   bsModal.show();
 };
 
+function bhBankCleanKonto(val) {
+  if (!val) return '';
+  return String(val).split('|')[0].trim();
+}
+
+function bhBankCalcSplitBalance(tx, splitRows) {
+  const totalAmount = Number(tx.amount || 0);
+  const isCredit = Boolean(tx.isCredit);
+  const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
+
+  let bankSollSum = 0;
+  let bankHabenSum = 0;
+  let hasNegative = false;
+
+  (splitRows || []).forEach(r => {
+    const rawAmt = Number(r.betrag) || 0;
+    if (rawAmt < 0) hasNegative = true;
+    const amt = Math.abs(rawAmt);
+    const s = bhBankCleanKonto(r.kontoSoll);
+    const h = bhBankCleanKonto(r.kontoHaben);
+
+    if (s === txBankKonto && h !== txBankKonto) {
+      bankSollSum += amt;
+    } else if (h === txBankKonto && s !== txBankKonto) {
+      bankHabenSum += amt;
+    } else {
+      // Falls noch nicht spezifisch Bankkonto zugewiesen, Default nach Transaktionsrichtung
+      if (isCredit) {
+        bankSollSum += amt;
+      } else {
+        bankHabenSum += amt;
+      }
+    }
+  });
+
+  // Netto-Wirkung auf Bankkonto:
+  // Für Gutschrift (isCredit): Soll (Mehrung) minus Haben (Minderung) muss dem Bankbetrag entsprechen
+  // Für Belastung (!isCredit): Haben (Minderung) minus Soll (Mehrung) muss dem Bankbetrag entsprechen
+  const actualNetBank = isCredit ? (bankSollSum - bankHabenSum) : (bankHabenSum - bankSollSum);
+  const diff = totalAmount - actualNetBank;
+  const isBalanced = Math.abs(diff) < 0.01 && !hasNegative;
+
+  return {
+    totalAmount,
+    isCredit,
+    txBankKonto,
+    bankSollSum,
+    bankHabenSum,
+    actualNetBank,
+    diff,
+    hasNegative,
+    isBalanced
+  };
+}
+
 function bhBankRenderSplitModalContent(tx) {
   const modalEl = document.getElementById('bhBankSplitModal');
   if (!modalEl) return;
 
   const totalAmount = Number(tx.amount || 0);
   const splitRows = window._bhSplitCurrentRows || [];
-  const currentSum = splitRows.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
-  const diff = totalAmount - currentSum;
-  const isBalanced = Math.abs(diff) < 0.01;
+  const bal = bhBankCalcSplitBalance(tx, splitRows);
 
   const kontenrahmen = window._bhKontenrahmen || [];
 
   function makeKontoSelectHTML(id, selectedVal) {
     const matched = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
     const displayVal = matched ? `${matched.konto} | ${matched.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Konto..." value="${escHtml(displayVal)}" autocomplete="off">`;
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Konto..." value="${escHtml(displayVal)}" autocomplete="off" oninput="bhBankUpdateSplitLiveBalance()" onchange="bhBankUpdateSplitLiveBalance()">`;
   }
 
   let tableRowsHtml = splitRows.map((r, i) => {
@@ -3221,7 +3274,7 @@ function bhBankRenderSplitModalContent(tx) {
           <input type="text" class="form-control form-control-sm" id="bh-split-desc-${i}" value="${escHtml(r.beschreibung)}" placeholder="Beschreibung..." oninput="bhBankUpdateSplitLiveBalance()">
         </td>
         <td style="width: 140px;">
-          <input type="number" step="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-split-amt-${i}" value="${amtVal}" placeholder="0.00" oninput="bhBankUpdateSplitLiveBalance()">
+          <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end fw-bold" id="bh-split-amt-${i}" value="${amtVal}" placeholder="0.00" oninput="bhBankUpdateSplitLiveBalance()">
         </td>
         <td style="width: 170px;">
           ${makeKontoSelectHTML(`bh-split-soll-${i}`, r.kontoSoll)}
@@ -3235,6 +3288,22 @@ function bhBankRenderSplitModalContent(tx) {
       </tr>
     `;
   }).join('');
+
+  let breakdownText = '';
+  if (bal.isCredit && bal.bankHabenSum > 0) {
+    breakdownText = `(Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)} &middot; Abzüge Haben: CHF ${bal.bankHabenSum.toFixed(2)})`;
+  } else if (!bal.isCredit && bal.bankSollSum > 0) {
+    breakdownText = `(Belastungen Haben: CHF ${bal.bankHabenSum.toFixed(2)} &middot; Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)})`;
+  }
+
+  let diffStatusHtml = '';
+  if (bal.hasNegative) {
+    diffStatusHtml = '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Nur positive Beträge erlaubt (Soll/Haben anpassen)</span>';
+  } else if (bal.isBalanced) {
+    diffStatusHtml = '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>';
+  } else {
+    diffStatusHtml = `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${bal.diff.toFixed(2)}</span>`;
+  }
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -3288,14 +3357,15 @@ function bhBankRenderSplitModalContent(tx) {
           </div>
 
           <!-- Live Balance Banner -->
-          <div id="bh-split-banner" class="card p-3 border-0 ${isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3">
+          <div id="bh-split-banner" class="card p-3 border-0 ${bal.isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div>
-                <span class="fw-bold"><i id="bh-split-banner-icon" class="fas ${isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2"></i>Status Aufteilung:</span>
-                Summe Split-Zeilen: <strong>CHF <span id="bh-split-current-sum">${currentSum.toFixed(2)}</span></strong> von <strong>CHF ${totalAmount.toFixed(2)}</strong>
+                <span class="fw-bold"><i id="bh-split-banner-icon" class="fas ${bal.isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2"></i>Status Aufteilung:</span>
+                Netto Bank: <strong>CHF <span id="bh-split-current-sum">${bal.actualNetBank.toFixed(2)}</span></strong> von <strong>CHF ${totalAmount.toFixed(2)}</strong>
+                <span id="bh-split-breakdown" class="small ms-2 text-muted">${breakdownText}</span>
               </div>
               <div class="fw-bold fs-6" id="bh-split-diff-status">
-                ${isBalanced ? '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>' : `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${diff.toFixed(2)}</span>`}
+                ${diffStatusHtml}
               </div>
             </div>
           </div>
@@ -3303,7 +3373,7 @@ function bhBankRenderSplitModalContent(tx) {
 
         <div class="modal-footer bg-light">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-          <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4" ${!isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
+          <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
             <i class="fas fa-save me-1"></i>Split-Buchung speichern (${splitRows.length} Zeilen)
           </button>
         </div>
@@ -3313,51 +3383,53 @@ function bhBankRenderSplitModalContent(tx) {
 }
 
 window.bhBankUpdateSplitLiveBalance = function() {
-  const rows = window._bhSplitCurrentRows || [];
-  rows.forEach((r, i) => {
-    const descEl = document.getElementById(`bh-split-desc-${i}`);
-    const amtEl = document.getElementById(`bh-split-amt-${i}`);
-    const sollEl = document.getElementById(`bh-split-soll-${i}`);
-    const habenEl = document.getElementById(`bh-split-haben-${i}`);
-
-    if (descEl) r.beschreibung = descEl.value;
-    if (amtEl) r.betrag = amtEl.value !== '' ? (parseFloat(amtEl.value) || 0) : 0;
-    if (sollEl) r.kontoSoll = String(sollEl.value || '').split('|')[0].trim();
-    if (habenEl) r.kontoHaben = String(habenEl.value || '').split('|')[0].trim();
-  });
+  bhBankUpdateSplitFromInputs();
 
   const txs = window._bhBankMatchResults || [];
   const tx = txs[window._bhSplitCurrentTxIndex];
   if (!tx) return;
 
-  const totalAmount = Number(tx.amount || 0);
-  const currentSum = rows.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
-  const diff = totalAmount - currentSum;
-  const isBalanced = Math.abs(diff) < 0.01;
+  const rows = window._bhSplitCurrentRows || [];
+  const bal = bhBankCalcSplitBalance(tx, rows);
 
   const sumEl = document.getElementById('bh-split-current-sum');
-  if (sumEl) sumEl.textContent = currentSum.toFixed(2);
+  if (sumEl) sumEl.textContent = bal.actualNetBank.toFixed(2);
+
+  const breakdownEl = document.getElementById('bh-split-breakdown');
+  if (breakdownEl) {
+    let breakdownText = '';
+    if (bal.isCredit && bal.bankHabenSum > 0) {
+      breakdownText = `(Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)} &middot; Abzüge Haben: CHF ${bal.bankHabenSum.toFixed(2)})`;
+    } else if (!bal.isCredit && bal.bankSollSum > 0) {
+      breakdownText = `(Belastungen Haben: CHF ${bal.bankHabenSum.toFixed(2)} &middot; Gutschriften Soll: CHF ${bal.bankSollSum.toFixed(2)})`;
+    }
+    breakdownEl.innerHTML = breakdownText;
+  }
 
   const diffStatusEl = document.getElementById('bh-split-diff-status');
   if (diffStatusEl) {
-    diffStatusEl.innerHTML = isBalanced 
-      ? '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>' 
-      : `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${diff.toFixed(2)}</span>`;
+    if (bal.hasNegative) {
+      diffStatusEl.innerHTML = '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Nur positive Beträge erlaubt (Soll/Haben anpassen)</span>';
+    } else if (bal.isBalanced) {
+      diffStatusEl.innerHTML = '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>';
+    } else {
+      diffStatusEl.innerHTML = `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${bal.diff.toFixed(2)}</span>`;
+    }
   }
 
   const bannerEl = document.getElementById('bh-split-banner');
   if (bannerEl) {
-    bannerEl.className = `card p-3 border-0 ${isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3`;
+    bannerEl.className = `card p-3 border-0 ${bal.isBalanced ? 'bg-success-subtle text-success border-success' : 'bg-warning-subtle text-dark border-warning'} rounded-3`;
   }
 
   const iconEl = document.getElementById('bh-split-banner-icon');
   if (iconEl) {
-    iconEl.className = `fas ${isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2`;
+    iconEl.className = `fas ${bal.isBalanced ? 'fa-check-circle text-success' : 'fa-exclamation-triangle text-warning'} me-2`;
   }
 
   const saveBtn = document.getElementById('bh-split-save-btn');
   if (saveBtn) {
-    saveBtn.disabled = !isBalanced;
+    saveBtn.disabled = !bal.isBalanced;
   }
 };
 
@@ -3371,8 +3443,8 @@ window.bhBankUpdateSplitFromInputs = function() {
 
     if (descEl) r.beschreibung = descEl.value;
     if (amtEl) r.betrag = amtEl.value !== '' ? (parseFloat(amtEl.value) || 0) : 0;
-    if (sollEl) r.kontoSoll = String(sollEl.value || '').split('|')[0].trim();
-    if (habenEl) r.kontoHaben = String(habenEl.value || '').split('|')[0].trim();
+    if (sollEl) r.kontoSoll = bhBankCleanKonto(sollEl.value);
+    if (habenEl) r.kontoHaben = bhBankCleanKonto(habenEl.value);
   });
 };
 
@@ -3410,11 +3482,15 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
   if (!tx) return;
 
   const splitRows = window._bhSplitCurrentRows || [];
-  const totalAmount = Number(tx.amount || 0);
-  const currentSum = splitRows.reduce((s, r) => s + (Number(r.betrag) || 0), 0);
+  const bal = bhBankCalcSplitBalance(tx, splitRows);
 
-  if (Math.abs(totalAmount - currentSum) >= 0.01) {
-    alert(`⚠️ Die Summe der Split-Zeilen (CHF ${currentSum.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${totalAmount.toFixed(2)}).`);
+  if (bal.hasNegative) {
+    alert('⚠️ Buchungsbeträge müssen positiv sein. Die Richtung (Zunahme/Abnahme) wird ausschliesslich über Soll und Haben bestimmt.');
+    return;
+  }
+
+  if (!bal.isBalanced) {
+    alert(`⚠️ Die Netto-Aufteilung auf das Bankkonto (CHF ${bal.actualNetBank.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${bal.totalAmount.toFixed(2)}).`);
     return;
   }
 
@@ -3431,6 +3507,10 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
     }
     if (r.kontoSoll === r.kontoHaben) {
       alert(`Soll- und Haben-Konto für Zeile #${i+1} dürfen nicht identisch sein.`);
+      return;
+    }
+    if (Number(r.betrag) < 0) {
+      alert(`Zeile #${i+1}: Bitte Betrag als positive Zahl eingeben.`);
       return;
     }
   }
@@ -3467,7 +3547,7 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
         beschreibung: r.beschreibung,
         konto_soll: r.kontoSoll,
         konto_haben: r.kontoHaben,
-        betrag: Number(r.betrag),
+        betrag: Math.abs(Number(r.betrag)),
         typ: 'Bank-Split'
       };
 
