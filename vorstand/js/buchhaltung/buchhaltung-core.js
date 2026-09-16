@@ -83,14 +83,26 @@ if (!document.getElementById('buchhaltung-module-styles')) {
     .bh-account-row {
       transition: background-color 0.15s ease;
       cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .bh-account-row:hover {
       background-color: rgba(13, 110, 253, 0.07) !important;
+    }
+    .bh-account-row:focus {
+      outline: 2px solid #0d6efd !important;
+      outline-offset: -2px;
+      position: relative;
+      z-index: 1;
     }
     .bh-account-row.bh-row-selected {
       background-color: #e7f1ff !important;
       box-shadow: inset 4px 0 0 #0d6efd !important;
       font-weight: 500;
+    }
+    .bh-account-row.bh-row-selected:focus {
+      outline: 2px solid #0a58ca !important;
+      outline-offset: -2px;
     }
     
     .bh-konto-badge {
@@ -287,6 +299,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
         const yearsSet = new Set(window._bhJournal.map(j => Number(j.jahr || window._bhYear)));
         yearsSet.add(2026);
         yearsSet.add(2025);
+        yearsSet.add(2024);
         const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
         
         let selectHTML = '';

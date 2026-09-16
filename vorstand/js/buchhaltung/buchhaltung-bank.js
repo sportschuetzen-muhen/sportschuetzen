@@ -567,22 +567,10 @@ function bhBankRenderResults(filter) {
   const btnUnklar = document.getElementById('bhBankFilterUnklar');
   if (btnUnklar) btnUnklar.innerHTML = `<i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})`;
 
-  // Button "Alle sicheren Buchungen ausführen" mit exakter Anzahl aktualisieren
-  const allBtn = document.getElementById('bhBtnBookAll');
-  if (allBtn && !window._bhIsBookingAll) {
-    const safeCount = rows.filter(r => 
-      !r.alreadyBooked && !r._isBooking && !r.isWrongYear &&
-      (
-        (r.isInvoice && r.matchedInvoice && r.matchedInvoice.id && r.matchScore >= 2 && !r.alreadyPaidInvoice) ||
-        (r.isJahresbeitrag && r.matchedMember && r.matchedBeitrag && r.matchedBeitrag.id && r.matchScore >= 2 && !r.alreadyPaidJb) ||
-        (r.matchType === 'rule' && r.matchScore >= 2)
-      )
-    ).length;
-    allBtn.innerHTML = `<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen${safeCount > 0 ? ` (${safeCount})` : ''}`;
-    allBtn.disabled = safeCount === 0;
+  // Buttons "Alle sicheren Buchungen ausführen" und "Ausgewählte Buchungen verbuchen" aktualisieren
+  if (typeof bhBankUpdateSafeBookingsBtn === 'function') {
+    bhBankUpdateSafeBookingsBtn();
   }
-
-  // Button "Ausgewählte Buchungen verbuchen" aktualisieren
   if (typeof bhBankUpdateSelectedBtn === 'function') {
     bhBankUpdateSelectedBtn();
   }
@@ -1967,6 +1955,8 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
           bhBankRenderResults(window._bhBankActiveFilter);
         }
       }
+      if (typeof bhBankUpdateSelectedBtn === 'function') bhBankUpdateSelectedBtn();
+      if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
     }
   };
 
@@ -2245,17 +2235,14 @@ window.bhBankBookAll = async function() {
     if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
     if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
 
-    // Sofort die Tabelle und Buttons aktualisieren (0ms Latenz)
-    bhBankRenderResults(window._bhBankActiveFilter);
-    window.bhBankUpdateSelectedBtn();
-
     // Spinner sofort entfernen & Batch-Toast schließen
     if (batchToast && batchToast.parentNode) batchToast.remove();
     window._bhIsBookingAll = false;
-    if (allBtn) {
-      allBtn.disabled = false;
-      allBtn.innerHTML = '<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen';
-    }
+
+    // Sofort die Tabelle und Buttons aktualisieren (0ms Latenz)
+    bhBankRenderResults(window._bhBankActiveFilter);
+    window.bhBankUpdateSelectedBtn();
+    window.bhBankUpdateSafeBookingsBtn();
 
     showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
 
@@ -2311,10 +2298,11 @@ window.bhBankBookAll = async function() {
   } finally {
     if (batchToast && batchToast.parentNode) batchToast.remove();
     window._bhIsBookingAll = false;
-    if (allBtn) {
-      allBtn.disabled = false;
-      allBtn.innerHTML = '<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen';
-    }
+    (window._bhBankMatchResults || []).forEach(r => {
+      if (!r.alreadyBooked) r._isBooking = false;
+    });
+    if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+    if (typeof bhBankUpdateSelectedBtn === 'function') bhBankUpdateSelectedBtn();
   }
 };
 
@@ -2362,6 +2350,27 @@ window.bhBankToggleQueue = function(txIdx, evt) {
   }
 
   window.bhBankUpdateSelectedBtn();
+  window.bhBankUpdateSafeBookingsBtn();
+};
+
+window.bhBankUpdateSafeBookingsBtn = function() {
+  const allBtn = document.getElementById('bhBtnBookAll');
+  if (!allBtn) return;
+  if (window._bhIsBookingAll) {
+    allBtn.disabled = true;
+    return;
+  }
+  const rows = window._bhBankMatchResults || [];
+  const safeCount = rows.filter(r => 
+    !r.alreadyBooked && !r._isBooking && !r.isWrongYear &&
+    (
+      (r.isInvoice && r.matchedInvoice && r.matchedInvoice.id && r.matchScore >= 2 && !r.alreadyPaidInvoice) ||
+      (r.isJahresbeitrag && r.matchedMember && r.matchedBeitrag && r.matchedBeitrag.id && r.matchScore >= 2 && !r.alreadyPaidJb) ||
+      (r.matchType === 'rule' && r.matchScore >= 2)
+    )
+  ).length;
+  allBtn.innerHTML = `<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen${safeCount > 0 ? ` (${safeCount})` : ''}`;
+  allBtn.disabled = (safeCount === 0 || !!window._bhIsBookingSelected);
 };
 
 window.bhBankUpdateSelectedBtn = function() {
@@ -2372,11 +2381,13 @@ window.bhBankUpdateSelectedBtn = function() {
 
   if (queued.length === 0) {
     btn.classList.add('d-none');
+    btn.disabled = false;
     return;
   }
 
   const totalAmount = queued.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
   btn.classList.remove('d-none');
+  btn.disabled = !!window._bhIsBookingSelected || !!window._bhIsBookingAll;
   btn.innerHTML = `<i class="fas fa-layer-group me-1"></i>${queued.length} ${queued.length === 1 ? 'Buchung' : 'Buchungen'} verbuchen <span class="badge bg-white text-primary ms-1">CHF ${totalAmount.toFixed(2)}</span>`;
 };
 
@@ -2491,13 +2502,14 @@ window.bhBankBookSelected = async function() {
     if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
     if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
 
-    // Sofort die Tabelle und Stapel-Button aktualisieren (0ms Latenz)
-    bhBankRenderResults(window._bhBankActiveFilter);
-    window.bhBankUpdateSelectedBtn();
-
     // Spinner sofort entfernen & Batch-Toast schließen
     if (batchToast && batchToast.parentNode) batchToast.remove();
     window._bhIsBookingSelected = false;
+
+    // Sofort die Tabelle und Buttons aktualisieren (0ms Latenz)
+    bhBankRenderResults(window._bhBankActiveFilter);
+    window.bhBankUpdateSelectedBtn();
+    window.bhBankUpdateSafeBookingsBtn();
 
     showToast(`⚡ ${preparedList.length} Bank-Buchung(en) (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
 
@@ -2553,7 +2565,15 @@ window.bhBankBookSelected = async function() {
   } finally {
     if (batchToast && batchToast.parentNode) batchToast.remove();
     window._bhIsBookingSelected = false;
+    const selBtn = document.getElementById('bhBtnBookSelected');
+    if (selBtn) {
+      selBtn.disabled = false;
+    }
+    (window._bhBankMatchResults || []).forEach(r => {
+      if (!r.alreadyBooked) r._isBooking = false;
+    });
     window.bhBankUpdateSelectedBtn();
+    window.bhBankUpdateSafeBookingsBtn();
   }
 };
 

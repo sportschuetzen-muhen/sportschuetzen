@@ -60,6 +60,7 @@ window.renderBuchhaltung = function() {
         <select class="form-select form-select-sm" id="bh-year-select" onchange="bhChangeYear(this.value)" style="width: auto;">
           <option value="2026" ${window._bhYear === 2026 ? 'selected' : ''}>Jahr: 2026</option>
           <option value="2025" ${window._bhYear === 2025 ? 'selected' : ''}>Jahr: 2025</option>
+          <option value="2024" ${window._bhYear === 2024 ? 'selected' : ''}>Jahr: 2024</option>
         </select>
         <button class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="bhOpenEntryModal(null)">
           <i class="fas fa-plus me-1"></i> Buchung erfassen
@@ -93,6 +94,10 @@ window.bhSwitchTab = function(tabName) {
 // Ändert das aktive Buchhaltungsjahr
 window.bhChangeYear = function(year) {
   window._bhYear = Number(year);
+  
+  if (window._bhBankTransactions && window._bhBankTransactions.length > 0 && typeof bhBankMatchAll === 'function') {
+    window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+  }
   
   recalculateLiveAccountBalances();
   updateAccountingKPIs();
@@ -464,6 +469,8 @@ window.renderTabBerichte = function(container) {
 // RENDERING: TAB 2 – KASSABUCH-JOURNAL
 window._bhSelectedJournalIds = window._bhSelectedJournalIds || new Set();
 window._bhLastCheckedJournalId = null;
+window._bhJournalAnchorId = null;
+window._bhJournalFocusId = null;
 
 window.renderTabJournal = function(container) {
   const tableResp = container.querySelector('.table-responsive');
@@ -537,7 +544,7 @@ window.renderTabJournal = function(container) {
     }
 
     return `
-    <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''}" data-journal-id="${item.id}" onclick="bhHandleJournalRowClick(event, ${item.id})">
+    <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''}" data-journal-id="${item.id}" tabindex="0" onclick="bhHandleJournalRowClick(event, ${item.id})" title="Klicken zum Auswählen (Shift/Ctrl + Pfeiltasten für Mehrfachauswahl)">
       <td class="text-center" style="width: 40px;" onclick="event.stopPropagation()">
         <input type="checkbox" class="form-check-input cursor-pointer bh-journal-check" data-id="${item.id}" ${isSelected ? 'checked' : ''} onchange="bhToggleJournalRow(${item.id}, this.checked, event)" title="Zeile auswählen">
       </td>
@@ -578,6 +585,17 @@ window.renderTabJournal = function(container) {
           <input type="text" class="form-control form-control-sm" id="bh-journal-search" placeholder="🔎 Beleg suchen..." oninput="bhFilterJournal(this.value)" style="max-width: 220px;">
           <span class="badge bg-secondary p-2 rounded-2">${filteredJournal.length} Buchungen</span>
         </div>
+      </div>
+
+      <!-- Hilfe-Hint zur Zeilenmarkierung & Tastaturnavigation -->
+      <div class="d-flex align-items-center justify-content-between p-2 mb-3 rounded-2 bg-light border text-muted small flex-wrap" style="font-size: 0.82rem; gap: 8px;">
+        <div class="d-flex align-items-center flex-wrap" style="gap: 6px;">
+          <i class="fas fa-keyboard text-primary me-1"></i>
+          <span><strong>Tipp:</strong> Zeile anklicken, dann mit <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Shift</kbd> + <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↓</kbd>/<kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↑</kbd> Bereich markieren, <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Ctrl</kbd> + <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↓</kbd>/<kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↑</kbd> hinzufügen, <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Leertaste</kbd> zum Auswählen.</span>
+        </div>
+        <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 text-primary fw-semibold" onclick="bhOpenJournalHelpModal()" title="Vollständige Übersicht der Shortcuts">
+          <i class="fas fa-question-circle me-1"></i>Alle Shortcuts
+        </button>
       </div>
 
       <!-- Kontextuelle Batch-Aktionsleiste für Mehrfachauswahl -->
@@ -695,69 +713,244 @@ window.bhUpdateJournalMasterCheckbox = function() {
   }
 };
 
+// Hilfsfunktion: Setzt die visuelle und Status-Selektion einer einzelnen Zeile
+window.bhSetJournalRowVisual = function(row, id, isSelected) {
+  const numId = Number(id);
+  if (isSelected) {
+    window._bhSelectedJournalIds.add(numId);
+    if (row) row.classList.add('bh-row-selected');
+  } else {
+    window._bhSelectedJournalIds.delete(numId);
+    if (row) row.classList.remove('bh-row-selected');
+  }
+  if (row) {
+    const cb = row.querySelector('.bh-journal-check');
+    if (cb) cb.checked = isSelected;
+  }
+};
+
+// Bereichsauswahl zwischen Anker und Ziel-Zeile
+window.bhSelectJournalRange = function(targetId) {
+  const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
+  if (visibleRows.length === 0) return;
+
+  const numTargetId = Number(targetId);
+  const anchorId = (window._bhJournalAnchorId !== null) 
+    ? window._bhJournalAnchorId 
+    : (window._bhLastCheckedJournalId !== null ? window._bhLastCheckedJournalId : Number(visibleRows[0].getAttribute('data-journal-id')));
+    
+  const startIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === anchorId);
+  const targetIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === numTargetId);
+
+  if (startIdx === -1 || targetIdx === -1) return;
+
+  const min = Math.min(startIdx, targetIdx);
+  const max = Math.max(startIdx, targetIdx);
+
+  for (let i = 0; i < visibleRows.length; i++) {
+    const rId = Number(visibleRows[i].getAttribute('data-journal-id'));
+    const inRange = (i >= min && i <= max);
+    window.bhSetJournalRowVisual(visibleRows[i], rId, inRange);
+  }
+
+  window._bhJournalFocusId = numTargetId;
+  window._bhLastCheckedJournalId = numTargetId;
+  window.bhUpdateJournalSelectionUI();
+};
+
 // Klick auf Tabellenzeile zum Auswählen
 window.bhHandleJournalRowClick = function(event, id) {
   if (event.target.closest('a, button, input, select')) return;
   const numId = Number(id);
-  const isSelected = window._bhSelectedJournalIds.has(numId);
-  bhToggleJournalRow(numId, !isSelected, event);
-};
-
-// Einzelne Zeile toggeln (inklusive Shift + Klick Bereichsauswahl)
-window.bhToggleJournalRow = function(id, isChecked, event) {
-  const numId = Number(id);
-  const rows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
-  
-  // Shift + Klick Bereichsauswahl
-  if (event && event.shiftKey && window._bhLastCheckedJournalId !== null && window._bhLastCheckedJournalId !== numId) {
-    const lastIndex = rows.findIndex(r => Number(r.getAttribute('data-journal-id')) === window._bhLastCheckedJournalId);
-    const currIndex = rows.findIndex(r => Number(r.getAttribute('data-journal-id')) === numId);
-    
-    if (lastIndex !== -1 && currIndex !== -1) {
-      const start = Math.min(lastIndex, currIndex);
-      const end = Math.max(lastIndex, currIndex);
-      
-      for (let i = start; i <= end; i++) {
-        const rId = Number(rows[i].getAttribute('data-journal-id'));
-        if (isChecked) {
-          window._bhSelectedJournalIds.add(rId);
-        } else {
-          window._bhSelectedJournalIds.delete(rId);
-        }
-        const cb = rows[i].querySelector('.bh-journal-check');
-        if (cb) cb.checked = isChecked;
-        if (isChecked) {
-          rows[i].classList.add('bh-row-selected');
-        } else {
-          rows[i].classList.remove('bh-row-selected');
-        }
-      }
-      window._bhLastCheckedJournalId = numId;
-      bhUpdateJournalSelectionUI();
-      return;
-    }
-  }
-  
-  if (isChecked) {
-    window._bhSelectedJournalIds.add(numId);
-  } else {
-    window._bhSelectedJournalIds.delete(numId);
-  }
-  window._bhLastCheckedJournalId = numId;
-  
   const targetRow = document.querySelector(`#bh-journal-tbody tr[data-journal-id="${numId}"]`);
   if (targetRow) {
-    const cb = targetRow.querySelector('.bh-journal-check');
-    if (cb) cb.checked = isChecked;
-    if (isChecked) {
-      targetRow.classList.add('bh-row-selected');
-    } else {
-      targetRow.classList.remove('bh-row-selected');
-    }
+    targetRow.focus({ preventScroll: true });
   }
-  
-  bhUpdateJournalSelectionUI();
+
+  const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
+
+  // Shift + Klick: Bereich markieren
+  if (event.shiftKey && (window._bhJournalAnchorId !== null || window._bhLastCheckedJournalId !== null)) {
+    window.bhSelectJournalRange(numId);
+    return;
+  }
+
+  // Ctrl / Cmd + Klick: Zeile toggeln (Mehrfachauswahl ergänzen)
+  if (event.ctrlKey || event.metaKey) {
+    const isSelected = window._bhSelectedJournalIds.has(numId);
+    if (targetRow) {
+      window.bhSetJournalRowVisual(targetRow, numId, !isSelected);
+    }
+    window._bhJournalAnchorId = numId;
+    window._bhJournalFocusId = numId;
+    window._bhLastCheckedJournalId = numId;
+    window.bhUpdateJournalSelectionUI();
+    return;
+  }
+
+  // Normaler Mausklick ohne Modifikatortasten:
+  // Zeile als Startpunkt auswählen (ersetzt vorherige Auswahl für saubere Bereichsnavigation)
+  for (let i = 0; i < visibleRows.length; i++) {
+    const rId = Number(visibleRows[i].getAttribute('data-journal-id'));
+    window.bhSetJournalRowVisual(visibleRows[i], rId, rId === numId);
+  }
+  window._bhJournalAnchorId = numId;
+  window._bhJournalFocusId = numId;
+  window._bhLastCheckedJournalId = numId;
+  window.bhUpdateJournalSelectionUI();
 };
+
+// Einzelne Zeile über Checkbox toggeln
+window.bhToggleJournalRow = function(id, isChecked, event) {
+  const numId = Number(id);
+  if (event && event.shiftKey && (window._bhJournalAnchorId !== null || window._bhLastCheckedJournalId !== null)) {
+    window.bhSelectJournalRange(numId);
+    return;
+  }
+  const targetRow = document.querySelector(`#bh-journal-tbody tr[data-journal-id="${numId}"]`);
+  if (targetRow) {
+    window.bhSetJournalRowVisual(targetRow, numId, isChecked);
+  }
+  window._bhJournalAnchorId = numId;
+  window._bhJournalFocusId = numId;
+  window._bhLastCheckedJournalId = numId;
+  window.bhUpdateJournalSelectionUI();
+};
+
+// Tastaturnavigation für das Kassabuch-Journal:
+// Pfeil Runter / Rauf, Shift + Pfeiltasten, Ctrl + Pfeiltasten, Leertaste, Strg+A, Escape
+window.bhHandleJournalKeyDown = function(event) {
+  // Eingaben in Textfeldern (z.B. der Suchleiste) nicht stören
+  if (event.target.closest('input:not(.bh-journal-check), textarea, select')) {
+    return;
+  }
+
+  const key = event.key;
+  if (!['ArrowDown', 'ArrowUp', ' ', 'Spacebar', 'a', 'A', 'Escape'].includes(key)) {
+    return;
+  }
+
+  const visibleRows = Array.from(document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]:not(.d-none)'));
+  if (visibleRows.length === 0) return;
+
+  // Escape: Gesamte Auswahl aufheben
+  if (key === 'Escape') {
+    event.preventDefault();
+    window.bhClearJournalSelection();
+    return;
+  }
+
+  // Strg + A / Cmd + A: Alle sichtbaren Zeilen markieren
+  if ((event.ctrlKey || event.metaKey) && (key === 'a' || key === 'A')) {
+    event.preventDefault();
+    window.bhToggleJournalSelectAll(true);
+    return;
+  }
+
+  // Leertaste: Auswahl der fokussierten Zeile toggeln
+  if (key === ' ' || key === 'Spacebar') {
+    event.preventDefault();
+    let currIdx = -1;
+    if (window._bhJournalFocusId !== null) {
+      currIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === window._bhJournalFocusId);
+    }
+    if (currIdx === -1) {
+      currIdx = visibleRows.indexOf(document.activeElement.closest('tr[data-journal-id]'));
+    }
+    if (currIdx !== -1) {
+      const r = visibleRows[currIdx];
+      const rId = Number(r.getAttribute('data-journal-id'));
+      const isSel = window._bhSelectedJournalIds.has(rId);
+      window.bhSetJournalRowVisual(r, rId, !isSel);
+      window._bhJournalAnchorId = rId;
+      window._bhJournalFocusId = rId;
+      window._bhLastCheckedJournalId = rId;
+      window.bhUpdateJournalSelectionUI();
+    }
+    return;
+  }
+
+  // Pfeil runter / Pfeil rauf
+  if (key === 'ArrowDown' || key === 'ArrowUp') {
+    event.preventDefault();
+    const dir = key === 'ArrowDown' ? 1 : -1;
+
+    let currIdx = -1;
+    if (window._bhJournalFocusId !== null) {
+      currIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === window._bhJournalFocusId);
+    }
+    if (currIdx === -1) {
+      currIdx = visibleRows.indexOf(document.activeElement.closest('tr[data-journal-id]'));
+    }
+    if (currIdx === -1) {
+      const firstSelectedId = Array.from(window._bhSelectedJournalIds)[0];
+      if (firstSelectedId) {
+        currIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === Number(firstSelectedId));
+      }
+    }
+    if (currIdx === -1) {
+      currIdx = dir === 1 ? 0 : visibleRows.length - 1;
+    }
+
+    const nextIdx = Math.max(0, Math.min(visibleRows.length - 1, currIdx + dir));
+    const nextRow = visibleRows[nextIdx];
+    const nextId = Number(nextRow.getAttribute('data-journal-id'));
+
+    if (event.shiftKey) {
+      // Shift + Pfeiltaste: Bereichsauswahl dynamisch vergrößern / verkleinern
+      let anchorIdx = -1;
+      if (window._bhJournalAnchorId !== null) {
+        anchorIdx = visibleRows.findIndex(r => Number(r.getAttribute('data-journal-id')) === window._bhJournalAnchorId);
+      }
+      if (anchorIdx === -1) {
+        anchorIdx = currIdx;
+        window._bhJournalAnchorId = Number(visibleRows[currIdx].getAttribute('data-journal-id'));
+      }
+
+      const min = Math.min(anchorIdx, nextIdx);
+      const max = Math.max(anchorIdx, nextIdx);
+
+      for (let i = 0; i < visibleRows.length; i++) {
+        const rId = Number(visibleRows[i].getAttribute('data-journal-id'));
+        const inRange = (i >= min && i <= max);
+        window.bhSetJournalRowVisual(visibleRows[i], rId, inRange);
+      }
+      window._bhJournalFocusId = nextId;
+      window._bhLastCheckedJournalId = nextId;
+    } else if (event.ctrlKey || event.metaKey) {
+      // Ctrl + Pfeiltaste: Zusätzliche Zeile zur Auswahl hinzufügen (wie vom User gewünscht)
+      window.bhSetJournalRowVisual(nextRow, nextId, true);
+      window._bhJournalFocusId = nextId;
+      window._bhLastCheckedJournalId = nextId;
+      if (window._bhJournalAnchorId === null) {
+        window._bhJournalAnchorId = nextId;
+      }
+    } else {
+      // Pfeiltaste ohne Modifikator: Auswahl bewegt sich mit Cursor
+      for (let i = 0; i < visibleRows.length; i++) {
+        const rId = Number(visibleRows[i].getAttribute('data-journal-id'));
+        window.bhSetJournalRowVisual(visibleRows[i], rId, rId === nextId);
+      }
+      window._bhJournalAnchorId = nextId;
+      window._bhJournalFocusId = nextId;
+      window._bhLastCheckedJournalId = nextId;
+    }
+
+    nextRow.focus({ preventScroll: true });
+    nextRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    window.bhUpdateJournalSelectionUI();
+  }
+};
+
+// Globaler Tastatur-Listener für den Journal-Tab (einmalig registrieren)
+if (!window._bhJournalKeydownListenerAttached) {
+  window._bhJournalKeydownListenerAttached = true;
+  window.addEventListener('keydown', function(event) {
+    if (window._bhActiveTab === 'journal') {
+      window.bhHandleJournalKeyDown(event);
+    }
+  });
+}
 
 // "Alle sichtbaren auswählen" Umschalter
 window.bhToggleJournalSelectAll = function(isChecked) {
@@ -765,25 +958,28 @@ window.bhToggleJournalSelectAll = function(isChecked) {
   
   visibleRows.forEach(row => {
     const id = Number(row.getAttribute('data-journal-id'));
-    const cb = row.querySelector('.bh-journal-check');
-    if (cb) cb.checked = isChecked;
-    
-    if (isChecked) {
-      window._bhSelectedJournalIds.add(id);
-      row.classList.add('bh-row-selected');
-    } else {
-      window._bhSelectedJournalIds.delete(id);
-      row.classList.remove('bh-row-selected');
-    }
+    window.bhSetJournalRowVisual(row, id, isChecked);
   });
   
-  bhUpdateJournalSelectionUI();
+  if (isChecked && visibleRows.length > 0) {
+    window._bhJournalAnchorId = Number(visibleRows[0].getAttribute('data-journal-id'));
+    window._bhJournalFocusId = Number(visibleRows[visibleRows.length - 1].getAttribute('data-journal-id'));
+    window._bhLastCheckedJournalId = window._bhJournalFocusId;
+  } else {
+    window._bhJournalAnchorId = null;
+    window._bhJournalFocusId = null;
+    window._bhLastCheckedJournalId = null;
+  }
+  
+  window.bhUpdateJournalSelectionUI();
 };
 
 // Auswahl vollständig leeren
 window.bhClearJournalSelection = function() {
   window._bhSelectedJournalIds.clear();
   window._bhLastCheckedJournalId = null;
+  window._bhJournalAnchorId = null;
+  window._bhJournalFocusId = null;
   
   document.querySelectorAll('#bh-journal-tbody tr[data-journal-id]').forEach(row => {
     row.classList.remove('bh-row-selected');
@@ -791,7 +987,92 @@ window.bhClearJournalSelection = function() {
     if (cb) cb.checked = false;
   });
   
-  bhUpdateJournalSelectionUI();
+  window.bhUpdateJournalSelectionUI();
+};
+
+// Modal: Hilfe zu Tastaturkürzeln & Zeilenauswahl im Kassabuch-Journal
+window.bhOpenJournalHelpModal = function() {
+  let modalEl = document.getElementById('bhModalJournalHelp');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalJournalHelp';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content shadow-lg border-0 rounded-4">
+        <div class="modal-header bg-primary text-white py-3">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-keyboard me-2"></i>Tastaturkürzel & Schnellauswahl im Kassabuch
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+        </div>
+        <div class="modal-body p-4">
+          <p class="text-muted small mb-3">
+            Im Kassabuch-Journal können Buchungen schnell und effizient mit der Tastatur oder der Maus markiert und als Stapel bearbeitet werden:
+          </p>
+          <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle mb-0 small">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 240px;">Tastenkürzel / Maus</th>
+                  <th>Aktion / Funktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="badge bg-secondary font-monospace">Mausklick</span> auf Zeile</td>
+                  <td><strong>Startpunkt setzen:</strong> Wählt die Buchung aus und setzt den Anker für die Tastaturnavigation.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Shift</kbd> + <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↓</kbd> / <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↑</kbd></td>
+                  <td><strong>Bereichsauswahl:</strong> Erweitert oder verkleinert die Auswahl dynamisch zeilenweise ausgehend vom Startpunkt.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Ctrl</kbd> + <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↓</kbd> / <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↑</kbd></td>
+                  <td><strong>Zeile hinzufügen:</strong> Gezieltes Hinzufügen der nachfolgenden Zeile zur Auswahl.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Shift</kbd> + <span class="badge bg-secondary font-monospace">Mausklick</span></td>
+                  <td><strong>Blockauswahl:</strong> Markiert alle Zeilen zwischen der vorherigen und der angeklickten Zeile.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Ctrl</kbd> + <span class="badge bg-secondary font-monospace">Mausklick</span></td>
+                  <td><strong>Einzelzeile umschalten:</strong> Wählt die Zeile an oder ab, ohne bestehende Markierungen zu verwerfen.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↓</kbd> / <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">↑</kbd> <em>(ohne Zusatztaste)</em></td>
+                  <td><strong>Zeilenweise navigieren:</strong> Verschiebt die Auswahl schrittweise auf die nächste Zeile.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Leertaste</kbd></td>
+                  <td><strong>Auswahl umschalten:</strong> Schaltet die Markierung der aktuell fokussierten Zeile ein oder aus.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Ctrl</kbd> + <kbd class="bg-dark text-white px-1.5 py-0.5 rounded">A</kbd></td>
+                  <td><strong>Alles auswählen:</strong> Markiert alle aktuell sichtbaren Buchungssätze.</td>
+                </tr>
+                <tr>
+                  <td><kbd class="bg-dark text-white px-1.5 py-0.5 rounded">Escape</kbd></td>
+                  <td><strong>Auswahl aufheben:</strong> Hebt alle bestehenden Markierungen auf.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer bg-light border-0 py-2.5 rounded-bottom-4">
+          <button type="button" class="btn btn-secondary btn-sm fw-bold px-3 shadow-sm" data-bs-dismiss="modal">Schliessen</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
 };
 
 // Hilfsfunktion: Sucht den Kontonamen anhand der Nummer
