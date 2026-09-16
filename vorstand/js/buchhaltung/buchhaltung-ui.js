@@ -609,7 +609,7 @@ window.renderTabJournal = function(container) {
             <span id="bh-journal-selected-count">${selectedCount}</span> Buchung(en) ausgewählt
           </span>
           <span class="badge bg-white text-dark border px-2 py-1 shadow-sm font-monospace" id="bh-journal-selected-sum">
-            Total: CHF ${fmtChf(selectedTotal)}
+            Total: ${fmtChf(selectedTotal)}
           </span>
         </div>
         <div class="d-flex align-items-center" style="gap: 8px;">
@@ -681,7 +681,7 @@ window.bhUpdateJournalSelectionUI = function() {
     if (countEl) countEl.textContent = selectedCount;
     if (btnCountEl) btnCountEl.textContent = selectedCount;
     if (btnPrintCountEl) btnPrintCountEl.textContent = selectedCount;
-    if (sumEl) sumEl.textContent = 'Total: CHF ' + fmtChf(total);
+    if (sumEl) sumEl.textContent = 'Total: ' + fmtChf(total);
   } else {
     if (batchBar) batchBar.classList.add('d-none');
   }

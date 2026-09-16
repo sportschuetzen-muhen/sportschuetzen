@@ -288,6 +288,14 @@ window.bhDetermineAutoBelegPrefix = function(soll, haben, typ) {
   return 'BEL-';
 };
 
+// Ermittelt den Basis-Belegstamm ohne Suffix a, b, c (z.B. Kasse_2026-004a -> Kasse_2026-004)
+window.bhGetSplitBaseBeleg = function(belegNr) {
+  if (!belegNr) return '';
+  const str = String(belegNr).trim();
+  const m = str.match(/^(.+?)[a-z]$/i);
+  return m ? m[1] : str;
+};
+
 // POPUP-MODAL: MANUELLE BUCHUNG ERFASSEN ODER BEARBEITEN
 window.bhOpenEntryModal = function(entryId) {
   let modalEl = document.getElementById('bhModalNewEntry');
@@ -309,7 +317,7 @@ window.bhOpenEntryModal = function(entryId) {
   const isEdit = Boolean(entryId);
 
   modalEl.innerHTML = `
-    <div class="modal-dialog ${isEdit ? 'modal-dialog-centered' : 'modal-lg modal-dialog-centered'}">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px);">
         <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
           <h5 class="modal-title fw-bold" id="bhe-modal-title">
@@ -318,6 +326,9 @@ window.bhOpenEntryModal = function(entryId) {
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-4">
+          <!-- Split-Warnung / Verbund-Hinweis Container -->
+          <div id="bhe-split-warning-container"></div>
+
           ${!isEdit ? `
             <!-- Tab-Auswahl: Einzelbuchung vs. Kassen-Sammelbeleg -->
             <ul class="nav nav-pills nav-fill mb-3 p-1 bg-light rounded-3 border" id="bhe-entry-tabs" role="tablist">
@@ -530,6 +541,38 @@ window.bhOpenEntryModal = function(entryId) {
       typEl.value = actionType;
       
       submitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern';
+
+      // Split-Verbund prüfen und Infobox anzeigen
+      const baseBeleg = window.bhGetSplitBaseBeleg(entry.beleg_nr);
+      const isSplit = /[a-z]$/i.test(String(entry.beleg_nr || '').trim());
+      const splitGroup = isSplit ? (window._bhJournal || []).filter(j => {
+        return Number(j.jahr) === Number(entry.jahr) && window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg;
+      }) : [];
+
+      const warnContainer = document.getElementById('bhe-split-warning-container');
+      if (warnContainer) {
+        if (splitGroup.length > 1) {
+          const splitGroupTotal = splitGroup.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
+          warnContainer.innerHTML = `
+            <div class="alert alert-primary border-primary d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 py-2.5 px-3 rounded-3 shadow-sm" style="background: #eef5ff; border-left: 4px solid #0d6efd;">
+              <div>
+                <div class="fw-bold text-primary"><i class="fas fa-layer-group me-1.5"></i>Split-Buchung: <span class="font-monospace">${escapeHtml(baseBeleg)}</span></div>
+                <div class="small text-muted">Gehört zu einem Verbund von <strong>${splitGroup.length} Positionen</strong> (Gesamtbetrag: <strong>${typeof fmtChf === 'function' ? fmtChf(splitGroupTotal) : 'CHF ' + splitGroupTotal.toFixed(2)}</strong>).</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary bg-white fw-semibold" onclick="bhPrintJournalBeleg(${entry.id})" title="Gesamten Beleg drucken">
+                  <i class="fas fa-print me-1"></i>Beleg drucken
+                </button>
+                <button type="button" class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="bhOpenSplitGroupEditModal('${escapeHtml(baseBeleg)}', ${entry.jahr})">
+                  <i class="fas fa-edit me-1"></i>Gesamten Split bearbeiten (${splitGroup.length} Zeilen)
+                </button>
+              </div>
+            </div>
+          `;
+        } else {
+          warnContainer.innerHTML = '';
+        }
+      }
     }
   } else {
     idEl.value = '';
@@ -926,6 +969,22 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
     return;
   }
 
+  // Automatische Verbund-Erkennung beim Drucken:
+  // Wenn ein einzelner Eintrag gedruckt wird, der auf a, b, c endet:
+  if (entries.length === 1) {
+    const singleEntry = entries[0];
+    const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(singleEntry.beleg_nr) : singleEntry.beleg_nr;
+    if (/[a-z]$/i.test(String(singleEntry.beleg_nr || '').trim())) {
+      const siblings = (window._bhJournal || []).filter(j => {
+        return Number(j.jahr) === Number(singleEntry.jahr) && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
+      });
+      if (siblings.length > 1) {
+        siblings.sort((a, b) => String(a.beleg_nr).localeCompare(String(b.beleg_nr)));
+        entries = siblings;
+      }
+    }
+  }
+
   const belegNrs = Array.from(new Set(entries.map(e => e.beleg_nr).filter(Boolean)));
   const belegNrDisplay = belegNrs.join(', ') || 'Ohne Belegnummer';
   
@@ -933,6 +992,37 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
   const totalAmount = entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
   const title = customTitle || (entries.length === 1 ? entries[0].beschreibung : `Kassenabrechnung (${entries.length} Positionen)`);
   
+  // Situative Erkennung: Kassen-Einnahme vs. Kassen-Auszahlung
+  let cashInflow = 0;
+  let cashOutflow = 0;
+  entries.forEach(e => {
+    const soll = String(e.konto_soll || '').trim();
+    const haben = String(e.konto_haben || '').trim();
+    const amt = Math.abs(Number(e.betrag) || 0);
+    if (soll === '1000' || soll.startsWith('1000')) {
+      cashInflow += amt;
+    } else if (haben === '1000' || haben.startsWith('1000')) {
+      cashOutflow += amt;
+    } else if (soll.startsWith('1020') || haben.startsWith('1020')) {
+      if (soll.startsWith('1020')) cashInflow += amt;
+      if (haben.startsWith('1020')) cashOutflow += amt;
+    } else {
+      if (haben.startsWith('3')) cashInflow += amt;
+      else if (soll.startsWith('4') || soll.startsWith('5') || soll.startsWith('6') || soll.startsWith('7') || soll.startsWith('8')) cashOutflow += amt;
+    }
+  });
+  const isEinnahme = cashInflow >= cashOutflow;
+  const belegType = isEinnahme ? 'Kassen-Einnahme' : 'Kassen-Auszahlung';
+  const belegTypeRowLabel = isEinnahme ? 'Kassen-Einnahme:' : 'Kassen-Auszahlung:';
+
+  function formatMoney(val) {
+    if (typeof fmtChf === 'function') {
+      const res = fmtChf(val);
+      return String(res).startsWith('CHF') ? res : 'CHF ' + res;
+    }
+    return 'CHF ' + Number(val || 0).toFixed(2);
+  }
+
   const kontenrahmen = window._bhKontenrahmen || [];
   function getKontoLabel(code) {
     const matched = kontenrahmen.find(k => String(k.konto).trim() === String(code).trim());
@@ -946,7 +1036,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
       <td><strong>${escapeHtml(e.beschreibung || '')}</strong></td>
       <td style="font-size: 11.5px;">${escapeHtml(getKontoLabel(e.konto_soll))}</td>
       <td style="font-size: 11.5px;">${escapeHtml(getKontoLabel(e.konto_haben))}</td>
-      <td style="text-align: right; font-weight: bold; white-space: nowrap; width: 110px;">CHF ${typeof fmtChf === 'function' ? fmtChf(e.betrag) : Number(e.betrag).toFixed(2)}</td>
+      <td style="text-align: right; font-weight: bold; white-space: nowrap; width: 110px;">${formatMoney(e.betrag)}</td>
     </tr>
   `).join('');
 
@@ -961,7 +1051,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
     <html lang="de">
     <head>
       <meta charset="utf-8">
-      <title>Kassenbeleg_${belegNrs[0] || 'Druck'}</title>
+      <title>${belegType}_${belegNrs[0] || 'Druck'}</title>
       <style>
         * { box-sizing: border-box; }
         body {
@@ -1060,38 +1150,8 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
           font-size: 15px;
           font-weight: 800;
         }
-        .signature-section {
-          margin-top: 35px;
-          display: flex;
-          gap: 25px;
-          justify-content: space-between;
-        }
-        .sig-box {
-          flex: 1;
-          border-top: 1px solid #495057;
-          padding-top: 8px;
-          font-size: 11px;
-          color: #495057;
-        }
-        .sig-title {
-          font-weight: bold;
-          color: #212529;
-          font-size: 12px;
-          margin-bottom: 25px;
-        }
-        .receipt-attach-zone {
-          margin-top: 35px;
-          border: 2px dashed #ced4da;
-          border-radius: 6px;
-          padding: 25px;
-          text-align: center;
-          color: #adb5bd;
-          font-size: 12px;
-          background: #fafbfc;
-        }
         @media print {
           body { padding: 10px; font-size: 12px; }
-          .receipt-attach-zone { page-break-inside: avoid; }
           @page { size: A4 portrait; margin: 15mm; }
         }
       </style>
@@ -1103,7 +1163,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
           <p class="club-sub">Kassabuch &middot; Belegwesen Vereinsrechnung</p>
         </div>
         <div class="doc-title-badge">
-          <div class="doc-title">Kassenbeleg</div>
+          <div class="doc-title">${escapeHtml(belegType)}</div>
           <div class="beleg-badge">${escapeHtml(belegNrDisplay)}</div>
         </div>
       </div>
@@ -1119,7 +1179,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
         </div>
         <div class="meta-item" style="text-align: right;">
           <div class="meta-label">Total Betrag</div>
-          <div class="meta-value" style="color: #0b5ed7; font-size: 16px;">CHF ${typeof fmtChf === 'function' ? fmtChf(totalAmount) : totalAmount.toFixed(2)}</div>
+          <div class="meta-value" style="color: #0b5ed7; font-size: 16px;">${formatMoney(totalAmount)}</div>
         </div>
       </div>
 
@@ -1137,30 +1197,11 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
         <tbody>
           ${tableRowsHtml}
           <tr class="total-row">
-            <td colspan="5" style="text-align: right; text-transform: uppercase;">Total Abrechnung:</td>
-            <td style="text-align: right; color: #0b5ed7;">CHF ${typeof fmtChf === 'function' ? fmtChf(totalAmount) : totalAmount.toFixed(2)}</td>
+            <td colspan="5" style="text-align: right; text-transform: uppercase;">${escapeHtml(belegTypeRowLabel)}</td>
+            <td style="text-align: right; color: #0b5ed7;">${formatMoney(totalAmount)}</td>
           </tr>
         </tbody>
       </table>
-
-      <div class="signature-section">
-        <div class="sig-box">
-          <div class="sig-title">Verbucht / Kassier:</div>
-          <div>Daniel Hunziker &middot; Datum: ${belegDatum}</div>
-        </div>
-        <div class="sig-box">
-          <div class="sig-title">Auszahlung erhalten / Belegsteller:</div>
-          <div>Name / Datum / Unterschrift: ...........................................</div>
-        </div>
-        <div class="sig-box">
-          <div class="sig-title">Geprüft GPK / Revision:</div>
-          <div>Datum / Visum: ................................................................</div>
-        </div>
-      </div>
-
-      <div class="receipt-attach-zone">
-        ✂ Original-Kassenbons, Quittungen oder Belege hier anheften / aufkleben
-      </div>
 
       <script>
         window.onload = function() {
@@ -1270,12 +1311,27 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
 
 // POST-Request zum Löschen eines Buchungssatzes
 window.bhDeleteJournalEntry = async function(entryId) {
-  const entry = window._bhJournal.find(j => Number(j.id) === Number(entryId));
+  const entry = (window._bhJournal || []).find(j => Number(j.id) === Number(entryId));
   if (!entry) return;
 
-  const conf = confirm(`⚠️ Buchungssatz löschen?\n\nMöchten Sie den Buchungssatz (ID: ${entryId}) wirklich unwiderruflich aus dem Journal löschen?\n\nBeleg: ${entry.beleg_nr}\nBetrag: ${fmtChf(entry.betrag)}\nText: ${entry.beschreibung}`);
+  const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(entry.beleg_nr) : entry.beleg_nr;
+  const isSplitRow = /[a-z]$/i.test(String(entry.beleg_nr || '').trim());
+  const splitSiblings = isSplitRow ? (window._bhJournal || []).filter(j => {
+    return Number(j.jahr) === Number(entry.jahr) && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
+  }) : [];
+
+  if (splitSiblings.length > 1) {
+    bhOpenDeleteSplitModal(entry, splitSiblings);
+    return;
+  }
+
+  const conf = confirm(`⚠️ Buchungssatz löschen?\n\nMöchten Sie den Buchungssatz (ID: ${entryId}) wirklich unwiderruflich aus dem Journal löschen?\n\nBeleg: ${entry.beleg_nr}\nBetrag: ${typeof fmtChf === 'function' ? fmtChf(entry.betrag) : 'CHF ' + Number(entry.betrag).toFixed(2)}\nText: ${entry.beschreibung}`);
   if (!conf) return;
 
+  await bhExecuteDeleteJournalDirect(entryId);
+};
+
+window.bhExecuteDeleteJournalDirect = async function(entryId) {
   try {
     const response = await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: entryId }, 'POST');
     const result = await response.json();
@@ -1283,7 +1339,7 @@ window.bhDeleteJournalEntry = async function(entryId) {
     if (result.success) {
       showSuccess("🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!");
       
-      window._bhJournal = window._bhJournal.filter(j => Number(j.id) !== Number(entryId));
+      window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(entryId));
       recalculateLiveAccountBalances();
       updateAccountingKPIs();
       renderActiveAccountingTab();
@@ -1296,6 +1352,506 @@ window.bhDeleteJournalEntry = async function(entryId) {
     }
   } catch (err) {
     alert("❌ Fehler beim Löschen der Buchung: " + err.message);
+  }
+};
+
+// =====================================================================
+// SPLIT-VERBUND: LÖSCH-MODAL & SAMMEL-LÖSCHUNG
+// =====================================================================
+window.bhOpenDeleteSplitModal = function(entry, splitSiblings) {
+  let modalEl = document.getElementById('bhModalDeleteSplit');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalDeleteSplit';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(entry.beleg_nr) : entry.beleg_nr;
+  const totalSum = splitSiblings.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
+
+  const rowsHtml = splitSiblings.map((s, idx) => `
+    <tr class="${s.id === entry.id ? 'table-warning fw-bold' : ''}">
+      <td class="font-monospace small">${escapeHtml(s.beleg_nr)}</td>
+      <td class="small">${escapeHtml(s.beschreibung)}</td>
+      <td class="small text-muted">${s.konto_soll} &rarr; ${s.konto_haben}</td>
+      <td class="text-end small fw-bold">${typeof fmtChf === 'function' ? fmtChf(s.betrag) : 'CHF ' + Number(s.betrag).toFixed(2)}</td>
+      <td class="text-center small">${s.id === entry.id ? '<span class="badge bg-warning text-dark">Ausgewählt</span>' : ''}</td>
+    </tr>
+  `).join('');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content shadow-lg border-0 rounded-4">
+        <div class="modal-header bg-danger text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-exclamation-triangle me-2"></i>Split-Buchung löschen (${escapeHtml(baseBeleg)})
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <p class="text-dark mb-2">
+            Die ausgewählte Zeile <strong>${escapeHtml(entry.beleg_nr)}</strong> ist Teil eines 
+            <strong>Beleg-Verbunds mit ${splitSiblings.length} Positionen</strong>:
+          </p>
+
+          <div class="table-responsive border rounded-3 mb-3 bg-white">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light small">
+                <tr>
+                  <th>Beleg-Nr</th>
+                  <th>Beschreibung</th>
+                  <th>Soll &rarr; Haben</th>
+                  <th class="text-end">Betrag</th>
+                  <th style="width: 80px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="alert alert-warning py-2.5 px-3 small rounded-3 mb-0">
+            <i class="fas fa-info-circle me-1"></i>
+            <strong>Empfehlung:</strong> Löschen Sie in der Regel den <strong>gesamten Beleg-Verbund</strong>, um verwaiste Buchungssätze zu vermeiden. Bei Bank-Splits wird die Banktransaktion danach im Bankabgleich wieder zur erneuten Buchung freigegeben.
+          </div>
+        </div>
+        <div class="modal-footer bg-light flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-outline-danger" onclick="bhExecuteDeleteJournalSingleDirect(${entry.id})">
+            Nur Zeile ${escapeHtml(entry.beleg_nr)} löschen
+          </button>
+          <button type="button" class="btn btn-danger fw-bold" onclick="bhExecuteDeleteSplitGroup('${escapeHtml(baseBeleg)}', ${entry.jahr})">
+            <i class="fas fa-trash-alt me-1"></i>Gesamten Beleg-Verbund löschen (${splitSiblings.length} Positionen)
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+};
+
+window.bhExecuteDeleteJournalSingleDirect = async function(entryId) {
+  const modalEl = document.getElementById('bhModalDeleteSplit');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+  await bhExecuteDeleteJournalDirect(entryId);
+};
+
+window.bhExecuteDeleteSplitGroup = async function(baseBeleg, year) {
+  const modalEl = document.getElementById('bhModalDeleteSplit');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  const siblings = (window._bhJournal || []).filter(j => {
+    return Number(j.jahr) === Number(year) && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
+  });
+
+  if (siblings.length === 0) return;
+
+  try {
+    for (const item of siblings) {
+      await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: item.id }, 'POST');
+      window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(item.id));
+    }
+
+    // Falls es ein Bank-Split war: Prüfe ob eine CAMT-Transaktion wieder entkoppelt werden kann
+    if (window._bhBankMatchResults && window._bhBankMatchResults.length > 0) {
+      window._bhBankMatchResults.forEach(tx => {
+        if (tx.matchedBeleg && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(tx.matchedBeleg) === baseBeleg : tx.matchedBeleg.startsWith(baseBeleg))) {
+          tx.alreadyBooked = false;
+          delete tx.bookedDate;
+        }
+      });
+      if (typeof bhBankRenderResults === 'function' && window._bhBankActiveFilter) {
+        bhBankRenderResults(window._bhBankActiveFilter);
+      }
+    }
+
+    if (typeof showSuccess === 'function') {
+      showSuccess(`🎉 Alle ${siblings.length} Positionen des Belegs ${baseBeleg} wurden gelöscht!`);
+    }
+
+    recalculateLiveAccountBalances();
+    updateAccountingKPIs();
+    renderActiveAccountingTab();
+
+    setTimeout(async () => {
+      if (typeof loadBuchhaltungData === 'function') await loadBuchhaltungData(true, true);
+    }, 1500);
+  } catch (err) {
+    alert('❌ Fehler beim Löschen des Split-Verbunds: ' + err.message);
+  }
+};
+
+// =====================================================================
+// SPLIT-VERBUND: GEMEINSAMES BEARBEITEN ALLER ZEILEN
+// =====================================================================
+window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
+  const entryModalEl = document.getElementById('bhModalNewEntry');
+  if (entryModalEl) {
+    const bsEntryModal = bootstrap.Modal.getInstance(entryModalEl);
+    if (bsEntryModal) bsEntryModal.hide();
+  }
+
+  const y = Number(year || window._bhYear || new Date().getFullYear());
+  const siblings = (window._bhJournal || []).filter(j => {
+    return Number(j.jahr) === y && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
+  });
+  siblings.sort((a, b) => String(a.beleg_nr).localeCompare(String(b.beleg_nr)));
+
+  if (siblings.length === 0) {
+    alert(`Keine Buchungssätze für den Beleg ${baseBeleg} gefunden.`);
+    return;
+  }
+
+  window._bhCurrentSplitEdit = {
+    baseBeleg,
+    year: y,
+    datum: siblings[0].datum,
+    rows: siblings.map(s => ({
+      id: s.id,
+      beleg_nr: s.beleg_nr,
+      beschreibung: s.beschreibung,
+      konto_soll: s.konto_soll,
+      konto_haben: s.konto_haben,
+      betrag: s.betrag,
+      typ: s.typ || 'Kassa'
+    })),
+    deletedIds: []
+  };
+
+  let modalEl = document.getElementById('bhModalSplitGroupEdit');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalSplitGroupEdit';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content shadow-lg border-0 rounded-4">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-layer-group me-2"></i>Split-Verbund bearbeiten (${escapeHtml(baseBeleg)})
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert bg-light border-start border-4 border-primary shadow-sm mb-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>
+                <strong>Belegstamm:</strong> <span class="font-monospace fw-bold text-primary">${escapeHtml(baseBeleg)}</span> &middot;
+                <strong>Datum:</strong> ${escapeHtml(siblings[0].datum || '')} &middot;
+                <strong>Jahr:</strong> ${y}
+              </div>
+              <div>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="bhAddSplitGroupEditRow()">
+                  <i class="fas fa-plus me-1"></i>Position hinzufügen
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive border rounded-3 mb-3 bg-white" style="max-height: 360px;">
+            <table class="table table-sm align-middle table-bordered mb-0">
+              <thead class="table-light small">
+                <tr>
+                  <th style="width: 35px;" class="text-center">#</th>
+                  <th style="width: 140px;">Beleg-Nr</th>
+                  <th>Beschreibung / Buchungstext</th>
+                  <th style="width: 200px;">Soll-Konto</th>
+                  <th style="width: 200px;">Haben-Konto</th>
+                  <th style="width: 130px;" class="text-end">Betrag (CHF)</th>
+                  <th style="width: 40px;"></th>
+                </tr>
+              </thead>
+              <tbody id="bh-sge-tbody">
+                <!-- Dynamische Zeilen via bhRenderSplitGroupEditRows -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card p-3 bg-light border-0 rounded-3" id="bh-sge-balance-card">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>
+                <span class="fw-bold text-dark"><i class="fas fa-calculator me-1.5 text-primary"></i>Status Split-Verbund:</span>
+                <span id="bh-sge-summary-text" class="small text-muted ms-2"></span>
+              </div>
+              <div class="fs-6 fw-bold" id="bh-sge-total-display">
+                Total: CHF 0.00
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-light flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-success fw-bold px-3" id="bh-sge-save-btn" onclick="bhSaveSplitGroupEdit(false)">
+            <i class="fas fa-save me-1"></i>Änderungen im Verbund speichern
+          </button>
+          <button type="button" class="btn btn-primary fw-bold px-3" id="bh-sge-save-print-btn" onclick="bhSaveSplitGroupEdit(true)">
+            <i class="fas fa-print me-1"></i>Speichern & Beleg neu drucken
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  bhRenderSplitGroupEditRows();
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+};
+
+window.bhRenderSplitGroupEditRows = function() {
+  const tbody = document.getElementById('bh-sge-tbody');
+  if (!tbody || !window._bhCurrentSplitEdit) return;
+
+  const { baseBeleg, rows } = window._bhCurrentSplitEdit;
+  const kontenrahmen = window._bhKontenrahmen || [];
+
+  const makeKontoOptions = (selectedVal) => {
+    return kontenrahmen.map(acc => {
+      const isSel = String(acc.konto).trim() === String(selectedVal || '').trim();
+      return `<option value="${acc.konto}" ${isSel ? 'selected' : ''}>${acc.konto} | ${acc.bezeichnung}</option>`;
+    }).join('');
+  };
+
+  tbody.innerHTML = rows.map((r, i) => {
+    const subSuffix = rows.length > 1 ? String.fromCharCode(97 + i) : '';
+    const belegDisplay = `${baseBeleg}${subSuffix}`;
+    const amt = (r.betrag !== undefined && r.betrag !== null) ? r.betrag : '';
+
+    return `
+      <tr>
+        <td class="text-center fw-bold small text-muted">${i + 1}</td>
+        <td class="font-monospace small fw-bold text-secondary">${escapeHtml(belegDisplay)}</td>
+        <td>
+          <input type="text" class="form-control form-control-sm" id="bh-sge-desc-${i}" value="${escapeHtml(r.beschreibung || '')}" placeholder="Beschreibung..." oninput="bhUpdateSplitGroupLiveTotal()">
+        </td>
+        <td>
+          <select class="form-select form-select-sm" id="bh-sge-soll-${i}" onchange="bhUpdateSplitGroupLiveTotal()">
+            <option value="" disabled ${!r.konto_soll ? 'selected' : ''}>Soll-Konto...</option>
+            ${makeKontoOptions(r.konto_soll)}
+          </select>
+        </td>
+        <td>
+          <select class="form-select form-select-sm" id="bh-sge-haben-${i}" onchange="bhUpdateSplitGroupLiveTotal()">
+            <option value="" disabled ${!r.konto_haben ? 'selected' : ''}>Haben-Konto...</option>
+            ${makeKontoOptions(r.konto_haben)}
+          </select>
+        </td>
+        <td>
+          <input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-sge-amt-${i}" value="${amt}" placeholder="0.00" oninput="bhUpdateSplitGroupLiveTotal()">
+        </td>
+        <td class="text-center">
+          ${rows.length > 1 ? `<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1.5" onclick="bhRemoveSplitGroupEditRow(${i})"><i class="fas fa-times"></i></button>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  bhUpdateSplitGroupLiveTotal();
+};
+
+window.bhSyncSplitGroupFromInputs = function() {
+  if (!window._bhCurrentSplitEdit) return;
+  const rows = window._bhCurrentSplitEdit.rows || [];
+
+  rows.forEach((r, i) => {
+    const descEl = document.getElementById(`bh-sge-desc-${i}`);
+    const sollEl = document.getElementById(`bh-sge-soll-${i}`);
+    const habenEl = document.getElementById(`bh-sge-haben-${i}`);
+    const amtEl = document.getElementById(`bh-sge-amt-${i}`);
+
+    if (descEl) r.beschreibung = descEl.value;
+    if (sollEl) r.konto_soll = sollEl.value;
+    if (habenEl) r.konto_haben = habenEl.value;
+    if (amtEl) r.betrag = amtEl.value;
+  });
+};
+
+window.bhAddSplitGroupEditRow = function() {
+  bhSyncSplitGroupFromInputs();
+  if (!window._bhCurrentSplitEdit) return;
+  const { rows, baseBeleg, datum } = window._bhCurrentSplitEdit;
+  const template = rows[rows.length - 1] || {};
+  rows.push({
+    beschreibung: '',
+    konto_soll: template.konto_soll || '',
+    konto_haben: template.konto_haben || '',
+    betrag: '',
+    typ: template.typ || 'Kassa',
+    datum: datum
+  });
+  bhRenderSplitGroupEditRows();
+};
+
+window.bhRemoveSplitGroupEditRow = function(idx) {
+  bhSyncSplitGroupFromInputs();
+  if (!window._bhCurrentSplitEdit) return;
+  const { rows, deletedIds } = window._bhCurrentSplitEdit;
+  if (rows.length > 1) {
+    const removed = rows.splice(idx, 1)[0];
+    if (removed && removed.id) {
+      deletedIds.push(removed.id);
+    }
+  }
+  bhRenderSplitGroupEditRows();
+};
+
+window.bhUpdateSplitGroupLiveTotal = function() {
+  bhSyncSplitGroupFromInputs();
+  if (!window._bhCurrentSplitEdit) return;
+  const { rows, baseBeleg } = window._bhCurrentSplitEdit;
+
+  let totalSum = 0;
+  let count = 0;
+  rows.forEach(r => {
+    const a = parseFloat(r.betrag);
+    if (!isNaN(a) && a > 0) {
+      totalSum += a;
+      count++;
+    }
+  });
+
+  const totalEl = document.getElementById('bh-sge-total-display');
+  if (totalEl) totalEl.innerHTML = `Total Beleg: <span class="text-primary font-monospace">CHF ${typeof fmtChf === 'function' ? fmtChf(totalSum) : totalSum.toFixed(2)}</span>`;
+
+  const summaryEl = document.getElementById('bh-sge-summary-text');
+  if (summaryEl) {
+    summaryEl.textContent = `${rows.length} Position(en) im Verbund`;
+  }
+};
+
+window.bhSaveSplitGroupEdit = async function(printAfter = false) {
+  bhSyncSplitGroupFromInputs();
+  const splitState = window._bhCurrentSplitEdit;
+  if (!splitState) return;
+
+  const { baseBeleg, year, rows, deletedIds } = splitState;
+  const validRows = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const amt = parseFloat(r.betrag);
+    if (!r.beschreibung.trim()) {
+      alert(`Bitte Beschreibung für Zeile #${i + 1} eingeben.`);
+      return;
+    }
+    if (!r.konto_soll || !r.konto_haben) {
+      alert(`Bitte Soll- und Haben-Konto für Zeile #${i + 1} angeben.`);
+      return;
+    }
+    if (r.konto_soll === r.konto_haben) {
+      alert(`Soll- und Haben-Konto für Zeile #${i + 1} dürfen nicht identisch sein.`);
+      return;
+    }
+    if (isNaN(amt) || amt <= 0) {
+      alert(`Bitte Betrag > 0 für Zeile #${i + 1} eingeben.`);
+      return;
+    }
+    validRows.push({ ...r, betrag: amt });
+  }
+
+  if (validRows.length === 0) {
+    alert('Der Split-Verbund muss mindestens eine gültige Zeile enthalten.');
+    return;
+  }
+
+  const saveBtn = document.getElementById('bh-sge-save-btn');
+  const printBtn = document.getElementById('bh-sge-save-print-btn');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Speichere Verbund...';
+  }
+  if (printBtn) printBtn.disabled = true;
+
+  try {
+    // 1. Gelöschte Zeilen im Backend entfernen
+    for (const dId of (deletedIds || [])) {
+      await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: dId }, 'POST');
+      window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(dId));
+    }
+
+    const updatedEntries = [];
+
+    // 2. Bestehende Zeilen aktualisieren bzw. neue anlegen
+    for (let i = 0; i < validRows.length; i++) {
+      const vr = validRows[i];
+      const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
+      const belegNr = `${baseBeleg}${subSuffix}`;
+      const payload = {
+        action: vr.id ? 'saveJournalEntry' : 'addJournalEntry',
+        id: vr.id || null,
+        jahr: year,
+        datum: vr.datum || new Date().toISOString().split('T')[0],
+        beleg_nr: belegNr,
+        beschreibung: vr.beschreibung,
+        konto_soll: vr.konto_soll,
+        konto_haben: vr.konto_haben,
+        betrag: vr.betrag,
+        typ: vr.typ || 'Kassa'
+      };
+
+      const res = await apiFetch('buchhaltung', payload, 'POST');
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || `Fehler bei Zeile #${i + 1}`);
+
+      const savedItem = (json.data && json.data.id) ? json.data : { ...payload, id: vr.id || Date.now() + i };
+      
+      if (vr.id) {
+        const idx = (window._bhJournal || []).findIndex(j => Number(j.id) === Number(vr.id));
+        if (idx !== -1) window._bhJournal[idx] = savedItem;
+        else window._bhJournal.push(savedItem);
+      } else {
+        window._bhJournal.push(savedItem);
+      }
+      updatedEntries.push(savedItem);
+    }
+
+    if (typeof showSuccess === 'function') {
+      showSuccess(`🎉 Split-Verbund ${baseBeleg} (${updatedEntries.length} Zeilen) erfolgreich aktualisiert!`);
+    }
+
+    const modalEl = document.getElementById('bhModalSplitGroupEdit');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+
+    recalculateLiveAccountBalances();
+    updateAccountingKPIs();
+    renderActiveAccountingTab();
+
+    if (printAfter && updatedEntries.length > 0) {
+      bhPrintJournalBeleg(updatedEntries, `Abrechnung ${baseBeleg}`);
+    }
+
+    setTimeout(async () => {
+      if (typeof loadBuchhaltungData === 'function') await loadBuchhaltungData(true, true);
+    }, 1500);
+
+  } catch (err) {
+    alert('❌ Fehler beim Speichern des Split-Verbunds: ' + err.message);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="fas fa-save me-1"></i> Änderungen im Verbund speichern';
+    }
+    if (printBtn) {
+      printBtn.disabled = false;
+      printBtn.innerHTML = '<i class="fas fa-print me-1"></i> Speichern & Beleg neu drucken';
+    }
   }
 };
 
@@ -1334,7 +1890,7 @@ window.bhConfirmDeleteSelectedJournalEntries = function() {
       <td class="fw-bold small" style="white-space: nowrap;">${escapeHtml(e.beleg_nr)}</td>
       <td class="small text-truncate" style="max-width: 200px;" title="${escapeHtml(e.beschreibung)}">${escapeHtml(e.beschreibung)}</td>
       <td class="small font-monospace">${e.konto_soll} → ${e.konto_haben}</td>
-      <td class="text-end fw-bold font-monospace small" style="white-space: nowrap;">CHF ${fmtChf(e.betrag)}</td>
+      <td class="text-end fw-bold font-monospace small" style="white-space: nowrap;">${fmtChf(e.betrag)}</td>
     </tr>
   `).join('');
 
@@ -1354,7 +1910,7 @@ window.bhConfirmDeleteSelectedJournalEntries = function() {
               <div class="fw-bold fs-6">Achtung: Unwiderruflicher Vorgang!</div>
               <div>
                 Möchten Sie die folgenden <strong>${selectedEntries.length} Buchungssatz/-sätze</strong> mit einem Gesamtwert von 
-                <strong>CHF ${fmtChf(totalAmount)}</strong> wirklich endgültig aus dem Kassabuch-Journal entfernen?
+                <strong>${fmtChf(totalAmount)}</strong> wirklich endgültig aus dem Kassabuch-Journal entfernen?
               </div>
             </div>
           </div>
@@ -1383,7 +1939,7 @@ window.bhConfirmDeleteSelectedJournalEntries = function() {
             </div>
             <div class="card-footer bg-light py-2 text-end">
               <span class="fw-bold me-2">Gesamtsumme:</span>
-              <span class="badge bg-secondary font-monospace fs-6 px-3 py-1.5">CHF ${fmtChf(totalAmount)}</span>
+              <span class="badge bg-secondary font-monospace fs-6 px-3 py-1.5">${fmtChf(totalAmount)}</span>
             </div>
           </div>
 
