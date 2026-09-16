@@ -541,6 +541,32 @@ function bhBankRenderResults(filter) {
   if (activeFilter === 'rules')  filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
   if (activeFilter === 'unklar') filtered = rows.filter(r => r.matchScore === 0 && !r.alreadyBooked);
 
+  // Live-Aktualisierung des Statistik-Banners & Filter-Counts ohne DOM-Zerstörung
+  const statsEl = document.getElementById('bhBankStatsBanner');
+  if (statsEl && typeof bhBankStatsBannerHTML === 'function') {
+    statsEl.innerHTML = bhBankStatsBannerHTML();
+  }
+
+  const jbCount = rows.filter(r => r.isJahresbeitrag || r.isInvoice).length;
+  const ruleCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType === 'rule').length;
+  const histCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType === 'journal').length;
+  const unklarCount = rows.filter(r => r.matchScore === 0 && !r.alreadyBooked).length;
+  const offenCount = rows.filter(r => !r.alreadyBooked).length;
+  const bookedCount = rows.filter(r => r.alreadyBooked).length;
+
+  const btnOffen = document.getElementById('bhBankFilterOffen');
+  if (btnOffen) btnOffen.innerHTML = `<i class="fas fa-hourglass-half me-1"></i>Offen (${offenCount})`;
+  const btnBooked = document.getElementById('bhBankFilterBooked');
+  if (btnBooked) btnBooked.innerHTML = `<i class="fas fa-check-double me-1"></i>Bereits gebucht (${bookedCount})`;
+  const btnAll = document.getElementById('bhBankFilterAll');
+  if (btnAll) btnAll.innerHTML = `Alle (${rows.length})`;
+  const btnJb = document.getElementById('bhBankFilterJb');
+  if (btnJb) btnJb.innerHTML = `<i class="fas fa-file-invoice-dollar me-1"></i>Beiträge & Rechnungen (${jbCount})`;
+  const btnRules = document.getElementById('bhBankFilterRules');
+  if (btnRules) btnRules.innerHTML = `<i class="fas fa-magic me-1"></i>Erkannte Regeln (${ruleCount + histCount})`;
+  const btnUnklar = document.getElementById('bhBankFilterUnklar');
+  if (btnUnklar) btnUnklar.innerHTML = `<i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})`;
+
   // Button "Alle sicheren Buchungen ausführen" mit exakter Anzahl aktualisieren
   const allBtn = document.getElementById('bhBtnBookAll');
   if (allBtn && !window._bhIsBookingAll) {
@@ -1713,7 +1739,7 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
   const habenEl = document.getElementById(`bh-haben-${txIdx}`);
   const rowTr   = sollEl ? sollEl.closest('tr') : null;
-  const bookBtn = rowTr ? rowTr.querySelector('button.btn-success') : null;
+  const bookBtn = document.getElementById(`bh-book-btn-${txIdx}`) || (rowTr ? rowTr.querySelector('button') : null);
 
   function resolveKontoCode(val) {
     if (!val) return '';
@@ -2204,8 +2230,10 @@ window.bhBankBookAll = async function() {
     const todayStr = new Date().toLocaleDateString('de-CH');
     preparedList.forEach(({ tx, txIdx, bookBtn }) => {
       tx._isBooking = false;
-      window._bhBankMatchResults[txIdx].alreadyBooked = true;
-      window._bhBankMatchResults[txIdx].bookedDate = todayStr;
+      if (window._bhBankMatchResults && window._bhBankMatchResults[txIdx]) {
+        window._bhBankMatchResults[txIdx].alreadyBooked = true;
+        window._bhBankMatchResults[txIdx].bookedDate = todayStr;
+      }
       if (bookBtn) {
         bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
         bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
@@ -2213,74 +2241,68 @@ window.bhBankBookAll = async function() {
       }
     });
 
-    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) parallel absetzen
+    // Salden & KPIs sofort live im RAM neu berechnen
+    if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
+    if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
+
+    // Sofort die Tabelle und Buttons aktualisieren (0ms Latenz)
+    bhBankRenderResults(window._bhBankActiveFilter);
+    window.bhBankUpdateSelectedBtn();
+
+    // Spinner sofort entfernen & Batch-Toast schließen
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    window._bhIsBookingAll = false;
+    if (allBtn) {
+      allBtn.disabled = false;
+      allBtn.innerHTML = '<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen';
+    }
+
+    showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
+
+    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) non-blocking im Hintergrund abarbeiten
     const secondaryTasks = [];
 
     preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, isJahresbeitrag }) => {
-      // a) Rechnungs-Zahlung
+      // a) Rechnungs-Zahlung: lokaler Cache sofort updaten
       if (matchedInvoice && matchedInvoice.id) {
-        secondaryTasks.push((async () => {
-          try {
-            await apiFetch('rechnungen', {
-              action: 'saveZahlung',
-              invoiceId: matchedInvoice.id,
-              datum: bookingDate,
-              methode: 'Überweisung',
-              beleg: belegNr,
-              skipBooking: true
-            }, 'POST');
-            const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
-            if (cachedInv) {
-              cachedInv.status = 'bezahlt';
-              cachedInv.payment_date = bookingDate;
-              cachedInv.payment_method = 'Überweisung';
-              cachedInv.document_ref = belegNr;
-            }
-          } catch (invErr) {
-            console.warn('⚠️ Fehler beim Aktualisieren der Rechnung:', invErr);
-          }
-        })());
+        const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
+        if (cachedInv) {
+          cachedInv.status = 'bezahlt';
+          cachedInv.payment_date = bookingDate;
+          cachedInv.payment_method = 'Überweisung';
+          cachedInv.document_ref = belegNr;
+        }
+        secondaryTasks.push(apiFetch('rechnungen', {
+          action: 'saveZahlung',
+          invoiceId: matchedInvoice.id,
+          datum: bookingDate,
+          methode: 'Überweisung',
+          beleg: belegNr,
+          skipBooking: true
+        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Rechnung:', err)));
       }
 
-      // b) Jahresbeitrags-Zahlung
+      // b) Jahresbeitrags-Zahlung: lokaler Cache sofort updaten
       if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
-        secondaryTasks.push((async () => {
-          try {
-            await apiFetch('jahresbeitrag', {
-              action: 'saveZahlung',
-              headerId: matchedBeitrag.id,
-              datum: bookingDate,
-              methode: 'Überweisung',
-              beleg: belegNr
-            }, 'POST');
-            const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
-            if (cachedJb) {
-              cachedJb.status = 'bezahlt';
-              cachedJb.payment_date = bookingDate;
-            }
-          } catch (jbErr) {
-            console.warn('⚠️ Fehler beim Aktualisieren des Jahresbeitrags:', jbErr);
-          }
-        })());
+        const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
+        if (cachedJb) {
+          cachedJb.status = 'bezahlt';
+          cachedJb.payment_date = bookingDate;
+        }
+        secondaryTasks.push(apiFetch('jahresbeitrag', {
+          action: 'saveZahlung',
+          headerId: matchedBeitrag.id,
+          datum: bookingDate,
+          methode: 'Überweisung',
+          beleg: belegNr
+        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Jahresbeitrag:', err)));
       }
     });
 
     if (secondaryTasks.length > 0) {
-      if (batchToast) {
-        const span = batchToast.querySelector('span');
-        if (span) span.textContent = `⏳ Aktualisiere Status von ${secondaryTasks.length} Rechnungen / Beiträgen...`;
-      }
-      await Promise.allSettled(secondaryTasks);
-    }
-
-    if (batchToast && batchToast.parentNode) batchToast.remove();
-    showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich in einem Schritt ausgeführt!`, 'success', 'top-end', 5000);
-
-    // Jetzt 1x am Schluss Hauptbuch und UI komplett synchronisieren
-    if (typeof loadBuchhaltungData === 'function') {
-      await loadBuchhaltungData(true, true);
-    } else {
-      bhBankRenderResults(window._bhBankActiveFilter);
+      Promise.allSettled(secondaryTasks).then(() => {
+        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen im Hintergrund abgeschlossen.`);
+      });
     }
   } catch (err) {
     console.error('Fehler beim Sammel-Buchen:', err);
@@ -2453,8 +2475,11 @@ window.bhBankBookSelected = async function() {
     preparedList.forEach(({ tx, txIdx, bookBtn }) => {
       tx._isBooking = false;
       tx._inBookingQueue = false;
-      window._bhBankMatchResults[txIdx].alreadyBooked = true;
-      window._bhBankMatchResults[txIdx].bookedDate = todayStr;
+      if (window._bhBankMatchResults && window._bhBankMatchResults[txIdx]) {
+        window._bhBankMatchResults[txIdx].alreadyBooked = true;
+        window._bhBankMatchResults[txIdx].bookedDate = todayStr;
+        window._bhBankMatchResults[txIdx]._inBookingQueue = false;
+      }
       if (bookBtn) {
         bookBtn.className = 'badge bg-light text-secondary border px-2 py-1.5';
         bookBtn.innerHTML = '<i class="fas fa-check me-1"></i>Gebucht';
@@ -2462,74 +2487,64 @@ window.bhBankBookSelected = async function() {
       }
     });
 
-    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) parallel absetzen
+    // Salden & KPIs sofort live im RAM neu berechnen
+    if (typeof recalculateLiveAccountBalances === 'function') recalculateLiveAccountBalances();
+    if (typeof updateAccountingKPIs === 'function') updateAccountingKPIs();
+
+    // Sofort die Tabelle und Stapel-Button aktualisieren (0ms Latenz)
+    bhBankRenderResults(window._bhBankActiveFilter);
+    window.bhBankUpdateSelectedBtn();
+
+    // Spinner sofort entfernen & Batch-Toast schließen
+    if (batchToast && batchToast.parentNode) batchToast.remove();
+    window._bhIsBookingSelected = false;
+
+    showToast(`⚡ ${preparedList.length} Bank-Buchung(en) (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
+
+    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) non-blocking im Hintergrund abarbeiten
     const secondaryTasks = [];
 
     preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, isJahresbeitrag }) => {
-      // a) Rechnungs-Zahlung
+      // a) Rechnungs-Zahlung: lokaler Cache sofort updaten
       if (matchedInvoice && matchedInvoice.id) {
-        secondaryTasks.push((async () => {
-          try {
-            await apiFetch('rechnungen', {
-              action: 'saveZahlung',
-              invoiceId: matchedInvoice.id,
-              datum: bookingDate,
-              methode: 'Überweisung',
-              beleg: belegNr,
-              skipBooking: true
-            }, 'POST');
-            const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
-            if (cachedInv) {
-              cachedInv.status = 'bezahlt';
-              cachedInv.payment_date = bookingDate;
-              cachedInv.payment_method = 'Überweisung';
-              cachedInv.document_ref = belegNr;
-            }
-          } catch (invErr) {
-            console.warn('⚠️ Fehler beim Aktualisieren der Rechnung:', invErr);
-          }
-        })());
+        const cachedInv = (window._invoices || []).find(inv => String(inv.id) === String(matchedInvoice.id));
+        if (cachedInv) {
+          cachedInv.status = 'bezahlt';
+          cachedInv.payment_date = bookingDate;
+          cachedInv.payment_method = 'Überweisung';
+          cachedInv.document_ref = belegNr;
+        }
+        secondaryTasks.push(apiFetch('rechnungen', {
+          action: 'saveZahlung',
+          invoiceId: matchedInvoice.id,
+          datum: bookingDate,
+          methode: 'Überweisung',
+          beleg: belegNr,
+          skipBooking: true
+        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Rechnung:', err)));
       }
 
-      // b) Jahresbeitrags-Zahlung
+      // b) Jahresbeitrags-Zahlung: lokaler Cache sofort updaten
       if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
-        secondaryTasks.push((async () => {
-          try {
-            await apiFetch('jahresbeitrag', {
-              action: 'saveZahlung',
-              headerId: matchedBeitrag.id,
-              datum: bookingDate,
-              methode: 'Überweisung',
-              beleg: belegNr
-            }, 'POST');
-            const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
-            if (cachedJb) {
-              cachedJb.status = 'bezahlt';
-              cachedJb.payment_date = bookingDate;
-            }
-          } catch (jbErr) {
-            console.warn('⚠️ Fehler beim Aktualisieren des Jahresbeitrags:', jbErr);
-          }
-        })());
+        const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
+        if (cachedJb) {
+          cachedJb.status = 'bezahlt';
+          cachedJb.payment_date = bookingDate;
+        }
+        secondaryTasks.push(apiFetch('jahresbeitrag', {
+          action: 'saveZahlung',
+          headerId: matchedBeitrag.id,
+          datum: bookingDate,
+          methode: 'Überweisung',
+          beleg: belegNr
+        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Jahresbeitrag:', err)));
       }
     });
 
     if (secondaryTasks.length > 0) {
-      if (batchToast) {
-        const span = batchToast.querySelector('span');
-        if (span) span.textContent = `⏳ Aktualisiere Status von ${secondaryTasks.length} Rechnungen / Beiträgen...`;
-      }
-      await Promise.allSettled(secondaryTasks);
-    }
-
-    if (batchToast && batchToast.parentNode) batchToast.remove();
-    showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 5000);
-
-    // Jetzt 1x am Schluss Hauptbuch und UI komplett synchronisieren
-    if (typeof loadBuchhaltungData === 'function') {
-      await loadBuchhaltungData(true, true);
-    } else {
-      bhBankRenderResults(window._bhBankActiveFilter);
+      Promise.allSettled(secondaryTasks).then(() => {
+        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen im Hintergrund abgeschlossen.`);
+      });
     }
   } catch (err) {
     console.error('Fehler beim Stapel-Buchen:', err);

@@ -217,20 +217,18 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
   }
   
   try {
-    const resInv = await apiFetch('inventar', 'action=getInventarData').then(r => r.json());
-    if (resInv && resInv.gewehre) {
-      window._bhProMemoriaGewehreCount = resInv.gewehre.length;
-    }
-  } catch (e) {
-    console.warn("⚠️ Inventar-Daten für Pro Memoria konnten nicht geladen werden:", e);
-  }
-  
-  try {
     const [resJournal, resKonten, resBudget, resRules] = await Promise.all([
       apiFetch('buchhaltung', 'action=getJournal'),
       apiFetch('buchhaltung', 'action=getKontenrahmen'),
       apiFetch('buchhaltung', 'action=getBudget'),
-      apiFetch('buchhaltung', 'action=getBankRules')
+      apiFetch('buchhaltung', 'action=getBankRules'),
+      apiFetch('inventar', 'action=getInventarData').then(r => r.json()).then(resInv => {
+        if (resInv && resInv.gewehre) {
+          window._bhProMemoriaGewehreCount = resInv.gewehre.length;
+        }
+      }).catch(e => {
+        console.warn("⚠️ Inventar-Daten für Pro Memoria konnten nicht geladen werden:", e);
+      })
     ]);
 
     const txtJournal = await resJournal.text();
@@ -306,7 +304,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
         // darf der gesamte Tab-Inhalt nicht mitten in der Interaktion zerstört werden!
         const active = document.activeElement;
         const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA');
-        if (isTyping && window._bhActiveTab === 'bank') {
+        if (isTyping && (window._bhActiveTab === 'bank' || window._bhActiveTab === 'bankabgleich')) {
           console.log('⚡ loadBuchhaltungData: Nutzer editiert gerade ein Feld im Bankabgleich, überspringe Tab-Neuaufbau.');
         } else {
           renderActiveAccountingTab();
