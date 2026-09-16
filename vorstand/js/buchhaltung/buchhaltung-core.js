@@ -4,7 +4,12 @@
 
 // Globale State-Variablen für Buchhaltung
 window._bhJournal = [];
-window._bhKontenrahmen = [];
+try {
+  const cachedKonten = localStorage.getItem('bh_kontenrahmen');
+  window._bhKontenrahmen = cachedKonten ? JSON.parse(cachedKonten) : [];
+} catch(_) {
+  window._bhKontenrahmen = [];
+}
 window._bhBudget = [];
 window._bhYear = new Date().getFullYear();
 window._bhActiveTab = 'berichte'; // 'berichte' | 'journal' | 'konten'
@@ -279,6 +284,9 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
     if (dataJournal.success && dataKonten.success && dataBudget.success) {
       window._bhJournal = dataJournal.data || [];
       window._bhKontenrahmen = dataKonten.data || [];
+      try {
+        localStorage.setItem('bh_kontenrahmen', JSON.stringify(dataKonten.data || []));
+      } catch(_) {}
       window._bhBudget = dataBudget.data || [];
 
       if (dataRules && dataRules.success && Array.isArray(dataRules.data)) {
@@ -498,9 +506,9 @@ window.bhGetAccountCategory = function(account) {
     } else if (codeStr.startsWith('114')) {
       sub = 'Umlaufvermögen';
       detail = 'Übrige kurzfristige Forderungen';
-    } else if (codeStr.startsWith('119')) {
+    } else if (codeStr.startsWith('13') || codeStr.startsWith('119')) {
       sub = 'Umlaufvermögen';
-      detail = 'Transitkonten';
+      detail = 'Transitorische Aktiven / Transitkonten';
     } else if (codeStr.startsWith('14') || codeStr.startsWith('15')) {
       sub = 'Anlagevermögen';
       detail = 'Mobile Sachanlagen';
@@ -673,7 +681,7 @@ window.getBuchungstyp = function(soll, haben) {
   const s = String(soll || '').trim();
   const h = String(haben || '').trim();
   
-  if (s.startsWith('119') || h.startsWith('119')) {
+  if (s.startsWith('13') || h.startsWith('13') || s.startsWith('119') || h.startsWith('119')) {
     return 'TRANSIT';
   }
 

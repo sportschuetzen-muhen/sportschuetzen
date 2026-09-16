@@ -123,7 +123,22 @@ window.renderTabBankabgleich = function(container) {
     window.fetchBhBankServerRules();
   }
 
-  // Sicherstellen, dass Rechnungsdaten und Beitrags-Gebühren geladen sind
+  // Sicherstellen, dass Kontenrahmen, Rechnungsdaten und Beitrags-Gebühren geladen sind
+  if ((!window._bhKontenrahmen || window._bhKontenrahmen.length === 0)) {
+    try {
+      const cached = localStorage.getItem('bh_kontenrahmen');
+      if (cached) window._bhKontenrahmen = JSON.parse(cached);
+    } catch(_) {}
+    if ((!window._bhKontenrahmen || window._bhKontenrahmen.length === 0) && typeof window.loadBuchhaltungData === 'function') {
+      window.loadBuchhaltungData(true).then(() => {
+        if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+          window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+          bhBankRenderResults(window._bhBankActiveFilter);
+        }
+      }).catch(() => {});
+    }
+  }
+
   if ((!window._invoices || window._invoices.length === 0) && typeof window.loadRechnungenData === 'function') {
     window.loadRechnungenData(true).then(() => {
       if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
@@ -517,10 +532,22 @@ if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
 
 window._bhUpdateTxRemittance = function(idx, val) {
   const rows = window._bhBankMatchResults || [];
-  if (rows[idx]) {
-    rows[idx].remittanceInfo = val;
-    rows[idx]._customRemittance = val;
-    rows[idx]._customRemittanceEdited = true;
+  const tx = rows[idx];
+  if (!tx) return;
+  tx.remittanceInfo = val;
+  tx._customRemittance = val;
+  const isEdited = !!(tx._originalRemittanceInfo && val.trim() !== tx._originalRemittanceInfo.trim());
+  tx._customRemittanceEdited = isEdited;
+
+  const origEl = document.getElementById(`bh-rmt-orig-${idx}`);
+  if (origEl) {
+    if (isEdited) {
+      origEl.innerHTML = `<i class="fas fa-info-circle me-1 opacity-75"></i>Original: ${escHtml(tx._originalRemittanceInfo)}`;
+      origEl.classList.remove('d-none');
+    } else {
+      origEl.innerHTML = '';
+      origEl.classList.add('d-none');
+    }
   }
 };
 
@@ -630,7 +657,8 @@ function bhBankRenderResults(filter) {
   const kontenrahmen = window._bhKontenrahmen || [];
 
   function makeKontoSelectHTML(id, selectedVal, type, isLocked = false) {
-    const matchedKonto = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
+    const cleanCode = String(selectedVal || '').split('|')[0].trim();
+    const matchedKonto = kontenrahmen.find(k => String(k.konto).trim() === cleanCode);
     const displayVal = matchedKonto ? `${matchedKonto.konto} | ${matchedKonto.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
 
     if (isLocked) {
@@ -747,17 +775,17 @@ function bhBankRenderResults(filter) {
               ${escHtml(r.remittanceInfo || '–')}
             </div>
           ` : `
-            <input type="text" id="bh-rmt-${realI}" class="form-control form-control-sm bh-rmt-input mb-1"
+            <input type="text" id="bh-rmt-${realI}" class="form-control form-control-sm bh-rmt-input"
               value="${escHtml(r.remittanceInfo || '')}"
               placeholder="Verwendungszweck / Buchungstext..."
               title="${escHtml(r.remittanceInfo || 'Klicken zum Anpassen')}"
               style="font-size: 12px; width: 100%; min-width: 180px;"
               oninput="window._bhUpdateTxRemittance(${realI}, this.value)">
-            ${r.remittanceInfo ? `
-              <div class="text-muted" style="font-size: 11px; line-height: 1.25; white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo)}">
-                ${escHtml(r.remittanceInfo)}
-              </div>
-            ` : ''}
+            <div id="bh-rmt-orig-${realI}" class="text-muted mt-1 ${r._customRemittanceEdited && r._originalRemittanceInfo && r.remittanceInfo.trim() !== r._originalRemittanceInfo.trim() ? '' : 'd-none'}"
+                 style="font-size: 10px; line-height: 1.25; white-space: normal; word-break: break-word;"
+                 title="Originaler Bankauszug-Text: ${escHtml(r._originalRemittanceInfo || '')}">
+              ${(r._customRemittanceEdited && r._originalRemittanceInfo && r.remittanceInfo.trim() !== r._originalRemittanceInfo.trim()) ? `<i class="fas fa-info-circle me-1 opacity-75"></i>Original: ${escHtml(r._originalRemittanceInfo)}` : ''}
+            </div>
           `}
         </td>
         <td>${statusBadge}</td>
@@ -1058,6 +1086,19 @@ window.bhBankHandleFiles = async function(files) {
       uniqueTxs.push(t);
     }
   });
+
+  // Sicherstellen, dass Kontenrahmen vor Matching & Rendering verfügbar ist
+  if (!window._bhKontenrahmen || window._bhKontenrahmen.length === 0) {
+    try {
+      const cached = localStorage.getItem('bh_kontenrahmen');
+      if (cached) window._bhKontenrahmen = JSON.parse(cached);
+    } catch(_) {}
+    if ((!window._bhKontenrahmen || window._bhKontenrahmen.length === 0) && typeof window.loadBuchhaltungData === 'function') {
+      try {
+        await window.loadBuchhaltungData(true);
+      } catch(_) {}
+    }
+  }
 
   window._bhBankTransactions = uniqueTxs;
   window._bhBankMatchResults = bhBankMatchAll(uniqueTxs);
@@ -1656,7 +1697,7 @@ function bhBankMatchAll(transactions) {
     const cleanTextAll = ((tx.remittanceInfo || '') + ' ' + (tx.partyName || '')).toLowerCase();
     const isVerbandsschiessen = /verbandsschiessen|vereinswettschiessen|wettschiessen|agksv|ssv|schützenverband|feldschiessen|kantonalstich|dmm/i.test(cleanTextAll);
     const splitHint = isVerbandsschiessen 
-      ? '⚠️ Wettschiessen / Verbandsabrechnung! Enthält evtl. Junioren-Anteile (Konto 4210 Nachwuchsförderung) und Erwachsene (Transit 1190). Split-Buchung empfohlen.'
+      ? '⚠️ Wettschiessen / Verbandsabrechnung! Enthält evtl. mehrere Teilbeträge (z. B. Nachwuchs / Meisterschaften). Split-Buchung empfohlen.'
       : '';
 
     return {
@@ -3119,19 +3160,23 @@ window.bhBankOpenSplitModal = function(txIdx) {
 
   const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
 
-  // Preset 2 Split-Zeilen
+  const matchGegenkonto = isCredit
+    ? (tx.suggestedHaben && tx.suggestedHaben !== txBankKonto ? tx.suggestedHaben : '')
+    : (tx.suggestedSoll && tx.suggestedSoll !== txBankKonto ? tx.suggestedSoll : '');
+
+  // Preset 2 Split-Zeilen (flexibel ohne feste Kontenverdrahtung)
   window._bhSplitCurrentRows = [
     {
-      beschreibung: `${partyOrInfo} (Erwachsene / Transit 1190)`,
+      beschreibung: `${partyOrInfo} (Teilbetrag 1)`,
       betrag: Number(tx.amount || 0),
-      kontoSoll: isCredit ? txBankKonto : '1190',
-      kontoHaben: isCredit ? '1190' : txBankKonto
+      kontoSoll: isCredit ? txBankKonto : matchGegenkonto,
+      kontoHaben: isCredit ? matchGegenkonto : txBankKonto
     },
     {
-      beschreibung: `${partyOrInfo} (Junioren / Nachwuchsförderung)`,
+      beschreibung: `${partyOrInfo} (Teilbetrag 2)`,
       betrag: 0,
-      kontoSoll: isCredit ? txBankKonto : '4210',
-      kontoHaben: isCredit ? '4210' : txBankKonto
+      kontoSoll: isCredit ? txBankKonto : '',
+      kontoHaben: isCredit ? '' : txBankKonto
     }
   ];
 
@@ -3341,8 +3386,8 @@ window.bhBankAddSplitRow = function() {
   (window._bhSplitCurrentRows = window._bhSplitCurrentRows || []).push({
     beschreibung: (tx ? (tx.partyName || tx.remittanceInfo || 'Split-Position') : 'Split-Position'),
     betrag: 0,
-    kontoSoll: isCredit ? txBankKonto : '1190',
-    kontoHaben: isCredit ? '1190' : txBankKonto
+    kontoSoll: isCredit ? txBankKonto : '',
+    kontoHaben: isCredit ? '' : txBankKonto
   });
 
   if (tx) bhBankRenderSplitModalContent(tx);

@@ -20,11 +20,27 @@ window.jbResolveAccountForPosition = function(sourceField, description, customSe
   // 1. Spezifische variable Zusatzpositionen (z1, z2)
   if (sf === 'Z1' || sf === 'Z001' || desc.includes('zusatzposition 1') || desc.includes('jacke')) {
     if (customSettings && customSettings.z1_konto) return String(customSettings.z1_konto).trim();
-    return '8500'; // Ausserordentlicher Ertrag
+    const gZ1 = (window._jbGebuehren || []).find(g => {
+      const k = String(g.key || '').trim().toUpperCase();
+      return k === 'Z001' || k === 'Z1';
+    });
+    if (gZ1) {
+      const k = String(gZ1['Haben-Konto-Jahresbeitrag-Buchhaltung'] || gZ1['Vorgeschlagenes Haben-Konto'] || gZ1.konto_haben || gZ1.konto || '').trim();
+      if (k) return k;
+    }
+    return '8500'; // Standard-Fallback
   }
   if (sf === 'Z2' || sf === 'Z002' || desc.includes('zusatzposition 2')) {
     if (customSettings && customSettings.z2_konto) return String(customSettings.z2_konto).trim();
-    return '1190'; // Transitkonto
+    const gZ2 = (window._jbGebuehren || []).find(g => {
+      const k = String(g.key || '').trim().toUpperCase();
+      return k === 'Z002' || k === 'Z2';
+    });
+    if (gZ2) {
+      const k = String(gZ2['Haben-Konto-Jahresbeitrag-Buchhaltung'] || gZ2['Vorgeschlagenes Haben-Konto'] || gZ2.konto_haben || gZ2.konto || '').trim();
+      if (k) return k;
+    }
+    return '1300'; // Transitorische Aktiven Standard (13xx)
   }
 
   // 2. Abgleich mit dem dynamischen Sheet gebuehrenconfig (Members100 Spalten I & J)
@@ -72,9 +88,9 @@ window.jbResolveAccountForPosition = function(sourceField, description, customSe
   if (sf === 'RA001' || desc.includes('vorstand')) return '3410'; // Rabatt Vorstand (Erlösminderung 3410)
   if (sf === 'RA002' || desc.includes('hausmeister')) return '6002'; // Unterhalt / Reparaturen Hausmeister
   
-  // Alle Wettschiessen (10m / 50m / Volksschiessen / DEZ) standardmässig auf Transitkonto 1190
+  // Wettschiessen (10m / 50m / Volksschiessen / DEZ): Falls nicht in gebuehrenconfig konfiguriert, auf Transitorische Aktiven (1300) leiten
   if (sf.startsWith('KK') || sf.startsWith('LG') || desc.includes('50m') || desc.includes('10m') || desc.includes('stich') || desc.includes('volksschiessen')) {
-    return '1190';
+    return '1300';
   }
 
   return '3410'; // Standard-Fallback

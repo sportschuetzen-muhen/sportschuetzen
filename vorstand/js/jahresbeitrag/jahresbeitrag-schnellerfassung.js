@@ -2,6 +2,18 @@
 // ============================================================
 // TAB 2: ACCESS-STYLE SCHNELLERFASSUNG RENDER
 // ============================================================
+function jbGetDefaultAccountForExtra(key, fallback) {
+  const g = (window._jbGebuehren || []).find(x => {
+    const k = String(x.key || '').trim().toUpperCase();
+    return k === key || k === key.replace(/^Z0*/, 'Z');
+  });
+  if (g) {
+    const k = String(g['Haben-Konto-Jahresbeitrag-Buchhaltung'] || g['Vorgeschlagenes Haben-Konto'] || g.konto_haben || g.konto || '').trim();
+    if (k) return k;
+  }
+  return fallback;
+}
+
 function renderSchnellerfassungTab() {
   return `
     <div class="row g-3 border rounded bg-white p-1" style="height: calc(100vh - 200px); overflow: hidden;">
@@ -482,7 +494,7 @@ function jbRenderEntryForm(m) {
               <div class="col-auto">
                 <div class="input-group input-group-sm" style="width: 110px;">
                   <input type="text" id="z1_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
-                         value="${_jbParticipationsState.z1_konto || '8500'}" 
+                         value="${_jbParticipationsState.z1_konto || jbGetDefaultAccountForExtra('Z001', '8500')}" 
                          ${_jbParticipationsState.z1_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
                          onchange="jbUpdateState('z1_konto', this.value, '${m.PersonNumber}')">
                   <button class="btn btn-outline-secondary" type="button" 
@@ -519,7 +531,7 @@ function jbRenderEntryForm(m) {
               <div class="col-auto">
                 <div class="input-group input-group-sm" style="width: 110px;">
                   <input type="text" id="z2_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
-                         value="${_jbParticipationsState.z2_konto || '1190'}" 
+                         value="${_jbParticipationsState.z2_konto || jbGetDefaultAccountForExtra('Z002', '1300')}" 
                          ${_jbParticipationsState.z2_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
                          onchange="jbUpdateState('z2_konto', this.value, '${m.PersonNumber}')">
                   <button class="btn btn-outline-secondary" type="button" 
@@ -970,7 +982,7 @@ window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {
       if (activateState) {
         if (!_jbLocalBulkChanges[pnClean].z1_text) _jbLocalBulkChanges[pnClean].z1_text = _jbParticipationsState.z1_text || 'Beitrag Vereinsjacke';
         if (_jbLocalBulkChanges[pnClean].z1_betrag === undefined) _jbLocalBulkChanges[pnClean].z1_betrag = _jbParticipationsState.z1_betrag !== undefined ? _jbParticipationsState.z1_betrag : 60;
-        if (!_jbLocalBulkChanges[pnClean].z1_konto) _jbLocalBulkChanges[pnClean].z1_konto = _jbParticipationsState.z1_konto || '8500';
+        if (!_jbLocalBulkChanges[pnClean].z1_konto) _jbLocalBulkChanges[pnClean].z1_konto = _jbParticipationsState.z1_konto || jbGetDefaultAccountForExtra('Z001', '8500');
       }
     }
   });

@@ -19,6 +19,18 @@ function jbCalculateLiveTotal(m, settings) {
     return feesMap[key] !== undefined ? feesMap[key] : fallback;
   };
 
+  const getFeeAccount = (key, fallback) => {
+    const matched = (window._jbGebuehren || []).find(g => {
+      const k = String(g.key || '').trim().toUpperCase();
+      return k === key || k === key.replace(/^Z0*/, 'Z');
+    });
+    if (matched) {
+      const k = String(matched['Haben-Konto-Jahresbeitrag-Buchhaltung'] || matched['Vorgeschlagenes Haben-Konto'] || matched.konto_haben || matched.konto || '').trim();
+      if (k) return k;
+    }
+    return fallback;
+  };
+
   const positions = [];
   
   // 1. Jahresbeitrag
@@ -137,7 +149,7 @@ function jbCalculateLiveTotal(m, settings) {
     positions.push({
       name: settings.z1_text,
       betrag: Number(settings.z1_betrag || 0),
-      konto: settings.z1_konto || '8500',
+      konto: settings.z1_konto || getFeeAccount('Z001', '8500'),
       locked: settings.z1_locked !== false,
       typ: 'Debit'
     });
@@ -146,7 +158,7 @@ function jbCalculateLiveTotal(m, settings) {
     positions.push({
       name: settings.z2_text,
       betrag: Number(settings.z2_betrag || 0),
-      konto: settings.z2_konto || '1190',
+      konto: settings.z2_konto || getFeeAccount('Z002', '1300'),
       locked: settings.z2_locked !== false,
       typ: 'Debit'
     });

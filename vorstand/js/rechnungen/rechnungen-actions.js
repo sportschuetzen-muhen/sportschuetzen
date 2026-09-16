@@ -453,12 +453,13 @@ window.rnOpenCreateModal = async function(btnEl) {
                 <table class="table table-bordered table-striped align-middle mb-0" style="font-size: 13px;">
                   <thead class="table-light">
                     <tr>
-                      <th style="width: 40px;" class="text-center">#</th>
+                      <th style="width: 35px;" class="text-center">#</th>
                       <th>Beschreibung der Dienstleistung / Ware</th>
-                      <th style="width: 90px;" class="text-end">Menge</th>
-                      <th style="width: 130px;" class="text-end">Einzelpreis</th>
-                      <th style="width: 130px;" class="text-end">Gesamt (CHF)</th>
-                      <th style="width: 50px;" class="text-center">Aktion</th>
+                      <th style="width: 80px;" class="text-end">Menge</th>
+                      <th style="width: 120px;" class="text-end">Einzelpreis</th>
+                      <th style="width: 120px;" class="text-end">Gesamt (CHF)</th>
+                      <th style="width: 130px;">Konto (Haben)</th>
+                      <th style="width: 45px;" class="text-center">Aktion</th>
                     </tr>
                   </thead>
                   <tbody id="rnc-positions-tbody">
@@ -468,11 +469,12 @@ window.rnOpenCreateModal = async function(btnEl) {
                     <tr class="table-light fw-extrabold text-primary" style="font-size:14px;">
                       <td colspan="4" class="text-end">Gesamtsumme (CHF):</td>
                       <td class="text-end font-monospace" id="rnc-total-sum">CHF 0.00</td>
-                      <td></td>
+                      <td colspan="2"></td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
+              ${typeof getRnKontenDatalistHtml === 'function' ? getRnKontenDatalistHtml() : ''}
             </div>
 
             <!-- Submit -->
@@ -618,7 +620,20 @@ function rncRecalculateTotal() {
 }
 window.rncRecalculateTotal = rncRecalculateTotal;
 
-function rncAddPositionRow(desc = "", unitPrice = "", qty = 1) {
+function getRnKontenDatalistHtml() {
+  let list = window._bhKontenrahmen;
+  if (!list || list.length === 0) {
+    try {
+      const cached = localStorage.getItem('bh_kontenrahmen');
+      if (cached) list = JSON.parse(cached);
+    } catch (e) {}
+  }
+  const options = (list || []).map(k => `<option value="${escapeHtml(k.konto)} | ${escapeHtml(k.bezeichnung)}">`).join('');
+  return `<datalist id="rn-konten-datalist">${options}</datalist>`;
+}
+window.getRnKontenDatalistHtml = getRnKontenDatalistHtml;
+
+function rncAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
   rncPosCounter++;
   const tbody = document.getElementById('rnc-positions-tbody');
   if (!tbody) return;
@@ -646,6 +661,9 @@ function rncAddPositionRow(desc = "", unitPrice = "", qty = 1) {
         <span class="input-group-text bg-light text-muted">CHF</span>
         <input type="number" class="form-control form-control-sm text-end fw-bold rnc-pos-amt bg-light" readonly value="${initialAmount}">
       </div>
+    </td>
+    <td>
+      <input type="text" class="form-control form-control-sm font-monospace rnc-pos-konto" list="rn-konten-datalist" value="${escapeHtml(konto || '')}" placeholder="Konto...">
     </td>
     <td class="text-center">
       <button type="button" class="btn btn-xs btn-outline-danger" onclick="rncRemovePositionRow('${tr.id}')">
@@ -734,12 +752,15 @@ window.rnSaveCreateInvoice = async function(event) {
     const qty = Number(row.querySelector('.rnc-pos-qty').value || 1);
     const unitPrice = Number(row.querySelector('.rnc-pos-unitprice').value || 0);
     const amt = Number(row.querySelector('.rnc-pos-amt').value || (qty * unitPrice));
+    const rawKonto = row.querySelector('.rnc-pos-konto') ? row.querySelector('.rnc-pos-konto').value.trim() : '';
+    const konto = rawKonto.split('|')[0].trim();
     positions.push({
       position_nr: index + 1,
       description: desc,
       quantity: qty,
       unit_price: unitPrice,
-      amount: amt
+      amount: amt,
+      konto: konto
     });
     totalAmount += amt;
   });
@@ -1030,12 +1051,13 @@ window.rnOpenEditModal = async function(invoiceId) {
                 <table class="table table-bordered table-striped align-middle mb-0" style="font-size: 13px;">
                   <thead class="table-light">
                     <tr>
-                      <th style="width: 40px;" class="text-center">#</th>
+                      <th style="width: 35px;" class="text-center">#</th>
                       <th>Beschreibung der Dienstleistung / Ware</th>
-                      <th style="width: 90px;" class="text-end">Menge</th>
-                      <th style="width: 130px;" class="text-end">Einzelpreis</th>
-                      <th style="width: 130px;" class="text-end">Gesamt (CHF)</th>
-                      <th style="width: 50px;" class="text-center">Aktion</th>
+                      <th style="width: 80px;" class="text-end">Menge</th>
+                      <th style="width: 120px;" class="text-end">Einzelpreis</th>
+                      <th style="width: 120px;" class="text-end">Gesamt (CHF)</th>
+                      <th style="width: 130px;">Konto (Haben)</th>
+                      <th style="width: 45px;" class="text-center">Aktion</th>
                     </tr>
                   </thead>
                   <tbody id="rne-positions-tbody">
@@ -1045,11 +1067,12 @@ window.rnOpenEditModal = async function(invoiceId) {
                     <tr class="table-light fw-extrabold text-primary" style="font-size:14px;">
                       <td colspan="4" class="text-end">Gesamtsumme (CHF):</td>
                       <td class="text-end font-monospace" id="rne-total-sum">CHF 0.00</td>
-                      <td></td>
+                      <td colspan="2"></td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
+              ${typeof getRnKontenDatalistHtml === 'function' ? getRnKontenDatalistHtml() : ''}
             </div>
 
             <!-- Submit -->
@@ -1076,7 +1099,7 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
   window.rneRecalculateTotal = rneRecalculateTotal;
 
-  function rneAddPositionRow(desc = "", unitPrice = "", qty = 1) {
+  function rneAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
     rnePosCounter++;
     const tbody = document.getElementById('rne-positions-tbody');
     if (!tbody) return;
@@ -1104,6 +1127,9 @@ window.rnOpenEditModal = async function(invoiceId) {
           <span class="input-group-text bg-light text-muted">CHF</span>
           <input type="number" class="form-control form-control-sm text-end fw-bold rne-pos-amt bg-light" readonly value="${initialAmount}">
         </div>
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm font-monospace rne-pos-konto" list="rn-konten-datalist" value="${escapeHtml(konto || '')}" placeholder="Konto...">
       </td>
       <td class="text-center">
         <button type="button" class="btn btn-xs btn-outline-danger" onclick="rneRemovePositionRow('${tr.id}')">
@@ -1143,7 +1169,7 @@ window.rnOpenEditModal = async function(invoiceId) {
   if (positions.length > 0) {
     positions.forEach(p => {
       if (typeof window.rneAddPositionRow === 'function') {
-        window.rneAddPositionRow(p.description || '', p.unit_price || p.amount || 0, p.quantity || 1);
+        window.rneAddPositionRow(p.description || '', p.unit_price || p.amount || 0, p.quantity || 1, p.konto || '');
       }
     });
   } else {
@@ -1192,12 +1218,15 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
     const qty = Number(row.querySelector('.rne-pos-qty').value || 1);
     const unitPrice = Number(row.querySelector('.rne-pos-unitprice').value || 0);
     const amt = Number(row.querySelector('.rne-pos-amt').value || (qty * unitPrice));
+    const rawKonto = row.querySelector('.rne-pos-konto') ? row.querySelector('.rne-pos-konto').value.trim() : '';
+    const konto = rawKonto.split('|')[0].trim();
     positions.push({
       position_nr: index + 1,
       description: desc,
       quantity: qty,
       unit_price: unitPrice,
-      amount: amt
+      amount: amt,
+      konto: konto
     });
     totalAmount += amt;
   });

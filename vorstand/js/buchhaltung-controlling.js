@@ -876,6 +876,36 @@ function calculateTransitStats(journal, accountCode) {
   return { inflow, outflow, balance: outflow - inflow };
 }
 
+function getTransitAccountsList(journalEntries) {
+  const accountMap = new Map();
+  
+  // 1. Aus Kontenrahmen erfassen (alle mit 13xx oder 119x)
+  (window._bhKontenrahmen || []).forEach(acc => {
+    const code = String(acc.konto || '').trim();
+    if (code.startsWith('13') || code.startsWith('119')) {
+      accountMap.set(code, {
+        konto: code,
+        bezeichnung: acc.bezeichnung || ('Transitkonto ' + code)
+      });
+    }
+  });
+
+  // 2. Aus Journal erfassen (falls ein Konto bebucht wurde, das nicht im Kontenrahmen steht)
+  (journalEntries || []).forEach(entry => {
+    const s = String(entry.konto_soll || '').trim();
+    const h = String(entry.konto_haben || '').trim();
+    if ((s.startsWith('13') || s.startsWith('119')) && !accountMap.has(s)) {
+      accountMap.set(s, { konto: s, bezeichnung: 'Transitkonto ' + s });
+    }
+    if ((h.startsWith('13') || h.startsWith('119')) && !accountMap.has(h)) {
+      accountMap.set(h, { konto: h, bezeichnung: 'Transitkonto ' + h });
+    }
+  });
+
+  // Sortiert nach Kontonummer
+  return Array.from(accountMap.values()).sort((a, b) => a.konto.localeCompare(b.konto, undefined, { numeric: true }));
+}
+
 function renderFullJournalReport(journal) {
   const sortedJournal = [...journal].sort((a, b) => Number(a.id) - Number(b.id));
   
@@ -1017,8 +1047,7 @@ function renderGVAuswertungReport(journal) {
     return sum + (bud ? Number(bud[activeBudgetCol] || 0) : 0);
   }, 0);
   
-  const stats1190 = calculateTransitStats(journal, '1190');
-  const stats1191 = calculateTransitStats(journal, '1191');
+  const transitAccounts = getTransitAccountsList(journal);
   
   const revenueRows = revenues.map(acc => {
     const bud = window._bhBudget.find(b => String(b.konto).trim() === String(acc.konto).trim());
@@ -1149,20 +1178,22 @@ function renderGVAuswertungReport(journal) {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td class="font-monospace text-muted fw-bold">1190</td>
-                <td><strong>Meisterschaften & sonstige Teilnahmen</strong> (Startgelder, Vorschüsse, Verbandsgebühren etc.)</td>
-                <td class="text-end text-success">${fmtChf(stats1190.inflow)}</td>
-                <td class="text-end text-danger">${fmtChf(stats1190.outflow)}</td>
-                <td class="text-end fw-bold ${stats1190.balance === 0 ? 'text-dark' : 'text-primary'}">${fmtChf(stats1190.balance)}</td>
-              </tr>
-              <tr>
-                <td class="font-monospace text-muted fw-bold">1191</td>
-                <td><strong>Gruppengewinne</strong> (Geldeingänge für Mitglieder aus Meisterschaften)</td>
-                <td class="text-end text-success">${fmtChf(stats1191.inflow)}</td>
-                <td class="text-end text-danger">${fmtChf(stats1191.outflow)}</td>
-                <td class="text-end fw-bold ${stats1191.balance === 0 ? 'text-dark' : 'text-primary'}">${fmtChf(stats1191.balance)}</td>
-              </tr>
+              ${transitAccounts.length > 0 ? transitAccounts.map(tAcc => {
+                const stats = calculateTransitStats(journal, tAcc.konto);
+                return `
+                  <tr>
+                    <td class="font-monospace text-muted fw-bold">${tAcc.konto}</td>
+                    <td><strong>${tAcc.bezeichnung}</strong></td>
+                    <td class="text-end text-success">${fmtChf(stats.inflow)}</td>
+                    <td class="text-end text-danger">${fmtChf(stats.outflow)}</td>
+                    <td class="text-end fw-bold ${stats.balance === 0 ? 'text-dark' : 'text-primary'}">${fmtChf(stats.balance)}</td>
+                  </tr>
+                `;
+              }).join('') : `
+                <tr>
+                  <td colspan="5" class="text-center text-muted py-3">Keine aktiven Durchlauf- oder Transitkonten (13xx) im Kontenrahmen/Journal vorhanden.</td>
+                </tr>
+              `}
             </tbody>
           </table>
         </div>
@@ -1639,12 +1670,12 @@ window.bhExportJournalToExcel = function() {
       csvRows.push(`${acc.konto};"${acc.bezeichnung.replace(/"/g, '""')}";${cat.main};;;${Number(acc._endsaldo || 0).toFixed(2)}`);
     });
     
-    // Transitkonten
-    const stats1190 = calculateTransitStats(filteredJournal, '1190');
-    const stats1191 = calculateTransitStats(filteredJournal, '1191');
-    
-    csvRows.push(`1190;"Transit Meisterschaften & sonstige Teilnahmen";Transit;${stats1190.inflow.toFixed(2)};${stats1190.outflow.toFixed(2)};${stats1190.balance.toFixed(2)}`);
-    csvRows.push(`1191;"Transit Gruppengewinne";Transit;${stats1191.inflow.toFixed(2)};${stats1191.outflow.toFixed(2)};${stats1191.balance.toFixed(2)}`);
+    // Transitkonten (dynamisch 13xx / 119x)
+    const transitAccountsCsv = getTransitAccountsList(filteredJournal);
+    transitAccountsCsv.forEach(tAcc => {
+      const stats = calculateTransitStats(filteredJournal, tAcc.konto);
+      csvRows.push(`${tAcc.konto};"${(tAcc.bezeichnung || '').replace(/"/g, '""')}";Transit;${stats.inflow.toFixed(2)};${stats.outflow.toFixed(2)};${stats.balance.toFixed(2)}`);
+    });
     
   } else {
     // Export Journal (Vollständig oder Revisoren)
@@ -1797,8 +1828,7 @@ window.bhPrintGVReport = function() {
     const totalExpenses = expenses.reduce((sum, acc) => sum + Number(acc._endsaldo || 0), 0);
     const netResult = totalRevenues - totalExpenses;
     
-    const stats1190 = calculateTransitStats(filteredJournal, '1190');
-    const stats1191 = calculateTransitStats(filteredJournal, '1191');
+    const transitAccountsPrint = getTransitAccountsList(filteredJournal);
     
     const revenueRows = revenues.map(acc => `
       <tr class="detail-row">
@@ -1884,20 +1914,22 @@ window.bhPrintGVReport = function() {
           </tr>
         </thead>
         <tbody>
-          <tr class="detail-row">
-            <td class="code fw-bold">1190</td>
-            <td><strong>Transit Meisterschaften & sonstige Teilnahmen</strong> (Startgelder, Vorschüsse, Verbandsgebühren)</td>
-            <td class="amount" style="color:#198754;">${fmtChf(stats1190.inflow)}</td>
-            <td class="amount" style="color:#dc3545;">${fmtChf(stats1190.outflow)}</td>
-            <td class="amount" style="font-weight:bold;">${fmtChf(stats1190.balance)}</td>
-          </tr>
-          <tr class="detail-row">
-            <td class="code fw-bold">1191</td>
-            <td><strong>Transit Gruppengewinne</strong> (Vereinsgelder für Meisterschafts-Auszahlungen)</td>
-            <td class="amount" style="color:#198754;">${fmtChf(stats1191.inflow)}</td>
-            <td class="amount" style="color:#dc3545;">${fmtChf(stats1191.outflow)}</td>
-            <td class="amount" style="font-weight:bold;">${fmtChf(stats1191.balance)}</td>
-          </tr>
+          ${transitAccountsPrint.length > 0 ? transitAccountsPrint.map(tAcc => {
+            const stats = calculateTransitStats(filteredJournal, tAcc.konto);
+            return `
+              <tr class="detail-row">
+                <td class="code fw-bold">${tAcc.konto}</td>
+                <td><strong>${tAcc.bezeichnung}</strong></td>
+                <td class="amount" style="color:#198754;">${fmtChf(stats.inflow)}</td>
+                <td class="amount" style="color:#dc3545;">${fmtChf(stats.outflow)}</td>
+                <td class="amount" style="font-weight:bold;">${fmtChf(stats.balance)}</td>
+              </tr>
+            `;
+          }).join('') : `
+            <tr class="detail-row">
+              <td colspan="5" style="text-align:center; color:#888;">Keine aktiven Durchlauf- oder Transitkonten vorhanden.</td>
+            </tr>
+          `}
         </tbody>
       </table>
       <p style="font-size:11px; color:#666; font-style:italic; margin-top:5px;">
