@@ -1344,6 +1344,7 @@ function bhBankMatchAll(transactions) {
     let alreadyPaidJb = false;
     let matchType = 'unknown'; // 'invoice' | 'jb' | 'rule' | 'journal' | 'heuristic' | 'unknown'
     let matchRuleName = '';
+    let matchRulePrefix = '';
 
     // Bank-Konto dynamisch anhand der erkannten XML-IBAN ermitteln (z.B. 1021 für Wirtschaftskonto, 1020 für Vereinskonto, 1022 für Sparkonto)
     const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
@@ -1601,7 +1602,7 @@ function bhBankMatchAll(transactions) {
 
     // 2. STUFE: Benutzer-Regeln (Rules)
     // Spezifischere Regeln (sowohl Empfänger als auch Verwendungszweck und/oder Betrag gesetzt) priorisieren
-    let matchRulePrefix = '';
+    matchRulePrefix = '';
     if (!isJahresbeitrag && !isInvoice && matchType === 'unknown') {
       const sortedRules = [...userRules].sort((a, b) => {
         let aSpec = 0;
