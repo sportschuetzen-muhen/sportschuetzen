@@ -150,15 +150,43 @@
 
         .content {
             flex: 1;
+            min-width: 0;
             padding: 24px;
             padding-bottom: calc(100px + env(safe-area-inset-bottom));
             overflow-y: auto;
+            overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             position: relative;
             background: var(--bg);
         }
-        .module-view { display: none; animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+        .module-view { display: none; animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1); min-width: 0; width: 100%; }
         .module-view.active { display: block; }
+
+        /* Sticky Action-Spalte für breite Tabellen (z.B. Bankabgleich & Journal) */
+        .bh-col-sticky-action {
+            position: sticky !important;
+            right: 0 !important;
+            background-color: #ffffff !important;
+            box-shadow: -4px 0 8px rgba(0, 0, 0, 0.06);
+            z-index: 5 !important;
+        }
+        thead th.bh-col-sticky-action {
+            background-color: #212529 !important;
+            color: #ffffff !important;
+            z-index: 15 !important;
+        }
+        tr.table-light td.bh-col-sticky-action {
+            background-color: #f8f9fa !important;
+        }
+        tr.table-secondary td.bh-col-sticky-action {
+            background-color: #e2e3e5 !important;
+        }
+        tr.table-primary td.bh-col-sticky-action {
+            background-color: #cfe2ff !important;
+        }
+        tr:hover td.bh-col-sticky-action {
+            background-color: #f1f4f8 !important;
+        }
 
         /* Responsive Layout Grid & Layout changes */
         @media (min-width: 1200px) {

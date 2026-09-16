@@ -149,9 +149,8 @@ window.renderTabBankabgleich = function(container) {
   const results = window._bhBankMatchResults || [];
 
   const jbCount = results.filter(r => r.isJahresbeitrag || r.isInvoice).length;
-  const ruleCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType === 'rule').length;
-  const histCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType === 'journal').length;
-  const unklarCount = results.filter(r => r.matchScore === 0 && !r.alreadyBooked).length;
+  const ruleCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic')).length;
+  const unklarCount = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked).length;
 
   const ibanFilterChecked = window._bhBankIbanFilterOff ? '' : 'checked';
 
@@ -227,7 +226,7 @@ window.renderTabBankabgleich = function(container) {
           <i class="fas fa-file-invoice-dollar me-1"></i>Beiträge & Rechnungen (${jbCount})
         </button>
         <button class="btn btn-sm btn-outline-info text-dark" id="bhBankFilterRules" onclick="bhBankFilter('rules')">
-          <i class="fas fa-magic me-1"></i>Erkannte Regeln (${ruleCount + histCount})
+          <i class="fas fa-magic me-1"></i>Erkannte Regeln (${ruleCount})
         </button>
         <button class="btn btn-sm btn-outline-warning text-dark" id="bhBankFilterUnklar" onclick="bhBankFilter('unklar')">
           <i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})
@@ -268,8 +267,9 @@ function bhBankStatsBannerHTML() {
   const results = window._bhBankMatchResults || [];
   const jbRows = results.filter(r => r.isJahresbeitrag || r.isInvoice);
   const ruleRows = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
-  const unklarRows = results.filter(r => r.matchScore === 0 && !r.alreadyBooked);
+  const unklarRows = results.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked);
   const bookedRows = results.filter(r => r.alreadyBooked);
+  const openRows = results.filter(r => !r.alreadyBooked);
 
   const totalIn  = results.filter(r => r.isCredit).reduce((s, r) => s + r.amount, 0);
   const totalOut = results.filter(r => !r.isCredit).reduce((s, r) => s + r.amount, 0);
@@ -299,9 +299,9 @@ function bhBankStatsBannerHTML() {
       </div>
       <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-warning bg-light">
-          <div class="small text-muted">Offen / Bereits gebucht</div>
-          <div class="fs-5 fw-bold text-dark">${unklarRows.length} offen</div>
-          <div class="text-muted small">${bookedRows.length} bereits gebucht</div>
+          <div class="small text-muted">Offen im Kassabuch</div>
+          <div class="fs-5 fw-bold text-dark">${openRows.length} offen</div>
+          <div class="text-muted small">${bookedRows.length} gebucht · <span class="text-warning fw-semibold">${unklarRows.length} noch unklar</span></div>
         </div>
       </div>
     </div>
@@ -539,7 +539,7 @@ function bhBankRenderResults(filter) {
   if (activeFilter === 'booked') filtered = rows.filter(r => r.alreadyBooked);
   if (activeFilter === 'jb')     filtered = rows.filter(r => r.isJahresbeitrag || r.isInvoice);
   if (activeFilter === 'rules')  filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic'));
-  if (activeFilter === 'unklar') filtered = rows.filter(r => r.matchScore === 0 && !r.alreadyBooked);
+  if (activeFilter === 'unklar') filtered = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked);
 
   // Live-Aktualisierung des Statistik-Banners & Filter-Counts ohne DOM-Zerstörung
   const statsEl = document.getElementById('bhBankStatsBanner');
@@ -548,9 +548,8 @@ function bhBankRenderResults(filter) {
   }
 
   const jbCount = rows.filter(r => r.isJahresbeitrag || r.isInvoice).length;
-  const ruleCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType === 'rule').length;
-  const histCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType === 'journal').length;
-  const unklarCount = rows.filter(r => r.matchScore === 0 && !r.alreadyBooked).length;
+  const ruleCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && (r.matchType === 'rule' || r.matchType === 'journal' || r.matchType === 'heuristic')).length;
+  const unklarCount = rows.filter(r => !r.isJahresbeitrag && !r.isInvoice && r.matchType !== 'rule' && r.matchType !== 'journal' && !r.alreadyBooked).length;
   const offenCount = rows.filter(r => !r.alreadyBooked).length;
   const bookedCount = rows.filter(r => r.alreadyBooked).length;
 
@@ -563,7 +562,7 @@ function bhBankRenderResults(filter) {
   const btnJb = document.getElementById('bhBankFilterJb');
   if (btnJb) btnJb.innerHTML = `<i class="fas fa-file-invoice-dollar me-1"></i>Beiträge & Rechnungen (${jbCount})`;
   const btnRules = document.getElementById('bhBankFilterRules');
-  if (btnRules) btnRules.innerHTML = `<i class="fas fa-magic me-1"></i>Erkannte Regeln (${ruleCount + histCount})`;
+  if (btnRules) btnRules.innerHTML = `<i class="fas fa-magic me-1"></i>Erkannte Regeln (${ruleCount})`;
   const btnUnklar = document.getElementById('bhBankFilterUnklar');
   if (btnUnklar) btnUnklar.innerHTML = `<i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})`;
 
@@ -610,7 +609,7 @@ function bhBankRenderResults(filter) {
     const matchedKonto = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
     const displayVal = matchedKonto ? `${matchedKonto.konto} | ${matchedKonto.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
 
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input" placeholder="Ziffern/Name..." value="${escHtml(displayVal)}" style="font-size:12px; min-width:160px;" autocomplete="off" title="Tippe Suchbegriff und drücke [Enter] oder [Tab] zum automatischen Übernehmen">`;
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input" placeholder="Ziffern/Name..." value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:140px;" autocomplete="off" title="${escHtml(displayVal || 'Tippe Suchbegriff und drücke [Enter] zum Auswählen')}">`;
   }
 
   const realIdxMap = filtered.map(r => rows.indexOf(r));
@@ -621,21 +620,21 @@ function bhBankRenderResults(filter) {
 
     let statusBadge = '';
     if (r.isWrongYear) {
-      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 FALSCHES BUCHUNGSJAHR: Diese Transaktion stammt aus ${r.txYear}, oben ist Buchhaltungsjahr ${window._bhYear} gewählt. Bitte oben Jahr umschalten!"><i class="fas fa-calendar-times me-1"></i>Jahr ${r.txYear} (Falsches Jahr)</span>`;
+      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 FALSCHES BUCHUNGSJAHR: Diese Transaktion stammt aus ${r.txYear}, oben ist Buchhaltungsjahr ${window._bhYear} gewählt. Bitte oben Jahr umschalten!"><i class="fas fa-calendar-times me-1"></i>Jahr ${r.txYear}</span>`;
     } else if (r.alreadyBooked) {
-      statusBadge = `<span class="badge bg-light text-secondary border" title="🔒 Transaktion wurde am ${escHtml(r.bookedDate || 'früher')} im Kassabuch erfasst."><i class="fas fa-check-double text-success me-1"></i>Bereits gebucht</span>`;
+      statusBadge = `<span class="badge bg-light text-secondary border" title="🔒 Transaktion wurde am ${escHtml(r.bookedDate || 'früher')} im Kassabuch erfasst."><i class="fas fa-check-double text-success me-1"></i>Gebucht</span>`;
     } else if (r.alreadyPaidInvoice) {
-      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Rechnung bezahlt</span>`;
+      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Rechnung ${escHtml(r.matchedInvoice?.id || '')} ist im Rechnungsmodul bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt</span>`;
     } else if (r.alreadyPaidJb) {
-      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Beitrag bezahlt</span>`;
+      statusBadge = `<span class="badge bg-secondary opacity-75" title="🔒 Jahresbeitrag von ${escHtml(r.matchedMember?.FirstName || '')} ${escHtml(r.matchedMember?.LastName || '')} ist bereits als BEZAHLT markiert."><i class="fas fa-info-circle me-1"></i>Bezahlt</span>`;
     } else if (r.isInvoice) {
-      statusBadge = `<span class="badge bg-success" title="✅ RECHNUNGS-TREFFER: Eindeutige Rechnungs-Nr. oder QR-Referenz gefunden. Buchungssatz ist vorbereitet."><i class="fas fa-check-circle me-1"></i>Rechnung ${escHtml(r.matchedInvoice?.id || '')}</span>`;
+      statusBadge = `<span class="badge bg-success" title="✅ RECHNUNGS-TREFFER: ${escHtml(r.matchedInvoice?.id || '')} (${escHtml(r.matchedInvoice?.name || '')})"><i class="fas fa-file-invoice me-1"></i>Rechnung</span>`;
     } else if (r.isJahresbeitrag) {
       statusBadge = '<span class="badge bg-success" title="✅ JAHRESBEITRAG: Mitglied und offener Jahresbeitrag eindeutig erkannt."><i class="fas fa-check-circle me-1"></i>Jahresbeitrag</span>';
     } else if (r.matchType === 'rule') {
-      statusBadge = `<span class="badge bg-info text-dark" title="⚡ REGEL-TREFFER: Durch benutzerdefinierte Regel \'${escHtml(r.matchRuleName)}\' erkannt. Konten sind vorausgefüllt. Bereit zum Buchen."><i class="fas fa-magic me-1"></i>Regel: ${escHtml(r.matchRuleName)}</span>`;
+      statusBadge = `<span class="badge bg-info text-dark" title="⚡ REGEL-TREFFER: ${escHtml(r.matchRuleName)}"><i class="fas fa-magic me-1"></i>Regel</span>`;
     } else if (r.matchType === 'journal') {
-      statusBadge = '<span class="badge bg-primary text-white" title="💡 HISTORIE-TREFFER: Noch NICHT gebucht! Kontenvorschlag basiert auf deinen früheren Buchungen. Klicke \'Buchen\' zum Ausführen."><i class="fas fa-history me-1"></i>Historie Treffer</span>';
+      statusBadge = '<span class="badge bg-primary text-white" title="💡 HISTORIE-TREFFER: Noch NICHT gebucht! Kontenvorschlag basiert auf deinen früheren Buchungen."><i class="fas fa-history me-1"></i>Historie</span>';
     } else if (r.matchType === 'heuristic') {
       statusBadge = '<span class="badge bg-light text-dark border" title="💡 SMART VORSCHLAG: Noch NICHT gebucht. Basiskonten nach Vorzeichen vorausgefüllt."><i class="fas fa-lightbulb me-1"></i>Vorschlag</span>';
     } else {
@@ -677,10 +676,10 @@ function bhBankRenderResults(filter) {
       const bookBtnLabel = isQueued ? 'Im Stapel' : 'Buchen';
       const bookBtnTitle = isQueued ? 'Klicken, um aus Buchungsstapel zu entfernen (Shift+Klick für Sofortbuchung)' : 'In den Buchungsstapel legen (Shift+Klick für Sofortbuchung)';
       actionButtons = `
-        <button class="btn btn-sm ${bookBtnClass} py-1 px-2 me-1" id="bh-book-btn-${realI}" onclick="bhBankToggleQueue(${realI}, event)" title="${bookBtnTitle}">
+        <button class="btn btn-sm ${bookBtnClass} py-1 px-2" id="bh-book-btn-${realI}" onclick="bhBankToggleQueue(${realI}, event)" title="${bookBtnTitle}">
           <i class="fas ${bookBtnIcon} me-1"></i>${bookBtnLabel}
         </button>
-        <button class="btn btn-sm ${splitBtnClass} py-1 px-2 me-1" onclick="bhBankOpenSplitModal(${realI})" title="Betrag in mehrere Zeilen aufteilen (z.B. 1190 Transit & 4210 Nachwuchsförderung)">
+        <button class="btn btn-sm ${splitBtnClass} py-1 px-2" onclick="bhBankOpenSplitModal(${realI})" title="Betrag in mehrere Zeilen aufteilen (z.B. Splitbuchung)">
           <i class="fas fa-columns me-1"></i>Split
         </button>
         <button class="btn btn-sm btn-outline-secondary py-1 px-2" onclick="bhBankSaveRuleModal(${realI})" title="Dauerhafte automatische Regel für diesen Absender/Text merken">
@@ -712,26 +711,31 @@ function bhBankRenderResults(filter) {
         <td class="text-end fw-bold ${amountClass}" style="white-space:nowrap;">
           ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
         </td>
-        <td style="min-width: 220px;">
+        <td style="min-width: 200px; max-width: 320px;">
           ${(r.alreadyBooked || r.isWrongYear) ? `
-            <small class="text-muted d-block" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
+            <div class="small text-muted" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
               ${escHtml(r.remittanceInfo || '–')}
-            </small>
+            </div>
           ` : `
-            <input type="text" id="bh-rmt-${realI}" class="form-control form-control-sm bh-rmt-input"
+            <input type="text" id="bh-rmt-${realI}" class="form-control form-control-sm bh-rmt-input mb-1"
               value="${escHtml(r.remittanceInfo || '')}"
               placeholder="Verwendungszweck / Buchungstext..."
-              title="Klicken zum Anpassen des Verwendungszwecks / Buchungstextes"
-              style="font-size: 12px; min-width: 210px;"
+              title="${escHtml(r.remittanceInfo || 'Klicken zum Anpassen')}"
+              style="font-size: 12px; width: 100%; min-width: 180px;"
               oninput="window._bhUpdateTxRemittance(${realI}, this.value)">
+            ${r.remittanceInfo ? `
+              <div class="text-muted" style="font-size: 11px; line-height: 1.25; white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo)}">
+                ${escHtml(r.remittanceInfo)}
+              </div>
+            ` : ''}
           `}
         </td>
         <td>${statusBadge}</td>
         <td>${matchInfo}</td>
-        <td style="min-width: 150px;">
+        <td style="min-width: 140px;">
           ${makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll')}
         </td>
-        <td style="min-width: 150px;">
+        <td style="min-width: 140px;">
           ${makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben')}
           ${(() => {
             if ((r.isJahresbeitrag || (r.isInvoice && String(r.matchedInvoice?.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
@@ -752,7 +756,7 @@ function bhBankRenderResults(filter) {
             return '';
           })()}
         </td>
-        ${canEdit ? `<td><div class="d-flex align-items-center">${actionButtons}</div></td>` : ''}
+        ${canEdit ? `<td class="bh-col-sticky-action text-center"><div class="d-flex align-items-center justify-content-center gap-1">${actionButtons}</div></td>` : ''}
       </tr>
     `;
   }).join('');
@@ -791,7 +795,7 @@ function bhBankRenderResults(filter) {
     <datalist id="bh-konten-datalist">
       ${datalistOptions}
     </datalist>
-    <div class="table-responsive">
+    <div class="table-responsive" style="overflow-x: auto; width: 100%;">
       <table id="bhBankTable" class="table table-hover table-sm align-middle mb-0" style="font-size: 13px;">
         <thead class="table-dark sticky-top">
           <tr>
@@ -803,7 +807,7 @@ function bhBankRenderResults(filter) {
             ${sortHeaderHTML('type', 'Zuordnung / Typ')}
             ${sortHeaderHTML('soll', 'Soll-Konto')}
             ${sortHeaderHTML('haben', 'Haben-Konto')}
-            ${canEdit ? '<th>Aktion</th>' : ''}
+            ${canEdit ? '<th class="bh-col-sticky-action text-center" style="min-width: 145px;">Aktion</th>' : ''}
           </tr>
         </thead>
         <tbody>${rowsHTML}</tbody>
@@ -860,6 +864,7 @@ function bhMakeTableResizable(table) {
   if (!table) return;
   const ths = table.querySelectorAll('thead th');
   ths.forEach(th => {
+    if (th.classList.contains('bh-col-sticky-action')) return;
     if (th.querySelector('.bh-col-resizer')) return;
 
     th.style.position = 'relative';
@@ -1363,7 +1368,7 @@ function bhBankMatchAll(transactions) {
 
         if (textHasJb || cleanRef || bestScore >= 2) {
           isJahresbeitrag = true;
-          matchScore = bestScore >= 2 ? 2 : (bestScore >= 1 ? 1 : 0);
+          matchScore = bestScore >= 2 ? 2 : 1;
           matchedMember = bestMem;
           matchedBeitrag = bestBeit;
           alreadyPaidJb = bestBeit ? (bestBeit.status === 'bezahlt') : false;
