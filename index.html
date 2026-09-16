@@ -1,245 +1,1567 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>Sportschützen Muhen App</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0f3a5d">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Portal | Sportschützen Muhen</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" href="data:,">
 
-<link rel="manifest" href="/sportschuetzen/manifest.json">
-<link rel="apple-touch-icon" sizes="180x180" href="/sportschuetzen/icons/apple-touch-icon.png">
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Sportschützen Muhen">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.6/piexif.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
-<link rel="icon" type="image/png" sizes="192x192" href="/sportschuetzen/icons/icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="/sportschuetzen/icons/icon-512.png">
+    <!-- OneSignal Integration -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
+        });
+      });
+    </script>
 
-<!-- OneSignal SDK (nur EINMAL!) -->
-<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-
-<script>
-/************************************************
- * OneSignal Init + PID Handling (stabil)
- ************************************************/
-window.OneSignalDeferred = window.OneSignalDeferred || [];
-OneSignalDeferred.push(async function (OneSignal) {
-
-        // Auf localhost deaktivieren um Fehler zu vermeiden
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.log("OneSignal: Deaktiviert auf localhost (Domain-Mismatch)");
-            return;
+    <style>
+        :root {
+            --primary: #0f3a5d;
+            --primary-light: #eef2ff;
+            --primary-hover: #1e4b7a;
+            --secondary: #1e293b;
+            --bg: #f8fafc;
+            --card-bg: rgba(255, 255, 255, 0.85);
+            --border: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 20px -2px rgba(15, 58, 93, 0.05), 0 2px 8px -1px rgba(15, 58, 93, 0.05);
+            --shadow-lg: 0 12px 30px -4px rgba(15, 58, 93, 0.08), 0 4px 12px -2px rgba(15, 58, 93, 0.08);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        try {
-            await OneSignal.init({
-            appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
-            serviceWorkerParam: { scope: "/sportschuetzen/" },
-            serviceWorkerPath: "OneSignalSDKWorker.js",
-            autoRegister: false,
-            notifyButton: { enable: true },
-            // NEU: Icon für Benachrichtigungen (gegen 404)
-            notificationDisplay: {
-                display: true,
-                icon: "/sportschuetzen/icons/icon-192.png"
+        html, body {
+            background-color: var(--bg);
+            font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+            color: var(--text-main);
+            height: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Elevating overall visuals */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            transition: var(--transition);
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        #login-screen {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at top right, #1e4b7a, var(--primary));
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .login-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(16px);
+            padding: 2.5rem;
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+        }
+
+        #app-screen { height: 100%; display: flex; flex-direction: column; }
+        .main-wrapper { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+        /* Modernized Sidebar */
+        .sidebar {
+            width: 260px;
+            background: white;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            transition: var(--transition);
+            z-index: 1000;
+        }
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 1.15rem;
+        }
+        .nav-link {
+            color: var(--text-muted);
+            padding: 0.75rem 1.5rem;
+            border-left: 4px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            font-size: 0.925rem;
+            transition: var(--transition);
+        }
+        .nav-link:hover {
+            background: #f8fafc;
+            color: var(--primary);
+        }
+        .nav-link.active {
+            background: var(--primary-light);
+            color: var(--primary);
+            border-left-color: var(--primary);
+            font-weight: 700;
+        }
+        .nav-link i {
+            width: 25px;
+            font-size: 1.1rem;
+            transition: var(--transition);
+        }
+
+        .content {
+            flex: 1;
+            min-width: 0;
+            padding: 24px;
+            padding-bottom: calc(100px + env(safe-area-inset-bottom));
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            position: relative;
+            background: var(--bg);
+        }
+        .module-view { display: none; animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1); min-width: 0; width: 100%; }
+        .module-view.active { display: block; }
+
+        /* Sticky Action-Spalte für breite Tabellen (z.B. Bankabgleich & Journal) */
+        .bh-col-sticky-action {
+            position: sticky !important;
+            right: 0 !important;
+            background-color: #ffffff !important;
+            box-shadow: -4px 0 8px rgba(0, 0, 0, 0.06);
+            z-index: 5 !important;
+        }
+        thead th.bh-col-sticky-action {
+            background-color: #212529 !important;
+            color: #ffffff !important;
+            z-index: 15 !important;
+        }
+        tr.table-light td.bh-col-sticky-action {
+            background-color: #f8f9fa !important;
+        }
+        tr.table-secondary td.bh-col-sticky-action {
+            background-color: #e2e3e5 !important;
+        }
+        tr.table-primary td.bh-col-sticky-action {
+            background-color: #cfe2ff !important;
+        }
+        tr:hover td.bh-col-sticky-action {
+            background-color: #f1f4f8 !important;
+        }
+
+        /* Responsive Layout Grid & Layout changes */
+        @media (min-width: 1200px) {
+            .mobile-header { display: none !important; }
+        }
+
+        /* IPAD/TABLET RESPONSIVENESS — vollständig ausgeblendet wie Mobile */
+        @media (min-width: 768px) and (max-width: 1199px) {
+            .mobile-header { display: flex !important; }
+            .main-wrapper { min-height: 0; flex: 1; overflow: hidden; }
+            .content {
+                padding: 20px;
+                padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
             }
-        });
-
-        console.log("OneSignal Init fertig");
-
-        // ---- PID Handling ----
-        const params = new URLSearchParams(window.location.search);
-        let pid = params.get("pid") || localStorage.getItem("sportschuetzen_pid");
-
-        if (!pid) {
-            console.log("Keine PID vorhanden");
-            return;
+            .sidebar {
+                position: fixed;
+                left: -280px;
+                width: 280px;
+                height: 100% !important;
+                height: 100dvh !important;
+                max-height: 100dvh !important;
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                overscroll-behavior-y: contain;
+                z-index: 2000;
+                box-shadow: 4px 0 25px rgba(0,0,0,0.15);
+                transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                padding-bottom: calc(40px + env(safe-area-inset-bottom)) !important;
+            }
+            .sidebar.show {
+                left: 0;
+            }
+            body.sidebar-open::after {
+                content: '';
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 58, 93, 0.35);
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+                z-index: 1500;
+                animation: fadeIn 0.2s ease-out;
+            }
         }
 
-        localStorage.setItem("sportschuetzen_pid", pid);
+        /* IPHONE/MOBILE RESPONSIVENESS */
+        @media (max-width: 767px) {
+            .mobile-header { display: flex !important; }
+            .content {
+                padding: 12px;
+                padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
+            }
+            .sidebar {
+                position: fixed;
+                left: -280px;
+                width: 280px;
+                height: 100% !important;
+                height: 100dvh !important;
+                max-height: 100dvh !important;
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                overscroll-behavior-y: contain;
+                z-index: 2000;
+                box-shadow: 4px 0 25px rgba(0,0,0,0.15);
+                transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                padding-bottom: calc(60px + env(safe-area-inset-bottom)) !important;
+            }
+            .sidebar.show {
+                left: 0;
+            }
+            .main-wrapper { min-height: 0; }
+            .module-view > .d-flex.justify-content-between {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .module-view > .d-flex.justify-content-between h2 {
+                font-size: 1.2rem;
+                word-break: break-word;
+            }
+            body.sidebar-open::after {
+                content: '';
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 58, 93, 0.35);
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+                z-index: 1500;
+                animation: fadeIn 0.2s ease-out;
+            }
 
-        if (OneSignal.User.externalId !== pid) {
-            const paddedPid = String(pid).padStart(6, '0');
-            await OneSignal.login(paddedPid);
-            console.log("Login mit PID:", paddedPid);
+            /* Mobile Swipeable Tab-Bar fuer Module wie Umfragen */
+            #umfragenTab.nav-tabs {
+                flex-wrap: nowrap !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                padding-bottom: 6px;
+                border-bottom: 2px solid #e2e8f0;
+                gap: 6px;
+                scrollbar-width: thin;
+            }
+            #umfragenTab.nav-tabs .nav-item {
+                flex: 0 0 auto;
+            }
+            #umfragenTab.nav-tabs .nav-link {
+                white-space: nowrap;
+                padding: 7px 13px;
+                font-size: 0.85rem;
+                font-weight: 600;
+                border-radius: 8px !important;
+                border: 1px solid #e2e8f0;
+                background: #f8fafc;
+                color: #475569;
+            }
+            #umfragenTab.nav-tabs .nav-link.active {
+                background: var(--primary);
+                color: #ffffff;
+                border-color: var(--primary);
+            }
+
+            /* Mobile Event Cards Styling */
+            .event-mobile-card {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                padding: 12px;
+                margin-bottom: 12px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .event-mobile-card:focus-within {
+                border-color: var(--primary);
+                box-shadow: 0 0 0 2px rgba(15, 58, 93, 0.15);
+            }
         }
 
-        const permission = OneSignal.Notifications.permission;
-
-        if (permission === "default") {
-            await OneSignal.Notifications.requestPermission();
+        .mobile-header {
+            display: none;
+            background: white;
+            padding: 10px 20px;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            z-index: 1200;
         }
 
-    } catch (err) {
-        console.error("OneSignal Fehler:", err);
-    }
-});
-
-/************************************************
- * ZENTRALE APP-RESUME LOGIK
- ************************************************/
-(function () {
-
-    let lastResume = 0;
-    const MIN_INTERVAL = 1500;
-
-    function fireResume(source) {
-        const now = Date.now();
-        if (now - lastResume < MIN_INTERVAL) return;
-        lastResume = now;
-
-        console.log("📲 App Resume:", source);
-
-        // Event für Hauptseite
-        document.dispatchEvent(new CustomEvent("app:resume"));
-
-        // Resume an alle iFrames senden
-        document.querySelectorAll("iframe").forEach(iframe => {
-            iframe.contentWindow?.postMessage(
-                { type: "app:resume", source, ts: now },
-                "*"
-            );
-        });
-    }
-
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
-            fireResume("visibility");
+        /* Responsive Tables & compact styling */
+        @media (max-width: 1199px) {
+            .content table:not(.exclude-responsive), 
+            .table-responsive {
+                display: block;
+                width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            /* KPI scaling */
+            .bh-metric-card {
+                padding: 15px !important;
+                border-left-width: 4px !important;
+            }
+            .bh-metric-card h2, #view-dashboard h3 {
+                font-size: 1.35rem !important;
+            }
         }
-    });
 
-    window.addEventListener("pageshow", e => {
-        if (e.persisted) {
-            fireResume("pageshow");
+        /* Compact elements & Touch Targets */
+        .table td, .table th {
+            padding: 8px 12px;
+            vertical-align: middle;
         }
-    });
+        @media (max-width: 767px) {
+            .table td, .table th {
+                padding: 12px 12px;
+            }
+        }
 
-    window.addEventListener("focus", () => {
-        fireResume("focus");
-    });
+        /* Pill-Style Tabs */
+        .bh-tab-btn {
+            border: none !important;
+            background: transparent !important;
+            color: var(--text-muted) !important;
+            padding: 8px 16px !important;
+            font-weight: 600 !important;
+            font-size: 0.875rem !important;
+            border-radius: 30px !important;
+            transition: var(--transition) !important;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-right: 4px;
+        }
+        .bh-tab-btn:hover {
+            color: var(--primary) !important;
+            background: rgba(15, 58, 93, 0.05) !important;
+        }
+        .bh-tab-btn.active {
+            color: white !important;
+            background: var(--primary) !important;
+            box-shadow: 0 4px 10px rgba(15, 58, 93, 0.2) !important;
+        }
 
-})();
-</script>
+        /* Sticky header & toolbars */
+        .sticky-toolbar {
+            position: sticky;
+            top: 0;
+            background: rgba(248, 250, 252, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 100;
+            padding: 10px 0;
+            margin-top: -10px;
+            border-bottom: 1px solid var(--border);
+        }
 
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=17">
+        /* Premium input fields */
+        .search-input-wrapper {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            width: 100%;
+        }
+        .search-input-wrapper i {
+            position: absolute;
+            left: 14px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .search-input-wrapper input {
+            border-radius: 30px !important;
+            padding-left: 36px !important;
+            border: 1px solid var(--border);
+            transition: var(--transition);
+        }
+        .search-input-wrapper input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(15, 58, 93, 0.12);
+        }
+
+        /* Premium typography formatting */
+        .currency-label {
+            font-size: 0.6em;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-right: 4px;
+            text-transform: uppercase;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .d-none { display: none !important; }
+        /* .draggable-player touch-action wird vom Manager-Modul (injectManagerStylesOnce) gesetzt */
+
+        @keyframes fadeInToast {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .custom-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 3000;
+            background: var(--primary);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            font-size: 14px;
+            animation: fadeInToast 0.3s ease-out;
+            border-left: 4px solid var(--success);
+        }
+
+        /* Custom premium toggles for contributions & faster entry */
+        .btn-toggle-active-primary {
+            background-color: var(--primary) !important;
+            color: white !important;
+            box-shadow: 0 2px 6px rgba(15, 58, 93, 0.15);
+        }
+        .btn-toggle-active-accent {
+            background-color: var(--success) !important;
+            color: white !important;
+            box-shadow: 0 2px 6px rgba(16, 185, 129, 0.15);
+        }
+        .btn-toggle-inactive {
+            background-color: transparent !important;
+            color: var(--text-muted) !important;
+        }
+        .btn-toggle-inactive:hover {
+            background-color: rgba(15, 58, 93, 0.04) !important;
+            color: var(--primary) !important;
+        }
+
+        /* Sticky Headers for large tables in modules */
+        .module-view .card-body.overflow-auto {
+            max-height: 65vh; /* Responsive height based on viewport */
+        }
+        .module-view .card-body.overflow-auto thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: #f8f9fa !important;
+            box-shadow: inset 0 -1px 0 var(--border);
+        }
+
+    </style>
 </head>
-
 <body>
 
-<div id="login-overlay" style="display:none;">
-    <div class="login-box">
-        <img src="icons/icon-512.png" alt="Logo" class="login-logo">
-        <h2>Anmeldung</h2>
-        <p>Bitte wähle deinen Namen aus und gib zur Bestätigung deine Lizenznummer oder deinen PIN ein.</p>
-        <div class="form-group">
-            <label for="login-user-select">Name</label>
-            <select id="login-user-select">
-                <option value="">Lade Teilnehmer...</option>
-            </select>
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+    <div class="login-card text-center">
+        <img src="https://danhunziker73-lgtm.github.io/sportschuetzen/icons/icon-512.png"
+             alt="Logo" height="60" class="mb-4">
+        <h4 class="mb-3">Vereins-Portal</h4>
+        <div class="form-floating mb-3">
+            <input type="text" class="form-control" id="login-user" placeholder="Benutzer">
+            <label>Benutzername</label>
         </div>
-        <div class="form-group">
-            <label for="login-password">Lizenz-Nummer / PIN</label>
-            <input type="number" id="login-password" placeholder="123456" autocomplete="off">
+        <div class="form-floating mb-3">
+            <input type="password" class="form-control" id="login-pw" placeholder="Passwort">
+            <label>Passwort</label>
         </div>
-        <div id="login-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:15px; font-weight:600;">Lizenznummer / PIN inkorrekt.</div>
-        <button id="login-btn" class="btn-main">Einloggen</button>
-        <div style="margin-top: 15px; text-align: center;">
-            <button id="login-help-toggle" class="btn-help-link" type="button" onclick="openLoginHelp()">❓ Lizenznummer / PIN vergessen?</button>
+        <button class="btn btn-primary w-100 py-2 fw-bold" onclick="doLogin()">Einloggen</button>
+        <p id="login-error" class="text-danger mt-3 small d-none">Zugangsdaten falsch!</p>
+    </div>
+</div>
+
+<!-- APP SCREEN -->
+<div id="app-screen" class="d-none">
+
+    <!-- MOBILE HEADER -->
+    <div class="mobile-header">
+        <button class="btn btn-link text-dark p-0" onclick="toggleSidebar()">
+            <i class="fas fa-bars fa-lg"></i>
+        </button>
+        <div class="d-flex flex-column align-items-center text-center">
+            <span class="fw-bold text-primary" style="font-size: 0.9rem; line-height: 1.2;">SPORTSCHÜTZEN MUHEN</span>
+            <div id="mobile-presence-banner" class="small text-muted" style="font-size: 0.65rem; font-weight: 500;"></div>
+        </div>
+        <span id="user-badge-mobile" class="badge bg-secondary">Gast</span>
+    </div>
+
+    <div class="main-wrapper">
+
+        <!-- SIDEBAR -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header d-none d-md-block">
+                <i class="fas fa-bullseye me-2"></i> <span class="sidebar-header-text">Muhen Portal</span>
+                <div id="user-info" class="small text-muted fw-normal mt-1">Nicht angemeldet</div>
+                <div id="sidebar-presence-badge" class="mt-2"></div>
+            </div>
+
+            <div class="nav flex-column mt-2">
+                <div class="nav-link active" onclick="navTo('dashboard', this)">
+                    <i class="fas fa-home"></i> <span class="nav-text">Übersicht</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('inventar', this)">
+                    <i class="fas fa-boxes"></i> <span class="nav-text">Inventar</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
+                     onclick="navTo('termine', this)">
+                    <i class="fas fa-calendar-alt"></i> <span class="nav-text">Jahresprogramm</span>
+                </div>
+
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('system-mails', this)">
+                    <i class="fas fa-envelope-open-text"></i> <span class="nav-text">System-Mails</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('umfragen', this)">
+                    <i class="fas fa-calendar-check"></i> <span class="nav-text">Anlässe & Umfragen</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
+                     onclick="navTo('manager', this)">
+                    <i class="fas fa-shield-alt"></i> <span class="nav-text">Team Manager</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
+                     onclick="navTo('resultate', this)">
+                    <i class="fas fa-trophy"></i> <span class="nav-text">Resultate</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,vermieter,kassier"
+                     onclick="navTo('vermietung', this)">
+                    <i class="fas fa-home"></i> <span class="nav-text">Vermietung</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('jahresmeisterschaft', this)">
+                    <i class="fas fa-medal"></i> <span class="nav-text">Jahresmeisterschaft KK</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('mail', this)">
+                    <i class="fas fa-envelope"></i> <span class="nav-text">Mail</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
+                     onclick="navTo('jahresbeitrag', this)">
+                    <i class="fas fa-coins"></i> <span class="nav-text">Jahresbeitrag</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
+                     onclick="navTo('rechnungen', this)">
+                    <i class="fas fa-file-invoice"></i> <span class="nav-text">Rechnungen</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,kassier"
+                     onclick="navTo('buchhaltung', this)">
+                    <i class="fas fa-book"></i> <span class="nav-text">Buchhaltung</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar"
+                     onclick="navTo('mitglieder', this)">
+                    <i class="fas fa-users"></i> <span class="nav-text">Mitglieder</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('archiv', this)">
+                    <i class="fas fa-box-archive"></i> <span class="nav-text">Vereins-Archiv & KI</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('meeting-recorder', this)">
+                    <i class="fas fa-microphone"></i> <span class="nav-text">Meeting-Recorder</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('news', this)">
+                    <i class="fas fa-newspaper"></i> <span class="nav-text">News KI</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('galerie', this)">
+                    <i class="fas fa-images"></i> <span class="nav-text">Galerie Manager</span>
+                </div>
+                <div class="nav-link role-protected" data-roles="admin"
+                     onclick="navTo('logins', this)">
+                    <i class="fas fa-user-lock"></i> <span class="nav-text">Logins</span>
+                </div>
+                <div class="mt-auto border-top p-3">
+                    <button class="btn btn-outline-primary w-100 btn-sm mb-2" onclick="openChangePasswordModal()">
+                        <i class="fas fa-key me-1"></i> <span class="nav-text">Passwort ändern</span>
+                    </button>
+                    <button class="btn btn-outline-danger w-100 btn-sm" onclick="doLogout()">
+                        <i class="fas fa-sign-out-alt me-1"></i> <span class="nav-text">Abmelden</span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- MAIN CONTENT -->
+        <main class="content" onclick="closeSidebarMobile()">
+
+            <!-- DASHBOARD -->
+            <div id="view-dashboard" class="module-view active">
+                <div class="d-flex justify-content-between align-items-md-center flex-column flex-md-row mb-4 p-4 rounded-4 shadow-sm border border-light position-relative overflow-hidden" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(240,244,248,0.9) 100%); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+                    <div class="position-absolute" style="top:-50px; right:-50px; width:150px; height:150px; background:radial-gradient(circle, rgba(15,58,93,0.05) 0%, rgba(255,255,255,0) 70%); border-radius:50%; z-index:0; pointer-events:none;"></div>
+                    <div class="position-relative" style="z-index: 1;">
+                        <h3 class="mb-1 text-primary" style="font-weight: 700; letter-spacing: -0.5px;">Willkommen zurück, <span id="dashboard-user-name"></span>! 👋</h3>
+                        <div id="presence-banner" class="mt-1"></div>
+                    </div>
+                    <div id="last-login-banner" class="mt-2 mt-md-0 position-relative" style="z-index: 1;"></div>
+                </div>
+                <p class="text-muted mb-3 fw-medium">Wähle einen Bereich im Menü aus:</p>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('inventar')" style="cursor:pointer">
+                            <h5>🔫 Inventar</h5>
+                            <p class="small text-muted">Ausgabe & Rückgabe verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('termine')" style="cursor:pointer">
+                            <h5>📅 Jahresprogramm</h5>
+                            <p class="small text-muted">Termine, Anlässe & Orte</p>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('system-mails')" style="cursor:pointer">
+                            <h5>✉️ System-Mails</h5>
+                            <p class="small text-muted">Abo-Verteiler & App Info</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('umfragen')" style="cursor:pointer">
+                            <h5>🗓️ Anlässe & Umfragen</h5>
+                            <p class="small text-muted">Umfragen, Controlling & Mails</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('manager')" style="cursor:pointer">
+                            <h5>🛡️ Manager</h5>
+                            <p class="small text-muted">Teams verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('resultate')" style="cursor:pointer">
+                            <h5>🏆 Resultate</h5>
+                            <p class="small text-muted">Ranglisten & Auswertung</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,vermieter,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('vermietung')" style="cursor:pointer">
+                            <h5>🏠 Vermietung</h5>
+                            <p class="small text-muted">Schützenhaus Vermietung verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('jahresmeisterschaft')" style="cursor:pointer">
+                            <h5>🏅 Jahresmeisterschaft KK</h5>
+                            <p class="small text-muted">Kleinkaliber Meisterschaft verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('mail')" style="cursor:pointer">
+                            <h5>📧 Mail</h5>
+                            <p class="small text-muted">Nachrichten & Kommunikation</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('jahresbeitrag')" style="cursor:pointer">
+                            <h5>💰 Jahresbeitrag</h5>
+                            <p class="small text-muted">Beiträge einsehen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('rechnungen')" style="cursor:pointer">
+                            <h5>🧾 Rechnungen</h5>
+                            <p class="small text-muted">Zentrales Rechnungs-Management & PDF</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('buchhaltung')" style="cursor:pointer">
+                            <h5>📊 Buchhaltung</h5>
+                            <p class="small text-muted">Doppelte Buchhaltung & KMU-Berichte</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('mitglieder')" style="cursor:pointer">
+                            <h5>👥 Mitglieder</h5>
+                            <p class="small text-muted">Mitgliederliste einsehen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('archiv')" style="cursor:pointer">
+                            <h5>📁 Vereins-Archiv & KI</h5>
+                            <p class="small text-muted">Google Drive Archiv & KI-Suche</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('meeting-recorder')" style="cursor:pointer">
+                            <h5>🎙️ Meeting-Recorder</h5>
+                            <p class="small text-muted">Sprachaufnahme & Protokoll-Erstellung</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('news')" style="cursor:pointer">
+                            <h5>🗞️ News KI</h5>
+                            <p class="small text-muted">KI-Berichte für Homepage erstellen</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('galerie')" style="cursor:pointer">
+                            <h5>🖼️ Galerie Manager</h5>
+                            <p class="small text-muted">Gesichter erkennen & EXIF-Tagging</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('logins')" style="cursor:pointer">
+                            <h5>🔐 Logins</h5>
+                            <p class="small text-muted">Benutzerzugriffe verwalten</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- INVENTAR -->
+            <div id="view-inventar" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>Inventar Verwaltung</h2>
+                </div>
+                <div id="inventar-container"></div>
+            </div>
+
+            <!-- TERMINE -->
+            <div id="view-termine" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>📅 Jahresprogramm</h2>
+                    <button class="btn btn-sm btn-success write-protected" onclick="saveTermineData()">
+                        💾 Speichern
+                    </button>
+                </div>
+                <!-- Container filled by js/termine.js -->
+                <div id="termine-container"></div>
+            </div>
+
+            <!-- RESULTATE -->
+            <div id="view-resultate" class="module-view">
+                <div id="resultate-container"></div>
+            </div>
+
+            <!-- MANAGER -->
+            <div id="view-manager" class="module-view">
+                <div id="manager-container"></div>
+            </div>
+
+            <!-- VERMIETUNG -->
+            <div id="view-vermietung" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>🏠 Vermietung Cockpit</h2>
+                </div>
+                <div id="vermietung-container"></div>
+            </div>
+
+            <!-- NEU: JAHRESMEISTERSCHAFT KK -->
+            <div id="view-jahresmeisterschaft" class="module-view">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>🏅 Jahresmeisterschaft KK</h2>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select id="jm-history-select" class="form-select form-select-sm" style="width: auto;" onchange="loadJahresmeisterschaftData()">
+                            <!-- Wird dynamisch gefüllt -->
+                            <option value="current">JM 2025 (Aktuell)</option>
+                        </select>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-primary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
+                                ⚙️ Aktionen
+                            </button>
+                            <ul class="dropdown-menu" id="jm-actions-menu">
+                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereKantonalstichDaten', 'Kantonalstich importieren')">Import: Kantonalstich</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVerbandsschiessendaten', 'Verbandsschiessen importieren')">Import: Verband</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVereinswettschiessendaten', 'Vereinswettschiessen importieren')">Import: Vereinswettschiessen</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')">Archivieren (Aktuelles Jahr)</a></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')">Neues Jahr (Nullen)</a></li>
+                            </ul>
+                        </div>
+                        <button class="btn btn-sm btn-success write-protected" onclick="saveJahresmeisterschaftData()">
+                            💾 Speichern
+                        </button>
+                    </div>
+                </div>
+                <div id="jahresmeisterschaft-container"></div>
+            </div>
+<!-- MAIL -->
+<div id="view-mail" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📧 Mail</h2>
+    </div>
+    <div id="mail-container"></div>
+</div>
+
+<!-- GALERIE MANAGER -->
+<div id="view-galerie" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h2 class="mb-0">🖼️ Galerie Manager</h2>
+            <div class="text-muted small">Vereins-Fotos erfassen, taggen & mit Immich synchronisieren</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="https://immich-muhen.danfamily.uk" target="_blank" rel="noopener noreferrer" 
+               class="btn btn-primary btn-sm fw-bold shadow-sm d-inline-flex align-items-center gap-2 px-3 py-1.5"
+               style="background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none;">
+                <i class="fas fa-external-link-alt"></i> Immich Web-App öffnen ↗
+            </a>
+        </div>
+    </div>
+    <div id="galerie-container">
+        <!-- Wird von galerie.js gerendert -->
+    </div>
+</div>
+
+<!-- JAHRESBEITRAG -->
+<div id="view-jahresbeitrag" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>💰 Jahresbeitrag</h2>
+    </div>
+    <div id="jahresbeitrag-container"></div>
+</div>
+
+<!-- RECHNUNGEN -->
+<div id="view-rechnungen" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🧾 Rechnungen & PDF-Cockpit</h2>
+    </div>
+    <div id="rechnungen-container"></div>
+</div>
+
+<!-- BUCHHALTUNG -->
+<div id="view-buchhaltung" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📊 Buchhaltung & KMU-Berichte</h2>
+    </div>
+    <div id="buchhaltung-container"></div>
+</div>
+
+<!-- MITGLIEDER -->
+<div id="view-mitglieder" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>👥 Mitglieder</h2>
+    </div>
+    <div id="mitglieder-container"></div>
+</div>
+
+<!-- NEWS AI -->
+<div id="view-news" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🗞️ KI-Berichte Generator</h2>
+    </div>
+    
+    <div class="card border-0 shadow-lg overflow-hidden mx-auto" style="max-width: 650px; background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
+        <div class="card-header border-0 bg-transparent p-0">
+            <ul class="nav nav-tabs nav-fill" id="newsTabs" role="tablist" style="background: #f8f9fa;">
+                <li class="nav-item">
+                    <button class="nav-link active py-3 fw-bold border-0 text-primary" id="ki-tab" type="button" role="tab" aria-controls="ki-panel" aria-selected="true" onclick="switchNewsMode('ki')">
+                        <i class="fas fa-robot me-2"></i>KI-Bericht erstellen
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-3 fw-bold border-0 text-muted" id="doc-tab" type="button" role="tab" aria-controls="doc-panel" aria-selected="false" onclick="switchNewsMode('doc')">
+                        <i class="fas fa-file-word me-2"></i>Fertigen Text einfügen / Word (.docx)
+                    </button>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="card-body p-4">
+            <form id="newsForm">
+                <!-- Gemeinsamer Titel des Berichts -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Titel des Berichts</label>
+                    <input type="text" id="news-title" class="form-control" placeholder="z.B. Erfolgreiches Feldschiessen 2026" required>
+                </div>
+
+                <div class="tab-content" id="newsTabContent">
+                    <!-- Tab 1: KI Generator -->
+                    <div class="tab-pane active" id="ki-panel" role="tabpanel" aria-labelledby="ki-tab">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Stichworte für die KI</label>
+                            <textarea id="news-keywords" class="form-control" rows="4" placeholder="z.B. Wetter war regnerisch. 30 Teilnehmer. Max Muster gewann mit 69 Punkten. Gute Stimmung." required></textarea>
+                            <small class="text-muted">Geben Sie Stichworte ein, aus denen die KI einen Fließtext formulieren soll.</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">KI-Modell & Kapazität</label>
+                            <select id="news-model" class="form-select">
+                                <option value="gemini-2.5-flash" data-info="Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)" selected>Gemini 2.5 Flash (Premium - Standard)</option>
+                                <option value="gemini-2.0-flash-lite" data-info="Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.">Gemini 2.0 Flash Lite (Lite - Höchste Verfügbarkeit)</option>
+                                <option value="gemini-2.5-pro" data-info="Höchste logische Qualität und beste Erkennungsrate, aber langsamer.">Gemini 2.5 Pro (Beste Erkennungsrate)</option>
+                            </select>
+                            <div id="news-model-desc" class="form-text text-muted mt-1 small">Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)</div>
+                        </div>
+                        
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="news-use-image-content" checked>
+                            <label class="form-check-label fw-bold text-muted small" for="news-use-image-content">Titelbild in Textanalyse einbeziehen</label>
+                            <div class="form-text small text-muted" style="font-size: 0.75rem;">Aktiviert: Die Premium-KI analysiert das Titelbild und bezieht erkennbare Details direkt in den Berichtstext ein.</div>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: Word Einlesen oder direkt einfügen -->
+                    <div class="tab-pane" id="doc-panel" role="tabpanel" aria-labelledby="doc-tab" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Option A: Word-Dokument hochladen (.docx)</label>
+                            <div class="border rounded p-3 text-center bg-light" style="cursor:pointer;" onclick="document.getElementById('news-doc-file').click()">
+                                <i class="fas fa-file-word fa-2x text-primary mb-2" id="news-doc-icon"></i>
+                                <p class="mb-0 text-muted small" id="news-doc-text">Klicken Sie hier, um eine Word-Datei (.docx) hochzuladen.</p>
+                                <div class="spinner-border spinner-border-sm text-primary mt-2 d-none" id="news-doc-spinner" role="status"></div>
+                            </div>
+                            <input type="file" id="news-doc-file" accept=".docx" style="display:none">
+                            <div class="text-danger small mt-1" style="font-size: 0.78rem;">
+                                <i class="fas fa-exclamation-triangle me-1"></i><strong>Hinweis:</strong> PDF-Dateien werden <u>nicht unterstützt</u>, da PDFs keine Formatierungen (Fett, Kursiv, Überschriften) übernehmen. Bitte nur Word (.docx) oder direktes Einfügen (Option B) nutzen.
+                            </div>
+                        </div>
+                        <div class="alert alert-info py-2 px-3 small border-0 mb-2">
+                            <i class="fas fa-keyboard me-1"></i> <strong>Option B: Direktes Einfügen (Copy & Paste):</strong><br>
+                            Kopiere deinen Text einfach (z. B. aus Word mit Strg+C) und füge ihn unten direkt in den <strong>Bericht-Entwurf</strong> ein (Strg+V). Fett, Kursiv und Absätze werden 1:1 übernommen!
+                        </div>
+
+                        <!-- Neuer Button: Social-Media Texte aus dem Web-Text generieren -->
+                        <div class="mt-2 p-2 border rounded bg-white text-center">
+                            <button type="button" class="btn btn-outline-info w-100 py-2 fw-semibold" id="news-generate-social-btn" onclick="generateSocialFromDoc()">
+                                <i class="fas fa-magic me-1"></i> <span id="news-social-btn-text">✨ Social-Texte mit KI generieren (Instagram & Facebook)</span>
+                                <span class="spinner-border spinner-border-sm d-none" id="news-social-spinner" role="status" aria-hidden="true"></span>
+                            </button>
+                            <div class="form-text small text-muted mt-1" style="font-size: 0.74rem;">
+                                Die KI liest deinen eingefügten Text und formuliert massgeschneiderte, Smartphone-optimierte Beiträge für Instagram und Facebook.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gemeinsame Bilder zum Bericht -->
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="fas fa-images text-primary me-1"></i> Fotos zum Bericht (Optional)
+                        </label>
+                        <span id="news-foto-count" class="badge bg-secondary">0 Fotos</span>
+                    </div>
+
+                    <!-- Upload-Optionen für Desktop & Mobiltelefon -->
+                    <div class="border rounded p-3 bg-light text-center mb-2">
+                        <div class="d-flex flex-wrap gap-2 justify-content-center">
+                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('news-foto').click()">
+                                <i class="fas fa-folder-open me-1"></i> Fotos auswählen (Dateien / Mediathek)
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('news-foto-camera').click()">
+                                <i class="fas fa-camera me-1"></i> Foto mit Kamera aufnehmen
+                            </button>
+                        </div>
+                        <div class="form-text small text-muted mt-2">
+                            Das mit ⭐ <strong>Titelbild</strong> markierte Foto wird als Aufmacher und für Instagram verwendet. Du kannst jedes Foto mit einem Klick zum Titelbild machen.
+                        </div>
+                    </div>
+
+                    <!-- Versteckte Datei-Inputs -->
+                    <input type="file" id="news-foto" accept="image/*" multiple style="display:none">
+                    <input type="file" id="news-foto-camera" accept="image/*" capture="environment" style="display:none">
+
+                    <!-- Interaktive Fotogalerie-Vorschau -->
+                    <div id="news-preview-container" class="row g-2 mt-2" style="display:none;"></div>
+                </div>
+
+                <!-- Gemeinsamer Editor-Bereich mit Kanal-Tabs (Webseite / Instagram / Facebook) -->
+                <div id="news-draft-container" class="mt-4" style="display:none;">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="fas fa-file-pen text-primary me-1"></i> Beitrags-Entwürfe anpassen
+                        </label>
+                        <div class="btn-group btn-group-sm" role="group" id="draftChannelTabs">
+                            <button type="button" class="btn btn-primary active fw-semibold" id="tab-channel-web" onclick="switchDraftChannel('web')">
+                                <i class="fas fa-globe me-1"></i> Webseite
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary fw-semibold" id="tab-channel-ig" onclick="switchDraftChannel('ig')">
+                                <i class="fab fa-instagram text-danger me-1"></i> Instagram <span class="badge bg-danger rounded-pill ms-1 d-none" id="badge-ig-status">Bereit</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary fw-semibold" id="tab-channel-fb" onclick="switchDraftChannel('fb')">
+                                <i class="fab fa-facebook text-primary me-1"></i> Facebook <span class="badge bg-primary rounded-pill ms-1 d-none" id="badge-fb-status">Bereit</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- KANAL 1: WEBSEITE (HTML mit Rich-Text-Editor) -->
+                    <div id="draft-panel-web" class="channel-panel">
+                        <!-- Formatierungsleiste -->
+                        <div class="editor-toolbar d-flex flex-wrap gap-1 bg-light p-2 border rounded-top align-items-center">
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('bold')" title="Fett">
+                                <i class="fas fa-bold"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('italic')" title="Kursiv">
+                                <i class="fas fa-italic"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('underline')" title="Unterstreichen">
+                                <i class="fas fa-underline"></i>
+                            </button>
+                            
+                            <div class="vr mx-1"></div>
+                            
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertUnorderedList')" title="Aufzählung">
+                                <i class="fas fa-list-ul"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('insertOrderedList')" title="Nummerierung">
+                                <i class="fas fa-list-ol"></i>
+                            </button>
+                            
+                            <div class="vr mx-1"></div>
+                            
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'h3')" title="Überschrift">
+                                <i class="fas fa-heading"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('formatBlock', 'p')" title="Normaler Absatz">
+                                <i class="fas fa-paragraph"></i>
+                            </button>
+                            
+                            <div class="vr mx-1"></div>
+                            
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('createLink')" title="Link einfügen">
+                                <i class="fas fa-link"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="formatDoc('unlink')" title="Link entfernen">
+                                <i class="fas fa-unlink"></i>
+                            </button>
+                        </div>
+                        
+                        <div id="news-draft-editor" class="form-control" style="min-height: 250px; border-top: none; border-top-left-radius: 0; border-top-right-radius: 0;" contenteditable="true"></div>
+                        <div class="form-text small text-muted mt-1">Dieser HTML-Bericht wird auf der Vereins-Webseite im Magazin-Layout publiziert.</div>
+                    </div>
+
+                    <!-- KANAL 2: INSTAGRAM (Smartphone-optimiert) -->
+                    <div id="draft-panel-ig" class="channel-panel" style="display: none;">
+                        <div class="bg-light p-2 border rounded-top d-flex flex-wrap justify-content-between align-items-center gap-1">
+                            <span class="small fw-bold text-muted"><i class="fab fa-instagram text-danger me-1"></i> Instagram Caption (Smartphone-Feed)</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 small" onclick="generateSocialFromDoc()" title="Social-Texte jetzt mit KI aus dem aktuellen Web-Bericht generieren">
+                                    <i class="fas fa-magic me-1"></i>Aus Web-Text generieren
+                                </button>
+                                <span id="news-ig-counter" class="badge bg-secondary">0 / 2200</span>
+                            </div>
+                        </div>
+                        <textarea id="news-ig-caption" class="form-control rounded-0" rows="9" placeholder="Instagram-Caption... (Wird von der KI automatisch generiert oder hier angepasst)" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"></textarea>
+                        <div class="bg-white border border-top-0 rounded-bottom p-2 small">
+                            <div class="text-muted mb-2" style="font-size: 0.75rem;">
+                                <i class="fas fa-mobile-screen me-1 text-primary"></i> <strong>Mobile-Regeln:</strong> Die ersten 1-2 Zeilen sind vor dem «... mehr»-Knick sichtbar. Links im Text sind auf Instagram nicht anklickbar (daher «👉 Link in Bio»).
+                            </div>
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                <span class="text-muted me-1" style="font-size: 0.72rem;">Hashtags anfügen:</span>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#sportschützen')">#sportschützen</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#muhen')">#muhen</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#schiesssport')">#schiesssport</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#kleinkaliber')">#kleinkaliber</button>
+                                <button type="button" class="btn btn-sm btn-light border py-0 px-2" style="font-size: 0.72rem;" onclick="appendNewsHashtag('#sportschützenmuhen')">#sportschützenmuhen</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- KANAL 3: FACEBOOK (Post & Webseiten-Link) -->
+                    <div id="draft-panel-fb" class="channel-panel" style="display: none;">
+                        <div class="bg-light p-2 border rounded-top d-flex flex-wrap justify-content-between align-items-center gap-1">
+                            <span class="small fw-bold text-muted"><i class="fab fa-facebook text-primary me-1"></i> Facebook Beitrag</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 small" onclick="generateSocialFromDoc()" title="Social-Texte jetzt mit KI aus dem aktuellen Web-Bericht generieren">
+                                    <i class="fas fa-magic me-1"></i>Aus Web-Text generieren
+                                </button>
+                                <span id="news-fb-counter" class="badge bg-secondary">0 Zeichen</span>
+                            </div>
+                        </div>
+                        <textarea id="news-fb-post" class="form-control rounded-0" rows="9" placeholder="Facebook-Beitrag... (Wird von der KI automatisch generiert oder hier angepasst)"></textarea>
+                        <div class="bg-white border border-top-0 rounded-bottom p-2 small text-muted" style="font-size: 0.75rem;">
+                            <i class="fas fa-link text-primary me-1"></i> <strong>Tipp:</strong> Links werden auf Facebook für Mobil- und Desktop-Nutzer als anklickbare Vorschau dargestellt.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Social Media & Veröffentlichungs-Optionen -->
+                <div class="mt-4 p-3 bg-light rounded border">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="fas fa-share-nodes text-primary me-1"></i> Kanäle für Veröffentlichung
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-info py-0 px-2" id="news-check-social-btn" onclick="checkSocialMediaStatus()" title="Verbindung zu Instagram & Facebook testen">
+                            <i class="fas fa-plug me-1"></i>Status prüfen
+                        </button>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="news-post-website" checked>
+                                <label class="form-check-label fw-semibold" for="news-post-website">
+                                    <i class="fas fa-globe text-primary me-1"></i> Vereins-Webseite
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="news-post-instagram" checked>
+                                <label class="form-check-label fw-semibold" for="news-post-instagram">
+                                    <i class="fab fa-instagram text-danger me-1"></i> Instagram
+                                </label>
+                                <div class="form-text text-muted small" style="font-size: 0.72rem;">@sportschuetzen.muhen (erfordert 1 Foto)</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="news-post-facebook" checked>
+                                <label class="form-check-label fw-semibold" for="news-post-facebook">
+                                    <i class="fab fa-facebook text-primary me-1"></i> Facebook
+                                </label>
+                                <div class="form-text text-muted small" style="font-size: 0.72rem;">Sportschützen Muhen (Seite)</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="news-social-status-info" class="mt-2 small d-none"></div>
+                </div>
+
+                <!-- Aktions-Buttons -->
+                <div class="mt-4 d-flex gap-2">
+                    <button type="button" class="btn btn-outline-primary flex-grow-1 py-2 fw-bold" id="news-generate-btn">
+                        <span id="news-btn-text">KI-Entwurf generieren</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="news-spinner" role="status" aria-hidden="true"></span>
+                    </button>
+                    <button type="button" class="btn btn-success flex-grow-1 py-2 fw-bold d-none" id="news-publish-btn">
+                        <span id="news-publish-btn-text">Definitiv Publizieren</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="news-publish-spinner" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+
+                <!-- Detailliertes Veröffentlichungs-Protokoll -->
+                <div id="news-publish-result" class="mt-3 d-none"></div>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- HILFE MODAL (LOGIN) -->
-<div id="login-help-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeLoginHelp()">
-    <div class="modal-card">
-        <div class="modal-header">
-            <h3>🔑 Hilfe zur Anmeldung</h3>
-            <button id="close-login-help" class="modal-close-btn" type="button" onclick="closeLoginHelp()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p style="margin-top:0;"><b>Wo finde ich meine Lizenznummer / meinen PIN?</b></p>
-            <ul style="padding-left: 20px; font-size: 0.9rem; line-height: 1.6; color: #4a5568; margin-bottom: 15px;">
-                <li><b>Aktivmitglieder:</b> Deine 6-stellige SSV-Lizenznummer findest du in deiner Einladungs-E-Mail zur a.o. GV sowie auf Deinem Lizenz-Büchlein.</li>
-                <li><b>Passivmitglieder:</b> Passivmitglieder besitzen meist keine SSV-Lizenz. Dein persönlicher 6-stelliger PIN steht direkt in deiner Einladungs-E-Mail.</li>
-            </ul>
-            <div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 12px; border-radius: 6px; font-size: 0.85rem; color: #2b6cb0;">
-                💡 <i>Tipp:</i> Öffne die E-Mail zur Einladung der ausserordentlichen GV – dort findest du deine Zugangsdaten im grünen Info-Kasten.
+<!-- GV & Präsenz wurde in Tab 4 von Anlässe & Umfragen integriert -->
+
+<!-- SYSTEM-MAILS -->
+<div id="view-system-mails" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>✉️ System-Mails (App Info)</h2>
+        <button class="btn btn-sm btn-success write-protected" onclick="saveSystemMailsData()">
+            💾 Speichern
+        </button>
+    </div>
+    <div id="system-mails-container"></div>
+</div>
+
+<!-- UMFRAGEN -->
+<div id="view-umfragen" class="module-view">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📊 Umfragen & Anmeldungen</h2>
+        <button class="btn btn-sm btn-success write-protected" onclick="saveUmfragenData()">
+            💾 Speichern
+        </button>
+    </div>
+    <div id="umfragen-container"></div>
+</div>
+
+<!-- PROTOKOLL-ARCHIV - wird vollständig durch archiv.js gerendert -->
+<div id="view-archiv" class="module-view"></div>
+
+<!-- MEETING-RECORDER - wird vollständig durch meeting-recorder.js gerendert -->
+<div id="view-meeting-recorder" class="module-view"></div>
+
+<!-- LOGINS - wird vollstaendig durch logins.js gerendert -->
+<div id="view-logins" class="module-view"></div>
+
+        </main>
+    </div>
+</div>
+
+<!-- Auswärtiges Calculator Modal -->
+<div class="modal fade" id="auswaertiges-modal" tabindex="-1" aria-labelledby="auswaertigesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="auswaertigesModalLabel"><i class="fas fa-calculator me-2"></i>Auswärtiges Resultat eintragen</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="calc-row">
+                <input type="hidden" id="calc-points-col">
+                <input type="hidden" id="calc-percent-col">
+                
+                <div class="mb-3">
+                    <label for="calc-max-points" class="form-label fw-bold">Maximalpunkte des Anlasses</label>
+                    <input type="number" class="form-control" id="calc-max-points" oninput="calculatePercentage()">
+                </div>
+                <div class="mb-3">
+                    <label for="calc-points" class="form-label fw-bold">Erzielte Punkte</label>
+                    <input type="number" step="any" class="form-control" id="calc-points" oninput="calculatePercentage()" placeholder="z.B. 95">
+                </div>
+                <div class="mb-3">
+                    <label for="calc-percent" class="form-label fw-bold">Resultat in % (automatisch berechnet)</label>
+                    <input type="text" class="form-control bg-light" id="calc-percent" readonly>
+                    <div class="form-text text-muted">
+                        Hinweis: Das Prozentresultat wird anhand der Formel: <code>(Erzielt / Max) * 100</code> berechnet.
+                    </div>
+                </div>
+                
+                <div class="alert alert-info text-start small" id="calc-info-text">
+                    <i class="fas fa-info-circle me-1"></i> <strong>Wichtig:</strong> Bitte selbst prüfen, welches Resultat das höchste ist, da dieses eingetragen werden sollte.
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-danger" onclick="clearAuswaertigesCalculator()"><i class="fas fa-trash me-2"></i>Leeren / Löschen</button>
+                <div>
+                    <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-success" onclick="saveAuswaertigesCalculator()"><i class="fas fa-save me-2"></i>Speichern</button>
+                </div>
             </div>
         </div>
-        <div class="modal-footer">
-            <button id="confirm-login-help" class="btn-main" type="button" style="width: auto; padding: 8px 20px;" onclick="closeLoginHelp()">Verstanden</button>
+    </div>
+</div>
+
+<!-- GV Einladungs-Mail Assistent Modal -->
+<div class="modal fade" id="gv-mail-modal" tabindex="-1" aria-labelledby="gvMailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow">
+            <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                <h5 class="modal-title fw-bold" id="gvMailModalLabel">
+                    <i class="fas fa-envelope-open-text me-2"></i>GV-Einladungs-Mails versenden
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- Status & Übersicht Card -->
+                <div class="card bg-light border-0 p-3 mb-3 rounded-3">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-7">
+                            <div class="fw-bold text-dark fs-6" id="gv-modal-event-title">Generalversammlung</div>
+                            <div class="small text-muted" id="gv-modal-event-details">📅 Lade Event-Details...</div>
+                        </div>
+                        <div class="col-md-5 text-md-end">
+                            <div id="gv-modal-attachment-status" class="small"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Text-Vorlagen & Assistent -->
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <label class="form-label fw-bold mb-0">
+                        <i class="fas fa-edit me-1 text-primary"></i> Begleittext der Einladungs-Mail
+                    </label>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGVMailTemplate('standard')" title="Standard Vorlage">📋 Standard</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGVMailTemplate('festlich')" title="Herzlich & Feierlich">✨ Festlich</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGVMailTemplate('wahljahr')" title="Fokus auf Wahlen">🗳️ Wahljahr</button>
+                    </div>
+                </div>
+
+                <textarea id="gv-custom-mailtext" class="form-control mb-2" rows="4" 
+                          placeholder="Begleittext für die E-Mail an alle Mitglieder..."
+                          oninput="updateGVMailPreview()"></textarea>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <small class="text-muted">
+                        Dieser Text wird in die E-Mail direkt unter der persönlichen Anrede <em>„Hallo [Vorname],“</em> eingefügt.
+                    </small>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-gv-ai-enhance" onclick="enhanceGVMailTextWithAI()">
+                        <i class="fas fa-magic me-1"></i> <span id="gv-ai-btn-text">Mit KI verfeinern</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="gv-ai-spinner" role="status"></span>
+                    </button>
+                </div>
+
+                <!-- Live E-Mail Vorschau Accordion -->
+                <div class="accordion mb-2" id="gvMailAccordion">
+                    <div class="accordion-item border rounded-3">
+                        <h2 class="accordion-header" id="headingPreview">
+                            <button class="accordion-button collapsed py-2 px-3 fw-bold small text-muted" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePreview" aria-expanded="false" aria-controls="collapsePreview">
+                                <i class="fas fa-eye me-2 text-primary"></i> E-Mail Live-Vorschau anzeigen (wie das Mitglied sie sieht)
+                            </button>
+                        </h2>
+                        <div id="collapsePreview" class="accordion-collapse collapse" aria-labelledby="headingPreview" data-bs-parent="#gvMailAccordion">
+                            <div class="accordion-body bg-light p-3" id="gv-mail-preview-body" style="font-size: 0.9rem;">
+                                <!-- Live Vorschau -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0 d-flex justify-content-between rounded-bottom-4">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-success" onclick="saveGVMailTextOnly()">
+                        💾 Text speichern
+                    </button>
+                    <button type="button" class="btn btn-primary fw-bold px-4" id="btn-gv-send-now" onclick="executeGVMailSend()">
+                        <i class="fas fa-paper-plane me-2"></i> <span id="gv-send-btn-text">Jetzt versenden</span>
+                        <span class="spinner-border spinner-border-sm d-none" id="gv-send-spinner" role="status"></span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<div id="app-wrapper" style="display:none;">
-<div id="pull-spinner"><div class="spinner-icon"></div></div>
-<header>
-    <h1 id="main-title">Termine</h1>
-    <div id="user-badge" style="display:none; position:absolute; right:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.78rem; font-weight:600; background:rgba(255,255,255,0.18); padding:3px 8px; border-radius:12px; align-items: center; gap: 5px; z-index: 1100;">
-        <span style="white-space:nowrap;">👤 <span id="display-firstname"></span></span>
-        <button id="logout-btn" title="Abmelden" style="background:none; border:none; color:white; cursor:pointer; opacity:0.55; font-size:0.7rem; padding: 0 0 0 5px; margin-left:2px; font-family:inherit; font-weight:700; line-height:1;">✕</button>
-    </div>
-</header>
+<!-- Welcome Security & Presence Modal -->
+<div class="modal fade" id="welcome-security-modal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);">
+            <!-- STEP 1: SAFETY CONFIRMATION -->
+            <div id="welcome-step-login" class="modal-body p-4 text-center">
+                <div class="mb-3 text-success">
+                    <i class="fas fa-user-shield fa-4x animate__animated animate__bounceIn"></i>
+                </div>
+                <h4 class="fw-bold text-primary mb-3" style="letter-spacing: -0.5px;">Sicherheits-Bestätigung</h4>
+                <p class="text-muted mb-4" style="font-size: 0.95rem;">
+                    Dein letzter Portal-Zugriff war am:<br>
+                    <strong class="text-dark fs-5 d-block mt-2" id="welcome-login-timestamp" style="font-weight: 700;">unbekannt</strong>
+                </p>
+                <div class="alert border-0 small mb-4 py-2" style="background-color: rgba(40,167,69,0.1); color: #1e7e34; border-radius: 12px; font-weight: 500;">
+                    <i class="fas fa-check-circle me-1"></i> Deine Sitzung wurde erfolgreich verifiziert.
+                </div>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" onclick="advanceWelcomeStep()">
+                        Ja, das war ich – Weiter <i class="fas fa-arrow-right ms-1"></i>
+                    </button>
+                    <button type="button" class="btn btn-link text-danger btn-sm text-decoration-none" onclick="handleSecurityLock()">
+                        Nein, das war ich nicht! (Sperren)
+                    </button>
+                </div>
+            </div>
 
-<main>
-<section id="page-home" class="page active-page">
-    <div class="card" style="text-align:center;">
-        <img src="icons/icon-512.png" style="height:100px; margin-bottom:10px;" alt="Logo">
-        <h2>Sportschützen Muhen</h2>
-        <p>Willkommen</p>
+            <!-- STEP 2: PRESENCE TRACKING -->
+            <div id="welcome-step-presence" class="modal-body p-4 text-center d-none">
+                <div id="welcome-presence-icon" class="mb-3 text-success">
+                    <i class="fas fa-users-viewfinder fa-4x text-success animate__animated animate__pulse animate__infinite" id="presence-modal-icon" style="transition: color 0.3s ease;"></i>
+                </div>
+                <h4 class="fw-bold text-primary mb-3" style="letter-spacing: -0.5px;">Gleichzeitigkeits-Schutz</h4>
+                <p class="text-muted mb-3" style="font-size: 0.95rem;">
+                    Wir prüfen die aktiven Sitzungen im Vorstand...
+                </p>
+                <div class="p-3 rounded-3 mb-4 text-start border border-light shadow-xs" id="welcome-presence-alert" style="background-color: rgba(248, 249, 250, 0.95);">
+                    <div id="welcome-presence-text" class="small text-muted text-center py-2">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                        Suche aktive Sitzungen...
+                    </div>
+                </div>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" data-bs-dismiss="modal">
+                        Portal betreten <i class="fas fa-sign-in-alt ms-1"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal fade" id="change-password-modal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);">
+            <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                <h5 class="modal-title fw-bold" id="changePasswordModalLabel"><i class="fas fa-key me-2"></i>Passwort ändern</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="change-password-form" onsubmit="submitChangePassword(event)">
+                    <div class="mb-3">
+                        <label for="cp-old-password" class="form-label fw-bold small text-muted">Aktuelles Passwort</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="cp-old-password" required placeholder="Dein bisheriges Passwort">
+                            <button class="btn btn-outline-secondary" type="button" onclick="loginsTogglePw('cp-old-password')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cp-new-password" class="form-label fw-bold small text-muted">Neues Passwort</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="cp-new-password" required placeholder="Mindestens 4 Zeichen">
+                            <button class="btn btn-outline-secondary" type="button" onclick="loginsTogglePw('cp-new-password')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label for="cp-confirm-password" class="form-label fw-bold small text-muted">Neues Passwort bestätigen</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="cp-confirm-password" required placeholder="Wiederhole das neue Passwort">
+                            <button class="btn btn-outline-secondary" type="button" onclick="loginsTogglePw('cp-confirm-password')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="cp-submit-btn">
+                            <i class="fas fa-save me-1"></i> Passwort aktualisieren
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- SCRIPTS – Reihenfolge wichtig! -->
+<script src="js/auth.js"></script>
+<script src="js/main.js"></script>
+<script src="js/inventar/inventar-core.js"></script>
+<script src="js/inventar/inventar-ui.js"></script>
+<script src="js/inventar/inventar-cart.js"></script>
+<script src="js/inventar/inventar-list.js"></script>
+<script src="js/inventar/inventar-journal.js"></script>
+<script src="js/inventar/inventar-pdf.js"></script>
+<script src="js/termine.js"></script>
+<script src="js/system-mails.js"></script>
+<script src="js/umfragen/umfragen-core.js"></script>
+<script src="js/umfragen/umfragen-ui.js"></script>
+<script src="js/umfragen/umfragen-events.js"></script>
+<script src="js/umfragen/umfragen-eval.js"></script>
+<script src="js/umfragen/umfragen-controlling.js"></script>
+<script src="js/umfragen/umfragen-tracking.js"></script>
+<script src="js/logins/logins-core.js"></script>
+<script src="js/logins/logins-ui.js"></script>
+<script src="js/logins/logins-events.js"></script>
+<script src="js/news.js"></script>
+<script src="js/logins/logins-actions.js"></script>
+<script src="js/manager/manager-core.js"></script>
+<script src="js/manager/manager-ui.js"></script>
+<script src="js/manager/manager-dnd.js"></script>
+<script src="js/manager/manager-mail.js"></script>
+<script src="js/manager/manager-pdf.js"></script>
+<script src="js/resultate/resultate-core.js"></script>
+<script src="js/resultate/resultate-ui.js"></script>
+<script src="js/resultate/resultate-events.js"></script>
+<script src="js/resultate/resultate-actions.js"></script>
+<script src="js/vermietung/vermietung-core.js"></script>
+<script src="js/vermietung/vermietung-ui.js"></script>
+<script src="js/vermietung/vermietung-list.js"></script>
+<script src="js/vermietung/vermietung-manager.js"></script>
+<script src="js/mail.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-core.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-calc.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-accounting.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-overview.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-schnellerfassung.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-import.js"></script>
+<script src="js/jahresbeitrag/jahresbeitrag-bank.js"></script>
+<script src="js/mitglieder/mitglieder-core.js"></script>
+<script src="js/mitglieder/mitglieder-ui.js"></script>
+<script src="js/mitglieder/mitglieder-list.js"></script>
+<script src="js/mitglieder/mitglieder-details.js"></script>
+<script src="js/mitglieder/mitglieder-manager.js"></script>
+<script src="js/mitglieder/mitglieder-import-ui.js"></script>
+<script src="js/mitglieder/mitglieder-sync-ui.js"></script>
+<script src="js/mitglieder/mitglieder-export.js"></script>
+
+<!-- Chart.js für grafische Auswertungen -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Skript für doppelte Buchhaltung & Auswertungen -->
+<script src="js/buchhaltung/buchhaltung-core.js"></script>
+<script src="js/buchhaltung/buchhaltung-ui.js"></script>
+<script src="js/buchhaltung/buchhaltung-modals.js"></script>
+<script src="js/buchhaltung/buchhaltung-bank.js"></script>
+<script src="js/buchhaltung-controlling.js"></script>
+
+<!-- Skript für Rechnungen & PDF-Cockpit -->
+<script src="js/rechnungen/rechnungen-core.js"></script>
+<script src="js/rechnungen/rechnungen-ui.js"></script>
+<script src="js/rechnungen/rechnungen-templates.js"></script>
+<script src="js/rechnungen/rechnungen-layouts.js"></script>
+<script src="js/rechnungen/rechnungen-actions.js"></script>
+
+
     
-    <div id="hero-rsvps"></div>
-    
-    <div class="filter-bar">
-        <h3>Termine</h3>
+<!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-core.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-ui.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
 
-        <div class="filter-container">
-            <button class="filter-btn active" onclick="filterTermine('all', this)">Alle</button>
-            <button class="filter-btn" onclick="filterTermine('verein', this)">🎯 Verein</button>
-            <button class="filter-btn" onclick="filterTermine('extern', this)">🏠 Haus</button>
-        </div>
+<!-- NEU: Skript für Protokoll-Archiv KI -->
+<script src="js/archiv.js"></script>
 
-        <div id="termine" class="termine-list">Lade Termine...</div>
-    </div>
-</section>
+<!-- NEU: Skript für Meeting-Recorder -->
+<script src="js/meeting-recorder.js"></script>
 
-<section id="page-jm" class="page"><iframe src="app/app_jm.html"></iframe></section>
-<section id="page-gruppe" class="page"><iframe src="app/app_gruppe.html"></iframe></section>
-<section id="page-mannschaft" class="page"><iframe src="app/app_mannschaft.html"></iframe></section>
+<!-- NEU: Skript für Galerie Manager -->
+<script src="js/galerie.js"></script>
 
-<section id="page-upload" class="page">
-    <iframe src="app/upload.html?v=3"></iframe>
-</section>
-</main>
+<script>
+window.rnJumpToJahresbeitrag = async function(pn) {
+  const navLink = Array.from(document.querySelectorAll('.nav-link')).find(el => el.getAttribute('onclick')?.includes('jahresbeitrag'));
+  if (navLink && typeof navTo === 'function') {
+    navTo('jahresbeitrag', navLink);
+  }
+  
+  const checkAndOpen = () => {
+    if (window._jbData && window._jbData.length > 0 && window._jbMemberMap && window._jbMemberMap[pn]) {
+      const header = window._jbData.find(x => String(x.PersonNumber).trim() === String(pn).trim());
+      if (header) {
+        if (typeof jbShowPositionen === 'function') {
+          jbShowPositionen(header.id);
+        }
+      } else {
+        console.warn(`Jahresbeitrag Header für PN ${pn} nicht gefunden.`);
+      }
+    } else {
+      setTimeout(checkAndOpen, 100);
+    }
+  };
+  
+  checkAndOpen();
+};
+</script>
 
-<nav class="bottom-nav">
-<button class="nav-item" onclick="nav('page-jm', 'Jahresmeisterschaft', this)"><span>🏆</span>JM</button>
-<button class="nav-item" onclick="nav('page-gruppe', 'Gruppe & Grenzland', this)"><span>👥</span>G&G</button>
-<button class="nav-item nav-home active" onclick="nav('page-home', 'Termine', this)"><span>🏠</span></button>
-<button class="nav-item" onclick="nav('page-mannschaft', 'Mannschaft', this)"><span>🎯</span>Mannschaft</button>
-<button class="nav-item" onclick="nav('page-upload', 'Upload', this)"><span>📤</span>Upload</button>
-</nav>
-
-</div>
-
-<script src="app.js?v=18" defer></script>
-
-<!-- Participant Modal -->
-<div id="participant-modal" class="modal-overlay">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2 id="modal-event-title">Teilnehmer</h2>
-            <button class="modal-close" onclick="closeParticipantsModal()">×</button>
-        </div>
-        <ul id="participant-list" class="participant-list">
-            <li>Lade Teilnehmer...</li>
-        </ul>
-    </div>
-</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
 </html>

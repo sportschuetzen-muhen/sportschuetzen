@@ -1,0 +1,677 @@
+// =========================================================
+//  MODULE: INVENTAR - UI
+//  - UI Shell, Tab-Navigation, Dropdowns & Booking Field Toggles
+// =========================================================
+
+// =========================================================
+//  UI SHELL
+// =========================================================
+function renderInventarUI(container) {
+    container.innerHTML = `
+        <style>
+            #inventar-container .sig-container {
+                border:1px solid #ccc; background:white;
+                height:150px; border-radius:8px; overflow:hidden;
+            }
+            #inventar-container canvas {
+                width:100% !important; height:100% !important; touch-action:none;
+            }
+            #inventar-container .nav-btn { font-weight:bold; border-radius:10px; padding:8px 16px; }
+            #inventar-container .table-sm { font-size:0.85rem; }
+            .warenkorb-card { border:2px dashed #0d6efd; border-radius:10px; background:#f8f9ff; }
+        </style>
+
+        <div class="d-flex flex-wrap gap-2 mb-4">
+            <button class="btn btn-primary nav-btn" id="inv-btn-ausgabe"
+                    onclick="localStorage.setItem('inventar-activeTab','ausgabe'); showInventarSection('ausgabe')">
+                📤 Buchung
+            </button>
+            <button class="btn btn-outline-secondary nav-btn" id="inv-btn-journal"
+                    onclick="localStorage.setItem('inventar-activeTab','journal'); showInventarSection('journal')">
+                📖 Journal
+            </button>
+            <button class="btn btn-outline-secondary nav-btn" id="inv-btn-liste"
+                    onclick="localStorage.setItem('inventar-activeTab','liste'); showInventarSection('liste')">
+                ✏️ Bestand
+            </button>
+            <button class="btn btn-outline-secondary nav-btn" id="inv-btn-finanzen"
+                    onclick="localStorage.setItem('inventar-activeTab','finanzen'); showInventarSection('finanzen')">
+                💰 Finanzen
+            </button>
+         ${canAdd() ? `
+<button class="btn btn-outline-dark nav-btn" id="inv-btn-admin"
+        onclick="localStorage.setItem('inventar-activeTab','admin'); showInventarSection('admin')">
+    ➕ Admin
+</button>` : ''}
+            <button class="btn btn-outline-info ms-auto nav-btn fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
+                <i class="fas fa-sync-alt me-1"></i> Daten aktualisieren
+            </button>
+        </div>
+
+        <!-- SECTION: BUCHUNG -->
+        <div id="inv-section-ausgabe" class="inv-section">
+            <div class="card border-0 shadow-sm p-4">
+                <form id="form-ausgabe" onsubmit="handleInventarSubmit(event)">
+                    <div class="row g-3">
+
+                        <!-- Links: Artikel erfassen -->
+                        <div class="col-md-4 border-end">
+                            <h6 class="fw-bold text-muted mb-3 text-uppercase">Artikel erfassen</h6>
+
+                            <label class="form-label fw-bold">Aktion</label>
+                            <select id="select-action" class="form-select mb-3"
+                                    onchange="toggleBookingFields(); warenkorb=[]; renderWarenkorb();">
+                                <option value="verkauf" selected>💰 Verkauf</option>
+                                <option value="checkout">📤 Ausgabe</option>
+                                <option value="checkin">📥 Rückgabe</option>
+                            </select>
+
+                            <label class="form-label fw-bold">Mitglied</label>
+                            <select id="select-mitglied" class="form-select mb-3"
+                                    onchange="updateSubOptions()" required></select>
+                            
+                            <div id="container-mitglied-ausleihen" class="d-none mb-3"></div>
+
+                            <label class="form-label fw-bold">Kategorie</label>
+                            <select id="select-kategorie" class="form-select mb-3"
+                                    onchange="updateSubOptions()">
+                                <option value="gewehr">Gewehr</option>
+                                <option value="schluessel">Schlüssel</option>
+                                <option value="kleidung" selected>Kleidung</option>
+                                <option value="schiessbekleidung">Schiessbekleidung</option>
+                            </select>
+
+                            <label class="form-label fw-bold">Gegenstand</label>
+                            <select id="select-gegenstand" class="form-select mb-3" onchange="onGegenstandSelect()"></select>
+
+                            <div id="container-zustand-abgabe">
+                                <label class="form-label fw-bold text-primary">Zustand bei Abgabe</label>
+                                <select id="select-zustand-abgabe" class="form-select mb-3"></select>
+                            </div>
+                            <div id="container-zustand-rueckgabe" class="d-none">
+                                <label class="form-label fw-bold text-danger">Zustand bei Rückgabe</label>
+                                <select id="select-zustand-rueckgabe" class="form-select mb-3"></select>
+                            </div>
+
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label fw-bold small" id="label-betrag">Pfandbetrag CHF</label>
+                                    <input type="number" id="pfand-betrag" class="form-control"
+                                           placeholder="0.00" step="0.01">
+                                </div>
+                                <div class="col-6" id="container-pfand-einnahme">
+                                    <label class="form-label fw-bold small">Pfand Einnahme</label>
+                                    <select id="pfand-einnahme" class="form-select">
+                                        <option value="Bar" selected>Ja – Bar (Pfand-Kasse)</option>
+                                        <option value="Twint">Ja – Twint</option>
+                                        <option value="Einzahlungsschein">Ja – QR-Rechnung (Einzahlungsschein)</option>
+                                        <option value="Nein">Nein (noch nicht bezahlt)</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 d-none" id="container-pfand-retour">
+                                    <label class="form-label fw-bold small">Pfand Retour</label>
+                                    <select id="pfand-retour" class="form-select">
+                                        <option value="Bar" selected>Ja – Bar retour</option>
+                                        <option value="Twint">Ja – Twint retour</option>
+                                        <option value="Banküberweisung">Ja – Banküberweisung</option>
+                                        <option value="Nein">Nein (nicht ausbezahlt)</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 d-none" id="container-verkauf-methode">
+                                    <label class="form-label fw-bold small">Zahlungsart</label>
+                                    <select id="verkauf-methode" class="form-select">
+                                        <option value="Bar">Bar</option>
+                                        <option value="Twint">Twint</option>
+                                        <option value="Einzahlungsschein">Einzahlungsschein (QR-Rechnung)</option>
+                                    </select>
+                                </div>
+                                <div class="col-12 d-none mt-2" id="container-verkauf-konto">
+                                    <label class="form-label fw-bold small text-primary mb-1">
+                                      <i class="fas fa-book me-1"></i>Haben-Konto (Buchhaltung)
+                                    </label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" id="verkauf-konto" class="form-control font-monospace" 
+                                               value="3200" readonly style="background-color: #e9ecef;"
+                                               onchange="document.getElementById('label-verwendungs-konto').innerText = this.value || '3200';">
+                                        <button class="btn btn-outline-secondary" type="button" id="btn-verkauf-konto-lock" 
+                                                onclick="toggleVerkaufKontoLock()" title="Konto-Sperre aufheben">
+                                            <i class="fas fa-lock" id="icon-verkauf-konto-lock"></i>
+                                        </button>
+                                    </div>
+                                    <div class="form-text small" style="font-size: 10px;">
+                                        Standard: <code>3200</code> (Ertrag Kleiderverkauf). Bei Vereinsjacken z.B. <code>8500</code>.
+                                    </div>
+                                </div>
+                                <div class="col-12 d-none mt-2" id="container-verkauf-info-banner">
+                                    <div class="alert alert-info py-2 px-3 mb-0 border-0 rounded-3 shadow-xs" style="font-size: 11px; background-color: #e0f2fe; color: #0369a1;">
+                                        <i class="fas fa-sync-alt me-1 fw-bold text-primary"></i>
+                                        <strong>Automatische Buchhaltung & Rechnungs-Erstellung:</strong><br>
+                                        • <strong>Bar / Twint:</strong> Bucht automatisch im Kassabuch (Soll 1000/1020 an Haben <span id="label-verwendungs-konto" class="fw-bold">3200</span>).<br>
+                                        • <strong>Einzahlungsschein:</strong> Erstellt automatisch eine QR-Rechnung und versendet sie per E-Mail.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="button" class="btn btn-outline-primary w-100"
+                                    onclick="warenkorbAdd()">
+                                ＋ Zum Warenkorb hinzufügen
+                            </button>
+                        </div>
+
+                        <!-- Mitte: Warenkorb + Bemerkungen -->
+                        <div class="col-md-4 border-end">
+                            <h6 class="fw-bold text-muted mb-3 text-uppercase">🛒 Warenkorb</h6>
+                            <div class="warenkorb-card p-3 mb-3">
+                                <div id="warenkorb-list">
+                                    <p class="text-muted small mb-0">Noch keine Gegenstände.</p>
+                                </div>
+                            </div>
+                            <label class="form-label fw-bold">Bemerkungen</label>
+                            <textarea id="trans-bemerkungen" class="form-control" rows="4"></textarea>
+                        </div>
+
+                        <!-- Rechts: Unterschriften -->
+                        <div class="col-md-4">
+                            <h6 class="fw-bold text-muted mb-3 text-uppercase">Unterschriften</h6>
+
+                            <label class="form-label fw-bold">Mitglied</label>
+                            <div class="sig-container mb-1">
+                                <canvas id="sig-mitglied"></canvas>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-link text-danger p-0 mb-3"
+                                    onclick="sigPadMitglied.clear()">Löschen</button>
+
+                            <div class="alert alert-light border py-2 mb-3 small">
+                                <i class="fas fa-user-check text-success"></i>
+                                Verantwortlich:<br>
+                                <strong id="inv-verantwortlicher-label"></strong>
+                            </div>
+
+                            <label class="form-label fw-bold">Vorstand</label>
+                            <div class="sig-container mb-1">
+                                <canvas id="sig-vorstand"></canvas>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-link text-danger p-0"
+                                    onclick="sigPadVorstand.clear()">Löschen</button>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btn-warenkorb-submit" disabled
+                            class="btn btn-success w-100 mt-4 py-3 fw-bold inv-submit">
+                        ✅ Warenkorb buchen &amp; Quittung erstellen
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- SECTION: BESTAND -->
+        <div id="inv-section-liste" class="inv-section d-none">
+            <div class="card border-0 shadow-sm p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4>Bestandsliste</h4>
+                    <select id="filter-liste" class="form-select w-auto"
+                            onchange="renderInventoryTable()">
+                        <option value="Inventar_Gewehre">Gewehre</option>
+                        <option value="Inventar_Schluessel">Schlüssel</option>
+                        <option value="Inventar_Kleidung" selected>Kleidung</option>
+                        <option value="Inventar_Schiessbekleidung">Schiessbekleidung</option>
+                        <option value="Personendaten">Mitglieder</option>
+                    </select>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle"
+                           id="inventory-table"></table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: FINANZEN -->
+        <div id="inv-section-finanzen" class="inv-section d-none">
+            <div class="row g-3 mb-4" id="finanz-stats"></div>
+            <div class="card border-0 shadow-sm p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4>Pfand-Journal (Offen)</h4>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="renderFinanzen()">
+                        <i class="fas fa-sync"></i>
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle" id="pfand-table">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Datum</th>
+                                <th>Mitglied</th>
+                                <th>Kategorie</th>
+                                <th>Gegenstand</th>
+                                <th class="text-end">Betrag</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pfand-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: JOURNAL -->
+        <div id="inv-section-journal" class="inv-section d-none">
+            <div class="card border-0 shadow-sm p-4 mb-4">
+                <h4>📖 Material-Bewegungen</h4>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm" id="table-transaktionen"></table>
+                </div>
+            </div>
+            <div class="card border-0 shadow-sm p-4">
+                <h4>🛡️ Admin-Protokoll</h4>
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm text-muted" id="table-protokoll"></table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: ADMIN (nur für admin/materialwart) -->
+        ${canAdd() ? `
+        <div id="inv-section-admin" class="inv-section d-none">
+            <div class="card border-0 shadow-sm p-4">
+                <h4>Neuen Eintrag erfassen</h4>
+                <select id="admin-target" class="form-select mb-4"
+                        onchange="renderAdminFields(this.value)">
+                    <option value="">-- Typ wählen --</option>
+                    <option value="Personendaten">👤 Mitglied</option>
+                    <option value="Inventar_Gewehre">🔫 Gewehr</option>
+                    <option value="Inventar_Schluessel">🔑 Schlüssel</option>
+                    <option value="Inventar_Kleidung">👕 Kleidung</option>
+                    <option value="Inventar_Schiessbekleidung">🎯 Schiessbekleidung</option>
+                </select>
+                <form id="adminForm" onsubmit="saveNewInventarItem(event)">
+                    <div id="dynamic-fields" class="row"></div>
+                    <button type="submit" class="btn btn-success mt-4 d-none inv-submit"
+                            id="btn-admin-save">Speichern</button>
+                </form>
+            </div>
+
+            <div class="card border-0 shadow-sm p-4 mt-4">
+                <h4>🔄 Adressbuch synchronisieren</h4>
+                <p class="text-muted small">Aktualisiert die Personendaten mit der zentralen SSV-Mitgliederdatenbank. Spender und externe Personen bleiben erhalten.</p>
+                <button type="button" class="btn btn-outline-primary" onclick="syncInventarMembers()" id="btn-sync-members">
+                    <i class="fas fa-sync-alt me-2"></i>SSV-Daten jetzt synchronisieren
+                </button>
+            </div>
+        </div>` : ''}
+    `;
+}
+
+// =========================================================
+//  NAV
+// =========================================================
+function showInventarSection(id) {
+    localStorage.setItem('inventar-activeTab', id);
+    document.querySelectorAll('.inv-section').forEach(s => s.classList.add('d-none'));
+    const el = document.getElementById('inv-section-' + id);
+    if (el) el.classList.remove('d-none');
+    document.querySelectorAll('#inventar-container .nav-btn').forEach(b => {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-outline-secondary');
+    });
+    const active = document.getElementById('inv-btn-' + id);
+    if (active) {
+        active.classList.remove('btn-outline-secondary');
+        active.classList.add('btn-primary');
+    }
+
+    // Render-Trigger beim Tab-Wechsel
+    if (id === 'liste') renderInventoryTable();
+    if (id === 'finanzen') renderFinanzen();
+    if (id === 'journal') renderJournalTables();
+}
+
+// =========================================================
+//  DROPDOWNS
+// =========================================================
+function fillInventarDropdowns() {
+    if (!inventarState?.mitglieder) return;
+
+    // Finde alle IDs, die aktuell etwas ausgeliehen haben
+    const currentPossessors = new Set();
+    ['gewehre','schluessel','kleidung','schiessbekleidung'].forEach(k => {
+        (inventarState[k] || []).forEach(i => {
+            if (i.Aktueller_Besitzer_ID && i.Aktueller_Besitzer_ID != "0" && i.Aktueller_Besitzer_ID != "") {
+                currentPossessors.add(i.Aktueller_Besitzer_ID.toString());
+            }
+        });
+    });
+
+    const sorted = [...inventarState.mitglieder]
+      .filter(m => {
+          const isAktivPassiv = (m.Status === 'Aktiv' || m.Status === 'Passiv');
+          const hasMaterial = currentPossessors.has(m.ID.toString());
+          return isAktivPassiv || hasMaterial;
+      })
+      .sort((a, b) => a.Nachname.localeCompare(b.Nachname));
+    
+    document.getElementById('select-mitglied').innerHTML =
+        '<option value="">-- wählen --</option>' +
+        sorted.map(m => {
+            let label = `${m.Nachname} ${m.Vorname}`;
+            if (m.Status === 'Verstorben') label += ' †';
+            else if (m.Status === 'Ehemalig') label += ' (Ehem.)';
+            else if (m.Status === 'Passiv') label += ' (Passiv)';
+            return `<option value="${m.ID}">${label}</option>`;
+        }).join('');
+
+    if (inventarState.config) {
+        const zOpts = '<option value="">-- wählen --</option>' +
+            inventarState.config.map(c => c.Transaktion_Zustand).filter(v => v)
+                .map(v => {
+                    const isOk = (v.toLowerCase() === 'ok' || v.toLowerCase() === 'i.o.');
+                    return `<option value="${v}" ${isOk ? 'selected' : ''}>${v}</option>`;
+                }).join('');
+        document.getElementById('select-zustand-abgabe').innerHTML    = zOpts;
+        document.getElementById('select-zustand-rueckgabe').innerHTML = zOpts;
+    }
+    toggleBookingFields(); // Sorgt dafür, dass UI-State zur default action (Verkauf) passt
+}
+
+function toggleBookingFields() {
+    const action = document.getElementById('select-action').value;
+    const isCheckout = action === 'checkout';
+    const isVerkauf = action === 'verkauf';
+    
+    document.getElementById('container-zustand-abgabe').classList.toggle('d-none', !isCheckout && !isVerkauf);
+    document.getElementById('container-zustand-rueckgabe').classList.toggle('d-none', isCheckout || isVerkauf);
+    
+    document.getElementById('container-pfand-einnahme').classList.toggle('d-none', !isCheckout);
+    document.getElementById('container-pfand-retour').classList.toggle('d-none', action !== 'checkin');
+    document.getElementById('container-verkauf-methode').classList.toggle('d-none', !isVerkauf);
+    document.getElementById('container-verkauf-konto')?.classList.toggle('d-none', !isVerkauf);
+    document.getElementById('container-verkauf-info-banner')?.classList.toggle('d-none', !isVerkauf);
+    
+    // Label umschalten für Betrag
+    const labelBetrag = document.getElementById('label-betrag');
+    if (isVerkauf) {
+        labelBetrag.innerText = 'Verkaufspreis CHF';
+    } else {
+        labelBetrag.innerText = 'Pfandbetrag CHF';
+    }
+    
+    updateSubOptions();
+}
+
+window.toggleVerkaufKontoLock = function() {
+    const input = document.getElementById('verkauf-konto');
+    const icon = document.getElementById('icon-verkauf-konto-lock');
+    if (!input || !icon) return;
+
+    if (input.hasAttribute('readonly')) {
+        input.removeAttribute('readonly');
+        input.style.backgroundColor = '#ffffff';
+        icon.className = 'fas fa-lock-open text-warning';
+    } else {
+        input.setAttribute('readonly', 'readonly');
+        input.style.backgroundColor = '#e9ecef';
+        icon.className = 'fas fa-lock';
+    }
+};
+
+function updateSubOptions() {
+    if (!inventarState) return;
+    const kat    = document.getElementById('select-kategorie').value;
+    const action = document.getElementById('select-action').value;
+    const mitgliedId = document.getElementById('select-mitglied').value;
+    const keyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                     "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+    const items  = inventarState[keyMap[kat]] || [];
+
+    // --- UX-HIGHLIGHT: Ausgeliehenes Material des Mitglieds anzeigen ---
+    const containerHoldings = document.getElementById('container-mitglied-ausleihen');
+    if (containerHoldings) {
+        if (action === 'checkin' && mitgliedId) {
+            let memberItems = [];
+            const allKeyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                                "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+            Object.keys(allKeyMap).forEach(k => {
+                (inventarState[allKeyMap[k]] || []).forEach(item => {
+                    if (item.Aktueller_Besitzer_ID && String(item.Aktueller_Besitzer_ID) === String(mitgliedId) && (item.Status || '').toLowerCase() !== 'verkauft') {
+                        memberItems.push({ kat: k, item: item, label: getItemLabel(k, item) });
+                    }
+                });
+            });
+
+            if (memberItems.length === 0) {
+                containerHoldings.className = 'mb-3';
+                containerHoldings.innerHTML = `
+                    <div class="alert alert-info py-2 px-3 small mb-0 border-0 rounded-3 shadow-xs">
+                        <i class="fas fa-check-circle me-1 text-success"></i>Dieses Mitglied hat aktuell <b>keine offenen Ausleihen</b>.
+                    </div>`;
+            } else {
+                containerHoldings.className = 'mb-3';
+                containerHoldings.innerHTML = `
+                    <div class="card border border-primary border-opacity-25 shadow-xs p-2.5 rounded-3 bg-white">
+                        <div class="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom">
+                            <span class="small fw-bold text-primary">
+                                <i class="fas fa-box-open me-1"></i>Aktuell ausgeliehen (${memberItems.length}):
+                            </span>
+                            ${memberItems.length > 1 ? `
+                            <button type="button" class="btn btn-xs btn-outline-primary fw-bold py-0.5 px-2" 
+                                    onclick="addAllMemberItemsToReturnCart('${mitgliedId}')" style="font-size: 11px;">
+                                <i class="fas fa-bolt me-1"></i>Alle retournieren
+                            </button>` : ''}
+                        </div>
+                        <div class="list-group list-group-flush">
+                            ${memberItems.map(m => {
+                                const openPfand = (inventarState?.pfand || []).find(p => 
+                                    String(p.Mitglied_ID) === String(mitgliedId) && 
+                                    String(p.Inventar_ID) === String(m.item.ID) && 
+                                    (p.Status||'').toLowerCase() === 'offen'
+                                );
+                                const pfandInfo = openPfand ? `CHF ${parseFloat(openPfand.Betrag).toFixed(2)} (${openPfand.Zahlungsart||'Bar'})` : (m.item.Depotbetrag ? `CHF ${parseFloat(m.item.Depotbetrag).toFixed(2)}` : 'Kein Pfand');
+                                const isInCart = warenkorb.some(w => w.itemId.toString() === m.item.ID.toString() && w.kategorie === m.kat);
+                                return `
+                                <div class="d-flex justify-content-between align-items-center py-1.5 small border-bottom border-light">
+                                    <div>
+                                        <span class="badge bg-secondary me-1 text-uppercase" style="font-size: 9px;">${m.kat}</span>
+                                        <strong>${m.label}</strong>
+                                        <div class="text-muted" style="font-size: 10px;">Pfand: <span class="fw-semibold text-dark">${pfandInfo}</span></div>
+                                    </div>
+                                    <button type="button" class="btn btn-sm ${isInCart ? 'btn-success disabled' : 'btn-outline-primary'} py-0 px-2" 
+                                            style="font-size: 11px;" 
+                                            onclick="quickSelectMemberItem('${m.kat}', '${m.item.ID}')">
+                                        ${isInCart ? '✓ Im Korb' : '📥 Wählen'}
+                                    </button>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+            }
+        } else {
+            containerHoldings.className = 'd-none mb-3';
+            containerHoldings.innerHTML = '';
+        }
+    }
+
+    // Sortierung: Bei Rückgabe die Gegenstände dieses Mitglieds ganz oben anzeigen!
+    const sortedItems = [...items].sort((a, b) => {
+        if (action === 'checkin' && mitgliedId) {
+            const aMine = String(a.Aktueller_Besitzer_ID) === String(mitgliedId);
+            const bMine = String(b.Aktueller_Besitzer_ID) === String(mitgliedId);
+            if (aMine && !bMine) return -1;
+            if (!aMine && bMine) return 1;
+        }
+        return 0;
+    });
+
+    document.getElementById('select-gegenstand').innerHTML = sortedItems.map(i => {
+        const isVerkauft = (i.Status || '').toLowerCase() === 'verkauft';
+        const isMine = action === 'checkin' && mitgliedId && String(i.Aktueller_Besitzer_ID) === String(mitgliedId);
+        const isOut = (i.Aktueller_Besitzer_ID &&
+                      i.Aktueller_Besitzer_ID.toString() !== "0" &&
+                      i.Aktueller_Besitzer_ID.toString() !== "") || isVerkauft;
+        const isInCart = warenkorb.some(w => w.itemId.toString() === i.ID.toString() && w.kategorie === kat);
+        
+        // Verkauf und Checkout sind blockiert wenn isOut oder isVerkauft, Checkin nur wenn !isOut bzw. !isVerkauft
+        const disabled = ((action === 'checkout' || action === 'verkauf') && isOut) || 
+                         (action === 'checkin' && (!isOut || isVerkauft)) || 
+                         isInCart;
+        // Bei Rückgabe: nur Items des gewählten Mitglieds aktivieren
+        const wrongOwner = action === 'checkin' && isOut && !isVerkauft && mitgliedId && !isMine;
+        const label = getItemLabel(kat, i);
+        
+        let statusIcon = isVerkauft ? '❌ (Verkauft)' : (isOut ? (isMine ? '⭐ (Bei Mitglied)' : '🔴') : '🟢');
+        if (isInCart) statusIcon = '🛒';
+
+        return `<option value="${i.ID}" ${isMine ? 'class="fw-bold text-primary"' : ''}
+            ${(disabled || wrongOwner) ? 'disabled style="color:#ccc"' : ''}>
+            ${label} ${statusIcon}
+        </option>`;
+    }).join('');
+    
+    // Initial den Betrag laden (Kaufpreis bei Verkauf ODER Depotbetrag bei Ausleihe)
+    onGegenstandSelect();
+}
+
+window.quickSelectMemberItem = function(kat, itemId) {
+    document.getElementById('select-kategorie').value = kat;
+    updateSubOptions();
+    document.getElementById('select-gegenstand').value = itemId;
+    onGegenstandSelect();
+};
+
+window.addAllMemberItemsToReturnCart = function(mitgliedId) {
+    const allKeyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                        "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+    let addedCount = 0;
+    Object.keys(allKeyMap).forEach(k => {
+        (inventarState[allKeyMap[k]] || []).forEach(item => {
+            if (item.Aktueller_Besitzer_ID && String(item.Aktueller_Besitzer_ID) === String(mitgliedId) && (item.Status || '').toLowerCase() !== 'verkauft') {
+                const itemId = item.ID.toString();
+                if (!warenkorb.some(w => w.itemId.toString() === itemId && w.kategorie === k)) {
+                    const label = getItemLabel(k, item);
+                    const openPfand = (inventarState?.pfand || []).find(p => 
+                        String(p.Mitglied_ID) === String(mitgliedId) && 
+                        String(p.Inventar_ID) === String(itemId) && 
+                        (p.Status||'').toLowerCase() === 'offen'
+                    );
+                    let pfand = 0;
+                    let retourMethode = 'Bar';
+                    if (openPfand && parseFloat(openPfand.Betrag) > 0) {
+                        pfand = parseFloat(openPfand.Betrag);
+                        const art = (openPfand.Zahlungsart || '').toLowerCase();
+                        if (art.includes('twint')) retourMethode = 'Twint';
+                        else if (art.includes('einzahlungsschein') || art.includes('rechnung')) retourMethode = 'Banküberweisung';
+                    } else if (item.Depotbetrag) {
+                        pfand = parseFloat(item.Depotbetrag) || 0;
+                    }
+                    warenkorb.push({
+                        itemId: itemId,
+                        kategorie: k,
+                        label: label,
+                        zustandAbgabe: 'i.O.',
+                        zustandRueckgabe: 'i.O.',
+                        pfandBetrag: pfand,
+                        pfandEinnahme: 'Nein',
+                        pfandMethode: null,
+                        pfandRetour: 'Ja',
+                        pfandRetourMethode: retourMethode,
+                        verkaufMethode: null
+                    });
+                    addedCount++;
+                }
+            }
+        });
+    });
+    if (addedCount > 0) {
+        renderWarenkorb();
+        updateSubOptions();
+    }
+};
+
+function onGegenstandSelect() {
+    const action = document.getElementById('select-action').value;
+    const kat = document.getElementById('select-kategorie').value;
+    const itemId = document.getElementById('select-gegenstand').value;
+    if (!itemId) return;
+
+    const keyMap = { "gewehr":"gewehre","schluessel":"schluessel",
+                     "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+    const item = (inventarState[keyMap[kat]] || []).find(i => i.ID.toString() === itemId.toString());
+    
+    if (item) {
+        if (action === 'verkauf') {
+            // 1. Verkauf: Kaufpreis / Verkaufspreis vorblenden
+            let preisRaw = item.Kaufpreis || item.Preis || item.kaufpreis || item.Verkaufspreis || 0;
+            if (preisRaw && preisRaw !== "") {
+                const preis = parseFloat(preisRaw.toString().replace("'", "").replace("CHF", "").trim());
+                if (!isNaN(preis) && preis > 0) {
+                    document.getElementById('pfand-betrag').value = preis.toFixed(2);
+                    return;
+                }
+            }
+        } else if (action === 'checkout') {
+            // 2. Ausleihe (Option B): Depotbetrag vorblenden
+            let depotRaw = item.Depotbetrag || item.Depot || item.depot || item.Pfandbetrag || item.Pfand || 0;
+            if (depotRaw && depotRaw !== "") {
+                const depot = parseFloat(depotRaw.toString().replace("'", "").replace("CHF", "").trim());
+                if (!isNaN(depot) && depot > 0) {
+                    document.getElementById('pfand-betrag').value = depot.toFixed(2);
+                    return;
+                }
+            }
+        } else if (action === 'checkin') {
+            // 3. Rückgabe: Nachschlagen, ob ein offenes Pfand für dieses Mitglied & Item existiert
+            const mitgliedId = document.getElementById('select-mitglied').value;
+            const openPfand = (inventarState?.pfand || []).find(p => 
+                String(p.Mitglied_ID) === String(mitgliedId) && 
+                String(p.Inventar_ID) === String(itemId) && 
+                (p.Status || '').toLowerCase() === 'offen'
+            );
+            if (openPfand && parseFloat(openPfand.Betrag) > 0) {
+                document.getElementById('pfand-betrag').value = parseFloat(openPfand.Betrag).toFixed(2);
+                const retSelect = document.getElementById('pfand-retour');
+                if (retSelect) {
+                    const art = (openPfand.Zahlungsart || '').toLowerCase();
+                    if (art.includes('twint')) retSelect.value = 'Twint';
+                    else if (art.includes('einzahlungsschein') || art.includes('rechnung')) retSelect.value = 'Banküberweisung';
+                    else retSelect.value = 'Bar';
+                }
+                return;
+            } else {
+                // Fallback: hinterlegter Depotbetrag des Gegenstands
+                let depotRaw = item.Depotbetrag || item.Depot || 0;
+                if (depotRaw) {
+                    const depot = parseFloat(depotRaw.toString().replace("'", "").replace("CHF", "").trim());
+                    if (!isNaN(depot) && depot > 0) {
+                        document.getElementById('pfand-betrag').value = depot.toFixed(2);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    document.getElementById('pfand-betrag').value = '';
+}
+
+function showJournalConfirmationAlert(message) {
+    const journalSection = document.getElementById('inv-section-journal');
+    if (!journalSection) return;
+
+    // Bestehenden Alert entfernen falls vorhanden
+    const oldAlert = journalSection.querySelector('.journal-booking-alert');
+    if (oldAlert) oldAlert.remove();
+
+    const alertHtml = `
+        <div class="alert alert-success alert-dismissible fade show mb-4 shadow-sm border-start border-success border-4 journal-booking-alert animate__animated animate__fadeInDown" role="alert" style="border-radius: 8px;">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle me-3 text-success" style="font-size: 1.5rem;"></i>
+                    <div>
+                        <h6 class="alert-heading fw-bold mb-1" style="font-size: 1rem; color: #198754;">Buchung erfolgreich durchgeführt!</h6>
+                        <p class="mb-0 small text-dark">${message} Bitte überprüfe die Buchung kurz unten in der Liste.</p>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-success fw-bold px-3 py-1.5" data-bs-dismiss="alert" style="border-radius: 6px;">✓ Verstanden</button>
+            </div>
+        </div>
+    `;
+    
+    // Ganz oben einfügen
+    journalSection.insertAdjacentHTML('afterbegin', alertHtml);
+}

@@ -1,0 +1,2277 @@
+// =====================================================================
+// MODUL: RECHNUNGEN & PDF-COCKPIT - ACTIONS (INVOICE CRUD & PDF/MAIL)
+// =====================================================================
+
+// ZAHLUNGS ERFASSUNGS MODAL WITH SYNC CHOICE
+window.rnOpenPaymentModal = function(invoiceId, amount) {
+  let modalEl = document.getElementById('rnModalPayment');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalPayment';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-success text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold"><i class="fas fa-coins me-2"></i>Zahlungseingang erfassen</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="rn-payment-form" onsubmit="rnSavePayment(event, '${invoiceId}')">
+            
+            <div class="alert alert-light border shadow-xs p-3 rounded-3 mb-4 d-flex justify-content-between align-items-center">
+              <div>
+                <span class="text-muted small">Zu begleichender Betrag:</span>
+                <h5 class="fw-bold mb-0 text-dark">Rechnung ${invoiceId}</h5>
+              </div>
+              <h3 class="fw-extrabold mb-0 text-primary font-monospace">${fmtChf(amount)}</h3>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">Zahlungsdatum</label>
+              <input type="date" class="form-control" id="rnp-datum" required value="${new Date().toISOString().split('T')[0]}">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">Zahlungsmethode</label>
+              <select class="form-select" id="rnp-methode" required>
+                <option value="Überweisung Raiffeisen" selected>Überweisung Bank (Raiffeisen)</option>
+                <option value="Kassabuch Bar">Barzahlung (Kassa)</option>
+                <option value="Twint">Twint</option>
+                <option value="Sonstiges">Sonstiges / Gutschein</option>
+              </select>
+            </div>
+
+            <div class="mb-4">
+              <label class="form-label fw-bold small text-muted">Beleg / Buchungsnummer</label>
+              <input type="text" class="form-control fw-bold" id="rnp-beleg" value="ZAL-${invoiceId}">
+              <div class="form-text text-muted small">Wird als Buchungsreferenz im Hauptbuch verbucht.</div>
+            </div>
+
+            <div class="mb-4 bg-light p-3 rounded-3 border">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="rnp-sync-bookkeeping" checked>
+                <label class="form-check-label fw-bold small text-dark" for="rnp-sync-bookkeeping">
+                  Zahlungseingang in Buchhaltung verbuchen
+                </label>
+              </div>
+              <div class="form-text text-muted small mt-1">
+                <strong>Option EIN (Standard):</strong> Verbucht die Zahlung automatisch im Journal (Soll Bank <code>1020</code> / Kassa <code>1000</code> an Haben Ertragskonto, z. B. <code>3400</code> Miete / <code>3000</code> Beitragsertrag).<br>
+                <span class="text-danger"><strong>Option AUS:</strong> Ändert nur den Rechnungsstatus im Cockpit (Ideal für bereits von Hand im Kassabuch erfasste Rechnungen!).</span>
+              </div>
+            </div>
+
+            <div class="d-grid">
+              <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" id="rnp-submit-btn">
+                <i class="fas fa-check-circle me-1"></i> Zahlungseingang speichern
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+};
+
+// SAVE PAYMENT
+window.rnSavePayment = async function(event, invoiceId) {
+  event.preventDefault();
+
+  const syncBookkeeping = document.getElementById('rnp-sync-bookkeeping').checked;
+  const datum = document.getElementById('rnp-datum').value;
+  const methode = document.getElementById('rnp-methode').value;
+  const beleg = document.getElementById('rnp-beleg').value.trim();
+
+  // 1. Optimistic Update
+  const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
+  let oldInv = null;
+  if (invIndex !== -1) {
+    oldInv = { ...window._invoices[invIndex] };
+    window._invoices[invIndex].status = 'bezahlt';
+    window._invoices[invIndex].zahlungsdatum = datum;
+    window._invoices[invIndex].zahlungsmethode = methode;
+    window._invoices[invIndex].beleg_nr = beleg || `PAY-${invoiceId}`;
+    window.renderRechnungen(); // Render table instantly!
+  }
+
+  // Close modal instantly
+  const modalEl = document.getElementById('rnModalPayment');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  showSuccess(`🎉 Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (Hintergrund-Synchronisation läuft)...`);
+
+  const payload = {
+    action: 'saveZahlung',
+    invoiceId: invoiceId,
+    datum: datum,
+    methode: methode,
+    beleg: beleg || `PAY-${invoiceId}`,
+    skipBooking: !syncBookkeeping
+  };
+
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || "Fehler beim Speichern der Zahlung.");
+    }
+    
+    // Lazy sync after 1500ms
+    setTimeout(async () => {
+      await loadRechnungenData(true);
+    }, 1500);
+  } catch (err) {
+    console.error("❌ Optimistic Save Payment failed:", err);
+    // Revert optimistic update!
+    if (invIndex !== -1 && oldInv) {
+      window._invoices[invIndex] = oldInv;
+      window.renderRechnungen();
+    }
+    alert("❌ Fehler beim Speichern der Zahlung (Revert durchgeführt): " + err.message);
+  }
+};
+
+
+// PDF GENERATION ONLY
+window.rnGeneratePDFOnly = async function(invoiceId, name) {
+  showLoadingOverlay(`Generiere QR-Rechnung PDF für ${name}...`);
+  
+  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) {
+    hideLoadingOverlay();
+    alert("❌ Rechnung nicht gefunden.");
+    return;
+  }
+
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
+
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+
+  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
+
+  const payload = {
+    action: 'generateInvoicePDF',
+    invoiceId: invoiceId,
+    recipient: recipient,
+    sender: sender,
+    layout: layout
+  };
+
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+
+    if (result.success) {
+      showSuccess("🎉 PDF erfolgreich generiert!");
+      if (result.pdfBase64) {
+        openPdfBase64(result.pdfBase64);
+      } else if (result.pdfUrl) {
+        window.open(result.pdfUrl, '_blank');
+      }
+      await loadRechnungenData(true);
+    } else {
+      throw new Error(result.error || "Generierung fehlgeschlagen.");
+    }
+  } catch (err) {
+    alert("❌ PDF Fehler: " + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+// SEND MAIL PROMPT
+window.rnSendMailPrompt = async function(invoiceId, name) {
+  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) return;
+
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
+
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+
+  const initialEmail = recipient.email || '';
+  const targetEmail = prompt(`📧 QR-Rechnung per E-Mail an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, initialEmail);
+  if (targetEmail === null) return;
+  if (!targetEmail.includes('@')) {
+    alert("❌ Ungültige E-Mail-Adresse.");
+    return;
+  }
+  recipient.email = targetEmail;
+
+  showLoadingOverlay(`Erstelle QR-Rechnung und sende E-Mail an ${name}...`);
+
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+
+  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
+
+  const payload = {
+    action: 'sendInvoiceEmail',
+    invoiceId: invoiceId,
+    recipient: recipient,
+    sender: sender,
+    layout: layout
+  };
+
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+
+    if (result.success) {
+      showSuccess(`🎉 E-Mail erfolgreich an ${targetEmail} versandt!`);
+      await loadRechnungenData(true);
+    } else {
+      throw new Error(result.error || "E-Mail-Versand fehlgeschlagen.");
+    }
+  } catch (err) {
+    alert("❌ E-Mail Fehler: " + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+// CREATE MANUALLY INVOICE MODAL
+window.rnOpenCreateModal = async function(btnEl) {
+  let modalEl = document.getElementById('rnModalCreateInvoice');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalCreateInvoice';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  // Externe Kontakte laden (falls nicht bereits geladen)
+  if (!window._externalContacts || window._externalContacts.length === 0) {
+    let origText = '';
+    if (btnEl) {
+      origText = btnEl.innerHTML;
+      btnEl.disabled = true;
+      btnEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Laden...';
+    }
+    try {
+      const response = await apiFetch('rechnungen', 'action=getContacts');
+      const result = await response.json();
+      if (result.success) {
+        window._externalContacts = result.data || [];
+      }
+    } catch (err) {
+      console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = origText;
+      }
+    }
+  }
+
+  const memberOptions = (window._mglData || []).map(m => 
+    `<option value="MBR:${m.PersonNumber}">${m.LastName} ${m.FirstName} (Nr: ${m.PersonNumber})</option>`
+  ).join('');
+
+  const externalOptions = (window._externalContacts || []).map(c => {
+    const isFirma = c.typ === 'firma' || Boolean(c.firma);
+    const label = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `Kontakt #${c.id}`);
+    const kat = c.kategorie ? ` [${c.kategorie}]` : '';
+    return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
+  }).join('');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold"><i class="fas fa-file-invoice me-2"></i>Neue Rechnung verfassen</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="rn-create-form" onsubmit="rnSaveCreateInvoice(event)">
+            <input type="hidden" id="rnc-contact-id" value="">
+            
+            <!-- Empfänger-Auswahl -->
+            <div class="row g-3 mb-3 pb-3 border-bottom">
+              <div class="col-md-12">
+                <div class="d-flex justify-content-between align-items-center mb-1.5 flex-wrap gap-2">
+                  <label class="form-label fw-bold small text-muted mb-0">Empfänger auswählen *</label>
+                  <button type="button" class="btn btn-xs btn-outline-primary fw-bold" onclick="rnOpenContactModal()">
+                    <i class="fas fa-user-plus me-1"></i> + Neuer externer Kontakt erfassen
+                  </button>
+                </div>
+                <select class="form-select fw-bold text-primary shadow-sm" id="rnc-member-select" required onchange="rnHandleMemberSelect(this.value)">
+                  <option value="" selected>-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>
+                  ${window._externalContacts.length > 0 ? `
+                  <optgroup label="Gespeicherte externe Kontakte (Sponsoren, Mieter, Firmen, Privat)">
+                    ${externalOptions}
+                  </optgroup>
+                  ` : ''}
+                  <optgroup label="Vereinsmitglieder">
+                    ${memberOptions}
+                  </optgroup>
+                </select>
+              </div>
+            </div>
+
+            <!-- Adressdaten (Gesperrt / Readonly Master-Kärtchen) -->
+            <div id="rnc-recipient-box" class="p-3 bg-light rounded-3 border mb-4 shadow-2xs">
+              <div id="rnc-empty-hint" class="text-muted small text-center py-2">
+                <i class="fas fa-info-circle me-1 text-primary"></i> Bitte wählen Sie oben einen Empfänger aus oder erfassen Sie einen neuen Kontakt.
+              </div>
+              
+              <div id="rnc-details-wrap" style="display:none;">
+                <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom flex-wrap gap-2">
+                  <div class="d-flex gap-1.5 align-items-center">
+                    <span class="badge bg-primary px-2 py-1" id="rnc-badge-type"></span>
+                    <span class="badge bg-secondary px-2 py-1" id="rnc-badge-kat"></span>
+                  </div>
+                  <button type="button" class="btn btn-xs btn-outline-secondary" id="rnc-edit-contact-btn" style="display:none;" onclick="rnEditCurrentSelectedContact()">
+                    <i class="fas fa-edit me-1"></i> Kontakt in Stammdaten bearbeiten
+                  </button>
+                </div>
+
+                <div class="row g-2">
+                  <div class="col-md-3">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Empfänger-ID / Mgl-Nr</label>
+                    <input type="text" class="form-control form-control-sm font-monospace bg-white" id="rnc-person-number" readonly>
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Empfänger (Name / Firma)</label>
+                    <input type="text" class="form-control form-control-sm fw-bold bg-white" id="rnc-name" readonly required>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">E-Mail</label>
+                    <input type="email" class="form-control form-control-sm bg-white" id="rnc-email" readonly>
+                  </div>
+
+                  <div class="col-md-6" id="rnc-contact-person-col" style="display:none;">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Ansprechperson / Kontaktperson</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-contact-person" readonly>
+                  </div>
+                  <div class="col-md-6" id="rnc-abteilung-col" style="display:none;">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Abteilung / Zusatz</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-abteilung" readonly>
+                  </div>
+
+                  <div class="col-md-5">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Strasse & Hausnummer</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-strasse" readonly>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Adresszusatz / Postfach</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-adresszusatz" readonly>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">PLZ</label>
+                    <input type="text" class="form-control form-control-sm font-monospace bg-white" id="rnc-plz" readonly>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Ort (Land)</label>
+                    <input type="text" class="form-control form-control-sm bg-white" id="rnc-ort" readonly>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Rechnungs-Kopfdaten -->
+            <div class="row g-3 mb-4 p-3 bg-light rounded-3 border border-light">
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">Rechnungsjahr</label>
+                <input type="number" class="form-control fw-bold font-monospace" id="rnc-year" required value="${window._bhYear}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">Rechnungstyp</label>
+                <select class="form-select" id="rnc-type" required>
+                  <option value="Vermietung" selected>Vermietung</option>
+                  <option value="Jahresbeitrag">Jahresbeitrag / Mitglieder</option>
+                  <option value="Materialverkauf">Materialverkauf</option>
+                  <option value="Depot / Pfand">Depot / Pfand</option>
+                  <option value="Schulsport">Schulsport</option>
+                  <option value="Sponsoring">Sponsoring / Gönner</option>
+                  <option value="Sonstige">Sonstige / Diverse</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">Rechnungs-ID (Vorschlag)</label>
+                <input type="text" class="form-control fw-bold text-success font-monospace" id="rnc-invoice-id" readonly>
+              </div>
+            </div>
+
+            <!-- Positionen verfassen -->
+            <div class="mb-4">
+              <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
+                <div class="d-flex gap-2">
+                  <div class="dropdown">
+                    <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      <i class="fas fa-magic me-1"></i> Standard-Positionen
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
+                      ${(typeof window.rnGetDropdownMenuHtml === 'function' ? window.rnGetDropdownMenuHtml('rncAddPositionRow') : '')}
+                    </ul>
+                  </div>
+                  
+                  <button type="button" class="btn btn-xs btn-primary" onclick="rncAddPositionRow()">
+                    <i class="fas fa-plus"></i> Pos hinzufügen
+                  </button>
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle mb-0" style="font-size: 13px;">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width: 40px;" class="text-center">#</th>
+                      <th>Beschreibung der Dienstleistung / Ware</th>
+                      <th style="width: 90px;" class="text-end">Menge</th>
+                      <th style="width: 130px;" class="text-end">Einzelpreis</th>
+                      <th style="width: 130px;" class="text-end">Gesamt (CHF)</th>
+                      <th style="width: 50px;" class="text-center">Aktion</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rnc-positions-tbody">
+                    <!-- Wird dynamisch gefüllt -->
+                  </tbody>
+                  <tfoot>
+                    <tr class="table-light fw-extrabold text-primary" style="font-size:14px;">
+                      <td colspan="4" class="text-end">Gesamtsumme (CHF):</td>
+                      <td class="text-end font-monospace" id="rnc-total-sum">CHF 0.00</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="d-grid mt-4">
+              <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm" id="rnc-submit-btn" disabled>
+                <i class="fas fa-check-circle me-1"></i> Rechnung verbindlich erstellen
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('rnc-invoice-id').value = (typeof window.generateSafeInvoiceId === 'function')
+    ? window.generateSafeInvoiceId('RE', window._bhYear)
+    : `RE-${String(window._bhYear || new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+
+  if (typeof window.rncAddPositionRow === 'function') {
+    window.rncAddPositionRow("Miete Schützenhaus Muhen", 150);
+  }
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+};
+
+window.rnEditCurrentSelectedContact = function() {
+  const contactId = document.getElementById('rnc-contact-id')?.value;
+  if (contactId) {
+    window.rnOpenContactModal(contactId);
+  }
+};
+
+// AUTOCOMPLETE SELECTOR HANDLER (READONLY MASTER BINDING)
+window.rnHandleMemberSelect = function(val) {
+  const contactIdEl = document.getElementById('rnc-contact-id');
+  if (contactIdEl) contactIdEl.value = '';
+
+  const emptyHint = document.getElementById('rnc-empty-hint');
+  const detailsWrap = document.getElementById('rnc-details-wrap');
+  const editBtn = document.getElementById('rnc-edit-contact-btn');
+  const cpCol = document.getElementById('rnc-contact-person-col');
+  const abtCol = document.getElementById('rnc-abteilung-col');
+  const badgeType = document.getElementById('rnc-badge-type');
+  const badgeKat = document.getElementById('rnc-badge-kat');
+  const submitBtn = document.getElementById('rnc-submit-btn');
+
+  if (!val) {
+    if (emptyHint) emptyHint.style.display = '';
+    if (detailsWrap) detailsWrap.style.display = 'none';
+    if (editBtn) editBtn.style.display = 'none';
+    if (submitBtn) submitBtn.disabled = true;
+
+    document.getElementById('rnc-person-number').value = '';
+    document.getElementById('rnc-name').value = '';
+    document.getElementById('rnc-email').value = '';
+    document.getElementById('rnc-strasse').value = '';
+    document.getElementById('rnc-plz').value = '';
+    document.getElementById('rnc-ort').value = '';
+    if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = '';
+    if (document.getElementById('rnc-contact-person')) document.getElementById('rnc-contact-person').value = '';
+    if (document.getElementById('rnc-abteilung')) document.getElementById('rnc-abteilung').value = '';
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = false;
+  if (emptyHint) emptyHint.style.display = 'none';
+  if (detailsWrap) detailsWrap.style.display = '';
+
+  if (val.startsWith('MBR:')) {
+    const personNumber = val.replace('MBR:', '');
+    const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(personNumber));
+    if (m) {
+      if (editBtn) editBtn.style.display = 'none';
+      if (badgeType) badgeType.textContent = '👤 Vereinsmitglied';
+      if (badgeKat) badgeKat.textContent = m.Status || 'Aktiv';
+      if (cpCol) cpCol.style.display = 'none';
+      if (abtCol) abtCol.style.display = 'none';
+
+      document.getElementById('rnc-person-number').value = m.PersonNumber || '';
+      document.getElementById('rnc-name').value = `${m.LastName} ${m.FirstName}`;
+      document.getElementById('rnc-email').value = m.PrimaryEmail || m.Email || '';
+      document.getElementById('rnc-strasse').value = m.Street || m.Strasse || '';
+      if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = '';
+      document.getElementById('rnc-plz').value = m.ZipCode || m.PLZ || '';
+      document.getElementById('rnc-ort').value = m.City || m.Ort || '';
+      document.getElementById('rnc-type').value = 'Jahresbeitrag';
+    }
+  } else if (val.startsWith('EXT:')) {
+    const extId = val.replace('EXT:', '').trim();
+    const c = (window._externalContacts || []).find(x => String(x.id).trim() === extId);
+    if (c) {
+      if (contactIdEl) contactIdEl.value = c.id;
+      if (editBtn) editBtn.style.display = '';
+      
+      const isFirma = c.typ === 'firma' || Boolean(c.firma);
+      if (badgeType) badgeType.textContent = isFirma ? '🏢 Firma / Organisation' : '👤 Privatperson';
+      if (badgeKat) badgeKat.textContent = c.kategorie || 'Extern';
+
+      const displayName = isFirma ? (c.firma || c.name) : ([c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ') || c.name);
+      
+      document.getElementById('rnc-person-number').value = 'EXT-' + c.id;
+      document.getElementById('rnc-name').value = displayName || '';
+      document.getElementById('rnc-email').value = c.email || '';
+      document.getElementById('rnc-strasse').value = c.strasse || '';
+      if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = c.adresszusatz || '';
+      document.getElementById('rnc-plz').value = c.plz || '';
+      document.getElementById('rnc-ort').value = c.ort ? `${c.ort}${c.land && c.land !== 'CH' ? ` (${c.land})` : ''}` : '';
+      
+      // Ansprechperson & Abteilung anzeigen
+      const cpName = isFirma ? [c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ') : '';
+      if (cpCol) {
+        cpCol.style.display = cpName ? '' : 'none';
+        if (document.getElementById('rnc-contact-person')) document.getElementById('rnc-contact-person').value = cpName;
+      }
+      if (abtCol) {
+        abtCol.style.display = c.abteilung ? '' : 'none';
+        if (document.getElementById('rnc-abteilung')) document.getElementById('rnc-abteilung').value = c.abteilung || '';
+      }
+
+      const typeEl = document.getElementById('rnc-type');
+      if (typeEl) {
+        if (c.kategorie === 'Sponsor') typeEl.value = 'Sponsoring';
+        else if (c.kategorie === 'Gönner') typeEl.value = 'Gönnerbeitrag';
+        else if (c.kategorie === 'Mieter') typeEl.value = 'Vermietung';
+        else typeEl.value = 'Vermietung';
+      }
+    }
+  }
+};
+
+// POSITION ROW DYNAMIC FUNCTIONS
+let rncPosCounter = 0;
+function rncRecalculateTotal() {
+  const amts = document.querySelectorAll('.rnc-pos-amt');
+  let sum = 0;
+  amts.forEach(el => sum += Number(el.value || 0));
+
+  const totalEl = document.getElementById('rnc-total-sum');
+  if (totalEl) {
+    totalEl.textContent = fmtChf(sum);
+  }
+}
+window.rncRecalculateTotal = rncRecalculateTotal;
+
+function rncAddPositionRow(desc = "", unitPrice = "", qty = 1) {
+  rncPosCounter++;
+  const tbody = document.getElementById('rnc-positions-tbody');
+  if (!tbody) return;
+
+  const initialAmount = (qty * (Number(unitPrice) || 0)).toFixed(2);
+
+  const tr = document.createElement('tr');
+  tr.id = `rnc-pos-row-${rncPosCounter}`;
+  tr.innerHTML = `
+    <td class="text-center font-monospace text-muted rnc-pos-idx">${tbody.children.length + 1}</td>
+    <td>
+      <input type="text" class="form-control form-control-sm rnc-pos-desc" required value="${desc}" placeholder="z.B. Getränkebezug Süsswasser">
+    </td>
+    <td>
+      <input type="number" step="1" min="1" class="form-control form-control-sm text-end rnc-pos-qty" required value="${qty}" oninput="rncRecalculateRowTotal('${tr.id}')">
+    </td>
+    <td>
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-light text-muted">CHF</span>
+        <input type="number" step="0.05" class="form-control form-control-sm text-end rnc-pos-unitprice" required value="${unitPrice}" placeholder="0.00" oninput="rncRecalculateRowTotal('${tr.id}')">
+      </div>
+    </td>
+    <td>
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-light text-muted">CHF</span>
+        <input type="number" class="form-control form-control-sm text-end fw-bold rnc-pos-amt bg-light" readonly value="${initialAmount}">
+      </div>
+    </td>
+    <td class="text-center">
+      <button type="button" class="btn btn-xs btn-outline-danger" onclick="rncRemovePositionRow('${tr.id}')">
+        <i class="fas fa-trash-alt"></i>
+      </button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+  rncRecalculateTotal();
+}
+window.rncAddPositionRow = rncAddPositionRow;
+
+function rncRecalculateRowTotal(rowId) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const qty = Number(row.querySelector('.rnc-pos-qty').value || 1);
+  const unitPrice = Number(row.querySelector('.rnc-pos-unitprice').value || 0);
+  const amtEl = row.querySelector('.rnc-pos-amt');
+  if (amtEl) {
+    amtEl.value = (qty * unitPrice).toFixed(2);
+  }
+  rncRecalculateTotal();
+}
+window.rncRecalculateRowTotal = rncRecalculateRowTotal;
+
+function rncRemovePositionRow(rowId) {
+  const row = document.getElementById(rowId);
+  if (row) {
+    row.remove();
+    const idxs = document.querySelectorAll('.rnc-pos-idx');
+    idxs.forEach((el, index) => el.textContent = index + 1);
+    rncRecalculateTotal();
+  }
+}
+window.rncRemovePositionRow = rncRemovePositionRow;
+
+// SAVE NEW MANUALLY INVOICE
+window.rnSaveCreateInvoice = async function(event) {
+  event.preventDefault();
+
+  const invoiceId = document.getElementById('rnc-invoice-id').value;
+  const name = document.getElementById('rnc-name').value.trim();
+  const email = document.getElementById('rnc-email').value.trim();
+  const strasse = document.getElementById('rnc-strasse').value.trim();
+  const plz = document.getElementById('rnc-plz').value.trim();
+  const ort = document.getElementById('rnc-ort').value.trim();
+  const contactId = document.getElementById('rnc-contact-id') ? document.getElementById('rnc-contact-id').value.trim() : '';
+  
+  let personNumber = document.getElementById('rnc-person-number').value.trim();
+  if (!personNumber && contactId) {
+    personNumber = 'EXT-' + contactId;
+  }
+
+  // Wenn es sich um eine Firma handelt, soll stets und ausschliesslich der Firmenname verwendet werden
+  let finalInvoiceName = name;
+  if (contactId) {
+    const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
+    if (existingContact) {
+      const isFirma = existingContact.typ === 'firma' || Boolean(existingContact.firma);
+      if (isFirma && existingContact.firma) {
+        finalInvoiceName = String(existingContact.firma).trim();
+      }
+    }
+  }
+
+  const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+
+  const invoiceHeader = {
+    id: invoiceId,
+    PersonNumber: personNumber,
+    name: finalInvoiceName,
+    year: Number(document.getElementById('rnc-year').value),
+    type: document.getElementById('rnc-type').value,
+    total_amount: 0,
+    status: 'offen',
+    created_at: nowStr,
+    updated_at: nowStr
+  };
+
+  const posRows = document.querySelectorAll('#rnc-positions-tbody tr');
+  const positions = [];
+  let totalAmount = 0;
+
+  posRows.forEach((row, index) => {
+    const desc = row.querySelector('.rnc-pos-desc').value.trim();
+    const qty = Number(row.querySelector('.rnc-pos-qty').value || 1);
+    const unitPrice = Number(row.querySelector('.rnc-pos-unitprice').value || 0);
+    const amt = Number(row.querySelector('.rnc-pos-amt').value || (qty * unitPrice));
+    positions.push({
+      position_nr: index + 1,
+      description: desc,
+      quantity: qty,
+      unit_price: unitPrice,
+      amount: amt
+    });
+    totalAmount += amt;
+  });
+
+  invoiceHeader.total_amount = totalAmount;
+
+  if (positions.length === 0) {
+    alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
+    return;
+  }
+
+  // 1. Optimistic Update
+  window._invoices.unshift(invoiceHeader);
+
+  // Falls externer Kontakt, Kontaktdaten auch lokal in _externalContacts aktualisieren
+  if (!document.getElementById('rnc-person-number').value.trim() || String(document.getElementById('rnc-person-number').value.trim()).startsWith('EXT')) {
+    const extIdx = contactId ? window._externalContacts.findIndex(c => String(c.id).trim() === String(contactId).trim()) : -1;
+    if (extIdx !== -1) {
+      window._externalContacts[extIdx] = {
+        ...window._externalContacts[extIdx],
+        name: name,
+        email: email,
+        strasse: strasse,
+        plz: plz,
+        ort: ort
+      };
+    } else {
+      window._externalContacts.push({
+        id: contactId || (window._externalContacts.length + 1),
+        name: name,
+        email: email,
+        strasse: strasse,
+        plz: plz,
+        ort: ort
+      });
+    }
+  }
+
+  // Tab & Filter zurücksetzen, damit die Rechnung sofort sichtbar ist
+  window._rechnungenActiveTab = 'archiv';
+  window._invoicesFilterStatus = 'alle';
+  window._invoicesFilterType = 'alle';
+  if (typeof rnRenderTable === 'function') {
+    rnRenderTable();
+  } else {
+    window.renderRechnungen();
+  }
+
+  // Close modal instantly
+  const modalEl = document.getElementById('rnModalCreateInvoice');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  showSuccess(`🎉 Rechnung ${invoiceId} erfolgreich erstellt (Hintergrund-Synchronisation läuft)...`);
+
+  // Sofort zur neu erstellten Zeile scrollen und hervorheben
+  setTimeout(() => {
+    const rowEl = document.getElementById(`rn-row-${invoiceId}`);
+    if (rowEl) {
+      rowEl.classList.add('table-success');
+      rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      setTimeout(() => rowEl.classList.remove('table-success'), 3000);
+    }
+  }, 100);
+
+  let recipientPayload = null;
+  if (contactId) {
+    const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
+    if (existingContact) {
+      recipientPayload = { ...existingContact };
+    }
+  }
+  if (!recipientPayload) {
+    recipientPayload = {
+      id: contactId || '',
+      name: name,
+      firma: name,
+      vorname: '',
+      nachname: '',
+      strasse: strasse,
+      plz: plz,
+      ort: ort,
+      email: email
+    };
+  }
+
+  const payload = {
+    action: 'createInvoice',
+    invoice: invoiceHeader,
+    positions: positions,
+    recipient: recipientPayload
+  };
+
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || "Fehler beim Anlegen im Backend.");
+    }
+    
+    // Server-Sync mit forceReload = true!
+    setTimeout(async () => {
+      await loadRechnungenData(true, true);
+      await loadInvoiceContactsData();
+    }, 1200);
+  } catch (err) {
+    console.error("❌ Optimistic Create Invoice failed:", err);
+    // Revert optimistic update!
+    window._invoices = window._invoices.filter(i => String(i.id) !== String(invoiceId));
+    window.renderRechnungen();
+    alert("❌ Fehler beim Erstellen der Rechnung (Revert durchgeführt): " + err.message);
+  }
+};
+
+// EDIT MANUALLY INVOICE MODAL
+window.rnOpenEditModal = async function(invoiceId) {
+  let modalEl = document.getElementById('rnModalEditInvoice');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalEditInvoice';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  showLoadingOverlay(`Lade Rechnung ${invoiceId}...`);
+  let inv = null;
+  let positions = [];
+  let data = null;
+  let recipient = null;
+
+  try {
+    const res = await apiFetch('rechnungen', { action: 'getInvoiceDetails', invoiceId });
+    data = await res.json();
+    if (data.success) {
+      inv = data.invoice;
+      positions = data.positions || [];
+      recipient = data.recipient || null;
+    } else {
+      throw new Error(data.error || "Unerwarteter Fehler.");
+    }
+  } catch (err) {
+    console.warn("⚠️ getInvoiceDetails Server-Fehler, versuche lokalen Fallback:", err);
+    // Fallback: Aus lokalem Cache laden
+    inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+    if (!inv) {
+      hideLoadingOverlay();
+      alert("❌ Fehler beim Laden der Rechnungsdetails: " + err.message);
+      return;
+    }
+    positions = [{
+      position_nr: 1,
+      description: inv.type || 'Rechnungsposition',
+      quantity: 1,
+      unit_price: inv.total_amount || 0,
+      amount: inv.total_amount || 0
+    }];
+  }
+  hideLoadingOverlay();
+
+  let contactId = '';
+  let email = '';
+  let strasse = '';
+  let plz = '';
+  let ort = '';
+
+  const isMember = inv.PersonNumber && !String(inv.PersonNumber).startsWith('EXT');
+  if (isMember) {
+    let members = window._mglData || [];
+    if (members.length === 0 && window.AppCache) {
+      const cached = window.AppCache.get('mitglieder');
+      if (cached && Array.isArray(cached.data)) members = cached.data;
+    }
+    const m = members.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+    email = m.Email || m.PrimaryEmail || '';
+    strasse = m.Street || m.Strasse || '';
+    plz = m.ZipCode || m.PLZ || '';
+    ort = m.City || m.Ort || '';
+  } else {
+    // Externe Kontakte: streng nach ID (oder Fallback auf Name)
+    const extId = String(inv.PersonNumber || '').replace('EXT-', '').replace('EXT:', '').trim();
+    if (!recipient && extId) {
+      recipient = (window._externalContacts || []).find(c => String(c.id).trim() === extId);
+    }
+    if (!recipient && inv.name) {
+      recipient = (window._externalContacts || []).find(c => String(c.name).trim().toLowerCase() === String(inv.name).trim().toLowerCase());
+    }
+    if (recipient) {
+      contactId = recipient.id || extId;
+      email = recipient.email || '';
+      strasse = recipient.strasse || '';
+      plz = recipient.plz || '';
+      ort = recipient.ort || '';
+    }
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold"><i class="fas fa-edit me-2"></i>Rechnung bearbeiten (ID: ${inv.id})</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="rn-edit-form" onsubmit="rnSaveEditInvoice(event, '${inv.id}')">
+            <input type="hidden" id="rne-contact-id" value="${escapeHtml(contactId)}">
+            
+            <!-- Adressdaten -->
+            <div class="row g-3 mb-3">
+              <div class="col-md-3">
+                <label class="form-label fw-bold small text-muted">Empfänger-ID / Mgl-Nr</label>
+                <input type="text" class="form-control font-monospace bg-light" id="rne-person-number" readonly value="${inv.PersonNumber || ''}">
+              </div>
+              <div class="col-md-5">
+                <label class="form-label fw-bold small text-muted">Empfänger (Name / Firma)</label>
+                <input type="text" class="form-control" id="rne-name" required value="${escapeHtml(inv.name || '')}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">E-Mail</label>
+                <input type="email" class="form-control" id="rne-email" value="${escapeHtml(email)}">
+              </div>
+            </div>
+
+            <div class="row g-3 mb-4">
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-muted">Strasse, Nr.</label>
+                <input type="text" class="form-control" id="rne-strasse" value="${escapeHtml(strasse)}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-bold small text-muted">PLZ</label>
+                <input type="text" class="form-control font-monospace" id="rne-plz" value="${escapeHtml(plz)}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">Ort</label>
+                <input type="text" class="form-control" id="rne-ort" value="${escapeHtml(ort)}">
+              </div>
+            </div>
+
+            <!-- Rechnungs-Kopfdaten -->
+            <div class="row g-3 mb-4 p-3 bg-light rounded-3 border border-light">
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">Rechnungsjahr</label>
+                <input type="number" class="form-control fw-bold font-monospace" id="rne-year" required value="${inv.year}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">Rechnungstyp</label>
+                <select class="form-select" id="rne-type" required>
+                  <option value="Vermietung" ${inv.type === 'Vermietung' ? 'selected' : ''}>Vermietung</option>
+                  <option value="Jahresbeitrag" ${inv.type === 'Jahresbeitrag' ? 'selected' : ''}>Jahresbeitrag / Mitglieder</option>
+                  <option value="Materialverkauf" ${inv.type === 'Materialverkauf' ? 'selected' : ''}>Materialverkauf</option>
+                  <option value="Depot / Pfand" ${inv.type === 'Depot / Pfand' ? 'selected' : ''}>Depot / Pfand</option>
+                  <option value="Schulsport" ${inv.type === 'Schulsport' ? 'selected' : ''}>Schulsport</option>
+                  <option value="Sponsoring" ${inv.type === 'Sponsoring' ? 'selected' : ''}>Sponsoring / Gönner</option>
+                  <option value="Sonstige" ${inv.type === 'Sonstige' ? 'selected' : ''}>Sonstige / Diverse</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-muted">Rechnungs-ID (Fixiert)</label>
+                <input type="text" class="form-control fw-bold text-success font-monospace bg-light" id="rne-invoice-id" readonly value="${inv.id}">
+              </div>
+            </div>
+
+            <!-- Positionen verfassen -->
+            <div class="mb-4">
+              <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
+                <div class="d-flex gap-2">
+                  <div class="dropdown">
+                    <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      <i class="fas fa-magic me-1"></i> Standard-Positionen
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
+                      ${(typeof window.rnGetDropdownMenuHtml === 'function' ? window.rnGetDropdownMenuHtml('rneAddPositionRow') : '')}
+                    </ul>
+                  </div>
+                  
+                  <button type="button" class="btn btn-xs btn-primary" onclick="rneAddPositionRow()">
+                    <i class="fas fa-plus"></i> Pos hinzufügen
+                  </button>
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle mb-0" style="font-size: 13px;">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width: 40px;" class="text-center">#</th>
+                      <th>Beschreibung der Dienstleistung / Ware</th>
+                      <th style="width: 90px;" class="text-end">Menge</th>
+                      <th style="width: 130px;" class="text-end">Einzelpreis</th>
+                      <th style="width: 130px;" class="text-end">Gesamt (CHF)</th>
+                      <th style="width: 50px;" class="text-center">Aktion</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rne-positions-tbody">
+                    <!-- Wird dynamisch gefüllt -->
+                  </tbody>
+                  <tfoot>
+                    <tr class="table-light fw-extrabold text-primary" style="font-size:14px;">
+                      <td colspan="4" class="text-end">Gesamtsumme (CHF):</td>
+                      <td class="text-end font-monospace" id="rne-total-sum">CHF 0.00</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="d-grid mt-4">
+              <button type="submit" class="btn btn-warning py-2.5 fw-bold rounded-3 shadow-sm" id="rne-submit-btn">
+                <i class="fas fa-save me-1"></i> Änderungen speichern
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  let rnePosCounter = 0;
+  function rneRecalculateTotal() {
+    const amts = document.querySelectorAll('.rne-pos-amt');
+    let sum = 0;
+    amts.forEach(el => sum += Number(el.value || 0));
+    const totalEl = document.getElementById('rne-total-sum');
+    if (totalEl) {
+      totalEl.textContent = fmtChf(sum);
+    }
+  }
+  window.rneRecalculateTotal = rneRecalculateTotal;
+
+  function rneAddPositionRow(desc = "", unitPrice = "", qty = 1) {
+    rnePosCounter++;
+    const tbody = document.getElementById('rne-positions-tbody');
+    if (!tbody) return;
+
+    const initialAmount = (qty * (Number(unitPrice) || 0)).toFixed(2);
+
+    const tr = document.createElement('tr');
+    tr.id = `rne-pos-row-${rnePosCounter}`;
+    tr.innerHTML = `
+      <td class="text-center font-monospace text-muted rne-pos-idx">${tbody.children.length + 1}</td>
+      <td>
+        <input type="text" class="form-control form-control-sm rne-pos-desc" required value="${escapeHtml(desc)}" placeholder="z.B. Getränkebezug Süsswasser">
+      </td>
+      <td>
+        <input type="number" step="1" min="1" class="form-control form-control-sm text-end rne-pos-qty" required value="${qty}" oninput="rneRecalculateRowTotal('${tr.id}')">
+      </td>
+      <td>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-light text-muted">CHF</span>
+          <input type="number" step="0.05" class="form-control form-control-sm text-end rne-pos-unitprice" required value="${unitPrice}" placeholder="0.00" oninput="rneRecalculateRowTotal('${tr.id}')">
+        </div>
+      </td>
+      <td>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-light text-muted">CHF</span>
+          <input type="number" class="form-control form-control-sm text-end fw-bold rne-pos-amt bg-light" readonly value="${initialAmount}">
+        </div>
+      </td>
+      <td class="text-center">
+        <button type="button" class="btn btn-xs btn-outline-danger" onclick="rneRemovePositionRow('${tr.id}')">
+          <i class="fas fa-trash-alt"></i>
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    rneRecalculateTotal();
+  }
+  window.rneAddPositionRow = rneAddPositionRow;
+
+  function rneRecalculateRowTotal(rowId) {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    const qty = Number(row.querySelector('.rne-pos-qty').value || 1);
+    const unitPrice = Number(row.querySelector('.rne-pos-unitprice').value || 0);
+    const amtEl = row.querySelector('.rne-pos-amt');
+    if (amtEl) {
+      amtEl.value = (qty * unitPrice).toFixed(2);
+    }
+    rneRecalculateTotal();
+  }
+  window.rneRecalculateRowTotal = rneRecalculateRowTotal;
+
+  function rneRemovePositionRow(rowId) {
+    const row = document.getElementById(rowId);
+    if (row) {
+      row.remove();
+      const idxs = document.querySelectorAll('.rne-pos-idx');
+      idxs.forEach((el, index) => el.textContent = index + 1);
+      rneRecalculateTotal();
+    }
+  }
+  window.rneRemovePositionRow = rneRemovePositionRow;
+
+  if (positions.length > 0) {
+    positions.forEach(p => {
+      if (typeof window.rneAddPositionRow === 'function') {
+        window.rneAddPositionRow(p.description || '', p.unit_price || p.amount || 0, p.quantity || 1);
+      }
+    });
+  } else {
+    if (typeof window.rneAddPositionRow === 'function') {
+      window.rneAddPositionRow();
+    }
+  }
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+};
+
+// SAVE EDITED INVOICE
+window.rnSaveEditInvoice = async function(event, invoiceId) {
+  event.preventDefault();
+
+  const name = document.getElementById('rne-name').value.trim();
+  const email = document.getElementById('rne-email').value.trim();
+  const strasse = document.getElementById('rne-strasse').value.trim();
+  const plz = document.getElementById('rne-plz').value.trim();
+  const ort = document.getElementById('rne-ort').value.trim();
+  const contactId = document.getElementById('rne-contact-id') ? document.getElementById('rne-contact-id').value.trim() : '';
+
+  let personNumber = document.getElementById('rne-person-number').value.trim();
+  if (!personNumber && contactId) {
+    personNumber = 'EXT-' + contactId;
+  }
+  const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+  
+  const invoiceHeader = {
+    id: invoiceId,
+    PersonNumber: personNumber,
+    name: name,
+    year: Number(document.getElementById('rne-year').value),
+    type: document.getElementById('rne-type').value,
+    total_amount: 0,
+    updated_at: nowStr
+  };
+
+  const posRows = document.querySelectorAll('#rne-positions-tbody tr');
+  const positions = [];
+  let totalAmount = 0;
+
+  posRows.forEach((row, index) => {
+    const desc = row.querySelector('.rne-pos-desc').value.trim();
+    const qty = Number(row.querySelector('.rne-pos-qty').value || 1);
+    const unitPrice = Number(row.querySelector('.rne-pos-unitprice').value || 0);
+    const amt = Number(row.querySelector('.rne-pos-amt').value || (qty * unitPrice));
+    positions.push({
+      position_nr: index + 1,
+      description: desc,
+      quantity: qty,
+      unit_price: unitPrice,
+      amount: amt
+    });
+    totalAmount += amt;
+  });
+
+  invoiceHeader.total_amount = totalAmount;
+
+  if (positions.length === 0) {
+    alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
+    return;
+  }
+
+  // 1. Optimistic Update
+  const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
+  let oldInv = null;
+  if (invIndex !== -1) {
+    oldInv = { ...window._invoices[invIndex] };
+    window._invoices[invIndex] = { ...window._invoices[invIndex], ...invoiceHeader };
+    window.renderRechnungen(); // Render table instantly!
+  }
+
+  // Falls externer Kontakt, Kontaktdaten auch lokal in _externalContacts aktualisieren
+  if (contactId || !document.getElementById('rne-person-number').value.trim() || String(document.getElementById('rne-person-number').value.trim()).startsWith('EXT')) {
+    const extIdx = contactId ? window._externalContacts.findIndex(c => String(c.id).trim() === String(contactId).trim()) : -1;
+    if (extIdx !== -1) {
+      window._externalContacts[extIdx] = {
+        ...window._externalContacts[extIdx],
+        name: name,
+        email: email,
+        strasse: strasse,
+        plz: plz,
+        ort: ort
+      };
+    }
+  }
+
+  // Close modal instantly
+  const modalEl = document.getElementById('rnModalEditInvoice');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  showSuccess(`🎉 Rechnung ${invoiceId} erfolgreich aktualisiert (Hintergrund-Synchronisation läuft)...`);
+
+  const payload = {
+    action: 'updateInvoice',
+    invoice: invoiceHeader,
+    positions: positions,
+    recipient: {
+      id: contactId,
+      vorname: name.split(' ')[0] || '',
+      nachname: name.split(' ').slice(1).join(' ') || '',
+      strasse: strasse,
+      plz: plz,
+      ort: ort,
+      email: email
+    }
+  };
+
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || "Fehler beim Aktualisieren im Backend.");
+    }
+    
+    // Server-Sync mit forceReload = true!
+    setTimeout(async () => {
+      await loadRechnungenData(true, true);
+      await loadInvoiceContactsData();
+    }, 1200);
+  } catch (err) {
+    console.error("❌ Optimistic Edit Invoice failed:", err);
+    // Revert optimistic update!
+    if (invIndex !== -1 && oldInv) {
+      window._invoices[invIndex] = oldInv;
+      window.renderRechnungen();
+    }
+    alert("❌ Fehler beim Bearbeiten der Rechnung (Revert durchgeführt): " + err.message);
+  }
+};
+
+// DELETE INVOICE PROMPT
+window.rnDeleteInvoicePrompt = async function(invoiceId) {
+  if (!confirm(`⚠️ Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?\n\nDadurch werden die Rechnungsdaten und alle Positionen in der Tabelle gelöscht.`)) {
+    return;
+  }
+
+  // 1. Optimistic Update
+  const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
+  let deletedInv = null;
+  if (invIndex !== -1) {
+    deletedInv = { ...window._invoices[invIndex], originalIndex: invIndex };
+    window._invoices.splice(invIndex, 1);
+    window.renderRechnungen(); // Render table instantly!
+  }
+
+  showSuccess(`🎉 Rechnung ${invoiceId} wurde gelöscht (Hintergrund-Synchronisation läuft)...`);
+
+  try {
+    const response = await apiFetch('rechnungen', { action: 'deleteInvoice', invoiceId }, 'POST');
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || "Fehler beim Löschen im Backend.");
+    }
+    
+    // Lazy sync after 1500ms
+    setTimeout(async () => {
+      await loadRechnungenData(true);
+    }, 1500);
+  } catch (err) {
+    console.error("❌ Optimistic Delete Invoice failed:", err);
+    // Revert optimistic update!
+    if (deletedInv !== null) {
+      window._invoices.splice(deletedInv.originalIndex, 0, deletedInv);
+      window.renderRechnungen();
+    }
+    alert("❌ Fehler beim Löschen der Rechnung (Revert durchgeführt): " + err.message);
+  }
+};
+
+// =====================================================================
+// 3-STUFIGES MAHNWESEN (MANUELL & AUTOMATISCHER SAMMEL-MAHNLAUF)
+// =====================================================================
+
+// Hilfsfunktion: Datumsdifferenz in Tagen berechnen
+function rnGetDaysSince(dateStr) {
+  if (!dateStr) return null;
+  let d = null;
+  const clean = String(dateStr).split(' ')[0].trim();
+  if (clean.includes('.')) {
+    const p = clean.split('.');
+    if (p.length === 3) d = new Date(`${p[2]}-${p[1]}-${p[0]}`);
+  } else if (clean.includes('-')) {
+    d = new Date(clean);
+  }
+  if (!d || isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// 1. MANUELLE MAHNUNG: DIALOG ÖFFNEN
+window.rnOpenMahnungModal = async function(invoiceId, name) {
+  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) {
+    alert("❌ Rechnung nicht gefunden: " + invoiceId);
+    return;
+  }
+
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
+
+  const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+  const nieMahnen = m && (m.Niemahnen === '1' || m.Niemahnen === true || m.Niemahnen === 1);
+
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+
+  const initialEmail = recipient.email || '';
+  const curStufe = Number(inv.mahnstufe || 0) || (inv.status === 'gemahnt' ? 1 : 0);
+  const recommendedStufe = Math.min(3, curStufe + 1);
+
+  const daysSinceCreated = rnGetDaysSince(inv.created_at);
+  const daysSinceLastMahnung = rnGetDaysSince(inv.mahn_datum);
+
+  let modalEl = document.getElementById('rnModalSendMahnung');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalSendMahnung';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const stufenLabels = {
+    1: { name: '1. Zahlungserinnerung', frist: '14 Tage Frist', fee: 'CHF 0.–', color: 'warning', icon: 'fa-bell' },
+    2: { name: '2. Mahnung', frist: '10 Tage Frist', fee: 'CHF 0.–', color: 'orange', icon: 'fa-exclamation-triangle' },
+    3: { name: '3. / Letzte Mahnung', frist: '7 Tage Frist (Rechtsfolge)', fee: 'CHF 20.– (optional)', color: 'danger', icon: 'fa-radiation' }
+  };
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-exclamation-triangle me-2 text-danger"></i>Mahnwesen – Rechnung ${escapeHtml(inv.id)}
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          ${nieMahnen ? `
+            <div class="alert alert-danger d-flex align-items-center mb-3 py-2 px-3 rounded-3">
+              <i class="fas fa-hand-paper fa-2x me-3"></i>
+              <div>
+                <strong>⚠️ VETO-HINWEIS: Option "Nie mahnen" ist aktiv!</strong><br>
+                <span class="small">Für ${escapeHtml(name)} ist in den Mitgliederstammdaten eine Mahnsperre hinterlegt. Mahnungen sollten nur nach ausdrücklicher Vorstandsrücksprache versendet werden.</span>
+              </div>
+            </div>
+          ` : ''}
+
+          ${daysSinceLastMahnung !== null && daysSinceLastMahnung < 10 ? `
+            <div class="alert alert-warning py-2 px-3 rounded-3 small mb-3">
+              <i class="fas fa-clock me-1 text-danger"></i>
+              <strong>Kurzer Mahnabstand:</strong> Die letzte Mahnung wurde erst vor <strong>${daysSinceLastMahnung} Tagen</strong> versendet (am ${escapeHtml(inv.mahn_datum || 'kürzlich')}). Empfohlen wird ein Mindestabstand von 10–14 Tagen.
+            </div>
+          ` : ''}
+
+          <!-- Rechnungsübersicht Kärtchen -->
+          <div class="bg-light p-3 rounded-3 border mb-3">
+            <div class="row g-2 align-items-center">
+              <div class="col-md-5">
+                <div class="text-muted small">Empfänger / Debitor</div>
+                <div class="fw-bold text-dark fs-6">${escapeHtml(inv.name)}</div>
+                <div class="text-muted small">${inv.PersonNumber ? (String(inv.PersonNumber).startsWith('EXT') ? 'Kontakt ' + escapeHtml(inv.PersonNumber) : 'Mgl-Nr: ' + escapeHtml(inv.PersonNumber)) : ''}</div>
+              </div>
+              <div class="col-md-3">
+                <div class="text-muted small">Rechnungsbetrag</div>
+                <div class="fw-bold text-primary font-monospace fs-6">${fmtChf(inv.total_amount)}</div>
+                <div class="text-muted small">${inv.type || 'Rechnung'} · ${inv.year}</div>
+              </div>
+              <div class="col-md-4 text-md-end">
+                <div class="text-muted small">Aktueller Mahnstatus</div>
+                ${curStufe > 0 ? `
+                  <span class="badge ${curStufe === 1 ? 'bg-warning text-dark' : (curStufe === 2 ? 'text-white' : 'bg-danger text-white')} px-2 py-1 rounded-pill" ${curStufe === 2 ? 'style="background-color: #fd7e14;"' : ''}>
+                    Stufe ${curStufe} (${escapeHtml(inv.mahn_datum || 'gemahnt')})
+                  </span>
+                ` : `
+                  <span class="badge bg-secondary px-2 py-1 rounded-pill">Noch nicht gemahnt</span>
+                `}
+                <div class="text-muted small mt-1">Rechnung erstellt: ${escapeHtml(String(inv.created_at || '–').split(' ')[0])}${daysSinceCreated !== null ? ` (${daysSinceCreated} Tage her)` : ''}</div>
+              </div>
+            </div>
+          </div>
+
+          <form id="rn-mahnung-form" onsubmit="rnExecuteSendMahnung(event, '${inv.id}')">
+            <!-- Stufenauswahl -->
+            <label class="form-label fw-bold text-dark mb-2">Zu versendende Mahnstufe auswählen:</label>
+            <div class="row g-2 mb-3">
+              ${[1, 2, 3].map(st => {
+                const info = stufenLabels[st];
+                const isRec = st === recommendedStufe;
+                const isChecked = st === recommendedStufe ? 'checked' : '';
+                return `
+                  <div class="col-md-4">
+                    <label class="card h-100 p-2.5 border rounded-3 text-start position-relative shadow-2xs cursor-pointer ${isRec ? 'border-primary bg-primary-subtle' : 'border-secondary-subtle'}" style="cursor: pointer;">
+                      <div class="d-flex align-items-center mb-1">
+                        <input class="form-check-input me-2 mt-0" type="radio" name="rnMahnstufeRadio" id="rnStufe${st}" value="${st}" ${isChecked} onchange="rnUpdateMahnungPreview(${st})">
+                        <span class="fw-bold small text-dark">${info.name}</span>
+                      </div>
+                      <div class="text-muted ps-4" style="font-size: 11px;">
+                        <div><i class="fas fa-hourglass-half me-1"></i>${info.frist}</div>
+                        <div><i class="fas fa-coins me-1"></i>Gebühr: ${info.fee}</div>
+                      </div>
+                      ${isRec ? `<span class="badge bg-primary position-absolute top-0 end-0 m-1" style="font-size:9px;">Empfohlen</span>` : ''}
+                    </label>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- E-Mail Adresse -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted mb-1">Empfänger E-Mail-Adresse *</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="fas fa-envelope text-primary"></i></span>
+                <input type="email" class="form-control" id="rn-mahnung-email" required value="${escapeHtml(initialEmail)}" placeholder="empfaenger@beispiel.ch">
+              </div>
+              <div class="form-text small">An diese Adresse wird das Mahnungs-PDF mit QR-Zahlteil versendet.</div>
+            </div>
+
+            <!-- Vorlagen-Vorschau (Collapsible / Dynamic) -->
+            <div class="card border rounded-3 p-3 bg-light mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-bold small text-primary"><i class="fas fa-eye me-1"></i>Text-Vorschau</span>
+                <span class="badge bg-secondary" id="rn-preview-stufe-badge">Stufe ${recommendedStufe}</span>
+              </div>
+              <div class="small fw-semibold text-dark mb-1" id="rn-preview-subject">...</div>
+              <div class="small text-muted font-monospace bg-white p-2 rounded border" id="rn-preview-body" style="max-height: 110px; overflow-y: auto; white-space: pre-wrap; font-size: 11px;">...</div>
+            </div>
+
+            <!-- Aktionen -->
+            <div class="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
+              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Abbrechen</button>
+              <button type="submit" class="btn btn-warning fw-bold px-4 shadow-sm" id="rn-mahnung-submit-btn">
+                <i class="fas fa-paper-plane me-1.5"></i> Mahnung jetzt versenden
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+
+  // Vorschautext initialisieren
+  rnUpdateMahnungPreview(recommendedStufe);
+};
+
+// Hilfsfunktion: Live-Vorschautext im Mahn-Modal aktualisieren
+window.rnUpdateMahnungPreview = function(stufe) {
+  const badgeEl = document.getElementById('rn-preview-stufe-badge');
+  const subjEl = document.getElementById('rn-preview-subject');
+  const bodyEl = document.getElementById('rn-preview-body');
+  if (!badgeEl || !subjEl || !bodyEl) return;
+
+  badgeEl.textContent = `Stufe ${stufe}`;
+  const key = `Mahnung ${stufe}`;
+  const l = (window._invoiceLayouts && (window._invoiceLayouts[key] || window._invoiceLayouts['Mahnung']))
+    || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[key] || rnGetDefaultLayouts()['Mahnung']) : null);
+
+  if (l) {
+    subjEl.textContent = `Betreff: ${l.mail_subject || 'Zahlungserinnerung'}`;
+    bodyEl.textContent = l.mail_body || l.intro || '...';
+  }
+};
+
+// 2. MANUELLE MAHNUNG: VERSAND AUSFÜHREN
+window.rnExecuteSendMahnung = async function(event, invoiceId) {
+  event.preventDefault();
+
+  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  if (!inv) return;
+
+  const emailInput = document.getElementById('rn-mahnung-email');
+  const targetEmail = emailInput ? emailInput.value.trim() : '';
+  if (!targetEmail || !targetEmail.includes('@')) {
+    alert("❌ Bitte geben Sie eine gültige E-Mail-Adresse ein.");
+    return;
+  }
+
+  const stufeEl = document.querySelector('input[name="rnMahnstufeRadio"]:checked');
+  const targetStufe = stufeEl ? Number(stufeEl.value) : 1;
+
+  const stufenLabels = {
+    1: '1. Zahlungserinnerung',
+    2: '2. Mahnung',
+    3: '3. / Letzte Mahnung vor Betreibung'
+  };
+  const stufenTitle = stufenLabels[targetStufe] || `Mahnung (Stufe ${targetStufe})`;
+
+  if (!confirm(`Möchtest du wirklich die "${stufenTitle}" für Rechnung ${invoiceId} (${inv.name || ''}) per E-Mail an "${targetEmail}" versenden?`)) {
+    return;
+  }
+
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+  recipient.email = targetEmail;
+
+  // Modal schliessen
+  const modalEl = document.getElementById('rnModalSendMahnung');
+  if (modalEl) {
+    const mInstance = bootstrap.Modal.getInstance(modalEl);
+    if (mInstance) mInstance.hide();
+  }
+
+  showLoadingOverlay(`Erstelle Mahnungs-PDF (${stufenTitle}) und sende E-Mail an ${inv.name}...`);
+
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender('Mahnung ' + targetStufe)
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType('Mahnung') : null);
+
+  const layoutKey = `Mahnung ${targetStufe}`;
+  const layout = (window._invoiceLayouts && (window._invoiceLayouts[layoutKey] || window._invoiceLayouts['Mahnung'])) || null;
+
+  const payload = {
+    action: 'sendMahnung',
+    invoiceId: invoiceId,
+    mahnstufe: targetStufe,
+    recipient: recipient,
+    sender: sender,
+    layout: layout
+  };
+
+  try {
+    const response = await apiFetch('rechnungen', payload, 'POST');
+    const result = await response.json();
+
+    if (result.success) {
+      // 1. Loading Overlay SOFORT ausblenden
+      hideLoadingOverlay();
+
+      // 2. Optimistic Status Update in RAM-Datenbank
+      const nowStr = result.mahn_datum || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+      inv.status = 'gemahnt';
+      inv.mahnstufe = targetStufe;
+      inv.mahn_datum = nowStr;
+      window.renderRechnungen();
+
+      // 3. Sichtbare Erfolgsbestätigung für den Anwender ausgeben
+      showSuccess(`🎉 ${stufenTitle} für Rechnung ${invoiceId} erfolgreich an ${targetEmail} versandt!`, 4000);
+
+      // 4. Sanfter Reload im Hintergrund nach Pufferzeit (kein UI-Flickern)
+      setTimeout(async () => {
+        try {
+          await loadRechnungenData(true, true);
+        } catch (_) {}
+      }, 1000);
+    } else {
+      throw new Error(result.error || "Mahnungs-Versand fehlgeschlagen.");
+    }
+  } catch (err) {
+    hideLoadingOverlay();
+    alert("❌ Mahnung Fehler: " + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+// Abwärtskompatibler Alias
+window.rnSendMahnungPrompt = window.rnOpenMahnungModal;
+
+// =====================================================================
+// 3. AUTOMATISCHER SAMMEL-MAHNLAUF (BATCH-MAHNUNG)
+// =====================================================================
+
+// Ermittelt alle Rechnungen, die fällig für eine Mahnung sind
+window.rnGetDueDunningInvoices = function() {
+  const invoices = window._invoices || [];
+  const candidates = [];
+
+  invoices.forEach(inv => {
+    const st = String(inv.status || '').toLowerCase();
+    if (st === 'bezahlt' || st === 'storniert') return;
+
+    const curStufe = Number(inv.mahnstufe || 0) || (st === 'gemahnt' ? 1 : 0);
+    const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
+    const nieMahnen = m && (m.Niemahnen === '1' || m.Niemahnen === true || m.Niemahnen === 1);
+
+    const daysSinceCreated = rnGetDaysSince(inv.created_at);
+    const daysSinceLastMahnung = rnGetDaysSince(inv.mahn_datum);
+
+    let isDue = false;
+    let nextStufe = 1;
+    let reason = '';
+
+    if (curStufe === 0) {
+      // Stufe 1 fällig, wenn Rechnung älter als 30 Tage ist
+      if (daysSinceCreated !== null && daysSinceCreated >= 30) {
+        isDue = true;
+        nextStufe = 1;
+        reason = `Rechnung seit ${daysSinceCreated} Tagen unbezahlt (Frist 30 Tage überschritten)`;
+      }
+    } else if (curStufe === 1) {
+      // Stufe 2 fällig, wenn Erinnerung mindestens 14 Tage her ist
+      if (daysSinceLastMahnung !== null && daysSinceLastMahnung >= 14) {
+        isDue = true;
+        nextStufe = 2;
+        reason = `Zahlungserinnerung vor ${daysSinceLastMahnung} Tagen versendet (Frist 14 Tage)`;
+      }
+    } else if (curStufe === 2) {
+      // Stufe 3 fällig, wenn 2. Mahnung mindestens 10 Tage her ist
+      if (daysSinceLastMahnung !== null && daysSinceLastMahnung >= 10) {
+        isDue = true;
+        nextStufe = 3;
+        reason = `2. Mahnung vor ${daysSinceLastMahnung} Tagen versendet (Frist 10 Tage)`;
+      }
+    }
+
+    if (isDue) {
+      const recipient = (typeof rnGetRecipientForInvoice === 'function')
+        ? rnGetRecipientForInvoice(inv)
+        : { email: '' };
+
+      candidates.push({
+        invoice: inv,
+        curStufe: curStufe,
+        nextStufe: nextStufe,
+        reason: reason,
+        nieMahnen: nieMahnen,
+        email: recipient.email || '',
+        daysOverdue: curStufe === 0 ? (daysSinceCreated - 30) : (daysSinceLastMahnung - (curStufe === 1 ? 14 : 10))
+      });
+    }
+  });
+
+  return candidates;
+};
+
+// Modal für Sammel-Mahnlauf öffnen
+window.rnOpenBatchMahnungModal = async function() {
+  // Externe Kontakte laden, falls noch nicht im Speicher
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
+
+  const candidates = window.rnGetDueDunningInvoices();
+
+  let modalEl = document.getElementById('rnModalBatchMahnung');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalBatchMahnung';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const stufenPills = {
+    1: '<span class="badge bg-warning text-dark px-2 py-1"><i class="fas fa-bell me-1"></i>Stufe 1 (Erinnerung)</span>',
+    2: '<span class="badge text-white px-2 py-1" style="background-color:#fd7e14;"><i class="fas fa-exclamation-triangle me-1"></i>Stufe 2 (2. Mahnung)</span>',
+    3: '<span class="badge bg-danger text-white px-2 py-1"><i class="fas fa-radiation me-1"></i>Stufe 3 (Letzte Mahnung)</span>'
+  };
+
+  const candidateRowsHtml = candidates.length > 0 ? candidates.map((c, idx) => {
+    const inv = c.invoice;
+    const canSend = !c.nieMahnen && c.email && c.email.includes('@');
+    const isChecked = canSend ? 'checked' : '';
+
+    return `
+      <tr class="${c.nieMahnen ? 'table-danger' : (!c.email ? 'table-warning' : '')}">
+        <td class="text-center">
+          <input type="checkbox" class="form-check-input rn-batch-check" id="rn-batch-item-${idx}" data-invoice-id="${inv.id}" data-next-stufe="${c.nextStufe}" data-email="${escapeHtml(c.email)}" ${isChecked} ${!canSend ? 'disabled' : ''} onchange="rnUpdateBatchSelectedCount()">
+        </td>
+        <td>
+          <div class="fw-bold text-dark">${escapeHtml(inv.name)}</div>
+          <div class="text-muted font-monospace small">${inv.id} · ${inv.type}</div>
+        </td>
+        <td class="text-end fw-bold font-monospace text-primary">${fmtChf(inv.total_amount)}</td>
+        <td>
+          ${stufenPills[c.nextStufe] || ''}
+          <div class="text-muted" style="font-size:10px;">${escapeHtml(c.reason)}</div>
+        </td>
+        <td>
+          ${c.email ? `<span class="small font-monospace text-dark">${escapeHtml(c.email)}</span>` : `<span class="badge bg-secondary">Keine E-Mail</span>`}
+          ${c.nieMahnen ? `<div class="badge bg-danger mt-1">⚠️ "Nie mahnen" aktiv</div>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('') : `
+    <tr>
+      <td colspan="5" class="text-center text-muted py-4">
+        <i class="fas fa-check-circle text-success fa-2x mb-2"></i><br>
+        <strong>Grossartig!</strong> Es sind aktuell keine offenen Rechnungen für eine Mahnung fällig.
+      </td>
+    </tr>
+  `;
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-bullhorn me-2"></i>Automatischer Sammel-Mahnlauf (Fällige Mahnungen prüfen)
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert alert-info py-2.5 px-3 rounded-3 small mb-3">
+            <i class="fas fa-info-circle me-1.5"></i>
+            Das System hat alle Rechnungen nach Schweizer Standardregeln geprüft:
+            <strong>Stufe 1</strong> nach 30 Tagen Fälligkeit · 
+            <strong>Stufe 2</strong> nach weiteren 14 Tagen · 
+            <strong>Stufe 3</strong> nach weiteren 10 Tagen. 
+            Mitglieder mit Sperre <em>"Nie mahnen"</em> werden automatisch geschützt.
+          </div>
+
+          <div class="table-responsive border rounded-3 mb-3" style="max-height: 420px; overflow-y: auto;">
+            <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+              <thead class="table-light sticky-top">
+                <tr>
+                  <th style="width: 40px;" class="text-center">
+                    <input type="checkbox" class="form-check-input" id="rn-batch-select-all" checked onchange="rnToggleBatchSelectAll(this.checked)">
+                  </th>
+                  <th>Empfänger / Rechnung</th>
+                  <th class="text-end" style="width: 130px;">Offener Betrag</th>
+                  <th>Vorgeschlagene Mahnung</th>
+                  <th>E-Mail & Prüfstatus</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${candidateRowsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-2 border-top">
+            <div class="text-muted small">
+              <span id="rn-batch-selected-label">0</span> Rechnungen für den Versand ausgewählt.
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Schliessen</button>
+              <button type="button" class="btn btn-warning fw-bold px-4 shadow-sm" id="rn-batch-submit-btn" onclick="rnExecuteBatchMahnung()" ${candidates.length === 0 ? 'disabled' : ''}>
+                <i class="fas fa-paper-plane me-1.5"></i> Ausgewählte Mahnungen jetzt versenden
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+
+  rnUpdateBatchSelectedCount();
+};
+
+// Hilfsfunktion: Select-All Checkbox im Batch-Mahnlauf
+window.rnToggleBatchSelectAll = function(isChecked) {
+  const checkboxes = document.querySelectorAll('.rn-batch-check:not(:disabled)');
+  checkboxes.forEach(cb => cb.checked = isChecked);
+  rnUpdateBatchSelectedCount();
+};
+
+// Hilfsfunktion: Zähler der ausgewählten Mahnungen aktualisieren
+window.rnUpdateBatchSelectedCount = function() {
+  const checkedBoxes = document.querySelectorAll('.rn-batch-check:checked');
+  const count = checkedBoxes.length;
+  const label = document.getElementById('rn-batch-selected-label');
+  const btn = document.getElementById('rn-batch-submit-btn');
+
+  if (label) label.textContent = count;
+  if (btn) {
+    btn.disabled = count === 0;
+    btn.innerHTML = `<i class="fas fa-paper-plane me-1.5"></i> ${count} Mahnung${count === 1 ? '' : 'en'} jetzt versenden`;
+  }
+};
+
+// 4. AUTOMATISCHER SAMMEL-MAHNLAUF: AUSFÜHRUNG
+window.rnExecuteBatchMahnung = async function() {
+  const checkedBoxes = document.querySelectorAll('.rn-batch-check:checked');
+  if (checkedBoxes.length === 0) {
+    alert("❌ Bitte wählen Sie mindestens eine Rechnung für den Mahnlauf aus.");
+    return;
+  }
+
+  if (!confirm(`Möchtest du wirklich ${checkedBoxes.length} Mahnungen generieren und per E-Mail versenden?`)) {
+    return;
+  }
+
+  const items = [];
+  checkedBoxes.forEach(cb => {
+    const invId = cb.getAttribute('data-invoice-id');
+    const stufe = Number(cb.getAttribute('data-next-stufe') || 1);
+    const email = cb.getAttribute('data-email');
+    const inv = window._invoices.find(i => String(i.id) === String(invId));
+    if (inv) {
+      const recipient = (typeof rnGetRecipientForInvoice === 'function')
+        ? rnGetRecipientForInvoice(inv)
+        : { email: email };
+      recipient.email = email;
+
+      items.push({
+        invoiceId: invId,
+        mahnstufe: stufe,
+        recipient: recipient
+      });
+    }
+  });
+
+  // Modal schliessen
+  const modalEl = document.getElementById('rnModalBatchMahnung');
+  if (modalEl) {
+    const mInstance = bootstrap.Modal.getInstance(modalEl);
+    if (mInstance) mInstance.hide();
+  }
+
+  showLoadingOverlay(`Verarbeite Sammel-Mahnlauf (${items.length} Mahnungen werden erstellt und versendet)...`);
+
+  try {
+    const response = await apiFetch('rechnungen', {
+      action: 'sendBatchMahnung',
+      items: items
+    }, 'POST');
+    const result = await response.json();
+
+    if (result.success) {
+      hideLoadingOverlay();
+      // Optimistic update
+      const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+      items.forEach(itm => {
+        const inv = window._invoices.find(i => String(i.id) === String(itm.invoiceId));
+        if (inv) {
+          inv.status = 'gemahnt';
+          inv.mahnstufe = itm.mahnstufe;
+          inv.mahn_datum = nowStr;
+        }
+      });
+      window.renderRechnungen();
+      showSuccess(`🎉 ${result.message || 'Sammel-Mahnlauf erfolgreich abgeschlossen!'}`, 4000);
+      setTimeout(async () => {
+        try {
+          await loadRechnungenData(true, true);
+        } catch (_) {}
+      }, 1000);
+    } else {
+      throw new Error(result.error || "Sammel-Mahnlauf fehlgeschlagen.");
+    }
+  } catch (err) {
+    hideLoadingOverlay();
+    alert("❌ Sammel-Mahnlauf Fehler: " + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+// =====================================================================
+// EXTERNE KONTAKTE VERWALTUNG (CRUD STRENG NACH ID)
+// =====================================================================
+window.rnOpenContactModal = function(contactId = null) {
+  let modalEl = document.getElementById('rnModalContact');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalContact';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  let contact = null;
+  if (contactId) {
+    contact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
+  }
+
+  const isFirma = contact ? (contact.typ === 'firma' || Boolean(contact.firma)) : false;
+  const currentCategory = (contact && contact.kategorie) ? contact.kategorie : (isFirma ? 'Sponsor' : 'Privat');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 rounded-4 shadow-lg">
+        <div class="modal-header ${contact ? 'bg-warning text-dark' : 'bg-primary text-white'} border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas ${contact ? 'fa-user-edit' : 'fa-user-plus'} me-2"></i>
+            ${contact ? 'Externen Kontakt bearbeiten' : 'Neuer externer Kontakt erfassen'}
+          </h5>
+          <button type="button" class="btn-close ${contact ? '' : 'btn-close-white'}" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="rn-contact-form" onsubmit="rnSaveContactForm(event)">
+            <input type="hidden" id="rnc-crud-id" value="${contact ? contact.id : ''}">
+            
+            <!-- Kontakt-Typ Umschaltung -->
+            <div class="card bg-light border-0 rounded-3 p-3 mb-3">
+              <div class="row align-items-center g-2">
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-muted mb-1">Kontaktart *</label>
+                  <div class="btn-group w-100 shadow-sm" role="group">
+                    <input type="radio" class="btn-check" name="rnc_typ_toggle" id="rnc-type-privat" value="privat" ${!isFirma ? 'checked' : ''} onchange="rnToggleContactType('privat')">
+                    <label class="btn btn-outline-primary fw-bold" for="rnc-type-privat">
+                      <i class="fas fa-user me-1.5"></i> Privatperson
+                    </label>
+
+                    <input type="radio" class="btn-check" name="rnc_typ_toggle" id="rnc-type-firma" value="firma" ${isFirma ? 'checked' : ''} onchange="rnToggleContactType('firma')">
+                    <label class="btn btn-outline-primary fw-bold" for="rnc-type-firma">
+                      <i class="fas fa-building me-1.5"></i> Firma / Organisation
+                    </label>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-muted mb-1">Kategorie / Segment</label>
+                  <select class="form-select shadow-sm" id="rnc-crud-kategorie" onchange="rnUpdateContactLivePreview()">
+                    <option value="Privat" ${currentCategory === 'Privat' ? 'selected' : ''}>👤 Privatperson</option>
+                    <option value="Sponsor" ${currentCategory === 'Sponsor' ? 'selected' : ''}>⭐ Sponsor / Werbepartner</option>
+                    <option value="Gönner" ${currentCategory === 'Gönner' ? 'selected' : ''}>🤝 Gönner / Spender</option>
+                    <option value="Gemeinde" ${currentCategory === 'Gemeinde' ? 'selected' : ''}>🏛️ Gemeinde / Behörde</option>
+                    <option value="Mieter" ${currentCategory === 'Mieter' ? 'selected' : ''}>🏠 Mieter Schützenhaus</option>
+                    <option value="Lieferant" ${currentCategory === 'Lieferant' ? 'selected' : ''}>📦 Lieferant / Partner</option>
+                    <option value="Verband" ${currentCategory === 'Verband' ? 'selected' : ''}>🎯 Verband / Verein</option>
+                    <option value="Sonstige" ${currentCategory === 'Sonstige' ? 'selected' : ''}>📌 Sonstige</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- FIRMENFELDER -->
+            <div id="rnc-firma-section" style="${isFirma ? '' : 'display:none;'}">
+              <div class="row g-3 mb-3">
+                <div class="col-md-7">
+                  <label class="form-label fw-bold small text-muted">Firma / Organisationsname *</label>
+                  <input type="text" class="form-control fw-bold text-dark" id="rnc-crud-firma" value="${escapeHtml(contact ? contact.firma || contact.name || '' : '')}" placeholder="z.B. Müller Holzbau AG oder Gemeinde Muhen" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label fw-bold small text-muted">Abteilung / Zusatz (optional)</label>
+                  <input type="text" class="form-control" id="rnc-crud-abteilung" value="${escapeHtml(contact ? contact.abteilung || '' : '')}" placeholder="z.B. Finanzverwaltung oder Sponsoring" oninput="rnUpdateContactLivePreview()">
+                </div>
+              </div>
+            </div>
+
+            <!-- ANSPRECHPERSON / NAME -->
+            <div class="card border rounded-3 p-3 mb-3 bg-white">
+              <div class="fw-bold small text-primary mb-2">
+                <i class="fas fa-id-card me-1.5"></i>
+                <span id="rnc-person-section-title">${isFirma ? 'Ansprechperson / Kontaktperson (optional)' : 'Persönliche Angaben (Privatperson)'}</span>
+              </div>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label fw-bold small text-muted">Anrede</label>
+                  <select class="form-select" id="rnc-crud-anrede" onchange="rnUpdateContactLivePreview()">
+                    <option value="" ${!contact || !contact.anrede ? 'selected' : ''}>– Keine –</option>
+                    <option value="Herr" ${contact && contact.anrede === 'Herr' ? 'selected' : ''}>Herr</option>
+                    <option value="Frau" ${contact && contact.anrede === 'Frau' ? 'selected' : ''}>Frau</option>
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold small text-muted">Vorname</label>
+                  <input type="text" class="form-control" id="rnc-crud-vorname" value="${escapeHtml(contact ? contact.vorname || '' : '')}" placeholder="Hans" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label fw-bold small text-muted">Nachname *</label>
+                  <input type="text" class="form-control fw-bold" id="rnc-crud-nachname" value="${escapeHtml(contact ? contact.nachname || (!isFirma ? contact.name || '' : '') : '')}" placeholder="Meier" oninput="rnUpdateContactLivePreview()">
+                </div>
+              </div>
+            </div>
+
+            <!-- ADRESSE -->
+            <div class="card border rounded-3 p-3 mb-3 bg-white">
+              <div class="fw-bold small text-primary mb-2">
+                <i class="fas fa-map-marker-alt me-1.5"></i> Postadresse (QR-Rechnung & Briefkopf konform)
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-md-8">
+                  <label class="form-label fw-bold small text-muted">Strasse & Hausnummer *</label>
+                  <input type="text" class="form-control" id="rnc-crud-strasse" required value="${escapeHtml(contact ? contact.strasse || '' : '')}" placeholder="Hauptstrasse 12" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold small text-muted">Adresszusatz / c/o / Postfach</label>
+                  <input type="text" class="form-control" id="rnc-crud-adresszusatz" value="${escapeHtml(contact ? contact.adresszusatz || '' : '')}" placeholder="z.B. Postfach 45" oninput="rnUpdateContactLivePreview()">
+                </div>
+              </div>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label fw-bold small text-muted">PLZ *</label>
+                  <input type="text" class="form-control font-monospace" id="rnc-crud-plz" required value="${escapeHtml(contact ? contact.plz || '' : '')}" placeholder="5037" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-muted">Ort *</label>
+                  <input type="text" class="form-control" id="rnc-crud-ort" required value="${escapeHtml(contact ? contact.ort || '' : '')}" placeholder="Muhen" oninput="rnUpdateContactLivePreview()">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label fw-bold small text-muted">Land</label>
+                  <input type="text" class="form-control font-monospace text-uppercase" id="rnc-crud-land" value="${escapeHtml(contact ? contact.land || 'CH' : 'CH')}" placeholder="CH" oninput="rnUpdateContactLivePreview()">
+                </div>
+              </div>
+            </div>
+
+            <!-- KONTAKTDATEN & BEMERKUNGEN -->
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-muted"><i class="fas fa-envelope me-1"></i>E-Mail (Rechnungsversand)</label>
+                <input type="email" class="form-control" id="rnc-crud-email" value="${escapeHtml(contact ? contact.email || '' : '')}" placeholder="rechnung@beispiel.ch">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-muted"><i class="fas fa-phone me-1"></i>Telefon / Mobil</label>
+                <input type="text" class="form-control" id="rnc-crud-telefon" value="${escapeHtml(contact ? contact.telefon || '' : '')}" placeholder="+41 62 123 45 67">
+              </div>
+              <div class="col-md-12">
+                <label class="form-label fw-bold small text-muted"><i class="fas fa-sticky-note me-1"></i>Bemerkungen / Notizen / Vereinbarungen</label>
+                <input type="text" class="form-control" id="rnc-crud-bemerkungen" value="${escapeHtml(contact ? contact.bemerkungen || '' : '')}" placeholder="z.B. Sponsoringvertrag 2026/2027; Rabatt 10%">
+              </div>
+            </div>
+
+            <!-- LIVE ADRESSVORSCHAU -->
+            <div class="card bg-light border-primary border-opacity-25 rounded-3 p-3 mb-4">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-bold small text-primary"><i class="fas fa-eye me-1.5"></i>Live-Vorschau Rechnungsanschrift (PDF & QR)</span>
+                <span class="badge bg-light text-muted border font-monospace small">ID: ${contact ? 'EXT-' + contact.id : '(Neu)'}</span>
+              </div>
+              <div id="rnc-live-preview-box" class="p-2.5 bg-white rounded-2 border font-monospace text-dark small" style="white-space: pre-line; line-height: 1.4;">
+                <!-- Wird dynamisch befüllt -->
+              </div>
+            </div>
+
+            <div class="d-grid">
+              <button type="submit" class="btn ${contact ? 'btn-warning' : 'btn-primary'} py-2.5 fw-bold rounded-3 shadow">
+                <i class="fas fa-save me-1.5"></i> ${contact ? 'Änderungen speichern' : 'Kontakt verbindlich anlegen'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  window.rnToggleContactType = function(type) {
+    const isF = type === 'firma';
+    const fSec = document.getElementById('rnc-firma-section');
+    const pTitle = document.getElementById('rnc-person-section-title');
+    const firmaInput = document.getElementById('rnc-crud-firma');
+    const nachnameInput = document.getElementById('rnc-crud-nachname');
+
+    if (fSec) fSec.style.display = isF ? '' : 'none';
+    if (pTitle) pTitle.textContent = isF ? 'Ansprechperson / Kontaktperson (optional)' : 'Persönliche Angaben (Privatperson)';
+    
+    if (firmaInput) {
+      if (isF) firmaInput.setAttribute('required', 'required');
+      else firmaInput.removeAttribute('required');
+    }
+    if (nachnameInput) {
+      if (!isF) nachnameInput.setAttribute('required', 'required');
+      else nachnameInput.removeAttribute('required');
+    }
+
+    rnUpdateContactLivePreview();
+  };
+
+  window.rnUpdateContactLivePreview = function() {
+    const isF = document.getElementById('rnc-type-firma')?.checked;
+    const firma = document.getElementById('rnc-crud-firma')?.value.trim() || '';
+    const abteilung = document.getElementById('rnc-crud-abteilung')?.value.trim() || '';
+    const anrede = document.getElementById('rnc-crud-anrede')?.value.trim() || '';
+    const vorname = document.getElementById('rnc-crud-vorname')?.value.trim() || '';
+    const nachname = document.getElementById('rnc-crud-nachname')?.value.trim() || '';
+    const strasse = document.getElementById('rnc-crud-strasse')?.value.trim() || 'Musterstrasse 1';
+    const zusatz = document.getElementById('rnc-crud-adresszusatz')?.value.trim() || '';
+    const plz = document.getElementById('rnc-crud-plz')?.value.trim() || '5037';
+    const ort = document.getElementById('rnc-crud-ort')?.value.trim() || 'Muhen';
+    const land = document.getElementById('rnc-crud-land')?.value.trim() || 'CH';
+
+    const lines = [];
+    if (isF) {
+      lines.push(firma || '[Firmenname / Organisation]');
+      if (abteilung) lines.push(abteilung);
+      const cpName = [anrede, vorname, nachname].filter(Boolean).join(' ');
+      if (cpName) lines.push(cpName);
+    } else {
+      if (anrede) lines.push(anrede);
+      const pName = [vorname, nachname].filter(Boolean).join(' ');
+      lines.push(pName || '[Vorname Nachname]');
+    }
+
+    lines.push(strasse);
+    if (zusatz) lines.push(zusatz);
+    lines.push(`${plz} ${ort}${land && land !== 'CH' ? ` (${land})` : ''}`);
+
+    const previewEl = document.getElementById('rnc-live-preview-box');
+    if (previewEl) {
+      previewEl.textContent = lines.join('\n');
+    }
+  };
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+  rnUpdateContactLivePreview();
+};
+
+window.rnSaveContactForm = async function(event) {
+  event.preventDefault();
+  const id = document.getElementById('rnc-crud-id').value.trim();
+  const typ = document.getElementById('rnc-type-firma')?.checked ? 'firma' : 'privat';
+  const kategorie = document.getElementById('rnc-crud-kategorie').value.trim();
+  const firma = document.getElementById('rnc-crud-firma') ? document.getElementById('rnc-crud-firma').value.trim() : '';
+  const abteilung = document.getElementById('rnc-crud-abteilung') ? document.getElementById('rnc-crud-abteilung').value.trim() : '';
+  const anrede = document.getElementById('rnc-crud-anrede').value.trim();
+  const vorname = document.getElementById('rnc-crud-vorname').value.trim();
+  const nachname = document.getElementById('rnc-crud-nachname').value.trim();
+  const strasse = document.getElementById('rnc-crud-strasse').value.trim();
+  const adresszusatz = document.getElementById('rnc-crud-adresszusatz').value.trim();
+  const plz = document.getElementById('rnc-crud-plz').value.trim();
+  const ort = document.getElementById('rnc-crud-ort').value.trim();
+  const land = document.getElementById('rnc-crud-land').value.trim() || 'CH';
+  const email = document.getElementById('rnc-crud-email').value.trim();
+  const telefon = document.getElementById('rnc-crud-telefon').value.trim();
+  const bemerkungen = document.getElementById('rnc-crud-bemerkungen').value.trim();
+
+  // Name für Fallback/Legacy
+  const name = typ === 'firma' ? (firma || [vorname, nachname].join(' ').trim()) : [vorname, nachname].join(' ').trim() || firma;
+
+  const contactObj = {
+    id,
+    typ,
+    kategorie,
+    firma,
+    abteilung,
+    anrede,
+    vorname,
+    nachname,
+    name,
+    strasse,
+    adresszusatz,
+    plz,
+    ort,
+    land,
+    email,
+    telefon,
+    bemerkungen
+  };
+
+  const modalEl = document.getElementById('rnModalContact');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  showLoadingOverlay('Speichere externen Kontakt...');
+  try {
+    const res = await apiFetch('rechnungen', { action: 'saveContact', contact: contactObj }, 'POST');
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error || 'Fehler beim Speichern');
+    
+    showSuccess(result.message || 'Kontakt erfolgreich gespeichert.');
+    await loadInvoiceContactsData();
+
+    const savedId = result.id || id;
+
+    // Falls das "Neue Rechnung"-Modal geöffnet ist: Dropdown aktualisieren & Kontakt direkt anwählen
+    const memberSelectEl = document.getElementById('rnc-member-select');
+    if (memberSelectEl) {
+      const memberOptions = (window._mglData || []).map(m => 
+        `<option value="MBR:${m.PersonNumber}">${m.LastName} ${m.FirstName} (Nr: ${m.PersonNumber})</option>`
+      ).join('');
+
+      const externalOptions = (window._externalContacts || []).map(c => {
+        const isFirma = c.typ === 'firma' || Boolean(c.firma);
+        const label = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `Kontakt #${c.id}`);
+        const kat = c.kategorie ? ` [${c.kategorie}]` : '';
+        return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
+      }).join('');
+
+      memberSelectEl.innerHTML = `
+        <option value="">-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>
+        ${window._externalContacts.length > 0 ? `
+        <optgroup label="Gespeicherte externe Kontakte (Sponsoren, Mieter, Firmen, Privat)">
+          ${externalOptions}
+        </optgroup>
+        ` : ''}
+        <optgroup label="Vereinsmitglieder">
+          ${memberOptions}
+        </optgroup>
+      `;
+
+      if (savedId) {
+        memberSelectEl.value = `EXT:${savedId}`;
+        if (typeof window.rnHandleMemberSelect === 'function') {
+          window.rnHandleMemberSelect(`EXT:${savedId}`);
+        }
+      }
+    }
+
+    if (window._rechnungenActiveTab === 'kontakte') {
+      renderActiveRechnungenTab();
+    }
+  } catch (err) {
+    alert('❌ Fehler: ' + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
+
+window.rnDeleteContactPrompt = async function(contactId) {
+  const c = (window._externalContacts || []).find(x => String(x.id).trim() === String(contactId).trim());
+  const label = c ? (window.rnGetContactDisplayName ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `ID ${c.id}`)) : `ID ${contactId}`;
+  if (!confirm(`Möchten Sie den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`)) return;
+
+  showLoadingOverlay('Lösche Kontakt...');
+  try {
+    const res = await apiFetch('rechnungen', { action: 'deleteContact', id: contactId }, 'POST');
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error || 'Fehler beim Löschen');
+
+    showSuccess('Kontakt gelöscht.');
+    window._externalContacts = window._externalContacts.filter(x => String(x.id).trim() !== String(contactId).trim());
+    if (window._rechnungenActiveTab === 'kontakte') {
+      renderActiveRechnungenTab();
+    }
+  } catch (err) {
+    alert('❌ Fehler: ' + err.message);
+  } finally {
+    hideLoadingOverlay();
+  }
+};
