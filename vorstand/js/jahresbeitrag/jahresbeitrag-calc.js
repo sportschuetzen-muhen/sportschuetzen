@@ -82,86 +82,113 @@ function jbCalculateLiveTotal(m, settings) {
     positions.push({ name: 'Lizenz anderer Verein', betrag: getFee('LI003', 0), typ: 'Debit' });
   }
   
-  // 3. Schützenhaus (GE001)
-  let chargeGe = false;
-  if (settings && settings.schuetzenhaus !== undefined) {
-    chargeGe = !!settings.schuetzenhaus;
-  } else {
-    const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
-    chargeGe = !isJunior && hatG50mOwn && !isPassiv;
-  }
-  
-  if (chargeGe) {
-    positions.push({ name: 'Schützenhaus (Infrastrukturbeitrag)', betrag: getFee('GE001', 50), typ: 'Debit' });
-  }
-  
-  // 4. Turniere
-  // KK Volksschiessen (KK008)
-  const volk = settings.kk_volksschiessen || 'keine';
-  if (volk !== 'keine') {
-    let stiche = 1;
-    if (volk === '2') stiche = 2;
-    if (volk === '3') stiche = 3;
-    const volkFee = getFee('KK008', 15);
-    positions.push({ name: `KK Volksschiessen (${stiche} Stich${stiche > 1 ? 'e' : ''})`, betrag: stiche * volkFee, typ: 'Debit' });
-  }
-  
-  // SSV dez (KK002/003/004/005)
-  const ssvdez = settings.ssv_dez || 'keine';
-  if (ssvdez !== 'keine') {
-    if (ssvdez === 'liegend') {
-      positions.push({ name: '50m AG DEZ liegend', betrag: getFee('KK002', 24), typ: 'Debit' });
-    } else if (ssvdez === '2-stellung') {
-      positions.push({ name: '50m AG DEZ 2-Stellung', betrag: getFee('KK003', 24), typ: 'Debit' });
-    } else if (ssvdez === '3-stellung') {
-      positions.push({ name: '50m AG DEZ 3-Stellung', betrag: getFee('KK004', 24), typ: 'Debit' });
-    } else if (ssvdez === 'liegend_2_3') {
-      const sumDez = getFee('KK002', 24) + getFee('KK003', 24) + getFee('KK004', 24);
-      positions.push({ name: '50m AG DEZ liegend & 2-Stellung & 3-Stellung', betrag: sumDez, typ: 'Debit' });
-    } else if (ssvdez === 'js') {
-      positions.push({ name: '50m AG DEZ (Jungschütze)', betrag: 0, typ: 'Debit' });
+  // 3. Dynamische Events, Wettkämpfe & Turniere
+  // Erstelle eine konsolidierte Map: falls settings.events vorhanden ist, nutze diese,
+  // ansonsten mappe vorhandene Legacy-Felder abwärtskompatibel.
+  const eventsMap = settings.events ? { ...settings.events } : {};
+
+  if (!settings.events) {
+    // Legacy-Defaulting & Fallback
+    let chargeGe = false;
+    if (settings && settings.schuetzenhaus !== undefined) {
+      chargeGe = !!settings.schuetzenhaus;
+    } else {
+      const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
+      chargeGe = !isJunior && hatG50mOwn && !isPassiv;
     }
+    if (chargeGe) eventsMap['GE001'] = 1;
+
+    if (settings.kk_volksschiessen && settings.kk_volksschiessen !== 'keine') {
+      eventsMap['KK008'] = Number(settings.kk_volksschiessen);
+    }
+    if (settings.ssv_dez === 'liegend') eventsMap['KK002'] = 1;
+    if (settings.ssv_dez === '2-stellung') eventsMap['KK003'] = 1;
+    if (settings.ssv_dez === '3-stellung') eventsMap['KK004'] = 1;
+    if (settings.ssv_dez === 'liegend_2_3') {
+      eventsMap['KK002'] = 1;
+      eventsMap['KK003'] = 1;
+      eventsMap['KK004'] = 1;
+    }
+    if (settings.ssv_dez === 'sv') eventsMap['KK005'] = 1;
+    if (settings.kk_grenzland && settings.kk_grenzland !== 'keine') eventsMap['KK001'] = 1;
+
+    if (settings.kk_verband) eventsMap['KK006'] = 1;
+    if (settings.kk_verein)  eventsMap['KK007'] = 1;
+
+    if (settings.lg_ag_dez)         eventsMap['LG001'] = 1;
+    if (settings.lg_ag_dez_auflage) eventsMap['LG002'] = 1;
+    if (settings.lg_ch_dez)         eventsMap['LG003'] = 1;
+    if (settings.lg_ch_dez_auflage) eventsMap['LG004'] = 1;
+    if (settings.lg_verband)        eventsMap['LG005'] = 1;
+    if (settings.lg_verein)         eventsMap['LG006'] = 1;
+    if (settings.lg_ch_kniend)      eventsMap['LG007'] = 1;
   }
-  
-  // KK Grenzland (KK001)
-  const grenz = settings.kk_grenzland || 'keine';
-  if (grenz === '1') {
-    positions.push({ name: '50m Grenzland', betrag: getFee('KK001', 15), typ: 'Debit' });
-  } else if (grenz === 'js') {
-    positions.push({ name: '50m Grenzland (Jungschütze)', betrag: 0, typ: 'Debit' });
-  }
-  
-  // Toggles for 50m
-  if (settings.kk_verband) positions.push({ name: '50m Verbandsschiessen', betrag: getFee('KK006', 15), typ: 'Debit' });
-  if (settings.kk_verein)  positions.push({ name: '50m Vereinsschiessen', betrag: getFee('KK007', 15), typ: 'Debit' });
-  
-  // Toggles for 10m
-  if (settings.lg_ag_dez)         positions.push({ name: '10m AG DEZ', betrag: getFee('LG001', 17), typ: 'Debit' });
-  if (settings.lg_ag_dez_auflage) positions.push({ name: '10m AG DEZ Auflage', betrag: getFee('LG002', 17), typ: 'Debit' });
-  if (settings.lg_ch_dez)         positions.push({ name: '10m CH DEZ', betrag: getFee('LG003', 20), typ: 'Debit' });
-  if (settings.lg_ch_dez_auflage) positions.push({ name: '10m CH DEZ Auflage', betrag: getFee('LG004', 20), typ: 'Debit' });
-  if (settings.lg_verband)        positions.push({ name: '10m Verbandsschiessen', betrag: getFee('LG005', 11), typ: 'Debit' });
-  if (settings.lg_verein)         positions.push({ name: '10m Vereinsschiessen', betrag: getFee('LG006', 14), typ: 'Debit' });
-  if (settings.lg_ch_kniend)      positions.push({ name: '10m CH Kniendmeisterschaft', betrag: getFee('LG007', 20), typ: 'Debit' });
-  
-  // 4b. Variable Zusatzpositionen (z.B. Beitrag Vereinsjacke, Eidg. Schützenfest)
-  if (settings.z1_active && settings.z1_text && Number(settings.z1_betrag) !== 0) {
+
+  // Iteriere über alle konfigurierten Events in eventsMap
+  Object.entries(eventsMap).forEach(([eventKey, val]) => {
+    const keyClean = String(eventKey).trim().toUpperCase();
+    const numVal = Number(val || 0);
+    if (numVal <= 0) return;
+
+    const feeObj = (window._jbGebuehren || []).find(f => String(f.key || '').trim().toUpperCase() === keyClean);
+    const unitPrice = feeObj ? Number(feeObj.betrag || 0) : getFee(keyClean, 0);
+    
+    // Counter-Typen wie Volksschiessen multiplizieren mit der Anzahl Stiche
+    const isCounter = (feeObj && feeObj.ui_typ === 'counter') || keyClean === 'KK008';
+    const count = isCounter ? numVal : 1;
+    const totalFee = count * unitPrice;
+
+    let desc = feeObj ? (feeObj.bezeichnungfrontend || feeObj.bezeichnung || keyClean) : keyClean;
+    if (isCounter && count > 0) {
+      desc += ` (${count} Stich${count > 1 ? 'e' : ''})`;
+    }
+
     positions.push({
-      name: settings.z1_text,
-      betrag: Number(settings.z1_betrag || 0),
-      konto: settings.z1_konto || getFeeAccount('Z001', '8500'),
-      locked: settings.z1_locked !== false,
-      typ: 'Debit'
+      name: desc,
+      betrag: totalFee,
+      konto: getFeeAccount(keyClean, ''),
+      typ: 'Debit',
+      key: keyClean
     });
-  }
-  if (settings.z2_active && settings.z2_text && Number(settings.z2_betrag) !== 0) {
-    positions.push({
-      name: settings.z2_text,
-      betrag: Number(settings.z2_betrag || 0),
-      konto: settings.z2_konto || getFeeAccount('Z002', '1300'),
-      locked: settings.z2_locked !== false,
-      typ: 'Debit'
+  });
+
+  // 4. Variable Zusatzpositionen (Freie Beträge)
+  const extrasList = settings.extras || [];
+  if (extrasList.length > 0) {
+    extrasList.forEach(ex => {
+      if (ex.active && ex.text && Number(ex.betrag) !== 0) {
+        positions.push({
+          name: ex.text,
+          betrag: Number(ex.betrag || 0),
+          konto: ex.konto || getFeeAccount(ex.key || 'Z001', '8500'),
+          locked: ex.locked !== false,
+          typ: 'Debit',
+          key: ex.key || 'ZUSATZ'
+        });
+      }
     });
+  } else {
+    // Abwärtskompatibilität für z1 und z2
+    if (settings.z1_active && settings.z1_text && Number(settings.z1_betrag) !== 0) {
+      positions.push({
+        name: settings.z1_text,
+        betrag: Number(settings.z1_betrag || 0),
+        konto: settings.z1_konto || getFeeAccount('Z001', '8500'),
+        locked: settings.z1_locked !== false,
+        typ: 'Debit',
+        key: 'Z001'
+      });
+    }
+    if (settings.z2_active && settings.z2_text && Number(settings.z2_betrag) !== 0) {
+      positions.push({
+        name: settings.z2_text,
+        betrag: Number(settings.z2_betrag || 0),
+        konto: settings.z2_konto || getFeeAccount('Z002', '1300'),
+        locked: settings.z2_locked !== false,
+        typ: 'Debit',
+        key: 'Z002'
+      });
+    }
   }
   
   // 5. Rabatte

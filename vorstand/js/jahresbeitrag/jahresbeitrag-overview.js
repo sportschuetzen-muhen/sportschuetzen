@@ -241,6 +241,13 @@ function jbRenderRows(data) {
       ${canEdit ? `
       <td class="align-middle text-end">
         <div class="d-inline-flex gap-1">
+          <!-- 0. IN SCHNELLERFASSUNG BEARBEITEN -->
+          <button class="btn btn-xs btn-outline-primary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+                  onclick="jbSwitchToSchnellerfassung('${r.PersonNumber}')"
+                  title="In Schnellerfassung bearbeiten" style="min-width: 32px;">
+            <i class="fas fa-edit"></i>
+          </button>
+
           <!-- 1. PDF RECHNUNG -->
           ${r.pdf_url ? `
             <a href="${r.pdf_url}" target="_blank" class="btn btn-xs btn-outline-danger btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
@@ -300,8 +307,9 @@ function jbFilter() {
   jbRenderRows(filtered);
 }
 
-let _jbModalParticipationsState = {}; // Modal-spezifischer Teilnahmen-State
-
+// ============================================================
+// RECHNUNGS-INSPEKTOR / DETAIL-MODAL (READ-ONLY MIT SCHNELL-AKTIONEN)
+// ============================================================
 async function jbShowPositionen(headerId) {
   const modalEl = document.getElementById('jbModalPositionen');
   const modal = new bootstrap.Modal(modalEl);
@@ -321,95 +329,12 @@ async function jbShowPositionen(headerId) {
 
     const pn = String(header.PersonNumber || '').trim();
     const m = _jbMemberMap[pn] || {};
-    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
+    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (header._name || pn);
 
     // 2. Hole Positionen direkt aus dem lokalen Browser-Cache
     const pos = _jbPositionsCache[headerId] || [];
 
-    // 3. Hole Teilnahmen direkt aus dem lokalen Browser-Cache
-    const memberParts = _jbParticipationsCache[pn] || [];
-
-    // Defaulting für Schützenhaus Infrastrukturbeitrag
-    const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-    const isJunior = age > 0 && age <= 20;
-    const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
-    const defaultGe = !isJunior && hatG50mOwn && !m._istPassiv;
-
-    // Initialisiere den modalen State exakt analog zur Schnellerfassung
-    _jbModalParticipationsState = {
-      lizenz: m._istPassiv ? 'passiv' : 'verein',
-      kk_volksschiessen: 'keine',
-      ssv_dez: 'keine',
-      kk_grenzland: 'keine',
-      kk_verband: false,
-      kk_verein: false,
-      lg_ag_dez: false,
-      lg_ag_dez_auflage: false,
-      lg_ch_dez: false,
-      lg_ch_dez_auflage: false,
-      lg_verband: false,
-      lg_verein: false,
-      lg_ch_kniend: false,
-      schuetzenhaus: defaultGe
-    };
-
-    // Lizenz-Defaulting
-    const ownLiz = (m._lizenzen || []).find(l => l.istMuhen);
-    if (ownLiz) {
-      _jbModalParticipationsState.lizenz = isJunior ? 'junior' : 'verein';
-    } else if ((m._lizenzen || []).length > 0) {
-      _jbModalParticipationsState.lizenz = 'fremd';
-    } else if (m._istPassiv) {
-      _jbModalParticipationsState.lizenz = 'passiv';
-    } else {
-      _jbModalParticipationsState.lizenz = 'keine';
-    }
-
-    // Teilnahmen in den modalen State einpflegen
-    let hasKK002 = false;
-    let hasKK003 = false;
-    let hasKK004 = false;
-    let hasKK005 = false;
-
-    memberParts.forEach(p => {
-      const val = Number(p.teilgenommen || 0);
-      if (p.eventkey === 'GE001') {
-        _jbModalParticipationsState.schuetzenhaus = val > 0;
-      }
-      if (val > 0) {
-        if (p.eventkey === 'KK001') _jbModalParticipationsState.kk_grenzland = '1';
-        if (p.eventkey === 'KK002') hasKK002 = true;
-        if (p.eventkey === 'KK003') hasKK003 = true;
-        if (p.eventkey === 'KK004') hasKK004 = true;
-        if (p.eventkey === 'KK005') hasKK005 = true;
-        if (p.eventkey === 'KK006') _jbModalParticipationsState.kk_verband = true;
-        if (p.eventkey === 'KK007') _jbModalParticipationsState.kk_verein = true;   // KK007 = Vereinsschiessen
-        if (p.eventkey === 'KK008') _jbModalParticipationsState.kk_volksschiessen = String(val); // KK008 = Volksschiessen
-        if (p.eventkey === 'LG001') _jbModalParticipationsState.lg_ag_dez = true;
-        if (p.eventkey === 'LG002') _jbModalParticipationsState.lg_ag_dez_auflage = true;
-        if (p.eventkey === 'LG003') _jbModalParticipationsState.lg_ch_dez = true;
-        if (p.eventkey === 'LG004') _jbModalParticipationsState.lg_ch_dez_auflage = true;
-        if (p.eventkey === 'LG005') _jbModalParticipationsState.lg_verband = true;
-        if (p.eventkey === 'LG006') _jbModalParticipationsState.lg_verein = true;
-        if (p.eventkey === 'LG007') _jbModalParticipationsState.lg_ch_kniend = true;
-      }
-    });
-
-    if (hasKK005) {
-      _jbModalParticipationsState.ssv_dez = 'sv';
-    } else if (isJunior && (hasKK002 || hasKK003 || hasKK004)) {
-      _jbModalParticipationsState.ssv_dez = 'js';
-    } else if (hasKK002 && hasKK003 && hasKK004) {
-      _jbModalParticipationsState.ssv_dez = 'liegend_2_3';
-    } else if (hasKK002) {
-      _jbModalParticipationsState.ssv_dez = 'liegend';
-    } else if (hasKK003) {
-      _jbModalParticipationsState.ssv_dez = '2-stellung';
-    } else if (hasKK004) {
-      _jbModalParticipationsState.ssv_dez = '3-stellung';
-    }
-
-    // Render das tabellarische Layout im Modal
+    // 3. Render das aufgeräumte Rechnungs-Inspektor-Layout
     jbRenderModalContent(header, pos, m, name);
   } catch(e) {
     modalBody.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
@@ -419,549 +344,213 @@ async function jbShowPositionen(headerId) {
 function jbRenderModalContent(header, pos, m, name) {
   const modalBody = document.getElementById('jbModalBody');
   const isPaid = header.status === 'bezahlt';
+  const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  const isJunior = age > 0 && age <= 20;
 
-  // Positions-Tabelle für Reiter 1
-  const posRows = pos.map(p => `
+  // Kategorien-Badges
+  let katHtml = '';
+  if (m._kategorien && m._kategorien.length > 0) {
+    katHtml = m._kategorien.map(k => typeof mglKatBadge === 'function' ? mglKatBadge(k) : `<span class="badge bg-secondary">${k}</span>`).join(' ');
+  } else if (m._kategorie) {
+    katHtml = m._kategorie.split(',').map(k => typeof mglKatBadge === 'function' ? mglKatBadge(k.trim()) : `<span class="badge bg-secondary">${k.trim()}</span>`).join(' ');
+  } else {
+    const fallbackKat = (header._kategorie || '').replace('Aktiv-', 'Aktiv ');
+    katHtml = typeof mglKatBadge === 'function' ? mglKatBadge(fallbackKat) : `<span class="badge bg-secondary">${fallbackKat || '–'}</span>`;
+  }
+  if (isJunior && !katHtml.toLowerCase().includes('junior') && !katHtml.toLowerCase().includes('schüler')) {
+    if (typeof mglKatBadge === 'function') katHtml += ' ' + mglKatBadge('Junior');
+  }
+
+  // Positions-Zeilen
+  const posRows = pos.length > 0 ? pos.map(p => `
     <tr>
-      <td>${p.position_nr}</td>
-      <td>${p.beschreibung}</td>
+      <td class="text-muted small">${p.position_nr || p.positionnr || '–'}</td>
+      <td class="fw-semibold text-dark">${p.beschreibung || '–'}</td>
       <td>
-        <span class="badge ${p.typ === 'Kredit' ? 'bg-success' : 'bg-primary'}">${p.typ}</span>
+        <span class="badge ${p.typ === 'Kredit' ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle'}">
+          ${p.typ}
+        </span>
       </td>
-      <td class="text-end ${p.typ === 'Kredit' ? 'text-success' : ''}">${fmtChf(p.betrag)}</td>
+      <td class="text-end fw-bold ${p.typ === 'Kredit' ? 'text-success' : 'text-dark'}">
+        ${p.typ === 'Kredit' ? '-' : ''}${fmtChf(Math.abs(p.betrag))}
+      </td>
     </tr>
-  `).join('');
+  `).join('') : `
+    <tr>
+      <td colspan="4" class="text-center py-4 text-muted">
+        <i class="fas fa-info-circle me-1"></i> Keine separaten Einzelpositionen vorhanden.
+      </td>
+    </tr>
+  `;
 
-  // 1. RECHNUNDSPOSTEN TAB CONTENT
-  const tabPostenHTML = `
-    <div id="jbModalTabPosten" class="jb-modal-tab-content">
-      <div class="d-flex justify-content-between align-items-center mb-3 bg-light p-2 rounded border">
+  const safeName = typeof escHtml === 'function' ? escHtml(name) : name;
+
+  modalBody.innerHTML = `
+    <!-- 1. Header-Karte: Mitglieds- und Betragsübersicht -->
+    <div class="card border-0 bg-light shadow-sm p-3 mb-3 rounded-3">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
-          <span class="badge bg-secondary me-1">${header.PersonNumber}</span>
-          <strong class="text-primary fs-6">${name}</strong>
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <h5 class="mb-0 text-primary fw-bold">${safeName}</h5>
+            <span class="badge bg-secondary font-monospace" style="font-size: 11px;">${header.PersonNumber}</span>
+          </div>
+          <div class="small text-muted d-flex align-items-center flex-wrap gap-2">
+            <span>Jahr: <strong>${header.year}</strong></span>
+            <span>·</span>
+            <span>${isJunior ? 'Junior' : 'Erwachsen'}${age > 0 ? ` (${age} J.)` : ''}</span>
+            <span>·</span>
+            <div>${katHtml}</div>
+          </div>
         </div>
-        <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')">
-          <i class="fas fa-edit me-1"></i>In Schnellerfassung bearbeiten
+        <div class="text-end">
+          <div class="small text-muted fw-semibold">Rechnungsbetrag</div>
+          <div class="fs-3 fw-extrabold ${isPaid ? 'text-success' : 'text-danger'}">${fmtChf(header.Gesamt)}</div>
+          <span class="badge ${isPaid ? 'bg-success' : 'bg-danger'} px-2 py-1 text-uppercase" style="font-size: 10px; letter-spacing: 0.5px;">
+            <i class="fas ${isPaid ? 'fa-check-circle' : 'fa-clock'} me-1"></i>${isPaid ? 'Bezahlt' : 'Offen'}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Rechnungs-Positionen -->
+    <div class="card border shadow-sm mb-3 rounded-3 overflow-hidden">
+      <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
+        <span class="fw-bold small text-secondary text-uppercase" style="font-size: 11px; letter-spacing: 0.5px;">
+          <i class="fas fa-list-ol me-1 text-primary"></i> Aufstellung der Rechnungsposten
+        </span>
+        <button class="btn btn-xs btn-outline-primary fw-bold shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')" title="Teilnahmen & Posten in Schnellerfassung anpassen">
+          <i class="fas fa-edit me-1"></i> In Schnellerfassung bearbeiten
         </button>
       </div>
-      <div class="table-responsive">
-        <table class="table table-hover table-sm">
-          <thead class="table-light">
-            <tr><th>#</th><th>Beschreibung</th><th>Typ</th><th class="text-end">Betrag</th></tr>
+      <div class="table-responsive mb-0">
+        <table class="table table-hover table-sm align-middle mb-0">
+          <thead class="table-light small text-muted">
+            <tr>
+              <th style="width: 45px;">#</th>
+              <th>Bezeichnung</th>
+              <th style="width: 90px;">Typ</th>
+              <th class="text-end" style="width: 120px;">Betrag</th>
+            </tr>
           </thead>
-          <tbody>${posRows}</tbody>
-          <tfoot class="fw-bold">
-            <tr class="table-secondary">
-              <td colspan="3" class="text-end">Gesamt</td>
-              <td class="text-end">${fmtChf(header.Gesamt)}</td>
+          <tbody>
+            ${posRows}
+          </tbody>
+          <tfoot class="table-secondary fw-bold">
+            <tr>
+              <td colspan="3" class="text-end">Gesamtsumme</td>
+              <td class="text-end text-dark">${fmtChf(header.Gesamt)}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-      ${header.payment_date ? `
-        <div class="alert alert-success small mb-0 d-flex align-items-center">
-          <i class="fas fa-check-circle me-2 fs-5"></i>
+    </div>
+
+    <!-- 3. Status-, Beleg- und Zahlungs-Information -->
+    ${isPaid ? `
+      <div class="alert alert-success d-flex align-items-center justify-content-between p-3 rounded-3 mb-3 shadow-sm border-success-subtle">
+        <div class="d-flex align-items-center">
+          <i class="fas fa-check-circle text-success fs-3 me-3"></i>
           <div>
-            <strong>Bezahlt am ${fmtDate(header.payment_date)}</strong><br>
-            via ${header.payment_method || '–'} · Beleg: ${header.document_ref || '–'}
+            <div class="fw-bold text-success">Rechnung vollständig bezahlt</div>
+            <div class="small text-muted">
+              Datum: <strong>${fmtDate(header.payment_date)}</strong> · 
+              Methode: <strong>${header.payment_method || '–'}</strong> · 
+              Beleg / Ref: <strong>${header.document_ref || '–'}</strong>
+            </div>
           </div>
-        </div>` : ''}
+        </div>
+      </div>
+    ` : `
+      <div class="alert alert-warning d-flex align-items-center justify-content-between p-3 rounded-3 mb-3 shadow-sm border-warning-subtle">
+        <div class="d-flex align-items-center">
+          <i class="fas fa-exclamation-circle text-warning fs-3 me-3"></i>
+          <div>
+            <div class="fw-bold text-dark">Zahlung noch ausstehend</div>
+            <div class="small text-muted">Offener Betrag: ${fmtChf(header.Gesamt)}</div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal(${header.id}, '${safeName}', ${header.Gesamt})">
+          <i class="fas fa-check me-1"></i> Zahlung jetzt verbuchen
+        </button>
+      </div>
+    `}
+
+    <!-- 4. Dokumenten-Aktionen (PDF / Mail) -->
+    <div class="card p-2.5 bg-light border rounded-3 mb-3 shadow-sm">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="small fw-bold text-secondary">
+          <i class="fas fa-file-invoice me-1 text-primary"></i> Rechnungsdokumente & Versand
+        </div>
+        <div class="d-flex gap-2">
+          ${header.pdf_url ? `
+            <a href="${header.pdf_url}" target="_blank" class="btn btn-sm btn-outline-danger shadow-sm fw-semibold">
+              <i class="fas fa-file-pdf me-1"></i> PDF-Rechnung öffnen
+            </a>
+          ` : `
+            <button class="btn btn-sm btn-outline-secondary shadow-sm fw-semibold" onclick="jbGenerateInvoicePdfRemote(${header.id}, '${header.PersonNumber}')">
+              <i class="fas fa-file-invoice me-1"></i> PDF generieren
+            </button>
+          `}
+          ${m.PrimaryEmail ? `
+            <button class="btn btn-sm ${header.mail_status === 'gesendet' ? 'btn-success text-white' : 'btn-outline-primary'} shadow-sm fw-semibold"
+                    onclick="jbSendInvoiceEmailRemote(${header.id}, '${header.PersonNumber}', '${m.PrimaryEmail}')">
+              <i class="fas ${header.mail_status === 'gesendet' ? 'fa-envelope-open-text' : 'fa-paper-plane'} me-1"></i>
+              ${header.mail_status === 'gesendet' ? 'Erneut senden' : 'Per E-Mail senden'}
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Modal Footer / Schnellwechsel -->
+    <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+      <button class="btn btn-secondary" data-bs-dismiss="modal">Schliessen</button>
+      <button class="btn btn-primary fw-bold px-3 shadow-sm" onclick="jbSwitchToSchnellerfassung('${header.PersonNumber}')">
+        <i class="fas fa-edit me-1"></i> In Schnellerfassung bearbeiten
+      </button>
     </div>
   `;
+}
 
-window.jbSwitchToSchnellerfassung = function(pn) {
+function jbOpenZahlungFromModal(id, name, betrag) {
   const modalEl = document.getElementById('jbModalPositionen');
   if (modalEl) {
     const bsModal = bootstrap.Modal.getInstance(modalEl);
     if (bsModal) bsModal.hide();
   }
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+
+  jbOpenZahlung(id, name, betrag);
+}
+
+window.jbSwitchToSchnellerfassung = function(pn) {
+  const pnClean = String(pn || '').trim();
+  const modalEl = document.getElementById('jbModalPositionen');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+
   _jbActiveTab = 'entry';
-  _jbSelectedMemberPN = String(pn).trim();
+  _jbSelectedMemberPN = pnClean;
   renderJahresbeitragView();
+
+  if (pnClean && typeof jbEntrySelectMember === 'function') {
+    jbEntrySelectMember(pnClean);
+    setTimeout(() => {
+      if (typeof jbScrollToActiveMember === 'function') {
+        jbScrollToActiveMember();
+      }
+    }, 150);
+  }
 };
-
-  // 2. BEARBEITEN TAB CONTENT
-  const calc = jbCalculateLiveTotal(m, _jbModalParticipationsState);
-  const isJunior = m.BirthDate ? ((new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) <= 20) : false;
-
-  const tabBearbeitenHTML = `
-    <div id="jbModalTabBearbeiten" class="jb-modal-tab-content d-none">
-      ${isPaid ? `
-        <div class="alert alert-warning py-2 mb-3 small fw-semibold">
-          <i class="fas fa-exclamation-triangle me-2 text-warning"></i>
-          <strong>Zahlungs-Warnhinweis:</strong> Diese Rechnung wurde bereits als <strong>BEZAHLT</strong> markiert! 
-          Änderungen an den Posten können zu Differenzen zwischen erhaltenem Geld und Soll-Betrag führen.
-        </div>` : ''}
-
-      <div class="row g-3">
-        <!-- Live-Summe links -->
-        <div class="col-md-5 d-flex flex-column">
-          <div class="card p-3 shadow-sm border-0 bg-light flex-fill d-flex flex-column rounded-3">
-            <div class="mb-2 border-bottom pb-2">
-              <h6 class="mb-0 text-primary">${m.FirstName} ${m.LastName}</h6>
-              <small class="text-muted">${header.PersonNumber} · ${isJunior ? 'Junior' : 'Erwachsen'}</small>
-            </div>
-            
-            <div class="flex-fill overflow-y-auto mb-2" style="max-height: 200px;" id="jbModalLivePositions">
-              <!-- Postenübersicht -->
-            </div>
-
-            <div class="p-2.5 bg-white border border-primary rounded-3 text-center shadow-sm mt-auto">
-              <div class="small text-muted fw-semibold" style="font-size: 11px;">Berechneter Gesamtbetrag</div>
-              <div class="fs-4 fw-extrabold text-primary" id="jbModalLiveTotal">CHF ${calc.total.toFixed(2)}</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Steuerungselemente rechts -->
-        <div class="col-md-7 overflow-y-auto" style="max-height: 380px;">
-          <!-- Lizenz -->
-          <div class="card p-2.5 border-0 bg-light shadow-sm mb-2 rounded-3">
-            <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">Lizenz & Status</div>
-            <div class="d-flex bg-white p-0.5 rounded border" style="gap: 3px;">
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('lizenz', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Keine</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'verein' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('lizenz', 'verein', '${header.PersonNumber}')" style="font-size: 11px;">Eigener JB</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'junior' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('lizenz', 'junior', '${header.PersonNumber}')" style="font-size: 11px;">Junior</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition fs-7 ${
-                _jbModalParticipationsState.lizenz === 'passiv' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('lizenz', 'passiv', '${header.PersonNumber}')" style="font-size: 11px;">Passiv</button>
-            </div>
-          </div>
-
-          <!-- Infrastrukturbeitrag Schützenhaus -->
-          <div class="card p-2.5 border-0 bg-light shadow-sm mb-2 rounded-3">
-            <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">Infrastrukturbeitrag Schützenhaus</div>
-            <div class="d-flex align-items-center justify-content-between bg-white p-2 rounded border">
-              <span class="small fw-semibold text-muted">Schützenhaus-Beitrag (CHF 50.00)</span>
-              <div class="form-check form-switch mb-0">
-                <input class="form-check-input" type="checkbox" id="modal_schuetzenhaus" ${
-                  _jbModalParticipationsState.schuetzenhaus ? 'checked' : ''
-                } onchange="jbConfirmModalSchuetzenhaus(this, '${header.PersonNumber}')">
-              </div>
-            </div>
-          </div>
-
-          <!-- KK Volksschiessen -->
-          <div class="card p-2.5 border-0 bg-light shadow-sm mb-2 rounded-3">
-            <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">KK Volksschiessen (KK008)</div>
-            <div class="d-flex bg-white p-0.5 rounded border" style="gap: 3px;">
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('kk_volksschiessen', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Kein</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('kk_volksschiessen', '1', '${header.PersonNumber}')" style="font-size: 11px;">1 St.</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === '2' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('kk_volksschiessen', '2', '${header.PersonNumber}')" style="font-size: 11px;">2 St.</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_volksschiessen === '3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('kk_volksschiessen', '3', '${header.PersonNumber}')" style="font-size: 11px;">3 St.</button>
-            </div>
-          </div>
-
-          <!-- SSV dez -->
-          <div class="card p-2.5 border-0 bg-light shadow-sm mb-2 rounded-3">
-            <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">SSV dez (KK002-KK005)</div>
-            <div class="d-flex bg-white p-0.5 rounded border flex-wrap" style="gap: 3px;">
-              <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('ssv_dez', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Kein</button>
-              <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'liegend' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('ssv_dez', 'liegend', '${header.PersonNumber}')" style="font-size: 11px;">Liegend</button>
-              <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === '2-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('ssv_dez', '2-stellung', '${header.PersonNumber}')" style="font-size: 11px;">2-St.</button>
-              <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === '3-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('ssv_dez', '3-stellung', '${header.PersonNumber}')" style="font-size: 11px;">3-St.</button>
-              <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'liegend_2_3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('ssv_dez', 'liegend_2_3', '${header.PersonNumber}')" style="font-size: 11px;">L+2+3</button>
-              <button class="btn btn-xs rounded border-0 py-1 flex-fill ${
-                _jbModalParticipationsState.ssv_dez === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('ssv_dez', 'js', '${header.PersonNumber}')" style="font-size: 11px;">JS</button>
-            </div>
-          </div>
-
-          <!-- KK Grenzland -->
-          <div class="card p-2.5 border-0 bg-light shadow-sm mb-2 rounded-3">
-            <div class="small fw-bold text-secondary mb-1.5 text-uppercase" style="font-size: 10px;">KK Grenzland (KK001)</div>
-            <div class="d-flex bg-white p-0.5 rounded border" style="gap: 3px;">
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_grenzland === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('kk_grenzland', 'keine', '${header.PersonNumber}')" style="font-size: 11px;">Kein</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_grenzland === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('kk_grenzland', '1', '${header.PersonNumber}')" style="font-size: 11px;">1 Stich</button>
-              <button class="btn btn-xs flex-fill py-1 rounded border-0 transition ${
-                _jbModalParticipationsState.kk_grenzland === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'
-              }" onclick="jbModalUpdateState('kk_grenzland', 'js', '${header.PersonNumber}')" style="font-size: 11px;">JS Stich</button>
-            </div>
-          </div>
-
-          <!-- KK Toggles -->
-          <div class="row g-2 mb-2">
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-white" style="cursor: pointer;">
-                <span class="fw-semibold text-muted" style="font-size: 11px;">50m Verband</span>
-                <input type="checkbox" class="form-check-input" id="modal_kk_verband" ${
-                  _jbModalParticipationsState.kk_verband ? 'checked' : ''
-                } onchange="jbModalUpdateState('kk_verband', this.checked, '${header.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-white" style="cursor: pointer;">
-                <span class="fw-semibold text-muted" style="font-size: 11px;">50m Verein</span>
-                <input type="checkbox" class="form-check-input" id="modal_kk_verein" ${
-                  _jbModalParticipationsState.kk_verein ? 'checked' : ''
-                } onchange="jbModalUpdateState('kk_verein', this.checked, '${header.PersonNumber}')">
-              </label>
-            </div>
-          </div>
-
-          <!-- LG Toggles -->
-          <div class="card p-2 border-0 bg-light shadow-sm rounded-3">
-            <div class="small fw-bold text-secondary mb-1 text-uppercase" style="font-size: 10px;">Luftgewehr 10m</div>
-            <div class="row g-1.5">
-              <div class="col-6">
-                <label class="w-100 p-1.5 border rounded bg-white d-flex align-items-center justify-content-between" style="cursor: pointer; font-size: 10px;">
-                  <span>10m AG DEZ</span>
-                  <input type="checkbox" class="form-check-input" id="modal_lg_ag_dez" ${
-                    _jbModalParticipationsState.lg_ag_dez ? 'checked' : ''
-                  } onchange="jbModalUpdateState('lg_ag_dez', this.checked, '${header.PersonNumber}')">
-                </label>
-              </div>
-              <div class="col-6">
-                <label class="w-100 p-1.5 border rounded bg-white d-flex align-items-center justify-content-between" style="cursor: pointer; font-size: 10px;">
-                  <span>10m AG DEZ Aufl.</span>
-                  <input type="checkbox" class="form-check-input" id="modal_lg_ag_dez_auflage" ${
-                    _jbModalParticipationsState.lg_ag_dez_auflage ? 'checked' : ''
-                  } onchange="jbModalUpdateState('lg_ag_dez_auflage', this.checked, '${header.PersonNumber}')">
-                </label>
-              </div>
-              <div class="col-6">
-                <label class="w-100 p-1.5 border rounded bg-white d-flex align-items-center justify-content-between" style="cursor: pointer; font-size: 10px;">
-                  <span>10m CH DEZ</span>
-                  <input type="checkbox" class="form-check-input" id="modal_lg_ch_dez" ${
-                    _jbModalParticipationsState.lg_ch_dez ? 'checked' : ''
-                  } onchange="jbModalUpdateState('lg_ch_dez', this.checked, '${header.PersonNumber}')">
-                </label>
-              </div>
-              <div class="col-6">
-                <label class="w-100 p-1.5 border rounded bg-white d-flex align-items-center justify-content-between" style="cursor: pointer; font-size: 10px;">
-                  <span>10m CH DEZ Aufl.</span>
-                  <input type="checkbox" class="form-check-input" id="modal_lg_ch_dez_auflage" ${
-                    _jbModalParticipationsState.lg_ch_dez_auflage ? 'checked' : ''
-                  } onchange="jbModalUpdateState('lg_ch_dez_auflage', this.checked, '${header.PersonNumber}')">
-                </label>
-              </div>
-              <div class="col-6">
-                <label class="w-100 p-1.5 border rounded bg-white d-flex align-items-center justify-content-between" style="cursor: pointer; font-size: 10px;">
-                  <span>10m Verband</span>
-                  <input type="checkbox" class="form-check-input" id="modal_lg_verband" ${
-                    _jbModalParticipationsState.lg_verband ? 'checked' : ''
-                  } onchange="jbModalUpdateState('lg_verband', this.checked, '${header.PersonNumber}')">
-                </label>
-              </div>
-              <div class="col-6">
-                <label class="w-100 p-1.5 border rounded bg-white d-flex align-items-center justify-content-between" style="cursor: pointer; font-size: 10px;">
-                  <span>10m Verein</span>
-                  <input type="checkbox" class="form-check-input" id="modal_lg_verein" ${
-                    _jbModalParticipationsState.lg_verein ? 'checked' : ''
-                  } onchange="jbModalUpdateState('lg_verein', this.checked, '${header.PersonNumber}')">
-                </label>
-              </div>
-              <div class="col-12">
-                <label class="w-100 p-1.5 border rounded bg-white d-flex align-items-center justify-content-between" style="cursor: pointer; font-size: 10px;">
-                  <span>10m CH Kniendmeisterschaft</span>
-                  <input type="checkbox" class="form-check-input" id="modal_lg_ch_kniend" ${
-                    _jbModalParticipationsState.lg_ch_kniend ? 'checked' : ''
-                  } onchange="jbModalUpdateState('lg_ch_kniend', this.checked, '${header.PersonNumber}')">
-                </label>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Aktionen Bearbeiten -->
-      <div class="d-flex gap-2 justify-content-end mt-4 pt-3 border-top">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-        <button class="btn btn-success px-4 fw-bold shadow-sm" onclick="jbModalSave(${header.id}, '${header.PersonNumber}')">
-          <i class="fas fa-save me-1"></i> Änderungen speichern
-        </button>
-      </div>
-    </div>
-  `;
-
-  // RENDER DUAL-TAB LAYOUT INTO MODAL BODY
-  modalBody.innerHTML = `
-    <!-- Header Info -->
-    <div class="d-flex justify-content-between align-items-start mb-3 border-bottom pb-2">
-      <div>
-        <h5 class="mb-0 text-primary">${name}</h5>
-        <small class="text-muted">PersonenNr: ${header.PersonNumber} · Jahr: ${header.year}</small>
-      </div>
-      <span class="badge fs-6 ${isPaid ? 'bg-success' : 'bg-danger'}">
-        ${isPaid ? 'bezahlt' : 'offen'}
-      </span>
-    </div>
-
-    <!-- Tab Buttons -->
-    <ul class="nav nav-pills mb-3" style="gap: 5px;">
-      <li class="nav-item">
-        <button class="nav-link active px-3 py-1.5 fw-semibold" id="jbModalLinkPosten" onclick="jbModalSwitchSubTab('posten')" style="font-size: 13px;">
-          <i class="fas fa-list-alt me-1.5"></i> Rechnungsdetails
-        </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link px-3 py-1.5 fw-semibold text-muted bg-transparent" id="jbModalLinkBearbeiten" onclick="jbModalSwitchSubTab('bearbeiten')" style="font-size: 13px;">
-          <i class="fas fa-edit me-1.5"></i> Rechnung bearbeiten
-        </button>
-      </li>
-    </ul>
-
-    ${tabPostenHTML}
-    ${tabBearbeitenHTML}
-  `;
-
-  // Init live list in modal
-  jbModalRenderLivePositions(m);
-}
-
-// Modal Reiter umschalten
-function jbModalSwitchSubTab(tab) {
-  const tabPosten = document.getElementById('jbModalTabPosten');
-  const tabBearbeiten = document.getElementById('jbModalTabBearbeiten');
-  const linkPosten = document.getElementById('jbModalLinkPosten');
-  const linkBearbeiten = document.getElementById('jbModalLinkBearbeiten');
-
-  if (tab === 'posten') {
-    tabPosten.classList.remove('d-none');
-    tabBearbeiten.classList.add('d-none');
-    linkPosten.className = 'nav-link active px-3 py-1.5 fw-semibold';
-    linkBearbeiten.className = 'nav-link px-3 py-1.5 fw-semibold text-muted bg-transparent';
-  } else {
-    tabPosten.classList.add('d-none');
-    tabBearbeiten.classList.remove('d-none');
-    linkPosten.className = 'nav-link px-3 py-1.5 fw-semibold text-muted bg-transparent';
-    linkBearbeiten.className = 'nav-link active px-3 py-1.5 fw-semibold';
-  }
-}
-
-// Live Positions im Modal updaten
-function jbModalRenderLivePositions(m) {
-  const container = document.getElementById('jbModalLivePositions');
-  if (!container) return;
-
-  const calc = jbCalculateLiveTotal(m, _jbModalParticipationsState);
-  container.innerHTML = calc.positions.map(p => `
-    <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size: 11px;">
-      <span class="text-muted">${p.name}</span>
-      <span class="fw-bold ${p.typ === 'Kredit' ? 'text-success' : 'text-dark'}">
-        ${p.typ === 'Kredit' ? '-' : ''}CHF ${Math.abs(p.betrag).toFixed(2)}
-      </span>
-    </div>
-  `).join('');
-  
-  const totalDisplay = document.getElementById('jbModalLiveTotal');
-  if (totalDisplay) {
-    totalDisplay.textContent = 'CHF ' + calc.total.toFixed(2);
-  }
-}
-
-function jbConfirmModalSchuetzenhaus(chk, pn) {
-  const currentVal = chk.checked;
-  const prevVal = !currentVal;
-  
-  if (confirm("Möchten Sie den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?")) {
-    jbModalUpdateState('schuetzenhaus', currentVal, pn);
-  } else {
-    chk.checked = prevVal;
-  }
-}
-
-// Modal State anpassen und live neu rendern
-function jbModalUpdateState(key, val, pn) {
-  const pnClean = String(pn || '').trim();
-  _jbModalParticipationsState[key] = val;
-  
-  const m = _jbMemberMap[pnClean];
-  if (m) {
-    jbModalRenderLivePositions(m);
-  }
-
-  // Segmented Pill Buttons aktualisieren
-  const buttons = document.querySelectorAll(`#jbModalTabBearbeiten button[onclick*="${key}"]`);
-  buttons.forEach(btn => {
-    const isTarget = btn.getAttribute('onclick').includes(`'${val}'`);
-    if (isTarget) {
-      btn.className = btn.className.replace('btn-toggle-inactive', '');
-      if (key === 'lizenz' || val === 'keine') {
-        btn.classList.add('btn-toggle-active-primary');
-      } else {
-        btn.classList.add('btn-toggle-active-accent');
-      }
-    } else {
-      btn.className = btn.className.replace('btn-toggle-active-primary', 'btn-toggle-inactive');
-      btn.className = btn.className.replace('btn-toggle-active-accent', 'btn-toggle-inactive');
-    }
-  });
-
-  // Checkboxen aktualisieren
-  const chk = document.getElementById(`modal_${key}`);
-  if (chk) {
-    chk.checked = val;
-  }
-}
-
-// Änderungen über das Modal speichern
-async function jbModalSave(headerId, pn) {
-  const pnClean = String(pn || '').trim();
-  const btn = document.querySelector('#jbModalTabBearbeiten button[onclick*="jbModalSave"]');
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Speichere…';
-  }
-
-  try {
-    const list = [];
-    const year = _jbYear;
-
-    list.push({ pn: pnClean, year, eventkey: 'GE001', teilgenommen: _jbModalParticipationsState.schuetzenhaus ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'KK008', teilgenommen: _jbModalParticipationsState.kk_volksschiessen === 'keine' ? 0 : Number(_jbModalParticipationsState.kk_volksschiessen), quelle: 'volksschiessen' });
-    list.push({ pn: pnClean, year, eventkey: 'KK007', teilgenommen: _jbModalParticipationsState.kk_verein ? 1 : 0, quelle: 'verein' });
-    
-    const ssv = _jbModalParticipationsState.ssv_dez;
-    list.push({ pn: pnClean, year, eventkey: 'KK002', teilgenommen: (ssv === 'liegend' || ssv === 'liegend_2_3') ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'KK003', teilgenommen: (ssv === '2-stellung' || ssv === 'liegend_2_3') ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'KK004', teilgenommen: (ssv === '3-stellung' || ssv === 'liegend_2_3') ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'KK005', teilgenommen: ssv === 'sv' ? 1 : 0 });
-    
-    list.push({ pn: pnClean, year, eventkey: 'KK001', teilgenommen: _jbModalParticipationsState.kk_grenzland !== 'keine' ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'KK006', teilgenommen: _jbModalParticipationsState.kk_verband ? 1 : 0 });
-
-    list.push({ pn: pnClean, year, eventkey: 'LG001', teilgenommen: _jbModalParticipationsState.lg_ag_dez ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'LG002', teilgenommen: _jbModalParticipationsState.lg_ag_dez_auflage ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'LG003', teilgenommen: _jbModalParticipationsState.lg_ch_dez ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'LG004', teilgenommen: _jbModalParticipationsState.lg_ch_dez_auflage ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'LG005', teilgenommen: _jbModalParticipationsState.lg_verband ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'LG006', teilgenommen: _jbModalParticipationsState.lg_verein ? 1 : 0 });
-    list.push({ pn: pnClean, year, eventkey: 'LG007', teilgenommen: _jbModalParticipationsState.lg_ch_kniend ? 1 : 0 });
-
-    // 1. In Google Sheets speichern via Bulk-API (inkl. Lizenz & Passiv-Status)
-    const resSave = await apiFetch('jahresbeitrag', '', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'saveParticipationsBulk',
-        list: list,
-        licenses: [{ pn: pnClean, lizenz: _jbModalParticipationsState.lizenz }],
-        user: window.currentUser || 'frontend'
-      })
-    });
-    const saveJson = await resSave.json();
-    if (!saveJson.success) throw new Error(saveJson.error);
-
-    // 2. Beiträge für dieses EINE Mitglied neu berechnen
-    const resCalc = await apiFetch('jahresbeitrag', `action=berechnen&year=${year}&pn=${pnClean}`);
-    const calcJson = await resCalc.json();
-    if (!calcJson.success) throw new Error(calcJson.error);
-
-    // 3. Schließe das Modal sofort für eine flüssige UX
-    const modalEl = document.getElementById('jbModalPositionen');
-    const modal = bootstrap.Modal.getInstance(modalEl);
-    if (modal) modal.hide();
-    
-    // Explizites Entfernen des Backdrops und Beendigung des Scroll-Locks, um Freezes zu verhindern
-    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-    document.body.classList.remove('modal-open');
-    document.body.style.overflow = '';
-    document.body.style.paddingRight = '';
-
-    // Optimistisches lokales Update im Speicher
-    const header = _jbData.find(x => String(x.id) === String(headerId));
-    if (header) {
-      const m = _jbMemberMap[pnClean];
-      if (m) {
-        // Lokalen Passiv-/Aktiv-Status anpassen
-        if (_jbModalParticipationsState.lizenz === 'passiv') {
-          m._istPassiv = true;
-          m.IsPassive = 1;
-          m.IsActive = 0;
-        } else {
-          m._istPassiv = false;
-          m.IsPassive = 0;
-          m.IsActive = 1;
-        }
-        
-        // Live neu berechnen
-        const calc = jbCalculateLiveTotal(m, _jbModalParticipationsState);
-        header.Gesamt = calc.total;
-        
-        // Positions-Cache aktualisieren
-        _jbPositionsCache[headerId] = calc.positions.map((p, idx) => ({
-          headerid: headerId,
-          PersonNumber: pnClean,
-          year: _jbYear,
-          position_nr: idx + 1,
-          beschreibung: p.name,
-          betrag: p.betrag,
-          typ: p.typ,
-          sourcefield: p.sourcefield
-        }));
-      }
-    }
-
-    // Tabelle sofort neu zeichnen
-    if (typeof renderJahresbeitragView === 'function') {
-      renderJahresbeitragView();
-    }
-    
-    showToast(`🎉 Beitrag für ${pnClean} erfolgreich aktualisiert und neu berechnet!`);
-
-    // 4. Haupt-Tabelle und Rechnungen asynchron im Hintergrund aktualisieren (kein UI-Freeze, kein Spinner)
-    (async () => {
-      try {
-        await loadJahresbeitragData(true, false); // showSpinner = false
-        const updatedHeader = _jbData.find(x => String(x.PersonNumber).trim() === pnClean);
-        if (updatedHeader && updatedHeader.invoiceId) {
-          const updatedM = _jbMemberMap[pnClean] || {};
-          const updatedName = updatedM.FirstName ? `${updatedM.FirstName} ${updatedM.LastName}` : pnClean;
-          console.log(`🤖 Synchronisiere Rechnung für ${pnClean} nach Änderung im Hintergrund...`);
-          await ensureInvoiceCreatedRemote(updatedHeader, updatedM, updatedName);
-          if (typeof jbMergeInvoicesIntoData === 'function') {
-            jbMergeInvoicesIntoData(window._jbAllInvoices || []);
-          }
-          if (typeof renderJahresbeitragView === 'function') {
-            renderJahresbeitragView();
-          }
-          showToast(`🔄 Rechnungs-PDF für ${updatedName} im Hintergrund aktualisiert!`);
-        } else {
-          if (typeof renderJahresbeitragView === 'function') {
-            renderJahresbeitragView();
-          }
-        }
-      } catch (err) {
-        console.error("⚠️ Fehler bei Hintergrund-Aktualisierung:", err);
-      }
-    })();
-  } catch(e) {
-    alert("Fehler beim Speichern: " + e.message);
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-save me-1"></i> Änderungen speichern';
-    }
-  }
-}
 
 function jbOpenZahlung(id, name, betrag) {
   document.getElementById('jbZahlungId').value    = id;

@@ -147,6 +147,7 @@ async function jbEntrySelectMember(pn) {
     // Falls ungespeicherte Bulk-Änderungen vorhanden sind, diese direkt laden!
     if (_jbLocalBulkChanges[pnClean]) {
       _jbParticipationsState = { ..._jbLocalBulkChanges[pnClean] };
+      if (!_jbParticipationsState.events) _jbParticipationsState.events = {};
       jbRenderEntryForm(m);
       return;
     }
@@ -159,6 +160,7 @@ async function jbEntrySelectMember(pn) {
 
     _jbParticipationsState = {
       lizenz: m._istPassiv ? 'passiv' : 'verein', // Default
+      events: {},
       kk_volksschiessen: 'keine',
       ssv_dez: 'keine',
       kk_grenzland: 'keine',
@@ -200,30 +202,38 @@ async function jbEntrySelectMember(pn) {
 
     memberParts.forEach(p => {
       const val = Number(p.teilgenommen || 0);
-      if (p.eventkey === 'GE001') {
+      const k = String(p.eventkey || '').trim().toUpperCase();
+      if (k) {
+        _jbParticipationsState.events[k] = val;
+      }
+      if (k === 'GE001') {
         _jbParticipationsState.schuetzenhaus = val > 0;
       }
       if (val > 0) {
         // Event Key ermitteln und in State schreiben
-        if (p.eventkey === 'KK001') _jbParticipationsState.kk_grenzland = '1';
-        if (p.eventkey === 'KK002') hasKK002 = true;
-        if (p.eventkey === 'KK003') hasKK003 = true;
-        if (p.eventkey === 'KK004') hasKK004 = true;
-        if (p.eventkey === 'KK005') hasKK005 = true;
-        if (p.eventkey === 'KK006') _jbParticipationsState.kk_verband = true;
-        if (p.eventkey === 'KK007') _jbParticipationsState.kk_verein = true;   // KK007 = Vereinsschiessen
-        if (p.eventkey === 'KK008') _jbParticipationsState.kk_volksschiessen = String(val); // KK008 = Volksschiessen
+        if (k === 'KK001') _jbParticipationsState.kk_grenzland = '1';
+        if (k === 'KK002') hasKK002 = true;
+        if (k === 'KK003') hasKK003 = true;
+        if (k === 'KK004') hasKK004 = true;
+        if (k === 'KK005') hasKK005 = true;
+        if (k === 'KK006') _jbParticipationsState.kk_verband = true;
+        if (k === 'KK007') _jbParticipationsState.kk_verein = true;   // KK007 = Vereinsschiessen
+        if (k === 'KK008') _jbParticipationsState.kk_volksschiessen = String(val); // KK008 = Volksschiessen
         
         // 10m
-        if (p.eventkey === 'LG001') _jbParticipationsState.lg_ag_dez = true;
-        if (p.eventkey === 'LG002') _jbParticipationsState.lg_ag_dez_auflage = true;
-        if (p.eventkey === 'LG003') _jbParticipationsState.lg_ch_dez = true;
-        if (p.eventkey === 'LG004') _jbParticipationsState.lg_ch_dez_auflage = true;
-        if (p.eventkey === 'LG005') _jbParticipationsState.lg_verband = true;
-        if (p.eventkey === 'LG006') _jbParticipationsState.lg_verein = true;
-        if (p.eventkey === 'LG007') _jbParticipationsState.lg_ch_kniend = true;
+        if (k === 'LG001') _jbParticipationsState.lg_ag_dez = true;
+        if (k === 'LG002') _jbParticipationsState.lg_ag_dez_auflage = true;
+        if (k === 'LG003') _jbParticipationsState.lg_ch_dez = true;
+        if (k === 'LG004') _jbParticipationsState.lg_ch_dez_auflage = true;
+        if (k === 'LG005') _jbParticipationsState.lg_verband = true;
+        if (k === 'LG006') _jbParticipationsState.lg_verein = true;
+        if (k === 'LG007') _jbParticipationsState.lg_ch_kniend = true;
       }
     });
+
+    if (_jbParticipationsState.events['GE001'] === undefined) {
+      _jbParticipationsState.events['GE001'] = defaultGe ? 1 : 0;
+    }
 
     if (hasKK005) {
       _jbParticipationsState.ssv_dez = 'sv';
@@ -244,6 +254,383 @@ async function jbEntrySelectMember(pn) {
     workspace.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
   }
 }
+
+// ============================================================
+// DYNAMIC FEE ENGINE & SCHEMA HELPERS
+// ============================================================
+function jbGetEffectiveFeeItems() {
+  const fees = window._jbGebuehren || [];
+  
+  // Standard-Fallbacks für historisch bestehende Keys ohne explizite UI-Spalten
+  const legacyDefaults = {
+    'GE001': { ui_gruppe: 'Infrastruktur', ui_feld: 'Schützenhaus-Beitrag', ui_typ: 'checkbox', ui_sort: 10 },
+    'KK008': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: 'KK Volksschiessen', ui_typ: 'counter', ui_sort: 10 },
+    'KK002': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: 'SSV Dezernat', ui_typ: 'singleselect', ui_sort: 20 },
+    'KK003': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: 'SSV Dezernat', ui_typ: 'singleselect', ui_sort: 21 },
+    'KK004': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: 'SSV Dezernat', ui_typ: 'singleselect', ui_sort: 22 },
+    'KK005': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: 'SSV Dezernat', ui_typ: 'singleselect', ui_sort: 23 },
+    'KK001': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: 'KK Grenzland', ui_typ: 'checkbox', ui_sort: 30 },
+    'KK006': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: '50m Verbandsschiessen', ui_typ: 'checkbox', ui_sort: 40 },
+    'KK007': { ui_gruppe: '50m Wettschiessen (KK)', ui_feld: '50m Vereinsschiessen', ui_typ: 'checkbox', ui_sort: 50 },
+    'LG001': { ui_gruppe: '10m Wettschiessen (LG)', ui_feld: '10m AG DEZ', ui_typ: 'checkbox', ui_sort: 10 },
+    'LG002': { ui_gruppe: '10m Wettschiessen (LG)', ui_feld: '10m AG DEZ Auflage', ui_typ: 'checkbox', ui_sort: 20 },
+    'LG003': { ui_gruppe: '10m Wettschiessen (LG)', ui_feld: '10m CH DEZ', ui_typ: 'checkbox', ui_sort: 30 },
+    'LG004': { ui_gruppe: '10m Wettschiessen (LG)', ui_feld: '10m CH DEZ Auflage', ui_typ: 'checkbox', ui_sort: 40 },
+    'LG005': { ui_gruppe: '10m Wettschiessen (LG)', ui_feld: '10m Verbandsschiessen', ui_typ: 'checkbox', ui_sort: 50 },
+    'LG006': { ui_gruppe: '10m Wettschiessen (LG)', ui_feld: '10m Vereinsschiessen', ui_typ: 'checkbox', ui_sort: 60 },
+    'LG007': { ui_gruppe: '10m Wettschiessen (LG)', ui_feld: '10m CH Kniendmeisterschaft', ui_typ: 'checkbox', ui_sort: 70 },
+    'Z001':  { ui_gruppe: 'Variable Zusatzpositionen', ui_feld: 'Beitrag Vereinsjacke', ui_typ: 'amount', ui_sort: 10 },
+    'Z002':  { ui_gruppe: 'Variable Zusatzpositionen', ui_feld: 'Beitrag Eidg. Schützenfest', ui_typ: 'amount', ui_sort: 20 }
+  };
+
+  return fees.map(f => {
+    const key = String(f.key || '').trim().toUpperCase();
+    const d = legacyDefaults[key] || {};
+    
+    // Check if aktiv is set (default to true if missing/empty)
+    const aktiv = f.aktiv !== false && f.aktiv !== 'false' && f.aktiv !== 0 && f.aktiv !== '0';
+
+    let gruppe = (f.ui_gruppe && String(f.ui_gruppe).trim()) || d.ui_gruppe || '';
+    if (!gruppe) {
+      if (key.startsWith('KK')) gruppe = '50m Wettschiessen (KK)';
+      else if (key.startsWith('LG')) gruppe = '10m Wettschiessen (LG)';
+      else if (key.startsWith('Z')) gruppe = 'Variable Zusatzpositionen';
+      else if (key === 'GE001') gruppe = 'Infrastruktur';
+      else gruppe = f.kategorie || 'Sonstige Gebühren';
+    }
+
+    let typ = (f.ui_typ && String(f.ui_typ).trim().toLowerCase()) || d.ui_typ || 'checkbox';
+    let feld = (f.ui_feld && String(f.ui_feld).trim()) || d.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key;
+    let sort = (f.ui_sort !== undefined && f.ui_sort !== null && f.ui_sort !== '') ? Number(f.ui_sort) : (d.ui_sort !== undefined ? d.ui_sort : 99);
+
+    return {
+      ...f,
+      key,
+      aktiv,
+      ui_gruppe: gruppe,
+      ui_typ: typ,
+      ui_feld: feld,
+      ui_sort: sort,
+      betrag: Number(f.betrag || 0)
+    };
+  });
+}
+
+function jbRenderDynamicFeeGroupsHTML(m, state) {
+  const feeItems = jbGetEffectiveFeeItems();
+  const events = state.events || {};
+
+  // Filtere nicht-aktive Gebühren sowie System-Gebühren (JB, LI, RA, GE001, amount/Zusatz)
+  const displayItems = feeItems.filter(f => {
+    if (!f.aktiv) return false;
+    const key = f.key;
+    if (key.startsWith('JB') || key.startsWith('LI') || key.startsWith('RA')) return false;
+    if (key === 'GE001') return false; // eigenes Schützenhaus-Widget
+    if (f.ui_typ === 'amount' || key.startsWith('Z')) return false; // eigene Zusatzpositionen-Card
+    const kat = String(f.kategorie || '').toLowerCase();
+    if (kat.includes('jahresbeitrag') || kat.includes('lizenz') || kat.includes('rabatt')) return false;
+    return true;
+  });
+
+  // Gruppieren nach ui_gruppe
+  const groups = {};
+  displayItems.forEach(item => {
+    const grp = item.ui_gruppe || 'Weitere Gebühren';
+    if (!groups[grp]) groups[grp] = [];
+    groups[grp].push(item);
+  });
+
+  let html = '';
+  Object.entries(groups).forEach(([groupName, items]) => {
+    // Sortieren nach ui_sort, dann key
+    items.sort((a, b) => (a.ui_sort || 99) - (b.ui_sort || 99));
+
+    // Icon anhand des Gruppennamens bestimmen
+    let icon = 'fa-bullseye text-primary';
+    const gLower = groupName.toLowerCase();
+    if (gLower.includes('50m') || gLower.includes('kk')) icon = 'fa-bullseye text-danger';
+    else if (gLower.includes('10m') || gLower.includes('lg')) icon = 'fa-bullseye text-primary';
+    else if (gLower.includes('300m')) icon = 'fa-crosshairs text-success';
+    else if (gLower.includes('pistole')) icon = 'fa-shield-alt text-warning';
+    else icon = 'fa-trophy text-info';
+
+    let bodyHtml = '';
+    const renderedKeys = new Set();
+
+    // Check for SSV Dezernat cluster
+    const ssvKeys = ['KK002', 'KK003', 'KK004', 'KK005'];
+    const hasSsvKeys = ssvKeys.some(k => items.some(it => it.key === k));
+
+    items.forEach(item => {
+      if (renderedKeys.has(item.key)) return;
+
+      if (item.ui_typ === 'counter') {
+        renderedKeys.add(item.key);
+        const count = Number(events[item.key] || 0);
+        bodyHtml += `
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label small fw-semibold text-muted mb-0">${escHtml(item.ui_feld || item.bezeichnungfrontend || item.key)} (${item.key})</label>
+              <span class="badge bg-secondary" style="font-size: 10px;">CHF ${item.betrag.toFixed(2)} / Stk.</span>
+            </div>
+            <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px;">
+              <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${count === 0 ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
+                      onclick="jbUpdateEventState('${item.key}', 0, '${m.PersonNumber}')">Kein Stich</button>
+              <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${count === 1 ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                      onclick="jbUpdateEventState('${item.key}', 1, '${m.PersonNumber}')">1 Stich</button>
+              <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${count === 2 ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                      onclick="jbUpdateEventState('${item.key}', 2, '${m.PersonNumber}')">2 Stiche</button>
+              <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${count === 3 ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                      onclick="jbUpdateEventState('${item.key}', 3, '${m.PersonNumber}')">3 Stiche</button>
+            </div>
+          </div>
+        `;
+      } else if (item.ui_typ === 'singleselect') {
+        const fieldName = item.ui_feld || 'Auswahl';
+        const isSsvCluster = hasSsvKeys && (fieldName === 'SSV Dezernat' || ssvKeys.includes(item.key));
+        
+        let fieldItems = [];
+        if (isSsvCluster) {
+          fieldItems = items.filter(it => ssvKeys.includes(it.key));
+        } else {
+          fieldItems = items.filter(it => it.ui_typ === 'singleselect' && it.ui_feld === fieldName);
+        }
+        fieldItems.forEach(it => renderedKeys.add(it.key));
+
+        const allKeys = fieldItems.map(it => it.key);
+        const allKeysStr = allKeys.join(',');
+
+        if (isSsvCluster) {
+          const ssvVal = state.ssv_dez || (
+            events['KK005'] ? 'sv' :
+            (events['KK002'] && events['KK003'] && events['KK004']) ? 'liegend_2_3' :
+            events['KK002'] ? 'liegend' :
+            events['KK003'] ? '2-stellung' :
+            events['KK004'] ? '3-stellung' : 'keine'
+          );
+          bodyHtml += `
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label small fw-semibold text-muted mb-0">SSV dez (KK002/003/004/005)</label>
+                <span class="badge bg-secondary" style="font-size: 10px;">CHF ${item.betrag.toFixed(2)}</span>
+              </div>
+              <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${ssvVal === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
+                        onclick="jbSelectSingleSelectOption('keine', '${allKeysStr}', '${m.PersonNumber}')">Kein Stich</button>
+                <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${ssvVal === 'liegend' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                        onclick="jbSelectSingleSelectOption('KK002', '${allKeysStr}', '${m.PersonNumber}')">Liegend</button>
+                <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${ssvVal === '2-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                        onclick="jbSelectSingleSelectOption('KK003', '${allKeysStr}', '${m.PersonNumber}')">2-Stellung</button>
+                <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${ssvVal === '3-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                        onclick="jbSelectSingleSelectOption('KK004', '${allKeysStr}', '${m.PersonNumber}')">3-Stellung</button>
+                <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${ssvVal === 'liegend_2_3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                        onclick="jbSelectSingleSelectOption('liegend_2_3', '${allKeysStr}', '${m.PersonNumber}')">L+2+3 St.</button>
+                <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${ssvVal === 'sv' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                        onclick="jbSelectSingleSelectOption('KK005', '${allKeysStr}', '${m.PersonNumber}')">SV Stich</button>
+              </div>
+            </div>
+          `;
+        } else {
+          // Generische Einzelauswahl (Radio-Pills)
+          const activeItem = fieldItems.find(it => Number(events[it.key] || 0) > 0);
+          const activeKey = activeItem ? activeItem.key : 'keine';
+
+          const buttonsHtml = fieldItems.map(it => {
+            const isActive = activeKey === it.key;
+            return `
+              <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${isActive ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                      onclick="jbSelectSingleSelectOption('${it.key}', '${allKeysStr}', '${m.PersonNumber}')"
+                      title="${escHtml(it.bezeichnung || '')} (CHF ${it.betrag.toFixed(2)})">
+                ${escHtml(it.bezeichnungfrontend || it.bezeichnung || it.key)}
+              </button>
+            `;
+          }).join('');
+
+          bodyHtml += `
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label small fw-semibold text-muted mb-0">${escHtml(fieldName)}</label>
+                <span class="badge bg-secondary" style="font-size: 10px;">Einzelauswahl</span>
+              </div>
+              <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${activeKey === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
+                        onclick="jbSelectSingleSelectOption('keine', '${allKeysStr}', '${m.PersonNumber}')">Keine</button>
+                ${buttonsHtml}
+              </div>
+            </div>
+          `;
+        }
+      } else if (item.ui_typ === 'multiselect') {
+        const fieldName = item.ui_feld || 'Mehrfachauswahl';
+        const fieldItems = items.filter(it => it.ui_typ === 'multiselect' && it.ui_feld === fieldName);
+        fieldItems.forEach(it => renderedKeys.add(it.key));
+
+        const buttonsHtml = fieldItems.map(it => {
+          const isActive = Number(events[it.key] || 0) > 0;
+          return `
+            <button type="button" class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${isActive ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
+                    onclick="jbToggleMultiSelectOption('${it.key}', '${m.PersonNumber}')"
+                    title="${escHtml(it.bezeichnung || '')} (CHF ${it.betrag.toFixed(2)})">
+              ${isActive ? '<i class="fas fa-check me-1"></i>' : ''}${escHtml(it.bezeichnungfrontend || it.bezeichnung || it.key)}
+              <span class="badge ${isActive ? 'bg-white text-dark' : 'bg-secondary'} ms-1" style="font-size: 9px;">CHF ${it.betrag.toFixed(2)}</span>
+            </button>
+          `;
+        }).join('');
+
+        bodyHtml += `
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label small fw-semibold text-muted mb-0">${escHtml(fieldName)}</label>
+              <span class="badge bg-info text-dark" style="font-size: 10px;">Mehrfachauswahl</span>
+            </div>
+            <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px; flex-wrap: wrap;">
+              ${buttonsHtml}
+            </div>
+          </div>
+        `;
+      }
+    });
+
+    // Verbleibende Checkbox-Elemente in 2-Spalten Grid rendern
+    const checkboxItems = items.filter(it => !renderedKeys.has(it.key) && (it.ui_typ === 'checkbox' || !it.ui_typ));
+    if (checkboxItems.length > 0) {
+      bodyHtml += '<div class="row g-2">';
+      checkboxItems.forEach(it => {
+        renderedKeys.add(it.key);
+        const isChecked = Number(events[it.key] || 0) > 0;
+        bodyHtml += `
+          <div class="col-6">
+            <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
+              <div>
+                <span class="small fw-semibold text-muted">${escHtml(it.ui_feld || it.bezeichnungfrontend || it.bezeichnung || it.key)}</span>
+                <span class="badge bg-secondary ms-1" style="font-size: 9px;">CHF ${it.betrag.toFixed(2)}</span>
+              </div>
+              <input type="checkbox" class="form-check-input" ${isChecked ? 'checked' : ''} 
+                     onchange="jbUpdateEventState('${it.key}', this.checked ? 1 : 0, '${m.PersonNumber}')">
+            </label>
+          </div>
+        `;
+      });
+      bodyHtml += '</div>';
+    }
+
+    html += `
+      <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
+        <h6 class="text-secondary fw-bold mb-3" style="font-size: 12px; text-transform: uppercase;">
+          <i class="fas ${icon} me-2"></i>${escHtml(groupName)}
+        </h6>
+        ${bodyHtml}
+      </div>
+    `;
+  });
+
+  return html;
+}
+
+window.jbUpdateEventState = function(key, val, pn) {
+  const pnClean = String(pn || '').trim();
+  key = String(key).trim().toUpperCase();
+  val = Number(val || 0);
+
+  if (!_jbParticipationsState.events) {
+    _jbParticipationsState.events = {};
+  }
+  _jbParticipationsState.events[key] = val;
+
+  // Sync to legacy fields if applicable
+  if (key === 'GE001') _jbParticipationsState.schuetzenhaus = val > 0;
+  if (key === 'KK008') _jbParticipationsState.kk_volksschiessen = val > 0 ? String(val) : 'keine';
+  if (key === 'KK006') _jbParticipationsState.kk_verband = val > 0;
+  if (key === 'KK007') _jbParticipationsState.kk_verein = val > 0;
+  if (key === 'KK001') _jbParticipationsState.kk_grenzland = val > 0 ? '1' : 'keine';
+  if (key === 'LG001') _jbParticipationsState.lg_ag_dez = val > 0;
+  if (key === 'LG002') _jbParticipationsState.lg_ag_dez_auflage = val > 0;
+  if (key === 'LG003') _jbParticipationsState.lg_ch_dez = val > 0;
+  if (key === 'LG004') _jbParticipationsState.lg_ch_dez_auflage = val > 0;
+  if (key === 'LG005') _jbParticipationsState.lg_verband = val > 0;
+  if (key === 'LG006') _jbParticipationsState.lg_verein = val > 0;
+  if (key === 'LG007') _jbParticipationsState.lg_ch_kniend = val > 0;
+
+  if (!_jbLocalBulkChanges[pnClean]) {
+    _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+  }
+  _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
+  _jbLocalBulkChanges[pnClean][key] = val;
+
+  if (typeof jbSyncMemberToCache === 'function') {
+    jbSyncMemberToCache(pnClean, _jbParticipationsState);
+  }
+
+  jbRenderEntryList();
+
+  const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
+  if (m) {
+    jbRenderEntryForm(m);
+  }
+
+  jbTriggerAutoSave(pnClean);
+};
+
+window.jbSelectSingleSelectOption = function(activeKey, allKeysStr, pn) {
+  const pnClean = String(pn || '').trim();
+  const allKeys = String(allKeysStr || '').split(',').map(k => k.trim().toUpperCase()).filter(Boolean);
+  
+  if (!_jbParticipationsState.events) {
+    _jbParticipationsState.events = {};
+  }
+
+  // Deactivate all keys in this group
+  allKeys.forEach(k => {
+    _jbParticipationsState.events[k] = 0;
+  });
+
+  // Activate selected option
+  if (activeKey === 'liegend_2_3') {
+    _jbParticipationsState.ssv_dez = 'liegend_2_3';
+    _jbParticipationsState.events['KK002'] = 1;
+    _jbParticipationsState.events['KK003'] = 1;
+    _jbParticipationsState.events['KK004'] = 1;
+  } else if (activeKey && activeKey !== 'keine') {
+    _jbParticipationsState.events[activeKey.toUpperCase()] = 1;
+    if (activeKey === 'KK002') _jbParticipationsState.ssv_dez = 'liegend';
+    else if (activeKey === 'KK003') _jbParticipationsState.ssv_dez = '2-stellung';
+    else if (activeKey === 'KK004') _jbParticipationsState.ssv_dez = '3-stellung';
+    else if (activeKey === 'KK005') _jbParticipationsState.ssv_dez = 'sv';
+  } else {
+    if (allKeys.includes('KK002')) _jbParticipationsState.ssv_dez = 'keine';
+  }
+
+  if (!_jbLocalBulkChanges[pnClean]) {
+    _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+  }
+  _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
+  if (_jbParticipationsState.ssv_dez) _jbLocalBulkChanges[pnClean].ssv_dez = _jbParticipationsState.ssv_dez;
+
+  if (typeof jbSyncMemberToCache === 'function') {
+    jbSyncMemberToCache(pnClean, _jbParticipationsState);
+  }
+
+  jbRenderEntryList();
+
+  const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
+  if (m) {
+    jbRenderEntryForm(m);
+  }
+
+  jbTriggerAutoSave(pnClean);
+};
+
+window.jbToggleMultiSelectOption = function(key, pn) {
+  const pnClean = String(pn || '').trim();
+  key = String(key).trim().toUpperCase();
+
+  if (!_jbParticipationsState.events) {
+    _jbParticipationsState.events = {};
+  }
+  const currentVal = Number(_jbParticipationsState.events[key] || 0);
+  const newVal = currentVal > 0 ? 0 : 1;
+  jbUpdateEventState(key, newVal, pnClean);
+};
 
 // 4. Formular für den aktiven Schützen rendern
 function jbRenderEntryForm(m) {
@@ -331,130 +718,10 @@ function jbRenderEntryForm(m) {
           </div>
         </div>
 
-        <!-- 2. Kleinkaliber (50m) -->
-        <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
-          <h6 class="text-secondary fw-bold mb-3" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-bullseye me-2 text-danger"></i>50m Wettschiessen (KK)</h6>
-          
-          <div class="mb-3">
-            <label class="form-label small fw-semibold text-muted">KK Volksschiessen (KK008)</label>
-            <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px;">
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('kk_volksschiessen', 'keine', '${m.PersonNumber}')">Kein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('kk_volksschiessen', '1', '${m.PersonNumber}')">1 Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '2' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('kk_volksschiessen', '2', '${m.PersonNumber}')">2 Stiche</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_volksschiessen === '3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('kk_volksschiessen', '3', '${m.PersonNumber}')">3 Stiche</button>
-            </div>
-          </div>
+        <!-- 2. Dynamische Wettkämpfe & Gebührengruppen (50m, 10m, weitere) -->
+        ${jbRenderDynamicFeeGroupsHTML(m, _jbParticipationsState)}
 
-          <div class="mb-3">
-            <label class="form-label small fw-semibold text-muted">SSV dez (KK002/003/004/005)</label>
-            <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px; flex-wrap: wrap;">
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('ssv_dez', 'keine', '${m.PersonNumber}')">Kein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'liegend' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('ssv_dez', 'liegend', '${m.PersonNumber}')">Liegend</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === '2-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('ssv_dez', '2-stellung', '${m.PersonNumber}')">2-Stellung</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === '3-stellung' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('ssv_dez', '3-stellung', '${m.PersonNumber}')">3-Stellung</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'liegend_2_3' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('ssv_dez', 'liegend_2_3', '${m.PersonNumber}')">L+2+3 St.</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.ssv_dez === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('ssv_dez', 'js', '${m.PersonNumber}')">JS Stich</button>
-            </div>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label small fw-semibold text-muted">KK Grenzland (KK001)</label>
-            <div class="d-flex bg-light p-1 rounded-2" style="gap: 5px;">
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === 'keine' ? 'btn-toggle-active-primary' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('kk_grenzland', 'keine', '${m.PersonNumber}')">Kein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === '1' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('kk_grenzland', '1', '${m.PersonNumber}')">Ein Stich</button>
-              <button class="btn btn-sm flex-fill rounded-2 border-0 py-1.5 ${_jbParticipationsState.kk_grenzland === 'js' ? 'btn-toggle-active-accent' : 'btn-toggle-inactive'}" 
-                      onclick="jbUpdateState('kk_grenzland', 'js', '${m.PersonNumber}')">JS Stich</button>
-            </div>
-          </div>
-
-          <div class="row g-2">
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">50m Verbandsschiessen</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.kk_verband ? 'checked' : ''} 
-                       onchange="jbUpdateState('kk_verband', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">50m Vereinsschiessen</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.kk_verein ? 'checked' : ''} 
-                       onchange="jbUpdateState('kk_verein', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- 3. Luftgewehr (10m) & Sonstiges -->
-        <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
-          <h6 class="text-secondary fw-bold mb-3" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-bullseye me-2 text-primary"></i>10m Wettschiessen (LG)</h6>
-          
-          <div class="row g-2">
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">10m AG DEZ</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.lg_ag_dez ? 'checked' : ''} 
-                       onchange="jbUpdateState('lg_ag_dez', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">10m AG DEZ Auflage</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.lg_ag_dez_auflage ? 'checked' : ''} 
-                       onchange="jbUpdateState('lg_ag_dez_auflage', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">10m CH DEZ</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.lg_ch_dez ? 'checked' : ''} 
-                       onchange="jbUpdateState('lg_ch_dez', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">10m CH DEZ Auflage</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.lg_ch_dez_auflage ? 'checked' : ''} 
-                       onchange="jbUpdateState('lg_ch_dez_auflage', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">10m Verbandsschiessen</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.lg_verband ? 'checked' : ''} 
-                       onchange="jbUpdateState('lg_verband', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-6">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">10m Vereinsschiessen</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.lg_verein ? 'checked' : ''} 
-                       onchange="jbUpdateState('lg_verein', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-            <div class="col-12">
-              <label class="w-100 p-2 border rounded-2 d-flex align-items-center justify-content-between bg-light" style="cursor: pointer;">
-                <span class="small fw-semibold text-muted">10m CH Kniendmeisterschaft</span>
-                <input type="checkbox" class="form-check-input" ${_jbParticipationsState.lg_ch_kniend ? 'checked' : ''} 
-                       onchange="jbUpdateState('lg_ch_kniend', this.checked, '${m.PersonNumber}')">
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- 4. Variable Zusatzpositionen (Freie Beträge) & Schloss 🔒 -->
+        <!-- 3. Variable Zusatzpositionen (Freie Beträge) & Schloss 🔒 -->
         <div class="card p-3 border-0 shadow-sm mb-3 rounded-3 bg-white border-start border-4 border-info">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="text-secondary fw-bold mb-0" style="font-size: 12px; text-transform: uppercase;">
@@ -589,16 +856,65 @@ function jbTriggerAutoSave(pnClean) {
       const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
       if (!m) return;
 
-      const payload = {
-        action: 'saveParticipations',
+      const events = settings.events ? { ...settings.events } : {};
+      if (settings.schuetzenhaus !== undefined) events['GE001'] = settings.schuetzenhaus ? 1 : 0;
+      if (settings.kk_volksschiessen !== undefined) events['KK008'] = settings.kk_volksschiessen === 'keine' ? 0 : Number(settings.kk_volksschiessen);
+      if (settings.kk_verein !== undefined) events['KK007'] = settings.kk_verein ? 1 : 0;
+      if (settings.kk_verband !== undefined) events['KK006'] = settings.kk_verband ? 1 : 0;
+      if (settings.kk_grenzland !== undefined) events['KK001'] = settings.kk_grenzland !== 'keine' ? 1 : 0;
+      if (settings.ssv_dez !== undefined) {
+        const ssv = settings.ssv_dez;
+        events['KK002'] = (ssv === 'liegend' || ssv === 'liegend_2_3') ? 1 : 0;
+        events['KK003'] = (ssv === '2-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
+        events['KK004'] = (ssv === '3-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
+        events['KK005'] = ssv === 'sv' ? 1 : 0;
+      }
+      if (settings.lg_ag_dez !== undefined) events['LG001'] = settings.lg_ag_dez ? 1 : 0;
+      if (settings.lg_ag_dez_auflage !== undefined) events['LG002'] = settings.lg_ag_dez_auflage ? 1 : 0;
+      if (settings.lg_ch_dez !== undefined) events['LG003'] = settings.lg_ch_dez ? 1 : 0;
+      if (settings.lg_ch_dez_auflage !== undefined) events['LG004'] = settings.lg_ch_dez_auflage ? 1 : 0;
+      if (settings.lg_verband !== undefined) events['LG005'] = settings.lg_verband ? 1 : 0;
+      if (settings.lg_verein !== undefined) events['LG006'] = settings.lg_verein ? 1 : 0;
+      if (settings.lg_ch_kniend !== undefined) events['LG007'] = settings.lg_ch_kniend ? 1 : 0;
+
+      const list = Object.entries(events).map(([eventkey, teilgenommen]) => ({
+        pn: pnClean,
         year: _jbYear,
-        PersonNumber: pnClean,
-        settings: settings
+        eventkey,
+        teilgenommen: Number(teilgenommen || 0),
+        quelle: 'schnellerfassung'
+      }));
+
+      const licenses = settings.lizenz ? [{ pn: pnClean, lizenz: settings.lizenz }] : [];
+
+      const payload = {
+        action: 'saveParticipationsBulk',
+        list: list,
+        licenses: licenses,
+        user: window.currentUser || 'frontend'
       };
 
-      await apiFetch('jahresbeitrag', payload, 'POST');
+      await apiFetch('jahresbeitrag', '', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
       
       // Memory Caches updaten
+      if (!_jbParticipationsCache[pnClean]) _jbParticipationsCache[pnClean] = [];
+      list.forEach(item => {
+        const idx = _jbParticipationsCache[pnClean].findIndex(p => p.eventkey === item.eventkey && Number(p.year) === Number(item.year));
+        if (idx >= 0) {
+          _jbParticipationsCache[pnClean][idx].teilgenommen = item.teilgenommen;
+        } else {
+          _jbParticipationsCache[pnClean].push({
+            PersonNumber: pnClean,
+            year: item.year,
+            eventkey: item.eventkey,
+            teilgenommen: item.teilgenommen
+          });
+        }
+      });
+
       if (typeof jbSyncMemberToCache === 'function') {
         jbSyncMemberToCache(pnClean, settings);
       }
@@ -621,27 +937,45 @@ function jbApplyPreset(presetType, pn) {
   const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
   if (!m) return;
 
+  if (!_jbParticipationsState.events) {
+    _jbParticipationsState.events = {};
+  }
+
   if (presetType === 'aktiv_a') {
     _jbParticipationsState.lizenz = 'verein';
     _jbParticipationsState.schuetzenhaus = true;
     _jbParticipationsState.kk_volksschiessen = '1';
     _jbParticipationsState.kk_verband = true;
     _jbParticipationsState.kk_verein = true;
+    _jbParticipationsState.events['GE001'] = 1;
+    _jbParticipationsState.events['KK008'] = 1;
+    _jbParticipationsState.events['KK006'] = 1;
+    _jbParticipationsState.events['KK007'] = 1;
   } else if (presetType === 'aktiv_b') {
     _jbParticipationsState.lizenz = 'verein';
     _jbParticipationsState.schuetzenhaus = true;
     _jbParticipationsState.kk_volksschiessen = '1';
     _jbParticipationsState.kk_verband = false;
     _jbParticipationsState.kk_verein = true;
+    _jbParticipationsState.events['GE001'] = 1;
+    _jbParticipationsState.events['KK008'] = 1;
+    _jbParticipationsState.events['KK006'] = 0;
+    _jbParticipationsState.events['KK007'] = 1;
   } else if (presetType === 'passiv') {
     _jbParticipationsState.lizenz = 'passiv';
     _jbParticipationsState.schuetzenhaus = false;
     _jbParticipationsState.kk_volksschiessen = 'keine';
     _jbParticipationsState.kk_verband = false;
     _jbParticipationsState.kk_verein = false;
+    _jbParticipationsState.events['GE001'] = 0;
+    _jbParticipationsState.events['KK008'] = 0;
+    _jbParticipationsState.events['KK006'] = 0;
+    _jbParticipationsState.events['KK007'] = 0;
   }
 
   _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+  _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
+
   if (typeof jbSyncMemberToCache === 'function') {
     jbSyncMemberToCache(pnClean, _jbParticipationsState);
   }
@@ -677,11 +1011,35 @@ function jbHandleSidebarKeyDown(e) {
 function jbUpdateState(key, val, pn) {
   const pnClean = String(pn || '').trim();
   _jbParticipationsState[key] = val;
+
+  if (!_jbParticipationsState.events) {
+    _jbParticipationsState.events = {};
+  }
+
+  // Sync to events map
+  if (key === 'schuetzenhaus') _jbParticipationsState.events['GE001'] = val ? 1 : 0;
+  else if (key === 'kk_volksschiessen') _jbParticipationsState.events['KK008'] = val === 'keine' ? 0 : Number(val);
+  else if (key === 'kk_verband') _jbParticipationsState.events['KK006'] = val ? 1 : 0;
+  else if (key === 'kk_verein') _jbParticipationsState.events['KK007'] = val ? 1 : 0;
+  else if (key === 'kk_grenzland') _jbParticipationsState.events['KK001'] = val !== 'keine' ? 1 : 0;
+  else if (key === 'ssv_dez') {
+    _jbParticipationsState.events['KK002'] = (val === 'liegend' || val === 'liegend_2_3') ? 1 : 0;
+    _jbParticipationsState.events['KK003'] = (val === '2-stellung' || val === 'liegend_2_3') ? 1 : 0;
+    _jbParticipationsState.events['KK004'] = (val === '3-stellung' || val === 'liegend_2_3') ? 1 : 0;
+    _jbParticipationsState.events['KK005'] = val === 'sv' ? 1 : 0;
+  } else if (key === 'lg_ag_dez') _jbParticipationsState.events['LG001'] = val ? 1 : 0;
+  else if (key === 'lg_ag_dez_auflage') _jbParticipationsState.events['LG002'] = val ? 1 : 0;
+  else if (key === 'lg_ch_dez') _jbParticipationsState.events['LG003'] = val ? 1 : 0;
+  else if (key === 'lg_ch_dez_auflage') _jbParticipationsState.events['LG004'] = val ? 1 : 0;
+  else if (key === 'lg_verband') _jbParticipationsState.events['LG005'] = val ? 1 : 0;
+  else if (key === 'lg_verein') _jbParticipationsState.events['LG006'] = val ? 1 : 0;
+  else if (key === 'lg_ch_kniend') _jbParticipationsState.events['LG007'] = val ? 1 : 0;
   
   if (!_jbLocalBulkChanges[pnClean]) {
     _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
   }
   _jbLocalBulkChanges[pnClean][key] = val;
+  _jbLocalBulkChanges[pnClean].events = { ..._jbParticipationsState.events };
 
   if (typeof jbSyncMemberToCache === 'function') {
     jbSyncMemberToCache(pnClean, _jbParticipationsState);
@@ -709,6 +1067,9 @@ function jbEntryResetForm(pn) {
 
   _jbParticipationsState = {
     lizenz: 'keine',
+    events: {
+      'GE001': defaultGe ? 1 : 0
+    },
     kk_volksschiessen: 'keine',
     ssv_dez: 'keine',
     kk_grenzland: 'keine',
@@ -810,26 +1171,37 @@ async function jbSaveAllBulkLocalChanges() {
     const licenses = Object.entries(_jbLocalBulkChanges).map(([pn, state]) => ({ pn, lizenz: state.lizenz }));
 
     Object.entries(_jbLocalBulkChanges).forEach(([pn, state]) => {
-      list.push({ pn, year, eventkey: 'GE001', teilgenommen: state.schuetzenhaus ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'KK008', teilgenommen: state.kk_volksschiessen === 'keine' ? 0 : Number(state.kk_volksschiessen), quelle: 'volksschiessen' });
-      list.push({ pn, year, eventkey: 'KK007', teilgenommen: state.kk_verein ? 1 : 0, quelle: 'verein' });
-      
-      const ssv = state.ssv_dez;
-      list.push({ pn, year, eventkey: 'KK002', teilgenommen: (ssv === 'liegend' || ssv === 'liegend_2_3') ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'KK003', teilgenommen: (ssv === '2-stellung' || ssv === 'liegend_2_3') ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'KK004', teilgenommen: (ssv === '3-stellung' || ssv === 'liegend_2_3') ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'KK005', teilgenommen: ssv === 'sv' ? 1 : 0 });
-      
-      list.push({ pn, year, eventkey: 'KK001', teilgenommen: state.kk_grenzland !== 'keine' ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'KK006', teilgenommen: state.kk_verband ? 1 : 0 });
+      const events = state.events ? { ...state.events } : {};
 
-      list.push({ pn, year, eventkey: 'LG001', teilgenommen: state.lg_ag_dez ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'LG002', teilgenommen: state.lg_ag_dez_auflage ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'LG003', teilgenommen: state.lg_ch_dez ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'LG004', teilgenommen: state.lg_ch_dez_auflage ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'LG005', teilgenommen: state.lg_verband ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'LG006', teilgenommen: state.lg_verein ? 1 : 0 });
-      list.push({ pn, year, eventkey: 'LG007', teilgenommen: state.lg_ch_kniend ? 1 : 0 });
+      if (state.schuetzenhaus !== undefined) events['GE001'] = state.schuetzenhaus ? 1 : 0;
+      if (state.kk_volksschiessen !== undefined) events['KK008'] = state.kk_volksschiessen === 'keine' ? 0 : Number(state.kk_volksschiessen);
+      if (state.kk_verein !== undefined) events['KK007'] = state.kk_verein ? 1 : 0;
+      if (state.kk_verband !== undefined) events['KK006'] = state.kk_verband ? 1 : 0;
+      if (state.kk_grenzland !== undefined) events['KK001'] = state.kk_grenzland !== 'keine' ? 1 : 0;
+      if (state.ssv_dez !== undefined) {
+        const ssv = state.ssv_dez;
+        events['KK002'] = (ssv === 'liegend' || ssv === 'liegend_2_3') ? 1 : 0;
+        events['KK003'] = (ssv === '2-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
+        events['KK004'] = (ssv === '3-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
+        events['KK005'] = ssv === 'sv' ? 1 : 0;
+      }
+      if (state.lg_ag_dez !== undefined) events['LG001'] = state.lg_ag_dez ? 1 : 0;
+      if (state.lg_ag_dez_auflage !== undefined) events['LG002'] = state.lg_ag_dez_auflage ? 1 : 0;
+      if (state.lg_ch_dez !== undefined) events['LG003'] = state.lg_ch_dez ? 1 : 0;
+      if (state.lg_ch_dez_auflage !== undefined) events['LG004'] = state.lg_ch_dez_auflage ? 1 : 0;
+      if (state.lg_verband !== undefined) events['LG005'] = state.lg_verband ? 1 : 0;
+      if (state.lg_verein !== undefined) events['LG006'] = state.lg_verein ? 1 : 0;
+      if (state.lg_ch_kniend !== undefined) events['LG007'] = state.lg_ch_kniend ? 1 : 0;
+
+      Object.entries(events).forEach(([eventkey, teilgenommen]) => {
+        list.push({
+          pn,
+          year,
+          eventkey,
+          teilgenommen: Number(teilgenommen || 0),
+          quelle: 'schnellerfassung'
+        });
+      });
     });
 
     const resSave = await apiFetch('jahresbeitrag', '', {
