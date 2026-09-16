@@ -696,10 +696,6 @@ async function initLogin() {
     const wrapper = document.getElementById('app-wrapper');
     const loginOverlay = document.getElementById('login-overlay');
 
-    // SSO-Check: Weiterleitungsparameter von Vereins-Homepage prüfen
-    const urlParams = new URLSearchParams(window.location.search);
-    const redirectTarget = urlParams.get('redirect') || urlParams.get('returnUrl');
-
     if (userStr) {
         let user = JSON.parse(userStr);
         // Migration: Falls Lizenz noch nicht sechstellig ist
@@ -708,24 +704,6 @@ async function initLogin() {
             localStorage.setItem('sportschuetzen_user', JSON.stringify(user));
         }
         syncOneSignal(user);
-
-        // Falls von der Website aufgerufen und bereits angemeldet:
-        if (redirectTarget) {
-            const sessionPayload = {
-                id: user.id,
-                lizenz: user.lizenz,
-                name: user.name,
-                vorname: user.vorname,
-                nachname: user.nachname,
-                role: user.role || 'member',
-                ts: Date.now()
-            };
-            const token = btoa(encodeURIComponent(JSON.stringify(sessionPayload)));
-            const sep = redirectTarget.includes('?') ? '&' : '?';
-            window.location.href = redirectTarget + sep + 'auth_session=' + encodeURIComponent(token);
-            return;
-        }
-
         showApp(user);
     } else {
         if (wrapper) wrapper.style.display = 'none';
@@ -866,26 +844,6 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
             localStorage.setItem('sportschuetzen_user', JSON.stringify(userData));
             syncOneSignal(userData);
             errorDiv.style.display = 'none';
-
-            // SSO-Check: Wenn von Website weitergeleitet, Session-Ticket zurücksenden
-            const urlParams = new URLSearchParams(window.location.search);
-            const redirectTarget = urlParams.get('redirect') || urlParams.get('returnUrl');
-            if (redirectTarget) {
-                const sessionPayload = {
-                    id: userData.id,
-                    lizenz: userData.lizenz,
-                    name: userData.name,
-                    vorname: userData.vorname,
-                    nachname: userData.nachname,
-                    role: userData.role || 'member',
-                    ts: Date.now()
-                };
-                const token = btoa(encodeURIComponent(JSON.stringify(sessionPayload)));
-                const sep = redirectTarget.includes('?') ? '&' : '?';
-                window.location.href = redirectTarget + sep + 'auth_session=' + encodeURIComponent(token);
-                return;
-            }
-
             document.getElementById('login-overlay').style.display = 'none';
             showApp(userData);
         } else {
