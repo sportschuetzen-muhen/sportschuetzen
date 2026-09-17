@@ -133,6 +133,22 @@ async function handleInventarSubmit(e) {
     const action     = document.getElementById('select-action').value;
     const mitgliedId = document.getElementById('select-mitglied').value;
 
+    const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
+    const cleanKonto = rawKonto.split('|')[0].trim();
+    if (action === 'verkauf' && !cleanKonto) {
+        alert("❌ Bitte wählen Sie für den Verkauf ein gültiges Haben-Konto aus dem Kontenrahmen aus.");
+        window._isInventarSubmitting = false;
+        setInventarBusy(false);
+        return;
+    }
+    const hasPfandCheckout = action === 'checkout' && warenkorb.some(w => parseFloat(w.pfandBetrag) > 0);
+    if (hasPfandCheckout && !cleanKonto) {
+        alert("❌ Bitte wählen Sie für das Depot ein gültiges Kautionskonto aus dem Kontenrahmen aus (Standard: 2030).");
+        window._isInventarSubmitting = false;
+        setInventarBusy(false);
+        return;
+    }
+
     const mailAdresse = localStorage.getItem('portal_mailadresse') || localStorage.getItem('portal_mailanzeige') || "";
     const emailToUse = mailAdresse.includes('@') ? mailAdresse : "sportschuetzen.muhen@gmail.com";
 
@@ -245,6 +261,9 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const memberPlz = mglMaster.PostCode || m.PLZ || '';
             const memberOrt = mglMaster.City || m.Ort || '';
             
+            const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
+            const customKontoHaben = rawKonto.split('|')[0].trim() || '8501';
+
             let totalAmount = 0;
             const positions = invoiceItems.map((w, index) => {
                 totalAmount += w.pfandBetrag;
@@ -253,7 +272,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     description: `Kleiderverkauf: ${w.label}`,
                     quantity: 1,
                     unit_price: w.pfandBetrag,
-                    amount: w.pfandBetrag
+                    amount: w.pfandBetrag,
+                    konto: customKontoHaben
                 };
             });
 
@@ -306,8 +326,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
         // (Twint wird NICHT sofort gebucht, da Twint erst Tage später als Netto-Sammelüberweisung auf der Bank eingeht)
         const barItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Bar');
         if (barItems.length > 0) {
-            const userKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-            const customKontoHaben = userKonto || '3200';
+            const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
+            const customKontoHaben = rawKonto.split('|')[0].trim() || '8501';
 
             let seqCounter = 1;
             for (let w of barItems) {
@@ -343,6 +363,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
 async function verarbeitePfandBuchhaltung(cart, action) {
     try {
         if (action === 'checkout') {
+            const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
+            const kautionsKonto = rawKonto.split('|')[0].trim() || '2030';
             // Bar-Pfand erhalten: Soll 1000 (Kasse) an Haben 2030 (Kautionen / Depots)
             const barPfand = cart.filter(w => (w.pfandMethode === 'Bar' || w.pfandEinnahme === 'Ja') && w.pfandMethode !== 'Twint' && w.pfandMethode !== 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
             let seqCounter = 1;
@@ -354,7 +376,7 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                     beleg_nr: uniqueBeleg,
                     beschreibung: `Pfand Kasse (Eingang): ${w.label}`,
                     konto_soll: '1000', // Kasse
-                    konto_haben: '2030', // Kautionen / Depots (Passivkonto)
+                    konto_haben: kautionsKonto, // z.B. 2030 Kautionen / Depots (Passivkonto)
                     betrag: betrag,
                     typ: 'Kaution',
                     jahr: new Date().getFullYear()
@@ -417,6 +439,9 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         const memberPlz = mglMaster.PostCode || m.PLZ || '';
         const memberOrt = mglMaster.City || m.Ort || '';
 
+        const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
+        const kautionsKonto = rawKonto.split('|')[0].trim() || '2030';
+
         let totalAmount = 0;
         const positions = invoicePfandItems.map((w, index) => {
             const betrag = parseFloat(w.pfandBetrag) || 0;
@@ -426,7 +451,8 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                 description: `Depot / Kaution: ${w.label} (wird bei Rückgabe erstattet)`,
                 quantity: 1,
                 unit_price: betrag,
-                amount: betrag
+                amount: betrag,
+                konto: kautionsKonto
             };
         });
 

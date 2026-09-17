@@ -30,14 +30,18 @@ window.renderTabTemplates = function(content) {
       const tIdStr = t.id ? `'${t.id}'` : 'null';
       const escapedDesc = String(t.desc).replace(/'/g, "\\'");
       const escapedCategory = String(t.category).replace(/'/g, "\\'");
+      const kontoVal = t.habenkonto || t.konto || '';
+      const escapedKonto = String(kontoVal).replace(/'/g, "\\'");
+      const kontoBadge = kontoVal ? `<span class="badge bg-light text-primary font-monospace border">${escapeHtml(kontoVal)}</span>` : '<span class="text-muted small">–</span>';
       
       return `
         <tr class="bh-account-row">
           <td><span class="badge ${catBadge} px-2.5 py-1.5">${escapeHtml(t.category)}</span></td>
           <td class="fw-bold text-dark">${escapeHtml(t.desc)}</td>
           <td class="text-end font-monospace fw-bold">${priceLabel}</td>
+          <td class="text-center">${kontoBadge}</td>
           <td class="text-end">
-            <button class="btn btn-xs btn-outline-warning me-1 write-protected" onclick="rnOpenTemplateModal(${tIdStr}, '${escapedCategory}', '${escapedDesc}', '${t.price || ''}')" title="Vorlage bearbeiten">
+            <button class="btn btn-xs btn-outline-warning me-1 write-protected" onclick="rnOpenTemplateModal(${tIdStr}, '${escapedCategory}', '${escapedDesc}', '${t.price || ''}', '${escapedKonto}')" title="Vorlage bearbeiten">
               <i class="fas fa-edit"></i>
             </button>
             <button class="btn btn-xs btn-outline-danger write-protected" onclick="rnDeleteTemplate(${tIdStr}, '${escapedDesc}')" title="Vorlage löschen">
@@ -66,10 +70,11 @@ window.renderTabTemplates = function(content) {
         <table class="table table-hover align-middle bh-table mb-0" style="font-size: 13.5px;">
           <thead>
             <tr>
-              <th style="width: 160px;">Kategorie</th>
+              <th style="width: 140px;">Kategorie</th>
               <th>Dienstleistung / Ware (Beschreibung)</th>
-              <th class="text-end" style="width: 180px;">Standard-Richtpreis</th>
-              <th class="text-end" style="width: 120px;">Aktionen</th>
+              <th class="text-end" style="width: 160px;">Standard-Richtpreis</th>
+              <th class="text-center" style="width: 150px;">Haben-Konto</th>
+              <th class="text-end" style="width: 110px;">Aktionen</th>
             </tr>
           </thead>
           <tbody>
@@ -82,7 +87,7 @@ window.renderTabTemplates = function(content) {
 };
 
 // Modal for Template Add/Edit
-window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc = '', prc = '') {
+window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc = '', prc = '', habenkonto = '') {
   let modalEl = document.getElementById('rnModalTemplateEdit');
   if (!modalEl) {
     modalEl = document.createElement('div');
@@ -94,7 +99,7 @@ window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc
   }
   
   const isNew = templateId === null || templateId === undefined || templateId === '';
-  const t = isNew ? { id: '', category: cat, desc: dsc, price: prc } : (window._invoiceTemplates.find(x => String(x.id) === String(templateId)) || { id: templateId, category: cat, desc: dsc, price: prc });
+  const t = isNew ? { id: '', category: cat, desc: dsc, price: prc, habenkonto: habenkonto } : (window._invoiceTemplates.find(x => String(x.id) === String(templateId)) || { id: templateId, category: cat, desc: dsc, price: prc, habenkonto: habenkonto });
   
   const tIdParam = isNew ? 'null' : `'${t.id}'`;
   
@@ -122,7 +127,7 @@ window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc
               <input type="text" class="form-control fw-semibold" id="rnt-desc" required value="${escapeHtml(t.desc)}" placeholder="z.B. Süssgetränk 0.5 l">
             </div>
             
-            <div class="mb-4">
+            <div class="mb-3">
               <label class="form-label fw-bold small text-muted">Standard-Richtpreis (Optional)</label>
               <div class="input-group">
                 <span class="input-group-text bg-light text-muted">CHF</span>
@@ -130,6 +135,15 @@ window.rnOpenTemplateModal = function(templateId = null, cat = 'Vermietung', dsc
               </div>
               <div class="form-text text-muted small mt-1">Lassen Sie dieses Feld leer, wenn der Betrag bei jeder Rechnung individuell eingegeben werden soll (z.B. Getränkebezug).</div>
             </div>
+
+            <div class="mb-4">
+              <label class="form-label fw-bold small text-primary mb-1">
+                <i class="fas fa-book me-1"></i>Haben-Konto (Buchhaltung)
+              </label>
+              <input type="text" class="form-control font-monospace" id="rnt-habenkonto" list="rn-konten-datalist" value="${escapeHtml(t.habenkonto || t.konto || '')}" placeholder="Konto wählen oder suchen (z.B. 3650)...">
+              <div class="form-text text-muted small mt-1">Wird beim Einfügen dieser Standard-Position automatisch als Gegenkonto übernommen.</div>
+            </div>
+            ${typeof getRnKontenDatalistHtml === 'function' ? getRnKontenDatalistHtml() : ''}
             
             <div class="d-grid">
               <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm">
@@ -153,6 +167,8 @@ window.rnSaveTemplate = async function(event, templateId) {
   const desc = document.getElementById('rnt-desc').value.trim();
   const priceInput = document.getElementById('rnt-price').value;
   const price = priceInput !== '' ? parseFloat(priceInput) : '';
+  const rawHabenkonto = document.getElementById('rnt-habenkonto') ? document.getElementById('rnt-habenkonto').value.trim() : '';
+  const habenkonto = rawHabenkonto.split('|')[0].trim();
   
   const submitBtn = event.target.querySelector('button[type="submit"]');
   if (submitBtn) {
@@ -161,7 +177,7 @@ window.rnSaveTemplate = async function(event, templateId) {
   }
   
   const isNew = templateId === null || templateId === undefined || templateId === '';
-  const newTemplate = { category, desc, price };
+  const newTemplate = { category, desc, price, habenkonto };
   
   // Server POST payload
   const payload = {

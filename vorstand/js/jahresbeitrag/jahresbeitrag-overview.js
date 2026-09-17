@@ -745,15 +745,29 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     throw new Error("Keine berechneten Positionen für dieses Mitglied gefunden. Bitte zuerst Beiträge berechnen.");
   }
   
-  const positions = cachedPos.map((p, idx) => ({
-    position_nr: p.position_nr || (idx + 1),
-    description: p.beschreibung || '',
-    quantity: Number(p.quantity || 1),
-    unit_price: Number(p.betrag || 0),
-    amount: Number(p.betrag || 0),
-    type: p.typ || 'Debit',
-    source_field: p.sourcefield || ''
-  }));
+  const positions = cachedPos.map((p, idx) => {
+    const desc = p.beschreibung || p.name || '';
+    const sf = p.sourcefield || p.key || '';
+    let posKonto = p.konto || '';
+    if (!posKonto && typeof window.jbResolveAccountForPosition === 'function') {
+      posKonto = window.jbResolveAccountForPosition(sf, desc);
+    }
+
+    if (!posKonto) {
+      throw new Error(`Fehlendes Haben-Konto für Jahresbeitrag-Position ${p.position_nr || (idx + 1)} („${desc}“, Key: ${sf || '–'}) bei Mitglied ${name}. Bitte im Sheet 'gebuehrenconfig' (Members100) das Gegenkonto eintragen.`);
+    }
+
+    return {
+      position_nr: p.position_nr || (idx + 1),
+      description: desc,
+      quantity: Number(p.quantity || 1),
+      unit_price: Number(p.betrag || 0),
+      amount: Number(p.betrag || 0),
+      type: p.typ || 'Debit',
+      source_field: sf,
+      konto: posKonto
+    };
+  });
 
   // Finde die Rechnung in einem der beiden Caches
   const invoicesList = window._invoices || window._jbAllInvoices || [];

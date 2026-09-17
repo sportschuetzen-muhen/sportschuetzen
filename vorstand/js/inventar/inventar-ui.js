@@ -126,27 +126,28 @@ function renderInventarUI(container) {
                                     </select>
                                 </div>
                                 <div class="col-12 d-none mt-2" id="container-verkauf-konto">
-                                    <label class="form-label fw-bold small text-primary mb-1">
+                                    <label class="form-label fw-bold small text-primary mb-1" id="label-verkauf-konto">
                                       <i class="fas fa-book me-1"></i>Haben-Konto (Buchhaltung)
                                     </label>
                                     <div class="input-group input-group-sm">
-                                        <input type="text" id="verkauf-konto" class="form-control font-monospace" 
-                                               value="3200" readonly style="background-color: #e9ecef;"
-                                               onchange="document.getElementById('label-verwendungs-konto').innerText = this.value || '3200';">
+                                        <input type="text" id="verkauf-konto" class="form-control font-monospace" list="inv-konten-datalist"
+                                               value="8501" readonly style="background-color: #e9ecef;"
+                                               placeholder="Konto suchen oder wählen..."
+                                               onchange="onVerkaufKontoChange(this.value)">
                                         <button class="btn btn-outline-secondary" type="button" id="btn-verkauf-konto-lock" 
-                                                onclick="toggleVerkaufKontoLock()" title="Konto-Sperre aufheben">
+                                                onclick="toggleVerkaufKontoLock()" title="Konto-Sperre aufheben / sperren">
                                             <i class="fas fa-lock" id="icon-verkauf-konto-lock"></i>
                                         </button>
                                     </div>
-                                    <div class="form-text small" style="font-size: 10px;">
-                                        Standard: <code>3200</code> (Ertrag Kleiderverkauf). Bei Vereinsjacken z.B. <code>8500</code>.
+                                    <div class="form-text small" style="font-size: 10px;" id="help-verkauf-konto">
+                                        Standard: <code>8501</code> (Kleiderverkauf) oder <code>2030</code> (Kautionen / Depots). Variabel aus Kontenrahmen wählbar.
                                     </div>
                                 </div>
                                 <div class="col-12 d-none mt-2" id="container-verkauf-info-banner">
                                     <div class="alert alert-info py-2 px-3 mb-0 border-0 rounded-3 shadow-xs" style="font-size: 11px; background-color: #e0f2fe; color: #0369a1;">
                                         <i class="fas fa-sync-alt me-1 fw-bold text-primary"></i>
                                         <strong>Automatische Buchhaltung & Rechnungs-Erstellung:</strong><br>
-                                        • <strong>Bar / Twint:</strong> Bucht automatisch im Kassabuch (Soll 1000/1020 an Haben <span id="label-verwendungs-konto" class="fw-bold">3200</span>).<br>
+                                        • <strong>Bar / Twint:</strong> Bucht automatisch im Kassabuch (Soll 1000/1020 an Haben <span id="label-verwendungs-konto" class="fw-bold">8501</span>).<br>
                                         • <strong>Einzahlungsschein:</strong> Erstellt automatisch eine QR-Rechnung und versendet sie per E-Mail.
                                     </div>
                                 </div>
@@ -368,8 +369,29 @@ function fillInventarDropdowns() {
         document.getElementById('select-zustand-abgabe').innerHTML    = zOpts;
         document.getElementById('select-zustand-rueckgabe').innerHTML = zOpts;
     }
+    fillInventarKontenDropdown();
     toggleBookingFields(); // Sorgt dafür, dass UI-State zur default action (Verkauf) passt
 }
+
+function fillInventarKontenDropdown() {
+    let list = window._bhKontenrahmen;
+    if (!list || list.length === 0) {
+        try {
+            const cached = localStorage.getItem('bh_kontenrahmen');
+            if (cached) list = JSON.parse(cached);
+        } catch (e) {}
+    }
+    let datalist = document.getElementById('inv-konten-datalist');
+    if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = 'inv-konten-datalist';
+        document.body.appendChild(datalist);
+    }
+    if (list && list.length > 0) {
+        datalist.innerHTML = list.map(k => `<option value="${escapeHtml(k.konto)} | ${escapeHtml(k.bezeichnung)}">`).join('');
+    }
+}
+window.fillInventarKontenDropdown = fillInventarKontenDropdown;
 
 function toggleBookingFields() {
     const action = document.getElementById('select-action').value;
@@ -382,7 +404,31 @@ function toggleBookingFields() {
     document.getElementById('container-pfand-einnahme').classList.toggle('d-none', !isCheckout);
     document.getElementById('container-pfand-retour').classList.toggle('d-none', action !== 'checkin');
     document.getElementById('container-verkauf-methode').classList.toggle('d-none', !isVerkauf);
-    document.getElementById('container-verkauf-konto')?.classList.toggle('d-none', !isVerkauf);
+    
+    // Konto-Container bei Verkauf UND bei Ausgabe (Depot) anzeigen
+    const kontoContainer = document.getElementById('container-verkauf-konto');
+    const labelKonto = document.getElementById('label-verkauf-konto');
+    const inputKonto = document.getElementById('verkauf-konto');
+    const helpKonto = document.getElementById('help-verkauf-konto');
+    
+    if (kontoContainer) {
+        kontoContainer.classList.toggle('d-none', !isVerkauf && !isCheckout);
+        if (isVerkauf) {
+            if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-book me-1"></i>Haben-Konto (Ertrag Kleiderverkauf)';
+            if (inputKonto && (inputKonto.value === '2030' || inputKonto.value.startsWith('2030 '))) {
+                inputKonto.value = '8501';
+            }
+            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>8501</code> (Kleiderverkauf). Ansonsten variabel aus Kontenrahmen wählbar.';
+            onVerkaufKontoChange(inputKonto ? inputKonto.value : '8501');
+        } else if (isCheckout) {
+            if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-shield-alt me-1"></i>Haben-Konto (Kautionen / Depots)';
+            if (inputKonto && (inputKonto.value === '8501' || inputKonto.value.startsWith('8501 ') || inputKonto.value === '3200')) {
+                inputKonto.value = '2030';
+            }
+            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>2030</code> (Kautionen / Depots - Passivkonto). Ansonsten variabel aus Kontenrahmen wählbar.';
+        }
+    }
+    
     document.getElementById('container-verkauf-info-banner')?.classList.toggle('d-none', !isVerkauf);
     
     // Label umschalten für Betrag
@@ -395,6 +441,12 @@ function toggleBookingFields() {
     
     updateSubOptions();
 }
+
+window.onVerkaufKontoChange = function(val) {
+    const cleanKonto = (val || '').split('|')[0].trim();
+    const lbl = document.getElementById('label-verwendungs-konto');
+    if (lbl) lbl.innerText = cleanKonto || '8501';
+};
 
 window.toggleVerkaufKontoLock = function() {
     const input = document.getElementById('verkauf-konto');

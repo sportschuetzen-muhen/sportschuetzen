@@ -8,6 +8,10 @@ window.rnEnsureCustomStyles = function() {
   const style = document.createElement('style');
   style.id = 'rn-invoices-custom-styles';
   style.textContent = `
+    #rn-table-scroll-wrap {
+      min-height: 480px !important;
+      padding-bottom: 120px !important;
+    }
     #rn-invoices-table {
       font-size: 14.5px !important;
     }
@@ -87,7 +91,9 @@ window.rnGetDropdownMenuHtml = function(actionFuncName) {
     grouped[cat].forEach(t => {
       const priceLabel = t.price ? ` (CHF ${Number(t.price).toFixed(2)})` : ' (Preis manuell)';
       const escapedDesc = String(t.desc).replace(/'/g, "\\'");
-      html += `<li><a class="dropdown-item" href="#" onclick="${actionFuncName}('${escapedDesc}', '${t.price || ''}'); return false;">${escapeHtml(t.desc)}${priceLabel}</a></li>`;
+      const kontoVal = t.habenkonto || t.konto || '';
+      const escapedKonto = String(kontoVal).replace(/'/g, "\\'");
+      html += `<li><a class="dropdown-item d-flex justify-content-between align-items-center py-1.5" href="#" onclick="${actionFuncName}('${escapedDesc}', '${t.price || ''}', 1, '${escapedKonto}'); return false;"><span>${escapeHtml(t.desc)}${priceLabel}</span>${kontoVal ? `<span class="badge bg-light text-primary font-monospace ms-2 border" style="font-size:11px;">${escapeHtml(kontoVal)}</span>` : ''}</a></li>`;
     });
   });
   
@@ -340,7 +346,7 @@ window.renderTabArchiv = function(content) {
         </div>
       </div>
 
-      <div class="table-responsive" id="rn-table-scroll-wrap">
+      <div class="table-responsive" id="rn-table-scroll-wrap" style="min-height: 480px; padding-bottom: 120px;">
         <table class="table table-hover align-middle bh-table rn-invoices-table mb-0" id="rn-invoices-table">
           <thead>
             <tr>
@@ -584,7 +590,7 @@ window.rnRenderTable = function() {
             </button>
 
             <div class="dropdown d-inline-block">
-              <button class="btn btn-sm btn-light border shadow-xs px-2 py-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Weitere Aktionen für ${item.id}">
+              <button class="btn btn-sm btn-light border shadow-xs px-2 py-1" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" title="Weitere Aktionen für ${item.id}">
                 <i class="fas fa-ellipsis-v text-muted"></i>
               </button>
               <ul class="dropdown-menu dropdown-menu-end shadow border-0 py-1" style="font-size: 13px; min-width: 220px; z-index: 1055;">

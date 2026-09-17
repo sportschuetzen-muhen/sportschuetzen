@@ -355,7 +355,9 @@ window.jbSyncMemberToCache = function(pn, settings) {
       position_nr: idx + 1,
       name: p.name,
       betrag: p.betrag,
-      typ: p.typ
+      typ: p.typ,
+      sourcefield: p.key || '',
+      konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '')
     }));
   }
 };

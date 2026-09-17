@@ -729,8 +729,10 @@ window.rnOpenCreateModal = async function(btnEl) {
     ? window.generateSafeInvoiceId('RE', window._bhYear)
     : `RE-${String(window._bhYear || new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
 
+  const defaultTpl = (window._invoiceTemplates || []).find(t => t.desc && t.desc.toLowerCase().includes('miete schützenhaus'));
+  const defaultKonto = defaultTpl ? (defaultTpl.habenkonto || defaultTpl.konto || '') : '3650';
   if (typeof window.rncAddPositionRow === 'function') {
-    window.rncAddPositionRow("Miete Schützenhaus Muhen", 150);
+    window.rncAddPositionRow("Miete Schützenhaus Muhen", 150, 1, defaultKonto);
   }
 
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -1006,6 +1008,14 @@ window.rnSaveCreateInvoice = async function(event) {
   if (positions.length === 0) {
     alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
     return;
+  }
+
+  // Strikte Validierung: Jede Position MUSS ein Gegenkonto haben
+  for (let i = 0; i < positions.length; i++) {
+    if (!positions[i].konto) {
+      alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+      return;
+    }
   }
 
   // 1. Optimistic Update
@@ -1472,6 +1482,14 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   if (positions.length === 0) {
     alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
     return;
+  }
+
+  // Strikte Validierung: Jede Position MUSS ein Gegenkonto haben
+  for (let i = 0; i < positions.length; i++) {
+    if (!positions[i].konto) {
+      alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+      return;
+    }
   }
 
   // 1. Optimistic Update
