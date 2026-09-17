@@ -1180,7 +1180,13 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
     : Boolean(window._rnShowInactiveMembers);
 
   // 1. Mitglieder filtern (aktive vs. verstorbene/ausgetretene) & sortieren nach Nachname, Vorname A - Z
-  const sortedMembers = [...(window._mglData || [])]
+  const memberSource = (window._mglData && window._mglData.length > 0)
+    ? window._mglData
+    : ((window._jbMembers && window._jbMembers.length > 0)
+        ? window._jbMembers
+        : ((window.AppCache && window.AppCache.get('mitglieder')?.data) || []));
+
+  const sortedMembers = [...memberSource]
     .filter(m => {
       const isDeceased = window.rnIsMemberDeceased(m);
       const isExited = window.rnIsMemberExited(m);
@@ -1551,6 +1557,11 @@ window.rnSelectFirstFilteredRecipient = function() {
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
   window.rnPopulateRecipientSelect('');
+  if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
+    loadMitgliederData(false).then(() => {
+      window.rnPopulateRecipientSelect('');
+    }).catch(() => {});
+  }
   rnMakeModalMovableAndResizable(modalEl);
   const posTable = modalEl.querySelector('#rnc-positions-table');
   if (posTable) rnInitPositionsTableResizable(posTable);
@@ -3979,6 +3990,10 @@ window.rnExecuteMassSend = async function() {
   setTimeout(async () => {
     try {
       if (typeof loadRechnungenData === 'function') await loadRechnungenData(true, true);
+      if (typeof jbMergeInvoicesIntoData === 'function' && window._jbData) {
+        jbMergeInvoicesIntoData(window._invoices || []);
+        if (typeof renderJahresbeitragView === 'function') renderJahresbeitragView();
+      }
     } catch (_) {}
   }, 1200);
 };

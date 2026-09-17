@@ -16,11 +16,13 @@ async function loadMitgliederData(forceReload = false) {
   // Wenn kein forceReload und Preload läuft, darauf warten
   if (!forceReload && (!window._mglData || window._mglData.length === 0) && window._mglPreloadPromise) {
     console.log("⏳ loadMitgliederData: Warte auf laufenden Preload im Hintergrund...");
-    container.innerHTML = `
-      <div class="text-center py-5">
-        <div class="spinner-border text-primary"></div>
-        <p class="mt-2 text-muted">Lade Mitglieder & Details (Preload im Hintergrund)…</p>
-      </div>`;
+    if (container) {
+      container.innerHTML = `
+        <div class="text-center py-5">
+          <div class="spinner-border text-primary"></div>
+          <p class="mt-2 text-muted">Lade Mitglieder & Details (Preload im Hintergrund)…</p>
+        </div>`;
+    }
     try {
       await window._mglPreloadPromise;
     } catch (e) {
@@ -31,10 +33,13 @@ async function loadMitgliederData(forceReload = false) {
   // Wenn Caches bereits geladen sind und kein forceReload erzwungen wird,
   // laden wir direkt und instant aus dem RAM oder AppCache!
   if (!forceReload) {
-    if (_mglData && _mglData.length > 0) {
+    if (window._mglData && window._mglData.length > 0) {
       console.log("⚡ loadMitgliederData: Lade aus RAM-Cache...");
-      renderMitgliederView(_mglData);
-      mglFilter();
+      _mglData = window._mglData;
+      if (container) {
+        renderMitgliederView(_mglData);
+        if (typeof mglFilter === 'function') mglFilter();
+      }
       return;
     }
     if (window.AppCache) {
@@ -42,21 +47,26 @@ async function loadMitgliederData(forceReload = false) {
       if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
         console.log("⚡ loadMitgliederData: Lade ohne Netzwerk-Wartezeit aus AppCache (localStorage)...");
         _mglData = cached.data;
+        window._mglData = cached.data;
         _mglLizenzenCache = cached.lizenzen || {};
         _mglFunktionenCache = cached.funktionen || {};
         _mglHistoryCache = cached.historie || {};
-        renderMitgliederView(_mglData);
-        mglFilter();
+        if (container) {
+          renderMitgliederView(_mglData);
+          if (typeof mglFilter === 'function') mglFilter();
+        }
         return;
       }
     }
   }
 
-  container.innerHTML = `
-    <div class="text-center py-5">
-      <div class="spinner-border text-primary"></div>
-      <p class="mt-2 text-muted">Lade Mitglieder & Details…</p>
-    </div>`;
+  if (container) {
+    container.innerHTML = `
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary"></div>
+        <p class="mt-2 text-muted">Lade Mitglieder & Details…</p>
+      </div>`;
+  }
 
   try {
     const [resAll, resLizz, resFn, resHist] = await Promise.all([
@@ -75,21 +85,23 @@ async function loadMitgliederData(forceReload = false) {
     } catch (_) {
       // HTML zurückgekommen (Google Login-Seite oder GAS-Fehlerseite)
       console.error('❌ Mitglieder API: HTML statt JSON erhalten:', rawText.slice(0, 300));
-      container.innerHTML = `
-        <div class="alert alert-warning">
-          <h5>⚠️ Backend nicht erreichbar</h5>
-          <p>Das Google Apps Script für <strong>Mitglieder</strong> gibt kein JSON zurück. 
-          Mögliche Ursachen:</p>
-          <ul>
-            <li>Das Script ist noch nicht als <strong>Web App</strong> deployed</li>
-            <li>Die URL im <code>worker.js</code> zeigt noch auf ein Platzhalter-Script</li>
-            <li>Das Script hat keinen <code>doGet()</code> implementiert</li>
-          </ul>
-          <details class="mt-2">
-            <summary class="small text-muted">Technische Details</summary>
-            <pre class="small mt-2 bg-light p-2 rounded">${escapeHtml(rawText.slice(0, 500))}</pre>
-          </details>
-        </div>`;
+      if (container) {
+        container.innerHTML = `
+          <div class="alert alert-warning">
+            <h5>⚠️ Backend nicht erreichbar</h5>
+            <p>Das Google Apps Script für <strong>Mitglieder</strong> gibt kein JSON zurück. 
+            Mögliche Ursachen:</p>
+            <ul>
+              <li>Das Script ist noch nicht als <strong>Web App</strong> deployed</li>
+              <li>Die URL im <code>worker.js</code> zeigt noch auf ein Platzhalter-Script</li>
+              <li>Das Script hat keinen <code>doGet()</code> implementiert</li>
+            </ul>
+            <details class="mt-2">
+              <summary class="small text-muted">Technische Details</summary>
+              <pre class="small mt-2 bg-light p-2 rounded">${escapeHtml(rawText.slice(0, 500))}</pre>
+            </details>
+          </div>`;
+      }
       return;
     }
 
@@ -147,6 +159,7 @@ async function loadMitgliederData(forceReload = false) {
     }
 
     _mglData = Array.isArray(data.data) ? data.data : [];
+    window._mglData = _mglData;
     if (window.AppCache) {
       window.AppCache.set('mitglieder', {
         data: _mglData,
@@ -155,11 +168,15 @@ async function loadMitgliederData(forceReload = false) {
         historie: _mglHistoryCache
       }, 120);
     }
-    renderMitgliederView(_mglData);
-    mglFilter();
+    if (container) {
+      renderMitgliederView(_mglData);
+      if (typeof mglFilter === 'function') mglFilter();
+    }
   } catch (e) {
     console.error('❌ loadMitgliederData:', e);
-    container.innerHTML = `<div class="alert alert-danger"><strong>Fehler:</strong> ${escapeHtml(e.message)}</div>`;
+    if (container) {
+      container.innerHTML = `<div class="alert alert-danger"><strong>Fehler:</strong> ${escapeHtml(e.message)}</div>`;
+    }
   }
 }
 

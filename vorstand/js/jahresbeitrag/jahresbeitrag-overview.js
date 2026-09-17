@@ -27,9 +27,12 @@ function renderOverviewTab(canEdit, years) {
         <option value="bezahlt">Bezahlt</option>
       </select>
       ${canEdit ? `
-      <div class="ms-auto d-inline-flex gap-2 align-items-center">
+      <div class="ms-auto d-inline-flex gap-2 align-items-center flex-wrap">
+        <button class="btn btn-sm btn-outline-primary" onclick="jbOpenSammelversandModal()" title="Alle Rechnungen für das aktive Jahr gesammelt per E-Mail versenden">
+          <i class="fas fa-paper-plane me-1"></i> Sammelversand E-Mail
+        </button>
         <button class="btn btn-sm btn-outline-warning" onclick="jbBerechnen()">
-          <i class="fas fa-calculator"></i> Alle Beiträge berechnen
+          <i class="fas fa-calculator me-1"></i> Alle Beiträge berechnen
         </button>
         <button class="btn btn-sm btn-outline-secondary d-flex align-items-center" onclick="jbResetYear('calculations')" title="Löscht alle Rechnungs- und Posteneinträge des aktiven Jahres und berechnet sie basierend auf den Turnierteilnahmen neu. Erfasste Teilnahmen und manuelle Gebühren-Überschreibungen (z.B. Schützenhaus) bleiben erhalten.">
           <i class="fas fa-history me-1"></i> Rechnungen zurücksetzen
@@ -738,7 +741,30 @@ function jbGetSenderForInvoiceType(invoiceType) {
 // Interne Hilfsfunktion: Stellt sicher, dass eine Rechnung in Rechnungen_GAS existiert.
 // Falls nicht, wird sie zuerst angelegt. Falls sie existiert aber sich der Betrag geändert hat, wird sie aktualisiert.
 async function ensureInvoiceCreatedRemote(r, m, name) {
-  const invoiceId = `RE-JB-${r.year}-${r.PersonNumber}`;
+  const invoicesList = window._invoices || window._jbAllInvoices || [];
+  
+  // 1. Suche nach existierender Rechnung:
+  // a) Über gespeicherte r.invoiceId
+  // b) Über PersonNumber + Jahr + Typ 'Jahresbeitrag'
+  // c) Über Legacy-Format 'RE-JB-...'
+  let existingInv = null;
+  if (r.invoiceId) {
+    existingInv = invoicesList.find(i => String(i.id).trim() === String(r.invoiceId).trim());
+  }
+  if (!existingInv) {
+    existingInv = invoicesList.find(i => 
+      String(i.PersonNumber).trim() === String(r.PersonNumber).trim() && 
+      Number(i.year) === Number(r.year) && 
+      String(i.type || '').toLowerCase() === 'jahresbeitrag'
+    );
+  }
+  if (!existingInv) {
+    existingInv = invoicesList.find(i => String(i.id).trim() === `RE-JB-${r.year}-${r.PersonNumber}`);
+  }
+
+  const invoiceId = existingInv 
+    ? existingInv.id 
+    : (r.invoiceId || ((typeof window.generateSafeInvoiceId === 'function') ? window.generateSafeInvoiceId('RE', r.year) : `RE-JB-${r.year}-${r.PersonNumber}`));
   
   const cachedPos = _jbPositionsCache[r.id] || [];
   if (cachedPos.length === 0) {
@@ -769,19 +795,15 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     };
   });
 
-  // Finde die Rechnung in einem der beiden Caches
-  const invoicesList = window._invoices || window._jbAllInvoices || [];
-  const existingInv = invoicesList.find(i => String(i.id) === invoiceId);
-  
   if (existingInv) {
     const diff = Math.abs(Number(existingInv.total_amount || 0) - Number(r.Gesamt || 0));
     if (diff > 0.01) {
-      console.log(`🔄 Rechnungsbetrag hat sich geändert (${existingInv.total_amount} -> ${r.Gesamt}). Aktualisiere Rechnung ${invoiceId}…`);
+      console.log(`🔄 Rechnungsbetrag hat sich geändert (${existingInv.total_amount} -> ${r.Gesamt}). Aktualisiere Rechnung ${existingInv.id}…`);
       
       const updatePayload = {
         action: 'updateInvoice',
         invoice: {
-          id: invoiceId,
+          id: existingInv.id,
           PersonNumber: r.PersonNumber,
           name: name,
           year: Number(r.year),
@@ -809,8 +831,8 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
         await loadRechnungenData(true, true);
       }
     }
-    r.invoiceId = invoiceId;
-    return invoiceId;
+    r.invoiceId = existingInv.id;
+    return existingInv.id;
   }
   
   // Rechnung neu anlegen
@@ -824,7 +846,15 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
       type: 'Jahresbeitrag',
       total_amount: Number(r.Gesamt)
     },
-    positions: positions
+    positions: positions,
+    recipient: {
+      vorname: m.FirstName || '',
+      nachname: m.LastName || '',
+      strasse: m.Street || '',
+      plz: m.PostCode || '',
+      ort: m.City || '',
+      email: m.PrimaryEmail || ''
+    }
   };
   
   const createRes = await rechnungenApiFetch(invoicePayload);
@@ -955,9 +985,24 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     const res = await rechnungenApiFetch(emailPayload);
     if (!res.success) throw new Error(res.error);
     
+    // Status lokal sofort aktualisieren
+    r.mail_status = 'gesendet';
+    const allInvs = window._invoices || window._jbAllInvoices || [];
+    const targetInv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
+    if (targetInv) {
+      targetInv.mail_status = 'gesendet';
+      targetInv.updated_at = (typeof formatSwissDate === 'function') ? formatSwissDate(new Date()) : new Date().toISOString();
+    }
+    
     showToast(`✉️ E-Mail-Rechnung erfolgreich an ${name} (${email}) gesendet!`);
     
-    // Daten neu laden
+    // Rechnungs-Modul & Jahresbeitrag neu laden und synchronisieren
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
+    if (typeof rnRenderTable === 'function') {
+      rnRenderTable();
+    }
     await loadJahresbeitragData(true, false);
   } catch (err) {
     alert("Fehler bei E-Mail-Versand: " + err.message);
@@ -967,6 +1012,31 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     }
   }
 }
+
+// Sammelversand für Jahresbeiträge: Öffnet das Massenversand-Modal vorselektiert mit allen Rechnungen des aktiven Jahres
+window.jbOpenSammelversandModal = async function() {
+  if (typeof rnOpenMassSendModal !== 'function') {
+    alert("Das Massenversand-Modul steht momentan nicht zur Verfügung.");
+    return;
+  }
+  
+  // Stelle sicher, dass die Rechnungen geladen sind
+  if (typeof loadRechnungenData === 'function') {
+    await loadRechnungenData(true, true);
+  }
+  
+  // Filter auf Jahresbeitrag setzen
+  window._rnMassSendTypeFilter = 'Jahresbeitrag';
+  
+  // Alle Rechnungs-IDs des aktuellen Jahres filtern
+  const jbInvs = (window._invoices || []).filter(inv => 
+    String(inv.type || '').toLowerCase() === 'jahresbeitrag' && 
+    Number(inv.year) === Number(_jbYear)
+  );
+  
+  const jbIds = jbInvs.map(i => i.id);
+  window.rnOpenMassSendModal(jbIds.length > 0 ? jbIds : []);
+};
 
 
 async function jbBerechnen() {
