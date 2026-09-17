@@ -488,6 +488,42 @@
             box-shadow: inset 0 -1px 0 var(--border);
         }
 
+        /* Rechnungen & PDF-Cockpit UI Enhancements */
+        .rn-kpi-clickable {
+            cursor: pointer;
+            transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out, border-color 0.15s ease-in-out;
+            border: 2px solid transparent !important;
+            user-select: none;
+        }
+        .rn-kpi-clickable:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08) !important;
+        }
+        .rn-kpi-clickable.rn-kpi-active {
+            border-color: #0d6efd !important;
+            background-color: #f8fbff !important;
+        }
+        .rn-kpi-clickable.rn-kpi-active.danger {
+            border-color: #dc3545 !important;
+            background-color: #fff8f8 !important;
+        }
+        .rn-kpi-clickable.rn-kpi-active.success {
+            border-color: #198754 !important;
+            background-color: #f6fbf8 !important;
+        }
+        .rn-status-pill {
+            font-size: 0.78rem;
+            padding: 0.25rem 0.65rem;
+            border-radius: 50rem;
+            font-weight: 500;
+            transition: all 0.15s ease-in-out;
+            cursor: pointer;
+        }
+        .rn-status-pill.active {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+            font-weight: 700;
+        }
+
     </style>
 </head>
 <body>

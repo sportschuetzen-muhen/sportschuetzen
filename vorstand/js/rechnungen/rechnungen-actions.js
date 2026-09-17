@@ -204,10 +204,15 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
   }
 };
 
-// SEND MAIL PROMPT
-window.rnSendMailPrompt = async function(invoiceId, name) {
-  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
-  if (!inv) return;
+// =====================================================================
+// MODAL FOR SENDING INVOICE WITH ATTACHED SWISS QR-BILL PDF
+// =====================================================================
+window.rnOpenSendMailModal = async function(invoiceId, name) {
+  const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+  if (!inv) {
+    alert("Rechnung nicht gefunden: " + invoiceId);
+    return;
+  }
 
   // Externe Kontakte laden, falls noch nicht im Speicher
   if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
@@ -222,46 +227,277 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
         strasse: '', plz: '', ort: '', email: ''
       };
 
-  const initialEmail = recipient.email || '';
-  const targetEmail = prompt(`📧 QR-Rechnung per E-Mail an ${name} versenden?\n\nBitte E-Mail-Adresse bestätigen/eingeben:`, initialEmail);
-  if (targetEmail === null) return;
-  if (!targetEmail.includes('@')) {
-    alert("❌ Ungültige E-Mail-Adresse.");
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+
+  const senderEmail = (sender && sender.email) ? sender.email : 'kassier@sportschuetzen-muhen.ch';
+  const senderName = (sender && (sender.vorname || sender.nachname))
+    ? `${sender.vorname || ''} ${sender.nachname || ''}`.trim()
+    : ((sender && sender.verein) || 'Sportschützen Muhen');
+
+  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
+
+  const replaceMailVars = (str) => {
+    let res = String(str || '')
+      .replace(/{vorname}/g, recipient.vorname || '')
+      .replace(/{nachname}/g, recipient.nachname || '')
+      .replace(/{anrede}/g, recipient.anrede || '')
+      .replace(/{firma}/g, recipient.firma || '')
+      .replace(/{rechnungsnummer}/g, inv.id)
+      .replace(/{rechnungsjahr}/g, String(inv.year || ''))
+      .replace(/{gesamtbetrag}/g, Number(inv.total_amount || 0).toFixed(2))
+      .replace(/{rechnungsdatum}/g, inv.created_at ? String(inv.created_at).split(' ')[0] : '')
+      .replace(/{absender_name}/g, senderName)
+      .replace(/{absender_email}/g, senderEmail);
+    return res.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+,/g, ',');
+  };
+
+  let defaultSubject = layout.mail_subject
+    ? replaceMailVars(layout.mail_subject)
+    : `Rechnung ${inv.id} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
+
+  let intro = layout.mail_intro ? replaceMailVars(layout.mail_intro) : 'anbei erhältst du die Rechnung als PDF mit QR-Zahlteil.';
+  let outro = layout.mail_outro ? replaceMailVars(layout.mail_outro) : 'Besten Dank für die termingerechte Überweisung!';
+
+  let modalEl = document.getElementById('rnModalSendInvoiceMail');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalSendInvoiceMail';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  const cleanRecipientName = escapeHtml(inv.name || name || 'Empfänger');
+  const targetEmailVal = recipient.email || '';
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 rounded-4 shadow">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-paper-plane me-2"></i>QR-Rechnung per E-Mail versenden
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+        </div>
+        <div class="modal-body p-4">
+          
+          <!-- Rechnungs-Info Leiste -->
+          <div class="d-flex flex-wrap align-items-center justify-content-between p-3 bg-light rounded-3 border mb-4 gap-2">
+            <div>
+              <span class="text-muted small">Empfänger:</span>
+              <div class="fw-bold text-dark fs-6">${cleanRecipientName}</div>
+              <div class="text-muted font-monospace" style="font-size: 11px;">
+                Rechnungs-ID: <strong class="text-primary">${inv.id}</strong> · Typ: <strong>${escapeHtml(inv.type || 'Rechnung')}</strong>
+              </div>
+            </div>
+            <div class="text-end">
+              <span class="text-muted small">Rechnungsbetrag:</span>
+              <div class="fw-bold fs-5 text-primary font-monospace">${fmtChf(inv.total_amount)}</div>
+              <span class="badge ${inv.status === 'bezahlt' ? 'bg-success' : 'bg-warning text-dark'}">${inv.status === 'bezahlt' ? 'Bereits bezahlt' : 'Offen'}</span>
+            </div>
+          </div>
+
+          <form id="rn-send-mail-form" onsubmit="event.preventDefault(); rnExecuteSendMail('${inv.id}');">
+            <div class="row g-3">
+              
+              <!-- Empfänger E-Mail -->
+              <div class="col-md-7">
+                <label class="form-label fw-bold small text-muted">
+                  Empfänger E-Mail-Adresse <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text bg-white"><i class="fas fa-at text-muted"></i></span>
+                  <input type="email" class="form-control fw-bold" id="rnm-email" required value="${escapeHtml(targetEmailVal)}" placeholder="name@beispiel.ch">
+                </div>
+                <div class="form-text text-muted" style="font-size: 11px;">
+                  ${recipient.email ? '<i class="fas fa-check-circle text-success me-1"></i>Aus Mitglieds-/Kontaktdaten übernommen' : '<i class="fas fa-exclamation-circle text-warning me-1"></i>Keine Standard-E-Mail hinterlegt – bitte eingeben'}
+                </div>
+              </div>
+
+              <!-- Absender -->
+              <div class="col-md-5">
+                <label class="form-label fw-bold small text-muted">Absender</label>
+                <div class="input-group">
+                  <span class="input-group-text bg-light"><i class="fas fa-user-shield text-muted"></i></span>
+                  <input type="text" class="form-control bg-light" readonly value="${escapeHtml(senderName)} <${escapeHtml(senderEmail)}>">
+                </div>
+                <div class="form-text text-muted" style="font-size: 11px;">
+                  Zustelladresse des Vorstands
+                </div>
+              </div>
+
+              <!-- Betreff -->
+              <div class="col-12">
+                <label class="form-label fw-bold small text-muted">
+                  E-Mail Betreff <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text bg-white"><i class="fas fa-heading text-muted"></i></span>
+                  <input type="text" class="form-control" id="rnm-subject" required value="${escapeHtml(defaultSubject)}">
+                </div>
+              </div>
+
+              <!-- Nachricht / Begleittext -->
+              <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <label class="form-label fw-bold small text-muted mb-0">Begleittext / Einleitung</label>
+                  <button type="button" class="btn btn-link btn-xs p-0 text-decoration-none text-muted" onclick="document.getElementById('rnm-intro').value = '${escapeJs(intro)}'">
+                    <i class="fas fa-undo me-1"></i>Standard wiederherstellen
+                  </button>
+                </div>
+                <textarea class="form-control" id="rnm-intro" rows="3" style="font-size: 13px;">${escapeHtml(intro)}</textarea>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label fw-bold small text-muted mb-1">Schlusstext & Grussformel</label>
+                <textarea class="form-control" id="rnm-outro" rows="2" style="font-size: 13px;">${escapeHtml(outro)}</textarea>
+              </div>
+
+              <!-- Anhang Badge -->
+              <div class="col-12">
+                <div class="p-3 bg-light rounded-3 border d-flex align-items-center justify-content-between">
+                  <div class="d-flex align-items-center">
+                    <div class="me-3 p-2 bg-white rounded border text-danger">
+                      <i class="fas fa-file-pdf fa-2x"></i>
+                    </div>
+                    <div>
+                      <strong class="d-block text-dark small">Rechnung_${inv.id}_${escapeHtml(String(inv.name || 'Empfaenger').replace(/\s+/g, '_'))}.pdf</strong>
+                      <span class="text-muted" style="font-size: 11px;">
+                        <i class="fas fa-qrcode text-dark me-1"></i>Schweizer QR-Rechnung mit offiziellem Zahlteil und Einzahlungsschein
+                      </span>
+                    </div>
+                  </div>
+                  <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 rounded-pill">
+                    <i class="fas fa-paperclip me-1"></i>Wird angehängt
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Fehlermeldungs-Container -->
+            <div id="rnm-error-alert" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+
+            <div class="modal-footer px-0 pb-0 pt-4 border-top mt-4 d-flex justify-content-between">
+              <button type="button" class="btn btn-light border" data-bs-dismiss="modal">
+                Abbrechen
+              </button>
+              <button type="submit" class="btn btn-primary fw-bold px-4 shadow-sm" id="rnm-btn-submit">
+                <i class="fas fa-paper-plane me-1.5"></i>Jetzt verbindlich senden
+              </button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+};
+
+window.rnExecuteSendMail = async function(invoiceId) {
+  const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+  if (!inv) return;
+
+  const emailInput = document.getElementById('rnm-email');
+  const subjectInput = document.getElementById('rnm-subject');
+  const introInput = document.getElementById('rnm-intro');
+  const outroInput = document.getElementById('rnm-outro');
+  const submitBtn = document.getElementById('rnm-btn-submit');
+  const errAlert = document.getElementById('rnm-error-alert');
+
+  if (errAlert) { errAlert.classList.add('d-none'); errAlert.textContent = ''; }
+
+  const targetEmail = emailInput ? emailInput.value.trim() : '';
+  if (!targetEmail || !targetEmail.includes('@')) {
+    if (emailInput) {
+      emailInput.classList.add('is-invalid');
+      emailInput.focus();
+    }
+    if (errAlert) {
+      errAlert.textContent = 'Bitte eine gültige E-Mail-Adresse angeben.';
+      errAlert.classList.remove('d-none');
+    }
     return;
   }
-  recipient.email = targetEmail;
+  if (emailInput) emailInput.classList.remove('is-invalid');
 
-  showLoadingOverlay(`Erstelle QR-Rechnung und sende E-Mail an ${name}...`);
+  const targetSubject = subjectInput ? subjectInput.value.trim() : '';
+  const targetIntro = introInput ? introInput.value.trim() : '';
+  const targetOutro = outroInput ? outroInput.value.trim() : '';
+
+  const recipient = (typeof rnGetRecipientForInvoice === 'function')
+    ? rnGetRecipientForInvoice(inv)
+    : {
+        vorname: inv.name.split(' ')[0] || '',
+        nachname: inv.name.split(' ').slice(1).join(' ') || '',
+        strasse: '', plz: '', ort: '', email: ''
+      };
+  recipient.email = targetEmail;
 
   const sender = (typeof rnGetLoggedInSender === 'function')
     ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
     : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
 
-  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
+  const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
+  const customLayout = Object.assign({}, baseLayout, {
+    mail_subject: targetSubject || baseLayout.mail_subject,
+    mail_intro: targetIntro || baseLayout.mail_intro,
+    mail_outro: targetOutro || baseLayout.mail_outro
+  });
 
   const payload = {
     action: 'sendInvoiceEmail',
     invoiceId: invoiceId,
     recipient: recipient,
     sender: sender,
-    layout: layout
+    layout: customLayout
   };
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Sende QR-Rechnung...';
+  }
 
   try {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();
 
     if (result.success) {
+      const modalEl = document.getElementById('rnModalSendInvoiceMail');
+      if (modalEl) {
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
+      }
       showSuccess(`🎉 E-Mail erfolgreich an ${targetEmail} versandt!`);
       await loadRechnungenData(true);
     } else {
       throw new Error(result.error || "E-Mail-Versand fehlgeschlagen.");
     }
   } catch (err) {
-    alert("❌ E-Mail Fehler: " + err.message);
+    console.error("Fehler beim E-Mail-Versand:", err);
+    if (errAlert) {
+      errAlert.textContent = 'Fehler beim E-Mail-Versand: ' + err.message;
+      errAlert.classList.remove('d-none');
+    } else {
+      alert("❌ E-Mail Fehler: " + err.message);
+    }
   } finally {
-    hideLoadingOverlay();
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fas fa-paper-plane me-1.5"></i>Jetzt verbindlich senden';
+    }
   }
+};
+
+// 100% Abwärtskompatibilität: Aufruf von rnSendMailPrompt öffnet das neue E-Mail-Modal
+window.rnSendMailPrompt = async function(invoiceId, name) {
+  return rnOpenSendMailModal(invoiceId, name);
 };
 
 // CREATE MANUALLY INVOICE MODAL

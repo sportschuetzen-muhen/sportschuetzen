@@ -234,12 +234,72 @@ window.rnInitializeTemplates = rnInitializeTemplates;
 // Filter Handlers
 window.rnChangeFilterStatus = function(val) {
   window._invoicesFilterStatus = val;
-  rnRenderTable();
+  
+  // Sync Select Dropdown falls vorhanden
+  const selectEl = document.getElementById('rn-filter-status');
+  if (selectEl && selectEl.value !== val) {
+    selectEl.value = val;
+  }
+  
+  // Sync Status Pills falls vorhanden
+  document.querySelectorAll('#rn-filter-pills .rn-status-pill').forEach(btn => {
+    const isAct = btn.dataset.status === val;
+    btn.classList.toggle('active', isAct);
+    if (isAct) {
+      btn.classList.remove('btn-outline-secondary', 'btn-outline-danger', 'btn-outline-warning', 'btn-outline-success');
+      if (val === 'offen') btn.classList.add('btn-danger', 'text-white');
+      else if (val === 'faellig') btn.classList.add('btn-warning', 'text-dark');
+      else if (val === 'gemahnt') btn.classList.add('btn-warning', 'text-dark');
+      else if (val === 'bezahlt') btn.classList.add('btn-success', 'text-white');
+      else btn.classList.add('btn-primary', 'text-white');
+    } else {
+      btn.classList.remove('btn-primary', 'btn-danger', 'btn-warning', 'btn-success', 'text-white', 'text-dark');
+      if (btn.dataset.status === 'offen') btn.classList.add('btn-outline-danger');
+      else if (btn.dataset.status === 'faellig') btn.classList.add('btn-outline-warning');
+      else if (btn.dataset.status === 'gemahnt') btn.classList.add('btn-outline-warning');
+      else if (btn.dataset.status === 'bezahlt') btn.classList.add('btn-outline-success');
+      else btn.classList.add('btn-outline-secondary');
+    }
+  });
+
+  // Sync KPI Cards Active State
+  document.querySelectorAll('.rn-kpi-clickable').forEach(card => {
+    const cardStatus = card.dataset.kpiStatus;
+    card.classList.toggle('rn-kpi-active', cardStatus === val || (cardStatus === 'offen' && val === 'faellig'));
+  });
+
+  if (typeof rnRenderTable === 'function') {
+    rnRenderTable();
+  }
+};
+
+// Klick auf KPI-Kachel toggelt den Status-Filter
+window.rnToggleFilterKpi = function(targetStatus) {
+  if (window._invoicesFilterStatus === targetStatus && targetStatus !== 'alle') {
+    rnChangeFilterStatus('alle');
+  } else {
+    rnChangeFilterStatus(targetStatus);
+  }
+};
+
+// Direktsprung von gesperrter Jahresbeitrag-Rechnung in Schnellerfassung
+window.rnJumpToJahresbeitrag = function(personNumber) {
+  if (personNumber) {
+    window._jbSelectedMemberPN = String(personNumber).trim();
+  }
+  if (typeof navTo === 'function') {
+    navTo('jahresbeitrag');
+  }
+  if (typeof jbSwitchTab === 'function') {
+    jbSwitchTab('entry');
+  }
 };
 
 window.rnChangeFilterType = function(val) {
   window._invoicesFilterType = val;
-  rnRenderTable();
+  if (typeof rnRenderTable === 'function') {
+    rnRenderTable();
+  }
 };
 
 // Sortierung anwenden
