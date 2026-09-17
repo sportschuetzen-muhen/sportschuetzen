@@ -236,7 +236,24 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
     ? `${sender.vorname || ''} ${sender.nachname || ''}`.trim()
     : ((sender && sender.verein) || 'Sportschützen Muhen');
 
-  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
+  // Layouts aus Speicher oder Defaults laden
+  let layoutsMap = window._invoiceLayouts;
+  if (!layoutsMap || Object.keys(layoutsMap).length === 0) {
+    if (typeof rnGetDefaultLayouts === 'function') {
+      layoutsMap = rnGetDefaultLayouts();
+    }
+    try {
+      const stored = localStorage.getItem('portal_invoice_layouts');
+      if (stored) {
+        layoutsMap = { ...(layoutsMap || {}), ...JSON.parse(stored) };
+      }
+    } catch (_) {}
+  }
+
+  const layout = (layoutsMap && layoutsMap[inv.type]) 
+    || (layoutsMap && layoutsMap['Sonstige'])
+    || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[inv.type] || rnGetDefaultLayouts()['Sonstige']) : {})
+    || {};
 
   const replaceMailVars = (str) => {
     let res = String(str || '')
@@ -244,44 +261,63 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
       .replace(/{nachname}/g, recipient.nachname || '')
       .replace(/{anrede}/g, recipient.anrede || '')
       .replace(/{firma}/g, recipient.firma || '')
+      .replace(/{abteilung}/g, recipient.abteilung || '')
       .replace(/{rechnungsnummer}/g, inv.id)
       .replace(/{rechnungsjahr}/g, String(inv.year || ''))
       .replace(/{gesamtbetrag}/g, Number(inv.total_amount || 0).toFixed(2))
       .replace(/{rechnungsdatum}/g, inv.created_at ? String(inv.created_at).split(' ')[0] : '')
+      .replace(/{iban}/g, typeof VEREIN_IBAN !== 'undefined' ? VEREIN_IBAN : '')
       .replace(/{absender_name}/g, senderName)
-      .replace(/{absender_email}/g, senderEmail);
+      .replace(/{absender_email}/g, senderEmail)
+      .replace(/{absender_vorname}/g, (sender && sender.vorname) || '')
+      .replace(/{absender_nachname}/g, (sender && sender.nachname) || '')
+      .replace(/{absender_verein}/g, (sender && sender.verein) || 'Sportschützen Muhen')
+      .replace(/{absender_funktion}/g, (sender && sender.funktion) || 'Vorstand');
     return res.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+,/g, ',');
   };
 
+  // Vorlage-Betreff und Vorlage-Body 1:1 aus der Vorlage übernehmen und Variablen einsetzen
   let defaultSubject = layout.mail_subject
     ? replaceMailVars(layout.mail_subject)
     : `Rechnung ${inv.id} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
 
-  let intro = layout.mail_intro ? replaceMailVars(layout.mail_intro) : 'anbei erhältst du die Rechnung als PDF mit QR-Zahlteil.';
-  let outro = layout.mail_outro ? replaceMailVars(layout.mail_outro) : 'Besten Dank für die termingerechte Überweisung!';
+  let defaultBody = layout.mail_body
+    ? replaceMailVars(layout.mail_body)
+    : replaceMailVars('Guten Tag {vorname} {nachname},\n\nanbei erhalten Sie die Rechnung {rechnungsnummer} über CHF {gesamtbetrag}.\n\nDen QR-Zahlteil finden Sie im PDF-Anhang.\n\nFreundliche Grüsse\nSportschützen Muhen');
+
+  window._rnmDefaultSubject = defaultSubject;
+  window._rnmDefaultBody = defaultBody;
 
   let modalEl = document.getElementById('rnModalSendInvoiceMail');
-  if (!modalEl) {
-    modalEl = document.createElement('div');
-    modalEl.id = 'rnModalSendInvoiceMail';
-    modalEl.className = 'modal fade';
-    modalEl.tabIndex = -1;
-    modalEl.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(modalEl);
-  }
+  if (modalEl) modalEl.remove();
+  modalEl = document.createElement('div');
+  modalEl.id = 'rnModalSendInvoiceMail';
+  modalEl.className = 'modal fade';
+  modalEl.tabIndex = -1;
+  modalEl.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(modalEl);
 
   const cleanRecipientName = escapeHtml(inv.name || name || 'Empfänger');
   const targetEmailVal = recipient.email || '';
+  const pdfFilename = `Rechnung_${inv.id}_${escapeHtml(String(inv.name || 'Empfaenger').replace(/\s+/g, '_'))}.pdf`;
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content border-0 rounded-4 shadow">
-        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold">
+      <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
+        
+        <!-- Modal Header mit Move & Maximize -->
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold mb-0">
             <i class="fas fa-paper-plane me-2"></i>QR-Rechnung per E-Mail versenden
           </h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+          </div>
         </div>
+
         <div class="modal-body p-4">
           
           <!-- Rechnungs-Info Leiste -->
@@ -313,7 +349,7 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
                   <input type="email" class="form-control fw-bold" id="rnm-email" required value="${escapeHtml(targetEmailVal)}" placeholder="name@beispiel.ch">
                 </div>
                 <div class="form-text text-muted" style="font-size: 11px;">
-                  ${recipient.email ? '<i class="fas fa-check-circle text-success me-1"></i>Aus Mitglieds-/Kontaktdaten übernommen' : '<i class="fas fa-exclamation-circle text-warning me-1"></i>Keine Standard-E-Mail hinterlegt – bitte eingeben'}
+                  ${recipient.email ? '<i class="fas fa-check-circle text-success me-1"></i>Aus Mitglieds-/Kontaktdaten übernommen' : '<i class="fas fa-exclamation-circle text-warning me-1"></i>Keine E-Mail hinterlegt – bitte eingeben'}
                 </div>
               </div>
 
@@ -336,24 +372,58 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
                 </label>
                 <div class="input-group">
                   <span class="input-group-text bg-white"><i class="fas fa-heading text-muted"></i></span>
-                  <input type="text" class="form-control" id="rnm-subject" required value="${escapeHtml(defaultSubject)}">
+                  <input type="text" class="form-control fw-semibold" id="rnm-subject" required value="${escapeHtml(defaultSubject)}">
                 </div>
               </div>
 
-              <!-- Nachricht / Begleittext -->
+              <!-- Hauptbereich: Vollständiger E-Mail Nachrichtentext mit Tabs (Bearbeiten / Vorschau) -->
               <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <label class="form-label fw-bold small text-muted mb-0">Begleittext / Einleitung</label>
-                  <button type="button" class="btn btn-link btn-xs p-0 text-decoration-none text-muted" onclick="document.getElementById('rnm-intro').value = '${escapeJs(intro)}'">
-                    <i class="fas fa-undo me-1"></i>Standard wiederherstellen
-                  </button>
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <label class="form-label fw-bold small text-muted mb-0">
+                    <i class="fas fa-envelope-open-text me-1 text-primary"></i>E-Mail Nachrichtentext
+                  </label>
+                  
+                  <div class="d-flex align-items-center gap-1.5">
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2" onclick="rnmResetTemplate()" title="Setzt Text und Betreff auf die Standard-Vorlage für diesen Typ zurück">
+                      <i class="fas fa-undo me-1"></i>Vorlage neu laden
+                    </button>
+                    <div class="btn-group btn-group-sm" role="group">
+                      <button type="button" id="rnm-tab-edit" class="btn btn-xs btn-primary active px-2.5 py-1 fw-bold" onclick="rnmSwitchTab('edit')">
+                        <i class="fas fa-edit me-1"></i>Bearbeiten
+                      </button>
+                      <button type="button" id="rnm-tab-prev" class="btn btn-xs btn-light border px-2.5 py-1 text-dark" onclick="rnmSwitchTab('prev')">
+                        <i class="fas fa-eye me-1"></i>E-Mail-Vorschau
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <textarea class="form-control" id="rnm-intro" rows="3" style="font-size: 13px;">${escapeHtml(intro)}</textarea>
-              </div>
 
-              <div class="col-12">
-                <label class="form-label fw-bold small text-muted mb-1">Schlusstext & Grussformel</label>
-                <textarea class="form-control" id="rnm-outro" rows="2" style="font-size: 13px;">${escapeHtml(outro)}</textarea>
+                <!-- Pane 1: Vollständiger Text-Editor -->
+                <div id="rnm-pane-edit">
+                  <textarea class="form-control font-monospace" id="rnm-mail-body" rows="9" style="font-size: 13px; line-height: 1.5;" placeholder="Vollständiger Nachrichtentext...">${escapeHtml(defaultBody)}</textarea>
+                  <div class="form-text text-muted d-flex justify-content-between" style="font-size: 11px;">
+                    <span><i class="fas fa-info-circle me-1"></i>Vollständiger E-Mail-Text aus der Vorlage ('${escapeHtml(inv.type || 'Sonstige')}'). Kann vor dem Senden frei angepasst werden.</span>
+                  </div>
+                </div>
+
+                <!-- Pane 2: Live HTML-Vorschau -->
+                <div id="rnm-pane-prev" class="d-none border rounded-3 p-3 bg-light shadow-2xs" style="min-height: 200px; max-height: 320px; overflow-y: auto;">
+                  <div class="bg-white p-3 rounded-2 border shadow-xs" style="max-width: 600px; margin: 0 auto; font-family: 'Segoe UI', Arial, sans-serif;">
+                    <div class="d-flex align-items-center border-bottom pb-2 mb-3 gap-2">
+                      <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-192.png" width="40" height="40" class="rounded" alt="Logo">
+                      <div>
+                        <div class="fw-bold text-dark" style="font-size: 14px; line-height: 1.2;">Sportschützen Muhen</div>
+                        <div class="text-muted" style="font-size: 11px;">Rechnungsversand</div>
+                      </div>
+                    </div>
+                    <div class="text-muted small mb-2 font-monospace" style="font-size: 11px;">
+                      <strong>Betreff:</strong> <span id="rnm-preview-subject">${escapeHtml(defaultSubject)}</span>
+                    </div>
+                    <hr class="my-2 opacity-50">
+                    <div id="rnm-preview-body-content" class="pt-1"></div>
+                  </div>
+                </div>
+
               </div>
 
               <!-- Anhang Badge -->
@@ -364,14 +434,14 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
                       <i class="fas fa-file-pdf fa-2x"></i>
                     </div>
                     <div>
-                      <strong class="d-block text-dark small">Rechnung_${inv.id}_${escapeHtml(String(inv.name || 'Empfaenger').replace(/\s+/g, '_'))}.pdf</strong>
+                      <strong class="d-block text-dark small">${pdfFilename}</strong>
                       <span class="text-muted" style="font-size: 11px;">
-                        <i class="fas fa-qrcode text-dark me-1"></i>Schweizer QR-Rechnung mit offiziellem Zahlteil und Einzahlungsschein
+                        <i class="fas fa-qrcode text-dark me-1"></i>Offizielle Schweizer QR-Rechnung mit QR-Zahlteil und Einzahlungsschein
                       </span>
                     </div>
                   </div>
                   <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 rounded-pill">
-                    <i class="fas fa-paperclip me-1"></i>Wird angehängt
+                    <i class="fas fa-paperclip me-1"></i>Wird automatisch angehängt
                   </span>
                 </div>
               </div>
@@ -392,12 +462,77 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
           </form>
 
         </div>
+
+        <!-- Resize-Grip Ecke unten rechts -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
+        </div>
+
       </div>
     </div>
   `;
 
   const modal = new bootstrap.Modal(modalEl);
   modal.show();
+  rnMakeModalMovableAndResizable(modalEl);
+};
+
+// Hilfsfunktionen für Mail-Modal Tabs und Vorlagen-Reset
+window.rnmSwitchTab = function(mode) {
+  const editTab = document.getElementById('rnm-tab-edit');
+  const prevTab = document.getElementById('rnm-tab-prev');
+  const editPane = document.getElementById('rnm-pane-edit');
+  const prevPane = document.getElementById('rnm-pane-prev');
+  const bodyText = document.getElementById('rnm-mail-body')?.value || '';
+
+  if (mode === 'prev') {
+    if (editTab) {
+      editTab.classList.remove('active', 'btn-primary');
+      editTab.classList.add('btn-light', 'text-dark', 'border');
+    }
+    if (prevTab) {
+      prevTab.classList.add('active', 'btn-primary');
+      prevTab.classList.remove('btn-light', 'text-dark', 'border');
+    }
+    if (editPane) editPane.classList.add('d-none');
+    if (prevPane) prevPane.classList.remove('d-none');
+
+    const prevContent = document.getElementById('rnm-preview-body-content');
+    if (prevContent) {
+      const clean = String(bodyText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+      const paras = clean.split(/\n\s*\n/);
+      const parasHtml = paras.map(p => {
+        const withBr = p.split('\n').map(line => escapeHtml(line.trim())).join('<br>');
+        return `<p style="margin:0 0 12px 0;line-height:1.6;font-size:13px;color:#333;">${withBr}</p>`;
+      }).join('');
+      prevContent.innerHTML = parasHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
+    }
+    const subjPrev = document.getElementById('rnm-preview-subject');
+    const subjVal = document.getElementById('rnm-subject')?.value || '';
+    if (subjPrev) subjPrev.textContent = subjVal;
+  } else {
+    if (prevTab) {
+      prevTab.classList.remove('active', 'btn-primary');
+      prevTab.classList.add('btn-light', 'text-dark', 'border');
+    }
+    if (editTab) {
+      editTab.classList.add('active', 'btn-primary');
+      editTab.classList.remove('btn-light', 'text-dark', 'border');
+    }
+    if (prevPane) prevPane.classList.add('d-none');
+    if (editPane) editPane.classList.remove('d-none');
+    document.getElementById('rnm-mail-body')?.focus();
+  }
+};
+
+window.rnmResetTemplate = function() {
+  if (confirm('Möchtest du den E-Mail-Betreff und den Nachrichtentext auf die Standard-Vorlage zurücksetzen?')) {
+    const subjectEl = document.getElementById('rnm-subject');
+    const bodyEl = document.getElementById('rnm-mail-body');
+    if (subjectEl) subjectEl.value = window._rnmDefaultSubject || '';
+    if (bodyEl) bodyEl.value = window._rnmDefaultBody || '';
+    window.rnmSwitchTab('edit');
+  }
 };
 
 window.rnExecuteSendMail = async function(invoiceId) {
@@ -406,8 +541,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
 
   const emailInput = document.getElementById('rnm-email');
   const subjectInput = document.getElementById('rnm-subject');
-  const introInput = document.getElementById('rnm-intro');
-  const outroInput = document.getElementById('rnm-outro');
+  const bodyInput = document.getElementById('rnm-mail-body');
   const submitBtn = document.getElementById('rnm-btn-submit');
   const errAlert = document.getElementById('rnm-error-alert');
 
@@ -428,8 +562,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
   if (emailInput) emailInput.classList.remove('is-invalid');
 
   const targetSubject = subjectInput ? subjectInput.value.trim() : '';
-  const targetIntro = introInput ? introInput.value.trim() : '';
-  const targetOutro = outroInput ? outroInput.value.trim() : '';
+  const targetBody = bodyInput ? bodyInput.value.trim() : '';
 
   const recipient = (typeof rnGetRecipientForInvoice === 'function')
     ? rnGetRecipientForInvoice(inv)
@@ -447,8 +580,8 @@ window.rnExecuteSendMail = async function(invoiceId) {
   const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
   const customLayout = Object.assign({}, baseLayout, {
     mail_subject: targetSubject || baseLayout.mail_subject,
-    mail_intro: targetIntro || baseLayout.mail_intro,
-    mail_outro: targetOutro || baseLayout.mail_outro
+    mail_body: targetBody || baseLayout.mail_body,
+    mail_intro: targetBody || baseLayout.mail_intro // Kompatibilität
   });
 
   const payload = {

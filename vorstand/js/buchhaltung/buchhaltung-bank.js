@@ -247,11 +247,12 @@ window.renderTabBankabgleich = function(container) {
           <i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})
         </button>
         
-        <div class="ms-auto d-flex gap-2 align-items-center">
-          <button class="btn btn-sm btn-primary fw-bold shadow-sm d-none" id="bhBtnBookSelected" onclick="bhBankBookSelected()" title="Alle im Stapel vorgemerkten Buchungen in einem Schritt ausführen">
-            <i class="fas fa-layer-group me-1"></i><span id="bhBtnBookSelectedText">0 Buchungen verbuchen</span>
-          </button>
-          <button class="btn btn-sm btn-success fw-bold shadow-sm" id="bhBtnBookAll" onclick="bhBankBookAll()">
+        <div class="ms-auto d-flex gap-3 align-items-center flex-wrap justify-content-end">
+          <div class="text-muted small d-none d-md-flex align-items-center bg-light border rounded-3 px-2.5 py-1" style="font-size: 11.5px;" title="Garantiert saubere Belegnummern und Datumschronologie">
+            <i class="fas fa-info-circle text-primary me-1.5"></i>
+            <span>Buchungen werden in einem Schritt chronologisch nach Datum sortiert verbucht.</span>
+          </div>
+          <button class="btn btn-sm btn-success fw-bold shadow-sm px-3 py-1.5" id="bhBtnBookAll" onclick="bhBankBookAll()" title="Alle offenen Bank-Buchungen chronologisch nach Datum sortiert ins Journal buchen">
             <i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen
           </button>
         </div>
@@ -490,12 +491,14 @@ if (typeof window !== 'undefined' && !window._bhKontoInputListenersAttached) {
           try { habenInput.select(); } catch (_) {}
         }
       } 
-      // Vom Haben-Konto direkt auf den "Buchen"-Button dieser Zeile
+      // Vom Haben-Konto direkt ins Soll-Konto der nächsten Zeile
       else if (input.id && input.id.startsWith('bh-haben-')) {
         const tr = input.closest('tr');
-        const bookBtn = tr ? tr.querySelector('button.btn-success') : null;
-        if (bookBtn) {
-          bookBtn.focus({ preventScroll: true });
+        const nextTr = tr ? tr.nextElementSibling : null;
+        const nextSoll = nextTr ? nextTr.querySelector('input[id^="bh-soll-"]') : null;
+        if (nextSoll) {
+          nextSoll.focus({ preventScroll: true });
+          try { nextSoll.select(); } catch (_) {}
         }
       }
     } else if (e.key === 'Tab' && !e.shiftKey) {
@@ -587,6 +590,22 @@ window._bhUpdateTxKonto = function(idx, type, val) {
     } else if (type === 'haben') {
       window._bhBankTransactions[idx].suggestedHaben = code;
       window._bhBankTransactions[idx]._customHabenEdited = true;
+    }
+  }
+
+  // Status-Badge der Zeile dynamisch und reaktiv aktualisieren
+  const badgeEl = document.getElementById(`bh-status-badge-${idx}`);
+  if (badgeEl && !tx.alreadyBooked && !tx.isWrongYear) {
+    if (tx.suggestedSoll && tx.suggestedHaben) {
+      badgeEl.className = 'badge px-2 py-1.5 fw-semibold';
+      badgeEl.style.cssText = 'background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);';
+      badgeEl.innerHTML = '<i class="fas fa-check me-1"></i>Bereit';
+      badgeEl.title = 'Vollständig kontiert und bereit zur Ausführung';
+    } else {
+      badgeEl.className = 'badge px-2 py-1.5 fw-semibold';
+      badgeEl.style.cssText = 'background-color: rgba(255, 193, 7, 0.15); color: #664d03; border: 1px solid rgba(255, 193, 7, 0.35);';
+      badgeEl.innerHTML = '<i class="fas fa-exclamation-circle text-warning me-1"></i>Konto fehlt';
+      badgeEl.title = 'Gegenkonto fehlt noch. Kann manuell ergänzt werden oder wird als unvollständig gebucht.';
     }
   }
 };
@@ -774,18 +793,16 @@ function bhBankRenderResults(filter) {
 
     let actionButtons = '';
     if (r.isWrongYear) {
-      actionButtons = `<span class="badge bg-light text-danger border px-2 py-1.5" title="🔒 Transaktion aus ${r.txYear} kann nicht im Buchhaltungsjahr ${window._bhYear} gebucht werden. Bitte oben Jahr umschalten!"><i class="fas fa-ban me-1"></i>Jahr ${r.txYear}</span>`;
+      actionButtons = `<span id="bh-status-badge-${realI}" class="badge bg-light text-danger border px-2 py-1.5" title="🔒 Transaktion aus ${r.txYear} kann nicht im Buchhaltungsjahr ${window._bhYear} gebucht werden. Bitte oben Jahr umschalten!"><i class="fas fa-ban me-1"></i>Jahr ${r.txYear}</span>`;
     } else if (canEdit && !r.alreadyBooked) {
       const splitBtnClass = r.isVerbandsschiessen ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary';
-      const isQueued = !!r._inBookingQueue;
-      const bookBtnClass = isQueued ? 'btn-primary text-white fw-bold shadow-sm' : 'btn-success';
-      const bookBtnIcon = isQueued ? 'fa-check-circle' : 'fa-check';
-      const bookBtnLabel = isQueued ? 'Im Stapel' : 'Buchen';
-      const bookBtnTitle = isQueued ? 'Klicken, um aus Buchungsstapel zu entfernen (Shift+Klick für Sofortbuchung)' : 'In den Buchungsstapel legen (Shift+Klick für Sofortbuchung)';
+      const isComplete = Boolean(r.suggestedSoll && r.suggestedHaben);
+      const statusBadge = isComplete
+        ? `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Vollständig kontiert und bereit zur Ausführung"><i class="fas fa-check me-1"></i>Bereit</span>`
+        : `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(255, 193, 7, 0.15); color: #664d03; border: 1px solid rgba(255, 193, 7, 0.35);" title="Gegenkonto fehlt noch. Kann manuell ergänzt werden oder wird als unvollständig gebucht."><i class="fas fa-exclamation-circle text-warning me-1"></i>Konto fehlt</span>`;
+
       actionButtons = `
-        <button class="btn btn-sm ${bookBtnClass} py-1 px-2" id="bh-book-btn-${realI}" onclick="bhBankToggleQueue(${realI}, event)" title="${bookBtnTitle}">
-          <i class="fas ${bookBtnIcon} me-1"></i>${bookBtnLabel}
-        </button>
+        ${statusBadge}
         <button class="btn btn-sm ${splitBtnClass} py-1 px-2" onclick="bhBankOpenSplitModal(${realI})" title="Betrag in mehrere Zeilen aufteilen (z.B. Splitbuchung)">
           <i class="fas fa-columns me-1"></i>Split
         </button>
@@ -797,16 +814,14 @@ function bhBankRenderResults(filter) {
         </button>
       `;
     } else if (r.alreadyBooked) {
-      actionButtons = `<span class="badge bg-light text-secondary border px-2 py-1.5" title="🔒 Bereits im Kassabuch erfasst. Doppelbuchung geschützt."><i class="fas fa-lock me-1"></i>Geschützt</span>`;
+      actionButtons = `<span id="bh-status-badge-${realI}" class="badge bg-light text-secondary border px-2 py-1.5" title="🔒 Bereits im Journal erfasst. Doppelbuchung geschützt."><i class="fas fa-lock me-1"></i>Gebucht</span>`;
     }
 
     const amountClass = isCredit ? 'text-success' : 'text-danger';
     const amountSign  = isCredit ? '+' : '-';
     const rowBg = (r.alreadyBooked || r.isWrongYear) 
       ? 'table-secondary text-muted' 
-      : (r._inBookingQueue 
-          ? 'table-primary border-primary' 
-          : ((r.isJahresbeitrag || r.isInvoice) ? 'table-light' : ''));
+      : ((r.isJahresbeitrag || r.isInvoice) ? 'table-light' : '');
 
     return `
       <tr class="${rowBg}" ${(r.alreadyBooked || r.isWrongYear) ? 'style="opacity:0.65;"' : ''}>
@@ -1932,8 +1947,8 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
 
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
   const habenEl = document.getElementById(`bh-haben-${txIdx}`);
-  const rowTr   = sollEl ? sollEl.closest('tr') : null;
-  const bookBtn = document.getElementById(`bh-book-btn-${txIdx}`) || (rowTr ? rowTr.querySelector('button') : null);
+  const statusBadge = document.getElementById(`bh-status-badge-${txIdx}`) || document.getElementById(`bh-book-btn-${txIdx}`) || (rowTr ? rowTr.querySelector('.badge') : null);
+  const bookBtn = statusBadge;
 
   function resolveKontoCode(val) {
     if (!val) return '';
@@ -2515,55 +2530,10 @@ window.bhBankBookAll = async function() {
 };
 
 // ---------------------------------------------------------------------
-// Buchungsstapel (Warenkorb-Prinzip) für ausgewählte Buchungen
+// Buchungsstapel & Einzelauswahl (in Variante 1 durch Gesamtbuchung abgelöst)
 // ---------------------------------------------------------------------
 window.bhBankToggleQueue = function(txIdx, evt) {
-  if (evt && evt.shiftKey) {
-    return window.bhBankBookOne(txIdx);
-  }
-
-  const tx = (window._bhBankMatchResults || [])[txIdx];
-  if (!tx || tx.alreadyBooked || tx._isBooking || tx.isWrongYear) return;
-
-  if (!tx._inBookingQueue) {
-    const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
-    const habenEl = document.getElementById(`bh-haben-${txIdx}`);
-    if (sollEl && typeof window._bhUpdateTxKonto === 'function') {
-      window._bhUpdateTxKonto(txIdx, 'soll', sollEl.value);
-    }
-    if (habenEl && typeof window._bhUpdateTxKonto === 'function') {
-      window._bhUpdateTxKonto(txIdx, 'haben', habenEl.value);
-    }
-    const rawSoll  = tx.suggestedSoll;
-    const rawHaben = tx.suggestedHaben;
-    if (!rawSoll && !rawHaben) {
-      showToast('⚠️ Bitte mindestens ein Konto (Bankkonto) für diese Zeile auswählen.', 'warning', 'top-end', 3000);
-      if (sollEl) sollEl.focus();
-      return;
-    }
-  }
-
-  tx._inBookingQueue = !tx._inBookingQueue;
-
-  // DOM visuell aktualisieren ohne Tabelle neu aufzubauen
-  const btn = document.getElementById(`bh-book-btn-${txIdx}`);
-  const row = btn ? btn.closest('tr') : null;
-  if (btn) {
-    if (tx._inBookingQueue) {
-      btn.className = 'btn btn-sm btn-primary text-white fw-bold py-1 px-2 me-1 shadow-sm';
-      btn.innerHTML = '<i class="fas fa-check-circle me-1"></i>Im Stapel';
-      btn.title = 'Klicken, um aus Buchungsstapel zu entfernen (Shift+Klick für Sofortbuchung)';
-      if (row) row.classList.add('table-primary', 'border-primary');
-    } else {
-      btn.className = 'btn btn-sm btn-success py-1 px-2 me-1';
-      btn.innerHTML = '<i class="fas fa-check me-1"></i>Buchen';
-      btn.title = 'In den Buchungsstapel legen (Shift+Klick für Sofortbuchung)';
-      if (row) row.classList.remove('table-primary', 'border-primary');
-    }
-  }
-
-  window.bhBankUpdateSelectedBtn();
-  window.bhBankUpdateSafeBookingsBtn();
+  showToast('ℹ️ Alle Bank-Buchungen werden gesammelt mit «Alle Buchungen ausführen» gebucht (automatisch nach Datum sortiert).', 'info', 'top-end', 3500);
 };
 
 window.bhBankUpdateSafeBookingsBtn = function() {
@@ -2578,25 +2548,14 @@ window.bhBankUpdateSafeBookingsBtn = function() {
     !r.alreadyBooked && !r._isBooking && !r.isWrongYear && Number(r.amount || 0) > 0
   ).length;
   allBtn.innerHTML = `<i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen${openCount > 0 ? ` (${openCount})` : ''}`;
-  allBtn.disabled = (openCount === 0 || !!window._bhIsBookingSelected);
+  allBtn.disabled = (openCount === 0);
 };
 
 window.bhBankUpdateSelectedBtn = function() {
-  const results = window._bhBankMatchResults || [];
-  const queued = results.filter(r => r._inBookingQueue && !r.alreadyBooked && !r._isBooking && !r.isWrongYear);
   const btn = document.getElementById('bhBtnBookSelected');
-  if (!btn) return;
-
-  if (queued.length === 0) {
+  if (btn) {
     btn.classList.add('d-none');
-    btn.disabled = false;
-    return;
   }
-
-  const totalAmount = queued.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-  btn.classList.remove('d-none');
-  btn.disabled = !!window._bhIsBookingSelected || !!window._bhIsBookingAll;
-  btn.innerHTML = `<i class="fas fa-layer-group me-1"></i>${queued.length} ${queued.length === 1 ? 'Buchung' : 'Buchungen'} verbuchen <span class="badge bg-white text-primary ms-1">CHF ${totalAmount.toFixed(2)}</span>`;
 };
 
 window.bhBankBookSelected = async function() {
