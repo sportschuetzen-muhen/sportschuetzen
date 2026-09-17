@@ -833,13 +833,76 @@ function rnMakeModalMovableAndResizable(modalEl) {
 }
 
 // ---------------------------------------------------------------------
+// CSS für Rechnungspositionen: Pfeile ausblenden & Spaltenbreiten
+// ---------------------------------------------------------------------
+function rnEnsurePositionsTableStyles() {
+  if (document.getElementById('rn-positions-custom-style')) return;
+  const style = document.createElement('style');
+  style.id = 'rn-positions-custom-style';
+  style.textContent = `
+    /* Pfeile bei Menge, Einzelpreis und Gesamt komplett entfernen (Webkit & Firefox) */
+    .rn-no-spin::-webkit-outer-spin-button,
+    .rn-no-spin::-webkit-inner-spin-button,
+    input.rnc-pos-qty::-webkit-outer-spin-button,
+    input.rnc-pos-qty::-webkit-inner-spin-button,
+    input.rnc-pos-unitprice::-webkit-outer-spin-button,
+    input.rnc-pos-unitprice::-webkit-inner-spin-button,
+    input.rnc-pos-amt::-webkit-outer-spin-button,
+    input.rnc-pos-amt::-webkit-inner-spin-button,
+    input.rne-pos-qty::-webkit-outer-spin-button,
+    input.rne-pos-qty::-webkit-inner-spin-button,
+    input.rne-pos-unitprice::-webkit-outer-spin-button,
+    input.rne-pos-unitprice::-webkit-inner-spin-button,
+    input.rne-pos-amt::-webkit-outer-spin-button,
+    input.rne-pos-amt::-webkit-inner-spin-button {
+      -webkit-appearance: none !important;
+      margin: 0 !important;
+    }
+    .rn-no-spin,
+    input.rnc-pos-qty,
+    input.rnc-pos-unitprice,
+    input.rnc-pos-amt,
+    input.rne-pos-qty,
+    input.rne-pos-unitprice,
+    input.rne-pos-amt {
+      -moz-appearance: textfield !important;
+    }
+
+    /* Tabelle: border-collapse separate damit position:relative auf th funktioniert */
+    #rnc-positions-table, #rne-positions-table {
+      border-collapse: separate !important;
+      border-spacing: 0 !important;
+      table-layout: fixed !important;
+      width: 100% !important;
+    }
+    #rnc-positions-table th, #rne-positions-table th,
+    #rnc-positions-table td, #rne-positions-table td {
+      border-bottom: 1px solid #dee2e6 !important;
+      border-right: 1px solid #dee2e6 !important;
+      box-sizing: border-box !important;
+    }
+    #rnc-positions-table th:first-child, #rne-positions-table th:first-child,
+    #rnc-positions-table td:first-child, #rne-positions-table td:first-child {
+      border-left: 1px solid #dee2e6 !important;
+    }
+    #rnc-positions-table thead th, #rne-positions-table thead th {
+      border-top: 1px solid #dee2e6 !important;
+      position: relative !important;
+      overflow: visible !important;
+      box-sizing: border-box !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// ---------------------------------------------------------------------
 // Spaltenbreiten der Rechnungspositionen-Tabelle anpassbar machen & in localStorage speichern
 // ---------------------------------------------------------------------
-const RN_POS_COL_WIDTHS_STORAGE_KEY = 'rn_positions_table_col_widths_v1';
+const RN_POS_COL_WIDTHS_STORAGE_KEY = 'rn_positions_table_col_widths_v2';
 const RN_DEFAULT_POS_COL_WIDTHS = {
   idx: 38,
-  desc: null, // flex / auto mit min-width: 180px
-  qty: 80,
+  desc: 380,
+  qty: 75,
   unitprice: 150,
   amt: 150,
   konto: 140,
@@ -848,6 +911,12 @@ const RN_DEFAULT_POS_COL_WIDTHS = {
 
 function rnApplyPositionsTableColWidths(tableEl) {
   if (!tableEl) return;
+  rnEnsurePositionsTableStyles();
+
+  tableEl.style.borderCollapse = 'separate';
+  tableEl.style.borderSpacing = '0';
+  tableEl.style.tableLayout = 'fixed';
+
   let savedWidths = {};
   try {
     const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
@@ -856,6 +925,9 @@ function rnApplyPositionsTableColWidths(tableEl) {
 
   const ths = tableEl.querySelectorAll('thead th[data-col]');
   ths.forEach(th => {
+    th.style.position = 'relative';
+    th.style.overflow = 'visible';
+    th.style.boxSizing = 'border-box';
     const col = th.getAttribute('data-col');
     if (!col) return;
     const width = (savedWidths && typeof savedWidths[col] === 'number' && savedWidths[col] > 25)
@@ -865,9 +937,7 @@ function rnApplyPositionsTableColWidths(tableEl) {
     if (width) {
       th.style.width = width + 'px';
       th.style.minWidth = width + 'px';
-    } else if (col === 'desc') {
-      th.style.width = 'auto';
-      th.style.minWidth = '180px';
+      th.style.maxWidth = width + 'px';
     }
   });
 }
@@ -925,78 +995,82 @@ function rnInitPositionsTableResizable(tableEl) {
     if (th.querySelector('.rn-col-resizer')) return;
 
     th.style.position = 'relative';
+    th.style.overflow = 'visible';
 
     const resizer = document.createElement('div');
     resizer.className = 'rn-col-resizer';
-    resizer.style.cssText = 'position:absolute; top:0; right:0; width:9px; cursor:col-resize; height:100%; user-select:none; z-index:10; display:flex; align-items:center; justify-content:center;';
+    resizer.style.cssText = 'position:absolute; top:0; bottom:0; right:-6px; width:12px; height:100%; min-height:36px; cursor:col-resize; user-select:none; z-index:25; display:flex; align-items:center; justify-content:center; touch-action:none;';
     resizer.title = 'Spaltenbreite anpassen (Ziehen zum Ändern, Doppelklick zum Zurücksetzen)';
 
     const handleLine = document.createElement('div');
-    handleLine.style.cssText = 'width:2px; height:60%; background-color:#cbd5e1; border-radius:1px; pointer-events:none; transition:background-color 0.15s, height 0.15s;';
+    handleLine.style.cssText = 'width:2px; height:80%; background-color:#94a3b8; border-radius:1px; pointer-events:none; opacity:0.6; transition:opacity 0.15s, background-color 0.15s, width 0.15s;';
     resizer.appendChild(handleLine);
 
     resizer.addEventListener('mouseenter', () => {
+      handleLine.style.opacity = '1';
       handleLine.style.backgroundColor = '#0d6efd';
-      handleLine.style.height = '100%';
+      handleLine.style.width = '3px';
+      resizer.style.zIndex = '30';
     });
     resizer.addEventListener('mouseleave', () => {
       if (!resizer.dataset.dragging) {
-        handleLine.style.backgroundColor = '#cbd5e1';
-        handleLine.style.height = '60%';
+        handleLine.style.opacity = '0.6';
+        handleLine.style.backgroundColor = '#94a3b8';
+        handleLine.style.width = '2px';
+        resizer.style.zIndex = '25';
       }
     });
 
     let startX = 0;
     let startWidth = 0;
 
-    const onPointerDown = (e) => {
+    const onMouseDown = (e) => {
       e.stopPropagation();
       e.preventDefault();
       startX = e.pageX;
-      startWidth = th.offsetWidth;
+      startWidth = th.getBoundingClientRect().width;
       resizer.dataset.dragging = 'true';
+      handleLine.style.opacity = '1';
       handleLine.style.backgroundColor = '#0d6efd';
-      handleLine.style.height = '100%';
+      handleLine.style.width = '3px';
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
 
-      const minWidth = (col === 'desc') ? 140 : (col === 'qty' ? 55 : 95);
+      const minWidth = (col === 'desc') ? 120 : (col === 'qty' ? 45 : 80);
 
-      const onPointerMove = (ev) => {
+      const onMouseMove = (ev) => {
         const diff = ev.pageX - startX;
         const newWidth = Math.max(minWidth, Math.round(startWidth + diff));
         th.style.width = newWidth + 'px';
         th.style.minWidth = newWidth + 'px';
+        th.style.maxWidth = newWidth + 'px';
       };
 
-      const onPointerUp = () => {
+      const onMouseUp = () => {
         delete resizer.dataset.dragging;
-        handleLine.style.backgroundColor = '#cbd5e1';
-        handleLine.style.height = '60%';
+        handleLine.style.opacity = '0.6';
+        handleLine.style.backgroundColor = '#94a3b8';
+        handleLine.style.width = '2px';
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        document.removeEventListener('pointermove', onPointerMove);
-        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
         rnSavePositionsTableColWidths(tableEl);
       };
 
-      document.addEventListener('pointermove', onPointerMove);
-      document.addEventListener('pointerup', onPointerUp);
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
     };
 
-    resizer.addEventListener('pointerdown', onPointerDown);
+    resizer.addEventListener('mousedown', onMouseDown);
 
     resizer.addEventListener('dblclick', (e) => {
       e.stopPropagation();
       e.preventDefault();
-      const def = RN_DEFAULT_POS_COL_WIDTHS[col];
-      if (def) {
-        th.style.width = def + 'px';
-        th.style.minWidth = def + 'px';
-      } else {
-        th.style.width = 'auto';
-        th.style.minWidth = '180px';
-      }
+      const def = RN_DEFAULT_POS_COL_WIDTHS[col] || 150;
+      th.style.width = def + 'px';
+      th.style.minWidth = def + 'px';
+      th.style.maxWidth = def + 'px';
       try {
         const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
         if (raw) {
@@ -1024,22 +1098,36 @@ window.rnOpenCreateModal = async function(btnEl) {
     document.body.appendChild(modalEl);
   }
 
-  // Externe Kontakte laden (falls nicht bereits geladen)
+  // Externe Kontakte, Mitgliederdaten & Standard-Vorlagen sicherstellen
+  const loadTasks = [];
+  if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
+    loadTasks.push(loadMitgliederData(false).catch(e => console.warn("Mitglieder load error:", e)));
+  }
   if (!window._externalContacts || window._externalContacts.length === 0) {
+    loadTasks.push((async () => {
+      try {
+        const response = await apiFetch('rechnungen', 'action=getContacts');
+        const result = await response.json();
+        if (result.success) {
+          window._externalContacts = result.data || [];
+        }
+      } catch (err) {
+        console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
+      }
+    })());
+  }
+  if (typeof rnInitializeTemplates === 'function') {
+    rnInitializeTemplates();
+  }
+  if (loadTasks.length > 0) {
     let origText = '';
     if (btnEl) {
       origText = btnEl.innerHTML;
       btnEl.disabled = true;
-      btnEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Laden...';
+      btnEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Kontakte laden...';
     }
     try {
-      const response = await apiFetch('rechnungen', 'action=getContacts');
-      const result = await response.json();
-      if (result.success) {
-        window._externalContacts = result.data || [];
-      }
-    } catch (err) {
-      console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
+      await Promise.all(loadTasks);
     } finally {
       if (btnEl) {
         btnEl.disabled = false;
@@ -1157,7 +1245,8 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
     return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
   }).join('');
 
-  let html = `<option value="">-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>`;
+  const totalCount = filteredMembers.length + filteredExternals.length;
+  let html = `<option value="">-- Bitte Empfänger auswählen (${totalCount > 0 ? totalCount + ' Empfänger verfügbar' : 'wird geladen...'}) --</option>`;
 
   if (filteredExternals.length > 0) {
     html += `
@@ -1285,7 +1374,7 @@ window.rnSelectFirstFilteredRecipient = function() {
                   <div id="rnc-search-count-hint" class="text-muted small" style="display: none; font-size: 11px;"></div>
                 </div>
 
-                <select class="form-select fw-bold text-primary shadow-sm" id="rnc-member-select" required onchange="rnHandleMemberSelect(this.value)">
+                <select class="form-select fw-bold text-primary shadow-sm" id="rnc-member-select" required onchange="rnHandleMemberSelect(this.value)" style="min-height: 38px;">
                 </select>
               </div>
             </div>
@@ -1386,7 +1475,7 @@ window.rnSelectFirstFilteredRecipient = function() {
                     <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                       <i class="fas fa-magic me-1"></i> Standard-Positionen
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
+                    <ul class="dropdown-menu dropdown-menu-end shadow py-2" style="font-size: 0.85rem; min-width: 290px; max-width: 380px; max-height: 420px; overflow-y: auto;">
                       ${(typeof window.rnGetDropdownMenuHtml === 'function' ? window.rnGetDropdownMenuHtml('rncAddPositionRow') : '')}
                     </ul>
                   </div>
@@ -1606,18 +1695,18 @@ function rncAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
       <input type="text" class="form-control form-control-sm rnc-pos-desc" required value="${desc}" placeholder="z.B. Getränkebezug Süsswasser">
     </td>
     <td>
-      <input type="number" step="1" min="1" class="form-control form-control-sm text-end rnc-pos-qty" required value="${qty}" oninput="rncRecalculateRowTotal('${tr.id}')">
+      <input type="number" step="1" min="1" class="form-control form-control-sm text-end rnc-pos-qty rn-no-spin" required value="${qty}" oninput="rncRecalculateRowTotal('${tr.id}')">
     </td>
     <td>
       <div class="input-group input-group-sm">
         <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
-        <input type="number" step="0.05" class="form-control form-control-sm text-end rnc-pos-unitprice" required value="${unitPrice}" placeholder="0.00" oninput="rncRecalculateRowTotal('${tr.id}')">
+        <input type="number" step="0.05" class="form-control form-control-sm text-end rnc-pos-unitprice rn-no-spin" required value="${unitPrice}" placeholder="0.00" oninput="rncRecalculateRowTotal('${tr.id}')">
       </div>
     </td>
     <td>
       <div class="input-group input-group-sm">
         <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
-        <input type="number" class="form-control form-control-sm text-end fw-bold rnc-pos-amt bg-light" readonly value="${initialAmount}">
+        <input type="number" class="form-control form-control-sm text-end fw-bold rnc-pos-amt bg-light rn-no-spin" readonly value="${initialAmount}">
       </div>
     </td>
     <td>
@@ -2059,7 +2148,7 @@ window.rnOpenEditModal = async function(invoiceId) {
                     <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                       <i class="fas fa-magic me-1"></i> Standard-Positionen
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size: 0.85rem; max-width: 320px;">
+                    <ul class="dropdown-menu dropdown-menu-end shadow py-2" style="font-size: 0.85rem; min-width: 290px; max-width: 380px; max-height: 420px; overflow-y: auto;">
                       ${(typeof window.rnGetDropdownMenuHtml === 'function' ? window.rnGetDropdownMenuHtml('rneAddPositionRow') : '')}
                     </ul>
                   </div>
@@ -2141,18 +2230,18 @@ window.rnOpenEditModal = async function(invoiceId) {
         <input type="text" class="form-control form-control-sm rne-pos-desc" required value="${escapeHtml(desc)}" placeholder="z.B. Miete Schützenhaus">
       </td>
       <td>
-        <input type="number" class="form-control form-control-sm text-end rne-pos-qty" required step="1" min="1" value="${qty}" oninput="rneRecalculateRowTotal('${tr.id}')">
+        <input type="number" class="form-control form-control-sm text-end rne-pos-qty rn-no-spin" required step="1" min="1" value="${qty}" oninput="rneRecalculateRowTotal('${tr.id}')">
       </td>
       <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
-          <input type="number" class="form-control form-control-sm text-end rne-pos-unitprice" required step="0.05" min="0" value="${unitPrice}" oninput="rneRecalculateRowTotal('${tr.id}')">
+          <input type="number" class="form-control form-control-sm text-end rne-pos-unitprice rn-no-spin" required step="0.05" min="0" value="${unitPrice}" oninput="rneRecalculateRowTotal('${tr.id}')">
         </div>
       </td>
       <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
-          <input type="number" class="form-control form-control-sm text-end fw-bold rne-pos-amt bg-light" readonly value="${initialAmount}">
+          <input type="number" class="form-control form-control-sm text-end fw-bold rne-pos-amt bg-light rn-no-spin" readonly value="${initialAmount}">
         </div>
       </td>
       <td>

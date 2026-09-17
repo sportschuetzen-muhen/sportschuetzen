@@ -795,16 +795,25 @@ function bhBankRenderResults(filter) {
     if (r.isWrongYear) {
       actionButtons = `<span id="bh-status-badge-${realI}" class="badge bg-light text-danger border px-2 py-1.5" title="🔒 Transaktion aus ${r.txYear} kann nicht im Buchhaltungsjahr ${window._bhYear} gebucht werden. Bitte oben Jahr umschalten!"><i class="fas fa-ban me-1"></i>Jahr ${r.txYear}</span>`;
     } else if (canEdit && !r.alreadyBooked) {
-      const splitBtnClass = r.isVerbandsschiessen ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary';
-      const isComplete = Boolean(r.suggestedSoll && r.suggestedHaben);
+      const isSplitConfigured = Boolean(r.isSplit && Array.isArray(r.splitRows) && r.splitRows.length > 0);
+      const splitBtnClass = isSplitConfigured 
+        ? 'btn-primary text-white fw-bold shadow-sm' 
+        : (r.isVerbandsschiessen ? 'btn-warning text-dark fw-bold' : 'btn-outline-secondary');
+      const splitBtnLabel = isSplitConfigured
+        ? `<i class="fas fa-columns me-1"></i>Split (${r.splitRows.length})`
+        : `<i class="fas fa-columns me-1"></i>Split`;
+
+      const isComplete = isSplitConfigured ? true : Boolean(r.suggestedSoll && r.suggestedHaben);
       const statusBadge = isComplete
-        ? `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Vollständig kontiert und bereit zur Ausführung"><i class="fas fa-check me-1"></i>Bereit</span>`
+        ? (isSplitConfigured
+            ? `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Splitbuchung (${r.splitRows.length} Positionen) vorkontiert und bereit zur Ausführung"><i class="fas fa-columns text-primary me-1"></i>Bereit (Split ${r.splitRows.length})</span>`
+            : `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Vollständig kontiert und bereit zur Ausführung"><i class="fas fa-check me-1"></i>Bereit</span>`)
         : `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(255, 193, 7, 0.15); color: #664d03; border: 1px solid rgba(255, 193, 7, 0.35);" title="Gegenkonto fehlt noch. Kann manuell ergänzt werden oder wird als unvollständig gebucht."><i class="fas fa-exclamation-circle text-warning me-1"></i>Konto fehlt</span>`;
 
       actionButtons = `
         ${statusBadge}
-        <button class="btn btn-sm ${splitBtnClass} py-1 px-2" onclick="bhBankOpenSplitModal(${realI})" title="Betrag in mehrere Zeilen aufteilen (z.B. Splitbuchung)">
-          <i class="fas fa-columns me-1"></i>Split
+        <button class="btn btn-sm ${splitBtnClass} py-1 px-2" onclick="bhBankOpenSplitModal(${realI})" title="${isSplitConfigured ? 'Split-Aufteilung ansehen oder anpassen' : 'Betrag in mehrere Zeilen aufteilen (z.B. Splitbuchung)'}">
+          ${splitBtnLabel}
         </button>
         <button class="btn btn-sm btn-outline-secondary py-1 px-2" onclick="bhBankSaveRuleModal(${realI})" title="Dauerhafte automatische Regel für diesen Absender/Text merken">
           <i class="fas fa-plus-circle"></i>
@@ -858,10 +867,20 @@ function bhBankRenderResults(filter) {
         <td>${statusBadge}</td>
         <td>${matchInfo}</td>
         <td style="min-width: 140px;">
-          ${makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
+          ${(r.isSplit && !isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten">
+              <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Soll)</div>
+              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => `${s.kontoSoll || '?'}: ${Number(s.betrag).toFixed(2)}`).join(' · ')}</div>
+            </div>
+          ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
         </td>
         <td style="min-width: 140px;">
-          ${makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', r.alreadyBooked || r.isWrongYear)}
+          ${(r.isSplit && isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
+            <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten">
+              <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Haben)</div>
+              <div class="text-muted text-truncate font-monospace" style="font-size:9.5px;">${r.splitRows.map(s => `${s.kontoHaben || '?'}: ${Number(s.betrag).toFixed(2)}`).join(' · ')}</div>
+            </div>
+          ` : makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', r.alreadyBooked || r.isWrongYear)}
           ${(() => {
             if ((r.isJahresbeitrag || (r.isInvoice && String(r.matchedInvoice?.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
               const hId = r.matchedBeitrag ? r.matchedBeitrag.id : (r.matchedInvoice ? r.matchedInvoice.id : null);
@@ -1843,8 +1862,10 @@ function bhBankMatchAll(transactions) {
       matchType: (tx.alreadyBooked || alreadyBooked) ? 'journal' : matchType,
       matchRuleName,
       matchRulePrefix,
-      suggestedSoll,
-      suggestedHaben,
+      isSplit: tx.isSplit || false,
+      splitRows: tx.splitRows || null,
+      suggestedSoll: tx.isSplit ? (tx.suggestedSoll || suggestedSoll) : suggestedSoll,
+      suggestedHaben: tx.isSplit ? (tx.suggestedHaben || suggestedHaben) : suggestedHaben,
       matchLabel
     };
   });
@@ -1966,13 +1987,15 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   tx.suggestedSoll = kontoSoll;
   tx.suggestedHaben = kontoHaben;
 
-  if (!kontoSoll && !kontoHaben) {
-    if (!isBatch) alert('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
-    throw new Error('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
-  }
-  if (kontoSoll && kontoHaben && kontoSoll === kontoHaben) {
-    if (!isBatch) alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
-    throw new Error('Soll- und Haben-Konto dürfen nicht identisch sein.');
+  if (!tx.isSplit) {
+    if (!kontoSoll && !kontoHaben) {
+      if (!isBatch) alert('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
+      throw new Error('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
+    }
+    if (kontoSoll && kontoHaben && kontoSoll === kontoHaben) {
+      if (!isBatch) alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
+      throw new Error('Soll- und Haben-Konto dürfen nicht identisch sein.');
+    }
   }
 
   // AUTOMATISCHER SICHERHEITS-CHECK: Verhindern, dass Bankkonto auf der falschen Seite gebucht wird!
@@ -2094,7 +2117,25 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   const bookingDate = tx.bookingDate || new Date().toISOString().split('T')[0];
 
   let entries = [];
-  if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx._customHabenEdited || tx.suggestedHaben === '3410') && typeof window.jbGetSplitBookings === 'function') {
+  if (tx.isSplit && Array.isArray(tx.splitRows) && tx.splitRows.length > 0) {
+    const validRows = tx.splitRows.filter(r => Number(r.betrag) > 0);
+    if (validRows.length === 0) {
+      throw new Error(`Splitbuchung #${txIdx+1} hat keine Positionen mit Betrag > 0.`);
+    }
+    entries = validRows.map((r, i) => {
+      const subChar = String.fromCharCode(97 + i); // a, b, c...
+      return {
+        jahr: year,
+        datum: bookingDate,
+        beleg_nr: `${belegNr}${subChar}`,
+        beschreibung: (r.beschreibung || beschreibung).trim(),
+        konto_soll: r.kontoSoll,
+        konto_haben: r.kontoHaben,
+        betrag: Math.abs(Number(r.betrag)),
+        typ: 'Bank-Split'
+      };
+    });
+  } else if ((tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag'))) && (!tx._customHabenEdited || tx.suggestedHaben === '3410') && typeof window.jbGetSplitBookings === 'function') {
     const hId = tx.matchedBeitrag ? tx.matchedBeitrag.id : (tx.matchedInvoice ? tx.matchedInvoice.id : null);
     const mObj = tx.matchedMember || (tx.matchedInvoice ? { FirstName: tx.matchedInvoice.name, LastName: '', PersonNumber: tx.matchedInvoice.PersonNumber } : {});
     const split = window.jbGetSplitBookings({
@@ -2354,7 +2395,7 @@ window.bhBankBookAll = async function() {
     return;
   }
 
-  const unvollstaendigCount = toBook.filter(({ r }) => !r.suggestedSoll || !r.suggestedHaben).length;
+  const unvollstaendigCount = toBook.filter(({ r }) => !r.isSplit && (!r.suggestedSoll || !r.suggestedHaben)).length;
   let confirmMsg = `${toBook.length} Bank-Buchungen jetzt in streng chronologischer Reihenfolge ins Journal eintragen?`;
   if (unvollstaendigCount > 0) {
     confirmMsg += `\n\nℹ️ Hinweis: ${unvollstaendigCount} Buchung(en) haben noch kein Gegenkonto und werden im Journal als unvollständig markiert, damit die Belegnummerierung und Datums-Chronologie sauber bleibt.`;
@@ -3233,21 +3274,26 @@ window.bhBankOpenSplitModal = function(txIdx) {
     ? (tx.suggestedHaben && tx.suggestedHaben !== txBankKonto ? tx.suggestedHaben : '')
     : (tx.suggestedSoll && tx.suggestedSoll !== txBankKonto ? tx.suggestedSoll : '');
 
-  // Preset 2 Split-Zeilen (flexibel ohne feste Kontenverdrahtung)
-  window._bhSplitCurrentRows = [
-    {
-      beschreibung: `${partyOrInfo} (Teilbetrag 1)`,
-      betrag: Number(tx.amount || 0),
-      kontoSoll: isCredit ? txBankKonto : matchGegenkonto,
-      kontoHaben: isCredit ? matchGegenkonto : txBankKonto
-    },
-    {
-      beschreibung: `${partyOrInfo} (Teilbetrag 2)`,
-      betrag: 0,
-      kontoSoll: isCredit ? txBankKonto : '',
-      kontoHaben: isCredit ? '' : txBankKonto
-    }
-  ];
+  // Falls bereits ein Split konfiguriert ist, diesen laden!
+  if (tx.isSplit && Array.isArray(tx.splitRows) && tx.splitRows.length > 0) {
+    window._bhSplitCurrentRows = JSON.parse(JSON.stringify(tx.splitRows));
+  } else {
+    // Preset 2 Split-Zeilen (flexibel ohne feste Kontenverdrahtung)
+    window._bhSplitCurrentRows = [
+      {
+        beschreibung: `${partyOrInfo} (Teilbetrag 1)`,
+        betrag: Number(tx.amount || 0),
+        kontoSoll: isCredit ? txBankKonto : matchGegenkonto,
+        kontoHaben: isCredit ? matchGegenkonto : txBankKonto
+      },
+      {
+        beschreibung: `${partyOrInfo} (Teilbetrag 2)`,
+        betrag: 0,
+        kontoSoll: isCredit ? txBankKonto : '',
+        kontoHaben: isCredit ? '' : txBankKonto
+      }
+    ];
+  }
 
   let modalEl = document.getElementById('bhBankSplitModal');
   if (!modalEl) {
@@ -3379,11 +3425,15 @@ function bhBankRenderSplitModalContent(tx) {
       <div class="modal-content shadow-lg border-0 rounded-4">
         <div class="modal-header bg-primary text-white">
           <h5 class="modal-title fw-bold">
-            <i class="fas fa-columns me-2"></i>Split-Buchung durchführen
+            <i class="fas fa-columns me-2"></i>Split-Buchung aufteilen
           </h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-4">
+          <div class="alert alert-info border-start border-4 border-info shadow-sm py-2 px-3 mb-3 d-flex align-items-center gap-2 small">
+            <i class="fas fa-info-circle fs-5 text-info flex-shrink-0"></i>
+            <div><strong>Workflow-Hinweis:</strong> Die Split-Aufteilung wird für diese Zeile vorgemerkt. Verbucht wird alles gemeinsam mit allen anderen Bankbuchungen beim Klick auf <strong>«Alle Buchungen ausführen»</strong>.</div>
+          </div>
           <div class="alert bg-light border-start border-4 border-warning shadow-sm mb-4">
             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
               <div>
@@ -3440,11 +3490,16 @@ function bhBankRenderSplitModalContent(tx) {
           </div>
         </div>
 
-        <div class="modal-footer bg-light">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-          <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
-            <i class="fas fa-save me-1"></i>Split-Buchung speichern (${splitRows.length} Zeilen)
-          </button>
+        <div class="modal-footer bg-light d-flex justify-content-between">
+          <div>
+            ${tx.isSplit ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="bhBankClearSplit(${window._bhSplitCurrentTxIndex})"><i class="fas fa-undo me-1"></i>Split aufheben (Einzelbuchung)</button>` : ''}
+          </div>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
+              <i class="fas fa-check me-1"></i>Split-Aufteilung übernehmen (${splitRows.length} Zeilen)
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -3544,13 +3599,13 @@ window.bhBankRemoveSplitRow = function(idx) {
   if (tx) bhBankRenderSplitModalContent(tx);
 };
 
-window.bhBankSaveSplitBooking = async function(txIdx) {
+window.bhBankSaveSplitBooking = function(txIdx) {
   bhBankUpdateSplitFromInputs();
   const txs = window._bhBankMatchResults || [];
   const tx = txs[txIdx];
   if (!tx) return;
 
-  const splitRows = window._bhSplitCurrentRows || [];
+  const splitRows = (window._bhSplitCurrentRows || []).filter(r => Number(r.betrag) > 0);
   const bal = bhBankCalcSplitBalance(tx, splitRows);
 
   if (bal.hasNegative) {
@@ -3558,8 +3613,13 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
     return;
   }
 
+  if (splitRows.length < 2) {
+    alert('⚠️ Eine Split-Buchung erfordert mindestens 2 Teilpositionen mit Betrag > 0.');
+    return;
+  }
+
   if (!bal.isBalanced) {
-    alert(`⚠️ Die Netto-Aufteilung auf das Bankkonto (CHF ${bal.actualNetBank.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${bal.totalAmount.toFixed(2)}).`);
+    alert(`⚠️ Die Netto-Aufteilung auf das Bankkonto (CHF ${bal.actualNetBank.toFixed(2)}) entspricht nicht dem Bankbetrag (CHF ${bal.totalAmount.toFixed(2)}). Differenz: CHF ${bal.diff.toFixed(2)}.`);
     return;
   }
 
@@ -3578,95 +3638,67 @@ window.bhBankSaveSplitBooking = async function(txIdx) {
       alert(`Soll- und Haben-Konto für Zeile #${i+1} dürfen nicht identisch sein.`);
       return;
     }
-    if (Number(r.betrag) < 0) {
-      alert(`Zeile #${i+1}: Bitte Betrag als positive Zahl eingeben.`);
+    if (Number(r.betrag) <= 0) {
+      alert(`Zeile #${i+1}: Bitte einen Betrag grösser als 0 eingeben.`);
       return;
     }
   }
 
-  const saveBtn = document.querySelector('#bhBankSplitModal .modal-footer button.btn-success');
-  if (window._bhIsSavingSplit) return;
-  window._bhIsSavingSplit = true;
-  if (saveBtn) {
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Speichere...';
-  }
+  // Split auf dem Transaktionsobjekt im Speicher ablegen
+  tx.isSplit = true;
+  tx.splitRows = JSON.parse(JSON.stringify(splitRows));
 
-  const year = Number(window._bhYear || new Date().getFullYear());
   const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
-  const baseSeq = bhGetNextBankBelegSeq(year, txBankKonto);
-  const prefix = getBankBelegPrefix(txBankKonto);
-  const baseBelegSeq = String(baseSeq).padStart(3, '0');
-
-  try {
-    let successCount = 0;
-
-    for (let i = 0; i < splitRows.length; i++) {
-      const r = splitRows[i];
-      if (Number(r.betrag) === 0) continue; // 0 CHF Zeilen überspringen
-
-      const subChar = String.fromCharCode(97 + i); // a, b, c...
-      const belegNr = `${prefix}${year}-${baseBelegSeq}${subChar}`;
-
-      const payloadBh = {
-        action: 'addJournalEntry',
-        jahr: year,
-        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
-        beleg_nr: belegNr,
-        beschreibung: r.beschreibung,
-        konto_soll: r.kontoSoll,
-        konto_haben: r.kontoHaben,
-        betrag: Math.abs(Number(r.betrag)),
-        typ: 'Bank-Split'
-      };
-
-      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-      const jsonBh = await resBh.json();
-      if (!jsonBh.success) throw new Error(jsonBh.error || `Fehler beim Buchen der Split-Zeile #${i+1}`);
-
-      window._bhJournal = window._bhJournal || [];
-      window._bhJournal.push({
-        id: (jsonBh.data && jsonBh.data.id) ? jsonBh.data.id : Date.now() + i,
-        jahr: year,
-        datum: tx.bookingDate || new Date().toISOString().split('T')[0],
-        beleg_nr: belegNr,
-        beschreibung: r.beschreibung,
-        konto_soll: r.kontoSoll,
-        konto_haben: r.kontoHaben,
-        betrag: Number(r.betrag),
-        typ: 'Bank-Split'
-      });
-
-      successCount++;
-    }
-
-    // Transaktion als gebucht markieren
-    window._bhBankMatchResults[txIdx].alreadyBooked = true;
-    window._bhBankMatchResults[txIdx].bookedDate = new Date().toLocaleDateString('de-CH');
-
-    // Modal schliessen
-    const modalEl = document.getElementById('bhBankSplitModal');
-    if (modalEl) {
-      const bsModal = bootstrap.Modal.getInstance(modalEl);
-      if (bsModal) bsModal.hide();
-    }
-
-    if (typeof showToast === 'function') {
-      showToast(`✅ Split-Buchung erfolgreich! ${successCount} Buchungssätze ins Kassabuch eingetragen.`, 'success');
-    } else {
-      alert(`✅ Split-Buchung erfolgreich! ${successCount} Buchungssätze eingetragen.`);
-    }
-
-    bhBankRenderResults(window._bhBankActiveFilter);
-  } catch (err) {
-    alert('❌ Fehler bei der Split-Buchung: ' + err.message);
-  } finally {
-    window._bhIsSavingSplit = false;
-    if (saveBtn) {
-      saveBtn.disabled = false;
-      saveBtn.innerHTML = `<i class="fas fa-save me-1"></i>Split-Buchung speichern (${splitRows.length} Zeilen)`;
-    }
+  if (tx.isCredit) {
+    tx.suggestedSoll = txBankKonto;
+    tx.suggestedHaben = '';
+  } else {
+    tx.suggestedHaben = txBankKonto;
+    tx.suggestedSoll = '';
   }
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx].isSplit = true;
+    window._bhBankTransactions[txIdx].splitRows = JSON.parse(JSON.stringify(splitRows));
+    window._bhBankTransactions[txIdx].suggestedSoll = tx.suggestedSoll;
+    window._bhBankTransactions[txIdx].suggestedHaben = tx.suggestedHaben;
+  }
+
+  // Modal schliessen
+  const modalEl = document.getElementById('bhBankSplitModal');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  showToast(`✅ Split-Aufteilung (${splitRows.length} Positionen) übernommen! Wird beim Klick auf «Alle Buchungen ausführen» verbucht.`, 'success', 'top-end', 4000);
+
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+};
+
+window.bhBankClearSplit = function(txIdx) {
+  const rows = window._bhBankMatchResults || [];
+  const tx = rows[txIdx];
+  if (!tx) return;
+
+  tx.isSplit = false;
+  delete tx.splitRows;
+
+  if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+    window._bhBankTransactions[txIdx].isSplit = false;
+    delete window._bhBankTransactions[txIdx].splitRows;
+  }
+
+  const modalEl = document.getElementById('bhBankSplitModal');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  showToast('Split-Aufteilung aufgehoben. Posten wird als Einzelsatz geführt.', 'info', 'top-end', 3000);
+  bhBankRenderResults(window._bhBankActiveFilter);
+  if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
 };
 
 // =====================================================================

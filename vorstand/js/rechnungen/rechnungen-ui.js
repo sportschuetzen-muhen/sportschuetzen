@@ -63,12 +63,21 @@ window.rnEnsureCustomStyles = function() {
 
 // Dropdown-Auswahl für Standard-Positionen generieren
 window.rnGetDropdownMenuHtml = function(actionFuncName) {
+  if (typeof rnInitializeTemplates === 'function') {
+    rnInitializeTemplates();
+  }
   let templates = window._invoiceTemplates;
   if (!templates || templates.length === 0) {
-    rnInitializeTemplates();
-    templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+    try {
+      templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+      window._invoiceTemplates = templates;
+    } catch (e) {}
   }
   
+  if (!templates || templates.length === 0) {
+    return '<li><span class="dropdown-item text-muted small py-2"><i class="fas fa-info-circle me-1"></i>Keine Standard-Vorlagen vorhanden</span></li>';
+  }
+
   const grouped = {};
   templates.forEach(t => {
     const cat = t.category || 'Sonstige';
@@ -79,7 +88,7 @@ window.rnGetDropdownMenuHtml = function(actionFuncName) {
   let html = '';
   const cats = Object.keys(grouped).sort();
   cats.forEach((cat, idx) => {
-    if (idx > 0) html += '<li><hr class="dropdown-divider"></li>';
+    if (idx > 0) html += '<li><hr class="dropdown-divider my-1"></li>';
     
     let catIcon = 'fa-shopping-cart';
     let catColor = 'text-info';
@@ -87,13 +96,13 @@ window.rnGetDropdownMenuHtml = function(actionFuncName) {
     else if (cat === 'Konsumationen') { catIcon = 'fa-wine-glass'; catColor = 'text-success'; }
     else if (cat === 'Schulsport') { catIcon = 'fa-bullseye'; catColor = 'text-danger'; }
     
-    html += `<li><h6 class="dropdown-header ${catColor} fw-bold"><i class="fas ${catIcon} me-1"></i> ${cat}</h6></li>`;
+    html += `<li><h6 class="dropdown-header ${catColor} fw-bold py-1 mb-0" style="font-size:11.5px;"><i class="fas ${catIcon} me-1"></i> ${cat}</h6></li>`;
     grouped[cat].forEach(t => {
       const priceLabel = t.price ? ` (CHF ${Number(t.price).toFixed(2)})` : ' (Preis manuell)';
       const escapedDesc = String(t.desc).replace(/'/g, "\\'");
       const kontoVal = t.habenkonto || t.konto || '';
       const escapedKonto = String(kontoVal).replace(/'/g, "\\'");
-      html += `<li><a class="dropdown-item d-flex justify-content-between align-items-center py-1.5" href="#" onclick="${actionFuncName}('${escapedDesc}', '${t.price || ''}', 1, '${escapedKonto}'); return false;"><span>${escapeHtml(t.desc)}${priceLabel}</span>${kontoVal ? `<span class="badge bg-light text-primary font-monospace ms-2 border" style="font-size:11px;">${escapeHtml(kontoVal)}</span>` : ''}</a></li>`;
+      html += `<li><a class="dropdown-item d-flex justify-content-between align-items-center py-1.5 px-3" href="#" onclick="${actionFuncName}('${escapedDesc}', '${t.price || ''}', 1, '${escapedKonto}'); return false;"><span>${escapeHtml(t.desc)}${priceLabel}</span>${kontoVal ? `<span class="badge bg-light text-primary font-monospace ms-2 border" style="font-size:11px;">${escapeHtml(kontoVal)}</span>` : ''}</a></li>`;
     });
   });
   
