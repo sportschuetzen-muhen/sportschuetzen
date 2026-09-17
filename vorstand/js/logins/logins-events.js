@@ -3,12 +3,47 @@
 // =========================================================
 
 async function loadLoginsData(force = false) {
+  if (typeof loadMitgliederData === 'function' && (!window._mglData || window._mglData.length === 0)) {
+    loadMitgliederData(false).catch(() => {});
+  }
   if (!force && LoginsState.loaded && document.getElementById('tab-btn-login_daten')) {
     console.log("⚡ loadLoginsData: Lade aus lokalem Cache...");
     return;
   }
   renderLoginsShell();
   await fetchLoginsData();
+}
+
+function refreshMemberSelectIfEmpty(currentPN) {
+  const sel = document.getElementById('lf-member-select');
+  if (!sel) return;
+  if (!window._mglData || window._mglData.length === 0) {
+    if (typeof loadMitgliederData === 'function') {
+      loadMitgliederData(false).then(() => {
+        const selNow = document.getElementById('lf-member-select');
+        const cur = String(currentPN || document.getElementById('lf-personnumber')?.value || '').trim();
+        const members = [...(window._mglData || [])]
+          .filter(m => {
+            const isDeceased = m.Deceased == 1 || m.Deceased === true || m.Deceased === '1' || String(m.Deceased).toLowerCase() === 'true' || Boolean(m.Todesdatum) || String(m.Status || '').toLowerCase().includes('verstorben');
+            const isExited = Boolean(m.Vereinsaustritt) || Boolean(m.ExitDate) || String(m.Status || '').toLowerCase().includes('ausgetreten') || String(m.Status || '').toLowerCase().includes('ehemalig');
+            if (cur && cur === String(m.PersonNumber || '').trim()) return true;
+            return !isDeceased && !isExited;
+          })
+          .sort((a, b) => {
+            const na = `${a.LastName || ''} ${a.FirstName || ''}`.trim().toLowerCase();
+            const nb = `${b.LastName || ''} ${b.FirstName || ''}`.trim().toLowerCase();
+            return na.localeCompare(nb, 'de');
+          });
+        let opts = '<option value="">-- Mitglied auswählen (übernimmt Name, Vorname, Mail) --</option>';
+        opts += members.map(m => {
+          const pn = String(m.PersonNumber || '').trim();
+          const isSel = cur && cur === pn;
+          return `<option value="${escapeHtml(pn)}" ${isSel ? 'selected' : ''}>${escapeHtml(m.LastName || '')} ${escapeHtml(m.FirstName || '')} (${escapeHtml(pn)})</option>`;
+        }).join('');
+        selNow.innerHTML = opts;
+      }).catch(e => console.warn("Mitglieder-Ladefehler für Login-Modal:", e));
+    }
+  }
 }
 
 function loginsSetTab(tab) {
@@ -51,6 +86,10 @@ function loginsOpenAdd() {
   document.getElementById('logins-modal-body').innerHTML = tab === 'login_daten'
     ? loginDatenForm(null) : appLoginForm(null);
 
+  if (tab === 'login_daten') {
+    refreshMemberSelectIfEmpty(null);
+  }
+
   // _mode speichern
   window._loginsEditMode = 'add';
   window._loginsEditRow  = null;
@@ -68,6 +107,10 @@ function loginsOpenEdit(record) {
   document.getElementById('logins-btn-delete').classList.remove('d-none');
   document.getElementById('logins-modal-body').innerHTML = tab === 'login_daten'
     ? loginDatenForm(record) : appLoginForm(record);
+
+  if (tab === 'login_daten') {
+    refreshMemberSelectIfEmpty(record.personnumber || record.PersonNumber);
+  }
 
   window._loginsEditMode = 'edit';
   window._loginsEditRow  = record;

@@ -832,6 +832,186 @@ function rnMakeModalMovableAndResizable(modalEl) {
   }
 }
 
+// ---------------------------------------------------------------------
+// Spaltenbreiten der Rechnungspositionen-Tabelle anpassbar machen & in localStorage speichern
+// ---------------------------------------------------------------------
+const RN_POS_COL_WIDTHS_STORAGE_KEY = 'rn_positions_table_col_widths_v1';
+const RN_DEFAULT_POS_COL_WIDTHS = {
+  idx: 38,
+  desc: null, // flex / auto mit min-width: 180px
+  qty: 80,
+  unitprice: 150,
+  amt: 150,
+  konto: 140,
+  action: 45
+};
+
+function rnApplyPositionsTableColWidths(tableEl) {
+  if (!tableEl) return;
+  let savedWidths = {};
+  try {
+    const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
+    if (raw) savedWidths = JSON.parse(raw) || {};
+  } catch (e) {}
+
+  const ths = tableEl.querySelectorAll('thead th[data-col]');
+  ths.forEach(th => {
+    const col = th.getAttribute('data-col');
+    if (!col) return;
+    const width = (savedWidths && typeof savedWidths[col] === 'number' && savedWidths[col] > 25)
+      ? savedWidths[col]
+      : RN_DEFAULT_POS_COL_WIDTHS[col];
+
+    if (width) {
+      th.style.width = width + 'px';
+      th.style.minWidth = width + 'px';
+    } else if (col === 'desc') {
+      th.style.width = 'auto';
+      th.style.minWidth = '180px';
+    }
+  });
+}
+window.rnApplyPositionsTableColWidths = rnApplyPositionsTableColWidths;
+
+function rnSavePositionsTableColWidths(tableEl) {
+  if (!tableEl) return;
+  try {
+    const ths = tableEl.querySelectorAll('thead th[data-col]');
+    let saved = {};
+    try {
+      const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
+      if (raw) saved = JSON.parse(raw) || {};
+    } catch (e) {}
+
+    ths.forEach(th => {
+      const col = th.getAttribute('data-col');
+      if (col && th.style.width && th.style.width !== 'auto') {
+        const val = parseInt(th.style.width, 10);
+        if (!isNaN(val) && val > 25) {
+          saved[col] = val;
+        }
+      }
+    });
+    localStorage.setItem(RN_POS_COL_WIDTHS_STORAGE_KEY, JSON.stringify(saved));
+  } catch (e) {
+    console.warn('Fehler beim Speichern der Spaltenbreiten:', e);
+  }
+}
+window.rnSavePositionsTableColWidths = rnSavePositionsTableColWidths;
+
+function rnResetPositionsTableColWidths(btnEl) {
+  try {
+    localStorage.removeItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
+  } catch (e) {}
+  const modal = btnEl ? btnEl.closest('.modal') : null;
+  const table = modal ? modal.querySelector('table[id$="-positions-table"]') : null;
+  if (table) {
+    rnApplyPositionsTableColWidths(table);
+  }
+}
+window.rnResetPositionsTableColWidths = rnResetPositionsTableColWidths;
+
+function rnInitPositionsTableResizable(tableEl) {
+  if (!tableEl) return;
+
+  rnApplyPositionsTableColWidths(tableEl);
+
+  const resizableCols = ['desc', 'qty', 'unitprice', 'amt', 'konto'];
+  const ths = tableEl.querySelectorAll('thead th[data-col]');
+
+  ths.forEach(th => {
+    const col = th.getAttribute('data-col');
+    if (!resizableCols.includes(col)) return;
+    if (th.querySelector('.rn-col-resizer')) return;
+
+    th.style.position = 'relative';
+
+    const resizer = document.createElement('div');
+    resizer.className = 'rn-col-resizer';
+    resizer.style.cssText = 'position:absolute; top:0; right:0; width:9px; cursor:col-resize; height:100%; user-select:none; z-index:10; display:flex; align-items:center; justify-content:center;';
+    resizer.title = 'Spaltenbreite anpassen (Ziehen zum Ändern, Doppelklick zum Zurücksetzen)';
+
+    const handleLine = document.createElement('div');
+    handleLine.style.cssText = 'width:2px; height:60%; background-color:#cbd5e1; border-radius:1px; pointer-events:none; transition:background-color 0.15s, height 0.15s;';
+    resizer.appendChild(handleLine);
+
+    resizer.addEventListener('mouseenter', () => {
+      handleLine.style.backgroundColor = '#0d6efd';
+      handleLine.style.height = '100%';
+    });
+    resizer.addEventListener('mouseleave', () => {
+      if (!resizer.dataset.dragging) {
+        handleLine.style.backgroundColor = '#cbd5e1';
+        handleLine.style.height = '60%';
+      }
+    });
+
+    let startX = 0;
+    let startWidth = 0;
+
+    const onPointerDown = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      startX = e.pageX;
+      startWidth = th.offsetWidth;
+      resizer.dataset.dragging = 'true';
+      handleLine.style.backgroundColor = '#0d6efd';
+      handleLine.style.height = '100%';
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      const minWidth = (col === 'desc') ? 140 : (col === 'qty' ? 55 : 95);
+
+      const onPointerMove = (ev) => {
+        const diff = ev.pageX - startX;
+        const newWidth = Math.max(minWidth, Math.round(startWidth + diff));
+        th.style.width = newWidth + 'px';
+        th.style.minWidth = newWidth + 'px';
+      };
+
+      const onPointerUp = () => {
+        delete resizer.dataset.dragging;
+        handleLine.style.backgroundColor = '#cbd5e1';
+        handleLine.style.height = '60%';
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        rnSavePositionsTableColWidths(tableEl);
+      };
+
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', onPointerUp);
+    };
+
+    resizer.addEventListener('pointerdown', onPointerDown);
+
+    resizer.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const def = RN_DEFAULT_POS_COL_WIDTHS[col];
+      if (def) {
+        th.style.width = def + 'px';
+        th.style.minWidth = def + 'px';
+      } else {
+        th.style.width = 'auto';
+        th.style.minWidth = '180px';
+      }
+      try {
+        const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          delete saved[col];
+          localStorage.setItem(RN_POS_COL_WIDTHS_STORAGE_KEY, JSON.stringify(saved));
+        }
+      } catch (err) {}
+    });
+
+    th.appendChild(resizer);
+  });
+}
+window.rnInitPositionsTableResizable = rnInitPositionsTableResizable;
+
 // CREATE MANUALLY INVOICE MODAL
 window.rnOpenCreateModal = async function(btnEl) {
   let modalEl = document.getElementById('rnModalCreateInvoice');
@@ -868,19 +1048,186 @@ window.rnOpenCreateModal = async function(btnEl) {
     }
   }
 
-  const memberOptions = (window._mglData || []).map(m => 
-    `<option value="MBR:${m.PersonNumber}">${m.LastName} ${m.FirstName} (Nr: ${m.PersonNumber})</option>`
-  ).join('');
+// Hilfsfunktionen für sortierte Empfänger & Buchstabensuche
+window._rnShowInactiveMembers = false;
 
-  const externalOptions = (window._externalContacts || []).map(c => {
+window.rnIsMemberDeceased = function(m) {
+  if (!m) return false;
+  return m.Deceased == 1 || m.Deceased === true || m.Deceased === '1' ||
+         String(m.Deceased).toLowerCase() === 'true' ||
+         Boolean(m.Todesdatum) ||
+         String(m.Status || '').toLowerCase().includes('verstorben');
+};
+
+window.rnIsMemberExited = function(m) {
+  if (!m) return false;
+  return Boolean(m.Vereinsaustritt) ||
+         Boolean(m.ExitDate) ||
+         String(m.Status || '').toLowerCase().includes('ausgetreten') ||
+         String(m.Status || '').toLowerCase().includes('ehemalig');
+};
+
+window.rnToggleInactiveMembers = function(show) {
+  window._rnShowInactiveMembers = Boolean(show);
+  const searchInput = document.getElementById('rnc-recipient-search');
+  window.rnPopulateRecipientSelect(searchInput ? searchInput.value : '');
+};
+
+window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedValue = null) {
+  const memberSelectEl = document.getElementById('rnc-member-select');
+  if (!memberSelectEl) return;
+
+  const currentVal = preserveSelectedValue !== null ? preserveSelectedValue : memberSelectEl.value;
+  const q = String(filterQuery || '').trim().toLowerCase();
+  const showInactive = document.getElementById('rnc-show-inactive-members')
+    ? document.getElementById('rnc-show-inactive-members').checked
+    : Boolean(window._rnShowInactiveMembers);
+
+  // 1. Mitglieder filtern (aktive vs. verstorbene/ausgetretene) & sortieren nach Nachname, Vorname A - Z
+  const sortedMembers = [...(window._mglData || [])]
+    .filter(m => {
+      const isDeceased = window.rnIsMemberDeceased(m);
+      const isExited = window.rnIsMemberExited(m);
+      if (!showInactive && (isDeceased || isExited)) {
+        // Falls aktuell genau dieses Mitglied gewählt ist, nicht entfernen
+        if (currentVal && currentVal === `MBR:${m.PersonNumber}`) return true;
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const na = `${a.LastName || ''} ${a.FirstName || ''}`.trim().toLowerCase();
+      const nb = `${b.LastName || ''} ${b.FirstName || ''}`.trim().toLowerCase();
+      return na.localeCompare(nb, 'de');
+    });
+
+  // 2. Externe Kontakte sortieren nach Nachname, Vorname bzw. Firma A - Z
+  const sortedExternals = [...(window._externalContacts || [])].sort((a, b) => {
+    const getContactSortLabel = (c) => {
+      if (c.typ === 'firma' || Boolean(c.firma)) {
+        return (c.firma || c.name || '').trim().toLowerCase();
+      }
+      const ln = (c.nachname || '').trim();
+      const fn = (c.vorname || '').trim();
+      if (ln || fn) return `${ln} ${fn}`.toLowerCase();
+      return (c.name || '').trim().toLowerCase();
+    };
+    const na = getContactSortLabel(a);
+    const nb = getContactSortLabel(b);
+    return na.localeCompare(nb, 'de');
+  });
+
+  // 3. Filtern nach Suchbegriff (Name, Vorname, Firma, PersonNumber, Ort, E-Mail)
+  const filteredMembers = sortedMembers.filter(m => {
+    if (!q) return true;
+    const ln = String(m.LastName || '').toLowerCase();
+    const fn = String(m.FirstName || '').toLowerCase();
+    const pn = String(m.PersonNumber || '').toLowerCase();
+    const em = String(m.PrimaryEmail || m.Email || '').toLowerCase();
+    const city = String(m.City || m.Ort || '').toLowerCase();
+    return ln.includes(q) || fn.includes(q) || `${ln} ${fn}`.includes(q) || `${fn} ${ln}`.includes(q) || pn.includes(q) || em.includes(q) || city.includes(q);
+  });
+
+  const filteredExternals = sortedExternals.filter(c => {
+    if (!q) return true;
+    const name = String(c.name || '').toLowerCase();
+    const fn = String(c.vorname || '').toLowerCase();
+    const ln = String(c.nachname || '').toLowerCase();
+    const firma = String(c.firma || '').toLowerCase();
+    const id = String(c.id || '').toLowerCase();
+    const em = String(c.email || '').toLowerCase();
+    const kat = String(c.kategorie || '').toLowerCase();
+    const city = String(c.ort || '').toLowerCase();
+    return name.includes(q) || fn.includes(q) || ln.includes(q) || `${ln} ${fn}`.includes(q) || `${fn} ${ln}`.includes(q) || firma.includes(q) || id.includes(q) || em.includes(q) || kat.includes(q) || city.includes(q);
+  });
+
+  const memberOptions = filteredMembers.map(m => {
+    const isDeceased = window.rnIsMemberDeceased(m);
+    const isExited = !isDeceased && window.rnIsMemberExited(m);
+    let tag = '';
+    if (isDeceased) tag = ' [† Verstorben]';
+    else if (isExited) tag = ' [Ausgetreten]';
+    return `<option value="MBR:${m.PersonNumber}">${escapeHtml(m.LastName || '')} ${escapeHtml(m.FirstName || '')}${tag} (Nr: ${escapeHtml(m.PersonNumber || '')})</option>`;
+  }).join('');
+
+  const externalOptions = filteredExternals.map(c => {
     const isFirma = c.typ === 'firma' || Boolean(c.firma);
     const label = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `Kontakt #${c.id}`);
     const kat = c.kategorie ? ` [${c.kategorie}]` : '';
     return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
   }).join('');
 
+  let html = `<option value="">-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>`;
+
+  if (filteredExternals.length > 0) {
+    html += `
+      <optgroup label="Gespeicherte externe Kontakte (${filteredExternals.length})">
+        ${externalOptions}
+      </optgroup>
+    `;
+  }
+  if (filteredMembers.length > 0) {
+    const groupLabel = showInactive 
+      ? `Vereinsmitglieder (inkl. ehem. & verstorben: ${filteredMembers.length})` 
+      : `Vereinsmitglieder (${filteredMembers.length})`;
+    html += `
+      <optgroup label="${groupLabel}">
+        ${memberOptions}
+      </optgroup>
+    `;
+  }
+
+  if (filteredExternals.length === 0 && filteredMembers.length === 0) {
+    html += `<option value="" disabled>⚠️ Kein Empfänger für "${escapeHtml(q)}" gefunden</option>`;
+  }
+
+  memberSelectEl.innerHTML = html;
+
+  if (currentVal && memberSelectEl.querySelector(`option[value="${currentVal}"]`)) {
+    memberSelectEl.value = currentVal;
+  } else if (!currentVal) {
+    memberSelectEl.value = "";
+  }
+
+  const hintEl = document.getElementById('rnc-search-count-hint');
+  if (hintEl) {
+    if (q) {
+      hintEl.style.display = 'inline-block';
+      hintEl.innerHTML = `<i class="fas fa-filter me-1 text-primary"></i>${filteredMembers.length + filteredExternals.length} Treffer`;
+    } else {
+      hintEl.style.display = 'none';
+      hintEl.innerHTML = '';
+    }
+  }
+};
+
+window.rnFilterRecipientSelect = function(query) {
+  window.rnPopulateRecipientSelect(query);
+};
+
+window.rnClearRecipientSearch = function() {
+  const searchInput = document.getElementById('rnc-recipient-search');
+  if (searchInput) {
+    searchInput.value = '';
+    searchInput.focus();
+  }
+  window.rnPopulateRecipientSelect('');
+};
+
+window.rnSelectFirstFilteredRecipient = function() {
+  const sel = document.getElementById('rnc-member-select');
+  if (!sel) return;
+  const firstOption = sel.querySelector('optgroup option');
+  if (firstOption && firstOption.value) {
+    sel.value = firstOption.value;
+    if (typeof window.rnHandleMemberSelect === 'function') {
+      window.rnHandleMemberSelect(sel.value);
+    }
+  }
+};
+
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 1100px;">
       <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
         <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
           <h5 class="modal-title fw-bold mb-0"><i class="fas fa-file-invoice me-2"></i>Neue Rechnung verfassen</h5>
@@ -906,16 +1253,39 @@ window.rnOpenCreateModal = async function(btnEl) {
                     <i class="fas fa-user-plus me-1"></i> + Neuer externer Kontakt erfassen
                   </button>
                 </div>
+
+                <!-- Suchfeld für Buchstabensuche -->
+                <div class="input-group input-group-sm mb-1.5 shadow-2xs">
+                  <span class="input-group-text bg-white border-end-0 text-muted">
+                    <i class="fas fa-search"></i>
+                  </span>
+                  <input type="text" 
+                         id="rnc-recipient-search" 
+                         class="form-control border-start-0 border-end-0" 
+                         placeholder="🔍 Empfänger suchen (Buchstabensuche: Name, Vorname, Firma, Nr...)" 
+                         oninput="rnFilterRecipientSelect(this.value)"
+                         onkeydown="if(event.key==='Enter'){ event.preventDefault(); rnSelectFirstFilteredRecipient(); }"
+                         autocomplete="off">
+                  <button class="btn btn-outline-secondary border-start-0" 
+                          type="button" 
+                          onclick="rnClearRecipientSearch()" 
+                          title="Suche zurücksetzen">
+                    <i class="fas fa-times"></i>
+                  </button>
+                </div>
+
+                <!-- Option: Verstorbene & Ausgetretene einblenden -->
+                <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                  <div class="form-check form-switch m-0" style="font-size: 11.5px;">
+                    <input class="form-check-input" type="checkbox" id="rnc-show-inactive-members" onchange="rnToggleInactiveMembers(this.checked)" style="cursor: pointer;">
+                    <label class="form-check-label text-muted" for="rnc-show-inactive-members" style="cursor: pointer; user-select: none;">
+                      Auch ehemalige &amp; verstorbene Mitglieder anzeigen
+                    </label>
+                  </div>
+                  <div id="rnc-search-count-hint" class="text-muted small" style="display: none; font-size: 11px;"></div>
+                </div>
+
                 <select class="form-select fw-bold text-primary shadow-sm" id="rnc-member-select" required onchange="rnHandleMemberSelect(this.value)">
-                  <option value="" selected>-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>
-                  ${window._externalContacts.length > 0 ? `
-                  <optgroup label="Gespeicherte externe Kontakte (Sponsoren, Mieter, Firmen, Privat)">
-                    ${externalOptions}
-                  </optgroup>
-                  ` : ''}
-                  <optgroup label="Vereinsmitglieder">
-                    ${memberOptions}
-                  </optgroup>
                 </select>
               </div>
             </div>
@@ -1009,6 +1379,9 @@ window.rnOpenCreateModal = async function(btnEl) {
               <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
                 <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-xs btn-outline-secondary" onclick="rnResetPositionsTableColWidths(this)" title="Spaltenbreiten auf Standard zurücksetzen">
+                    <i class="fas fa-arrows-alt-h me-1"></i> Breiten-Reset
+                  </button>
                   <div class="dropdown">
                     <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                       <i class="fas fa-magic me-1"></i> Standard-Positionen
@@ -1025,16 +1398,16 @@ window.rnOpenCreateModal = async function(btnEl) {
               </div>
 
               <div class="table-responsive">
-                <table class="table table-bordered table-striped align-middle mb-0" style="font-size: 13px;">
+                <table class="table table-bordered table-striped align-middle mb-0" id="rnc-positions-table" style="font-size: 13px;">
                   <thead class="table-light">
                     <tr>
-                      <th style="width: 35px;" class="text-center">#</th>
-                      <th>Beschreibung der Dienstleistung / Ware</th>
-                      <th style="width: 80px;" class="text-end">Menge</th>
-                      <th style="width: 120px;" class="text-end">Einzelpreis</th>
-                      <th style="width: 120px;" class="text-end">Gesamt (CHF)</th>
-                      <th style="width: 130px;">Konto (Haben)</th>
-                      <th style="width: 45px;" class="text-center">Aktion</th>
+                      <th data-col="idx" style="width: 38px;" class="text-center">#</th>
+                      <th data-col="desc" style="min-width: 180px;">Beschreibung der Dienstleistung / Ware</th>
+                      <th data-col="qty" style="width: 80px;" class="text-end">Menge</th>
+                      <th data-col="unitprice" style="width: 150px;" class="text-end">Einzelpreis</th>
+                      <th data-col="amt" style="width: 150px;" class="text-end">Gesamt (CHF)</th>
+                      <th data-col="konto" style="width: 140px;">Konto (Haben)</th>
+                      <th data-col="action" style="width: 45px;" class="text-center">Aktion</th>
                     </tr>
                   </thead>
                   <tbody id="rnc-positions-tbody">
@@ -1080,7 +1453,10 @@ window.rnOpenCreateModal = async function(btnEl) {
 
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
+  window.rnPopulateRecipientSelect('');
   rnMakeModalMovableAndResizable(modalEl);
+  const posTable = modalEl.querySelector('#rnc-positions-table');
+  if (posTable) rnInitPositionsTableResizable(posTable);
 };
 
 window.rnEditCurrentSelectedContact = function() {
@@ -1234,13 +1610,13 @@ function rncAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
     </td>
     <td>
       <div class="input-group input-group-sm">
-        <span class="input-group-text bg-light text-muted">CHF</span>
+        <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
         <input type="number" step="0.05" class="form-control form-control-sm text-end rnc-pos-unitprice" required value="${unitPrice}" placeholder="0.00" oninput="rncRecalculateRowTotal('${tr.id}')">
       </div>
     </td>
     <td>
       <div class="input-group input-group-sm">
-        <span class="input-group-text bg-light text-muted">CHF</span>
+        <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
         <input type="number" class="form-control form-control-sm text-end fw-bold rnc-pos-amt bg-light" readonly value="${initialAmount}">
       </div>
     </td>
@@ -1570,7 +1946,7 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
 
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 1100px;">
       <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
         <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
           <h5 class="modal-title fw-bold mb-0"><i class="fas fa-edit me-2"></i>Rechnung bearbeiten (ID: ${inv.id})</h5>
@@ -1676,6 +2052,9 @@ window.rnOpenEditModal = async function(invoiceId) {
               <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
                 <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-xs btn-outline-secondary" onclick="rnResetPositionsTableColWidths(this)" title="Spaltenbreiten auf Standard zurücksetzen">
+                    <i class="fas fa-arrows-alt-h me-1"></i> Breiten-Reset
+                  </button>
                   <div class="dropdown">
                     <button class="btn btn-xs btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                       <i class="fas fa-magic me-1"></i> Standard-Positionen
@@ -1692,16 +2071,16 @@ window.rnOpenEditModal = async function(invoiceId) {
               </div>
 
               <div class="table-responsive">
-                <table class="table table-bordered table-striped align-middle mb-0" style="font-size: 13px;">
+                <table class="table table-bordered table-striped align-middle mb-0" id="rne-positions-table" style="font-size: 13px;">
                   <thead class="table-light">
                     <tr>
-                      <th style="width: 35px;" class="text-center">#</th>
-                      <th>Beschreibung der Dienstleistung / Ware</th>
-                      <th style="width: 80px;" class="text-end">Menge</th>
-                      <th style="width: 120px;" class="text-end">Einzelpreis</th>
-                      <th style="width: 120px;" class="text-end">Gesamt (CHF)</th>
-                      <th style="width: 130px;">Konto (Haben)</th>
-                      <th style="width: 45px;" class="text-center">Aktion</th>
+                      <th data-col="idx" style="width: 38px;" class="text-center">#</th>
+                      <th data-col="desc" style="min-width: 180px;">Beschreibung der Dienstleistung / Ware</th>
+                      <th data-col="qty" style="width: 80px;" class="text-end">Menge</th>
+                      <th data-col="unitprice" style="width: 150px;" class="text-end">Einzelpreis</th>
+                      <th data-col="amt" style="width: 150px;" class="text-end">Gesamt (CHF)</th>
+                      <th data-col="konto" style="width: 140px;">Konto (Haben)</th>
+                      <th data-col="action" style="width: 45px;" class="text-center">Aktion</th>
                     </tr>
                   </thead>
                   <tbody id="rne-positions-tbody">
@@ -1766,13 +2145,13 @@ window.rnOpenEditModal = async function(invoiceId) {
       </td>
       <td>
         <div class="input-group input-group-sm">
-          <span class="input-group-text bg-light text-muted">CHF</span>
+          <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
           <input type="number" class="form-control form-control-sm text-end rne-pos-unitprice" required step="0.05" min="0" value="${unitPrice}" oninput="rneRecalculateRowTotal('${tr.id}')">
         </div>
       </td>
       <td>
         <div class="input-group input-group-sm">
-          <span class="input-group-text bg-light text-muted">CHF</span>
+          <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
           <input type="number" class="form-control form-control-sm text-end fw-bold rne-pos-amt bg-light" readonly value="${initialAmount}">
         </div>
       </td>
@@ -1829,6 +2208,8 @@ window.rnOpenEditModal = async function(invoiceId) {
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
   rnMakeModalMovableAndResizable(modalEl);
+  const posTable = modalEl.querySelector('#rne-positions-table');
+  if (posTable) rnInitPositionsTableResizable(posTable);
 };
 
 // SAVE EDITED INVOICE
@@ -3457,29 +3838,10 @@ window.rnSaveContactForm = async function(event) {
     // Falls das "Neue Rechnung"-Modal geöffnet ist: Dropdown aktualisieren & Kontakt direkt anwählen
     const memberSelectEl = document.getElementById('rnc-member-select');
     if (memberSelectEl) {
-      const memberOptions = (window._mglData || []).map(m => 
-        `<option value="MBR:${m.PersonNumber}">${m.LastName} ${m.FirstName} (Nr: ${m.PersonNumber})</option>`
-      ).join('');
-
-      const externalOptions = (window._externalContacts || []).map(c => {
-        const isFirma = c.typ === 'firma' || Boolean(c.firma);
-        const label = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `Kontakt #${c.id}`);
-        const kat = c.kategorie ? ` [${c.kategorie}]` : '';
-        return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
-      }).join('');
-
-      memberSelectEl.innerHTML = `
-        <option value="">-- Bitte Empfänger auswählen (oder oben neu anlegen) --</option>
-        ${window._externalContacts.length > 0 ? `
-        <optgroup label="Gespeicherte externe Kontakte (Sponsoren, Mieter, Firmen, Privat)">
-          ${externalOptions}
-        </optgroup>
-        ` : ''}
-        <optgroup label="Vereinsmitglieder">
-          ${memberOptions}
-        </optgroup>
-      `;
-
+      if (typeof window.rnPopulateRecipientSelect === 'function') {
+        const searchInput = document.getElementById('rnc-recipient-search');
+        window.rnPopulateRecipientSelect(searchInput ? searchInput.value : '', savedId ? `EXT:${savedId}` : null);
+      }
       if (savedId) {
         memberSelectEl.value = `EXT:${savedId}`;
         if (typeof window.rnHandleMemberSelect === 'function') {

@@ -52,6 +52,7 @@ async function loginsSave() {
       params = {
         action:       mode === 'add' ? 'addLoginDaten' : 'saveLoginDaten',
         username:     document.getElementById('lf-username')?.value?.trim()    || '',
+        personnumber: document.getElementById('lf-personnumber')?.value?.trim()|| '',
         anzeigename:  document.getElementById('lf-anzeigename')?.value?.trim() || '',
         rolle:        rolle,
         passwort:     document.getElementById('lf-passwort')?.value            || '',
@@ -155,3 +156,58 @@ async function loginsSync() {
     btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i> App-Users Synchronisieren';
   }
 }
+
+// =========================================================
+//  Event-Handler für Mitglieder-Zuordnung aus Members100
+// =========================================================
+
+window.loginsOnMemberSelect = function(personNumber) {
+  const pn = String(personNumber || '').trim();
+  const pnInput = document.getElementById('lf-personnumber');
+  const anzeigeInput = document.getElementById('lf-anzeigename');
+  const mailInput = document.getElementById('lf-mailadresse');
+  const userInput = document.getElementById('lf-username');
+  const rolleExtInput = document.getElementById('lf-rolle-extern');
+
+  if (!pn) {
+    if (pnInput) pnInput.value = '';
+    return;
+  }
+
+  if (pnInput) pnInput.value = pn;
+
+  const m = (window._mglData || []).find(x => String(x.PersonNumber || '').trim() === pn);
+  if (!m) return;
+
+  const fn = String(m.FirstName || '').trim();
+  const ln = String(m.LastName || '').trim();
+  const fullName = [fn, ln].filter(Boolean).join(' ');
+  if (anzeigeInput) anzeigeInput.value = fullName;
+
+  const email = String(m.PrimaryEmail || m.Email || '').trim();
+  if (mailInput) mailInput.value = email;
+
+  // Falls Benutzername noch leer ist: Vorschlag generieren
+  if (userInput && !userInput.value.trim()) {
+    const cleanFn = fn.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanLn = ln.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanFn && cleanLn) {
+      userInput.value = `${cleanFn[0]}.${cleanLn}`;
+    } else if (cleanLn) {
+      userInput.value = cleanLn;
+    }
+  }
+
+  // Falls Funktion vorhanden und Rolle extern noch leer
+  if (rolleExtInput && !rolleExtInput.value.trim() && m.Funktion) {
+    rolleExtInput.value = m.Funktion;
+  }
+};
+
+window.loginsOnPersonNumberInput = function(val) {
+  const pn = String(val || '').trim();
+  const sel = document.getElementById('lf-member-select');
+  if (sel) {
+    sel.value = pn;
+  }
+};

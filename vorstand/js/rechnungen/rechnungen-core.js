@@ -469,13 +469,20 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
     if (cached && Array.isArray(cached.data)) members = cached.data;
   }
 
-  // Abgleich mit Mitglieder-DB anhand des Anzeigenamens
-  const cleanLogin = loggedInName.toLowerCase();
-  const member = members.find(m => {
-    const fn = String(m.FirstName || '').trim().toLowerCase();
-    const ln = String(m.LastName || '').trim().toLowerCase();
-    return `${fn} ${ln}` === cleanLogin || `${ln} ${fn}` === cleanLogin || fn === cleanLogin || ln === cleanLogin;
-  });
+  // Abgleich mit Mitglieder-DB: Primär über PersonNumber, Fallback über Anzeigenamen
+  const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
+  let member = null;
+  if (loggedInPN) {
+    member = members.find(m => String(m.PersonNumber || '').trim() === loggedInPN);
+  }
+  if (!member) {
+    const cleanLogin = loggedInName.toLowerCase();
+    member = members.find(m => {
+      const fn = String(m.FirstName || '').trim().toLowerCase();
+      const ln = String(m.LastName || '').trim().toLowerCase();
+      return `${fn} ${ln}` === cleanLogin || `${ln} ${fn}` === cleanLogin || fn === cleanLogin || ln === cleanLogin;
+    });
+  }
 
   if (member) {
     return {

@@ -159,6 +159,7 @@ async function doLogin() {
             localStorage.setItem('portal_mailadresse', data.mailadresse || data.Mailadresse || data.mailanzeige || data.Mailanzeige || '');
             localStorage.setItem('portal_mailanzeige', data.mailadresse || data.Mailadresse || data.mailanzeige || data.Mailanzeige || ''); // Rückwärtskompatibilität
             localStorage.setItem('portal_rolle_extern', data.rolle_extern || data.Rolle_extern || '');
+            localStorage.setItem('portal_personnumber', data.personnumber || data.PersonNumber || '');
 
             showApp();
             showSuccess('Willkommen, ' + currentUser + '!');
@@ -179,6 +180,7 @@ function doLogout() {
     localStorage.removeItem('portal_role');
     localStorage.removeItem('portal_roles');
     localStorage.removeItem('portal_login_id');
+    localStorage.removeItem('portal_personnumber');
     sessionStorage.removeItem('csrf_token');
     csrfToken = null;
     currentRoles = [];

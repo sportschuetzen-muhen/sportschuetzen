@@ -174,6 +174,7 @@ function renderLoginDatenTable(rows, canWrite) {
   const rows_html = rows.map(r => `
     <tr>
       <td><code class="text-primary fw-bold">${escapeHtml(r.username)}</code></td>
+      <td>${r.personnumber ? `<span class="badge bg-light text-dark border font-monospace">${escapeHtml(r.personnumber)}</span>` : '<span class="text-muted">–</span>'}</td>
       <td><span class="badge ${roleBadgeColor(r.rolle)}">${escapeHtml(r.rolle)}</span></td>
       <td>${escapeHtml(r.anzeigename)}</td>
       <td class="text-muted small">${escapeHtml(r.mailadresse || r.mailanzeige || '')}</td>
@@ -185,10 +186,11 @@ function renderLoginDatenTable(rows, canWrite) {
     </tr>`).join('');
 
   return `
-    <table class="table table-hover table-sm align-middle mb-0" style="min-width:650px">
+    <table class="table table-hover table-sm align-middle mb-0" style="min-width:720px">
       <thead class="table-dark">
         <tr>
           ${th('username','Benutzername')}
+          ${th('personnumber','PersonNumber')}
           ${th('rolle','Rolle')}
           ${th('anzeigename','Anzeigename')}
           ${th('mailadresse','E-Mail-Adresse')}
@@ -328,13 +330,54 @@ function loginDatenForm(r) {
     `<option value="${ro}" ${r && r.rolle && r.rolle.split(',').map(x=>x.trim()).includes(ro) ? 'selected' : ''}>${ro}</option>`
   ).join('');
 
+  const curPN = r ? String(r.personnumber || r.PersonNumber || '').trim() : '';
+
+  const members = [...(window._mglData || [])]
+    .filter(m => {
+      const isDeceased = m.Deceased == 1 || m.Deceased === true || m.Deceased === '1' || String(m.Deceased).toLowerCase() === 'true' || Boolean(m.Todesdatum) || String(m.Status || '').toLowerCase().includes('verstorben');
+      const isExited = Boolean(m.Vereinsaustritt) || Boolean(m.ExitDate) || String(m.Status || '').toLowerCase().includes('ausgetreten') || String(m.Status || '').toLowerCase().includes('ehemalig');
+      if (curPN && curPN === String(m.PersonNumber || '').trim()) return true;
+      return !isDeceased && !isExited;
+    })
+    .sort((a, b) => {
+      const na = `${a.LastName || ''} ${a.FirstName || ''}`.trim().toLowerCase();
+      const nb = `${b.LastName || ''} ${b.FirstName || ''}`.trim().toLowerCase();
+      return na.localeCompare(nb, 'de');
+    });
+
+  const memberOptions = members.map(m => {
+    const pn = String(m.PersonNumber || '').trim();
+    const isSel = curPN && curPN === pn;
+    const fn = m.FirstName || '';
+    const ln = m.LastName || '';
+    return `<option value="${escapeHtml(pn)}" ${isSel ? 'selected' : ''}>${escapeHtml(ln)} ${escapeHtml(fn)} (${escapeHtml(pn)})</option>`;
+  }).join('');
+
   return `
     <div class="row g-3">
-      <div class="col-md-6">
+      <div class="col-12">
+        <div class="p-3 bg-light rounded border">
+          <label class="form-label fw-bold mb-1 text-primary">
+            <i class="fas fa-users me-1"></i> Mitglied verknüpfen (Members100)
+          </label>
+          <select class="form-select" id="lf-member-select" onchange="loginsOnMemberSelect(this.value)">
+            <option value="">-- Mitglied auswählen (übernimmt Name, Vorname, Mail) --</option>
+            ${memberOptions}
+          </select>
+          <div class="form-text small text-muted">
+            Wähle ein Vereinsmitglied: PersonNumber, Name, Vorname und E-Mail-Adresse werden automatisch ausgefüllt.
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-bold">PersonNumber (Mitglieds-Nr)</label>
+        <input type="text" class="form-control font-monospace" id="lf-personnumber" value="${v('personnumber')}" placeholder="z.B. 123456" oninput="loginsOnPersonNumberInput(this.value)">
+      </div>
+      <div class="col-md-4">
         <label class="form-label fw-bold">Benutzername *</label>
         <input type="text" class="form-control" id="lf-username" value="${v('username')}" placeholder="z.B. j.muster">
       </div>
-      <div class="col-md-6">
+      <div class="col-md-4">
         <label class="form-label fw-bold">Anzeigename *</label>
         <input type="text" class="form-control" id="lf-anzeigename" value="${v('anzeigename')}" placeholder="z.B. Jochen Muster">
       </div>
