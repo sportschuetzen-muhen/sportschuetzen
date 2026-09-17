@@ -2,6 +2,61 @@
 // MODUL: RECHNUNGEN & PDF-COCKPIT - UI
 // =====================================================================
 
+// Tabelle- und UI-Styling sicherstellen
+window.rnEnsureCustomStyles = function() {
+  if (document.getElementById('rn-invoices-custom-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'rn-invoices-custom-styles';
+  style.textContent = `
+    #rn-invoices-table {
+      font-size: 14.5px !important;
+    }
+    #rn-invoices-table th {
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      padding: 14px 14px !important;
+      letter-spacing: 0.5px !important;
+      text-transform: uppercase !important;
+      color: #334155 !important;
+      background-color: #f8fafc !important;
+      border-bottom: 2px solid #e2e8f0 !important;
+    }
+    #rn-invoices-table td {
+      padding: 13px 14px !important;
+      vertical-align: middle !important;
+      font-size: 14px !important;
+    }
+    .rn-id-badge {
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      padding: 6px 11px !important;
+      border-radius: 6px !important;
+      letter-spacing: 0.5px !important;
+      font-family: monospace !important;
+    }
+    .rn-recipient-name {
+      font-size: 15px !important;
+      font-weight: 600 !important;
+      color: #0f172a !important;
+      line-height: 1.3 !important;
+    }
+    .rn-sub-label {
+      font-size: 12px !important;
+      color: #64748b !important;
+      margin-top: 2px !important;
+    }
+    .rn-amount-cell {
+      font-size: 15.5px !important;
+      font-weight: 700 !important;
+      color: #0f3a5d !important;
+    }
+    .rn-batch-item-row:hover {
+      background-color: rgba(13, 110, 253, 0.04) !important;
+    }
+  `;
+  document.head.appendChild(style);
+};
+
 // Dropdown-Auswahl für Standard-Positionen generieren
 window.rnGetDropdownMenuHtml = function(actionFuncName) {
   let templates = window._invoiceTemplates;
@@ -195,9 +250,12 @@ window.renderTabArchiv = function(content) {
     <div class="bh-report-section border border-light shadow-sm mb-4">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:15px;">
         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-filter me-2"></i>Filter & Rechnungs-Archiv</h5>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap">
           <button class="btn btn-sm btn-outline-warning fw-bold shadow-sm write-protected" onclick="rnOpenBatchMahnungModal()" title="Alle fälligen offenen Rechnungen prüfen und per Klick gesammelt mahnen">
-            <i class="fas fa-bullhorn me-1"></i> Fällige Mahnungen prüfen (${dueCount > 0 ? dueCount : 'Mahnlauf'})
+            <i class="fas fa-bullhorn me-1"></i> Fällige Mahnungen (${dueCount > 0 ? dueCount : 'Mahnlauf'})
+          </button>
+          <button class="btn btn-sm btn-primary fw-bold shadow-sm write-protected" onclick="rnOpenMassSendModal()" title="Mehrere Rechnungen gesammelt per E-Mail versenden">
+            <i class="fas fa-paper-plane me-1"></i> Massenversand
           </button>
           <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenCreateModal(this)">
             <i class="fas fa-plus-circle me-1"></i> Rechnung erstellen
@@ -266,18 +324,37 @@ window.renderTabArchiv = function(content) {
 
     <!-- Tabelle -->
     <div class="bh-report-section border border-light shadow-sm">
+      <!-- Floating Selection Action Bar -->
+      <div id="rn-table-selection-bar" class="d-none alert alert-primary d-flex justify-content-between align-items-center py-2 px-3 mb-3 shadow-sm rounded-3">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-primary fs-6 px-2.5 py-1" id="rn-selected-count">0</span>
+          <span class="fw-semibold text-primary">Rechnungen ausgewählt</span>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="rnStartMassSendFromSelection()">
+            <i class="fas fa-paper-plane me-1"></i> Massenversand für Auswahl starten
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="rnClearTableSelection()">
+            Auswahl aufheben
+          </button>
+        </div>
+      </div>
+
       <div class="table-responsive" id="rn-table-scroll-wrap">
-        <table class="table table-hover align-middle bh-table mb-0" id="rn-invoices-table">
+        <table class="table table-hover align-middle bh-table rn-invoices-table mb-0" id="rn-invoices-table">
           <thead>
             <tr>
-              <th class="bh-sort-header" onclick="rnSortInvoices('id')">Rechnungs-ID ${rnGetSortIndicator('id')}</th>
+              <th style="width: 44px;" class="text-center">
+                <input type="checkbox" class="form-check-input" id="rn-table-select-all" title="Alle sichtbaren Rechnungen auswählen" onchange="rnToggleTableSelectAll(this.checked)">
+              </th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('id')" style="width: 155px;">Rechnungs-ID ${rnGetSortIndicator('id')}</th>
               <th class="bh-sort-header" onclick="rnSortInvoices('name')">Empfänger ${rnGetSortIndicator('name')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('created_at')">Datum ${rnGetSortIndicator('created_at')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('year')">Jahr ${rnGetSortIndicator('year')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('type')">Typ ${rnGetSortIndicator('type')}</th>
-              <th class="bh-sort-header text-center" onclick="rnSortInvoices('status')" style="width: 100px;">Status ${rnGetSortIndicator('status')}</th>
-              <th class="bh-sort-header text-end" onclick="rnSortInvoices('total_amount')" style="width: 130px;">Betrag ${rnGetSortIndicator('total_amount')}</th>
-              <th class="text-end" style="width: 130px;">Aktionen</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('created_at')" style="width: 140px;">Datum ${rnGetSortIndicator('created_at')}</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('year')" style="width: 90px;">Jahr ${rnGetSortIndicator('year')}</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('type')" style="width: 150px;">Typ ${rnGetSortIndicator('type')}</th>
+              <th class="bh-sort-header text-center" onclick="rnSortInvoices('status')" style="width: 155px;">Status ${rnGetSortIndicator('status')}</th>
+              <th class="bh-sort-header text-end" onclick="rnSortInvoices('total_amount')" style="width: 150px;">Betrag ${rnGetSortIndicator('total_amount')}</th>
+              <th class="text-end" style="width: 160px;">Aktionen</th>
             </tr>
           </thead>
           <tbody id="rn-tbody">
@@ -288,6 +365,7 @@ window.renderTabArchiv = function(content) {
     </div>
   `;
 
+  rnEnsureCustomStyles();
   rnRenderTable();
 };
 
@@ -388,7 +466,8 @@ window.rnRenderTable = function() {
 
   // 3. Tabellenzeilen generieren
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine passenden Rechnungen gefunden.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine passenden Rechnungen gefunden.</td></tr>`;
+    if (typeof rnOnTableRowSelectChange === 'function') rnOnTableRowSelectChange();
     return;
   }
 
@@ -406,17 +485,17 @@ window.rnRenderTable = function() {
     // Differenzierte Statusanzeige nach Schweizer 3-Stufen-Mahnwesen
     let statusBadge = '';
     if (isPaid) {
-      statusBadge = '<span class="badge bg-success px-2.5 py-1.5 rounded-pill small"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>';
+      statusBadge = '<span class="badge bg-success px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>';
     } else if (st === 'gemahnt' || mStufe > 0 || st.includes('mahn') || st === '2' || st === '3') {
       if (mStufe === 1) {
-        statusBadge = '<span class="badge bg-warning text-dark px-2.5 py-1.5 rounded-pill small" title="1. Zahlungserinnerung versendet"><i class="fas fa-bell me-1"></i>Erinnerung (1/3)</span>';
+        statusBadge = '<span class="badge bg-warning text-dark px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;" title="1. Zahlungserinnerung versendet"><i class="fas fa-bell me-1"></i>Erinnerung (1/3)</span>';
       } else if (mStufe === 2) {
-        statusBadge = '<span class="badge text-white px-2.5 py-1.5 rounded-pill small" style="background-color: #fd7e14;" title="2. Mahnung versendet"><i class="fas fa-exclamation-triangle me-1"></i>2. Mahnung (2/3)</span>';
+        statusBadge = '<span class="badge text-white px-2.5 py-1.5 rounded-pill" style="background-color: #fd7e14; font-size:12.5px;" title="2. Mahnung versendet"><i class="fas fa-exclamation-triangle me-1"></i>2. Mahnung (2/3)</span>';
       } else {
-        statusBadge = '<span class="badge bg-danger text-white px-2.5 py-1.5 rounded-pill small" title="3. und letzte Mahnung vor Betreibung"><i class="fas fa-radiation me-1"></i>Letzte Mahnung (3/3)</span>';
+        statusBadge = '<span class="badge bg-danger text-white px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;" title="3. und letzte Mahnung vor Betreibung"><i class="fas fa-radiation me-1"></i>Letzte Mahnung (3/3)</span>';
       }
     } else {
-      statusBadge = '<span class="badge bg-secondary px-2.5 py-1.5 rounded-pill small">Offen</span>';
+      statusBadge = '<span class="badge bg-secondary px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;">Offen</span>';
     }
 
     // Frist prüfen (für überfällig)
@@ -435,7 +514,7 @@ window.rnRenderTable = function() {
       if (createdDate && !isNaN(createdDate.getTime())) {
         const diffDays = Math.ceil(Math.abs(now - createdDate) / (1000 * 60 * 60 * 24));
         if (diffDays > 30 && mStufe === 0) {
-          extraBadge = `<span class="badge bg-danger ms-1" style="font-size:9px;" title="Überfällig seit ${diffDays - 30} Tagen"><i class="fas fa-clock me-0.5"></i>Fällig (${diffDays}d)</span>`;
+          extraBadge = `<span class="badge bg-danger ms-1" style="font-size:11px;" title="Überfällig seit ${diffDays - 30} Tagen"><i class="fas fa-clock me-0.5"></i>Fällig (${diffDays}d)</span>`;
         }
       }
     }
@@ -444,29 +523,41 @@ window.rnRenderTable = function() {
     if (item.PersonNumber) {
       if (String(item.PersonNumber).startsWith('EXT')) {
         const cId = String(item.PersonNumber).replace('EXT-', '').replace('EXT:', '');
-        numberLabel = `<div class="text-muted" style="font-size:10px;"><i class="fas fa-address-card me-1 text-info"></i>Kontakt ID: ${escapeHtml(cId)}</div>`;
+        numberLabel = `<div class="rn-sub-label text-muted"><i class="fas fa-address-card me-1 text-info"></i>Kontakt ID: ${escapeHtml(cId)}</div>`;
       } else {
-        numberLabel = `<div class="text-muted" style="font-size:10px;">Mitglieds-Nr: ${escapeHtml(item.PersonNumber)}</div>`;
+        numberLabel = `<div class="rn-sub-label text-muted">Mitglieds-Nr: ${escapeHtml(item.PersonNumber)}</div>`;
       }
     }
 
-    const createdDisplay = item.created_at ? escapeHtml(String(item.created_at).split(' ')[0]) : '–';
+    const mailSentBadge = item.mail_status === 'gesendet'
+      ? `<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:11px;" title="Rechnung wurde per E-Mail versendet"><i class="fas fa-check me-0.5"></i>Mail gesendet</span>`
+      : '';
+
+    const createdDisplay = typeof isoToDisplay === 'function'
+      ? (isoToDisplay(item.created_at) || '–')
+      : (item.created_at ? escapeHtml(String(item.created_at).split(' ')[0]) : '–');
 
     return `
       <tr class="bh-account-row" id="rn-row-${item.id}">
+        <td class="text-center" onclick="event.stopPropagation()">
+          <input type="checkbox" class="form-check-input rn-table-row-check" data-id="${item.id}" value="${item.id}" onchange="rnOnTableRowSelectChange()">
+        </td>
         <td>
-          <span class="bh-konto-badge bh-konto-soll-badge" style="cursor: pointer;" onclick="rnOpenDetailsModal('${item.id}')" title="Klicken für Rechnungsdetails">
+          <span class="bh-konto-badge bh-konto-soll-badge rn-id-badge" style="cursor: pointer;" onclick="rnOpenDetailsModal('${item.id}')" title="Klicken für Rechnungsdetails">
             ${item.id}
           </span>
         </td>
         <td>
-          <div class="fw-bold text-dark mb-0">${escapeHtml(item.name)}</div>
+          <div class="fw-bold text-dark mb-0 rn-recipient-name">
+            ${escapeHtml(item.name)}
+            ${mailSentBadge}
+          </div>
           ${numberLabel}
         </td>
-        <td class="text-muted font-monospace small">${createdDisplay}</td>
-        <td class="text-muted font-monospace">${item.year}</td>
+        <td class="text-muted font-monospace" style="font-size: 13.5px;">${createdDisplay}</td>
+        <td class="text-muted font-monospace" style="font-size: 14px; font-weight: 500;">${item.year}</td>
         <td>
-          <span class="badge bg-light text-dark border small">
+          <span class="badge bg-light text-dark border" style="font-size: 12.5px; padding: 5px 10px;">
             ${item.type}
             ${item.type === 'Jahresbeitrag' ? '<i class="fas fa-lock text-warning ms-1" title="Jahresbeitrag – synchronisiert über Schnellerfassung"></i>' : ''}
           </span>
@@ -475,67 +566,67 @@ window.rnRenderTable = function() {
           ${statusBadge}
           ${extraBadge}
         </td>
-        <td class="text-end fw-bold text-primary font-monospace">${fmtChf(item.total_amount)}</td>
-        <td class="text-end" style="white-space: nowrap; width: 130px;">
-          <div class="d-inline-flex align-items-center gap-1 justify-content-end">
+        <td class="text-end fw-bold text-primary font-monospace rn-amount-cell">${fmtChf(item.total_amount)}</td>
+        <td class="text-end" style="white-space: nowrap; width: 160px;">
+          <div class="d-inline-flex align-items-center gap-1.5 justify-content-end">
             ${item.pdf_url ? `
-              <a href="${item.pdf_url}" target="_blank" class="btn btn-xs btn-outline-danger shadow-xs fw-semibold" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
+              <a href="${item.pdf_url}" target="_blank" class="btn btn-sm btn-outline-danger shadow-xs fw-semibold px-2 py-1" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
                 <i class="fas fa-file-pdf me-1"></i>PDF
               </a>
             ` : `
-              <button class="btn btn-xs btn-outline-secondary write-protected shadow-xs" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}')" title="PDF QR-Rechnung generieren">
+              <button class="btn btn-sm btn-outline-secondary write-protected shadow-xs px-2 py-1" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}')" title="PDF QR-Rechnung generieren">
                 <i class="fas fa-cog me-1"></i>PDF
               </button>
             `}
 
-            <button class="btn btn-xs btn-outline-primary write-protected shadow-xs" onclick="rnSendMailPrompt('${item.id}', '${escapeJs(item.name)}')" title="QR-Rechnung per E-Mail versenden">
-              <i class="fas fa-envelope"></i>
+            <button class="btn btn-sm btn-outline-primary write-protected shadow-xs px-2 py-1" onclick="rnSendMailPrompt('${item.id}', '${escapeJs(item.name)}')" title="QR-Rechnung per E-Mail versenden">
+              <i class="fas fa-paper-plane"></i>
             </button>
 
             <div class="dropdown d-inline-block">
-              <button class="btn btn-xs btn-light border shadow-xs" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Weitere Aktionen für ${item.id}">
+              <button class="btn btn-sm btn-light border shadow-xs px-2 py-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Weitere Aktionen für ${item.id}">
                 <i class="fas fa-ellipsis-v text-muted"></i>
               </button>
-              <ul class="dropdown-menu dropdown-menu-end shadow border-0 py-1" style="font-size: 12px; min-width: 220px; z-index: 1055;">
+              <ul class="dropdown-menu dropdown-menu-end shadow border-0 py-1" style="font-size: 13px; min-width: 220px; z-index: 1055;">
                 <li>
-                  <a class="dropdown-item py-1.5" href="#" onclick="rnOpenDetailsModal('${item.id}'); return false;">
+                  <a class="dropdown-item py-2" href="#" onclick="rnOpenDetailsModal('${item.id}'); return false;">
                     <i class="fas fa-eye text-primary me-2 fa-fw"></i>Details einsehen
                   </a>
                 </li>
                 ${!isPaid ? `
                   <li>
-                    <a class="dropdown-item py-1.5 write-protected" href="#" onclick="rnOpenPaymentModal('${item.id}', ${item.total_amount}); return false;">
+                    <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenPaymentModal('${item.id}', ${item.total_amount}); return false;">
                       <i class="fas fa-coins text-success me-2 fa-fw"></i>Zahlung erfassen...
                     </a>
                   </li>
                   <li>
-                    <a class="dropdown-item py-1.5 write-protected" href="#" onclick="rnOpenMahnungModal('${item.id}', '${escapeJs(item.name)}'); return false;">
+                    <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenMahnungModal('${item.id}', '${escapeJs(item.name)}'); return false;">
                       <i class="fas fa-exclamation-triangle text-warning me-2 fa-fw"></i>Mahnung verwalten...
                     </a>
                   </li>
                 ` : ''}
                 <li><hr class="dropdown-divider my-1"></li>
                 <li>
-                  <a class="dropdown-item py-1.5 write-protected" href="#" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}'); return false;">
+                  <a class="dropdown-item py-2 write-protected" href="#" onclick="rnGeneratePDFOnly('${item.id}', '${escapeJs(item.name)}'); return false;">
                     <i class="fas fa-sync text-secondary me-2 fa-fw"></i>PDF neu generieren
                   </a>
                 </li>
                 ${item.type === 'Jahresbeitrag' ? `
                   <li>
-                    <a class="dropdown-item py-1.5" href="#" onclick="rnJumpToJahresbeitrag('${item.PersonNumber}'); return false;">
+                    <a class="dropdown-item py-2" href="#" onclick="rnJumpToJahresbeitrag('${item.PersonNumber}'); return false;">
                       <i class="fas fa-lock text-warning me-2 fa-fw"></i>In Jahresbeitrag öffnen
                     </a>
                   </li>
                 ` : `
                   ${!isPaid ? `
                     <li>
-                      <a class="dropdown-item py-1.5 write-protected" href="#" onclick="rnOpenEditModal('${item.id}'); return false;">
+                      <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenEditModal('${item.id}'); return false;">
                         <i class="fas fa-edit text-info me-2 fa-fw"></i>Rechnung bearbeiten
                       </a>
                     </li>
                     <li><hr class="dropdown-divider my-1"></li>
                     <li>
-                      <a class="dropdown-item py-1.5 text-danger write-protected" href="#" onclick="rnDeleteInvoicePrompt('${item.id}'); return false;">
+                      <a class="dropdown-item py-2 text-danger write-protected" href="#" onclick="rnDeleteInvoicePrompt('${item.id}'); return false;">
                         <i class="fas fa-trash-alt me-2 fa-fw"></i>Rechnung löschen
                       </a>
                     </li>
@@ -548,6 +639,10 @@ window.rnRenderTable = function() {
       </tr>
     `;
   }).join('');
+
+  if (typeof rnOnTableRowSelectChange === 'function') {
+    rnOnTableRowSelectChange();
+  }
 };
 
 // DETAILS MODAL

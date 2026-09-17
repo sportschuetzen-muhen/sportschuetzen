@@ -124,6 +124,8 @@ function jbCalculateLiveTotal(m, settings) {
     if (settings.lg_ch_kniend)      eventsMap['LG007'] = 1;
   }
 
+  const youthSubsidies = {}; // konto -> { total, konto, kontobezeichnung }
+
   // Iteriere über alle konfigurierten Events in eventsMap
   Object.entries(eventsMap).forEach(([eventKey, val]) => {
     const keyClean = String(eventKey).trim().toUpperCase();
@@ -143,13 +145,60 @@ function jbCalculateLiveTotal(m, settings) {
       desc += ` (${count} Stich${count > 1 ? 'e' : ''})`;
     }
 
+    const itemKonto = getFeeAccount(keyClean, '');
+    const itemKontoBez = feeObj ? (feeObj['Kontobezeichnung im KMU-Kontenrahmen'] || feeObj.kontobezeichnung || '') : '';
+
     positions.push({
       name: desc,
       betrag: totalFee,
-      konto: getFeeAccount(keyClean, ''),
+      konto: itemKonto,
       typ: 'Debit',
       key: keyClean
     });
+
+    // Merkmal für Zusammenzug: Kategorie = 'Kostenübernahme_Jugend'
+    const feeKat = feeObj ? String(feeObj.kategorie || '').trim().toLowerCase() : '';
+    const isKostenuebernahme = feeKat === 'kostenübernahme_jugend' || feeKat === 'kostenuebernahme_jugend';
+
+    if (isKostenuebernahme && totalFee > 0) {
+      // Gegenkonto variabel aus der Gebührenconfig des Eintrags oder Master-Eintrags holen
+      const targetKonto = itemKonto || getFeeAccount('KOSTENUEBERNAHME_JUGEND', '3420');
+      const targetKontoBez = itemKontoBez || 'Nachwuchsförderung';
+      
+      if (!youthSubsidies[targetKonto]) {
+        youthSubsidies[targetKonto] = {
+          total: 0,
+          konto: targetKonto,
+          kontobezeichnung: targetKontoBez
+        };
+      }
+      youthSubsidies[targetKonto].total += totalFee;
+    }
+  });
+
+  // Zusammenzug der Positionen mit Kategorie 'Kostenübernahme_Jugend'
+  // Text und Gegenkonto variabel aus Gebührenconfig
+  const masterSubsidy = (window._jbGebuehren || []).find(f => {
+    const k = String(f.key || '').trim().toUpperCase();
+    const cKat = String(f.kategorie || '').trim().toLowerCase();
+    return k === 'KOSTENUEBERNAHME_JUGEND' || cKat === 'kostenübernahme_jugend' || cKat === 'kostenuebernahme_jugend';
+  });
+
+  const subsidyTitle = (masterSubsidy && (masterSubsidy.bezeichnung || masterSubsidy.bezeichnungfrontend))
+    ? (masterSubsidy.bezeichnung || masterSubsidy.bezeichnungfrontend)
+    : 'Beitrag Jugendförderung Verein (Übernahme SpS Muhen)';
+
+  Object.values(youthSubsidies).forEach(sub => {
+    if (sub.total > 0) {
+      positions.push({
+        name: subsidyTitle,
+        betrag: -sub.total,
+        konto: sub.konto,
+        kontobezeichnung: sub.kontobezeichnung || (masterSubsidy ? (masterSubsidy['Kontobezeichnung im KMU-Kontenrahmen'] || masterSubsidy.kontobezeichnung || '') : 'Nachwuchsförderung'),
+        typ: 'Kredit',
+        key: 'KOSTENUEBERNAHME_JUGEND'
+      });
+    }
   });
 
   // 4. Variable Zusatzpositionen (Freie Beträge)

@@ -88,6 +88,20 @@ window.jbResolveAccountForPosition = function(sourceField, description, customSe
   if (sf === 'RA001' || desc.includes('vorstand')) return '3410'; // Rabatt Vorstand (Erlösminderung 3410)
   if (sf === 'RA002' || desc.includes('hausmeister')) return '6002'; // Unterhalt / Reparaturen Hausmeister
   
+  // Kostenübernahme Jugend / Meisterschaften
+  if (sf === 'KOSTENUEBERNAHME_JUGEND' || desc.includes('kostenübernahme') || desc.includes('kostenuebernahme') || desc.includes('jugendförderung')) {
+    const gK = (window._jbGebuehren || []).find(g => {
+      const k = String(g.key || '').trim().toUpperCase();
+      const kat = String(g.kategorie || '').trim().toLowerCase();
+      return k === 'KOSTENUEBERNAHME_JUGEND' || kat === 'kostenübernahme_jugend' || kat === 'kostenuebernahme_jugend';
+    });
+    if (gK) {
+      const k = String(gK['Haben-Konto-Jahresbeitrag-Buchhaltung'] || gK.konto || '').trim();
+      if (k) return k;
+    }
+    return '3420'; // Standard-Gegenkonto Jugendförderung
+  }
+
   // Wettschiessen (10m / 50m / Volksschiessen / DEZ): Falls nicht in gebuehrenconfig konfiguriert, auf Transitorische Aktiven (1300) leiten
   if (sf.startsWith('KK') || sf.startsWith('LG') || desc.includes('50m') || desc.includes('10m') || desc.includes('stich') || desc.includes('volksschiessen')) {
     return '1300';

@@ -2176,7 +2176,582 @@ window.rnExecuteBatchMahnung = async function() {
 };
 
 // =====================================================================
-// EXTERNE KONTAKTE VERWALTUNG (CRUD STRENG NACH ID)
+// 5. TABELLEN-SELEKTION & MASSENVERSAND VON RECHNUNGEN
+// =====================================================================
+
+// Tabellenauswahl: Alle Checkboxen umschalten
+window.rnToggleTableSelectAll = function(isChecked) {
+  const checkboxes = document.querySelectorAll('.rn-table-row-check');
+  checkboxes.forEach(cb => { cb.checked = isChecked; });
+  rnOnTableRowSelectChange();
+};
+
+// Tabellenauswahl: Event-Handler bei Änderung
+window.rnOnTableRowSelectChange = function() {
+  const checkboxes = document.querySelectorAll('.rn-table-row-check');
+  const checked = document.querySelectorAll('.rn-table-row-check:checked');
+  const selectAll = document.getElementById('rn-table-select-all');
+  if (selectAll) {
+    selectAll.checked = checkboxes.length > 0 && checked.length === checkboxes.length;
+    selectAll.indeterminate = checked.length > 0 && checked.length < checkboxes.length;
+  }
+
+  const bar = document.getElementById('rn-table-selection-bar');
+  const countLabel = document.getElementById('rn-selected-count');
+  if (countLabel) countLabel.textContent = checked.length;
+
+  if (bar) {
+    if (checked.length > 0) {
+      bar.classList.remove('d-none');
+    } else {
+      bar.classList.add('d-none');
+    }
+  }
+};
+
+// Ausgewählte Rechnungs-IDs abrufen
+window.rnGetSelectedInvoiceIds = function() {
+  const checked = document.querySelectorAll('.rn-table-row-check:checked');
+  return Array.from(checked).map(cb => cb.value || cb.getAttribute('data-id')).filter(Boolean);
+};
+
+// Auswahl leeren
+window.rnClearTableSelection = function() {
+  const checkboxes = document.querySelectorAll('.rn-table-row-check');
+  checkboxes.forEach(cb => { cb.checked = false; });
+  const selectAll = document.getElementById('rn-table-select-all');
+  if (selectAll) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+  }
+  const bar = document.getElementById('rn-table-selection-bar');
+  if (bar) bar.classList.add('d-none');
+};
+
+// Massenversand aus Tabellenauswahl starten
+window.rnStartMassSendFromSelection = function() {
+  const ids = rnGetSelectedInvoiceIds();
+  if (ids.length === 0) {
+    alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
+    return;
+  }
+  rnOpenMassSendModal(ids);
+};
+
+// State für Massenversand-Filterung im Modal
+window._rnMassSendActiveFilter = 'unsent';
+window._rnMassSendTypeFilter = 'alle';
+window._rnMassSendCancelled = false;
+window._rnMassSendInProgress = false;
+window._rnMassSendPreselectedIds = [];
+
+// Modal für Massenversand öffnen
+window.rnOpenMassSendModal = async function(preselectedIds = []) {
+  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+    try { await loadInvoiceContactsData(); } catch (_) {}
+  }
+  if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
+    try { await loadMitgliederData(false); } catch (_) {}
+  }
+
+  let modalEl = document.getElementById('rnModalMassSend');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalMassSend';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  window._rnMassSendCancelled = false;
+  window._rnMassSendInProgress = false;
+  window._rnMassSendPreselectedIds = Array.isArray(preselectedIds) ? preselectedIds : [];
+  if (window._rnMassSendPreselectedIds.length > 0) {
+    window._rnMassSendActiveFilter = 'selection';
+  } else {
+    window._rnMassSendActiveFilter = 'unsent';
+  }
+
+  rnRenderMassSendModalContent(modalEl);
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+};
+
+window.rnRenderMassSendModalContent = function(modalEl) {
+  if (!modalEl) modalEl = document.getElementById('rnModalMassSend');
+  if (!modalEl) return;
+
+  const preselected = window._rnMassSendPreselectedIds || [];
+  const currentFilter = window._rnMassSendActiveFilter || 'unsent';
+  const typeFilter = window._rnMassSendTypeFilter || 'alle';
+
+  // 1. Rechnungen filtern
+  let candidates = (window._invoices || []).filter(inv => {
+    // Typ Filter
+    if (typeFilter !== 'alle' && String(inv.type || '').toLowerCase() !== typeFilter.toLowerCase()) {
+      return false;
+    }
+
+    if (currentFilter === 'selection') {
+      return preselected.includes(String(inv.id));
+    }
+    if (currentFilter === 'unsent') {
+      return inv.mail_status !== 'gesendet';
+    }
+    if (currentFilter === 'open') {
+      return String(inv.status || '').toLowerCase() !== 'bezahlt';
+    }
+    if (currentFilter === 'all') {
+      return true;
+    }
+    return true;
+  });
+
+  // Empfängerdetails für Kandidaten auflösen
+  const rowsData = candidates.map(inv => {
+    const recipient = (typeof rnGetRecipientForInvoice === 'function')
+      ? rnGetRecipientForInvoice(inv)
+      : { email: '' };
+    const hasEmail = Boolean(recipient.email && recipient.email.includes('@'));
+    const isAlreadySent = inv.mail_status === 'gesendet';
+    return {
+      invoice: inv,
+      recipient: recipient,
+      email: recipient.email || '',
+      hasEmail: hasEmail,
+      isAlreadySent: isAlreadySent
+    };
+  });
+
+  const totalCount = rowsData.length;
+  const readyCount = rowsData.filter(r => r.hasEmail).length;
+  const missingEmailCount = totalCount - readyCount;
+  const totalAmount = rowsData.reduce((s, r) => s + Number(r.invoice.total_amount || 0), 0);
+
+  const tableRowsHtml = rowsData.length > 0 ? rowsData.map((row, idx) => {
+    const inv = row.invoice;
+    const isChecked = row.hasEmail ? 'checked' : '';
+    const sentBadge = row.isAlreadySent
+      ? `<span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 11px;"><i class="fas fa-history me-1"></i>Bereits versendet</span>`
+      : `<span class="badge bg-secondary-subtle text-muted border border-secondary-subtle ms-1" style="font-size: 11px;"><i class="fas fa-envelope-open me-1"></i>Noch nicht versendet</span>`;
+
+    return `
+      <tr id="rn-mass-row-${inv.id}" class="rn-batch-item-row align-middle">
+        <td class="text-center" style="width: 44px;">
+          <input type="checkbox" class="form-check-input rn-mass-item-check" 
+                 id="rn-mass-check-${idx}" 
+                 data-invoice-id="${inv.id}" 
+                 data-idx="${idx}" 
+                 ${isChecked} 
+                 onchange="rnUpdateMassSendSelectedCount()">
+        </td>
+        <td>
+          <span class="bh-konto-badge bh-konto-soll-badge rn-id-badge">${inv.id}</span>
+          <span class="badge bg-light text-dark border ms-1" style="font-size: 11.5px;">${escapeHtml(inv.type || 'Rechnung')}</span>
+        </td>
+        <td>
+          <div class="fw-bold text-dark mb-0">${escapeHtml(inv.name)}</div>
+          <div class="text-muted small">${sentBadge}</div>
+        </td>
+        <td>
+          <div class="input-group input-group-sm" style="max-width: 280px;">
+            <span class="input-group-text bg-white ${row.hasEmail ? 'text-success' : 'text-danger'}">
+              <i class="fas ${row.hasEmail ? 'fa-check-circle' : 'fa-exclamation-triangle'}"></i>
+            </span>
+            <input type="email" class="form-control form-control-sm rn-mass-email-input" 
+                   id="rn-mass-email-${inv.id}" 
+                   value="${escapeHtml(row.email)}" 
+                   placeholder="E-Mail eingeben..." 
+                   oninput="rnOnMassEmailChange('${inv.id}', this.value)">
+          </div>
+        </td>
+        <td class="text-end fw-bold text-primary font-monospace" style="font-size: 14.5px;">
+          ${fmtChf(inv.total_amount)}
+        </td>
+        <td class="text-center" style="width: 140px;" id="rn-mass-status-col-${inv.id}">
+          <span class="badge bg-light text-muted border py-1.5 px-2.5 font-monospace" id="rn-mass-row-badge-${inv.id}" style="font-size: 11.5px;">
+            <i class="fas fa-clock me-1 text-secondary"></i>Wartet
+          </span>
+        </td>
+      </tr>
+    `;
+  }).join('') : `
+    <tr>
+      <td colspan="6" class="text-center text-muted py-5">
+        <i class="fas fa-inbox fa-3x text-secondary opacity-50 mb-3 d-block"></i>
+        <strong>Keine passenden Rechnungen für diesen Filter gefunden.</strong>
+      </td>
+    </tr>
+  `;
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+      <div class="modal-content border-0 rounded-4 shadow-lg">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-paper-plane me-2"></i>Massenversand von QR-Rechnungen
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="rn-mass-close-x"></button>
+        </div>
+
+        <div class="modal-body p-4">
+          <!-- Filterleiste & Schnellfilter -->
+          <div class="p-3 bg-light rounded-3 border mb-3">
+            <div class="row g-2 align-items-center justify-content-between">
+              <div class="col-md-8 d-flex flex-wrap align-items-center gap-1.5">
+                <span class="text-muted small fw-bold me-1">Filter:</span>
+                <button type="button" class="btn btn-xs ${currentFilter === 'unsent' ? 'btn-primary' : 'btn-outline-secondary'}" onclick="rnSetMassSendFilter('unsent')">
+                  <i class="fas fa-envelope-open me-1"></i>Noch nicht versendet
+                </button>
+                <button type="button" class="btn btn-xs ${currentFilter === 'open' ? 'btn-danger' : 'btn-outline-danger'}" onclick="rnSetMassSendFilter('open')">
+                  <i class="fas fa-clock me-1"></i>Alle offenen
+                </button>
+                <button type="button" class="btn btn-xs ${currentFilter === 'all' ? 'btn-secondary text-white' : 'btn-outline-secondary'}" onclick="rnSetMassSendFilter('all')">
+                  <i class="fas fa-list me-1"></i>Alle Rechnungen
+                </button>
+                ${preselected.length > 0 ? `
+                  <button type="button" class="btn btn-xs ${currentFilter === 'selection' ? 'btn-info text-white' : 'btn-outline-info'}" onclick="rnSetMassSendFilter('selection')">
+                    <i class="fas fa-check-square me-1"></i>Tabellenauswahl (${preselected.length})
+                  </button>
+                ` : ''}
+              </div>
+              <div class="col-md-4 text-md-end">
+                <select class="form-select form-select-sm" id="rn-mass-type-select" onchange="rnSetMassSendTypeFilter(this.value)">
+                  <option value="alle" ${typeFilter === 'alle' ? 'selected' : ''}>Alle Rechnungstypen</option>
+                  <option value="Jahresbeitrag" ${typeFilter === 'Jahresbeitrag' ? 'selected' : ''}>Jahresbeitrag</option>
+                  <option value="Vermietung" ${typeFilter === 'Vermietung' ? 'selected' : ''}>Vermietung</option>
+                  <option value="Materialverkauf" ${typeFilter === 'Materialverkauf' ? 'selected' : ''}>Materialverkauf</option>
+                  <option value="Schulsport" ${typeFilter === 'Schulsport' ? 'selected' : ''}>Schulsport</option>
+                  <option value="Sponsoring" ${typeFilter === 'Sponsoring' ? 'selected' : ''}>Sponsoring / Gönner</option>
+                  <option value="Sonstige" ${typeFilter === 'Sonstige' ? 'selected' : ''}>Sonstige / Diverse</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Progress Box (Standard versteckt) -->
+          <div id="rn-mass-progress-box" class="d-none alert alert-primary py-3 px-4 rounded-3 mb-3 border border-primary-subtle shadow-sm">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="fw-bold fs-6" id="rn-mass-progress-title">
+                <i class="fas fa-spinner fa-spin me-2"></i>Massenversand wird ausgeführt...
+              </span>
+              <span class="badge bg-primary fs-6 font-monospace" id="rn-mass-progress-percent">0%</span>
+            </div>
+            <div class="progress mb-2" style="height: 18px; border-radius: 9px; background-color: rgba(255,255,255,0.6);">
+              <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" id="rn-mass-progress-bar" style="width: 0%;"></div>
+            </div>
+            <div class="d-flex justify-content-between text-muted small">
+              <span id="rn-mass-progress-detail">Initialisiere Versand...</span>
+              <span class="font-monospace fw-bold" id="rn-mass-progress-counts">0 / 0</span>
+            </div>
+          </div>
+
+          <!-- Tabelle mit Kandidaten -->
+          <div class="table-responsive border rounded-3 mb-3" style="max-height: 400px; overflow-y: auto;">
+            <table class="table table-hover align-middle mb-0" style="font-size: 13.5px;" id="rn-mass-send-table">
+              <thead class="table-light sticky-top">
+                <tr>
+                  <th style="width: 44px;" class="text-center">
+                    <input type="checkbox" class="form-check-input" id="rn-mass-select-all" checked onchange="rnToggleMassSendSelectAll(this.checked)">
+                  </th>
+                  <th style="width: 170px;">Rechnung</th>
+                  <th>Empfänger</th>
+                  <th style="width: 290px;">E-Mail-Adresse</th>
+                  <th class="text-end" style="width: 140px;">Betrag</th>
+                  <th class="text-center" style="width: 140px;">Status</th>
+                </tr>
+              </thead>
+              <tbody id="rn-mass-tbody">
+                ${tableRowsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Footer Steuerung -->
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-2 border-top">
+            <div class="text-muted small">
+              <span class="fw-bold text-dark" id="rn-mass-selected-label">${readyCount}</span> von <span class="fw-bold">${totalCount}</span> Rechnungen ausgewählt.
+              <span class="text-primary font-monospace ms-2 fw-semibold" id="rn-mass-amount-label">Gesamt: ${fmtChf(totalAmount)}</span>
+              ${missingEmailCount > 0 ? `<span class="badge bg-warning text-dark ms-2"><i class="fas fa-exclamation-triangle me-1"></i>${missingEmailCount} ohne E-Mail</span>` : ''}
+            </div>
+
+            <div class="d-flex gap-2 align-items-center" id="rn-mass-btn-group">
+              <button type="button" class="btn btn-light" data-bs-dismiss="modal" id="rn-mass-cancel-btn">Schliessen</button>
+              <button type="button" class="btn btn-primary fw-bold px-4 shadow-sm" id="rn-mass-submit-btn" onclick="rnExecuteMassSend()" ${readyCount === 0 ? 'disabled' : ''}>
+                <i class="fas fa-paper-plane me-1.5"></i> <span id="rn-mass-submit-text">${readyCount} Rechnungen jetzt versenden</span>
+              </button>
+              <button type="button" class="btn btn-danger fw-bold px-3 d-none shadow-sm" id="rn-mass-abort-btn" onclick="rnAbortMassSend()">
+                <i class="fas fa-stop-circle me-1.5"></i> Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  rnUpdateMassSendSelectedCount();
+};
+
+window.rnSetMassSendFilter = function(filterName) {
+  window._rnMassSendActiveFilter = filterName;
+  rnRenderMassSendModalContent();
+};
+
+window.rnSetMassSendTypeFilter = function(typeName) {
+  window._rnMassSendTypeFilter = typeName;
+  rnRenderMassSendModalContent();
+};
+
+window.rnOnMassEmailChange = function(invoiceId, newEmail) {
+  const cb = document.querySelector(`.rn-mass-item-check[data-invoice-id="${invoiceId}"]`);
+  if (cb) {
+    const isValid = Boolean(newEmail && newEmail.includes('@'));
+    if (!cb.checked && isValid) {
+      cb.checked = true;
+    }
+  }
+  rnUpdateMassSendSelectedCount();
+};
+
+window.rnToggleMassSendSelectAll = function(isChecked) {
+  const checkboxes = document.querySelectorAll('.rn-mass-item-check');
+  checkboxes.forEach(cb => { cb.checked = isChecked; });
+  rnUpdateMassSendSelectedCount();
+};
+
+window.rnUpdateMassSendSelectedCount = function() {
+  const checkedBoxes = document.querySelectorAll('.rn-mass-item-check:checked');
+  const allBoxes = document.querySelectorAll('.rn-mass-item-check');
+  const selectAll = document.getElementById('rn-mass-select-all');
+  if (selectAll) {
+    selectAll.checked = allBoxes.length > 0 && checkedBoxes.length === allBoxes.length;
+    selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < allBoxes.length;
+  }
+
+  let validSelectedCount = 0;
+  let totalAmount = 0;
+
+  checkedBoxes.forEach(cb => {
+    const invId = cb.getAttribute('data-invoice-id');
+    const emailInput = document.getElementById(`rn-mass-email-${invId}`);
+    const email = emailInput ? emailInput.value.trim() : '';
+    if (email && email.includes('@')) {
+      validSelectedCount++;
+    }
+    const inv = (window._invoices || []).find(i => String(i.id) === String(invId));
+    if (inv) totalAmount += Number(inv.total_amount || 0);
+  });
+
+  const label = document.getElementById('rn-mass-selected-label');
+  if (label) label.textContent = validSelectedCount;
+
+  const amountLabel = document.getElementById('rn-mass-amount-label');
+  if (amountLabel) amountLabel.textContent = `Gesamt: ${fmtChf(totalAmount)}`;
+
+  const submitBtn = document.getElementById('rn-mass-submit-btn');
+  const submitText = document.getElementById('rn-mass-submit-text');
+  if (submitBtn && submitText) {
+    if (validSelectedCount > 0 && !window._rnMassSendInProgress) {
+      submitBtn.removeAttribute('disabled');
+      submitText.textContent = `${validSelectedCount} Rechnungen jetzt versenden`;
+    } else if (!window._rnMassSendInProgress) {
+      submitBtn.setAttribute('disabled', 'true');
+      submitText.textContent = `Keine Rechnungen ausgewählt`;
+    }
+  }
+};
+
+window.rnAbortMassSend = function() {
+  if (window._rnMassSendInProgress) {
+    window._rnMassSendCancelled = true;
+    const detail = document.getElementById('rn-mass-progress-detail');
+    if (detail) detail.textContent = 'Abbruch angefordert... Bitte warten.';
+  }
+};
+
+// Ausführung des Massenversands mit Live Progress Bar
+window.rnExecuteMassSend = async function() {
+  const checkedBoxes = document.querySelectorAll('.rn-mass-item-check:checked');
+  const itemsToSend = [];
+
+  checkedBoxes.forEach(cb => {
+    const invId = cb.getAttribute('data-invoice-id');
+    const emailInput = document.getElementById(`rn-mass-email-${invId}`);
+    const email = emailInput ? emailInput.value.trim() : '';
+    const inv = (window._invoices || []).find(i => String(i.id) === String(invId));
+
+    if (inv && email && email.includes('@')) {
+      const recipient = (typeof rnGetRecipientForInvoice === 'function')
+        ? rnGetRecipientForInvoice(inv)
+        : {};
+      recipient.email = email;
+      itemsToSend.push({
+        invoice: inv,
+        invoiceId: invId,
+        recipient: recipient
+      });
+    }
+  });
+
+  if (itemsToSend.length === 0) {
+    alert("❌ Bitte wähle mindestens eine Rechnung mit gültiger E-Mail-Adresse aus.");
+    return;
+  }
+
+  if (!confirm(`Möchtest du wirklich ${itemsToSend.length} Rechnungen als PDF mit Schweizer QR-Code generieren und per E-Mail versenden?`)) {
+    return;
+  }
+
+  window._rnMassSendInProgress = true;
+  window._rnMassSendCancelled = false;
+
+  // UI in Progress-Modus umschalten
+  const progressBox = document.getElementById('rn-mass-progress-box');
+  const progressBar = document.getElementById('rn-mass-progress-bar');
+  const progressPercent = document.getElementById('rn-mass-progress-percent');
+  const progressTitle = document.getElementById('rn-mass-progress-title');
+  const progressDetail = document.getElementById('rn-mass-progress-detail');
+  const progressCounts = document.getElementById('rn-mass-progress-counts');
+  const submitBtn = document.getElementById('rn-mass-submit-btn');
+  const cancelBtn = document.getElementById('rn-mass-cancel-btn');
+  const abortBtn = document.getElementById('rn-mass-abort-btn');
+  const closeX = document.getElementById('rn-mass-close-x');
+
+  if (progressBox) progressBox.classList.remove('d-none');
+  if (submitBtn) submitBtn.classList.add('d-none');
+  if (cancelBtn) cancelBtn.classList.add('d-none');
+  if (closeX) closeX.classList.add('d-none');
+  if (abortBtn) abortBtn.classList.remove('d-none');
+
+  let successCount = 0;
+  let failCount = 0;
+  const total = itemsToSend.length;
+  const nowSwiss = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+
+  // Alle Checkboxen deaktivieren während Versand
+  document.querySelectorAll('.rn-mass-item-check').forEach(cb => { cb.setAttribute('disabled', 'true'); });
+
+  for (let i = 0; i < total; i++) {
+    if (window._rnMassSendCancelled) {
+      if (progressDetail) progressDetail.textContent = 'Versand durch Benutzer abgebrochen.';
+      break;
+    }
+
+    const itm = itemsToSend[i];
+    const inv = itm.invoice;
+    const pct = Math.round((i / total) * 100);
+
+    if (progressBar) progressBar.style.width = `${pct}%`;
+    if (progressPercent) progressPercent.textContent = `${pct}%`;
+    if (progressCounts) progressCounts.textContent = `${i + 1} / ${total}`;
+    if (progressDetail) progressDetail.textContent = `Sende Rechnung ${inv.id} an ${inv.name} (${itm.recipient.email})...`;
+
+    // Zeilen-Badge aktualisieren
+    const badge = document.getElementById(`rn-mass-row-badge-${inv.id}`);
+    if (badge) {
+      badge.className = 'badge bg-primary text-white py-1.5 px-2.5';
+      badge.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Sende...`;
+    }
+
+    try {
+      const sender = (typeof rnGetLoggedInSender === 'function')
+        ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+        : null;
+      const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
+
+      const response = await apiFetch('rechnungen', {
+        action: 'sendInvoiceEmail',
+        invoiceId: inv.id,
+        recipient: itm.recipient,
+        sender: sender,
+        layout: layout
+      }, 'POST');
+
+      const result = await response.json();
+      if (result.success) {
+        successCount++;
+        inv.mail_status = 'gesendet';
+        inv.updated_at = nowSwiss;
+        if (badge) {
+          badge.className = 'badge bg-success text-white py-1.5 px-2.5';
+          badge.innerHTML = `<i class="fas fa-check me-1"></i>Gesendet`;
+        }
+      } else {
+        throw new Error(result.error || 'Serverfehler beim Versand');
+      }
+    } catch (sendErr) {
+      failCount++;
+      console.error(`Fehler bei Rechnung ${inv.id}:`, sendErr);
+      if (badge) {
+        badge.className = 'badge bg-danger text-white py-1.5 px-2.5';
+        badge.title = sendErr.message;
+        badge.innerHTML = `<i class="fas fa-times me-1"></i>Fehler`;
+      }
+    }
+
+    // Kleine Pause (250ms), um Server nicht zu überlasten
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  // Abschluss
+  window._rnMassSendInProgress = false;
+  const finalPct = window._rnMassSendCancelled ? Math.round(((successCount + failCount) / total) * 100) : 100;
+
+  if (progressBar) {
+    progressBar.style.width = `${finalPct}%`;
+    progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+    if (failCount === 0 && !window._rnMassSendCancelled) {
+      progressBar.classList.remove('bg-primary');
+      progressBar.classList.add('bg-success');
+    } else {
+      progressBar.classList.remove('bg-primary');
+      progressBar.classList.add('bg-warning');
+    }
+  }
+  if (progressPercent) progressPercent.textContent = `${finalPct}%`;
+  if (progressCounts) progressCounts.textContent = `${successCount + failCount} / ${total}`;
+
+  if (progressTitle) {
+    if (window._rnMassSendCancelled) {
+      progressTitle.innerHTML = `<i class="fas fa-exclamation-triangle text-warning me-2"></i>Massenversand abgebrochen`;
+    } else if (failCount === 0) {
+      progressTitle.innerHTML = `<i class="fas fa-check-circle text-success me-2"></i>Massenversand erfolgreich abgeschlossen!`;
+    } else {
+      progressTitle.innerHTML = `<i class="fas fa-info-circle text-warning me-2"></i>Massenversand mit Hinweisen abgeschlossen`;
+    }
+  }
+
+  if (progressDetail) {
+    progressDetail.innerHTML = `<strong>${successCount}</strong> erfolgreich versendet${failCount > 0 ? `, <span class="text-danger"><strong>${failCount}</strong> fehlgeschlagen</span>` : ''}.`;
+  }
+
+  // Buttons zurücksetzen
+  if (abortBtn) abortBtn.classList.add('d-none');
+  if (cancelBtn) {
+    cancelBtn.classList.remove('d-none');
+    cancelBtn.textContent = 'Schliessen';
+  }
+  if (closeX) closeX.classList.remove('d-none');
+
+  // Haupttabelle im Hintergrund sofort aktualisieren
+  if (typeof rnRenderTable === 'function') rnRenderTable();
+  if (typeof showSuccess === 'function') {
+    showSuccess(`🎉 ${successCount} Rechnungen erfolgreich versendet!`);
+  }
+
+  // Nachgeladener Sync
+  setTimeout(async () => {
+    try {
+      if (typeof loadRechnungenData === 'function') await loadRechnungenData(true, true);
+    } catch (_) {}
+  }, 1200);
+};
+
+// =====================================================================
+// 6. EXTERNE KONTAKTE VERWALTUNG (CRUD STRENG NACH ID)
 // =====================================================================
 window.rnOpenContactModal = function(contactId = null) {
   let modalEl = document.getElementById('rnModalContact');

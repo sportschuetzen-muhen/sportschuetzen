@@ -228,7 +228,7 @@ function jbMergeInvoicesIntoData(invoices) {
 // SWITCH TABS
 // ============================================================
 function jbSwitchTab(tabName) {
-  _jbActiveTab = tabName;
+  _jbActiveTab = tabName === 'bank' ? 'overview' : tabName;
   renderJahresbeitragView();
 }
 
@@ -244,7 +244,7 @@ function renderJahresbeitragView() {
 
   // Tab Navigation Controls
   const tabControlHTML = `
-    <div class="d-flex bg-white p-1 rounded shadow-sm mb-4 border" style="max-width: 840px;">
+    <div class="d-flex bg-white p-1 rounded shadow-sm mb-4 border" style="max-width: 680px;">
       <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'overview' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('overview')">
         <i class="fas fa-list-ul me-2"></i> Beitrags-Übersicht
       </button>
@@ -253,9 +253,6 @@ function renderJahresbeitragView() {
       </button>
       <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'import' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('import')">
         <i class="fas fa-file-excel me-2"></i> Excel-Import
-      </button>
-      <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'bank' ? 'btn-success text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('bank')">
-        <i class="fas fa-university me-2"></i> Bankabgleich
       </button>
       ${canEdit ? `
       <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'config' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('config')">
@@ -272,8 +269,6 @@ function renderJahresbeitragView() {
     contentHTML = renderSchnellerfassungTab();
   } else if (_jbActiveTab === 'import') {
     contentHTML = renderExcelImportTab();
-  } else if (_jbActiveTab === 'bank') {
-    contentHTML = renderBankabgleichTab();
   } else if (_jbActiveTab === 'config') {
     contentHTML = typeof renderGebuehrenConfigTab === 'function' ? renderGebuehrenConfigTab() : '<div class="alert alert-info">Lade Gebührenmodul…</div>';
   }
@@ -293,8 +288,6 @@ function renderJahresbeitragView() {
         }
       }, 150);
     }
-  } else if (_jbActiveTab === 'bank') {
-    jbBankRenderResults();
   } else if (_jbActiveTab === 'config') {
     if (typeof jbInitGebuehrenConfig === 'function') jbInitGebuehrenConfig();
   }

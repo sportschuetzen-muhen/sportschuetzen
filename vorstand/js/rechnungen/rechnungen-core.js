@@ -370,17 +370,17 @@ window.rnGetRecipientForInvoice = function(inv) {
   }
 
   if (contact) {
-    const isFirma = contact.typ === 'firma' || Boolean(contact.firma);
+    const isFirma = contact.typ === 'firma' || Boolean(contact.firma) || Boolean(contact.name && contact.name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
     return {
       id: contact.id,
       typ: contact.typ || (isFirma ? 'firma' : 'privat'),
-      kategorie: contact.kategorie || 'Privat',
-      firma: contact.firma || '',
+      kategorie: contact.kategorie || (isFirma ? 'Firma' : 'Privat'),
+      firma: contact.firma || (isFirma ? (contact.name || inv.name) : '') || '',
       abteilung: contact.abteilung || '',
       anrede: contact.anrede || '',
       vorname: contact.vorname || '',
       nachname: contact.nachname || '',
-      name: isFirma ? (contact.firma || contact.name) : ((contact.vorname || '') + ' ' + (contact.nachname || '')).trim() || contact.name || inv.name,
+      name: isFirma ? (contact.firma || contact.name || inv.name) : ((contact.vorname || '') + ' ' + (contact.nachname || '')).trim() || contact.name || inv.name,
       strasse: contact.strasse || '',
       adresszusatz: contact.adresszusatz || '',
       plz: String(contact.plz || ''),
@@ -393,15 +393,16 @@ window.rnGetRecipientForInvoice = function(inv) {
   }
 
   const rawName = String(inv.name || '').trim();
+  const isFirma = Boolean(rawName && rawName.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
   const nameParts = rawName.split(/\s+/);
-  const vorname = nameParts.length > 1 ? nameParts[0] : rawName;
-  const nachname = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+  const vorname = !isFirma && nameParts.length > 1 ? nameParts[0] : (isFirma ? '' : rawName);
+  const nachname = !isFirma && nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
 
   return {
     id: extId || '',
-    typ: 'privat',
-    kategorie: 'Privat',
-    firma: '',
+    typ: isFirma ? 'firma' : 'privat',
+    kategorie: isFirma ? 'Firma' : 'Privat',
+    firma: isFirma ? rawName : '',
     abteilung: '',
     anrede: '',
     vorname: vorname || '',

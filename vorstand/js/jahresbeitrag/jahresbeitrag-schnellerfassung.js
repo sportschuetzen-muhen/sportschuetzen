@@ -16,10 +16,10 @@ function jbGetDefaultAccountForExtra(key, fallback) {
 
 function renderSchnellerfassungTab() {
   return `
-    <div class="row g-3 border rounded bg-white p-1" style="height: calc(100vh - 200px); overflow: hidden;">
+    <div class="row g-3 border rounded bg-white p-2" style="min-height: calc(100vh - 215px);">
       
       <!-- Linke Seitenleiste: Mitgliederliste -->
-      <div class="col-md-3 border-end d-flex flex-column h-100 p-2 bg-light rounded-start">
+      <div class="col-md-3 border-end d-flex flex-column p-2 bg-light rounded-start" style="height: calc(100vh - 225px); min-height: 520px; position: sticky; top: 10px;">
         <div class="mb-2">
           <input type="text" class="form-control form-control-sm" id="jbEntrySearch" 
                  placeholder="🔍 Suchen (Name / ID)…" oninput="jbEntrySearchFilter(this.value)" onkeydown="jbHandleSidebarKeyDown(event)">
@@ -43,13 +43,13 @@ function renderSchnellerfassungTab() {
           <i class="fas fa-shield-alt text-success me-1"></i>Auto-Save aktiv
         </div>
 
-        <div class="list-group flex-fill overflow-y-auto border rounded bg-white" id="jbEntryMemberList" style="max-height: calc(100% - 135px);">
+        <div class="list-group flex-fill overflow-y-auto border rounded bg-white" id="jbEntryMemberList">
           <!-- Dynamisch geladen -->
         </div>
       </div>
 
       <!-- Rechte Arbeitsfläche: Details & Erfassung -->
-      <div class="col-md-9 h-100 overflow-y-auto p-3 d-flex flex-column" id="jbEntryWorkspace">
+      <div class="col-md-9 p-3 d-flex flex-column" id="jbEntryWorkspace" style="min-height: calc(100vh - 225px);">
         <div class="text-center my-auto text-muted py-5">
           <i class="fas fa-users fa-3x mb-3 text-primary" style="opacity: 0.3;"></i>
           <h5>Wählen Sie ein Mitglied aus der linken Liste aus</h5>
@@ -69,6 +69,7 @@ function renderSchnellerfassungTab() {
 function jbRenderEntryList() {
   const listEl = document.getElementById('jbEntryMemberList');
   if (!listEl) return;
+  const savedScroll = listEl.scrollTop;
 
   const search = _jbEntrySearch.toLowerCase().trim();
   const filtered = _jbMembers.filter(m => {
@@ -114,6 +115,10 @@ function jbRenderEntryList() {
       </button>
     `;
   }).join('');
+
+  if (savedScroll > 0) {
+    listEl.scrollTop = savedScroll;
+  }
 }
 
 // 2. Suche in der Seitenleiste
@@ -319,6 +324,8 @@ function jbGetEffectiveFeeItems() {
 function jbRenderDynamicFeeGroupsHTML(m, state) {
   const feeItems = jbGetEffectiveFeeItems();
   const events = state.events || {};
+  const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  const isJunior = age > 0 && age <= 20;
 
   // Filtere nicht-aktive Gebühren sowie System-Gebühren (JB, LI, RA, GE001, amount/Zusatz)
   const displayItems = feeItems.filter(f => {
@@ -329,6 +336,12 @@ function jbRenderDynamicFeeGroupsHTML(m, state) {
     if (f.ui_typ === 'amount' || key.startsWith('Z')) return false; // eigene Zusatzpositionen-Card
     const kat = String(f.kategorie || '').toLowerCase();
     if (kat.includes('jahresbeitrag') || kat.includes('lizenz') || kat.includes('rabatt')) return false;
+
+    // Variante A: Zielgruppen-Filter (Alle, Aktive, Junioren)
+    const zg = String(f.zielgruppe || '').trim().toLowerCase();
+    if (zg === 'junioren' && !isJunior) return false;
+    if (zg === 'aktive' && isJunior) return false;
+
     return true;
   });
 
@@ -632,14 +645,47 @@ window.jbToggleMultiSelectOption = function(key, pn) {
   jbUpdateEventState(key, newVal, pnClean);
 };
 
+// Live-Zusammenfassung der linken Spalte gezielt aktualisieren (ohne Re-Render der rechten Spalte)
+function jbUpdateLiveSummary(m) {
+  if (!m) return;
+  const calc = jbCalculateLiveTotal(m, _jbParticipationsState);
+
+  const totalEl = document.getElementById('jbLiveTotal');
+  if (totalEl) {
+    totalEl.textContent = `CHF ${calc.total.toFixed(2)}`;
+  }
+
+  const listEl = document.getElementById('jbLivePositionsList');
+  if (listEl) {
+    listEl.innerHTML = `
+      <div class="fw-bold text-muted small mb-2 text-uppercase" style="font-size: 10px; letter-spacing: 1px;">Postenübersicht</div>
+      ${calc.positions.map(p => `
+        <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size: 12px;">
+          <span class="text-muted">${p.name}</span>
+          <span class="fw-bold ${p.typ === 'Kredit' ? 'text-success' : 'text-dark'}">
+            ${p.typ === 'Kredit' ? '-' : ''}CHF ${Math.abs(p.betrag).toFixed(2)}
+          </span>
+        </div>
+      `).join('')}
+    `;
+  }
+}
+
 // 4. Formular für den aktiven Schützen rendern
 function jbRenderEntryForm(m) {
   const workspace = document.getElementById('jbEntryWorkspace');
   if (!workspace) return;
 
+  // Scrollposition & aktives Eingabefeld merken, damit Fokus & Ansicht nicht springen
+  const rightCol = document.getElementById('jbEntryRightCol');
+  const savedScroll = rightCol ? rightCol.scrollTop : 0;
+  const focusedEl = document.activeElement;
+  const focusedId = (focusedEl && focusedEl.id) ? focusedEl.id : null;
+  const cursorStart = (focusedEl && focusedEl.selectionStart !== undefined) ? focusedEl.selectionStart : null;
+  const cursorEnd = (focusedEl && focusedEl.selectionEnd !== undefined) ? focusedEl.selectionEnd : null;
+
   // Live-Berechnung der Summen
   const calc = jbCalculateLiveTotal(m, _jbParticipationsState);
-
   const isJunior = m.BirthDate ? ((new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) <= 20) : false;
 
   const positionsHTML = calc.positions.map(p => `
@@ -654,15 +700,15 @@ function jbRenderEntryForm(m) {
   workspace.innerHTML = `
     <div class="row g-4 h-100 flex-fill">
       
-      <!-- LINKE SPALTE: Live-Kostenübersicht -->
-      <div class="col-md-5 d-flex flex-column">
-        <div class="card p-3 shadow-sm border-0 bg-light flex-fill d-flex flex-column rounded-3" style="background: rgba(243, 244, 246, 0.6); backdrop-filter: blur(10px);">
+      <!-- LINKE SPALTE: Live-Kostenübersicht (Sticky) -->
+      <div class="col-md-5 d-flex flex-column" style="position: sticky; top: 10px; height: calc(100vh - 235px); min-height: 480px;">
+        <div class="card p-3 shadow-sm border-0 bg-light flex-fill d-flex flex-column rounded-3" style="background: rgba(243, 244, 246, 0.7); backdrop-filter: blur(10px);">
           <div class="mb-3 border-bottom pb-2">
-            <h5 class="mb-0 text-primary">${m.FirstName} ${m.LastName}</h5>
+            <h5 class="mb-0 text-primary fw-bold">${m.FirstName} ${m.LastName}</h5>
             <small class="text-muted">${m.PersonNumber} · ${isJunior ? '👦 Junior' : '👤 Erwachsen'}</small>
           </div>
 
-          <div class="flex-fill overflow-y-auto mb-3" style="max-height: calc(100vh - 430px);">
+          <div class="flex-fill overflow-y-auto mb-3 pe-1" id="jbLivePositionsList" style="max-height: calc(100vh - 430px);">
             <div class="fw-bold text-muted small mb-2 text-uppercase" style="font-size: 10px; letter-spacing: 1px;">Postenübersicht</div>
             ${positionsHTML}
           </div>
@@ -675,8 +721,8 @@ function jbRenderEntryForm(m) {
         </div>
       </div>
 
-      <!-- RECHTE SPALTE: Auswahlelemente -->
-      <div class="col-md-7 d-flex flex-column overflow-y-auto pr-1" style="max-height: calc(100vh - 210px);">
+      <!-- RECHTE SPALTE: Auswahlelemente (Scrollbar mit ausreichend Puffer unten) -->
+      <div class="col-md-7 d-flex flex-column overflow-y-auto pr-2 pb-5 mb-4" id="jbEntryRightCol" style="max-height: calc(100vh - 235px); min-height: 480px;">
         
         <!-- 0. Schnell-Presets (Vorlagen) -->
         <div class="card p-2 border-0 shadow-sm mb-3 rounded-3 bg-light border-start border-4 border-warning">
@@ -812,12 +858,12 @@ function jbRenderEntryForm(m) {
           </div>
         </div>
 
-        <!-- 5. Speichern & Aktionen -->
-        <div class="d-flex gap-2 mt-auto pt-2">
-          <button class="btn btn-outline-danger" onclick="jbEntryResetForm('${m.PersonNumber}')">
+        <!-- 5. Speichern & Aktionen (mit großzügigem Abstand nach unten) -->
+        <div class="d-flex gap-2 mt-4 pt-2 pb-5">
+          <button class="btn btn-outline-danger px-3" onclick="jbEntryResetForm('${m.PersonNumber}')">
             <i class="fas fa-trash-alt me-1"></i> Zurücksetzen
           </button>
-          <button class="btn btn-success flex-fill py-2 fw-bold shadow-sm" onclick="jbEntrySaveAndNext('${m.PersonNumber}')">
+          <button class="btn btn-success flex-fill py-2.5 fw-bold shadow-sm" onclick="jbEntrySaveAndNext('${m.PersonNumber}')">
             <i class="fas fa-save me-1"></i> Speichern & Weiter (Nächster Schütze)
           </button>
         </div>
@@ -826,6 +872,23 @@ function jbRenderEntryForm(m) {
 
     </div>
   `;
+
+  // Scrollposition & Fokus wiederherstellen
+  const newRightCol = document.getElementById('jbEntryRightCol');
+  if (newRightCol && savedScroll > 0) {
+    newRightCol.scrollTop = savedScroll;
+  }
+  if (focusedId) {
+    const el = document.getElementById(focusedId);
+    if (el) {
+      try {
+        el.focus({ preventScroll: true });
+        if (cursorStart !== null && cursorEnd !== null && el.setSelectionRange) {
+          el.setSelectionRange(cursorStart, cursorEnd);
+        }
+      } catch(e) {}
+    }
+  }
 }
 
 function jbConfirmEntrySchuetzenhaus(chk, pn) {
@@ -1049,7 +1112,13 @@ function jbUpdateState(key, val, pn) {
 
   const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
   if (m) {
-    jbRenderEntryForm(m);
+    // Bei Eingabefeldern und Schaltern nur die Live-Summary aktualisieren,
+    // damit der Cursor im Feld bleibt und der Fokus/Scroll nicht springt!
+    if (key.startsWith('z1_') || key.startsWith('z2_') || key === 'schuetzenhaus') {
+      jbUpdateLiveSummary(m);
+    } else {
+      jbRenderEntryForm(m);
+    }
   }
 
   jbTriggerAutoSave(pnClean);
@@ -1330,7 +1399,31 @@ function jbSortSidebar(col) {
 window.jbToggleKontoLock = function(key, pn) {
   const pnClean = String(pn || '').trim();
   const current = !!_jbParticipationsState[key];
-  jbUpdateState(key, !current, pnClean);
+  const next = !current;
+  _jbParticipationsState[key] = next;
+  if (!_jbLocalBulkChanges[pnClean]) _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+  _jbLocalBulkChanges[pnClean][key] = next;
+
+  const prefix = key.startsWith('z1') ? 'z1' : 'z2';
+  const inputEl = document.getElementById(`${prefix}_konto_${pnClean}`);
+  if (inputEl) {
+    if (next) {
+      inputEl.removeAttribute('readonly');
+      inputEl.style.backgroundColor = '';
+      inputEl.focus();
+    } else {
+      inputEl.setAttribute('readonly', 'readonly');
+      inputEl.style.backgroundColor = '#e9ecef';
+    }
+  }
+  const btn = event && event.currentTarget ? event.currentTarget : null;
+  if (btn) {
+    btn.title = next ? 'Konto sperren' : 'Konto bearbeiten';
+    const icon = btn.querySelector('i');
+    if (icon) {
+      icon.className = `fas ${next ? 'fa-lock-open text-warning' : 'fa-lock'}`;
+    }
+  }
 };
 
 window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {

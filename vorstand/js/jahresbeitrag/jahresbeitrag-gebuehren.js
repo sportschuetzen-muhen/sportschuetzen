@@ -60,15 +60,16 @@ function renderGebuehrenConfigTab() {
           <thead class="table-light small text-muted text-uppercase" style="font-size: 11px;">
             <tr>
               <th style="width: 75px;">Key</th>
-              <th style="width: 110px;">Kategorie</th>
+              <th style="width: 105px;">Kategorie</th>
+              <th style="width: 95px;">Zielgruppe</th>
               <th>Bezeichnung Frontend</th>
               <th class="text-end" style="width: 90px;">Betrag</th>
               <th style="width: 95px;">Konto</th>
               <th>UI-Gruppe (Card)</th>
               <th>UI-Feld</th>
-              <th style="width: 115px;">UI-Typ</th>
-              <th class="text-center" style="width: 60px;">Sort</th>
-              <th class="text-center" style="width: 70px;">Aktiv</th>
+              <th style="width: 110px;">UI-Typ</th>
+              <th class="text-center" style="width: 55px;">Sort</th>
+              <th class="text-center" style="width: 60px;">Aktiv</th>
               <th class="text-end" style="width: 65px;">Aktion</th>
             </tr>
           </thead>
@@ -97,53 +98,110 @@ function renderGebuehrenConfigModals() {
           <div class="modal-body">
             <form id="jbFormGebuehr" onsubmit="event.preventDefault(); jbSaveGebuehrFromModal();">
               
+              <!-- 💡 Aufklappbarer Spickzettel & Erklärung der UI-Felder -->
+              <div class="card border-info-subtle bg-light-subtle mb-3">
+                <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#jbGebuehrenHelpCollapse">
+                  <span class="fw-bold text-primary small">
+                    <i class="fas fa-question-circle me-1 text-info"></i> 💡 Spickzettel: Wie funktionieren die 5 UI-Felder & Zielgruppen?
+                  </span>
+                  <span class="badge bg-light text-muted border small"><i class="fas fa-chevron-down"></i></span>
+                </div>
+                <div class="collapse show" id="jbGebuehrenHelpCollapse">
+                  <div class="card-body p-3 small text-muted" style="font-size: 11.5px; line-height: 1.5;">
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <div class="p-2 border rounded bg-white h-100">
+                          <strong class="text-dark d-block mb-1">🏷️ UI-Gruppe & UI-Feld</strong>
+                          <ul class="ps-3 mb-0">
+                            <li><strong>UI-Gruppe:</strong> Überschrift der Card in der Schnellerfassung (z. B. <code>50m Wettschiessen (KK)</code>).</li>
+                            <li><strong>UI-Feld:</strong> Beschriftung des Elements oder Gruppenname (z. B. <code>SSV Dezernat</code>).</li>
+                            <li><strong>Sortierung (ui_sort):</strong> Reihenfolge innerhalb der Gruppe (z. B. <code>10</code>, <code>20</code>, <code>30</code>).</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <div class="p-2 border rounded bg-white h-100">
+                          <strong class="text-dark d-block mb-1">🎛️ UI-Typ & Steuerelement</strong>
+                          <ul class="ps-3 mb-0">
+                            <li><code>checkbox</code>: Häkchen (Ja / Nein) für Einzelstiche.</li>
+                            <li><code>counter</code>: Stiche-Zähler (0, 1, 2, 3 Stiche, multipliziert Betrag × Stiche).</li>
+                            <li><code>singleselect</code>: Radio-Pills (nur 1 Option aus der Gruppe wählbar).</li>
+                            <li><code>multiselect</code>: Mehrfachauswahl als Pill-Buttons.</li>
+                            <li><code>amount</code>: Freier Betrag mit Schutzkonto (Zusatzpositionen).</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="col-12">
+                        <div class="p-2 border rounded bg-white">
+                          <strong class="text-dark d-block mb-1">🎯 Zielgruppe (Variante A) & Buchhaltung</strong>
+                          <div class="d-flex gap-3 flex-wrap">
+                            <div><code>Alle</code>: Für alle Mitglieder wählbar.</div>
+                            <div><code>Aktive</code>: Nur für erwachsene Aktivmitglieder (Zahlung durch Mitglied).</div>
+                            <div><code>Junioren</code>: Nur für Junioren (wird auf der Rechnung automatisch via <strong>Jugendförderung Konto 3420</strong> vom Verein übernommen).</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Basisdaten Zeile 1 -->
               <div class="row g-3 mb-3">
                 <div class="col-md-3">
                   <label class="form-label small fw-bold text-muted">Schlüssel (Key) *</label>
                   <input type="text" class="form-control form-control-sm font-monospace fw-bold" id="g_key" placeholder="z.B. KK009" required>
-                  <div class="form-text small" style="font-size: 10px;">Eindeutiger Code (z.B. KK..., LG..., Z...)</div>
+                  <div class="form-text small" style="font-size: 10px;">Eindeutiger Code (KK..., LG..., Z...)</div>
                 </div>
-                <div class="col-md-4">
-                  <label class="form-label small fw-bold text-muted">Kategorie (Buchhaltung/Domain) *</label>
-                  <input type="text" class="form-control form-control-sm" id="g_kategorie" list="jbDlistKategorien" placeholder="z.B. Kleinkaliber" required>
-                  <datalist id="jbDlistKategorien">
-                    <option value="Kleinkaliber"></option>
-                    <option value="Luftgewehr"></option>
-                    <option value="Jahresbeitrag"></option>
-                    <option value="Lizenz"></option>
-                    <option value="Gebäude"></option>
-                    <option value="Zusatz"></option>
-                    <option value="Rabatt"></option>
-                  </datalist>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold text-muted">Kategorie *</label>
+                  <select class="form-select form-select-sm" id="g_kategorie_select" onchange="jbHandleSmartSelect(this, 'g_kategorie')">
+                    <!-- Dynamisch geladen -->
+                  </select>
+                  <input type="text" class="form-control form-control-sm mt-1" id="g_kategorie" placeholder="Kategorie eingeben" required style="display: none;">
                 </div>
-                <div class="col-md-5">
-                  <label class="form-label small fw-bold text-muted">Bezeichnung Frontend *</label>
-                  <input type="text" class="form-control form-control-sm" id="g_bezeichnungfrontend" placeholder="z.B. 50m Liegend Nachdoppel" required>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold text-muted">🎯 Zielgruppe *</label>
+                  <select class="form-select form-select-sm fw-semibold" id="g_zielgruppe">
+                    <option value="Alle">👥 Alle (Aktive & Junioren)</option>
+                    <option value="Aktive">🎯 Nur Aktive (Erwachsene)</option>
+                    <option value="Junioren">👦 Nur Junioren (Vereinsübernahme)</option>
+                  </select>
                 </div>
-              </div>
-
-              <div class="row g-3 mb-3">
-                <div class="col-md-5">
-                  <label class="form-label small fw-bold text-muted">Vollständige Bezeichnung (Rechnungsdruck)</label>
-                  <input type="text" class="form-control form-control-sm" id="g_bezeichnung" placeholder="Wird auf PDF-Rechnung gedruckt">
-                </div>
-                <div class="col-md-2">
+                <div class="col-md-3">
                   <label class="form-label small fw-bold text-muted">Betrag (CHF) *</label>
                   <div class="input-group input-group-sm">
                     <span class="input-group-text">CHF</span>
                     <input type="number" step="0.05" class="form-control text-end" id="g_betrag" placeholder="0.00" required>
                   </div>
                 </div>
-                <div class="col-md-2">
+              </div>
+
+              <!-- Zeile 2: Bezeichnungen -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold text-muted">Bezeichnung Frontend *</label>
+                  <input type="text" class="form-control form-control-sm" id="g_bezeichnungfrontend" placeholder="z.B. 50m Liegend Nachdoppel" required>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold text-muted">Vollständige Bezeichnung (Rechnungsdruck)</label>
+                  <input type="text" class="form-control form-control-sm" id="g_bezeichnung" placeholder="Wird auf PDF-Rechnung gedruckt">
+                </div>
+              </div>
+
+              <!-- Zeile 3: Buchhaltungskonto -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-4">
                   <label class="form-label small fw-bold text-muted">Haben-Konto</label>
                   <input type="text" class="form-control form-control-sm font-monospace" id="g_konto" placeholder="z.B. 4426">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-8">
                   <label class="form-label small fw-bold text-muted">Kontobezeichnung (KMU)</label>
                   <input type="text" class="form-control form-control-sm" id="g_kontobezeichnung" placeholder="z.B. Ertrag Wettschiessen">
                 </div>
               </div>
 
+              <!-- UI-Darstellung Card -->
               <div class="card p-3 bg-light border-0 rounded-3 mb-3">
                 <h6 class="text-secondary fw-bold mb-2 small text-uppercase" style="font-size: 11px;">
                   <i class="fas fa-desktop me-1 text-primary"></i> UI-Darstellung in der Schnellerfassung
@@ -151,17 +209,17 @@ function renderGebuehrenConfigModals() {
                 <div class="row g-3">
                   <div class="col-md-4">
                     <label class="form-label small fw-bold text-muted">UI-Gruppe (Card-Überschrift)</label>
-                    <input type="text" class="form-control form-control-sm" id="g_ui_gruppe" list="jbDlistUIGruppen" placeholder="z.B. 50m Wettschiessen (KK)">
-                    <datalist id="jbDlistUIGruppen">
-                      <option value="50m Wettschiessen (KK)"></option>
-                      <option value="10m Wettschiessen (LG)"></option>
-                      <option value="Variable Zusatzpositionen"></option>
-                      <option value="Schützenhaus"></option>
-                    </datalist>
+                    <select class="form-select form-select-sm" id="g_ui_gruppe_select" onchange="jbHandleSmartSelect(this, 'g_ui_gruppe')">
+                      <!-- Dynamisch geladen -->
+                    </select>
+                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_gruppe" placeholder="UI-Gruppe eingeben" style="display: none;">
                   </div>
                   <div class="col-md-4">
                     <label class="form-label small fw-bold text-muted">UI-Feld (Steuerelement-Name)</label>
-                    <input type="text" class="form-control form-control-sm" id="g_ui_feld" placeholder="z.B. SSV Dezernat">
+                    <select class="form-select form-select-sm" id="g_ui_feld_select" onchange="jbHandleSmartSelect(this, 'g_ui_feld')">
+                      <!-- Dynamisch geladen -->
+                    </select>
+                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_feld" placeholder="UI-Feld eingeben" style="display: none;">
                   </div>
                   <div class="col-md-4">
                     <label class="form-label small fw-bold text-muted">UI-Typ *</label>
@@ -263,7 +321,7 @@ function jbRenderGebuehrenTable() {
   if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="11" class="text-center py-4 text-muted">
+        <td colspan="12" class="text-center py-4 text-muted">
           <i class="fas fa-info-circle me-1"></i> Keine Gebühren entsprechen den Filterkriterien.
         </td>
       </tr>`;
@@ -283,10 +341,16 @@ function jbRenderGebuehrenTable() {
     else if (uiTyp === 'singleselect') typBadge = `<span class="badge bg-warning text-dark">singleselect</span>`;
     else if (uiTyp === 'amount') typBadge = `<span class="badge bg-success">amount</span>`;
 
+    const zg = String(f.zielgruppe || 'Alle').trim();
+    let zgBadge = `<span class="badge bg-light text-muted border">Alle</span>`;
+    if (zg.toLowerCase() === 'junioren') zgBadge = `<span class="badge bg-success text-white">👦 Junioren</span>`;
+    else if (zg.toLowerCase() === 'aktive') zgBadge = `<span class="badge bg-primary text-white">🎯 Aktive</span>`;
+
     return `
       <tr class="${isAktiv ? '' : 'table-light opacity-75'}">
         <td><strong class="font-monospace text-primary">${k}</strong></td>
         <td><span class="badge bg-light text-secondary border">${f.kategorie || '–'}</span></td>
+        <td>${zgBadge}</td>
         <td>
           <div class="fw-semibold text-dark">${f.bezeichnungfrontend || f.bezeichnung || '–'}</div>
           ${f.bezeichnung && f.bezeichnung !== f.bezeichnungfrontend ? `<div class="text-muted small" style="font-size:10px;">${f.bezeichnung}</div>` : ''}
@@ -313,6 +377,98 @@ function jbRenderGebuehrenTable() {
   }).join('');
 }
 
+function jbPopulateModalDropdowns(selectedKat, selectedGrp, selectedFeld) {
+  const fees = window._jbGebuehren || [];
+  
+  // 1. Kategorie Select
+  const kats = Array.from(new Set(fees.map(f => String(f.kategorie || '').trim()).filter(Boolean))).sort();
+  const katSelect = document.getElementById('g_kategorie_select');
+  const katInput = document.getElementById('g_kategorie');
+  if (katSelect && katInput) {
+    let html = '<option value="">-- Kategorie wählen --</option>';
+    let found = false;
+    kats.forEach(k => {
+      const sel = k === selectedKat;
+      if (sel) found = true;
+      html += `<option value="${escHtml(k)}"${sel ? ' selected' : ''}>${escHtml(k)}</option>`;
+    });
+    html += '<option value="__custom__">➕ [ Neue Kategorie erfassen… ]</option>';
+    katSelect.innerHTML = html;
+    if (!found && selectedKat) {
+      katSelect.value = '__custom__';
+      katInput.value = selectedKat;
+      katInput.style.display = 'block';
+    } else {
+      katInput.value = selectedKat || '';
+      katInput.style.display = 'none';
+    }
+  }
+
+  // 2. UI-Gruppe Select
+  const gruppen = Array.from(new Set(fees.map(f => String(f.ui_gruppe || '').trim()).filter(Boolean))).sort();
+  const grpSelect = document.getElementById('g_ui_gruppe_select');
+  const grpInput = document.getElementById('g_ui_gruppe');
+  if (grpSelect && grpInput) {
+    let html = '<option value="">-- UI-Gruppe wählen --</option>';
+    let found = false;
+    gruppen.forEach(g => {
+      const sel = g === selectedGrp;
+      if (sel) found = true;
+      html += `<option value="${escHtml(g)}"${sel ? ' selected' : ''}>${escHtml(g)}</option>`;
+    });
+    html += '<option value="__custom__">➕ [ Neue UI-Gruppe erfassen… ]</option>';
+    grpSelect.innerHTML = html;
+    if (!found && selectedGrp) {
+      grpSelect.value = '__custom__';
+      grpInput.value = selectedGrp;
+      grpInput.style.display = 'block';
+    } else {
+      grpInput.value = selectedGrp || '';
+      grpInput.style.display = 'none';
+    }
+  }
+
+  // 3. UI-Feld Select
+  const felder = Array.from(new Set(fees.map(f => String(f.ui_feld || '').trim()).filter(Boolean))).sort();
+  const feldSelect = document.getElementById('g_ui_feld_select');
+  const feldInput = document.getElementById('g_ui_feld');
+  if (feldSelect && feldInput) {
+    let html = '<option value="">-- Bestehendes Feld wählen oder neu --</option>';
+    let found = false;
+    felder.forEach(fld => {
+      const sel = fld === selectedFeld;
+      if (sel) found = true;
+      html += `<option value="${escHtml(fld)}"${sel ? ' selected' : ''}>${escHtml(fld)}</option>`;
+    });
+    html += '<option value="__custom__">➕ [ Neues Feld erfassen… ]</option>';
+    feldSelect.innerHTML = html;
+    if (!found && selectedFeld) {
+      feldSelect.value = '__custom__';
+      feldInput.value = selectedFeld;
+      feldInput.style.display = 'block';
+    } else {
+      feldInput.value = selectedFeld || '';
+      feldInput.style.display = 'none';
+    }
+  }
+}
+
+function jbHandleSmartSelect(selectEl, inputId) {
+  const inputEl = document.getElementById(inputId);
+  if (!inputEl) return;
+  if (selectEl.value === '__custom__') {
+    inputEl.style.display = 'block';
+    inputEl.value = '';
+    inputEl.focus();
+  } else if (selectEl.value) {
+    inputEl.value = selectEl.value;
+    inputEl.style.display = 'none';
+  } else {
+    inputEl.value = '';
+    inputEl.style.display = 'none';
+  }
+}
+
 function jbOpenEditGebuehrModal(key) {
   const modalEl = document.getElementById('jbModalGebuehrEdit');
   if (!modalEl) return;
@@ -326,14 +482,13 @@ function jbOpenEditGebuehrModal(key) {
     if (titleEl) titleEl.innerHTML = '➕ Neue Gebühr erfassen';
     keyInput.readOnly = false;
     keyInput.value = '';
-    document.getElementById('g_kategorie').value = 'Kleinkaliber';
+    jbPopulateModalDropdowns('Kleinkaliber', '50m Wettschiessen (KK)', '');
+    document.getElementById('g_zielgruppe').value = 'Alle';
     document.getElementById('g_bezeichnungfrontend').value = '';
     document.getElementById('g_bezeichnung').value = '';
     document.getElementById('g_betrag').value = '15.00';
     document.getElementById('g_konto').value = '4426';
     document.getElementById('g_kontobezeichnung').value = '';
-    document.getElementById('g_ui_gruppe').value = '50m Wettschiessen (KK)';
-    document.getElementById('g_ui_feld').value = '';
     document.getElementById('g_ui_typ').value = 'checkbox';
     document.getElementById('g_ui_sort').value = '10';
     document.getElementById('g_aktiv').checked = true;
@@ -344,14 +499,13 @@ function jbOpenEditGebuehrModal(key) {
     keyInput.value = key;
 
     const f = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === String(key).toUpperCase()) || {};
-    document.getElementById('g_kategorie').value = f.kategorie || '';
+    jbPopulateModalDropdowns(f.kategorie || '', f.ui_gruppe || '', f.ui_feld || '');
+    document.getElementById('g_zielgruppe').value = f.zielgruppe || 'Alle';
     document.getElementById('g_bezeichnungfrontend').value = f.bezeichnungfrontend || '';
     document.getElementById('g_bezeichnung').value = f.bezeichnung || '';
     document.getElementById('g_betrag').value = f.betrag !== undefined ? f.betrag : '';
     document.getElementById('g_konto').value = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto || '';
     document.getElementById('g_kontobezeichnung').value = f['Kontobezeichnung im KMU-Kontenrahmen'] || f.kontobezeichnung || '';
-    document.getElementById('g_ui_gruppe').value = f.ui_gruppe || '';
-    document.getElementById('g_ui_feld').value = f.ui_feld || '';
     document.getElementById('g_ui_typ').value = (f.ui_typ || 'checkbox').toLowerCase();
     document.getElementById('g_ui_sort').value = f.ui_sort !== undefined ? f.ui_sort : '10';
     document.getElementById('g_aktiv').checked = f.aktiv !== false && f.aktiv !== 'FALSE' && f.aktiv !== '0' && f.aktiv !== 0;
@@ -371,6 +525,7 @@ async function jbSaveGebuehrFromModal() {
   try {
     const key = document.getElementById('g_key').value.trim().toUpperCase();
     const kategorie = document.getElementById('g_kategorie').value.trim();
+    const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
     const bezeichnungfrontend = document.getElementById('g_bezeichnungfrontend').value.trim();
     const bezeichnung = document.getElementById('g_bezeichnung').value.trim() || bezeichnungfrontend;
     const betrag = parseFloat(document.getElementById('g_betrag').value) || 0;
@@ -391,6 +546,7 @@ async function jbSaveGebuehrFromModal() {
       action: 'saveGebuehr',
       key,
       kategorie,
+      zielgruppe,
       bezeichnungfrontend,
       bezeichnung,
       betrag,
