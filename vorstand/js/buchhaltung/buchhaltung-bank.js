@@ -833,7 +833,7 @@ function bhBankRenderResults(filter) {
       : ((r.isJahresbeitrag || r.isInvoice) ? 'table-light' : '');
 
     return `
-      <tr class="${rowBg}" ${(r.alreadyBooked || r.isWrongYear) ? 'style="opacity:0.65;"' : ''}>
+      <tr id="bh-bank-row-${realI}" data-tx-idx="${realI}" class="${rowBg}" ${(r.alreadyBooked || r.isWrongYear) ? 'style="opacity:0.65;"' : ''}>
         <td class="small" style="white-space:nowrap;">
           <span class="fw-bold">${formatSwissDate(r.bookingDate)}</span>
           ${r.accountIban ? `<br><span class="badge bg-light text-muted border" style="font-size:9px;" title="Konto: ${escHtml(r.accountIban)}">${escHtml(r.accountIban.slice(-8))}</span>` : ''}
@@ -1968,6 +1968,7 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
 
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
   const habenEl = document.getElementById(`bh-haben-${txIdx}`);
+  const rowTr   = (sollEl ? sollEl.closest('tr') : null) || (habenEl ? habenEl.closest('tr') : null) || document.getElementById(`bh-bank-row-${txIdx}`) || (document.getElementById(`bh-status-badge-${txIdx}`)?.closest('tr') || null);
   const statusBadge = document.getElementById(`bh-status-badge-${txIdx}`) || document.getElementById(`bh-book-btn-${txIdx}`) || (rowTr ? rowTr.querySelector('.badge') : null);
   const bookBtn = statusBadge;
 
@@ -2129,8 +2130,8 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
         datum: bookingDate,
         beleg_nr: `${belegNr}${subChar}`,
         beschreibung: (r.beschreibung || beschreibung).trim(),
-        konto_soll: r.kontoSoll,
-        konto_haben: r.kontoHaben,
+        konto_soll: bhBankCleanKonto(r.kontoSoll) || r.kontoSoll,
+        konto_haben: bhBankCleanKonto(r.kontoHaben) || r.kontoHaben,
         betrag: Math.abs(Number(r.betrag)),
         typ: 'Bank-Split'
       };
@@ -2196,8 +2197,9 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
   tx._isBooking = true;
 
   const sollEl  = document.getElementById(`bh-soll-${txIdx}`);
-  const rowTr   = sollEl ? sollEl.closest('tr') : null;
-  const bookBtn = rowTr ? rowTr.querySelector('button.btn-success') : null;
+  const habenEl = document.getElementById(`bh-haben-${txIdx}`);
+  const rowTr   = (sollEl ? sollEl.closest('tr') : null) || (habenEl ? habenEl.closest('tr') : null) || document.getElementById(`bh-bank-row-${txIdx}`) || (document.getElementById(`bh-status-badge-${txIdx}`)?.closest('tr') || null);
+  const bookBtn = rowTr ? (rowTr.querySelector('button.btn-success') || rowTr.querySelector('.badge')) : null;
 
   if (bookBtn) {
     bookBtn.disabled = true;

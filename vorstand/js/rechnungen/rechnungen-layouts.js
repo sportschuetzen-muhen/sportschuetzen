@@ -335,8 +335,8 @@ window.renderTabLayouts = function(content) {
               <div class="fw-bold text-muted mb-1"><i class="fas fa-envelope-open me-1"></i> E-Mail Vorschau</div>
               <div class="bg-white p-2 border rounded">
                 <div><strong class="text-muted">Betreff:</strong> <span id="prev-mail-subject" class="fw-bold text-dark">...</span></div>
-                <hr class="my-1.5">
-                <div id="prev-mail-body" class="text-secondary font-monospace" style="white-space: pre-line; font-size: 10px;">...</div>
+                <hr class="my-2 opacity-50">
+                <div id="prev-mail-body" class="text-secondary font-monospace pt-2" style="white-space: pre-line; font-size: 10px;">...</div>
               </div>
             </div>
 
@@ -393,7 +393,11 @@ window.rnUpdateLayoutPreview = function() {
   if (prevIntro) prevIntro.textContent = replaceVars(intro);
   if (prevOutro) prevOutro.textContent = replaceVars(outro);
   if (prevNotice) prevNotice.textContent = replaceVars(notice);
-  if (prevMailSubj) prevMailSubj.textContent = replaceVars(mailSubj);
+  if (prevMailSubj) {
+    let s = replaceVars(mailSubj);
+    s = s.replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ').replace(/\bRE-(\d)/gi, '$1');
+    prevMailSubj.textContent = s;
+  }
   if (prevMailBody) prevMailBody.textContent = replaceVars(mailBody);
 };
 

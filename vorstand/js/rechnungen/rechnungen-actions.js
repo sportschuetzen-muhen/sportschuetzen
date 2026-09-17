@@ -277,9 +277,13 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
   };
 
   // Vorlage-Betreff und Vorlage-Body 1:1 aus der Vorlage übernehmen und Variablen einsetzen
+  const cleanSubjNum = String(inv.id || '').replace(/^RE[-_]?/i, '') || String(inv.id || '');
   let defaultSubject = layout.mail_subject
     ? replaceMailVars(layout.mail_subject)
-    : `Rechnung ${inv.id} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
+        .replace(new RegExp('Rechnung\\s+' + String(inv.id || '').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), 'Rechnung ' + cleanSubjNum)
+        .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+        .replace(/\bRE-(\d)/gi, '$1')
+    : `Rechnung ${cleanSubjNum} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
 
   let defaultBody = layout.mail_body
     ? replaceMailVars(layout.mail_body)
@@ -299,7 +303,8 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
 
   const cleanRecipientName = escapeHtml(inv.name || name || 'Empfänger');
   const targetEmailVal = recipient.email || '';
-  const pdfFilename = `Rechnung_${inv.id}_${escapeHtml(String(inv.name || 'Empfaenger').replace(/\s+/g, '_'))}.pdf`;
+  const cleanPdfId = String(inv.id || '').replace(/^RE[-_]?/i, '') || String(inv.id || '');
+  const pdfFilename = `Rechnung_${cleanPdfId}_${escapeHtml(String(inv.name || 'Empfaenger').replace(/\s+/g, '_'))}.pdf`;
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -420,7 +425,7 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
                       <strong>Betreff:</strong> <span id="rnm-preview-subject">${escapeHtml(defaultSubject)}</span>
                     </div>
                     <hr class="my-2 opacity-50">
-                    <div id="rnm-preview-body-content" class="pt-1"></div>
+                    <div id="rnm-preview-body-content" class="pt-3"></div>
                   </div>
                 </div>
 
@@ -578,8 +583,11 @@ window.rnExecuteSendMail = async function(invoiceId) {
     : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
 
   const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
+  const cleanTargetSubject = (targetSubject || baseLayout.mail_subject || '')
+    .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+    .replace(/\bRE-(\d)/gi, '$1');
   const customLayout = Object.assign({}, baseLayout, {
-    mail_subject: targetSubject || baseLayout.mail_subject,
+    mail_subject: cleanTargetSubject,
     mail_body: targetBody || baseLayout.mail_body,
     mail_intro: targetBody || baseLayout.mail_intro // Kompatibilität
   });
@@ -2472,7 +2480,7 @@ function rnGetDaysSince(dateStr) {
 
 // 1. MANUELLE MAHNUNG: DIALOG ÖFFNEN
 window.rnOpenMahnungModal = async function(invoiceId, name) {
-  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (!inv) {
     alert("❌ Rechnung nicht gefunden: " + invoiceId);
     return;
@@ -2501,176 +2509,517 @@ window.rnOpenMahnungModal = async function(invoiceId, name) {
   const daysSinceCreated = rnGetDaysSince(inv.created_at);
   const daysSinceLastMahnung = rnGetDaysSince(inv.mahn_datum);
 
-  let modalEl = document.getElementById('rnModalSendMahnung');
-  if (!modalEl) {
-    modalEl = document.createElement('div');
-    modalEl.id = 'rnModalSendMahnung';
-    modalEl.className = 'modal fade';
-    modalEl.tabIndex = -1;
-    modalEl.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(modalEl);
+  const cleanRecipientName = escapeHtml(inv.name || name || 'Empfänger');
+  const targetEmailVal = initialEmail;
+
+  const sender = (typeof rnGetLoggedInSender === 'function')
+    ? rnGetLoggedInSender('Mahnung ' + recommendedStufe)
+    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType('Mahnung') : null);
+
+  const senderEmail = (sender && sender.email) ? sender.email : 'kassier@sportschuetzen-muhen.ch';
+  const senderName = (sender && (sender.vorname || sender.nachname))
+    ? `${sender.vorname || ''} ${sender.nachname || ''}`.trim()
+    : ((sender && sender.verein) || 'Sportschützen Muhen');
+
+  // Layouts aus Speicher oder Defaults laden
+  let layoutsMap = window._invoiceLayouts;
+  if (!layoutsMap || Object.keys(layoutsMap).length === 0) {
+    if (typeof rnGetDefaultLayouts === 'function') {
+      layoutsMap = rnGetDefaultLayouts();
+    }
+    try {
+      const stored = localStorage.getItem('portal_invoice_layouts');
+      if (stored) {
+        layoutsMap = { ...(layoutsMap || {}), ...JSON.parse(stored) };
+      }
+    } catch (_) {}
   }
+
+  const replaceMailVars = (str, stufeNum) => {
+    let res = String(str || '')
+      .replace(/{vorname}/g, recipient.vorname || '')
+      .replace(/{nachname}/g, recipient.nachname || '')
+      .replace(/{anrede}/g, recipient.anrede || '')
+      .replace(/{firma}/g, recipient.firma || '')
+      .replace(/{abteilung}/g, recipient.abteilung || '')
+      .replace(/{rechnungsnummer}/g, inv.id)
+      .replace(/{rechnungsjahr}/g, String(inv.year || ''))
+      .replace(/{gesamtbetrag}/g, Number(inv.total_amount || 0).toFixed(2))
+      .replace(/{rechnungsdatum}/g, inv.created_at ? String(inv.created_at).split(' ')[0] : '')
+      .replace(/{iban}/g, typeof VEREIN_IBAN !== 'undefined' ? VEREIN_IBAN : '')
+      .replace(/{absender_name}/g, senderName)
+      .replace(/{absender_email}/g, senderEmail)
+      .replace(/{absender_vorname}/g, (sender && sender.vorname) || '')
+      .replace(/{absender_nachname}/g, (sender && sender.nachname) || '')
+      .replace(/{absender_verein}/g, (sender && sender.verein) || 'Sportschützen Muhen')
+      .replace(/{absender_funktion}/g, (sender && sender.funktion) || 'Vorstand')
+      .replace(/{mahnstufe}/g, String(stufeNum || 1));
+    return res.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+,/g, ',');
+  };
+
+  window._rnMahnLayoutsMap = layoutsMap;
+  window._rnMahnCurrentInvoice = inv;
+  window._rnMahnRecipient = recipient;
+  window._rnMahnSenderName = senderName;
+  window._rnMahnSenderEmail = senderEmail;
+  window._rnMahnReplaceMailVars = replaceMailVars;
+  window._rnMahnSelectedStufe = recommendedStufe;
 
   const stufenLabels = {
     1: { name: '1. Zahlungserinnerung', frist: '14 Tage Frist', fee: 'CHF 0.–', color: 'warning', icon: 'fa-bell' },
     2: { name: '2. Mahnung', frist: '10 Tage Frist', fee: 'CHF 0.–', color: 'orange', icon: 'fa-exclamation-triangle' },
     3: { name: '3. / Letzte Mahnung', frist: '7 Tage Frist (Rechtsfolge)', fee: 'CHF 20.– (optional)', color: 'danger', icon: 'fa-radiation' }
   };
+  window._rnMahnStufenLabels = stufenLabels;
+
+  const initLayout = (layoutsMap && (layoutsMap[`Mahnung ${recommendedStufe}`] || layoutsMap['Mahnung']))
+    || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[`Mahnung ${recommendedStufe}`] || rnGetDefaultLayouts()['Mahnung']) : {})
+    || {};
+
+  const cleanSubjNum = String(inv.id || '').replace(/^RE[-_]?/i, '') || String(inv.id || '');
+  const initialSubject = (initLayout.mail_subject
+    ? replaceMailVars(initLayout.mail_subject, recommendedStufe)
+        .replace(new RegExp('Rechnung\\s+' + String(inv.id || '').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), 'Rechnung ' + cleanSubjNum)
+        .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+        .replace(/\bRE-(\d)/gi, '$1')
+    : `Zahlungserinnerung: Rechnung ${cleanSubjNum} | Sportschützen Muhen`);
+
+  const initialBody = initLayout.mail_body
+    ? replaceMailVars(initLayout.mail_body, recommendedStufe)
+    : replaceMailVars('Guten Tag {vorname} {nachname},\n\nbei der Überprüfung unserer Buchhaltung haben wir festgestellt, dass für folgende Rechnung noch kein Zahlungseingang vorliegt:\n\nRechnungsnummer: {rechnungsnummer}\nAusstehender Betrag: CHF {gesamtbetrag}\n\nWir bitten dich höflich, den Betrag innert 14 Tagen zu begleichen. Den QR-Einzahlungsschein findest du im Anhang.\n\nSportliche Grüsse\nSportschützen Muhen', recommendedStufe);
+
+  window._rnMahnDefaultSubject = initialSubject;
+  window._rnMahnDefaultBody = initialBody;
+
+  const cleanNameForFile = escapeHtml(String(inv.name || 'Empfaenger').replace(/\s+/g, '_'));
+  const initialPdfFilename = `${recommendedStufe === 1 ? 'Zahlungserinnerung' : 'Mahnung_' + recommendedStufe}_${inv.id}_${cleanNameForFile}.pdf`;
+
+  let modalEl = document.getElementById('rnModalSendMahnung');
+  if (modalEl) modalEl.remove();
+  modalEl = document.createElement('div');
+  modalEl.id = 'rnModalSendMahnung';
+  modalEl.className = 'modal fade';
+  modalEl.tabIndex = -1;
+  modalEl.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(modalEl);
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content border-0 rounded-4 shadow">
-        <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold">
-            <i class="fas fa-exclamation-triangle me-2 text-danger"></i>Mahnwesen – Rechnung ${escapeHtml(inv.id)}
+      <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
+        
+        <!-- Modal Header mit Move & Maximize -->
+        <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold mb-0">
+            <i class="fas fa-exclamation-triangle me-2 text-dark"></i>Mahnwesen – Rechnung ${escapeHtml(inv.id)}
           </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm text-dark p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+          </div>
         </div>
+
         <div class="modal-body p-4">
+          
+          <!-- Optionale Mahn-Alerts -->
           ${nieMahnen ? `
-            <div class="alert alert-danger d-flex align-items-center mb-3 py-2 px-3 rounded-3">
+            <div class="alert alert-danger d-flex align-items-center mb-3 py-2 px-3 rounded-3 shadow-2xs">
               <i class="fas fa-hand-paper fa-2x me-3"></i>
               <div>
                 <strong>⚠️ VETO-HINWEIS: Option "Nie mahnen" ist aktiv!</strong><br>
-                <span class="small">Für ${escapeHtml(name)} ist in den Mitgliederstammdaten eine Mahnsperre hinterlegt. Mahnungen sollten nur nach ausdrücklicher Vorstandsrücksprache versendet werden.</span>
+                <span class="small">Für ${cleanRecipientName} ist in den Stammdaten eine Mahnsperre hinterlegt. Mahnungen sollten nur nach Vorstandsrücksprache versendet werden.</span>
               </div>
             </div>
           ` : ''}
 
           ${daysSinceLastMahnung !== null && daysSinceLastMahnung < 10 ? `
-            <div class="alert alert-warning py-2 px-3 rounded-3 small mb-3">
-              <i class="fas fa-clock me-1 text-danger"></i>
-              <strong>Kurzer Mahnabstand:</strong> Die letzte Mahnung wurde erst vor <strong>${daysSinceLastMahnung} Tagen</strong> versendet (am ${escapeHtml(inv.mahn_datum || 'kürzlich')}). Empfohlen wird ein Mindestabstand von 10–14 Tagen.
+            <div class="alert alert-warning d-flex align-items-center mb-3 py-2 px-3 rounded-3 small shadow-2xs">
+              <i class="fas fa-clock fa-lg me-2 text-danger"></i>
+              <div>
+                <strong>Kurzer Mahnabstand:</strong> Die letzte Mahnung wurde erst vor <strong>${daysSinceLastMahnung} Tagen</strong> versendet (am ${escapeHtml(inv.mahn_datum || 'kürzlich')}). Empfohlen wird ein Mindestabstand von 10–14 Tagen.
+              </div>
             </div>
           ` : ''}
 
-          <!-- Rechnungsübersicht Kärtchen -->
-          <div class="bg-light p-3 rounded-3 border mb-3">
-            <div class="row g-2 align-items-center">
-              <div class="col-md-5">
-                <div class="text-muted small">Empfänger / Debitor</div>
-                <div class="fw-bold text-dark fs-6">${escapeHtml(inv.name)}</div>
-                <div class="text-muted small">${inv.PersonNumber ? (String(inv.PersonNumber).startsWith('EXT') ? 'Kontakt ' + escapeHtml(inv.PersonNumber) : 'Mgl-Nr: ' + escapeHtml(inv.PersonNumber)) : ''}</div>
+          <!-- Rechnungs-Info Leiste (Analog Rechnungsversand) -->
+          <div class="d-flex flex-wrap align-items-center justify-content-between p-3 bg-light rounded-3 border mb-4 gap-2">
+            <div>
+              <span class="text-muted small">Empfänger / Debitor:</span>
+              <div class="fw-bold text-dark fs-6">${cleanRecipientName}</div>
+              <div class="text-muted font-monospace" style="font-size: 11px;">
+                Rechnungs-ID: <strong class="text-primary">${inv.id}</strong> · Typ: <strong>${escapeHtml(inv.type || 'Rechnung')}</strong> ${inv.year ? `· ${inv.year}` : ''} ${inv.PersonNumber ? (String(inv.PersonNumber).startsWith('EXT') ? '· Kontakt ' + escapeHtml(inv.PersonNumber) : '· Mgl-Nr: ' + escapeHtml(inv.PersonNumber)) : ''}
               </div>
-              <div class="col-md-3">
-                <div class="text-muted small">Rechnungsbetrag</div>
-                <div class="fw-bold text-primary font-monospace fs-6">${fmtChf(inv.total_amount)}</div>
-                <div class="text-muted small">${inv.type || 'Rechnung'} · ${inv.year}</div>
-              </div>
-              <div class="col-md-4 text-md-end">
-                <div class="text-muted small">Aktueller Mahnstatus</div>
+            </div>
+            <div class="text-end">
+              <span class="text-muted small">Rechnungsbetrag:</span>
+              <div class="fw-bold fs-5 text-primary font-monospace">${fmtChf(inv.total_amount)}</div>
+              <div class="d-flex align-items-center justify-content-end gap-1 mt-1">
                 ${curStufe > 0 ? `
-                  <span class="badge ${curStufe === 1 ? 'bg-warning text-dark' : (curStufe === 2 ? 'text-white' : 'bg-danger text-white')} px-2 py-1 rounded-pill" ${curStufe === 2 ? 'style="background-color: #fd7e14;"' : ''}>
+                  <span class="badge ${curStufe === 1 ? 'bg-warning text-dark' : (curStufe === 2 ? 'text-white' : 'bg-danger text-white')}" ${curStufe === 2 ? 'style="background-color: #fd7e14;"' : ''}>
                     Stufe ${curStufe} (${escapeHtml(inv.mahn_datum || 'gemahnt')})
                   </span>
                 ` : `
-                  <span class="badge bg-secondary px-2 py-1 rounded-pill">Noch nicht gemahnt</span>
+                  <span class="badge bg-secondary">Noch nicht gemahnt</span>
                 `}
-                <div class="text-muted small mt-1">Rechnung erstellt: ${escapeHtml(String(inv.created_at || '–').split(' ')[0])}${daysSinceCreated !== null ? ` (${daysSinceCreated} Tage her)` : ''}</div>
+                <span class="badge bg-white text-muted border" style="font-size: 10px;">
+                  ${daysSinceCreated !== null ? `${daysSinceCreated} Tage her` : 'neu'}
+                </span>
               </div>
             </div>
           </div>
 
-          <form id="rn-mahnung-form" onsubmit="rnExecuteSendMahnung(event, '${inv.id}')">
-            <!-- Stufenauswahl -->
-            <label class="form-label fw-bold text-dark mb-2">Zu versendende Mahnstufe auswählen:</label>
-            <div class="row g-2 mb-3">
-              ${[1, 2, 3].map(st => {
-                const info = stufenLabels[st];
-                const isRec = st === recommendedStufe;
-                const isChecked = st === recommendedStufe ? 'checked' : '';
-                return `
-                  <div class="col-md-4">
-                    <label class="card h-100 p-2.5 border rounded-3 text-start position-relative shadow-2xs cursor-pointer ${isRec ? 'border-primary bg-primary-subtle' : 'border-secondary-subtle'}" style="cursor: pointer;">
-                      <div class="d-flex align-items-center mb-1">
-                        <input class="form-check-input me-2 mt-0" type="radio" name="rnMahnstufeRadio" id="rnStufe${st}" value="${st}" ${isChecked} onchange="rnUpdateMahnungPreview(${st})">
-                        <span class="fw-bold small text-dark">${info.name}</span>
-                      </div>
-                      <div class="text-muted ps-4" style="font-size: 11px;">
-                        <div><i class="fas fa-hourglass-half me-1"></i>${info.frist}</div>
-                        <div><i class="fas fa-coins me-1"></i>Gebühr: ${info.fee}</div>
-                      </div>
-                      ${isRec ? `<span class="badge bg-primary position-absolute top-0 end-0 m-1" style="font-size:9px;">Empfohlen</span>` : ''}
-                    </label>
+          <form id="rn-mahnung-form" onsubmit="event.preventDefault(); rnExecuteSendMahnung(event, '${inv.id}');">
+            
+            <!-- Mahnstufen-Auswahl -->
+            <div class="mb-4">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label fw-bold small text-muted mb-0">
+                  <i class="fas fa-layer-group me-1 text-warning"></i>Zu versendende Mahnstufe auswählen:
+                </label>
+                <span class="text-muted" style="font-size: 11px;">Klick auf eine Stufe lädt passende Vorlage</span>
+              </div>
+              <div class="row g-2">
+                ${[1, 2, 3].map(st => {
+                  const info = stufenLabels[st];
+                  const isRec = st === recommendedStufe;
+                  const isChecked = st === recommendedStufe;
+                  return `
+                    <div class="col-md-4">
+                      <label class="card h-100 p-2.5 border rounded-3 text-start position-relative shadow-2xs rn-mahnstufe-card ${isChecked ? 'border-warning bg-warning-subtle shadow-sm' : 'border-secondary-subtle bg-white'}" id="rn-mahnstufe-card-${st}" style="cursor: pointer; transition: all 0.15s ease;">
+                        <div class="d-flex align-items-center mb-1">
+                          <input class="form-check-input me-2 mt-0" type="radio" name="rnMahnstufeRadio" id="rnStufe${st}" value="${st}" ${isChecked ? 'checked' : ''} onchange="rnSelectMahnstufe(${st})">
+                          <span class="fw-bold small text-dark">${info.name}</span>
+                        </div>
+                        <div class="text-muted ps-4" style="font-size: 11px;">
+                          <div><i class="fas fa-hourglass-half me-1 text-muted"></i>${info.frist}</div>
+                          <div><i class="fas fa-coins me-1 text-muted"></i>Gebühr: ${info.fee}</div>
+                        </div>
+                        ${isRec ? `<span class="badge bg-primary position-absolute top-0 end-0 m-1" style="font-size:9px;">Empfohlen</span>` : ''}
+                      </label>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <div class="row g-3">
+              
+              <!-- Empfänger E-Mail -->
+              <div class="col-md-7">
+                <label class="form-label fw-bold small text-muted">
+                  Empfänger E-Mail-Adresse <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text bg-white"><i class="fas fa-at text-muted"></i></span>
+                  <input type="email" class="form-control fw-bold" id="rn-mahnung-email" required value="${escapeHtml(targetEmailVal)}" placeholder="name@beispiel.ch">
+                </div>
+                <div class="form-text text-muted" style="font-size: 11px;">
+                  ${targetEmailVal ? '<i class="fas fa-check-circle text-success me-1"></i>Aus Mitglieds-/Kontaktdaten übernommen' : '<i class="fas fa-exclamation-circle text-warning me-1"></i>Keine E-Mail hinterlegt – bitte eingeben'}
+                </div>
+              </div>
+
+              <!-- Absender -->
+              <div class="col-md-5">
+                <label class="form-label fw-bold small text-muted">Absender</label>
+                <div class="input-group">
+                  <span class="input-group-text bg-light"><i class="fas fa-user-shield text-muted"></i></span>
+                  <input type="text" class="form-control bg-light" readonly value="${escapeHtml(senderName)} <${escapeHtml(senderEmail)}>">
+                </div>
+                <div class="form-text text-muted" style="font-size: 11px;">
+                  Zustelladresse des Vorstands
+                </div>
+              </div>
+
+              <!-- Betreff -->
+              <div class="col-12">
+                <label class="form-label fw-bold small text-muted">
+                  E-Mail Betreff <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text bg-white"><i class="fas fa-heading text-muted"></i></span>
+                  <input type="text" class="form-control fw-semibold" id="rn-mahnung-subject" required value="${escapeHtml(initialSubject)}">
+                </div>
+              </div>
+
+              <!-- Hauptbereich: Vollständiger E-Mail Nachrichtentext mit Tabs (Bearbeiten / Vorschau) -->
+              <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <label class="form-label fw-bold small text-muted mb-0">
+                    <i class="fas fa-envelope-open-text me-1 text-warning"></i>E-Mail Nachrichtentext
+                  </label>
+                  
+                  <div class="d-flex align-items-center gap-1.5">
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2" onclick="rnResetMahnungTemplate()" title="Setzt Text und Betreff auf die Standard-Vorlage für diese Stufe zurück">
+                      <i class="fas fa-undo me-1"></i>Vorlage neu laden
+                    </button>
+                    <div class="btn-group btn-group-sm" role="group">
+                      <button type="button" id="rnm-mahn-tab-edit" class="btn btn-xs btn-warning active px-2.5 py-1 fw-bold text-dark" onclick="rnSwitchMahnungTab('edit')">
+                        <i class="fas fa-edit me-1"></i>Bearbeiten
+                      </button>
+                      <button type="button" id="rnm-mahn-tab-prev" class="btn btn-xs btn-light border px-2.5 py-1 text-dark" onclick="rnSwitchMahnungTab('prev')">
+                        <i class="fas fa-eye me-1"></i>E-Mail-Vorschau
+                      </button>
+                    </div>
                   </div>
-                `;
-              }).join('')}
-            </div>
+                </div>
 
-            <!-- E-Mail Adresse -->
-            <div class="mb-3">
-              <label class="form-label fw-bold small text-muted mb-1">Empfänger E-Mail-Adresse *</label>
-              <div class="input-group">
-                <span class="input-group-text bg-light"><i class="fas fa-envelope text-primary"></i></span>
-                <input type="email" class="form-control" id="rn-mahnung-email" required value="${escapeHtml(initialEmail)}" placeholder="empfaenger@beispiel.ch">
+                <!-- Pane 1: Vollständiger Text-Editor -->
+                <div id="rnm-mahn-pane-edit">
+                  <textarea class="form-control font-monospace" id="rn-mahnung-body" rows="9" style="font-size: 13px; line-height: 1.5;" placeholder="Vollständiger Mahnungs-Nachrichtentext...">${escapeHtml(initialBody)}</textarea>
+                  <div class="form-text text-muted d-flex justify-content-between" style="font-size: 11px;">
+                    <span id="rn-mahnung-body-hint"><i class="fas fa-info-circle me-1"></i>Vollständiger E-Mail-Text aus der Vorlage ('Mahnung ${recommendedStufe}'). Kann vor dem Senden frei angepasst werden.</span>
+                  </div>
+                </div>
+
+                <!-- Pane 2: Live HTML-Vorschau -->
+                <div id="rnm-mahn-pane-prev" class="d-none border rounded-3 p-3 bg-light shadow-2xs" style="min-height: 200px; max-height: 320px; overflow-y: auto;">
+                  <div class="bg-white p-3 rounded-2 border shadow-xs" style="max-width: 600px; margin: 0 auto; font-family: 'Segoe UI', Arial, sans-serif;">
+                    <div class="d-flex align-items-center border-bottom pb-2 mb-3 gap-2">
+                      <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-192.png" width="40" height="40" class="rounded" alt="Logo">
+                      <div>
+                        <div class="fw-bold text-dark" style="font-size: 14px; line-height: 1.2;">Sportschützen Muhen</div>
+                        <div class="text-muted" style="font-size: 11px;" id="rnm-mahn-preview-header-subtitle">Mahnwesen · ${stufenLabels[recommendedStufe].name}</div>
+                      </div>
+                    </div>
+                    <div class="text-muted small mb-2 font-monospace" style="font-size: 11px;">
+                      <strong>Betreff:</strong> <span id="rnm-mahn-preview-subject">${escapeHtml(initialSubject)}</span>
+                    </div>
+                    <hr class="my-2 opacity-50">
+                    <div id="rnm-mahn-preview-body-content" class="pt-3"></div>
+                  </div>
+                </div>
+
               </div>
-              <div class="form-text small">An diese Adresse wird das Mahnungs-PDF mit QR-Zahlteil versendet.</div>
-            </div>
 
-            <!-- Vorlagen-Vorschau (Collapsible / Dynamic) -->
-            <div class="card border rounded-3 p-3 bg-light mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="fw-bold small text-primary"><i class="fas fa-eye me-1"></i>Text-Vorschau</span>
-                <span class="badge bg-secondary" id="rn-preview-stufe-badge">Stufe ${recommendedStufe}</span>
+              <!-- Anhang Badge -->
+              <div class="col-12">
+                <div class="p-3 bg-light rounded-3 border d-flex align-items-center justify-content-between">
+                  <div class="d-flex align-items-center">
+                    <div class="me-3 p-2 bg-white rounded border text-danger">
+                      <i class="fas fa-file-pdf fa-2x"></i>
+                    </div>
+                    <div>
+                      <strong class="d-block text-dark small" id="rn-mahnung-pdf-filename">${initialPdfFilename}</strong>
+                      <span class="text-muted" style="font-size: 11px;">
+                        <i class="fas fa-qrcode text-dark me-1"></i>Offizielles Mahnungsdokument mit Schweizer QR-Code Zahlteil und Rechnungskopie
+                      </span>
+                    </div>
+                  </div>
+                  <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-2.5 py-1.5 rounded-pill">
+                    <i class="fas fa-paperclip me-1"></i>Wird automatisch generiert & angehängt
+                  </span>
+                </div>
               </div>
-              <div class="small fw-semibold text-dark mb-1" id="rn-preview-subject">...</div>
-              <div class="small text-muted font-monospace bg-white p-2 rounded border" id="rn-preview-body" style="max-height: 110px; overflow-y: auto; white-space: pre-wrap; font-size: 11px;">...</div>
+
             </div>
 
-            <!-- Aktionen -->
-            <div class="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
-              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Abbrechen</button>
+            <!-- Fehlermeldungs-Container -->
+            <div id="rn-mahnung-error-alert" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+
+            <div class="modal-footer px-0 pb-0 pt-4 border-top mt-4 d-flex justify-content-between">
+              <button type="button" class="btn btn-light border" data-bs-dismiss="modal">
+                Abbrechen
+              </button>
               <button type="submit" class="btn btn-warning fw-bold px-4 shadow-sm" id="rn-mahnung-submit-btn">
-                <i class="fas fa-paper-plane me-1.5"></i> Mahnung jetzt versenden
+                <i class="fas fa-paper-plane me-1.5"></i>Mahnung jetzt verbindlich versenden
               </button>
             </div>
+
           </form>
+
         </div>
+
+        <!-- Resize-Grip Ecke unten rechts -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
+        </div>
+
       </div>
     </div>
   `;
 
-  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  const modal = new bootstrap.Modal(modalEl);
   modal.show();
-
-  // Vorschautext initialisieren
-  rnUpdateMahnungPreview(recommendedStufe);
+  rnMakeModalMovableAndResizable(modalEl);
 };
 
-// Hilfsfunktion: Live-Vorschautext im Mahn-Modal aktualisieren
+// Hilfsfunktion: Stufenauswahl im Mahn-Modal umschalten
+window.rnSelectMahnstufe = function(st) {
+  window._rnMahnSelectedStufe = st;
+  const inv = window._rnMahnCurrentInvoice;
+  const recipient = window._rnMahnRecipient;
+  const layoutsMap = window._rnMahnLayoutsMap;
+  const replaceMailVars = window._rnMahnReplaceMailVars;
+  const stufenLabels = window._rnMahnStufenLabels || {
+    1: { name: '1. Zahlungserinnerung' },
+    2: { name: '2. Mahnung' },
+    3: { name: '3. / Letzte Mahnung' }
+  };
+
+  // 1. Radio & Visuelle Kartengestaltung aktualisieren
+  [1, 2, 3].forEach(s => {
+    const radio = document.getElementById(`rnStufe${s}`);
+    if (radio) radio.checked = (s === st);
+
+    const card = document.getElementById(`rn-mahnstufe-card-${s}`);
+    if (card) {
+      if (s === st) {
+        card.classList.remove('border-secondary-subtle', 'bg-white');
+        card.classList.add('border-warning', 'bg-warning-subtle', 'shadow-sm');
+      } else {
+        card.classList.remove('border-warning', 'bg-warning-subtle', 'shadow-sm');
+        card.classList.add('border-secondary-subtle', 'bg-white');
+      }
+    }
+  });
+
+  // 2. Vorlage für gewählte Stufe ermitteln
+  const key = `Mahnung ${st}`;
+  const l = (layoutsMap && (layoutsMap[key] || layoutsMap['Mahnung']))
+    || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[key] || rnGetDefaultLayouts()['Mahnung']) : {})
+    || {};
+
+  const cleanSubjNum = String(inv?.id || '').replace(/^RE[-_]?/i, '') || String(inv?.id || '');
+  let defSubj = (l.mail_subject
+    ? (replaceMailVars ? replaceMailVars(l.mail_subject, st) : l.mail_subject)
+    : `Zahlungserinnerung: Rechnung ${cleanSubjNum} | Sportschützen Muhen`)
+    .replace(new RegExp('Rechnung\\s+' + String(inv?.id || '').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), 'Rechnung ' + cleanSubjNum)
+    .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+    .replace(/\bRE-(\d)/gi, '$1');
+
+  let defBody = l.mail_body
+    ? (replaceMailVars ? replaceMailVars(l.mail_body, st) : l.mail_body)
+    : (replaceMailVars ? replaceMailVars('Guten Tag {vorname} {nachname},\n\nfür folgende Rechnung konnte noch kein Zahlungseingang festgestellt werden:\n\nRechnungsnummer: {rechnungsnummer}\nAusstehender Betrag: CHF {gesamtbetrag}\n\nWir bitten höflich um Überweisung.\n\nFreundliche Grüsse\nSportschützen Muhen', st) : '');
+
+  window._rnMahnDefaultSubject = defSubj;
+  window._rnMahnDefaultBody = defBody;
+
+  const subjEl = document.getElementById('rn-mahnung-subject');
+  const bodyEl = document.getElementById('rn-mahnung-body');
+  if (subjEl) subjEl.value = defSubj;
+  if (bodyEl) bodyEl.value = defBody;
+
+  // 3. Hinweise & Badges aktualisieren
+  const hintEl = document.getElementById('rn-mahnung-body-hint');
+  if (hintEl) {
+    hintEl.innerHTML = `<i class="fas fa-info-circle me-1"></i>Vollständiger E-Mail-Text aus der Vorlage ('Mahnung ${st}'). Kann vor dem Senden frei angepasst werden.`;
+  }
+
+  const subEl = document.getElementById('rnm-mahn-preview-header-subtitle');
+  if (subEl) {
+    subEl.textContent = `Mahnwesen · ${(stufenLabels[st] && stufenLabels[st].name) || 'Mahnung'}`;
+  }
+
+  const pdfEl = document.getElementById('rn-mahnung-pdf-filename');
+  if (pdfEl && inv) {
+    const cleanName = escapeHtml(String(inv.name || 'Empfaenger').replace(/\s+/g, '_'));
+    pdfEl.textContent = `${st === 1 ? 'Zahlungserinnerung' : 'Mahnung_' + st}_${inv.id}_${cleanName}.pdf`;
+  }
+
+  // Falls Vorschau aktiv ist, Text synchronisieren
+  const prevPane = document.getElementById('rnm-mahn-pane-prev');
+  if (prevPane && !prevPane.classList.contains('d-none')) {
+    rnSwitchMahnungTab('prev');
+  }
+};
+
+// Rückwärtskompatibler Wrapper
 window.rnUpdateMahnungPreview = function(stufe) {
-  const badgeEl = document.getElementById('rn-preview-stufe-badge');
-  const subjEl = document.getElementById('rn-preview-subject');
-  const bodyEl = document.getElementById('rn-preview-body');
-  if (!badgeEl || !subjEl || !bodyEl) return;
+  if (typeof window.rnSelectMahnstufe === 'function') {
+    window.rnSelectMahnstufe(stufe);
+  }
+};
 
-  badgeEl.textContent = `Stufe ${stufe}`;
-  const key = `Mahnung ${stufe}`;
-  const l = (window._invoiceLayouts && (window._invoiceLayouts[key] || window._invoiceLayouts['Mahnung']))
-    || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[key] || rnGetDefaultLayouts()['Mahnung']) : null);
+// Hilfsfunktionen für Mahn-Modal Tabs und Vorlagen-Reset
+window.rnSwitchMahnungTab = function(mode) {
+  const editTab = document.getElementById('rnm-mahn-tab-edit');
+  const prevTab = document.getElementById('rnm-mahn-tab-prev');
+  const editPane = document.getElementById('rnm-mahn-pane-edit');
+  const prevPane = document.getElementById('rnm-mahn-pane-prev');
+  const bodyText = document.getElementById('rn-mahnung-body')?.value || '';
 
-  if (l) {
-    subjEl.textContent = `Betreff: ${l.mail_subject || 'Zahlungserinnerung'}`;
-    bodyEl.textContent = l.mail_body || l.intro || '...';
+  if (mode === 'prev') {
+    if (editTab) {
+      editTab.classList.remove('active', 'btn-warning');
+      editTab.classList.add('btn-light', 'text-dark', 'border');
+    }
+    if (prevTab) {
+      prevTab.classList.add('active', 'btn-warning');
+      prevTab.classList.remove('btn-light', 'text-dark', 'border');
+    }
+    if (editPane) editPane.classList.add('d-none');
+    if (prevPane) prevPane.classList.remove('d-none');
+
+    const prevContent = document.getElementById('rnm-mahn-preview-body-content');
+    if (prevContent) {
+      const clean = String(bodyText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+      const paras = clean.split(/\n\s*\n/);
+      const parasHtml = paras.map(p => {
+        const withBr = p.split('\n').map(line => escapeHtml(line.trim())).join('<br>');
+        return `<p style="margin:0 0 12px 0;line-height:1.6;font-size:13px;color:#333;">${withBr}</p>`;
+      }).join('');
+      prevContent.innerHTML = parasHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
+    }
+    const subjPrev = document.getElementById('rnm-mahn-preview-subject');
+    const subjVal = document.getElementById('rn-mahnung-subject')?.value || '';
+    if (subjPrev) subjPrev.textContent = subjVal;
+  } else {
+    if (prevTab) {
+      prevTab.classList.remove('active', 'btn-warning');
+      prevTab.classList.add('btn-light', 'text-dark', 'border');
+    }
+    if (editTab) {
+      editTab.classList.add('active', 'btn-warning');
+      editTab.classList.remove('btn-light', 'text-dark', 'border');
+    }
+    if (prevPane) prevPane.classList.add('d-none');
+    if (editPane) editPane.classList.remove('d-none');
+    document.getElementById('rn-mahnung-body')?.focus();
+  }
+};
+
+window.rnResetMahnungTemplate = function() {
+  if (confirm('Möchtest du den E-Mail-Betreff und den Mahnungstext auf die Standard-Vorlage der aktuellen Stufe zurücksetzen?')) {
+    const subjectEl = document.getElementById('rn-mahnung-subject');
+    const bodyEl = document.getElementById('rn-mahnung-body');
+    if (subjectEl) subjectEl.value = window._rnMahnDefaultSubject || '';
+    if (bodyEl) bodyEl.value = window._rnMahnDefaultBody || '';
+    window.rnSwitchMahnungTab('edit');
   }
 };
 
 // 2. MANUELLE MAHNUNG: VERSAND AUSFÜHREN
 window.rnExecuteSendMahnung = async function(event, invoiceId) {
-  event.preventDefault();
+  if (event) event.preventDefault();
 
-  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+  const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
   if (!inv) return;
 
   const emailInput = document.getElementById('rn-mahnung-email');
+  const subjectInput = document.getElementById('rn-mahnung-subject');
+  const bodyInput = document.getElementById('rn-mahnung-body');
+  const submitBtn = document.getElementById('rn-mahnung-submit-btn');
+  const errAlert = document.getElementById('rn-mahnung-error-alert');
+
+  if (errAlert) { errAlert.classList.add('d-none'); errAlert.textContent = ''; }
+
   const targetEmail = emailInput ? emailInput.value.trim() : '';
   if (!targetEmail || !targetEmail.includes('@')) {
-    alert("❌ Bitte geben Sie eine gültige E-Mail-Adresse ein.");
+    if (emailInput) {
+      emailInput.classList.add('is-invalid');
+      emailInput.focus();
+    }
+    if (errAlert) {
+      errAlert.textContent = 'Bitte eine gültige E-Mail-Adresse angeben.';
+      errAlert.classList.remove('d-none');
+    }
     return;
   }
+  if (emailInput) emailInput.classList.remove('is-invalid');
 
   const stufeEl = document.querySelector('input[name="rnMahnstufeRadio"]:checked');
-  const targetStufe = stufeEl ? Number(stufeEl.value) : 1;
+  const targetStufe = stufeEl ? Number(stufeEl.value) : (window._rnMahnSelectedStufe || 1);
 
   const stufenLabels = {
     1: '1. Zahlungserinnerung',
@@ -2683,6 +3032,9 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
     return;
   }
 
+  const targetSubject = subjectInput ? subjectInput.value.trim() : '';
+  const targetBody = bodyInput ? bodyInput.value.trim() : '';
+
   const recipient = (typeof rnGetRecipientForInvoice === 'function')
     ? rnGetRecipientForInvoice(inv)
     : {
@@ -2692,21 +3044,23 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       };
   recipient.email = targetEmail;
 
-  // Modal schliessen
-  const modalEl = document.getElementById('rnModalSendMahnung');
-  if (modalEl) {
-    const mInstance = bootstrap.Modal.getInstance(modalEl);
-    if (mInstance) mInstance.hide();
-  }
-
-  showLoadingOverlay(`Erstelle Mahnungs-PDF (${stufenTitle}) und sende E-Mail an ${inv.name}...`);
-
   const sender = (typeof rnGetLoggedInSender === 'function')
     ? rnGetLoggedInSender('Mahnung ' + targetStufe)
     : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType('Mahnung') : null);
 
   const layoutKey = `Mahnung ${targetStufe}`;
-  const layout = (window._invoiceLayouts && (window._invoiceLayouts[layoutKey] || window._invoiceLayouts['Mahnung'])) || null;
+  const baseLayout = (window._invoiceLayouts && (window._invoiceLayouts[layoutKey] || window._invoiceLayouts['Mahnung']))
+    || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[layoutKey] || rnGetDefaultLayouts()['Mahnung']) : {})
+    || {};
+
+  const cleanTargetSubject = (targetSubject || baseLayout.mail_subject || '')
+    .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+    .replace(/\bRE-(\d)/gi, '$1');
+  const customLayout = Object.assign({}, baseLayout, {
+    mail_subject: cleanTargetSubject,
+    mail_body: targetBody || baseLayout.mail_body,
+    mail_intro: targetBody || baseLayout.mail_intro
+  });
 
   const payload = {
     action: 'sendMahnung',
@@ -2714,28 +3068,34 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
     mahnstufe: targetStufe,
     recipient: recipient,
     sender: sender,
-    layout: layout
+    layout: customLayout
   };
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Erstelle Mahnungs-PDF & sende E-Mail...';
+  }
 
   try {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();
 
     if (result.success) {
-      // 1. Loading Overlay SOFORT ausblenden
-      hideLoadingOverlay();
+      const modalEl = document.getElementById('rnModalSendMahnung');
+      if (modalEl) {
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
+      }
 
-      // 2. Optimistic Status Update in RAM-Datenbank
+      // Optimistic Status Update in RAM-Datenbank
       const nowStr = result.mahn_datum || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
       inv.status = 'gemahnt';
       inv.mahnstufe = targetStufe;
       inv.mahn_datum = nowStr;
       window.renderRechnungen();
 
-      // 3. Sichtbare Erfolgsbestätigung für den Anwender ausgeben
       showSuccess(`🎉 ${stufenTitle} für Rechnung ${invoiceId} erfolgreich an ${targetEmail} versandt!`, 4000);
 
-      // 4. Sanfter Reload im Hintergrund nach Pufferzeit (kein UI-Flickern)
       setTimeout(async () => {
         try {
           await loadRechnungenData(true, true);
@@ -2745,10 +3105,18 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       throw new Error(result.error || "Mahnungs-Versand fehlgeschlagen.");
     }
   } catch (err) {
-    hideLoadingOverlay();
-    alert("❌ Mahnung Fehler: " + err.message);
+    console.error("Fehler beim Mahnungs-Versand:", err);
+    if (errAlert) {
+      errAlert.textContent = 'Fehler beim Mahnungs-Versand: ' + err.message;
+      errAlert.classList.remove('d-none');
+    } else {
+      alert("❌ Mahnung Fehler: " + err.message);
+    }
   } finally {
-    hideLoadingOverlay();
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fas fa-paper-plane me-1.5"></i>Mahnung jetzt verbindlich versenden';
+    }
   }
 };
 
