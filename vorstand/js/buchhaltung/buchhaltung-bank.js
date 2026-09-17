@@ -252,7 +252,7 @@ window.renderTabBankabgleich = function(container) {
             <i class="fas fa-layer-group me-1"></i><span id="bhBtnBookSelectedText">0 Buchungen verbuchen</span>
           </button>
           <button class="btn btn-sm btn-success fw-bold shadow-sm" id="bhBtnBookAll" onclick="bhBankBookAll()">
-            <i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen
+            <i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen
           </button>
         </div>
       </div>
@@ -682,8 +682,13 @@ function bhBankRenderResults(filter) {
     }
 
     const realIdx = id.startsWith('bh-soll-') ? id.replace('bh-soll-', '') : id.replace('bh-haben-', '');
+    const isEmpty = !cleanCode;
+    const highlightStyle = isEmpty 
+      ? 'background-color: #fff9db !important; border: 1.5px dashed #f59f00 !important; color: #495057;' 
+      : '';
+    const placeholderText = isEmpty ? '⚠️ Gegenkonto wählen...' : 'Ziffern/Name...';
 
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input" placeholder="Ziffern/Name..." value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:140px;" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Tippe Suchbegriff und drücke [Enter] zum Auswählen')}">`;
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input ${isEmpty ? 'bh-konto-empty' : ''}" placeholder="${placeholderText}" value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:140px; ${highlightStyle}" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Kein Gegenkonto zugeordnet (kann leer gebucht oder manuell gewählt werden)')}">`;
   }
 
   const realIdxMap = filtered.map(r => rows.indexOf(r));
@@ -1748,13 +1753,14 @@ function bhBankMatchAll(transactions) {
       }
     }
 
-    // 4. STUFE: Smart Defaults nach Vorzeichen
+    // 4. STUFE: Smart Defaults nach Vorzeichen (ohne Standard 6000 / 3900)
+    // Wenn kein Gegenkonto ermittelt werden kann, bleibt es leer und wird im UI hervorgehoben!
     if (!suggestedSoll || !suggestedHaben) {
       if (tx.isCredit) {
         suggestedSoll = suggestedSoll || txBankKonto; // Bank
-        suggestedHaben = suggestedHaben || '3900'; // Übriger Ertrag
+        suggestedHaben = suggestedHaben || ''; // Gegenkonto leer lassen statt 3900
       } else {
-        suggestedSoll = suggestedSoll || '6000'; // Raum/Unterhalt Aufwand
+        suggestedSoll = suggestedSoll || ''; // Gegenkonto leer lassen statt 6000
         suggestedHaben = suggestedHaben || txBankKonto; // Bank
       }
     }
@@ -1770,7 +1776,7 @@ function bhBankMatchAll(transactions) {
         suggestedHaben = tmp;
       }
       if (!isBankKontoCode(suggestedSoll)) {
-        suggestedHaben = suggestedHaben || suggestedSoll || '3900';
+        suggestedHaben = suggestedHaben || suggestedSoll || '';
         suggestedSoll = txBankKonto;
       }
     } else {
@@ -1780,9 +1786,14 @@ function bhBankMatchAll(transactions) {
         suggestedSoll = tmp;
       }
       if (!isBankKontoCode(suggestedHaben)) {
-        suggestedSoll = suggestedSoll || suggestedHaben || '6000';
+        suggestedSoll = suggestedSoll || suggestedHaben || '';
         suggestedHaben = txBankKonto;
       }
+    }
+
+    if (suggestedSoll && suggestedHaben && suggestedSoll === suggestedHaben) {
+      if (tx.isCredit) suggestedHaben = '';
+      else suggestedSoll = '';
     }
 
     const txYear = tx.bookingDate ? new Date(tx.bookingDate).getFullYear() : Number(window._bhYear || new Date().getFullYear());
@@ -1940,35 +1951,42 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   tx.suggestedSoll = kontoSoll;
   tx.suggestedHaben = kontoHaben;
 
-  if (!kontoSoll || !kontoHaben) {
-    if (!isBatch) alert('Bitte wählen Sie Soll- und Haben-Konto aus.');
-    throw new Error('Bitte wählen Sie Soll- und Haben-Konto aus.');
+  if (!kontoSoll && !kontoHaben) {
+    if (!isBatch) alert('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
+    throw new Error('Mindestens das Bankkonto (Soll oder Haben) muss vorhanden sein.');
   }
-  if (kontoSoll === kontoHaben) {
+  if (kontoSoll && kontoHaben && kontoSoll === kontoHaben) {
     if (!isBatch) alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
     throw new Error('Soll- und Haben-Konto dürfen nicht identisch sein.');
   }
 
   // AUTOMATISCHER SICHERHEITS-CHECK: Verhindern, dass Bankkonto auf der falschen Seite gebucht wird!
+  const defaultBankKonto = tx.accountIban ? bhBankGetAccountForIban(tx.accountIban, '1020') : '1020';
   if (!tx.isCredit) {
+    // Belastung: Bank muss im Haben stehen
     if (isBankKontoCode(kontoSoll) && !isBankKontoCode(kontoHaben)) {
-      console.warn(`[Bankabgleich] Belastung erfordert Bank im Haben. Vertausche Soll (${kontoSoll}) und Haben (${kontoHaben}).`);
       const tempKonto = kontoSoll;
       kontoSoll = kontoHaben;
       kontoHaben = tempKonto;
-      if (sollEl) sollEl.value = kontoSoll;
-      if (habenEl) habenEl.value = kontoHaben;
+    }
+    if (!isBankKontoCode(kontoHaben)) {
+      kontoHaben = defaultBankKonto;
     }
   } else {
+    // Gutschrift: Bank muss im Soll stehen
     if (isBankKontoCode(kontoHaben) && !isBankKontoCode(kontoSoll)) {
-      console.warn(`[Bankabgleich] Gutschrift erfordert Bank im Soll. Vertausche Soll (${kontoSoll}) und Haben (${kontoHaben}).`);
       const tempKonto = kontoSoll;
       kontoSoll = kontoHaben;
       kontoHaben = tempKonto;
-      if (sollEl) sollEl.value = kontoSoll;
-      if (habenEl) habenEl.value = kontoHaben;
+    }
+    if (!isBankKontoCode(kontoSoll)) {
+      kontoSoll = defaultBankKonto;
     }
   }
+  if (sollEl) sollEl.value = kontoSoll;
+  if (habenEl) habenEl.value = kontoHaben;
+  tx.suggestedSoll = kontoSoll;
+  tx.suggestedHaben = kontoHaben;
 
   const rmtEl = document.getElementById(`bh-rmt-${txIdx}`);
   if (rmtEl) {
@@ -2310,40 +2328,25 @@ window.bhBankBookAll = async function() {
   const results = window._bhBankMatchResults || [];
   const activeYear = Number(window._bhYear || new Date().getFullYear());
   
-  // Strikter und präziser Sicherheitsfilter:
-  // 1. Nicht bereits gebucht, nicht in Bearbeitung, passendes Kalenderjahr
-  // 2. Rechnungen: Eindeutige ID, Score >= 2 und noch nicht bezahlt
-  // 3. Jahresbeiträge: Mitglied & Beitrag eindeutig zugeordnet, noch nicht bezahlt, Score >= 2
-  // 4. Buchungsregeln: Benutzer- oder System-Regel mit Score >= 2
+  // Zusammengelegter Buchungs-Pool: Alle ungebuchten Transaktionen des aktiven Jahres,
+  // bei denen mindestens das Bankkonto vorhanden ist (Sichere + unvollständige manuelle Posten).
   const toBook = results
     .map((r, i) => ({ r, i }))
-    .filter(({ r }) => {
-      if (r.alreadyBooked || r._isBooking || r.isWrongYear) return false;
-
-      // 1. Eindeutig zugeordnete offene Rechnung
-      if (r.isInvoice && r.matchedInvoice && r.matchedInvoice.id && r.matchScore >= 2 && !r.alreadyPaidInvoice) {
-        return true;
-      }
-
-      // 2. Eindeutig zugeordneter offener Jahresbeitrag (Mitglied + Beitrag vorhanden)
-      if (r.isJahresbeitrag && r.matchedMember && r.matchedBeitrag && r.matchedBeitrag.id && r.matchScore >= 2 && !r.alreadyPaidJb) {
-        return true;
-      }
-
-      // 3. Eindeutige Buchungsregel (System-Regel oder benutzerdefinierte Regel mit MatchScore >= 2)
-      if (r.matchType === 'rule' && r.matchScore >= 2) {
-        return true;
-      }
-
-      return false;
-    });
+    .filter(({ r }) => !r.alreadyBooked && !r._isBooking && !r.isWrongYear && Number(r.amount || 0) > 0);
 
   if (!toBook.length) {
-    showToast(`Keine eindeutigen, ungebuchten Transaktionen für das Buchungsjahr ${activeYear} vorhanden.`, 'warning', 'top-end');
+    showToast(`Keine ungebuchten Transaktionen für das Buchungsjahr ${activeYear} vorhanden.`, 'warning', 'top-end');
     return;
   }
 
-  const ok = confirm(`${toBook.length} eindeutige Bank-Buchungen jetzt automatisch in einem Schritt ins Journal eintragen?\n\nDie entsprechenden Rechnungen und Jahresbeiträge werden parallel als bezahlt markiert.`);
+  const unvollstaendigCount = toBook.filter(({ r }) => !r.suggestedSoll || !r.suggestedHaben).length;
+  let confirmMsg = `${toBook.length} Bank-Buchungen jetzt in streng chronologischer Reihenfolge ins Journal eintragen?`;
+  if (unvollstaendigCount > 0) {
+    confirmMsg += `\n\nℹ️ Hinweis: ${unvollstaendigCount} Buchung(en) haben noch kein Gegenkonto und werden im Journal als unvollständig markiert, damit die Belegnummerierung und Datums-Chronologie sauber bleibt.`;
+  }
+  confirmMsg += '\n\nZugeordnete Rechnungen und Jahresbeiträge werden parallel als bezahlt markiert.';
+
+  const ok = confirm(confirmMsg);
   if (!ok) return;
 
   window._bhIsBookingAll = true;
@@ -2356,7 +2359,15 @@ window.bhBankBookAll = async function() {
   const batchToast = showToast(`⏳ Bereite ${toBook.length} Buchungen lokal im Browser vor...`, 'info', 'top-end', 0);
 
   try {
-    // 1. Belegnummern im Vorfeld lückenlos und deterministisch vergeben
+    // 1. WICHTIG: Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum sortieren!
+    toBook.sort((a, b) => {
+      const dateA = new Date(a.r.bookingDate || '1970-01-01').getTime();
+      const dateB = new Date(b.r.bookingDate || '1970-01-01').getTime();
+      if (dateA !== dateB) return dateA - dateB;
+      return a.i - b.i;
+    });
+
+    // 2. Belegnummern im Vorfeld lückenlos und streng chronologisch vergeben
     toBook.forEach(({ r }) => {
       const txBankKonto = isBankKontoCode(r.suggestedSoll) 
         ? r.suggestedSoll 
@@ -2525,10 +2536,9 @@ window.bhBankToggleQueue = function(txIdx, evt) {
     }
     const rawSoll  = tx.suggestedSoll;
     const rawHaben = tx.suggestedHaben;
-    if (!rawSoll || !rawHaben) {
-      showToast('⚠️ Bitte vor dem Vormerken Soll- und Haben-Konto für diese Zeile auswählen.', 'warning', 'top-end', 3000);
-      if (!rawSoll && sollEl) sollEl.focus();
-      else if (!rawHaben && habenEl) habenEl.focus();
+    if (!rawSoll && !rawHaben) {
+      showToast('⚠️ Bitte mindestens ein Konto (Bankkonto) für diese Zeile auswählen.', 'warning', 'top-end', 3000);
+      if (sollEl) sollEl.focus();
       return;
     }
   }
@@ -2564,16 +2574,11 @@ window.bhBankUpdateSafeBookingsBtn = function() {
     return;
   }
   const rows = window._bhBankMatchResults || [];
-  const safeCount = rows.filter(r => 
-    !r.alreadyBooked && !r._isBooking && !r.isWrongYear &&
-    (
-      (r.isInvoice && r.matchedInvoice && r.matchedInvoice.id && r.matchScore >= 2 && !r.alreadyPaidInvoice) ||
-      (r.isJahresbeitrag && r.matchedMember && r.matchedBeitrag && r.matchedBeitrag.id && r.matchScore >= 2 && !r.alreadyPaidJb) ||
-      (r.matchType === 'rule' && r.matchScore >= 2)
-    )
+  const openCount = rows.filter(r => 
+    !r.alreadyBooked && !r._isBooking && !r.isWrongYear && Number(r.amount || 0) > 0
   ).length;
-  allBtn.innerHTML = `<i class="fas fa-bolt me-1"></i>Alle sicheren Buchungen ausführen${safeCount > 0 ? ` (${safeCount})` : ''}`;
-  allBtn.disabled = (safeCount === 0 || !!window._bhIsBookingSelected);
+  allBtn.innerHTML = `<i class="fas fa-bolt me-1"></i>Alle Buchungen ausführen${openCount > 0 ? ` (${openCount})` : ''}`;
+  allBtn.disabled = (openCount === 0 || !!window._bhIsBookingSelected);
 };
 
 window.bhBankUpdateSelectedBtn = function() {
@@ -2623,7 +2628,15 @@ window.bhBankBookSelected = async function() {
   const batchToast = showToast(`⏳ Bereite ${toBook.length} Buchungen aus dem Stapel vor...`, 'info', 'top-end', 0);
 
   try {
-    // 1. Belegnummern deterministisch vergeben
+    // 1. Vor der Belegnummern-Vergabe STRIKT chronologisch nach Buchungsdatum sortieren
+    toBook.sort((a, b) => {
+      const dateA = new Date(a.r.bookingDate || '1970-01-01').getTime();
+      const dateB = new Date(b.r.bookingDate || '1970-01-01').getTime();
+      if (dateA !== dateB) return dateA - dateB;
+      return a.i - b.i;
+    });
+
+    // 2. Belegnummern lückenlos und chronologisch vergeben
     toBook.forEach(({ r }) => {
       const txBankKonto = isBankKontoCode(r.suggestedSoll) 
         ? r.suggestedSoll 

@@ -500,6 +500,205 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
   return rnOpenSendMailModal(invoiceId, name);
 };
 
+/**
+ * Macht ein Bootstrap-Modal interaktiv frei verschiebbar und in der Grösse veränderbar (verkleinern / vergrössern)
+ */
+function rnMakeModalMovableAndResizable(modalEl) {
+  if (!modalEl) return;
+  const dialog = modalEl.querySelector('.modal-dialog');
+  const content = modalEl.querySelector('.modal-content');
+  const header = modalEl.querySelector('.modal-header');
+  const modalBody = modalEl.querySelector('.modal-body');
+  const maxBtn = modalEl.querySelector('.rn-modal-maximize-btn');
+  const resizer = modalEl.querySelector('.rn-modal-resizer');
+
+  if (!dialog || !content || !header) return;
+
+  header.style.cursor = 'grab';
+  header.style.userSelect = 'none';
+
+  if (modalBody) {
+    modalBody.style.overflowY = 'auto';
+    modalBody.style.maxHeight = 'calc(85vh - 65px)';
+  }
+
+  let isDragging = false;
+  let isResizing = false;
+  let isMaximized = false;
+  let savedState = null;
+  let startX, startY, initialLeft, initialTop, initialWidth, initialHeight;
+
+  function ensureFixedPosition() {
+    const rect = dialog.getBoundingClientRect();
+    if (dialog.classList.contains('modal-dialog-centered') || dialog.style.position !== 'fixed') {
+      dialog.classList.remove('modal-dialog-centered');
+      dialog.style.position = 'fixed';
+      dialog.style.margin = '0';
+      dialog.style.left = Math.round(rect.left) + 'px';
+      dialog.style.top = Math.max(10, Math.round(rect.top)) + 'px';
+      dialog.style.width = Math.round(rect.width) + 'px';
+      dialog.style.maxWidth = 'none';
+      dialog.style.zIndex = '1060';
+    }
+    return rect;
+  }
+
+  // Header Drag (Verschieben bei jeglicher Grösse)
+  header.addEventListener('pointerdown', function(e) {
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a') || e.target.closest('select')) {
+      return;
+    }
+    if (isMaximized) return;
+
+    e.preventDefault();
+    ensureFixedPosition();
+
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    initialLeft = parseFloat(dialog.style.left) || dialog.getBoundingClientRect().left;
+    initialTop = parseFloat(dialog.style.top) || dialog.getBoundingClientRect().top;
+
+    header.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+
+    function onPointerMove(ev) {
+      if (!isDragging) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+
+      const rect = dialog.getBoundingClientRect();
+      let nextLeft = initialLeft + dx;
+      let nextTop = initialTop + dy;
+
+      nextLeft = Math.max(-rect.width + 120, Math.min(window.innerWidth - 120, nextLeft));
+      nextTop = Math.max(0, Math.min(window.innerHeight - 60, nextTop));
+
+      dialog.style.left = Math.round(nextLeft) + 'px';
+      dialog.style.top = Math.round(nextTop) + 'px';
+    }
+
+    function onPointerUp() {
+      isDragging = false;
+      header.style.cursor = 'grab';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  });
+
+  // Doppelklick auf Header = Maximieren / Wiederherstellen
+  header.addEventListener('dblclick', function(e) {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    if (maxBtn) maxBtn.click();
+  });
+
+  // Resizing via Grip unten rechts (Verkleinern & Vergrössern)
+  if (resizer) {
+    resizer.addEventListener('pointerdown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isMaximized) return;
+
+      ensureFixedPosition();
+      const rect = dialog.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+
+      isResizing = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      initialWidth = rect.width;
+      initialHeight = contentRect.height;
+
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'nwse-resize';
+
+      function onResizeMove(ev) {
+        if (!isResizing) return;
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+
+        const currentLeft = parseFloat(dialog.style.left) || rect.left;
+        const currentTop = parseFloat(dialog.style.top) || rect.top;
+
+        const maxW = window.innerWidth - currentLeft - 10;
+        const maxH = window.innerHeight - currentTop - 10;
+        const newW = Math.max(450, Math.min(maxW, initialWidth + dx));
+        const newH = Math.max(280, Math.min(maxH, initialHeight + dy));
+
+        dialog.style.width = Math.round(newW) + 'px';
+        content.style.height = Math.round(newH) + 'px';
+        if (modalBody) {
+          modalBody.style.maxHeight = `calc(${Math.round(newH)}px - 62px)`;
+        }
+      }
+
+      function onResizeUp() {
+        isResizing = false;
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        window.removeEventListener('pointermove', onResizeMove);
+        window.removeEventListener('pointerup', onResizeUp);
+      }
+
+      window.addEventListener('pointermove', onResizeMove);
+      window.addEventListener('pointerup', onResizeUp);
+    });
+  }
+
+  // Button Maximieren / Wiederherstellen
+  if (maxBtn) {
+    maxBtn.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const icon = maxBtn.querySelector('i');
+
+      if (!isMaximized) {
+        const rect = dialog.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+        savedState = {
+          left: dialog.style.left || (Math.round(rect.left) + 'px'),
+          top: dialog.style.top || (Math.round(rect.top) + 'px'),
+          width: dialog.style.width || (Math.round(rect.width) + 'px'),
+          height: content.style.height || (Math.round(contentRect.height) + 'px'),
+          bodyMaxHeight: modalBody ? modalBody.style.maxHeight : ''
+        };
+
+        dialog.classList.remove('modal-dialog-centered');
+        dialog.style.position = 'fixed';
+        dialog.style.margin = '0';
+        dialog.style.left = '12px';
+        dialog.style.top = '12px';
+        dialog.style.width = 'calc(100vw - 24px)';
+        dialog.style.maxWidth = 'none';
+        content.style.height = 'calc(100vh - 24px)';
+        if (modalBody) {
+          modalBody.style.maxHeight = 'calc(100vh - 24px - 62px)';
+        }
+        if (icon) icon.className = 'fas fa-compress';
+        maxBtn.title = 'Wiederherstellen';
+        isMaximized = true;
+      } else {
+        if (savedState) {
+          dialog.style.left = savedState.left;
+          dialog.style.top = savedState.top;
+          dialog.style.width = savedState.width;
+          content.style.height = savedState.height;
+          if (modalBody) {
+            modalBody.style.maxHeight = savedState.bodyMaxHeight || 'calc(85vh - 65px)';
+          }
+        }
+        if (icon) icon.className = 'fas fa-expand';
+        maxBtn.title = 'Maximieren / Verkleinern';
+        isMaximized = false;
+      }
+    };
+  }
+}
+
 // CREATE MANUALLY INVOICE MODAL
 window.rnOpenCreateModal = async function(btnEl) {
   let modalEl = document.getElementById('rnModalCreateInvoice');
@@ -549,10 +748,15 @@ window.rnOpenCreateModal = async function(btnEl) {
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content border-0 rounded-4 shadow">
-        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold"><i class="fas fa-file-invoice me-2"></i>Neue Rechnung verfassen</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold mb-0"><i class="fas fa-file-invoice me-2"></i>Neue Rechnung verfassen</h5>
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Verkleinern" style="opacity: 0.85; line-height: 1;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
         </div>
         <div class="modal-body p-4">
           <form id="rn-create-form" onsubmit="rnSaveCreateInvoice(event)">
@@ -561,9 +765,11 @@ window.rnOpenCreateModal = async function(btnEl) {
             <!-- Empfänger-Auswahl -->
             <div class="row g-3 mb-3 pb-3 border-bottom">
               <div class="col-md-12">
-                <div class="d-flex justify-content-between align-items-center mb-1.5 flex-wrap gap-2">
-                  <label class="form-label fw-bold small text-muted mb-0">Empfänger auswählen *</label>
-                  <button type="button" class="btn btn-xs btn-outline-primary fw-bold" onclick="rnOpenContactModal()">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-1" style="margin-bottom: 9px;">
+                  <label for="rnc-member-select" class="form-label fw-bold small text-muted mb-0">
+                    <i class="fas fa-user-tag me-1 text-primary"></i>Empfänger auswählen *
+                  </label>
+                  <button type="button" class="btn btn-xs btn-outline-primary fw-bold px-2.5 py-1" onclick="rnOpenContactModal()" style="font-size: 12px; border-radius: 6px;">
                     <i class="fas fa-user-plus me-1"></i> + Neuer externer Kontakt erfassen
                   </button>
                 </div>
@@ -721,6 +927,10 @@ window.rnOpenCreateModal = async function(btnEl) {
             </div>
           </form>
         </div>
+        <!-- Resize-Grip Ecke unten rechts -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
+        </div>
       </div>
     </div>
   `;
@@ -737,6 +947,7 @@ window.rnOpenCreateModal = async function(btnEl) {
 
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
+  rnMakeModalMovableAndResizable(modalEl);
 };
 
 window.rnEditCurrentSelectedContact = function() {
@@ -1176,6 +1387,12 @@ window.rnOpenEditModal = async function(invoiceId) {
   let strasse = '';
   let plz = '';
   let ort = '';
+  let isFirma = false;
+  let ansprechperson = '';
+  let abteilung = '';
+  let adresszusatz = '';
+  let land = 'CH';
+  let kat = '';
 
   const isMember = inv.PersonNumber && !String(inv.PersonNumber).startsWith('EXT');
   if (isMember) {
@@ -1189,6 +1406,7 @@ window.rnOpenEditModal = async function(invoiceId) {
     strasse = m.Street || m.Strasse || '';
     plz = m.ZipCode || m.PLZ || '';
     ort = m.City || m.Ort || '';
+    kat = 'Vereinsmitglied';
   } else {
     // Externe Kontakte: streng nach ID (oder Fallback auf Name)
     const extId = String(inv.PersonNumber || '').replace('EXT-', '').replace('EXT:', '').trim();
@@ -1196,56 +1414,103 @@ window.rnOpenEditModal = async function(invoiceId) {
       recipient = (window._externalContacts || []).find(c => String(c.id).trim() === extId);
     }
     if (!recipient && inv.name) {
-      recipient = (window._externalContacts || []).find(c => String(c.name).trim().toLowerCase() === String(inv.name).trim().toLowerCase());
+      recipient = (window._externalContacts || []).find(c => 
+        (c.firma && String(c.firma).trim().toLowerCase() === String(inv.name).trim().toLowerCase()) ||
+        (c.name && String(c.name).trim().toLowerCase() === String(inv.name).trim().toLowerCase())
+      );
     }
     if (recipient) {
       contactId = recipient.id || extId;
+      isFirma = recipient.typ === 'firma' || Boolean(recipient.firma);
+      kat = recipient.kategorie || (isFirma ? 'Firma' : 'Privat');
       email = recipient.email || '';
+      ansprechperson = recipient.ansprechperson || '';
+      abteilung = recipient.abteilung || '';
       strasse = recipient.strasse || '';
+      adresszusatz = recipient.adresszusatz || '';
       plz = recipient.plz || '';
       ort = recipient.ort || '';
+      land = recipient.land || 'CH';
+    } else if (extId) {
+      contactId = extId;
     }
   }
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content border-0 rounded-4 shadow">
-        <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold"><i class="fas fa-edit me-2"></i>Rechnung bearbeiten (ID: ${inv.id})</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
+        <div class="modal-header bg-warning text-dark border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold mb-0"><i class="fas fa-edit me-2"></i>Rechnung bearbeiten (ID: ${inv.id})</h5>
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm text-dark p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Verkleinern" style="opacity: 0.85; line-height: 1;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
         </div>
         <div class="modal-body p-4">
           <form id="rn-edit-form" onsubmit="rnSaveEditInvoice(event, '${inv.id}')">
             <input type="hidden" id="rne-contact-id" value="${escapeHtml(contactId)}">
             
-            <!-- Adressdaten -->
-            <div class="row g-3 mb-3">
-              <div class="col-md-3">
-                <label class="form-label fw-bold small text-muted">Empfänger-ID / Mgl-Nr</label>
-                <input type="text" class="form-control font-monospace bg-light" id="rne-person-number" readonly value="${inv.PersonNumber || ''}">
+            <!-- Adressdaten (Master-Kärtchen mit Absprung zu Stammdaten) -->
+            <div id="rne-recipient-box" class="p-3 bg-light rounded-3 border mb-4 shadow-2xs">
+              <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom flex-wrap gap-2">
+                <div class="d-flex gap-1.5 align-items-center">
+                  <span class="badge ${isMember ? 'bg-info text-dark' : (isFirma ? 'bg-primary' : 'bg-secondary')} px-2 py-1" id="rne-badge-type">
+                    ${isMember ? '👤 Vereinsmitglied' : (isFirma ? '🏢 Firma / Organisation' : '👤 Privatperson')}
+                  </span>
+                  ${kat ? `<span class="badge bg-secondary px-2 py-1" id="rne-badge-kat">${escapeHtml(kat)}</span>` : ''}
+                </div>
+                ${contactId ? `
+                <button type="button" class="btn btn-xs btn-outline-primary fw-bold" onclick="rnOpenContactModal('${contactId}')">
+                  <i class="fas fa-user-edit me-1"></i> Kontakt in Stammdaten bearbeiten
+                </button>
+                ` : `
+                <span class="text-muted small"><i class="fas fa-lock me-1"></i>Stammdaten schreibgeschützt</span>
+                `}
               </div>
-              <div class="col-md-5">
-                <label class="form-label fw-bold small text-muted">Empfänger (Name / Firma)</label>
-                <input type="text" class="form-control" id="rne-name" required value="${escapeHtml(inv.name || '')}">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-bold small text-muted">E-Mail</label>
-                <input type="email" class="form-control" id="rne-email" value="${escapeHtml(email)}">
-              </div>
-            </div>
 
-            <div class="row g-3 mb-4">
-              <div class="col-md-6">
-                <label class="form-label fw-bold small text-muted">Strasse, Nr.</label>
-                <input type="text" class="form-control" id="rne-strasse" value="${escapeHtml(strasse)}">
-              </div>
-              <div class="col-md-2">
-                <label class="form-label fw-bold small text-muted">PLZ</label>
-                <input type="text" class="form-control font-monospace" id="rne-plz" value="${escapeHtml(plz)}">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-bold small text-muted">Ort</label>
-                <input type="text" class="form-control" id="rne-ort" value="${escapeHtml(ort)}">
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Empfänger-ID / Mgl-Nr</label>
+                  <input type="text" class="form-control form-control-sm font-monospace bg-white" id="rne-person-number" readonly value="${inv.PersonNumber || (contactId ? 'EXT-' + contactId : '')}">
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Empfänger (Name / Firma)</label>
+                  <input type="text" class="form-control form-control-sm fw-bold bg-white" id="rne-name" readonly required value="${escapeHtml(inv.name || (recipient ? (recipient.firma || recipient.name) : ''))}">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">E-Mail</label>
+                  <input type="email" class="form-control form-control-sm bg-white" id="rne-email" readonly value="${escapeHtml(email)}">
+                </div>
+
+                ${isFirma && (ansprechperson || abteilung) ? `
+                <div class="col-md-6" id="rne-contact-person-col" ${!ansprechperson ? 'style="display:none;"' : ''}>
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Ansprechperson / Kontaktperson</label>
+                  <input type="text" class="form-control form-control-sm bg-white" id="rne-contact-person" readonly value="${escapeHtml(ansprechperson)}">
+                </div>
+                <div class="col-md-6" id="rne-abteilung-col" ${!abteilung ? 'style="display:none;"' : ''}>
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Abteilung / Zusatz</label>
+                  <input type="text" class="form-control form-control-sm bg-white" id="rne-abteilung" readonly value="${escapeHtml(abteilung)}">
+                </div>
+                ` : ''}
+
+                <div class="col-md-5">
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Strasse & Hausnummer</label>
+                  <input type="text" class="form-control form-control-sm bg-white" id="rne-strasse" readonly value="${escapeHtml(strasse)}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Adresszusatz / Postfach</label>
+                  <input type="text" class="form-control form-control-sm bg-white" id="rne-adresszusatz" readonly value="${escapeHtml(adresszusatz)}">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">PLZ</label>
+                  <input type="text" class="form-control form-control-sm font-monospace bg-white" id="rne-plz" readonly value="${escapeHtml(plz)}">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label text-muted fw-bold mb-0" style="font-size:11px;">Ort (Land)</label>
+                  <input type="text" class="form-control form-control-sm bg-white" id="rne-ort" readonly value="${escapeHtml(ort + (land && land !== 'CH' ? ' (' + land + ')' : ''))}">
+                </div>
               </div>
             </div>
 
@@ -1329,6 +1594,10 @@ window.rnOpenEditModal = async function(invoiceId) {
             </div>
           </form>
         </div>
+        <!-- Resize-Grip Ecke unten rechts -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
+        </div>
       </div>
     </div>
   `;
@@ -1345,27 +1614,27 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
   window.rneRecalculateTotal = rneRecalculateTotal;
 
-  function rneAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
+  function rneAddPositionRow(desc = '', unitPrice = 0, qty = 1, konto = '') {
     rnePosCounter++;
     const tbody = document.getElementById('rne-positions-tbody');
     if (!tbody) return;
 
-    const initialAmount = (qty * (Number(unitPrice) || 0)).toFixed(2);
-
     const tr = document.createElement('tr');
     tr.id = `rne-pos-row-${rnePosCounter}`;
+    const initialAmount = (Number(qty || 1) * Number(unitPrice || 0)).toFixed(2);
+
     tr.innerHTML = `
-      <td class="text-center font-monospace text-muted rne-pos-idx">${tbody.children.length + 1}</td>
+      <td class="text-center font-monospace rne-pos-idx">${tbody.children.length + 1}</td>
       <td>
-        <input type="text" class="form-control form-control-sm rne-pos-desc" required value="${escapeHtml(desc)}" placeholder="z.B. Getränkebezug Süsswasser">
+        <input type="text" class="form-control form-control-sm rne-pos-desc" required value="${escapeHtml(desc)}" placeholder="z.B. Miete Schützenhaus">
       </td>
       <td>
-        <input type="number" step="1" min="1" class="form-control form-control-sm text-end rne-pos-qty" required value="${qty}" oninput="rneRecalculateRowTotal('${tr.id}')">
+        <input type="number" class="form-control form-control-sm text-end rne-pos-qty" required step="1" min="1" value="${qty}" oninput="rneRecalculateRowTotal('${tr.id}')">
       </td>
       <td>
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-light text-muted">CHF</span>
-          <input type="number" step="0.05" class="form-control form-control-sm text-end rne-pos-unitprice" required value="${unitPrice}" placeholder="0.00" oninput="rneRecalculateRowTotal('${tr.id}')">
+          <input type="number" class="form-control form-control-sm text-end rne-pos-unitprice" required step="0.05" min="0" value="${unitPrice}" oninput="rneRecalculateRowTotal('${tr.id}')">
         </div>
       </td>
       <td>
@@ -1426,20 +1695,17 @@ window.rnOpenEditModal = async function(invoiceId) {
 
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
+  rnMakeModalMovableAndResizable(modalEl);
 };
 
 // SAVE EDITED INVOICE
 window.rnSaveEditInvoice = async function(event, invoiceId) {
   event.preventDefault();
 
-  const name = document.getElementById('rne-name').value.trim();
-  const email = document.getElementById('rne-email').value.trim();
-  const strasse = document.getElementById('rne-strasse').value.trim();
-  const plz = document.getElementById('rne-plz').value.trim();
-  const ort = document.getElementById('rne-ort').value.trim();
+  const name = document.getElementById('rne-name') ? document.getElementById('rne-name').value.trim() : '';
   const contactId = document.getElementById('rne-contact-id') ? document.getElementById('rne-contact-id').value.trim() : '';
 
-  let personNumber = document.getElementById('rne-person-number').value.trim();
+  let personNumber = document.getElementById('rne-person-number') ? document.getElementById('rne-person-number').value.trim() : '';
   if (!personNumber && contactId) {
     personNumber = 'EXT-' + contactId;
   }
@@ -1501,21 +1767,6 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
     window.renderRechnungen(); // Render table instantly!
   }
 
-  // Falls externer Kontakt, Kontaktdaten auch lokal in _externalContacts aktualisieren
-  if (contactId || !document.getElementById('rne-person-number').value.trim() || String(document.getElementById('rne-person-number').value.trim()).startsWith('EXT')) {
-    const extIdx = contactId ? window._externalContacts.findIndex(c => String(c.id).trim() === String(contactId).trim()) : -1;
-    if (extIdx !== -1) {
-      window._externalContacts[extIdx] = {
-        ...window._externalContacts[extIdx],
-        name: name,
-        email: email,
-        strasse: strasse,
-        plz: plz,
-        ort: ort
-      };
-    }
-  }
-
   // Close modal instantly
   const modalEl = document.getElementById('rnModalEditInvoice');
   if (modalEl) {
@@ -1525,19 +1776,12 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
 
   showSuccess(`🎉 Rechnung ${invoiceId} erfolgreich aktualisiert (Hintergrund-Synchronisation läuft)...`);
 
+  // WICHTIG: Kein recipient-Objekt mitsenden! Stammdaten werden ausschliesslich über "Externe Kontakte" verwaltet,
+  // damit Firmennamen/Ansprechpersonen/Stammdaten nicht überschrieben oder fehlerhaft aufgeteilt werden.
   const payload = {
     action: 'updateInvoice',
     invoice: invoiceHeader,
-    positions: positions,
-    recipient: {
-      id: contactId,
-      vorname: name.split(' ')[0] || '',
-      nachname: name.split(' ').slice(1).join(' ') || '',
-      strasse: strasse,
-      plz: plz,
-      ort: ort,
-      email: email
-    }
+    positions: positions
   };
 
   try {
@@ -2792,13 +3036,18 @@ window.rnOpenContactModal = function(contactId = null) {
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content border-0 rounded-4 shadow-lg">
-        <div class="modal-header ${contact ? 'bg-warning text-dark' : 'bg-primary text-white'} border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold">
+      <div class="modal-content border-0 rounded-4 shadow-lg" style="position: relative;">
+        <div class="modal-header ${contact ? 'bg-warning text-dark' : 'bg-primary text-white'} border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold mb-0">
             <i class="fas ${contact ? 'fa-user-edit' : 'fa-user-plus'} me-2"></i>
             ${contact ? 'Externen Kontakt bearbeiten' : 'Neuer externer Kontakt erfassen'}
           </h5>
-          <button type="button" class="btn-close ${contact ? '' : 'btn-close-white'}" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm ${contact ? 'text-dark' : 'text-white'} p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Verkleinern" style="opacity: 0.85; line-height: 1;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close ${contact ? '' : 'btn-close-white'}" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
         </div>
         <div class="modal-body p-4">
           <form id="rn-contact-form" onsubmit="rnSaveContactForm(event)">
@@ -2942,6 +3191,10 @@ window.rnOpenContactModal = function(contactId = null) {
             </div>
           </form>
         </div>
+        <!-- Resize-Grip Ecke unten rechts -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
+        </div>
       </div>
     </div>
   `;
@@ -3005,6 +3258,7 @@ window.rnOpenContactModal = function(contactId = null) {
 
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
+  rnMakeModalMovableAndResizable(modalEl);
   rnUpdateContactLivePreview();
 };
 
@@ -3098,6 +3352,40 @@ window.rnSaveContactForm = async function(event) {
         if (typeof window.rnHandleMemberSelect === 'function') {
           window.rnHandleMemberSelect(`EXT:${savedId}`);
         }
+      }
+    }
+
+    // Falls das "Rechnung bearbeiten"-Modal geöffnet ist: Kontaktdaten darin live aktualisieren
+    const editForm = document.getElementById('rn-edit-form');
+    if (editForm) {
+      const c = (window._externalContacts || []).find(x => String(x.id).trim() === String(savedId).trim());
+      if (c) {
+        const isF = c.typ === 'firma' || Boolean(c.firma);
+        const displayName = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || '');
+        const nameInput = document.getElementById('rne-name');
+        if (nameInput) nameInput.value = displayName;
+        const emailInput = document.getElementById('rne-email');
+        if (emailInput) emailInput.value = c.email || '';
+        const strasseInput = document.getElementById('rne-strasse');
+        if (strasseInput) strasseInput.value = c.strasse || '';
+        const plzInput = document.getElementById('rne-plz');
+        if (plzInput) plzInput.value = c.plz || '';
+        const ortInput = document.getElementById('rne-ort');
+        if (ortInput) ortInput.value = (c.ort || '') + (c.land && c.land !== 'CH' ? ' (' + c.land + ')' : '');
+        const badgeType = document.getElementById('rne-badge-type');
+        if (badgeType) badgeType.textContent = isF ? '🏢 Firma / Organisation' : '👤 Privatperson';
+        const badgeKat = document.getElementById('rne-badge-kat');
+        if (badgeKat && c.kategorie) badgeKat.textContent = c.kategorie;
+        const cpInput = document.getElementById('rne-contact-person');
+        if (cpInput) cpInput.value = c.ansprechperson || '';
+        const cpCol = document.getElementById('rne-contact-person-col');
+        if (cpCol) cpCol.style.display = (isF && c.ansprechperson) ? '' : 'none';
+        const abtInput = document.getElementById('rne-abteilung');
+        if (abtInput) abtInput.value = c.abteilung || '';
+        const abtCol = document.getElementById('rne-abteilung-col');
+        if (abtCol) abtCol.style.display = (isF && c.abteilung) ? '' : 'none';
+        const adrInput = document.getElementById('rne-adresszusatz');
+        if (adrInput) adrInput.value = c.adresszusatz || '';
       }
     }
 

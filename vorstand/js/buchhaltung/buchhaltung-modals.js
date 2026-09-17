@@ -370,15 +370,15 @@ window.bhOpenEntryModal = function(entryId) {
                 <div class="row g-3 mb-3">
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted text-primary"><i class="fas fa-long-arrow-alt-right me-1"></i> Soll-Konto (Empfänger)</label>
-                    <select class="form-select" id="bhe-soll" required>
-                      <option value="" disabled selected>Konto wählen...</option>
+                    <select class="form-select" id="bhe-soll">
+                      <option value="">(Kein Konto / Offen)</option>
                       ${sollOptions}
                     </select>
                   </div>
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted text-success"><i class="fas fa-long-arrow-alt-left me-1"></i> Haben-Konto (Quelle)</label>
-                    <select class="form-select" id="bhe-haben" required>
-                      <option value="" disabled selected>Konto wählen...</option>
+                    <select class="form-select" id="bhe-haben">
+                      <option value="">(Kein Konto / Offen)</option>
                       ${sollOptions}
                     </select>
                   </div>
@@ -1239,7 +1239,15 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
     typ:          document.getElementById('bhe-typ').value
   };
   
-  if (payload.konto_soll === payload.konto_haben) {
+  if (!payload.konto_soll && !payload.konto_haben) {
+    alert("❌ Fehler: Mindestens ein Konto (Soll oder Haben) muss angegeben werden!");
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
+    }
+    return;
+  }
+  if (payload.konto_soll && payload.konto_haben && payload.konto_soll === payload.konto_haben) {
     alert("❌ Fehler: Soll- und Haben-Konto dürfen nicht identisch sein (Gegenkonto erforderlich)!");
     if (submitBtn) {
       submitBtn.disabled = false;

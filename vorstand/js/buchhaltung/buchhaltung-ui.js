@@ -472,6 +472,14 @@ window._bhLastCheckedJournalId = null;
 window._bhJournalAnchorId = null;
 window._bhJournalFocusId = null;
 
+window.bhToggleJournalIncompleteFilter = function() {
+  window._bhJournalFilterIncomplete = !window._bhJournalFilterIncomplete;
+  const container = document.getElementById('bh-tab-content-container');
+  if (container && typeof window.renderTabJournal === 'function') {
+    window.renderTabJournal(container);
+  }
+};
+
 window.renderTabJournal = function(container) {
   const tableResp = container.querySelector('.table-responsive');
   const tableScrollTop = tableResp ? tableResp.scrollTop : 0;
@@ -479,6 +487,14 @@ window.renderTabJournal = function(container) {
 
   let filteredJournal = window._bhJournal.filter(j => Number(j.jahr) === Number(window._bhYear));
   
+  // Zähle unvollständige Buchungen (fehlendes Soll- oder Haben-Konto)
+  const incompleteCount = filteredJournal.filter(j => !String(j.konto_soll || '').trim() || !String(j.konto_haben || '').trim()).length;
+
+  // Filter nach unvollständigen Buchungen anwenden (falls aktiviert)
+  if (window._bhJournalFilterIncomplete) {
+    filteredJournal = filteredJournal.filter(j => !String(j.konto_soll || '').trim() || !String(j.konto_haben || '').trim());
+  }
+
   // Bereinige Selektion von nicht mehr existierenden IDs
   const currentIds = new Set(filteredJournal.map(j => Number(j.id)));
   window._bhSelectedJournalIds.forEach(id => {
@@ -526,6 +542,12 @@ window.renderTabJournal = function(container) {
     const isErtrag  = bTyp === 'ERTRAG';
     const isSelected = window._bhSelectedJournalIds.has(Number(item.id));
 
+    const cleanSoll = String(item.konto_soll || '').trim();
+    const cleanHaben = String(item.konto_haben || '').trim();
+    const isIncomplete = !cleanSoll || !cleanHaben;
+    const incompleteClass = isIncomplete ? 'bh-row-incomplete table-warning' : '';
+    const incompleteStyle = isIncomplete ? 'background-color: #fff9e6 !important; border-left: 4px solid #fd7e14;' : '';
+
     let amountClass = 'text-secondary';
     let amountSign  = '';
     let badgeClass  = 'bg-secondary text-white';
@@ -544,7 +566,7 @@ window.renderTabJournal = function(container) {
     }
 
     return `
-    <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''}" data-journal-id="${item.id}" tabindex="0" onclick="bhHandleJournalRowClick(event, ${item.id})" title="Klicken zum Auswählen (Shift/Ctrl + Pfeiltasten für Mehrfachauswahl)">
+    <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''} ${incompleteClass}" style="${incompleteStyle}" data-journal-id="${item.id}" tabindex="0" onclick="bhHandleJournalRowClick(event, ${item.id})" title="${isIncomplete ? '⚠️ Unvollständige Buchung: Gegenkonto fehlt! Klicken zum Auswählen / Stift-Icon zum Nachführen' : 'Klicken zum Auswählen (Shift/Ctrl + Pfeiltasten für Mehrfachauswahl)'}">
       <td class="text-center" style="width: 40px;" onclick="event.stopPropagation()">
         <input type="checkbox" class="form-check-input cursor-pointer bh-journal-check" data-id="${item.id}" ${isSelected ? 'checked' : ''} onchange="bhToggleJournalRow(${item.id}, this.checked, event)" title="Zeile auswählen">
       </td>
@@ -553,12 +575,24 @@ window.renderTabJournal = function(container) {
       <td class="fw-bold text-dark small">${item.beleg_nr}</td>
       <td class="small fw-semibold">${escapeHtml(item.beschreibung)}</td>
       <td>
-        <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span> 
-        <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
+        ${cleanSoll ? `
+          <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span> 
+          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
+        ` : `
+          <span class="badge bg-warning text-dark border border-warning" title="Soll-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">
+            <i class="fas fa-exclamation-triangle me-1"></i>Soll fehlt
+          </span>
+        `}
       </td>
       <td>
-        <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span> 
-        <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
+        ${cleanHaben ? `
+          <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span> 
+          <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
+        ` : `
+          <span class="badge bg-warning text-dark border border-warning" title="Haben-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">
+            <i class="fas fa-exclamation-triangle me-1"></i>Haben fehlt
+          </span>
+        `}
       </td>
       <td class="text-end fw-bold ${amountClass}" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
       <td>
@@ -569,7 +603,7 @@ window.renderTabJournal = function(container) {
         <button class="bh-edit-btn text-primary" onclick="bhPrintJournalBeleg(${item.id})" title="Kassenbeleg drucken / als PDF ablegen">
           <i class="fas fa-print"></i>
         </button>
-        <button class="bh-edit-btn ms-1" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten">
+        <button class="bh-edit-btn ms-1" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten (z. B. Gegenkonto nachführen)">
           <i class="fas fa-edit"></i>
         </button>
         <button class="bh-edit-btn text-danger ms-1" onclick="bhDeleteJournalEntry(${item.id})" title="Buchung löschen">
@@ -584,8 +618,13 @@ window.renderTabJournal = function(container) {
     <div class="bh-report-section border border-light shadow-sm">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap: 10px;">
         <h4 class="fw-bold text-primary mb-0"><i class="fas fa-receipt me-2"></i>Kassabuch-Journal (${window._bhYear})</h4>
-        <div class="d-flex align-items-center" style="gap: 10px;">
-          <input type="text" class="form-control form-control-sm" id="bh-journal-search" placeholder="🔎 Beleg suchen..." oninput="bhFilterJournal(this.value)" style="max-width: 220px;">
+        <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
+          <input type="text" class="form-control form-control-sm" id="bh-journal-search" placeholder="🔎 Beleg suchen..." oninput="bhFilterJournal(this.value)" style="max-width: 180px;">
+          <button type="button" class="btn btn-sm ${window._bhJournalFilterIncomplete ? 'btn-warning fw-bold text-dark shadow-sm' : 'btn-outline-warning text-dark'}" 
+                  onclick="bhToggleJournalIncompleteFilter()" 
+                  title="Nur Buchungssätze anzeigen, bei denen Soll- oder Haben-Konto fehlt">
+            <i class="fas fa-exclamation-triangle me-1"></i>Unvollständig (${incompleteCount})
+          </button>
           <span class="badge bg-secondary p-2 rounded-2">${filteredJournal.length} Buchungen</span>
         </div>
       </div>
