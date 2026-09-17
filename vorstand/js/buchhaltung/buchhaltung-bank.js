@@ -882,7 +882,7 @@ function bhBankRenderResults(filter) {
             </div>
           ` : makeKontoSelectHTML(habenSelectId, r.suggestedHaben, 'haben', r.alreadyBooked || r.isWrongYear)}
           ${(() => {
-            if ((r.isJahresbeitrag || (r.isInvoice && String(r.matchedInvoice?.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
+            if (!r.isSplit && (r.isJahresbeitrag || (r.isInvoice && String(r.matchedInvoice?.type || '').toLowerCase().includes('jahresbeitrag'))) && typeof window.jbGetSplitBookings === 'function') {
               const hId = r.matchedBeitrag ? r.matchedBeitrag.id : (r.matchedInvoice ? r.matchedInvoice.id : null);
               const mObj = r.matchedMember || (r.matchedInvoice ? { FirstName: r.matchedInvoice.name, LastName: '', PersonNumber: r.matchedInvoice.PersonNumber } : {});
               const splits = window.jbGetSplitBookings({
@@ -1300,6 +1300,113 @@ function bhBankParseCAMT053(xmlText) {
 }
 
 // ---------------------------------------------------------------------
+// Automatische Verknüpfung von Rechnungspositionen & Gegenkonten (Split / Einzel)
+// ---------------------------------------------------------------------
+window.bhBankApplyInvoicePositionsToTx = function(tx, inv, positions) {
+  if (!tx || !inv) return;
+  const invId = String(inv.id || '').trim();
+  positions = positions || inv.positions || (window._invoicePositionsCache && window._invoicePositionsCache[invId]) || [];
+  if (!Array.isArray(positions) || positions.length === 0) return;
+
+  // Im Objekt und Cache hinterlegen
+  inv.positions = positions;
+  window._invoicePositionsCache = window._invoicePositionsCache || {};
+  window._invoicePositionsCache[invId] = positions;
+
+  const isCredit = Boolean(tx.isCredit);
+  const txBankKonto = isBankKontoCode(tx.suggestedSoll) ? tx.suggestedSoll : bhBankGetAccountForIban(tx.accountIban, '1020');
+  
+  // Relevante Positionen mit Betrag != 0 filtern
+  const validPositions = positions.filter(p => Math.abs(Number(p.amount !== undefined ? p.amount : (p.betrag !== undefined ? p.betrag : 0))) >= 0.01);
+  if (validPositions.length === 0) return;
+
+  if (validPositions.length === 1 && !tx._customHabenEdited && !tx._customSollEdited) {
+    // Einzelposition: Exaktes Gegenkonto der Position zuweisen
+    const singlePos = validPositions[0];
+    const posKonto = bhBankCleanKonto(singlePos.konto);
+    if (posKonto) {
+      if (isCredit) {
+        tx.suggestedHaben = posKonto;
+        tx.suggestedSoll = txBankKonto;
+      } else {
+        tx.suggestedSoll = posKonto;
+        tx.suggestedHaben = txBankKonto;
+      }
+    }
+    tx.isSplit = false;
+    tx.splitRows = null;
+    return;
+  }
+
+  // Mehrere Positionen -> Automatische Split-Konfiguration (sofern nicht manuell vom Nutzer editiert)
+  if (validPositions.length > 1 && (!tx._customSplitEdited || !Array.isArray(tx.splitRows) || tx.splitRows.length === 0)) {
+    let netSum = 0;
+    const splitRows = validPositions.map((p, idx) => {
+      const pAmt = Number(p.amount !== undefined ? p.amount : (p.betrag !== undefined ? p.betrag : 0));
+      const posDesc = (p.description || p.beschreibung || `Position ${idx + 1}`).trim();
+      const posKonto = bhBankCleanKonto(p.konto) || (isCredit ? '3800' : '6000');
+      const absAmt = Math.abs(pAmt);
+
+      let rowSoll = '';
+      let rowHaben = '';
+
+      if (isCredit) {
+        if (pAmt >= 0) {
+          rowSoll = txBankKonto;
+          rowHaben = posKonto;
+          netSum += pAmt;
+        } else {
+          // Rabatt / Abzug / Gutschrift
+          rowSoll = posKonto;
+          rowHaben = txBankKonto;
+          netSum -= absAmt;
+        }
+      } else {
+        if (pAmt >= 0) {
+          rowSoll = posKonto;
+          rowHaben = txBankKonto;
+          netSum += pAmt;
+        } else {
+          rowSoll = txBankKonto;
+          rowHaben = posKonto;
+          netSum -= absAmt;
+        }
+      }
+
+      return {
+        beschreibung: `Zahlungseingang ${inv.id} (${inv.name || ''}): ${posDesc}`,
+        betrag: Math.round(absAmt * 100) / 100,
+        kontoSoll: rowSoll,
+        kontoHaben: rowHaben,
+        position_nr: p.position_nr || (idx + 1)
+      };
+    });
+
+    // Prüfen auf allfällige Überzahlung (z. B. Spende / Aufrundung durch Einzahler)
+    const txTotal = Math.abs(Number(tx.amount || 0));
+    const diff = Math.round((txTotal - netSum) * 100) / 100;
+    if (diff > 0.05) {
+      splitRows.push({
+        beschreibung: `Überzahlung / Spende zu Rechnung ${inv.id} (${inv.name || ''})`,
+        betrag: diff,
+        kontoSoll: isCredit ? txBankKonto : '3800',
+        kontoHaben: isCredit ? '3800' : txBankKonto
+      });
+    }
+
+    tx.isSplit = true;
+    tx.splitRows = splitRows;
+    if (isCredit) {
+      tx.suggestedSoll = txBankKonto;
+      tx.suggestedHaben = '';
+    } else {
+      tx.suggestedHaben = txBankKonto;
+      tx.suggestedSoll = '';
+    }
+  }
+};
+
+// ---------------------------------------------------------------------
 // Matching Engine (Jahresbeiträge + Rules + Journal History + Duplikats-Schutz)
 // ---------------------------------------------------------------------
 function bhBankMatchAll(transactions) {
@@ -1309,7 +1416,7 @@ function bhBankMatchAll(transactions) {
   const userRules = window.getBhBankRules();
   const journalHistory = window._bhJournal || [];
 
-  return transactions.map(tx => {
+  const results = transactions.map(tx => {
     const cleanRemittance = (tx.remittanceInfo || '').toLowerCase();
     const cleanParty      = (tx.partyName || '').toLowerCase();
     const cleanRef        = (tx.creditorReference || '').toLowerCase();
@@ -1869,6 +1976,31 @@ function bhBankMatchAll(transactions) {
       matchLabel
     };
   });
+
+  // Rechnungs-Positionen anwenden (Split oder spezifisches Gegenkonto)
+  results.forEach(r => {
+    if (r.matchedInvoice) {
+      bhBankApplyInvoicePositionsToTx(r, r.matchedInvoice);
+    }
+  });
+
+  // Rechnungen ohne Positionen asynchron im Hintergrund nachladen und Ansicht auffrischen
+  const missingInvoices = results.filter(r => r.matchedInvoice && !r.alreadyBooked && (!r.matchedInvoice.positions || r.matchedInvoice.positions.length === 0));
+  if (missingInvoices.length > 0 && typeof window.rnGetInvoicePositions === 'function') {
+    const promises = missingInvoices.map(async r => {
+      const positions = await window.rnGetInvoicePositions(r.matchedInvoice.id);
+      if (positions && positions.length > 0) {
+        bhBankApplyInvoicePositionsToTx(r, r.matchedInvoice, positions);
+      }
+    });
+    Promise.allSettled(promises).then(() => {
+      if (typeof bhBankRenderResults === 'function' && window._bhBankMatchResults === results) {
+        bhBankRenderResults(window._bhBankActiveFilter);
+      }
+    });
+  }
+
+  return results;
 }
 
 function normalizeString(s) {
@@ -2117,6 +2249,14 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
   const belegNr = customBelegNr || bhGetNextBankBelegNr(year, txBankKonto);
   const bookingDate = tx.bookingDate || new Date().toISOString().split('T')[0];
 
+  // Vorab sicherstellen: Falls Rechnung gematcht und Positionen im Cache oder Objekt vorhanden sind
+  if (tx.matchedInvoice && !tx._customSplitEdited && (!tx.splitRows || tx.splitRows.length === 0)) {
+    const cachedPos = (window._invoicePositionsCache && window._invoicePositionsCache[String(tx.matchedInvoice.id).trim()]) || tx.matchedInvoice.positions;
+    if (cachedPos && cachedPos.length > 0) {
+      bhBankApplyInvoicePositionsToTx(tx, tx.matchedInvoice, cachedPos);
+    }
+  }
+
   let entries = [];
   if (tx.isSplit && Array.isArray(tx.splitRows) && tx.splitRows.length > 0) {
     const validRows = tx.splitRows.filter(r => Number(r.betrag) > 0);
@@ -2166,6 +2306,9 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     }];
   }
 
+  const isJbMatched = Boolean(tx.isJahresbeitrag || (tx.matchedInvoice && String(tx.matchedInvoice.type || '').toLowerCase().includes('jahresbeitrag')));
+  const resolvedBeitrag = tx.matchedBeitrag || (isJbMatched ? (window._jbAllBeitraege || []).find(b => String(b.PersonNumber) === String(tx.matchedInvoice?.PersonNumber) || String(b.id) === String(tx.matchedInvoice?.id)) : null);
+
   return {
     txIdx,
     tx,
@@ -2174,8 +2317,8 @@ window.bhBankPrepareBookingItem = function(txIdx, customBelegNr, isBatch = false
     entries,
     bookBtn,
     matchedInvoice: tx.matchedInvoice,
-    matchedBeitrag: tx.matchedBeitrag,
-    isJahresbeitrag: tx.isJahresbeitrag
+    matchedBeitrag: resolvedBeitrag,
+    isJahresbeitrag: isJbMatched
   };
 };
 
@@ -3261,10 +3404,20 @@ window.bhBankDeleteRule = function(idx) {
 // =====================================================================
 // SPLIT-BUCHUNG MODAL & VERARBEITUNG
 // =====================================================================
-window.bhBankOpenSplitModal = function(txIdx) {
+window.bhBankOpenSplitModal = async function(txIdx) {
   const rows = window._bhBankMatchResults || [];
   const tx = rows[txIdx];
   if (!tx) return;
+
+  // Falls einer Rechnung zugeordnet und noch kein Split erfasst: Positionen nachladen & anwenden
+  if (tx.matchedInvoice && (!tx.splitRows || tx.splitRows.length === 0)) {
+    if (typeof window.rnGetInvoicePositions === 'function') {
+      const positions = await window.rnGetInvoicePositions(tx.matchedInvoice.id);
+      if (positions && positions.length > 0 && typeof window.bhBankApplyInvoicePositionsToTx === 'function') {
+        window.bhBankApplyInvoicePositionsToTx(tx, tx.matchedInvoice, positions);
+      }
+    }
+  }
 
   window._bhSplitCurrentTxIndex = txIdx;
   const isCredit = tx.isCredit;
@@ -3648,6 +3801,7 @@ window.bhBankSaveSplitBooking = function(txIdx) {
 
   // Split auf dem Transaktionsobjekt im Speicher ablegen
   tx.isSplit = true;
+  tx._customSplitEdited = true;
   tx.splitRows = JSON.parse(JSON.stringify(splitRows));
 
   const txBankKonto = bhBankGetAccountForIban(tx.accountIban, '1020');
@@ -3661,6 +3815,7 @@ window.bhBankSaveSplitBooking = function(txIdx) {
 
   if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
     window._bhBankTransactions[txIdx].isSplit = true;
+    window._bhBankTransactions[txIdx]._customSplitEdited = true;
     window._bhBankTransactions[txIdx].splitRows = JSON.parse(JSON.stringify(splitRows));
     window._bhBankTransactions[txIdx].suggestedSoll = tx.suggestedSoll;
     window._bhBankTransactions[txIdx].suggestedHaben = tx.suggestedHaben;
@@ -3685,10 +3840,12 @@ window.bhBankClearSplit = function(txIdx) {
   if (!tx) return;
 
   tx.isSplit = false;
+  tx._customSplitEdited = true;
   delete tx.splitRows;
 
   if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
     window._bhBankTransactions[txIdx].isSplit = false;
+    window._bhBankTransactions[txIdx]._customSplitEdited = true;
     delete window._bhBankTransactions[txIdx].splitRows;
   }
 

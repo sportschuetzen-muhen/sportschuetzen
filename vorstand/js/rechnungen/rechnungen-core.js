@@ -184,6 +184,12 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
     if (result.success) {
       window._invoices = result.data || [];
       window._jbAllInvoices = window._invoices; // Keep jahresbeitrag cache in sync!
+      window._invoicePositionsCache = window._invoicePositionsCache || {};
+      window._invoices.forEach(inv => {
+        if (Array.isArray(inv.positions) && inv.positions.length > 0) {
+          window._invoicePositionsCache[String(inv.id).trim()] = inv.positions;
+        }
+      });
       window.renderRechnungen();
     } else {
       throw new Error(result.error || "API returned success: false");
@@ -203,6 +209,37 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
         </div>`;
     }
   }
+};
+
+// Hilfsfunktion: Gibt die Positionen einer Rechnung zurück (aus RAM-Cache, Invoice-Objekt oder Remote per getInvoiceDetails)
+window.rnGetInvoicePositions = async function(invoiceId) {
+  if (!invoiceId) return [];
+  const idStr = String(invoiceId).trim();
+  window._invoicePositionsCache = window._invoicePositionsCache || {};
+  
+  if (window._invoicePositionsCache[idStr] && Array.isArray(window._invoicePositionsCache[idStr]) && window._invoicePositionsCache[idStr].length > 0) {
+    return window._invoicePositionsCache[idStr];
+  }
+  
+  const inv = (window._invoices || []).find(i => String(i.id).trim() === idStr);
+  if (inv && Array.isArray(inv.positions) && inv.positions.length > 0) {
+    window._invoicePositionsCache[idStr] = inv.positions;
+    return inv.positions;
+  }
+  
+  // Remote Nachladen via getInvoiceDetails (Live-GAS Fallback)
+  try {
+    const res = await apiFetch('rechnungen', { action: 'getInvoiceDetails', invoiceId: idStr });
+    const json = await res.json();
+    if (json && json.success && Array.isArray(json.positions)) {
+      window._invoicePositionsCache[idStr] = json.positions;
+      if (inv) inv.positions = json.positions;
+      return json.positions;
+    }
+  } catch (err) {
+    console.warn("⚠️ rnGetInvoicePositions Nachladen fehlgeschlagen für " + idStr, err);
+  }
+  return [];
 };
 
 // Standard-Vorlagen initialisieren
