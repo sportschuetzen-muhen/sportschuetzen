@@ -799,7 +799,7 @@ const bgModuleLoader = {
             id: 'buchhaltung',
             label: 'Buchhaltung',
             load: () => (typeof window.loadBuchhaltungData === 'function' ? window.loadBuchhaltungData(true) : Promise.resolve()),
-            isLoaded: () => typeof window._bhJournalData !== 'undefined' && window._bhJournalData !== null && window._bhJournalData.length > 0
+            isLoaded: () => (typeof window._bhJournal !== 'undefined' && window._bhJournal !== null && window._bhJournal.length > 0) || (typeof window._bhJournalData !== 'undefined' && window._bhJournalData !== null && window._bhJournalData.length > 0)
         },
         {
             id: 'inventar',
