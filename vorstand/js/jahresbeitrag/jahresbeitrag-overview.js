@@ -986,12 +986,15 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     if (!res.success) throw new Error(res.error);
     
     // Status lokal sofort aktualisieren
+    const nowSwissStr = (typeof formatSwissDate === 'function') ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
     r.mail_status = 'gesendet';
+    r.send_date = res.sendDate || nowSwissStr;
     const allInvs = window._invoices || window._jbAllInvoices || [];
     const targetInv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
     if (targetInv) {
       targetInv.mail_status = 'gesendet';
-      targetInv.updated_at = (typeof formatSwissDate === 'function') ? formatSwissDate(new Date()) : new Date().toISOString();
+      targetInv.send_date = res.sendDate || nowSwissStr;
+      targetInv.updated_at = nowSwissStr;
     }
     
     showToast(`✉️ E-Mail-Rechnung erfolgreich an ${name} (${email}) gesendet!`);

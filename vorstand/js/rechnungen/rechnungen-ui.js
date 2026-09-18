@@ -362,14 +362,15 @@ window.renderTabArchiv = function(content) {
               <th style="width: 44px;" class="text-center">
                 <input type="checkbox" class="form-check-input" id="rn-table-select-all" title="Alle sichtbaren Rechnungen auswählen" onchange="rnToggleTableSelectAll(this.checked)">
               </th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('id')" style="width: 155px;">Rechnungs-ID ${rnGetSortIndicator('id')}</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('id')" style="width: 145px;">Rechnungs-ID ${rnGetSortIndicator('id')}</th>
               <th class="bh-sort-header" onclick="rnSortInvoices('name')">Empfänger ${rnGetSortIndicator('name')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('created_at')" style="width: 140px;">Datum ${rnGetSortIndicator('created_at')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('year')" style="width: 90px;">Jahr ${rnGetSortIndicator('year')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('type')" style="width: 150px;">Typ ${rnGetSortIndicator('type')}</th>
-              <th class="bh-sort-header text-center" onclick="rnSortInvoices('status')" style="width: 155px;">Status ${rnGetSortIndicator('status')}</th>
-              <th class="bh-sort-header text-end" onclick="rnSortInvoices('total_amount')" style="width: 150px;">Betrag ${rnGetSortIndicator('total_amount')}</th>
-              <th class="text-end" style="width: 160px;">Aktionen</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('created_at')" style="width: 130px;" title="Datum der Rechnungserstellung (Fakturierung)">Rechnungsdatum ${rnGetSortIndicator('created_at')}</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('send_date')" style="width: 130px;" title="Datum des E-Mail-Versands">Versanddatum ${rnGetSortIndicator('send_date')}</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('year')" style="width: 80px;">Jahr ${rnGetSortIndicator('year')}</th>
+              <th class="bh-sort-header" onclick="rnSortInvoices('type')" style="width: 130px;">Typ ${rnGetSortIndicator('type')}</th>
+              <th class="bh-sort-header text-center" onclick="rnSortInvoices('status')" style="width: 140px;">Status ${rnGetSortIndicator('status')}</th>
+              <th class="bh-sort-header text-end" onclick="rnSortInvoices('total_amount')" style="width: 135px;">Betrag ${rnGetSortIndicator('total_amount')}</th>
+              <th class="text-end" style="width: 150px;">Aktionen</th>
             </tr>
           </thead>
           <tbody id="rn-tbody">
@@ -398,7 +399,9 @@ window.rnRenderTable = function() {
       String(i.id).toLowerCase().includes(query) ||
       String(i.name).toLowerCase().includes(query) ||
       String(i.document_ref).toLowerCase().includes(query) ||
-      String(i.PersonNumber).toLowerCase().includes(query);
+      String(i.PersonNumber).toLowerCase().includes(query) ||
+      String(i.send_date || '').toLowerCase().includes(query) ||
+      String(i.created_at || '').toLowerCase().includes(query);
 
     const st = String(i.status || '').toLowerCase();
     const isPaid = st === 'bezahlt';
@@ -454,7 +457,7 @@ window.rnRenderTable = function() {
     if (col === 'total_amount' || col === 'year') {
       valA = Number(valA || 0);
       valB = Number(valB || 0);
-    } else if (col === 'created_at') {
+    } else if (col === 'created_at' || col === 'send_date') {
       const parseD = (dStr) => {
         if (!dStr) return 0;
         const str = String(dStr).trim();
@@ -481,7 +484,7 @@ window.rnRenderTable = function() {
 
   // 3. Tabellenzeilen generieren
   if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine passenden Rechnungen gefunden.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Keine passenden Rechnungen gefunden.</td></tr>`;
     if (typeof rnOnTableRowSelectChange === 'function') rnOnTableRowSelectChange();
     return;
   }
@@ -545,12 +548,24 @@ window.rnRenderTable = function() {
     }
 
     const mailSentBadge = item.mail_status === 'gesendet'
-      ? `<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:11px;" title="Rechnung wurde per E-Mail versendet"><i class="fas fa-check me-0.5"></i>Mail gesendet</span>`
+      ? `<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:11px;" title="Rechnung wurde per E-Mail versendet${item.send_date ? ' am ' + escapeHtml(item.send_date) : ''}"><i class="fas fa-check me-0.5"></i>Mail gesendet</span>`
       : '';
 
     const createdDisplay = typeof isoToDisplay === 'function'
       ? (isoToDisplay(item.created_at) || '–')
       : (item.created_at ? escapeHtml(String(item.created_at).split(' ')[0]) : '–');
+
+    let sendDisplay = '–';
+    if (item.send_date) {
+      const sRaw = String(item.send_date).trim();
+      if (typeof isoToDisplay === 'function' && sRaw.includes('T')) {
+        sendDisplay = isoToDisplay(sRaw) || sRaw;
+      } else {
+        sendDisplay = escapeHtml(sRaw);
+      }
+    } else if (item.mail_status === 'gesendet') {
+      sendDisplay = '<span class="text-success small fst-italic" title="Rechnung versendet (Datum nicht hinterlegt)"><i class="fas fa-check me-1"></i>gesendet</span>';
+    }
 
     return `
       <tr class="bh-account-row" id="rn-row-${item.id}">
@@ -569,7 +584,10 @@ window.rnRenderTable = function() {
           </div>
           ${numberLabel}
         </td>
-        <td class="text-muted font-monospace" style="font-size: 13.5px;">${createdDisplay}</td>
+        <td class="text-muted font-monospace" style="font-size: 13px;" title="Rechnungsdatum: ${createdDisplay}">${createdDisplay}</td>
+        <td class="text-muted font-monospace" style="font-size: 13px;" title="${item.send_date ? 'Versandt am: ' + escapeHtml(item.send_date) : (item.mail_status === 'gesendet' ? 'Rechnung wurde versendet' : 'Noch nicht versendet')}">
+          ${item.send_date ? `<span class="text-dark"><i class="fas fa-paper-plane text-success me-1" style="font-size:11px;"></i>${sendDisplay}</span>` : sendDisplay}
+        </td>
         <td class="text-muted font-monospace" style="font-size: 14px; font-weight: 500;">${item.year}</td>
         <td>
           <span class="badge bg-light text-dark border" style="font-size: 12.5px; padding: 5px 10px;">
@@ -733,7 +751,8 @@ window.rnOpenDetailsModal = async function(invoiceId) {
           <div class="col-6 text-end">
             <div class="small text-muted fw-semibold">Status:</div>
             <span class="badge ${inv.status === 'bezahlt' ? 'bg-success' : 'bg-warning text-dark'} px-2.5 py-1.5 rounded-pill mt-1 fw-bold">${inv.status}</span>
-            <div class="text-muted small mt-1 font-monospace" style="font-size:11px;">Fakturierung: ${inv.created_at}</div>
+            <div class="text-muted small mt-1 font-monospace" style="font-size:11px;">Rechnungsdatum: ${inv.created_at || '–'}</div>
+            <div class="text-muted small font-monospace" style="font-size:11px;">Versanddatum: ${inv.send_date ? escapeHtml(inv.send_date) : (inv.mail_status === 'gesendet' ? '<span class="text-success"><i class="fas fa-check me-0.5"></i>gesendet</span>' : '–')}</div>
           </div>
         </div>
 

@@ -616,6 +616,11 @@ window.rnExecuteSendMail = async function(invoiceId) {
         if (bsModal) bsModal.hide();
       }
       showSuccess(`🎉 E-Mail erfolgreich an ${targetEmail} versandt!`);
+      const targetInv = (window._invoices || []).find(x => String(x.id).trim() === String(invoiceId).trim());
+      if (targetInv) {
+        targetInv.mail_status = 'gesendet';
+        targetInv.send_date = result.sendDate || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+      }
       await loadRechnungenData(true);
     } else {
       throw new Error(result.error || "E-Mail-Versand fehlgeschlagen.");
@@ -3918,6 +3923,7 @@ window.rnExecuteMassSend = async function() {
       if (result.success) {
         successCount++;
         inv.mail_status = 'gesendet';
+        inv.send_date = result.sendDate || nowSwiss;
         inv.updated_at = nowSwiss;
         if (badge) {
           badge.className = 'badge bg-success text-white py-1.5 px-2.5';
