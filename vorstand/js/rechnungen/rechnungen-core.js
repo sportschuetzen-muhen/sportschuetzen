@@ -91,48 +91,17 @@ window.rnGetMembersList = function() {
   return [];
 };
 
-// Asynchrones Sicherstellen, dass Members100-Daten im RAM vorliegen
+// Asynchrones Sicherstellen, dass Members100-Daten im RAM vorliegen (nutzt den zentralen deduplizierten Loader)
 window.rnEnsureMembersLoaded = async function(force = false) {
   const current = window.rnGetMembersList();
   if (!force && current.length > 0) {
     return current;
   }
 
-  // 1. Falls Preload-Promise von main.js aktiv ist, darauf warten
-  if (window._mglPreloadPromise) {
-    try {
-      await window._mglPreloadPromise;
-      const loaded = window.rnGetMembersList();
-      if (loaded.length > 0) return loaded;
-    } catch (_) {}
-  }
-
-  // 2. Direkt und schnell aus Members100 Backend laden
-  try {
-    const res = await apiFetch('mitglieder', 'action=getAll');
-    const raw = await res.text();
-    let data;
-    try { data = JSON.parse(raw); } catch (_) {}
-    if (data && (data.success || Array.isArray(data))) {
-      const list = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
-      if (list.length > 0) {
-        window._mglData = list;
-        if (window.AppCache) {
-          const existing = window.AppCache.get('mitglieder') || {};
-          window.AppCache.set('mitglieder', { ...existing, data: list }, 120);
-        }
-        return window._mglData;
-      }
-    }
-  } catch (err) {
-    console.warn("⚠️ Fehler beim direkten Abruf der Members100-Daten:", err);
-  }
-
-  // 3. Fallback: loadMitgliederData
-  if (typeof loadMitgliederData === 'function') {
-    try {
-      await loadMitgliederData(force);
-    } catch (_) {}
+  if (typeof window.ensureMitgliederLoaded === 'function') {
+    await window.ensureMitgliederLoaded(force);
+  } else if (typeof loadMitgliederData === 'function') {
+    await loadMitgliederData(force);
   }
 
   return window.rnGetMembersList();

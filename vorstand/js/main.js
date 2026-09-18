@@ -560,9 +560,18 @@ function showApp() {
     const roleLabel = roles.length ? roles.join(', ') : 'gast';
     const primaryRole = roles[0] || 'gast';
 
-    document.getElementById('user-info').innerText = `${currentUser} (${roleLabel})`;
-    document.getElementById('user-badge-mobile').innerText = primaryRole;
-    
+    // Sofortige Cache-Wärmung aus AppCache für 0 ms Ladezeit
+    if (window.AppCache) {
+        const cachedMgl = window.AppCache.get('mitglieder');
+        if (cachedMgl && Array.isArray(cachedMgl.data) && cachedMgl.data.length > 0) {
+            window._mglData = cachedMgl.data;
+            if (cachedMgl.lizenzen) window._mglLizenzenCache = cachedMgl.lizenzen;
+            if (cachedMgl.funktionen) window._mglFunktionenCache = cachedMgl.funktionen;
+            if (cachedMgl.historie) window._mglHistoryCache = cachedMgl.historie;
+            console.log(`⚡ AppCache: ${window._mglData.length} Mitglieder sofort im RAM verfügbar.`);
+        }
+    }
+
     const dbUserName = document.getElementById('dashboard-user-name');
     if (dbUserName) dbUserName.innerText = currentUser;
 
@@ -994,66 +1003,21 @@ async function silentInitialLoad() {
             })();
         }
 
-        // 2. Mitglieder bulk load
-        if (typeof loadMitgliederData === 'function') {
+        // 2. Mitglieder bulk load (Dedupliziert & sequentiell über ensureMitgliederLoaded)
+        if (typeof window.ensureMitgliederLoaded === 'function' || typeof loadMitgliederData === 'function') {
             window._mglPreloadPromise = (async () => {
-                const [resAll, resLizz, resFn, resHist] = await Promise.all([
-                    apiFetch('mitglieder', 'action=getAll'),
-                    apiFetch('mitglieder', 'action=getLizenzen'),
-                    apiFetch('mitglieder', 'action=getFunktionen'),
-                    apiFetch('mitglieder', 'action=getHistorie')
-                ]);
-
-                let data = null, lizzData = null, fnData = null, histData = null;
-                try { data = await resAll.json(); } catch (_) {}
-                try { lizzData = await resLizz.json(); } catch (_) {}
-                try { fnData = await resFn.json(); } catch (_) {}
-                try { histData = await resHist.json(); } catch (_) {}
-
-                if (data && data.success && Array.isArray(data.data)) {
-                    window._mglData = data.data;
-
-                    window._mglLizenzenCache = {};
-                    if (lizzData && lizzData.success && Array.isArray(lizzData.data)) {
-                        lizzData.data.forEach(l => {
-                            const pnKey = String(l.PersonNumber || '').trim();
-                            if (pnKey) {
-                                if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
-                                window._mglLizenzenCache[pnKey].push(l);
-                            }
-                        });
-                    }
-
-                    window._mglFunktionenCache = {};
-                    if (fnData && fnData.success && Array.isArray(fnData.data)) {
-                        fnData.data.forEach(f => {
-                            const pnKey = String(f.PersonNumber || '').trim();
-                            if (pnKey) {
-                                if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
-                                window._mglFunktionenCache[pnKey].push(f);
-                            }
-                        });
-                    }
-
-                    window._mglHistoryCache = {};
-                    if (histData && histData.success && Array.isArray(histData.data)) {
-                        histData.data.forEach(h => {
-                            const pnKey = String(h.PersonNumber || '').trim();
-                            if (pnKey) {
-                                if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
-                                window._mglHistoryCache[pnKey].push(h);
-                            }
-                        });
-                    }
-
-                    const activeView = document.querySelector('.module-view.active');
-                    const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
-                    if (activeViewId === 'mitglieder') {
-                        if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
-                        if (typeof mglFilter === 'function') mglFilter();
-                    }
-                    console.log("✅ Initiales Bulk-Loading: Mitglieder geladen.");
+                if (typeof window.ensureMitgliederLoaded === 'function') {
+                    await window.ensureMitgliederLoaded();
+                } else if (typeof loadMitgliederData === 'function') {
+                    await loadMitgliederData(false);
                 }
+                const activeView = document.querySelector('.module-view.active');
+                const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
+                if (activeViewId === 'mitglieder') {
+                    if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
+                    if (typeof mglFilter === 'function') mglFilter();
+                }
+                console.log("✅ Initiales Bulk-Loading: Mitglieder geladen.");
             })();
         }
 
@@ -1150,65 +1114,15 @@ async function runBackgroundSync() {
             }
         }
 
-        // 2. Synchronisierung Mitglieder
-        if (typeof loadMitgliederData === 'function') {
-            console.log("🔄 Background Sync: Lade Mitglieder & Details...");
-
-            const [resAll, resLizz, resFn, resHist] = await Promise.all([
-                apiFetch('mitglieder', 'action=getAll'),
-                apiFetch('mitglieder', 'action=getLizenzen'),
-                apiFetch('mitglieder', 'action=getFunktionen'),
-                apiFetch('mitglieder', 'action=getHistorie')
-            ]);
-
-            let data = null, lizzData = null, fnData = null, histData = null;
-            try { data = await resAll.json(); } catch (_) {}
-            try { lizzData = await resLizz.json(); } catch (_) {}
-            try { fnData = await resFn.json(); } catch (_) {}
-            try { histData = await resHist.json(); } catch (_) {}
-
-            if (data && data.success && Array.isArray(data.data)) {
-                window._mglData = data.data;
-
-                window._mglLizenzenCache = {};
-                if (lizzData && lizzData.success && Array.isArray(lizzData.data)) {
-                    lizzData.data.forEach(l => {
-                        const pnKey = String(l.PersonNumber || '').trim();
-                        if (pnKey) {
-                            if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
-                            window._mglLizenzenCache[pnKey].push(l);
-                        }
-                    });
-                }
-
-                window._mglFunktionenCache = {};
-                if (fnData && fnData.success && Array.isArray(fnData.data)) {
-                    fnData.data.forEach(f => {
-                        const pnKey = String(f.PersonNumber || '').trim();
-                        if (pnKey) {
-                            if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
-                            window._mglFunktionenCache[pnKey].push(f);
-                        }
-                    });
-                }
-
-                window._mglHistoryCache = {};
-                if (histData && histData.success && Array.isArray(histData.data)) {
-                    histData.data.forEach(h => {
-                        const pnKey = String(h.PersonNumber || '').trim();
-                        if (pnKey) {
-                            if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
-                            window._mglHistoryCache[pnKey].push(h);
-                        }
-                    });
-                }
-
-                if (activeViewId === 'mitglieder') {
-                    if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
-                    if (typeof mglFilter === 'function') mglFilter();
-                }
-                console.log("✅ Background Sync: Mitglieder erfolgreich synchronisiert.");
+        // 2. Synchronisierung Mitglieder (über deduplizierten Loader)
+        if (typeof window.ensureMitgliederLoaded === 'function') {
+            console.log("🔄 Background Sync: Synchronisiere Mitglieder...");
+            await window.ensureMitgliederLoaded(true);
+            if (activeViewId === 'mitglieder' && typeof renderMitgliederView === 'function') {
+                renderMitgliederView(window._mglData);
+                if (typeof mglFilter === 'function') mglFilter();
             }
+            console.log("✅ Background Sync: Mitglieder erfolgreich synchronisiert.");
         }
         
         console.log("✅ Background Sync: Erfolgreich abgeschlossen.");

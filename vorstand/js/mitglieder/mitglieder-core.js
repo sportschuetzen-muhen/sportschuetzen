@@ -10,34 +10,103 @@ window._mglLizenzenCache = window._mglLizenzenCache || {};
 window._mglFunktionenCache = window._mglFunktionenCache || {};
 window._mglHistoryCache = window._mglHistoryCache || {};
 
-async function loadMitgliederData(forceReload = false) {
-  const container = document.getElementById('mitglieder-container');
-  
-  // Wenn kein forceReload und Preload läuft, darauf warten
-  if (!forceReload && (!window._mglData || window._mglData.length === 0) && window._mglPreloadPromise) {
-    console.log("⏳ loadMitgliederData: Warte auf laufenden Preload im Hintergrund...");
-    if (container) {
-      container.innerHTML = `
-        <div class="text-center py-5">
-          <div class="spinner-border text-primary"></div>
-          <p class="mt-2 text-muted">Lade Mitglieder & Details (Preload im Hintergrund)…</p>
-        </div>`;
-    }
-    try {
-      await window._mglPreloadPromise;
-    } catch (e) {
-      console.error("❌ Fehler beim Warten auf Preload:", e);
+// Globaler Singleton-Promise zur Vermeidung paralleler Anfragen
+window._mglLoadPromise = null;
+
+// Zentraler, deduplizierter Loader für Mitgliederdaten (ohne parallele Mammut-Calls)
+window.ensureMitgliederLoaded = async function(forceReload = false) {
+  // 1. Bereits im RAM vorhanden?
+  if (!forceReload && Array.isArray(window._mglData) && window._mglData.length > 0) {
+    return window._mglData;
+  }
+
+  // 2. Blitzschnell aus AppCache (localStorage) laden (0 ms Wartezeit)
+  if (!forceReload && window.AppCache) {
+    const cached = window.AppCache.get('mitglieder');
+    if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+      window._mglData = cached.data;
+      if (cached.lizenzen) window._mglLizenzenCache = cached.lizenzen;
+      if (cached.funktionen) window._mglFunktionenCache = cached.funktionen;
+      if (cached.historie) window._mglHistoryCache = cached.historie;
+      return window._mglData;
     }
   }
 
-  // Wenn Caches bereits geladen sind und kein forceReload erzwungen wird,
-  // laden wir direkt und instant aus dem RAM oder AppCache!
+  // 3. Läuft bereits ein Netzwerk-Request? Genau denselben Promise mitbenutzen!
+  if (window._mglLoadPromise) {
+    return window._mglLoadPromise;
+  }
+
+  // 4. Einzelner, zielgerichteter API-Call NUR für Mitglieder (keine Mammut-Parallelen!)
+  window._mglLoadPromise = (async () => {
+    try {
+      console.log("📡 ensureMitgliederLoaded: Rufe Mitgliederliste (action=getAll) ab...");
+      const res = await apiFetch('mitglieder', 'action=getAll');
+      const rawText = await res.text();
+
+      let data = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch (jsonErr) {
+        console.warn('⚠️ Mitglieder API: HTML statt JSON erhalten (GAS Login oder Quota):', rawText.slice(0, 180));
+      }
+
+      if (data && data.success && Array.isArray(data.data)) {
+        window._mglData = data.data;
+        if (window.AppCache) {
+          const prev = window.AppCache.get('mitglieder') || {};
+          window.AppCache.set('mitglieder', {
+            ...prev,
+            data: window._mglData
+          }, 120);
+        }
+        // Event auslösen für geöffnete Rechnungs-Modals / Dropdowns
+        window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
+        return window._mglData;
+      }
+
+      // Fallback: Wenn Server HTML liefert, prüfe ob alte gecachte Daten existieren
+      if (window.AppCache) {
+        const fallback = window.AppCache.get('mitglieder');
+        if (fallback && Array.isArray(fallback.data) && fallback.data.length > 0) {
+          console.info("ℹ️ Verwende gecachte Mitglieder aus AppCache als Ausweichdaten.");
+          window._mglData = fallback.data;
+          window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
+          return window._mglData;
+        }
+      }
+
+      // Weiterer Fallback: Jahresbeitrag-Mitgliederliste
+      if (Array.isArray(window._jbMembers) && window._jbMembers.length > 0) {
+        window._mglData = window._jbMembers;
+        window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
+        return window._mglData;
+      }
+
+      if (data && !data.success) {
+        throw new Error(data.error || 'Server meldete success: false');
+      }
+    } catch (e) {
+      console.error('❌ ensureMitgliederLoaded Fehler:', e);
+    } finally {
+      window._mglLoadPromise = null;
+    }
+
+    return window._mglData || [];
+  })();
+
+  return window._mglLoadPromise;
+};
+
+async function loadMitgliederData(forceReload = false) {
+  const container = document.getElementById('mitglieder-container');
+  
+  // 1. Schneller Vorab-Check (RAM oder AppCache)
   if (!forceReload) {
     if (window._mglData && window._mglData.length > 0) {
       console.log("⚡ loadMitgliederData: Lade aus RAM-Cache...");
-      _mglData = window._mglData;
       if (container) {
-        renderMitgliederView(_mglData);
+        renderMitgliederView(window._mglData);
         if (typeof mglFilter === 'function') mglFilter();
       }
       return;
@@ -46,13 +115,12 @@ async function loadMitgliederData(forceReload = false) {
       const cached = window.AppCache.get('mitglieder');
       if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
         console.log("⚡ loadMitgliederData: Lade ohne Netzwerk-Wartezeit aus AppCache (localStorage)...");
-        _mglData = cached.data;
         window._mglData = cached.data;
-        _mglLizenzenCache = cached.lizenzen || {};
-        _mglFunktionenCache = cached.funktionen || {};
-        _mglHistoryCache = cached.historie || {};
+        window._mglLizenzenCache = cached.lizenzen || {};
+        window._mglFunktionenCache = cached.funktionen || {};
+        window._mglHistoryCache = cached.historie || {};
         if (container) {
-          renderMitgliederView(_mglData);
+          renderMitgliederView(window._mglData);
           if (typeof mglFilter === 'function') mglFilter();
         }
         return;
@@ -64,114 +132,110 @@ async function loadMitgliederData(forceReload = false) {
     container.innerHTML = `
       <div class="text-center py-5">
         <div class="spinner-border text-primary"></div>
-        <p class="mt-2 text-muted">Lade Mitglieder & Details…</p>
+        <p class="mt-2 text-muted">Lade Mitglieder…</p>
       </div>`;
   }
 
   try {
-    const [resAll, resLizz, resFn, resHist] = await Promise.all([
-      apiFetch('mitglieder', 'action=getAll'),
-      apiFetch('mitglieder', 'action=getLizenzen'),
-      apiFetch('mitglieder', 'action=getFunktionen'),
-      apiFetch('mitglieder', 'action=getHistorie')
-    ]);
+    // 2. Mitgliederliste abrufen (dedupliziert, einzelner fokussierter Call)
+    const list = await window.ensureMitgliederLoaded(forceReload);
 
-    // Prüfe Content-Type – wenn HTML kommt, ist das Script nicht korrekt deployed
-    const rawText = await resAll.text();
-
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch (_) {
-      // HTML zurückgekommen (Google Login-Seite oder GAS-Fehlerseite)
-      console.error('❌ Mitglieder API: HTML statt JSON erhalten:', rawText.slice(0, 300));
+    if (!list || list.length === 0) {
       if (container) {
         container.innerHTML = `
           <div class="alert alert-warning">
-            <h5>⚠️ Backend nicht erreichbar</h5>
-            <p>Das Google Apps Script für <strong>Mitglieder</strong> gibt kein JSON zurück. 
-            Mögliche Ursachen:</p>
-            <ul>
-              <li>Das Script ist noch nicht als <strong>Web App</strong> deployed</li>
-              <li>Die URL im <code>worker.js</code> zeigt noch auf ein Platzhalter-Script</li>
-              <li>Das Script hat keinen <code>doGet()</code> implementiert</li>
-            </ul>
-            <details class="mt-2">
-              <summary class="small text-muted">Technische Details</summary>
-              <pre class="small mt-2 bg-light p-2 rounded">${escapeHtml(rawText.slice(0, 500))}</pre>
-            </details>
+            <h5>⚠️ Mitglieder konnten nicht geladen werden</h5>
+            <p>Das Google Apps Script Backend antwortete nicht rechtzeitig oder lieferte ein ungültiges Format.</p>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadMitgliederData(true)">Erneut versuchen</button>
           </div>`;
       }
       return;
     }
 
-    if (!data.success) throw new Error(data.error || 'Unbekannter Fehler');
-
-    // Lizenzen indizieren
-    try {
-      const lizzData = await resLizz.json();
-      _mglLizenzenCache = {};
-      if (lizzData.success && Array.isArray(lizzData.data)) {
-        lizzData.data.forEach(l => {
-          const pnKey = String(l.PersonNumber || '').trim();
-          if (pnKey) {
-            if (!_mglLizenzenCache[pnKey]) _mglLizenzenCache[pnKey] = [];
-            _mglLizenzenCache[pnKey].push(l);
-          }
-        });
-      }
-    } catch (err) {
-      console.error('❌ Fehler beim Parsen der Lizenzen im Cache:', err);
-    }
-
-    // Funktionen indizieren
-    try {
-      const fnData = await resFn.json();
-      _mglFunktionenCache = {};
-      if (fnData.success && Array.isArray(fnData.data)) {
-        fnData.data.forEach(f => {
-          const pnKey = String(f.PersonNumber || '').trim();
-          if (pnKey) {
-            if (!_mglFunktionenCache[pnKey]) _mglFunktionenCache[pnKey] = [];
-            _mglFunktionenCache[pnKey].push(f);
-          }
-        });
-      }
-    } catch (err) {
-      console.error('❌ Fehler beim Parsen der Funktionen im Cache:', err);
-    }
-
-    // Historie indizieren
-    try {
-      const histData = await resHist.json();
-      _mglHistoryCache = {};
-      if (histData.success && Array.isArray(histData.data)) {
-        histData.data.forEach(h => {
-          const pnKey = String(h.PersonNumber || '').trim();
-          if (pnKey) {
-            if (!_mglHistoryCache[pnKey]) _mglHistoryCache[pnKey] = [];
-            _mglHistoryCache[pnKey].push(h);
-          }
-        });
-      }
-    } catch (err) {
-      console.error('❌ Fehler beim Parsen der Historie im Cache:', err);
-    }
-
-    _mglData = Array.isArray(data.data) ? data.data : [];
-    window._mglData = _mglData;
-    if (window.AppCache) {
-      window.AppCache.set('mitglieder', {
-        data: _mglData,
-        lizenzen: _mglLizenzenCache,
-        funktionen: _mglFunktionenCache,
-        historie: _mglHistoryCache
-      }, 120);
-    }
+    // Mitglieder sofort anzeigen!
     if (container) {
-      renderMitgliederView(_mglData);
+      renderMitgliederView(window._mglData);
       if (typeof mglFilter === 'function') mglFilter();
     }
+
+    // 3. Sekundäre Detail-Caches (Lizenzen, Funktionen, Historie)
+    // UNTERBINDUNG PARALLELER CALLS: Sequentiell und non-blocking im Hintergrund laden
+    (async () => {
+      try {
+        // 3a. Lizenzen
+        if (!window._mglLizenzenCache || Object.keys(window._mglLizenzenCache).length === 0 || forceReload) {
+          try {
+            const resLizz = await apiFetch('mitglieder', 'action=getLizenzen');
+            const lizzData = await resLizz.json();
+            if (lizzData && lizzData.success && Array.isArray(lizzData.data)) {
+              window._mglLizenzenCache = {};
+              lizzData.data.forEach(l => {
+                const pnKey = String(l.PersonNumber || '').trim();
+                if (pnKey) {
+                  if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
+                  window._mglLizenzenCache[pnKey].push(l);
+                }
+              });
+            }
+          } catch (err) {
+            console.warn('⚠️ Lizenzen-Cache Hintergrund-Laden:', err);
+          }
+        }
+
+        // 3b. Funktionen
+        if (!window._mglFunktionenCache || Object.keys(window._mglFunktionenCache).length === 0 || forceReload) {
+          try {
+            const resFn = await apiFetch('mitglieder', 'action=getFunktionen');
+            const fnData = await resFn.json();
+            if (fnData && fnData.success && Array.isArray(fnData.data)) {
+              window._mglFunktionenCache = {};
+              fnData.data.forEach(f => {
+                const pnKey = String(f.PersonNumber || '').trim();
+                if (pnKey) {
+                  if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
+                  window._mglFunktionenCache[pnKey].push(f);
+                }
+              });
+            }
+          } catch (err) {
+            console.warn('⚠️ Funktionen-Cache Hintergrund-Laden:', err);
+          }
+        }
+
+        // 3c. Historie
+        if (!window._mglHistoryCache || Object.keys(window._mglHistoryCache).length === 0 || forceReload) {
+          try {
+            const resHist = await apiFetch('mitglieder', 'action=getHistorie');
+            const histData = await resHist.json();
+            if (histData && histData.success && Array.isArray(histData.data)) {
+              window._mglHistoryCache = {};
+              histData.data.forEach(h => {
+                const pnKey = String(h.PersonNumber || '').trim();
+                if (pnKey) {
+                  if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
+                  window._mglHistoryCache[pnKey].push(h);
+                }
+              });
+            }
+          } catch (err) {
+            console.warn('⚠️ Historie-Cache Hintergrund-Laden:', err);
+          }
+        }
+
+        // Im AppCache mit Details speichern
+        if (window.AppCache) {
+          window.AppCache.set('mitglieder', {
+            data: window._mglData,
+            lizenzen: window._mglLizenzenCache,
+            funktionen: window._mglFunktionenCache,
+            historie: window._mglHistoryCache
+          }, 120);
+        }
+      } catch (secErr) {
+        console.warn('⚠️ Detail-Caches Hintergrund-Laden:', secErr);
+      }
+    })();
+
   } catch (e) {
     console.error('❌ loadMitgliederData:', e);
     if (container) {

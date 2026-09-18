@@ -1228,9 +1228,16 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
   }).join('');
 
   const totalCount = filteredMembers.length + filteredExternals.length;
-  const isCurrentlyLoading = memberSource.length === 0 && (window._externalContacts || []).length === 0;
+  const isMembersLoading = memberSource.length === 0 && Boolean(window._mglLoadPromise);
+  const isContactsLoading = (window._externalContacts || []).length === 0 && Boolean(window._externalContactsPromise);
 
-  let placeholderText = `-- Bitte Empfänger auswählen (${totalCount > 0 ? totalCount + ' Empfänger: ' + filteredExternals.length + ' externe, ' + filteredMembers.length + ' Mitglieder' : (isCurrentlyLoading ? 'wird aus Members100 geladen...' : 'keine Kontakte verfügbar')}) --`;
+  let placeholderText = totalCount > 0 
+    ? `-- Bitte Empfänger auswählen (${totalCount} Kontakte: ${filteredExternals.length} externe, ${filteredMembers.length} Mitglieder) --`
+    : (isMembersLoading 
+        ? '⏳ Externe Kontakte geladen – Vereinsmitglieder werden abgerufen...' 
+        : (filteredExternals.length > 0 
+            ? `-- Bitte Empfänger auswählen (${filteredExternals.length} externe Kontakte verfügbar) --` 
+            : '-- Bitte Empfänger auswählen --'));
   let html = `<option value="">${placeholderText}</option>`;
 
   // ZUERST: Externe Empfänger A–Z
@@ -1252,11 +1259,17 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
         ${memberOptions}
       </optgroup>
     `;
+  } else if (isMembersLoading) {
+    html += `
+      <optgroup label="👥 Vereinsmitglieder (wird geladen...)">
+        <option value="" disabled>⏳ Vereinsmitglieder werden vom Server geladen...</option>
+      </optgroup>
+    `;
   }
 
   if (filteredExternals.length === 0 && filteredMembers.length === 0) {
-    if (isCurrentlyLoading) {
-      html += `<option value="" disabled>⏳ Empfängerdaten werden aus Members100 geladen...</option>`;
+    if (isMembersLoading || isContactsLoading) {
+      html += `<option value="" disabled>⏳ Empfängerdaten werden geladen...</option>`;
     } else {
       html += `<option value="" disabled>⚠️ Kein Empfänger für "${escapeHtml(q)}" gefunden</option>`;
     }
@@ -1281,6 +1294,18 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
     }
   }
 };
+
+// Automatischer Re-Render wenn Mitgliederdaten im Hintergrund fertig eintreffen
+if (!window._rnMitgliederLoadedListenerAdded) {
+  window._rnMitgliederLoadedListenerAdded = true;
+  window.addEventListener('mitglieder-loaded', () => {
+    const memberSelectEl = document.getElementById('rnc-member-select');
+    if (memberSelectEl && typeof window.rnPopulateRecipientSelect === 'function') {
+      const searchInput = document.getElementById('rnc-recipient-search');
+      window.rnPopulateRecipientSelect(searchInput ? searchInput.value : '', memberSelectEl.value);
+    }
+  });
+}
 
 window.rnFilterRecipientSelect = function(query) {
   window.rnPopulateRecipientSelect(query);

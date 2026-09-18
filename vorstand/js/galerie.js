@@ -680,19 +680,15 @@ function updateTagsList() {
 
 async function loadMembersForList() {
     try {
-        if (window.AppCache && AppCache.get('mitglieder')) {
+        let list = [];
+        if (typeof window.ensureMitgliederLoaded === 'function') {
+            list = await window.ensureMitgliederLoaded();
+        } else if (window.AppCache && AppCache.get('mitglieder')) {
             const cached = AppCache.get('mitglieder');
-            if (Array.isArray(cached) && cached.length > 0) {
-                mitgliederList = cached.map(m => `${m.FirstName || ''} ${m.LastName || ''}`.trim()).sort();
-                return;
-            }
+            list = Array.isArray(cached) ? cached : (cached?.data || []);
         }
-        const res = await apiFetch('mitglieder', 'action=getAll');
-        if (res.ok) {
-            const data = await res.json();
-            if (data.data) {
-                mitgliederList = data.data.map(m => `${m.FirstName || ''} ${m.LastName || ''}`.trim()).sort();
-            }
+        if (Array.isArray(list) && list.length > 0) {
+            mitgliederList = list.map(m => `${m.FirstName || ''} ${m.LastName || ''}`.trim()).sort();
         }
     } catch (e) {
         console.error("Fehler beim Laden der Mitgliederliste", e);

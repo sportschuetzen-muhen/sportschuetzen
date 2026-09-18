@@ -60,26 +60,29 @@ async function loadMailData(force = false) {
     '<div class="text-center py-5 text-muted"><i class="fas fa-circle-notch fa-spin fa-2x mb-3"></i><br>Lade Mitglieder...</div>';
 
   try {
-    const res  = await apiFetch('mitglieder', 'action=getAll');
-    const text = await res.text();
-
-    let data;
-    try { data = JSON.parse(text); }
-    catch (e) {
-      document.getElementById('mail-container').innerHTML =
-        `<div class="alert alert-danger"><strong>Parse-Fehler:</strong><br>
-         <pre style="font-size:0.75rem;max-height:200px;overflow:auto">${text.substring(0,500)}</pre></div>`;
-      return;
+    let list = [];
+    if (typeof window.ensureMitgliederLoaded === 'function') {
+      list = await window.ensureMitgliederLoaded(forceReload);
+    } else {
+      const res  = await apiFetch('mitglieder', 'action=getAll');
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch (e) {
+        document.getElementById('mail-container').innerHTML =
+          `<div class="alert alert-danger"><strong>Parse-Fehler:</strong><br>
+           <pre style="font-size:0.75rem;max-height:200px;overflow:auto">${text.substring(0,500)}</pre></div>`;
+        return;
+      }
+      if (!data.success) {
+        document.getElementById('mail-container').innerHTML =
+          `<div class="alert alert-danger">Fehler: ${data.error || JSON.stringify(data)}</div>`;
+        return;
+      }
+      list = Array.isArray(data.data) ? data.data : [];
     }
 
-    if (!data.success) {
-      document.getElementById('mail-container').innerHTML =
-        `<div class="alert alert-danger">Fehler: ${data.error || JSON.stringify(data)}</div>`;
-      return;
-    }
-
-    // Cache im globalen Objekt window._mglData aktualisieren!
-    window._mglData = Array.isArray(data.data) ? data.data : [];
+    window._mglData = list;
 
     const seen = new Set();
     _mailAllMembers = window._mglData.filter(m => {
