@@ -66,6 +66,87 @@ window.loadInvoiceContactsData = async function() {
   }
 };
 
+// Robustes Ermitteln der verfügbaren Vereinsmitglieder (Members100) aus allen Speicherquellen
+window.rnGetMembersList = function() {
+  if (Array.isArray(window._mglData) && window._mglData.length > 0) {
+    return window._mglData;
+  }
+  if (window.AppCache) {
+    const cached = window.AppCache.get('mitglieder');
+    if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+      window._mglData = cached.data;
+      return window._mglData;
+    }
+  }
+  if (window._jbMemberMap && Object.keys(window._jbMemberMap).length > 0) {
+    const fromMap = Object.values(window._jbMemberMap);
+    if (fromMap.length > 0) {
+      window._mglData = fromMap;
+      return window._mglData;
+    }
+  }
+  if (Array.isArray(window._jbMembers) && window._jbMembers.length > 0) {
+    return window._jbMembers;
+  }
+  return [];
+};
+
+// Asynchrones Sicherstellen, dass Members100-Daten im RAM vorliegen
+window.rnEnsureMembersLoaded = async function(force = false) {
+  const current = window.rnGetMembersList();
+  if (!force && current.length > 0) {
+    return current;
+  }
+
+  // 1. Falls Preload-Promise von main.js aktiv ist, darauf warten
+  if (window._mglPreloadPromise) {
+    try {
+      await window._mglPreloadPromise;
+      const loaded = window.rnGetMembersList();
+      if (loaded.length > 0) return loaded;
+    } catch (_) {}
+  }
+
+  // 2. Direkt und schnell aus Members100 Backend laden
+  try {
+    const res = await apiFetch('mitglieder', 'action=getAll');
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch (_) {}
+    if (data && (data.success || Array.isArray(data))) {
+      const list = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
+      if (list.length > 0) {
+        window._mglData = list;
+        if (window.AppCache) {
+          const existing = window.AppCache.get('mitglieder') || {};
+          window.AppCache.set('mitglieder', { ...existing, data: list }, 120);
+        }
+        return window._mglData;
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim direkten Abruf der Members100-Daten:", err);
+  }
+
+  // 3. Fallback: loadMitgliederData
+  if (typeof loadMitgliederData === 'function') {
+    try {
+      await loadMitgliederData(force);
+    } catch (_) {}
+  }
+
+  return window.rnGetMembersList();
+};
+
+// Asynchrones Sicherstellen, dass externe Kontakte vorliegen
+window.rnEnsureContactsLoaded = async function(force = false) {
+  if (!force && Array.isArray(window._externalContacts) && window._externalContacts.length > 0) {
+    return window._externalContacts;
+  }
+  await window.loadInvoiceContactsData();
+  return window._externalContacts || [];
+};
+
 // API Endpoint to fetch template positions
 window.loadInvoiceTemplatesData = async function() {
   try {
@@ -150,10 +231,9 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
       loadInvoiceContactsData()
     ]);
     
-    // Mitgliederdaten im Hintergrund laden für Adress- und Absenderabgleich, falls noch nicht im RAM
-    if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
-      loadMitgliederData(false).catch(e => console.warn("Mitglieder Preload:", e));
-    }
+    // Mitgliederdaten & externe Kontakte im Hintergrund laden für Adress- und Absenderabgleich
+    window.rnEnsureMembersLoaded().catch(e => console.warn("Mitglieder Preload:", e));
+    window.rnEnsureContactsLoaded().catch(e => console.warn("Kontakte Preload:", e));
     
     // Prüfe Content-Type – wenn HTML kommt, ist das Script nicht korrekt deployed/erreichbar
     const rawText = await invRes.text();

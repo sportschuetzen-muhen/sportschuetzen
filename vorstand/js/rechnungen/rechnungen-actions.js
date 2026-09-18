@@ -1099,79 +1099,39 @@ function rnInitPositionsTableResizable(tableEl) {
 }
 window.rnInitPositionsTableResizable = rnInitPositionsTableResizable;
 
-// CREATE MANUALLY INVOICE MODAL
-window.rnOpenCreateModal = async function(btnEl) {
-  let modalEl = document.getElementById('rnModalCreateInvoice');
-  if (!modalEl) {
-    modalEl = document.createElement('div');
-    modalEl.id = 'rnModalCreateInvoice';
-    modalEl.className = 'modal fade';
-    modalEl.tabIndex = -1;
-    modalEl.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(modalEl);
-  }
-
-  // Externe Kontakte, Mitgliederdaten & Standard-Vorlagen sicherstellen
-  const loadTasks = [];
-  if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
-    loadTasks.push(loadMitgliederData(false).catch(e => console.warn("Mitglieder load error:", e)));
-  }
-  if (!window._externalContacts || window._externalContacts.length === 0) {
-    loadTasks.push((async () => {
-      try {
-        const response = await apiFetch('rechnungen', 'action=getContacts');
-        const result = await response.json();
-        if (result.success) {
-          window._externalContacts = result.data || [];
-        }
-      } catch (err) {
-        console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
-      }
-    })());
-  }
-  if (typeof rnInitializeTemplates === 'function') {
-    rnInitializeTemplates();
-  }
-  if (loadTasks.length > 0) {
-    let origText = '';
-    if (btnEl) {
-      origText = btnEl.innerHTML;
-      btnEl.disabled = true;
-      btnEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Kontakte laden...';
-    }
-    try {
-      await Promise.all(loadTasks);
-    } finally {
-      if (btnEl) {
-        btnEl.disabled = false;
-        btnEl.innerHTML = origText;
-      }
-    }
-  }
-
 // Hilfsfunktionen für sortierte Empfänger & Buchstabensuche
 window._rnShowInactiveMembers = false;
 
 window.rnIsMemberDeceased = function(m) {
   if (!m) return false;
-  return m.Deceased == 1 || m.Deceased === true || m.Deceased === '1' ||
-         String(m.Deceased).toLowerCase() === 'true' ||
-         Boolean(m.Todesdatum) ||
+  const dec = m.Deceased;
+  return dec == 1 || dec === true || dec === '1' ||
+         String(dec).toLowerCase() === 'true' ||
+         (Boolean(m.Todesdatum) && String(m.Todesdatum).trim() !== '' && String(m.Todesdatum).trim() !== '–' && String(m.Todesdatum).trim() !== 'null') ||
          String(m.Status || '').toLowerCase().includes('verstorben');
 };
 
 window.rnIsMemberExited = function(m) {
   if (!m) return false;
-  return Boolean(m.Vereinsaustritt) ||
-         Boolean(m.ExitDate) ||
+  const isDateSet = (v) => {
+    if (!v) return false;
+    const s = String(v).trim().toLowerCase();
+    return s !== '' && s !== '–' && s !== 'null' && s !== 'undefined' && s !== 'false' && s !== '0';
+  };
+  return isDateSet(m.Vereinsaustritt) ||
+         isDateSet(m.ExitDate) ||
+         (m.IsActive !== undefined && m.IsActive !== null && (m.IsActive == 0 || m.IsActive === false || m.IsActive === '0' || String(m.IsActive).toLowerCase() === 'false')) ||
          String(m.Status || '').toLowerCase().includes('ausgetreten') ||
-         String(m.Status || '').toLowerCase().includes('ehemalig');
+         String(m.Status || '').toLowerCase().includes('ehemalig') ||
+         String(m.Status || '').toLowerCase().includes('inaktiv');
 };
 
 window.rnToggleInactiveMembers = function(show) {
   window._rnShowInactiveMembers = Boolean(show);
   const searchInput = document.getElementById('rnc-recipient-search');
-  window.rnPopulateRecipientSelect(searchInput ? searchInput.value : '');
+  const sel = document.getElementById('rnc-member-select');
+  const currentVal = sel ? sel.value : null;
+  window.rnPopulateRecipientSelect(searchInput ? searchInput.value : '', currentVal);
 };
 
 window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedValue = null) {
@@ -1180,61 +1140,49 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
 
   const currentVal = preserveSelectedValue !== null ? preserveSelectedValue : memberSelectEl.value;
   const q = String(filterQuery || '').trim().toLowerCase();
-  const showInactive = document.getElementById('rnc-show-inactive-members')
-    ? document.getElementById('rnc-show-inactive-members').checked
-    : Boolean(window._rnShowInactiveMembers);
+  const showInactiveSwitch = document.getElementById('rnc-show-inactive-members');
+  const showInactive = showInactiveSwitch ? showInactiveSwitch.checked : Boolean(window._rnShowInactiveMembers);
 
-  // 1. Mitglieder filtern (aktive vs. verstorbene/ausgetretene) & sortieren nach Nachname, Vorname A - Z
-  const memberSource = (window._mglData && window._mglData.length > 0)
-    ? window._mglData
-    : ((window._jbMembers && window._jbMembers.length > 0)
-        ? window._jbMembers
-        : ((window.AppCache && window.AppCache.get('mitglieder')?.data) || []));
+  // 1. Externe Kontakte sortieren nach Firma bzw. Nachname, Vorname A - Z (ERSTE GRUPPE)
+  const getContactSortKey = (c) => {
+    if (c.typ === 'firma' || (!c.nachname && !c.vorname && c.firma)) {
+      return (c.firma || c.name || '').trim();
+    }
+    const ln = (c.nachname || '').trim();
+    const fn = (c.vorname || '').trim();
+    if (ln || fn) return `${ln} ${fn}`.trim();
+    return (c.firma || c.name || `ID-${c.id}`).trim();
+  };
+
+  const sortedExternals = [...(window._externalContacts || [])].sort((a, b) => {
+    const na = getContactSortKey(a);
+    const nb = getContactSortKey(b);
+    return na.localeCompare(nb, 'de', { sensitivity: 'base' });
+  });
+
+  // 2. Vereinsmitglieder (aus Members100 via rnGetMembersList) sortieren nach Nachname, Vorname A - Z (ZWEITE GRUPPE)
+  const memberSource = typeof window.rnGetMembersList === 'function'
+    ? window.rnGetMembersList()
+    : (window._mglData || []);
 
   const sortedMembers = [...memberSource]
     .filter(m => {
       const isDeceased = window.rnIsMemberDeceased(m);
       const isExited = window.rnIsMemberExited(m);
       if (!showInactive && (isDeceased || isExited)) {
-        // Falls aktuell genau dieses Mitglied gewählt ist, nicht entfernen
+        // Falls aktuell genau dieses Mitglied gewählt ist, im Dropdown erhalten
         if (currentVal && currentVal === `MBR:${m.PersonNumber}`) return true;
         return false;
       }
       return true;
     })
     .sort((a, b) => {
-      const na = `${a.LastName || ''} ${a.FirstName || ''}`.trim().toLowerCase();
-      const nb = `${b.LastName || ''} ${b.FirstName || ''}`.trim().toLowerCase();
-      return na.localeCompare(nb, 'de');
+      const na = `${(a.LastName || '').trim()} ${(a.FirstName || '').trim()}`.trim();
+      const nb = `${(b.LastName || '').trim()} ${(b.FirstName || '').trim()}`.trim();
+      return na.localeCompare(nb, 'de', { sensitivity: 'base' });
     });
 
-  // 2. Externe Kontakte sortieren nach Nachname, Vorname bzw. Firma A - Z
-  const sortedExternals = [...(window._externalContacts || [])].sort((a, b) => {
-    const getContactSortLabel = (c) => {
-      if (c.typ === 'firma' || Boolean(c.firma)) {
-        return (c.firma || c.name || '').trim().toLowerCase();
-      }
-      const ln = (c.nachname || '').trim();
-      const fn = (c.vorname || '').trim();
-      if (ln || fn) return `${ln} ${fn}`.toLowerCase();
-      return (c.name || '').trim().toLowerCase();
-    };
-    const na = getContactSortLabel(a);
-    const nb = getContactSortLabel(b);
-    return na.localeCompare(nb, 'de');
-  });
-
-  // 3. Filtern nach Suchbegriff (Name, Vorname, Firma, PersonNumber, Ort, E-Mail)
-  const filteredMembers = sortedMembers.filter(m => {
-    if (!q) return true;
-    const ln = String(m.LastName || '').toLowerCase();
-    const fn = String(m.FirstName || '').toLowerCase();
-    const pn = String(m.PersonNumber || '').toLowerCase();
-    const em = String(m.PrimaryEmail || m.Email || '').toLowerCase();
-    const city = String(m.City || m.Ort || '').toLowerCase();
-    return ln.includes(q) || fn.includes(q) || `${ln} ${fn}`.includes(q) || `${fn} ${ln}`.includes(q) || pn.includes(q) || em.includes(q) || city.includes(q);
-  });
-
+  // 3. Filtern nach Suchbegriff (Buchstabensuche: Name, Vorname, Firma, PersonNumber, Ort, E-Mail)
   const filteredExternals = sortedExternals.filter(c => {
     if (!q) return true;
     const name = String(c.name || '').toLowerCase();
@@ -1248,36 +1196,57 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
     return name.includes(q) || fn.includes(q) || ln.includes(q) || `${ln} ${fn}`.includes(q) || `${fn} ${ln}`.includes(q) || firma.includes(q) || id.includes(q) || em.includes(q) || kat.includes(q) || city.includes(q);
   });
 
+  const filteredMembers = sortedMembers.filter(m => {
+    if (!q) return true;
+    const ln = String(m.LastName || '').toLowerCase();
+    const fn = String(m.FirstName || '').toLowerCase();
+    const pn = String(m.PersonNumber || '').toLowerCase();
+    const an = String(m.AddressNumber || '').toLowerCase();
+    const em = String(m.PrimaryEmail || m.Email || '').toLowerCase();
+    const city = String(m.City || m.Ort || '').toLowerCase();
+    return ln.includes(q) || fn.includes(q) || `${ln} ${fn}`.includes(q) || `${fn} ${ln}`.includes(q) || pn.includes(q) || an.includes(q) || em.includes(q) || city.includes(q);
+  });
+
+  const externalOptions = filteredExternals.map(c => {
+    const isFirma = c.typ === 'firma' || Boolean(c.firma);
+    const label = (typeof window.rnGetContactDisplayName === 'function')
+      ? window.rnGetContactDisplayName(c)
+      : (c.firma || [c.nachname, c.vorname].filter(Boolean).join(' ') || c.name || `Kontakt #${c.id}`);
+    const kat = c.kategorie ? ` [${c.kategorie}]` : '';
+    const extra = c.ort ? ` · ${c.ort}` : (c.email ? ` · ${c.email}` : '');
+    return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${escapeHtml(extra)})</option>`;
+  }).join('');
+
   const memberOptions = filteredMembers.map(m => {
     const isDeceased = window.rnIsMemberDeceased(m);
     const isExited = !isDeceased && window.rnIsMemberExited(m);
     let tag = '';
     if (isDeceased) tag = ' [† Verstorben]';
     else if (isExited) tag = ' [Ausgetreten]';
-    return `<option value="MBR:${m.PersonNumber}">${escapeHtml(m.LastName || '')} ${escapeHtml(m.FirstName || '')}${tag} (Nr: ${escapeHtml(m.PersonNumber || '')})</option>`;
-  }).join('');
-
-  const externalOptions = filteredExternals.map(c => {
-    const isFirma = c.typ === 'firma' || Boolean(c.firma);
-    const label = (typeof window.rnGetContactDisplayName === 'function') ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `Kontakt #${c.id}`);
-    const kat = c.kategorie ? ` [${c.kategorie}]` : '';
-    return `<option value="EXT:${c.id}">${isFirma ? '🏢 ' : '👤 '}${escapeHtml(label)}${kat} (EXT-${c.id}${c.email ? ' · ' + escapeHtml(c.email) : ''})</option>`;
+    const cityInfo = (m.City || m.Ort) ? ` · ${m.City || m.Ort}` : '';
+    return `<option value="MBR:${m.PersonNumber}">👤 ${escapeHtml(m.LastName || '')} ${escapeHtml(m.FirstName || '')}${tag} (Nr: ${escapeHtml(m.PersonNumber || '')}${escapeHtml(cityInfo)})</option>`;
   }).join('');
 
   const totalCount = filteredMembers.length + filteredExternals.length;
-  let html = `<option value="">-- Bitte Empfänger auswählen (${totalCount > 0 ? totalCount + ' Empfänger verfügbar' : 'wird geladen...'}) --</option>`;
+  const isCurrentlyLoading = memberSource.length === 0 && (window._externalContacts || []).length === 0;
 
+  let placeholderText = `-- Bitte Empfänger auswählen (${totalCount > 0 ? totalCount + ' Empfänger: ' + filteredExternals.length + ' externe, ' + filteredMembers.length + ' Mitglieder' : (isCurrentlyLoading ? 'wird aus Members100 geladen...' : 'keine Kontakte verfügbar')}) --`;
+  let html = `<option value="">${placeholderText}</option>`;
+
+  // ZUERST: Externe Empfänger A–Z
   if (filteredExternals.length > 0) {
     html += `
-      <optgroup label="Gespeicherte externe Kontakte (${filteredExternals.length})">
+      <optgroup label="🏢 Externe Empfänger / Kontakte (${filteredExternals.length})">
         ${externalOptions}
       </optgroup>
     `;
   }
+
+  // DANACH: Eigene Vereinsmitglieder A–Z
   if (filteredMembers.length > 0) {
     const groupLabel = showInactive 
-      ? `Vereinsmitglieder (inkl. ehem. & verstorben: ${filteredMembers.length})` 
-      : `Vereinsmitglieder (${filteredMembers.length})`;
+      ? `👥 Vereinsmitglieder (inkl. ehem. & verstorben: ${filteredMembers.length})` 
+      : `👥 Vereinsmitglieder (${filteredMembers.length})`;
     html += `
       <optgroup label="${groupLabel}">
         ${memberOptions}
@@ -1286,7 +1255,11 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
   }
 
   if (filteredExternals.length === 0 && filteredMembers.length === 0) {
-    html += `<option value="" disabled>⚠️ Kein Empfänger für "${escapeHtml(q)}" gefunden</option>`;
+    if (isCurrentlyLoading) {
+      html += `<option value="" disabled>⏳ Empfängerdaten werden aus Members100 geladen...</option>`;
+    } else {
+      html += `<option value="" disabled>⚠️ Kein Empfänger für "${escapeHtml(q)}" gefunden</option>`;
+    }
   }
 
   memberSelectEl.innerHTML = html;
@@ -1301,7 +1274,7 @@ window.rnPopulateRecipientSelect = function(filterQuery = '', preserveSelectedVa
   if (hintEl) {
     if (q) {
       hintEl.style.display = 'inline-block';
-      hintEl.innerHTML = `<i class="fas fa-filter me-1 text-primary"></i>${filteredMembers.length + filteredExternals.length} Treffer`;
+      hintEl.innerHTML = `<i class="fas fa-filter me-1 text-primary"></i>${filteredMembers.length + filteredExternals.length} Treffer (${filteredExternals.length} extern, ${filteredMembers.length} Mgl)`;
     } else {
       hintEl.style.display = 'none';
       hintEl.innerHTML = '';
@@ -1334,6 +1307,63 @@ window.rnSelectFirstFilteredRecipient = function() {
   }
 };
 
+// CREATE MANUALLY INVOICE MODAL
+window.rnOpenCreateModal = async function(btnEl) {
+  let modalEl = document.getElementById('rnModalCreateInvoice');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'rnModalCreateInvoice';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(modalEl);
+  }
+
+  // Externe Kontakte, Mitgliederdaten (Members100) & Standard-Vorlagen sicherstellen
+  const loadTasks = [];
+  if (typeof window.rnEnsureMembersLoaded === 'function') {
+    loadTasks.push(window.rnEnsureMembersLoaded().catch(e => console.warn("Members100 load error:", e)));
+  } else if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
+    loadTasks.push(loadMitgliederData(false).catch(e => console.warn("Mitglieder load error:", e)));
+  }
+
+  if (typeof window.rnEnsureContactsLoaded === 'function') {
+    loadTasks.push(window.rnEnsureContactsLoaded().catch(e => console.warn("Contacts load error:", e)));
+  } else if (!window._externalContacts || window._externalContacts.length === 0) {
+    loadTasks.push((async () => {
+      try {
+        const response = await apiFetch('rechnungen', 'action=getContacts');
+        const result = await response.json();
+        if (result.success) {
+          window._externalContacts = result.data || [];
+        }
+      } catch (err) {
+        console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
+      }
+    })());
+  }
+
+  if (typeof rnInitializeTemplates === 'function') {
+    rnInitializeTemplates();
+  }
+
+  if (loadTasks.length > 0) {
+    let origText = '';
+    if (btnEl) {
+      origText = btnEl.innerHTML;
+      btnEl.disabled = true;
+      btnEl.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Empfänger laden...';
+    }
+    try {
+      await Promise.all(loadTasks);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = origText;
+      }
+    }
+  }
+
   modalEl.innerHTML = `
     <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 1100px;">
       <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
@@ -1353,9 +1383,9 @@ window.rnSelectFirstFilteredRecipient = function() {
             <!-- Empfänger-Auswahl -->
             <div class="row g-3 mb-3 pb-3 border-bottom">
               <div class="col-md-12">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-1" style="margin-bottom: 9px;">
-                  <label for="rnc-member-select" class="form-label fw-bold small text-muted mb-0">
-                    <i class="fas fa-user-tag me-1 text-primary"></i>Empfänger auswählen *
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-1">
+                  <label for="rnc-member-select" class="form-label fw-bold text-dark mb-0" style="font-size: 13.5px;">
+                    <i class="fas fa-user-tag me-1.5 text-primary"></i>Empfänger auswählen <span class="text-danger">*</span>
                   </label>
                   <button type="button" class="btn btn-xs btn-outline-primary fw-bold px-2.5 py-1" onclick="rnOpenContactModal()" style="font-size: 12px; border-radius: 6px;">
                     <i class="fas fa-user-plus me-1"></i> + Neuer externer Kontakt erfassen
@@ -1363,19 +1393,21 @@ window.rnSelectFirstFilteredRecipient = function() {
                 </div>
 
                 <!-- Suchfeld für Buchstabensuche -->
-                <div class="input-group input-group-sm mb-1.5 shadow-2xs">
-                  <span class="input-group-text bg-white border-end-0 text-muted">
-                    <i class="fas fa-search"></i>
+                <div class="input-group mb-2 shadow-2xs">
+                  <span class="input-group-text bg-white border-end-0 text-muted" style="border-radius: 8px 0 0 8px;">
+                    <i class="fas fa-search text-primary"></i>
                   </span>
                   <input type="text" 
                          id="rnc-recipient-search" 
                          class="form-control border-start-0 border-end-0" 
+                         style="min-height: 38px; font-size: 13.5px;"
                          placeholder="🔍 Empfänger suchen (Buchstabensuche: Name, Vorname, Firma, Nr...)" 
                          oninput="rnFilterRecipientSelect(this.value)"
                          onkeydown="if(event.key==='Enter'){ event.preventDefault(); rnSelectFirstFilteredRecipient(); }"
                          autocomplete="off">
                   <button class="btn btn-outline-secondary border-start-0" 
                           type="button" 
+                          style="border-radius: 0 8px 8px 0;"
                           onclick="rnClearRecipientSearch()" 
                           title="Suche zurücksetzen">
                     <i class="fas fa-times"></i>
@@ -1384,16 +1416,38 @@ window.rnSelectFirstFilteredRecipient = function() {
 
                 <!-- Option: Verstorbene & Ausgetretene einblenden -->
                 <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-                  <div class="form-check form-switch m-0" style="font-size: 11.5px;">
+                  <div class="form-check form-switch m-0" style="font-size: 12px;">
                     <input class="form-check-input" type="checkbox" id="rnc-show-inactive-members" onchange="rnToggleInactiveMembers(this.checked)" style="cursor: pointer;">
-                    <label class="form-check-label text-muted" for="rnc-show-inactive-members" style="cursor: pointer; user-select: none;">
-                      Auch ehemalige &amp; verstorbene Mitglieder anzeigen
+                    <label class="form-check-label text-muted fw-semibold" for="rnc-show-inactive-members" style="cursor: pointer; user-select: none;">
+                      <i class="fas fa-user-clock me-1 text-secondary"></i>Auch ehemalige &amp; verstorbene Mitglieder anzeigen
                     </label>
                   </div>
-                  <div id="rnc-search-count-hint" class="text-muted small" style="display: none; font-size: 11px;"></div>
+                  <div id="rnc-search-count-hint" class="text-muted small" style="display: none; font-size: 11.5px;"></div>
                 </div>
 
-                <select class="form-select fw-bold text-primary shadow-sm" id="rnc-member-select" required onchange="rnHandleMemberSelect(this.value)" style="min-height: 38px;">
+                <style>
+                  #rnc-member-select optgroup {
+                    font-weight: 700;
+                    color: #0f3a5d;
+                    background: #f1f5f9;
+                    font-size: 12.5px;
+                    padding: 4px;
+                  }
+                  #rnc-member-select option {
+                    font-weight: 500;
+                    color: #1e293b;
+                    background: #ffffff;
+                    padding: 4px 6px;
+                    font-size: 13.5px;
+                  }
+                </style>
+
+                <!-- Großzügiges Dropdown -->
+                <select class="form-select fw-bold text-primary shadow-sm" 
+                        id="rnc-member-select" 
+                        required 
+                        onchange="rnHandleMemberSelect(this.value)" 
+                        style="min-height: 44px; font-size: 14px; border-radius: 8px; border: 1.5px solid #cbd5e1;">
                 </select>
               </div>
             </div>
@@ -1562,10 +1616,11 @@ window.rnSelectFirstFilteredRecipient = function() {
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
   window.rnPopulateRecipientSelect('');
-  if ((!window._mglData || window._mglData.length === 0) && typeof loadMitgliederData === 'function') {
-    loadMitgliederData(false).then(() => {
-      window.rnPopulateRecipientSelect('');
-    }).catch(() => {});
+  if (typeof window.rnEnsureMembersLoaded === 'function') {
+    window.rnEnsureMembersLoaded().then(() => window.rnPopulateRecipientSelect('')).catch(() => {});
+  }
+  if (typeof window.rnEnsureContactsLoaded === 'function') {
+    window.rnEnsureContactsLoaded().then(() => window.rnPopulateRecipientSelect('')).catch(() => {});
   }
   rnMakeModalMovableAndResizable(modalEl);
   const posTable = modalEl.querySelector('#rnc-positions-table');
@@ -1616,21 +1671,39 @@ window.rnHandleMemberSelect = function(val) {
   if (detailsWrap) detailsWrap.style.display = '';
 
   if (val.startsWith('MBR:')) {
-    const personNumber = val.replace('MBR:', '');
-    const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(personNumber));
+    const personNumber = val.replace('MBR:', '').trim();
+    const members = (typeof window.rnGetMembersList === 'function')
+      ? window.rnGetMembersList()
+      : (window._mglData || []);
+    const m = members.find(x => String(x.PersonNumber).trim() === personNumber);
     if (m) {
       if (editBtn) editBtn.style.display = 'none';
+      const isDeceased = (typeof window.rnIsMemberDeceased === 'function') ? window.rnIsMemberDeceased(m) : false;
+      const isExited = (typeof window.rnIsMemberExited === 'function') ? window.rnIsMemberExited(m) : false;
       if (badgeType) badgeType.textContent = '👤 Vereinsmitglied';
-      if (badgeKat) badgeKat.textContent = m.Status || 'Aktiv';
+      if (badgeKat) {
+        if (isDeceased) {
+          badgeKat.textContent = '† Verstorben';
+          badgeKat.className = 'badge bg-dark px-2 py-1';
+        } else if (isExited) {
+          badgeKat.textContent = 'Ausgetreten / Ehemalig';
+          badgeKat.className = 'badge bg-secondary px-2 py-1';
+        } else {
+          badgeKat.textContent = m._kategorie || m.Status || 'Aktiv';
+          badgeKat.className = 'badge bg-success px-2 py-1';
+        }
+      }
       if (cpCol) cpCol.style.display = 'none';
       if (abtCol) abtCol.style.display = 'none';
 
       document.getElementById('rnc-person-number').value = m.PersonNumber || '';
-      document.getElementById('rnc-name').value = `${m.LastName} ${m.FirstName}`;
+      document.getElementById('rnc-name').value = `${m.LastName || ''} ${m.FirstName || ''}`.trim();
       document.getElementById('rnc-email').value = m.PrimaryEmail || m.Email || '';
       document.getElementById('rnc-strasse').value = m.Street || m.Strasse || '';
-      if (document.getElementById('rnc-adresszusatz')) document.getElementById('rnc-adresszusatz').value = '';
-      document.getElementById('rnc-plz').value = m.ZipCode || m.PLZ || '';
+      if (document.getElementById('rnc-adresszusatz')) {
+        document.getElementById('rnc-adresszusatz').value = m.Addition || m.Adresszusatz || '';
+      }
+      document.getElementById('rnc-plz').value = m.PostCode || m.ZipCode || m.PLZ || '';
       document.getElementById('rnc-ort').value = m.City || m.Ort || '';
       document.getElementById('rnc-type').value = 'Jahresbeitrag';
     }

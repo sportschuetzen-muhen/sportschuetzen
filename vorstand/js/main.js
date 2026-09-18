@@ -1004,40 +1004,47 @@ async function silentInitialLoad() {
                     apiFetch('mitglieder', 'action=getHistorie')
                 ]);
 
-                const data = await resAll.json();
-                const lizzData = await resLizz.json();
-                const fnData = await resFn.json();
-                const histData = await resHist.json();
+                let data = null, lizzData = null, fnData = null, histData = null;
+                try { data = await resAll.json(); } catch (_) {}
+                try { lizzData = await resLizz.json(); } catch (_) {}
+                try { fnData = await resFn.json(); } catch (_) {}
+                try { histData = await resHist.json(); } catch (_) {}
 
-                if (data.success && lizzData.success && fnData.success && histData.success) {
-                    window._mglData = Array.isArray(data.data) ? data.data : [];
+                if (data && data.success && Array.isArray(data.data)) {
+                    window._mglData = data.data;
 
                     window._mglLizenzenCache = {};
-                    lizzData.data.forEach(l => {
-                        const pnKey = String(l.PersonNumber || '').trim();
-                        if (pnKey) {
-                            if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
-                            window._mglLizenzenCache[pnKey].push(l);
-                        }
-                    });
+                    if (lizzData && lizzData.success && Array.isArray(lizzData.data)) {
+                        lizzData.data.forEach(l => {
+                            const pnKey = String(l.PersonNumber || '').trim();
+                            if (pnKey) {
+                                if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
+                                window._mglLizenzenCache[pnKey].push(l);
+                            }
+                        });
+                    }
 
                     window._mglFunktionenCache = {};
-                    fnData.data.forEach(f => {
-                        const pnKey = String(f.PersonNumber || '').trim();
-                        if (pnKey) {
-                            if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
-                            window._mglFunktionenCache[pnKey].push(f);
-                        }
-                    });
+                    if (fnData && fnData.success && Array.isArray(fnData.data)) {
+                        fnData.data.forEach(f => {
+                            const pnKey = String(f.PersonNumber || '').trim();
+                            if (pnKey) {
+                                if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
+                                window._mglFunktionenCache[pnKey].push(f);
+                            }
+                        });
+                    }
 
                     window._mglHistoryCache = {};
-                    histData.data.forEach(h => {
-                        const pnKey = String(h.PersonNumber || '').trim();
-                        if (pnKey) {
-                            if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
-                            window._mglHistoryCache[pnKey].push(h);
-                        }
-                    });
+                    if (histData && histData.success && Array.isArray(histData.data)) {
+                        histData.data.forEach(h => {
+                            const pnKey = String(h.PersonNumber || '').trim();
+                            if (pnKey) {
+                                if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
+                                window._mglHistoryCache[pnKey].push(h);
+                            }
+                        });
+                    }
 
                     const activeView = document.querySelector('.module-view.active');
                     const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
@@ -1154,40 +1161,47 @@ async function runBackgroundSync() {
                 apiFetch('mitglieder', 'action=getHistorie')
             ]);
 
-            const data = await resAll.json();
-            const lizzData = await resLizz.json();
-            const fnData = await resFn.json();
-            const histData = await resHist.json();
+            let data = null, lizzData = null, fnData = null, histData = null;
+            try { data = await resAll.json(); } catch (_) {}
+            try { lizzData = await resLizz.json(); } catch (_) {}
+            try { fnData = await resFn.json(); } catch (_) {}
+            try { histData = await resHist.json(); } catch (_) {}
 
-            if (data.success && lizzData.success && fnData.success && histData.success) {
-                window._mglData = Array.isArray(data.data) ? data.data : [];
+            if (data && data.success && Array.isArray(data.data)) {
+                window._mglData = data.data;
 
                 window._mglLizenzenCache = {};
-                lizzData.data.forEach(l => {
-                    const pnKey = String(l.PersonNumber || '').trim();
-                    if (pnKey) {
-                        if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
-                        window._mglLizenzenCache[pnKey].push(l);
-                    }
-                });
+                if (lizzData && lizzData.success && Array.isArray(lizzData.data)) {
+                    lizzData.data.forEach(l => {
+                        const pnKey = String(l.PersonNumber || '').trim();
+                        if (pnKey) {
+                            if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
+                            window._mglLizenzenCache[pnKey].push(l);
+                        }
+                    });
+                }
 
                 window._mglFunktionenCache = {};
-                fnData.data.forEach(f => {
-                    const pnKey = String(f.PersonNumber || '').trim();
-                    if (pnKey) {
-                        if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
-                        window._mglFunktionenCache[pnKey].push(f);
-                    }
-                });
+                if (fnData && fnData.success && Array.isArray(fnData.data)) {
+                    fnData.data.forEach(f => {
+                        const pnKey = String(f.PersonNumber || '').trim();
+                        if (pnKey) {
+                            if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
+                            window._mglFunktionenCache[pnKey].push(f);
+                        }
+                    });
+                }
 
                 window._mglHistoryCache = {};
-                histData.data.forEach(h => {
-                    const pnKey = String(h.PersonNumber || '').trim();
-                    if (pnKey) {
-                        if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
-                        window._mglHistoryCache[pnKey].push(h);
-                    }
-                });
+                if (histData && histData.success && Array.isArray(histData.data)) {
+                    histData.data.forEach(h => {
+                        const pnKey = String(h.PersonNumber || '').trim();
+                        if (pnKey) {
+                            if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
+                            window._mglHistoryCache[pnKey].push(h);
+                        }
+                    });
+                }
 
                 if (activeViewId === 'mitglieder') {
                     if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
