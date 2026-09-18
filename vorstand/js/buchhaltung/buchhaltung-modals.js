@@ -296,6 +296,241 @@ window.bhGetSplitBaseBeleg = function(belegNr) {
   return m ? m[1] : str;
 };
 
+// =====================================================================
+// AUTOCOMPLETE-WIDGET FÜR KONTOAUSWAHL (Suchbar mit Dropdown)
+// =====================================================================
+
+// CSS für Autocomplete-Dropdown (einmalig injizieren)
+(function() {
+  if (document.getElementById('bh-konto-ac-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'bh-konto-ac-styles';
+  style.textContent = `
+    .bh-konto-ac-wrap { position: relative; }
+    .bh-konto-ac-dropdown {
+      position: absolute; z-index: 1060; width: 100%; max-height: 280px;
+      overflow-y: auto; background: #fff; border: 1px solid rgba(0,0,0,.15);
+      border-radius: 0.5rem; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+      display: none; margin-top: 2px;
+    }
+    .bh-konto-ac-dropdown.show { display: block; }
+    .bh-konto-ac-item {
+      padding: 7px 12px; cursor: pointer; font-size: 0.85rem;
+      border-bottom: 1px solid rgba(0,0,0,.04); display: flex;
+      justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .bh-konto-ac-item:last-child { border-bottom: none; }
+    .bh-konto-ac-item:hover, .bh-konto-ac-item.active {
+      background: rgba(13, 110, 253, 0.08);
+    }
+    .bh-konto-ac-item .konto-code {
+      font-family: monospace; font-weight: 700; min-width: 44px;
+    }
+    .bh-konto-ac-item .konto-name { flex: 1; }
+    .bh-konto-ac-badge {
+      font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; font-weight: 600;
+      white-space: nowrap;
+    }
+    .bh-konto-ac-badge.cat-aktiven { background: #d1ecf1; color: #0c5460; }
+    .bh-konto-ac-badge.cat-passiven { background: #f8d7da; color: #721c24; }
+    .bh-konto-ac-badge.cat-ertrag { background: #d4edda; color: #155724; }
+    .bh-konto-ac-badge.cat-aufwand { background: #fff3cd; color: #856404; }
+    .bh-konto-ac-badge.cat-abschluss { background: #e2e3e5; color: #383d41; }
+    .bh-konto-ac-empty {
+      padding: 10px 14px; font-size: 0.82rem; color: #888; text-align: center;
+    }
+    .bh-konto-ac-input.is-resolved {
+      border-color: #198754 !important;
+      box-shadow: 0 0 0 0.15rem rgba(25, 135, 84, 0.15) !important;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+// Extrahiert den 4-stelligen Konto-Code aus einem Input-Wert ("1000 | Kasse" → "1000")
+window.bhKontoResolveCode = function(val) {
+  if (!val) return '';
+  const s = String(val).trim();
+  if (s.includes('|')) return s.split('|')[0].trim();
+  if (/^\d{4}$/.test(s)) return s;
+  const matches = typeof bhFindMatchingKonten === 'function' ? bhFindMatchingKonten(s) : [];
+  return matches.length > 0 ? String(matches[0].konto).trim() : s;
+};
+
+// Formatiert einen Konto-Code zum Display-Wert ("1000" → "1000 | Kasse")
+window.bhKontoFormatDisplay = function(code) {
+  if (!code) return '';
+  const c = String(code).trim();
+  const acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === c);
+  return acc ? `${acc.konto} | ${acc.bezeichnung}` : c;
+};
+
+// Initialisiert Autocomplete für alle .bh-konto-ac-input Felder innerhalb eines Containers
+window.bhInitKontoAutocompleteForContainer = function(container) {
+  if (!container) return;
+  const inputs = container.querySelectorAll('input.bh-konto-ac-input');
+  inputs.forEach(input => {
+    // Dropdown-Container erstellen falls nicht vorhanden
+    let dropdown = input.parentElement.querySelector('.bh-konto-ac-dropdown');
+    if (!dropdown) {
+      dropdown = document.createElement('div');
+      dropdown.className = 'bh-konto-ac-dropdown';
+      input.parentElement.appendChild(dropdown);
+    }
+
+    let activeIdx = -1;
+    let currentMatches = [];
+
+    const getCatClass = (acc) => {
+      const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: acc.klasse || '' };
+      const m = (cat.main || '').toLowerCase();
+      if (m.includes('aktiv')) return 'cat-aktiven';
+      if (m.includes('passiv')) return 'cat-passiven';
+      if (m.includes('ertrag')) return 'cat-ertrag';
+      if (m.includes('aufwand')) return 'cat-aufwand';
+      if (m.includes('abschluss')) return 'cat-abschluss';
+      return '';
+    };
+
+    const getCatLabel = (acc) => {
+      const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: acc.klasse || '' };
+      return cat.main || acc.klasse || '';
+    };
+
+    const renderDropdown = (query) => {
+      const q = String(query || '').trim();
+      if (!q) {
+        // Zeige alle Konten wenn kein Query (z.B. bei Fokus)
+        currentMatches = (window._bhKontenrahmen || []).slice(0, 50);
+      } else if (q.includes('|')) {
+        dropdown.classList.remove('show');
+        return;
+      } else {
+        currentMatches = typeof bhFindMatchingKonten === 'function' ? bhFindMatchingKonten(q) : [];
+      }
+      activeIdx = -1;
+
+      if (currentMatches.length === 0 && q) {
+        dropdown.innerHTML = '<div class="bh-konto-ac-empty"><i class="fas fa-search me-1"></i>Kein Konto gefunden für «' + (typeof escapeHtml === 'function' ? escapeHtml(q) : q) + '»</div>';
+        dropdown.classList.add('show');
+        return;
+      }
+
+      dropdown.innerHTML = currentMatches.map((acc, idx) => {
+        const catCls = getCatClass(acc);
+        const catLabel = getCatLabel(acc);
+        return `<div class="bh-konto-ac-item" data-idx="${idx}" data-code="${acc.konto}">
+          <span class="konto-code">${acc.konto}</span>
+          <span class="konto-name">${typeof escapeHtml === 'function' ? escapeHtml(acc.bezeichnung || '') : (acc.bezeichnung || '')}</span>
+          ${catLabel ? `<span class="bh-konto-ac-badge ${catCls}">${catLabel}</span>` : ''}
+        </div>`;
+      }).join('');
+      dropdown.classList.add('show');
+    };
+
+    const selectItem = (acc) => {
+      input.value = `${acc.konto} | ${acc.bezeichnung}`;
+      input.classList.add('is-resolved');
+      dropdown.classList.remove('show');
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const highlightItem = (idx) => {
+      const items = dropdown.querySelectorAll('.bh-konto-ac-item');
+      items.forEach(it => it.classList.remove('active'));
+      if (idx >= 0 && idx < items.length) {
+        items[idx].classList.add('active');
+        items[idx].scrollIntoView({ block: 'nearest' });
+      }
+    };
+
+    // Input event
+    input.addEventListener('input', () => {
+      input.classList.remove('is-resolved');
+      renderDropdown(input.value);
+    });
+
+    // Focus event – show all accounts
+    input.addEventListener('focus', () => {
+      const val = input.value.trim();
+      if (!val || !val.includes('|')) {
+        renderDropdown(val);
+      }
+    });
+
+    // Keyboard navigation
+    input.addEventListener('keydown', (e) => {
+      const items = dropdown.querySelectorAll('.bh-konto-ac-item');
+      if (!dropdown.classList.contains('show') || items.length === 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          renderDropdown(input.value);
+        }
+        return;
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIdx = Math.min(activeIdx + 1, items.length - 1);
+        highlightItem(activeIdx);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIdx = Math.max(activeIdx - 1, 0);
+        highlightItem(activeIdx);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (activeIdx >= 0 && activeIdx < currentMatches.length) {
+          selectItem(currentMatches[activeIdx]);
+        } else if (currentMatches.length > 0) {
+          selectItem(currentMatches[0]);
+        }
+      } else if (e.key === 'Tab') {
+        // Resolve on Tab
+        if (!input.value.includes('|') && currentMatches.length > 0) {
+          const target = activeIdx >= 0 ? currentMatches[activeIdx] : currentMatches[0];
+          selectItem(target);
+        }
+        dropdown.classList.remove('show');
+      } else if (e.key === 'Escape') {
+        dropdown.classList.remove('show');
+      }
+    });
+
+    // Click on dropdown item
+    dropdown.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // Prevent blur
+      const item = e.target.closest('.bh-konto-ac-item');
+      if (item) {
+        const idx = Number(item.dataset.idx);
+        if (idx >= 0 && idx < currentMatches.length) {
+          selectItem(currentMatches[idx]);
+        }
+      }
+    });
+
+    // Blur – close dropdown and auto-resolve
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        dropdown.classList.remove('show');
+        const val = input.value.trim();
+        if (val && !val.includes('|')) {
+          const matches = typeof bhFindMatchingKonten === 'function' ? bhFindMatchingKonten(val) : [];
+          if (matches.length > 0) {
+            input.value = `${matches[0].konto} | ${matches[0].bezeichnung}`;
+            input.classList.add('is-resolved');
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+      }, 150);
+    });
+
+    // Mark as resolved if already filled
+    if (input.value && input.value.includes('|')) {
+      input.classList.add('is-resolved');
+    }
+  });
+};
+
 // POPUP-MODAL: MANUELLE BUCHUNG ERFASSEN ODER BEARBEITEN
 window.bhOpenEntryModal = function(entryId) {
   let modalEl = document.getElementById('bhModalNewEntry');
@@ -308,11 +543,6 @@ window.bhOpenEntryModal = function(entryId) {
     modalEl.setAttribute('aria-hidden', 'true');
     document.body.appendChild(modalEl);
   }
-  
-  const sollOptions = (window._bhKontenrahmen || []).map(acc => {
-    const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: acc.klasse || '' };
-    return `<option value="${acc.konto}">${acc.konto} - ${acc.bezeichnung} (${cat.main})</option>`;
-  }).join('');
   
   const isEdit = Boolean(entryId);
 
@@ -370,17 +600,15 @@ window.bhOpenEntryModal = function(entryId) {
                 <div class="row g-3 mb-3">
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted text-primary"><i class="fas fa-long-arrow-alt-right me-1"></i> Soll-Konto (Empfänger)</label>
-                    <select class="form-select" id="bhe-soll">
-                      <option value="">(Kein Konto / Offen)</option>
-                      ${sollOptions}
-                    </select>
+                    <div class="bh-konto-ac-wrap">
+                      <input type="text" class="form-control bh-konto-ac-input" id="bhe-soll" placeholder="Konto suchen (Nr. oder Name)..." autocomplete="off">
+                    </div>
                   </div>
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted text-success"><i class="fas fa-long-arrow-alt-left me-1"></i> Haben-Konto (Quelle)</label>
-                    <select class="form-select" id="bhe-haben">
-                      <option value="">(Kein Konto / Offen)</option>
-                      ${sollOptions}
-                    </select>
+                    <div class="bh-konto-ac-wrap">
+                      <input type="text" class="form-control bh-konto-ac-input" id="bhe-haben" placeholder="Konto suchen (Nr. oder Name)..." autocomplete="off">
+                    </div>
                   </div>
                 </div>
                 
@@ -496,6 +724,9 @@ window.bhOpenEntryModal = function(entryId) {
       </div>
     </div>
   `;
+
+  // Autocomplete initialisieren für Soll/Haben
+  setTimeout(() => bhInitKontoAutocompleteForContainer(modalEl), 50);
   
   const titleEl = document.getElementById('bhe-modal-title');
   const idEl = document.getElementById('bhe-id');
@@ -526,8 +757,10 @@ window.bhOpenEntryModal = function(entryId) {
       
       belegEl.value = entry.beleg_nr || '';
       beschreibungEl.value = entry.beschreibung || '';
-      sollEl.value = entry.konto_soll || '';
-      habenEl.value = entry.konto_haben || '';
+      sollEl.value = window.bhKontoFormatDisplay(entry.konto_soll || '');
+      habenEl.value = window.bhKontoFormatDisplay(entry.konto_haben || '');
+      if (sollEl.value && sollEl.value.includes('|')) sollEl.classList.add('is-resolved');
+      if (habenEl.value && habenEl.value.includes('|')) habenEl.classList.add('is-resolved');
       betragEl.value = Number(entry.betrag || 0).toFixed(2);
       
       let actionType = entry.typ || 'Kassa';
@@ -585,13 +818,13 @@ window.bhOpenEntryModal = function(entryId) {
     const updateAutoBeleg = () => {
       if (idEl.value) return;
       if (belegEl.dataset.userEdited === 'true') return;
-      const pfx = window.bhDetermineAutoBelegPrefix(sollEl.value, habenEl.value, typEl.value);
+      const pfx = window.bhDetermineAutoBelegPrefix(window.bhKontoResolveCode(sollEl.value), window.bhKontoResolveCode(habenEl.value), typEl.value);
       const y = Number(window._bhYear || new Date().getFullYear());
       belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
     };
 
-    sollEl.onchange = updateAutoBeleg;
-    habenEl.onchange = updateAutoBeleg;
+    sollEl.addEventListener('change', updateAutoBeleg);
+    habenEl.addEventListener('change', updateAutoBeleg);
     typEl.onchange = updateAutoBeleg;
 
     updateAutoBeleg();
@@ -661,11 +894,11 @@ window.bhSyncKassaSammelFromInputs = function() {
     if (isFrei) {
       const sollEl = document.getElementById(`bh-ks-soll-${i}`);
       const habenEl = document.getElementById(`bh-ks-haben-${i}`);
-      if (sollEl) r.kontoSoll = sollEl.value;
-      if (habenEl) r.kontoHaben = habenEl.value;
+      if (sollEl) r.kontoSoll = window.bhKontoResolveCode(sollEl.value);
+      if (habenEl) r.kontoHaben = window.bhKontoResolveCode(habenEl.value);
     } else {
       const kontoEl = document.getElementById(`bh-ks-konto-${i}`);
-      if (kontoEl) r.konto = kontoEl.value;
+      if (kontoEl) r.konto = window.bhKontoResolveCode(kontoEl.value);
     }
   });
 };
@@ -698,38 +931,28 @@ window.bhRenderKassaSammelRows = function() {
   const isFrei = (art === 'frei');
   const rows = window._bhKassaSammelRows || [];
 
-  const makeKontoOptions = (selectedVal) => {
-    return (window._bhKontenrahmen || []).map(acc => {
-      const isSel = String(acc.konto).trim() === String(selectedVal || '').trim();
-      return `<option value="${acc.konto}" ${isSel ? 'selected' : ''}>${acc.konto} | ${acc.bezeichnung}</option>`;
-    }).join('');
-  };
-
   tbody.innerHTML = rows.map((r, i) => {
     let kontoCells = '';
     if (isFrei) {
       kontoCells = `
         <td>
-          <select class="form-select form-select-sm" id="bh-ks-soll-${i}" onchange="bhUpdateKassaSammelLiveTotal()">
-            <option value="" disabled ${!r.kontoSoll ? 'selected' : ''}>Soll-Konto...</option>
-            ${makeKontoOptions(r.kontoSoll)}
-          </select>
+          <div class="bh-konto-ac-wrap">
+            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-ks-soll-${i}" value="${r.kontoSoll ? window.bhKontoFormatDisplay(r.kontoSoll) : ''}" placeholder="Soll-Konto..." autocomplete="off">
+          </div>
         </td>
         <td>
-          <select class="form-select form-select-sm" id="bh-ks-haben-${i}" onchange="bhUpdateKassaSammelLiveTotal()">
-            <option value="" disabled ${!r.kontoHaben ? 'selected' : ''}>Haben-Konto...</option>
-            ${makeKontoOptions(r.kontoHaben)}
-          </select>
+          <div class="bh-konto-ac-wrap">
+            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-ks-haben-${i}" value="${r.kontoHaben ? window.bhKontoFormatDisplay(r.kontoHaben) : ''}" placeholder="Haben-Konto..." autocomplete="off">
+          </div>
         </td>
       `;
     } else {
-      const labelPlaceholder = art === 'einnahme' ? 'Ertragskonto wählen...' : 'Aufwandskonto wählen...';
+      const labelPlaceholder = art === 'einnahme' ? 'Ertragskonto suchen...' : 'Aufwandskonto suchen...';
       kontoCells = `
         <td>
-          <select class="form-select form-select-sm" id="bh-ks-konto-${i}" onchange="bhUpdateKassaSammelLiveTotal()">
-            <option value="" disabled ${!r.konto ? 'selected' : ''}>${labelPlaceholder}</option>
-            ${makeKontoOptions(r.konto)}
-          </select>
+          <div class="bh-konto-ac-wrap">
+            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-ks-konto-${i}" value="${r.konto ? window.bhKontoFormatDisplay(r.konto) : ''}" placeholder="${labelPlaceholder}" autocomplete="off">
+          </div>
         </td>
       `;
     }
@@ -750,6 +973,9 @@ window.bhRenderKassaSammelRows = function() {
       </tr>
     `;
   }).join('');
+
+  // Autocomplete initialisieren für Konto-Inputs
+  setTimeout(() => bhInitKontoAutocompleteForContainer(tbody), 30);
 
   bhUpdateKassaSammelLiveTotal();
 };
@@ -1233,8 +1459,8 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
     datum:        document.getElementById('bhe-datum').value,
     beleg_nr:     document.getElementById('bhe-beleg').value.trim(),
     beschreibung: document.getElementById('bhe-beschreibung').value.trim(),
-    konto_soll:   document.getElementById('bhe-soll').value,
-    konto_haben:  document.getElementById('bhe-haben').value,
+    konto_soll:   window.bhKontoResolveCode(document.getElementById('bhe-soll').value),
+    konto_haben:  window.bhKontoResolveCode(document.getElementById('bhe-haben').value),
     betrag:       Number(document.getElementById('bhe-betrag').value),
     typ:          document.getElementById('bhe-typ').value
   };
@@ -1625,14 +1851,6 @@ window.bhRenderSplitGroupEditRows = function() {
   if (!tbody || !window._bhCurrentSplitEdit) return;
 
   const { baseBeleg, rows } = window._bhCurrentSplitEdit;
-  const kontenrahmen = window._bhKontenrahmen || [];
-
-  const makeKontoOptions = (selectedVal) => {
-    return kontenrahmen.map(acc => {
-      const isSel = String(acc.konto).trim() === String(selectedVal || '').trim();
-      return `<option value="${acc.konto}" ${isSel ? 'selected' : ''}>${acc.konto} | ${acc.bezeichnung}</option>`;
-    }).join('');
-  };
 
   tbody.innerHTML = rows.map((r, i) => {
     const subSuffix = rows.length > 1 ? String.fromCharCode(97 + i) : '';
@@ -1647,16 +1865,14 @@ window.bhRenderSplitGroupEditRows = function() {
           <input type="text" class="form-control form-control-sm" id="bh-sge-desc-${i}" value="${escapeHtml(r.beschreibung || '')}" placeholder="Beschreibung..." oninput="bhUpdateSplitGroupLiveTotal()">
         </td>
         <td>
-          <select class="form-select form-select-sm" id="bh-sge-soll-${i}" onchange="bhUpdateSplitGroupLiveTotal()">
-            <option value="" disabled ${!r.konto_soll ? 'selected' : ''}>Soll-Konto...</option>
-            ${makeKontoOptions(r.konto_soll)}
-          </select>
+          <div class="bh-konto-ac-wrap">
+            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-sge-soll-${i}" value="${r.konto_soll ? window.bhKontoFormatDisplay(r.konto_soll) : ''}" placeholder="Soll-Konto suchen..." autocomplete="off">
+          </div>
         </td>
         <td>
-          <select class="form-select form-select-sm" id="bh-sge-haben-${i}" onchange="bhUpdateSplitGroupLiveTotal()">
-            <option value="" disabled ${!r.konto_haben ? 'selected' : ''}>Haben-Konto...</option>
-            ${makeKontoOptions(r.konto_haben)}
-          </select>
+          <div class="bh-konto-ac-wrap">
+            <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-sge-haben-${i}" value="${r.konto_haben ? window.bhKontoFormatDisplay(r.konto_haben) : ''}" placeholder="Haben-Konto suchen..." autocomplete="off">
+          </div>
         </td>
         <td>
           <input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end fw-bold" id="bh-sge-amt-${i}" value="${amt}" placeholder="0.00" oninput="bhUpdateSplitGroupLiveTotal()">
@@ -1667,6 +1883,9 @@ window.bhRenderSplitGroupEditRows = function() {
       </tr>
     `;
   }).join('');
+
+  // Autocomplete initialisieren für Soll/Haben Inputs
+  setTimeout(() => bhInitKontoAutocompleteForContainer(tbody), 30);
 
   bhUpdateSplitGroupLiveTotal();
 };
@@ -1682,8 +1901,8 @@ window.bhSyncSplitGroupFromInputs = function() {
     const amtEl = document.getElementById(`bh-sge-amt-${i}`);
 
     if (descEl) r.beschreibung = descEl.value;
-    if (sollEl) r.konto_soll = sollEl.value;
-    if (habenEl) r.konto_haben = habenEl.value;
+    if (sollEl) r.konto_soll = window.bhKontoResolveCode(sollEl.value);
+    if (habenEl) r.konto_haben = window.bhKontoResolveCode(habenEl.value);
     if (amtEl) r.betrag = amtEl.value;
   });
 };
@@ -2302,6 +2521,12 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
     return '<i class="fas fa-sort ms-1 text-muted opacity-50"></i>';
   }
 
+  // Farbgebung: Die "reduzierende" Seite wird rot dargestellt
+  // Aktiv/Aufwand: Soll = normal (primary), Haben = rot (danger) → Ausgabe/Abnahme
+  // Passiv/Ertrag: Haben = normal (success), Soll = rot (danger) → Abnahme
+  const sollColorClass = isAssetOrExpense ? 'text-primary' : 'text-danger';
+  const habenColorClass = isAssetOrExpense ? 'text-danger' : 'text-success';
+
   const rowsHtml = computedEntries.map(entry => {
     return `
       <tr class="bh-account-row" onclick="this.classList.toggle('bh-row-selected')" title="Klicken zum dauerhaften Hervorheben dieser Zeile">
@@ -2313,8 +2538,8 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
           <span class="bh-konto-badge">${entry.gegenKonto}</span>
           <span class="text-muted ms-1 small d-none d-md-inline">${entry.gegenKontoName || ''}</span>
         </td>
-        <td class="text-end fw-semibold text-primary">${entry.sollVal > 0 ? window.fmtChf(entry.sollVal) : '–'}</td>
-        <td class="text-end fw-semibold text-success">${entry.habenVal > 0 ? window.fmtChf(entry.habenVal) : '–'}</td>
+        <td class="text-end fw-semibold ${sollColorClass}">${entry.sollVal > 0 ? window.fmtChf(entry.sollVal) : '–'}</td>
+        <td class="text-end fw-semibold ${habenColorClass}">${entry.habenVal > 0 ? window.fmtChf(entry.habenVal) : '–'}</td>
         <td class="text-end fw-bold text-dark">${window.fmtChf(entry.runningBalance)}</td>
       </tr>
     `;
@@ -2386,14 +2611,14 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
             </div>
             <div class="col-sm-3">
               <div class="p-2.5 bg-white border border-light rounded-3 text-center shadow-sm">
-                <div class="small text-muted fw-semibold text-primary" style="font-size: 11px;">Total Soll (+)</div>
-                <h5 class="fw-bold mt-1 mb-0 text-primary">${window.fmtChf(totalSoll)}</h5>
+                <div class="small text-muted fw-semibold ${sollColorClass}" style="font-size: 11px;">Total Soll (+)</div>
+                <h5 class="fw-bold mt-1 mb-0 ${sollColorClass}">${window.fmtChf(totalSoll)}</h5>
               </div>
             </div>
             <div class="col-sm-3">
               <div class="p-2.5 bg-white border border-light rounded-3 text-center shadow-sm">
-                <div class="small text-muted fw-semibold text-success" style="font-size: 11px;">Total Haben (-)</div>
-                <h5 class="fw-bold mt-1 mb-0 text-success">${window.fmtChf(totalHaben)}</h5>
+                <div class="small text-muted fw-semibold ${habenColorClass}" style="font-size: 11px;">Total Haben (-)</div>
+                <h5 class="fw-bold mt-1 mb-0 ${habenColorClass}">${window.fmtChf(totalHaben)}</h5>
               </div>
             </div>
             <div class="col-sm-3">
@@ -2445,8 +2670,8 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
                 ${rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="8" class="text-center text-muted py-4">Keine Buchungen auf diesem Konto im Jahr ' + window._bhYear + ' vorhanden.</td></tr>'}
                 <tr class="bh-main-total-row sticky-bottom bg-white" style="border-top: 2px solid #dee2e6;">
                   <td colspan="5" class="fw-bold">KUMULIERT / JAHRESSUMME</td>
-                  <td class="text-end fw-bold text-primary">${window.fmtChf(totalSoll)}</td>
-                  <td class="text-end fw-bold text-success">${window.fmtChf(totalHaben)}</td>
+                  <td class="text-end fw-bold ${sollColorClass}">${window.fmtChf(totalSoll)}</td>
+                  <td class="text-end fw-bold ${habenColorClass}">${window.fmtChf(totalHaben)}</td>
                   <td class="text-end fw-bold text-primary">${window.fmtChf(acc._endsaldo)}</td>
                 </tr>
               </tbody>
