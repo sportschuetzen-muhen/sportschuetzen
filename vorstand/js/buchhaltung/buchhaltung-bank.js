@@ -453,18 +453,18 @@ function bhBankBuildJournalGroups(journalHistory) {
 }
 
 // Berechnet den Netto-Fluss auf dem Bankkonto einer Journal-Split-Gruppe
-function getGroupNetBankAmount(grp, isCredit) {
+function getGroupNetBankAmount(grp, isCredit, targetBankKonto = null) {
   let net = 0;
   grp.entries.forEach(j => {
     const amt = Number(j.betrag || 0);
-    const sollIsBank = isBankKontoCode(j.konto_soll);
-    const habenIsBank = isBankKontoCode(j.konto_haben);
+    const sollMatches = targetBankKonto ? (String(j.konto_soll || '').trim() === String(targetBankKonto).trim()) : isBankKontoCode(j.konto_soll);
+    const habenMatches = targetBankKonto ? (String(j.konto_haben || '').trim() === String(targetBankKonto).trim()) : isBankKontoCode(j.konto_haben);
     if (isCredit) {
-      if (sollIsBank) net += amt;
-      else if (habenIsBank) net -= amt;
+      if (sollMatches) net += amt;
+      else if (habenMatches) net -= amt;
     } else {
-      if (habenIsBank) net += amt;
-      else if (sollIsBank) net -= amt;
+      if (habenMatches) net += amt;
+      else if (sollMatches) net -= amt;
     }
   });
   return Math.round(net * 100) / 100;
@@ -1422,9 +1422,13 @@ function bhBankParseCAMT053(xmlText) {
 
     const partyName     = getTagText(partyNode, 'Nm');
     const pstlAdr       = getFirstChild(partyNode, 'PstlAdr');
-    const partyPLZ      = getTagText(pstlAdr, 'PstCd');
+    let partyPLZ        = getTagText(pstlAdr, 'PstCd');
     const partyCity     = getTagText(pstlAdr, 'TwnNm');
     const adrLine       = getTagText(pstlAdr, 'AdrLine');
+    if (!partyPLZ) {
+      const matchPlz = ((adrLine || '') + ' ' + (partyCity || '')).match(/\b([1-9]\d{3})\b/);
+      if (matchPlz) partyPLZ = matchPlz[1];
+    }
 
     const strd       = getFirstChild(getFirstChild(txDtls, 'RmtInf'), 'Strd');
     const ustrd      = getTagText(getFirstChild(txDtls, 'RmtInf'), 'Ustrd');
@@ -1444,6 +1448,7 @@ function bhBankParseCAMT053(xmlText) {
       partyCity: partyCity || (adrLine ? adrLine.split(' ').slice(-1)[0] : ''),
       remittanceInfo,
       _originalRemittanceInfo: remittanceInfo,
+      ustrd,
       creditorReference,
       fileMsgId,
       accountIban,
@@ -1661,67 +1666,110 @@ function bhBankMatchAll(transactions) {
         let bestInv = null;
         let bestInvScore = 0;
 
-        // Vorfilterung für sicheres Matching: Datumsmuster (z.B. 02.02.2026, 2.2.26, 2026-02-02) und isolierte 4-stellige Jahreszahlen aus Verwendungszweck ausblenden
-        const rmtNoDates = cleanRemittance
-          .replace(/\b\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b/g, ' ')
-          .replace(/\b20\d{2}\b/g, ' ');
+        // Hilfsfunktion: Empfängerdaten der Rechnung (Nachname & PLZ) ermitteln
+        function getInvoiceRecipient(inv) {
+          if (!inv) return { nachname: '', vorname: '', plz: '' };
+          if (typeof window.rnGetRecipientForInvoice === 'function') {
+            try {
+              const r = window.rnGetRecipientForInvoice(inv);
+              if (r && (r.nachname || r.firma || r.plz)) {
+                return {
+                  nachname: r.nachname || r.firma || r.name || '',
+                  vorname: r.vorname || '',
+                  plz: String(r.plz || '').trim()
+                };
+              }
+            } catch (_) {}
+          }
+          if (inv.PersonNumber && Array.isArray(window._jbMembers)) {
+            const m = window._jbMembers.find(x => String(x.PersonNumber) === String(inv.PersonNumber));
+            if (m) {
+              return {
+                nachname: m.LastName || '',
+                vorname: m.FirstName || '',
+                plz: String(m.PostCode || m.ZipCode || m.PLZ || inv.plz || '').trim()
+              };
+            }
+          }
+          const rawName = String(inv.name || '').trim();
+          const parts = rawName.split(/\s+/).filter(Boolean);
+          return {
+            nachname: parts.length > 1 ? parts[parts.length - 1] : rawName,
+            nachnameAlt: parts.length > 1 ? parts[0] : rawName,
+            vorname: parts.length > 1 ? parts[0] : '',
+            plz: String(inv.plz || '').trim()
+          };
+        }
 
         for (const inv of invoices) {
           const invIdRaw = String(inv.id || '').trim();
           const invIdClean = invIdRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
           const invTotal = Number(inv.total_amount || 0);
-          const invName = normalizeString(inv.name || '');
-          const invPn = String(inv.PersonNumber || '').replace(/[^0-9]/g, '');
           const sameAmount = Math.abs(invTotal - txAmt) < 0.05;
+
+          // 1. Extrahiere 4-stelligen Code aus der Rechnungsnummer (z.B. "7K4M" aus "RE-26-7K4M", "3SMD" aus "DP-26-3SMD", "0042" aus "RE-JB-2026-0042")
+          const idParts = invIdRaw.split('-');
+          const invSuffix = idParts.length > 1 ? idParts[idParts.length - 1].trim() : invIdRaw;
+          const cleanSuffix = invSuffix.toLowerCase();
+
+          // Abgleich mit <Ustrd> und Verwendungszweck (cleanRemittance / cleanRef)
+          const cleanUstrd = String(tx.ustrd || '').toLowerCase();
+          const cleanRmtNoSpace = cleanRemittance.replace(/[^a-z0-9]/g, '');
+          const cleanRefNoSpace = cleanRef.replace(/[^a-z0-9]/g, '');
+
+          let hasCodeMatch = false;
+          if (cleanSuffix && cleanSuffix.length >= 3 && !/^20\d{2}$/.test(cleanSuffix)) {
+            const suffixRegex = new RegExp(`(?:^|[^a-z0-9])${cleanSuffix}(?:[^a-z0-9]|$)`, 'i');
+            if (suffixRegex.test(cleanUstrd) || suffixRegex.test(cleanRemittance) || cleanRefNoSpace.includes(cleanSuffix)) {
+              hasCodeMatch = true;
+            }
+          }
+          const hasFullIdMatch = invIdClean && (cleanRmtNoSpace.includes(invIdClean) || cleanRefNoSpace.includes(invIdClean));
+          const hasInvoiceNumber = hasCodeMatch || hasFullIdMatch;
+
+          // 2. Abgleich Nachname & PLZ (Vorname bewusst weglassen)
+          const rec = getInvoiceRecipient(inv);
+          const recNachname = normalizeString(rec.nachname || '');
+          const recNachnameAlt = normalizeString(rec.nachnameAlt || '');
+          const recPlz = String(rec.plz || '').trim().replace(/[^0-9]/g, '');
+          const txPlz = String(tx.partyPLZ || '').trim().replace(/[^0-9]/g, '');
+
+          let hasNachnameMatch = false;
+          const candidates = [recNachname, recNachnameAlt].filter(n => n && n.length >= 3);
+          for (const cand of candidates) {
+            const nachnameRegex = new RegExp(`(?:^|\\s)${cand}(?:\\s|$)`, 'i');
+            if (nachnameRegex.test(bankName) || bankName.includes(cand)) {
+              hasNachnameMatch = true;
+              break;
+            }
+          }
+
+          let hasPlzMatch = false;
+          if (recPlz && txPlz && recPlz.length === 4 && txPlz.length === 4) {
+            hasPlzMatch = (recPlz === txPlz);
+          }
 
           let score = 0;
 
-          // 1. Exakte Rechnungs-ID im Text oder Referenz (z.B. "RE-26-7K4M", "MV-26-8N2W", "DP-26-5M7T", "RE-JB-2026-0042", "V-2026-0012")
-          const cleanRmtNoSpace = cleanRemittance.replace(/[^a-z0-9]/g, '');
-          const cleanRefNoSpace = cleanRef.replace(/[^a-z0-9]/g, '');
-          if (invIdClean && (cleanRmtNoSpace.includes(invIdClean) || cleanRefNoSpace.includes(invIdClean))) {
-            score += 4.5; // Volltreffer bei exakter ID
-          } else {
-            // 1b. Eindeutiger Kennungsteil / Suffix (z.B. "7K4M" aus "RE-26-7K4M" oder "8N2W" aus "MV-26-8N2W")
-            const idParts = invIdRaw.split('-');
-            const suffix = idParts.length > 1 ? idParts[idParts.length - 1].toLowerCase().trim() : '';
-
-            // Suffix muss mindestens 3 Zeichen haben und darf keine reine Jahreszahl (z.B. 2026) sein
-            if (suffix && suffix.length >= 3 && !/^20\d{2}$/.test(suffix)) {
-              const suffixRegex = new RegExp(`\\b${suffix}\\b`, 'i');
-              if (suffixRegex.test(rmtNoDates) || cleanRef.includes(suffix)) {
-                const hasKeyword = /(?:rechnung|re-?nr|inv|ref|beleg|nr)/i.test(cleanRemittance);
-                score += hasKeyword ? 2.5 : 2.0;
-              }
-            }
-          }
-
-          // 2. QR-Referenz-Endung auf PersonNumber
-          if (cleanRef && invPn && cleanRef.replace(/[^0-9]/g, '').endsWith(invPn)) {
-            score += 2;
-          }
-
-          // 3. Exakter Betrag
-          if (sameAmount) {
-            score += 1.5;
-          }
-
-          // 4. Namensabgleich (Vor-/Nachname oder Firma)
-          if (invName && bankName) {
-            if (bankName.includes(invName) || invName.includes(bankName)) {
-              score += 2;
+          // Prioritäten-Hierarchie:
+          if (hasInvoiceNumber) {
+            if (sameAmount) {
+              score = 5.0; // Prio 1: Rechnungsnummer (4-stellig oder voll) & Gesamtbetrag stimmen 1:1!
             } else {
-              const parts = invName.split(/\s+/).filter(p => p.length > 2);
-              let partMatches = 0;
-              parts.forEach(p => { if (bankName.includes(p)) partMatches++; });
-              if (partMatches >= 2) score += 1.5;
-              else if (partMatches === 1) score += 0.8;
+              score = 3.5; // Prio 2: Rechnungsnummer erkannt, aber Betrag weicht ab (Teilzahlung/Skonto/Überzahlung)
+            }
+          } else if (hasNachnameMatch && hasPlzMatch) {
+            if (sameAmount) {
+              score = 3.2; // Prio 3: Nachname + PLZ stimmen & Gesamtbetrag stimmt überein
+            } else {
+              score = 1.8; // Nachname + PLZ stimmen, aber Betrag weicht ab -> unterhalb Schwelle (2.5) für automatische Zuweisung
             }
           }
 
-          // 5. Bevorzuge noch offene Rechnungen (nur wenn mindestens ein Identifikator wie Name, ID oder Suffix gematcht hat)
-          if (inv.status !== 'bezahlt' && score >= 2.0) {
-            score += 1;
+          // Feiner Tie-Breaker für gleichwertige Treffer
+          if (score > 0) {
+            if (inv.status !== 'bezahlt') score += 0.2;
+            if (sameAmount && !hasInvoiceNumber) score += 0.1;
           }
 
           if (score > bestInvScore) {
@@ -2027,7 +2075,7 @@ function bhBankMatchAll(transactions) {
       if (!alreadyBooked || !matchedJournalEntry) {
         for (const [grpKey, grp] of journalGroups.entries()) {
           if (usedGroupKeys.has(grpKey)) continue;
-          const netGrp = getGroupNetBankAmount(grp, tx.isCredit);
+          const netGrp = getGroupNetBankAmount(grp, tx.isCredit, txBankKonto);
           if (Math.abs(netGrp - tx.amount) < 0.05) {
             const days = bhBankDaysDiff(grp.datum, tx.bookingDate);
             if (days <= 35) {
@@ -2053,9 +2101,9 @@ function bhBankMatchAll(transactions) {
           const amtDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
           if (amtDiff >= 0.05) return false;
 
-          // Bankkonto-Richtung muss stimmen (Gutschrift: Bank im Soll; Belastung: Bank im Haben)
-          if (tx.isCredit && !isBankKontoCode(j.konto_soll)) return false;
-          if (!tx.isCredit && !isBankKontoCode(j.konto_haben)) return false;
+          // Strikte Bankkonto-Prüfung: Nur genau das erkannte Bankkonto (1020, 1021, 1022) der CAMT-Transaktion abgleichen!
+          if (tx.isCredit && String(j.konto_soll || '').trim() !== String(txBankKonto).trim()) return false;
+          if (!tx.isCredit && String(j.konto_haben || '').trim() !== String(txBankKonto).trim()) return false;
 
           const days = bhBankDaysDiff(j.datum, tx.bookingDate);
           if (days > 35) return false;
@@ -2079,8 +2127,9 @@ function bhBankMatchAll(transactions) {
           const amtDiff = Math.abs(Number(j.betrag || 0) - tx.amount);
           if (amtDiff >= 0.05) return false;
 
-          if (tx.isCredit && !isBankKontoCode(j.konto_soll)) return false;
-          if (!tx.isCredit && !isBankKontoCode(j.konto_haben)) return false;
+          // Strikte Bankkonto-Prüfung: Bankkonto muss exakt übereinstimmen!
+          if (tx.isCredit && String(j.konto_soll || '').trim() !== String(txBankKonto).trim()) return false;
+          if (!tx.isCredit && String(j.konto_haben || '').trim() !== String(txBankKonto).trim()) return false;
 
           const days = bhBankDaysDiff(j.datum, tx.bookingDate);
           if (days > 4) return false;
@@ -2105,8 +2154,12 @@ function bhBankMatchAll(transactions) {
     if (alreadyBooked) {
       matchType = 'journal';
       if (matchedJournalEntry) {
-        if (!tx._customSollEdited) suggestedSoll = String(matchedJournalEntry.konto_soll || '').trim() || suggestedSoll;
-        if (!tx._customHabenEdited) suggestedHaben = String(matchedJournalEntry.konto_haben || '').trim() || suggestedHaben;
+        if (!tx._customSollEdited) {
+          suggestedSoll = tx.isCredit ? txBankKonto : (String(matchedJournalEntry.konto_soll || '').trim() || suggestedSoll);
+        }
+        if (!tx._customHabenEdited) {
+          suggestedHaben = tx.isCredit ? (String(matchedJournalEntry.konto_haben || '').trim() || suggestedHaben) : txBankKonto;
+        }
       }
     }
 
