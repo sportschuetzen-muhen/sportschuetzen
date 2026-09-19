@@ -25,6 +25,8 @@ sportschuetzen-website/
 *.temp
 *~
 *.swp
+scratch/
+supabase-local/
 
 # Logs
 *.log

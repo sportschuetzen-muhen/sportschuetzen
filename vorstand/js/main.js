@@ -1178,6 +1178,7 @@ function hasWriteAccess(module) {
         'rechnungen':          ['admin', 'kassier', 'vorstand'],
         'mitglieder':          ['admin', 'schuetzenmeister', 'aktuar', 'vorstand'],
         'meeting-recorder':    ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
+        'anlaesse':            ['admin', 'vorstand', 'schuetzenmeister', 'aktuar', 'kassier', 'vermieter'],
         'logins':              ['admin']
     };
 
@@ -1259,6 +1260,7 @@ function navTo(viewId, el) {
         else if (viewId === 'vermietung' && typeof loadVermietungData === 'function') loadPromise = loadVermietungData();
         else if (viewId === 'system-mails' && typeof loadSystemMailsData === 'function') loadPromise = loadSystemMailsData();
         else if (viewId === 'umfragen' && typeof loadUmfragenData === 'function') loadPromise = loadUmfragenData();
+        else if (viewId === 'anlaesse' && typeof loadAnlaesseData === 'function') loadPromise = loadAnlaesseData();
         else if (viewId === 'logins' && typeof loadLoginsData === 'function') loadPromise = loadLoginsData();
         else if (viewId === 'jahresmeisterschaft' && typeof loadJahresmeisterschaftData === 'function') loadPromise = loadJahresmeisterschaftData();
         else if (viewId === 'jahresmeisterschaft-kk' && typeof loadJahresmeisterschaftKKData === 'function') loadPromise = loadJahresmeisterschaftKKData();

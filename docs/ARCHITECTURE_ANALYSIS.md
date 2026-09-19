@@ -807,20 +807,20 @@ graph TD
 
 ### Empfohlene Migrations-Reihenfolge (Phasen 0 bis 11)
 
-| Phase | Bereich | Ziel / Inhalt | Begründung & Risiko |
-|:------|:--------|:--------------|:--------------------|
-| **0** | **Zielarchitektur + Datenmodell** | Supabase-Struktur, Beziehungen, IDs, Rollen, RLS-Entwurf | **Fundament:** Verhindert zweifaches Bauen von Auth/RLS. (Kein Code-Risiko) |
-| **1** | **Auth + Rollen + RLS** | Supabase Auth (JWT), `public.user_roles` als Source of Truth, RLS-Hilfsfunktionen | Sichere gemeinsame Grundlage für alle neuen Tabellen. (Mittel) |
-| **2** | **ANLÄSSE (Pilot-Modul)** | Erstes vollständig neues Supabase-Modul (Anlässe, Helfer, Teilnehmer) | **Pilot:** Keine Legacy-Beeinträchtigung, sofort isoliert testbar. (Niedrig) |
-| **3** | **Vermietung** | Erster produktiver Migrationskandidat: Workflow, Kunden, Verträge | Abgegrenzter Workflow; Google Calendar bleibt Belegungs-Master. (Niedrig) |
-| **4** | **Mitglieder (Read-only Sync)** | Supabase liest Stammdaten via `PersonNumber` (manueller Sync nach XLSX-Import) | Google Sheets bleibt vorerst Master; Supabase wird Read-Replica. (Niedrig) |
-| **5** | **Anlässe / Eventplaner** | Bestehende RSVP-Funktion mit dem neuen Anlässe-Modul zusammenführen | Konsolidierung der Event-Anmeldungen. (Mittel) |
-| **6** | **Mitglieder (Write-Master)** | Supabase wird Master für Mitglieder-Stammdaten | Schnittstellen & Berechtigungen müssen stehen. (Hoch) |
-| **7** | **Inventar** | Vereinsinventar, Ausleihe und Rückgabe | Relativ unabhängig von anderen Modulen. (Niedrig) |
-| **8** | **Jahresmeisterschaft** | Migration auf Basis der neuen KI-/Standblatt-Erkennung | Migration in der Saisonpause nach Abschluss der KI-Tests. (Mittel) |
-| **9** | **Jahresbeiträge** | Beitragsgenerierung basierend auf Mitgliedern und Funktionen | Abhängig von validen Stammdaten. (Hoch) |
-| **10** | **Rechnungen** | Fakturierung, PDF-Ablage via Proxmox/Paperless-NGX | Abhängig von Beitrags- und Buchungsdaten. (Hoch) |
-| **11** | **Buchhaltung** | Doppelte Buchhaltung, Kontenrahmen, Jahresabschluss | Letztes Modul, finanztechnisch sensibel. (Sehr Hoch) |
+| Phase | Bereich | Ziel / Inhalt | Begründung & Risiko | Status |
+|:------|:--------|:--------------|:--------------------|:-------|
+| **0** | **Zielarchitektur + Datenmodell** | Supabase-Struktur, Beziehungen, IDs, Rollen, RLS-Entwurf | **Fundament:** Verhindert zweifaches Bauen von Auth/RLS. (Kein Code-Risiko) | ✅ **Abgeschlossen** |
+| **1** | **Auth + Rollen + RLS** | Supabase Auth (JWT), `public.user_roles` als Source of Truth, RLS-Hilfsfunktionen | Sichere gemeinsame Grundlage für alle neuen Tabellen. (Mittel) | ✅ **Abgeschlossen** |
+| **2** | **ANLÄSSE (Pilot-Modul)** | Erstes vollständig neues Supabase-Modul: Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Event-Controlling (Projektauftrag Punkte 12–17) | **Pilot:** Keine Legacy-Beeinträchtigung der bestehenden Sheets; isoliert im Vorstand-Portal integriert & getestet. (Niedrig) | ✅ **Abgeschlossen** |
+| **3** | **Vermietung** | Erster produktiver Migrationskandidat: Workflow, Kunden, Verträge | Abgegrenzter Workflow; Google Calendar bleibt Belegungs-Master. (Niedrig) | ⏳ **Nächster Schritt** |
+| **4** | **Mitglieder (Read-only Sync)** | Supabase liest Stammdaten via `PersonNumber` (manueller Sync nach XLSX-Import) | Google Sheets bleibt vorerst Master; Supabase wird Read-Replica. (Niedrig) | Geplant |
+| **5** | **Anlässe / Eventplaner** | Bestehende RSVP-Funktion mit dem neuen Anlässe-Modul zusammenführen | Konsolidierung der Event-Anmeldungen. (Mittel) | Geplant |
+| **6** | **Mitglieder (Write-Master)** | Supabase wird Master für Mitglieder-Stammdaten | Schnittstellen & Berechtigungen müssen stehen. (Hoch) | Geplant |
+| **7** | **Inventar** | Vereinsinventar, Ausleihe und Rückgabe | Relativ unabhängig von anderen Modulen. (Niedrig) | Geplant |
+| **8** | **Jahresmeisterschaft** | Migration auf Basis der neuen KI-/Standblatt-Erkennung | Migration in der Saisonpause nach Abschluss der KI-Tests. (Mittel) | Geplant |
+| **9** | **Jahresbeiträge** | Beitragsgenerierung basierend auf Mitgliedern und Funktionen | Abhängig von validen Stammdaten. (Hoch) | Geplant |
+| **10** | **Rechnungen** | Fakturierung, PDF-Ablage via Proxmox/Paperless-NGX | Abhängig von Beitrags- und Buchungsdaten. (Hoch) | Geplant |
+| **11** | **Buchhaltung** | Doppelte Buchhaltung, Kontenrahmen, Jahresabschluss | Letztes Modul, finanztechnisch sensibel. (Sehr Hoch) | Geplant |
 
 ### Parallelbetriebs-Architektur
 

@@ -63,6 +63,10 @@ function ensureVermietungStylesOnce() {
       background: white;
       border: 1px solid rgba(0,0,0,0.06);
     }
+    .feedback-card.urgent {
+      border-left: 5px solid #d00000 !important;
+      background: #fff8f8;
+    }
     .feedback-card:hover {
       transform: translateX(3px);
       box-shadow: 0 5px 12px rgba(0,0,0,0.05) !important;
@@ -146,24 +150,51 @@ function ensureVermietungStylesOnce() {
 function renderVermietungCockpit(daten) {
   ensureVermietungStylesOnce();
 
+  const isOffen = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("01") || s === 'contract_sent';
+  };
+  const isGemahnt = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("02") || s === 'reminded';
+  };
+  const isBezahlt = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed';
+  };
+  const isStorniert = d => {
+    const s = String(d.status || '').toLowerCase();
+    return s.includes("05") || s === 'cancelled';
+  };
+  const isInquiry = d => {
+    const s = String(d.status || '').toLowerCase();
+    return d.is_inquiry === true || s === 'inquiry';
+  };
+
   const stats = {
-    offen:     daten.filter(d => d.status.includes("01")).length,
-    gemahnt:   daten.filter(d => d.status.includes("02")).length,
-    bezahlt:   daten.filter(d => d.status.includes("03") || d.status.includes("04")).length,
-    storniert: daten.filter(d => d.status.includes("05")).length,
+    offen:     daten.filter(isOffen).length,
+    gemahnt:   daten.filter(isGemahnt).length,
+    bezahlt:   daten.filter(isBezahlt).length,
+    storniert: daten.filter(isStorniert).length,
+    anfragen:  daten.filter(isInquiry).length
   };
 
   // Nächste Vermietung bestimmen
-  const heute  = new Date();
+  const heute = new Date();
+  heute.setHours(0,0,0,0);
   const aktive = daten
-    .filter(d => !d.status.includes("05") && !d.status.includes("00"))
+    .filter(d => !isStorniert(d) && String(d.status).indexOf("00") === -1 && d.status !== 'conflict')
     .filter(d => {
+      if (d.start_date_iso) {
+        return new Date(d.start_date_iso) >= heute;
+      }
       const p = (d.mietdatum || "").split(".");
       return p.length === 3 && new Date(p[2], p[1]-1, p[0]) >= heute;
     })
     .sort((a, b) => {
-      const pa = a.mietdatum.split("."), pb = b.mietdatum.split(".");
-      return new Date(pa[2],pa[1]-1,pa[0]) - new Date(pb[2],pb[1]-1,pb[0]);
+      const da = a.start_date_iso ? new Date(a.start_date_iso) : (a.mietdatum ? new Date(a.mietdatum.split(".")[2], a.mietdatum.split(".")[1]-1, a.mietdatum.split(".")[0]) : new Date(0));
+      const db = b.start_date_iso ? new Date(b.start_date_iso) : (b.mietdatum ? new Date(b.mietdatum.split(".")[2], b.mietdatum.split(".")[1]-1, b.mietdatum.split(".")[0]) : new Date(0));
+      return da - db;
     });
   const naechste = aktive[0];
 
@@ -172,9 +203,13 @@ function renderVermietungCockpit(daten) {
 
   // Verfügbare Jahre für Auswahl ermitteln
   const jahre = [...new Set(daten.map(d => {
+    if (d.start_date_iso) return d.start_date_iso.split('-')[0];
     const p = (d.mietdatum || "").split(".");
     return p.length === 3 ? p[2] : null;
   }).filter(Boolean))].sort().reverse();
+  if (!jahre.includes(String(einnahmenJahr))) {
+    jahre.unshift(String(einnahmenJahr));
+  }
 
   // Zähler für Filter-Badges
   const countAll = daten.length;
@@ -182,12 +217,13 @@ function renderVermietungCockpit(daten) {
   const countGemahnt = stats.gemahnt;
   const countBezahlt = stats.bezahlt;
   const countStorniert = stats.storniert;
+  const countAnfragen = stats.anfragen;
 
   document.getElementById('vermietung-container').innerHTML = `
     <!-- STATISTIK-KACHELN -->
     <div class="row g-3 mb-4">
       <div class="col-6 col-md-2">
-        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #ffc107 !important;">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #ffc107 !important; cursor:pointer;" onclick="filterVermietungPill('offen')">
           <div style="font-size:1.8rem;font-weight:bold;color:#ffc107">
             <i class="fas fa-clock me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.offen}
           </div>
@@ -195,7 +231,7 @@ function renderVermietungCockpit(daten) {
         </div>
       </div>
       <div class="col-6 col-md-2">
-        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #fd7e14 !important;">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #fd7e14 !important; cursor:pointer;" onclick="filterVermietungPill('gemahnt')">
           <div style="font-size:1.8rem;font-weight:bold;color:#fd7e14">
             <i class="fas fa-exclamation-circle me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.gemahnt}
           </div>
@@ -203,7 +239,7 @@ function renderVermietungCockpit(daten) {
         </div>
       </div>
       <div class="col-6 col-md-2">
-        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #28a745 !important;">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #28a745 !important; cursor:pointer;" onclick="filterVermietungPill('bezahlt')">
           <div style="font-size:1.8rem;font-weight:bold;color:#28a745">
             <i class="fas fa-check-double me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.bezahlt}
           </div>
@@ -211,7 +247,7 @@ function renderVermietungCockpit(daten) {
         </div>
       </div>
       <div class="col-6 col-md-2">
-        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #dc3545 !important;">
+        <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100" style="border-left:4px solid #dc3545 !important; cursor:pointer;" onclick="filterVermietungPill('storniert')">
           <div style="font-size:1.8rem;font-weight:bold;color:#dc3545">
             <i class="fas fa-times-circle me-2" style="font-size: 1.3rem; opacity: 0.85;"></i>${stats.storniert}
           </div>
@@ -232,12 +268,13 @@ function renderVermietungCockpit(daten) {
         </div>
       </div>
 
+      <!-- NEU: NEUE RESERVATION ERFASSEN (Ersetzt Clubdesk) -->
       <div class="col-6 col-md-2">
         <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100"
-             style="border-left:4px solid #6f42c1 !important; cursor:pointer"
-             onclick="triggerClubdeskExport()">
-          <div style="font-size:1.6rem;color:#6f42c1;"><i class="fas fa-file-csv"></i></div>
-          <div class="small text-muted fw-bold mt-1">Clubdesk Export</div>
+             style="border-left:4px solid #0d6efd !important; cursor:pointer; background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);"
+             onclick="openNewReservationModal()">
+          <div style="font-size:1.6rem;color:#0d6efd;"><i class="fas fa-plus-circle"></i></div>
+          <div class="small text-primary fw-bold mt-1">Neue Miete erfassen</div>
         </div>
       </div>
     </div>
@@ -250,9 +287,10 @@ function renderVermietungCockpit(daten) {
         <strong>Nächste Vermietung:</strong>
         ${escapeHtml(naechste.mietdatum)} – ${escapeHtml(naechste.vorname)} ${escapeHtml(naechste.nachname)}
         <span class="badge ms-2" style="background:#0f3a5d">${escapeHtml(naechste.vertragsnr)}</span>
+        <span class="badge ms-1 bg-secondary">${escapeHtml(naechste.mietbetrag)}</span>
       </div>
       <button class="btn btn-sm btn-outline-primary" style="font-weight:600; font-size:0.8rem;"
-              onclick="openVermietungModal(${naechste.row})"><i class="fas fa-external-link-alt me-1"></i>Details</button>
+              onclick="openVermietungModal('${naechste.row}')"><i class="fas fa-external-link-alt me-1"></i>Details</button>
     </div>`
     : '<div class="alert alert-success mb-4 border-0 shadow-sm"><i class="fas fa-info-circle me-2"></i>Keine bevorstehenden Vermietungen</div>'}
 
@@ -260,7 +298,10 @@ function renderVermietungCockpit(daten) {
     <div class="row g-4">
       <div class="col-12 col-lg-5">
         <div class="card border-0 shadow-sm p-3">
-          <h5 class="mb-3 fw-bold text-dark"><i class="fas fa-calendar-alt text-primary me-2"></i>Belegungskalender</h5>
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0 fw-bold text-dark"><i class="fas fa-calendar-alt text-primary me-2"></i>Belegungskalender</h5>
+            <small class="text-muted"><i class="fas fa-shield-alt text-success me-1"></i>Google Calendar Master</small>
+          </div>
           <iframe
             src="https://calendar.google.com/calendar/embed?src=c3BvcnRzY2h1ZXR6ZW4ubXVoZW5AZ21haWwuY29t&ctz=Europe%2FZurich&mode=MONTH&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&wkst=2&bgcolor=%23ffffff&color=%23009688"
             style="border:none;border-radius:8px;width:100%;height:380px;"
@@ -281,7 +322,7 @@ function renderVermietungCockpit(daten) {
             </li>
             <li class="nav-item" role="presentation">
               <button class="nav-link fw-bold btn-sm text-secondary" id="feedback-tab" data-bs-toggle="pill" data-bs-target="#tab-feedback" type="button" role="tab" aria-controls="tab-feedback" aria-selected="false" onclick="renderFeedbackCards()">
-                <i class="fas fa-comment-slash me-1"></i> Stornorückmeldungen
+                <i class="fas fa-comment-slash me-1"></i> Stornorückmeldungen (${stornoFeedbackDaten.length})
               </button>
             </li>
           </ul>
@@ -290,11 +331,14 @@ function renderVermietungCockpit(daten) {
             <!-- TAB 1: RESERVATIONEN -->
             <div class="tab-pane fade show active" id="tab-reservations" role="tabpanel" aria-labelledby="reservations-tab">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-                <div class="position-relative" style="width: 230px;">
-                  <input type="text" class="form-control form-control-sm ps-4" id="res-search-input" placeholder="Suche Name, E-Mail, Datum..." oninput="searchReservations(this.value)">
+                <div class="position-relative" style="width: 250px;">
+                  <input type="text" class="form-control form-control-sm ps-4" id="res-search-input" placeholder="Suche Name, E-Mail, Datum, Nr..." oninput="searchReservations(this.value)">
                   <i class="fas fa-search position-absolute text-muted" style="left: 10px; top: 9px; font-size: 0.8rem;"></i>
                 </div>
                 <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-primary py-1 fw-bold" onclick="openNewReservationModal()">
+                    <i class="fas fa-plus me-1"></i>Neue Miete
+                  </button>
                   <button class="btn btn-sm btn-outline-secondary py-1" onclick="loadVermietungData(true)">🔄 Aktualisieren</button>
                 </div>
               </div>
@@ -316,6 +360,10 @@ function renderVermietungCockpit(daten) {
                 <div class="filter-pill ${aktuellerFilter === 'storniert' ? 'active' : ''}" onclick="filterVermietungPill('storniert')">
                   Storniert <span class="badge rounded-pill bg-danger">${countStorniert}</span>
                 </div>
+                ${countAnfragen > 0 ? `
+                <div class="filter-pill ${aktuellerFilter === 'anfragen' ? 'active' : ''}" onclick="filterVermietungPill('anfragen')">
+                  Vorab-Anfragen <span class="badge rounded-pill bg-info text-dark">${countAnfragen}</span>
+                </div>` : ''}
               </div>
 
               <div style="overflow-x:auto;max-height:350px;overflow-y:auto;" class="border rounded shadow-sm bg-white">
@@ -324,7 +372,8 @@ function renderVermietungCockpit(daten) {
                     <tr>
                       <th style="cursor:pointer" onclick="sortVermietung()">Datum <i class="fas fa-sort text-muted ms-1"></i></th>
                       <th>Name</th>
-                      <th>Vertrag</th>
+                      <th>Vertrags-Nr.</th>
+                      <th>Mietbetrag</th>
                       <th>Status</th>
                       <th></th>
                     </tr>
@@ -340,7 +389,7 @@ function renderVermietungCockpit(daten) {
             <div class="tab-pane fade" id="tab-feedback" role="tabpanel" aria-labelledby="feedback-tab">
               <div class="mb-3">
                 <div class="position-relative" style="width: 250px;">
-                  <input type="text" class="form-control form-control-sm ps-4" id="fb-search-input" placeholder="Feedback filtern (Name, Grund...)" oninput="searchFeedback(this.value)">
+                  <input type="text" class="form-control form-control-sm ps-4" id="fb-search-input" placeholder="Feedback filtern (Grund, V-Nr...)" oninput="searchFeedback(this.value)">
                   <i class="fas fa-search position-absolute text-muted" style="left: 10px; top: 9px; font-size: 0.8rem;"></i>
                 </div>
               </div>
@@ -367,13 +416,32 @@ function renderVermietungCockpit(daten) {
         </div>
       </div>
     </div>
+
+    <!-- NEUE RESERVATION MODAL (SCHNELLERFASSUNG) -->
+    <div class="modal fade" id="newReservationModal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header border-0 bg-primary text-white" style="border-radius:8px 8px 0 0;">
+            <h5 class="modal-title fw-bold"><i class="fas fa-plus-circle me-2"></i>Neue Reservation erfassen</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" id="new-reservation-modal-body"></div>
+          <div class="modal-footer border-0 bg-light">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" class="btn btn-primary fw-bold" onclick="saveNewReservation()"><i class="fas fa-save me-1"></i>Reservation speichern</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 }
 
 // Generiert die HTML-Visualisierung der Reservierungs-Zeitleiste (Timeline)
 function getTimelineHtml(status) {
-  const isStorniert = status.includes("05");
-  const isKonflikt  = status.includes("00");
+  const s = String(status || '').toLowerCase();
+  const isStorniert = s.includes("05") || s === 'cancelled';
+  const isKonflikt  = s.includes("00") || s === 'conflict';
+  const isInquiry   = s === 'inquiry';
   
   if (isKonflikt) {
     return `
@@ -381,6 +449,16 @@ function getTimelineHtml(status) {
         <div class="timeline-step storniert">
           <div class="timeline-circle"><i class="fas fa-exclamation-triangle"></i></div>
           <div class="timeline-title">Konflikt</div>
+        </div>
+      </div>`;
+  }
+
+  if (isInquiry) {
+    return `
+      <div class="timeline-steps">
+        <div class="timeline-step active">
+          <div class="timeline-circle"><i class="fas fa-clock"></i></div>
+          <div class="timeline-title">Vorab-Anfrage (Prüfung)</div>
         </div>
       </div>`;
   }
@@ -399,21 +477,21 @@ function getTimelineHtml(status) {
       </div>`;
   }
 
-  const step1Class = status.includes("01") || status.includes("02") || status.includes("03") || status.includes("04") ? 'completed' : '';
-  const step2Class = status.includes("02") ? 'storniert' : (status.includes("03") || status.includes("04") ? 'completed' : 'active');
-  const step3Class = status.includes("03") || status.includes("04") ? 'completed' : '';
-  const step4Class = status.includes("04") ? 'completed' : '';
+  const step1Class = 'completed'; // Vertrag versandt
+  const step2Class = s.includes("02") || s === 'reminded' ? 'storniert' : (s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed' ? 'completed' : 'active');
+  const step3Class = (s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed') ? 'completed' : '';
+  const step4Class = (s.includes("04") || s === 'keys_issued' || s === 'completed') ? 'completed' : '';
 
-  const step2Icon = status.includes("02") ? '<i class="fas fa-exclamation"></i>' : '2';
-  const step2Title = status.includes("02") ? 'Gemahnt' : 'Zahlung';
-  const step3Icon = status.includes("03") || status.includes("04") ? '<i class="fas fa-check"></i>' : '3';
-  const step4Icon = status.includes("04") ? '<i class="fas fa-key"></i>' : '4';
+  const step2Icon = s.includes("02") || s === 'reminded' ? '<i class="fas fa-exclamation"></i>' : '2';
+  const step2Title = s.includes("02") || s === 'reminded' ? 'Gemahnt' : 'Zahlung';
+  const step3Icon = (s.includes("03") || s.includes("04") || s === 'paid' || s === 'keys_issued' || s === 'completed') ? '<i class="fas fa-check"></i>' : '3';
+  const step4Icon = (s.includes("04") || s === 'keys_issued' || s === 'completed') ? '<i class="fas fa-key"></i>' : '4';
 
   return `
     <div class="timeline-steps">
       <div class="timeline-step ${step1Class}">
         <div class="timeline-circle">1</div>
-        <div class="timeline-title">Vertrag</div>
+        <div class="timeline-title">Vertrag versandt</div>
       </div>
       <div class="timeline-step ${step2Class}">
         <div class="timeline-circle">${step2Icon}</div>

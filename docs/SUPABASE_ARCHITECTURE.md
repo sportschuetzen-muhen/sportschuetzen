@@ -1,7 +1,7 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
 **Stand:** 2026-09-19  
-**Phase:** 0 & 2 – Zielarchitektur & Datenmodellierung  
+**Phase:** 0, 1, 2 & 3 – Zielarchitektur, Auth, Anlässe & Vermietung  
 **Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
@@ -395,159 +395,301 @@ CREATE INDEX idx_members_auth_user ON public.members(auth_user_id);
 
 ---
 
-### Pilotmodul: ANLÄSSE
+### Pilotmodul: ANLÄSSE (Event-Management & Controlling)
 
-Das Modul `ANLÄSSE` wird als erstes Fachmodul vollständig nativ in Supabase aufgebaut. Es deckt Schiessanlässe, vereinsinterne Feste, GV und Helfereinsätze ab.
+Das Modul `ANLÄSSE` wird als erstes Fachmodul vollständig nativ in Supabase aufgebaut (gemäss Projektauftrag Punkte 12–17). Es deckt nicht nur die Event-Ausschreibung ab, sondern fungiert als vollständiges operatives Planungs-, Festwirtschafts- und Controlling-Werkzeug:
 
 ```sql
--- 1. Anlass-Kategorien
-CREATE TABLE public.event_categories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code VARCHAR(50) UNIQUE NOT NULL,                  -- z.B. 'meisterschaft', 'fest', 'gv', 'training'
-    name VARCHAR(100) NOT NULL,
-    color_hex VARCHAR(10) DEFAULT '#0f3a5d',
-    description TEXT
-);
-
--- 2. Haupttabelle Anlässe
+-- 1. Haupttabelle Anlässe & Vorlagen (Punkte 12, 13, 15)
 CREATE TABLE public.events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title VARCHAR(200) NOT NULL,
+    name VARCHAR(200) NOT NULL,
     description TEXT,
-    category_id UUID REFERENCES public.event_categories(id),
-    location VARCHAR(200) DEFAULT 'Schiessanlage Muhen',
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ NOT NULL,
-    registration_deadline TIMESTAMPTZ,
-    max_participants INTEGER,
-    requires_licence BOOLEAN DEFAULT false,            -- Nur für lizenzierte Schützen
-    is_public BOOLEAN DEFAULT false,                   -- Auf Vereins-Website sichtbar
-    is_cancelled BOOLEAN DEFAULT false,
+    event_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME,
+    location VARCHAR(200) NOT NULL DEFAULT 'Schiessanlage Muhen',
+    manager_name VARCHAR(150),                          -- Verantwortlicher (Name)
+    manager_id UUID REFERENCES auth.users(id),          -- Verknüpfter Benutzer
+    expected_visitors INTEGER NOT NULL DEFAULT 0,       -- Erwartete Besucher für Mengenplanung
+    status VARCHAR(50) NOT NULL DEFAULT 'draft',        -- 'draft', 'planned', 'active', 'completed', 'cancelled'
+    budget NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+    notes TEXT,
+    is_template BOOLEAN NOT NULL DEFAULT false,         -- True = Dient als Vorlage (z.B. '1.-August-Feier')
+    template_name VARCHAR(100),
+    is_public BOOLEAN NOT NULL DEFAULT false,           -- Auf öffentlicher Vereins-Website anzeigen
     created_by UUID REFERENCES auth.users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 3. Anmeldungen / Teilnehmer (RSVP)
-CREATE TABLE public.event_registrations (
+-- 2. Mengen- & Artikelplanung (Punkte 13 & 14)
+-- Formel: erwartete Besucher × Menge pro Besucher × Sicherheitsfaktor = empfohlene Bestellmenge
+CREATE TABLE public.event_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
-    person_number INTEGER REFERENCES public.members(person_number), -- Wenn Vereinsmitglied
-    guest_name VARCHAR(150),                           -- Falls externe Begleitperson
-    guest_email VARCHAR(255),
-    status rsvp_status NOT NULL DEFAULT 'attending',
-    target_discipline VARCHAR(50),                     -- z.B. 'liegend', 'kniend'
-    remarks TEXT,
-    registered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_event_member UNIQUE (event_id, person_number)
+    category VARCHAR(100) NOT NULL DEFAULT 'Festwirtschaft',
+    item_name VARCHAR(150) NOT NULL,
+    unit VARCHAR(50) NOT NULL DEFAULT 'Stk',
+    cost_price NUMERIC(10,2) NOT NULL DEFAULT 0.00,     -- Einkaufspreis
+    sales_price NUMERIC(10,2) NOT NULL DEFAULT 0.00,    -- Verkaufspreis
+    qty_per_visitor NUMERIC(8,3) NOT NULL DEFAULT 0.000,-- Menge pro Besucher
+    safety_factor NUMERIC(5,2) NOT NULL DEFAULT 1.10,   -- Sicherheitsfaktor (Standard 1.10 = +10%)
+    recommended_qty NUMERIC(10,2) NOT NULL DEFAULT 0.00,-- Errechnete Empfehlung
+    order_qty NUMERIC(10,2) NOT NULL DEFAULT 0.00,      -- Tatsächliche Bestellmenge (übersteuerbar)
+    actual_qty NUMERIC(10,2) NOT NULL DEFAULT 0.00,     -- Tatsächlich gelieferte Menge
+    sold_qty NUMERIC(10,2) NOT NULL DEFAULT 0.00,       -- Verkaufte Menge
+    remaining_qty NUMERIC(10,2) NOT NULL DEFAULT 0.00,  -- Restmenge
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 4. Helfer-Schichten für Anlässe
-CREATE TABLE public.event_helper_shifts (
+-- 3. Lieferanten-Bestellungen (Punkt 13)
+CREATE TABLE public.event_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
-    role_name VARCHAR(100) NOT NULL,                   -- z.B. 'Wirtschaft', 'Standblatt-Ausgabe', 'Range Officer'
-    start_time TIMESTAMPTZ NOT NULL,
-    end_time TIMESTAMPTZ NOT NULL,
+    supplier_name VARCHAR(150) NOT NULL,                -- Lieferant
+    supplier_contact VARCHAR(200),
+    item_id UUID REFERENCES public.event_items(id) ON DELETE SET NULL,
+    item_description VARCHAR(200) NOT NULL,
+    quantity NUMERIC(10,2) NOT NULL DEFAULT 1.00,
+    unit VARCHAR(50) NOT NULL DEFAULT 'Stk',
+    total_price NUMERIC(10,2) NOT NULL DEFAULT 0.00,
+    order_date DATE,
+    delivery_date DATE,
+    delivery_time TIME,
+    status VARCHAR(50) NOT NULL DEFAULT 'draft',
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 4. Vorbereitung & Checklisten (Punkt 13)
+CREATE TABLE public.event_checklists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    phase VARCHAR(50) NOT NULL DEFAULT 'Vorbereitung',  -- 'Vorbereitung', 'Einkauf', 'Aufbau', 'Durchführung', 'Abbau', 'Nachbereitung'
+    task VARCHAR(255) NOT NULL,
+    assigned_to VARCHAR(150),
+    assigned_user_id UUID REFERENCES auth.users(id),
+    due_date DATE,
+    priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 5. Helfer / Stände / Schichten (Punkt 13)
+CREATE TABLE public.event_shifts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    area VARCHAR(100) NOT NULL,                         -- Bereich/Stand (z.B. 'Grill', 'Ausschank', 'Kasse', 'Standblattbüro')
+    role_name VARCHAR(100) NOT NULL,                    -- Funktion (z.B. 'Grillmeister', 'Service', 'Kassier', 'Schiessleiter')
+    shift_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
     required_helpers INTEGER NOT NULL DEFAULT 1,
-    assigned_person_number INTEGER REFERENCES public.members(person_number),
-    assigned_guest_name VARCHAR(150),
-    remarks TEXT
+    description TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'open',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_events_start ON public.events(start_time);
-CREATE INDEX idx_event_reg_event ON public.event_registrations(event_id);
+-- 6. Helfer-Zuordnungen & Bestätigung durch Mitglieder (Punkt 13)
+CREATE TABLE public.event_shift_assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shift_id UUID NOT NULL REFERENCES public.event_shifts(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id),             -- Verknüpftes Login-Konto
+    helper_name VARCHAR(150) NOT NULL,
+    helper_email VARCHAR(255),
+    helper_phone VARCHAR(50),
+    confirmed_by_helper BOOLEAN NOT NULL DEFAULT false, -- Mitglied hat Einsatz bestätigt
+    confirmation_date TIMESTAMPTZ,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 7. Event-Controlling (Punkt 16) – Berechneter View
+CREATE OR REPLACE VIEW public.v_event_controlling AS
+WITH item_stats AS (
+    SELECT event_id,
+        COALESCE(SUM(order_qty * cost_price), 0.00) AS total_planned_cost,
+        COALESCE(SUM(actual_qty * cost_price), 0.00) AS total_actual_cost,
+        COALESCE(SUM(order_qty * sales_price), 0.00) AS total_planned_revenue,
+        COALESCE(SUM(sold_qty * sales_price), 0.00) AS total_actual_revenue
+    FROM public.event_items GROUP BY event_id
+),
+shift_stats AS (
+    SELECT s.event_id,
+        COALESCE(SUM(
+            ROUND(EXTRACT(EPOCH FROM (s.end_time - s.start_time)) / 3600.0, 2) *
+            (SELECT COUNT(*) FROM public.event_shift_assignments a WHERE a.shift_id = s.id)
+        ), 0.00) AS total_helper_hours
+    FROM public.event_shifts s GROUP BY s.event_id
+)
+SELECT e.id AS event_id, e.name AS event_name, e.event_date, e.status, e.budget, e.expected_visitors,
+    COALESCE(i.total_planned_cost, 0.00) AS planned_cost,
+    COALESCE(i.total_actual_cost, 0.00) AS actual_cost,
+    COALESCE(i.total_planned_revenue, 0.00) AS planned_revenue,
+    COALESCE(i.total_actual_revenue, 0.00) AS actual_revenue,
+    (COALESCE(i.total_actual_revenue, 0.00) - COALESCE(i.total_actual_cost, 0.00)) AS gross_margin,
+    COALESCE(s.total_helper_hours, 0.00) AS total_helper_hours,
+    CASE WHEN COALESCE(s.total_helper_hours, 0) > 0 THEN
+        ROUND((COALESCE(i.total_actual_revenue, 0.00) - COALESCE(i.total_actual_cost, 0.00)) / s.total_helper_hours, 2)
+    ELSE 0.00 END AS margin_per_helper_hour
+FROM public.events e
+LEFT JOIN item_stats i ON i.event_id = e.id
+LEFT JOIN shift_stats s ON s.event_id = e.id;
+
+-- 8. Vorlage duplizieren (Punkt 15)
+-- public.create_event_from_template(template_id, new_name, new_date, new_visitors)
+-- Dupliziert Event, skaliert alle Artikel mit neuem Besucherfaktor und kopiert Checklisten & Schichten.
 ```
+
+#### Frontend-Integration: Modul ANLÄSSE im Vorstand-Portal
+
+Das Modul ist im bestehenden Vorstand-Portal (`vorstand/`) nahtlos als eigenständiger Bereich **„Anlässe & Controlling“** integriert:
+
+* **[vorstand/js/supabase-client.js](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/supabase-client.js):** Initialisiert `@supabase/supabase-js` mit dem öffentlichen `ANON_KEY` und Host `http://192.168.68.117:8000`.
+* **[vorstand/js/anlaesse.js](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/anlaesse.js):** Enthält 6 interaktive Funktions-Tabs:
+  1. **📅 Übersicht & Anlässe (Punkte 12 & 13):** Filter nach Status (`Geplant`, `Aktiv`, `Abgeschlossen`, `Vorlagen`), Suche, Metadatenkarten, Neuerfassung und Duplizierung aus Vorlagen.
+  2. **⚖️ Mengenrechner & Artikelplanung (Punkte 13 & 14):** Formel $\text{Menge} = \text{Besucher} \times \text{Menge/Besucher} \times \text{Sicherheitsfaktor}$. Echtzeit-Neuberechnung bei Besucheränderung und Soll/Ist-Vergleich (bestellt, geliefert, verkauft, Rest).
+  3. **🛒 Bestellwesen & Lieferanten (Punkt 13):** Lieferanten-Bestellungen mit Lieferterminen, Mengenkontingenten und Status (`draft`, `ordered`, `confirmed`, `delivered`, `cancelled`).
+  4. **✅ Checklisten & Vorbereitung (Punkt 13):** Phasenbasierte Vorbereitung (`Vorbereitung`, `Einkauf`, `Aufbau`, `Durchführung`, `Abbau`, `Nachbereitung`) mit interaktiven Checkboxen, Fälligkeit und Prioritäten.
+  5. **👥 Helfer & Stände / Schichten (Punkt 13):** Stand- und Schichtplan (Grill, Ausschank, Kasse), Soll- vs. Ist-Besetzung, Zuweisung von Helfern und Bestätigungs-Workflow.
+  6. **📊 Event-Controlling & Marge (Punkt 16):** Anbindung an PostgreSQL View `v_event_controlling`, 4 KPI-Kacheln (Soll-/Ist-Kosten, Einnahmen, Bruttomarge, Deckungsbeitrag pro Helferstunde).
+* **[vorstand/index.html](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/index.html) & [vorstand/js/main.js](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/main.js):** Sidebar-Navigation, Dashboard-Kachel, View-Container `#view-anlaesse` und Einbindung in `navTo('anlaesse')` sowie `hasWriteAccess`.
 
 ---
 
-### Fachmodul: VERMIETUNG
+### Fachmodul: VERMIETUNG (Phase 3 – Abgeschlossen)
 
-Die Vermietung wird als erstes bestehendes Altsystem abgelöst. Das Modell trennt strikt zwischen **operativer Vermietungsverwaltung (Supabase)** und **physischer Kalenderbelegung (Google Calendar)**.
+Die Vermietungsverwaltung für Schützenstube und Schützenhaus wurde als erstes operatives Altsystem erfolgreich migriert.
+
+#### Architektur & Aufgabenteilung (Hybridbetrieb):
+* **Supabase PostgreSQL (Master-Datenbank):**
+  * Hält alle Buchungen (`rental_requests`), Statusabläufe (`rental_status_logs`), Storno-Feedbacks (`rental_cancellation_feedbacks`), Tarife (`rental_pricing`) und dynamische Konfigurationen (`rental_settings`).
+  * Keine Hartcodierung: Mietpreise (Standard CHF 300.-), Vorlagen-ID (`1j6s4pq0dOHyF0Viko_uDfhbTwO5pPCX_ZYfu6nC0N-o`), IBAN, Absender- und Wirtschaftsdaten werden dynamisch verwaltet.
+* **Google Apps Script & Google Calendar (Ausführungs-Dienstleister):**
+  * Belegungs-Master & Concurrency-Schutz: Miettermin ganztägig belegt, Folgetag automatisch als Reinigungspuffer gesperrt; Freigabe bei Stornierung.
+  * PDF-Mietvertrag: Erstellung mit amtlicher Schweizer QR-Rechnung (SPC 0200 1) via Google Doc Template.
+  * E-Mail-Versand: Versand von Vertrag, Mahnung, Schlüsselübergabe, Storno-Mail mit Feedbacklink und Wirtschafts-Benachrichtigung.
+  * E-Banking Scan: `raiffeisen.js` scannt automatische Gutschrifts-Mails der Raiffeisenbank im Gmail-Label `Raiffeisen` und stößt automatische Zahlungsbestätigung an.
+* **Automatischer Abgleich & Schutz vor Doppelversand:**
+  * Mails werden ausschließlich über definierte Workflow-Trigger versendet.
+  * Das Vorstand-Portal (`vorstand/js/vermietung/`) prüft vor Mailaktionen (z. B. Mahnung, Schlüsselübergabe), ob diese bereits versandt wurden, und gleicht im Hintergrund neue Raiffeisen-Zahlungseingänge automatisch nach Supabase ab.
+  * Bereinigt: Clubdesk-Export und WhatsApp/CallMeBot wurden vollständig entfernt.
 
 ```sql
--- 1. Mietobjekte / Tarife
+-- 1. Dynamische Einstellungen (100% ohne Hartcodierung)
+CREATE TABLE public.rental_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    setting_key VARCHAR(50) UNIQUE NOT NULL,
+    setting_value TEXT NOT NULL,
+    description VARCHAR(255),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 2. Tarife & Mietpreise
 CREATE TABLE public.rental_pricing (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tariff_code VARCHAR(50) UNIQUE NOT NULL,           -- z.B. 'standard_tag', 'mitglied_rabatt', 'abend'
+    tariff_code VARCHAR(50) UNIQUE NOT NULL,           -- 'standard_tag', 'mitglied_rabatt', 'abend'
     description VARCHAR(150) NOT NULL,
     base_price_chf NUMERIC(10,2) NOT NULL,
     cleaning_fee_chf NUMERIC(10,2) DEFAULT 0.00,
     deposit_chf NUMERIC(10,2) DEFAULT 200.00,
-    is_active BOOLEAN DEFAULT true
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 2. Vermietungsanfragen & Buchungen
+-- 3. Sequenz & Trigger für automatische Buchungsnummern (V-YYYY-XXXX / A-YYYY-XXXX)
+CREATE SEQUENCE public.rental_booking_seq START WITH 100;
+
+-- 4. Buchungen & Anfragen
 CREATE TABLE public.rental_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    booking_number VARCHAR(30) UNIQUE NOT NULL,         -- z.B. 'MIETE-2026-0042'
+    booking_number VARCHAR(30) UNIQUE NOT NULL,
+    is_inquiry BOOLEAN NOT NULL DEFAULT false,
+    inquiry_type VARCHAR(50),
+    inquiry_note TEXT,
     
     -- Mietzeitraum
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    start_time TIME,
-    end_time TIME,
+    festbeginn VARCHAR(50),
     
     -- Mieter- / Kundendaten
-    customer_type VARCHAR(20) NOT NULL DEFAULT 'private', -- 'private', 'company', 'member'
-    person_number INTEGER REFERENCES public.members(person_number), -- Nur bei Vereinsmitgliedern
+    salutation VARCHAR(20),
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    company VARCHAR(150),
     street VARCHAR(150) NOT NULL,
     post_code VARCHAR(20) NOT NULL,
     city VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL,
     phone VARCHAR(50) NOT NULL,
     
-    -- Anlassdetails
-    event_purpose VARCHAR(255) NOT NULL,               -- Zweck (z.B. 'Geburtstag', 'Familienfeier')
-    expected_guests INTEGER,
-    remarks TEXT,
-    
-    -- Finanzielle Abwicklung
+    -- Finanzen
     pricing_id UUID REFERENCES public.rental_pricing(id),
-    total_amount_chf NUMERIC(10,2) NOT NULL,
+    total_amount_chf NUMERIC(10,2) NOT NULL DEFAULT 300.00,
     deposit_amount_chf NUMERIC(10,2) DEFAULT 200.00,
-    is_deposit_paid BOOLEAN DEFAULT false,
-    is_rental_paid BOOLEAN DEFAULT false,
+    is_paid BOOLEAN DEFAULT false,
     
     -- Status & Workflow
-    status rental_status NOT NULL DEFAULT 'inquiry',
+    status public.rental_status NOT NULL DEFAULT 'contract_sent',
     rejection_reason TEXT,
     cancellation_reason TEXT,
     
+    -- Zeitstempel & Protokolle
+    datum_vertrag DATE,
+    datum_mahnung DATE,
+    datum_schluessel DATE,
+    datum_storno DATE,
+    datum_raiffeisen DATE,
+    status_raiffeisen VARCHAR(100),
+    kommentar_raiffeisen TEXT,
+    mail_wirtschaft_sent_at TIMESTAMPTZ,
+    
     -- Externe Verknüpfungen
-    google_calendar_event_id VARCHAR(255),             -- Google Calendar Event-ID (Belegungs-Master!)
-    contract_storage_path TEXT,                        -- Supabase Storage Pfad: 'vermietungen/2026/vertrag_0042.pdf'
+    google_calendar_event_id VARCHAR(255),
+    contract_file_url TEXT,
+    paperless_status public.archive_sync_status NOT NULL DEFAULT 'not_applicable',
+    paperless_document_id INTEGER,
     
-    -- Asynchrone Archivierung in Paperless-NGX
-    paperless_status archive_sync_status NOT NULL DEFAULT 'not_applicable',
-    paperless_document_id INTEGER,                     -- ID im Paperless-Server
-    paperless_error_message TEXT,
-    
-    -- Metadaten
+    admin_comment TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    handled_by UUID REFERENCES auth.users(id)          -- Bearbeitender Vermieter/Admin
+    handled_by UUID REFERENCES auth.users(id)
 );
 
--- 3. Historie / Protokoll zu Vermietungen
+-- 5. Status-Historie & Audit-Trail (automatischer Trigger)
 CREATE TABLE public.rental_status_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rental_request_id UUID NOT NULL REFERENCES public.rental_requests(id) ON DELETE CASCADE,
-    previous_status rental_status,
-    new_status rental_status NOT NULL,
+    previous_status public.rental_status,
+    new_status public.rental_status NOT NULL,
     comment TEXT,
-    changed_by UUID REFERENCES auth.users(id),
+    changed_by VARCHAR(100) DEFAULT 'System',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 6. Storno-Rückmeldungen mit Alarmfunktion
+CREATE TABLE public.rental_cancellation_feedbacks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rental_request_id UUID REFERENCES public.rental_requests(id) ON DELETE SET NULL,
+    booking_number VARCHAR(30) NOT NULL,
+    reason TEXT NOT NULL,
+    remarks TEXT,
+    is_urgent BOOLEAN DEFAULT false,                    -- true bei "Zahlung bereits getätigt"
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_rentals_dates ON public.rental_requests(start_date, end_date);
 CREATE INDEX idx_rentals_status ON public.rental_requests(status);
-CREATE INDEX idx_rentals_paperless ON public.rental_requests(paperless_status);
+CREATE INDEX idx_rentals_vnr ON public.rental_requests(booking_number);
+CREATE INDEX idx_rental_logs_req ON public.rental_status_logs(rental_request_id);
 ```
+
 
 ---
 
@@ -557,53 +699,86 @@ Alle Tabellen laufen unter aktiviertem RLS. **Entscheidender Vorteil des neuen R
 
 Ändert sich die Vereinsorganisation (z. B. "Kassier darf ab sofort Vermietungen genehmigen"), muss **keine einzige RLS-Policy angefasst werden**, sondern lediglich ein Datensatz in `public.role_permissions`.
 
-### 5.1 Policies für `public.events` & `event_registrations`
+### 5.1 Policies für `public.events` & Fachmodul ANLÄSSE
+
+Alle Tabellen des Fachmoduls sind durch RLS geschützt. Im Zielmodell steuern Berechtigungen (`anlaesse.view_internal`, `anlaesse.manage`, `anlaesse.rsvp_all`) den Zugriff. Für die Übergangs- und Entwicklungsphase im Vorstand-Portal (`03_anon_dev_policies.sql`) ist der Zugriff über den öffentlichen `ANON_KEY` freigeschaltet:
 
 ```sql
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.event_registrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.event_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.event_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.event_checklists ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.event_shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.event_shift_assignments ENABLE ROW LEVEL SECURITY;
 
--- 1. ANLÄSSE LESEN:
--- Öffentliche Anlässe darf jeder (auch nicht-eingeloggte Besucher) sehen
-CREATE POLICY "Public events visible to all" ON public.events
-    FOR SELECT TO public
-    USING (is_public = true AND is_cancelled = false);
+-- 1. ANLÄSSE (public.events):
+-- Öffentliche Anlässe für alle (auch Website-Gäste); interne für Vereinsmitglieder
+CREATE POLICY "events_select_policy" ON public.events
+    FOR SELECT TO authenticated, anon
+    USING (
+        is_public = true
+        OR auth.has_permission('anlaesse.view_internal')
+        OR auth.has_permission('anlaesse.manage')
+    );
 
--- Vereinsinterne Anlässe sehen Benutzer mit der Berechtigung 'anlaesse.view_internal' (Mitglieder & Vorstand)
-CREATE POLICY "Internal events visible with permission" ON public.events
-    FOR SELECT TO authenticated
-    USING (auth.has_permission('anlaesse.view_internal'));
-
--- 2. ANLÄSSE ERSTELLEN / BEARBEITEN / ABSAGEN:
--- Geprüft wird die Aktionsberechtigung 'anlaesse.manage'
-CREATE POLICY "Manage events based on permission" ON public.events
+CREATE POLICY "events_manage_policy" ON public.events
     FOR ALL TO authenticated
     USING (auth.has_permission('anlaesse.manage'))
     WITH CHECK (auth.has_permission('anlaesse.manage'));
 
--- 3. ANMELDUNGEN (RSVP) - EIGENE ANMELDUNG:
--- Mitglieder dürfen ihre eigene Anmeldung einsehen und verändern ('anlaesse.rsvp_self')
-CREATE POLICY "Member manages own registration" ON public.event_registrations
+-- 2. MENGEN- & ARTIKELPLANUNG (public.event_items):
+CREATE POLICY "event_items_select_policy" ON public.event_items
+    FOR SELECT TO authenticated
+    USING (auth.has_permission('anlaesse.view_internal') OR auth.has_permission('anlaesse.manage'));
+
+CREATE POLICY "event_items_manage_policy" ON public.event_items
     FOR ALL TO authenticated
+    USING (auth.has_permission('anlaesse.manage'))
+    WITH CHECK (auth.has_permission('anlaesse.manage'));
+
+-- 3. LIEFERANTEN-BESTELLUNGEN (public.event_orders):
+CREATE POLICY "event_orders_manage_policy" ON public.event_orders
+    FOR ALL TO authenticated
+    USING (auth.has_permission('anlaesse.manage'))
+    WITH CHECK (auth.has_permission('anlaesse.manage'));
+
+-- 4. CHECKLISTEN (public.event_checklists):
+CREATE POLICY "event_checklists_select_policy" ON public.event_checklists
+    FOR SELECT TO authenticated
+    USING (auth.has_permission('anlaesse.view_internal') OR auth.has_permission('anlaesse.manage'));
+
+CREATE POLICY "event_checklists_manage_policy" ON public.event_checklists
+    FOR ALL TO authenticated
+    USING (auth.has_permission('anlaesse.manage'))
+    WITH CHECK (auth.has_permission('anlaesse.manage'));
+
+-- 5. SCHICHTEN & HELFER (public.event_shifts & public.event_shift_assignments):
+CREATE POLICY "event_shifts_select_policy" ON public.event_shifts
+    FOR SELECT TO authenticated
+    USING (auth.has_permission('anlaesse.view_internal') OR auth.has_permission('anlaesse.manage'));
+
+CREATE POLICY "event_shift_assign_select_policy" ON public.event_shift_assignments
+    FOR SELECT TO authenticated
     USING (
-        auth.has_permission('anlaesse.rsvp_self') AND
-        person_number IN (
-            SELECT person_number FROM public.members WHERE auth_user_id = auth.uid()
-        )
-    )
-    WITH CHECK (
-        auth.has_permission('anlaesse.rsvp_self') AND
-        person_number IN (
-            SELECT person_number FROM public.members WHERE auth_user_id = auth.uid()
-        )
+        user_id = auth.uid()
+        OR auth.has_permission('anlaesse.manage')
+        OR auth.has_permission('anlaesse.rsvp_all')
     );
 
--- 4. ANMELDUNGEN VOLLVERWALTUNG:
--- Berechtigte Funktionäre ('anlaesse.rsvp_all') dürfen alle Anmeldungen verwalten
-CREATE POLICY "Functionaries manage all registrations" ON public.event_registrations
-    FOR ALL TO authenticated
-    USING (auth.has_permission('anlaesse.rsvp_all'))
-    WITH CHECK (auth.has_permission('anlaesse.rsvp_all'));
+-- Helfer dürfen ihre eigene Schicht bestätigen
+CREATE POLICY "event_shift_assign_self_confirm" ON public.event_shift_assignments
+    FOR UPDATE TO authenticated
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+-- 6. ENTWICKLUNGS- & ÜBERGANGSPOLICIES (03_anon_dev_policies.sql):
+-- Ermöglicht die nahtlose Nutzung des Moduls im Vorstand-Portal mit ANON_KEY
+CREATE POLICY "events_anon_manage" ON public.events FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "event_items_anon_manage" ON public.event_items FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "event_orders_anon_manage" ON public.event_orders FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "event_checklists_anon_manage" ON public.event_checklists FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "event_shifts_anon_manage" ON public.event_shifts FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "event_shift_assignments_anon_manage" ON public.event_shift_assignments FOR ALL TO anon USING (true) WITH CHECK (true);
 ```
 
 ### 5.2 Policies für `public.rental_requests` (Vermietung)
@@ -762,20 +937,20 @@ Während der Übergangsphasen (Phasen 0 bis 5) bleibt Google Sheets der operativ
 
 ## 7. Migrations-Roadmap (Phasen 0 bis 11)
 
-| Phase | Bereich | Ziel / Inhalt | Führendes System |
-|:---|:---|:---|:---|
-| **Phase 0** | **Zielarchitektur & Datenmodell** | Detailliertes PostgreSQL Schema, Tabellen, Fremdschlüssel, Enums, RLS-Entwurf | – |
-| **Phase 1** | **Auth, Rollen & RLS** | Supabase Auth, `user_roles` Tabelle, JWT Hook, SQL-Hilfsfunktionen | Supabase Auth |
-| **Phase 2** | **Pilotmodul ANLÄSSE** | Eigenständige Tabellen für Events, Teilnehmer, Helfer; Integration ins Vorstand-Portal | Supabase |
-| **Phase 3** | **Modul VERMIETUNG** | Vollständige Ablösung der Vermietungsverwaltung; Google Calendar bleibt Belegungs-Master | Supabase (Workflow) / Google Calendar (Termine) |
-| **Phase 4** | **Mitglieder (Read-only Sync)** | Aufbau von `public.members` als Read-Replica mit Sync-Button nach XLSX-Import | Google Sheets (Master) → Supabase (Replica) |
-| **Phase 5** | **Anlässe & Eventplaner Integration**| Ablösung des alten GAS-Eventplaners; Zusammenführung aller Anmeldungen in Supabase | Supabase |
-| **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) |
-| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen | Supabase |
-| **Phase 8** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR |
-| **Phase 9** | **Jahresbeiträge** | Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members` | Supabase |
-| **Phase 10** | **Rechnungen & Fakturierung** | QR-Rechnungen, PDF-Generierung und Archivierung in Paperless-NGX | Supabase + Paperless-NGX |
-| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung (letzter Schritt) | Supabase |
+| Phase | Bereich | Ziel / Inhalt | Führendes System | Status |
+|:---|:---|:---|:---|:---|
+| **Phase 0** | **Zielarchitektur & Datenmodell** | Detailliertes PostgreSQL Schema, Tabellen, Fremdschlüssel, Enums, RLS-Entwurf | – | ✅ **Abgeschlossen** |
+| **Phase 1** | **Auth, Rollen & RLS** | Supabase Auth, `user_roles` Tabelle, JWT Hook, 70 Permissions, SQL-Hilfsfunktionen (`01_auth_and_roles.sql`) | Supabase Auth | ✅ **Abgeschlossen** |
+| **Phase 2** | **Pilotmodul ANLÄSSE** | Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Controlling (`02_events_module.sql`, `03_anon_dev_policies.sql`); Vollständige Integration ins Vorstand-Portal (`anlaesse.js`, `supabase-client.js`) | Supabase | ✅ **Abgeschlossen** |
+| **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
+| **Phase 4** | **Mitglieder (Read-only Sync)** | Aufbau von `public.members` als Read-Replica mit Sync-Button nach XLSX-Import | Google Sheets (Master) → Supabase (Replica) | ⏳ **Nächster Schritt** |
+| **Phase 5** | **Anlässe & Eventplaner Integration**| Ablösung des alten GAS-Eventplaners; Zusammenführung aller Anmeldungen in Supabase | Supabase | Geplant |
+| **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | Geplant |
+| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen | Supabase | Geplant |
+| **Phase 8** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
+| **Phase 9** | **Jahresbeiträge** | Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members` | Supabase | Geplant |
+| **Phase 10** | **Rechnungen & Fakturierung** | QR-Rechnungen, PDF-Generierung und Archivierung in Paperless-NGX | Supabase + Paperless-NGX | Geplant |
+| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung (letzter Schritt) | Supabase | Geplant |
 
 ---
 
