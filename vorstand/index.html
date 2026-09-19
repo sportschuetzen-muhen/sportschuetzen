@@ -148,6 +148,31 @@
             transition: var(--transition);
         }
 
+        /* Supabase Migrated Module Badges */
+        .module-supabase-badge {
+            background: rgba(16, 185, 129, 0.12);
+            color: #059669;
+            border: 1px solid rgba(16, 185, 129, 0.28);
+            font-size: 0.62rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 6px;
+            letter-spacing: 0.3px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .sidebar .nav-link .module-supabase-badge {
+            font-size: 0.58rem;
+            padding: 1px 5px;
+            margin-left: auto;
+        }
+        .overview-card-migrated {
+            border-left: 4px solid #10b981 !important;
+            background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(240,253,244,0.45) 100%) !important;
+        }
+
         .content {
             flex: 1;
             min-width: 0;
@@ -591,6 +616,7 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('anlaesse', this)">
                     <i class="fas fa-calendar-star"></i> <span class="nav-text">Anlässe & Controlling</span>
+                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('umfragen', this)">
@@ -607,6 +633,7 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,vermieter,kassier"
                      onclick="navTo('vermietung', this)">
                     <i class="fas fa-home"></i> <span class="nav-text">Vermietung</span>
+                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('jahresmeisterschaft', this)">
@@ -631,6 +658,7 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar"
                      onclick="navTo('mitglieder', this)">
                     <i class="fas fa-users"></i> <span class="nav-text">Mitglieder</span>
+                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('archiv', this)">
@@ -676,8 +704,13 @@
                     </div>
                     <div id="last-login-banner" class="mt-2 mt-md-0 position-relative" style="z-index: 1;"></div>
                 </div>
-                <p class="text-muted mb-3 fw-medium">Wähle einen Bereich im Menü aus:</p>
-                <div class="row g-3 mt-2">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <p class="text-muted mb-0 fw-medium">Wähle einen Bereich im Menü aus:</p>
+                    <span class="module-supabase-badge" style="font-size: 0.72rem; padding: 4px 10px;">
+                        <i class="fas fa-database text-success me-1"></i> 3 Module migriert (Anlässe, Vermietung, Mitglieder)
+                    </span>
+                </div>
+                <div class="row g-3 mt-1">
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('inventar')" style="cursor:pointer">
@@ -701,10 +734,13 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
                              onclick="navTo('anlaesse')" style="cursor:pointer">
-                            <h5>⭐ Anlässe & Controlling</h5>
-                            <p class="small text-muted">Mengenrechner, Helfer, Bestellungen & Marge (Supabase)</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5>⭐ Anlässe & Controlling</h5>
+                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
+                            </div>
+                            <p class="small text-muted">Mengenrechner, Helfer, Bestellungen & Marge (Supabase Master)</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
@@ -729,10 +765,13 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,vermieter,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
                              onclick="navTo('vermietung')" style="cursor:pointer">
-                            <h5>🏠 Vermietung</h5>
-                            <p class="small text-muted">Schützenhaus Vermietung verwalten</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5>🏠 Vermietung</h5>
+                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
+                            </div>
+                            <p class="small text-muted">Schützenhaus Vermietung verwalten (Supabase Master / Hybrid)</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
@@ -771,10 +810,13 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
                              onclick="navTo('mitglieder')" style="cursor:pointer">
-                            <h5>👥 Mitglieder</h5>
-                            <p class="small text-muted">Mitgliederliste einsehen</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5>👥 Mitglieder</h5>
+                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
+                            </div>
+                            <p class="small text-muted">Mitgliederliste, SSV-Import & Dual-Sync (Supabase Master)</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
@@ -848,7 +890,10 @@
             <!-- VERMIETUNG -->
             <div id="view-vermietung" class="module-view">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2>🏠 Vermietung Cockpit</h2>
+                    <div class="d-flex align-items-center gap-2">
+                        <h2 class="mb-0">🏠 Vermietung Cockpit</h2>
+                        <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase Master</span>
+                    </div>
                 </div>
                 <div id="vermietung-container"></div>
             </div>
@@ -937,7 +982,10 @@
 <!-- MITGLIEDER -->
 <div id="view-mitglieder" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>👥 Mitglieder</h2>
+        <div class="d-flex align-items-center gap-2">
+            <h2 class="mb-0">👥 Mitglieder</h2>
+            <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase Master</span>
+        </div>
     </div>
     <div id="mitglieder-container"></div>
 </div>
@@ -1552,6 +1600,7 @@
 <script src="js/mitglieder/mitglieder-list.js"></script>
 <script src="js/mitglieder/mitglieder-details.js"></script>
 <script src="js/mitglieder/mitglieder-manager.js"></script>
+<script src="js/mitglieder/mitglieder-import-engine.js"></script>
 <script src="js/mitglieder/mitglieder-import-ui.js"></script>
 <script src="js/mitglieder/mitglieder-sync-ui.js"></script>
 <script src="js/mitglieder/mitglieder-export.js"></script>

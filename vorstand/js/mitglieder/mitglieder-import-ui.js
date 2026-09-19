@@ -141,9 +141,12 @@ function mglRenderImport() {
   }
 }
 
+let _mglImportByPerson = {};
+
 function mglCancelImport() {
   _mglImportId = null;
   _mglImportRows = [];
+  _mglImportByPerson = {};
   mglRenderImport();
 }
 
@@ -175,24 +178,27 @@ function mglProcessImportFile(file) {
         throw new Error('Es konnte kein Blatt namens "DataSource" in der Excel-Datei gefunden werden. Bitte lade die originale Export-Datei aus dem VVA-Portal herunter.');
       }
 
-      loadingText.textContent = "Berechne Differenzen in der Google-Datenbank...";
+      loadingText.textContent = "Lade aktuellen Mitgliederbestand zum Abgleich...";
+      await window.ensureMitgliederLoaded(false);
+
+      loadingText.textContent = "Berechne Differenzen blitzschnell im Browser...";
       const worksheet = workbook.Sheets[dsSheetName];
       const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      const payload = {
-        action: 'calculateSSVDiff',
-        rows: rawRows
-      };
+      const currentLicenses = Object.values(window._mglLizenzenCache || {}).flat();
+      const currentFunctions = Object.values(window._mglFunktionenCache || {}).flat();
 
-      const res = await apiFetch('mitglieder', payload, 'POST');
-      const resData = await res.json();
-
-      if (!resData.success) {
-        throw new Error(resData.error || 'Fehler beim Berechnen des Imports auf dem Server.');
-      }
+      const resData = window.SSVImportEngine.runClientSSVDiffCalculation(
+        rawRows,
+        window._mglData || [],
+        currentLicenses,
+        currentFunctions,
+        []
+      );
 
       _mglImportId = resData.importId;
       _mglImportRows = resData.diffRows;
+      _mglImportByPerson = resData.byPerson;
 
       mglDisplayDiffs();
     } catch(err) {
@@ -325,37 +331,36 @@ async function mglApplyImport() {
   btn.disabled = true;
   step2.classList.add('d-none');
   loading.classList.remove('d-none');
-  loadingText.textContent = "Wende freigegebene Mutationen an. Bitte warten...";
+  loadingText.textContent = "Wende freigegebene Mutationen in Supabase an...";
 
   try {
-    const payload = {
-      action: 'applySSVDiff',
-      importId: _mglImportId,
-      diffRows: _mglImportRows
-    };
+    const stats = await window.SSVImportEngine.applySSVDiffClient(
+      _mglImportId,
+      _mglImportRows,
+      _mglImportByPerson,
+      (msg) => { loadingText.textContent = msg; }
+    );
 
-    const res = await apiFetch('mitglieder', payload, 'POST');
-    const data = await res.json();
-
-    if (!data.success) {
-      throw new Error(data.error || 'Fehler beim Anwenden des Imports auf dem Server.');
-    }
-
-    const stats = data.stats;
-    alert(`✅ Import erfolgreich abgeschlossen!\n\nMutiert/Korrgiert: ${stats.updated}\nNeu angelegt: ${stats.created}\nÜbersprungen: ${stats.skipped}`);
+    alert(`✅ Import erfolgreich abgeschlossen!\n\n` +
+          `• In Supabase gespeichert & verarbeitet\n` +
+          `• Mutiert/Korrigiert: ${stats.updated}\n` +
+          `• Neu angelegt: ${stats.created}\n` +
+          `• Übersprungen: ${stats.skipped}\n` +
+          `• Google Sheet Test-Kopie synchronisiert (1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0)`);
 
     // Zurücksetzen und Mitgliederliste neu laden
     _mglImportId = null;
     _mglImportRows = [];
+    _mglImportByPerson = {};
     _mglActiveTab = 'liste';
-    
+
     // Mitglieder neu laden
     await loadMitgliederData(true);
   } catch(err) {
     alert("Fehler beim Abschliessen des Imports: " + err.message);
-    // Zurück zur Vorschau
     loading.classList.add('d-none');
     step2.classList.remove('d-none');
     btn.disabled = false;
   }
 }
+

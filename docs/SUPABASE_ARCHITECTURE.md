@@ -102,6 +102,8 @@ Die Migration von Google Sheets / Google Apps Script (GAS) auf Supabase folgt f�
 └──────────────────────────────────────────────┘
 ```
 
+> **Visuelle Kennzeichnung im Vorstand-Portal:** Erfolgreich auf Supabase migrierte Module (**Anlässe & Controlling**, **Vermietung**, **Mitglieder**) sind in der linken Navigations-Sidebar sowie im Dashboard (Übersichtskarten) mit einem einheitlichen `Supabase`-Badge optisch hervorgehoben.
+
 ### Rollenverteilung der Teilsysteme
 
 | System / Komponente | Host / Umgebung | Führende Zuständigkeit (Single Source of Truth) |
@@ -904,9 +906,9 @@ Für Mietverträge, Rechnungen und Dokumente wird eine zweistufige Speicherstrat
 
 ---
 
-### 6.3 Mitglieder-Synchronisation (XLSX → Sheets → Supabase)
+### 6.3 Mitglieder-Synchronisation (Browser-Native SSV Engine & Dual-Write)
 
-Während der Übergangsphasen (Phasen 0 bis 5) bleibt Google Sheets der operative Master für die SSV-Verbandsdaten.
+Im Zuge von Phase 4 wurde der bisherige, komplexe GAS-Import durch eine hochperformante, browser-native SSV-Import-Engine abgelöst. Das Frontend übernimmt das Parsen der Verbands-XLSX und die 1:1 Diff-Berechnung im Speicher des Browsers.
 
 ```text
                  SCHWEIZER SCHIESSSPORTVERBAND (SSV)
@@ -914,24 +916,39 @@ Während der Übergangsphasen (Phasen 0 bis 5) bleibt Google Sheets der operativ
                                 ▼ Offizieller Export
                            XLSX-Datei
                                 │
-                                ▼ Manueller Import durch Aktuar/Admin
-                      Google Sheets (Members100)
-                     = Operativer Mitglieder-Master
-                                │
-                                │ Auslösen durch Button im Vorstand-Portal:
-                                │ "Mitglieder nach Supabase synchronisieren"
-                                ▼
-                       Cloudflare Worker / Script
-                                │
-                                ▼ Batch-Upsert via Supabase REST API
-                      public.members (Supabase)
-                           = Read-Replica
-                     (Schlüssel: person_number)
+                                ▼ Browser-Upload (Vorstand-Portal)
+                 ┌───────────────────────────────────────────┐
+                 │  Browser-Native SSV Diff Engine           │
+                 │  vorstand/js/mitglieder/                  │
+                 │  mitglieder-import-engine.js              │
+                 │  - SheetJS Client-Parsing (< 100 ms)      │
+                 │  - 1:1 SSV-Regelwerk & Quellschutz        │
+                 │  - Lizenz-, Funktions- & Adress-Diff      │
+                 └─────────────────────┬─────────────────────┘
+                                       │
+                      Interaktive Diff-Vorschau & Genehmigung
+                                       │
+                    ┌──────────────────┴──────────────────┐
+                    ▼                                     ▼
+        1. SCHREIBEN (Primär)                 2. DUAL-WRITE (Spiegelung)
+        Supabase PostgreSQL                   Google Sheet (Test-Kopie)
+        192.168.68.117:8000                   ID: 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0
+        ├── public.members                    ├── members
+        ├── public.member_licenses            ├── memberlicenses
+        ├── public.member_functions           ├── memberfunctions
+        ├── public.member_training            ├── membertrainings
+        └── public.member_history             └── memberaudit
+                                                          │
+                                                          ▼
+                                              Satelliten-Sheets & Module
+                                              (Jahresmeisterschaft, Inventar,
+                                               Eventplaner, GV-Admin)
 ```
 
-**Eigenschaften dieses Sync-Musters:**
-- **Kein unkontrollierter Cron-Job:** Der Sync wird gezielt nach erfolgtem Verbands-Import manuell ausgelöst.
-- **Transaktionale Sicherheit:** Bestehende Verknüpfungen (z. B. zu Resultaten, Beiträgen oder Anlässen) bleiben über `person_number` stabil erhalten.
+**Wichtige Test-Konfiguration (Testphase):**
+- **Test-Spreadsheet-ID:** `1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0` (1:1 Arbeitskopie des Vorstands zum ausgiebigen Testen).
+- **Produktions-Spreadsheet-ID:** `11G9LdZhghm8U-Dpsv4NOyBg5mm5xlD2nhU10BQNvq3A` (bleibt während der Testphase vollständig unverändert und geschützt).
+- **Quellschutz-Garantie:** Manuelle Markierungen (`is_passive_source = 'manual'`, Ehrenmitglieder) werden durch SSV-Imports weder in Supabase noch im Google Sheet überschrieben.
 
 ---
 
@@ -943,8 +960,8 @@ Während der Übergangsphasen (Phasen 0 bis 5) bleibt Google Sheets der operativ
 | **Phase 1** | **Auth, Rollen & RLS** | Supabase Auth, `user_roles` Tabelle, JWT Hook, 70 Permissions, SQL-Hilfsfunktionen (`01_auth_and_roles.sql`) | Supabase Auth | ✅ **Abgeschlossen** |
 | **Phase 2** | **Pilotmodul ANLÄSSE** | Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Controlling (`02_events_module.sql`, `03_anon_dev_policies.sql`); Vollständige Integration ins Vorstand-Portal (`anlaesse.js`, `supabase-client.js`) | Supabase | ✅ **Abgeschlossen** |
 | **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
-| **Phase 4** | **Mitglieder (Read-only Sync)** | Aufbau von `public.members` als Read-Replica mit Sync-Button nach XLSX-Import | Google Sheets (Master) → Supabase (Replica) | ⏳ **Nächster Schritt** |
-| **Phase 5** | **Anlässe & Eventplaner Integration**| Ablösung des alten GAS-Eventplaners; Zusammenführung aller Anmeldungen in Supabase | Supabase | Geplant |
+| **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie (`1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0`) | Supabase (Master) ⇄ Google Sheet (Test-Kopie) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 5** | **Anlässe & Eventplaner Integration**| Ablösung des alten GAS-Eventplaners; Zusammenführung aller Anmeldungen in Supabase | Supabase | ⏳ **Nächster Schritt** |
 | **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | Geplant |
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen | Supabase | Geplant |
 | **Phase 8** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |

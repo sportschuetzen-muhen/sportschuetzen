@@ -69,6 +69,35 @@ function mglRenderSync() {
         </div>
       </div>
 
+      <!-- Test & Dual-Sync Banner -->
+      <div class="alert alert-info border-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4 p-3 rounded-3 shadow-sm">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.2rem; flex-shrink: 0;">
+            <i class="fas fa-database"></i>
+          </div>
+          <div>
+            <div class="d-flex align-items-center gap-2">
+              <strong class="text-primary">Master-Datenbank: Supabase PostgreSQL</strong>
+              <span class="badge bg-warning text-dark font-monospace" style="font-size: 0.72rem;">1:1 Test-Kopie aktiv</span>
+            </div>
+            <p class="mb-0 text-muted small">
+              Google Sheet Read-Replica: <code class="user-select-all text-dark fw-bold">1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0</code>
+            </p>
+          </div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-sm btn-outline-dark" href="https://docs.google.com/spreadsheets/d/1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0" target="_blank" rel="noopener noreferrer">
+            <i class="fas fa-external-link-alt me-1"></i> Test-Sheet öffnen
+          </a>
+          <button class="btn btn-sm btn-outline-primary" onclick="mglTriggerSupabaseToSheetSync()">
+            <i class="fas fa-info-circle me-1"></i> Dual-Write Status
+          </button>
+          <button class="btn btn-sm btn-primary" onclick="mglTriggerSheetToSupabaseSync(event)">
+            <i class="fas fa-cloud-download-alt me-1"></i> Sheet → Supabase importieren
+          </button>
+        </div>
+      </div>
+
       <!-- 6 System Cards Grid -->
       <div class="row g-3" id="mglSyncCardGrid">
         <!-- 1. Jahresmeisterschaft -->
@@ -530,3 +559,48 @@ async function mglLoadSyncHistory() {
     body.innerHTML = `<tr><td colspan="5" class="text-danger text-center">Fehler: ${escapeHtml(err.message)}</td></tr>`;
   }
 }
+
+/**
+ * Trigger für manuellen Import aus dem Google Sheet (Test-Kopie) nach Supabase
+ */
+async function mglTriggerSheetToSupabaseSync(event) {
+  if (!confirm('Möchtest du alle Mitglieder, Lizenzen und Funktionen aus dem Google Sheet (Test-Kopie 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0) nach Supabase synchronisieren?')) return;
+  const btn = event ? event.currentTarget : null;
+  const origText = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Synchronisiere...';
+  }
+
+  try {
+    // 1. Zuerst frische Daten aus Sheet/GAS laden falls nötig
+    await window.ensureMitgliederLoaded(true);
+    // 2. Zu Supabase hochladen
+    if (typeof window.syncAllMitgliederToSupabase === 'function') {
+      await window.syncAllMitgliederToSupabase();
+      alert('✅ Erfolgreich nach Supabase synchronisiert!');
+    } else {
+      throw new Error('syncAllMitgliederToSupabase Funktion nicht verfügbar.');
+    }
+  } catch (err) {
+    alert('❌ Fehler bei Synchronisation nach Supabase: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+
+/**
+ * Statusanzeige für Dual-Write / Supabase zu Sheet
+ */
+function mglTriggerSupabaseToSheetSync() {
+  alert('ℹ️ DUAL-WRITE STATUS:\n\n' +
+        '1. Primärdatenbank: Supabase PostgreSQL (192.168.68.117:8000)\n' +
+        '2. Test-Kopie Google Sheet: 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0\n\n' +
+        'Bei jedem SSV-Excel-Import im Reiter "SSV-Import" werden alle Mutationen clientseitig geprüft, ' +
+        'in Supabase geschrieben und gleichzeitig automatisch in das Test-Google-Sheet synchronisiert (Dual-Write).\n' +
+        'Damit bleiben verknüpfte Module (Jahresmeisterschaft, Inventar, etc.) konsistent!');
+}
+
