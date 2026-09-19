@@ -3,7 +3,7 @@
 **Stand:** 2026-09-19  
 **Phase:** 1 – Bestandsanalyse  
 **Autor:** Automatisierte Code-Analyse  
-**Status:** ENTWURF – Muss vom Projektverantwortlichen verifiziert werden
+**Status:** ABGESCHLOSSEN – Durch Projektverantwortlichen verifiziert
 
 ---
 
@@ -22,105 +22,134 @@
 11. [Datumsverarbeitung](#11-datumsverarbeitung)
 12. [Bekannte technische Risiken](#12-bekannte-technische-risiken)
 13. [Abhängigkeiten zwischen Modulen](#13-abhängigkeiten-zwischen-modulen)
-14. [Vorschlag für schrittweise Migration](#14-vorschlag-für-schrittweise-migration)
-
----
-
-## 1. Ist-Architektur
+14. [Vorschlag für schrittweise Migration](#14-vorschlag-für-schrittweise-migrati## 1. Ist-Architektur
 
 ### Architektur-Überblick
 
+Das Gesamtsystem besteht aus **drei Frontends**, die über Cloudflare Worker Gateways und Google Apps Script (GAS) auf ein gemeinsames Backend aus Google Spreadsheets sowie zusätzliche Dienste zugreifen:
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        BENUTZER (Browser)                       │
-│                  Desktop / Tablet / Smartphone                  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ HTTPS
-                           ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     GitHub Pages (Frontend)                      │
-│              vorstand/index.html + vorstand/js/*                 │
-│            danhunziker73-lgtm.github.io/sportschuetzen/          │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ HTTPS (fetch)
-                           ▼
-┌──────────────────────────────────────────────────────────────────┐
-│              CLOUDFLARE WORKERS (API-Gateway)                    │
-│                                                                  │
-│  v1-vorstand.js (Haupt-API-Worker)                              │
-│  ├── Proxy → Google Apps Script (Module)                         │
-│  ├── Natives Modul: Archiv-KI (Cloudflare D1 + AI)              │
-│  ├── Natives Modul: News-KI (Google Gemini)                     │
-│  ├── Natives Modul: Gesichtserkennung (Faces)                   │
-│  ├── Natives Modul: Resultate-KI OCR                            │
-│  └── Natives Modul: Immich Galerie                              │
-│                                                                  │
-│  sportschuetzen-website-worker.js (Öffentliche Website)         │
-│  ├── Immich Fotogalerie Proxy (CORS-Bypass)                     │
-│  ├── Facebook API Proxy                                          │
-│  └── Instagram API Proxy                                         │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ HTTPS (fetch, redirect: follow)
-                           ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                 GOOGLE APPS SCRIPT (Backend)                     │
-│                                                                  │
-│  Vorstand_Login_GAS     → Spreadsheet-ID: 1s4B6f...             │
-│  Members100_GAS         → Spreadsheet-ID: 11G9Ld...             │
-│  Eventplaner_GAS        → Spreadsheet-ID: 1lN180...             │
-│  Admin_GV_GAS           → Termine, GV-Einladungen               │
-│  Buchhaltung_GAS        → Doppelte Buchhaltung                   │
-│  Rechnungen_GAS         → Rechnungen & PDF                      │
-│  Vereinsinventar_GAS    → Inventar-Verwaltung                   │
-│  Jahresmeisterschaft_GAS→ KK-Meisterschaft                     │
-│  vermietung_GAS         → Schützenhaus-Vermietung               │
-│  mannschaft_homepage_GAS→ Team Manager / Grenzland Cup          │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   GOOGLE SHEETS (Datenbank)                      │
-│          Mehrere Spreadsheets mit zahlreichen Tabellenblättern   │
-└──────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   BENUTZER (Browser)                                   │
+│    Desktop / Tablet (Vorstand)        Smartphone (Mitglieder)        Öffentlich / Web  │
+└───────────────┬──────────────────────────────────┬────────────────────────────┬────────┘
+                │ HTTPS                            │ HTTPS                      │ HTTPS
+                ▼                                  ▼                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   DREI FRONTENDS                                       │
+│                    (Hosting: GitHub Pages & Web-Server / Custom Domain)                │
+│                                                                                        │
+│  1. Vorstand-Portal (SPA):    vorstand/index.html + vorstand/js/*                      │
+│  2. Mitglieder-App (PWA):     index.html + app.js + app/*                              │
+│  3. Vereins-Website:          sportschuetzen-website/frontend/*                        │
+└───────────────┬──────────────────────────────────┬────────────────────────────┬────────┘
+                │ HTTPS (fetch)                    │ HTTPS (fetch)              │ HTTPS (fetch)
+                ▼                                  ▼                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                           CLOUDFLARE WORKERS (API-Gateways)                            │
+│                                                                                        │
+│  v1-vorstand.js (Haupt-API Vorstand-Portal)                                            │
+│  ├── Proxy → Google Apps Script (11 Module)                                            │
+│  ├── Natives Modul: Archiv-KI (Cloudflare D1 + AI)                                     │
+│  ├── Natives Modul: News-KI (Google Gemini)                                            │
+│  ├── Natives Modul: Gesichtserkennung (Faces)                                          │
+│  ├── Natives Modul: Resultate-KI OCR                                                   │
+│  └── Natives Modul: Immich Galerie-Proxy                                               │
+│                                                                                        │
+│  worker_github-dropdown-refresh.js (Mitglieder-App & Upload)                           │
+│  ├── Standblatt-Upload (Speicherung in Cloudflare R2)                                  │
+│  ├── Eventplaner API (RSVP, Teilnehmer mit Lizenz-Lookup)                              │
+│  ├── Mitglieder-Auth (Members100 + Vorstand_Login Proxy)                               │
+│  └── Haus-Kalender (Belegungsabfrage)                                                  │
+│                                                                                        │
+│  App- & Website-Spezifische Hilfs-Worker:                                              │
+│  ├── termine.dan-hunziker73.workers.dev (Termine-Feed)                                 │
+│  ├── jahresmeisterschaft-muhen.dan-hunziker73.workers.dev (Jahresmeisterschaft)         │
+│  └── gruppe.dan-hunziker73.workers.dev (Gruppen & Mannschaft)                          │
+│                                                                                        │
+│  sportschuetzen-website-worker.js (Öffentliche Vereins-Website)                        │
+│  ├── Immich Fotogalerie Proxy (CORS-Bypass & Caching)                                  │
+│  └── Facebook & Instagram Graph API Proxy                                              │
+└───────────────┬──────────────────────────────────┬────────────────────────────┬────────┘
+                │ HTTPS (fetch, redirect: follow)  │                            │
+                ▼                                  ▼                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              GOOGLE APPS SCRIPT (Backend)                              │
+│                                                                                        │
+│  Vorstand_Login_GAS     → Spreadsheet-ID: 1s4B6fYIezLJUnROjM_TIcijVtwWJQL1yl08n2JS3fFo│
+│  Members100_GAS         → Spreadsheet-ID: 11G9LdZhghm8U-Dpsv4NOyBg5mm5xlD2nhU10BQNvq3A│
+│  Eventplaner_GAS        → Spreadsheet-ID: 1lN180zraGTBsxxb7uJid7607nLHrBNxmoLjLH8jZWiE│
+│  Admin_GV_GAS           → Spreadsheet-ID: 1q54RIa3Oo3DT1ONIkAgsvv5-qAhU1UuV0KvLP0f-PyI│
+│  Buchhaltung_GAS        → Spreadsheet-ID: 1C3jbge0YVcmOxNgCkks3A-z8m9kLKrXNxpZwI3FQcpA│
+│  Rechnungen_GAS         → Spreadsheet-ID: 1D3tbMHVNzf-VzTyP1DnGQ4MXqtjw7H1hlV4NY2X-wfE│
+│  Vereinsinventar_GAS    → Spreadsheet-ID: 183MBGdaNw_qSZdNQPTxui3gsend9pOkpEpC2K3G7O2U│
+│  Jahresmeisterschaft_GAS (Original) → ID: 1ye7nbT1lLLYzilwNhw6NnslwvUrtxFuT-ZZJRrG2sT0│
+│  Jahresmeisterschaft_GAS (KI-Basis) → ID: 1Dihy7Xey4DIko8Qw0qnzzRtVqx7TftLueCmUXT7Uv5g│
+│  vermietung_GAS         → Spreadsheet-ID: 1T_HpoVzfJsI47RAHN4_EmHZgTPHMSNnk5pIgPs0R43A│
+│  mannschaft_homepage_GAS→ Spreadsheet-ID: 1VuOv6b8r5m1g_9ZidPR3OPZ7YIwLUm6dYLC9nKmC2mE│
+└────────────────────────────────────────┬───────────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              GOOGLE SHEETS (Datenbank)                                 │
+│        10 Master-Spreadsheets mit zahlreichen Tabellenblättern & Verknüpfungen         │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Technologie-Stack
 
-| Schicht | Technologie |
-|:--------|:------------|
-| Frontend | HTML5, CSS3 (Inline `<style>`), Vanilla JavaScript (ES6+) |
-| UI-Framework | Bootstrap 5.3.0 (CDN) |
-| Icons | Font Awesome 6.4.0 (CDN) |
-| Schriften | Google Fonts: Outfit, Plus Jakarta Sans |
-| Hosting Frontend | GitHub Pages |
-| API-Gateway | Cloudflare Workers (2 Worker) |
-| Backend | Google Apps Script (11 Projekte) |
-| Datenbank | Google Sheets (mehrere Spreadsheets) |
-| KI-Archiv | Cloudflare D1 (SQLite) + Cloudflare AI (Embeddings) |
-| News-KI | Google Gemini API (2.5 Flash, 2.0 Flash Lite, 2.5 Pro) |
-| Push-Benachrichtigungen | OneSignal (App-ID: `fe30b2b7-...`) |
-| Fotoverwaltung | Immich (self-hosted, `immich-muhen.danfamily.uk`) |
-| Social Media | Facebook Graph API, Instagram Graph API |
-| Bibliotheken (CDN) | SignaturePad, jsPDF, html2canvas, SortableJS, SheetJS (xlsx), Mammoth, piexif, face-api.js, Chart.js |
+| Schicht | Technologie / Komponente | Details / Verwendung |
+|:--------|:-------------------------|:---------------------|
+| **Frontend 1 (Vorstand)** | HTML5, Bootstrap 5.3.0, Font Awesome 6.4, Vanilla JS | Single-Page Application im Ordner `vorstand/` (Verwaltung, Finanzen, Mitglieder) |
+| **Frontend 2 (Mitglieder)** | HTML5, CSS3, Vanilla JS, PWA | Progressive Web App im Ordner `app/` + Root `index.html`/`app.js` (Mobile First) |
+| **Frontend 3 (Website)** | HTML5, CSS3, Vanilla JS, Web Components | Öffentliche Vereinshomepage im Ordner `sportschuetzen-website/` |
+| **Hosting Frontends** | GitHub Pages & Web-Server | `sportschuetzen-muhen.github.io/sportschuetzen/` (sowie künftige Domain `sportschuetzen-muhen.ch`) |
+| **API-Gateways** | Cloudflare Workers | `v1-vorstand`, `worker_github-dropdown-refresh`, `sportschuetzen-website-worker` + Hilfs-Worker (`termine`, `jahresmeisterschaft`, `gruppe`) |
+| **File Storage** | Cloudflare R2 | `MY_BUCKET` für Standblatt-Uploads |
+| **Backend (Legacy)** | Google Apps Script (11 Projekte) | Schnittstellen zu Google Sheets (doGet/doPost) |
+| **Datenbank (Legacy)** | Google Sheets | 10 Tabellen-Dokumente als relationale Datenspeicher-Ersatz |
+| **KI-Archiv** | Cloudflare D1 (SQLite) + Cloudflare AI | `@cf/baai/bge-m3` Vektoreinbettung für Protokollsuche |
+| **News-KI** | Google Gemini API | Gemini 2.5 Flash / 2.0 Flash Lite für Berichtserstellung |
+| **Push-Benachrichtigungen** | OneSignal | App-ID `fe30b2b7-...` |
+| **Social Media** | Facebook & Instagram Graph API | Automatisierte Beitragserstellung über Worker-Proxy |
+| **Bibliotheken (CDN)** | Verschiedene JS-Libs | SignaturePad, jsPDF, html2canvas, SortableJS, SheetJS (xlsx), Mammoth, piexif, face-api.js, Chart.js |
 
+#### Self-Hosted Server-Infrastruktur (Proxmox VE)
+
+Neben den Cloud-Diensten (Cloudflare, Google) betreibt der Verein einen zentralen Virtualisierungs-Server auf Basis von **Proxmox VE**:
+
+- **Proxmox VE Host:** Zentraler Server für Container (LXC) und virtuelle Maschinen (VMs).
+- **Supabase (Zielarchitektur):** Die künftige relationale Datenbank (PostgreSQL), Authentifizierung (Supabase Auth), Row-Level Security (RLS) und Storage werden als self-hosted Instanz auf diesem Proxmox-Server laufen.
+- **Paperless-NGX:** Ein bestehender Paperless-NGX Server läuft bereits auf demselben Proxmox-Host. Er dient als Dokumenten-Management-System (DMS) für die revisionssichere Archivierung von Protokollen, Quittungen, Verträgen und Vereinsdokumenten.
+- **Immich:** Ein bestehender Immich-Server (Fotoverwaltung, angebunden unter `immich-muhen.danfamily.uk`) läuft ebenfalls auf diesem Proxmox-Host und stellt Vereinsfotos und Alben bereit.
 ---
 
 ## 2. Frontend-Struktur
 
-### Einstiegspunkt
+Im Gesamtprojekt existieren **drei separate Frontends**, die jeweils unterschiedliche Benutzergruppen und Anwendungsfälle bedienen, aber alle auf dieselbe Google-Sheets-Datenbasis zugreifen:
+
+1. **Frontend 1 – Vorstand-Portal (`vorstand/`):** Single-Page Application (SPA) für Desktop und Tablet zur Verwaltung des gesamten Vereins (Mitglieder, Finanzen, Buchhaltung, Rechnungen, Vermietung, Archiv).
+2. **Frontend 2 – Mitglieder-App (`app/` + Root `index.html`, `app.js`):** Mobile-First PWA für Vereinsmitglieder zum Abrufen von Terminen, RSVP bei Anlässen, Erfassen von Jahresmeisterschafts-Resultaten (Standblatt-Upload) und Kalenderabfrage.
+3. **Frontend 3 – Vereins-Website (`sportschuetzen-website/`):** Öffentliche Website für Vereinsauftritt, News/Berichte, Vermietungsanfragen (Schützenhaus), Immich-Fotogalerien, Resultate-Anzeige sowie geplanter geschützter Mitglieder-Bereich.
+
+---
+
+### Frontend 1: Vorstand-Portal (SPA)
+
+#### Einstiegspunkt
 
 - **Datei:** `vorstand/index.html` (1604 Zeilen, 89 KB)
 - **Typ:** Single-Page Application (SPA)
 - **Alle Module** sind als `<div class="module-view">` in einer einzigen HTML-Datei eingebettet
 
-### Navigation / Routing
+#### Navigation / Routing
 
 - **Routing-Funktion:** `navTo(viewId, el)` in `main.js` (Zeile 1188)
 - **Mechanismus:** CSS-Klassen-basiert (`module-view.active`), keine URL-basierte Navigation
 - **Sidebar:** 260px Desktop, Off-Canvas mobile (< 1200px)
 - **Mobile Header:** Hamburger-Menü für Sidebar-Toggle
 
-### Module (Views)
+#### Module (Views)
 
 | View-ID | Bezeichnung | Sichtbar für Rollen | Frontend-Dateien |
 |:--------|:------------|:-------------------|:-----------------|
@@ -195,6 +224,30 @@
 - `AppState.setError(error)` für zentrales Error-Tracking
 - Try/Catch in allen API-Calls
 
+### Frontend 2: Mitglieder-App (Mobile PWA)
+
+- **Dateien:** Root `index.html`, `app.js`, `style.css`, Subviews im Ordner `app/` (`app_anlaesse.html`, `app_jahresmeisterschaft.html`, `app_kalender.html`, `app_mannschaft.html`, `app_standblatt.html`)
+- **Typ:** Progressive Web App (PWA) mit Service Worker und Manifest, optimiert für Smartphone-Nutzung
+- **Hauptfunktionen:**
+  - Login via SSV-PersonNumber oder PIN (`app_login`)
+  - Standblatt-Upload für KK-Jahresmeisterschaft (Bildaufnahme & Cloudflare R2 Upload)
+  - Eventplaner / RSVP-Rückmeldungen für Schiessanlässe und Helfereinsätze
+  - Jahresprogramm / Termine-Feed und Hauskalender-Belegungsanzeige
+- **Backend-Anbindung:** Kommuniziert über `worker_github-dropdown-refresh.js` sowie Hilfs-Worker (`termine.dan-hunziker73.workers.dev`, `jahresmeisterschaft-muhen.dan-hunziker73.workers.dev`, `gruppe.dan-hunziker73.workers.dev`) direkt mit den Google Sheets (Members100, Eventplaner, Termine, Jahresmeisterschaft).
+
+### Frontend 3: Vereins-Website (`sportschuetzen-website/`)
+
+- **Dateien:** `sportschuetzen-website/frontend/` (`index.html`, `verein.html`, `schuetzenhaus_vermietung.html`, `resultate.html`, `storno_feedback.html`, `admin.html`, `galerie-editor.html`, Web Components)
+- **Typ:** Öffentliche Vereins-Website und Redaktionssystem
+- **Hauptfunktionen:**
+  - Öffentliche Präsentation des Vereins, Trainingsangebote, Schiesssport-News, Kontakt
+  - Schützenhaus-Vermietung: Buchungsanfrage-Formular und Storno-/Feedback-System
+  - Immich-Fotogalerien (Proxy via `sportschuetzen-website-worker.js`)
+  - Resultate-Übersicht & Gruppenmeisterschaften (dynamisch aus Hilfs-Workern gespeist)
+  - Redaktionssystem (`admin.html` / `galerie-editor.html`): Erstellung von Vereinsberichten mit KI-Unterstützung (Gemini) und Galerie-Synchronisation
+  - Geplanter geschützter Bereich für Mitglieder (Protokolle, interne Fotos, etc.), vorbereitet via `auth-session.js`
+- **Backend-Anbindung:** Greift für Termine, Resultate, Vermietungs-Buchungen und Berichte auf Worker-Endpunkte und damit auf die Google Sheets zu.
+
 ---
 
 ## 3. Backend-Struktur
@@ -206,13 +259,21 @@
 | **Vorstand_Login_GAS** | `1s4B6fYIezLJUnROjM_TIcijVtwWJQL1yl08n2JS3fFo` | Login, Passwort-Hashing, Session-Tracking, User-Sync | `API_Passwort_Hashing.js` |
 | **Members100_GAS** | `11G9LdZhghm8U-Dpsv4NOyBg5mm5xlD2nhU10BQNvq3A` | Mitglieder-Master-DB, SSV-Sync, Lizenzen, Funktionen, Beiträge | `doget_dopost.js`, `syncHandlers.js`, `config.js` |
 | **Eventplaner_GAS** | `1lN180zraGTBsxxb7uJid7607nLHrBNxmoLjLH8jZWiE` | RSVP-System, Umfragen, Tracking | `dogetdopost.js` |
-| **Admin_GV_GAS** | TODO / UNKLAR | Termine, GV-Einladungen, OneSignal-Push | `doget_dopost.js`, `write_termine.js`, `Core_GV_Invitation.js` |
-| **Buchhaltung_GAS** | TODO / UNKLAR | Doppelte Buchhaltung, Kontenrahmen | `doget_dopost.js`, `config.js` |
-| **Rechnungen_GAS** | TODO / UNKLAR | Rechnungsstellung, PDF-Generierung | `doget_dopost.js`, `pdf_generator.js`, `config.js` |
-| **Vereinsinventar_GAS** | TODO / UNKLAR | Inventar-Verwaltung, Ausgabe/Rückgabe | `doget_dopost.js` |
-| **Jahresmeisterschaft_GAS_Original** | TODO / UNKLAR | KK-Meisterschaft, Resultate-Import | 31 Dateien |
-| **vermietung_GAS** | TODO / UNKLAR | Schützenhaus-Vermietung, Formulare, Booking | `doget.js`, `dopost.js`, `Auto_Mail.js` |
-| **mannschaft_homepage_GAS** | TODO / UNKLAR | Team Manager, Mannschafts-Homepage | `mannschaft_homepage_doget_dopost.gs` |
+| **Admin_GV_GAS** | `1q54RIa3Oo3DT1ONIkAgsvv5-qAhU1UuV0KvLP0f-PyI` | Termine, GV-Einladungen, OneSignal-Push | `doget_dopost.js`, `write_termine.js`, `Core_GV_Invitation.js` |
+| **Buchhaltung_GAS** | `1C3jbge0YVcmOxNgCkks3A-z8m9kLKrXNxpZwI3FQcpA` | Doppelte Buchhaltung, Kontenrahmen | `doget_dopost.js`, `config.js` |
+| **Rechnungen_GAS** | `1D3tbMHVNzf-VzTyP1DnGQ4MXqtjw7H1hlV4NY2X-wfE` | Rechnungsstellung, PDF-Generierung | `doget_dopost.js`, `pdf_generator.js`, `config.js` |
+| **Vereinsinventar_GAS** | `183MBGdaNw_qSZdNQPTxui3gsend9pOkpEpC2K3G7O2U` | Inventar-Verwaltung, Ausgabe/Rückgabe | `doget_dopost.js` |
+| **Jahresmeisterschaft_GAS_Original** | `1ye7nbT1lLLYzilwNhw6NnslwvUrtxFuT-ZZJRrG2sT0` | KK-Meisterschaft, Resultate-Import (Legacy / Fallback) | 31 Dateien |
+| **Jahresmeisterschaft_GAS_neue_Version_KI_Erkennung** | `1Dihy7Xey4DIko8Qw0qnzzRtVqx7TftLueCmUXT7Uv5g` | KK-Meisterschaft, Resultate-Import mit KI/OCR (**Präferiert**, in Testphase) | 31 Dateien |
+| **vermietung_GAS** | `1T_HpoVzfJsI47RAHN4_EmHZgTPHMSNnk5pIgPs0R43A` | Schützenhaus-Vermietung, Formulare, Booking | `doget.js`, `dopost.js`, `Auto_Mail.js` |
+| **mannschaft_homepage_GAS** | `1VuOv6b8r5m1g_9ZidPR3OPZ7YIwLUm6dYLC9nKmC2mE` | Team Manager, Mannschafts-Homepage | `mannschaft_homepage_doget_dopost.gs` |
+
+> ⚠️ **Wichtiger Hinweis zur doppelten Jahresmeisterschaft:**  
+> Für die Jahresmeisterschaft existieren aktuell zwei GAS-Projekte bzw. Spreadsheet-Datenbanken:
+> 1. `Jahresmeisterschaft_GAS_Original` (Spreadsheet-ID: `1ye7nbT1lLLYzilwNhw6NnslwvUrtxFuT-ZZJRrG2sT0`): Ursprüngliche Version.
+> 2. `Jahresmeisterschaft_GAS_neue_Version_KI_Erkennung` (Spreadsheet-ID: `1Dihy7Xey4DIko8Qw0qnzzRtVqx7TftLueCmUXT7Uv5g`): Neue Version auf Basis automatisierter KI-/OCR-Erkennung von Standblättern.
+> 
+> **Status & Präferenz:** Die **neue Version auf Basis KI ist präferiert** und bildet die funktionale Vorlage für die Supabase-Zielarchitektur. Sie ist jedoch aktuell noch nicht ganz fertig getestet, weshalb die Original-Version vorerst parallel vorgehalten wird.
 
 ### GAS-Endpunkte (doGet/doPost)
 
@@ -264,25 +325,51 @@
 
 ## 4. Login & Authentifizierung
 
-### Login-Ablauf
+### Übersicht der Login-Bereiche (3 Frontends)
+
+Im Gesamtsystem gibt es derzeit **zwei aktive Login-Mechanismen** und ein **drittes geplantes Login**:
+
+1. **Vorstand-Portal (`vorstand/`): 1x Admin/Vorstand-Login (Aktiv)**
+   - **Zielgruppe:** Vorstandsmitglieder, Schützenmeister, Aktuar, Kassier, Vermieter, Materialwart, Administratoren.
+   - **Identifikation:** Benutzername (Freitext aus Tabelle `login_daten`, z.B. "admin" oder Nachname).
+   - **Authentifizierung:** Passwort-Eingabe → SHA-256-Hash → Vergleich gegen Spalte E (`passwort_hash`) in `login_daten`.
+   - **Rollen:** Rückgabe von Primärrolle und Mehrfachrollen (`roles[]`), Steuerung der Modulsichtbarkeit und Schreibrechte.
+
+2. **Mitglieder-App (`app/` + `index.html`): 2x Login-Identifikatoren (Aktiv)**
+   - **Zielgruppe:** Alle lizenzierten Schützen und Vereinsmitglieder.
+   - **Identifikation (zwei Möglichkeiten):**
+     - **Möglichkeit A:** SSV-Personennummer (`PersonNumber`, z.B. offizielle Schützen-Lizenznummer).
+     - **Möglichkeit B:** 6-stellige Adressnummer / PIN (`AddressNumber` bzw. `addressnumber_pin`, ggf. zero-padded).
+   - **Authentifizierung:** Abgleich gegen Tabelle `app_login`. Als Passwort wird sowohl der Hash des PINs (raw und 6-stellig padded) als auch ein individuell gesetztes Passwort akzeptiert.
+   - **Berechtigung:** Standard-Rolle `member`; schaltet Standblatt-Uploads, Eventplaner/RSVP und Termine frei.
+
+3. **Vereins-Website (`sportschuetzen-website/`): 1x Geschützter Bereich (Geplant / Vorbereitet)**
+   - **Zielgruppe:** Vereinsmitglieder und Vorstand auf der öffentlichen Homepage.
+   - **Zweck:** Geschützter Bereich für nicht-öffentliche Vereinsinhalte: GV- und Vorstandsprotokolle, interne Berichte, hochauflösende Fotogalerien (Immich) und vereinsinterne Downloads.
+   - **Aktueller Stand im Code:** Es existiert bereits ein SSO- und Ticket-Manager (`sportschuetzen-website/frontend/js/auth-session.js`), der Session-Tickets (`?auth_session=...`) aus der Mitglieder-App entgegennehmen und synchronisieren kann (inkl. Rollen-Check wie `isVorstand()`, `hasRole('member')`).
+   - **Ziel mit Supabase:** Nahtlose Zusammenführung aller drei Frontends unter einem einheitlichen **Supabase Auth (JWT)** Login mit granularen Row-Level-Security (RLS) Policies.
+
+### Login-Ablauf (Ist-Zustand)
 
 ```
-1. Benutzer gibt Benutzername + Passwort ein
+1. Benutzer gibt Benutzername / PIN + Passwort ein
 2. Frontend hasht Passwort mit SHA-256 (crypto.subtle.digest)
-3. fetch → Worker → GAS mit: user=<username>&pw=<sha256hash>
-4. GAS prüft:
-   a) Tabelle "app_login" (Mitglieder): PersonNr / PIN / AddressNumber
-   b) Tabelle "login_daten" (Admins/Vorstand): Username
+3. fetch → Worker → GAS mit: user=<username/pin>&pw=<sha256hash>
+4. GAS prüft je nach Kontext:
+   a) Tabelle "login_daten" (Vorstand-Portal): Username-Matching
+   b) Tabelle "app_login" (Mitglieder-App): PersonNumber- oder PIN/AddressNumber-Matching
 5. Hash-Vergleich: gespeicherter Hash === übermittelter Hash
 6. Erfolg → Response: { success, name, role, roles[], mailadresse, ... }
-7. Frontend speichert in localStorage und ruft showApp() auf
+7. Frontend speichert Identität in localStorage / sessionStorage und initialisiert Views
 ```
 
 ### Benutzeridentifikation
 
-- **Admin-Login (`login_daten`):** Username (Freitext), z.B. "admin" oder Name
-- **Mitglieder-Login (`app_login`):** PersonNumber oder AddressNumber (PIN, 6-stellig, zero-padded)
-- **Matching-Logik:** Vergleich gegen PersonNumber, PIN (raw) und PIN (padded auf 6 Stellen)
+- **Vorstand-Login (`login_daten`):** Username (Freitext), z.B. "admin" oder Vorname/Nachname
+- **Mitglieder-Login (`app_login`):** Zwei Eingabewege möglich:
+  1. `PersonNumber` (offizielle SSV-Personennummer)
+  2. `AddressNumber` / `PIN` (6-stellig, zero-padded)
+- **Matching-Logik in GAS:** Prüfung gegen PersonNumber, PIN (raw) und PIN (padded auf 6 Stellen)
 
 ### Passwort-Authentifizierung
 
@@ -470,15 +557,18 @@
 
 > **TODO / UNKLAR:** Detaillierte Spaltenstruktur der Eventplaner-Tabellen muss aus `dogetdopost.js` extrahiert werden (911 Zeilen).
 
-### Weitere Spreadsheets
+### Weitere Spreadsheets (IDs eingetragen)
 
-> **TODO / UNKLAR:** Die Spreadsheet-IDs und Tabellenstrukturen der folgenden GAS-Projekte sind nur aus den jeweiligen `config.js` oder `doget_dopost.js` Dateien ableitbar und wurden in dieser Phase nicht vollständig analysiert:
+Die Spreadsheet-IDs für alle weiteren Backend-Projekte wurden ermittelt und zugeordnet:
 
-- **Buchhaltung:** Kontenrahmen, Journal, Bilanz, Erfolgsrechnung
-- **Rechnungen:** Rechnungen, Positionen, Templates
-- **Inventar:** Artikel, Transaktionen, Journal
-- **Vermietung:** Buchungen, Fixdaten, Feedback
-- **Jahresmeisterschaft:** Ranglisten, Resultate, Archive
+- **Admin_GV_GAS** (`1q54RIa3Oo3DT1ONIkAgsvv5-qAhU1UuV0KvLP0f-PyI`): Termine, GV-Einladungen, Präsenzen, Push-Trigger
+- **Buchhaltung_GAS** (`1C3jbge0YVcmOxNgCkks3A-z8m9kLKrXNxpZwI3FQcpA`): Doppelte Buchhaltung, Kontenrahmen, Journal, Bilanz, Erfolgsrechnung
+- **Rechnungen_GAS** (`1D3tbMHVNzf-VzTyP1DnGQ4MXqtjw7H1hlV4NY2X-wfE`): Rechnungsstellung, PDF-Generierung, Positionen
+- **Vereinsinventar_GAS** (`183MBGdaNw_qSZdNQPTxui3gsend9pOkpEpC2K3G7O2U`): Inventar-Artikel, Ausleihe/Rückgabe, Transaktionen
+- **Jahresmeisterschaft_GAS (Original)** (`1ye7nbT1lLLYzilwNhw6NnslwvUrtxFuT-ZZJRrG2sT0`): KK-Meisterschaft, Resultate-Import (Legacy / Fallback)
+- **Jahresmeisterschaft_GAS (KI-Erkennung)** (`1Dihy7Xey4DIko8Qw0qnzzRtVqx7TftLueCmUXT7Uv5g`): KK-Meisterschaft mit KI-/OCR-Standblatt-Erkennung (**Präferierte Version**, in Testphase)
+- **vermietung_GAS** (`1T_HpoVzfJsI47RAHN4_EmHZgTPHMSNnk5pIgPs0R43A`): Schützenhaus-Vermietung, Buchungen, Fixdaten, Storno/Feedback
+- **mannschaft_homepage_GAS** (`1VuOv6b8r5m1g_9ZidPR3OPZ7YIwLUm6dYLC9nKmC2mE`): Team Manager, Grenzland Cup, Gruppen
 
 ---
 
@@ -495,7 +585,7 @@
 | Rechnungen | Rechnungen_GAS | Rechnungen, Positionen | ✓ | ✓ |
 | Inventar | Vereinsinventar_GAS | Inventar-Artikel, Transaktionen | ✓ | ✓ |
 | Vermietung | vermietung_GAS | Buchungen, Fixdaten | ✓ | ✓ |
-| Jahresmeisterschaft | Jahresmeisterschaft_GAS | Ranglisten, Resultate | ✓ | ✓ |
+| Jahresmeisterschaft | Jahresmeisterschaft_GAS (KI-Version präferiert) | Ranglisten, Resultate, Standblatt-OCR | ✓ | ✓ |
 | Manager | mannschaft_homepage_GAS | Teams, Gruppen | ✓ | ✓ |
 | Archiv | Worker-nativ (D1) | Cloudflare D1 | ✓ | ✓ |
 | News | Worker-nativ (KI) | – (nur Gemini API) | – | – |
@@ -715,34 +805,58 @@ graph TD
 
 ## 14. Vorschlag für schrittweise Migration
 
-### Empfohlene Migrations-Reihenfolge
+### Empfohlene Migrations-Reihenfolge (Phasen 0 bis 11)
 
-| Phase | Modul | Begründung | Risiko |
-|:------|:------|:-----------|:-------|
-| **1** | Auth / Login | Basis für alles – Supabase Auth + JWT + RLS-Grundlage | MITTEL |
-| **2** | Mitglieder (Read-only Sync) | Stammdaten als Read-Replica in Supabase, Google Sheet bleibt Master | NIEDRIG |
-| **3** | **ANLÄSSE (neu)** | Erstes neues Modul, keine bestehende Funktionalität betroffen | NIEDRIG |
-| **4** | Umfragen/Eventplaner → Anlässe-Integration | Bestehende RSVP-Daten schrittweise mit Anlässe-Modul verbinden | MITTEL |
-| **5** | Mitglieder (Write) | Supabase wird Master für Mitglieder, Sync zurück zu Google Sheet | HOCH |
-| **6** | Vermietung | Relativ eigenständig, wenige Abhängigkeiten | NIEDRIG |
-| **7** | Inventar | Eigenständiges Modul | NIEDRIG |
-| **8** | Jahresmeisterschaft | Saisonbasiert, Migration in Saisonpause | MITTEL |
-| **9** | Jahresbeitrag | Eng mit Mitglieder + Rechnungen verknüpft | HOCH |
-| **10** | Rechnungen | Abhängigkeit von Buchhaltung | HOCH |
-| **11** | Buchhaltung | Letztes Modul, höchstes Risiko, FiBu-kritisch | SEHR HOCH |
+| Phase | Bereich | Ziel / Inhalt | Begründung & Risiko |
+|:------|:--------|:--------------|:--------------------|
+| **0** | **Zielarchitektur + Datenmodell** | Supabase-Struktur, Beziehungen, IDs, Rollen, RLS-Entwurf | **Fundament:** Verhindert zweifaches Bauen von Auth/RLS. (Kein Code-Risiko) |
+| **1** | **Auth + Rollen + RLS** | Supabase Auth (JWT), `public.user_roles` als Source of Truth, RLS-Hilfsfunktionen | Sichere gemeinsame Grundlage für alle neuen Tabellen. (Mittel) |
+| **2** | **ANLÄSSE (Pilot-Modul)** | Erstes vollständig neues Supabase-Modul (Anlässe, Helfer, Teilnehmer) | **Pilot:** Keine Legacy-Beeinträchtigung, sofort isoliert testbar. (Niedrig) |
+| **3** | **Vermietung** | Erster produktiver Migrationskandidat: Workflow, Kunden, Verträge | Abgegrenzter Workflow; Google Calendar bleibt Belegungs-Master. (Niedrig) |
+| **4** | **Mitglieder (Read-only Sync)** | Supabase liest Stammdaten via `PersonNumber` (manueller Sync nach XLSX-Import) | Google Sheets bleibt vorerst Master; Supabase wird Read-Replica. (Niedrig) |
+| **5** | **Anlässe / Eventplaner** | Bestehende RSVP-Funktion mit dem neuen Anlässe-Modul zusammenführen | Konsolidierung der Event-Anmeldungen. (Mittel) |
+| **6** | **Mitglieder (Write-Master)** | Supabase wird Master für Mitglieder-Stammdaten | Schnittstellen & Berechtigungen müssen stehen. (Hoch) |
+| **7** | **Inventar** | Vereinsinventar, Ausleihe und Rückgabe | Relativ unabhängig von anderen Modulen. (Niedrig) |
+| **8** | **Jahresmeisterschaft** | Migration auf Basis der neuen KI-/Standblatt-Erkennung | Migration in der Saisonpause nach Abschluss der KI-Tests. (Mittel) |
+| **9** | **Jahresbeiträge** | Beitragsgenerierung basierend auf Mitgliedern und Funktionen | Abhängig von validen Stammdaten. (Hoch) |
+| **10** | **Rechnungen** | Fakturierung, PDF-Ablage via Proxmox/Paperless-NGX | Abhängig von Beitrags- und Buchungsdaten. (Hoch) |
+| **11** | **Buchhaltung** | Doppelte Buchhaltung, Kontenrahmen, Jahresabschluss | Letztes Modul, finanztechnisch sensibel. (Sehr Hoch) |
 
-### Parallelbetriebs-Strategie
+### Parallelbetriebs-Architektur
 
-```
-Phase 1-3:  Google Sheets = Master für ALLES
-            Supabase = Neue Module + Auth
+```text
+                 ┌──────────────────────────────────────┐
+                 │            Supabase Auth             │
+                 │      user_roles (Source of Truth)    │
+                 │      JWT roles[] (RLS Cache)         │
+                 └──────────────────┬───────────────────┘
+                                    │
+                             RLS / Policies
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+        ▼                           ▼                           ▼
+    Mitglieder                  Anlässe                     Vermietung
+  (Read-Replica)             (Neues Modul)             (Supabase = Master)
+        │                           │                           │
+        │                           ├── Teilnehmer              ├── Buchungsstatus
+        │                           ├── RSVP / Anmeldungen      ├── Kundendaten
+        │                           └── Helfer / Schichten      ├── Vertrag PDF → Supabase Storage
+        │                                                       │                  & Paperless-NGX
+        ▼                                                       └── Termin-Sync → Google Calendar
+   PersonNumber                                                                     (Belegungs-Master)
+        │
+        ├── Jahresmeisterschaft
+        ├── Beiträge
+        ├── Rechnungen
+        ├── Teams
+        └── Funktionen
 
-Phase 4-6:  Google Sheets = Master für Legacy-Module
-            Supabase = Master für migrierte Module
-            Sync-Layer für Stammdaten
-
-Phase 7-11: Google Sheets = Backup / Archiv
-            Supabase = Master für alles
+Google Sheets (Legacy)
+      ▲
+      │ manueller Sync (nach XLSX-Verbandsimport)
+      │
+      └── bestehende GAS-Systeme
 ```
 
 ### Nächste Schritte
@@ -756,4 +870,4 @@ Phase 7-11: Google Sheets = Backup / Archiv
 
 ---
 
-> **Hinweis:** Dieses Dokument basiert ausschliesslich auf der Code-Analyse des Repositories. Alle mit **TODO / UNKLAR** markierten Stellen konnten nicht eindeutig aus dem Code abgeleitet werden und müssen vom Projektverantwortlichen bestätigt oder ergänzt werden.
+> **Hinweis:** Dieses Dokument basiert auf der Code-Analyse des Repositories sowie den Ergänzungen und Verifizierungen durch den Projektverantwortlichen (Infrastruktur Proxmox, Frontends, Spreadsheet-IDs, Login-Systeme). Phase 1 (Bestandsanalyse) ist damit vollständig abgeschlossen.
