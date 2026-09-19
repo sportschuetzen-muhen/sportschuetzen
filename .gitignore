@@ -1,0 +1,4 @@
+.env
+.env.local
+.antigravity/
+node_modules/
