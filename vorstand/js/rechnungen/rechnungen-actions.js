@@ -111,6 +111,23 @@ window.rnSavePayment = async function(event, invoiceId) {
 
   showSuccess(`🎉 Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (Hintergrund-Synchronisation läuft)...`);
 
+  // 1. Primärspeicher: Supabase REST
+  const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
+  if (supa) {
+    try {
+      await supa.from('invoices').update({
+        status: 'bezahlt',
+        payment_date: datum,
+        payment_method: methode,
+        document_ref: beleg || `PAY-${invoiceId}`,
+        updated_at: new Date().toISOString()
+      }).eq('id', invoiceId);
+    } catch (supaErr) {
+      console.warn("⚠️ Supabase savePayment Warning:", supaErr);
+    }
+  }
+
+  // 2. Dual-Write: Asynchrone Spiegelung an Google Apps Script & Buchhaltung
   const payload = {
     action: 'saveZahlung',
     invoiceId: invoiceId,
@@ -193,6 +210,18 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
       } else if (result.pdfUrl) {
         window.open(result.pdfUrl, '_blank');
       }
+
+      // Supabase State Update (pdf_url persistieren)
+      const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
+      if (supa && result.pdfUrl) {
+        try {
+          await supa.from('invoices').update({
+            pdf_url: result.pdfUrl,
+            updated_at: new Date().toISOString()
+          }).eq('id', invoiceId);
+        } catch (e) { console.warn("Supabase pdf_url update:", e); }
+      }
+
       await loadRechnungenData(true);
     } else {
       throw new Error(result.error || "Generierung fehlgeschlagen.");
@@ -617,10 +646,25 @@ window.rnExecuteSendMail = async function(invoiceId) {
       }
       showSuccess(`🎉 E-Mail erfolgreich an ${targetEmail} versandt!`);
       const targetInv = (window._invoices || []).find(x => String(x.id).trim() === String(invoiceId).trim());
+      const sendDateStr = result.sendDate || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
       if (targetInv) {
         targetInv.mail_status = 'gesendet';
-        targetInv.send_date = result.sendDate || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+        targetInv.send_date = sendDateStr;
       }
+
+      // Supabase State Update (mail_status & send_date)
+      const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
+      if (supa) {
+        try {
+          await supa.from('invoices').update({
+            mail_status: 'gesendet',
+            send_date: new Date().toISOString(),
+            pdf_url: result.pdfUrl || targetInv?.pdf_url || '',
+            updated_at: new Date().toISOString()
+          }).eq('id', invoiceId);
+        } catch (e) { console.warn("Supabase mail_status update:", e); }
+      }
+
       await loadRechnungenData(true);
     } else {
       throw new Error(result.error || "E-Mail-Versand fehlgeschlagen.");
@@ -1565,7 +1609,8 @@ window.rnOpenCreateModal = async function(btnEl) {
             <div class="mb-4">
               <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 align-items-center">
+                  <div id="rnc-pos-col-toggle"></div>
                   <button type="button" class="btn btn-xs btn-outline-secondary" onclick="rnResetPositionsTableColWidths(this)" title="Spaltenbreiten auf Standard zurücksetzen">
                     <i class="fas fa-arrows-alt-h me-1"></i> Breiten-Reset
                   </button>
@@ -1588,13 +1633,13 @@ window.rnOpenCreateModal = async function(btnEl) {
                 <table class="table table-bordered table-striped align-middle mb-0" id="rnc-positions-table" style="font-size: 13px;">
                   <thead class="table-light">
                     <tr>
-                      <th data-col="idx" style="width: 38px;" class="text-center">#</th>
-                      <th data-col="desc" style="min-width: 180px;">Beschreibung der Dienstleistung / Ware</th>
-                      <th data-col="qty" style="width: 80px;" class="text-end">Menge</th>
-                      <th data-col="unitprice" style="width: 150px;" class="text-end">Einzelpreis</th>
-                      <th data-col="amt" style="width: 150px;" class="text-end">Gesamt (CHF)</th>
-                      <th data-col="konto" style="width: 140px;">Konto (Haben)</th>
-                      <th data-col="action" style="width: 45px;" class="text-center">Aktion</th>
+                      <th data-col="idx" data-col-id="idx" data-col-name="#" style="width: 38px;" class="text-center">#</th>
+                      <th data-col="desc" data-col-id="desc" data-col-name="Beschreibung" style="min-width: 180px;">Beschreibung der Dienstleistung / Ware</th>
+                      <th data-col="qty" data-col-id="qty" data-col-name="Menge" style="width: 80px;" class="text-end">Menge</th>
+                      <th data-col="unitprice" data-col-id="unitprice" data-col-name="Einzelpreis" style="width: 150px;" class="text-end">Einzelpreis</th>
+                      <th data-col="amt" data-col-id="amt" data-col-name="Gesamt (CHF)" style="width: 150px;" class="text-end">Gesamt (CHF)</th>
+                      <th data-col="konto" data-col-id="konto" data-col-name="Konto (Haben)" style="width: 140px;">Konto (Haben)</th>
+                      <th data-col="action" data-col-id="action" data-col-name="Aktion" style="width: 45px;" class="text-center">Aktion</th>
                     </tr>
                   </thead>
                   <tbody id="rnc-positions-tbody">
@@ -1650,6 +1695,13 @@ window.rnOpenCreateModal = async function(btnEl) {
   rnMakeModalMovableAndResizable(modalEl);
   const posTable = modalEl.querySelector('#rnc-positions-table');
   if (posTable) rnInitPositionsTableResizable(posTable);
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window._rncColToggle = window.TableKit.setupColumnToggle('#rnc-positions-table', {
+      container: '#rnc-pos-col-toggle',
+      storageKey: 'rnc_positions_table_cols'
+    });
+  }
 };
 
 window.rnEditCurrentSelectedContact = function() {
@@ -1812,29 +1864,29 @@ function rncAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
   const tr = document.createElement('tr');
   tr.id = `rnc-pos-row-${rncPosCounter}`;
   tr.innerHTML = `
-    <td class="text-center font-monospace text-muted rnc-pos-idx">${tbody.children.length + 1}</td>
-    <td>
+    <td class="text-center font-monospace text-muted rnc-pos-idx tk-col-idx">${tbody.children.length + 1}</td>
+    <td class="tk-col-desc">
       <input type="text" class="form-control form-control-sm rnc-pos-desc" required value="${desc}" placeholder="z.B. Getränkebezug Süsswasser">
     </td>
-    <td>
+    <td class="tk-col-qty">
       <input type="number" step="1" min="1" class="form-control form-control-sm text-end rnc-pos-qty rn-no-spin" required value="${qty}" oninput="rncRecalculateRowTotal('${tr.id}')">
     </td>
-    <td>
+    <td class="tk-col-unitprice">
       <div class="input-group input-group-sm">
         <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
         <input type="number" step="0.05" class="form-control form-control-sm text-end rnc-pos-unitprice rn-no-spin" required value="${unitPrice}" placeholder="0.00" oninput="rncRecalculateRowTotal('${tr.id}')">
       </div>
     </td>
-    <td>
+    <td class="tk-col-amt">
       <div class="input-group input-group-sm">
         <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
         <input type="number" class="form-control form-control-sm text-end fw-bold rnc-pos-amt bg-light rn-no-spin" readonly value="${initialAmount}">
       </div>
     </td>
-    <td>
+    <td class="tk-col-konto">
       <input type="text" class="form-control form-control-sm font-monospace rnc-pos-konto" list="rn-konten-datalist" value="${escapeHtml(konto || '')}" placeholder="Konto...">
     </td>
-    <td class="text-center">
+    <td class="text-center tk-col-action">
       <button type="button" class="btn btn-xs btn-outline-danger" onclick="rncRemovePositionRow('${tr.id}')">
         <i class="fas fa-trash-alt"></i>
       </button>
@@ -1842,6 +1894,9 @@ function rncAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
   `;
   tbody.appendChild(tr);
   rncRecalculateTotal();
+  if (window._rncColToggle && typeof window._rncColToggle.apply === 'function') {
+    window._rncColToggle.apply();
+  }
 }
 window.rncAddPositionRow = rncAddPositionRow;
 
@@ -2033,12 +2088,68 @@ window.rnSaveCreateInvoice = async function(event) {
     recipient: recipientPayload
   };
 
+  // 1. Supabase PostgreSQL Master Write (< 50ms)
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      const sbInv = {
+        id: invoiceId,
+        person_number: personNumber || null,
+        name: finalInvoiceName,
+        year: Number(document.getElementById('rnc-year').value),
+        type: document.getElementById('rnc-type').value,
+        total_amount: totalAmount,
+        status: 'offen',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      const { error: invErr } = await sb.from('invoices').upsert(sbInv);
+      if (invErr) console.warn("⚠️ [Supabase] Invoice header upsert warning:", invErr);
+
+      if (positions.length > 0) {
+        const sbPositions = positions.map(p => ({
+          invoice_id: invoiceId,
+          position_nr: p.position_nr,
+          description: p.description,
+          quantity: p.quantity,
+          unit_price: p.unit_price,
+          amount: p.amount,
+          konto: p.konto || null
+        }));
+        await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+        const { error: posErr } = await sb.from('invoice_positions').insert(sbPositions);
+        if (posErr) console.warn("⚠️ [Supabase] Positions insert warning:", posErr);
+      }
+
+      if (contactId && recipientPayload) {
+        await sb.from('external_contacts').upsert({
+          id: String(contactId),
+          typ: recipientPayload.typ || 'privat',
+          kategorie: recipientPayload.kategorie || null,
+          firma: recipientPayload.firma || null,
+          vorname: recipientPayload.vorname || null,
+          nachname: recipientPayload.nachname || null,
+          name: recipientPayload.name || finalInvoiceName,
+          strasse: recipientPayload.strasse || null,
+          plz: recipientPayload.plz || null,
+          ort: recipientPayload.ort || null,
+          email: recipientPayload.email || null,
+          updated_at: new Date().toISOString()
+        });
+      }
+      console.log(`✅ [Supabase] Invoice ${invoiceId} and positions saved to Supabase.`);
+    } catch (sbEx) {
+      console.warn("⚠️ [Supabase] Create Invoice error:", sbEx);
+    }
+  }
+
+  // 2. Dual-Write to Google Apps Script / Sheets (Background Sync)
   try {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();
 
     if (!result.success) {
-      throw new Error(result.error || "Fehler beim Anlegen im Backend.");
+      console.warn("⚠️ Dual-Write GAS returned error:", result.error);
     }
     
     // Server-Sync mit forceReload = true!
@@ -2047,11 +2158,7 @@ window.rnSaveCreateInvoice = async function(event) {
       await loadInvoiceContactsData();
     }, 1200);
   } catch (err) {
-    console.error("❌ Optimistic Create Invoice failed:", err);
-    // Revert optimistic update!
-    window._invoices = window._invoices.filter(i => String(i.id) !== String(invoiceId));
-    window.renderRechnungen();
-    alert("❌ Fehler beim Erstellen der Rechnung (Revert durchgeführt): " + err.message);
+    console.warn("⚠️ Dual-write to Sheets failed (Supabase Master intact):", err);
   }
 };
 
@@ -2262,7 +2369,8 @@ window.rnOpenEditModal = async function(invoiceId) {
             <div class="mb-4">
               <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
-                <div class="d-flex gap-2">
+                 <div class="d-flex gap-2 align-items-center">
+                  <div id="rne-pos-col-toggle"></div>
                   <button type="button" class="btn btn-xs btn-outline-secondary" onclick="rnResetPositionsTableColWidths(this)" title="Spaltenbreiten auf Standard zurücksetzen">
                     <i class="fas fa-arrows-alt-h me-1"></i> Breiten-Reset
                   </button>
@@ -2285,13 +2393,13 @@ window.rnOpenEditModal = async function(invoiceId) {
                 <table class="table table-bordered table-striped align-middle mb-0" id="rne-positions-table" style="font-size: 13px;">
                   <thead class="table-light">
                     <tr>
-                      <th data-col="idx" style="width: 38px;" class="text-center">#</th>
-                      <th data-col="desc" style="min-width: 180px;">Beschreibung der Dienstleistung / Ware</th>
-                      <th data-col="qty" style="width: 80px;" class="text-end">Menge</th>
-                      <th data-col="unitprice" style="width: 150px;" class="text-end">Einzelpreis</th>
-                      <th data-col="amt" style="width: 150px;" class="text-end">Gesamt (CHF)</th>
-                      <th data-col="konto" style="width: 140px;">Konto (Haben)</th>
-                      <th data-col="action" style="width: 45px;" class="text-center">Aktion</th>
+                      <th data-col="idx" data-col-id="idx" data-col-name="#" style="width: 38px;" class="text-center">#</th>
+                      <th data-col="desc" data-col-id="desc" data-col-name="Beschreibung" style="min-width: 180px;">Beschreibung der Dienstleistung / Ware</th>
+                      <th data-col="qty" data-col-id="qty" data-col-name="Menge" style="width: 80px;" class="text-end">Menge</th>
+                      <th data-col="unitprice" data-col-id="unitprice" data-col-name="Einzelpreis" style="width: 150px;" class="text-end">Einzelpreis</th>
+                      <th data-col="amt" data-col-id="amt" data-col-name="Gesamt (CHF)" style="width: 150px;" class="text-end">Gesamt (CHF)</th>
+                      <th data-col="konto" data-col-id="konto" data-col-name="Konto (Haben)" style="width: 140px;">Konto (Haben)</th>
+                      <th data-col="action" data-col-id="action" data-col-name="Aktion" style="width: 45px;" class="text-center">Aktion</th>
                     </tr>
                   </thead>
                   <tbody id="rne-positions-tbody">
@@ -2311,8 +2419,8 @@ window.rnOpenEditModal = async function(invoiceId) {
 
             <!-- Submit -->
             <div class="d-grid mt-4">
-              <button type="submit" class="btn btn-warning py-2.5 fw-bold rounded-3 shadow-sm" id="rne-submit-btn">
-                <i class="fas fa-save me-1"></i> Änderungen speichern
+              <button type="submit" class="btn btn-warning py-2.5 fw-bold rounded-3 shadow-sm text-dark" id="rne-submit-btn">
+                <i class="fas fa-save me-1"></i> Änderungen verbindlich speichern
               </button>
             </div>
           </form>
@@ -2337,7 +2445,7 @@ window.rnOpenEditModal = async function(invoiceId) {
   }
   window.rneRecalculateTotal = rneRecalculateTotal;
 
-  function rneAddPositionRow(desc = '', unitPrice = 0, qty = 1, konto = '') {
+  function rneAddPositionRow(desc = "", unitPrice = "", qty = 1, konto = "") {
     rnePosCounter++;
     const tbody = document.getElementById('rne-positions-tbody');
     if (!tbody) return;
@@ -2347,29 +2455,29 @@ window.rnOpenEditModal = async function(invoiceId) {
     const initialAmount = (Number(qty || 1) * Number(unitPrice || 0)).toFixed(2);
 
     tr.innerHTML = `
-      <td class="text-center font-monospace rne-pos-idx">${tbody.children.length + 1}</td>
-      <td>
+      <td class="text-center font-monospace rne-pos-idx tk-col-idx">${tbody.children.length + 1}</td>
+      <td class="tk-col-desc">
         <input type="text" class="form-control form-control-sm rne-pos-desc" required value="${escapeHtml(desc)}" placeholder="z.B. Miete Schützenhaus">
       </td>
-      <td>
+      <td class="tk-col-qty">
         <input type="number" class="form-control form-control-sm text-end rne-pos-qty rn-no-spin" required step="1" min="1" value="${qty}" oninput="rneRecalculateRowTotal('${tr.id}')">
       </td>
-      <td>
+      <td class="tk-col-unitprice">
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
           <input type="number" class="form-control form-control-sm text-end rne-pos-unitprice rn-no-spin" required step="0.05" min="0" value="${unitPrice}" oninput="rneRecalculateRowTotal('${tr.id}')">
         </div>
       </td>
-      <td>
+      <td class="tk-col-amt">
         <div class="input-group input-group-sm">
           <span class="input-group-text bg-light text-muted px-1.5 py-0" style="font-size: 11px; min-width: 32px; justify-content: center;">CHF</span>
           <input type="number" class="form-control form-control-sm text-end fw-bold rne-pos-amt bg-light rn-no-spin" readonly value="${initialAmount}">
         </div>
       </td>
-      <td>
+      <td class="tk-col-konto">
         <input type="text" class="form-control form-control-sm font-monospace rne-pos-konto" list="rn-konten-datalist" value="${escapeHtml(konto || '')}" placeholder="Konto...">
       </td>
-      <td class="text-center">
+      <td class="text-center tk-col-action">
         <button type="button" class="btn btn-xs btn-outline-danger" onclick="rneRemovePositionRow('${tr.id}')">
           <i class="fas fa-trash-alt"></i>
         </button>
@@ -2377,6 +2485,9 @@ window.rnOpenEditModal = async function(invoiceId) {
     `;
     tbody.appendChild(tr);
     rneRecalculateTotal();
+    if (window._rneColToggle && typeof window._rneColToggle.apply === 'function') {
+      window._rneColToggle.apply();
+    }
   }
   window.rneAddPositionRow = rneAddPositionRow;
 
@@ -2421,6 +2532,13 @@ window.rnOpenEditModal = async function(invoiceId) {
   rnMakeModalMovableAndResizable(modalEl);
   const posTable = modalEl.querySelector('#rne-positions-table');
   if (posTable) rnInitPositionsTableResizable(posTable);
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window._rneColToggle = window.TableKit.setupColumnToggle('#rne-positions-table', {
+      container: '#rne-pos-col-toggle',
+      storageKey: 'rne_positions_table_cols'
+    });
+  }
 };
 
 // SAVE EDITED INVOICE
@@ -2509,12 +2627,48 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
     positions: positions
   };
 
+  // 1. Supabase PostgreSQL Master Update (< 50ms)
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      const sbInv = {
+        name: name,
+        year: Number(document.getElementById('rne-year').value),
+        type: document.getElementById('rne-type').value,
+        total_amount: totalAmount,
+        person_number: personNumber || null,
+        updated_at: new Date().toISOString()
+      };
+      const { error: invErr } = await sb.from('invoices').update(sbInv).eq('id', invoiceId);
+      if (invErr) console.warn("⚠️ [Supabase] Invoice update warning:", invErr);
+
+      await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+      if (positions.length > 0) {
+        const sbPositions = positions.map(p => ({
+          invoice_id: invoiceId,
+          position_nr: p.position_nr,
+          description: p.description,
+          quantity: p.quantity,
+          unit_price: p.unit_price,
+          amount: p.amount,
+          konto: p.konto || null
+        }));
+        const { error: posErr } = await sb.from('invoice_positions').insert(sbPositions);
+        if (posErr) console.warn("⚠️ [Supabase] Positions update warning:", posErr);
+      }
+      console.log(`✅ [Supabase] Invoice ${invoiceId} and positions updated in Supabase.`);
+    } catch (sbEx) {
+      console.warn("⚠️ [Supabase] Update Invoice error:", sbEx);
+    }
+  }
+
+  // 2. Dual-Write to Google Apps Script / Sheets (Background Sync)
   try {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();
 
     if (!result.success) {
-      throw new Error(result.error || "Fehler beim Aktualisieren im Backend.");
+      console.warn("⚠️ Dual-Write GAS update returned error:", result.error);
     }
     
     // Server-Sync mit forceReload = true!
@@ -2523,13 +2677,7 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
       await loadInvoiceContactsData();
     }, 1200);
   } catch (err) {
-    console.error("❌ Optimistic Edit Invoice failed:", err);
-    // Revert optimistic update!
-    if (invIndex !== -1 && oldInv) {
-      window._invoices[invIndex] = oldInv;
-      window.renderRechnungen();
-    }
-    alert("❌ Fehler beim Bearbeiten der Rechnung (Revert durchgeführt): " + err.message);
+    console.warn("⚠️ Dual-write edit to Sheets failed (Supabase Master intact):", err);
   }
 };
 
@@ -2550,12 +2698,25 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
 
   showSuccess(`🎉 Rechnung ${invoiceId} wurde gelöscht (Hintergrund-Synchronisation läuft)...`);
 
+  // Supabase PostgreSQL Master Delete
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+      await sb.from('invoices').delete().eq('id', invoiceId);
+      console.log(`✅ [Supabase] Invoice ${invoiceId} deleted from Supabase.`);
+    } catch (sbEx) {
+      console.warn("⚠️ [Supabase] Delete Invoice error:", sbEx);
+    }
+  }
+
+  // Dual-Write Delete to GAS / Sheets
   try {
     const response = await apiFetch('rechnungen', { action: 'deleteInvoice', invoiceId }, 'POST');
     const result = await response.json();
 
     if (!result.success) {
-      throw new Error(result.error || "Fehler beim Löschen im Backend.");
+      console.warn("⚠️ Dual-Write GAS delete returned error:", result.error);
     }
     
     // Lazy sync after 1500ms
@@ -2563,13 +2724,7 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
       await loadRechnungenData(true);
     }, 1500);
   } catch (err) {
-    console.error("❌ Optimistic Delete Invoice failed:", err);
-    // Revert optimistic update!
-    if (deletedInv !== null) {
-      window._invoices.splice(deletedInv.originalIndex, 0, deletedInv);
-      window.renderRechnungen();
-    }
-    alert("❌ Fehler beim Löschen der Rechnung (Revert durchgeführt): " + err.message);
+    console.warn("⚠️ Dual-write delete to Sheets failed (Supabase Master intact):", err);
   }
 };
 
@@ -3208,6 +3363,30 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       inv.mahn_datum = nowStr;
       window.renderRechnungen();
 
+      // Supabase PostgreSQL Master Update
+      const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+      if (sb) {
+        try {
+          let hist = [];
+          try {
+            if (inv.mahn_historie) hist = typeof inv.mahn_historie === 'string' ? JSON.parse(inv.mahn_historie) : inv.mahn_historie;
+          } catch (_) {}
+          if (!Array.isArray(hist)) hist = [];
+          hist.push({ stufe: targetStufe, datum: nowStr, email: targetEmail });
+          inv.mahn_historie = hist;
+
+          await sb.from('invoices').update({
+            status: 'gemahnt',
+            mahnstufe: targetStufe,
+            mahn_datum: nowStr,
+            mahn_historie: JSON.stringify(hist),
+            updated_at: new Date().toISOString()
+          }).eq('id', invoiceId);
+        } catch (sbErr) {
+          console.warn("⚠️ [Supabase] Dunning update warning:", sbErr);
+        }
+      }
+
       showSuccess(`🎉 ${stufenTitle} für Rechnung ${invoiceId} erfolgreich an ${targetEmail} versandt!`, 4000);
 
       setTimeout(async () => {
@@ -3686,7 +3865,7 @@ window.rnRenderMassSendModalContent = function(modalEl) {
 
     return `
       <tr id="rn-mass-row-${inv.id}" class="rn-batch-item-row align-middle">
-        <td class="text-center" style="width: 44px;">
+        <td class="text-center tk-col-check" style="width: 44px;">
           <input type="checkbox" class="form-check-input rn-mass-item-check" 
                  id="rn-mass-check-${idx}" 
                  data-invoice-id="${inv.id}" 
@@ -3694,15 +3873,15 @@ window.rnRenderMassSendModalContent = function(modalEl) {
                  ${isChecked} 
                  onchange="rnUpdateMassSendSelectedCount()">
         </td>
-        <td>
+        <td class="tk-col-id">
           <span class="bh-konto-badge bh-konto-soll-badge rn-id-badge">${inv.id}</span>
           <span class="badge bg-light text-dark border ms-1" style="font-size: 11.5px;">${escapeHtml(inv.type || 'Rechnung')}</span>
         </td>
-        <td>
+        <td class="tk-col-recipient">
           <div class="fw-bold text-dark mb-0">${escapeHtml(inv.name)}</div>
           <div class="text-muted small">${sentBadge}</div>
         </td>
-        <td>
+        <td class="tk-col-email">
           <div class="input-group input-group-sm" style="max-width: 280px;">
             <span class="input-group-text bg-white ${row.hasEmail ? 'text-success' : 'text-danger'}">
               <i class="fas ${row.hasEmail ? 'fa-check-circle' : 'fa-exclamation-triangle'}"></i>
@@ -3714,10 +3893,10 @@ window.rnRenderMassSendModalContent = function(modalEl) {
                    oninput="rnOnMassEmailChange('${inv.id}', this.value)">
           </div>
         </td>
-        <td class="text-end fw-bold text-primary font-monospace" style="font-size: 14.5px;">
+        <td class="text-end fw-bold text-primary font-monospace tk-col-amount" style="font-size: 14.5px;">
           ${fmtChf(inv.total_amount)}
         </td>
-        <td class="text-center" style="width: 140px;" id="rn-mass-status-col-${inv.id}">
+        <td class="text-center tk-col-status" style="width: 140px;" id="rn-mass-status-col-${inv.id}">
           <span class="badge bg-light text-muted border py-1.5 px-2.5 font-monospace" id="rn-mass-row-badge-${inv.id}" style="font-size: 11.5px;">
             <i class="fas fa-clock me-1 text-secondary"></i>Wartet
           </span>
@@ -3726,20 +3905,22 @@ window.rnRenderMassSendModalContent = function(modalEl) {
     `;
   }).join('') : `
     <tr>
-      <td colspan="6" class="text-center text-muted py-5">
-        <i class="fas fa-inbox fa-3x text-secondary opacity-50 mb-3 d-block"></i>
-        <strong>Keine passenden Rechnungen für diesen Filter gefunden.</strong>
+      <td colspan="6" class="text-center text-muted py-4">
+        <i class="fas fa-info-circle me-1"></i>Keine Rechnungen für die ausgewählten Filterkriterien gefunden.
       </td>
     </tr>
   `;
 
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-dialog-centered modal-xl">
-      <div class="modal-content border-0 rounded-4 shadow-lg">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content border-0 shadow-lg rounded-4">
         <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold">
-            <i class="fas fa-paper-plane me-2"></i>Massenversand von QR-Rechnungen
-          </h5>
+          <div>
+            <h5 class="modal-title fw-bold mb-0">
+              <i class="fas fa-paper-plane me-2"></i>Massenversand: Rechnungen per E-Mail
+            </h5>
+            <div class="small text-white-50 mt-0.5">Automatisierter Rechnungsversand mit Schweizer QR-Rechnung (PDF-Anhang)</div>
+          </div>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="rn-mass-close-x"></button>
         </div>
 
@@ -3763,6 +3944,7 @@ window.rnRenderMassSendModalContent = function(modalEl) {
                     <i class="fas fa-check-square me-1"></i>Tabellenauswahl (${preselected.length})
                   </button>
                 ` : ''}
+                <div id="rn-mass-col-toggle" class="d-inline-block ms-1"></div>
               </div>
               <div class="col-md-4 text-md-end">
                 <select class="form-select form-select-sm" id="rn-mass-type-select" onchange="rnSetMassSendTypeFilter(this.value)">
@@ -3800,14 +3982,14 @@ window.rnRenderMassSendModalContent = function(modalEl) {
             <table class="table table-hover align-middle mb-0" style="font-size: 13.5px;" id="rn-mass-send-table">
               <thead class="table-light sticky-top">
                 <tr>
-                  <th style="width: 44px;" class="text-center">
+                  <th data-col-id="check" data-col-name="Auswahl" style="width: 44px;" class="text-center">
                     <input type="checkbox" class="form-check-input" id="rn-mass-select-all" checked onchange="rnToggleMassSendSelectAll(this.checked)">
                   </th>
-                  <th style="width: 170px;">Rechnung</th>
-                  <th>Empfänger</th>
-                  <th style="width: 290px;">E-Mail-Adresse</th>
-                  <th class="text-end" style="width: 140px;">Betrag</th>
-                  <th class="text-center" style="width: 140px;">Status</th>
+                  <th data-col-id="id" data-col-name="Rechnung" style="width: 170px;">Rechnung</th>
+                  <th data-col-id="recipient" data-col-name="Empfänger">Empfänger</th>
+                  <th data-col-id="email" data-col-name="E-Mail-Adresse" style="width: 290px;">E-Mail-Adresse</th>
+                  <th data-col-id="amount" data-col-name="Betrag" class="text-end" style="width: 140px;">Betrag</th>
+                  <th data-col-id="status" data-col-name="Status" class="text-center" style="width: 140px;">Status</th>
                 </tr>
               </thead>
               <tbody id="rn-mass-tbody">
@@ -3840,6 +4022,13 @@ window.rnRenderMassSendModalContent = function(modalEl) {
   `;
 
   rnUpdateMassSendSelectedCount();
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window.TableKit.setupColumnToggle('#rn-mass-send-table', {
+      container: '#rn-mass-col-toggle',
+      storageKey: 'rn_mass_send_table_cols'
+    });
+  }
 };
 
 window.rnSetMassSendFilter = function(filterName) {
@@ -4026,6 +4215,15 @@ window.rnExecuteMassSend = async function() {
         if (badge) {
           badge.className = 'badge bg-success text-white py-1.5 px-2.5';
           badge.innerHTML = `<i class="fas fa-check me-1"></i>Gesendet`;
+        }
+
+        const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+        if (sb) {
+          sb.from('invoices').update({
+            mail_status: 'gesendet',
+            send_date: inv.send_date,
+            updated_at: new Date().toISOString()
+          }).eq('id', inv.id).then(() => {}).catch(() => {});
         }
       } else {
         throw new Error(result.error || 'Serverfehler beim Versand');
@@ -4401,15 +4599,50 @@ window.rnSaveContactForm = async function(event) {
   }
 
   showLoadingOverlay('Speichere externen Kontakt...');
+  
+  // 1. Supabase PostgreSQL Master Save
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      const targetId = id || ('EXT-' + Date.now());
+      await sb.from('external_contacts').upsert({
+        id: targetId,
+        typ: typ || 'privat',
+        kategorie: kategorie || null,
+        firma: firma || null,
+        abteilung: abteilung || null,
+        anrede: anrede || null,
+        vorname: vorname || null,
+        nachname: nachname || null,
+        name: name,
+        strasse: strasse || null,
+        adresszusatz: adresszusatz || null,
+        plz: plz || null,
+        ort: ort || null,
+        land: land || 'CH',
+        email: email || null,
+        telefon: telefon || null,
+        bemerkungen: bemerkungen || null,
+        updated_at: new Date().toISOString()
+      });
+      contactObj.id = targetId;
+      console.log(`✅ [Supabase] External contact ${targetId} saved.`);
+    } catch (sbErr) {
+      console.warn("⚠️ [Supabase] Contact upsert warning:", sbErr);
+    }
+  }
+
   try {
     const res = await apiFetch('rechnungen', { action: 'saveContact', contact: contactObj }, 'POST');
     const result = await res.json();
-    if (!result.success) throw new Error(result.error || 'Fehler beim Speichern');
+    if (!result.success) {
+      console.warn('⚠️ GAS contact save returned warning:', result.error);
+    }
     
     showSuccess(result.message || 'Kontakt erfolgreich gespeichert.');
     await loadInvoiceContactsData();
 
-    const savedId = result.id || id;
+    const savedId = result.id || contactObj.id || id;
 
     // Falls das "Neue Rechnung"-Modal geöffnet ist: Dropdown aktualisieren & Kontakt direkt anwählen
     const memberSelectEl = document.getElementById('rnc-member-select');
@@ -4476,6 +4709,18 @@ window.rnDeleteContactPrompt = async function(contactId) {
   if (!confirm(`Möchten Sie den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`)) return;
 
   showLoadingOverlay('Lösche Kontakt...');
+
+  // Supabase PostgreSQL Master Delete
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      await sb.from('external_contacts').delete().eq('id', String(contactId));
+      console.log(`✅ [Supabase] External contact ${contactId} deleted.`);
+    } catch (sbErr) {
+      console.warn("⚠️ [Supabase] Contact delete warning:", sbErr);
+    }
+  }
+
   try {
     const res = await apiFetch('rechnungen', { action: 'deleteContact', id: contactId }, 'POST');
     const result = await res.json();

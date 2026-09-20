@@ -114,12 +114,12 @@ function mglOpenDetail(pn) {
       const aktiv = (l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !String(l.ExitDate || '').trim();
       const istMuhen = l.istMuhen || String(l.LicenseInvoicingClubNumber || '').trim() === '1.02.0.01.087';
       return `<tr>
-        <td>${escapeHtml(l.MembershipCategory || '–')}</td>
-        <td>${mglFmtDate(l.EntryDate)}</td>
-        <td>${mglFmtDate(l.ExitDate)}</td>
-        <td>${escapeHtml(l.LicenseType || '–')}</td>
-        <td>${istMuhen ? '<span class="badge bg-success opacity-75">Muhen (bezahlt)</span>' : `<span class="badge bg-warning text-dark">Fremdzahler: ${escapeHtml(l.LicenseInvoicingClubName || '–')}</span>`}</td>
-        <td><span class="badge ${aktiv ? 'bg-success' : 'bg-secondary'}">${aktiv ? 'aktiv' : 'inaktiv'}</span></td>
+        <td class="tk-col-kat">${escapeHtml(l.MembershipCategory || '–')}</td>
+        <td class="tk-col-eintritt">${mglFmtDate(l.EntryDate)}</td>
+        <td class="tk-col-austritt">${mglFmtDate(l.ExitDate)}</td>
+        <td class="tk-col-typ">${escapeHtml(l.LicenseType || '–')}</td>
+        <td class="tk-col-zahlstelle">${istMuhen ? '<span class="badge bg-success opacity-75">Muhen (bezahlt)</span>' : `<span class="badge bg-warning text-dark">Fremdzahler: ${escapeHtml(l.LicenseInvoicingClubName || '–')}</span>`}</td>
+        <td class="tk-col-status"><span class="badge ${aktiv ? 'bg-success' : 'bg-secondary'}">${aktiv ? 'aktiv' : 'inaktiv'}</span></td>
       </tr>`;
     }).join('') || '<tr><td colspan="6" class="text-muted text-center">Keine Lizenzen</td></tr>';
 
@@ -127,11 +127,11 @@ function mglOpenDetail(pn) {
       const aktiv = !String(f.OfficialFunctionExitDate || '').trim();
       const rabattKat = f.rabatt_kategorie || f.rabattkategorie;
       return `<tr>
-        <td>${escapeHtml(f.OfficialFunctionCategory || '–')}</td>
-        <td>${mglFmtDate(f.OfficialFunctionEntryDate)}</td>
-        <td>${mglFmtDate(f.OfficialFunctionExitDate)}</td>
-        <td>${rabattKat ? `<span class="badge bg-warning text-dark">${escapeHtml(rabattKat)}</span>` : '–'}</td>
-        <td><span class="badge ${aktiv ? 'bg-success' : 'bg-secondary'}">${aktiv ? 'aktiv' : 'ehemalig'}</span></td>
+        <td class="tk-col-fn">${escapeHtml(f.OfficialFunctionCategory || '–')}</td>
+        <td class="tk-col-eintritt">${mglFmtDate(f.OfficialFunctionEntryDate)}</td>
+        <td class="tk-col-austritt">${mglFmtDate(f.OfficialFunctionExitDate)}</td>
+        <td class="tk-col-rabatt">${rabattKat ? `<span class="badge bg-warning text-dark">${escapeHtml(rabattKat)}</span>` : '–'}</td>
+        <td class="tk-col-status"><span class="badge ${aktiv ? 'bg-success' : 'bg-secondary'}">${aktiv ? 'aktiv' : 'ehemalig'}</span></td>
       </tr>`;
     }).join('') || '<tr><td colspan="5" class="text-muted text-center">Keine Funktionen</td></tr>';
 
@@ -250,10 +250,21 @@ function mglOpenDetail(pn) {
           </div>
 
           <div class="tab-pane fade" id="mglTabLiz">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="text-muted small fw-semibold">Lizenzen & Abteilungen</span>
+              <div id="mgl-detail-liz-col-toggle"></div>
+            </div>
             <div class="table-responsive">
-              <table class="table table-sm mgl-table">
+              <table class="table table-sm mgl-table" id="mgl-detail-liz-table">
                 <thead>
-                  <tr><th>Kategorie</th><th>Eintritt</th><th>Austritt</th><th>Typ</th><th>Zahlstelle (SSV)</th><th>Status</th></tr>
+                  <tr>
+                    <th data-col-id="kat" data-col-name="Kategorie">Kategorie</th>
+                    <th data-col-id="eintritt" data-col-name="Eintritt">Eintritt</th>
+                    <th data-col-id="austritt" data-col-name="Austritt">Austritt</th>
+                    <th data-col-id="typ" data-col-name="Typ">Typ</th>
+                    <th data-col-id="zahlstelle" data-col-name="Zahlstelle (SSV)">Zahlstelle (SSV)</th>
+                    <th data-col-id="status" data-col-name="Status">Status</th>
+                  </tr>
                 </thead>
                 <tbody>${lizRows}</tbody>
               </table>
@@ -261,10 +272,20 @@ function mglOpenDetail(pn) {
           </div>
 
           <div class="tab-pane fade" id="mglTabFn">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="text-muted small fw-semibold">Vereinsfunktionen & Ämter</span>
+              <div id="mgl-detail-fn-col-toggle"></div>
+            </div>
             <div class="table-responsive">
-              <table class="table table-sm">
+              <table class="table table-sm" id="mgl-detail-fn-table">
                 <thead class="table-light">
-                  <tr><th>Funktion</th><th>Eintritt</th><th>Austritt</th><th>Rabatt</th><th>Status</th></tr>
+                  <tr>
+                    <th data-col-id="fn" data-col-name="Funktion">Funktion</th>
+                    <th data-col-id="eintritt" data-col-name="Eintritt">Eintritt</th>
+                    <th data-col-id="austritt" data-col-name="Austritt">Austritt</th>
+                    <th data-col-id="rabatt" data-col-name="Rabatt">Rabatt</th>
+                    <th data-col-id="status" data-col-name="Status">Status</th>
+                  </tr>
                 </thead>
                 <tbody>${fnRows}</tbody>
               </table>
@@ -437,6 +458,17 @@ function mglOpenDetail(pn) {
           </div>` : ''}
         </div>
       </div>`;
+
+    if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+      window.TableKit.setupColumnToggle('#mgl-detail-liz-table', {
+        container: '#mgl-detail-liz-col-toggle',
+        storageKey: 'mgl_detail_liz_table_cols'
+      });
+      window.TableKit.setupColumnToggle('#mgl-detail-fn-table', {
+        container: '#mgl-detail-fn-col-toggle',
+        storageKey: 'mgl_detail_fn_table_cols'
+      });
+    }
   } catch (e) {
     body.innerHTML = `<div class="alert alert-danger m-3">Fehler: ${e.message}</div>`;
   }

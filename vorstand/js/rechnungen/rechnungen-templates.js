@@ -36,11 +36,11 @@ window.renderTabTemplates = function(content) {
       
       return `
         <tr class="bh-account-row">
-          <td><span class="badge ${catBadge} px-2.5 py-1.5">${escapeHtml(t.category)}</span></td>
-          <td class="fw-bold text-dark">${escapeHtml(t.desc)}</td>
-          <td class="text-end font-monospace fw-bold">${priceLabel}</td>
-          <td class="text-center">${kontoBadge}</td>
-          <td class="text-end">
+          <td class="tk-col-cat"><span class="badge ${catBadge} px-2.5 py-1.5">${escapeHtml(t.category)}</span></td>
+          <td class="fw-bold text-dark tk-col-desc">${escapeHtml(t.desc)}</td>
+          <td class="text-end font-monospace fw-bold tk-col-price">${priceLabel}</td>
+          <td class="text-center tk-col-konto">${kontoBadge}</td>
+          <td class="text-end tk-col-actions">
             <button class="btn btn-xs btn-outline-warning me-1 write-protected" onclick="rnOpenTemplateModal(${tIdStr}, '${escapedCategory}', '${escapedDesc}', '${t.price || ''}', '${escapedKonto}')" title="Vorlage bearbeiten">
               <i class="fas fa-edit"></i>
             </button>
@@ -57,9 +57,12 @@ window.renderTabTemplates = function(content) {
     <div class="card border border-light shadow-sm p-4">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-magic me-2"></i>Standard-Rechnungspositionen verwalten</h5>
-        <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenTemplateModal(null)">
-          <i class="fas fa-plus-circle me-1"></i> Position hinzufügen
-        </button>
+        <div class="d-flex gap-2 align-items-center">
+          <div id="rn-templates-col-toggle"></div>
+          <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenTemplateModal(null)">
+            <i class="fas fa-plus-circle me-1"></i> Position hinzufügen
+          </button>
+        </div>
       </div>
       
       <p class="text-muted small mb-4">
@@ -67,14 +70,14 @@ window.renderTabTemplates = function(content) {
       </p>
       
       <div class="table-responsive">
-        <table class="table table-hover align-middle bh-table mb-0" style="font-size: 13.5px;">
+        <table class="table table-hover align-middle bh-table mb-0" id="rn-templates-table" style="font-size: 13.5px;">
           <thead>
             <tr>
-              <th style="width: 140px;">Kategorie</th>
-              <th>Dienstleistung / Ware (Beschreibung)</th>
-              <th class="text-end" style="width: 160px;">Standard-Richtpreis</th>
-              <th class="text-center" style="width: 150px;">Haben-Konto</th>
-              <th class="text-end" style="width: 110px;">Aktionen</th>
+              <th data-col-id="cat" data-col-name="Kategorie" style="width: 140px;">Kategorie</th>
+              <th data-col-id="desc" data-col-name="Beschreibung">Dienstleistung / Ware (Beschreibung)</th>
+              <th data-col-id="price" data-col-name="Standard-Richtpreis" class="text-end" style="width: 160px;">Standard-Richtpreis</th>
+              <th data-col-id="konto" data-col-name="Haben-Konto" class="text-center" style="width: 150px;">Haben-Konto</th>
+              <th data-col-id="actions" data-col-name="Aktionen" class="text-end" style="width: 110px;">Aktionen</th>
             </tr>
           </thead>
           <tbody>
@@ -84,6 +87,13 @@ window.renderTabTemplates = function(content) {
       </div>
     </div>
   `;
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window.TableKit.setupColumnToggle('#rn-templates-table', {
+      container: '#rn-templates-col-toggle',
+      storageKey: 'rn_templates_table_cols'
+    });
+  }
 };
 
 // Modal for Template Add/Edit
@@ -178,8 +188,27 @@ window.rnSaveTemplate = async function(event, templateId) {
   
   const isNew = templateId === null || templateId === undefined || templateId === '';
   const newTemplate = { category, desc, price, habenkonto };
+
+  // 1. Supabase PostgreSQL Master Write
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      const tId = isNew ? (desc.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now()) : String(templateId);
+      await sb.from('invoice_templates').upsert({
+        id: tId,
+        category: category,
+        description: desc,
+        unit_price: price !== '' ? Number(price) : null,
+        konto: habenkonto || null,
+        updated_at: new Date().toISOString()
+      });
+      console.log(`✅ [Supabase] Template ${desc} saved to Supabase.`);
+    } catch (sbErr) {
+      console.warn("⚠️ [Supabase] Template save warning:", sbErr);
+    }
+  }
   
-  // Server POST payload
+  // 2. Dual-Write to GAS
   const payload = {
     action: 'saveTemplate',
     templateId: isNew ? '' : String(templateId),
@@ -238,6 +267,17 @@ window.rnDeleteTemplate = async function(templateId, desc) {
   
   const isServerTpl = templateId !== null && templateId !== undefined && templateId !== '';
   
+  // Supabase PostgreSQL Master Delete
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb && isServerTpl) {
+    try {
+      await sb.from('invoice_templates').delete().eq('id', String(templateId));
+      console.log(`✅ [Supabase] Template ${templateId} deleted from Supabase.`);
+    } catch (sbErr) {
+      console.warn("⚠️ [Supabase] Template delete warning:", sbErr);
+    }
+  }
+
   if (isServerTpl) {
     const payload = {
       action: 'deleteTemplate',

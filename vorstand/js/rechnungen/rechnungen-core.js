@@ -47,14 +47,133 @@ window.generateSafeInvoiceId = function(prefix = 'RE', year = null) {
   return `${prefix.toUpperCase().trim()}-${shortYear}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
 };
 
+// Supabase Client Access & State
+function getRechnungenSupabaseClient() {
+  if (typeof window.getSupabaseClient === 'function') {
+    return window.getSupabaseClient();
+  }
+  return window.supabaseClient || null;
+}
+window.getRechnungenSupabaseClient = getRechnungenSupabaseClient;
+window._rechnungenIsSupabase = false;
+
+// Formatierungshelfer für Schweizer Datumsanzeige (DD.MM.YYYY)
+function rnFmtSwissDate(val) {
+  if (!val) return '';
+  if (typeof val === 'string' && val.includes('.')) return val;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+}
+window.rnFmtSwissDate = rnFmtSwissDate;
+
+// --- MAPPING HELPER FÜR SUPABASE POSTGREST ---
+function mapInvoiceFromSupabase(r, posMap = {}) {
+  const invId = String(r.id).trim();
+  let mahnHist = [];
+  try {
+    if (r.mahn_historie) {
+      mahnHist = typeof r.mahn_historie === 'string' ? JSON.parse(r.mahn_historie) : r.mahn_historie;
+    }
+  } catch (_) {}
+
+  return {
+    id: invId,
+    PersonNumber: r.person_number || '',
+    name: r.recipient_name || '',
+    year: Number(r.year || new Date().getFullYear()),
+    type: r.type || 'Jahresbeitrag',
+    status: r.status || 'offen',
+    total_amount: Number(r.total_amount || 0),
+    payment_date: r.payment_date || '',
+    payment_method: r.payment_method || '',
+    document_ref: r.document_ref || '',
+    pdf_url: r.pdf_url || '',
+    pdf_storage_path: r.pdf_storage_path || '',
+    mail_status: r.mail_status || 'entwurf',
+    send_date: r.send_date ? rnFmtSwissDate(r.send_date) : '',
+    mahnstufe: Number(r.mahnstufe || 0),
+    mahn_datum: r.mahn_datum ? rnFmtSwissDate(r.mahn_datum) : '',
+    mahn_historie: mahnHist,
+    notes: r.notes || '',
+    created_at: r.created_at ? rnFmtSwissDate(r.created_at) : '',
+    updated_at: r.updated_at ? rnFmtSwissDate(r.updated_at) : '',
+    positions: posMap[invId] || []
+  };
+}
+
+function mapPositionFromSupabase(r) {
+  return {
+    id: r.id,
+    invoice_id: String(r.invoice_id).trim(),
+    position_nr: Number(r.position_nr || 1),
+    description: r.description || '',
+    quantity: Number(r.quantity || 1),
+    unit_price: Number(r.unit_price || 0),
+    amount: Number(r.amount || 0),
+    konto: r.konto || '3000',
+    type: r.type || 'standard',
+    source_field: r.source_field || '',
+    sourcefield: r.source_field || ''
+  };
+}
+
+function mapTemplateFromSupabase(r) {
+  return {
+    id: r.id,
+    category: r.category || 'Allgemein',
+    desc: r.description || '',
+    price: Number(r.price || 0),
+    habenkonto: r.habenkonto || '3000',
+    konto: r.habenkonto || '3000'
+  };
+}
+
+function mapContactFromSupabase(r) {
+  return {
+    id: r.id,
+    typ: r.typ || 'privat',
+    kategorie: r.kategorie || '',
+    firma: r.firma || '',
+    abteilung: r.abteilung || '',
+    anrede: r.anrede || '',
+    vorname: r.vorname || '',
+    nachname: r.nachname || '',
+    strasse: r.strasse || '',
+    adresszusatz: r.adresszusatz || '',
+    plz: r.plz || '',
+    ort: r.ort || '',
+    land: r.land || 'Schweiz',
+    email: r.email || '',
+    telefon: r.telefon || '',
+    bemerkungen: r.bemerkungen || ''
+  };
+}
+
 // Online/Preload Endpoint Trigger
 window._invoiceTemplates = [];
 window._invoiceLayouts = {};
 window._externalContacts = [];
 window._rechnungenActiveTab = 'archiv';
 
-// API Endpoint to fetch external contacts
+// API Endpoint to fetch external contacts (Supabase First mit GAS-Fallback)
 window.loadInvoiceContactsData = async function() {
+  const supa = getRechnungenSupabaseClient();
+  if (supa) {
+    try {
+      const { data, error } = await supa.from('external_contacts').select('*').order('nachname', { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        window._externalContacts = data.map(mapContactFromSupabase);
+        return window._externalContacts;
+      }
+    } catch (e) {
+      console.warn("⚠️ Supabase Kontakte-Abfrage fehlgeschlagen, nutze GAS:", e);
+    }
+  }
+
   try {
     const response = await apiFetch('rechnungen', 'action=getContacts');
     const result = await response.json();
@@ -64,6 +183,7 @@ window.loadInvoiceContactsData = async function() {
   } catch (err) {
     console.warn("⚠️ Fehler beim Abrufen der externen Kontakte:", err);
   }
+  return window._externalContacts || [];
 };
 
 // Robustes Ermitteln der verfügbaren Vereinsmitglieder (Members100) aus allen Speicherquellen
@@ -116,27 +236,63 @@ window.rnEnsureContactsLoaded = async function(force = false) {
   return window._externalContacts || [];
 };
 
-// API Endpoint to fetch template positions
+// API Endpoint to fetch template positions (Supabase First mit GAS-Fallback)
 window.loadInvoiceTemplatesData = async function() {
+  const supa = getRechnungenSupabaseClient();
+  if (supa) {
+    try {
+      const { data, error } = await supa.from('invoice_templates').select('*').order('sort_order', { ascending: true }).order('description', { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        window._invoiceTemplates = data.map(mapTemplateFromSupabase);
+        localStorage.setItem('portal_invoice_templates', JSON.stringify(window._invoiceTemplates));
+        return window._invoiceTemplates;
+      }
+    } catch (e) {
+      console.warn("⚠️ Supabase Vorlagen-Abfrage fehlgeschlagen, nutze GAS:", e);
+    }
+  }
+
   try {
     const response = await apiFetch('rechnungen', 'action=getTemplates');
     const result = await response.json();
     if (result.success && result.data) {
       window._invoiceTemplates = result.data || [];
-      // Sync to localStorage as fallback
       localStorage.setItem('portal_invoice_templates', JSON.stringify(window._invoiceTemplates));
     } else {
       throw new Error(result.error || "GAS success was false");
     }
   } catch (err) {
     console.warn("⚠️ Fehler beim Abrufen der Standard-Positionen vom Server, benutze LocalStorage:", err);
-    rnInitializeTemplates(); // Ensure localStorage has defaults
+    rnInitializeTemplates();
     window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
   }
+  return window._invoiceTemplates || [];
 };
 
-// API Endpoint to fetch layout configuration
+// API Endpoint to fetch layout configuration (Supabase First mit GAS-Fallback)
 window.loadInvoiceLayoutsData = async function() {
+  const supa = getRechnungenSupabaseClient();
+  if (supa) {
+    try {
+      const { data, error } = await supa.from('invoice_layouts').select('*');
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const map = {};
+        data.forEach(item => {
+          if (item.type) map[item.type] = item;
+        });
+        if (typeof rnGetDefaultLayouts === 'function') {
+          window._invoiceLayouts = { ...rnGetDefaultLayouts(), ...map };
+        } else {
+          window._invoiceLayouts = map;
+        }
+        localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
+        return window._invoiceLayouts;
+      }
+    } catch (e) {
+      console.warn("⚠️ Supabase Layouts-Abfrage fehlgeschlagen, nutze GAS:", e);
+    }
+  }
+
   try {
     const response = await apiFetch('rechnungen', 'action=getLayouts');
     const result = await response.json();
@@ -166,15 +322,14 @@ window.loadInvoiceLayoutsData = async function() {
       }
     } catch (_) {}
   }
+  return window._invoiceLayouts || {};
 };
 
-// Online/Preload Endpoint Trigger
+// Online/Preload Endpoint Trigger (Supabase First mit GAS-Fallback)
 window.loadRechnungenData = async function(silent = false, forceReload = false) {
   const container = document.getElementById('rechnungen-container');
   const hasCachedData = window._invoices && window._invoices.length > 0;
   
-  // Wenn Caches bereits geladen sind und kein forceReload erzwungen wird,
-  // laden wir direkt und instant aus dem lokalen Speicher!
   if (!forceReload && hasCachedData) {
     console.log("⚡ loadRechnungenData: Lade aus lokalem Cache...");
     window.renderRechnungen();
@@ -186,13 +341,52 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
       container.innerHTML = `
         <div class="text-center py-5">
           <div class="spinner-border text-primary" role="status"></div>
-          <p class="mt-2 text-muted">Lade Rechnungen und Zahlungsdaten aus der Datenbank...</p>
+          <p class="mt-2 text-muted">Lade Rechnungen und Zahlungsdaten aus Supabase...</p>
         </div>`;
     }
   }
 
+  // 1. SUPABASE-FIRST VERSUCH
+  const supa = getRechnungenSupabaseClient();
+  if (supa) {
+    try {
+      const [invRes, posRes] = await Promise.all([
+        supa.from('invoices').select('*').order('created_at', { ascending: false }),
+        supa.from('invoice_positions').select('*').order('position_nr', { ascending: true }),
+        loadInvoiceTemplatesData(),
+        loadInvoiceLayoutsData(),
+        loadInvoiceContactsData()
+      ]);
+
+      if (!invRes.error && Array.isArray(invRes.data) && invRes.data.length > 0) {
+        console.log(`✅ ${invRes.data.length} Rechnungen & ${posRes.data?.length || 0} Positionen aus Supabase geladen (< 50 ms).`);
+        window._rechnungenIsSupabase = true;
+
+        // Positions-Map aufbauen
+        const posMap = {};
+        (posRes.data || []).forEach(p => {
+          const invId = String(p.invoice_id).trim();
+          if (!posMap[invId]) posMap[invId] = [];
+          posMap[invId].push(mapPositionFromSupabase(p));
+        });
+
+        window._invoicePositionsCache = posMap;
+        window._invoices = invRes.data.map(r => mapInvoiceFromSupabase(r, posMap));
+        window._jbAllInvoices = window._invoices;
+
+        window.rnEnsureMembersLoaded().catch(e => console.warn("Mitglieder Preload:", e));
+        window.renderRechnungen();
+        return;
+      } else if (!invRes.error && invRes.data.length === 0) {
+        console.log("ℹ️ Supabase Invoices noch leer. Wechsle zu Google Apps Script zum Laden bestehender Daten...");
+      }
+    } catch (supaErr) {
+      console.warn("⚠️ Supabase Abfrage fehlgeschlagen, wechsle zu GAS Fallback:", supaErr);
+    }
+  }
+
+  // 2. FALLBACK: GOOGLE APPS SCRIPT
   try {
-    // Parallel fetching of invoices, standard positions templates, layout configs and contacts
     const [invRes, _a, _b, _c] = await Promise.all([
       apiFetch('rechnungen', 'action=getInvoices'),
       loadInvoiceTemplatesData(),
@@ -200,11 +394,9 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
       loadInvoiceContactsData()
     ]);
     
-    // Mitgliederdaten & externe Kontakte im Hintergrund laden für Adress- und Absenderabgleich
     window.rnEnsureMembersLoaded().catch(e => console.warn("Mitglieder Preload:", e));
     window.rnEnsureContactsLoaded().catch(e => console.warn("Kontakte Preload:", e));
     
-    // Prüfe Content-Type – wenn HTML kommt, ist das Script nicht korrekt deployed/erreichbar
     const rawText = await invRes.text();
     let result;
     try {
@@ -231,8 +423,9 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
     }
     
     if (result.success) {
+      window._rechnungenIsSupabase = false;
       window._invoices = result.data || [];
-      window._jbAllInvoices = window._invoices; // Keep jahresbeitrag cache in sync!
+      window._jbAllInvoices = window._invoices;
       window._invoicePositionsCache = window._invoicePositionsCache || {};
       window._invoices.forEach(inv => {
         if (Array.isArray(inv.positions) && inv.positions.length > 0) {
@@ -260,6 +453,206 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
   }
 };
 
+// =====================================================================
+// 1-KLICK-MIGRATION: ALLE RECHNUNGEN & DATEN AUS GOOGLE SHEETS NACH SUPABASE
+// =====================================================================
+window.syncRechnungenFromLegacy = async function() {
+  const supa = getRechnungenSupabaseClient();
+  if (!supa) {
+    alert("❌ Supabase Client ist nicht initialisiert. Bitte Seite neu laden.");
+    return;
+  }
+
+  if (!confirm("Möchtest du jetzt alle Rechnungen, Positionen, Vorlagen und Kontakte aus dem bestehenden Google Spreadsheet nach Supabase importieren?")) {
+    return;
+  }
+
+  const btn = document.getElementById('rn-sync-legacy-btn');
+  const originalBtnHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Importiere...';
+  }
+
+  try {
+    // 1. Daten aus GAS abrufen
+    const [invRes, tmplRes, layRes, contRes] = await Promise.all([
+      apiFetch('rechnungen', 'action=getInvoices'),
+      apiFetch('rechnungen', 'action=getTemplates'),
+      apiFetch('rechnungen', 'action=getLayouts'),
+      apiFetch('rechnungen', 'action=getContacts')
+    ]);
+
+    const [invJson, tmplJson, layJson, contJson] = await Promise.all([
+      invRes.json(),
+      tmplRes.json(),
+      layRes.json(),
+      contRes.json()
+    ]);
+
+    let importedInvoices = 0;
+    let importedPositions = 0;
+    let importedContacts = 0;
+    let importedTemplates = 0;
+    let importedLayouts = 0;
+
+    // A. Kontakte importieren
+    const contacts = contJson.data || [];
+    if (contacts.length > 0) {
+      const contactsToUpsert = contacts.map(c => ({
+        id: String(c.id).trim(),
+        typ: c.typ || 'privat',
+        kategorie: c.kategorie || '',
+        firma: c.firma || '',
+        abteilung: c.abteilung || '',
+        anrede: c.anrede || '',
+        vorname: c.vorname || '',
+        nachname: c.nachname || '',
+        strasse: c.strasse || '',
+        adresszusatz: c.adresszusatz || '',
+        plz: String(c.plz || ''),
+        ort: c.ort || '',
+        land: c.land || 'Schweiz',
+        email: c.email || '',
+        telefon: c.telefon || '',
+        bemerkungen: c.bemerkungen || '',
+        updated_at: new Date().toISOString()
+      }));
+      const { error: cErr } = await supa.from('external_contacts').upsert(contactsToUpsert, { onConflict: 'id' });
+      if (cErr) console.warn("Warnung Kontakte-Import:", cErr);
+      else importedContacts = contactsToUpsert.length;
+    }
+
+    // B. Vorlagen importieren
+    const templates = tmplJson.data || [];
+    if (templates.length > 0) {
+      const templatesToUpsert = templates.map((t, idx) => ({
+        category: t.category || 'Allgemein',
+        description: t.desc || t.description || '',
+        price: Number(t.price || 0),
+        habenkonto: t.habenkonto || t.konto || '3000',
+        sort_order: idx + 1,
+        updated_at: new Date().toISOString()
+      }));
+      const { error: tErr } = await supa.from('invoice_templates').upsert(templatesToUpsert, { onConflict: 'id' });
+      if (tErr) console.warn("Warnung Vorlagen-Import:", tErr);
+      else importedTemplates = templatesToUpsert.length;
+    }
+
+    // C. Layouts importieren
+    const layouts = layJson.data || [];
+    if (layouts.length > 0) {
+      const layoutsToUpsert = layouts.map(l => ({
+        type: String(l.type || '').toLowerCase().trim(),
+        title: l.title || '',
+        intro: l.intro || '',
+        outro: l.outro || '',
+        notice: l.notice || '',
+        mail_subject: l.mail_subject || '',
+        mail_body: l.mail_body || '',
+        updated_at: new Date().toISOString()
+      })).filter(l => l.type);
+      const { error: lErr } = await supa.from('invoice_layouts').upsert(layoutsToUpsert, { onConflict: 'type' });
+      if (lErr) console.warn("Warnung Layouts-Import:", lErr);
+      else importedLayouts = layoutsToUpsert.length;
+    }
+
+    // D. Rechnungen & Positionen importieren
+    const invoices = invJson.data || [];
+    if (invoices.length > 0) {
+      const invoicesToUpsert = invoices.map(i => {
+        let paymentDate = null;
+        if (i.payment_date) {
+          const p = String(i.payment_date).split(' ')[0];
+          if (p.includes('.')) {
+            const parts = p.split('.');
+            if (parts.length === 3) paymentDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+          } else if (p.includes('-')) {
+            paymentDate = p;
+          }
+        }
+
+        return {
+          id: String(i.id).trim(),
+          person_number: String(i.PersonNumber || '').trim(),
+          recipient_name: i.name || '',
+          year: Number(i.year || new Date().getFullYear()),
+          type: i.type || 'Jahresbeitrag',
+          status: i.status || 'offen',
+          total_amount: Number(i.total_amount || 0),
+          payment_date: paymentDate,
+          payment_method: i.payment_method || '',
+          document_ref: i.document_ref || '',
+          pdf_url: i.pdf_url || '',
+          mail_status: i.mail_status || 'entwurf',
+          mahnstufe: Number(i.mahnstufe || 0),
+          mahn_datum: i.mahn_datum || null,
+          mahn_historie: Array.isArray(i.mahn_historie) ? i.mahn_historie : [],
+          updated_at: new Date().toISOString()
+        };
+      });
+
+      const { error: iErr } = await supa.from('invoices').upsert(invoicesToUpsert, { onConflict: 'id' });
+      if (iErr) throw iErr;
+      importedInvoices = invoicesToUpsert.length;
+
+      // Alle Positionen sammeln
+      const allPositions = [];
+      invoices.forEach(inv => {
+        const invId = String(inv.id).trim();
+        const pos = Array.isArray(inv.positions) ? inv.positions : [];
+        pos.forEach((p, idx) => {
+          allPositions.push({
+            invoice_id: invId,
+            position_nr: Number(p.position_nr || idx + 1),
+            description: p.description || p.desc || 'Position',
+            quantity: Number(p.quantity || 1),
+            unit_price: Number(p.unit_price || p.price || 0),
+            amount: Number(p.amount || 0),
+            konto: p.konto || '3000',
+            type: p.type || 'standard',
+            source_field: p.source_field || p.sourcefield || ''
+          });
+        });
+      });
+
+      if (allPositions.length > 0) {
+        // Zuerst alte Positionen für diese Invoices leeren, um Duplikate zu vermeiden
+        const invIds = invoicesToUpsert.map(i => i.id);
+        await supa.from('invoice_positions').delete().in('invoice_id', invIds);
+        
+        // In Batches einfügen
+        const batchSize = 100;
+        for (let b = 0; b < allPositions.length; b += batchSize) {
+          const slice = allPositions.slice(b, b + batchSize);
+          const { error: pErr } = await supa.from('invoice_positions').insert(slice);
+          if (pErr) console.warn("Warnung Positionen Batch Insert:", pErr);
+        }
+        importedPositions = allPositions.length;
+      }
+    }
+
+    alert(`🎉 1-Klick-Import erfolgreich abgeschlossen!\n\n` +
+          `• ${importedInvoices} Rechnungen\n` +
+          `• ${importedPositions} Rechnungspositionen\n` +
+          `• ${importedContacts} externe Kontakte\n` +
+          `• ${importedTemplates} Standard-Vorlagen\n` +
+          `• ${importedLayouts} Layout-Konfigurationen\n\n` +
+          `Supabase ist ab sofort der aktive Master für Rechnungen!`);
+
+    await loadRechnungenData(false, true);
+
+  } catch (err) {
+    console.error("❌ Fehler beim 1-Klick-Import:", err);
+    alert("❌ Fehler beim Importieren der Rechnungsdaten: " + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalBtnHtml;
+    }
+  }
+};
+
 // Hilfsfunktion: Gibt die Positionen einer Rechnung zurück (aus RAM-Cache, Invoice-Objekt oder Remote per getInvoiceDetails)
 window.rnGetInvoicePositions = async function(invoiceId) {
   if (!invoiceId) return [];
@@ -276,6 +669,20 @@ window.rnGetInvoicePositions = async function(invoiceId) {
     return inv.positions;
   }
   
+  // Supabase Nachladen
+  const supa = getRechnungenSupabaseClient();
+  if (supa && window._rechnungenIsSupabase) {
+    try {
+      const { data, error } = await supa.from('invoice_positions').select('*').eq('invoice_id', idStr).order('position_nr', { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map(mapPositionFromSupabase);
+        window._invoicePositionsCache[idStr] = mapped;
+        if (inv) inv.positions = mapped;
+        return mapped;
+      }
+    } catch (_) {}
+  }
+
   // Remote Nachladen via getInvoiceDetails (Live-GAS Fallback)
   try {
     const res = await apiFetch('rechnungen', { action: 'getInvoiceDetails', invoiceId: idStr });

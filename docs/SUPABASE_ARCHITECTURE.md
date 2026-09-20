@@ -1102,7 +1102,7 @@ Mit Abschluss von Phase 8 wurde Supabase zum führenden **Write-Master** für di
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen (Personalien, Adressen, Status, Finanzen) direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges; TableKit mit Spalten-Ausblendung; Dual-Write zu Google Sheet | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 9** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
-| **Phase 10** | **Jahresbeiträge & Fakturierung**| Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members`, QR-Rechnungen | Supabase + Paperless-NGX | Geplant |
+| **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Standard-Vorlagen, Layouts & externe Kontakte (`10_invoices_module.sql`); Supabase Master mit asynchronem Dual-Write zu Google Sheets (`1D3tbMHVNzf-VzTyP1DnGQ4MXqtjw7H1hlV4NY2X-wfE`); Serverless QR-Rechnungs-PDF & Gmail-Versand via GAS; TableKit Spaltenausblendung im Archiv sowie in allen Modalen | Supabase (Master) ⇄ Google Sheet (Spiegelung) / GAS (PDF/Mail) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung (letzter Schritt) | Supabase | Geplant |
 
 ---

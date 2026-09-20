@@ -460,12 +460,33 @@ window.rnSaveLayout = async function(event, type) {
     localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
   } catch (_) {}
 
+  // 1. Supabase PostgreSQL Master Write
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      await sb.from('invoice_layouts').upsert({
+        type: type,
+        title: title || null,
+        intro: intro || null,
+        outro: outro || null,
+        notice: notice || null,
+        mail_subject: mail_subject || null,
+        mail_body: mail_body || null,
+        updated_at: new Date().toISOString()
+      });
+      console.log(`✅ [Supabase] Layout for '${type}' saved to Supabase.`);
+    } catch (sbErr) {
+      console.warn("⚠️ [Supabase] Layout save warning:", sbErr);
+    }
+  }
+
   const submitBtn = document.getElementById('rnl-submit-btn');
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Speichere Layout...';
   }
 
+  // 2. Dual-Write to GAS
   try {
     const response = await apiFetch('rechnungen', {
       action: 'saveLayout',

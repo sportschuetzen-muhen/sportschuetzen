@@ -265,7 +265,11 @@ window.renderTabArchiv = function(content) {
     <div class="bh-report-section border border-light shadow-sm mb-4">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:15px;">
         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-filter me-2"></i>Filter & Rechnungs-Archiv</h5>
-        <div class="d-flex gap-2 flex-wrap">
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <div id="rn-column-toggle" class="d-inline-block"></div>
+          <button class="btn btn-sm btn-outline-info fw-bold shadow-sm" id="rn-sync-legacy-btn" onclick="syncRechnungenFromLegacy()" title="Rechnungen, Positionen & Vorlagen aus Google Sheets nach Supabase synchronisieren">
+            <i class="fas fa-sync me-1"></i> Sheets &rarr; Supabase Sync
+          </button>
           <button class="btn btn-sm btn-outline-warning fw-bold shadow-sm write-protected" onclick="rnOpenBatchMahnungModal()" title="Alle fälligen offenen Rechnungen prüfen und per Klick gesammelt mahnen">
             <i class="fas fa-bullhorn me-1"></i> Fällige Mahnungen (${dueCount > 0 ? dueCount : 'Mahnlauf'})
           </button>
@@ -359,18 +363,18 @@ window.renderTabArchiv = function(content) {
         <table class="table table-hover align-middle bh-table rn-invoices-table mb-0" id="rn-invoices-table">
           <thead>
             <tr>
-              <th style="width: 44px;" class="text-center">
+              <th data-col-id="check" data-col-name="Auswahl" style="width: 44px;" class="text-center">
                 <input type="checkbox" class="form-check-input" id="rn-table-select-all" title="Alle sichtbaren Rechnungen auswählen" onchange="rnToggleTableSelectAll(this.checked)">
               </th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('id')" style="width: 145px;">Rechnungs-ID ${rnGetSortIndicator('id')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('name')">Empfänger ${rnGetSortIndicator('name')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('created_at')" style="width: 130px;" title="Datum der Rechnungserstellung (Fakturierung)">Rechnungsdatum ${rnGetSortIndicator('created_at')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('send_date')" style="width: 130px;" title="Datum des E-Mail-Versands">Versanddatum ${rnGetSortIndicator('send_date')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('year')" style="width: 80px;">Jahr ${rnGetSortIndicator('year')}</th>
-              <th class="bh-sort-header" onclick="rnSortInvoices('type')" style="width: 130px;">Typ ${rnGetSortIndicator('type')}</th>
-              <th class="bh-sort-header text-center" onclick="rnSortInvoices('status')" style="width: 140px;">Status ${rnGetSortIndicator('status')}</th>
-              <th class="bh-sort-header text-end" onclick="rnSortInvoices('total_amount')" style="width: 135px;">Betrag ${rnGetSortIndicator('total_amount')}</th>
-              <th class="text-end" style="width: 150px;">Aktionen</th>
+              <th data-col-id="id" data-col-name="Rechnungs-ID" class="bh-sort-header" onclick="rnSortInvoices('id')" style="width: 145px;">Rechnungs-ID ${rnGetSortIndicator('id')}</th>
+              <th data-col-id="name" data-col-name="Empfänger" class="bh-sort-header" onclick="rnSortInvoices('name')">Empfänger ${rnGetSortIndicator('name')}</th>
+              <th data-col-id="created_at" data-col-name="Rechnungsdatum" class="bh-sort-header" onclick="rnSortInvoices('created_at')" style="width: 130px;" title="Datum der Rechnungserstellung (Fakturierung)">Rechnungsdatum ${rnGetSortIndicator('created_at')}</th>
+              <th data-col-id="send_date" data-col-name="Versanddatum" class="bh-sort-header" onclick="rnSortInvoices('send_date')" style="width: 130px;" title="Datum des E-Mail-Versands">Versanddatum ${rnGetSortIndicator('send_date')}</th>
+              <th data-col-id="year" data-col-name="Jahr" class="bh-sort-header" onclick="rnSortInvoices('year')" style="width: 80px;">Jahr ${rnGetSortIndicator('year')}</th>
+              <th data-col-id="type" data-col-name="Typ" class="bh-sort-header" onclick="rnSortInvoices('type')" style="width: 130px;">Typ ${rnGetSortIndicator('type')}</th>
+              <th data-col-id="status" data-col-name="Status" class="bh-sort-header text-center" onclick="rnSortInvoices('status')" style="width: 140px;">Status ${rnGetSortIndicator('status')}</th>
+              <th data-col-id="amount" data-col-name="Betrag" class="bh-sort-header text-end" onclick="rnSortInvoices('total_amount')" style="width: 135px;">Betrag ${rnGetSortIndicator('total_amount')}</th>
+              <th data-col-id="actions" data-col-name="Aktionen" class="text-end" style="width: 150px;">Aktionen</th>
             </tr>
           </thead>
           <tbody id="rn-tbody">
@@ -569,38 +573,38 @@ window.rnRenderTable = function() {
 
     return `
       <tr class="bh-account-row" id="rn-row-${item.id}">
-        <td class="text-center" onclick="event.stopPropagation()">
+        <td class="text-center tk-col-check" onclick="event.stopPropagation()">
           <input type="checkbox" class="form-check-input rn-table-row-check" data-id="${item.id}" value="${item.id}" onchange="rnOnTableRowSelectChange()">
         </td>
-        <td>
+        <td class="tk-col-id">
           <span class="bh-konto-badge bh-konto-soll-badge rn-id-badge" style="cursor: pointer;" onclick="rnOpenDetailsModal('${item.id}')" title="Klicken für Rechnungsdetails">
             ${item.id}
           </span>
         </td>
-        <td>
+        <td class="tk-col-name">
           <div class="fw-bold text-dark mb-0 rn-recipient-name">
             ${escapeHtml(item.name)}
             ${mailSentBadge}
           </div>
           ${numberLabel}
         </td>
-        <td class="text-muted font-monospace" style="font-size: 13px;" title="Rechnungsdatum: ${createdDisplay}">${createdDisplay}</td>
-        <td class="text-muted font-monospace" style="font-size: 13px;" title="${item.send_date ? 'Versandt am: ' + escapeHtml(item.send_date) : (item.mail_status === 'gesendet' ? 'Rechnung wurde versendet' : 'Noch nicht versendet')}">
+        <td class="text-muted font-monospace tk-col-created_at" style="font-size: 13px;" title="Rechnungsdatum: ${createdDisplay}">${createdDisplay}</td>
+        <td class="text-muted font-monospace tk-col-send_date" style="font-size: 13px;" title="${item.send_date ? 'Versandt am: ' + escapeHtml(item.send_date) : (item.mail_status === 'gesendet' ? 'Rechnung wurde versendet' : 'Noch nicht versendet')}">
           ${item.send_date ? `<span class="text-dark"><i class="fas fa-paper-plane text-success me-1" style="font-size:11px;"></i>${sendDisplay}</span>` : sendDisplay}
         </td>
-        <td class="text-muted font-monospace" style="font-size: 14px; font-weight: 500;">${item.year}</td>
-        <td>
+        <td class="text-muted font-monospace tk-col-year" style="font-size: 14px; font-weight: 500;">${item.year}</td>
+        <td class="tk-col-type">
           <span class="badge bg-light text-dark border" style="font-size: 12.5px; padding: 5px 10px;">
             ${item.type}
             ${item.type === 'Jahresbeitrag' ? '<i class="fas fa-lock text-warning ms-1" title="Jahresbeitrag – synchronisiert über Schnellerfassung"></i>' : ''}
           </span>
         </td>
-        <td class="text-center">
+        <td class="text-center tk-col-status">
           ${statusBadge}
           ${extraBadge}
         </td>
-        <td class="text-end fw-bold text-primary font-monospace rn-amount-cell">${fmtChf(item.total_amount)}</td>
-        <td class="text-end" style="white-space: nowrap; width: 160px;">
+        <td class="text-end fw-bold text-primary font-monospace rn-amount-cell tk-col-amount">${fmtChf(item.total_amount)}</td>
+        <td class="text-end tk-col-actions" style="white-space: nowrap; width: 160px;">
           <div class="d-inline-flex align-items-center gap-1.5 justify-content-end">
             ${item.pdf_url ? `
               <a href="${item.pdf_url}" target="_blank" class="btn btn-sm btn-outline-danger shadow-xs fw-semibold px-2 py-1" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
@@ -676,6 +680,13 @@ window.rnRenderTable = function() {
   if (typeof rnOnTableRowSelectChange === 'function') {
     rnOnTableRowSelectChange();
   }
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window.TableKit.setupColumnToggle('#rn-invoices-table', {
+      container: '#rn-column-toggle',
+      storageKey: 'rn_invoices_table_cols'
+    });
+  }
 };
 
 // DETAILS MODAL
@@ -730,13 +741,13 @@ window.rnOpenDetailsModal = async function(invoiceId) {
         }
         return `
         <tr>
-          <td class="font-monospace text-muted" style="width: 50px;">#${p.position_nr}</td>
-          <td class="fw-semibold">
+          <td class="font-monospace text-muted tk-col-pos" style="width: 50px;">#${p.position_nr}</td>
+          <td class="fw-semibold tk-col-desc">
             ${escapeHtml(p.description)}
             ${qtyStr}
           </td>
-          <td class="text-muted text-center">${p.type}</td>
-          <td class="text-end fw-bold text-dark font-monospace">${fmtChf(p.amount)}</td>
+          <td class="text-muted text-center tk-col-type">${p.type}</td>
+          <td class="text-end fw-bold text-dark font-monospace tk-col-amount">${fmtChf(p.amount)}</td>
         </tr>
       `;
       }).join('');
@@ -757,20 +768,23 @@ window.rnOpenDetailsModal = async function(invoiceId) {
         </div>
 
         <div class="mb-4">
-          <h6 class="fw-bold text-primary mb-3"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list me-1.5"></i>Rechnungspositionen</h6>
+            <div id="rn-detail-col-toggle"></div>
+          </div>
           <div class="table-responsive">
-            <table class="table table-bordered table-striped table-hover align-middle mb-0" style="font-size: 13px;">
+            <table class="table table-bordered table-striped table-hover align-middle mb-0" id="rn-detail-positions-table" style="font-size: 13px;">
               <thead class="table-light">
                 <tr>
-                  <th>Pos</th>
-                  <th>Beschreibung</th>
-                  <th class="text-center" style="width: 80px;">Typ</th>
-                  <th class="text-end" style="width: 150px;">Betrag</th>
+                  <th data-col-id="pos" data-col-name="Pos">Pos</th>
+                  <th data-col-id="desc" data-col-name="Beschreibung">Beschreibung</th>
+                  <th data-col-id="type" data-col-name="Typ" class="text-center" style="width: 80px;">Typ</th>
+                  <th data-col-id="amount" data-col-name="Betrag" class="text-end" style="width: 150px;">Betrag</th>
                 </tr>
               </thead>
               <tbody>
                 ${posRows.length > 0 ? posRows : '<tr><td colspan="4" class="text-center text-muted">Keine Positionen erfasst.</td></tr>'}
-                <tr class="table-light fw-bold" style="border-top: 2px solid #343a40;">
+                <tr class="table-light fw-extrabold" style="border-top: 2px solid #343a40;">
                   <td colspan="3" class="text-end">Gesamtsumme:</td>
                   <td class="text-end text-primary font-monospace" style="font-size:14px;">${fmtChf(inv.total_amount)}</td>
                 </tr>
@@ -853,6 +867,13 @@ window.rnOpenDetailsModal = async function(invoiceId) {
           </div>
           <button type="button" class="btn btn-sm btn-secondary px-3" data-bs-dismiss="modal">Schliessen</button>
         `;
+      }
+
+      if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+        window.TableKit.setupColumnToggle('#rn-detail-positions-table', {
+          container: '#rn-detail-col-toggle',
+          storageKey: 'rn_detail_positions_table_cols'
+        });
       }
     } else {
       throw new Error(data.error || "Unerwarteter Fehler.");
@@ -1171,6 +1192,12 @@ window.rnFilterContacts = function(query) {
   const tbody = document.getElementById('rn-contacts-tbody');
   if (tbody) {
     tbody.innerHTML = rnRenderContactsRows();
+    if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+      window.TableKit.setupColumnToggle('#rn-contacts-table', {
+        container: '#rn-contacts-col-toggle',
+        storageKey: 'rn_contacts_table_cols'
+      });
+    }
   }
 };
 
@@ -1189,31 +1216,26 @@ window.rnRenderContactsRows = function() {
     const sOrt = String(c.ort || '').toLowerCase();
     const sStrasse = String(c.strasse || '').toLowerCase();
     const sKat = String(c.kategorie || '').toLowerCase();
-    return sId.includes(q) || sName.includes(q) || sFirma.includes(q) || sVorname.includes(q) || 
-           sNachname.includes(q) || sEmail.includes(q) || sOrt.includes(q) || sStrasse.includes(q) || sKat.includes(q);
+    const sTyp = String(c.typ || '').toLowerCase();
+
+    return sId.includes(q) || sName.includes(q) || sFirma.includes(q) ||
+           sVorname.includes(q) || sNachname.includes(q) || sEmail.includes(q) ||
+           sOrt.includes(q) || sKat.includes(q) || sTyp.includes(q);
   });
 
   if (filtered.length === 0) {
-    return `
-      <tr>
-        <td colspan="8" class="text-center text-muted py-5">
-          <i class="fas fa-address-book fa-3x mb-3 text-secondary opacity-50"></i>
-          <h5>Keine externen Kontakte gefunden</h5>
-          <p class="small text-muted mb-0">${q ? 'Kein Kontakt entspricht den Suchkriterien.' : 'Noch keine externen Kontakte erfasst. Klicken Sie auf "+ Neuer Kontakt erfassen", um einen anzulegen.'}</p>
-        </td>
-      </tr>
-    `;
+    return `<tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-search me-1"></i>Keine externen Kontakte gefunden.</td></tr>`;
   }
 
   return filtered.map((c, idx) => {
     const isFirma = c.typ === 'firma' || Boolean(c.firma);
     const category = c.kategorie || (isFirma ? 'Firma' : 'Privat');
     
-    // Title & Subtitle
+    // Main Display Title & Subtitle
     let mainTitle = '';
     let subTitle = '';
     if (isFirma) {
-      mainTitle = escapeHtml(c.firma || c.name || 'Unbenannte Organisation');
+      mainTitle = escapeHtml(c.firma || c.name || 'Unbenannte Firma');
       const cpParts = [c.anrede, c.vorname, c.nachname].filter(Boolean).join(' ');
       if (cpParts || c.abteilung) {
         subTitle = `<span class="text-muted"><i class="fas fa-user-tie me-1"></i>${escapeHtml(cpParts)}${c.abteilung ? ` · <span class="badge bg-light text-secondary border">${escapeHtml(c.abteilung)}</span>` : ''}</span>`;
@@ -1241,31 +1263,31 @@ window.rnRenderContactsRows = function() {
 
     return `
       <tr>
-        <td class="text-center fw-bold text-muted small" style="width: 40px;">${idx + 1}</td>
-        <td style="width: 90px;">
+        <td class="text-center fw-bold text-muted small tk-col-idx" style="width: 40px;">${idx + 1}</td>
+        <td class="tk-col-id" style="width: 90px;">
           <span class="badge bg-light text-primary border font-monospace px-2 py-1">EXT-${escapeHtml(c.id)}</span>
         </td>
-        <td style="width: 120px;">
+        <td class="tk-col-type" style="width: 120px;">
           <span class="badge ${isFirma ? 'bg-indigo text-white bg-opacity-75' : 'bg-light text-dark border'} me-1">
             <i class="fas ${isFirma ? 'fa-building' : 'fa-user'} me-1"></i>${isFirma ? 'Firma' : 'Privat'}
           </span>
           <span class="badge ${catBadgeClass} small">${escapeHtml(category)}</span>
         </td>
-        <td>
+        <td class="tk-col-name">
           <div class="fw-bold text-dark">${mainTitle}</div>
           ${subTitle ? `<div class="small mt-0.5">${subTitle}</div>` : ''}
           ${c.bemerkungen ? `<div class="small text-muted fst-italic mt-0.5"><i class="fas fa-sticky-note me-1 text-warning"></i>${escapeHtml(c.bemerkungen)}</div>` : ''}
         </td>
-        <td>
+        <td class="tk-col-email">
           ${c.email ? `<a href="mailto:${escapeHtml(c.email)}" class="text-decoration-none text-primary fw-medium"><i class="fas fa-envelope me-1 small"></i>${escapeHtml(c.email)}</a>` : '<span class="text-muted">–</span>'}
         </td>
-        <td>
+        <td class="tk-col-address">
           ${fullAddress ? `<small class="text-secondary"><i class="fas fa-map-marker-alt me-1 text-muted"></i>${escapeHtml(fullAddress)}</small>` : '<span class="text-muted">–</span>'}
         </td>
-        <td>
+        <td class="tk-col-phone">
           ${c.telefon ? `<small class="text-secondary"><i class="fas fa-phone me-1 text-muted"></i>${escapeHtml(c.telefon)}</small>` : '<span class="text-muted">–</span>'}
         </td>
-        <td class="text-end" style="width: 150px;">
+        <td class="text-end tk-col-actions" style="width: 150px;">
           <div class="btn-group btn-group-sm shadow-sm">
             <button class="btn btn-outline-primary" onclick="rnOpenCreateModal(); setTimeout(() => { const sel = document.getElementById('rnc-member-select'); if(sel) { sel.value = 'EXT:${c.id}'; rnHandleMemberSelect(sel.value); } }, 200);" title="Rechnung an diesen Kontakt erstellen">
               <i class="fas fa-file-invoice-dollar"></i>
@@ -1299,7 +1321,8 @@ window.renderTabContacts = function(content) {
             Zentrale Verwaltung externer Kontakte (Sponsoren, Mieter, Firmen, Behörden & Privatpersonen) mit QR-Rechnung- und Briefkopf-Konformität.
           </p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 align-items-center">
+          <div id="rn-contacts-col-toggle"></div>
           <button class="btn btn-primary fw-bold px-3 py-2 rounded-3 shadow-sm" onclick="rnOpenContactModal()">
             <i class="fas fa-plus me-1.5"></i> Neuer Kontakt erfassen
           </button>
@@ -1322,17 +1345,17 @@ window.renderTabContacts = function(content) {
 
       <!-- Tabelle -->
       <div class="table-responsive border rounded-3 shadow-sm">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0" id="rn-contacts-table">
           <thead class="table-light small">
             <tr>
-              <th style="width: 40px;" class="text-center">#</th>
-              <th style="width: 90px;">ID</th>
-              <th style="width: 120px;">Typ / Kat.</th>
-              <th>Name / Firma & Kontaktperson</th>
-              <th>E-Mail</th>
-              <th>Adresse</th>
-              <th>Telefon</th>
-              <th style="width: 150px;" class="text-end">Aktionen</th>
+              <th data-col-id="idx" data-col-name="#" style="width: 40px;" class="text-center">#</th>
+              <th data-col-id="id" data-col-name="ID" style="width: 90px;">ID</th>
+              <th data-col-id="type" data-col-name="Typ / Kat." style="width: 120px;">Typ / Kat.</th>
+              <th data-col-id="name" data-col-name="Name / Firma & Kontaktperson">Name / Firma & Kontaktperson</th>
+              <th data-col-id="email" data-col-name="E-Mail">E-Mail</th>
+              <th data-col-id="address" data-col-name="Adresse">Adresse</th>
+              <th data-col-id="phone" data-col-name="Telefon">Telefon</th>
+              <th data-col-id="actions" data-col-name="Aktionen" style="width: 150px;" class="text-end">Aktionen</th>
             </tr>
           </thead>
           <tbody id="rn-contacts-tbody">
@@ -1342,5 +1365,11 @@ window.renderTabContacts = function(content) {
       </div>
     </div>
   `;
-};
 
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window.TableKit.setupColumnToggle('#rn-contacts-table', {
+      container: '#rn-contacts-col-toggle',
+      storageKey: 'rn_contacts_table_cols'
+    });
+  }
+};
