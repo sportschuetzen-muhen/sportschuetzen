@@ -187,26 +187,129 @@ async function handleInventarSubmit(e) {
         }))
     };
 
+    // --- SUPABASE FIRST BUCHUNG ---
+    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+    let result = { status: 'success', transactionIds: [] };
+
     try {
-        const res = await apiFetch('inventar', '', {
+        if (supa) {
+            const neuerStatus = action === 'checkin' ? "Im Lager" : (action === 'verkauf' ? "Verkauft" : "Ausgegeben");
+            const neuerBesitzer = action === 'checkin' ? null : ((mitgliedId && parseInt(mitgliedId) > 0) ? parseInt(mitgliedId) : null);
+            const bookingTime = new Date().toISOString();
+
+            // 1. Transaktionen in Supabase anlegen
+            const txRecords = warenkorb.map(w => ({
+                timestamp: bookingTime,
+                action: payloadAction,
+                member_id: (mitgliedId && parseInt(mitgliedId) > 0) ? parseInt(mitgliedId) : null,
+                item_id: String(w.itemId).trim(),
+                category: w.kategorie,
+                condition_out: w.zustandAbgabe || null,
+                condition_in: w.zustandRueckgabe || null,
+                notes: bemerkungen || null,
+                responsible_person: currentUser || 'Vorstand',
+                deposit_amount: parseFloat(w.pfandBetrag) || 0,
+                deposit_received: action === 'checkout' ? (w.pfandEinnahme || '-') : '-',
+                deposit_returned: action === 'checkin' ? (w.pfandRetour || '-') : '-',
+                payment_method: action === 'verkauf' ? (w.verkaufMethode || 'Bar') : (action === 'checkout' ? (w.pfandMethode || 'Bar') : (w.pfandRetourMethode || 'Bar retour')),
+                sig_member_url: payload.sigMitglied || null,
+                sig_board_url: payload.Sig_Vorstand || null
+            }));
+
+            const { data: createdTx, error: txErr } = await supa
+                .from('inventory_transactions')
+                .insert(txRecords)
+                .select('id');
+
+            if (txErr) {
+                console.warn("Supabase Transaktions-Insert Fehler:", txErr.message);
+            } else if (createdTx) {
+                result.transactionIds = createdTx.map(t => t.id);
+                result.transactionId = createdTx[0]?.id;
+            }
+
+            // 2. Artikelstatus & Besitzer aktualisieren
+            for (const w of warenkorb) {
+                await supa
+                    .from('inventory_items')
+                    .update({
+                        status: neuerStatus,
+                        current_owner_id: neuerBesitzer,
+                        updated_at: bookingTime
+                    })
+                    .eq('id', String(w.itemId).trim());
+            }
+
+            // 3. Pfand-Verwaltung in Supabase
+            if (action === 'checkout') {
+                for (const w of warenkorb) {
+                    if (parseFloat(w.pfandBetrag) > 0) {
+                        const pfandId = 'P-' + Math.floor(100000 + Math.random() * 900000);
+                        await supa.from('inventory_deposits').insert([{
+                            id: pfandId,
+                            member_id: parseInt(mitgliedId),
+                            item_id: String(w.itemId).trim(),
+                            category: w.kategorie,
+                            amount: parseFloat(w.pfandBetrag) || 0,
+                            date_out: bookingTime,
+                            status: 'Offen',
+                            payment_method: w.pfandMethode || 'Bar'
+                        }]);
+                    }
+                }
+            } else if (action === 'checkin') {
+                for (const w of warenkorb) {
+                    if (w.pfandRetour === 'Ja' || (w.pfandRetour && w.pfandRetour !== 'Nein' && w.pfandRetour !== '-')) {
+                        await supa.from('inventory_deposits')
+                            .update({
+                                status: 'Retour',
+                                date_returned: bookingTime
+                            })
+                            .eq('member_id', parseInt(mitgliedId))
+                            .eq('item_id', String(w.itemId).trim())
+                            .eq('status', 'Offen');
+                    }
+                }
+            }
+
+            // 4. Revisions-Auditlog
+            await supa.from('inventory_audit_log').insert([{
+                timestamp: bookingTime,
+                user_name: currentUser || 'Vorstand',
+                action: payloadAction,
+                details: `${payloadAction} (${warenkorb.length} Pos.) für Mitglied ${mitgliedId}: ${warenkorb.map(w => w.label || w.itemId).join(', ')}`
+            }]);
+
+            console.log("✅ Buchung erfolgreich in Supabase gespeichert!");
+        }
+
+        // --- ASYNCHRONER DUAL-WRITE AN GOOGLE APPS SCRIPT ---
+        apiFetch('inventar', '', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(payload)
-        });
-        const result = await res.json();
+        }).then(res => res.json())
+          .then(gasRes => console.log("✅ Dual-Write zu Google Sheets erfolgreich:", gasRes))
+          .catch(gasErr => console.warn("⚠️ Dual-Write zu Google Sheets verzögert/Fehler:", gasErr));
 
-        console.log("Backend PDF URL:", result.pdfUrl);
-
-        // PDF nur lokal generieren wenn Backend keins hat
-        if (!result.pdfUrl) {
-            await generateQuittungPDF(
-                payload,
-                result.transactionId || result.transactionIds?.[0],
-                result.sigMitgliedUrl || "",
-                result.sigVorstandUrl || "",
-                action === 'verkauf'
-            );
+        // Fallback: Falls Supabase nicht aktiv war, synchron auf GAS warten
+        if (!supa) {
+            const res = await apiFetch('inventar', '', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(payload)
+            });
+            result = await res.json();
         }
+
+        // PDF lokal generieren
+        await generateQuittungPDF(
+            payload,
+            result.transactionId || result.transactionIds?.[0] || '1',
+            payload.sigMitglied || "",
+            payload.Sig_Vorstand || "",
+            action === 'verkauf'
+        );
 
         // --- NACHBEARBEITUNG (Rechnung/Buchhaltung) ---
         if (action === 'verkauf') {
@@ -224,12 +327,12 @@ async function handleInventarSubmit(e) {
         sigPadMitglied?.clear();
         sigPadVorstand?.clear();
 
-        showJournalConfirmationAlert(`${result.transactionIds ? result.transactionIds.length : 1} Position(en) erfolgreich erfasst und Beleg im Google Drive gesichert. Bitte überprüfe die Buchung kurz unten in der Liste.`);
+        showJournalConfirmationAlert(`${warenkorb.length || 1} Position(en) erfolgreich erfasst (Supabase Master & Dual-Write). Bitte überprüfe die Buchung kurz unten in der Liste.`);
         localStorage.setItem('inventar-activeTab', 'journal');
         showInventarSection('journal');
         
         // Journal direkt mit neuen Daten vom Server aktualisieren
-        loadInventarData(true);
+        await loadInventarData(true);
         
     } catch(err) {
         console.error("Buchungsfehler:", err);

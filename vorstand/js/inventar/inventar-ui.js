@@ -21,7 +21,7 @@ function renderInventarUI(container) {
             .warenkorb-card { border:2px dashed #0d6efd; border-radius:10px; background:#f8f9ff; }
         </style>
 
-        <div class="d-flex flex-wrap gap-2 mb-4">
+        <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
             <button class="btn btn-primary nav-btn" id="inv-btn-ausgabe"
                     onclick="localStorage.setItem('inventar-activeTab','ausgabe'); showInventarSection('ausgabe')">
                 📤 Buchung
@@ -43,9 +43,23 @@ function renderInventarUI(container) {
         onclick="localStorage.setItem('inventar-activeTab','admin'); showInventarSection('admin')">
     ➕ Admin
 </button>` : ''}
-            <button class="btn btn-outline-info ms-auto nav-btn fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
-                <i class="fas fa-sync-alt me-1"></i> Daten aktualisieren
-            </button>
+            <div class="ms-auto d-flex gap-2 align-items-center">
+                ${inventarState?._isSupabase ? `
+                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 small" title="Verbunden mit Supabase PostgreSQL">
+                        <i class="fas fa-database me-1"></i> Supabase Live
+                    </span>
+                ` : `
+                    <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1 small" title="Legacy Google Apps Script Mode">
+                        <i class="fas fa-file-excel me-1"></i> Google Sheets
+                    </span>
+                `}
+                <button class="btn btn-outline-secondary nav-btn btn-sm" onclick="syncInventarFromLegacy()" title="1-Klick Import aller Daten aus dem Google Sheet nach Supabase">
+                    <i class="fas fa-cloud-download-alt me-1"></i> Sheet-Sync / Import
+                </button>
+                <button class="btn btn-outline-info nav-btn btn-sm fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
+                    <i class="fas fa-sync-alt me-1"></i> Neu laden
+                </button>
+            </div>
         </div>
 
         <!-- SECTION: BUCHUNG -->

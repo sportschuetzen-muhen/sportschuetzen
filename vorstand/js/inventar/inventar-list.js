@@ -212,6 +212,7 @@ function editInventarItem(targetSheet, id) {
 }
 
 // =========================================================
+// =========================================================
 //  SAVE / UPDATE
 // =========================================================
 async function saveNewInventarItem(e) {
@@ -220,23 +221,124 @@ async function saveNewInventarItem(e) {
     const target = document.getElementById('admin-target').value;
     const fields = {};
     new FormData(e.target).forEach((v,k) => fields[k]=v);
-    const isUpdate = fields.ID && fields.ID !== "";
+    const isUpdate = Boolean(fields.ID && fields.ID !== "");
+
+    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
 
     try {
-        await apiFetch('inventar', '', {
+        if (supa && target !== 'Personendaten') {
+            const catMap = {
+                "Inventar_Gewehre": "gewehr",
+                "Inventar_Schluessel": "schluessel",
+                "Inventar_Kleidung": "kleidung",
+                "Inventar_Schiessbekleidung": "schiessbekleidung"
+            };
+            const prefixMap = {
+                "Inventar_Gewehre": "G",
+                "Inventar_Schluessel": "SCH",
+                "Inventar_Kleidung": "K",
+                "Inventar_Schiessbekleidung": "SB"
+            };
+            const category = catMap[target] || 'gewehr';
+            const prefix = prefixMap[target] || 'X';
+
+            let itemId = fields.ID;
+            if (!isUpdate) {
+                const keyMap = { "gewehr":"gewehre","schluessel":"schluessel","kleidung":"kleidung","schiessbekleidung":"schiessbekleidung" };
+                const existingItems = inventarState?.[keyMap[category]] || [];
+                let maxNum = 0;
+                existingItems.forEach(it => {
+                    const idStr = String(it.ID || '');
+                    if (idStr.startsWith(prefix + '-')) {
+                        const n = parseInt(idStr.split('-')[1]);
+                        if (!isNaN(n) && n > maxNum) maxNum = n;
+                    }
+                });
+                itemId = `${prefix}-${maxNum + 1}`;
+                fields.ID = itemId;
+            }
+
+            const supaItem = {
+                id: String(itemId).trim(),
+                category: category,
+                depot_amount: parseFloat(fields.Depotbetrag) || 0,
+                purchase_price: parseFloat(fields.Kaufpreis) || null,
+                purchase_year: fields.Kauf_Spender_Jahr ? String(fields.Kauf_Spender_Jahr) : null,
+                purchase_date: fields.Kaufdatum ? (typeof formatISODateSafe === 'function' ? formatISODateSafe(fields.Kaufdatum) : fields.Kaufdatum) : null,
+                updated_at: new Date().toISOString()
+            };
+
+            if (!isUpdate) {
+                supaItem.status = 'Im Lager';
+                supaItem.current_owner_id = null;
+            } else if (fields.Status) {
+                supaItem.status = fields.Status;
+            }
+
+            if (category === 'gewehr') {
+                supaItem.manufacturer = fields.Hersteller || null;
+                supaItem.model = fields.Modell || null;
+                supaItem.serial_number = fields.Laufnummer || null;
+                supaItem.diopter = fields.Diopter || null;
+                supaItem.front_sight = fields.Ringkorn || null;
+                supaItem.accessories = fields.Zubehoer || null;
+                supaItem.special_notes = fields.Spezielles || null;
+                supaItem.caliber_distance = fields.Distanz || '50m';
+                supaItem.owner_person_id = fields.Eigentümer_ID || null;
+                supaItem.donor_person_id = fields.Gespendet_ID || null;
+                supaItem.seller_person_id = fields.Verkaeufer_ID || null;
+            } else if (category === 'schluessel') {
+                supaItem.key_name = fields.Bezeichnung || '';
+                supaItem.key_number = fields.Nummer ? String(fields.Nummer) : null;
+            } else if (category === 'kleidung' || category === 'schiessbekleidung') {
+                supaItem.item_type = fields.Typ || '';
+                supaItem.size = fields.Groesse || '';
+            }
+
+            const { error: saveErr } = await supa
+                .from('inventory_items')
+                .upsert(supaItem, { onConflict: 'id' });
+
+            if (saveErr) throw new Error("Supabase Speicherfehler: " + saveErr.message);
+
+            // Revisions-Auditlog eintragen
+            await supa.from('inventory_audit_log').insert([{
+                timestamp: new Date().toISOString(),
+                user_name: currentUser || 'Vorstand',
+                action: isUpdate ? 'updateItem' : 'addNewItem',
+                details: `${target}: ID ${itemId} (${isUpdate ? 'aktualisiert' : 'neu erfasst'})`
+            }]);
+        }
+
+        // Asynchroner Dual-Write zu Google Apps Script
+        apiFetch('inventar', '', {
             method: 'POST',
-            body: JSON.stringify({ action: isUpdate?"updateItem":"addNewItem", targetSheet:target, fields })
-        });
+            body: JSON.stringify({ action: isUpdate ? "updateItem" : "addNewItem", targetSheet: target, fields })
+        }).then(r => r.json())
+          .then(res => console.log("✅ Dual-Write Item erfolgreich:", res))
+          .catch(e => console.warn("⚠️ Dual-Write Item Fehler:", e));
+
+        // Falls kein Supabase aktiv war, synchron auf GAS warten
+        if (!supa || target === 'Personendaten') {
+            await apiFetch('inventar', '', {
+                method: 'POST',
+                body: JSON.stringify({ action: isUpdate ? "updateItem" : "addNewItem", targetSheet: target, fields })
+            });
+        }
+
         e.target.reset();
         const idField = document.getElementById('admin-edit-id');
         if (idField) idField.remove();
         const btn = document.getElementById('btn-admin-save');
         btn.innerText = "Speichern";
         btn.classList.replace('btn-warning','btn-success');
-        await loadInventarData();
-        alert(isUpdate ? "✅ Änderung gespeichert!" : "✅ Neu erfasst!");
-    } catch (err) { alert("Fehler: " + err.message); }
-    setInventarBusy(false);
+        await loadInventarData(true);
+        alert(isUpdate ? "✅ Änderung gespeichert (Supabase Master & Dual-Write)!" : "✅ Neu erfasst (Supabase Master & Dual-Write)!");
+    } catch (err) {
+        alert("Fehler: " + err.message);
+    } finally {
+        setInventarBusy(false);
+    }
 }
 
 // =========================================================
@@ -248,25 +350,57 @@ async function deleteInventarItem(target, id) {
         return;
     }
 
-    if (!confirm("Eintrag wirklich löschen?")) return;
+    if (!confirm(`Eintrag ${id} wirklich löschen?`)) return;
 
     setInventarBusy(true);
 
+    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+
     try {
-        await apiFetch('inventar', '', {
+        if (supa && target !== 'Personendaten') {
+            const { error: delErr } = await supa
+                .from('inventory_items')
+                .delete()
+                .eq('id', String(id).trim());
+
+            if (delErr) throw new Error("Supabase Löschfehler: " + delErr.message);
+
+            await supa.from('inventory_audit_log').insert([{
+                timestamp: new Date().toISOString(),
+                user_name: currentUser || 'Vorstand',
+                action: 'deleteItem',
+                details: `${target}: ID ${id} gelöscht`
+            }]);
+        }
+
+        // Asynchroner Dual-Write zu Google Apps Script
+        apiFetch('inventar', '', {
             method: 'POST',
             body: JSON.stringify({
                 action: "deleteItem",
                 targetSheet: target,
                 itemId: id
             })
-        });
+        }).then(r => r.json())
+          .then(res => console.log("✅ Dual-Write Delete erfolgreich:", res))
+          .catch(e => console.warn("⚠️ Dual-Write Delete Fehler:", e));
 
-        await loadInventarData();
+        if (!supa || target === 'Personendaten') {
+            await apiFetch('inventar', '', {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: "deleteItem",
+                    targetSheet: target,
+                    itemId: id
+                })
+            });
+        }
+
+        await loadInventarData(true);
 
     } catch (err) {
         alert("Fehler: " + err.message);
+    } finally {
+        setInventarBusy(false);
     }
-
-    setInventarBusy(false);
 }

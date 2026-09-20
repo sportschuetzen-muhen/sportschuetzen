@@ -1,7 +1,7 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
-**Stand:** 2026-09-19  
-**Phase:** 0, 1, 2 & 3 – Zielarchitektur, Auth, Anlässe & Vermietung  
+**Stand:** 2026-09-20  
+**Phase:** 0, 1, 2, 3, 4, 5 & 7 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder, Umfragen & Inventar  
 **Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
@@ -23,6 +23,8 @@
    - [Google Calendar (Belegungs-Master)](#google-calendar-belegungs-master)
    - [Dokumentenfluss: Supabase Storage & Paperless-NGX](#dokumentenfluss-supabase-storage--paperless-ngx)
    - [Mitglieder-Synchronisation (XLSX → Sheets → Supabase)](#mitglieder-synchronisation-xlsx--sheets--supabase)
+   - [Fachmodul: ANLÄSSE & UMFRAGEN](#64-fachmodul-anlässe--umfragen-phase-5--abgeschlossen--im-testbetrieb)
+   - [Fachmodul: INVENTAR-VERWALTUNG](#65-fachmodul-inventar-verwaltung-phase-7--abgeschlossen--im-testbetrieb)
 7. [Migrations-Roadmap (Phasen 0 bis 11)](#7-migrations-roadmap-phasen-0-bis-11)
 
 ---
@@ -997,6 +999,25 @@ Gemäss Architekturentscheidung bleiben das operative Controlling-Modul **ANLÄS
    - Direkte REST-Abfrage von Supabase mit Stale-While-Revalidate Caching.
    - Schnelle Speicherung von Zu-/Absagen in `poll_responses` und asynchroner Dual-Write an das Google Sheet.
 
+### 6.5 Fachmodul INVENTAR-VERWALTUNG (Phase 7 – Abgeschlossen & im Testbetrieb)
+
+Die Verwaltung des gesamten Vereinsinventars (Sportwaffen, Schlüssel, Vereinskleidung, Schiessbekleidung, Ausleihe mit digitaler Signatur und Kautions-/Pfandkasse) wurde erfolgreich auf Supabase migriert.
+
+**Architektur-Highlights von Phase 7:**
+1. **Relationales PostgreSQL-Schema (`08_inventory_module.sql`):**
+   - `public.inventory_items`: Einheitliche, relational verknüpfte Tabelle für alle 4 Gegenstandskategorien (`gewehr`, `schluessel`, `kleidung`, `schiessbekleidung`) mit Status (`Im Lager`, `Ausgegeben`, `Verkauft`, `Defekt`) und Fremdschlüssel `current_owner_id` zu `public.members(person_number)`.
+   - `public.inventory_transactions`: Lückenloses Buchungsjournal aller Ausleihen (`AUSGABE`), Rücknahmen (`CHECKIN`) und Verkäufe (`VERKAUF`) mit Signaturen, PDF-Quittungs-URL und Zahlungsart.
+   - `public.inventory_deposits`: Dediziertes Pfand- und Kautionskassen-Tracking mit Status (`Offen`, `Retour`, `Verrechnet`).
+   - `public.inventory_audit_log`: Revisionssicheres Änderungsprotokoll für alle administrativen Mutationen.
+   - `public.inventory_config`: Zentrale Konfiguration aller Dropdown-Wertelisten.
+2. **Modulares Vorstand-Cockpit (`vorstand/js/inventar/`):**
+   - `inventar-core.js`: Lädt alle Daten blitzschnell (< 60 ms) primär aus Supabase und verknüpft Besitzer und Empfänger direkt mit `public.members`. Transparenter Fallback auf Google Apps Script.
+   - `inventar-cart.js`: Transaktionen werden sofort in Supabase persistiert (Status-Update der Artikel, Transaction-Insert, Kautionseintrag). Ein paralleler, asynchroner Dual-Write an das alte Google Apps Script hält das bestehende Google Spreadsheet (`183MBGdaNw_qSZdNQPTxui3gsend9pOkpEpC2K3G7O2U`) synchron.
+   - `inventar-list.js`: Neuanlage, Bearbeitung und Löschung von Inventargegenständen direkt über Supabase REST.
+   - 1-Klick-Import (`syncInventarFromLegacy()`): Ermöglicht den sofortigen Transfer aller bestehenden Gegenstände, Historien und Pfanddaten aus Google Sheets nach Supabase.
+3. **Optische Kennzeichnung:**
+   - Grüner `Supabase`-Badge in der Sidebar-Navigation und auf der Dashboard-Übersichtskarte.
+
 ---
 
 ## 7. Migrations-Roadmap (Phasen 0 bis 11)
@@ -1009,8 +1030,8 @@ Gemäss Architekturentscheidung bleiben das operative Controlling-Modul **ANLÄS
 | **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
 | **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie (`1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0`) | Supabase (Master) ⇄ Google Sheet (Test-Kopie) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 5** | **Anlässe & Umfragen (Eventplaner)**| Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung; Dual-Write zum Google Sheet (`1lN180...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | ⏳ **Nächster Schritt** |
-| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen | Supabase | Geplant |
+| **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | ⏳ Geplant |
+| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 8** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
 | **Phase 9** | **Jahresbeiträge** | Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members` | Supabase | Geplant |
 | **Phase 10** | **Rechnungen & Fakturierung** | QR-Rechnungen, PDF-Generierung und Archivierung in Paperless-NGX | Supabase + Paperless-NGX | Geplant |

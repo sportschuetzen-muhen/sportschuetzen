@@ -603,6 +603,7 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('inventar', this)">
                     <i class="fas fa-boxes"></i> <span class="nav-text">Inventar</span>
+                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('termine', this)">
@@ -708,15 +709,18 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <p class="text-muted mb-0 fw-medium">Wähle einen Bereich im Menü aus:</p>
                     <span class="module-supabase-badge" style="font-size: 0.72rem; padding: 4px 10px;">
-                        <i class="fas fa-database text-success me-1"></i> 4 Module migriert (Anlässe, Umfragen, Vermietung, Mitglieder)
+                        <i class="fas fa-database text-success me-1"></i> 5 Module migriert (Anlässe, Umfragen, Vermietung, Mitglieder, Inventar)
                     </span>
                 </div>
                 <div class="row g-3 mt-1">
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
                              onclick="navTo('inventar')" style="cursor:pointer">
-                            <h5>🔫 Inventar</h5>
-                            <p class="small text-muted">Ausgabe & Rückgabe verwalten</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🔫 Inventar</h5>
+                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
+                            </div>
+                            <p class="small text-muted">Ausgabe, Rücknahme & Waffenkontrolle</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
