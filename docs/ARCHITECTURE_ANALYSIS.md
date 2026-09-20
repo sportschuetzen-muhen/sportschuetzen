@@ -118,10 +118,11 @@ Das Gesamtsystem besteht aus **drei Frontends**, die über Cloudflare Worker Gat
 
 Neben den Cloud-Diensten (Cloudflare, Google) betreibt der Verein einen zentralen Virtualisierungs-Server auf Basis von **Proxmox VE**:
 
-- **Proxmox VE Host:** Zentraler Server für Container (LXC) und virtuelle Maschinen (VMs).
-- **Supabase (Zielarchitektur):** Die künftige relationale Datenbank (PostgreSQL), Authentifizierung (Supabase Auth), Row-Level Security (RLS) und Storage werden als self-hosted Instanz auf diesem Proxmox-Server laufen.
+- **Proxmox VE Host:** Zentraler Server (Host "Medion") für Container (LXC) und virtuelle Maschinen (VMs).
+- **Supabase (Self-Hosted):** Relationale Datenbank (PostgreSQL), Authentifizierung (Supabase Auth), Row-Level Security (RLS) und Storage laufen im Container `117` (`supabase-verein`) auf Port `8000`. Der weltweite, verschlüsselte HTTPS-Zugriff für alle Frontends und APIs erfolgt über den **Cloudflare Tunnel** (Container `112`) unter **`https://supabase-muhen.danfamily.uk`**.
 - **Paperless-NGX:** Ein bestehender Paperless-NGX Server läuft bereits auf demselben Proxmox-Host. Er dient als Dokumenten-Management-System (DMS) für die revisionssichere Archivierung von Protokollen, Quittungen, Verträgen und Vereinsdokumenten.
-- **Immich:** Ein bestehender Immich-Server (Fotoverwaltung, angebunden unter `immich-muhen.danfamily.uk`) läuft ebenfalls auf diesem Proxmox-Host und stellt Vereinsfotos und Alben bereit.
+- **Immich:** Ein bestehender Immich-Server (Fotoverwaltung, angebunden via Tunnel unter `immich-muhen.danfamily.uk`) läuft ebenfalls auf diesem Proxmox-Host und stellt Vereinsfotos und Alben bereit.
+- **Cloudflare Tunnel (`cloudfared`):** Container `112` verbindet interne Vereins-Dienste verschlüsselt mit dem Cloudflare Edge Network, ohne offene Ports oder Port-Forwarding am Router zu erfordern.
 ---
 
 ## 2. Frontend-Struktur

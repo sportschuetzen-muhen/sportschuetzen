@@ -116,6 +116,34 @@ Die Migration von Google Sheets / Google Apps Script (GAS) auf Supabase folgt f�
 | **Immich** | Proxmox VE | Original-Bildverwaltung, Gesichts- und Objekterkennung, Fotogalerien |
 | **Google Sheets** | Google Drive | Vorübergehender Master für SSV-Mitgliederdaten (während Phasen 0–5) |
 | **Cloudflare Workers** | Cloudflare Edge | Caching, Edge-Proxy, API-Routing zwischen Legacy- und Supabase-Welt |
+| **Cloudflare Tunnel** | Proxmox VE (LXC 112) | Sichere, weltweite HTTPS-Verbindung ohne offene Router-Ports |
+
+### 2.3 Netzwerk-Architektur & Anbindung (Cloudflare Tunnel)
+
+> [!IMPORTANT]
+> **Architektur-Standard für alle zukünftigen Anbindungen:**
+> Sämtliche Frontends (Vorstand-Portal, Mitglieder-App, Vereinswebsite), Cloudflare Worker und Hintergrunddienste greifen **ausschließlich über die offizielle HTTPS-Endpunkt-URL** auf Supabase zu:
+> **`https://supabase-muhen.danfamily.uk`**
+> Direkte Zugriffe über lokale IP-Adressen (`192.168.x.x`) sind in Produktions-Builds und Frontends untersagt, um Mixed-Content-Sicherheitsblockaden moderner Browser zu verhindern und weltweite Verfügbarkeit zu garantieren.
+
+```text
+  [ Browser / Frontends ]          [ Cloudflare Edge ]          [ Proxmox VE Host "Medion" ]
+(sps-b55.pages.dev / App / Web)     (SSL/TLS Edge ZRH)            (192.168.68.61)
+           │                                │                                │
+           │ HTTPS                          │ Encrypted Tunnel               │
+           └───────────────────────────────►│ (48417d69-...)                 │
+             https://supabase-muhen.        └───────────────────────────────►│ Container 112 (cloudfared)
+             danfamily.uk                                                    │            │
+                                                                             │            ▼ HTTP (intern)
+                                                                             │ Container 117 (supabase-verein)
+                                                                             │ Port 8000 (Kong/Envoy / REST / Auth)
+```
+
+* **Öffentliche HTTPS-URL:** `https://supabase-muhen.danfamily.uk` (SSL über Cloudflare Edge Zürich/Amsterdam).
+* **Interner Proxmox-Host:** Medion (`192.168.68.61`).
+* **Supabase-Container:** LXC `117` (`supabase-verein`), interner Port `8000`, automatischer Start (`onboot: 1`).
+* **Tunnel-Container:** LXC `112` (`cloudfared`), Tunnel-Name `proxmox`.
+* **Zero-Downtime:** Bestehende Tunnel-Verbindungen (PVE, Home Assistant, Immich, Jellyfin etc.) bleiben vollständig isoliert und unberührt.
 
 ---
 
@@ -553,7 +581,7 @@ LEFT JOIN shift_stats s ON s.event_id = e.id;
 
 Das Modul ist im bestehenden Vorstand-Portal (`vorstand/`) nahtlos als eigenständiger Bereich **„Anlässe & Controlling“** integriert:
 
-* **[vorstand/js/supabase-client.js](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/supabase-client.js):** Initialisiert `@supabase/supabase-js` mit dem öffentlichen `ANON_KEY` und Host `http://192.168.68.117:8000`.
+* **[vorstand/js/supabase-client.js](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/supabase-client.js):** Initialisiert `@supabase/supabase-js` mit dem öffentlichen `ANON_KEY` und Host `https://supabase-muhen.danfamily.uk` (via Cloudflare Tunnel).
 * **[vorstand/js/anlaesse.js](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/anlaesse.js):** Enthält 6 interaktive Funktions-Tabs:
   1. **📅 Übersicht & Anlässe (Punkte 12 & 13):** Filter nach Status (`Geplant`, `Aktiv`, `Abgeschlossen`, `Vorlagen`), Suche, Metadatenkarten, Neuerfassung und Duplizierung aus Vorlagen.
   2. **⚖️ Mengenrechner & Artikelplanung (Punkte 13 & 14):** Formel $\text{Menge} = \text{Besucher} \times \text{Menge/Besucher} \times \text{Sicherheitsfaktor}$. Echtzeit-Neuberechnung bei Besucheränderung und Soll/Ist-Vergleich (bestellt, geliefert, verkauft, Rest).
@@ -932,7 +960,7 @@ Im Zuge von Phase 4 wurde der bisherige, komplexe GAS-Import durch eine hochperf
                     ▼                                     ▼
         1. SCHREIBEN (Primär)                 2. DUAL-WRITE (Spiegelung)
         Supabase PostgreSQL                   Google Sheet (Test-Kopie)
-        192.168.68.117:8000                   ID: 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0
+        supabase-muhen.danfamily.uk           ID: 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0
         ├── public.members                    ├── members
         ├── public.member_licenses            ├── memberlicenses
         ├── public.member_functions           ├── memberfunctions
