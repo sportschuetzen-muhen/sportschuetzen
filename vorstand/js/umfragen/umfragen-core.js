@@ -303,6 +303,14 @@ function formatISODate(dateVal) {
     return str;
 }
 
+function getPollSupabaseClient() {
+    if (typeof window.getSupabaseClient === 'function') {
+        return window.getSupabaseClient();
+    }
+    return window.supabaseClient || null;
+}
+window.getPollSupabaseClient = getPollSupabaseClient;
+
 async function loadUmfragenData(force = false) {
   const container = document.getElementById('umfragen-container');
   if(!container) return;
@@ -332,8 +340,46 @@ async function loadUmfragenData(force = false) {
     </div>
   `;
 
+  // 1. VERSUCH: Nativ aus Supabase laden (sehr schnell)
+  const supa = getPollSupabaseClient();
+  if (supa) {
+    try {
+        const { data, error } = await supa
+            .from('poll_events')
+            .select('*')
+            .order('datum', { ascending: false });
+        
+        if (!error && Array.isArray(data) && data.length > 0) {
+            umfragenState = data.map(e => ({
+                id: String(e.id),
+                title: e.title || '',
+                datum: e.datum || '',
+                gruppe: e.gruppe || 'aktiv',
+                schiessanlass: isTrue(e.schiessanlass),
+                aktiv: isTrue(e.aktiv),
+                showparticipants: isTrue(e.showparticipants),
+                frage_begleitung: isTrue(e.frage_begleitung),
+                frage_essen: isTrue(e.frage_essen),
+                frage_grund: isTrue(e.frage_grund),
+                dokument_url: e.dokument_url || '',
+                details: e.details || '',
+                options: parsePollOptions(e.options)
+            }));
+            console.log(`✅ ${umfragenState.length} Umfragen & Events aus Supabase geladen.`);
+            renderUmfragenUI(container);
+            return;
+        } else if (!error && Array.isArray(data) && data.length === 0) {
+            console.log("ℹ️ Supabase poll_events noch leer. Fallback auf Google Apps Script...");
+        } else if (error) {
+            console.warn("Supabase poll_events Abfragefehler:", error.message);
+        }
+    } catch (supaErr) {
+        console.warn("Supabase Abfrage fehlgeschlagen:", supaErr);
+    }
+  }
+
+  // 2. FALLBACK: Google Apps Script
   try {
-    // Falls das Backend noch nicht aktualisiert wurde, fangen wir das weich ab
     const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
     const data = await res.json();
     
@@ -345,12 +391,129 @@ async function loadUmfragenData(force = false) {
       options: parsePollOptions(e.options)
     }));
     renderUmfragenUI(container);
-    // HINWEIS: preloadUmfragenAllDetails deaktiviert, da Teilnehmer und Historie on-demand geladen werden
-    // setTimeout(preloadUmfragenAllDetails, 50);
+
+    // Falls Supabase verbunden ist, aber noch keine Daten hat, Hinweis einblenden
+    if (supa && umfragenState.length > 0) {
+        const infoBanner = document.createElement('div');
+        infoBanner.className = 'alert alert-warning alert-dismissible fade show d-flex justify-content-between align-items-center mb-3';
+        infoBanner.innerHTML = `
+            <div>
+                <i class="fas fa-database text-primary me-2"></i>
+                <b>Supabase-Migration bereit:</b> Daten wurden noch aus Google Sheets geladen. Du kannst bestehende Umfragen jetzt mit 1 Klick nach Supabase übernehmen!
+            </div>
+            <button class="btn btn-sm btn-primary ms-3 text-nowrap" onclick="syncPollsFromLegacy()">
+                <i class="fas fa-cloud-upload-alt me-1"></i> Nach Supabase migrieren
+            </button>
+        `;
+        const tabContent = container.querySelector('.tab-content') || container.firstChild;
+        if (tabContent && tabContent.parentNode) {
+            tabContent.parentNode.insertBefore(infoBanner, tabContent);
+        }
+    }
   } catch (e) {
-    container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden (Google Script bereits aktualisiert?): ${escapeHtml(e.message)}</div>`;
+    container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden der Events: ${escapeHtml(e.message)}</div>`;
   }
 }
+
+// === 1-KLICK SYNC VON GOOGLE SHEETS NACH SUPABASE ===
+async function syncPollsFromLegacy() {
+    const supa = getPollSupabaseClient();
+    if (!supa) {
+        alert("Supabase-Verbindung nicht verfügbar.");
+        return;
+    }
+
+    if (!confirm("Möchtest du alle Umfragen, Anmeldungen und Logs aus dem Google Sheet nach Supabase importieren?")) {
+        return;
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'custom-toast';
+    toast.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Importiere Umfragen & Anmeldungen nach Supabase...';
+    document.body.appendChild(toast);
+
+    try {
+        // 1. Events aus GAS laden
+        const resEvents = await apiFetch('umfragen', 'action=getAllEventsAdmin');
+        const rawEvents = await resEvents.json();
+        const eventsList = Array.isArray(rawEvents) ? rawEvents : (rawEvents.events || []);
+
+        if (eventsList.length > 0) {
+            const pollRows = eventsList.map(e => ({
+                id: String(e.id || ('pe_' + Date.now())),
+                title: String(e.title || 'Unbenannter Anlass'),
+                datum: e.datum ? formatISODate(e.datum) : null,
+                gruppe: String(e.gruppe || 'aktiv').trim(),
+                schiessanlass: isTrue(e.schiessanlass),
+                aktiv: isTrue(e.aktiv),
+                showparticipants: isTrue(e.showparticipants),
+                frage_begleitung: isTrue(e.frage_begleitung),
+                frage_essen: isTrue(e.frage_essen),
+                frage_grund: isTrue(e.frage_grund),
+                dokument_url: String(e.dokument_url || e.dokument || ''),
+                details: String(e.details || e.beschreibung || ''),
+                options: parsePollOptions(e.options)
+            }));
+
+            const { error: evErr } = await supa.from('poll_events').upsert(pollRows);
+            if (evErr) throw new Error("Fehler beim Importieren der Events: " + evErr.message);
+        }
+
+        // 2. Responses Log laden & in poll_responses und poll_responses_log spiegeln
+        try {
+            const resLog = await apiFetch('umfragen', 'action=getResponsesLog');
+            const logEntries = await resLog.json();
+            if (Array.isArray(logEntries) && logEntries.length > 0) {
+                // Letzten Status pro Event + Lizenz ermitteln
+                const latestMap = {};
+                logEntries.forEach(log => {
+                    const evId = String(log.eventid || log.event || '');
+                    const liz = String(log.lizenz || log['100id'] || '').trim();
+                    if (evId && liz) {
+                        const key = `${evId}_${liz}`;
+                        const t = log.timestamp ? new Date(log.timestamp).getTime() : 0;
+                        if (!latestMap[key] || t >= latestMap[key].time) {
+                            latestMap[key] = { log, time: t };
+                        }
+                    }
+                });
+
+                const responseRows = Object.values(latestMap).map(item => {
+                    const l = item.log;
+                    const att = isTrue(l.attending || l.teilnahme || l.status);
+                    return {
+                        event_id: String(l.eventid || l.event),
+                        lizenz: String(l.lizenz || l['100id']).trim(),
+                        attending: att,
+                        count: parseInt(l.count || l.anzahl_teilnehmer || 1) || 1,
+                        essen: parseInt(l.essen || l.food || 0) || 0,
+                        vegi: parseInt(l.vegi || 0) || 0,
+                        grund: String(l.grund || l.reason || l.bemerkung || '').trim(),
+                        optionids: String(l.optionids || l.option_ids || '').trim()
+                    };
+                });
+
+                if (responseRows.length > 0) {
+                    await supa.from('poll_responses').upsert(responseRows, { onConflict: 'event_id,lizenz' });
+                }
+            }
+        } catch (respLogErr) {
+            console.warn("Responses Log Import fehlgeschlagen:", respLogErr);
+        }
+
+        toast.className = 'custom-toast bg-success';
+        toast.innerHTML = '<i class="fas fa-check-circle me-2"></i> Migration nach Supabase erfolgreich abgeschlossen!';
+        setTimeout(() => toast.remove(), 4000);
+
+        await loadUmfragenData(true);
+
+    } catch (err) {
+        toast.className = 'custom-toast bg-danger';
+        toast.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i> Import fehlgeschlagen: ' + escapeHtml(err.message);
+        setTimeout(() => toast.remove(), 6000);
+    }
+}
+window.syncPollsFromLegacy = syncPollsFromLegacy;
 
 function getEventIdFromLog(log) {
     if (!log) return '';

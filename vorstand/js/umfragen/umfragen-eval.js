@@ -5,6 +5,55 @@ async function selectEventForParticipants(eventId) {
     loadParticipantsIfEventSelected();
 }
 
+async function fetchEventParticipants(eventId) {
+    if (!eventId) return [];
+    if (window._umfragenParticipantsCache && window._umfragenParticipantsCache[eventId]) {
+        return window._umfragenParticipantsCache[eventId];
+    }
+    await ensureMembersLookup();
+
+    // 1. Supabase Abfrage
+    const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+    if (supa) {
+        try {
+            const { data, error } = await supa
+                .from('poll_responses')
+                .select('*')
+                .eq('event_id', String(eventId))
+                .eq('attending', true);
+            if (!error && Array.isArray(data) && data.length > 0) {
+                const pData = data.map(r => {
+                    let liz = String(r.lizenz || '').trim();
+                    let m = (membersLookup && (membersLookup[liz] || membersLookup[liz.padStart(6, '0')]));
+                    let memberName = m ? `${m.LastName || ''} ${m.FirstName || ''}`.trim() : `Lizenz ${liz}`;
+                    return {
+                        lizenz: liz,
+                        name: memberName,
+                        count: parseInt(r.count) || 1,
+                        essen: parseInt(r.essen) || 0,
+                        vegi: parseInt(r.vegi) || 0,
+                        grund: r.grund || '',
+                        optionids: r.optionids || ''
+                    };
+                });
+                window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
+                window._umfragenParticipantsCache[eventId] = pData;
+                return pData;
+            }
+        } catch (supaErr) {
+            console.warn("Supabase fetchEventParticipants fehlgeschlagen:", supaErr);
+        }
+    }
+
+    // 2. Fallback GAS
+    const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(eventId)}`);
+    const pData = await res.json();
+    window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
+    window._umfragenParticipantsCache[eventId] = Array.isArray(pData) ? pData : [];
+    return window._umfragenParticipantsCache[eventId];
+}
+window.fetchEventParticipants = fetchEventParticipants;
+
 async function loadParticipantsIfEventSelected() {
     if(!currentEventId) return;
     const listDiv = document.getElementById('umfragen-teilnehmer-list');
@@ -19,17 +68,7 @@ async function loadParticipantsIfEventSelected() {
     
     try {
         await ensureMembersLookup();
-
-        let pData;
-        if (hasCache) {
-            console.log("⚡ loadParticipantsIfEventSelected: Verwende Cache...");
-            pData = window._umfragenParticipantsCache[currentEventId];
-        } else {
-            const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentEventId)}`);
-            pData = await res.json();
-            window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
-            window._umfragenParticipantsCache[currentEventId] = pData;
-        }
+        let pData = await fetchEventParticipants(currentEventId);
         // pData ist ein Array von {lizenz, name} (GAS liefert Lizenz + Name)
         pData.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
         
@@ -218,16 +257,7 @@ async function loadGroupsIfEventSelected() {
     try {
         await ensureMembersLookup();
 
-        let pData;
-        if (hasCache) {
-            console.log("⚡ loadGroupsIfEventSelected: Verwende Cache...");
-            pData = window._umfragenParticipantsCache[currentGroupEventId];
-        } else {
-            const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(currentGroupEventId)}`);
-            pData = await res.json();
-            window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
-            window._umfragenParticipantsCache[currentGroupEventId] = pData;
-        }
+        let pData = await fetchEventParticipants(currentGroupEventId);
         
         pData.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de-CH'));
         currentGroupParticipants = [];

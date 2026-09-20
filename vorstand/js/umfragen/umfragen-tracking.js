@@ -15,17 +15,51 @@ async function loadUmfragenHistorie(force = false) {
         await ensureMembersLookup();
 
         if (force || !hasLogs) {
-            // 1. Hole rohe Logs von neuen API-Aktionen
-            const [resLog, resViews] = await Promise.all([
-                apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
-                apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
-            ]);
+            // 1. Hole rohe Logs (zuerst Supabase, sonst Google Apps Script)
+            const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+            let loadedFromSupa = false;
+            if (supa) {
+                try {
+                    const [resLog, resViews] = await Promise.all([
+                        supa.from('poll_responses_log').select('*').order('zeitstempel', { ascending: false }).limit(200),
+                        supa.from('poll_views').select('*').order('zeitpunkt', { ascending: false }).limit(200)
+                    ]);
+                    if (!resLog.error && !resViews.error && ((resLog.data && resLog.data.length > 0) || (resViews.data && resViews.data.length > 0))) {
+                        rawResponsesLog = (resLog.data || []).map(l => ({
+                            eventid: l.event_id,
+                            lizenz: l.lizenz,
+                            attending: l.action !== 'reset_to_open',
+                            count: l.count,
+                            essen: l.essen,
+                            vegi: l.vegi,
+                            grund: l.grund,
+                            timestamp: l.zeitstempel
+                        }));
+                        rawViewsLog = (resViews.data || []).map(v => ({
+                            eventid: v.event_id,
+                            lizenz: v.lizenz,
+                            zeitpunkt: v.zeitpunkt,
+                            info: v.info
+                        }));
+                        loadedFromSupa = true;
+                    }
+                } catch (supaErr) {
+                    console.warn("Supabase Tracking-Log Abfrage fehlgeschlagen:", supaErr);
+                }
+            }
 
-            if (resLog && resLog.error) throw new Error(resLog.error);
-            if (resViews && resViews.error) throw new Error(resViews.error);
+            if (!loadedFromSupa) {
+                const [resLog, resViews] = await Promise.all([
+                    apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
+                    apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
+                ]);
 
-            rawResponsesLog = Array.isArray(resLog) ? resLog : [];
-            rawViewsLog = Array.isArray(resViews) ? resViews : [];
+                if (resLog && resLog.error) throw new Error(resLog.error);
+                if (resViews && resViews.error) throw new Error(resViews.error);
+
+                rawResponsesLog = Array.isArray(resLog) ? resLog : [];
+                rawViewsLog = Array.isArray(resViews) ? resViews : [];
+            }
 
             // Sortieren nach Timestamp absteigend
             const parseTime = (t) => t ? new Date(t).getTime() : 0;

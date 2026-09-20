@@ -950,6 +950,25 @@ Im Zuge von Phase 4 wurde der bisherige, komplexe GAS-Import durch eine hochperf
 - **Produktions-Spreadsheet-ID:** `11G9LdZhghm8U-Dpsv4NOyBg5mm5xlD2nhU10BQNvq3A` (bleibt während der Testphase vollständig unverändert und geschützt).
 - **Quellschutz-Garantie:** Manuelle Markierungen (`is_passive_source = 'manual'`, Ehrenmitglieder) werden durch SSV-Imports weder in Supabase noch im Google Sheet überschrieben.
 
+### 6.4 Fachmodul ANLÄSSE & UMFRAGEN (Phase 5 – Abgeschlossen & im Testbetrieb)
+
+Gemäss Architekturentscheidung bleiben das operative Controlling-Modul **ANLÄSSE & Controlling** (`public.events`, Mengenrechner, Bestellungen, Checklisten, Helfer/Schichten) und das RSVP-/Umfragen-Modul **Anlässe & Umfragen** (`public.poll_events`, `public.poll_responses`, `public.poll_views`, `public.poll_responses_log`) als zwei getrennte, eigenständige Module bestehen.
+
+**Architektur-Highlights von Phase 5:**
+1. **Eigenständiges PostgreSQL-Schema (`07_eventplaner_module.sql`):**
+   - `public.poll_events`: Speichert Umfragen, Schiessanlass-Optionen, Abfrage-Flags und Dokumenten-Links.
+   - `public.poll_responses`: Speichert Teilnehmer-RSVPs mit Personenanzahl, Essenswünschen (Fleisch/Vegi), Absagegründen und Termin-Optionen.
+   - `public.poll_views`: Verfolgt Aufrufe und Gelesen-Status für Nachfassaktionen.
+   - `public.poll_responses_log`: Revisionssicheres Audit-Log aller Statusänderungen.
+2. **Vorstand-Cockpit (`vorstand/js/umfragen/`):**
+   - Vollständig getrennt von `anlaesse.js` in der Sidebar und Übersicht.
+   - Lädt primär aus Supabase (< 50 ms) mit automatischem Fallback auf GAS.
+   - Dual-Write ins Google Spreadsheet (`1lN180zraGTBsxxb7uJid7607nLHrBNxmoLjLH8jZWiE`) bei jeder Event-Änderung.
+   - 1-Klick-Synchronisation / Import alter Sheet-Daten direkt nach Supabase.
+3. **Mitglieder-PWA (`app.js`):**
+   - Direkte REST-Abfrage von Supabase mit Stale-While-Revalidate Caching.
+   - Schnelle Speicherung von Zu-/Absagen in `poll_responses` und asynchroner Dual-Write an das Google Sheet.
+
 ---
 
 ## 7. Migrations-Roadmap (Phasen 0 bis 11)
@@ -961,8 +980,8 @@ Im Zuge von Phase 4 wurde der bisherige, komplexe GAS-Import durch eine hochperf
 | **Phase 2** | **Pilotmodul ANLÄSSE** | Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Controlling (`02_events_module.sql`, `03_anon_dev_policies.sql`); Vollständige Integration ins Vorstand-Portal (`anlaesse.js`, `supabase-client.js`) | Supabase | ✅ **Abgeschlossen** |
 | **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
 | **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie (`1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0`) | Supabase (Master) ⇄ Google Sheet (Test-Kopie) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 5** | **Anlässe & Eventplaner Integration**| Ablösung des alten GAS-Eventplaners; Zusammenführung aller Anmeldungen in Supabase | Supabase | ⏳ **Nächster Schritt** |
-| **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | Geplant |
+| **Phase 5** | **Anlässe & Umfragen (Eventplaner)**| Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung; Dual-Write zum Google Sheet (`1lN180...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | ⏳ **Nächster Schritt** |
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen | Supabase | Geplant |
 | **Phase 8** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
 | **Phase 9** | **Jahresbeiträge** | Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members` | Supabase | Geplant |

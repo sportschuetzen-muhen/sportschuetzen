@@ -1,7 +1,96 @@
-
 const WORKER_TERMINE_URL = "https://termine.dan-hunziker73.workers.dev?action=getTermine";
 const EVENTPLANER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev";
 const GOOGLE_SCRIPT_URL = `${EVENTPLANER_URL}?action=getHausKalender`;
+
+// --- SUPABASE NATIVE INTEGRATION (Phase 5: Anlässe & Umfragen) ---
+const SUPABASE_REST_URL = "http://192.168.68.117:8000/rest/v1";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
+
+async function fetchRSVPEventsFromSupabase(lizenz) {
+    if (!lizenz) return null;
+    const cleanLizenz = String(lizenz).trim();
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+    };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    try {
+        const [resEvents, resResponses] = await Promise.all([
+            fetch(`${SUPABASE_REST_URL}/poll_events?select=*&aktiv=eq.true&order=datum.asc`, { headers, signal: controller.signal }),
+            fetch(`${SUPABASE_REST_URL}/poll_responses?select=*&lizenz=eq.${encodeURIComponent(cleanLizenz)}`, { headers, signal: controller.signal })
+        ]);
+        clearTimeout(timeoutId);
+
+        if (!resEvents.ok) return null;
+        const events = await resEvents.json();
+        if (!Array.isArray(events) || events.length === 0) return null;
+        const responses = resResponses.ok ? await resResponses.json() : [];
+
+        const userRespMap = {};
+        (responses || []).forEach(r => {
+            userRespMap[String(r.event_id)] = r;
+        });
+
+        return events.map(e => {
+            const uResp = userRespMap[String(e.id)];
+            return {
+                id: String(e.id),
+                title: e.title || '',
+                titel: e.title || '',
+                datum_iso: e.datum || '',
+                gruppe: e.gruppe || 'aktiv',
+                schiessanlass: Boolean(e.schiessanlass),
+                showParticipants: Boolean(e.showparticipants),
+                frage_begleitung: Boolean(e.frage_begleitung),
+                frage_essen: Boolean(e.frage_essen),
+                frage_grund: Boolean(e.frage_grund),
+                dokument_url: e.dokument_url || '',
+                details: e.details || '',
+                options: Array.isArray(e.options) ? e.options : [],
+                attending: uResp ? uResp.attending : null,
+                optionids: uResp ? (uResp.optionids || '') : '',
+                count: uResp ? (parseInt(uResp.count) || 1) : 1,
+                essen: uResp ? (parseInt(uResp.essen) || 0) : 0,
+                vegi: uResp ? (parseInt(uResp.vegi) || 0) : 0,
+                grund: uResp ? (uResp.grund || '') : ''
+            };
+        });
+    } catch (err) {
+        clearTimeout(timeoutId);
+        return null;
+    }
+}
+
+async function saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, optionids) {
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+    };
+    const body = {
+        event_id: String(eventId),
+        lizenz: String(cleanLizenz),
+        attending: Boolean(attending),
+        count: parseInt(count) || 1,
+        essen: parseInt(essen) || 0,
+        vegi: parseInt(vegi) || 0,
+        grund: String(grund || '').trim(),
+        optionids: String(optionids || '').trim()
+    };
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/poll_responses`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body)
+        });
+        return res.ok;
+    } catch(e) {
+        return false;
+    }
+}
 
 let allTermine = [];
 const pollResultsCache = {};
@@ -154,11 +243,16 @@ async function loadTermine() {
             } catch(e) {}
         }
 
-        const [resWorker, resGoogle, resRSVP] = await Promise.all([
+        const [resWorker, resGoogle, supaRSVP] = await Promise.all([
             safeFetch(WORKER_TERMINE_URL),
             safeFetch(GOOGLE_SCRIPT_URL),
-            safeFetch(`${EVENTPLANER_URL}?action=getRSVPEvents&lizenz=${activeLizenz}`)
+            fetchRSVPEventsFromSupabase(activeLizenz)
         ]);
+
+        let resRSVP = supaRSVP;
+        if (!resRSVP || resRSVP.length === 0) {
+            resRSVP = await safeFetch(`${EVENTPLANER_URL}?action=getRSVPEvents&lizenz=${activeLizenz}`);
+        }
 
         // Titel-Normalisierung sofort sicherstellen (verhindert 'undefined')
         (resRSVP || []).forEach(t => {
@@ -1129,6 +1223,11 @@ window.submitRSVP = async function(eventId, attending) {
     try {
         // Sicherstellen dass Lizenz sechstellig ist
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
+
+        // 1. Supabase Master (schnell speichern)
+        saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, '');
+
+        // 2. Dual-Write zu Google Sheet (Parallelbetrieb)
         const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${cleanLizenz}&attending=${attending}&count=${count}&essen=${essen}&vegi=${vegi}&grund=${encodeURIComponent(grund)}`);
         const result = await resp.json();
         if (!result.success) throw new Error("Serverfehler beim Speichern");
@@ -1405,7 +1504,13 @@ window.submitPollVote = async function(eventId) {
 
     try {
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
-        const optionids = encodeURIComponent(selectedIds.join(','));
+        const rawOptIds = selectedIds.join(',');
+        const optionids = encodeURIComponent(rawOptIds);
+
+        // 1. Supabase Master
+        saveRSVPToSupabase(eventId, cleanLizenz, true, 1, 0, 0, '', rawOptIds);
+
+        // 2. Dual-Write zu Google Sheet (Parallelbetrieb)
         const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${encodeURIComponent(eventId)}&lizenz=${cleanLizenz}&attending=true&count=1&essen=0&vegi=0&grund=&optionids=${optionids}`);
         const result = await resp.json();
         if (!result.success) throw new Error('Serverfehler');
@@ -1430,6 +1535,11 @@ window.submitPollAbsent = async function(eventId) {
 
     try {
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
+
+        // 1. Supabase Master
+        saveRSVPToSupabase(eventId, cleanLizenz, false, 1, 0, 0, 'Kein Termin passt', '');
+
+        // 2. Dual-Write zu Google Sheet (Parallelbetrieb)
         const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${encodeURIComponent(eventId)}&lizenz=${cleanLizenz}&attending=false&count=1&essen=0&vegi=0&grund=Kein+Termin+passt&optionids=`);
         const result = await resp.json();
         if (!result.success) throw new Error('Serverfehler');
@@ -1503,7 +1613,22 @@ async function trackRSVPView(eventId, lizenz) {
     if (localStorage.getItem(trackKey)) return;
 
     try {
-        // Wir nutzen den EVENTPLANER_URL (Cloudflare Worker -> Google Script)
+        // 1. Supabase Track (asynchron)
+        fetch(`${SUPABASE_REST_URL}/poll_views`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                event_id: String(eventId),
+                lizenz: String(lizenz),
+                info: 'Gesehen (App)'
+            })
+        }).catch(() => {});
+
+        // 2. Google Script Track (Dual-Write)
         await fetch(`${EVENTPLANER_URL}?action=trackView&eventid=${encodeURIComponent(eventId)}&lizenz=${encodeURIComponent(lizenz)}`);
         localStorage.setItem(trackKey, "true");
         console.log("View tracked for event:", eventId);

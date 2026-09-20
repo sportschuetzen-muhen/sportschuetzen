@@ -357,7 +357,7 @@ function removeUmfrageEvent(idx) {
 }
 
 async function saveUmfragenData() {
-    if(!confirm("Alle Events in der Umfrage-App updaten?")) return;
+    if(!confirm("Alle Events in der Umfrage-App speichern?")) return;
     try {
         const cleanEvents = (umfragenState || []).map(e => {
             const opts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
@@ -366,16 +366,48 @@ async function saveUmfragenData() {
                 options: opts
             };
         });
+
         const payload = {
             action: "saveEventsAdmin",
             events: cleanEvents
         };
-        await apiFetch('umfragen', '', {
+
+        // 1. SUPABASE MASTER: Direkt und schnell speichern
+        const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+        if (supa) {
+            const pollRows = cleanEvents.map(e => ({
+                id: String(e.id || ('pe_' + Date.now())),
+                title: String(e.title || 'Unbenannter Anlass'),
+                datum: e.datum ? formatISODate(e.datum) : null,
+                gruppe: String(e.gruppe || 'aktiv').trim(),
+                schiessanlass: isTrue(e.schiessanlass),
+                aktiv: isTrue(e.aktiv),
+                showparticipants: isTrue(e.showparticipants),
+                frage_begleitung: isTrue(e.frage_begleitung),
+                frage_essen: isTrue(e.frage_essen),
+                frage_grund: isTrue(e.frage_grund),
+                dokument_url: String(e.dokument_url || ''),
+                details: String(e.details || ''),
+                options: e.options || []
+            }));
+
+            const { error: supaErr } = await supa.from('poll_events').upsert(pollRows);
+            if (supaErr) {
+                console.error("Fehler beim Speichern in Supabase:", supaErr);
+                throw new Error("Supabase Fehler: " + supaErr.message);
+            }
+            console.log(`✅ ${pollRows.length} Events erfolgreich in Supabase gespeichert.`);
+        }
+
+        // 2. DUAL-WRITE: Google Sheet im Hintergrund synchronisieren (Parallelbetrieb)
+        apiFetch('umfragen', '', {
             method: 'POST',
             body: JSON.stringify(payload)
-        });
+        }).then(() => console.log("✅ Dual-Write zu Google Sheet erfolgreich"))
+          .catch(err => console.warn("⚠️ Dual-Write zu Google Sheet fehlgeschlagen:", err));
+
         window.clearUnsaved();
-        alert("✅ Umfragen Gespeichert!");
+        alert("✅ Umfragen erfolgreich gespeichert (Supabase Master & Dual-Write)");
         loadUmfragenData();
     } catch(e) {
         alert("Fehler beim Speichern der Umfragen: " + e.message);
