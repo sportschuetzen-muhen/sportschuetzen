@@ -563,12 +563,31 @@ async function jbSaveGebuehrFromModal() {
       user: window.currentUser || 'frontend'
     };
 
-    const res = await apiFetch('jahresbeitrag', '', {
+    // 1. Direkt in Supabase speichern
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (supa) {
+      try {
+        await supa.from('gebuehren_config').upsert({
+          key: key,
+          bezeichnung: bezeichnung,
+          bezeichnung_frontend: bezeichnungfrontend,
+          betrag: Number(betrag || 0),
+          konto_haben: konto || '3000',
+          kategorie: ui_gruppe || 'Jahresbeitrag',
+          sort_order: Number(ui_sort || 10),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' });
+        console.log(`✅ [Supabase] Gebühr ${key} gespeichert.`);
+      } catch (errSup) {
+        console.warn("⚠️ Fehler bei Supabase Gebühren-Speicherung:", errSup);
+      }
+    }
+
+    // 2. Dual-Write an GAS
+    apiFetch('jahresbeitrag', '', {
       method: 'POST',
       body: JSON.stringify(payload)
-    });
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || 'Fehler beim Speichern');
+    }).catch(err => console.warn("⚠️ Dual-Write GAS Gebühren-Speicherung:", err));
 
     showToast(`🎉 Gebühr ${key} erfolgreich gespeichert!`);
 

@@ -925,80 +925,11 @@ async function silentInitialLoad() {
         console.log("🔍 Checking loadJahresbeitragData: ", typeof loadJahresbeitragData);
         if (typeof loadJahresbeitragData === 'function') {
             window._jbPreloadPromise = (async () => {
-                const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
-                console.log("🔍 Fetching Jahresbeitrag APIs for year: ", year);
-                const [beitraege, members, participations, positions, gebuehren, invoices] = await Promise.all([
-                    apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
-                    apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
-                    apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
-                    apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json()),
-                    apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
-                        console.warn("⚠️ Fehler beim Preload der Gebühren:", err);
-                        return { success: false, data: [] };
-                    }),
-                    apiFetch('rechnungen', 'action=getInvoices').then(r => r.json()).catch(err => {
-                        console.warn("⚠️ Fehler beim Preload der Rechnungen:", err);
-                        return { success: false, data: [] };
-                    })
-                ]);
-
-                console.log("🔍 Jahresbeitrag API success statuses:", {
-                    beitraege: beitraege.success,
-                    members: members.success,
-                    participations: participations.success,
-                    positions: positions.success,
-                    gebuehren: gebuehren ? gebuehren.success : false,
-                    invoices: invoices ? invoices.success : false
-                });
-
-                if (beitraege.success && members.success && participations.success && positions.success) {
-                    window._jbGebuehren = gebuehren && gebuehren.success ? (gebuehren.data || []) : [];
-                    window._jbAllInvoices = invoices && invoices.success ? (invoices.data || []) : [];
-                    window._invoices = window._jbAllInvoices; // Sync both caches!
-                    window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
-                    window._jbMemberMap = {};
-                    (members.data || []).forEach(m => { 
-                        window._jbMemberMap[String(m.PersonNumber)] = m; 
-                    });
-                    
-                    window._jbAllBeitraege = beitraege.data || [];
-                    window._jbAllParticipations = participations.data || [];
-                    window._jbAllPositions = positions.positions || [];
-                    
-                    window._jbData = window._jbAllBeitraege.filter(h => Number(h.year) === Number(year));
-
-                    // Invoices mergen
-                    if (typeof jbMergeInvoicesIntoData === 'function') {
-                        jbMergeInvoicesIntoData(window._jbAllInvoices || []);
-                    }
-
-                    window._jbParticipationsCache = {};
-                    window._jbAllParticipations.forEach(p => {
-                        if (Number(p.year) === Number(year)) {
-                            const pn = String(p.PersonNumber).trim();
-                            if (!window._jbParticipationsCache[pn]) window._jbParticipationsCache[pn] = [];
-                            window._jbParticipationsCache[pn].push(p);
-                        }
-                    });
-
-                    window._jbPositionsCache = {};
-                    window._jbAllPositions.forEach(p => {
-                        if (Number(p.year) === Number(year)) {
-                            const hid = String(p.headerid).trim();
-                            if (!window._jbPositionsCache[hid]) window._jbPositionsCache[hid] = [];
-                            window._jbPositionsCache[hid].push(p);
-                        }
-                    });
-
-                    if (typeof jbApplyTableSorting === 'function') jbApplyTableSorting();
-                    if (typeof jbApplySidebarSorting === 'function') jbApplySidebarSorting();
-                    
-                    const activeView = document.querySelector('.module-view.active');
-                    const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
-                    if (activeViewId === 'jahresbeitrag' && typeof renderJahresbeitragView === 'function') {
-                        renderJahresbeitragView();
-                    }
+                try {
+                    await loadJahresbeitragData(false, false);
                     console.log("✅ Initiales Bulk-Loading: Jahresbeitrag geladen.");
+                } catch (jbErr) {
+                    console.warn("⚠️ Fehler beim Preload des Jahresbeitrags:", jbErr);
                 }
             })();
         }

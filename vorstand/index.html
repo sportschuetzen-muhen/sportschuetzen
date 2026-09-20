@@ -649,6 +649,7 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('jahresbeitrag', this)">
                     <i class="fas fa-coins"></i> <span class="nav-text">Jahresbeitrag</span>
+                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('rechnungen', this)">
@@ -802,10 +803,13 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
                              onclick="navTo('jahresbeitrag')" style="cursor:pointer">
-                            <h5>💰 Jahresbeitrag</h5>
-                            <p class="small text-muted">Beiträge einsehen</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5>💰 Jahresbeitrag</h5>
+                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
+                            </div>
+                            <p class="small text-muted">Beitragsverwaltung, Schnellerfassung & Gebühren (Supabase Master)</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">

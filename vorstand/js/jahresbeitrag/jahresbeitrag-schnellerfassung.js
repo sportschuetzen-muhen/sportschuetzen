@@ -950,6 +950,26 @@ function jbTriggerAutoSave(pnClean) {
 
       const licenses = settings.lizenz ? [{ pn: pnClean, lizenz: settings.lizenz }] : [];
 
+      // 1. Direkt in Supabase speichern
+      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+      if (supa && list.length > 0) {
+        try {
+          const dbParts = list.map(item => ({
+            id: `${item.pn}-${item.year}-${item.eventkey}`,
+            person_number: item.pn,
+            year: Number(item.year),
+            event_key: item.eventkey,
+            teilgenommen: Number(item.teilgenommen || 0),
+            quelle: 'schnellerfassung',
+            erfasst_am: new Date().toISOString(),
+            erfasst_von: window.currentUser || 'frontend'
+          }));
+          await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
+        } catch (errSup) {
+          console.warn("⚠️ Fehler bei Supabase Auto-Save Participations:", errSup);
+        }
+      }
+
       const payload = {
         action: 'saveParticipationsBulk',
         list: list,
@@ -957,10 +977,11 @@ function jbTriggerAutoSave(pnClean) {
         user: window.currentUser || 'frontend'
       };
 
-      await apiFetch('jahresbeitrag', '', {
+      // 2. Asynchroner Dual-Write an GAS
+      apiFetch('jahresbeitrag', '', {
         method: 'POST',
         body: JSON.stringify(payload)
-      });
+      }).catch(err => console.warn("⚠️ Dual-Write GAS Participations Auto-Save:", err));
       
       // Memory Caches updaten
       if (!_jbParticipationsCache[pnClean]) _jbParticipationsCache[pnClean] = [];
@@ -1273,6 +1294,66 @@ async function jbSaveAllBulkLocalChanges() {
       });
     });
 
+    // 1. Direkt in Supabase speichern
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (supa && list.length > 0) {
+      try {
+        const dbParts = list.map(item => ({
+          id: `${item.pn}-${item.year}-${item.eventkey}`,
+          person_number: item.pn,
+          year: Number(item.year),
+          event_key: item.eventkey,
+          teilgenommen: Number(item.teilgenommen || 0),
+          quelle: 'schnellerfassung',
+          erfasst_am: new Date().toISOString(),
+          erfasst_von: window.currentUser || 'frontend'
+        }));
+        await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
+
+        // Für jeden geänderten Schützen den Beitrag neu berechnen und speichern
+        for (const pn of editedPNs) {
+          const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber).trim() === pn);
+          if (m && typeof jbCalculateLiveTotal === 'function') {
+            const settings = _jbLocalBulkChanges[pn] || {};
+            const calc = jbCalculateLiveTotal(m, settings);
+            const headId = `${year}-${pn}`;
+
+            await supa.from('contributions_header').upsert({
+              id: headId,
+              person_number: pn,
+              year: Number(year),
+              status: 'offen',
+              gesamt: calc.total,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'person_number,year' });
+
+            const newPos = calc.positions.map((p, idx) => ({
+              id: `${headId}-${idx + 1}`,
+              header_id: headId,
+              person_number: pn,
+              year: Number(year),
+              position_nr: idx + 1,
+              beschreibung: p.name || 'Position',
+              betrag: Number(p.betrag || 0),
+              typ: p.typ || 'Debit',
+              source_field: p.key || '',
+              konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
+              last_upd: new Date().toISOString()
+            }));
+
+            await supa.from('contributions_positions').delete().eq('header_id', headId);
+            if (newPos.length > 0) {
+              await supa.from('contributions_positions').insert(newPos);
+            }
+          }
+        }
+        console.log(`✅ [Supabase] ${list.length} Teilnahmen und Beiträge für ${editedPNs.length} Schützen gespeichert.`);
+      } catch (errSup) {
+        console.warn("⚠️ Fehler bei direkter Supabase Bulk-Speicherung:", errSup);
+      }
+    }
+
+    // 2. Dual-Write an GAS
     const resSave = await apiFetch('jahresbeitrag', '', {
       method: 'POST',
       body: JSON.stringify({
@@ -1283,11 +1364,11 @@ async function jbSaveAllBulkLocalChanges() {
       })
     });
     const saveJson = await resSave.json();
-    if (!saveJson.success) throw new Error(saveJson.error);
+    if (!saveJson.success && !supa) throw new Error(saveJson.error);
 
     const resCalc = await apiFetch('jahresbeitrag', `action=berechnen&year=${year}&pn=${editedPNs.join(',')}`);
     const calcJson = await resCalc.json();
-    if (!calcJson.success) throw new Error(calcJson.error);
+    if (!calcJson.success && !supa) throw new Error(calcJson.error);
 
     showToast(`🎉 ${count} Schützen erfolgreich gespeichert und Beiträge neu berechnet!`);
     

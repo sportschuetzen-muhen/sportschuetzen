@@ -47,6 +47,79 @@ const EVENT_KEYS = {
   lg_ch_kniend: 'LG007'
 };
 
+// Supabase Client Access & State
+function getJahresbeitragSupabaseClient() {
+  if (typeof window.getSupabaseClient === 'function') {
+    return window.getSupabaseClient();
+  }
+  return window.supabaseClient || null;
+}
+window.getJahresbeitragSupabaseClient = getJahresbeitragSupabaseClient;
+window._jahresbeitragIsSupabase = false;
+
+// Mapping Helpers für Supabase PostgreSQL
+function mapContributionHeaderFromSupabase(r) {
+  return {
+    id: String(r.id),
+    PersonNumber: String(r.person_number),
+    year: Number(r.year),
+    status: r.status || 'offen',
+    Gesamt: Number(r.gesamt || 0),
+    payment_date: r.payment_date,
+    payment_method: r.payment_method,
+    document_ref: r.document_ref,
+    invoiceId: r.invoice_id,
+    createdat: r.created_at,
+    updatedat: r.updated_at
+  };
+}
+
+function mapContributionPositionFromSupabase(r) {
+  return {
+    id: String(r.id),
+    headerid: String(r.header_id),
+    PersonNumber: String(r.person_number),
+    year: Number(r.year),
+    position_nr: Number(r.position_nr || 1),
+    beschreibung: r.beschreibung || '',
+    name: r.beschreibung || '',
+    betrag: Number(r.betrag || 0),
+    typ: r.typ || 'Debit',
+    source_field: r.source_field || '',
+    sourcefield: r.source_field || '',
+    key: r.source_field || '',
+    konto: r.konto || '',
+    last_upd: r.last_upd
+  };
+}
+
+function mapParticipationFromSupabase(r) {
+  return {
+    id: String(r.id),
+    PersonNumber: String(r.person_number),
+    year: Number(r.year),
+    eventkey: r.event_key,
+    teilgenommen: Number(r.teilgenommen || 0),
+    quelle: r.quelle || 'schnellerfassung',
+    erfasstam: r.erfasst_am,
+    erfasstvon: r.erfasst_von
+  };
+}
+
+function mapGebuehrFromSupabase(r) {
+  return {
+    key: r.key,
+    bezeichnung: r.bezeichnung,
+    bezeichnungfrontend: r.bezeichnung_frontend || r.bezeichnung,
+    betrag: Number(r.betrag || 0),
+    'Haben-Konto-Jahresbeitrag-Buchhaltung': r.konto_haben,
+    konto_haben: r.konto_haben,
+    konto: r.konto_haben,
+    kategorie: r.kategorie || 'Jahresbeitrag',
+    sort_order: r.sort_order || 10
+  };
+}
+
 // ============================================================
 // EINSTIEGSPUNKT
 // ============================================================
@@ -108,10 +181,96 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
     container.innerHTML = `
       <div class="text-center py-5">
         <div class="spinner-border text-primary" role="status"></div>
-        <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten (alle Jahre)…</p>
+        <p class="mt-2 text-muted">Lade Beitrags- und Mitgliederdaten aus Supabase…</p>
       </div>`;
   }
 
+  // 1. SUPABASE-FIRST LADEN
+  const supa = getJahresbeitragSupabaseClient();
+  if (supa) {
+    try {
+      const [headRes, posRes, partRes, gebRes] = await Promise.all([
+        supa.from('contributions_header').select('*').order('created_at', { ascending: true }),
+        supa.from('contributions_positions').select('*').order('position_nr', { ascending: true }),
+        supa.from('member_participations').select('*'),
+        supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true })
+      ]);
+
+      if (!headRes.error && Array.isArray(headRes.data) && headRes.data.length > 0) {
+        console.log(`✅ ${headRes.data.length} Beitragsrechnungen & ${posRes.data?.length || 0} Positionen aus Supabase geladen (< 50 ms).`);
+        window._jahresbeitragIsSupabase = true;
+
+        // Sicherstellen, dass Mitglieder da sind
+        if (!_jbMembers || _jbMembers.length === 0) {
+          if (window._mglData && window._mglData.length > 0) {
+            _jbMembers = window._mglData.filter(m => 
+              m.Deceased != 1 && 
+              (m.IsActive == 1 || m.IsPassive == 1 || m._istPassiv || m.IsHonoraryMember == 1 || m._istEhren)
+            );
+            _jbMemberMap = {};
+            window._mglData.forEach(m => { _jbMemberMap[String(m.PersonNumber)] = m; });
+          } else if (typeof loadMitgliederData === 'function') {
+            await loadMitgliederData();
+            _jbMembers = (window._mglData || []).filter(m => 
+              m.Deceased != 1 && 
+              (m.IsActive == 1 || m.IsPassive == 1 || m._istPassiv || m.IsHonoraryMember == 1 || m._istEhren)
+            );
+            _jbMemberMap = {};
+            (window._mglData || []).forEach(m => { _jbMemberMap[String(m.PersonNumber)] = m; });
+          }
+        }
+
+        // Sicherstellen, dass Rechnungen da sind
+        if (!window._invoices || window._invoices.length === 0) {
+          if (typeof loadRechnungenData === 'function') {
+            await loadRechnungenData(true, false);
+          }
+        }
+
+        window._jbAllBeitraege = headRes.data.map(mapContributionHeaderFromSupabase);
+        window._jbAllPositions = (posRes.data || []).map(mapContributionPositionFromSupabase);
+        window._jbAllParticipations = (partRes.data || []).map(mapParticipationFromSupabase);
+        window._jbGebuehren = (gebRes.data || []).map(mapGebuehrFromSupabase);
+
+        _jbAllBeitraege = window._jbAllBeitraege;
+        _jbAllPositions = window._jbAllPositions;
+        _jbAllParticipations = window._jbAllParticipations;
+
+        // Für das aktive Jahr filtern
+        _jbData = _jbAllBeitraege.filter(h => Number(h.year) === Number(_jbYear));
+
+        _jbParticipationsCache = {};
+        _jbAllParticipations.forEach(p => {
+          if (Number(p.year) === Number(_jbYear)) {
+            const pn = String(p.PersonNumber).trim();
+            if (!_jbParticipationsCache[pn]) _jbParticipationsCache[pn] = [];
+            _jbParticipationsCache[pn].push(p);
+          }
+        });
+
+        _jbPositionsCache = {};
+        _jbAllPositions.forEach(p => {
+          if (Number(p.year) === Number(_jbYear)) {
+            const hid = String(p.headerid).trim();
+            if (!_jbPositionsCache[hid]) _jbPositionsCache[hid] = [];
+            _jbPositionsCache[hid].push(p);
+          }
+        });
+
+        window._jbAllInvoices = window._invoices || [];
+        jbMergeInvoicesIntoData(window._jbAllInvoices);
+
+        jbApplyTableSorting();
+        jbApplySidebarSorting();
+        renderJahresbeitragView();
+        return;
+      }
+    } catch (supaErr) {
+      console.warn("⚠️ Supabase Jahresbeitrag Abfrage fehlgeschlagen, nutze GAS-Fallback:", supaErr);
+    }
+  }
+
+  // 2. FALLBACK: GOOGLE APPS SCRIPT / SHEETS
   try {
     const t = Date.now();
     const [beitraege, members, participations, positions, invoicesRes, gebuehrenRes] = await Promise.all([
@@ -135,6 +294,8 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
     if (!members.success)   throw new Error(members.error);
     if (!participations.success) throw new Error(participations.error);
     if (!positions.success) throw new Error(positions.error);
+
+    window._jahresbeitragIsSupabase = false;
 
     // Alle aktiven, passiven und ehrenwerten lebenden Mitglieder filtern
     _jbMembers = (members.data || []).filter(m => 
@@ -193,6 +354,149 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
     container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
   }
 }
+
+// ============================================================
+// 1-KLICK-MIGRATION: ALLE BEITRÄGE AUS GOOGLE SHEETS NACH SUPABASE
+// ============================================================
+window.syncJahresbeitragFromLegacy = async function() {
+  const supa = getJahresbeitragSupabaseClient();
+  if (!supa) {
+    alert("❌ Supabase Client ist nicht initialisiert. Bitte Seite neu laden.");
+    return;
+  }
+
+  if (!confirm("Möchtest du jetzt alle Beitragsrechnungen, Positionen, Turnierteilnahmen und die Gebührenordnung aus Google Sheets nach Supabase importieren?")) {
+    return;
+  }
+
+  const btn = document.getElementById('jb-sync-legacy-btn');
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Importiere...';
+  }
+
+  try {
+    const t = Date.now();
+    const [beitraegeRes, positionsRes, partRes, gebRes] = await Promise.all([
+      apiFetch('jahresbeitrag', `action=getBeitraege&_t=${t}`).then(r => r.json()),
+      apiFetch('jahresbeitrag', `action=getPositionen&_t=${t}`).then(r => r.json()),
+      apiFetch('jahresbeitrag', `action=getParticipations&_t=${t}`).then(r => r.json()),
+      apiFetch('jahresbeitrag', `action=getGebuehren&_t=${t}`).then(r => r.json())
+    ]);
+
+    let importedHeaders = 0;
+    let importedPositions = 0;
+    let importedParticipations = 0;
+    let importedGebuehren = 0;
+
+    // 1. Gebührenordnung importieren
+    const gebList = gebRes.data || [];
+    if (gebList.length > 0) {
+      const dbGebuehren = gebList.map(g => ({
+        key: String(g.key || '').trim(),
+        bezeichnung: String(g.bezeichnung || '').trim(),
+        bezeichnung_frontend: String(g.bezeichnungfrontend || g.bezeichnung || '').trim(),
+        betrag: Number(g.betrag || 0),
+        konto_haben: String(g['Haben-Konto-Jahresbeitrag-Buchhaltung'] || g.konto_haben || g.konto || '3000').trim(),
+        kategorie: String(g.kategorie || g.ui_gruppe || 'Jahresbeitrag').trim(),
+        sort_order: Number(g.ui_sort || g.sort_order || 10),
+        updated_at: new Date().toISOString()
+      })).filter(g => !!g.key);
+
+      const { error: errGeb } = await supa.from('gebuehren_config').upsert(dbGebuehren, { onConflict: 'key' });
+      if (errGeb) console.warn("Warnung bei Gebühren-Import:", errGeb);
+      else importedGebuehren = dbGebuehren.length;
+    }
+
+    // 2. Beitrags-Header importieren
+    const headers = beitraegeRes.data || [];
+    if (headers.length > 0) {
+      const dbHeaders = headers.map(h => ({
+        id: String(h.id || `${h.year}-${h.PersonNumber}`),
+        person_number: String(h.PersonNumber || '').trim(),
+        year: Number(h.year),
+        status: h.status || 'offen',
+        gesamt: Number(h.Gesamt || 0),
+        payment_date: h.payment_date || h.paymentdate || null,
+        payment_method: h.payment_method || h.paymentmethod || null,
+        document_ref: h.document_ref || h.documentref || null,
+        invoice_id: h.invoiceId || null,
+        created_at: h.createdat ? new Date(h.createdat).toISOString() : new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })).filter(h => !!h.person_number && !!h.year);
+
+      // In Chunks von 50 hochladen
+      for (let i = 0; i < dbHeaders.length; i += 50) {
+        const chunk = dbHeaders.slice(i, i + 50);
+        const { error: errHead } = await supa.from('contributions_header').upsert(chunk, { onConflict: 'person_number,year' });
+        if (errHead) console.warn("Warnung bei Header-Chunk-Import:", errHead);
+        else importedHeaders += chunk.length;
+      }
+    }
+
+    // 3. Positionen importieren
+    const positions = positionsRes.positions || [];
+    if (positions.length > 0) {
+      const dbPositions = positions.map(p => ({
+        id: String(p.id || `${p.headerid}-${p.position_nr || 1}`),
+        header_id: String(p.headerid || '').trim(),
+        person_number: String(p.PersonNumber || '').trim(),
+        year: Number(p.year),
+        position_nr: Number(p.position_nr || 1),
+        beschreibung: String(p.beschreibung || p.name || 'Position').trim(),
+        betrag: Number(p.betrag || 0),
+        typ: String(p.typ || 'Debit').trim(),
+        source_field: String(p.sourcefield || p.source_field || p.key || '').trim(),
+        konto: String(p.konto || '3000').trim(),
+        last_upd: new Date().toISOString()
+      })).filter(p => !!p.header_id && !!p.person_number);
+
+      for (let i = 0; i < dbPositions.length; i += 50) {
+        const chunk = dbPositions.slice(i, i + 50);
+        const { error: errPos } = await supa.from('contributions_positions').upsert(chunk, { onConflict: 'id' });
+        if (errPos) console.warn("Warnung bei Positionen-Chunk-Import:", errPos);
+        else importedPositions += chunk.length;
+      }
+    }
+
+    // 4. Turnierteilnahmen importieren
+    const partList = partRes.data || [];
+    if (partList.length > 0) {
+      const dbParts = partList.map(p => ({
+        id: String(p.id || `${p.PersonNumber}-${p.year}-${p.eventkey}`),
+        person_number: String(p.PersonNumber || '').trim(),
+        year: Number(p.year),
+        event_key: String(p.eventkey || '').trim(),
+        teilgenommen: Number(p.teilgenommen || 0),
+        quelle: String(p.quelle || 'legacy-sync').trim(),
+        erfasst_am: p.erfasstam ? new Date(p.erfasstam).toISOString() : new Date().toISOString(),
+        erfasst_von: String(p.erfasstvon || 'sync').trim()
+      })).filter(p => !!p.person_number && !!p.year && !!p.event_key);
+
+      for (let i = 0; i < dbParts.length; i += 50) {
+        const chunk = dbParts.slice(i, i + 50);
+        const { error: errPart } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
+        if (errPart) console.warn("Warnung bei Teilnahmen-Chunk-Import:", errPart);
+        else importedParticipations += chunk.length;
+      }
+    }
+
+    alert(`🎉 Migration erfolgreich!\n\n${importedHeaders} Beitragsrechnungen\n${importedPositions} Positionen\n${importedParticipations} Wettkampfteilnahmen\n${importedGebuehren} Gebühren\nerfolgreich nach Supabase importiert.`);
+    
+    // Daten neu laden
+    await loadJahresbeitragData(true, true);
+
+  } catch (err) {
+    console.error("❌ Fehler bei Synchronisation:", err);
+    alert("Fehler beim Import: " + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+};
 
 // Invoices aus Rechnungen_GAS mit den Beitrags-Header-Einträgen mergen
 function jbMergeInvoicesIntoData(invoices) {
@@ -277,6 +581,16 @@ function renderJahresbeitragView() {
 
   if (_jbActiveTab === 'overview') {
     jbRenderRows(_jbData);
+    if (typeof TableKit !== 'undefined' && typeof TableKit.setupColumnToggle === 'function') {
+      setTimeout(() => {
+        TableKit.setupColumnToggle({
+          tableId: 'jbTable',
+          dropdownId: 'jbTableColToggleDropdown',
+          badgeId: 'jbTableColToggleBadge',
+          storageKey: 'portal_jb_overview_cols'
+        });
+      }, 50);
+    }
   } else if (_jbActiveTab === 'entry') {
     jbRenderEntryList();
     jbAddScrollSupport();

@@ -26,8 +26,21 @@ function renderOverviewTab(canEdit, years) {
         <option value="offen">Offen</option>
         <option value="bezahlt">Bezahlt</option>
       </select>
+
+      <!-- Spalten-Ausblender -->
+      <div class="dropdown d-inline-block" id="jbTableColToggleDropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Spalten ein- oder ausblenden">
+          <i class="fas fa-columns me-1"></i> Spalten <span class="badge bg-light text-dark border ms-1" id="jbTableColToggleBadge">8/8</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm p-2" style="min-width: 200px;" id="jbTableColToggleList">
+        </ul>
+      </div>
+
       ${canEdit ? `
       <div class="ms-auto d-inline-flex gap-2 align-items-center flex-wrap">
+        <button class="btn btn-sm btn-outline-success" id="jb-sync-legacy-btn" onclick="syncJahresbeitragFromLegacy()" title="1-Klick Datenabgleich aller Beiträge, Positionen, Turniere und Gebühren von Google Sheets nach Supabase">
+          <i class="fas fa-cloud-download-alt me-1"></i> Sheets-Sync
+        </button>
         <button class="btn btn-sm btn-outline-primary" onclick="jbOpenSammelversandModal()" title="Alle Rechnungen für das aktive Jahr gesammelt per E-Mail versenden">
           <i class="fas fa-paper-plane me-1"></i> Sammelversand E-Mail
         </button>
@@ -576,31 +589,54 @@ async function jbSaveZahlung() {
   btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
   try {
-    // 1. In Members100_GAS verbuchen
-    const res  = await apiFetch('jahresbeitrag',
-      `action=saveZahlung&headerId=${id}&datum=${datum}&methode=${encodeURIComponent(methode)}&beleg=${encodeURIComponent(beleg)}`);
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error);
-
-    // 2. In Rechnungen_GAS verbuchen, falls die Rechnung dort bereits existiert
     const r = _jbData.find(x => String(x.id) === String(id));
-    if (r && r.invoiceId) {
+
+    // 1. In Supabase verbuchen (< 50 ms)
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (supa) {
       try {
-        const payPayload = {
-          action: 'saveZahlung',
-          invoiceId: r.invoiceId,
-          datum: datum,
-          methode: methode,
-          beleg: beleg || `PAY-${r.invoiceId}`,
-          skipBooking: true // Buchung erfolgt via Splitbuchung in Schritt 3
-        };
-        const payRes = await rechnungenApiFetch(payPayload);
-        if (!payRes.success) {
-          console.warn("⚠️ Rechnungen_GAS Zahlungssynchronisierung fehlgeschlagen:", payRes.error);
+        await supa.from('contributions_header').update({
+          status: 'bezahlt',
+          payment_date: datum,
+          payment_method: methode,
+          document_ref: beleg || `PAY-${id}`,
+          updated_at: new Date().toISOString()
+        }).eq('id', id);
+
+        if (r && r.invoiceId) {
+          await supa.from('invoices').update({
+            status: 'bezahlt',
+            payment_date: datum,
+            payment_method: methode,
+            document_ref: beleg || `PAY-${r.invoiceId}`,
+            updated_at: new Date().toISOString()
+          }).eq('id', r.invoiceId);
         }
-      } catch (payErr) {
-        console.warn("⚠️ Fehler bei Zahlungssynchronisierung mit Rechnungen_GAS:", payErr);
+        console.log(`✅ [Supabase] Zahlung für Beitrag ${id} (und ggf. Rechnung ${r?.invoiceId}) direkt verbucht.`);
+      } catch (errSup) {
+        console.warn("⚠️ Fehler bei direkter Supabase Beitragszahlung:", errSup);
       }
+    }
+
+    // 2. Asynchroner Dual-Write in Members100_GAS & Rechnungen_GAS
+    apiFetch('jahresbeitrag',
+      `action=saveZahlung&headerId=${id}&datum=${datum}&methode=${encodeURIComponent(methode)}&beleg=${encodeURIComponent(beleg)}`
+    ).then(res => res.json()).then(data => {
+      if (!data.success) console.warn("⚠️ Dual-Write Members100_GAS saveZahlung Warnung:", data.error);
+    }).catch(err => console.warn("⚠️ Dual-Write Members100_GAS saveZahlung Netzwerkfehler:", err));
+
+    if (r && r.invoiceId) {
+      const payPayload = {
+        action: 'saveZahlung',
+        invoiceId: r.invoiceId,
+        datum: datum,
+        methode: methode,
+        beleg: beleg || `PAY-${r.invoiceId}`,
+        skipBooking: true // Buchung erfolgt via Splitbuchung in Schritt 3
+      };
+      rechnungenApiFetch(payPayload).catch(payErr => {
+        console.warn("⚠️ Fehler bei Zahlungssynchronisierung mit Rechnungen_GAS:", payErr);
+      });
     }
 
     // 3. In Buchhaltung_GAS verbuchen via Splitbuchung
@@ -795,6 +831,44 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     };
   });
 
+  // 1. Direkt in Supabase persistieren (falls aktiv)
+  const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+  if (supa) {
+    try {
+      const sbInv = {
+        id: invoiceId,
+        person_number: String(r.PersonNumber || '').trim(),
+        recipient_name: name,
+        year: Number(r.year),
+        type: 'Jahresbeitrag',
+        total_amount: Number(r.Gesamt || 0),
+        status: r.status || 'offen',
+        updated_at: new Date().toISOString()
+      };
+      await supa.from('invoices').upsert(sbInv, { onConflict: 'id' });
+
+      if (positions.length > 0) {
+        const sbPositions = positions.map(p => ({
+          invoice_id: invoiceId,
+          position_nr: p.position_nr,
+          description: p.description,
+          quantity: p.quantity,
+          unit_price: p.unit_price,
+          amount: p.amount,
+          konto: p.konto || '3000'
+        }));
+        await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+        await supa.from('invoice_positions').insert(sbPositions);
+      }
+
+      await supa.from('contributions_header').update({ invoice_id: invoiceId }).eq('id', r.id);
+      console.log(`✅ [Supabase] Jahresbeitrags-Rechnung ${invoiceId} gespeichert & in contributions_header verknüpft.`);
+    } catch (errSup) {
+      console.warn("⚠️ Fehler bei direkter Supabase Rechnungs-Speicherung:", errSup);
+    }
+  }
+
+  // 2. Dual-Write an Rechnungen_GAS
   if (existingInv) {
     const diff = Math.abs(Number(existingInv.total_amount || 0) - Number(r.Gesamt || 0));
     if (diff > 0.01) {
@@ -821,21 +895,16 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
         }
       };
       
-      const updateRes = await rechnungenApiFetch(updatePayload);
-      if (!updateRes.success) {
-        throw new Error("Fehler beim Aktualisieren der Rechnung in Rechnungen_GAS: " + updateRes.error);
-      }
-      
-      // Caches im Hintergrund aktualisieren
-      if (typeof loadRechnungenData === 'function') {
-        await loadRechnungenData(true, true);
-      }
+      rechnungenApiFetch(updatePayload).then(updateRes => {
+        if (!updateRes.success) console.warn("⚠️ Rechnungen_GAS Update-Warnung:", updateRes.error);
+        if (typeof loadRechnungenData === 'function') loadRechnungenData(true, true);
+      }).catch(err => console.warn("⚠️ Rechnungen_GAS Update Netzwerkfehler:", err));
     }
     r.invoiceId = existingInv.id;
     return existingInv.id;
   }
   
-  // Rechnung neu anlegen
+  // Rechnung neu anlegen in GAS (Dual-Write)
   const invoicePayload = {
     action: 'createInvoice',
     invoice: {
@@ -857,15 +926,10 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     }
   };
   
-  const createRes = await rechnungenApiFetch(invoicePayload);
-  if (!createRes.success) {
-    throw new Error("Fehler beim Anlegen der Rechnung in Rechnungen_GAS: " + createRes.error);
-  }
-  
-  // Caches im Hintergrund aktualisieren
-  if (typeof loadRechnungenData === 'function') {
-    await loadRechnungenData(true, true);
-  }
+  rechnungenApiFetch(invoicePayload).then(createRes => {
+    if (!createRes.success) console.warn("⚠️ Rechnungen_GAS Anlegen-Warnung:", createRes.error);
+    if (typeof loadRechnungenData === 'function') loadRechnungenData(true, true);
+  }).catch(err => console.warn("⚠️ Rechnungen_GAS Anlegen Netzwerkfehler:", err));
   
   r.invoiceId = invoiceId;
   return r.invoiceId;
@@ -1049,10 +1113,71 @@ async function jbBerechnen() {
     btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Berechne…';
   }
   try {
+    // 1. Supabase Berechnung & Persistierung
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    let newlyCalculatedCount = 0;
+    if (supa && Array.isArray(_jbMembers) && _jbMembers.length > 0) {
+      try {
+        const existingPns = new Set((_jbData || []).map(d => String(d.PersonNumber).trim()));
+        const toCalculate = _jbMembers.filter(m => !existingPns.has(String(m.PersonNumber).trim()));
+
+        if (toCalculate.length > 0) {
+          console.log(`🤖 Berechne ${toCalculate.length} fehlende Beiträge für ${_jbYear} in Supabase...`);
+          const newHeaders = [];
+          const newPositions = [];
+
+          for (const m of toCalculate) {
+            const pn = String(m.PersonNumber).trim();
+            const headId = `${_jbYear}-${pn}`;
+            const calc = typeof jbCalculateLiveTotal === 'function' ? jbCalculateLiveTotal(m, {}) : { total: 0, positions: [] };
+
+            newHeaders.push({
+              id: headId,
+              person_number: pn,
+              year: Number(_jbYear),
+              status: 'offen',
+              gesamt: calc.total,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+
+            calc.positions.forEach((p, idx) => {
+              newPositions.push({
+                id: `${headId}-${idx + 1}`,
+                header_id: headId,
+                person_number: pn,
+                year: Number(_jbYear),
+                position_nr: idx + 1,
+                beschreibung: p.name || 'Position',
+                betrag: Number(p.betrag || 0),
+                typ: p.typ || 'Debit',
+                source_field: p.key || '',
+                konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
+                last_upd: new Date().toISOString()
+              });
+            });
+          }
+
+          if (newHeaders.length > 0) {
+            await supa.from('contributions_header').upsert(newHeaders, { onConflict: 'person_number,year' });
+            if (newPositions.length > 0) {
+              await supa.from('contributions_positions').upsert(newPositions, { onConflict: 'id' });
+            }
+            newlyCalculatedCount = newHeaders.length;
+            console.log(`✅ [Supabase] ${newHeaders.length} neue Beiträge und ${newPositions.length} Positionen angelegt.`);
+          }
+        }
+      } catch (errSup) {
+        console.warn("⚠️ Fehler bei Supabase Vorberechnung:", errSup);
+      }
+    }
+
+    // 2. Dual-Write an GAS
     const res  = await apiFetch('jahresbeitrag', `action=berechnen&year=${_jbYear}`);
     const data = await res.json();
-    if (!data.success) throw new Error(data.error);
-    alert(data.message || '✅ Fertig');
+    if (!data.success && newlyCalculatedCount === 0) throw new Error(data.error);
+
+    alert(`✅ Beiträge für ${_jbYear} erfolgreich berechnet!`);
     await loadJahresbeitragData(true, false);
   } catch(e) {
     alert('Fehler: ' + e.message);

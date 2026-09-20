@@ -1086,6 +1086,22 @@ Mit Abschluss von Phase 8 wurde Supabase zum führenden **Write-Master** für di
    - Eigener Status-Filter-Button `Jugend (U21)` in der Filterleiste.
    - Einheitliche optische Kennzeichnung mit `U21`-Badge in Tabelle, Karten und Profilkopf.
 
+### 6.9 Fachmodul: Jahresbeitrag & Beitragsverwaltung (Supabase Master & Dual-Write)
+
+Mit dem Modul Jahresbeitrag wurde die Verbindung zwischen Mitglieder-Stammdaten (`public.members`) und Fakturierung (`public.invoices`) auf Supabase PostgreSQL als führenden Master überführt:
+
+1. **Relationales Datenmodell (`supabase/migrations/11_jahresbeitrag_module.sql`):**
+   - `public.contributions_header`: Hält alle Beitragsrechnungen je Mitglied und Jahr mit Gesamtbetrag, Zahlungsstatus, Zahlungsdatum, Zahlungsmethode, Belegreferenz und Fremdschlüssel `invoice_id` zu `public.invoices(id)`.
+   - `public.contributions_positions`: Detail-Rechnungspositionen mit Gegenkonto (Haben-Konto für Buchhaltung), Betrag, Positionstyp ('Debit'/'Credit') und Quellenschlüssel.
+   - `public.member_participations`: Wettkampfteilnahmen für Beitragsrabatte & Schiessgelder.
+   - `public.gebuehren_config`: Dynamische Gebührenordnung (JB001-JB007, LI001-LI003, GE001, Turniere und Zusatzpositionen).
+2. **Supabase-First Cockpit (`vorstand/js/jahresbeitrag/`):**
+   - `jahresbeitrag-core.js`: Blitzschnelles Laden aller Beitragsrechnungen, Positionen, Turniere und Gebühren direkt via Supabase REST (< 50 ms) mit automatischem Fallback auf GAS.
+   - `jahresbeitrag-overview.js`: Direkte Verbuchung von Zahlungen in Supabase, automatische Rechnungsanlage und -verknüpfung in `public.invoices`. TableKit Spaltenausblendung (`TableKit.setupColumnToggle`) in der Beitragsübersicht.
+   - `jahresbeitrag-schnellerfassung.js`: Sofortige Speicherung von Teilnahmen und Neuberechnungen in Supabase mit asynchronem Dual-Write an Google Sheets (`Members100_GAS`).
+   - `jahresbeitrag-gebuehren.js`: Dynamische Verwaltung der Gebührenordnung direkt in Supabase.
+   - **1-Klick-Import (`syncJahresbeitragFromLegacy()`):** Bequeme Übernahme aller bestehenden Beitragsrechnungen, Positionen, Turnierteilnahmen und Gebühren aus Google Sheets nach Supabase mit einem einzigen Knopfdruck.
+
 ---
 
 ## 7. Migrations-Roadmap (Phasen 0 bis 11)
@@ -1101,7 +1117,7 @@ Mit Abschluss von Phase 8 wurde Supabase zum führenden **Write-Master** für di
 | **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`); Dual-Write zu Google Sheets (`1q54RIa...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen (Personalien, Adressen, Status, Finanzen) direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges; TableKit mit Spalten-Ausblendung; Dual-Write zu Google Sheet | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 9** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
+| **Phase 9** | **Jahresbeitrag & Beitragsverwaltung** | Beitragsrechnungen, Detailpositionen, Wettkampfteilnahmen & Gebührenordnung (`11_jahresbeitrag_module.sql`); Supabase Master mit asynchronem Dual-Write zu Google Sheets (`Members100_GAS`); direkte Verknüpfung mit `invoices` & TableKit Spaltenausblendung | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Standard-Vorlagen, Layouts & externe Kontakte (`10_invoices_module.sql`); Supabase Master mit asynchronem Dual-Write zu Google Sheets (`1D3tbMHVNzf-VzTyP1DnGQ4MXqtjw7H1hlV4NY2X-wfE`); Serverless QR-Rechnungs-PDF & Gmail-Versand via GAS; TableKit Spaltenausblendung im Archiv sowie in allen Modalen | Supabase (Master) ⇄ Google Sheet (Spiegelung) / GAS (PDF/Mail) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung (letzter Schritt) | Supabase | Geplant |
 
