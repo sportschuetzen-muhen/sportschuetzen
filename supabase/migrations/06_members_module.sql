@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS public.member_licenses (
 
 CREATE INDEX IF NOT EXISTS idx_licenses_person ON public.member_licenses(person_number);
 CREATE INDEX IF NOT EXISTS idx_licenses_active ON public.member_licenses(person_number, is_active);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_unique ON public.member_licenses(person_number, membership_category, entry_date);
 
 -- 3. TABELLE: public.member_functions (Vorstand & Vereinschargen)
 -- ------------------------------------------------------------------------------

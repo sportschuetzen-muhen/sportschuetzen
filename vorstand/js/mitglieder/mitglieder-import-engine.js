@@ -641,9 +641,14 @@
           is_active: lic.IsActive === 1,
           import_quelle: 'SSV-Import'
         };
-        await supa.from('member_licenses').upsert(licRecord, {
-          onConflict: 'person_number,membership_category,entry_date'
-        }).catch(e => console.warn('Lizenz-Fehler:', e));
+        try {
+          const { error: licErr } = await supa.from('member_licenses').upsert(licRecord, {
+            onConflict: 'person_number,membership_category,entry_date'
+          });
+          if (licErr) console.warn('⚠️ Lizenz-Fehler bei Mitglied ' + pn + ':', licErr);
+        } catch (e) {
+          console.warn('⚠️ Lizenz-Fehler bei Mitglied ' + pn + ':', e);
+        }
       }
 
       // 3. Historie-Einträge für jedes freigegebene Diff erzeugen
@@ -664,7 +669,12 @@
 
     // Historie batch-eintragen
     if (historyEntries.length > 0) {
-      await supa.from('member_history').insert(historyEntries).catch(e => console.warn('History Insert:', e));
+      try {
+        const { error: histErr } = await supa.from('member_history').insert(historyEntries);
+        if (histErr) console.warn('⚠️ History Insert Fehler:', histErr);
+      } catch (e) {
+        console.warn('⚠️ History Insert Exception:', e);
+      }
     }
 
     // 4. DUAL-WRITE: Synchronisation zum Google Sheet (Test-Kopie)

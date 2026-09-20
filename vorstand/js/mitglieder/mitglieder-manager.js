@@ -109,15 +109,20 @@ async function mglSaveMember(event, pn) {
       if (Boolean(oldMember.IsPassive) !== isPassive) changesSummary.push(`Status: ${isPassive ? 'Passiv' : 'Aktiv'}`);
       if (Boolean(oldMember.IsHonoraryMember) !== isHonorary) changesSummary.push(`Ehrenmitglied: ${isHonorary ? 'Ja' : 'Nein'}`);
 
-      await supa.from('member_history').insert({
-        person_number: Number(pn),
-        ereignistyp: 'Mutation Vorstand',
-        alterwert: `Name: ${oldMember.FirstName || ''} ${oldMember.LastName || ''}, Ort: ${oldMember.City || '-'}, Status: ${oldMember._istPassiv ? 'Passiv' : 'Aktiv'}`,
-        neuerwert: changesSummary.length ? changesSummary.join('; ') : 'Stammdaten aktualisiert',
-        name: `${firstName} ${lastName}`,
-        erfasst_von: window.currentUser?.email || 'Vorstand',
-        datum: new Date().toISOString().split('T')[0]
-      }).catch(err => console.warn('⚠️ member_history Audit-Insert:', err));
+      try {
+        const { error: histErr } = await supa.from('member_history').insert({
+          person_number: Number(pn),
+          ereignistyp: 'Mutation Vorstand',
+          alterwert: `Name: ${oldMember.FirstName || ''} ${oldMember.LastName || ''}, Ort: ${oldMember.City || '-'}, Status: ${oldMember._istPassiv ? 'Passiv' : 'Aktiv'}`,
+          neuerwert: changesSummary.length ? changesSummary.join('; ') : 'Stammdaten aktualisiert',
+          name: `${firstName} ${lastName}`,
+          erfasstvon: window.currentUser?.email || 'Vorstand',
+          datum: new Date().toISOString().split('T')[0]
+        });
+        if (histErr) console.warn('⚠️ member_history Audit-Insert:', histErr);
+      } catch (err) {
+        console.warn('⚠️ member_history Audit-Insert Exception:', err);
+      }
     }
 
     // 3. ASYNCHRONER DUAL-WRITE: Spiegelung an Google Apps Script / Sheet
@@ -307,15 +312,20 @@ async function mglSaveNeu() {
       if (insErr) throw new Error('Supabase Insert-Fehler: ' + insErr.message);
 
       // Audit Log
-      await supa.from('member_history').insert({
-        person_number: nextPn,
-        ereignistyp: 'Vereinseintritt',
-        alterwert: '-',
-        neuerwert: `Neuaufnahme intern: ${vorname} ${nachname}`,
-        name: `${vorname} ${nachname}`,
-        erfasst_von: window.currentUser?.email || 'Vorstand',
-        datum: new Date().toISOString().split('T')[0]
-      }).catch(e => console.warn('member_history error:', e));
+      try {
+        const { error: histErr } = await supa.from('member_history').insert({
+          person_number: nextPn,
+          ereignistyp: 'Vereinseintritt',
+          alterwert: '-',
+          neuerwert: `Neuaufnahme intern: ${vorname} ${nachname}`,
+          name: `${vorname} ${nachname}`,
+          erfasstvon: window.currentUser?.email || 'Vorstand',
+          datum: new Date().toISOString().split('T')[0]
+        });
+        if (histErr) console.warn('member_history error:', histErr);
+      } catch (e) {
+        console.warn('member_history exception:', e);
+      }
     }
 
     // 2. DUAL-WRITE: Asynchron an Google Apps Script

@@ -343,9 +343,14 @@ window.syncAllMitgliederToSupabase = async function() {
 
     for (let i = 0; i < licRecords.length; i += 50) {
       const chunk = licRecords.slice(i, i + 50);
-      await supa.from('member_licenses').upsert(chunk, {
-        onConflict: 'person_number,membership_category,entry_date'
-      }).catch(e => console.warn('Sync Lic Chunk Error:', e));
+      try {
+        const { error: licErr } = await supa.from('member_licenses').upsert(chunk, {
+          onConflict: 'person_number,membership_category,entry_date'
+        });
+        if (licErr) console.warn('Sync Lic Chunk Error:', licErr);
+      } catch (e) {
+        console.warn('Sync Lic Chunk Exception:', e);
+      }
     }
   }
 
@@ -365,7 +370,12 @@ window.syncAllMitgliederToSupabase = async function() {
 
     for (let i = 0; i < fnRecords.length; i += 50) {
       const chunk = fnRecords.slice(i, i + 50);
-      await supa.from('member_functions').upsert(chunk).catch(e => console.warn('Sync Fn Chunk Error:', e));
+      try {
+        const { error: fnErr } = await supa.from('member_functions').upsert(chunk);
+        if (fnErr) console.warn('Sync Fn Chunk Error:', fnErr);
+      } catch (e) {
+        console.warn('Sync Fn Chunk Exception:', e);
+      }
     }
   }
 
