@@ -1,8 +1,9 @@
 // =========================================================
 //  RESULTATE (Grenzland) - UI Rendering
+//  Native Supabase Architecture mit Google Apps Script Fallback
 // =========================================================
 
-function loadResultateData(force = false) {
+async function loadResultateData(force = false) {
   ensureResultateShell();
 
   if (!force && resultateState.rows.length > 0 && document.getElementById('resultate-app')) {
@@ -13,6 +14,55 @@ function loadResultateData(force = false) {
   setStatus("Lade…", false);
   renderLoading();
 
+  const supa = getResultateSupabaseClient();
+  const contestType = window._resultateContestType || "grenzland";
+  const year = window._resultateYear || new Date().getFullYear();
+
+  // 1. ZUERST SUPABASE PRÜFEN
+  if (supa) {
+    try {
+      console.log(`📡 [Supabase] Lade Resultate für ${contestType} (${year})...`);
+      
+      // Parallel: Resultate, aktive Mitglieder und konfigurierte Teams
+      const [resResult, membersResult, teamsResult] = await Promise.allSettled([
+        supa.from('contest_results').select('*').eq('contest_type', contestType).eq('year', year),
+        supa.from('members').select('person_number, first_name, last_name, primary_email').eq('is_active', true),
+        supa.from('contest_teams').select('team_name').eq('contest_type', contestType).eq('year', year).order('sort_order')
+      ]);
+
+      const supaRows = (resResult.status === 'fulfilled' && !resResult.value.error) ? (resResult.value.data || []) : null;
+      const supaMembers = (membersResult.status === 'fulfilled' && !membersResult.value.error) ? (membersResult.value.data || []) : [];
+      const supaTeams = (teamsResult.status === 'fulfilled' && !teamsResult.value.error) ? (teamsResult.value.data || []).map(t => t.team_name) : [];
+
+      // Wenn Supabase Daten liefert
+      if (supaRows && supaRows.length > 0) {
+        window._resultateIsSupabase = true;
+        console.log(`✅ [Supabase] ${supaRows.length} Resultate-Zeilen geladen.`);
+
+        resultateState.members = supaMembers.map(m => ({
+          id: String(m.person_number),
+          vorname: m.first_name || "",
+          nachname: m.last_name || "",
+          email: m.primary_email || ""
+        }));
+
+        resultateState.rows = supaRows.map(r => mapContestResultFromSupabase(r));
+        resultateState.teams = buildTeamsList(supaTeams, resultateState.rows);
+        resultateState.isDirty = false;
+
+        renderUI();
+        updateBackendBadge();
+        setStatus("Alles geladen (Supabase)", false);
+        return;
+      }
+      console.warn("⚠️ [Supabase] Noch keine Resultate-Zeilen für dieses Jahr vorhanden. Wechsle zu GAS-Fallback...");
+    } catch (supaErr) {
+      console.warn("⚠️ [Supabase] Fehler beim Laden der Resultate:", supaErr);
+    }
+  }
+
+  // 2. FALLBACK: Google Apps Script API
+  window._resultateIsSupabase = false;
   return apiFetch("manager", "action=getResultateData&sheetName=aktuell_Grenzland")
     .then(r => r.text())
     .then(txt => {
@@ -34,13 +84,48 @@ function loadResultateData(force = false) {
       resultateState.isDirty = false;
 
       renderUI();
-      setStatus("Alles geladen", false);
+      updateBackendBadge();
+      setStatus("Alles geladen (GAS)", false);
+
+      // Auto-Seed in Supabase im Hintergrund, falls Supabase aktiv ist
+      if (supa && incoming.length > 0) {
+        syncFallbackToSupabase(incoming, contestType, year);
+      }
     })
     .catch(e => {
       const wrap = document.getElementById("resultate-wrap");
       if (wrap) wrap.innerHTML = `<div class="alert alert-danger">Fehler: ${escapeHtml(e.message)}</div>`;
       setStatus("Fehler", false);
     });
+}
+
+// Hilfsfunktion: Dual-Seed von GAS nach Supabase
+async function syncFallbackToSupabase(rows, contestType, year) {
+  const supa = getResultateSupabaseClient();
+  if (!supa || !rows || rows.length === 0) return;
+  try {
+    const payload = rows.map(r => mapContestResultToSupabase(r, contestType, year));
+    const { error } = await supa.from('contest_results').upsert(payload, { onConflict: 'contest_type,year,person_number' });
+    if (!error) {
+      console.log(`✅ [Supabase Seed] ${payload.length} Zeilen erfolgreich aus GAS nach Supabase gespiegelt.`);
+      window._resultateIsSupabase = true;
+      updateBackendBadge();
+    }
+  } catch (err) {
+    console.warn("Supabase Seed Hinweis:", err);
+  }
+}
+
+function updateBackendBadge() {
+  const badge = document.getElementById("resultate-backend-badge");
+  if (!badge) return;
+  if (window._resultateIsSupabase) {
+    badge.className = "badge bg-success ms-2";
+    badge.innerHTML = '<i class="fas fa-database me-1"></i> Supabase Master';
+  } else {
+    badge.className = "badge bg-warning text-dark ms-2";
+    badge.innerHTML = '<i class="fas fa-sync me-1"></i> GAS Fallback';
+  }
 }
 
 function ensureResultateShell() {
@@ -55,13 +140,16 @@ function ensureResultateShell() {
     <div id="resultate-app">
       <div class="d-flex justify-content-between align-items-center mb-3 sticky-top bg-white p-2 shadow-sm rounded" style="z-index: 600;">
         <div>
-          <h4 class="m-0">🏁 Resultate – Grenzland</h4>
-          <div class="small text-muted">Teams (R2/R3) werden von der vorherigen Runde übernommen, solange nicht manuell geändert.</div>
+          <div class="d-flex align-items-center">
+            <h4 class="m-0 fw-bold">🏁 Resultate – Grenzland</h4>
+            <span id="resultate-backend-badge" class="badge bg-secondary ms-2"><i class="fas fa-database me-1"></i> Prüfe...</span>
+          </div>
+          <div class="small text-muted mt-1">Teams (R2/R3) werden von der vorherigen Runde übernommen, solange nicht manuell geändert. (Max. 4 Schützen/Team)</div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
           <button class="btn btn-outline-warning btn-sm fw-semibold" onclick="openResultateOcrModal()" title="Resultate aus Foto mit KI einlesen">📸 Foto einlesen</button>
           <button class="btn btn-outline-primary btn-sm" onclick="pushOneSignalGrenzland()">📣 Push</button>
-          <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup_Grenzland übernehmen (nur fehlende)">📥 Von Setup laden</button>
+          <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup übernehmen (nur fehlende)">📥 Von Setup laden</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData(true)">🔄 Laden</button>
           <button id="btn-save-resultate" class="btn btn-success btn-sm fw-bold" onclick="saveResultateData()">💾 Speichern</button>
         </div>
@@ -73,27 +161,27 @@ function ensureResultateShell() {
         <div class="card-body">
           <div id="resultate-wrap"></div>
 
-   <div class="mt-3 p-2 border rounded bg-light">
-  <div class="fw-bold mb-2">Schütze hinzufügen (nur aus Mitglieder)</div>
-  <div class="d-flex gap-2 flex-wrap align-items-center">
-    <select id="new-member-select" class="form-select form-select-sm" style="max-width: 360px;">
-      <option value="">— Mitglied wählen —</option>
-    </select>
+          <div class="mt-3 p-2 border rounded bg-light">
+            <div class="fw-bold mb-2">Schütze hinzufügen (nur aus Mitglieder)</div>
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+              <select id="new-member-select" class="form-select form-select-sm" style="max-width: 360px;">
+                <option value="">— Mitglied wählen —</option>
+              </select>
 
-    <select id="new-start-round" class="form-select form-select-sm" style="max-width: 170px;">
-      <option value="r1">Start ab Runde 1</option>
-      <option value="r2">Start ab Runde 2</option>
-      <option value="r3">Start ab Runde 3</option>
-    </select>
+              <select id="new-start-round" class="form-select form-select-sm" style="max-width: 170px;">
+                <option value="r1">Start ab Runde 1</option>
+                <option value="r2">Start ab Runde 2</option>
+                <option value="r3">Start ab Runde 3</option>
+              </select>
 
-    <select id="new-start-team" class="form-select form-select-sm" style="max-width: 220px;">
-      <option value="">— Team wählen —</option>
-    </select>
+              <select id="new-start-team" class="form-select form-select-sm" style="max-width: 220px;">
+                <option value="">— Team wählen —</option>
+              </select>
 
-    <button class="btn btn-primary btn-sm" onclick="confirmAddSelectedMember()">Hinzufügen</button>
-    <div id="avail-count" class="small text-muted"></div>
-  </div>
-</div>
+              <button class="btn btn-primary btn-sm" onclick="confirmAddSelectedMember()">Hinzufügen</button>
+              <div id="avail-count" class="small text-muted"></div>
+            </div>
+          </div>
 
         </div>
       </div>
@@ -190,36 +278,36 @@ function injectStylesOnce() {
   s.id = "resultate-inline-style";
   s.textContent = `
     .round-head { border-left: 6px solid #0d6efd; }
-  .round-1 .team-card { border-top: 4px solid #0d6efd; background: #fbfdff; }
-.round-2 .team-card { border-top: 4px solid #198754; background: #fbfffd; }
-.round-3 .team-card { border-top: 4px solid #fd7e14; background: #fffdf9; }
+    .round-1 .team-card { border-top: 4px solid #0d6efd; background: #fbfdff; }
+    .round-2 .team-card { border-top: 4px solid #198754; background: #fbfffd; }
+    .round-3 .team-card { border-top: 4px solid #fd7e14; background: #fffdf9; }
 
     .team-card { border: 1px solid rgba(0,0,0,.08); }
     .team-card .card-body {
-  overflow-x: hidden;
-}
+      overflow-x: hidden;
+    }
     .team-badge { font-size: .75rem; }
     .rowline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .5rem;
-  align-items: center;
-}
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      align-items: center;
+    }
     @media (max-width: 576px) {
       .rowline { grid-template-columns: 1fr 1fr 80px; }
     }
     .name-cell {
-  flex: 1 1 220px;
-  min-width: 160px;
-}
-.rowline select {
-  flex: 0 1 170px;
-  min-width: 140px;
-}
+      flex: 1 1 220px;
+      min-width: 160px;
+    }
+    .rowline select {
+      flex: 0 1 170px;
+      min-width: 140px;
+    }
     .points-input {
-  flex: 0 0 90px;
-  max-width: 100%;
-}
+      flex: 0 0 90px;
+      max-width: 100%;
+    }
   `;
   document.head.appendChild(s);
 }
@@ -227,7 +315,7 @@ function injectStylesOnce() {
 function renderLoading() {
   const wrap = document.getElementById("resultate-wrap");
   if (!wrap) return;
-  wrap.innerHTML = `<div class="text-center p-4"><div class="spinner-border text-primary"></div><div class="text-muted mt-2">Lade…</div></div>`;
+  wrap.innerHTML = `<div class="text-center p-4"><div class="spinner-border text-primary"></div><div class="text-muted mt-2">Lade Resultate…</div></div>`;
 }
 
 function renderUI() {
@@ -295,7 +383,7 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
 
     const header = `
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span>${escapeHtml(teamName)}</span>
+        <span class="fw-bold">${escapeHtml(teamName)}</span>
         <span class="badge ${isPool ? "bg-secondary" : (count > TEAM_LIMIT ? "bg-danger" : "bg-primary")} team-badge">
           ${count}${isPool ? "" : "/" + TEAM_LIMIT}
         </span>
@@ -304,7 +392,7 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
 
     const body = list.length
       ? list.map(({r, idx}) => renderShooterLine(idx, roundKey, teamsPlusPool)).join("")
-      : `<div class="text-muted small">—</div>`;
+      : `<div class="text-muted small p-2">— Keine Schützen zugeteilt —</div>`;
 
     return `
       <div class="col-12 col-md-6 col-xl-4">
@@ -321,7 +409,7 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
   return `
     <div class="p-2 mb-3 rounded round-head ${roundClass}">
       <div class="d-flex justify-content-between align-items-center">
-        <h5 class="m-0">${escapeHtml(title)}</h5>
+        <h5 class="m-0 fw-bold">${escapeHtml(title)}</h5>
         <div class="small text-muted">Team-Limit: ${TEAM_LIMIT} (Pool unbegrenzt)</div>
       </div>
     </div>

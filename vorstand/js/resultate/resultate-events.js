@@ -301,6 +301,24 @@ async function startOcrAnalysis() {
       throw new Error(data.error || "Unerwarteter Fehler bei der Bilderkennung.");
     }
 
+    // Optionaler Audit-Log in Supabase
+    try {
+      const supa = typeof getResultateSupabaseClient === 'function' ? getResultateSupabaseClient() : null;
+      if (supa) {
+        supa.from('contest_ocr_logs').insert([{
+          id: 'ocr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+          contest_type: window._resultateContestType || 'grenzland',
+          round: round,
+          model_used: model,
+          recognized_count: (data.ergebnisse || []).length,
+          raw_response: data.ergebnisse || null,
+          created_by: localStorage.getItem('portal_user') || 'system'
+        }]).then(() => {}).catch(e => console.warn('Supabase OCR log:', e));
+      }
+    } catch (logErr) {
+      console.warn("OCR Log Exception:", logErr);
+    }
+
     renderOcrResults(data.ergebnisse, round);
   } catch (err) {
     console.error(err);

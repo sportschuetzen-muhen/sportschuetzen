@@ -1,28 +1,30 @@
 // =========================================================
 //  RESULTATE (Grenzland) - Actions / Server Requests
+//  Native Supabase Architecture mit Google Apps Script Dual-Write
 // =========================================================
 
 async function saveResultateData() {
-  // Validierung Punkte
+  // 1. Validierung Punkte (nur 0-100 oder leer)
   for (const r of resultateState.rows) {
-    if (!r.id) return alert("Es gibt eine Zeile ohne ID.");
+    if (!r.id) return alert("Es gibt eine Zeile ohne ID / Personennummer.");
     if (!isValidPoints(r.r1_p1) || !isValidPoints(r.r2_p1) || !isValidPoints(r.r3_p1)) {
       return alert("Bitte Punkte korrigieren: nur ganze Zahlen 0–100 (oder leer).");
     }
   }
 
-  // Limit-Check (Sperre) – Pool ausgenommen
-  const rounds = ["r1","r2","r3"];
+  // 2. Limit-Check (Sperre) – max 4 pro Team, Pool ausgenommen
+  const rounds = ["r1", "r2", "r3"];
   for (const rk of rounds) {
     const counts = new Map();
     resultateState.rows.forEach(r => {
-      const t = (r[`${rk}_team`] || "") || "";
-      if (!t) return; // leer == Pool
+      const t = (r[`${rk}_team`] || "").trim();
+      if (!t || t === POOL_LABEL) return; // leer oder Pool
       counts.set(t, (counts.get(t) || 0) + 1);
     });
     for (const [team, cnt] of counts.entries()) {
       if (cnt > TEAM_LIMIT) {
-        return alert(`${roundLabel(rk)}: Team "${team}" hat ${cnt} Zuteilungen (max ${TEAM_LIMIT}). Bitte korrigieren (Pool ist unbegrenzt).`);
+        const rLabel = rk === "r1" ? "Runde 1" : rk === "r2" ? "Runde 2" : "Runde 3";
+        return alert(`${rLabel}: Team "${team}" hat ${cnt} Zuteilungen (max ${TEAM_LIMIT}). Bitte korrigieren (Pool ist unbegrenzt).`);
       }
     }
   }
@@ -31,27 +33,81 @@ async function saveResultateData() {
   const original = btn ? btn.innerText : "Speichern";
   if (btn) { btn.disabled = true; btn.innerText = "Speichere..."; }
 
-  // Payload: Pool wird als "" gesendet (weil wir intern "" speichern, sobald Pool gewählt ist)
+  const contestType = window._resultateContestType || "grenzland";
+  const year = window._resultateYear || new Date().getFullYear();
+  const supa = getResultateSupabaseClient();
+
+  // Payload für GAS
   const payloadRows = resultateState.rows.map(r => ({
     id: r.id,
-    r1_team: r.r1_team || "",
+    r1_team: (r.r1_team === POOL_LABEL) ? "" : (r.r1_team || ""),
     r1_p1: r.r1_p1 || "",
-    r2_team: r.r2_team || "",
+    r2_team: (r.r2_team === POOL_LABEL) ? "" : (r.r2_team || ""),
     r2_p1: r.r2_p1 || "",
-    r3_team: r.r3_team || "",
+    r3_team: (r.r3_team === POOL_LABEL) ? "" : (r.r3_team || ""),
     r3_p1: r.r3_p1 || ""
   }));
 
-  try {
-    const res = await apiFetch("manager", "action=saveResultateData", {
-      method: "POST",
-      body: JSON.stringify({ sheetName: "aktuell_Grenzland", rows: payloadRows })
-    });
-    const txt = await res.text();
-    let data;
-    try { data = JSON.parse(txt); } catch { throw new Error("Speichern: Backend-Antwort ist kein JSON"); }
-    if (data.error) throw new Error(data.error);
+  let savedSuccessfully = false;
 
+  // 3. PRIMÄR: SUPABASE UPSERT
+  if (supa) {
+    try {
+      const supaRows = resultateState.rows.map(r => mapContestResultToSupabase(r, contestType, year));
+      console.log(`💾 [Supabase] Speichere ${supaRows.length} Resultate-Zeilen...`);
+
+      const { data, error } = await supa.from('contest_results').upsert(supaRows, {
+        onConflict: 'contest_type,year,person_number'
+      });
+
+      if (error) {
+        console.error("❌ [Supabase] Fehler beim Speichern der Resultate:", error);
+        throw error;
+      }
+
+      savedSuccessfully = true;
+      window._resultateIsSupabase = true;
+      if (typeof updateBackendBadge === 'function') updateBackendBadge();
+      console.log("✅ [Supabase] Resultate erfolgreich gesichert.");
+
+      // DUAL-WRITE: Asynchron an Google Sheets spiegeln (ohne Blockade)
+      apiFetch("manager", "action=saveResultateData", {
+        method: "POST",
+        body: JSON.stringify({ sheetName: "aktuell_Grenzland", rows: payloadRows })
+      }).then(r => r.text()).then(txt => {
+        console.log("📡 [Dual-Write] GAS-Sync Resultate abgeschlossen.");
+      }).catch(err => {
+        console.warn("⚠️ [Dual-Write] GAS-Sync Hinweis:", err.message);
+      });
+
+    } catch (supaErr) {
+      console.warn("⚠️ [Supabase] Fallback auf GAS wegen:", supaErr.message);
+    }
+  }
+
+  // 4. FALLBACK: GAS SPEICHERN (falls Supabase nicht erreichbar war)
+  if (!savedSuccessfully) {
+    try {
+      const res = await apiFetch("manager", "action=saveResultateData", {
+        method: "POST",
+        body: JSON.stringify({ sheetName: "aktuell_Grenzland", rows: payloadRows })
+      });
+      const txt = await res.text();
+      let data;
+      try { data = JSON.parse(txt); } catch { throw new Error("Speichern: Backend-Antwort ist kein JSON"); }
+      if (data.error) throw new Error(data.error);
+
+      savedSuccessfully = true;
+      console.log("✅ [GAS] Resultate erfolgreich gesichert.");
+    } catch (e) {
+      alert("Fehler beim Speichern: " + e.message);
+      if (btn) { btn.disabled = false; btn.innerText = original; }
+      setStatus("Fehler beim Speichern", true);
+      return;
+    }
+  }
+
+  if (savedSuccessfully) {
     resultateState.isDirty = false;
     setStatus("✅ Gespeichert", false);
 
@@ -59,10 +115,6 @@ async function saveResultateData() {
       btn.innerText = "✅ OK";
       setTimeout(() => { btn.innerText = original; btn.disabled = false; }, 1200);
     }
-  } catch (e) {
-    alert("Fehler beim Speichern: " + e.message);
-    if (btn) { btn.disabled = false; btn.innerText = original; }
-    setStatus("Fehler beim Speichern", true);
   }
 }
 
@@ -71,6 +123,64 @@ async function syncSetupToResultate() {
   const origText = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Syncing…'; }
 
+  const supa = getResultateSupabaseClient();
+  const contestType = window._resultateContestType || "grenzland";
+  const year = window._resultateYear || new Date().getFullYear();
+
+  // 1. ZUERST IN SUPABASE PRÜFEN
+  if (supa) {
+    try {
+      const { data: setupData, error: sErr } = await supa
+        .from('contest_setups')
+        .select('*')
+        .eq('contest_type', contestType)
+        .eq('year', year);
+
+      if (!sErr && setupData && setupData.length > 0) {
+        const existingIds = new Set(resultateState.rows.map(r => String(r.id)));
+        const missing = setupData.filter(s => !existingIds.has(String(s.person_number)));
+
+        if (missing.length > 0) {
+          const newSupaRows = missing.map(s => {
+            const team = (s.team || "").trim();
+            return {
+              id: `${contestType}_${year}_${s.person_number}`,
+              contest_type: contestType,
+              year: year,
+              person_number: String(s.person_number),
+              name: s.name,
+              stellung: s.stellung || "liegend",
+              r1_team: team,
+              r1_p1: null,
+              r2_team: team,
+              r2_p1: null,
+              r3_team: team,
+              r3_p1: null,
+              is_auto_r2: true,
+              is_auto_r3: true
+            };
+          });
+
+          const { error: insErr } = await supa.from('contest_results').upsert(newSupaRows, {
+            onConflict: 'contest_type,year,person_number'
+          });
+
+          if (!insErr) {
+            alert(`✅ ${missing.length} Schütze${missing.length === 1 ? '' : 'n'} aus Setup übernommen (Supabase).`);
+            await loadResultateData(true);
+            return;
+          }
+        } else {
+          alert('Alle Setup-Schützen sind bereits in Resultate vorhanden – nichts hinzugefügt.');
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Supabase Setup-Sync:", err);
+    }
+  }
+
+  // 2. FALLBACK: GAS SYNC
   try {
     const res = await apiFetch(
       'manager',
@@ -86,8 +196,7 @@ async function syncSetupToResultate() {
       alert('Alle Setup-Schützen sind bereits in Resultate vorhanden – nichts hinzugefügt.');
     } else {
       alert(`✅ ${added} Schütze${added === 1 ? '' : 'n'} aus Setup_Grenzland übernommen.`);
-      await loadResultateData(); // Neu laden damit UI aktuell ist
-      return; // loadResultateData setzt Status selbst
+      await loadResultateData(true);
     }
   } catch (e) {
     alert('Fehler beim Sync: ' + e.message);
