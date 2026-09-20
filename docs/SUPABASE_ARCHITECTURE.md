@@ -1,7 +1,7 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
 **Stand:** 2026-09-20  
-**Phase:** 0 bis 8 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine & Inventar  
+**Phase:** 0 bis 13 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate & Mail-Log  
 **Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
@@ -25,7 +25,9 @@
    - [Mitglieder-Synchronisation (XLSX → Sheets → Supabase)](#mitglieder-synchronisation-xlsx--sheets--supabase)
    - [Fachmodul: ANLÄSSE & UMFRAGEN](#64-fachmodul-anlässe--umfragen-phase-5--abgeschlossen--im-testbetrieb)
    - [Fachmodul: INVENTAR-VERWALTUNG](#65-fachmodul-inventar-verwaltung-phase-7--abgeschlossen--im-testbetrieb)
-7. [Migrations-Roadmap (Phasen 0 bis 11)](#7-migrations-roadmap-phasen-0-bis-11)
+   - [Fachmodul: RESULTATE & WETTKÄMPFE](#66-fachmodul-resultate--wettkämpfe-phase-12--abgeschlossen--im-testbetrieb)
+   - [Fachmodul: MAIL-LOG & VERSANDPROTOKOLL](#67-fachmodul-mail-log--versandprotokoll-phase-13--abgeschlossen--im-testbetrieb)
+7. [Migrations-Roadmap (Phasen 0 bis 13)](#7-migrations-roadmap-phasen-0-bis-13)
 
 ---
 
@@ -1104,7 +1106,56 @@ Mit dem Modul Jahresbeitrag wurde die Verbindung zwischen Mitglieder-Stammdaten 
 
 ---
 
-## 7. Migrations-Roadmap (Phasen 0 bis 11)
+## 6.6 Fachmodul: RESULTATE & WETTKÄMPFE (Phase 12 – Abgeschlossen & im Testbetrieb)
+
+Phase 12 implementiert das vollständige Schiessergebnis-Modul für den Grenzlandcup, die Mannschafts- und Gruppenmeisterschaft.
+
+**Datenbankmodell (`supabase/migrations/12_results_module.sql`):**
+- `public.contest_results` – Schiessresultate je Wettbewerb, Jahr, Runde & Schütze (bis zu 3 Runden à 2 Passen; auto-Vererbung via `is_auto_r2`/`is_auto_r3`)
+- `public.contest_setups` – Schützen-Zuteilungen aus dem Team Manager (Primärzuteilung je Runde)
+- `public.contest_teams` – Konfigurierte Teams je Wettbewerb & Jahr (inkl. `max_shooters`)
+- `public.contest_ocr_logs` – Audit-Trail für die KI-gestützte Standblatt-Erkennung (Gemini Vision)
+
+**Besonderheiten:**
+- `contest_type` unterscheidet `grenzland`, `mannschaft`, `gruppe`
+- Team-Vererbung über Runden hinweg (Standardfall: selbes Team in R2/R3 wie R1)
+- Initial-Stammdaten für Saison 2026 (Muhen 1–3 für alle Wettbewerbe)
+
+---
+
+## 6.7 Fachmodul: MAIL-LOG & VERSANDPROTOKOLL (Phase 13 – Abgeschlossen & im Testbetrieb)
+
+Phase 13 ergänzt das System um ein **zentrales, modulübergreifendes E-Mail-Versandprotokoll**. Der tatsächliche Mailversand bleibt vollständig bei Google Apps Script (`MailApp` / `GmailApp`). Supabase übernimmt ausschliesslich die Rolle des Audit-Logs.
+
+**Datenbankmodell (`supabase/migrations/13_mail_module.sql`):**
+- `public.mail_logs` – Protokolleintrag je versendeter E-Mail
+
+| Feld | Bedeutung |
+|:---|:---|
+| `module_ref` | Herkunftsmodul: `rechnung`, `mietvertrag`, `jahresbeitrag`, `mahnung`, `anlasse`, `vermietung`, `mitglieder`, `sonstige` |
+| `record_id` | ID des verknüpften Datensatzes (z.B. `RE-26-7K4M`) – kein FK (loose coupling) |
+| `recipient_email` / `recipient_name` | Primärer Empfänger |
+| `cc_email` | CC-Adressen (kommagetrennt) |
+| `subject` / `body_snippet` | Betreff & erste ~500 Zeichen als Vorschau |
+| `status` | `gesendet`, `fehler`, `simuliert` |
+| `sender_email` / `sender_name` | GAS-Absenderkonto |
+| `has_pdf` | Boolean – war ein PDF-Anhang vorhanden? |
+| `sent_via` | `GAS_MailApp`, `GAS_GmailApp`, `Supabase_SMTP`, `Resend`, `Test` |
+| `sent_at` | Versandzeitpunkt (TIMESTAMPTZ) |
+
+**RPC-Hilfsfunktion:**
+GAS-Skripte schreiben nach dem Versand per `supabase.rpc('log_mail_sent', {...})` oder direktem REST-INSERT einen Eintrag. Kein FK-Constraint notwendig – loose coupling zu allen Modulen.
+
+**Frontend-Integration (`vorstand/js/mail.js`, `vorstand/index.html`):**
+- Mail-Seite erhielt einen zweiten Tab **«Versandprotokoll»** neben dem bestehenden Verteiler-Tab
+- Filter nach Modul, Status und Freitext-Suche (Empfänger/Betreff)
+- Lazy Loading: Daten werden erst beim Tab-Klick aus Supabase geladen
+- Klick auf Zeile öffnet Detail-Modal (inkl. Body-Vorschau, CC, Fehlerinfo)
+- Badge am Tab zeigt Gesamtanzahl der geladenen Log-Einträge
+
+---
+
+## 7. Migrations-Roadmap (Phasen 0 bis 13)
 
 | Phase | Bereich | Ziel / Inhalt | Führendes System | Status |
 |:---|:---|:---|:---|:---|
@@ -1112,16 +1163,18 @@ Mit dem Modul Jahresbeitrag wurde die Verbindung zwischen Mitglieder-Stammdaten 
 | **Phase 1** | **Auth, Rollen & RLS** | Supabase Auth, `user_roles` Tabelle, JWT Hook, 70 Permissions, SQL-Hilfsfunktionen (`01_auth_and_roles.sql`) | Supabase Auth | ✅ **Abgeschlossen** |
 | **Phase 2** | **Pilotmodul ANLÄSSE** | Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Controlling (`02_events_module.sql`, `03_anon_dev_policies.sql`); Vollständige Integration ins Vorstand-Portal (`anlaesse.js`, `supabase-client.js`) | Supabase | ✅ **Abgeschlossen** |
 | **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
-| **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie (`1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0`) | Supabase (Master) ⇄ Google Sheet (Test-Kopie) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 5** | **Anlässe & Umfragen (Eventplaner)**| Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung; Dual-Write zum Google Sheet (`1lN180...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`); Dual-Write zu Google Sheets (`1q54RIa...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie | Supabase (Master) ⇄ Google Sheet (Test-Kopie) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 5** | **Anlässe & Umfragen (Eventplaner)** | Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung; Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen (Personalien, Adressen, Status, Finanzen) direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges; TableKit mit Spalten-Ausblendung; Dual-Write zu Google Sheet | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 9** | **Jahresbeitrag & Beitragsverwaltung** | Beitragsrechnungen, Detailpositionen, Wettkampfteilnahmen & Gebührenordnung (`11_jahresbeitrag_module.sql`); Supabase Master mit asynchronem Dual-Write zu Google Sheets (`Members100_GAS`); direkte Verknüpfung mit `invoices` & TableKit Spaltenausblendung | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Standard-Vorlagen, Layouts & externe Kontakte (`10_invoices_module.sql`); Supabase Master mit asynchronem Dual-Write zu Google Sheets (`1D3tbMHVNzf-VzTyP1DnGQ4MXqtjw7H1hlV4NY2X-wfE`); Serverless QR-Rechnungs-PDF & Gmail-Versand via GAS; TableKit Spaltenausblendung im Archiv sowie in allen Modalen | Supabase (Master) ⇄ Google Sheet (Spiegelung) / GAS (PDF/Mail) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung (letzter Schritt) | Supabase | Geplant |
+| **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges; Dual-Write zu Google Sheet | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 9** | **Jahresbeitrag & Beitragsverwaltung** | Beitragsrechnungen, Detailpositionen, Wettkampfteilnahmen & Gebührenordnung (`11_jahresbeitrag_module.sql`); asynchrones Dual-Write zu Google Sheets | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Layouts & externe Kontakte (`10_invoices_module.sql`); QR-Rechnungs-PDF & Gmail-Versand via GAS | Supabase (Master) ⇄ Google Sheet (Spiegelung) / GAS (PDF/Mail) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung | Supabase | 🔜 **Geplant** |
+| **Phase 12** | **Resultate & Wettkämpfe** | Schiessresultate je Wettbewerb, Jahr & Runde; Team-Zuteilungen; KI-Standblatt-Erkennung Audit-Log (`12_results_module.sql`); Unterstützung Grenzlandcup, Mannschaft & Gruppenmeisterschaft | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 13** | **Mail-Log & Versandprotokoll** | Zentrales, modulübergreifendes E-Mail-Audit-Log (`13_mail_module.sql`, `public.mail_logs`); RPC-Funktion `log_mail_sent()` für GAS-Integration; Frontend-Tab «Versandprotokoll» mit Filtern, Lazy Loading & Detail-Modal | Supabase (Log) / GAS (Versand) | ✅ **Abgeschlossen & im Testbetrieb** |
 
 ---
 
-> **Ergebnis:** Mit dieser Architektur sind alle Schnittstellen, Verantwortlichkeiten und Sicherheitsmechanismen eindeutig und widerspruchsfrei definiert. Phase 0 ist damit abgeschlossen. Die konkreten DDL-Skripte für Phase 1 bis 3 können direkt aus diesem Entwurf abgeleitet werden.
+> **Ergebnis:** Mit dieser Architektur sind alle Schnittstellen, Verantwortlichkeiten und Sicherheitsmechanismen eindeutig und widerspruchsfrei definiert. Phase 0 ist damit abgeschlossen. Die konkreten DDL-Skripte für Phase 1 bis 13 wurden vollständig implementiert und in den Testbetrieb überführt.
 
