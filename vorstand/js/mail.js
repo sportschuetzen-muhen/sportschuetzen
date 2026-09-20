@@ -502,3 +502,213 @@ function mailCSV() {
   a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
 }
+
+// ============================================================
+// MAIL-LOG (Versandprotokoll aus public.mail_logs / Supabase)
+// ============================================================
+
+let _mailLogData   = [];   // Rohdaten (alle geladenen Logs)
+let _mailLogLoaded = false;
+
+/**
+ * Lädt die letzten 500 Einträge aus public.mail_logs und rendert die Tabelle.
+ * @param {boolean} force – true = Cache ignorieren
+ */
+async function loadMailLogData(force = false) {
+  if (_mailLogLoaded && !force) { filterMailLog(); return; }
+
+  const container = document.getElementById('mail-log-container');
+  container.innerHTML = `
+    <div class="text-center py-5 text-muted">
+      <i class="fas fa-circle-notch fa-spin fa-2x mb-3"></i><br>Lade Versandprotokoll…
+    </div>`;
+
+  try {
+    const sb = window.supabaseClient || (typeof supabase !== 'undefined' ? supabase : null);
+    if (!sb) throw new Error('Supabase-Client nicht initialisiert.');
+
+    const { data, error } = await sb
+      .from('mail_logs')
+      .select('id,module_ref,record_id,recipient_email,recipient_name,cc_email,subject,body_snippet,status,error_message,sender_name,has_pdf,sent_via,sent_at')
+      .order('sent_at', { ascending: false })
+      .limit(500);
+
+    if (error) throw new Error(error.message);
+
+    _mailLogData   = data || [];
+    _mailLogLoaded = true;
+
+    // Badge aktualisieren
+    const badge = document.getElementById('mail-log-badge');
+    if (badge) {
+      badge.textContent = _mailLogData.length;
+      badge.classList.remove('d-none');
+    }
+
+    filterMailLog();
+
+  } catch (e) {
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Fehler:</strong> ${e.message}
+      </div>`;
+  }
+}
+
+/** Filtert _mailLogData anhand der drei Filter-Controls und rendert die Tabelle. */
+function filterMailLog() {
+  const module = (document.getElementById('mail-log-filter-module')?.value || '').toLowerCase();
+  const status = (document.getElementById('mail-log-filter-status')?.value || '').toLowerCase();
+  const search = (document.getElementById('mail-log-search')?.value || '').toLowerCase();
+
+  const filtered = _mailLogData.filter(r => {
+    if (module && r.module_ref !== module) return false;
+    if (status && r.status    !== status)  return false;
+    if (search) {
+      const hay = `${r.recipient_email} ${r.recipient_name || ''} ${r.subject}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  _renderMailLogTable(filtered);
+}
+
+/** Rendert die gefilterten Einträge als Bootstrap-Tabelle. */
+function _renderMailLogTable(rows) {
+  const container = document.getElementById('mail-log-container');
+  if (!container) return;
+
+  if (!rows.length) {
+    container.innerHTML = `
+      <div class="text-center text-muted py-5">
+        <i class="fas fa-inbox fa-2x mb-2"></i><br>Keine Einträge gefunden.
+      </div>`;
+    return;
+  }
+
+  const tbody = rows.map(r => {
+    const statusBadge = _mailLogStatusBadge(r.status);
+    const modLabel    = _mailLogModuleLabel(r.module_ref);
+    const sentAt      = r.sent_at ? new Date(r.sent_at).toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' }) : '–';
+    const pdfIcon     = r.has_pdf ? '<i class="fas fa-paperclip text-muted" title="PDF Anhang"></i>' : '';
+    const subject     = escapeHtml(r.subject || '–');
+    const recipient   = escapeHtml(r.recipient_email || '–');
+    const name        = escapeHtml(r.recipient_name || '');
+
+    return `
+      <tr style="cursor:pointer" onclick='_showMailLogDetail(${JSON.stringify(JSON.stringify(r))})'>
+        <td class="align-middle text-nowrap text-muted small">${sentAt}</td>
+        <td class="align-middle">${modLabel}</td>
+        <td class="align-middle">
+          <div class="fw-medium">${recipient}</div>
+          ${name ? `<div class="text-muted small">${name}</div>` : ''}
+        </td>
+        <td class="align-middle" style="max-width:300px">
+          <div class="text-truncate">${subject}</div>
+          ${r.record_id ? `<span class="badge bg-light text-dark border small">${escapeHtml(r.record_id)}</span>` : ''}
+        </td>
+        <td class="align-middle text-center">${pdfIcon}</td>
+        <td class="align-middle">${statusBadge}</td>
+      </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="text-muted small mb-2">${rows.length} Einträge</div>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle" style="font-size:0.875rem">
+        <thead class="table-light">
+          <tr>
+            <th>Datum</th>
+            <th>Modul</th>
+            <th>Empfänger</th>
+            <th>Betreff / Ref.</th>
+            <th class="text-center"><i class="fas fa-paperclip" title="PDF"></i></th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>`;
+}
+
+/** Zeigt Detailansicht eines Log-Eintrags (Klick auf Zeile). */
+function _showMailLogDetail(jsonStr) {
+  const r = JSON.parse(jsonStr);
+  const sentAt = r.sent_at ? new Date(r.sent_at).toLocaleString('de-CH') : '–';
+
+  const rows = [
+    ['Datum',       sentAt],
+    ['Modul',       r.module_ref || '–'],
+    ['Referenz-ID', r.record_id  || '–'],
+    ['Empfänger',   r.recipient_email + (r.recipient_name ? ` (${r.recipient_name})` : '')],
+    ['CC',          r.cc_email  || '–'],
+    ['Betreff',     r.subject   || '–'],
+    ['Status',      r.status    || '–'],
+    ['Absender',    r.sender_name || '–'],
+    ['Versandweg',  r.sent_via  || '–'],
+    ['PDF-Anhang',  r.has_pdf ? '✅ Ja' : '–'],
+    ['Vorschau',    r.body_snippet ? `<pre style="white-space:pre-wrap;font-size:0.8rem;max-height:200px;overflow:auto">${escapeHtml(r.body_snippet)}</pre>` : '–'],
+    ...(r.error_message ? [['Fehlermeldung', `<span class="text-danger">${escapeHtml(r.error_message)}</span>`]] : [])
+  ];
+
+  const tableRows = rows.map(([k, v]) =>
+    `<tr><th class="text-muted fw-normal" style="width:130px;white-space:nowrap">${k}</th><td>${v}</td></tr>`
+  ).join('');
+
+  // Modal dynamisch erzeugen oder wiederverwenden
+  let modal = document.getElementById('mail-log-detail-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'mail-log-detail-modal';
+    modal.className = 'modal fade';
+    modal.tabIndex = -1;
+    modal.innerHTML = `
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fas fa-envelope me-2"></i>Mail-Log Detail</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="mail-log-detail-body"></div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Schliessen</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+
+  document.getElementById('mail-log-detail-body').innerHTML =
+    `<table class="table table-sm table-borderless">${tableRows}</table>`;
+
+  new bootstrap.Modal(modal).show();
+}
+
+/** Gibt ein farbiges Badge für den Mail-Status zurück. */
+function _mailLogStatusBadge(status) {
+  const map = {
+    'gesendet':  '<span class="badge bg-success">✅ Gesendet</span>',
+    'fehler':    '<span class="badge bg-danger">❌ Fehler</span>',
+    'simuliert': '<span class="badge bg-warning text-dark">🧪 Simuliert</span>',
+  };
+  return map[status] || `<span class="badge bg-secondary">${escapeHtml(status || '–')}</span>`;
+}
+
+/** Gibt ein Emoji-Label für das Herkunftsmodul zurück. */
+function _mailLogModuleLabel(ref) {
+  const map = {
+    'rechnung':     '💶 Rechnung',
+    'mietvertrag':  '🏠 Mietvertrag',
+    'jahresbeitrag':'📋 Jahresbeitrag',
+    'mahnung':      '⚠️ Mahnung',
+    'anlasse':      '📅 Anlässe',
+    'vermietung':   '🔑 Vermietung',
+    'mitglieder':   '👥 Mitglieder',
+    'sonstige':     '📁 Sonstige',
+    'unbekannt':    '❓ Unbekannt',
+  };
+  return map[ref] || escapeHtml(ref || '–');
+}
+

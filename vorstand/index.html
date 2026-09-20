@@ -953,10 +953,78 @@
             </div>
 <!-- MAIL -->
 <div id="view-mail" class="module-view">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>📧 Mail</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h2 class="mb-0">📧 Mail</h2>
+            <div class="text-muted small">Verteiler &amp; Versandprotokoll</div>
+        </div>
     </div>
-    <div id="mail-container"></div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3" id="mailTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="mail-verteiler-tab" data-bs-toggle="tab"
+                    data-bs-target="#mail-tab-verteiler" type="button" role="tab"
+                    aria-controls="mail-tab-verteiler" aria-selected="true">
+                <i class="fas fa-users me-1"></i> Verteiler
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="mail-log-tab" data-bs-toggle="tab"
+                    data-bs-target="#mail-tab-log" type="button" role="tab"
+                    aria-controls="mail-tab-log" aria-selected="false"
+                    onclick="loadMailLogData()">
+                <i class="fas fa-history me-1"></i> Versandprotokoll
+                <span id="mail-log-badge" class="badge bg-secondary ms-1 d-none"></span>
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="mailTabContent">
+        <!-- Tab 1: Verteiler (bestehend) -->
+        <div class="tab-pane fade show active" id="mail-tab-verteiler" role="tabpanel">
+            <div id="mail-container"></div>
+        </div>
+
+        <!-- Tab 2: Versandprotokoll (mail_logs) -->
+        <div class="tab-pane fade" id="mail-tab-log" role="tabpanel">
+            <!-- Toolbar -->
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <select id="mail-log-filter-module" class="form-select form-select-sm" style="width:auto"
+                        onchange="filterMailLog()">
+                    <option value="">Alle Module</option>
+                    <option value="rechnung">💶 Rechnung</option>
+                    <option value="mietvertrag">🏠 Mietvertrag</option>
+                    <option value="jahresbeitrag">📋 Jahresbeitrag</option>
+                    <option value="mahnung">⚠️ Mahnung</option>
+                    <option value="anlasse">📅 Anlässe</option>
+                    <option value="vermietung">🔑 Vermietung</option>
+                    <option value="mitglieder">👥 Mitglieder</option>
+                    <option value="sonstige">📁 Sonstige</option>
+                </select>
+                <select id="mail-log-filter-status" class="form-select form-select-sm" style="width:auto"
+                        onchange="filterMailLog()">
+                    <option value="">Alle Status</option>
+                    <option value="gesendet">✅ Gesendet</option>
+                    <option value="fehler">❌ Fehler</option>
+                    <option value="simuliert">🧪 Simuliert</option>
+                </select>
+                <input type="text" id="mail-log-search" class="form-control form-control-sm"
+                       style="width:220px" placeholder="🔍 Empfänger / Betreff..."
+                       oninput="filterMailLog()">
+                <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadMailLogData(true)">
+                    <i class="fas fa-sync me-1"></i> Aktualisieren
+                </button>
+            </div>
+            <!-- Tabelle -->
+            <div id="mail-log-container">
+                <div class="text-center text-muted py-5">
+                    <i class="fas fa-history fa-2x mb-2"></i><br>
+                    Klicke auf den Tab um das Protokoll zu laden.
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- GALERIE MANAGER -->
