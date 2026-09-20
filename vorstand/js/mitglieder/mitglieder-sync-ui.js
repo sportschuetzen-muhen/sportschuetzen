@@ -597,7 +597,7 @@ async function mglTriggerSheetToSupabaseSync(event) {
  */
 function mglTriggerSupabaseToSheetSync() {
   alert('ℹ️ DUAL-WRITE STATUS:\n\n' +
-        '1. Primärdatenbank: Supabase PostgreSQL (192.168.68.117:8000)\n' +
+        '1. Primärdatenbank: Supabase PostgreSQL (supabase-muhen.danfamily.uk)\n' +
         '2. Test-Kopie Google Sheet: 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0\n\n' +
         'Bei jedem SSV-Excel-Import im Reiter "SSV-Import" werden alle Mutationen clientseitig geprüft, ' +
         'in Supabase geschrieben und gleichzeitig automatisch in das Test-Google-Sheet synchronisiert (Dual-Write).\n' +

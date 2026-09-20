@@ -1,12 +1,12 @@
 /**
  * supabase-client.js
  * Initialisierung des offiziellen @supabase/supabase-js Clients für das Vorstand-Portal.
- * Host: 192.168.68.117:8000
+ * Host: https://supabase-muhen.danfamily.uk (via Cloudflare Tunnel)
  * Modul: ANLÄSSE & Controlling (Native Supabase Migration)
  */
 
 (function () {
-    const SUPABASE_URL = 'http://192.168.68.117:8000';
+    const SUPABASE_URL = 'https://supabase-muhen.danfamily.uk';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
 
     let client = null;
