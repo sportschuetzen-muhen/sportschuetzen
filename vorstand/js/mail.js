@@ -598,7 +598,7 @@ function _renderMailLogTable(rows) {
     const name        = escapeHtml(r.recipient_name || '');
 
     return `
-      <tr style="cursor:pointer" onclick='_showMailLogDetail(${JSON.stringify(JSON.stringify(r))})'>
+      <tr style="cursor:pointer" onclick="_showMailLogDetail('${r.id}')">
         <td class="align-middle text-nowrap text-muted small">${sentAt}</td>
         <td class="align-middle">${modLabel}</td>
         <td class="align-middle">
@@ -634,8 +634,18 @@ function _renderMailLogTable(rows) {
 }
 
 /** Zeigt Detailansicht eines Log-Eintrags (Klick auf Zeile). */
-function _showMailLogDetail(jsonStr) {
-  const r = JSON.parse(jsonStr);
+function _showMailLogDetail(itemOrId) {
+  let r = null;
+  if (typeof itemOrId === 'string') {
+    r = _mailLogData.find(x => x.id === itemOrId);
+    if (!r) {
+      try { r = JSON.parse(itemOrId); } catch (e) { r = null; }
+    }
+  } else if (itemOrId && typeof itemOrId === 'object') {
+    r = itemOrId;
+  }
+  if (!r) return;
+
   const sentAt = r.sent_at ? new Date(r.sent_at).toLocaleString('de-CH') : '–';
 
   const rows = [

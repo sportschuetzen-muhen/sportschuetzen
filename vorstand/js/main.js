@@ -748,7 +748,7 @@ const bgModuleLoader = {
             id: 'system-mails',
             label: 'System-Mails',
             load: () => (typeof loadSystemMailsData === 'function' ? loadSystemMailsData(false) : Promise.resolve()),
-            isLoaded: () => typeof sysMailState !== 'undefined' && sysMailState !== null && document.getElementById('app-info-list') !== null
+            isLoaded: () => typeof sysMailState !== 'undefined' && sysMailState !== null && (document.getElementById('sys-mail-list') !== null || document.getElementById('app-info-list') !== null)
         },
         {
             id: 'resultate',

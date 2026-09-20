@@ -1,7 +1,7 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
 **Stand:** 2026-09-20  
-**Phase:** 0 bis 13 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate & Mail-Log  
+**Phase:** 0 bis 14 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log & System-Mail-Verteiler  
 **Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
@@ -27,7 +27,8 @@
    - [Fachmodul: INVENTAR-VERWALTUNG](#65-fachmodul-inventar-verwaltung-phase-7--abgeschlossen--im-testbetrieb)
    - [Fachmodul: RESULTATE & WETTKÄMPFE](#66-fachmodul-resultate--wettkämpfe-phase-12--abgeschlossen--im-testbetrieb)
    - [Fachmodul: MAIL-LOG & VERSANDPROTOKOLL](#67-fachmodul-mail-log--versandprotokoll-phase-13--abgeschlossen--im-testbetrieb)
-7. [Migrations-Roadmap (Phasen 0 bis 13)](#7-migrations-roadmap-phasen-0-bis-13)
+   - [Fachmodul: SYSTEM-MAIL-KONFIGURATION](#68-fachmodul-system-mail-konfiguration-phase-14--abgeschlossen--im-testbetrieb)
+7. [Migrations-Roadmap (Phasen 0 bis 14)](#7-migrations-roadmap-phasen-0-bis-14)
 
 ---
 
@@ -1155,7 +1156,25 @@ GAS-Skripte schreiben nach dem Versand per `supabase.rpc('log_mail_sent', {...})
 
 ---
 
-## 7. Migrations-Roadmap (Phasen 0 bis 13)
+## 6.8 Fachmodul: SYSTEM-MAIL-KONFIGURATION (Phase 14 – Abgeschlossen & im Testbetrieb)
+
+Phase 14 überführt alle systemweiten E-Mail-Verteiler und automatischen Benachrichtigungsempfänger (bisher im Google Spreadsheet `App_Info`-Tab) in Supabase PostgreSQL (`public.system_mail_configs`).
+
+**Datenbankmodell (`supabase/migrations/14_system_mail_configs.sql`):**
+- `public.system_mail_configs`: Hält alle Systemereignis-Verteiler (`schluessel`, `bezeichnung`, `mailadresse`, `modul`, `beschreibung`, `sort_order`).
+- `schluessel` ist `UNIQUE` und entspricht der Spalte A des Altsystems (z.B. `Info_Mail_Mannschaft`, `Info_Mail_Vereinswettschiessen`, `Info_Mail_Gruppe`, etc.).
+- RLS: `anon`-SELECT für GAS-Skripte ohne JWT; Schreibzugriff nur für `authenticated` (Vorstand).
+- RPC-Funktion `public.get_system_mail(p_schluessel)` für direkte GAS-Abfragen.
+
+**Frontend-Integration (`vorstand/js/system-mails.js`, `vorstand/index.html`):**
+- Supabase-First Laderoutine mit automatischem Fallback auf GAS `loadAdminData`.
+- Mitglieder-Dropdown wird dynamisch aus `public.members` befüllt.
+- Speichern erfolgt primär in Supabase (< 50 ms) mit asynchronem Dual-Write zu Google Apps Script (`App_Info`-Sheet).
+- Grüner `Supabase`-Badge in der Sidebar und auf der Dashboard-Übersichtskarte.
+
+---
+
+## 7. Migrations-Roadmap (Phasen 0 bis 14)
 
 | Phase | Bereich | Ziel / Inhalt | Führendes System | Status |
 |:---|:---|:---|:---|:---|
@@ -1173,8 +1192,9 @@ GAS-Skripte schreiben nach dem Versand per `supabase.rpc('log_mail_sent', {...})
 | **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung | Supabase | 🔜 **Geplant** |
 | **Phase 12** | **Resultate & Wettkämpfe** | Schiessresultate je Wettbewerb, Jahr & Runde; Team-Zuteilungen; KI-Standblatt-Erkennung Audit-Log (`12_results_module.sql`); Unterstützung Grenzlandcup, Mannschaft & Gruppenmeisterschaft | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 13** | **Mail-Log & Versandprotokoll** | Zentrales, modulübergreifendes E-Mail-Audit-Log (`13_mail_module.sql`, `public.mail_logs`); RPC-Funktion `log_mail_sent()` für GAS-Integration; Frontend-Tab «Versandprotokoll» mit Filtern, Lazy Loading & Detail-Modal | Supabase (Log) / GAS (Versand) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 14** | **System-Mail-Verteiler** | Migration aller automatischen Mail-Empfänger und Abo-Verteiler (`14_system_mail_configs.sql`, `public.system_mail_configs`); RPC-Funktion `get_system_mail()`; Supabase-First UI & Dual-Write zu `App_Info` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 
 ---
 
-> **Ergebnis:** Mit dieser Architektur sind alle Schnittstellen, Verantwortlichkeiten und Sicherheitsmechanismen eindeutig und widerspruchsfrei definiert. Phase 0 ist damit abgeschlossen. Die konkreten DDL-Skripte für Phase 1 bis 13 wurden vollständig implementiert und in den Testbetrieb überführt.
+> **Ergebnis:** Mit dieser Architektur sind alle Schnittstellen, Verantwortlichkeiten und Sicherheitsmechanismen eindeutig und widerspruchsfrei definiert. Phase 0 ist damit abgeschlossen. Die konkreten DDL-Skripte für Phase 1 bis 14 wurden vollständig implementiert und in den Testbetrieb überführt.
 
