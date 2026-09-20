@@ -1020,6 +1020,49 @@ Die Verwaltung des gesamten Vereinsinventars (Sportwaffen, Schlüssel, Vereinskl
 
 ---
 
+### 6.6 Fachmodul: Jahresprogramm (Termine, Anlässe & Orte)
+
+Die Terminplanung, Schiesstage und Vereinsanlässe sowie die damit verknüpften Austragungsorte mit Google Maps wurden von Google Sheets (`Admin_Generalversammlungen_GAS`, Sheet-ID `1q54RIa3Oo3DT1ONIkAgsvv5-qAhU1UuV0KvLP0f-PyI`) auf Supabase PostgreSQL migriert.
+
+1. **Datenbankmodell (`supabase/migrations/09_termine_module.sql`):**
+   - `public.termine`: Speichert alle Vereinstermine und Schiesstage mit Datum, Startzeit, Endzeit, Titel, Ort, Kategorie (`Jahresprogramm`, `Schiesstermine`), Status (`fix`, `provisorisch`, `abgesagt`), Google Maps Link, Typ (`verein`) und `sort_order` für benutzerdefinierte Reihenfolgen.
+   - `public.termine_locations`: Stammdaten der Austragungsorte mit Namen und Google Maps URLs, sortierbar per Drag & Drop (`sort_order`).
+   - `public.termine_event_types`: Vordefinierte Anlass-Typen zur Vereinheitlichung aller Terminbezeichnungen im Portal, sortierbar per Drag & Drop (`sort_order`).
+   - Vollständige RLS-Absicherung mit Authenticated-Policies für Vorstand und Schützenmeister sowie Anon-Dev-Policies für die Website/PWA.
+2. **Modulare Frontend-Architektur (`vorstand/js/termine/`):**
+   - `termine-core.js`: Supabase-First Laderoutine (< 50 ms) mit automatischem Fallback auf Google Apps Script.
+   - **Dual-Write**: Beim Speichern im Vorstand-Portal werden Termine und Stammdaten primär in Supabase aktualisiert und parallel asynchron an Google Apps Script übermittelt. Dadurch bleiben bestehende Google-Docs-Vorlagen (GV-Einladung via `write_termine.js`) und ältere Webhooks zu 100% synchron.
+   - **1-Klick-Import (`syncTermineFromLegacy()`):** Bequeme Übernahme aller bestehenden Termine und Orte aus Google Sheets nach Supabase mit einem einzigen Knopfdruck.
+   - `termine-ui.js`: Rendering und Interaktion basierend auf dem neuen `TableKit`-Standard.
+
+---
+
+### 6.7 Zentraler UI-Standard: `TableKit` (`vorstand/js/ui-table-kit.js`)
+
+Mit der Migration des Jahresprogramms wurde ein **unternehmensweiter Standard** für interaktive Tabellen und Listen geschaffen, der das Look & Feel über alle Fachmodule hinweg vereinheitlicht:
+
+1. **Spalten-Sortierung (`TableKit.makeSortable`):**
+   - Klickbare Spalten-Header mit Sortier-Pfeilen (`↕`, `▲`, `▼`).
+   - Automatische Typenerkennung: Schweizer Datumsformate (`DD.MM.YYYY`, `YYYY-MM-DD`), Uhrzeiten (`HH:mm`), Zahlen, Text (inkl. Umlaute mit `de-CH` Collation) sowie Live-Werte von Formularfeldern (`<input>`, `<select>`).
+2. **Drag & Drop Verschiebung (`TableKit.makeDraggable`):**
+   - Diskreter Griff (`⋮⋮`) an jeder Zeile zum manuellen Reordering.
+   - Volle Unterstützung für Desktop (HTML5 Drag & Drop) und Mobilgeräte (Touch-Tracking).
+   - Reorder-Callback zur sofortigen Aktualisierung der Daten-Arrays und Unsaved-State-Tracking.
+3. **Aus- und Einblendbarkeit & Filter (`TableKit.setupFilter`):**
+   - **Status-Pills**: Schnelles Umschalten zwischen z.B. *Alle*, *Nur Fix*, *Provisorisch* und *Abgesagte ausblenden*.
+   - **Live-Suche**: Freitextsuche über alle Zeilen und Formularfelder hinweg.
+   - **Einklappbare Bereiche (`TableKit.setupCollapsible`):** Akkordeon-artiges Minimieren von Tabellen und Stammdaten-Karten mit Speicherung des Zustands im `localStorage`.
+
+#### 📌 Nachrüst-Plan für bereits migrierte Module:
+Die folgenden, bereits migrierten Module werden im Zuge der weiteren Portal-Harmonisierung mit dem zentralen `TableKit`-Standard nachgerüstet:
+- [ ] **Modul Inventar (`vorstand/js/inventar/`):** Inventarliste, Pfandkasse und Journal mit Spaltensortierung und Filter-Pills ausrüsten.
+- [ ] **Modul Anlässe & Umfragen (`vorstand/js/umfragen/`):** Teilnehmerlisten und Umfragen-Übersicht sortierbar und einklappbar machen.
+- [ ] **Modul Vermietung (`vorstand/js/vermietung/`):** Buchungstabelle und Belegungsliste mit Spaltensortierung und Status-Pills versehen.
+- [ ] **Modul Mitglieder (`vorstand/js/mitglieder/`):** Mitglieder- und Adresslisten mit TableKit-Spaltensortierung und Live-Filter harmonisieren.
+- [ ] **Modul Anlässe & Controlling (`vorstand/js/anlaesse.js`):** Helferlisten, Mengenrechner und Checklisten per Drag & Drop sortierbar machen.
+
+---
+
 ## 7. Migrations-Roadmap (Phasen 0 bis 11)
 
 | Phase | Bereich | Ziel / Inhalt | Führendes System | Status |
@@ -1030,13 +1073,14 @@ Die Verwaltung des gesamten Vereinsinventars (Sportwaffen, Schlüssel, Vereinskl
 | **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
 | **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie (`1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0`) | Supabase (Master) ⇄ Google Sheet (Test-Kopie) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 5** | **Anlässe & Umfragen (Eventplaner)**| Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung; Dual-Write zum Google Sheet (`1lN180...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 6** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | ⏳ Geplant |
+| **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`); Dual-Write zu Google Sheets (`1q54RIa...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 8** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
-| **Phase 9** | **Jahresbeiträge** | Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members` | Supabase | Geplant |
-| **Phase 10** | **Rechnungen & Fakturierung** | QR-Rechnungen, PDF-Generierung und Archivierung in Paperless-NGX | Supabase + Paperless-NGX | Geplant |
+| **Phase 8** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | ⏳ Geplant |
+| **Phase 9** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
+| **Phase 10** | **Jahresbeiträge & Fakturierung**| Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members`, QR-Rechnungen | Supabase + Paperless-NGX | Geplant |
 | **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung (letzter Schritt) | Supabase | Geplant |
 
 ---
 
 > **Ergebnis:** Mit dieser Architektur sind alle Schnittstellen, Verantwortlichkeiten und Sicherheitsmechanismen eindeutig und widerspruchsfrei definiert. Phase 0 ist damit abgeschlossen. Die konkreten DDL-Skripte für Phase 1 bis 3 können direkt aus diesem Entwurf abgeleitet werden.
+

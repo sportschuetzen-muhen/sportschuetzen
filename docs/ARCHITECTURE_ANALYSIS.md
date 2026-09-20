@@ -156,7 +156,7 @@ Im Gesamtprojekt existieren **drei separate Frontends**, die jeweils unterschied
 |:--------|:------------|:-------------------|:-----------------|
 | `dashboard` | Übersicht | Alle | `main.js` |
 | `inventar` | Inventar | admin, vorstand, materialwart, schuetzenmeister, aktuar, kassier, vermieter | `inventar/` (6 Dateien) |
-| `termine` | Jahresprogramm | admin, vorstand, schuetzenmeister, aktuar, kassier, vermieter | `termine.js` |
+| `termine` | Jahresprogramm | admin, vorstand, schuetzenmeister, aktuar, kassier, vermieter | `termine/` (termine-core.js, termine-ui.js, termine.js) |
 | `system-mails` | System-Mails | admin, vorstand, schuetzenmeister, aktuar, kassier | `system-mails.js` |
 | `umfragen` | Anlässe & Umfragen | admin, vorstand, schuetzenmeister, aktuar, kassier | `umfragen/` (6 Dateien) |
 | `manager` | Team Manager | admin, vorstand, schuetzenmeister | `manager/` (6 Dateien) |
@@ -581,7 +581,7 @@ Die Spreadsheet-IDs für alle weiteren Backend-Projekte wurden ermittelt und zug
 | Mitglieder | Members100_GAS | members, licenses, functions, training, history, participations | ✓ | ✓ |
 | Jahresbeitrag | Members100_GAS | contributions_header, contributions_positions, positionen_config, gebuehren_config | ✓ | ✓ |
 | Umfragen | Eventplaner_GAS | events, responses, views | ✓ | ✓ |
-| Termine | Admin_GV_GAS | Termine-Sheet | ✓ | ✓ |
+| Termine | Admin_GV_GAS | Termine-Sheet (Dual-Write; Supabase Master) | ✓ | ✓ |
 | Buchhaltung | Buchhaltung_GAS | Journal, Kontenrahmen, etc. | ✓ | ✓ |
 | Rechnungen | Rechnungen_GAS | Rechnungen, Positionen | ✓ | ✓ |
 | Inventar | Vereinsinventar_GAS | Inventar-Artikel, Transaktionen | ✓ | ✓ |
