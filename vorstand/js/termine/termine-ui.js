@@ -117,10 +117,13 @@ function renderTermineUI(container) {
                   <button type="button" class="tk-pill-btn" data-filter="abgesagt">Abgesagt</button>
                 </div>
               </div>
-              <!-- Suchfeld -->
-              <div class="input-group input-group-sm" style="max-width: 260px;">
-                <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
-                <input type="text" id="termine-search-input" class="form-control border-start-0" placeholder="Termine filtern…">
+              <!-- Suchfeld & Spalten Toggle -->
+              <div class="d-flex align-items-center gap-2">
+                <div class="input-group input-group-sm" style="max-width: 240px;">
+                  <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                  <input type="text" id="termine-search-input" class="form-control border-start-0" placeholder="Termine filtern…">
+                </div>
+                <div id="termine-column-toggle"></div>
               </div>
             </div>
           </div>
@@ -132,13 +135,13 @@ function renderTermineUI(container) {
             <thead class="table-light">
               <tr>
                 <th style="width: 40px;" class="text-center" title="Manuell verschieben (Drag & Drop)">⋮⋮</th>
-                <th data-sort-key="datum" style="width: 140px;">Datum</th>
-                <th data-sort-key="startzeit" style="width: 95px;">Start</th>
-                <th data-sort-key="endzeit" style="width: 95px;">Ende</th>
-                <th data-sort-key="anlasstitel">Anlass</th>
-                <th data-sort-key="ort">Ort / Map</th>
-                <th data-sort-key="kategorie" style="width: 130px;">Kategorie</th>
-                <th data-sort-key="status" style="width: 130px;">Status</th>
+                <th data-sort-key="datum" data-col-id="datum" data-col-name="Datum" style="width: 140px;">Datum</th>
+                <th data-sort-key="startzeit" data-col-id="startzeit" data-col-name="Start" style="width: 95px;">Start</th>
+                <th data-sort-key="endzeit" data-col-id="endzeit" data-col-name="Ende" style="width: 95px;">Ende</th>
+                <th data-sort-key="anlasstitel" data-col-id="anlasstitel" data-col-name="Anlass">Anlass</th>
+                <th data-sort-key="ort" data-col-id="ort" data-col-name="Ort / Map">Ort / Map</th>
+                <th data-sort-key="kategorie" data-col-id="kategorie" data-col-name="Kategorie" style="width: 130px;">Kategorie</th>
+                <th data-sort-key="status" data-col-id="status" data-col-name="Status" style="width: 130px;">Status</th>
                 <th style="width: 45px;"></th>
               </tr>
             </thead>
@@ -234,19 +237,19 @@ function renderTermineList() {
         <td class="text-center align-middle">
           <span class="tk-drag-handle ${!canWrite ? 'd-none' : ''}" title="Zeile ziehen zum Verschieben">⋮⋮</span>
         </td>
-        <td>
+        <td class="tk-col-datum">
           <input data-field="datum" type="date" class="form-control form-control-sm write-protected"
             value="${isoDate(t.datum)}" ${!canWrite ? 'readonly disabled' : ''}>
         </td>
-        <td>
+        <td class="tk-col-startzeit">
           <input data-field="startzeit" type="time" class="form-control form-control-sm write-protected"
             value="${formatTime(t.startzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
         </td>
-        <td>
+        <td class="tk-col-endzeit">
           <input data-field="endzeit" type="time" class="form-control form-control-sm write-protected"
             value="${formatTime(t.endzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
         </td>
-        <td>
+        <td class="tk-col-anlasstitel">
           <select data-field="anlasstitel" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
             <option value="">-- Anlass --</option>
             ${(adminState.dropdowns.anlaesse || []).map(a =>
@@ -254,7 +257,7 @@ function renderTermineList() {
             ).join('')}
           </select>
         </td>
-        <td>
+        <td class="tk-col-ort">
           <div class="d-flex align-items-center gap-1">
             <select data-field="ort" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
               <option value="">-- Ort --</option>
@@ -265,14 +268,14 @@ function renderTermineList() {
             <span class="ort-map-icon">${mapBtn}</span>
           </div>
         </td>
-        <td>
+        <td class="tk-col-kategorie">
           <select data-field="kategorie" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
             ${(adminState.dropdowns.kategorien || ['Jahresprogramm', 'Schiesstermine']).map(k =>
               `<option value="${escapeHtml(k)}" ${k === t.kategorie ? 'selected' : ''}>${escapeHtml(k)}</option>`
             ).join('')}
           </select>
         </td>
-        <td>
+        <td class="tk-col-status">
           <select data-field="status" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
             ${['fix', 'provisorisch', 'abgesagt'].map(s =>
               `<option value="${s}" ${s === t.status ? 'selected' : ''}>${s}</option>`
@@ -290,6 +293,7 @@ function renderTermineList() {
 
   const countBadge = document.getElementById('termine-count-badge');
   if (countBadge) countBadge.innerText = adminState.termine.length;
+  if (window._termineColToggle) window._termineColToggle.apply();
 }
 
 function renderDropdownEditor() {
@@ -441,6 +445,14 @@ function initTableKitForTermine() {
     document.getElementById('content-orte'),
     'termine_orte'
   );
+
+  // 7. Spalten-Sichtbarkeit / Ein- und Ausblenden
+  if (typeof window.TableKit.setupColumnToggle === 'function') {
+    window._termineColToggle = window.TableKit.setupColumnToggle('#termine-table', {
+      container: '#termine-column-toggle',
+      storageKey: 'termine_columns_visibility'
+    });
+  }
 }
 
 // =========================================================

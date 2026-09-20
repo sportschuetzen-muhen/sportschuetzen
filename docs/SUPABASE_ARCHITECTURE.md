@@ -1,7 +1,7 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
 **Stand:** 2026-09-20  
-**Phase:** 0, 1, 2, 3, 4, 5 & 7 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder, Umfragen & Inventar  
+**Phase:** 0 bis 8 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine & Inventar  
 **Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
@@ -1052,14 +1052,39 @@ Mit der Migration des Jahresprogramms wurde ein **unternehmensweiter Standard** 
    - **Status-Pills**: Schnelles Umschalten zwischen z.B. *Alle*, *Nur Fix*, *Provisorisch* und *Abgesagte ausblenden*.
    - **Live-Suche**: Freitextsuche über alle Zeilen und Formularfelder hinweg.
    - **Einklappbare Bereiche (`TableKit.setupCollapsible`):** Akkordeon-artiges Minimieren von Tabellen und Stammdaten-Karten mit Speicherung des Zustands im `localStorage`.
+4. **Spalten-Ausblendung (`TableKit.setupColumnToggle`):**
+   - Interaktives Dropdown zur vollständigen Ein- und Ausblendung beliebiger Tabellenspalten (Header und Zellen).
+   - Persistente Speicherung der Spaltenauswahl im `localStorage`.
+   - Zähler-Badge (z.B. `7/7` oder `9/9`).
 
 #### 📌 Nachrüst-Plan für bereits migrierte Module:
-Die folgenden, bereits migrierten Module werden im Zuge der weiteren Portal-Harmonisierung mit dem zentralen `TableKit`-Standard nachgerüstet:
+Die folgenden Module werden/wurden im Zuge der weiteren Portal-Harmonisierung mit dem zentralen `TableKit`-Standard nachgerüstet:
+- [x] **Modul Termine (`vorstand/js/termine/`):** Spaltensortierung, Drag & Drop und Spalten-Ausblender aktiv.
+- [x] **Modul Mitglieder (`vorstand/js/mitglieder/`):** Mitglieder- und Adresslisten mit TableKit-Spaltensortierung, Spalten-Ausblender und Status-Pills ausgerüstet.
 - [ ] **Modul Inventar (`vorstand/js/inventar/`):** Inventarliste, Pfandkasse und Journal mit Spaltensortierung und Filter-Pills ausrüsten.
 - [ ] **Modul Anlässe & Umfragen (`vorstand/js/umfragen/`):** Teilnehmerlisten und Umfragen-Übersicht sortierbar und einklappbar machen.
 - [ ] **Modul Vermietung (`vorstand/js/vermietung/`):** Buchungstabelle und Belegungsliste mit Spaltensortierung und Status-Pills versehen.
-- [ ] **Modul Mitglieder (`vorstand/js/mitglieder/`):** Mitglieder- und Adresslisten mit TableKit-Spaltensortierung und Live-Filter harmonisieren.
 - [ ] **Modul Anlässe & Controlling (`vorstand/js/anlaesse.js`):** Helferlisten, Mengenrechner und Checklisten per Drag & Drop sortierbar machen.
+
+---
+
+### 6.8 Fachmodul: Mitglieder Write-Master & Status U21 (Phase 8 – Abgeschlossen & im Testbetrieb)
+
+Mit Abschluss von Phase 8 wurde Supabase zum führenden **Write-Master** für die Mitglieder-Stammdaten erhoben:
+
+1. **Umfassende Daten-Mutation direkt in Supabase:**
+   - Vorstandsmitglieder können im Tab ✏️ *Bearbeiten* sämtliche Personalien (Vorname, Nachname, Anrede, Geburtsdatum, Geschlecht), Adressdaten (Strasse, PLZ, Ort, E-Mail, Telefon), Vereinsstatus (Passivmitglied mit SSV-Quellschutz, Ehrenmitglied, Ein-/Austritt, Bemerkungen) sowie Bank- und Rechnungsdaten (IBAN, BIC, Kontoinhaber, Rechnungsversand, Nie mahnen) mutieren.
+   - Mutationen werden direkt via Supabase REST in `public.members` gespeichert (< 50 ms).
+2. **Revisionssicheres Audit-Log (`public.member_history`):**
+   - Jede Mutation erzeugt automatisch einen Eintrag in `public.member_history` mit Erfasser, Datum, Vorher-/Nachher-Zusammenfassung und Ereignistyp (`Mutation Vorstand`).
+3. **Dual-Write (Abwärtskompatibilität):**
+   - Beim Speichern wird parallel asynchron an Google Apps Script (`action=saveVerein`) gespiegelt, sodass bestehende Google Sheets (Jahresbeitrag, alte Skripte) stets synchron bleiben.
+4. **Neuanlage (`mglSaveNeu`):**
+   - Interne Neuanlagen vergeben automatisch die nächste freie Personennummer ab `990001` und schreiben primär in Supabase mit Dual-Write an Google Sheets.
+5. **Alterskategorie Jugend (U21):**
+   - Vollständige Integration der SSV-Nachwuchskategorie `Jugend (U21)` (`Kalenderjahr - Geburtsjahr <= 20` oder Nachwuchs-Lizenz).
+   - Eigener Status-Filter-Button `Jugend (U21)` in der Filterleiste.
+   - Einheitliche optische Kennzeichnung mit `U21`-Badge in Tabelle, Karten und Profilkopf.
 
 ---
 
@@ -1075,7 +1100,7 @@ Die folgenden, bereits migrierten Module werden im Zuge der weiteren Portal-Harm
 | **Phase 5** | **Anlässe & Umfragen (Eventplaner)**| Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung; Dual-Write zum Google Sheet (`1lN180...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`); Dual-Write zu Google Sheets (`1q54RIa...`) | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 8** | **Mitglieder (Write-Master)** | Supabase wird alleiniger Master für Stammdaten; Mutationen direkt in Supabase | Supabase (Master) | ⏳ Geplant |
+| **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen (Personalien, Adressen, Status, Finanzen) direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges; TableKit mit Spalten-Ausblendung; Dual-Write zu Google Sheet | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 9** | **Jahresmeisterschaft** | Übernahme der präferierten KI-/Standblatt-Erkennung nach Abschluss der Testphase | Supabase + Cloudflare AI / OCR | Geplant |
 | **Phase 10** | **Jahresbeiträge & Fakturierung**| Beitragsrechnung und Debitorenverwaltung verknüpft mit `public.members`, QR-Rechnungen | Supabase + Paperless-NGX | Geplant |
 | **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung (letzter Schritt) | Supabase | Geplant |

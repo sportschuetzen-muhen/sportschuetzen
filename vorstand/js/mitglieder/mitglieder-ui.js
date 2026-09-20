@@ -252,13 +252,15 @@ function mglStatusBadge(m) {
   const isPassiv = m._istPassiv || m.IsPassive == 1 || m.IsPassive === true;
   const isAktiv = m.IsActive == 1 || m.IsActive === true || m.IsActive === '1';
   const hatAktLiz = Number(m._aktiveLizenzenCount || 0) > 0;
+  const isU21 = typeof mglIsU21 === 'function' ? mglIsU21(m) : false;
+  const u21Badge = isU21 ? ' <span class="badge bg-info text-dark ms-1" title="Nachwuchs / Jugend (U21)"><i class="fas fa-child me-1"></i>U21</span>' : '';
 
   if (isDeceased) return '<span class="badge bg-dark">† Verstorben</span>';
-  if (isEhren) return '<span class="badge bg-warning text-dark">Ehrenmitglied</span>';
-  if (isPassiv) return '<span class="badge bg-secondary">Passiv</span>';
-  if (isAktiv && hatAktLiz) return '<span class="badge bg-success">Aktiv</span>';
-  if (isAktiv && !hatAktLiz) return '<span class="badge bg-success opacity-75">Aktiv</span>';
-  return '<span class="badge bg-dark">Inaktiv</span>';
+  if (isEhren) return `<span class="badge bg-warning text-dark">Ehrenmitglied</span>${u21Badge}`;
+  if (isPassiv) return `<span class="badge bg-secondary">Passiv</span>${u21Badge}`;
+  if (isAktiv && hatAktLiz) return `<span class="badge bg-success">Aktiv</span>${u21Badge}`;
+  if (isAktiv && !hatAktLiz) return `<span class="badge bg-success opacity-75">Aktiv</span>${u21Badge}`;
+  return `<span class="badge bg-dark">Inaktiv</span>${u21Badge}`;
 }
 
 function mglKatBadge(kat) {

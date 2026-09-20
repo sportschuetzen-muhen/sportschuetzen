@@ -81,6 +81,7 @@ function mglOpenDetail(pn) {
     const badgeAktiv = (m._badgeAktiv || (m.IsActive == 1 || m.IsActive === true || m.IsActive === '1')) && !m._istPassiv && !isDeceased;
     const badgeLizenz = m._badgeLizenzText || `${Number(m._aktiveLizenzenCount || 0)} aktiv`;
     const badgeEhren = m._badgeEhren || m.IsHonoraryMember == 1 || m.IsHonoraryMember === true;
+    const isU21 = typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21;
 
     document.getElementById('mglDetailTitle').textContent = `${m.FirstName || ''} ${m.LastName || ''} ${isDeceased ? '†' : ''}`;
 
@@ -167,6 +168,7 @@ function mglOpenDetail(pn) {
               <div class="mgl-badge-row">
                 ${isDeceased ? `<span class="mgl-chip gray">† Verstorben</span>` : (badgeAktiv ? `<span class="mgl-chip green">Aktiv</span>` : `<span class="mgl-chip gray">Inaktiv</span>`)}
                 <span class="mgl-chip blue">${badgeLizenz}</span>
+                ${isU21 ? '<span class="mgl-chip" style="background:#0dcaf0;color:#000;font-weight:600;"><i class="fas fa-child me-1"></i>Jugend (U21)</span>' : ''}
                 ${badgeEhren ? `<span class="mgl-chip gold">Ehrenmitglied</span>` : ''}
               </div>
             </div>
@@ -271,44 +273,167 @@ function mglOpenDetail(pn) {
 
           ${canEditVerein ? `
           <div class="tab-pane fade" id="mglTabEdit">
-            <div class="row g-3 mt-1">
-              <div class="col-md-6">
-                <label class="form-label">IBAN</label>
-                <input type="text" class="form-control" id="mglEditIBAN" value="${m.IBAN || ''}">
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">BIC</label>
-                <input type="text" class="form-control" id="mglEditBIC" value="${m.BIC || ''}">
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Kontoinhaber</label>
-                <input type="text" class="form-control" id="mglEditKonto" value="${m.Kontoinhaber || ''}">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label">Rechnungsversand</label>
-                <select class="form-select" id="mglEditRV">
-                  <option ${m.Rechnungsversand === 'E-Mail' ? 'selected' : ''}>E-Mail</option>
-                  <option ${m.Rechnungsversand === 'Post' ? 'selected' : ''}>Post</option>
-                </select>
-              </div>
-              <div class="col-md-4">
-                <label class="form-label">Vereinsaustritt</label>
-                <input type="date" class="form-control" id="mglEditAustritt"
-                       value="${mglFmtDateIso(m.Vereinsaustritt)}">
-              </div>
-              <div class="col-md-4">
-                <div class="form-check mt-4">
-                  <input type="checkbox" class="form-check-input" id="mglEditMahnen"
-                         ${m.Niemahnen ? 'checked' : ''}>
-                  <label class="form-check-label">Nie mahnen</label>
+            <form id="mglEditForm" onsubmit="mglSaveMember(event, '${pn}')">
+              
+              <!-- Sektion 1: Personalien -->
+              <div class="card border mb-3 shadow-xs rounded-3">
+                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase d-flex justify-content-between align-items-center">
+                  <span><i class="fas fa-user text-primary me-1"></i> Personalien</span>
+                  <span class="badge bg-primary-subtle text-primary fw-semibold" style="font-size:0.7rem">Supabase Write-Master</span>
+                </div>
+                <div class="card-body p-3">
+                  <div class="row g-2">
+                    <div class="col-md-2">
+                      <label class="form-label small fw-bold text-muted">Anrede</label>
+                      <select class="form-select form-select-sm" id="mglEditSalutation">
+                        <option value="Herr" ${m.Salutation === 'Herr' ? 'selected' : ''}>Herr</option>
+                        <option value="Frau" ${m.Salutation === 'Frau' ? 'selected' : ''}>Frau</option>
+                        <option value="Familie" ${m.Salutation === 'Familie' ? 'selected' : ''}>Familie</option>
+                        <option value="" ${!m.Salutation ? 'selected' : ''}>–</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small fw-bold text-muted">Vorname *</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditFirstName" value="${escapeHtml(m.FirstName || '')}" required>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small fw-bold text-muted">Nachname *</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditLastName" value="${escapeHtml(m.LastName || '')}" required>
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small fw-bold text-muted">Geburtsdatum</label>
+                      <input type="date" class="form-control form-control-sm" id="mglEditBirthDate" value="${mglFmtDateIso(m.BirthDate)}">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small fw-bold text-muted">Geschlecht</label>
+                      <select class="form-select form-select-sm" id="mglEditGender">
+                        <option value="m" ${String(m.Gender || '').toLowerCase().startsWith('m') ? 'selected' : ''}>Männlich</option>
+                        <option value="w" ${String(m.Gender || '').toLowerCase().startsWith('w') || String(m.Gender || '').toLowerCase().startsWith('f') ? 'selected' : ''}>Weiblich</option>
+                        <option value="" ${!m.Gender ? 'selected' : ''}>–</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="col-12">
-                <button class="btn btn-primary" onclick="mglSaveVerein('${pn}')">
-                  <i class="fas fa-save"></i> Speichern
+
+              <!-- Sektion 2: Adresse & Kommunikation -->
+              <div class="card border mb-3 shadow-xs rounded-3">
+                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
+                  <i class="fas fa-map-marker-alt text-primary me-1"></i> Adresse & Kommunikation
+                </div>
+                <div class="card-body p-3">
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <label class="form-label small fw-bold text-muted">Strasse / Nr.</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditStreet" value="${escapeHtml(m.Street || '')}">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label small fw-bold text-muted">PLZ</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditPostCode" value="${escapeHtml(m.PostCode || '')}">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold text-muted">Ort</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditCity" value="${escapeHtml(m.City || '')}">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold text-muted">E-Mail (Haupt)</label>
+                      <input type="email" class="form-control form-control-sm" id="mglEditEmail" value="${escapeHtml(m.PrimaryEmail || '')}">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold text-muted">Mobiltelefon</label>
+                      <input type="tel" class="form-control form-control-sm" id="mglEditMobilePhone" value="${escapeHtml(m.PrivateMobilePhone || '')}">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold text-muted">Festnetz / Büro</label>
+                      <input type="tel" class="form-control form-control-sm" id="mglEditLandlinePhone" value="${escapeHtml(m.PrivateLandlinePhone || m.BusinessLandlinePhone || '')}">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sektion 3: Vereinsstatus & Quellschutz -->
+              <div class="card border mb-3 shadow-xs rounded-3">
+                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
+                  <i class="fas fa-shield-alt text-primary me-1"></i> Vereinsstatus & Quellschutz
+                </div>
+                <div class="card-body p-3">
+                  <div class="row g-3">
+                    <div class="col-md-3">
+                      <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="mglEditIsPassive" ${m._istPassiv || m.IsPassive ? 'checked' : ''}>
+                        <label class="form-check-label fw-semibold small" for="mglEditIsPassive">Passivmitglied</label>
+                      </div>
+                      <div class="form-text small text-muted" style="font-size: 0.72rem;">Schützt vor unbedachtem SSV-Überschreiben</div>
+                    </div>
+                    <div class="col-md-3">
+                      <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="mglEditIsHonorary" ${m._istEhren || m.IsHonoraryMember ? 'checked' : ''}>
+                        <label class="form-check-label fw-semibold small" for="mglEditIsHonorary">Ehrenmitglied</label>
+                      </div>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small fw-bold text-muted">Ehrenmitglied seit</label>
+                      <input type="date" class="form-control form-control-sm" id="mglEditHonorarySince" value="${mglFmtDateIso(m.HonoraryMemberSince)}">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small fw-bold text-muted">Vereinseintritt</label>
+                      <input type="date" class="form-control form-control-sm" id="mglEditClubEntry" value="${mglFmtDateIso(m.ClubEntryDate || m.FirstClubEntryDateSSV)}">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small fw-bold text-muted">Vereinsaustritt</label>
+                      <input type="date" class="form-control form-control-sm" id="mglEditAustritt" value="${mglFmtDateIso(m.Vereinsaustritt)}">
+                    </div>
+                    <div class="col-md-9">
+                      <label class="form-label small fw-bold text-muted">Bemerkungen / Notizen</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditRemark" value="${escapeHtml(m.Remark || '')}" placeholder="Interne Bemerkungen...">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sektion 4: Zahlungsdaten & Rechnungen -->
+              <div class="card border mb-3 shadow-xs rounded-3">
+                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
+                  <i class="fas fa-file-invoice text-primary me-1"></i> Zahlungsdaten & Beitragsfakturierung
+                </div>
+                <div class="card-body p-3">
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <label class="form-label small fw-bold text-muted">IBAN</label>
+                      <input type="text" class="form-control form-control-sm font-monospace" id="mglEditIBAN" value="${escapeHtml(m.IBAN || '')}" placeholder="CH...">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small fw-bold text-muted">BIC</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditBIC" value="${escapeHtml(m.BIC || '')}">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small fw-bold text-muted">Kontoinhaber</label>
+                      <input type="text" class="form-control form-control-sm" id="mglEditKonto" value="${escapeHtml(m.Kontoinhaber || '')}">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold text-muted">Rechnungsversand</label>
+                      <select class="form-select form-select-sm" id="mglEditRV">
+                        <option value="E-Mail" ${m.Rechnungsversand === 'E-Mail' ? 'selected' : ''}>E-Mail</option>
+                        <option value="Post" ${m.Rechnungsversand === 'Post' ? 'selected' : ''}>Post</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <div class="form-check form-switch mt-4">
+                        <input class="form-check-input" type="checkbox" id="mglEditMahnen" ${m.Niemahnen ? 'checked' : ''}>
+                        <label class="form-check-label fw-semibold small" for="mglEditMahnen">Nie mahnen</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                <span class="small text-muted"><i class="fas fa-lock me-1"></i>Speicherung erfolgt primär in Supabase PostgreSQL mit Revisions-Audit</span>
+                <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" id="mglEditSubmitBtn">
+                  <i class="fas fa-save me-1"></i> Änderungen speichern
                 </button>
               </div>
-            </div>
+            </form>
           </div>` : ''}
         </div>
       </div>`;

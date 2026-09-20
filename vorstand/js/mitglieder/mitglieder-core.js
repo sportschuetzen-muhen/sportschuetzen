@@ -65,9 +65,32 @@ function mapMemberFromSupabase(r) {
     synced_at: r.synced_at,
     _istEhren: Boolean(r.is_honorary),
     _istPassiv: Boolean(r.is_passive),
-    _badgeAktiv: Boolean(r.is_active) && !r.is_passive && !r.deceased
+    _badgeAktiv: Boolean(r.is_active) && !r.is_passive && !r.deceased,
+    _isU21: mglIsU21({ BirthDate: r.birth_date, PersonNumber: r.person_number })
   };
 }
+
+// Ermittelt ob ein Mitglied gemäss SSV-Definition der Alterskategorie U21 (Jugend/Junioren) angehört
+function mglIsU21(m) {
+  if (!m) return false;
+  if (m.BirthDate) {
+    const d = new Date(m.BirthDate);
+    if (!isNaN(d.getTime())) {
+      const currentYear = new Date().getFullYear();
+      const age = currentYear - d.getFullYear();
+      if (age <= 20 && age >= 5) return true;
+    }
+  }
+  const lics = m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || [];
+  if (Array.isArray(lics)) {
+    return lics.some(l => {
+      const t = String(l.LicenseType || l.license_type || l.membership_category || '').toUpperCase();
+      return t.includes('U21') || t.includes('U17') || t.includes('U15') || t.includes('JUNIOR') || t.includes('JUGEND') || t.includes('NACHWUCHS');
+    });
+  }
+  return false;
+}
+window.mglIsU21 = mglIsU21;
 
 function mapLicenseFromSupabase(r) {
   return {

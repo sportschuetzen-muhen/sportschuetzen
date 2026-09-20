@@ -121,6 +121,10 @@
       .tk-collapsed .tk-collapse-content {
         display: none !important;
       }
+      /* TableKit: Spalten-Sichtbarkeit / Ausblenden */
+      .tk-col-hidden {
+        display: none !important;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -265,15 +269,24 @@
     let dragSrcEl = null;
     let touchDragging = false;
     let touchTargetEl = null;
+    let isHandleActive = false;
+
+    // Desktop: Tracking ob Mousedown auf dem Drag-Handle stattfand
+    containerElement.addEventListener('mousedown', (e) => {
+      isHandleActive = !!e.target.closest('.tk-drag-handle');
+    });
+    document.addEventListener('mouseup', () => {
+      isHandleActive = false;
+    });
 
     // --- DESKTOP HTML5 DRAG & DROP ---
     containerElement.addEventListener('dragstart', (e) => {
-      const handle = e.target.closest('.tk-drag-handle');
       const row = e.target.closest(options.itemSelector || 'tr[data-id], .tk-draggable-item');
       if (!row) return;
 
-      // Nur zulassen wenn am Handle gezogen wird (oder wenn kein separates Handle definiert ist)
-      if (row.querySelector('.tk-drag-handle') && !handle) {
+      const hasHandle = !!row.querySelector('.tk-drag-handle');
+      // Nur ziehen erlauben wenn vorher mousedown auf dem Handle war (oder kein Handle existiert)
+      if (hasHandle && !isHandleActive) {
         e.preventDefault();
         return;
       }
@@ -285,6 +298,7 @@
     });
 
     containerElement.addEventListener('dragend', () => {
+      isHandleActive = false;
       if (dragSrcEl) dragSrcEl.classList.remove('tk-dragging');
       clearDropHighlights(containerElement);
       dragSrcEl = null;
@@ -347,10 +361,13 @@
       touchDragging = true;
       touchTargetEl = row;
       row.classList.add('tk-dragging');
-    }, { passive: true });
+    }, { passive: false });
 
     containerElement.addEventListener('touchmove', (e) => {
       if (!touchDragging || !touchTargetEl) return;
+      // Verhindert das Standard-Scrollen auf Smartphones, während die Zeile bewegt wird!
+      if (e.cancelable) e.preventDefault();
+
       const touch = e.touches[0];
       const targetOver = document.elementFromPoint(touch.clientX, touch.clientY);
       if (!targetOver) return;
@@ -365,7 +382,7 @@
           targetRow.parentNode.insertBefore(touchTargetEl, targetRow.nextSibling);
         }
       }
-    }, { passive: true });
+    }, { passive: false });
 
     containerElement.addEventListener('touchend', () => {
       if (!touchDragging) return;
@@ -515,12 +532,154 @@
     });
   }
 
+  // =========================================================
+  // 5. SPALTEN EIN- & AUSBLENDEN (TableKit.setupColumnToggle)
+  // =========================================================
+  function setupColumnToggle(tableOrSelector, options = {}) {
+    ensureStyles();
+    const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+    if (!table) return;
+
+    const container = typeof options.container === 'string' ? document.querySelector(options.container) : options.container;
+    const storageKey = options.storageKey || (table.id ? `tk_cols_${table.id}` : null);
+
+    // Spalten ermitteln: Entweder aus options.columns oder dynamisch aus <th> mit data-col-id
+    let cols = options.columns || [];
+    if (!cols.length) {
+      const ths = table.querySelectorAll('thead th[data-col-id]');
+      ths.forEach(th => {
+        cols.push({
+          id: th.dataset.colId,
+          name: th.dataset.colName || th.innerText.replace(/[↕▲▼]/g, '').trim(),
+          defaultVisible: th.dataset.colDefault !== 'hidden'
+        });
+      });
+    }
+
+    if (!cols.length) return;
+
+    // Gespeicherte Sichtbarkeit laden
+    let savedState = {};
+    if (storageKey) {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) savedState = JSON.parse(raw);
+      } catch (_) {}
+    }
+
+    // Aktuellen Zustand initialisieren
+    const colState = {};
+    cols.forEach(c => {
+      if (savedState && typeof savedState[c.id] === 'boolean') {
+        colState[c.id] = savedState[c.id];
+      } else {
+        colState[c.id] = c.defaultVisible !== false;
+      }
+    });
+
+    function applyColumnVisibility() {
+      cols.forEach(c => {
+        const isVisible = colState[c.id];
+        const cells = table.querySelectorAll(`.tk-col-${c.id}, [data-col-id="${c.id}"]`);
+        cells.forEach(el => {
+          if (isVisible) {
+            el.classList.remove('tk-col-hidden');
+          } else {
+            el.classList.add('tk-col-hidden');
+          }
+        });
+      });
+
+      if (container) {
+        const visibleCount = cols.filter(c => colState[c.id]).length;
+        const countBadge = container.querySelector('.tk-col-count');
+        if (countBadge) countBadge.textContent = `${visibleCount}/${cols.length}`;
+
+        cols.forEach(c => {
+          const chk = container.querySelector(`input[data-col-toggle="${c.id}"]`);
+          if (chk) chk.checked = colState[c.id];
+        });
+      }
+
+      if (storageKey) {
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(colState));
+        } catch (_) {}
+      }
+
+      if (typeof options.onChange === 'function') {
+        options.onChange(colState);
+      }
+    }
+
+    if (container) {
+      container.innerHTML = `
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-1 shadow-xs" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Spalten ein- oder ausblenden">
+            <i class="fas fa-columns text-primary"></i>
+            <span>Spalten</span>
+            <span class="badge bg-secondary ms-1 tk-col-count" style="font-size: 0.72rem;">${cols.length}/${cols.length}</span>
+          </button>
+          <div class="dropdown-menu dropdown-menu-end shadow p-2" style="min-width: 220px; font-size: 0.85rem; z-index: 1060;">
+            <div class="d-flex justify-content-between align-items-center mb-2 px-1 border-bottom pb-1">
+              <span class="fw-bold small text-muted text-uppercase" style="font-size: 0.72rem;">Spalten auswählen</span>
+              <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-primary small tk-col-show-all" style="font-size: 0.75rem;">Alle an</button>
+            </div>
+            <div class="tk-col-dropdown-list d-flex flex-column gap-1">
+              ${cols.map(c => `
+                <label class="dropdown-item d-flex align-items-center justify-content-between py-1 px-2 rounded cursor-pointer mb-0">
+                  <span>${c.name}</span>
+                  <input class="form-check-input ms-2 tk-col-checkbox" type="checkbox" data-col-toggle="${c.id}" ${colState[c.id] ? 'checked' : ''}>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+
+      container.querySelectorAll('.tk-col-checkbox').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+          const colId = e.target.dataset.colToggle;
+          colState[colId] = e.target.checked;
+          applyColumnVisibility();
+        });
+      });
+
+      const showAllBtn = container.querySelector('.tk-col-show-all');
+      if (showAllBtn) {
+        showAllBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          cols.forEach(c => { colState[c.id] = true; });
+          applyColumnVisibility();
+        });
+      }
+    }
+
+    applyColumnVisibility();
+
+    return {
+      apply: applyColumnVisibility,
+      toggle: (colId, visible) => {
+        if (colId in colState) {
+          colState[colId] = (typeof visible === 'boolean') ? visible : !colState[colId];
+          applyColumnVisibility();
+        }
+      },
+      showAll: () => {
+        cols.forEach(c => { colState[c.id] = true; });
+        applyColumnVisibility();
+      },
+      getState: () => ({ ...colState })
+    };
+  }
+
   // Globale Registrierung
   window.TableKit = {
     makeSortable,
     makeDraggable,
     setupFilter,
     setupCollapsible,
+    setupColumnToggle,
     ensureStyles
   };
 

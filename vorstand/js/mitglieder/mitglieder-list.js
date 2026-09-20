@@ -80,6 +80,9 @@ function mglRenderListe(data) {
         <i class="fas fa-file-excel me-1"></i> Excel-Export
       </button>
 
+      <!-- Spalten-Ausblender Button (nur bei Tabellenansicht sichtbar) -->
+      <div id="mgl-column-toggle" class="ms-md-2 ${window._mglViewMode === 'table' ? '' : 'd-none'}"></div>
+
       <!-- Button Neues Mitglied -->
       ${canEdit ? `
       <button class="btn btn-sm btn-primary ms-auto" onclick="mglNeuesMitglied()">
@@ -98,6 +101,9 @@ function mglRenderListe(data) {
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'ohne-lizenz' ? 'active' : ''}" onclick="mglSetTypeFilter('ohne-lizenz')">
         Aktiv ohne Lizenz
+      </div>
+      <div class="mgl-pill-tab ${window._mglFilterType === 'u21' ? 'active' : ''}" onclick="mglSetTypeFilter('u21')" title="Nachwuchs & Jugendliche unter 21 Jahren (U21)">
+        <i class="fas fa-child text-info me-1"></i>Jugend (U21)
       </div>
       <div class="mgl-pill-tab ${window._mglFilterType === 'passiv' ? 'active' : ''}" onclick="mglSetTypeFilter('passiv')">
         Passiv
@@ -169,19 +175,19 @@ function mglRenderRows(data) {
       <div class="card border-0 shadow-sm">
         <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-hover table-sm mb-0 align-middle">
+            <table class="table table-hover table-sm mb-0 align-middle" id="mgl-table">
               <thead class="table-dark">
                 <tr>
-                  <th class="mgl-clickable-sort" onclick="mglSetSort('AddressNumber')">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
-                  <th class="mgl-clickable-sort" onclick="mglSetSort('LastName')">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
-                  <th class="mgl-clickable-sort" onclick="mglSetSort('BirthDate')">Geburtsdatum <span class="mgl-sort-ind">${mglSortIndicator('BirthDate')}</span></th>
-                  <th>E-Mail</th>
-                  <th>Telefon</th>
-                  <th class="mgl-clickable-sort" onclick="mglSetSort('_kategorie')">Kategorie <span class="mgl-sort-ind">${mglSortIndicator('_kategorie')}</span></th>
-                  <th class="mgl-clickable-sort" onclick="mglSetSort('_aktiveLizenzenCount')">Lizenzen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveLizenzenCount')}</span></th>
-                  <th class="mgl-clickable-sort" onclick="mglSetSort('_aktiveFunktionenCount')">Funktionen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveFunktionenCount')}</span></th>
-                  <th>Status</th>
-                  <th></th>
+                  <th data-col-id="nr" data-col-name="Nr. / Lizenz" class="mgl-clickable-sort tk-col-nr" onclick="mglSetSort('AddressNumber')">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
+                  <th data-col-id="name" data-col-name="Name" class="mgl-clickable-sort tk-col-name" onclick="mglSetSort('LastName')">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
+                  <th data-col-id="geburt" data-col-name="Geburtsdatum" class="mgl-clickable-sort tk-col-geburt" onclick="mglSetSort('BirthDate')">Geburtsdatum <span class="mgl-sort-ind">${mglSortIndicator('BirthDate')}</span></th>
+                  <th data-col-id="email" data-col-name="E-Mail" class="tk-col-email">E-Mail</th>
+                  <th data-col-id="telefon" data-col-name="Telefon" class="tk-col-telefon">Telefon</th>
+                  <th data-col-id="kategorie" data-col-name="Kategorie" class="mgl-clickable-sort tk-col-kategorie" onclick="mglSetSort('_kategorie')">Kategorie <span class="mgl-sort-ind">${mglSortIndicator('_kategorie')}</span></th>
+                  <th data-col-id="lizenzen" data-col-name="Lizenzen" class="mgl-clickable-sort tk-col-lizenzen" onclick="mglSetSort('_aktiveLizenzenCount')">Lizenzen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveLizenzenCount')}</span></th>
+                  <th data-col-id="funktionen" data-col-name="Funktionen" class="mgl-clickable-sort tk-col-funktionen" onclick="mglSetSort('_aktiveFunktionenCount')">Funktionen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveFunktionenCount')}</span></th>
+                  <th data-col-id="status" data-col-name="Status" class="tk-col-status">Status</th>
+                  <th style="width: 75px;"></th>
                 </tr>
               </thead>
               <tbody id="mglTableBody">
@@ -212,14 +218,14 @@ function mglRenderRows(data) {
                   }
 
                   return `<tr>
-                    <td class="small">
+                    <td class="small tk-col-nr">
                       <div class="fw-bold text-dark font-monospace" style="font-size:0.9rem">${addrNum}</div>
                       <div class="text-muted small d-flex align-items-center mt-1" style="font-size:0.75rem">
                         <span class="font-monospace">Liz: ${pn}</span>
                         ${copyIcon}
                       </div>
                     </td>
-                    <td>
+                    <td class="tk-col-name">
                       <a href="#" class="text-decoration-none fw-semibold"
                          onclick="mglOpenDetail('${pn}'); return false;">
                         ${name}
@@ -228,14 +234,14 @@ function mglRenderRows(data) {
                       ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
                       ${fnHtml}
                     </td>
-                    <td class="small text-nowrap">${birthDateStr}</td>
-                    <td class="small">${email}</td>
-                    <td class="small">${phone}</td>
-                    <td>${katBadge}</td>
-                    <td><span class="badge bg-primary">${aktiveLiz}</span></td>
-                    <td><span class="badge bg-info text-dark">${aktiveFn}</span></td>
-                    <td>${statusBadge}</td>
-                    <td class="text-nowrap">
+                    <td class="small text-nowrap tk-col-geburt">${birthDateStr}</td>
+                    <td class="small tk-col-email">${email}</td>
+                    <td class="small tk-col-telefon">${phone}</td>
+                    <td class="tk-col-kategorie">${katBadge}</td>
+                    <td class="tk-col-lizenzen"><span class="badge bg-primary">${aktiveLiz}</span></td>
+                    <td class="tk-col-funktionen"><span class="badge bg-info text-dark">${aktiveFn}</span></td>
+                    <td class="tk-col-status">${statusBadge}</td>
+                    <td class="text-nowrap text-end">
                       <button class="btn btn-outline-primary btn-sm py-0 px-2"
                               onclick="mglOpenDetail('${pn}')">
                         <i class="fas fa-eye"></i>
@@ -243,7 +249,7 @@ function mglRenderRows(data) {
                       ${canEdit ? `
                       <button class="btn btn-outline-secondary btn-sm py-0 px-2"
                               onclick="mglOpenEdit('${pn}')"
-                              title="Vereinsinterne Felder bearbeiten">
+                              title="Mitgliedsdaten bearbeiten">
                         <i class="fas fa-pen"></i>
                       </button>` : ''}
                     </td>
@@ -255,6 +261,13 @@ function mglRenderRows(data) {
         </div>
       </div>
     `;
+
+    if (typeof window.TableKit?.setupColumnToggle === 'function') {
+      window._mglColToggle = window.TableKit.setupColumnToggle('#mgl-table', {
+        container: '#mgl-column-toggle',
+        storageKey: 'mgl_columns_visibility'
+      });
+    }
   } else {
     // Rendern als moderne, kartenbasierte Grid-Ansicht
     container.innerHTML = `
@@ -380,6 +393,8 @@ function mglFilter() {
           ? (!isDeceased && isAktiv && aktiveLiz > 0)
         : typeMode === 'ohne-lizenz' 
           ? (!isDeceased && isAktiv && aktiveLiz === 0)
+        : typeMode === 'u21'
+          ? (!isDeceased && (typeof mglIsU21 === 'function' ? mglIsU21(m) : !!m._isU21))
         : typeMode === 'passiv' 
           ? (!isDeceased && isPassiv)
         : typeMode === 'ehren' 
