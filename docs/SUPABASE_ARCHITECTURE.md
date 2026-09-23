@@ -1305,11 +1305,20 @@ Phase 18 hat alle verbliebenen Satellitenschnittstellen in der Mobile PWA (`app.
 
 ---
 
-### 6.18 FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG (Phase 19 – Geplant)
+### 6.18 FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG (Phase 19 – In Vorbereitung / Teildeaktiviert)
 
-Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden:
-- Gezielte Deaktivierung aller verbliebenen asynchronen Dual-Write Spiegelungen im Vorstand-Portal.
-- Vollständige Stilllegung der 10 Legacy Google Spreadsheets und 11 Google Apps Script Projekte.
+Für die Module mit vollständigem Supabase-Datenbestand wurden die asynchronen Dual-Write-Spiegelungen zu Google Sheets im Vorstand-Portal deaktiviert (sauber auskommentiert, sodass sie bei Bedarf jederzeit durch einfaches Einkommentieren wiederhergestellt werden können):
+- **Termine (`vorstand/js/termine/termine-core.js`):** Dual-Write an `Admin_GV_GAS` deaktiviert.
+- **Mitglieder (`vorstand/js/mitglieder/mitglieder-manager.js` & `mitglieder-import-engine.js`):** Mutationen und SSV-Diffs spiegeln nicht mehr ins Google Sheet.
+- **Rechnungen (`vorstand/js/rechnungen/rechnungen-actions.js`):** Rechnungsanlage, -änderung und -löschung schreiben rein nach Supabase; UI aktualisiert sich in < 200 ms.
+- **Team Manager (`vorstand/js/manager/manager-core.js`):** Team-Zuteilungen spiegeln nicht mehr ins Tabellenblatt.
+- **System-Mails (`vorstand/js/system-mails.js`):** Verteiler-Spiegelung an das `App_Info`-Sheet deaktiviert.
+
+**Operative Dienste bleiben 100% aktiv:**
+- PDF-Generierung für Rechnungen & Mietverträge
+- Google Calendar Belegungs-Einträge
+- Mailversand über Gmail (Rechnungsmails, Verträge, Mahnungen)
+- Mobile PWA Standblatt-Uploads nach Cloudflare R2
 
 ---
 
@@ -1336,7 +1345,7 @@ Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden
 | **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; 1-Klick-Import; Mail-Audit-Log (`17_team_manager_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 17** | **Generalversammlung & Präsenz** | Migration von GV-Stammdaten, Traktanden, Beschlüssen, Präsenzkontrolle & Stimmberechtigung (`18_generalversammlung_module.sql`); Sub-Sekunden RSVP-Berechnung; Dual-Write an GAS | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, RSVPs/Umfragen und Website-Resultate; kein Daten-Fallback auf GAS | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 19** | **Finaler Cut-Over** | Vollständige Deaktivierung aller Dual-Writes; Stilllegung aller Google Sheets & Google Apps Scripts | Supabase (Single Source of Truth) | 📋 **Geplant** |
+| **Phase 19** | **Finaler Cut-Over** | Gezielte Deaktivierung der Dual-Writes für geprüfte Module (Termine, Mitglieder, Rechnungen, Teams, System-Mails); Stilllegung nach finaler Abnahme der Restmodule | Supabase (Single Source of Truth) | 🟡 **Teildeaktiviert (Reversibel)** |
 
 ---
 
