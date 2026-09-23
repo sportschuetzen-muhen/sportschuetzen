@@ -629,6 +629,7 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('manager', this)">
                     <i class="fas fa-shield-alt"></i> <span class="nav-text">Team Manager</span>
+                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('resultate', this)">
@@ -643,6 +644,7 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('jahresmeisterschaft', this)">
                     <i class="fas fa-medal"></i> <span class="nav-text">Jahresmeisterschaft KK</span>
+                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('mail', this)">
@@ -771,10 +773,13 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
                              onclick="navTo('manager')" style="cursor:pointer">
-                            <h5>🛡️ Manager</h5>
-                            <p class="small text-muted">Teams verwalten</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🛡️ Team Manager</h5>
+                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
+                            </div>
+                            <p class="small text-muted">Teams & Schützen-Zuteilung (Supabase Master)</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
@@ -798,10 +803,13 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
                              onclick="navTo('jahresmeisterschaft')" style="cursor:pointer">
-                            <h5>🏅 Jahresmeisterschaft KK</h5>
-                            <p class="small text-muted">Kleinkaliber Meisterschaft verwalten</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🏅 Jahresmeisterschaft KK</h5>
+                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
+                            </div>
+                            <p class="small text-muted">Kleinkaliber Meisterschaft verwalten (Supabase Master)</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">

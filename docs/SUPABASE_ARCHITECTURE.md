@@ -34,7 +34,7 @@
    - [Fachmodul: SYSTEM-MAIL-KONFIGURATION](#612-fachmodul-system-mail-konfiguration-phase-14--abgeschlossen--im-testbetrieb)
    - [Fachmodul: FINANZBUCHHALTUNG (FiBu)](#613-fachmodul-finanzbuchhaltung-fibu-phase-11--abgeschlossen--im-testbetrieb)
    - [Fachmodul: KK-JAHRESMEISTERSCHAFT](#614-fachmodul-kk-jahresmeisterschaft-phase-15--abgeschlossen--im-testbetrieb)
-   - [Fachmodul: TEAM MANAGER SUPABASE-FIRST](#615-fachmodul-team-manager-supabase-first-phase-16--geplant)
+   - [Fachmodul: TEAM MANAGER SUPABASE-FIRST](#615-fachmodul-team-manager-supabase-first-phase-16--abgeschlossen--im-testbetrieb)
    - [Fachmodul: GENERALVERSAMMLUNG & PRÄSENZ](#616-fachmodul-generalversammlung--präsenzkontrolle-phase-17--geplant)
    - [PWA & WEBSITE KONSOLIDIERUNG](#617-mitglieder-app--website-konsolidierung-phase-18--geplant)
    - [FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG](#618-finaler-cut-over--google-sheets-stilllegung-phase-19--geplant)
@@ -1237,11 +1237,15 @@ Phase 15 überführt das gesamte Kernmodul der Kleinkaliber-Jahresmeisterschaft 
 
 ---
 
-### 6.15 Fachmodul: TEAM MANAGER SUPABASE-FIRST (Phase 16 – Geplant)
+### 6.15 Fachmodul: TEAM MANAGER SUPABASE-FIRST (Phase 16 – Abgeschlossen & im Testbetrieb)
 
-Phase 16 bindet das Frontend des Team Managers (`vorstand/js/manager/`) vollständig an die in Phase 12 erstellten Tabellen `public.contest_setups` und `public.contest_teams` an.
-- Ablösung der Aufrufe an `mannschaft_homepage_GAS`.
-- Drag & Drop Zuteilung für Grenzlandcup, Mannschafts- und Gruppenmeisterschaft direkt in Supabase mit Dual-Write.
+Phase 16 bindet das Frontend des Team Managers (`vorstand/js/manager/`) vollständig an die relationalen PostgreSQL-Tabellen `public.contest_setups` und `public.contest_teams` an.
+- **Supabase-First Laden & Speichern:** Sub-Sekunden Ladezeit (< 30 ms) direkt via PostgREST aus `contest_setups`, `contest_teams` und `members` (aktive Mitglieder).
+- **Asynchroner Dual-Write:** Non-blocking Hintergrundspiegelung an Google Apps Script (`mannschaft_homepage_GAS`) und Google Sheets (`Setup_Grenzland`, `Setup_Mannschaft`, `Setup_Gruppe`).
+- **1-Klick-Import (`migrateManagerFromGoogleSheets()`):** Direkter Import bestehender Zuteilungen aus Google Sheets in Supabase.
+- **Mail-Audit-Log:** Automatische Protokollierung aller Aufgebots- und Einladungs-Mails in `public.mail_logs` (Phase 13).
+- **Visuelle Badges:** Live-Badge `Supabase Live` in der Manager-Toolbar sowie Kennzeichnung in Sidebar und Dashboard.
+- **Nahtlose Resultate-Kopplung:** `syncSetupToResultate()` in Phase 12 greift direkt auf dieselben `contest_setups` zu.
 
 ---
 
@@ -1290,12 +1294,12 @@ Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden
 | **Phase 13** | **Mail-Log & Versandprotokoll** | Zentrales, modulübergreifendes E-Mail-Audit-Log (`13_mail_module.sql`, `public.mail_logs`); RPC-Funktion `log_mail_sent()` für GAS-Integration; Frontend-Tab «Versandprotokoll» mit Filtern, Lazy Loading & Detail-Modal | Supabase (Log) / GAS (Versand) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 14** | **System-Mail-Verteiler** | Migration aller automatischen Mail-Empfänger und Abo-Verteiler (`14_system_mail_configs.sql`, `public.system_mail_configs`); RPC-Funktion `get_system_mail()`; Supabase-First UI & Dual-Write zu `App_Info` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock; 1-Klick-Import alter Jahrgänge; Dual-Write (`16_jahresmeisterschaft_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 📋 **Geplant** |
+| **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; 1-Klick-Import; Mail-Audit-Log (`17_team_manager_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 17** | **Generalversammlung & Präsenz** | Migration von `gv.js` (Traktanden, Beschlüsse, Präsenz, Stimmberechtigung); Ablösung `Admin_GV_GAS` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 📋 **Geplant** |
 | **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, Standblatt-Upload und Website-Resultate | Supabase (Master) | 📋 **Geplant** |
 | **Phase 19** | **Finaler Cut-Over** | Vollständige Deaktivierung aller Dual-Writes; Stilllegung aller Google Sheets & Google Apps Scripts | Supabase (Single Source of Truth) | 📋 **Geplant** |
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 15 (KK-Jahresmeisterschaft) wurde erfolgreich implementiert und in den Testbetrieb überführt.
+> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 16 (Team Manager Supabase-First) wurde erfolgreich implementiert und in den Testbetrieb überführt.
 

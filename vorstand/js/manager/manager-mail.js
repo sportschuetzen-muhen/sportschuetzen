@@ -316,6 +316,26 @@ async function executeMailSend() {
         const data = JSON.parse(await res.text());
         if (data.error) throw new Error(data.error);
 
+        // Audit-Log in Supabase public.mail_logs erfassen (Phase 13)
+        const supa = (typeof getManagerSupabaseClient === 'function' ? getManagerSupabaseClient() : (window.supabaseClient || null));
+        if (supa) {
+            try {
+                await supa.from('mail_logs').insert({
+                    id: 'mail_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+                    sender_email: 'sportschuetzen.muhen@gmail.com',
+                    recipient_count: mails.length,
+                    recipients_summary: mails.slice(0, 5).join(', ') + (mails.length > 5 ? ` (+${mails.length - 5} weitere)` : ''),
+                    subject: subject,
+                    body_preview: bodyText.slice(0, 200),
+                    module: 'manager',
+                    status: 'success',
+                    metadata: { modules: selectedModules, attachments_count: attachments.length }
+                });
+            } catch (logErr) {
+                console.warn('⚠️ [Mail-Log] Audit-Log Eintrag Hinweis:', logErr.message);
+            }
+        }
+
         bootstrap.Modal.getInstance(document.getElementById('mailWizardModal')).hide();
         showToast(`✅ Entwurf für ${mails.length} Empfänger erstellt!`, 'success');
 

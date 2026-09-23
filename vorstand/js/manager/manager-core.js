@@ -40,9 +40,21 @@ const CONTEST_CONFIG = {
     }
 };
 
+// === SUPABASE STATE & CLIENT ACCESS ===
+window._managerIsSupabase = false;
+
+function getManagerSupabaseClient() {
+    if (typeof window.getSupabaseClient === 'function') {
+        return window.getSupabaseClient();
+    }
+    return window.supabaseClient || null;
+}
+window.getManagerSupabaseClient = getManagerSupabaseClient;
+
 // === GLOBAL STATE ===
 let appState = {
     activeModule: "grenzland",
+    activeYear: new Date().getFullYear(),
     members: [],
     teams: [],
     pool: [],
@@ -522,6 +534,7 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
     }
 
     const targetModule = moduleKey || appState.activeModule;
+    const year = appState.activeYear || new Date().getFullYear();
 
     if (!force && mailWizard.cachedModules[targetModule] && appState.members.length > 0) {
         if (!isPreload) {
@@ -534,6 +547,7 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
             window.clearUnsaved();
             appState.mailList = [];
             renderContestUI();
+            if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
 
             // Singleton-Guard: DnD nur einmal initialisieren
             if (!window._managerDndInited) {
@@ -568,7 +582,80 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
     }
 
     const config = CONTEST_CONFIG[targetModule];
+    const supa = getManagerSupabaseClient();
 
+    // 1. PRIMÄR: SUPABASE-FIRST LADEN
+    if (supa) {
+        try {
+            console.log(`📡 [Supabase] Lade Contest-Daten für ${targetModule} (${year})...`);
+            const [setupsRes, teamsRes, membersRes] = await Promise.allSettled([
+                supa.from('contest_setups').select('*').eq('contest_type', targetModule).eq('year', year).order('sort_order'),
+                supa.from('contest_teams').select('*').eq('contest_type', targetModule).eq('year', year).order('sort_order'),
+                supa.from('members').select('person_number, first_name, last_name, primary_email').eq('is_active', true)
+            ]);
+
+            const supaSetups = (setupsRes.status === 'fulfilled' && !setupsRes.value.error) ? (setupsRes.value.data || []) : [];
+            const supaTeams = (teamsRes.status === 'fulfilled' && !teamsRes.value.error) ? (teamsRes.value.data || []) : [];
+            const supaMembers = (membersRes.status === 'fulfilled' && !membersRes.value.error) ? (membersRes.value.data || []) : [];
+
+            // Supabase nutzen wenn Mitglieder vorhanden sind und Setups oder Teams existieren
+            if (supaMembers.length > 0 && (supaSetups.length > 0 || supaTeams.length > 0)) {
+                window._managerIsSupabase = true;
+
+                const mappedMembers = supaMembers.map(m => ({
+                    id: String(m.person_number),
+                    vorname: m.first_name || "",
+                    nachname: m.last_name || "",
+                    email: m.primary_email || ""
+                }));
+
+                const mappedContestData = supaSetups.map(s => ({
+                    id: String(s.person_number),
+                    name: s.name,
+                    runde_1_team: s.team || "",
+                    team: s.team || "",
+                    stellung: s.stellung || "liegend"
+                }));
+
+                const configuredTeams = supaTeams.map(t => t.team_name);
+
+                processContestData({
+                    members: mappedMembers,
+                    contestData: mappedContestData,
+                    configuredTeams: configuredTeams
+                }, config);
+
+                mailWizard.cachedModules[targetModule] = {
+                    teams: JSON.parse(JSON.stringify(appState.teams)),
+                    pool: JSON.parse(JSON.stringify(appState.pool))
+                };
+
+                if (!isPreload) {
+                    renderContestUI();
+                    if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
+
+                    if (!window._managerDndInited) {
+                        initDragAndDrop();
+                        window._managerDndInited = true;
+                        appState._dndInited = true;
+                    }
+
+                    const sel = document.getElementById('module-selector');
+                    if (sel) sel.value = appState.activeModule;
+                }
+
+                console.log(`✅ [Supabase] ${targetModule} erfolgreich geladen (${supaSetups.length} Setups, ${supaTeams.length} Teams).`);
+                return;
+            } else {
+                console.warn(`⚠️ [Supabase] Keine Setups/Teams für ${targetModule} (${year}) gefunden. Prüfe Google Sheets Fallback...`);
+            }
+        } catch (supaErr) {
+            console.warn("⚠️ [Supabase] Fehler beim Laden der Manager-Daten:", supaErr);
+        }
+    }
+
+    // 2. FALLBACK: GOOGLE APPS SCRIPT
+    window._managerIsSupabase = false;
     try {
         const params = `action=getManagerData&sheetName=${encodeURIComponent(config.sheetName)}`;
         const res = await apiFetch('manager', params);
@@ -590,6 +677,7 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
 
         if (!isPreload) {
             renderContestUI();
+            if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
 
             // Singleton-Guard: DnD-Listener nur EINMAL an document binden
             // (gilt für die gesamte App-Laufzeit, unabhängig von Modul-Wechseln)
@@ -601,6 +689,11 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
 
             const sel = document.getElementById('module-selector');
             if (sel) sel.value = appState.activeModule;
+        }
+
+        // Auto-Seed nach Supabase im Hintergrund, falls Supabase aktiv ist und noch leer war
+        if (supa && data && data.contestData && data.contestData.length > 0) {
+            autoSeedManagerToSupabase(targetModule, year, data, config);
         }
 
     } catch (e) {
@@ -656,8 +749,14 @@ function ensureManagerShell() {
                     <option value="mannschaft">👥 Mannschaft</option>
                     <option value="gruppe">🎯 Gruppe (SGM)</option>
                 </select>
+                <span id="manager-backend-badge" class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                    <i class="fas fa-database me-1"></i>Supabase Live
+                </span>
                 <button class="btn btn-outline-secondary btn-sm" onclick="addTeamToState()" title="Neues Team">
                     <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Team</span>
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="migrateManagerFromGoogleSheets()" title="Aus Google Sheet importieren">
+                    <i class="fas fa-file-import me-1"></i> <span class="d-none d-lg-inline">Aus Sheets importieren</span>
                 </button>
             </div>
             <div class="d-none d-md-flex gap-2">
@@ -740,39 +839,228 @@ async function saveContest() {
     setLoading();
     const exportData = [];
     appState.teams.forEach(team => {
-        team.shooters.forEach(s => {
+        team.shooters.forEach((s, idx) => {
             exportData.push({
-                id: String(s.id), name: String(s.name || ""),
+                id: String(s.id),
+                name: String(s.name || ""),
                 team: String(team.name || ""),
-                stellung: appState.activeModule === "gruppe" ? (s.zone === "kniend" ? "Kniend" : "Liegend") : ""
+                stellung: appState.activeModule === "gruppe" ? (s.zone === "kniend" ? "kniend" : "liegend") : (s.zone || "liegend"),
+                sort_order: idx + 1
             });
         });
     });
 
+    const targetModule = appState.activeModule;
+    const year = appState.activeYear || new Date().getFullYear();
+    const supa = getManagerSupabaseClient();
+    let supaSaved = false;
+
+    // 1. SUPABASE-FIRST SPEICHERN
+    if (supa) {
+        try {
+            console.log(`💾 [Supabase] Speichere Setups für ${targetModule} (${year})...`);
+            
+            // A. Teams sichern
+            const teamRows = appState.teams.map((t, idx) => ({
+                id: `${targetModule}_${year}_${t.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+                contest_type: targetModule,
+                year: year,
+                team_name: t.name,
+                max_shooters: config.zones.reduce((sum, z) => sum + (z.limit || 0), 0) || 4,
+                sort_order: (idx + 1) * 10
+            }));
+
+            // Lösche Teams, die entfernt wurden
+            const currentTeamNames = appState.teams.map(t => t.name);
+            if (currentTeamNames.length > 0) {
+                await supa.from('contest_teams')
+                    .delete()
+                    .eq('contest_type', targetModule)
+                    .eq('year', year)
+                    .not('team_name', 'in', `(${currentTeamNames.map(n => `"${n}"`).join(',')})`);
+            }
+
+            if (teamRows.length > 0) {
+                const { error: teamErr } = await supa.from('contest_teams').upsert(teamRows, {
+                    onConflict: 'contest_type,year,team_name'
+                });
+                if (teamErr) console.warn("⚠️ [Supabase] Fehler beim Speichern der Teams:", teamErr);
+            }
+
+            // B. Schützen-Zuteilungen sichern
+            const supaSetups = exportData.map(s => ({
+                id: `setup_${targetModule}_${year}_${s.id}`,
+                contest_type: targetModule,
+                year: year,
+                person_number: String(s.id),
+                name: s.name,
+                team: s.team,
+                stellung: s.stellung || 'liegend',
+                sort_order: s.sort_order || 0,
+                updated_at: new Date().toISOString()
+            }));
+
+            // Zuerst bestehende Setups für diesen Contest & Jahr löschen (entfernt auch in Pool verschobene Schützen)
+            await supa.from('contest_setups')
+                .delete()
+                .eq('contest_type', targetModule)
+                .eq('year', year);
+
+            if (supaSetups.length > 0) {
+                const { error: setupErr } = await supa.from('contest_setups').insert(supaSetups);
+                if (setupErr) throw setupErr;
+            }
+
+            supaSaved = true;
+            window._managerIsSupabase = true;
+            if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
+            console.log(`✅ [Supabase] ${supaSetups.length} Schützen & ${teamRows.length} Teams erfolgreich gespeichert.`);
+
+            // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund
+            apiFetch('manager', 'action=saveManagerData', {
+                method: 'POST',
+                body: JSON.stringify({
+                    sheetName: config.sheetName,
+                    data: exportData.map(d => ({
+                        id: d.id,
+                        name: d.name,
+                        team: d.team,
+                        stellung: appState.activeModule === "gruppe" ? (d.stellung === "kniend" ? "Kniend" : "Liegend") : ""
+                    }))
+                })
+            }).then(r => r.text()).then(txt => {
+                console.log("📡 [Dual-Write] GAS-Spiegelung Team Manager abgeschlossen:", txt.slice(0, 80));
+            }).catch(err => {
+                console.warn("⚠️ [Dual-Write] GAS-Spiegelung Hinweis:", err.message);
+            });
+
+        } catch (supaErr) {
+            console.warn("⚠️ [Supabase] Fehler beim Speichern, wechsle auf GAS Fallback:", supaErr.message);
+        }
+    }
+
+    // 2. FALLBACK: GAS SPEICHERN falls Supabase nicht aktiv/erfolgreich
+    if (!supaSaved) {
+        try {
+            const res = await apiFetch('manager', 'action=saveManagerData', {
+                method: 'POST',
+                body: JSON.stringify({
+                    sheetName: config.sheetName,
+                    data: exportData.map(d => ({
+                        id: d.id,
+                        name: d.name,
+                        team: d.team,
+                        stellung: appState.activeModule === "gruppe" ? (d.stellung === "kniend" ? "Kniend" : "Liegend") : ""
+                    }))
+                })
+            });
+            const txt = await res.text();
+            let data;
+            try { data = JSON.parse(txt); } catch { throw new Error("Speichern: Backend-Antwort ist kein JSON"); }
+            if (data.error) throw new Error(data.error);
+        } catch (e) {
+            alert("Fehler beim Speichern: " + e.message);
+            setError();
+            return;
+        }
+    }
+
+    // Cache nach erfolgreichem Speichern aktualisieren
+    mailWizard.cachedModules[appState.activeModule] = {
+        teams: JSON.parse(JSON.stringify(appState.teams)),
+        pool: JSON.parse(JSON.stringify(appState.pool))
+    };
+
+    appState.isDirty = false;
+    window.clearUnsaved();
+    setSuccess();
+}
+
+async function autoSeedManagerToSupabase(moduleKey, year, data, config) {
+    const supa = getManagerSupabaseClient();
+    if (!supa) return;
     try {
-        const res = await apiFetch('manager', 'action=saveManagerData', {
-            method: 'POST',
-            body: JSON.stringify({ sheetName: config.sheetName, data: exportData })
+        console.log(`🌱 [Auto-Seed] Initialisiere Supabase für ${moduleKey} (${year})...`);
+        const sheetData = data.contestData || [];
+        const memberById = new Map((data.members || []).map(m => [String(m.id), m]));
+
+        // Teams extrahieren
+        const teamsSet = new Set();
+        const setups = [];
+        sheetData.forEach((row, idx) => {
+            const rowId = row.id != null ? String(row.id).trim() : "";
+            if (!rowId) return;
+            const team = String(row.runde_1_team || "").trim();
+            if (team && team !== "Pool") {
+                teamsSet.add(team);
+                const mem = memberById.get(rowId);
+                const name = mem ? `${mem.nachname} ${mem.vorname}`.trim() : (row.name || `ID ${rowId}`);
+                setups.push({
+                    id: `setup_${moduleKey}_${year}_${rowId}`,
+                    contest_type: moduleKey,
+                    year: year,
+                    person_number: rowId,
+                    name: name,
+                    team: team,
+                    stellung: String(row.stellung || "").toLowerCase().includes("kniend") ? "kniend" : "liegend",
+                    sort_order: idx + 1
+                });
+            }
         });
-        const txt = await res.text();
-        let data;
-        try { data = JSON.parse(txt); } catch { throw new Error("Speichern: Backend-Antwort ist kein JSON"); }
-        if (data.error) throw new Error(data.error);
 
-        // Cache nach erfolgreichem Speichern aktualisieren
-        mailWizard.cachedModules[appState.activeModule] = {
-            teams: JSON.parse(JSON.stringify(appState.teams)),
-            pool: JSON.parse(JSON.stringify(appState.pool))
-        };
+        // Teams anlegen
+        const teamRows = Array.from(teamsSet).map((t, idx) => ({
+            id: `${moduleKey}_${year}_${t.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+            contest_type: moduleKey,
+            year: year,
+            team_name: t,
+            max_shooters: config.zones.reduce((sum, z) => sum + (z.limit || 0), 0) || 4,
+            sort_order: (idx + 1) * 10
+        }));
 
-        appState.isDirty = false;
-        window.clearUnsaved();
-        setSuccess();
-    } catch (e) {
-        alert("Fehler beim Speichern: " + e.message);
-        setError();
+        if (teamRows.length > 0) {
+            await supa.from('contest_teams').upsert(teamRows, { onConflict: 'contest_type,year,team_name' });
+        }
+        if (setups.length > 0) {
+            await supa.from('contest_setups').upsert(setups, { onConflict: 'contest_type,year,person_number' });
+        }
+        console.log(`✅ [Auto-Seed] Supabase erfolgreich mit ${setups.length} Setups initialisiert.`);
+    } catch (err) {
+        console.warn("⚠️ [Auto-Seed] Hinweis:", err.message);
     }
 }
+
+async function migrateManagerFromGoogleSheets(moduleKey = null) {
+    const targetModule = moduleKey || appState.activeModule;
+    const config = CONTEST_CONFIG[targetModule];
+    const year = appState.activeYear || new Date().getFullYear();
+
+    if (!confirm(`Möchtest du die aktuellen Teams und Zuteilungen für "${config.title}" aus dem Google Sheet (${config.sheetName}) nach Supabase importieren?`)) {
+        return;
+    }
+
+    const supa = getManagerSupabaseClient();
+    if (!supa) {
+        alert("Fehler: Supabase-Client nicht verfügbar.");
+        return;
+    }
+
+    try {
+        if (typeof showToast === 'function') showToast("⏳ Lade Daten aus Google Sheets...", "info");
+        const params = `action=getManagerData&sheetName=${encodeURIComponent(config.sheetName)}`;
+        const res = await apiFetch('manager', params);
+        const data = JSON.parse(await res.text());
+        if (data.error) throw new Error(data.error);
+
+        await autoSeedManagerToSupabase(targetModule, year, data, config);
+        delete mailWizard.cachedModules[targetModule];
+        if (typeof showToast === 'function') showToast("✅ Import nach Supabase erfolgreich abgeschlossen!", "success");
+        await loadContestData(targetModule, true);
+    } catch (e) {
+        alert("Fehler beim Importieren: " + e.message);
+    }
+}
+window.migrateManagerFromGoogleSheets = migrateManagerFromGoogleSheets;
 
 
 // escapeJs() wird von main.js bereitgestellt (vollständige Version mit ", \n, \r).

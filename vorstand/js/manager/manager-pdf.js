@@ -255,23 +255,8 @@ async function exportAllPDF() {
 
 async function fetchContestDataForPdf(moduleKey) {
     const config = CONTEST_CONFIG[moduleKey];
-    const params = `action=getManagerData&sheetName=${encodeURIComponent(config.sheetName)}`;
-    const res = await apiFetch('manager', params);
-
-    if (!res.ok) {
-        const errTxt = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} (${moduleKey}): ${errTxt.slice(0, 200)}`);
-    }
-
-    const txt = await res.text();
-    let data;
-    try { data = JSON.parse(txt); }
-    catch { throw new Error(`Kein JSON (${moduleKey}): ${txt.slice(0, 200)}`); }
-
-    if (data.error) throw new Error(`${moduleKey}: ${data.error}`);
-
-    appState.activeModule = moduleKey;
-    processContestData(data, config);
+    // Supabase-First: Nutze loadContestData mit isPreload=true
+    await loadContestData(moduleKey, false, true);
     return config;
 }
 

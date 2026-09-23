@@ -44,6 +44,16 @@ function processContestData(data, config) {
     const sheetData = data.contestData || [];
     const tempTeams = {};
 
+    // 1. Vorab konfigurierte Teams anlegen (z. B. aus Supabase contest_teams)
+    if (data.configuredTeams && Array.isArray(data.configuredTeams) && data.configuredTeams.length > 0) {
+        data.configuredTeams.forEach(tName => {
+            const trimmed = String(tName || "").trim();
+            if (trimmed && !tempTeams[trimmed]) {
+                tempTeams[trimmed] = { name: trimmed, shooters: [] };
+            }
+        });
+    }
+
     sheetData.forEach(row => {
         const rowId = row.id != null ? String(row.id).trim() : "";
         if (!rowId) return;
@@ -51,9 +61,9 @@ function processContestData(data, config) {
         const member = memberById.get(rowId);
         const displayName = member
             ? `${member.nachname} ${member.vorname}`.trim()
-            : `ID ${rowId}`;
-        const email = member ? (member.email || "") : "";
-        const teamName = String(row.runde_1_team || "").trim() || "Pool";
+            : (row.name ? String(row.name).trim() : `ID ${rowId}`);
+        const email = member ? (member.email || "") : (row.email || "");
+        const teamName = String(row.runde_1_team || row.team || "").trim() || "Pool";
 
         let zoneKey = config.zones[0].key;
         if (config.zones.length > 1) {
@@ -87,6 +97,20 @@ function processContestData(data, config) {
             });
         }
     });
+}
+
+function updateManagerBackendBadge() {
+    const badge = document.getElementById('manager-backend-badge');
+    if (!badge) return;
+    if (window._managerIsSupabase) {
+        badge.className = 'badge bg-success-subtle text-success border border-success-subtle px-2 py-1';
+        badge.innerHTML = '<i class="fas fa-database me-1"></i>Supabase Live';
+        badge.title = 'Daten stammen direkt aus Supabase PostgreSQL (Master)';
+    } else {
+        badge.className = 'badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1';
+        badge.innerHTML = '<i class="fas fa-cloud me-1"></i>GAS Fallback';
+        badge.title = 'Fallback-Modus: Daten stammen aus Google Apps Script';
+    }
 }
 
 function renderContestUI() {
