@@ -1,0 +1,18 @@
+{
+  "name": "Sportschützen Muhen",
+  "short_name": "Sportschützen",
+  "description": "Offizielle Web-App der Sportschützen Muhen – Resultate, Termine & Vereinsleben.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f3c5c",
+  "lang": "de-CH",
+  "icons": [
+    {
+      "src": "assets/logo.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

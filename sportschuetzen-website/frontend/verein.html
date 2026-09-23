@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Verein - Sportschützen Muhen</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .hero {
+            min-height: 50vh;
+        }
+    </style>
+</head>
+<body>
+    <site-header active="verein"></site-header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-overlay"></div>
+        <div class="container hero-content fade-in-up">
+            <h1>Unser <span class="text-red">Verein</span></h1>
+            <p>Tradition, Kameradschaft und sportliche Höchstleistungen seit 1919. Erfahren Sie mehr über unsere Geschichte, den Vorstand und unsere erfolgreiche Juniorenförderung.</p>
+        </div>
+    </section>
+
+    <!-- Geschichte (Timeline) -->
+    <section id="geschichte">
+        <div class="container">
+            <div class="section-header">
+                <h2>Unsere <span class="text-red">Geschichte</span></h2>
+                <p>Eine kleine Zeitreise durch die Geschichte der Sportschützen Muhen.</p>
+            </div>
+
+            <div class="timeline">
+                <div class="timeline-item">
+                    <span class="timeline-date">4. Dezember 1919</span>
+                    <div class="timeline-content">
+                        <h3>Gründung des Vereins</h3>
+                        <p>Acht Männer aus Muhen traten in der Waldeck zusammen und gründeten einen neuen Schiessverein. Ihre Waffe war anfänglich das Flobert (ein Kleinkalibergewehr mit einem Kaliber von 5,6 mm), welches fast in jedem Haus zum Schutz des Federviehs vorhanden war. Der erste Präsident war Gottlieb Lüscher.</p>
+                    </div>
+                </div>
+
+                <div class="timeline-item">
+                    <span class="timeline-date">12. März 1929</span>
+                    <div class="timeline-content">
+                        <h3>Namensänderung</h3>
+                        <p>Nachdem man auf 50 Meter umgestellt hatte und das präzisere Langgewehr die oberen Ränge abräumte, änderte man den Vereinsnamen in "Sportschützen Muhen". Kurz darauf folgte 1931 der Kleinkaliberkarabiner als neue, handlichere Waffe.</p>
+                    </div>
+                </div>
+
+                <div class="timeline-item">
+                    <span class="timeline-date">1960er Jahre</span>
+                    <div class="timeline-content">
+                        <h3>Die Krise & der Stutzerschreck</h3>
+                        <p>Das Aufkommen des Stutzers löste eine Krise aus, da sich nicht jeder diese teure Waffe leisten konnte. Bisher hatten Stutzerschützen nur kniend geschossen, nun durften sie auch liegend schiessen und dominierten die Ränge. Der Verein reagierte und schaffte eigene Stutzer an, die verliehen wurden.</p>
+                    </div>
+                </div>
+
+                <div class="timeline-item">
+                    <span class="timeline-date">1980er Jahre</span>
+                    <div class="timeline-content">
+                        <h3>Nachwuchs-Boom</h3>
+                        <p>Gerhard Künzli baute mit grossem Einsatz das Jungschützenwesen auf. 1980 nahmen stolze 72 Jungschützen teil! Auch die Mädchen mischten hervorragend mit und standen 1981 an der Spitze von interkantonalen Wettkämpfen. Zudem fand 1981 das erste, äusserst erfolgreiche Strohhausschiessen statt (585 Teilnehmer).</p>
+                    </div>
+                </div>
+
+                <div class="timeline-item">
+                    <span class="timeline-date">1982</span>
+                    <div class="timeline-content">
+                        <h3>10-Meter Luftgewehranlage</h3>
+                        <p>Gemeinsam mit den 300-Meter-Schützen wurde eine Luftgewehranlage eingerichtet. Dies ermöglichte ein Wintertraining und bot den Jungen einen idealen Einstieg in den Schiesssport ohne Angst vor Knall und Rückstoss.</p>
+                    </div>
+                </div>
+
+                <div class="timeline-item">
+                    <span class="timeline-date">1996 - 1997</span>
+                    <div class="timeline-content">
+                        <h3>Neubau Schützenhaus Rüteli</h3>
+                        <p>Dank dem grossen finanziellen Erfolg des Strohhausschiessens konnte der lang ersehnte Neubau realisiert werden. Mit sehr vielen Fronstunden entstand die moderne Anlage mit 16 Zugscheiben und einer gemütlichen Schützenstube.</p>
+                    </div>
+                </div>
+
+                <div class="timeline-item">
+                    <span class="timeline-date">2016</span>
+                    <div class="timeline-content">
+                        <h3>Elektronische Trefferanzeige</h3>
+                        <p>Für das kantonale Schützenfest wurde die Infrastruktur weiter aufgerüstet. Die moderne elektronische Trefferanlage von Sius für die 50-m-Distanz wurde installiert.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Historische Galerie -->
+    <section id="galerie" style="background: rgba(15, 60, 92, 0.02); padding: 5rem 0;">
+        <div class="container">
+            <div class="section-header">
+                <h2>Vereins- &amp; <span class="text-red">Fotogalerie</span></h2>
+                <p>Einblicke in unsere Vereinsgeschichte, Wettkämpfe und aktuelle Anlässe direkt aus unserem Fotoarchiv. Tippe auf ein Bild für Details.</p>
+            </div>
+            
+            <!-- Category Filter Bar, Album Selector & Search -->
+            <div style="display: flex; flex-direction: column; gap: 1rem; align-items: center; margin-bottom: 2rem;">
+                <!-- Dynamische Alben-Filter (wird automatisch befüllt) -->
+                <div id="gallery-album-filters" class="gallery-filters" style="margin-bottom: 0.25rem; display: none;"></div>
+
+                <div class="gallery-filters" style="margin-bottom: 0;">
+                    <button class="gallery-filter-btn active" data-category="all">Alle Kategorien</button>
+                    <button class="gallery-filter-btn" data-category="geschichte">Geschichte</button>
+                    <button class="gallery-filter-btn" data-category="events">Events</button>
+                    <button class="gallery-filter-btn" data-category="nachwuchs">Nachwuchs</button>
+                </div>
+                
+                <div style="position: relative; width: 100%; max-width: 400px; margin-bottom: 0.5rem;">
+                    <span style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    <input type="text" id="gallery-search" placeholder="Suche nach Personen, Titeln, Tags..." style="width: 100%; padding: 0.75rem 1rem 0.75rem 2.5rem; border-radius: 30px; border: 1px solid rgba(15, 60, 92, 0.15); background: white; color: var(--text-color); font-family: inherit; font-size: 0.95rem; outline: none; box-shadow: 0 2px 10px rgba(0,0,0,0.02);">
+                </div>
+
+                <!-- Dynamisch erstellte Tag-Cloud -->
+                <div id="gallery-tag-cloud" style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; max-width: 800px; margin-top: 0.5rem;"></div>
+            </div>
+            
+            <div class="masonry-grid" id="galerie-grid">
+                <!-- Dynamically populated by galerie.js -->
+            </div>
+
+            <!-- Load More Container -->
+            <div id="gallery-load-more-container" style="text-align: center; margin-top: 3rem; display: none;">
+                <button id="gallery-load-more-btn" class="btn btn-primary" style="padding: 0.75rem 2.5rem; border-radius: 30px; font-weight: 700; transition: var(--transition);">Mehr Bilder laden</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 🔐 Geschützter Mitgliederbereich -->
+    <section id="mitglieder" style="padding: 5rem 0; background: linear-gradient(180deg, rgba(15, 60, 92, 0.02) 0%, rgba(15, 60, 92, 0.07) 100%); border-top: 1px solid var(--glass-border); border-bottom: 1px solid var(--glass-border);">
+        <div class="container">
+            <div class="section-header">
+                <h2>🔐 Geschützter <span class="text-red">Mitgliederbereich</span></h2>
+                <p>Vereinsfotos (Immich), interne Dokumente, Jahresprogramm und Schiessbetrieb exklusiv für unsere Schützen.</p>
+            </div>
+
+            <!-- STATE 1: Nicht angemeldet (Prompt mit Web-App Weiterleitung) -->
+            <div id="mb-logged-out" class="glass-card" style="text-align: center; max-width: 750px; margin: 0 auto; padding: 3.5rem 2rem; border: 1px solid rgba(220, 38, 38, 0.2); box-shadow: 0 15px 35px rgba(15, 60, 92, 0.08);">
+                <div style="font-size: 3.5rem; margin-bottom: 1rem; line-height: 1;">🔐</div>
+                <h3 style="font-size: 1.8rem; margin-bottom: 0.75rem; color: var(--primary-color);">Zugang nur für Vereinsmitglieder</h3>
+                <p style="font-size: 1.05rem; color: var(--text-light); max-width: 580px; margin: 0 auto 2rem; line-height: 1.6;">
+                    Du bist Mitglied der Sportschützen Muhen? Melde dich bequem über unser zentrales Schützen-Login an. Nach der Bestätigung stehen dir alle Vereinsalben, interne Termine und Dokumente sofort zur Verfügung.
+                </p>
+                <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <button id="btn-mb-login" class="btn btn-primary" style="padding: 0.85rem 2rem; font-size: 1.05rem; border-radius: 30px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.6rem; box-shadow: 0 4px 15px rgba(220, 38, 38, 0.25);">
+                        <span>👉</span> <span>In der Schützen-App anmelden</span>
+                    </button>
+                </div>
+                <div style="margin-top: 1.75rem; font-size: 0.88rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                    <span>💡</span> <span>Du wirst kurz zur Web-App geleitet und nach Eingabe deines Namens und PINs automatisch hierher zurückgeführt.</span>
+                </div>
+            </div>
+
+            <!-- STATE 2: Angemeldet (Voller Zugriff) -->
+            <div id="mb-logged-in" style="display: none;">
+                <!-- Willkommens-Bar -->
+                <div class="glass-card mb-4" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; padding: 1.25rem 2rem; border-left: 5px solid var(--primary-color);">
+                    <div>
+                        <span style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Vereinskonto aktiv</span>
+                        <h3 style="margin: 0.15rem 0 0; font-size: 1.3rem; color: var(--primary-color);">
+                            Willkommen, <span id="mb-user-fullname">Schütze</span> 
+                            <span id="mb-user-badge" class="badge" style="font-size: 0.75rem; background: var(--primary-color); color: white; padding: 3px 8px; border-radius: 8px; vertical-align: middle; margin-left: 6px;">Mitglied</span>
+                        </h3>
+                    </div>
+                    <div style="display: flex; gap: 0.75rem; align-items: center;">
+                        <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" class="btn btn-primary" style="padding: 0.5rem 1.2rem; font-size: 0.9rem; border-radius: 20px; text-decoration: none;">
+                            🎯 Zur Schützen-App
+                        </a>
+                        <button id="btn-mb-logout" class="btn btn-outline" style="padding: 0.5rem 1rem; font-size: 0.9rem; border-radius: 20px;">
+                            Abmelden
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tabs Navigation -->
+                <div class="gallery-filters" style="margin-bottom: 2rem; justify-content: flex-start; overflow-x: auto; padding-bottom: 0.5rem;">
+                    <button class="gallery-filter-btn active" data-tab="fotos">📷 Vereinsfotos (Immich)</button>
+                    <button class="gallery-filter-btn" data-tab="dokumente">📄 Vereinsdokumente</button>
+                    <button class="gallery-filter-btn" data-tab="termine">📅 Schiessbetrieb & Termine</button>
+                    <button class="gallery-filter-btn" id="tab-btn-vorstand" data-tab="vorstand" style="display: none; border-color: var(--accent-color); color: var(--accent-color); font-weight: 700;">📂 Vorstandsdokumente</button>
+                </div>
+
+                <!-- Tab 1: Fotos (Immich) -->
+                <div id="tab-content-fotos" class="mb-tab-pane">
+                    <div class="glass-card mb-4" style="background: rgba(15, 60, 92, 0.03);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <h3 style="margin-bottom: 0.25rem;">📷 Vereinsfotos & Alben (Immich)</h3>
+                                <p style="color: var(--text-muted); font-size: 0.95rem;">Fotos von Wettkämpfen, Absenden, Vereinsreisen und gesellschaftlichen Anlässen direkt aus unserem privaten Fotoarchiv.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid-3" id="immich-albums-grid">
+                        <div class="glass-card" style="padding: 1.5rem; text-align: center;">
+                            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🏆</div>
+                            <h4>Absenden & Jahresabschluss</h4>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">Siegerehrungen, gemütliches Beisammensein und Impressionen des Saisonabschlusses.</p>
+                            <a href="#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        </div>
+                        <div class="glass-card" style="padding: 1.5rem; text-align: center;">
+                            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎯</div>
+                            <h4>Strohhausschiessen & Wettkämpfe</h4>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">Wettkampftage 50m und 10m, Gruppenmeisterschaften und Schützenfeste.</p>
+                            <a href="#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        </div>
+                        <div class="glass-card" style="padding: 1.5rem; text-align: center;">
+                            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🍻</div>
+                            <h4>Vereinsausflug & Grillabende</h4>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">Kameradschaft abseits des Schiesstandes, Vereinsreisen und Anlässe im Schützenhaus.</p>
+                            <a href="#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Dokumente -->
+                <div id="tab-content-dokumente" class="mb-tab-pane" style="display: none;">
+                    <div class="grid-2">
+                        <div class="glass-card">
+                            <h3 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                                <span>📜</span> Statuten & Reglemente
+                            </h3>
+                            <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem;">
+                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
+                                    <span>📄 Vereinsstatuten Sportschützen Muhen</span>
+                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
+                                </li>
+                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
+                                    <span>🎯 Schiessordnung & Sicherheitsreglement</span>
+                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
+                                </li>
+                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0;">
+                                    <span>🏠 Schützenhausordnung & Benützung</span>
+                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="glass-card">
+                            <h3 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                                <span>📋</span> Leitfäden & Merkblätter
+                            </h3>
+                            <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem;">
+                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
+                                    <span>📤 Standblatt-Upload Leitfaden</span>
+                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">Anleitung</span>
+                                </li>
+                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
+                                    <span>🎯 Munitionsbestellung & Konditionen</span>
+                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
+                                </li>
+                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0;">
+                                    <span>🤝 Spesen- und Entschädigungsreglement</span>
+                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Termine & Jahresprogramm -->
+                <div id="tab-content-termine" class="mb-tab-pane" style="display: none;">
+                    <div class="glass-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <h3 style="margin-bottom: 0.25rem;">📅 Jahresprogramm & Schiesstage</h3>
+                                <p style="color: var(--text-muted); font-size: 0.95rem;">Übersicht aller vereinsinternen Trainings- und Wettkampftermine.</p>
+                            </div>
+                            <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" class="btn btn-secondary" style="font-size: 0.9rem;">
+                                📲 In Schützen-App zu Terminen anmelden
+                            </a>
+                        </div>
+                        <div style="background: white; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--glass-border);">
+                            <div style="display: flex; gap: 1rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid rgba(0,0,0,0.06);">
+                                <div style="background: rgba(15, 60, 92, 0.1); color: var(--primary-color); font-weight: 800; padding: 0.5rem 0.8rem; border-radius: 10px; text-align: center; min-width: 65px;">
+                                    <div style="font-size: 0.75rem; text-transform: uppercase;">März</div>
+                                    <div style="font-size: 1.3rem; line-height: 1;">28</div>
+                                </div>
+                                <div>
+                                    <h4 style="margin: 0 0 0.2rem; font-size: 1.05rem;">Eröffnungsschiessen 50m</h4>
+                                    <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted);">Saisonauftakt 50m Kleinkaliber im Schützenhaus Rüteli ab 17:30 Uhr</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 1rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid rgba(0,0,0,0.06);">
+                                <div style="background: rgba(15, 60, 92, 0.1); color: var(--primary-color); font-weight: 800; padding: 0.5rem 0.8rem; border-radius: 10px; text-align: center; min-width: 65px;">
+                                    <div style="font-size: 0.75rem; text-transform: uppercase;">April</div>
+                                    <div style="font-size: 1.3rem; line-height: 1;">11</div>
+                                </div>
+                                <div>
+                                    <h4 style="margin: 0 0 0.2rem; font-size: 1.05rem;">Gruppenmeisterschaft 1. Runde</h4>
+                                    <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted);">1. Vorrunde Heimrunde Mannschaft & Einzelwertung</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 1rem; align-items: center; padding: 1rem 0;">
+                                <div style="background: rgba(15, 60, 92, 0.1); color: var(--primary-color); font-weight: 800; padding: 0.5rem 0.8rem; border-radius: 10px; text-align: center; min-width: 65px;">
+                                    <div style="font-size: 0.75rem; text-transform: uppercase;">Mai</div>
+                                    <div style="font-size: 1.3rem; line-height: 1;">02</div>
+                                </div>
+                                <div>
+                                    <h4 style="margin: 0 0 0.2rem; font-size: 1.05rem;">Strohhausschiessen 2026</h4>
+                                    <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted);">Grossanlass mit Gastsektionen aus der ganzen Schweiz</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Vorstandsbereich (Nur sichtbar für Vorstand / Admin) -->
+                <div id="tab-content-vorstand" class="mb-tab-pane" style="display: none;">
+                    <div class="glass-card" style="border: 2px solid rgba(220, 38, 38, 0.3); background: rgba(220, 38, 38, 0.02);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <span class="badge" style="background: var(--accent-color); color: white; margin-bottom: 0.5rem; display: inline-block;">Vertraulich • Nur Vorstand</span>
+                                <h3 style="margin-bottom: 0.25rem;">📂 Vorstandsdokumente & Sitzungsablage</h3>
+                                <p style="color: var(--text-muted); font-size: 0.95rem;">Interne Protokolle, Budgets und Beschlüsse des Vorstandes.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="grid-2">
+                            <div style="background: white; border-radius: 12px; padding: 1.25rem; border: 1px solid var(--glass-border);">
+                                <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <span>📝</span> Sitzungsprotokolle
+                                </h4>
+                                <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                                    <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--glass-border);">
+                                        <a href="docs/2018-06-25%20Protokoll%20Vorstandssitzung%20Sportsch%C3%BCtzen%20Muhen.pdf" target="_blank" style="color: var(--primary-color); font-weight: 600; text-decoration: none;">
+                                            📄 Protokoll Vorstandssitzung
+                                        </a>
+                                        <span style="font-size: 0.8rem; color: var(--text-muted);">PDF</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div style="background: white; border-radius: 12px; padding: 1.25rem; border: 1px solid var(--glass-border);">
+                                <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <span>📊</span> Finanzen & Administration
+                                </h4>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1rem;">
+                                    Buchhaltung, Beitragscontrolling und GV-Verwaltung werden sicher über die Google-Apps-Script-Vorstandstools verwaltet.
+                                </p>
+                                <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" class="btn btn-outline" style="font-size: 0.85rem; width: 100%; text-align: center;">
+                                    Verknüpfte Module ansehen
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Nachwuchs -->
+    <section id="nachwuchs">
+        <div class="container">
+            <div class="section-header">
+                <h2>Unsere Junioren sind <span class="text-red">unsere Zukunft</span></h2>
+                <p>Nachwuchsförderung (J+S und Schulsport) auf höchstem Niveau.</p>
+            </div>
+            
+            <div class="glass-card mb-4">
+                <p>Jährlich fördern wir unseren Nachwuchs mit einem detaillierten wöchentlichen J+S Trainingsprogramm. Unsere Juniorenausbildner (Andrea Rossi, Marco Fischer und Christiane Keller) bringen den "Kleinen" bei, worauf es ankommt beim Sportschiessen. Unser Sport ist nicht günstig, damit alle die Möglichkeit haben im Juniorenalter einzusteigen, bietet unser Verein entsprechende Unterstützung an. Die sehr speziellen Jacken, Hosen und Schuhe werden zur Verfügung gestellt. Ebenso das Sportgerät und das nötige Zubehör.</p>
+                <p class="mt-4">Unsere Nachwuchsförderung geniesst auf kantonaler und nationaler Ebene ein gutes Ansehen. Unsere Junioren lassen immer wieder durch Podestplätze von sich reden und verstärken das Kantonalkader. Wir sind stolz auf unseren Nachwuchs.</p>
+            </div>
+
+            <div class="grid-4 mt-4">
+                <div class="glass-card">
+                    <div class="card-icon">🎯</div>
+                    <h3>Luftgewehr 10m</h3>
+                    <p>Der ideale Einstieg in das Sportschiessen. Geschossen wird in Hallen oder Schiesskellern während der Wintersaison mit Diabolo. Anfangs "stehend aufgelegt", später (ab 13 Jahren) "stehend frei".</p>
+                </div>
+                <div class="glass-card">
+                    <div class="card-icon">🏅</div>
+                    <h3>Kleinkaliber 50m</h3>
+                    <p>Die nächste Ausbildungsstufe mit dem Kaliber .22 lr (scharf). Nach "liegend aufgelegt" folgt "liegend frei" und schliesslich das Olympische 3-Stellungsschiessen (Liegend, Kniend, Stehend).</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Präsidenten -->
+    <section id="vorstand" style="background: rgba(15, 60, 92, 0.02);">
+        <div class="container">
+            <div class="section-header">
+                <h2>Unsere <span class="text-red">Präsidenten</span></h2>
+                <p>Die Köpfe, die den Verein durch die Zeit geführt haben.</p>
+            </div>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Jahr</th>
+                        <th>Name</th>
+                        <th>Bemerkung</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>1919</td><td>Gottlieb Lüscher</td><td>Tonnacker</td></tr>
+                    <tr><td>1924</td><td>Emil Vogel</td><td></td></tr>
+                    <tr><td>1928</td><td>Otto Lüscher-Hochuli</td><td></td></tr>
+                    <tr><td>1936</td><td>Max Eichenberger</td><td></td></tr>
+                    <tr><td>1938</td><td>Otto Lüscher-Hochuli</td><td>Ehrenpräsident</td></tr>
+                    <tr><td>1948</td><td>Ernst Arber</td><td></td></tr>
+                    <tr><td>1953</td><td>Max Müller</td><td></td></tr>
+                    <tr><td>1974</td><td>Max Müller</td><td>Ehrenpräsident</td></tr>
+                    <tr><td>1978</td><td>Hans Bäni</td><td></td></tr>
+                    <tr><td>1990</td><td>Bernhard Hauri</td><td></td></tr>
+                    <tr><td>1997</td><td>Hans Bäni</td><td></td></tr>
+                    <tr><td>2001</td><td>Roger Haller</td><td></td></tr>
+                    <tr><td>2008</td><td>Hans Bäni</td><td>Ehrenpräsident</td></tr>
+                    <tr><td>2012</td><td>Daniel Berchtold</td><td></td></tr>
+                    <tr><td>2026</td><td>Simon Hediger</td><td>Aktuell</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Vorstand & Funktionäre -->
+    <section id="vorstand-mitglieder" style="padding: 5rem 0; border-top: 1px solid var(--glass-border);">
+        <div class="container">
+            <div class="section-header">
+                <h2>Vorstand & <span class="text-red">Funktionäre</span></h2>
+                <p>Die Köpfe hinter dem sportlichen und administrativen Erfolg unseres Vereins.</p>
+            </div>
+            
+            <div class="board-grid">
+                <!-- Simon Hediger -->
+                <div class="board-card glass-card">
+                    <div class="board-avatar grad-simon">SH</div>
+                    <div class="board-info">
+                        <h3>Simon Hediger</h3>
+                        <span class="board-role">Präsident & Schützenmeister</span>
+                    </div>
+                </div>
+
+                <!-- Daniel Hunziker -->
+                <div class="board-card glass-card">
+                    <div class="board-avatar grad-daniel">DH</div>
+                    <div class="board-info">
+                        <h3>Daniel Hunziker</h3>
+                        <span class="board-role">Vizepräsident & Kassier</span>
+                    </div>
+                </div>
+
+                <!-- Andrea Rossi -->
+                <div class="board-card glass-card">
+                    <div class="board-avatar grad-andrea">AR</div>
+                    <div class="board-info">
+                        <h3>Andrea Rossi</h3>
+                        <span class="board-role">Juniorenleiter Gewehr 50m</span>
+                    </div>
+                </div>
+
+                <!-- Marco Fischer -->
+                <div class="board-card glass-card">
+                    <div class="board-avatar grad-marco">MF</div>
+                    <div class="board-info">
+                        <h3>Marco Fischer</h3>
+                        <span class="board-role">Schützenmeister Gewehr 50m</span>
+                    </div>
+                </div>
+
+                <!-- Olivia Rossi -->
+                <div class="board-card glass-card">
+                    <div class="board-avatar grad-olivia">OR</div>
+                    <div class="board-info">
+                        <h3>Olivia Rossi</h3>
+                        <span class="board-role">Schützenmeisterin Gewehr 50m</span>
+                    </div>
+                </div>
+
+                <!-- Beat Augsburger -->
+                <div class="board-card glass-card">
+                    <div class="board-avatar grad-beat">BA</div>
+                    <div class="board-info">
+                        <h3>Beat Augsburger</h3>
+                        <span class="board-role">Mitgliederverwalter</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Wir Gedenken Section -->
+    <section id="gedenken" style="background: rgba(15, 60, 92, 0.05); border-top: 1px solid var(--glass-border); padding: 5rem 0;">
+        <div class="container">
+            <div class="section-header">
+                <h2>Wir <span class="text-red">Gedenken</span></h2>
+                <p>In ehrendem Andenken an unsere verstorbenen Kameradinnen und Kameraden, die unseren Verein über Jahre hinweg geprägt und begleitet haben.</p>
+            </div>
+            
+            <div class="grid-3" style="margin-top: 3rem;">
+                <!-- Gedenkkarte 1 -->
+                <div class="glass-card" style="text-align: center; display: flex; flex-direction: column; align-items: center; padding: 2.5rem; border-top: 4px solid var(--accent-color);">
+                    <div style="font-size: 2.5rem; margin-bottom: 1rem; filter: grayscale(30%);">🕯️</div>
+                    <h3 style="margin-bottom: 0.25rem;">Geri Künzli</h3>
+                    <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600; margin-bottom: 1rem;">Ehrenmitglied & Vorstandsmitglied</span>
+                    <p style="font-size: 0.95rem; color: var(--text-light); margin-bottom: 1.5rem; line-height: 1.6;">
+                        * 27. April 1934 – † 29. September 2022<br>
+                        Mit unermüdlicher Freude setzte er sich für den Verein und die Jungschützen ein. Ihm verdanken wir den Bau unseres modernen Schützenhauses.
+                    </p>
+                    <a href="assets/gedenken/geri.jpg" target="_blank" class="btn btn-outline" style="font-size: 0.9rem; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span>🖼️</span> Todesanzeige ansehen
+                    </a>
+                </div>
+
+                <!-- Gedenkkarte 2 -->
+                <div class="glass-card" style="text-align: center; display: flex; flex-direction: column; align-items: center; padding: 2.5rem; border-top: 4px solid var(--accent-color);">
+                    <div style="font-size: 2.5rem; margin-bottom: 1rem; filter: grayscale(30%);">🕯️</div>
+                    <h3 style="margin-bottom: 0.25rem;">Arthur Wegmüller (Turi)</h3>
+                    <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600; margin-bottom: 1rem;">Schützenkamerad</span>
+                    <p style="font-size: 0.95rem; color: var(--text-light); margin-bottom: 1.5rem; line-height: 1.6;">
+                        * 7. Dezember 1957 – † 6. Oktober 2022<br>
+                        Unerwartet aus dem Leben gerissen. Wir vermissen seine gesellige Art und behalten ihn in dankbarer Erinnerung.
+                    </p>
+                    <a href="assets/gedenken/Todesanzeige Turi.JPG" target="_blank" class="btn btn-outline" style="font-size: 0.9rem; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span>🖼️</span> Todesanzeige ansehen
+                    </a>
+                </div>
+
+                <!-- Gedenkkarte 3 -->
+                <div class="glass-card" style="text-align: center; display: flex; flex-direction: column; align-items: center; padding: 2.5rem; border-top: 4px solid var(--accent-color);">
+                    <div style="font-size: 2.5rem; margin-bottom: 1rem; filter: grayscale(30%);">🕯️</div>
+                    <h3 style="margin-bottom: 0.25rem;">Kurt Lüscher</h3>
+                    <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600; margin-bottom: 1rem;">Ehrenmitglied</span>
+                    <p style="font-size: 0.95rem; color: var(--text-light); margin-bottom: 1.5rem; line-height: 1.6;">
+                        * 24. Juli 1939 – † 24. Dezember 2024<br>
+                        In dankbarem Gedenken an ein treues Ehrenmitglied, das unserem Verein über viele Jahre hinweg eng verbunden war.
+                    </p>
+                    <a href="assets/gedenken/Todesanzeige Kurt Luescher.jpg" target="_blank" class="btn btn-outline" style="font-size: 0.9rem; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span>🖼️</span> Todesanzeige ansehen
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <site-footer></site-footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Dynamische Ehrenpräsidenten-Deduplizierung
+            const rows = Array.from(document.querySelectorAll('.data-table tbody tr'));
+            const presidents = {};
+
+            rows.forEach(row => {
+                const year = parseInt(row.cells[0].textContent.trim());
+                const name = row.cells[1].textContent.trim();
+                const remarkCell = row.cells[2];
+                const remark = remarkCell.textContent.trim();
+
+                if (!presidents[name]) {
+                    presidents[name] = [];
+                }
+                presidents[name].push({ row, year, remarkCell, remark });
+            });
+
+            Object.keys(presidents).forEach(name => {
+                const terms = presidents[name];
+                if (terms.length > 1) {
+                    const hasEhren = terms.some(t => t.remark.includes('Ehrenpräsident'));
+                    if (hasEhren) {
+                        // Sortieren nach Jahr absteigend
+                        terms.sort((a, b) => b.year - a.year);
+                        // Beim neuesten "Ehrenpräsident" einblenden
+                        terms[0].remarkCell.textContent = 'Ehrenpräsident';
+                        // Bei allen älteren Amtszeiten entfernen, falls dort vorhanden
+                        for (let i = 1; i < terms.length; i++) {
+                            if (terms[i].remark.includes('Ehrenpräsident')) {
+                                terms[i].remarkCell.textContent = '';
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+    <script src="js/auth-session.js"></script>
+    <script src="js/components.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/galerie.js?v=4"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loggedOutView = document.getElementById('mb-logged-out');
+            const loggedInView = document.getElementById('mb-logged-in');
+            const userNameEl = document.getElementById('mb-user-fullname');
+            const userBadgeEl = document.getElementById('mb-user-badge');
+            const tabVorstandBtn = document.getElementById('tab-btn-vorstand');
+            const btnLogin = document.getElementById('btn-mb-login');
+            const btnLogout = document.getElementById('btn-mb-logout');
+
+            // Login Trigger -> Weiterleitung zum Web-App Login mit Rücksprung
+            if (btnLogin) {
+                btnLogin.addEventListener('click', () => {
+                    window.AuthSession.login('verein.html#mitglieder');
+                });
+            }
+
+            // Logout Trigger
+            if (btnLogout) {
+                btnLogout.addEventListener('click', () => {
+                    if (confirm('Möchtest du dich abmelden?')) {
+                        window.AuthSession.logout();
+                    }
+                });
+            }
+
+            // Tab Navigation im Mitgliederbereich
+            const tabButtons = document.querySelectorAll('#mitglieder .gallery-filter-btn');
+            tabButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetTab = btn.getAttribute('data-tab');
+                    tabButtons.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+
+                    document.querySelectorAll('.mb-tab-pane').forEach(pane => {
+                        pane.style.display = 'none';
+                    });
+                    const activePane = document.getElementById(`tab-content-${targetTab}`);
+                    if (activePane) activePane.style.display = 'block';
+                });
+            });
+
+            // Status-Aktualisierung über AuthSession
+            if (window.AuthSession) {
+                window.AuthSession.onChange(user => {
+                    if (user) {
+                        if (loggedOutView) loggedOutView.style.display = 'none';
+                        if (loggedInView) loggedInView.style.display = 'block';
+
+                        const displayName = user.name || (user.vorname ? `${user.vorname} ${user.nachname || ''}` : 'Vereinsmitglied');
+                        if (userNameEl) userNameEl.textContent = displayName;
+
+                        const isVorstand = window.AuthSession.isVorstand();
+                        if (userBadgeEl) {
+                            userBadgeEl.textContent = isVorstand ? 'Vorstand' : 'Mitglied';
+                            userBadgeEl.style.background = isVorstand ? 'var(--accent-color)' : 'var(--primary-color)';
+                        }
+
+                        // Vorstand-Tab nur für Vorstand/Admin einblenden
+                        if (tabVorstandBtn) {
+                            tabVorstandBtn.style.display = isVorstand ? 'inline-block' : 'none';
+                        }
+                    } else {
+                        if (loggedOutView) loggedOutView.style.display = 'block';
+                        if (loggedInView) loggedInView.style.display = 'none';
+                    }
+                });
+            }
+        });
+    </script>
+
+    <!-- Fullscreen Lightbox Modal (Flickr details) -->
+    <div id="galerie-lightbox" class="lightbox-modal" style="display: none;">
+        <button class="lightbox-nav-btn prev-btn" id="lightbox-prev" onclick="window.prevLightbox(event)">&lsaquo;</button>
+        <button class="lightbox-close" onclick="window.closeLightbox()">&times;</button>
+        <div class="lightbox-content">
+            <div class="lightbox-image-wrapper">
+                <img id="lightbox-img" src="" alt="">
+                <video id="lightbox-video" controls playsinline style="display: none; max-width: 100%; max-height: 75vh; border-radius: 8px; outline: none; background: #000;"></video>
+                <div id="lightbox-fallback" class="lightbox-img-fallback" style="display: none;">📸</div>
+            </div>
+            <div class="lightbox-info">
+                <div class="lightbox-meta" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                    <span id="lightbox-category" class="category-badge"></span>
+                    <span id="lightbox-album" class="category-badge" style="background: rgba(15, 60, 92, 0.08); color: var(--primary-color); border: 1px solid rgba(15, 60, 92, 0.15); display: none;"></span>
+                    <span id="lightbox-date" class="date-badge"></span>
+                </div>
+                <h2 id="lightbox-title"></h2>
+                <div id="lightbox-desc" class="lightbox-description"></div>
+                <!-- AI Generated Tags & Persons (Internal Archive) -->
+                <div id="lightbox-tags" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem;"></div>
+                <div id="lightbox-persons" style="display: none;"></div>
+            </div>
+        </div>
+        <button class="lightbox-nav-btn next-btn" id="lightbox-next" onclick="window.nextLightbox(event)">&rsaquo;</button>
+    </div>
+</body>
+</html>
