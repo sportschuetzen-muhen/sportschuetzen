@@ -462,13 +462,51 @@ window.migrateBuchhaltungFromGoogleSheets = async function() {
     const rawRules = (resRules && resRules.success) ? (resRules.data || []) : [];
 
     if (typeof showLoadingOverlay === 'function') showLoadingOverlay(`Übertrage ${rawKonten.length} Konten nach Supabase...`);
-    const accountsToUpsert = rawKonten.map((k, idx) => ({
-      konto: String(k.konto).trim(),
-      bezeichnung: String(k.bezeichnung || '').trim(),
-      klasse: String(k.klasse || '').trim(),
-      eroeffnungssaldo: Number(k.eroeffnungssaldo || 0),
-      sort_order: (idx + 1) * 10
-    })).filter(k => k.konto);
+    const accountsMap = new Map();
+    rawKonten.forEach((k, idx) => {
+      const acc = String(k.konto || '').trim();
+      if (!acc) return;
+      accountsMap.set(acc, {
+        konto: acc,
+        bezeichnung: String(k.bezeichnung || '').trim(),
+        klasse: String(k.klasse || '').trim(),
+        eroeffnungssaldo: Number(k.eroeffnungssaldo || 0),
+        sort_order: (idx + 1) * 10
+      });
+    });
+
+    // Sicherheit: Prüfe, ob im Journal verwendete Konten im Kontenrahmen fehlen (z.B. Konto 3800 für Spenden/Aufrundungen)
+    rawJournal.forEach(j => {
+      [j.konto_soll, j.konto_haben].forEach(rawAcc => {
+        const acc = String(rawAcc || '').trim();
+        if (acc && !accountsMap.has(acc)) {
+          let bezeichnung = 'Sammelkonto ' + acc;
+          let klasse = 'Ertrag';
+          if (acc === '3800') {
+            bezeichnung = 'Sponsoring, Gönner & Spenden';
+            klasse = 'Ertrag';
+          } else if (acc.startsWith('1')) {
+            klasse = 'Aktiven';
+          } else if (acc.startsWith('2')) {
+            klasse = 'Passiven';
+          } else if (acc.startsWith('3')) {
+            klasse = 'Ertrag';
+          } else if (/^[4-8]/.test(acc)) {
+            klasse = 'Aufwand';
+          }
+          accountsMap.set(acc, {
+            konto: acc,
+            bezeichnung: bezeichnung,
+            klasse: klasse,
+            eroeffnungssaldo: 0,
+            sort_order: parseInt(acc, 10) || 9999
+          });
+          console.warn(`ℹ️ Konto ${acc} wurde im Journal gefunden, fehlte aber im Kontenrahmen. Automatisch als ${klasse} angelegt.`);
+        }
+      });
+    });
+
+    const accountsToUpsert = Array.from(accountsMap.values());
 
     if (accountsToUpsert.length > 0) {
       const { error: accErr } = await supa.from('accounting_accounts').upsert(accountsToUpsert, { onConflict: 'konto' });
