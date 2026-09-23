@@ -243,9 +243,21 @@ function renderUmfragenUI(container) {
             <div class="row g-3">
                 <div class="col-md-12 write-protected">
                     <div class="card p-3 mb-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title mb-0">&#128640; Tools</h5>
-                            <button class="btn btn-success btn-sm write-protected" onclick="saveGVData()">&#128190; GV-Stammdaten speichern</button>
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <h5 class="card-title mb-0">&#128640; Tools & GV-Steuerung</h5>
+                                <span id="gv-backend-badge" class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                    <i class="fas fa-database me-1"></i>Supabase Live
+                                </span>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-secondary btn-sm write-protected" onclick="migrateGVFromGoogleSheets()" title="Aus Google Sheets importieren">
+                                    <i class="fas fa-file-import me-1"></i> Aus Sheets importieren
+                                </button>
+                                <button class="btn btn-success btn-sm write-protected fw-bold" onclick="saveGVData()">
+                                    &#128190; GV-Stammdaten speichern
+                                </button>
+                            </div>
                         </div>
                         <div class="d-flex gap-2 flex-wrap align-items-center">
                             <div class="form-check form-switch d-flex align-items-center me-2 pe-2 border-end" style="margin-bottom: 0; min-height: auto;">
@@ -437,3 +449,18 @@ async function ensureMembersLookup() {
         console.error("Fehler beim Laden der Mitglieder-Adressen", e);
     }
 }
+
+function updateGVBackendBadge() {
+    const badge = document.getElementById('gv-backend-badge');
+    if (!badge) return;
+    if (window._gvIsSupabase) {
+        badge.className = 'badge bg-success-subtle text-success border border-success-subtle px-2 py-1';
+        badge.innerHTML = '<i class="fas fa-database me-1"></i>Supabase Live';
+        badge.title = 'GV-Stammdaten & Präsenz stammen direkt aus Supabase PostgreSQL (Master)';
+    } else {
+        badge.className = 'badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1';
+        badge.innerHTML = '<i class="fas fa-cloud me-1"></i>GAS Fallback';
+        badge.title = 'Fallback-Modus: Daten stammen aus Google Apps Script';
+    }
+}
+window.updateGVBackendBadge = updateGVBackendBadge;

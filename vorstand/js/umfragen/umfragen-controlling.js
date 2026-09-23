@@ -2,6 +2,15 @@
 
 let gvState = null;
 let originalGvState = null;
+window._gvIsSupabase = false;
+
+function getGVSupabaseClient() {
+  if (typeof window.getSupabaseClient === 'function') {
+    return window.getSupabaseClient();
+  }
+  return window.supabaseClient || null;
+}
+window.getGVSupabaseClient = getGVSupabaseClient;
 
 function getGVState() {
   if (typeof gvState !== 'undefined' && gvState) {
@@ -17,13 +26,14 @@ function getGVState() {
 
 /**
  * Wird aufgerufen, wenn Tab 4 "Erweitertes Controlling" geöffnet wird.
- * Lädt die GV-Stammdaten (falls noch nicht geladen) und baut die UI auf.
+ * Lädt die GV-Stammdaten (Supabase-First mit GAS-Fallback) und baut die UI auf.
  */
 async function initGVControllingTab() {
   if (gvState) {
     // Daten bereits geladen – nur UI neu rendern
     renderGVListEmbedded();
     fetchGVEventsEmbedded();
+    if (typeof updateGVBackendBadge === 'function') updateGVBackendBadge();
     return;
   }
 
@@ -32,11 +42,101 @@ async function initGVControllingTab() {
     listDiv.innerHTML = '<div class="text-center p-3 text-muted"><div class="spinner-border spinner-border-sm text-primary mb-2"></div><div>Lade GV Daten...</div></div>';
   }
 
+  const currentYear = new Date().getFullYear();
+  const supa = getGVSupabaseClient();
+  let loadedFromSupabase = false;
+
+  // 1. PRIMÄR: SUPABASE-FIRST LADEN
+  if (supa) {
+    try {
+      console.log(`📡 [Supabase] Lade GV-Stammdaten für Jahr ${currentYear}...`);
+      const { data: gvData, error: gvErr } = await supa
+        .from('gv_instances')
+        .select('*')
+        .eq('year', currentYear)
+        .maybeSingle();
+
+      if (!gvErr && gvData) {
+        loadedFromSupabase = true;
+        window._gvIsSupabase = true;
+
+        const placeholders = [
+          { platzhaltername: '{{Welche_GV}}', bezeichnung_app: 'Welche GV', inhalt: String(gvData.number || 100) },
+          { platzhaltername: '{{Datum_GV}}', bezeichnung_app: 'Datum GV', inhalt: gvData.datum || '' },
+          { platzhaltername: '{{Zeit_GV}}', bezeichnung_app: 'Zeit GV', inhalt: gvData.zeit || '19:30' },
+          { platzhaltername: '{{Ort_GV}}', bezeichnung_app: 'Ort GV', inhalt: gvData.ort || 'Schützenhaus Muhen' },
+          { platzhaltername: '{{Datum_GV_Vorjahr}}', bezeichnung_app: 'Datum GV Vorjahr', inhalt: gvData.datum_vorjahr || '' },
+          { platzhaltername: '{{Datum_Abmeldung}}', bezeichnung_app: 'Datum Abmeldung', inhalt: gvData.abmelde_datum || '' },
+          { platzhaltername: '{{Mahndatum}}', bezeichnung_app: 'Mahndatum', inhalt: gvData.mahn_datum || '' },
+          { platzhaltername: '{{Wort_Praesident}}', bezeichnung_app: 'Wort des Präsidenten', inhalt: gvData.praesident_wort || '' },
+          { platzhaltername: '{{Budget}}', bezeichnung_app: 'Budget', inhalt: gvData.budget_text || '' },
+          { platzhaltername: '{{Dokument_Einladung}}', bezeichnung_app: 'Dokument Einladung', inhalt: gvData.doc_einladung_url || '' },
+          { platzhaltername: '{{Dokument_Protokoll}}', bezeichnung_app: 'Dokument Protokoll', inhalt: gvData.doc_protokoll_url || '' },
+          { platzhaltername: '{{Dokument_Jahresbericht}}', bezeichnung_app: 'Dokument Jahresbericht', inhalt: gvData.doc_jahresbericht_url || '' },
+          { platzhaltername: '{{Anhaenge}}', bezeichnung_app: 'Anhänge', inhalt: gvData.doc_anhaenge_url || '' },
+          { platzhaltername: '{{Mail_Vorstand}}', bezeichnung_app: 'Mail-Verteiler Vorstands-Kopie', inhalt: (gvData.vorstand_mails || []).join('; ') }
+        ];
+
+        if (gvData.custom_placeholders && typeof gvData.custom_placeholders === 'object') {
+          Object.entries(gvData.custom_placeholders).forEach(([k, v]) => {
+            if (!placeholders.some(p => p.bezeichnung_app === k || p.platzhaltername === k)) {
+              placeholders.push({ platzhaltername: `{{${k}}}`, bezeichnung_app: k, inhalt: String(v || '') });
+            }
+          });
+        }
+
+        gvState = {
+          jahr: gvData.year,
+          linked_event: gvData.linked_event_id || '',
+          is_election_year: Boolean(gvData.is_election_year),
+          platzhalter: placeholders,
+          vorstandMembers: []
+        };
+
+        const sw = document.getElementById('gv-wahljahr-switch-embedded');
+        if (sw) sw.checked = gvState.is_election_year;
+
+        // Vorstandsmitglieder ermitteln
+        if (window._mglData && window._mglFunktionenCache) {
+          const vorstandPNs = {};
+          Object.entries(window._mglFunktionenCache).forEach(([pn, funcs]) => {
+            funcs.forEach(f => {
+              if (!String(f.OfficialFunctionExitDate || '').trim()) {
+                const cat = String(f.OfficialFunctionCategory || '').toLowerCase();
+                if (!cat.includes('hausmeister') && !cat.includes('hauswart')) {
+                  vorstandPNs[String(pn)] = true;
+                }
+              }
+            });
+          });
+          gvState.vorstandMembers = window._mglData
+            .filter(m => vorstandPNs[String(m.PersonNumber)])
+            .map(m => ({
+              name: (String(m.FirstName || '') + " " + String(m.LastName || '')).trim() || m.PrimaryEmail,
+              email: String(m.PrimaryEmail || m.Email || '').trim()
+            }))
+            .filter(x => x.email);
+          gvState.vorstandMembers.sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        originalGvState = JSON.parse(JSON.stringify(gvState));
+        renderGVListEmbedded();
+        fetchGVEventsEmbedded();
+        if (typeof updateGVBackendBadge === 'function') updateGVBackendBadge();
+        console.log(`✅ [Supabase] GV-Stammdaten für ${currentYear} erfolgreich geladen.`);
+        return;
+      }
+    } catch (supaErr) {
+      console.warn("⚠️ [Supabase] Fehler beim Laden der GV-Instanz, wechsle auf GAS Fallback:", supaErr);
+    }
+  }
+
+  // 2. FALLBACK: GOOGLE APPS SCRIPT
+  window._gvIsSupabase = false;
   try {
     let loadedAdminData = null;
     let loadedVorstandData = null;
 
-    // Verwende vorverlegte Admin-Daten aus Cache falls vorhanden
     if (typeof adminState !== 'undefined' && adminState) {
       console.log("⚡ initGVControllingTab: Verwende vorverlegte Admin-Daten aus Cache...");
       loadedAdminData = JSON.parse(JSON.stringify(adminState));
@@ -51,9 +151,7 @@ async function initGVControllingTab() {
       }
     }
 
-    // Berechne Vorstand aus vorverlegtem Cache falls vorhanden
     if (window._mglData && window._mglFunktionenCache) {
-      console.log("⚡ initGVControllingTab: Berechne Vorstand aus vorverlegtem Cache...");
       const vorstandPNs = {};
       Object.entries(window._mglFunktionenCache).forEach(([pn, funcs]) => {
         funcs.forEach(f => {
@@ -85,6 +183,12 @@ async function initGVControllingTab() {
 
     renderGVListEmbedded();
     fetchGVEventsEmbedded();
+    if (typeof updateGVBackendBadge === 'function') updateGVBackendBadge();
+
+    // Auto-Seed nach Supabase im Hintergrund
+    if (supa && loadedAdminData) {
+      autoSeedGVToSupabase(loadedAdminData);
+    }
   } catch (e) {
     if (listDiv) {
       listDiv.innerHTML = '<div class="alert alert-danger">Fehler beim Laden: ' + escapeHtml(e.message) + '</div>';
@@ -306,17 +410,83 @@ async function loadGVParticipants(eventId) {
     }
     
     try {
-        let pData;
+        let pData = null;
         if (hasCache) {
             console.log("⚡ loadGVParticipants: Verwende Cache...");
             pData = window._gvParticipantsCache[eventId];
-        } else {
-            // Wir nutzen die Backend-API "getGVStatus", die uns Ja, Nein und Offen liefert
+        }
+
+        // 1. PRIMÄR: SUPABASE-FIRST LADEN
+        const supa = getGVSupabaseClient();
+        if (!pData && supa) {
+            try {
+                console.log(`📡 [Supabase] Lade GV-Teilnehmer für Event ${eventId}...`);
+                const [membersRes, responsesRes] = await Promise.allSettled([
+                    supa.from('members').select('person_number, first_name, last_name, primary_email, is_active, status_u21').eq('is_active', true),
+                    supa.from('poll_responses').select('*').eq('event_id', eventId)
+                ]);
+
+                const members = (membersRes.status === 'fulfilled' && !membersRes.value.error) ? (membersRes.value.data || []) : [];
+                const responses = (responsesRes.status === 'fulfilled' && !responsesRes.value.error) ? (responsesRes.value.data || []) : [];
+
+                if (members.length > 0) {
+                    const responseByLizenz = new Map();
+                    responses.forEach(r => {
+                        const liz = String(r.lizenz || '').trim();
+                        if (liz) {
+                            responseByLizenz.set(liz.length <= 6 ? liz.padStart(6, '0') : liz, r);
+                            responseByLizenz.set(liz, r);
+                        }
+                    });
+
+                    pData = members.map(m => {
+                        const pn = String(m.person_number || '');
+                        const liz = pn.length <= 6 ? pn.padStart(6, '0') : pn;
+                        const resp = responseByLizenz.get(liz) || responseByLizenz.get(pn);
+                        
+                        let status = 'offen';
+                        let essen = 0;
+                        let vegi = 0;
+                        let grund = '';
+
+                        if (resp) {
+                            status = (resp.attending === true || resp.attending === 'true' || resp.attending === 1) ? 'ja' : 'nein';
+                            essen = resp.essen || 0;
+                            vegi = resp.vegi || 0;
+                            grund = resp.grund || '';
+                        }
+
+                        return {
+                            id: pn,
+                            name: `${m.last_name || ''} ${m.first_name || ''}`.trim(),
+                            status: status,
+                            essen: essen,
+                            vegi: vegi,
+                            grund: grund,
+                            lizenz: liz,
+                            stimmberechtigt: true
+                        };
+                    });
+
+                    // Nach Name sortieren
+                    pData.sort((a, b) => a.name.localeCompare(b.name, 'de'));
+                    window._gvParticipantsCache = window._gvParticipantsCache || {};
+                    window._gvParticipantsCache[eventId] = pData;
+                    console.log(`✅ [Supabase] ${pData.length} Teilnehmer in Sub-Sekunden berechnet.`);
+
+                    // In public.gv_praesenz spiegeln
+                    syncPraesenzToSupabase(pData, gvState.jahr || new Date().getFullYear());
+                }
+            } catch(supaErr) {
+                console.warn("⚠️ [Supabase] Fehler bei Teilnehmerberechnung, Fallback zu GAS:", supaErr);
+            }
+        }
+
+        // 2. FALLBACK: GAS RUNTOOL getGVStatus
+        if (!pData) {
             const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
             const result = await res.json();
-            
             if (!result.success) throw new Error(result.error || "Fehler beim Laden");
-            
             pData = result.data || [];
             window._gvParticipantsCache = window._gvParticipantsCache || {};
             window._gvParticipantsCache[eventId] = pData;
@@ -837,31 +1007,204 @@ async function saveGVData(silent = false) {
     if (!silent) alert("Fehler: Keine GV-Daten vorhanden.");
     return;
   }
-  const payload = {
-    action: "saveAdminData",
-    user: user,
-    termine: stateToSave.termine,
-    platzhalter: stateToSave.platzhalter,
-    app_info: stateToSave.app_info,
-    dropdowns: stateToSave.dropdowns,
-    logDetails: "GV-Daten aktualisiert"
+
+  const supa = getGVSupabaseClient();
+  const year = stateToSave.jahr || new Date().getFullYear();
+  const isElectionYear = (document.getElementById('gv-wahljahr-switch-embedded')?.checked) || false;
+  stateToSave.is_election_year = isElectionYear;
+
+  const findVal = (term) => {
+    const item = stateToSave.platzhalter.find(p => (p.bezeichnung_app || p.platzhaltername || '').toLowerCase().includes(term));
+    return item ? (item.inhalt || '') : '';
   };
-  try {
-    const res = await apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) });
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch(e) { data = { error: "Ungueltige Server-Antwort" }; }
-    
-    if (data.status === 'success' || data.success) {
-        if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
-        if (!silent) alert("✅ Gespeichert!");
-    } else {
-        if (!silent) alert("Fehler beim Speichern: " + (data.error || data.message || "Unbekannt"));
+
+  let supaSaved = false;
+
+  // 1. PRIMÄR: SUPABASE SPEICHERN
+  if (supa) {
+    try {
+      console.log(`💾 [Supabase] Speichere GV-Instanz für ${year}...`);
+      const customPl = {};
+      stateToSave.platzhalter.forEach(p => {
+        const key = p.bezeichnung_app || p.platzhaltername || '';
+        customPl[key] = p.inhalt || '';
+      });
+
+      const vorstandMails = (findVal('mail') || '').split(';').map(x => x.trim()).filter(Boolean);
+
+      const { error } = await supa.from('gv_instances').upsert({
+        id: 'gv_' + year,
+        year: year,
+        number: parseInt(findVal('welche gv')) || 100,
+        datum: findVal('datum gv') || null,
+        zeit: findVal('zeit gv') || '19:30',
+        ort: findVal('ort gv') || 'Schützenhaus Muhen',
+        datum_vorjahr: findVal('vorjahr') || null,
+        abmelde_datum: findVal('abmeldung') || null,
+        mahn_datum: findVal('mahn') || null,
+        is_election_year: isElectionYear,
+        linked_event_id: stateToSave.linked_event || null,
+        praesident_wort: findVal('wort') || findVal('einladungstext'),
+        budget_text: findVal('budget'),
+        vorstand_mails: vorstandMails,
+        doc_einladung_url: findVal('einladung'),
+        doc_protokoll_url: findVal('protokoll'),
+        doc_jahresbericht_url: findVal('jahresbericht'),
+        doc_anhaenge_url: findVal('anhänge'),
+        custom_placeholders: customPl,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'year' });
+
+      if (error) throw error;
+      supaSaved = true;
+      window._gvIsSupabase = true;
+      if (typeof updateGVBackendBadge === 'function') updateGVBackendBadge();
+      console.log(`✅ [Supabase] GV-Instanz für ${year} erfolgreich gespeichert.`);
+
+      // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund
+      const payload = {
+        action: "saveAdminData",
+        user: user,
+        termine: stateToSave.termine,
+        platzhalter: stateToSave.platzhalter,
+        app_info: stateToSave.app_info,
+        dropdowns: stateToSave.dropdowns,
+        logDetails: "GV-Daten aktualisiert (Supabase Dual-Write)"
+      };
+      apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) })
+        .then(r => r.text())
+        .then(txt => console.log("📡 [Dual-Write] GAS-Sync GV abgeschlossen:", txt.slice(0, 80)))
+        .catch(err => console.warn("⚠️ [Dual-Write] GAS-Sync Hinweis:", err.message));
+
+    } catch (supaErr) {
+      console.warn("⚠️ [Supabase] Fehler beim Speichern der GV-Daten, Fallback zu GAS:", supaErr.message);
     }
-  } catch(e) {
-    if (!silent) alert("Netzwerk/Skript-Fehler: " + e);
+  }
+
+  // 2. FALLBACK: GAS SPEICHERN falls Supabase fehlschlug
+  if (!supaSaved) {
+    const payload = {
+      action: "saveAdminData",
+      user: user,
+      termine: stateToSave.termine,
+      platzhalter: stateToSave.platzhalter,
+      app_info: stateToSave.app_info,
+      dropdowns: stateToSave.dropdowns,
+      logDetails: "GV-Daten aktualisiert"
+    };
+    try {
+      const res = await apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch(e) { data = { error: "Ungueltige Server-Antwort" }; }
+      if (!data.status && !data.success) {
+        if (!silent) alert("Fehler beim Speichern: " + (data.error || data.message || "Unbekannt"));
+        return;
+      }
+    } catch(e) {
+      if (!silent) alert("Netzwerk/Skript-Fehler: " + e);
+      return;
+    }
+  }
+
+  if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
+  if (!silent) alert("✅ Gespeichert!");
+}
+
+async function syncPraesenzToSupabase(pData, year) {
+  const supa = getGVSupabaseClient();
+  if (!supa || !Array.isArray(pData) || pData.length === 0) return;
+  try {
+    const gvId = 'gv_' + year;
+    const rows = pData.map(p => ({
+      id: `praesenz_${year}_${p.id || p.lizenz}`,
+      gv_id: gvId,
+      person_number: String(p.id || p.lizenz || ''),
+      name: p.name || '',
+      lizenz: p.lizenz || '',
+      anmeldung_status: p.status || 'offen',
+      stimmberechtigt: p.stimmberechtigt !== false,
+      essen: p.essen || 0,
+      vegi: p.vegi || 0,
+      grund: p.grund || '',
+      updated_at: new Date().toISOString()
+    }));
+
+    await supa.from('gv_praesenz').upsert(rows, { onConflict: 'gv_id,person_number' });
+  } catch (err) {
+    console.warn("⚠️ [Supabase] Präsenz-Sync Hinweis:", err.message);
   }
 }
+
+async function autoSeedGVToSupabase(data) {
+  const supa = getGVSupabaseClient();
+  if (!supa || !data) return;
+  try {
+    const currentYear = new Date().getFullYear();
+    const placeholders = data.platzhalter || [];
+    const findVal = (term) => {
+      const item = placeholders.find(p => (p.bezeichnung_app || p.platzhaltername || '').toLowerCase().includes(term));
+      return item ? (item.inhalt || '') : '';
+    };
+
+    const customPl = {};
+    placeholders.forEach(p => {
+      const key = p.bezeichnung_app || p.platzhaltername || '';
+      customPl[key] = p.inhalt || '';
+    });
+
+    const vorstandMails = (findVal('mail') || '').split(';').map(x => x.trim()).filter(Boolean);
+
+    await supa.from('gv_instances').upsert({
+      id: 'gv_' + currentYear,
+      year: currentYear,
+      number: parseInt(findVal('welche gv')) || 100,
+      datum: findVal('datum gv') || null,
+      zeit: findVal('zeit gv') || '19:30',
+      ort: findVal('ort gv') || 'Schützenhaus Muhen',
+      datum_vorjahr: findVal('vorjahr') || null,
+      abmelde_datum: findVal('abmeldung') || null,
+      mahn_datum: findVal('mahn') || null,
+      is_election_year: false,
+      praesident_wort: findVal('wort') || findVal('einladungstext'),
+      budget_text: findVal('budget'),
+      vorstand_mails: vorstandMails,
+      doc_einladung_url: findVal('einladung'),
+      doc_protokoll_url: findVal('protokoll'),
+      doc_jahresbericht_url: findVal('jahresbericht'),
+      doc_anhaenge_url: findVal('anhänge'),
+      custom_placeholders: customPl,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'year' });
+    console.log(`✅ [Auto-Seed] GV ${currentYear} in Supabase angelegt.`);
+  } catch (err) {
+    console.warn("⚠️ [Auto-Seed] GV Hinweis:", err.message);
+  }
+}
+
+async function migrateGVFromGoogleSheets() {
+  if (!confirm("Möchtest du die aktuellen GV-Stammdaten und Platzhalter aus dem Google Sheet nach Supabase importieren?")) {
+    return;
+  }
+  const supa = getGVSupabaseClient();
+  if (!supa) {
+    alert("Fehler: Supabase-Client nicht verfügbar.");
+    return;
+  }
+  try {
+    if (typeof showToast === 'function') showToast("⏳ Lade Daten aus Google Sheets...", "info");
+    const res = await apiFetch('termine', 'action=loadAdminData');
+    const text = await res.text();
+    const data = JSON.parse(text);
+    await autoSeedGVToSupabase(data);
+    if (typeof showToast === 'function') showToast("✅ GV-Daten erfolgreich nach Supabase importiert!", "success");
+    gvState = null;
+    await initGVControllingTab();
+  } catch(e) {
+    alert("Fehler beim Import: " + e.message);
+  }
+}
+window.migrateGVFromGoogleSheets = migrateGVFromGoogleSheets;
 
 async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
     if (!fileOrFileList) return;

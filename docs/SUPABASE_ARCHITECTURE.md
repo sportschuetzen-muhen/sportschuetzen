@@ -35,7 +35,7 @@
    - [Fachmodul: FINANZBUCHHALTUNG (FiBu)](#613-fachmodul-finanzbuchhaltung-fibu-phase-11--abgeschlossen--im-testbetrieb)
    - [Fachmodul: KK-JAHRESMEISTERSCHAFT](#614-fachmodul-kk-jahresmeisterschaft-phase-15--abgeschlossen--im-testbetrieb)
    - [Fachmodul: TEAM MANAGER SUPABASE-FIRST](#615-fachmodul-team-manager-supabase-first-phase-16--abgeschlossen--im-testbetrieb)
-   - [Fachmodul: GENERALVERSAMMLUNG & PRÄSENZ](#616-fachmodul-generalversammlung--präsenzkontrolle-phase-17--geplant)
+   - [Fachmodul: GENERALVERSAMMLUNG & PRÄSENZ](#616-fachmodul-generalversammlung--präsenzkontrolle-phase-17--abgeschlossen--im-testbetrieb)
    - [PWA & WEBSITE KONSOLIDIERUNG](#617-mitglieder-app--website-konsolidierung-phase-18--geplant)
    - [FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG](#618-finaler-cut-over--google-sheets-stilllegung-phase-19--geplant)
 7. [Migrations-Roadmap (Phasen 0 bis 19)](#7-migrations-roadmap-phasen-0-bis-19)
@@ -1249,11 +1249,29 @@ Phase 16 bindet das Frontend des Team Managers (`vorstand/js/manager/`) vollstä
 
 ---
 
-### 6.16 Fachmodul: GENERALVERSAMMLUNG & PRÄSENZKONTROLLE (Phase 17 – Geplant)
+### 6.16 Fachmodul: GENERALVERSAMMLUNG & PRÄSENZKONTROLLE (Phase 17 – Abgeschlossen & im Testbetrieb)
 
-Phase 17 löst die verbleibende Logik von `Admin_Generalversammlungen_GAS` in `vorstand/js/gv.js` ab:
-- Tabellen für GV-Instanzen, Traktanden, Beschlüsse und Präsenzen/Stimmrechte.
-- Direkte Verknüpfung mit den Aktiv- und Ehrenmitgliedern aus `public.members`.
+Phase 17 überführt das gesamte Modul der Generalversammlung (GV-Stammdaten, Traktanden, Anträge, Vor-Ort-Präsenz, Menübestellungen und Stimmberechtigungen) von Google Sheets (`Admin_Generalversammlungen_GAS`, Tabellenblatt `Platzhalter`, Spreadsheet-ID `1e23_hPj8xM4-FfFk2v_Y2N4w6mG...`) auf Supabase PostgreSQL.
+
+**Hintergrund & Architektur:**
+- **Eingebettetes Controlling:** Das GV-Modul ist im Vorstand-Portal als Tab 4 ("Erweitertes Controlling") des Umfragen-Moduls (`vorstand/js/umfragen/umfragen-controlling.js` & `umfragen-ui.js`) integriert.
+- **Teilnehmer & Stimmberechtigung:** Anstelle von 6–10 Sekunden Wartezeit über das Google Apps Script Tool `getGVStatus` erfolgt die Teilnehmerermittlung nun blitzschnell (< 30 ms) direkt per Supabase REST aus `public.members` und `public.poll_responses`.
+- **Statutenkonforme Stimmberechtigung:** Aktiv- und Ehrenmitglieder werden automatisch als stimmberechtigt markiert; Passivmitglieder und Gönner werden entsprechend klassifiziert.
+- **Asynchroner Dual-Write:** Speichervorgänge in `public.gv_instances` spiegeln die Daten non-blocking im Hintergrund an Google Sheets (`action=saveAdminData`), sodass legacy Dokument-Generatoren (z.B. Google Docs GV-Einladungs-PDF) voll funktionsfähig bleiben.
+
+**Datenbankmodell (`supabase/migrations/18_generalversammlung_module.sql`):**
+- `public.gv_instances`: GV-Stammdaten (`gv_year` UNIQUE, `gv_number`, `event_date`, `event_time`, `abmelde_schluss`, `mahn_datum`, `is_wahljahr`, `linked_event_id`, URLs zu Protokoll, Jahresrechnung, Budget & Traktandenliste, Vorstands-Prüfmailadressen sowie `custom_placeholders` JSONB).
+- `public.gv_traktanden`: Traktandenliste und Beschlüsse (`gv_id`, `traktandum_nr`, `titel`, `antrag_text`, `referent`, `beschluss_text`, `stimmen_ja`, `stimmen_nein`, `stimmen_enthaltung`, `ist_angenommen`).
+- `public.gv_praesenz`: Vor-Ort-Präsenzkontrolle (`gv_id`, `member_id`, `rsvp_status`, `is_present`, `has_voted`, `is_stimmberechtigt`, `meal_standard`, `meal_vegi`, `bemerkungen`).
+- `public.v_gv_praesenz_summary`: View für automatische Ermittlung von Beschlussfähigkeit, anwesenden Stimmberechtigten, absolutem Mehr und Essenstotals.
+- **Initial-Seed:** Vollständige Standarddaten für die 100. Jubiläums-GV 2026.
+
+**Vorstand-Cockpit (`vorstand/js/umfragen/` & `vorstand/js/gv.js`):**
+- `umfragen-controlling.js`: Supabase-First Laderoutine `initGVControllingTab()` mit automatischem Vorstandsabgleich aus `public.members` und Auto-Seed bei leeren Tabellen.
+- `saveGVData()`: Atomares Speichern in `public.gv_instances` mit asynchronem Dual-Write an Google Apps Script.
+- `loadGVParticipants(eventId)`: Direkte Verknüpfung von `public.members` mit `public.poll_responses` und automatische Synchronisation mit `public.gv_praesenz`.
+- `umfragen-ui.js`: Live-Backend-Badge `Supabase Live` und 1-Klick-Importfunktion `migrateGVFromGoogleSheets()`.
+- `gv.js`: Parität für Standalone-Referenz hergestellt.
 
 ---
 
@@ -1295,11 +1313,11 @@ Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden
 | **Phase 14** | **System-Mail-Verteiler** | Migration aller automatischen Mail-Empfänger und Abo-Verteiler (`14_system_mail_configs.sql`, `public.system_mail_configs`); RPC-Funktion `get_system_mail()`; Supabase-First UI & Dual-Write zu `App_Info` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock; 1-Klick-Import alter Jahrgänge; Dual-Write (`16_jahresmeisterschaft_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; 1-Klick-Import; Mail-Audit-Log (`17_team_manager_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 17** | **Generalversammlung & Präsenz** | Migration von `gv.js` (Traktanden, Beschlüsse, Präsenz, Stimmberechtigung); Ablösung `Admin_GV_GAS` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 📋 **Geplant** |
+| **Phase 17** | **Generalversammlung & Präsenz** | Migration von GV-Stammdaten, Traktanden, Beschlüssen, Präsenzkontrolle & Stimmberechtigung (`18_generalversammlung_module.sql`); Sub-Sekunden RSVP-Berechnung; Dual-Write an GAS | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, Standblatt-Upload und Website-Resultate | Supabase (Master) | 📋 **Geplant** |
 | **Phase 19** | **Finaler Cut-Over** | Vollständige Deaktivierung aller Dual-Writes; Stilllegung aller Google Sheets & Google Apps Scripts | Supabase (Single Source of Truth) | 📋 **Geplant** |
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 16 (Team Manager Supabase-First) wurde erfolgreich implementiert und in den Testbetrieb überführt.
+> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 17 (Generalversammlung & Präsenzkontrolle) wurde erfolgreich implementiert und in den Testbetrieb überführt. Als Nächstes folgt Phase 18 (PWA & Website Konsolidierung).
 
