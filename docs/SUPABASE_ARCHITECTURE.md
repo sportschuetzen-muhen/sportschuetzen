@@ -1275,19 +1275,40 @@ Phase 17 überführt das gesamte Modul der Generalversammlung (GV-Stammdaten, Tr
 
 ---
 
-### 6.17 MITGLIEDER-APP & WEBSITE KONSOLIDIERUNG (Phase 18 – Geplant)
+### 6.17 MITGLIEDER-APP & WEBSITE KONSOLIDIERUNG (Phase 18 – Abgeschlossen & im Testbetrieb)
 
-Phase 18 migriert die verbliebenen Satellitenschnittstellen in der Mobile PWA (`app.js`, `app/*`) und auf der Vereins-Website:
-- Direkter Abruf von `public.termine` und Hausbelegung in der PWA.
-- Standblatt-Upload-Metadaten direkt nach Supabase (`public.contest_ocr_logs` / `public.jm_seasons`).
-- Resultate-Feed auf der Vereins-Website direkt aus Supabase REST.
+Phase 18 hat alle verbliebenen Satellitenschnittstellen in der Mobile PWA (`app.js`, `app/*`) und auf der Vereins-Website (`sportschuetzen-website/frontend/`) erfolgreich auf eine reine, native Supabase REST Architektur umgestellt:
+- **PWA Termine & Hausbelegung (`app.js`)**:
+  - `fetchTermineFromSupabase()`: Direkter Abruf aller Vereinstermine aus `public.termine` (`order=datum.asc,sort_order.asc`).
+  - `fetchHausbelegungFromSupabase()`: Direkter Abruf aller bestätigten Vermietungen aus `public.rental_requests` (`status != cancelled`).
+  - **Kein Fallback mehr auf GAS**: Vollständige Ablösung der Legacy-Worker-URL `WORKER_TERMINE_URL` und des Google Hauskalenders für Datenabfragen.
+- **Website Termine (`sportschuetzen-website/frontend/js/main.js`)**:
+  - `loadTermine()`: Direkte Abfrage von `public.termine` über die Supabase REST API mit Runden-Präfix-Logik und Datumsfilterung (kein Worker- oder GAS-Fallback).
+- **RSVP, Umfragen & Teilnehmer**:
+  - `fetchRSVPEventsFromSupabase(lizenz)`: Direkter Ladevorgang aus `public.poll_events` und `public.poll_responses`.
+  - `fetchPollResultsFromSupabase(eventId)`: Direkte Aggregation der Stimmen und Namen aus `public.poll_responses`.
+  - `fetchParticipantsFromSupabase(eventId)`: Direkter Abruf der Teilnehmerliste aus `public.poll_responses` mit automatischer Namensauflösung.
+  - `loadMembersFromSupabase()`: Mitgliederliste für Login-Dropdowns direkt aus `public.members`.
+  - `saveRSVPToSupabase()`: Direkte Mutationsausführung in Supabase ohne Abhängigkeit von GAS-Schreibbestätigungen.
+  - `trackRSVPView()`: Asynchrones Tracking direkt in `public.poll_views`.
+- **Standblatt-Upload (`app/upload.js`)**:
+  - Bild-Upload an Cloudflare Worker für Cloudflare R2 Speicherung bleibt wie angefordert beibehalten.
+  - Upload-Metadaten werden zusätzlich asynchron direkt in `public.contest_ocr_logs` protokolliert (Audit-Trail).
+- **Website & PWA Jahresmeisterschaft (`resultate.js`, `app/app_jm.html`)**:
+  - `loadJahresmeisterschaft()` & `loadJMData()`: Direkte Abfrage von `public.jm_shooters` (`jahr=eq.current` / Saisonjahr) über die Supabase REST API für Liga 1, Liga 2 und Junioren U21.
+- **Website & PWA Wettkampf-Resultate (`resultate.js`, `app_gruppe.html`, `app_mannschaft.html`)**:
+  - Direkte Abfrage von `public.contest_results` für Gruppenmeisterschaft, Grenzlandcup und Mannschaftsmeisterschaft.
+  - Erweiterung von `public.contest_results` in `19_pwa_website_consolidation.sql` um die Runden 4 bis 7 für die Schweizer Mannschaftsmeisterschaft.
+- **Website Schützenhaus Vermietung (`schuetzenhaus_vermietung.html`)**:
+  - `loadCalendarEvents()`: Belegungskalender lädt Vermietungen direkt aus `public.rental_requests` und Vereinstermine aus `public.termine`.
+  - Korrektur der temporären LAN-IP auf die offizielle Produktions-URL `https://supabase-muhen.danfamily.uk/rest/v1`.
 
 ---
 
 ### 6.18 FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG (Phase 19 – Geplant)
 
 Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden:
-- Gezielte Deaktivierung aller asynchronen Dual-Write Spiegelungen.
+- Gezielte Deaktivierung aller verbliebenen asynchronen Dual-Write Spiegelungen im Vorstand-Portal.
 - Vollständige Stilllegung der 10 Legacy Google Spreadsheets und 11 Google Apps Script Projekte.
 
 ---
@@ -1314,10 +1335,11 @@ Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden
 | **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock; 1-Klick-Import alter Jahrgänge; Dual-Write (`16_jahresmeisterschaft_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; 1-Klick-Import; Mail-Audit-Log (`17_team_manager_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 17** | **Generalversammlung & Präsenz** | Migration von GV-Stammdaten, Traktanden, Beschlüssen, Präsenzkontrolle & Stimmberechtigung (`18_generalversammlung_module.sql`); Sub-Sekunden RSVP-Berechnung; Dual-Write an GAS | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, Standblatt-Upload und Website-Resultate | Supabase (Master) | 📋 **Geplant** |
+| **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, RSVPs/Umfragen und Website-Resultate; kein Daten-Fallback auf GAS | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 19** | **Finaler Cut-Over** | Vollständige Deaktivierung aller Dual-Writes; Stilllegung aller Google Sheets & Google Apps Scripts | Supabase (Single Source of Truth) | 📋 **Geplant** |
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 17 (Generalversammlung & Präsenzkontrolle) wurde erfolgreich implementiert und in den Testbetrieb überführt. Als Nächstes folgt Phase 18 (PWA & Website Konsolidierung).
+> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 18 (PWA & Website Konsolidierung) wurde erfolgreich abgeschlossen und alle Datenabfragen laufen rein über Supabase REST. Als Nächstes und Letztes folgt Phase 19 (Finaler Cut-Over & Google-Sheets-Stilllegung).
+
 

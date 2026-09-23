@@ -19,6 +19,7 @@ GAS/
 WORKER/
 sportschuetzen-website/
 
+
 # Backup & Temporary files
 *.bak
 *.tmp
@@ -27,6 +28,8 @@ sportschuetzen-website/
 *.swp
 scratch/
 supabase-local/
+*.bat
+WORKER_ANLEITUNG.md
 
 # Logs
 *.log

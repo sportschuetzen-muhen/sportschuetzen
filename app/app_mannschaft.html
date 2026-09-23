@@ -124,8 +124,9 @@
     <div id="overview"></div>
 
 <script>
-    const WORKER_URL = "https://gruppe.dan-hunziker73.workers.dev";
-    const selectedYear = 'aktuell'; 
+    const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
+    const currentYear = new Date().getFullYear(); 
     let raw = []; let teams = [];
 
     // Pull-to-Refresh Logik
@@ -155,10 +156,27 @@
     }
 
     async function loadData() {
+        const headers = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` };
         try {
-            // Cache-Busting hinzugefügt (?t=...), damit Push-Nachrichten immer frische Daten erzwingen
-            const response = await fetch(`${WORKER_URL}?type=mannschaft&jahr=${selectedYear}&t=${Date.now()}`);
-            raw = await response.json(); 
+            const response = await fetch(`${SUPABASE_REST_URL}/contest_results?contest_type=eq.mannschaft&year=eq.${currentYear}&order=name.asc`, { headers });
+            const data = await response.json(); 
+            raw = (Array.isArray(data) ? data : []).map(r => ({
+                name: r.name,
+                r1Team: r.r1_team || '',
+                r1Pkt: r.r1_p1 || 0,
+                r2Team: r.r2_team || '',
+                r2Pkt: r.r2_p1 || 0,
+                r3Team: r.r3_team || '',
+                r3Pkt: r.r3_p1 || 0,
+                r4Team: r.r4_team || '',
+                r4Pkt: r.r4_p1 || 0,
+                r5Team: r.r5_team || '',
+                r5Pkt: r.r5_p1 || 0,
+                r6Team: r.r6_team || '',
+                r6Pkt: r.r6_p1 || 0,
+                r7Team: r.r7_team || '',
+                r7Pkt: r.r7_p1 || 0
+            }));
             
             teams = [...new Set(raw.flatMap(r => {
                 let t = [];

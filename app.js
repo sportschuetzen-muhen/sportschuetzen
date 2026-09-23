@@ -1,31 +1,96 @@
-const WORKER_TERMINE_URL = "https://termine.dan-hunziker73.workers.dev?action=getTermine";
-const EVENTPLANER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev";
-const GOOGLE_SCRIPT_URL = `${EVENTPLANER_URL}?action=getHausKalender`;
+// ==============================================================================
+// SPORTSCHÜTZEN MUHEN - MITGLIEDER APP (PWA)
+// Supabase-First Architektur (Phase 18) - Reiner Supabase REST Datenzugriff
+// ==============================================================================
 
-// --- SUPABASE NATIVE INTEGRATION (Phase 5: Anlässe & Umfragen) ---
 const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
-async function fetchRSVPEventsFromSupabase(lizenz) {
-    if (!lizenz) return null;
-    const cleanLizenz = String(lizenz).trim();
-    const headers = {
+function getSupabaseHeaders() {
+    return {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
     };
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+}
+
+/**
+ * 1. Termine direkt aus Supabase (public.termine)
+ */
+async function fetchTermineFromSupabase() {
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/termine?select=*&status=neq.abgesagt&order=datum.asc,sort_order.asc`, {
+            headers: getSupabaseHeaders()
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+
+        return data.map(r => ({
+            id: r.id,
+            datum: r.datum || '',
+            datum_iso: r.datum || '',
+            start: r.startzeit || '',
+            startzeit: r.startzeit || '',
+            endzeit: r.endzeit || '',
+            titel: r.anlasstitel || '',
+            anlasstitel: r.anlasstitel || '',
+            ort: r.ort || 'Muhen',
+            map: r.austragungsorte_map || '',
+            status: r.status || 'fix',
+            kategorie: r.kategorie || 'Jahresprogramm',
+            typ: r.typ || 'verein'
+        }));
+    } catch (e) {
+        console.error('Fehler beim Laden der Termine aus Supabase:', e);
+        return [];
+    }
+}
+
+/**
+ * 2. Hausbelegung / Vermietungen direkt aus Supabase (public.rental_requests)
+ */
+async function fetchHausbelegungFromSupabase() {
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, {
+            headers: getSupabaseHeaders()
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+
+        return data.map(r => ({
+            id: r.booking_number,
+            datum: r.start_date || '',
+            datum_iso: r.start_date || '',
+            start: r.festbeginn || '',
+            titel: r.is_inquiry ? 'Schützenhaus (Anfrage)' : 'Schützenhaus Vermietung',
+            ort: 'Schützenhaus',
+            status: 'fix',
+            typ: 'extern'
+        }));
+    } catch (e) {
+        console.error('Fehler beim Laden der Hausbelegung aus Supabase:', e);
+        return [];
+    }
+}
+
+/**
+ * 3. RSVP-Anlässe direkt aus Supabase (public.poll_events & public.poll_responses)
+ */
+async function fetchRSVPEventsFromSupabase(lizenz) {
+    if (!lizenz) return [];
+    const cleanLizenz = String(lizenz).trim();
+    const headers = getSupabaseHeaders();
 
     try {
         const [resEvents, resResponses] = await Promise.all([
-            fetch(`${SUPABASE_REST_URL}/poll_events?select=*&aktiv=eq.true&order=datum.asc`, { headers, signal: controller.signal }),
-            fetch(`${SUPABASE_REST_URL}/poll_responses?select=*&lizenz=eq.${encodeURIComponent(cleanLizenz)}`, { headers, signal: controller.signal })
+            fetch(`${SUPABASE_REST_URL}/poll_events?select=*&aktiv=eq.true&order=datum.asc`, { headers }),
+            fetch(`${SUPABASE_REST_URL}/poll_responses?select=*&lizenz=eq.${encodeURIComponent(cleanLizenz)}`, { headers })
         ]);
-        clearTimeout(timeoutId);
 
-        if (!resEvents.ok) return null;
+        if (!resEvents.ok) return [];
         const events = await resEvents.json();
-        if (!Array.isArray(events) || events.length === 0) return null;
+        if (!Array.isArray(events) || events.length === 0) return [];
         const responses = resResponses.ok ? await resResponses.json() : [];
 
         const userRespMap = {};
@@ -58,15 +123,17 @@ async function fetchRSVPEventsFromSupabase(lizenz) {
             };
         });
     } catch (err) {
-        clearTimeout(timeoutId);
-        return null;
+        console.error('Fehler beim Laden von RSVPs aus Supabase:', err);
+        return [];
     }
 }
 
+/**
+ * 4. RSVP Antwort speichern (public.poll_responses)
+ */
 async function saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, optionids) {
     const headers = {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        ...getSupabaseHeaders(),
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates'
     };
@@ -92,6 +159,95 @@ async function saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen,
     }
 }
 
+/**
+ * 5. Umfrage-Ergebnisse direkt aus Supabase aggregieren (public.poll_responses)
+ */
+async function fetchPollResultsFromSupabase(eventId) {
+    const headers = getSupabaseHeaders();
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/poll_responses?event_id=eq.${encodeURIComponent(eventId)}&select=lizenz,attending,optionids`, { headers });
+        if (!res.ok) return null;
+        const responses = await res.json();
+        if (!Array.isArray(responses)) return null;
+
+        const counts = {};
+        const names = {};
+        let totalVoted = 0;
+
+        responses.forEach(r => {
+            if (r.attending && r.optionids) {
+                totalVoted++;
+                const optIds = String(r.optionids).split(',').map(s => s.trim()).filter(Boolean);
+                optIds.forEach(oid => {
+                    counts[oid] = (counts[oid] || 0) + 1;
+                    if (!names[oid]) names[oid] = [];
+                    names[oid].push(r.lizenz);
+                });
+            } else if (r.attending === false) {
+                totalVoted++;
+            }
+        });
+
+        return { counts, names, totalVoted };
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * 6. Teilnehmerliste direkt aus Supabase laden (public.poll_responses)
+ */
+async function fetchParticipantsFromSupabase(eventId) {
+    const headers = getSupabaseHeaders();
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/poll_responses?event_id=eq.${encodeURIComponent(eventId)}&attending=eq.true&select=lizenz,count,essen,vegi,grund`, { headers });
+        if (!res.ok) return [];
+        const responses = await res.json();
+        if (!Array.isArray(responses)) return [];
+
+        return responses.map(r => {
+            const rawLiz = String(r.lizenz || '').trim();
+            const paddedLiz = rawLiz.padStart(6, '0');
+            const member = (allUsers || []).find(u => String(u.lizenz || u.id || '').padStart(6, '0') === paddedLiz);
+            const name = member ? `${member.lastname || ''} ${member.firstname || ''}`.trim() : `Lizenz ${paddedLiz}`;
+            return {
+                lizenz: paddedLiz,
+                name: name || `Lizenz ${paddedLiz}`,
+                count: r.count || 1,
+                essen: r.essen || 0,
+                vegi: r.vegi || 0,
+                grund: r.grund || ''
+            };
+        });
+    } catch (e) {
+        return [];
+    }
+}
+
+/**
+ * 7. Mitglieder direkt aus Supabase laden (public.members)
+ */
+async function loadMembersFromSupabase() {
+    const headers = getSupabaseHeaders();
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/members?select=id,personnumber,addressnumber,firstname,lastname,status&status=neq.austritt&order=lastname.asc`, { headers });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+        return data.map(m => ({
+            id: String(m.addressnumber || m.personnumber || m.id).padStart(6, '0'),
+            personnumber: String(m.personnumber || ''),
+            addressnumber: String(m.addressnumber || '').padStart(6, '0'),
+            lizenz: String(m.addressnumber || m.personnumber || m.id).padStart(6, '0'),
+            firstname: m.firstname || '',
+            lastname: m.lastname || '',
+            type: 'member'
+        }));
+    } catch (e) {
+        return [];
+    }
+}
+
 let allTermine = [];
 const pollResultsCache = {};
 const participantsCache = {};
@@ -101,10 +257,9 @@ const spinner = document.getElementById('pull-spinner');
 
 function prefetchParticipants(eventId) {
     if (!eventId || participantsCache[eventId]) return;
-    fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${encodeURIComponent(eventId)}`)
-        .then(r => r.ok ? r.json() : null)
+    fetchParticipantsFromSupabase(eventId)
         .then(data => {
-            if (Array.isArray(data)) {
+            if (Array.isArray(data) && data.length > 0) {
                 participantsCache[eventId] = data;
             }
         })
@@ -243,47 +398,41 @@ async function loadTermine() {
             } catch(e) {}
         }
 
-        const [resWorker, resGoogle, supaRSVP] = await Promise.all([
-            safeFetch(WORKER_TERMINE_URL),
-            safeFetch(GOOGLE_SCRIPT_URL),
+        const [resTermine, resHaus, supaRSVP] = await Promise.all([
+            fetchTermineFromSupabase(),
+            fetchHausbelegungFromSupabase(),
             fetchRSVPEventsFromSupabase(activeLizenz)
         ]);
 
-        let resRSVP = supaRSVP;
-        if (!resRSVP || resRSVP.length === 0) {
-            resRSVP = await safeFetch(`${EVENTPLANER_URL}?action=getRSVPEvents&lizenz=${activeLizenz}`);
-        }
+        const resRSVP = supaRSVP || [];
 
         // Titel-Normalisierung sofort sicherstellen (verhindert 'undefined')
-        (resRSVP || []).forEach(t => {
+        resRSVP.forEach(t => {
             if (!t.titel && t.title) t.titel = t.title;
         });
 
-        // Poll-Ergebnisse ECHT im Hintergrund vorladen (OHNE await - blockiert das Rendern NICHT!)
-        const pollEvents = (resRSVP || []).filter(t => t.options && t.options.length > 0);
+        // Poll-Ergebnisse direkt aus Supabase im Hintergrund vorladen
+        const pollEvents = resRSVP.filter(t => t.options && t.options.length > 0);
         if (pollEvents.length > 0) {
             pollEvents.forEach(pe => {
-                fetch(`${EVENTPLANER_URL}?action=getPollResults&eventid=${encodeURIComponent(pe.id)}`)
-                    .then(r => r.ok ? r.json() : null)
-                    .then(data => {
-                        if (data && !data.error) {
-                            pollResultsCache[pe.id] = data;
-                            // Falls bereits eine Poll-Karte im DOM gerendert ist, Resultate sofort auffrischen
-                            const fullEvent = allTermine.find(x => String(x.id) === String(pe.id)) || pe;
-                            if (!fullEvent.titel && fullEvent.title) fullEvent.titel = fullEvent.title;
-                            const cardEl = document.getElementById(`rsvp-${pe.id}`) || document.getElementById(`poll-card-${pe.id}`);
-                            if (cardEl && fullEvent.attending !== null && fullEvent.attending !== undefined) {
-                                const wasOpen = openPolls.has(String(pe.id)) || document.getElementById(`poll-body-${pe.id}`)?.style.display === 'block';
-                                if (wasOpen) openPolls.add(String(pe.id));
-                                const tempWrap = document.createElement('div');
-                                renderPollCard(fullEvent, tempWrap);
-                                if (tempWrap.firstElementChild) {
-                                    cardEl.replaceWith(tempWrap.firstElementChild);
-                                }
+                fetchPollResultsFromSupabase(pe.id).then(data => {
+                    if (data) {
+                        pollResultsCache[pe.id] = data;
+                        // Falls bereits eine Poll-Karte im DOM gerendert ist, Resultate sofort auffrischen
+                        const fullEvent = allTermine.find(x => String(x.id) === String(pe.id)) || pe;
+                        if (!fullEvent.titel && fullEvent.title) fullEvent.titel = fullEvent.title;
+                        const cardEl = document.getElementById(`rsvp-${pe.id}`) || document.getElementById(`poll-card-${pe.id}`);
+                        if (cardEl && fullEvent.attending !== null && fullEvent.attending !== undefined) {
+                            const wasOpen = openPolls.has(String(pe.id)) || document.getElementById(`poll-body-${pe.id}`)?.style.display === 'block';
+                            if (wasOpen) openPolls.add(String(pe.id));
+                            const tempWrap = document.createElement('div');
+                            renderPollCard(fullEvent, tempWrap);
+                            if (tempWrap.firstElementChild) {
+                                cardEl.replaceWith(tempWrap.firstElementChild);
                             }
                         }
-                    })
-                    .catch(() => {});
+                    }
+                }).catch(() => {});
             });
         }
 
@@ -309,12 +458,12 @@ async function loadTermine() {
         const merged = [];
 
         // Zuerst alle Vereinstermine aus dem Jahresprogramm übernehmen
-        (resWorker || []).forEach(t => {
+        (resTermine || []).forEach(t => {
             merged.push({ ...t, typ: 'verein' });
         });
 
         // Hauskalender hinzufügen, ausser derselbe Termin existiert bereits im Vereinsprogramm
-        (resGoogle || []).forEach(ext => {
+        (resHaus || []).forEach(ext => {
             const extDate = normalizeDateStr(ext);
             const extTitle = normalizeTitle(ext.titel);
 
@@ -861,38 +1010,11 @@ async function initLogin() {
         } catch(e) {}
 
         try {
-            try {
-                let r = await fetch(`${EVENTPLANER_URL}?action=getMembers&type=member`);
-                if(!r.ok) throw new Error("Backend nicht erreichbar");
-                const resData = await r.json();
-                if (Array.isArray(resData) && resData.length > 0) {
-                    allUsers = resData;
-                    try { localStorage.setItem('sportschuetzen_members_cache', JSON.stringify(allUsers)); } catch(_) {}
-                    populateDropdown(allUsers);
-                } else {
-                    throw new Error("Leeres Array vom Worker");
-                }
-            } catch(e) {
-                console.warn("Worker Fallback -> Lade direkt aus Members100...", e);
-                try {
-                    const fallbackUrl = "https://script.google.com/macros/s/AKfycbyiJBjqfLWYuQeY89s2lKS4DoI6UY45uVAIImTK8vHzhTbDLyKFwcL6RYOrWatMdA8A/exec?action=getMembers&type=member";
-                    let r2 = await fetch(fallbackUrl);
-                    let raw2 = await r2.json();
-                    if (Array.isArray(raw2)) {
-                        allUsers = raw2.map(m => ({
-                            id: String(m.AddressNumber || m.PersonNumber || '').padStart(6, '0'),
-                            personnumber: String(m.PersonNumber || ''),
-                            addressnumber: String(m.AddressNumber || '').padStart(6, '0'),
-                            lizenz: String(m.AddressNumber || '').padStart(6, '0'),
-                            firstname: m.FirstName || '',
-                            lastname: m.LastName || '',
-                            type: 'member'
-                        }));
-                    }
-                } catch(e2) {
-                    console.error("Backend nicht erreichbar:", e2);
-                    allUsers = [];
-                }
+            const members = await loadMembersFromSupabase();
+            if (Array.isArray(members) && members.length > 0) {
+                allUsers = members;
+                try { localStorage.setItem('sportschuetzen_members_cache', JSON.stringify(allUsers)); } catch(_) {}
+                populateDropdown(allUsers);
             }
             
             if (!Array.isArray(allUsers)) allUsers = [];
@@ -939,7 +1061,8 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
 
     try {
         // SICHERER BACKEND-LOGIN
-        const resp = await fetch(`${EVENTPLANER_URL}?action=checkLogin&user=${userId}&pw=${inputHash}`);
+        const AUTH_WORKER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev";
+        const resp = await fetch(`${AUTH_WORKER_URL}?action=checkLogin&user=${userId}&pw=${inputHash}`);
         let result;
         try {
             result = await resp.json();
@@ -1224,15 +1347,11 @@ window.submitRSVP = async function(eventId, attending) {
         // Sicherstellen dass Lizenz sechstellig ist
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
 
-        // 1. Supabase Master (schnell speichern)
-        saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, '');
-
-        // 2. Dual-Write zu Google Sheet (Parallelbetrieb)
-        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${eventId}&lizenz=${cleanLizenz}&attending=${attending}&count=${count}&essen=${essen}&vegi=${vegi}&grund=${encodeURIComponent(grund)}`);
-        const result = await resp.json();
-        if (!result.success) throw new Error("Serverfehler beim Speichern");
+        // 1. Supabase Master (direkt speichern)
+        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, '');
+        if (!ok) throw new Error("Fehler beim Speichern in Supabase");
         
-        loadTermine(); // Nur bei Erfolg neu laden
+        loadTermine(); // Bei Erfolg neu laden
     } catch(e) { 
         console.error(e);
         alert("Fehler: Deine Antwort konnte nicht gespeichert werden. Bitte versuche es erneut.");
@@ -1440,11 +1559,8 @@ function renderPollCard(t, heroWrap) {
 // Hilfsfunktion: Poll-Ergebnisse asynchron laden
 async function fetchPollResultsAsync(eventId, callback) {
     try {
-        const res = await fetch(`${EVENTPLANER_URL}?action=getPollResults&eventid=${encodeURIComponent(eventId)}`);
-        if (res.ok) {
-            const data = await res.json();
-            if (data && !data.error) callback(data);
-        }
+        const data = await fetchPollResultsFromSupabase(eventId);
+        if (data) callback(data);
     } catch(e) {
         console.warn('Poll-Ergebnisse konnten nicht geladen werden:', e);
     }
@@ -1505,15 +1621,10 @@ window.submitPollVote = async function(eventId) {
     try {
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
         const rawOptIds = selectedIds.join(',');
-        const optionids = encodeURIComponent(rawOptIds);
 
-        // 1. Supabase Master
-        saveRSVPToSupabase(eventId, cleanLizenz, true, 1, 0, 0, '', rawOptIds);
-
-        // 2. Dual-Write zu Google Sheet (Parallelbetrieb)
-        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${encodeURIComponent(eventId)}&lizenz=${cleanLizenz}&attending=true&count=1&essen=0&vegi=0&grund=&optionids=${optionids}`);
-        const result = await resp.json();
-        if (!result.success) throw new Error('Serverfehler');
+        // 1. Supabase Master (direkt speichern)
+        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, true, 1, 0, 0, '', rawOptIds);
+        if (!ok) throw new Error('Fehler beim Speichern in Supabase');
         
         // Cache leeren für Event, damit frische Daten geladen werden
         delete pollResultsCache[eventId];
@@ -1536,13 +1647,9 @@ window.submitPollAbsent = async function(eventId) {
     try {
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
 
-        // 1. Supabase Master
-        saveRSVPToSupabase(eventId, cleanLizenz, false, 1, 0, 0, 'Kein Termin passt', '');
-
-        // 2. Dual-Write zu Google Sheet (Parallelbetrieb)
-        const resp = await fetch(`${EVENTPLANER_URL}?action=setRSVP&eventid=${encodeURIComponent(eventId)}&lizenz=${cleanLizenz}&attending=false&count=1&essen=0&vegi=0&grund=Kein+Termin+passt&optionids=`);
-        const result = await resp.json();
-        if (!result.success) throw new Error('Serverfehler');
+        // 1. Supabase Master (direkt speichern)
+        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, false, 1, 0, 0, 'Kein Termin passt', '');
+        if (!ok) throw new Error('Fehler beim Speichern in Supabase');
 
         delete pollResultsCache[eventId];
         loadTermine();
@@ -1571,11 +1678,10 @@ window.showParticipants = async function(eventId) {
     if (participantsCache[eventId]) {
         renderList(participantsCache[eventId]);
         modal.style.display = 'flex';
-        // Revalidate im Hintergrund
-        fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${encodeURIComponent(eventId)}`)
-            .then(r => r.ok ? r.json() : null)
+        // Revalidate im Hintergrund aus Supabase
+        fetchParticipantsFromSupabase(eventId)
             .then(fresh => {
-                if (Array.isArray(fresh)) {
+                if (Array.isArray(fresh) && fresh.length > 0) {
                     participantsCache[eventId] = fresh;
                     renderList(fresh);
                 }
@@ -1588,12 +1694,9 @@ window.showParticipants = async function(eventId) {
     modal.style.display = 'flex';
     
     try {
-        const res = await fetch(`${EVENTPLANER_URL}?action=getParticipants&eventid=${encodeURIComponent(eventId)}`);
-        if(res.ok) {
-            const data = await res.json();
-            participantsCache[eventId] = data;
-            renderList(data);
-        } else throw new Error();
+        const data = await fetchParticipantsFromSupabase(eventId);
+        participantsCache[eventId] = data;
+        renderList(data);
     } catch(e) { list.innerHTML = '<li style="color:red;">Fehler beim Laden.</li>'; }
 };
 
@@ -1614,7 +1717,7 @@ async function trackRSVPView(eventId, lizenz) {
 
     try {
         // 1. Supabase Track (asynchron)
-        fetch(`${SUPABASE_REST_URL}/poll_views`, {
+        await fetch(`${SUPABASE_REST_URL}/poll_views`, {
             method: 'POST',
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
@@ -1626,12 +1729,9 @@ async function trackRSVPView(eventId, lizenz) {
                 lizenz: String(lizenz),
                 info: 'Gesehen (App)'
             })
-        }).catch(() => {});
-
-        // 2. Google Script Track (Dual-Write)
-        await fetch(`${EVENTPLANER_URL}?action=trackView&eventid=${encodeURIComponent(eventId)}&lizenz=${encodeURIComponent(lizenz)}`);
+        });
         localStorage.setItem(trackKey, "true");
-        console.log("View tracked for event:", eventId);
+        console.log("View tracked for event in Supabase:", eventId);
     } catch (e) {
         // Silent fail, damit die App bei Tracking-Fehlern nicht abstürzt
     }

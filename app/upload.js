@@ -1,4 +1,6 @@
 const WORKER_UPLOAD_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev/";
+const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 let teilnehmer = [];
 
 /* ---------------------------------------------
@@ -116,6 +118,32 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             btn.textContent = "Jetzt senden";
             return;
         }
+
+        // Supabase Audit-Log (asynchron protokollieren)
+        fetch(`${SUPABASE_REST_URL}/contest_ocr_logs`, {
+            method: "POST",
+            headers: {
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                id: `sb_${user.lizenz || user.id}_${Date.now()}`,
+                contest_type: "standblatt",
+                round: "r1",
+                model_used: "manual_upload",
+                recognized_count: 1,
+                raw_response: {
+                    erzielt,
+                    maximal,
+                    lizenz: user.lizenz || user.id,
+                    vorname: user.vorname,
+                    nachname: user.nachname,
+                    timestamp: new Date().toISOString()
+                },
+                created_by: String(user.lizenz || user.id)
+            })
+        }).catch(err => console.warn("Supabase Log Hinweis:", err));
 
         const res = await fetch(WORKER_UPLOAD_URL, {
             method: "POST",
