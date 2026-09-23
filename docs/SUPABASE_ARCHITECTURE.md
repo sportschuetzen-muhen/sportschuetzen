@@ -36,7 +36,7 @@
    - [Fachmodul: KK-JAHRESMEISTERSCHAFT](#614-fachmodul-kk-jahresmeisterschaft-phase-15--abgeschlossen--im-testbetrieb)
    - [Fachmodul: TEAM MANAGER SUPABASE-FIRST](#615-fachmodul-team-manager-supabase-first-phase-16--abgeschlossen--im-testbetrieb)
    - [Fachmodul: GENERALVERSAMMLUNG & PRÄSENZ](#616-fachmodul-generalversammlung--präsenzkontrolle-phase-17--abgeschlossen--im-testbetrieb)
-   - [PWA & WEBSITE KONSOLIDIERUNG](#617-mitglieder-app--website-konsolidierung-phase-18--geplant)
+   - [PWA & WEBSITE KONSOLIDIERUNG](#617-mitglieder-app--website-konsolidierung-phase-18--abgeschlossen--im-testbetrieb)
    - [FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG](#618-finaler-cut-over--google-sheets-stilllegung-phase-19--geplant)
 7. [Migrations-Roadmap (Phasen 0 bis 19)](#7-migrations-roadmap-phasen-0-bis-19)
 
