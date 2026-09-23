@@ -1,7 +1,7 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
-**Stand:** 2026-09-20  
-**Phase:** 0 bis 14 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log & System-Mail-Verteiler  
+**Stand:** 2026-09-23  
+**Phase:** 0 bis 19 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log, System-Mails, Finanzbuchhaltung, KK-Jahresmeisterschaft, Team Manager, Generalversammlung, App & Website, Cut-Over  
 **Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
@@ -25,10 +25,20 @@
    - [Mitglieder-Synchronisation (XLSX → Sheets → Supabase)](#mitglieder-synchronisation-xlsx--sheets--supabase)
    - [Fachmodul: ANLÄSSE & UMFRAGEN](#64-fachmodul-anlässe--umfragen-phase-5--abgeschlossen--im-testbetrieb)
    - [Fachmodul: INVENTAR-VERWALTUNG](#65-fachmodul-inventar-verwaltung-phase-7--abgeschlossen--im-testbetrieb)
-   - [Fachmodul: RESULTATE & WETTKÄMPFE](#66-fachmodul-resultate--wettkämpfe-phase-12--abgeschlossen--im-testbetrieb)
-   - [Fachmodul: MAIL-LOG & VERSANDPROTOKOLL](#67-fachmodul-mail-log--versandprotokoll-phase-13--abgeschlossen--im-testbetrieb)
-   - [Fachmodul: SYSTEM-MAIL-KONFIGURATION](#68-fachmodul-system-mail-konfiguration-phase-14--abgeschlossen--im-testbetrieb)
-7. [Migrations-Roadmap (Phasen 0 bis 14)](#7-migrations-roadmap-phasen-0-bis-14)
+   - [Fachmodul: JAHRESPROGRAMM & TERMINE](#66-fachmodul-jahresprogramm-termine-anlässe--orte)
+   - [Zentraler UI-Standard: TableKit](#67-zentraler-ui-standard-tablekit-vorstandjsui-table-kitjs)
+   - [Fachmodul: MITGLIEDER WRITE-MASTER](#68-fachmodul-mitglieder-write-master--status-u21-phase-8--abgeschlossen--im-testbetrieb)
+   - [Fachmodul: JAHRESBEITRAG & BEITRAGSVERWALTUNG](#69-fachmodul-jahresbeitrag--beitragsverwaltung-supabase-master--dual-write)
+   - [Fachmodul: RESULTATE & WETTKÄMPFE](#610-fachmodul-resultate--wettkämpfe-phase-12--abgeschlossen--im-testbetrieb)
+   - [Fachmodul: MAIL-LOG & VERSANDPROTOKOLL](#611-fachmodul-mail-log--versandprotokoll-phase-13--abgeschlossen--im-testbetrieb)
+   - [Fachmodul: SYSTEM-MAIL-KONFIGURATION](#612-fachmodul-system-mail-konfiguration-phase-14--abgeschlossen--im-testbetrieb)
+   - [Fachmodul: FINANZBUCHHALTUNG (FiBu)](#613-fachmodul-finanzbuchhaltung-fibu-phase-11--abgeschlossen--im-testbetrieb)
+   - [Fachmodul: KK-JAHRESMEISTERSCHAFT](#614-fachmodul-kk-jahresmeisterschaft-phase-15--in-umsetzung)
+   - [Fachmodul: TEAM MANAGER SUPABASE-FIRST](#615-fachmodul-team-manager-supabase-first-phase-16--geplant)
+   - [Fachmodul: GENERALVERSAMMLUNG & PRÄSENZ](#616-fachmodul-generalversammlung--präsenzkontrolle-phase-17--geplant)
+   - [PWA & WEBSITE KONSOLIDIERUNG](#617-mitglieder-app--website-konsolidierung-phase-18--geplant)
+   - [FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG](#618-finaler-cut-over--google-sheets-stilllegung-phase-19--geplant)
+7. [Migrations-Roadmap (Phasen 0 bis 19)](#7-migrations-roadmap-phasen-0-bis-19)
 
 ---
 
@@ -1174,7 +1184,93 @@ Phase 14 überführt alle systemweiten E-Mail-Verteiler und automatischen Benach
 
 ---
 
-## 7. Migrations-Roadmap (Phasen 0 bis 14)
+## 6.9 Fachmodul: FINANZBUCHHALTUNG (FiBu) (Phase 11 – Abgeschlossen & im Testbetrieb)
+
+Phase 11 migriert das gesamte Buchhaltungs- und Finanzwesen (Kassabuch, doppelter Kontenrahmen, Budgetierung, CAMT.053 Bankabgleich & Buchungszentrale) in Supabase PostgreSQL (`supabase/migrations/15_accounting_module.sql`).
+
+**Datenbankmodell (`supabase/migrations/15_accounting_module.sql`):**
+- `public.accounting_accounts`: Vollständiger KMU-Kontenrahmen (`konto` PK, `bezeichnung`, `klasse`, `hauptgruppe`, `gruppe`, `untergruppe`, `soll_haben`, `eroeffnungssaldo`).
+- `public.accounting_journal`: Buchungsjournal (`id` PK, `jahr`, `datum`, `beleg_nr`, `beschreibung`, `konto_soll`, `konto_haben`, `betrag`, `typ`, `split_group_id`, `created_at`).
+  - Fremdschlüssel-Absicherung: `konto_soll` und `konto_haben` referenzieren `accounting_accounts(konto) ON UPDATE CASCADE ON DELETE RESTRICT`.
+- `public.accounting_budgets`: Normalisierte Jahresbudgets (`id` PK, `konto`, `jahr`, `betrag`, `updated_at`, `UNIQUE(konto, jahr)`).
+- `public.accounting_bank_rules`: CAMT.053 Erkennungs- und Kontierungsregeln (`id` PK, `rule_key`, `label`, `pattern_party`, `pattern_text`, `prefix`, `soll`, `haben`, `scope`, `amount_mode`, `amount_min`, `amount_max`, `sort_order`).
+
+**UI-Standard TableKit (Ein- & Ausblendbare Spalten mit LocalStorage-Persistenz):**
+Sämtliche Tabellen und Modale des Buchhaltungsmoduls wurden nahtlos an den `TableKit`-Standard angebunden:
+- **Kassabuch-Journal:** `#bh-journal-table` mit Spaltenauswahl-Button `#bh-journal-column-toggle` (`tk_cols_bh_journal`).
+- **Kontenrahmen & Budget:** `#bh-konten-table` mit Spaltenauswahl-Button `#bh-konten-column-toggle` (`tk_cols_bh_konten`).
+- **Kontoauszug-Modal:** `#bh-kontoauszug-modal-table` mit Spaltenauswahl-Button `#bh-kontoauszug-col-toggle` (`tk_cols_bh_kontoauszug`).
+- **Massen-Budgetierungs-Modal:** `#bh-budget-matrix-table` mit Spaltenauswahl-Button `#bh-budget-matrix-col-toggle` (`tk_cols_bh_budget_matrix`).
+- **Bankabgleich & Buchungszentrale:** `#bhBankTable` mit Spaltenauswahl-Button `#bh-bank-column-toggle` (`tk_cols_bh_bank`).
+- **Automatische Buchungsregeln:** `#bh-manage-rules-table` mit Spaltenauswahl-Button `#bh-rules-column-toggle` (`tk_cols_bh_manage_rules`).
+
+**Modulübergreifende Buchungsintegration (Supabase Direct Write):**
+- **Rechnungsmodul (`rechnungen-actions.js`):** Direkter Buchungssatz-Eintrag in `accounting_journal` bei Zahlungseingang (Bank 1020 / Kasse 1000 an Ertrag).
+- **Jahresbeitragswesen (`jahresbeitrag-overview.js`):** Automatische Verbuchung von Split-Buchungssätzen direkt in `accounting_journal`.
+- **Inventar / Materialwart (`inventar-cart.js`):** Bar-Verkäufe und Kautionen/Depots (checkout/checkin) werden direkt in `accounting_journal` gebucht.
+
+**Migrations- & Synchronisationswerkzeuge:**
+- **1-Klick-Import (`migrateBuchhaltungFromGoogleSheets()`):** Automatische Übernahme aller Konten, Journal-Einträge, Budgets und Bankregeln aus Google Sheets (`Buchhaltung_GAS`) nach Supabase mit Live-Fortschrittsanzeige.
+- **Asynchroner Dual-Write:** Alle schreibenden Operationen schreiben primär in Supabase (< 50 ms) und spiegeln die Änderungen non-blocking im Hintergrund an Google Sheets.
+
+---
+
+### 6.14 Fachmodul: KK-JAHRESMEISTERSCHAFT (Phase 15 – In Umsetzung)
+
+Phase 15 überführt das gesamte Kernmodul der Kleinkaliber-Jahresmeisterschaft von Google Sheets (`Jahresmeisterschaft_GAS_Original` & `Jahresmeisterschaft_GAS_KI_Testcode...`, Spreadsheet-ID `1ye7nbT1lLLYzilwNhw6NnslwvUrtxFuT-ZZJRrG2sT0` / `1Dihy7Xey4DIko8Qw0qnzzRtVqx7TftLueCmUXT7Uv5g`) auf Supabase PostgreSQL.
+
+**Hintergrund & Herausforderung:**
+- Die bisherige Jahresmeisterschaft ist eine hochkomplexe zweidimensionale Matrix (Titel, Max-Punkte, Aktiv-Flags, Liga 1 à 8 Schützen mit Abstieg, Liga 2 mit Aufstieg, U21-Junioren, Streichresultate-Berechnung, Totals und Prozente).
+- In Google Sheets führte das Speichern zu Rechenzeiten von 10–15 Sekunden mit Sheet-Locks.
+- Auf Supabase erfolgt die Berechnung der Totals, Streichresultate und Ranglisten blitzschnell im Browser bzw. in PostgreSQL (< 30 ms).
+
+**Datenbankmodell (`supabase/migrations/16_jahresmeisterschaft_module.sql`):**
+- `public.jm_seasons`: Speichert Jahres-Snapshots (`jahr` PK z.B. 'current', '2026', '2025', `raw_grid` JSONB, `junior_exclusions` JSONB, `is_archived` BOOLEAN, `updated_at`).
+- `public.jm_shooters`: Strukturierte Schützenübersicht je Saison (`id` PK, `jahr`, `person_number`, `name`, `liga`, `rang`, `total`, `streichresultat_prz`, `status`).
+- `public.jm_competitions`: Stammdaten der Wettkämpfe und Schiessen je Saison (`id` PK, `jahr`, `name`, `max_punkte`, `is_active`, `col_index`, `typ`).
+- RLS-Policies: Lesezugriff für authentifizierte Benutzer und Anon (PWA/Website); Schreibzugriff nur für autorisierte Rollen (`admin`, `schuetzenmeister`, `vorstand`).
+
+**Vorstand-Cockpit (`vorstand/js/jahresmeisterschaft/`):**
+- `jahresmeisterschaft-core.js`: Lädt `raw_grid` und Archiv-Jahre direkt aus Supabase (< 30 ms) mit transparentem Fallback auf GAS.
+- `jahresmeisterschaft-manager.js`: Schreibt Mutationen und Drag-and-Drop-Verschiebungen atomar nach Supabase mit asynchronem Dual-Write an das Google Sheet.
+- 1-Klick-Import (`migrateJMFromGoogleSheets()`): Übernahme aller bestehenden Tabellen und Archivblätter nach Supabase.
+
+---
+
+### 6.15 Fachmodul: TEAM MANAGER SUPABASE-FIRST (Phase 16 – Geplant)
+
+Phase 16 bindet das Frontend des Team Managers (`vorstand/js/manager/`) vollständig an die in Phase 12 erstellten Tabellen `public.contest_setups` und `public.contest_teams` an.
+- Ablösung der Aufrufe an `mannschaft_homepage_GAS`.
+- Drag & Drop Zuteilung für Grenzlandcup, Mannschafts- und Gruppenmeisterschaft direkt in Supabase mit Dual-Write.
+
+---
+
+### 6.16 Fachmodul: GENERALVERSAMMLUNG & PRÄSENZKONTROLLE (Phase 17 – Geplant)
+
+Phase 17 löst die verbleibende Logik von `Admin_Generalversammlungen_GAS` in `vorstand/js/gv.js` ab:
+- Tabellen für GV-Instanzen, Traktanden, Beschlüsse und Präsenzen/Stimmrechte.
+- Direkte Verknüpfung mit den Aktiv- und Ehrenmitgliedern aus `public.members`.
+
+---
+
+### 6.17 MITGLIEDER-APP & WEBSITE KONSOLIDIERUNG (Phase 18 – Geplant)
+
+Phase 18 migriert die verbliebenen Satellitenschnittstellen in der Mobile PWA (`app.js`, `app/*`) und auf der Vereins-Website:
+- Direkter Abruf von `public.termine` und Hausbelegung in der PWA.
+- Standblatt-Upload-Metadaten direkt nach Supabase (`public.contest_ocr_logs` / `public.jm_seasons`).
+- Resultate-Feed auf der Vereins-Website direkt aus Supabase REST.
+
+---
+
+### 6.18 FINALER CUT-OVER & GOOGLE-SHEETS-STILLEGUNG (Phase 19 – Geplant)
+
+Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden:
+- Gezielte Deaktivierung aller asynchronen Dual-Write Spiegelungen.
+- Vollständige Stilllegung der 10 Legacy Google Spreadsheets und 11 Google Apps Script Projekte.
+
+---
+
+## 7. Migrations-Roadmap (Phasen 0 bis 19)
 
 | Phase | Bereich | Ziel / Inhalt | Führendes System | Status |
 |:---|:---|:---|:---|:---|
@@ -1189,12 +1285,17 @@ Phase 14 überführt alle systemweiten E-Mail-Verteiler und automatischen Benach
 | **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges; Dual-Write zu Google Sheet | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 9** | **Jahresbeitrag & Beitragsverwaltung** | Beitragsrechnungen, Detailpositionen, Wettkampfteilnahmen & Gebührenordnung (`11_jahresbeitrag_module.sql`); asynchrones Dual-Write zu Google Sheets | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Layouts & externe Kontakte (`10_invoices_module.sql`); QR-Rechnungs-PDF & Gmail-Versand via GAS | Supabase (Master) ⇄ Google Sheet (Spiegelung) / GAS (PDF/Mail) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen und Bilanz/Erfolgsrechnung | Supabase | 🔜 **Geplant** |
+| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen, Journal, Budgets und CAMT.053 Bankregeln (`15_accounting_module.sql`); TableKit-Standard (ein-/ausblendbare Spalten & Persistenz) in allen Tabellen & Modalen; asynchrones Dual-Write zu `Buchhaltung_GAS`; 1-Klick-Importtool | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 12** | **Resultate & Wettkämpfe** | Schiessresultate je Wettbewerb, Jahr & Runde; Team-Zuteilungen; KI-Standblatt-Erkennung Audit-Log (`12_results_module.sql`); Unterstützung Grenzlandcup, Mannschaft & Gruppenmeisterschaft | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 13** | **Mail-Log & Versandprotokoll** | Zentrales, modulübergreifendes E-Mail-Audit-Log (`13_mail_module.sql`, `public.mail_logs`); RPC-Funktion `log_mail_sent()` für GAS-Integration; Frontend-Tab «Versandprotokoll» mit Filtern, Lazy Loading & Detail-Modal | Supabase (Log) / GAS (Versand) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 14** | **System-Mail-Verteiler** | Migration aller automatischen Mail-Empfänger und Abo-Verteiler (`14_system_mail_configs.sql`, `public.system_mail_configs`); RPC-Funktion `get_system_mail()`; Supabase-First UI & Dual-Write zu `App_Info` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock; 1-Klick-Import alter Jahrgänge; Dual-Write (`16_jahresmeisterschaft_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 🚀 **In Umsetzung** |
+| **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 📋 **Geplant** |
+| **Phase 17** | **Generalversammlung & Präsenz** | Migration von `gv.js` (Traktanden, Beschlüsse, Präsenz, Stimmberechtigung); Ablösung `Admin_GV_GAS` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 📋 **Geplant** |
+| **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, Standblatt-Upload und Website-Resultate | Supabase (Master) | 📋 **Geplant** |
+| **Phase 19** | **Finaler Cut-Over** | Vollständige Deaktivierung aller Dual-Writes; Stilllegung aller Google Sheets & Google Apps Scripts | Supabase (Single Source of Truth) | 📋 **Geplant** |
 
 ---
 
-> **Ergebnis:** Mit dieser Architektur sind alle Schnittstellen, Verantwortlichkeiten und Sicherheitsmechanismen eindeutig und widerspruchsfrei definiert. Phase 0 ist damit abgeschlossen. Die konkreten DDL-Skripte für Phase 1 bis 14 wurden vollständig implementiert und in den Testbetrieb überführt.
+> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 15 (KK-Jahresmeisterschaft) befindet sich nun in Umsetzung.
 

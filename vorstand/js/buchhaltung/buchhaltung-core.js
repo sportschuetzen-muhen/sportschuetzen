@@ -209,7 +209,16 @@ if (!document.getElementById('buchhaltung-module-styles')) {
   document.head.appendChild(style);
 }
 
-// Lädt alle Buchhaltungsdaten vom Worker
+// Accessor für Supabase Client im Buchhaltungs-Modul
+function getBuchhaltungSupabaseClient() {
+  if (typeof window.getSupabaseClient === 'function') {
+    return window.getSupabaseClient();
+  }
+  return window.supabaseClient || null;
+}
+window.getBuchhaltungSupabaseClient = getBuchhaltungSupabaseClient;
+
+// Lädt alle Buchhaltungsdaten (Supabase-First mit GAS-Fallback)
 window.loadBuchhaltungData = async function(silent = false, forceReload = false) {
   const hasCachedData = window._bhJournal && window._bhJournal.length > 0 && window._bhKontenrahmen && window._bhKontenrahmen.length > 0;
   
@@ -228,125 +237,322 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
       content.innerHTML = `
         <div class="text-center py-5">
           <div class="spinner-border text-primary" role="status"></div>
-          <p class="mt-2 text-muted">Lade Buchhaltungsdaten aus dem Hauptbuch...</p>
+          <p class="mt-2 text-muted">Lade Buchhaltungsdaten (Supabase Master)...</p>
         </div>`;
     }
   }
-  
-  try {
-    const [resJournal, resKonten, resBudget, resRules] = await Promise.all([
-      apiFetch('buchhaltung', 'action=getJournal'),
-      apiFetch('buchhaltung', 'action=getKontenrahmen'),
-      apiFetch('buchhaltung', 'action=getBudget'),
-      apiFetch('buchhaltung', 'action=getBankRules'),
-      apiFetch('inventar', 'action=getInventarData').then(r => r.json()).then(resInv => {
-        if (resInv && resInv.gewehre) {
-          window._bhProMemoriaGewehreCount = resInv.gewehre.length;
-        }
-      }).catch(e => {
-        console.warn("⚠️ Inventar-Daten für Pro Memoria konnten nicht geladen werden:", e);
-      })
-    ]);
 
-    const txtJournal = await resJournal.text();
-    const txtKonten = await resKonten.text();
-    const txtBudget = await resBudget.text();
-    const txtRules = await resRules.text();
+  const supa = getBuchhaltungSupabaseClient();
+  let loadedFromSupabase = false;
 
-    let dataJournal, dataKonten, dataBudget, dataRules;
+  if (supa) {
     try {
-      dataJournal = JSON.parse(txtJournal);
-      dataKonten = JSON.parse(txtKonten);
-      dataBudget = JSON.parse(txtBudget);
-      dataRules = JSON.parse(txtRules);
-    } catch (_) {
-      console.error('❌ Buchhaltung API: HTML statt JSON erhalten.');
-      const content = document.getElementById('bh-tab-content-container');
-      if (content) {
-        content.innerHTML = `
-          <div class="alert alert-warning">
-            <h5>⚠️ Backend nicht erreichbar</h5>
-            <p>Das Google Apps Script für <strong>Buchhaltung</strong> gibt kein JSON zurück. Mögliche Ursachen:</p>
-            <ul>
-              <li>Das Script ist noch nicht als <strong>Web App</strong> deployed</li>
-              <li>Die URL im <code>worker.js</code> ist inkorrekt oder abgelaufen</li>
-              <li>Ein Berechtigungs- oder Quotenlimit bei Google wurde überschritten</li>
-            </ul>
-            <details class="mt-2">
-              <summary class="small text-muted">Technische Details (Journal-Antwort)</summary>
-              <pre class="small mt-2 bg-light p-2 rounded">${escapeHtml(txtJournal.slice(0, 500))}</pre>
-            </details>
-          </div>`;
+      console.log("🚀 Lade Buchhaltungsdaten aus Supabase...");
+      const [accRes, jnlRes, budRes, ruleRes] = await Promise.all([
+        supa.from('accounting_accounts').select('*').order('sort_order', { ascending: true }),
+        supa.from('accounting_journal').select('*').order('id', { ascending: false }),
+        supa.from('accounting_budgets').select('*'),
+        supa.from('accounting_bank_rules').select('*').order('sort_order', { ascending: true }),
+        (async () => {
+          try {
+            // Pro Memoria Gewehre aus inventar_items falls vorhanden
+            const r = await supa.from('inventar_items').select('id, typ').ilike('typ', '%gewehr%');
+            if (r.data) window._bhProMemoriaGewehreCount = r.data.length;
+          } catch (_) {}
+        })()
+      ]);
+
+      if (!accRes.error && !jnlRes.error && Array.isArray(accRes.data) && accRes.data.length > 0) {
+        window._bhKontenrahmen = accRes.data.map((a, idx) => ({
+          ...a,
+          _rowIndex: idx + 2
+        }));
+        window._bhJournal = (jnlRes.data || []).map(j => ({
+          ...j,
+          id: Number(j.id),
+          jahr: Number(j.jahr),
+          betrag: Number(j.betrag)
+        }));
+
+        // Budgets in Matrix/Map-Format überführen für Abwärtskompatibilität
+        const rawBudgets = budRes.data || [];
+        const budgetMap = {};
+        rawBudgets.forEach(b => {
+          const k = String(b.konto).trim();
+          if (!budgetMap[k]) {
+            const acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === k);
+            budgetMap[k] = { konto: k, bezeichnung: acc ? acc.bezeichnung : '' };
+          }
+          budgetMap[k]['budget_' + b.jahr] = Number(b.betrag || 0);
+        });
+        window._bhBudget = Object.values(budgetMap);
+
+        if (!ruleRes.error && Array.isArray(ruleRes.data)) {
+          window._bhBankServerRules = ruleRes.data;
+          try {
+            localStorage.setItem('bh_bank_rules', JSON.stringify(ruleRes.data));
+          } catch(_) {}
+        }
+
+        try {
+          localStorage.setItem('bh_kontenrahmen', JSON.stringify(window._bhKontenrahmen));
+        } catch(_) {}
+
+        window._bhIsSupabase = true;
+        loadedFromSupabase = true;
+        console.log(`✅ Buchhaltung erfolgreich aus Supabase geladen: ${window._bhKontenrahmen.length} Konten, ${window._bhJournal.length} Journal-Einträge.`);
+      }
+    } catch (supaErr) {
+      console.warn("⚠️ Supabase Buchhaltung Abfrage fehlgeschlagen, versuche Legacy GAS:", supaErr);
+    }
+  }
+
+  // Fallback auf GAS, falls Supabase noch leer ist oder nicht erreichbar war
+  if (!loadedFromSupabase) {
+    console.log("ℹ️ Lade Buchhaltungsdaten via Google Apps Script (Fallback)...");
+    window._bhIsSupabase = false;
+
+    try {
+      const [resJournal, resKonten, resBudget, resRules] = await Promise.all([
+        apiFetch('buchhaltung', 'action=getJournal'),
+        apiFetch('buchhaltung', 'action=getKontenrahmen'),
+        apiFetch('buchhaltung', 'action=getBudget'),
+        apiFetch('buchhaltung', 'action=getBankRules'),
+        apiFetch('inventar', 'action=getInventarData').then(r => r.json()).then(resInv => {
+          if (resInv && resInv.gewehre) {
+            window._bhProMemoriaGewehreCount = resInv.gewehre.length;
+          }
+        }).catch(e => {
+          console.warn("⚠️ Inventar-Daten für Pro Memoria konnten nicht geladen werden:", e);
+        })
+      ]);
+
+      const txtJournal = await resJournal.text();
+      const txtKonten = await resKonten.text();
+      const txtBudget = await resBudget.text();
+      const txtRules = await resRules.text();
+
+      let dataJournal, dataKonten, dataBudget, dataRules;
+      try {
+        dataJournal = JSON.parse(txtJournal);
+        dataKonten = JSON.parse(txtKonten);
+        dataBudget = JSON.parse(txtBudget);
+        dataRules = JSON.parse(txtRules);
+      } catch (_) {
+        console.error('❌ Buchhaltung API: HTML statt JSON erhalten.');
+        const content = document.getElementById('bh-tab-content-container');
+        if (content) {
+          content.innerHTML = `
+            <div class="alert alert-warning">
+              <h5>⚠️ Backend nicht erreichbar</h5>
+              <p>Das Google Apps Script für <strong>Buchhaltung</strong> gibt kein JSON zurück. Mögliche Ursachen:</p>
+              <ul>
+                <li>Das Script ist noch nicht als <strong>Web App</strong> deployed</li>
+                <li>Die URL im <code>worker.js</code> ist inkorrekt oder abgelaufen</li>
+                <li>Ein Berechtigungs- oder Quotenlimit bei Google wurde überschritten</li>
+              </ul>
+              <details class="mt-2">
+                <summary class="small text-muted">Technische Details (Journal-Antwort)</summary>
+                <pre class="small mt-2 bg-light p-2 rounded">${escapeHtml(txtJournal.slice(0, 500))}</pre>
+              </details>
+            </div>`;
+        }
+        return;
+      }
+      
+      if (dataJournal.success && dataKonten.success && dataBudget.success) {
+        window._bhJournal = dataJournal.data || [];
+        window._bhKontenrahmen = dataKonten.data || [];
+        try {
+          localStorage.setItem('bh_kontenrahmen', JSON.stringify(dataKonten.data || []));
+        } catch(_) {}
+        window._bhBudget = dataBudget.data || [];
+
+        if (dataRules && dataRules.success && Array.isArray(dataRules.data)) {
+          window._bhBankServerRules = dataRules.data;
+          try {
+            localStorage.setItem('bh_bank_rules', JSON.stringify(dataRules.data));
+          } catch(_) {}
+        }
+      } else {
+        throw new Error(dataJournal.error || dataKonten.error || dataBudget.error || "Unerwarteter API Fehler.");
+      }
+    } catch (err) {
+      console.error("❌ Fehler beim Laden der Buchhaltungsdaten via GAS:", err);
+      if (!silent || !hasCachedData) {
+        const content = document.getElementById('bh-tab-content-container');
+        if (content) {
+          content.innerHTML = `
+            <div class="alert alert-danger shadow-sm rounded-3">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              <strong>Verbindungsfehler:</strong> Die Buchhaltungsdaten konnten nicht geladen werden.
+              <br><small class="text-muted">${err.message}</small>
+            </div>`;
+        }
       }
       return;
     }
+  }
+
+  // Gemeinsame Nachbearbeitung (Live-Berechnungen, Filter, KPI)
+  if (window._bhBankTransactions && window._bhBankTransactions.length > 0 && typeof bhBankMatchAll === 'function') {
+    window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+  }
+  
+  recalculateLiveAccountBalances();
+  
+  const yearSelect = document.getElementById('bh-year-select');
+  if (yearSelect) {
+    const yearsSet = new Set((window._bhJournal || []).map(j => Number(j.jahr || window._bhYear)));
+    yearsSet.add(2026);
+    yearsSet.add(2025);
+    yearsSet.add(2024);
+    const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
     
-    if (dataJournal.success && dataKonten.success && dataBudget.success) {
-      window._bhJournal = dataJournal.data || [];
-      window._bhKontenrahmen = dataKonten.data || [];
-      try {
-        localStorage.setItem('bh_kontenrahmen', JSON.stringify(dataKonten.data || []));
-      } catch(_) {}
-      window._bhBudget = dataBudget.data || [];
-
-      if (dataRules && dataRules.success && Array.isArray(dataRules.data)) {
-        window._bhBankServerRules = dataRules.data;
-        try {
-          localStorage.setItem('bh_bank_rules', JSON.stringify(dataRules.data));
-        } catch(_) {}
-      }
-
-      if (window._bhBankTransactions && window._bhBankTransactions.length > 0 && typeof bhBankMatchAll === 'function') {
-        window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
-      }
-      
-      recalculateLiveAccountBalances();
-      
-      const yearSelect = document.getElementById('bh-year-select');
-      if (yearSelect) {
-        const yearsSet = new Set(window._bhJournal.map(j => Number(j.jahr || window._bhYear)));
-        yearsSet.add(2026);
-        yearsSet.add(2025);
-        yearsSet.add(2024);
-        const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
-        
-        let selectHTML = '';
-        sortedYears.forEach(yr => {
-          selectHTML += `<option value="${yr}" ${window._bhYear === yr ? 'selected' : ''}>Jahr: ${yr}</option>`;
-        });
-        yearSelect.innerHTML = selectHTML;
-      }
-      
-      updateAccountingKPIs();
-      
-      const content = document.getElementById('bh-tab-content-container');
-      if (content) {
-        // Falls der Nutzer im Tab "Bankabgleich" gerade in ein Eingabefeld klickt/tippt,
-        // darf der gesamte Tab-Inhalt nicht mitten in der Interaktion zerstört werden!
-        const active = document.activeElement;
-        const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA');
-        if (isTyping && (window._bhActiveTab === 'bank' || window._bhActiveTab === 'bankabgleich')) {
-          console.log('⚡ loadBuchhaltungData: Nutzer editiert gerade ein Feld im Bankabgleich, überspringe Tab-Neuaufbau.');
-        } else {
-          renderActiveAccountingTab();
-        }
-      }
+    let selectHTML = '';
+    sortedYears.forEach(yr => {
+      selectHTML += `<option value="${yr}" ${window._bhYear === yr ? 'selected' : ''}>Jahr: ${yr}</option>`;
+    });
+    yearSelect.innerHTML = selectHTML;
+  }
+  
+  updateAccountingKPIs();
+  
+  const content = document.getElementById('bh-tab-content-container');
+  if (content) {
+    const active = document.activeElement;
+    const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA');
+    if (isTyping && (window._bhActiveTab === 'bank' || window._bhActiveTab === 'bankabgleich')) {
+      console.log('⚡ loadBuchhaltungData: Nutzer editiert gerade ein Feld im Bankabgleich, überspringe Tab-Neuaufbau.');
     } else {
-      throw new Error(dataJournal.error || dataKonten.error || dataBudget.error || "Unerwarteter API Fehler.");
+      renderActiveAccountingTab();
     }
-  } catch (err) {
-    console.error("❌ Fehler beim Laden der Buchhaltungsdaten:", err);
-    if (!silent || !hasCachedData) {
-      const content = document.getElementById('bh-tab-content-container');
-      if (content) {
-        content.innerHTML = `
-          <div class="alert alert-danger shadow-sm rounded-3">
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            <strong>Verbindungsfehler:</strong> Die Buchhaltungsdaten konnten nicht geladen werden.
-            <br><small class="text-muted">${err.message}</small>
-          </div>`;
+  }
+};
+
+// =====================================================================
+// 1-KLICK DATENMIGRATION: GOOGLE SHEET -> SUPABASE
+// =====================================================================
+window.migrateBuchhaltungFromGoogleSheets = async function() {
+  if (!confirm("Möchtest du alle Konten, Journal-Buchungen, Budgets und Bank-Regeln jetzt aus dem Google Sheet nach Supabase importieren? Bestehende Daten in Supabase werden dabei synchronisiert.")) {
+    return;
+  }
+  const supa = getBuchhaltungSupabaseClient();
+  if (!supa) {
+    alert("❌ Supabase-Client nicht initialisiert. Bitte Seite neu laden.");
+    return;
+  }
+  if (typeof showLoadingOverlay === 'function') showLoadingOverlay("Lese Daten aus Google Sheets (GAS)...");
+
+  try {
+    const [resJnl, resKto, resBud, resRules] = await Promise.all([
+      apiFetch('buchhaltung', 'action=getJournal').then(r => r.json()),
+      apiFetch('buchhaltung', 'action=getKontenrahmen').then(r => r.json()),
+      apiFetch('buchhaltung', 'action=getBudget').then(r => r.json()),
+      apiFetch('buchhaltung', 'action=getBankRules').then(r => r.json()).catch(() => ({ success: false, data: [] }))
+    ]);
+
+    if (!resKto.success || !resJnl.success) {
+      throw new Error("Fehler beim Abruf der Daten aus Google Sheets: " + (resKto.error || resJnl.error));
+    }
+
+    const rawKonten = resKto.data || [];
+    const rawJournal = resJnl.data || [];
+    const rawBudget = resBud.data || [];
+    const rawRules = (resRules && resRules.success) ? (resRules.data || []) : [];
+
+    if (typeof showLoadingOverlay === 'function') showLoadingOverlay(`Übertrage ${rawKonten.length} Konten nach Supabase...`);
+    const accountsToUpsert = rawKonten.map((k, idx) => ({
+      konto: String(k.konto).trim(),
+      bezeichnung: String(k.bezeichnung || '').trim(),
+      klasse: String(k.klasse || '').trim(),
+      eroeffnungssaldo: Number(k.eroeffnungssaldo || 0),
+      sort_order: (idx + 1) * 10
+    })).filter(k => k.konto);
+
+    if (accountsToUpsert.length > 0) {
+      const { error: accErr } = await supa.from('accounting_accounts').upsert(accountsToUpsert, { onConflict: 'konto' });
+      if (accErr) throw new Error("Fehler beim Speichern der Konten: " + accErr.message);
+    }
+
+    if (typeof showLoadingOverlay === 'function') showLoadingOverlay(`Übertrage ${rawJournal.length} Journal-Einträge nach Supabase...`);
+    // Chunks à 100 Zeilen
+    for (let i = 0; i < rawJournal.length; i += 100) {
+      const chunk = rawJournal.slice(i, i + 100).map(j => ({
+        id: Number(j.id),
+        jahr: Number(j.jahr || new Date().getFullYear()),
+        datum: j.datum || new Date().toISOString().slice(0, 10),
+        beleg_nr: String(j.beleg_nr || ''),
+        beschreibung: String(j.beschreibung || ''),
+        konto_soll: String(j.konto_soll || '').trim(),
+        konto_haben: String(j.konto_haben || '').trim(),
+        betrag: Number(j.betrag || 0),
+        typ: String(j.typ || 'Kassa'),
+        buchungstyp: String(j.buchungstyp || 'TRANSIT')
+      })).filter(j => j.konto_soll && j.konto_haben && j.betrag > 0);
+
+      if (chunk.length > 0) {
+        const { error: jnlErr } = await supa.from('accounting_journal').upsert(chunk, { onConflict: 'id' });
+        if (jnlErr) throw new Error("Fehler beim Speichern der Buchungssätze: " + jnlErr.message);
       }
     }
+
+    if (typeof showLoadingOverlay === 'function') showLoadingOverlay(`Übertrage Budgets nach Supabase...`);
+    const budgetsToUpsert = [];
+    rawBudget.forEach(b => {
+      const k = String(b.konto || '').trim();
+      if (!k) return;
+      Object.keys(b).forEach(prop => {
+        if (prop.startsWith('budget_')) {
+          const yr = parseInt(prop.replace('budget_', ''), 10);
+          const amt = Number(b[prop] || 0);
+          if (!isNaN(yr) && amt !== 0) {
+            budgetsToUpsert.push({
+              konto: k,
+              jahr: yr,
+              betrag: amt
+            });
+          }
+        }
+      });
+    });
+
+    if (budgetsToUpsert.length > 0) {
+      const { error: budErr } = await supa.from('accounting_budgets').upsert(budgetsToUpsert, { onConflict: 'konto,jahr' });
+      if (budErr) console.warn("Warnung beim Budget-Sync:", budErr.message);
+    }
+
+    if (rawRules.length > 0) {
+      if (typeof showLoadingOverlay === 'function') showLoadingOverlay(`Übertrage ${rawRules.length} Bank-Regeln nach Supabase...`);
+      const rulesToUpsert = rawRules.map((r, idx) => ({
+        label: String(r.label || ''),
+        pattern_party: String(r.pattern_party || ''),
+        pattern_text: String(r.pattern_text || ''),
+        prefix: String(r.prefix || ''),
+        soll: String(r.soll || ''),
+        haben: String(r.haben || ''),
+        pattern: String(r.pattern || ''),
+        scope: String(r.scope || 'all'),
+        amount_mode: String(r.amount_mode || 'any'),
+        amount_min: (r.amount_min !== '' && r.amount_min !== undefined && r.amount_min !== null) ? Number(r.amount_min) : null,
+        amount_max: (r.amount_max !== '' && r.amount_max !== undefined && r.amount_max !== null) ? Number(r.amount_max) : null,
+        sort_order: (idx + 1) * 10
+      })).filter(r => r.label);
+
+      if (rulesToUpsert.length > 0) {
+        await supa.from('accounting_bank_rules').delete().neq('label', '___dummy___');
+        const { error: ruleErr } = await supa.from('accounting_bank_rules').insert(rulesToUpsert);
+        if (ruleErr) console.warn("Warnung beim Bankregeln-Sync:", ruleErr.message);
+      }
+    }
+
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    alert(`✅ Erfolgreich nach Supabase migriert:\n• ${rawKonten.length} Konten\n• ${rawJournal.length} Buchungen\n• ${budgetsToUpsert.length} Budgetwerte\n• ${rawRules.length} Bank-Regeln`);
+    await window.loadBuchhaltungData(false, true);
+  } catch (err) {
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    console.error("❌ Fehler bei Migration Google Sheets -> Supabase:", err);
+    alert("❌ Fehler bei der Migration: " + err.message);
   }
 };
 

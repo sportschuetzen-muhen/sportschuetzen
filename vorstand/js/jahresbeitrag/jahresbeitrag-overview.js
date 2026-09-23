@@ -655,6 +655,27 @@ async function jbSaveZahlung() {
           year: Number(r?.year || new Date().getFullYear())
         });
         if (splits && splits.length > 0) {
+          if (supa) {
+            const rowsToInsert = splits.map((s, sIdx) => ({
+              id: `bh_jb_${id}_${Date.now()}_${sIdx}`,
+              jahr: Number(r?.year || new Date().getFullYear()),
+              datum: datum,
+              beleg_nr: beleg || `PAY-${id}`,
+              beschreibung: s.beschreibung,
+              konto_soll: String(s.konto_soll).trim(),
+              konto_haben: String(s.konto_haben).trim(),
+              betrag: Number(s.betrag || 0),
+              typ: isBar ? 'Kassa' : 'Bank',
+              split_group_id: splits.length > 1 ? `grp_${beleg || 'PAY-' + id}_${Date.now()}` : null,
+              created_at: new Date().toISOString()
+            }));
+            supa.from('accounting_journal').insert(rowsToInsert)
+              .then(({ error }) => {
+                if (error) console.warn('[Jahresbeitrag -> FiBu] Supabase journal insert error:', error);
+                else console.log('✅ Jahresbeitrag Split-Zahlung in Supabase FiBu gebucht.');
+              }).catch(e => console.warn('[Jahresbeitrag -> FiBu] Journal insert exception:', e));
+          }
+
           const payload = splits.length > 1 ? {
             action: 'addJournalEntries',
             jahr: Number(r?.year || new Date().getFullYear()),

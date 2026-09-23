@@ -196,46 +196,64 @@ window.bhSaveKonto = async function(event) {
   const budgetVal = Number(document.getElementById('bhk-budget').value || 0);
   
   try {
-    const response = await apiFetch('buchhaltung', payload, 'POST');
-    const result = await response.json();
-    
-    if (result.success) {
-      const budgetPayload = {
-        action: 'saveBudget',
-        konto: payload.konto,
-        orig_konto: payload.orig_konto,
-        bezeichnung: payload.bezeichnung,
-        jahr: window._bhYear,
-        betrag: budgetVal
-      };
-      
+    // 1. Supabase-First Write
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+    if (supa) {
       try {
-        await apiFetch('buchhaltung', budgetPayload, 'POST');
-      } catch (bErr) {
-        console.warn("⚠️ Budget konnte nicht synchronisiert werden:", bErr);
+        const accObj = {
+          konto: payload.konto,
+          bezeichnung: payload.bezeichnung,
+          klasse: payload.klasse,
+          eroeffnungssaldo: payload.eroeffnungssaldo
+        };
+        const { error: accErr } = await supa.from('accounting_accounts').upsert(accObj, { onConflict: 'konto' });
+        if (accErr) console.warn("⚠️ Supabase Konto upsert Warning:", accErr.message);
+
+        if (budgetVal !== undefined) {
+          const { error: budErr } = await supa.from('accounting_budgets').upsert({
+            konto: payload.konto,
+            jahr: Number(window._bhYear || new Date().getFullYear()),
+            betrag: budgetVal
+          }, { onConflict: 'konto,jahr' });
+          if (budErr) console.warn("⚠️ Supabase Budget upsert Warning:", budErr.message);
+        }
+      } catch (supaErr) {
+        console.warn("⚠️ Supabase saveKonto Fehler:", supaErr);
       }
-      
-      if (typeof showSuccess === 'function') {
-        showSuccess(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) und Budget erfolgreich gespeichert!`);
-      } else {
-        alert(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) erfolgreich gespeichert!`);
-      }
-      
-      const modalEl = document.getElementById('bhModalKonto');
-      if (modalEl) {
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
-      }
-      // Backdrops aufräumen
-      document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
-      document.body.classList.remove('modal-open');
-      document.body.style.removeProperty('padding-right');
-      document.body.style.removeProperty('overflow');
-      
-      await loadBuchhaltungData(true, true);
-    } else {
-      throw new Error(result.error || "Fehler beim Speichern im Backend.");
     }
+
+    // 2. Dual-Write zu Google Apps Script (Hintergrund)
+    const budgetPayload = {
+      action: 'saveBudget',
+      konto: payload.konto,
+      orig_konto: payload.orig_konto,
+      bezeichnung: payload.bezeichnung,
+      jahr: window._bhYear,
+      betrag: budgetVal
+    };
+
+    apiFetch('buchhaltung', payload, 'POST')
+      .then(() => apiFetch('buchhaltung', budgetPayload, 'POST'))
+      .catch(e => console.warn("⚠️ GAS Dual-Write saveKonto Warning:", e));
+
+    if (typeof showSuccess === 'function') {
+      showSuccess(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) und Budget erfolgreich gespeichert!`);
+    } else {
+      alert(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) erfolgreich gespeichert!`);
+    }
+    
+    const modalEl = document.getElementById('bhModalKonto');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+    // Backdrops aufräumen
+    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('padding-right');
+    document.body.style.removeProperty('overflow');
+    
+    await loadBuchhaltungData(true, true);
   } catch (err) {
     alert("❌ Fehler beim Speichern: " + err.message);
   } finally {
@@ -1497,42 +1515,81 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
   }
   
   try {
-    const response = await apiFetch('buchhaltung', payload, 'POST');
-    const result = await response.json();
+    let savedEntry = null;
+
+    // 1. Supabase-First Write
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      try {
+        const jObj = {
+          jahr: Number(payload.jahr || new Date().getFullYear()),
+          datum: payload.datum || new Date().toISOString().slice(0, 10),
+          beleg_nr: payload.beleg_nr || '',
+          beschreibung: payload.beschreibung || '',
+          konto_soll: payload.konto_soll,
+          konto_haben: payload.konto_haben,
+          betrag: Number(payload.betrag || 0),
+          typ: payload.typ || 'Kassa',
+          buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(payload.konto_soll, payload.konto_haben) : 'TRANSIT'
+        };
+        if (payload.id) {
+          jObj.id = Number(payload.id);
+          const { data, error } = await supa.from('accounting_journal').update(jObj).eq('id', jObj.id).select().single();
+          if (!error && data) savedEntry = data;
+        } else {
+          const { data, error } = await supa.from('accounting_journal').insert(jObj).select().single();
+          if (!error && data) {
+            savedEntry = data;
+            payload.id = data.id;
+          }
+        }
+      } catch (supaErr) {
+        console.warn("⚠️ Supabase saveJournalEntry Warning:", supaErr);
+      }
+    }
+
+    // 2. Dual-Write zu Google Apps Script (Hintergrund)
+    apiFetch('buchhaltung', payload, 'POST')
+      .then(r => r.json())
+      .then(res => {
+        if (!savedEntry && res && res.data) savedEntry = res.data;
+      })
+      .catch(e => console.warn("⚠️ GAS Dual-Write saveJournalEntry Warning:", e));
+
+    showSuccess(payload.id ? "🎉 Buchungssatz erfolgreich aktualisiert!" : "🎉 Buchungssatz erfolgreich im Journal registriert!");
     
-    if (result.success) {
-      showSuccess(payload.id ? "🎉 Buchungssatz erfolgreich aktualisiert!" : "🎉 Buchungssatz erfolgreich im Journal registriert!");
-      
-      const modalEl = document.getElementById('bhModalNewEntry');
+    const modalEl = document.getElementById('bhModalNewEntry');
+    if (modalEl) {
       const modal = bootstrap.Modal.getInstance(modalEl);
       if (modal) modal.hide();
-      
-      let savedEntry = null;
-      if (result.data) {
-        savedEntry = result.data;
-        if (payload.id) {
-          const idx = window._bhJournal.findIndex(j => Number(j.id) === Number(savedEntry.id));
-          if (idx !== -1) {
-            window._bhJournal[idx] = savedEntry;
-          }
-        } else {
-          window._bhJournal.push(savedEntry);
-        }
-        recalculateLiveAccountBalances();
-        updateAccountingKPIs();
-        renderActiveAccountingTab();
-      }
-      
-      if (printAfter && (savedEntry || payload)) {
-        bhPrintJournalBeleg([savedEntry || payload]);
-      }
-
-      setTimeout(async () => {
-        await loadBuchhaltungData(true, true);
-      }, 1500);
-    } else {
-      throw new Error(result.error || "Unerwarteter Fehler im Backend.");
     }
+    
+    if (!savedEntry) {
+      savedEntry = {
+        ...payload,
+        id: payload.id || Date.now()
+      };
+    }
+
+    if (payload.id) {
+      const idx = window._bhJournal.findIndex(j => Number(j.id) === Number(savedEntry.id));
+      if (idx !== -1) {
+        window._bhJournal[idx] = savedEntry;
+      }
+    } else {
+      window._bhJournal.unshift(savedEntry);
+    }
+    recalculateLiveAccountBalances();
+    updateAccountingKPIs();
+    renderActiveAccountingTab();
+    
+    if (printAfter) {
+      bhPrintJournalBeleg([savedEntry]);
+    }
+
+    setTimeout(async () => {
+      await loadBuchhaltungData(true, true);
+    }, 1500);
   } catch (err) {
     alert("❌ Fehler beim Buchen: " + err.message);
   } finally {
@@ -1567,23 +1624,30 @@ window.bhDeleteJournalEntry = async function(entryId) {
 
 window.bhExecuteDeleteJournalDirect = async function(entryId) {
   try {
-    const response = await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: entryId }, 'POST');
-    const result = await response.json();
-
-    if (result.success) {
-      showSuccess("🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!");
-      
-      window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(entryId));
-      recalculateLiveAccountBalances();
-      updateAccountingKPIs();
-      renderActiveAccountingTab();
-      
-      setTimeout(async () => {
-        await loadBuchhaltungData(true, true);
-      }, 1500);
-    } else {
-      throw new Error(result.error || "Unerwarteter Fehler beim Löschen.");
+    // 1. Supabase-First Delete
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      try {
+        await supa.from('accounting_journal').delete().eq('id', Number(entryId));
+      } catch (supaErr) {
+        console.warn("⚠️ Supabase deleteJournalEntry Warning:", supaErr);
+      }
     }
+
+    // 2. Dual-Write zu Google Apps Script (Hintergrund)
+    apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: entryId }, 'POST')
+      .catch(e => console.warn("⚠️ GAS Dual-Write deleteJournalEntry Warning:", e));
+
+    showSuccess("🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!");
+    
+    window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(entryId));
+    recalculateLiveAccountBalances();
+    updateAccountingKPIs();
+    renderActiveAccountingTab();
+    
+    setTimeout(async () => {
+      await loadBuchhaltungData(true, true);
+    }, 1500);
   } catch (err) {
     alert("❌ Fehler beim Löschen der Buchung: " + err.message);
   }
@@ -2004,15 +2068,49 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
   if (printBtn) printBtn.disabled = true;
 
   try {
-    // 1. Gelöschte Zeilen im Backend entfernen
+    // 1. Supabase-First Sync
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      try {
+        if (deletedIds && deletedIds.length > 0) {
+          await supa.from('accounting_journal').delete().in('id', deletedIds.map(Number));
+        }
+        for (let i = 0; i < validRows.length; i++) {
+          const vr = validRows[i];
+          const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
+          const belegNr = `${baseBeleg}${subSuffix}`;
+          const jRow = {
+            jahr: Number(year || new Date().getFullYear()),
+            datum: vr.datum || new Date().toISOString().slice(0, 10),
+            beleg_nr: belegNr,
+            beschreibung: vr.beschreibung,
+            konto_soll: vr.konto_soll,
+            konto_haben: vr.konto_haben,
+            betrag: Number(vr.betrag || 0),
+            typ: vr.typ || 'Kassa',
+            buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(vr.konto_soll, vr.konto_haben) : 'TRANSIT'
+          };
+          if (vr.id) {
+            jRow.id = Number(vr.id);
+            await supa.from('accounting_journal').upsert(jRow, { onConflict: 'id' });
+          } else {
+            await supa.from('accounting_journal').insert(jRow);
+          }
+        }
+      } catch (supaErr) {
+        console.warn("⚠️ Supabase saveSplitGroupEdit Warning:", supaErr);
+      }
+    }
+
+    // 2. Gelöschte Zeilen im GAS-Backend entfernen
     for (const dId of (deletedIds || [])) {
-      await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: dId }, 'POST');
+      apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: dId }, 'POST').catch(() => {});
       window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(dId));
     }
 
     const updatedEntries = [];
 
-    // 2. Bestehende Zeilen aktualisieren bzw. neue anlegen
+    // 3. Bestehende Zeilen in GAS aktualisieren bzw. neue anlegen (Dual-Write)
     for (let i = 0; i < validRows.length; i++) {
       const vr = validRows[i];
       const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
@@ -2205,7 +2303,19 @@ window.bhExecuteBatchDeleteJournalEntries = async function() {
     let success = false;
     let errorMessage = '';
 
-    // 1. Primärversuch: Schneller Batch-Endpunkt in GAS
+    // 1. Supabase-First Batch Delete
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      try {
+        const { error: supaDelErr } = await supa.from('accounting_journal').delete().in('id', ids);
+        if (supaDelErr) console.warn("⚠️ Supabase batch delete Warning:", supaDelErr.message);
+        else success = true;
+      } catch (sErr) {
+        console.warn("⚠️ Supabase batch delete Exception:", sErr);
+      }
+    }
+
+    // 2. Dual-Write zu GAS
     try {
       const response = await apiFetch('buchhaltung', { action: 'deleteJournalEntriesBatch', ids: ids }, 'POST');
       const result = await response.json();
@@ -2530,17 +2640,17 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
   const rowsHtml = computedEntries.map(entry => {
     return `
       <tr class="bh-account-row" onclick="this.classList.toggle('bh-row-selected')" title="Klicken zum dauerhaften Hervorheben dieser Zeile">
-        <td class="font-monospace small text-muted">${entry.id}</td>
-        <td><span class="fw-semibold">${window.isoToDisplay ? window.isoToDisplay(entry.datum) : entry.datum}</span></td>
-        <td><span class="badge bg-light text-dark border font-monospace" style="font-size:11px;" title="Klicken zum Kopieren" onclick="event.stopPropagation(); navigator.clipboard.writeText('${entry.beleg_nr || ''}'); window.showToast ? window.showToast('Beleg-Nr kopiert: ${entry.beleg_nr || ''}', 'info') : null;">${entry.beleg_nr || '–'}</span></td>
-        <td class="small fw-semibold text-dark">${window.escapeHtml ? window.escapeHtml(entry.beschreibung) : entry.beschreibung}</td>
-        <td>
+        <td class="font-monospace small text-muted tk-col-id">${entry.id}</td>
+        <td class="tk-col-datum"><span class="fw-semibold">${window.isoToDisplay ? window.isoToDisplay(entry.datum) : entry.datum}</span></td>
+        <td class="tk-col-beleg"><span class="badge bg-light text-dark border font-monospace" style="font-size:11px;" title="Klicken zum Kopieren" onclick="event.stopPropagation(); navigator.clipboard.writeText('${entry.beleg_nr || ''}'); window.showToast ? window.showToast('Beleg-Nr kopiert: ${entry.beleg_nr || ''}', 'info') : null;">${entry.beleg_nr || '–'}</span></td>
+        <td class="small fw-semibold text-dark tk-col-beschreibung">${window.escapeHtml ? window.escapeHtml(entry.beschreibung) : entry.beschreibung}</td>
+        <td class="tk-col-gegenkonto">
           <span class="bh-konto-badge">${entry.gegenKonto}</span>
           <span class="text-muted ms-1 small d-none d-md-inline">${entry.gegenKontoName || ''}</span>
         </td>
-        <td class="text-end fw-semibold ${sollColorClass}">${entry.sollVal > 0 ? window.fmtChf(entry.sollVal) : '–'}</td>
-        <td class="text-end fw-semibold ${habenColorClass}">${entry.habenVal > 0 ? window.fmtChf(entry.habenVal) : '–'}</td>
-        <td class="text-end fw-bold text-dark">${window.fmtChf(entry.runningBalance)}</td>
+        <td class="text-end fw-semibold ${sollColorClass} tk-col-soll">${entry.sollVal > 0 ? window.fmtChf(entry.sollVal) : '–'}</td>
+        <td class="text-end fw-semibold ${habenColorClass} tk-col-haben">${entry.habenVal > 0 ? window.fmtChf(entry.habenVal) : '–'}</td>
+        <td class="text-end fw-bold text-dark tk-col-saldo">${window.fmtChf(entry.runningBalance)}</td>
       </tr>
     `;
   }).join('');
@@ -2573,7 +2683,7 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
         <div class="modal-body p-4">
           <!-- Account selector & Live-Filter -->
           <div class="row g-3 mb-3 align-items-end">
-            <div class="col-lg-6">
+            <div class="col-lg-5">
               <label class="form-label fw-bold small text-muted mb-1">Konto auswählen & blättern</label>
               <div class="input-group">
                 <button class="btn btn-outline-secondary border-2" type="button" onclick="bhNavigateKontoauszug(-1)" title="Vorheriges Konto">
@@ -2594,7 +2704,8 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
                 <input type="text" id="bhKontoauszugSearch" class="form-control border-2" placeholder="Text, Beleg, Betrag filtern..." oninput="bhFilterKontoauszug(this.value)" autocomplete="off">
               </div>
             </div>
-            <div class="col-lg-2 text-lg-end">
+            <div class="col-lg-3 text-lg-end d-flex align-items-center justify-content-lg-end gap-2 flex-wrap">
+              <div id="bh-kontoauszug-col-toggle" class="d-inline-block"></div>
               <span class="badge bg-primary px-3 py-2 fs-7 rounded-pill text-wrap">
                 ${acc.klasse} - ${window.bhGetAccountCategory(acc).main}
               </span>
@@ -2631,31 +2742,31 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
 
           <!-- Ledgers Table -->
           <div class="table-responsive animate__animated animate__fadeIn border rounded-3 shadow-sm bg-white" id="bhKontoauszugTableWrap" style="max-height: ${isFs ? 'calc(100vh - 330px)' : '480px'}; overflow-y: auto;">
-            <table class="table table-hover align-middle bh-table mb-0">
+            <table id="bh-kontoauszug-modal-table" class="table table-hover align-middle bh-table mb-0">
               <thead class="table-light sticky-top" style="z-index: 2;">
                 <tr>
-                  <th style="width: 65px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('id')" title="Klicken zum Sortieren nach ID">
+                  <th class="tk-col-id" data-col-id="id" data-col-name="ID" style="width: 65px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('id')" title="Klicken zum Sortieren nach ID">
                     ID ${sortIndicator('id')}
                   </th>
-                  <th style="width: 115px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('datum')" title="Klicken zum Sortieren nach Datum">
+                  <th class="tk-col-datum" data-col-id="datum" data-col-name="Datum" style="width: 115px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('datum')" title="Klicken zum Sortieren nach Datum">
                     Datum ${sortIndicator('datum')}
                   </th>
-                  <th style="width: 130px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('beleg')" title="Klicken zum Sortieren nach Beleg-Nr">
+                  <th class="tk-col-beleg" data-col-id="beleg" data-col-name="Beleg-Nr" style="width: 130px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('beleg')" title="Klicken zum Sortieren nach Beleg-Nr">
                     Beleg-Nr ${sortIndicator('beleg')}
                   </th>
-                  <th style="cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('beschreibung')" title="Klicken zum Sortieren nach Beschreibung">
+                  <th class="tk-col-beschreibung" data-col-id="beschreibung" data-col-name="Beschreibung" style="cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('beschreibung')" title="Klicken zum Sortieren nach Beschreibung">
                     Beschreibung ${sortIndicator('beschreibung')}
                   </th>
-                  <th style="width: 220px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('gegenkonto')" title="Klicken zum Sortieren nach Gegenkonto">
+                  <th class="tk-col-gegenkonto" data-col-id="gegenkonto" data-col-name="Gegenkonto" style="width: 220px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('gegenkonto')" title="Klicken zum Sortieren nach Gegenkonto">
                     Gegenkonto ${sortIndicator('gegenkonto')}
                   </th>
-                  <th class="text-end" style="width: 120px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('soll')" title="Klicken zum Sortieren nach Soll">
+                  <th class="text-end tk-col-soll" data-col-id="soll" data-col-name="Soll" style="width: 120px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('soll')" title="Klicken zum Sortieren nach Soll">
                     Soll ${sortIndicator('soll')}
                   </th>
-                  <th class="text-end" style="width: 120px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('haben')" title="Klicken zum Sortieren nach Haben">
+                  <th class="text-end tk-col-haben" data-col-id="haben" data-col-name="Haben" style="width: 120px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('haben')" title="Klicken zum Sortieren nach Haben">
                     Haben ${sortIndicator('haben')}
                   </th>
-                  <th class="text-end" style="width: 140px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('saldo')" title="Klicken zum Sortieren nach Saldo">
+                  <th class="text-end tk-col-saldo" data-col-id="saldo" data-col-name="Saldo" style="width: 140px; cursor: pointer; user-select: none;" onclick="bhSortKontoauszug('saldo')" title="Klicken zum Sortieren nach Saldo">
                     Saldo ${sortIndicator('saldo')}
                   </th>
                 </tr>
@@ -2699,6 +2810,13 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
 
   const bootstrapModal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
   bootstrapModal.show();
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window.TableKit.setupColumnToggle('#bh-kontoauszug-modal-table', {
+      container: '#bh-kontoauszug-col-toggle',
+      storageKey: 'bh_kontoauszug_cols'
+    });
+  }
 };
 
 // POPUP-MODAL: MASSEN-BUDGETIERUNG & BUDGET-MATRIX EDITOR
@@ -2758,14 +2876,14 @@ window.bhOpenBudgetMatrixModal = function() {
 
     return `
       <tr class="bh-account-row align-middle" data-konto="${kCode}" data-prev-actual="${prevActual}" data-prev-budget="${prevBudget}">
-        <td class="font-monospace fw-bold text-primary" style="width: 80px;">${acc.konto}</td>
-        <td>
+        <td class="font-monospace fw-bold text-primary tk-col-konto" style="width: 80px;" data-col-id="konto">${acc.konto}</td>
+        <td class="tk-col-bezeichnung" data-col-id="bezeichnung">
           <div class="fw-bold text-dark">${window.escapeHtml ? window.escapeHtml(acc.bezeichnung) : acc.bezeichnung}</div>
           <span class="badge ${badgeClass} opacity-75" style="font-size:10px;">${cat.main}</span>
         </td>
-        <td class="text-end fw-semibold text-muted font-monospace">${window.fmtChf(prevActual)}</td>
-        <td class="text-end fw-semibold text-secondary font-monospace">${prevBudget > 0 ? window.fmtChf(prevBudget) : '–'}</td>
-        <td style="width: 200px;">
+        <td class="text-end fw-semibold text-muted font-monospace tk-col-prev-actual" data-col-id="prev-actual">${window.fmtChf(prevActual)}</td>
+        <td class="text-end fw-semibold text-secondary font-monospace tk-col-prev-budget" data-col-id="prev-budget">${prevBudget > 0 ? window.fmtChf(prevBudget) : '–'}</td>
+        <td class="tk-col-curr-budget" data-col-id="curr-budget" style="width: 200px;">
           <div class="input-group input-group-sm">
             <span class="input-group-text bg-light font-monospace" style="font-size: 11px;">CHF</span>
             <input type="number" step="1" class="form-control form-control-sm fw-bold text-end bhm-budget-input" id="bhm-budget-${kCode}" value="${currentBudget}" data-konto="${kCode}">
@@ -2791,32 +2909,33 @@ window.bhOpenBudgetMatrixModal = function() {
         </div>
         
         <div class="modal-body p-4">
-          <!-- Toolbar with Quick Copy buttons -->
+          <!-- Toolbar with Quick Copy buttons and Column Toggle -->
           <div class="p-3 bg-light rounded-3 border mb-4 d-flex justify-content-between align-items-center flex-wrap" style="gap: 10px;">
             <div class="d-flex align-items-center" style="gap: 10px;">
               <i class="fas fa-magic text-primary"></i>
               <span class="small fw-semibold text-dark">Schnell-Übernahme von Vorjahreswerten (${prevYear}):</span>
             </div>
-            <div class="d-flex" style="gap: 8px;">
+            <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
               <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhCopyBudgetFromPrevActual()">
                 <i class="fas fa-copy me-1"></i> Vorjahres-Ist (${prevYear}) kopieren
               </button>
               <button class="btn btn-sm btn-outline-secondary fw-bold shadow-sm" onclick="bhCopyBudgetFromPrevBudget()">
                 <i class="fas fa-history me-1"></i> Vorjahres-Budget (${prevYear}) kopieren
               </button>
+              <div id="bh-budget-matrix-col-toggle" class="d-inline-block"></div>
             </div>
           </div>
 
           <!-- Table matrix -->
           <div class="table-responsive" style="max-height: 480px;">
-            <table class="table table-hover align-middle bh-table mb-0">
+            <table class="table table-hover align-middle bh-table mb-0" id="bh-budget-matrix-table">
               <thead>
                 <tr>
-                  <th style="width: 80px;">Konto</th>
-                  <th>Bezeichnung / Klasse</th>
-                  <th class="text-end" style="width: 150px;">Vorjahres-Ist (${prevYear})</th>
-                  <th class="text-end" style="width: 150px;">Vorjahres-Budget (${prevYear})</th>
-                  <th class="text-end" style="width: 200px;">Budget (${currentYear})</th>
+                  <th data-col-id="konto" class="tk-col-konto" style="width: 80px;">Konto</th>
+                  <th data-col-id="bezeichnung" class="tk-col-bezeichnung">Bezeichnung / Klasse</th>
+                  <th data-col-id="prev-actual" class="tk-col-prev-actual text-end" style="width: 150px;">Vorjahres-Ist (${prevYear})</th>
+                  <th data-col-id="prev-budget" class="tk-col-prev-budget text-end" style="width: 150px;">Vorjahres-Budget (${prevYear})</th>
+                  <th data-col-id="curr-budget" class="tk-col-curr-budget text-end" style="width: 200px;">Budget (${currentYear})</th>
                 </tr>
               </thead>
               <tbody>
@@ -2838,6 +2957,15 @@ window.bhOpenBudgetMatrixModal = function() {
 
   const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
   modal.show();
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    setTimeout(() => {
+      window.TableKit.setupColumnToggle('#bh-budget-matrix-table', {
+        container: document.getElementById('bh-budget-matrix-col-toggle'),
+        storageKey: 'tk_cols_bh_budget_matrix'
+      });
+    }, 50);
+  }
 };
 
 // Übernimmt Vorjahres-Ist für alle Eingabefelder
@@ -2875,6 +3003,29 @@ window.bhSaveAllBudgets = async function() {
   let successCount = 0;
 
   try {
+    const records = [];
+    inputs.forEach(inp => {
+      const kCode = inp.getAttribute('data-konto');
+      const val = Number(inp.value || 0);
+      records.push({
+        konto: kCode,
+        jahr: parseInt(currentYear, 10),
+        betrag: val,
+        updated_at: new Date().toISOString()
+      });
+    });
+
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    if (sb) {
+      const { error: sbErr } = await sb.from('accounting_budgets').upsert(records, { onConflict: 'konto,jahr' });
+      if (sbErr) {
+        console.warn('[Buchhaltung] Supabase budget upsert error:', sbErr);
+      } else {
+        successCount = records.length;
+      }
+    }
+
+    // Dual-write to GAS
     const savePromises = Array.from(inputs).map(inp => {
       const kCode = inp.getAttribute('data-konto');
       const val = Number(inp.value || 0);
@@ -2890,10 +3041,16 @@ window.bhSaveAllBudgets = async function() {
       
       return apiFetch('buchhaltung', payload, 'POST')
         .then(r => r.json())
-        .then(res => { if (res.success) successCount++; });
+        .then(res => { if (res.success && !sb) successCount++; })
+        .catch(err => console.warn('[Buchhaltung Dual-Write] Budget GAS sync failed:', err));
     });
 
-    await Promise.all(savePromises);
+    if (!sb) {
+      await Promise.all(savePromises);
+    } else {
+      // Run GAS sync non-blocking in background
+      Promise.all(savePromises).catch(e => console.warn('[Buchhaltung Dual-Write] Background sync failed:', e));
+    }
 
     if (typeof showToast === 'function') {
       showToast(`🎉 Budget ${currentYear} für ${successCount} Konten erfolgreich gespeichert!`, 'success');

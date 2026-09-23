@@ -17,6 +17,11 @@ function renderJahresmeisterschaft(grid) {
         saveBtn.disabled = (jmCurrentJahr !== "current");
     }
 
+    // Live-Badge aktualisieren
+    if (typeof updateJMSupabaseBadge === 'function') {
+        updateJMSupabaseBadge(window._jmIsSupabase);
+    }
+
     // Aktionen-Menü dynamisch füllen
     const actionsMenu = document.getElementById('jm-actions-menu');
     if (actionsMenu) {
@@ -26,11 +31,15 @@ function renderJahresmeisterschaft(grid) {
                 <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVerbandsschiessendaten', 'Verbandsschiessen importieren')">Import: Verband</a></li>
                 <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVereinswettschiessendaten', 'Vereinswettschiessen importieren')">Import: Vereinswettschiessen</a></li>
                 <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item text-primary fw-semibold" href="#" onclick="migrateJMFromGoogleSheets()"><i class="fas fa-file-import me-2"></i>Aus Google Sheet importieren</a></li>
+                <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')">Archivieren (Aktuelles Jahr)</a></li>
                 <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')">Neues Jahr (Nullen)</a></li>
             `;
         } else {
             actionsMenu.innerHTML = `
+                <li><a class="dropdown-item text-primary fw-semibold" href="#" onclick="migrateJMFromGoogleSheets()"><i class="fas fa-file-import me-2"></i>Aus Google Sheet importieren</a></li>
+                <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item text-danger fw-bold" href="#" onclick="runDeleteArchivedYearAction('${jmCurrentJahr}')"><i class="fas fa-trash-alt me-2"></i>Archiv ${jmCurrentJahr} unwiderruflich löschen</a></li>
             `;
         }

@@ -56,7 +56,13 @@ window.renderBuchhaltung = function() {
           <i class="fas fa-print me-1.5"></i> GV-Export
         </button>
       </div>
-      <div class="d-flex align-items-center mb-2 mb-md-0" style="gap: 10px;">
+      <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap" style="gap: 8px;">
+        <span id="bh-supabase-badge" class="badge ${window._bhIsSupabase ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-warning-subtle text-warning border border-warning-subtle'} px-2 py-1.5" title="${window._bhIsSupabase ? 'Supabase PostgreSQL ist aktiv (Live)' : 'Google Apps Script Fallback aktiv'}">
+          <i class="fas ${window._bhIsSupabase ? 'fa-bolt' : 'fa-cloud'} me-1"></i>${window._bhIsSupabase ? 'Supabase Live' : 'Google Sheet'}
+        </span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="migrateBuchhaltungFromGoogleSheets()" title="Bestehende Daten aus Google Sheets nach Supabase synchronisieren/importieren">
+          <i class="fas fa-file-import me-1"></i>Aus Sheet importieren
+        </button>
         <select class="form-select form-select-sm" id="bh-year-select" onchange="bhChangeYear(this.value)" style="width: auto;">
           <option value="2026" ${window._bhYear === 2026 ? 'selected' : ''}>Jahr: 2026</option>
           <option value="2025" ${window._bhYear === 2025 ? 'selected' : ''}>Jahr: 2025</option>
@@ -567,14 +573,14 @@ window.renderTabJournal = function(container) {
 
     return `
     <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''} ${incompleteClass}" style="${incompleteStyle}" data-journal-id="${item.id}" tabindex="0" onclick="bhHandleJournalRowClick(event, ${item.id})" title="${isIncomplete ? '⚠️ Unvollständige Buchung: Gegenkonto fehlt! Klicken zum Auswählen / Stift-Icon zum Nachführen' : 'Klicken zum Auswählen (Shift/Ctrl + Pfeiltasten für Mehrfachauswahl)'}">
-      <td class="text-center" style="width: 40px;" onclick="event.stopPropagation()">
+      <td class="text-center tk-col-select" style="width: 40px;" onclick="event.stopPropagation()">
         <input type="checkbox" class="form-check-input cursor-pointer bh-journal-check" data-id="${item.id}" ${isSelected ? 'checked' : ''} onchange="bhToggleJournalRow(${item.id}, this.checked, event)" title="Zeile auswählen">
       </td>
-      <td class="fw-semibold text-muted small">${item.id}</td>
-      <td>${isoToDisplay(item.datum)}</td>
-      <td class="fw-bold text-dark small">${item.beleg_nr}</td>
-      <td class="small fw-semibold">${escapeHtml(item.beschreibung)}</td>
-      <td>
+      <td class="fw-semibold text-muted small tk-col-id">${item.id}</td>
+      <td class="tk-col-datum">${isoToDisplay(item.datum)}</td>
+      <td class="fw-bold text-dark small tk-col-beleg_nr">${item.beleg_nr}</td>
+      <td class="small fw-semibold tk-col-beschreibung">${escapeHtml(item.beschreibung)}</td>
+      <td class="tk-col-konto_soll">
         ${cleanSoll ? `
           <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span> 
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
@@ -584,7 +590,7 @@ window.renderTabJournal = function(container) {
           </span>
         `}
       </td>
-      <td>
+      <td class="tk-col-konto_haben">
         ${cleanHaben ? `
           <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span> 
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
@@ -594,12 +600,12 @@ window.renderTabJournal = function(container) {
           </span>
         `}
       </td>
-      <td class="text-end fw-bold ${amountClass}" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
-      <td>
+      <td class="text-end fw-bold ${amountClass} tk-col-betrag" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
+      <td class="tk-col-buchungstyp">
         <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${bTyp || 'BUCHUNG'}</span>
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
-      <td class="text-end" style="white-space: nowrap;" onclick="event.stopPropagation()">
+      <td class="text-end tk-col-aktionen" style="white-space: nowrap;" onclick="event.stopPropagation()">
         <button class="bh-edit-btn text-primary" onclick="bhPrintJournalBeleg(${item.id})" title="Kassenbeleg drucken / als PDF ablegen">
           <i class="fas fa-print"></i>
         </button>
@@ -625,6 +631,7 @@ window.renderTabJournal = function(container) {
                   title="Nur Buchungssätze anzeigen, bei denen Soll- oder Haben-Konto fehlt">
             <i class="fas fa-exclamation-triangle me-1"></i>Unvollständig (${incompleteCount})
           </button>
+          <div id="bh-journal-column-toggle" class="d-inline-block"></div>
           <span class="badge bg-secondary p-2 rounded-2">${filteredJournal.length} Buchungen</span>
         </div>
       </div>
@@ -665,21 +672,21 @@ window.renderTabJournal = function(container) {
       </div>
       
       <div class="table-responsive" style="max-height: 520px;">
-        <table class="table table-hover align-middle bh-table mb-0">
+        <table id="bh-journal-table" class="table table-hover align-middle bh-table mb-0">
           <thead>
             <tr>
-              <th style="width: 40px;" class="text-center">
+              <th style="width: 40px;" class="text-center tk-col-select" data-col-id="select" data-col-name="Auswahl">
                 <input type="checkbox" class="form-check-input cursor-pointer" id="bh-journal-select-all" onchange="bhToggleJournalSelectAll(this.checked)" title="Alle sichtbaren auswählen">
               </th>
-              <th class="bh-sort-header" onclick="bhSortJournal('id')">ID ${bhGetSortIndicator(col, 'id', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortJournal('datum')">Datum ${bhGetSortIndicator(col, 'datum', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortJournal('beleg_nr')">Beleg-Nr ${bhGetSortIndicator(col, 'beleg_nr', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortJournal('beschreibung')">Beschreibung ${bhGetSortIndicator(col, 'beschreibung', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortJournal('konto_soll')">Soll-Konto ${bhGetSortIndicator(col, 'konto_soll', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortJournal('konto_haben')">Haben-Konto ${bhGetSortIndicator(col, 'konto_haben', asc)}</th>
-              <th class="bh-sort-header text-end" onclick="bhSortJournal('betrag')">Betrag ${bhGetSortIndicator(col, 'betrag', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortJournal('buchungstyp')">Typ / Buchungstyp ${bhGetSortIndicator(col, 'buchungstyp', asc)}</th>
-              <th class="text-end" style="width: 105px;">Aktion</th>
+              <th class="bh-sort-header tk-col-id" data-col-id="id" data-col-name="ID" onclick="bhSortJournal('id')">ID ${bhGetSortIndicator(col, 'id', asc)}</th>
+              <th class="bh-sort-header tk-col-datum" data-col-id="datum" data-col-name="Datum" onclick="bhSortJournal('datum')">Datum ${bhGetSortIndicator(col, 'datum', asc)}</th>
+              <th class="bh-sort-header tk-col-beleg_nr" data-col-id="beleg_nr" data-col-name="Beleg-Nr" onclick="bhSortJournal('beleg_nr')">Beleg-Nr ${bhGetSortIndicator(col, 'beleg_nr', asc)}</th>
+              <th class="bh-sort-header tk-col-beschreibung" data-col-id="beschreibung" data-col-name="Beschreibung" onclick="bhSortJournal('beschreibung')">Beschreibung ${bhGetSortIndicator(col, 'beschreibung', asc)}</th>
+              <th class="bh-sort-header tk-col-konto_soll" data-col-id="konto_soll" data-col-name="Soll-Konto" onclick="bhSortJournal('konto_soll')">Soll-Konto ${bhGetSortIndicator(col, 'konto_soll', asc)}</th>
+              <th class="bh-sort-header tk-col-konto_haben" data-col-id="konto_haben" data-col-name="Haben-Konto" onclick="bhSortJournal('konto_haben')">Haben-Konto ${bhGetSortIndicator(col, 'konto_haben', asc)}</th>
+              <th class="bh-sort-header text-end tk-col-betrag" data-col-id="betrag" data-col-name="Betrag" onclick="bhSortJournal('betrag')">Betrag ${bhGetSortIndicator(col, 'betrag', asc)}</th>
+              <th class="bh-sort-header tk-col-buchungstyp" data-col-id="buchungstyp" data-col-name="Typ" onclick="bhSortJournal('buchungstyp')">Typ / Buchungstyp ${bhGetSortIndicator(col, 'buchungstyp', asc)}</th>
+              <th class="text-end tk-col-aktionen" data-col-id="aktionen" data-col-name="Aktionen" style="width: 105px;">Aktion</th>
             </tr>
           </thead>
           <tbody id="bh-journal-tbody">
@@ -696,6 +703,13 @@ window.renderTabJournal = function(container) {
   }
   window.scrollTo(0, windowScrollTop);
   bhUpdateJournalMasterCheckbox();
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window.TableKit.setupColumnToggle('#bh-journal-table', {
+      container: '#bh-journal-column-toggle',
+      storageKey: 'bh_journal_cols'
+    });
+  }
 };
 
 // Hilfsfunktion: Aktualisiert die visuelle Darstellung der Selektion (Aktionsleiste & Master-Checkbox)
@@ -1210,16 +1224,16 @@ window.renderTabKontenrahmen = function(container) {
     
     return `
       <tr class="bh-account-row" onclick="bhHandleAccountRowClick(event, '${acc.konto}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${acc.konto}">
-        <td><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
-        <td class="fw-bold text-dark">${acc.bezeichnung}</td>
-        <td><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
-        <td class="text-end text-muted">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>
-        <td class="text-end ${acc._veraenderung >= 0 ? 'text-success' : 'text-danger'}">
+        <td class="tk-col-konto"><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
+        <td class="fw-bold text-dark tk-col-bezeichnung">${acc.bezeichnung}</td>
+        <td class="tk-col-klasse"><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
+        <td class="text-end text-muted tk-col-eroeffnungssaldo">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>
+        <td class="text-end ${acc._veraenderung >= 0 ? 'text-success' : 'text-danger'} tk-col-veraenderung">
           ${acc._veraenderung >= 0 ? '+' : ''}${fmtChf(acc._veraenderung)}
         </td>
-        <td class="text-end fw-bold text-primary">${fmtChf(acc._endsaldo)}</td>
-        <td class="text-end fw-semibold text-secondary">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
-        <td class="text-end" style="white-space: nowrap;">
+        <td class="text-end fw-bold text-primary tk-col-endsaldo">${fmtChf(acc._endsaldo)}</td>
+        <td class="text-end fw-semibold text-secondary tk-col-budget">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
+        <td class="text-end tk-col-aktionen" style="white-space: nowrap;">
           <button class="bh-edit-btn" onclick="event.stopPropagation(); bhOpenKontoModal('${acc.konto}', ${acc._rowIndex || 'null'})" title="Konto bearbeiten">
             <i class="fas fa-edit"></i>
           </button>
@@ -1235,29 +1249,30 @@ window.renderTabKontenrahmen = function(container) {
     <div class="bh-report-section border border-light shadow-sm">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:10px;">
         <h4 class="fw-bold text-primary mb-0"><i class="fas fa-university me-2"></i>KMU-Kontenrahmen & Budget (${window._bhYear})</h4>
-        <div class="d-flex align-items-center" style="gap: 10px;">
+        <div class="d-flex align-items-center flex-wrap" style="gap: 10px;">
           <button class="btn btn-sm btn-outline-success fw-bold shadow-sm me-1" onclick="bhOpenBudgetMatrixModal()">
             <i class="fas fa-calculator me-1"></i> Budget-Matrix Editor
           </button>
           <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenKontoModal(null)">
             <i class="fas fa-plus-circle me-1"></i> Konto hinzufügen
           </button>
+          <div id="bh-konten-column-toggle" class="d-inline-block"></div>
           <span class="badge bg-primary px-3 py-2 rounded-2">${window._bhKontenrahmen.length} Konten</span>
         </div>
       </div>
       
       <div class="table-responsive">
-        <table class="table table-hover align-middle bh-table mb-0">
+        <table id="bh-konten-table" class="table table-hover align-middle bh-table mb-0">
           <thead>
             <tr>
-              <th class="bh-sort-header" onclick="bhSortKonten('konto')">Konto ${bhGetSortIndicator(col, 'konto', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortKonten('bezeichnung')">Bezeichnung ${bhGetSortIndicator(col, 'bezeichnung', asc)}</th>
-              <th class="bh-sort-header" onclick="bhSortKonten('klasse')">Klassifizierung ${bhGetSortIndicator(col, 'klasse', asc)}</th>
-              <th class="bh-sort-header text-end" onclick="bhSortKonten('eroeffnungssaldo')">Eröffnungssaldo ${bhGetSortIndicator(col, 'eroeffnungssaldo', asc)}</th>
-              <th class="bh-sort-header text-end" onclick="bhSortKonten('_veraenderung')">Veränderung ${bhGetSortIndicator(col, '_veraenderung', asc)}</th>
-              <th class="bh-sort-header text-end" onclick="bhSortKonten('_endsaldo')">Endsaldo ${bhGetSortIndicator(col, '_endsaldo', asc)}</th>
-              <th class="bh-sort-header text-end" onclick="bhSortKonten('budget')">Budget (${window._bhYear}) ${bhGetSortIndicator(col, 'budget', asc)}</th>
-              <th class="text-end" style="width: 80px;">Aktion</th>
+              <th class="bh-sort-header tk-col-konto" data-col-id="konto" data-col-name="Konto" onclick="bhSortKonten('konto')">Konto ${bhGetSortIndicator(col, 'konto', asc)}</th>
+              <th class="bh-sort-header tk-col-bezeichnung" data-col-id="bezeichnung" data-col-name="Bezeichnung" onclick="bhSortKonten('bezeichnung')">Bezeichnung ${bhGetSortIndicator(col, 'bezeichnung', asc)}</th>
+              <th class="bh-sort-header tk-col-klasse" data-col-id="klasse" data-col-name="Klassifizierung" onclick="bhSortKonten('klasse')">Klassifizierung ${bhGetSortIndicator(col, 'klasse', asc)}</th>
+              <th class="bh-sort-header text-end tk-col-eroeffnungssaldo" data-col-id="eroeffnungssaldo" data-col-name="Eröffnungssaldo" onclick="bhSortKonten('eroeffnungssaldo')">Eröffnungssaldo ${bhGetSortIndicator(col, 'eroeffnungssaldo', asc)}</th>
+              <th class="bh-sort-header text-end tk-col-veraenderung" data-col-id="veraenderung" data-col-name="Veränderung" onclick="bhSortKonten('_veraenderung')">Veränderung ${bhGetSortIndicator(col, '_veraenderung', asc)}</th>
+              <th class="bh-sort-header text-end tk-col-endsaldo" data-col-id="endsaldo" data-col-name="Endsaldo" onclick="bhSortKonten('_endsaldo')">Endsaldo ${bhGetSortIndicator(col, '_endsaldo', asc)}</th>
+              <th class="bh-sort-header text-end tk-col-budget" data-col-id="budget" data-col-name="Budget" onclick="bhSortKonten('budget')">Budget (${window._bhYear}) ${bhGetSortIndicator(col, 'budget', asc)}</th>
+              <th class="text-end tk-col-aktionen" data-col-id="aktionen" data-col-name="Aktionen" style="width: 80px;">Aktion</th>
             </tr>
           </thead>
           <tbody>
@@ -1267,4 +1282,11 @@ window.renderTabKontenrahmen = function(container) {
       </div>
     </div>
   `;
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    window.TableKit.setupColumnToggle('#bh-konten-table', {
+      container: '#bh-konten-column-toggle',
+      storageKey: 'bh_konten_cols'
+    });
+  }
 };

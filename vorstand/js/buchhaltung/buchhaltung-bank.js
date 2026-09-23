@@ -59,7 +59,35 @@ window.saveBhBankRules = function(rules) {
     console.error('Fehler beim lokalen Speichern der Bank-Regeln:', e);
   }
 
-  // Übermittlung an das zentrale Google Sheet
+  // 1. Supabase Persistence
+  const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+  if (sb) {
+    const ruleRows = rules.map((r, i) => ({
+      rule_key: String(r.id || r.rule_key || `rule_${i}_${Date.now()}`),
+      label: String(r.label || ''),
+      pattern_party: String(r.pattern_party || ''),
+      pattern_text: String(r.pattern_text || ''),
+      pattern: String(r.pattern || ''),
+      prefix: String(r.prefix || r.label || ''),
+      soll: String(r.soll || '').split('|')[0].trim(),
+      haben: String(r.haben || '').split('|')[0].trim(),
+      scope: String(r.scope || 'all'),
+      amount_mode: String(r.amount_mode || 'any'),
+      amount_min: (r.amount_min !== undefined && r.amount_min !== null && r.amount_min !== '') ? Number(r.amount_min) : null,
+      amount_max: (r.amount_max !== undefined && r.amount_max !== null && r.amount_max !== '') ? Number(r.amount_max) : null,
+      sort_order: i,
+      updated_at: new Date().toISOString()
+    }));
+
+    sb.from('accounting_bank_rules').upsert(ruleRows, { onConflict: 'rule_key' })
+      .then(({ error }) => {
+        if (error) console.warn('[Buchhaltung Supabase] Error saving bank rules:', error);
+        else console.log('✅ Bank-Regeln in Supabase gespeichert.');
+      })
+      .catch(err => console.warn('[Buchhaltung Supabase] Bank rules save exception:', err));
+  }
+
+  // 2. Dual-Write Übermittlung an das zentrale Google Sheet
   try {
     apiFetch('buchhaltung', { action: 'saveBankRules', rules: rules }, 'POST')
       .then(res => res.json())
@@ -76,8 +104,43 @@ window.saveBhBankRules = function(rules) {
   }
 };
 
-// Beim Modulstart zentrale Regeln aus Google Sheet abrufen
-window.fetchBhBankServerRules = function() {
+// Beim Modulstart zentrale Regeln aus Supabase oder Google Sheet abrufen
+window.fetchBhBankServerRules = async function() {
+  const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+  if (sb) {
+    try {
+      const { data: sbRules, error } = await sb.from('accounting_bank_rules').select('*').order('sort_order', { ascending: true });
+      if (!error && Array.isArray(sbRules) && sbRules.length > 0) {
+        const mapped = sbRules.map(r => ({
+          ...r,
+          id: r.rule_key,
+          label: r.label || '',
+          pattern_party: r.pattern_party || '',
+          pattern_text: r.pattern_text || '',
+          pattern: r.pattern || '',
+          prefix: r.prefix || '',
+          soll: r.soll || '',
+          haben: r.haben || '',
+          scope: r.scope || 'all',
+          amount_mode: r.amount_mode || 'any',
+          amount_min: r.amount_min,
+          amount_max: r.amount_max
+        }));
+        window._bhBankServerRules = mapped;
+        localStorage.setItem('bh_bank_rules', JSON.stringify(mapped));
+        console.log(`✅ ${mapped.length} Bank-Regeln aus Supabase geladen.`);
+        if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
+          window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
+          bhBankRenderResults(window._bhBankActiveFilter);
+        }
+        return;
+      }
+    } catch (sbErr) {
+      console.warn('[Buchhaltung Supabase] Rules query failed, falling back to GAS:', sbErr);
+    }
+  }
+
+  // Fallback: Google Sheet
   try {
     apiFetch('buchhaltung', { action: 'getBankRules' }, 'GET')
       .then(res => res.json())
@@ -89,10 +152,8 @@ window.fetchBhBankServerRules = function() {
           localStorage.setItem('bh_bank_rules', newRulesJson);
           console.log(`✅ ${json.data.length} Bank-Regeln erfolgreich aus dem zentralen Google Sheet geladen.`);
           
-          // Wenn sich die Regeln nicht geändert haben, ist kein störendes Re-Rendern nötig!
           if (oldRulesJson === newRulesJson) return;
 
-          // Falls der Nutzer gerade aktiv in einem Feld tippt, Re-Matching nicht mit Fokusverlust durchführen
           const active = document.activeElement;
           if (active && active.classList && active.classList.contains('bh-konto-input')) {
             console.log('Fokus aktiv in Konto-Eingabe, verzögere Hintergrund-Re-Matching...');
@@ -256,7 +317,8 @@ window.renderTabBankabgleich = function(container) {
           <i class="fas fa-question-circle me-1"></i>Unklar (${unklarCount})
         </button>
         
-        <div class="ms-auto d-flex gap-3 align-items-center flex-wrap justify-content-end">
+        <div class="ms-auto d-flex gap-2 align-items-center flex-wrap justify-content-end">
+          <div id="bh-bank-column-toggle" class="d-inline-block"></div>
           <div class="text-muted small d-none d-md-flex align-items-center bg-light border rounded-3 px-2.5 py-1" style="font-size: 11.5px;" title="Garantiert saubere Belegnummern und Datumschronologie">
             <i class="fas fa-info-circle text-primary me-1.5"></i>
             <span>Buchungen werden in einem Schritt chronologisch nach Datum sortiert verbucht.</span>
@@ -984,18 +1046,18 @@ function bhBankRenderResults(filter) {
 
     return `
       <tr id="bh-bank-row-${realI}" data-tx-idx="${realI}" class="${rowBg}" ${(r.alreadyBooked || r.isWrongYear) ? 'style="opacity:0.65;"' : ''}>
-        <td class="small" style="white-space:nowrap;">
+        <td data-col-id="date" class="small tk-col-date" style="white-space:nowrap;">
           <span class="fw-bold">${formatSwissDate(r.bookingDate)}</span>
           ${r.accountIban ? `<br><span class="badge bg-light text-muted border" style="font-size:9px;" title="Konto: ${escHtml(r.accountIban)}">${escHtml(r.accountIban.slice(-8))}</span>` : ''}
         </td>
-        <td>
+        <td data-col-id="party" class="tk-col-party">
           <span class="fw-bold">${escHtml(r.partyName || '–')}</span>
           ${r.partyCity ? `<br><small class="text-muted">${escHtml(r.partyPLZ)} ${escHtml(r.partyCity)}</small>` : ''}
         </td>
-        <td class="text-end fw-bold ${amountClass}" style="white-space:nowrap;">
+        <td data-col-id="amount" class="text-end fw-bold ${amountClass} tk-col-amount" style="white-space:nowrap;">
           ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
         </td>
-        <td style="min-width: 200px; max-width: 320px;">
+        <td data-col-id="remittance" class="tk-col-remittance" style="min-width: 200px; max-width: 320px;">
           ${(r.alreadyBooked || r.isWrongYear) ? `
             <div class="small text-muted" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
               ${escHtml(r.remittanceInfo || '–')}
@@ -1014,9 +1076,9 @@ function bhBankRenderResults(filter) {
             </div>
           `}
         </td>
-        <td>${statusBadge}</td>
-        <td>${matchInfo}</td>
-        <td style="min-width: 140px;">
+        <td data-col-id="status" class="tk-col-status">${statusBadge}</td>
+        <td data-col-id="type" class="tk-col-type">${matchInfo}</td>
+        <td data-col-id="soll" class="tk-col-soll" style="min-width: 140px;">
           ${(r.isSplit && !isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
             <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten">
               <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Soll)</div>
@@ -1024,7 +1086,7 @@ function bhBankRenderResults(filter) {
             </div>
           ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
         </td>
-        <td style="min-width: 140px;">
+        <td data-col-id="haben" class="tk-col-haben" style="min-width: 140px;">
           ${(r.isSplit && isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
             <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten">
               <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Haben)</div>
@@ -1050,7 +1112,7 @@ function bhBankRenderResults(filter) {
             return '';
           })()}
         </td>
-        ${canEdit ? `<td class="bh-col-sticky-action text-center"><div class="d-flex align-items-center justify-content-center gap-1">${actionButtons}</div></td>` : ''}
+        ${canEdit ? `<td data-col-id="actions" class="bh-col-sticky-action text-center tk-col-actions"><div class="d-flex align-items-center justify-content-center gap-1">${actionButtons}</div></td>` : ''}
       </tr>
     `;
   }).join('');
@@ -1059,7 +1121,7 @@ function bhBankRenderResults(filter) {
     const isCurrent = window._bhBankSortCol === colKey;
     const icon = isCurrent ? (window._bhBankSortAsc ? ' <i class="fas fa-sort-up text-primary"></i>' : ' <i class="fas fa-sort-down text-primary"></i>') : ' <i class="fas fa-sort opacity-25"></i>';
     const alignClass = alignRight ? 'text-end' : '';
-    return `<th class="${alignClass}" style="cursor:pointer; user-select:none; position:relative;" onclick="bhBankSortTable('${colKey}')" title="Klicken zum Sortieren / Rand ziehen zum Anpassen der Breite">${label}${icon}</th>`;
+    return `<th data-col-id="${colKey}" class="${alignClass} tk-col-${colKey}" style="cursor:pointer; user-select:none; position:relative;" onclick="bhBankSortTable('${colKey}')" title="Klicken zum Sortieren / Rand ziehen zum Anpassen der Breite">${label}${icon}</th>`;
   }
 
   let datalistOptions = kontenrahmen.map(k => {
@@ -1101,7 +1163,7 @@ function bhBankRenderResults(filter) {
             ${sortHeaderHTML('type', 'Zuordnung / Typ')}
             ${sortHeaderHTML('soll', 'Soll-Konto')}
             ${sortHeaderHTML('haben', 'Haben-Konto')}
-            ${canEdit ? '<th class="bh-col-sticky-action text-center" style="min-width: 145px;">Aktion</th>' : ''}
+            ${canEdit ? '<th data-col-id="actions" class="bh-col-sticky-action text-center tk-col-actions" style="min-width: 145px;">Aktion</th>' : ''}
           </tr>
         </thead>
         <tbody>${rowsHTML}</tbody>
@@ -1121,6 +1183,13 @@ function bhBankRenderResults(filter) {
 
   setTimeout(() => {
     bhMakeTableResizable(document.getElementById('bhBankTable'));
+
+    if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+      window.TableKit.setupColumnToggle('#bhBankTable', {
+        container: document.getElementById('bh-bank-column-toggle'),
+        storageKey: 'tk_cols_bh_bank'
+      });
+    }
     
     // 1. Falls der Nutzer vor dem Re-Render in einem Feld war: Fokus und Cursor nahtlos wiederherstellen OHNE Scroll-Sprung!
     if (focusedInputId) {
@@ -2645,6 +2714,40 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
     let jsonBh = null;
     const isSplit = entries.length > 1;
 
+    // 1. Supabase Native Direct Write
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    let sbSuccess = false;
+    let createdEntries = [];
+
+    if (sb) {
+      try {
+        const rowsToInsert = entries.map((e, eIdx) => ({
+          id: e.id || `bh_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${eIdx}`,
+          jahr: parseInt(e.jahr, 10),
+          datum: bookingDate,
+          beleg_nr: belegNr,
+          beschreibung: e.beschreibung,
+          konto_soll: String(e.konto_soll).trim(),
+          konto_haben: String(e.konto_haben).trim(),
+          betrag: Number(e.betrag || 0),
+          typ: 'Bank',
+          split_group_id: isSplit ? (e.split_group_id || `grp_${belegNr}_${Date.now()}`) : null,
+          created_at: new Date().toISOString()
+        }));
+
+        const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
+        if (sbErr) {
+          console.warn('[Buchhaltung Supabase] Insert failed, falling back to GAS:', sbErr);
+        } else {
+          sbSuccess = true;
+          createdEntries = sbData || rowsToInsert;
+        }
+      } catch (err) {
+        console.warn('[Buchhaltung Supabase] Insert exception:', err);
+      }
+    }
+
+    // 2. Dual-Write to GAS
     if (isSplit) {
       const payloadBh = {
         action: 'addJournalEntries',
@@ -2654,9 +2757,13 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
         entries: entries,
         typ: 'Bank'
       };
-      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-      jsonBh = await resBh.json();
-      if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen der Splitbuchung im Journal');
+      if (!sbSuccess) {
+        const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+        jsonBh = await resBh.json();
+        if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen der Splitbuchung im Journal');
+      } else {
+        apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Bank split error:', e));
+      }
     } else {
       const payloadBh = {
         action: 'addJournalEntry',
@@ -2669,9 +2776,13 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
         betrag: entries[0].betrag,
         typ: 'Bank'
       };
-      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-      jsonBh = await resBh.json();
-      if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen im Journal');
+      if (!sbSuccess) {
+        const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+        jsonBh = await resBh.json();
+        if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen im Journal');
+      } else {
+        apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Bank single error:', e));
+      }
     }
 
     // 2. Falls eine Rechnung erkannt wurde: im Rechnungs-Modul als bezahlt markieren (POST mit skipBooking: true)
@@ -2731,7 +2842,9 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
 
     // Sofort lokal im Kassabuch-Journal registrieren für 100%ige Sofort-Sperre
     window._bhJournal = window._bhJournal || [];
-    if (isSplit && Array.isArray(jsonBh.data)) {
+    if (sbSuccess && createdEntries.length > 0) {
+      createdEntries.forEach(entry => window._bhJournal.push(entry));
+    } else if (isSplit && Array.isArray(jsonBh && jsonBh.data)) {
       jsonBh.data.forEach(entry => {
         window._bhJournal.push(entry);
       });
@@ -2851,13 +2964,53 @@ window.bhBankBookAll = async function() {
       throw new Error('Keine gültigen Buchungssätze generiert.');
     }
 
-    // 3. 1x atomarer Sammel-Commit an Buchhaltung_GAS
+    // 3. Sammel-Commit (Supabase First + Dual-Write to GAS)
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    let sbBatchSuccess = false;
+    let createdBatchEntries = [];
+
+    if (sb) {
+      if (allBtn) {
+        allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Speichere ${allJournalEntries.length} Buchungen in Supabase...`;
+      }
+      if (batchToast) {
+        const span = batchToast.querySelector('span');
+        if (span) span.textContent = `⏳ Speichere ${allJournalEntries.length} Buchungen direkt in Supabase...`;
+      }
+
+      try {
+        const rowsToInsert = allJournalEntries.map((e, eIdx) => ({
+          id: e.id || `bh_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${eIdx}`,
+          jahr: parseInt(e.jahr || activeYear, 10),
+          datum: e.datum,
+          beleg_nr: e.beleg_nr,
+          beschreibung: e.beschreibung,
+          konto_soll: String(e.konto_soll).trim(),
+          konto_haben: String(e.konto_haben).trim(),
+          betrag: Number(e.betrag || 0),
+          typ: 'Bank',
+          split_group_id: e.split_group_id || null,
+          created_at: new Date().toISOString()
+        }));
+
+        const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
+        if (sbErr) {
+          console.warn('[Buchhaltung Supabase] Batch insert error, falling back to GAS:', sbErr);
+        } else {
+          sbBatchSuccess = true;
+          createdBatchEntries = sbData || rowsToInsert;
+        }
+      } catch (sbEx) {
+        console.warn('[Buchhaltung Supabase] Batch insert exception:', sbEx);
+      }
+    }
+
     if (allBtn) {
       allBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Übertrage ${allJournalEntries.length} Buchungssätze...`;
     }
     if (batchToast) {
       const span = batchToast.querySelector('span');
-      if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze in einem Commit an GAS...`;
+      if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze an GAS (Dual-Write)...`;
     }
 
     const payloadBh = {
@@ -2866,16 +3019,22 @@ window.bhBankBookAll = async function() {
       entries: allJournalEntries,
       typ: 'Bank'
     };
-    const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-    const jsonBh = await resBh.json();
-    if (!jsonBh.success) {
-      throw new Error(jsonBh.error || 'Fehler beim Sammel-Buchen im Journal');
-    }
 
-    // Lokales Journal direkt mit den bestätigten Datensätzen aktualisieren
-    window._bhJournal = window._bhJournal || [];
-    const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
-    serverEntries.forEach(entry => window._bhJournal.push(entry));
+    if (!sbBatchSuccess) {
+      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+      const jsonBh = await resBh.json();
+      if (!jsonBh.success) {
+        throw new Error(jsonBh.error || 'Fehler beim Sammel-Buchen im Journal');
+      }
+      window._bhJournal = window._bhJournal || [];
+      const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
+      serverEntries.forEach(entry => window._bhJournal.push(entry));
+    } else {
+      // Async dual write to GAS
+      apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Batch all GAS error:', e));
+      window._bhJournal = window._bhJournal || [];
+      createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
+    }
 
     // Alle vorbereiteten Transaktionen im UI als gebucht markieren
     const todayStr = new Date().toLocaleDateString('de-CH');
@@ -3072,13 +3231,53 @@ window.bhBankBookSelected = async function() {
       throw new Error('Keine gültigen Buchungssätze generiert.');
     }
 
-    // 3. 1x atomarer Sammel-Commit an Buchhaltung_GAS
+    // 3. Sammel-Commit (Supabase First + Dual-Write to GAS)
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    let sbBatchSuccess = false;
+    let createdBatchEntries = [];
+
+    if (sb) {
+      if (selBtn) {
+        selBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Speichere ${allJournalEntries.length} Buchungen in Supabase...`;
+      }
+      if (batchToast) {
+        const span = batchToast.querySelector('span');
+        if (span) span.textContent = `⏳ Speichere ${allJournalEntries.length} Buchungen direkt in Supabase...`;
+      }
+
+      try {
+        const rowsToInsert = allJournalEntries.map((e, eIdx) => ({
+          id: e.id || `bh_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${eIdx}`,
+          jahr: parseInt(e.jahr || activeYear, 10),
+          datum: e.datum,
+          beleg_nr: e.beleg_nr,
+          beschreibung: e.beschreibung,
+          konto_soll: String(e.konto_soll).trim(),
+          konto_haben: String(e.konto_haben).trim(),
+          betrag: Number(e.betrag || 0),
+          typ: 'Bank',
+          split_group_id: e.split_group_id || null,
+          created_at: new Date().toISOString()
+        }));
+
+        const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
+        if (sbErr) {
+          console.warn('[Buchhaltung Supabase] Batch selected insert error, falling back to GAS:', sbErr);
+        } else {
+          sbBatchSuccess = true;
+          createdBatchEntries = sbData || rowsToInsert;
+        }
+      } catch (sbEx) {
+        console.warn('[Buchhaltung Supabase] Batch selected insert exception:', sbEx);
+      }
+    }
+
     if (selBtn) {
       selBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>Übertrage ${allJournalEntries.length} Buchungssätze...`;
     }
     if (batchToast) {
       const span = batchToast.querySelector('span');
-      if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze in einem Commit an GAS...`;
+      if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze an GAS (Dual-Write)...`;
     }
 
     const payloadBh = {
@@ -3087,16 +3286,22 @@ window.bhBankBookSelected = async function() {
       entries: allJournalEntries,
       typ: 'Bank'
     };
-    const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-    const jsonBh = await resBh.json();
-    if (!jsonBh.success) {
-      throw new Error(jsonBh.error || 'Fehler beim Sammel-Buchen im Journal');
-    }
 
-    // Lokales Journal direkt mit den bestätigten Datensätzen aktualisieren
-    window._bhJournal = window._bhJournal || [];
-    const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
-    serverEntries.forEach(entry => window._bhJournal.push(entry));
+    if (!sbBatchSuccess) {
+      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
+      const jsonBh = await resBh.json();
+      if (!jsonBh.success) {
+        throw new Error(jsonBh.error || 'Fehler beim Sammel-Buchen im Journal');
+      }
+      window._bhJournal = window._bhJournal || [];
+      const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
+      serverEntries.forEach(entry => window._bhJournal.push(entry));
+    } else {
+      // Async dual write to GAS
+      apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Batch selected GAS error:', e));
+      window._bhJournal = window._bhJournal || [];
+      createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
+    }
 
     // Alle vorbereiteten Transaktionen im UI als gebucht markieren & aus Stapel entfernen
     const todayStr = new Date().toLocaleDateString('de-CH');
@@ -3565,14 +3770,14 @@ window.bhBankManageRulesModal = function() {
 
     return `
       <tr>
-        <td><span class="fw-bold text-dark">${escHtml(r.label)}</span></td>
-        <td>${partyHtml}</td>
-        <td>${textHtml}</td>
-        <td>${amtHtml}</td>
-        <td><span class="text-muted small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
-        <td><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
-        <td><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
-        <td class="text-end" style="white-space: nowrap;">
+        <td data-col-id="label" class="tk-col-label"><span class="fw-bold text-dark">${escHtml(r.label)}</span></td>
+        <td data-col-id="party" class="tk-col-party">${partyHtml}</td>
+        <td data-col-id="text" class="tk-col-text">${textHtml}</td>
+        <td data-col-id="amount" class="tk-col-amount">${amtHtml}</td>
+        <td data-col-id="prefix" class="tk-col-prefix"><span class="text-muted small fw-semibold">${escHtml(r.prefix || r.label)}</span></td>
+        <td data-col-id="soll" class="tk-col-soll"><span class="badge bg-primary font-monospace px-2 py-1" title="Soll: ${escHtml(r.soll)}">${escHtml(sollNr)}</span></td>
+        <td data-col-id="haben" class="tk-col-haben"><span class="badge bg-success font-monospace px-2 py-1" title="Haben: ${escHtml(r.haben)}">${escHtml(habenNr)}</span></td>
+        <td data-col-id="actions" class="text-end tk-col-actions" style="white-space: nowrap;">
           <button class="btn btn-sm btn-outline-primary py-1 px-2 me-1" onclick="bhBankOpenRuleEditorModal(${i})" title="Regel bearbeiten">
             <i class="fas fa-edit me-1"></i>Bearbeiten
           </button>
@@ -3606,24 +3811,27 @@ window.bhBankManageRulesModal = function() {
           </div>
         </div>
         <div class="modal-body p-4">
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <p class="text-muted small mb-0">Erstelle oder bearbeite Regeln für die automatische Zuordnung von Kontoauszug-Transaktionen (getrennte Kriterien für Empfänger/Zahler, Verwendungszweck und optionale Betragsfilter).</p>
-            <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
-              <i class="fas fa-plus me-1"></i>Neue Regel erstellen
-            </button>
+            <div class="d-flex align-items-center gap-2">
+              <div id="bh-rules-column-toggle" class="d-inline-block"></div>
+              <button class="btn btn-sm btn-success fw-bold px-3" onclick="bhBankOpenRuleEditorModal(-1)">
+                <i class="fas fa-plus me-1"></i>Neue Regel erstellen
+              </button>
+            </div>
           </div>
           <div id="bhManageRulesTableWrap" class="table-responsive" style="max-height: ${isFs ? 'calc(100vh - 220px)' : '520px'}; overflow-y: auto;">
-            <table class="table table-hover table-sm align-middle mb-0" style="table-layout: fixed; width: 100%;">
+            <table id="bh-manage-rules-table" class="table table-hover table-sm align-middle mb-0" style="table-layout: fixed; width: 100%;">
               <thead class="table-light sticky-top">
                 <tr>
-                  <th style="width: 17%;">Bezeichnung</th>
-                  <th style="width: 15%;"><i class="fas fa-user me-1 text-primary"></i>Empfänger / Zahler</th>
-                  <th style="width: 15%;"><i class="fas fa-file-alt me-1 text-success"></i>Verwendungszweck</th>
-                  <th style="width: 14%;"><i class="fas fa-coins me-1 text-warning"></i>Betrag</th>
-                  <th style="width: 17%;">Journal-Text / Präfix</th>
-                  <th style="width: 6%;">Soll</th>
-                  <th style="width: 6%;">Haben</th>
-                  <th style="width: 10%;" class="text-end">Aktionen</th>
+                  <th data-col-id="label" class="tk-col-label" style="width: 17%;">Bezeichnung</th>
+                  <th data-col-id="party" class="tk-col-party" style="width: 15%;"><i class="fas fa-user me-1 text-primary"></i>Empfänger / Zahler</th>
+                  <th data-col-id="text" class="tk-col-text" style="width: 15%;"><i class="fas fa-file-alt me-1 text-success"></i>Verwendungszweck</th>
+                  <th data-col-id="amount" class="tk-col-amount" style="width: 14%;"><i class="fas fa-coins me-1 text-warning"></i>Betrag</th>
+                  <th data-col-id="prefix" class="tk-col-prefix" style="width: 17%;">Journal-Text / Präfix</th>
+                  <th data-col-id="soll" class="tk-col-soll" style="width: 6%;">Soll</th>
+                  <th data-col-id="haben" class="tk-col-haben" style="width: 6%;">Haben</th>
+                  <th data-col-id="actions" class="tk-col-actions text-end" style="width: 10%;">Aktionen</th>
                 </tr>
               </thead>
               <tbody>${rulesRows}</tbody>
@@ -3638,6 +3846,15 @@ window.bhBankManageRulesModal = function() {
   `;
 
   bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+    setTimeout(() => {
+      window.TableKit.setupColumnToggle('#bh-manage-rules-table', {
+        container: document.getElementById('bh-rules-column-toggle'),
+        storageKey: 'tk_cols_bh_manage_rules'
+      });
+    }, 50);
+  }
 };
 
 window.bhBankDeleteRule = function(idx) {
@@ -3645,6 +3862,18 @@ window.bhBankDeleteRule = function(idx) {
   const r = rules[idx];
   const ok = confirm(`Regel "${r ? r.label : ''}" wirklich löschen?`);
   if (!ok) return;
+
+  if (r) {
+    const ruleKey = r.id || r.rule_key;
+    const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
+    if (sb && ruleKey) {
+      sb.from('accounting_bank_rules').delete().eq('rule_key', ruleKey)
+        .then(({ error }) => {
+          if (error) console.warn('[Buchhaltung Supabase] Error deleting rule:', error);
+          else console.log('✅ Regel aus Supabase gelöscht.');
+        });
+    }
+  }
 
   rules.splice(idx, 1);
   window.saveBhBankRules(rules);

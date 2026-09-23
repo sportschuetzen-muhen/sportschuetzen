@@ -122,6 +122,31 @@ window.rnSavePayment = async function(event, invoiceId) {
         document_ref: beleg || `PAY-${invoiceId}`,
         updated_at: new Date().toISOString()
       }).eq('id', invoiceId);
+
+      if (syncBookkeeping) {
+        const invObj = window._invoices.find(i => String(i.id) === String(invoiceId));
+        const sollKonto = (methode === 'Bar' || methode === 'Kasse') ? '1000' : '1020';
+        const habenKonto = (invObj && invObj.account_haben) ? String(invObj.account_haben).trim() : '3400';
+        const payYear = new Date(datum).getFullYear() || new Date().getFullYear();
+        const payAmt = Number(invObj ? invObj.total_amount : 0);
+        if (payAmt > 0) {
+          supa.from('accounting_journal').insert({
+            id: `bh_inv_${invoiceId}_${Date.now()}`,
+            jahr: payYear,
+            datum: datum,
+            beleg_nr: beleg || `RE-${invoiceId}`,
+            beschreibung: `Zahlung Rechnung ${invoiceId} ${invObj ? invObj.name || '' : ''}`.trim(),
+            konto_soll: sollKonto,
+            konto_haben: habenKonto,
+            betrag: payAmt,
+            typ: 'Rechnung',
+            created_at: new Date().toISOString()
+          }).then(({ error }) => {
+            if (error) console.warn('[Rechnungen -> FiBu] Supabase journal insert error:', error);
+            else console.log('✅ Rechnungszahlung direkt in Supabase FiBu gebucht.');
+          }).catch(e => console.warn('[Rechnungen -> FiBu] Journal insert exception:', e));
+        }
+      }
     } catch (supaErr) {
       console.warn("⚠️ Supabase savePayment Warning:", supaErr);
     }

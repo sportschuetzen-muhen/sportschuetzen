@@ -100,42 +100,57 @@ async function loadTermineData(force = false) {
         showTermineOverlay(false);
         return;
       } else if (!termRes.error && termine.length === 0) {
-        console.log('ℹ️ Supabase Termine noch leer. Lade bestehende Daten aus Google Apps Script...');
+        console.warn('⚠️ Supabase Termine noch leer. Bitte Daten importieren (Sheet-Sync Button).');
+        container.innerHTML = `<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-2"></i>Keine Termine in Supabase vorhanden. Bitte über «Sheet-Sync / Import» importieren.</div>`;
+        showTermineOverlay(false);
+        return;
       }
     } catch (supaErr) {
-      console.warn('⚠️ Supabase Abfrage für Termine fehlgeschlagen, wechsle zu GAS Fallback:', supaErr);
+      console.error('❌ Supabase Abfrage für Termine fehlgeschlagen:', supaErr);
+      container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Fehler beim Laden aus Supabase: ${supaErr.message}</div>`;
+      showTermineOverlay(false);
+      return;
     }
   }
 
-  // 3. FALLBACK: Aus Google Apps Script (Altsystem) laden
-  try {
-    const res = await apiFetch('termine', 'action=loadAdminData');
-    adminState = await res.json();
-    adminState._isSupabase = false;
+  // ──────────────────────────────────────────────────────────────
+  // [GAS-FALLBACK DEAKTIVIERT 2026-09-21]
+  // Grund: Supabase ist Master. GAS-Read nicht mehr benötigt.
+  // Bei Bedarf wieder einkommentieren.
+  // ──────────────────────────────────────────────────────────────
+  // try {
+  //   const res = await apiFetch('termine', 'action=loadAdminData');
+  //   adminState = await res.json();
+  //   adminState._isSupabase = false;
+  //
+  //   if (adminState.dropdowns?.orteMitMaps) {
+  //     adminState.dropdowns.orteMitMaps = adminState.dropdowns.orteMitMaps
+  //       .filter(p => p?.[0]?.trim() || p?.[1]?.trim());
+  //   }
+  //
+  //   originalAdminState = JSON.parse(JSON.stringify(adminState));
+  //
+  //   if (window.AppCache) {
+  //     window.AppCache.set('termine', adminState, 120);
+  //   }
+  //
+  //   renderTermineUI(document.getElementById('termine-ui'));
+  //   updateLastSyncLabel('Zuletzt aktualisiert: Google Sheets (' + new Date().toLocaleTimeString() + ')');
+  //
+  //   // Falls Supabase erreichbar ist, aber noch leer war: 1-Klick Migration anbieten
+  //   if (supa && !adminState._isSupabase) {
+  //     showMigrationBanner();
+  //   }
+  // } catch (e) {
+  //   container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
+  // } finally {
+  //   showTermineOverlay(false);
+  // }
 
-    if (adminState.dropdowns?.orteMitMaps) {
-      adminState.dropdowns.orteMitMaps = adminState.dropdowns.orteMitMaps
-        .filter(p => p?.[0]?.trim() || p?.[1]?.trim());
-    }
-
-    originalAdminState = JSON.parse(JSON.stringify(adminState));
-
-    if (window.AppCache) {
-      window.AppCache.set('termine', adminState, 120);
-    }
-
-    renderTermineUI(document.getElementById('termine-ui'));
-    updateLastSyncLabel('Zuletzt aktualisiert: Google Sheets (' + new Date().toLocaleTimeString() + ')');
-
-    // Falls Supabase erreichbar ist, aber noch leer war: 1-Klick Migration anbieten
-    if (supa && !adminState._isSupabase) {
-      showMigrationBanner();
-    }
-  } catch (e) {
-    container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
-  } finally {
-    showTermineOverlay(false);
-  }
+  // Kein GAS-Fallback mehr – Supabase ist einzige Datenquelle
+  console.warn('⚠️ Supabase Client nicht verfügbar. Termine können nicht geladen werden.');
+  container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Supabase Client nicht verfügbar.</div>`;
+  showTermineOverlay(false);
 }
 
 // =========================================================

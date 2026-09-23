@@ -1,4 +1,5 @@
 // === SUB-MODUL: JAHRESMEISTERSCHAFT - MANAGER & API & ARCHIV ===
+// Native Supabase Architecture mit Google Apps Script Fallback & Dual-Write
 
 async function saveJahresmeisterschaftData() {
     if (jmPendingUpdates.length === 0 && jmPendingMoves.length === 0 && !jmExclusionsChanged) {
@@ -12,10 +13,84 @@ async function saveJahresmeisterschaftData() {
         return;
     }
 
-    if (!confirm("Bist du sicher, dass du die Änderungen im Google Sheet speichern möchtest? Dies überschreibt die Live-Daten!")) {
+    if (!confirm("Bist du sicher, dass du die Änderungen speichern möchtest?")) {
         return;
     }
 
+    // --- 1. SUPABASE-FIRST SPEICHERN ---
+    const sb = getJMSupabaseClient();
+    if (sb && window._jmIsSupabase) {
+        try {
+            showLoadingOverlay('Speichere Jahresmeisterschaft in Supabase...');
+
+            // Aktualisiere jmRawGrid mit den pending updates
+            jmPendingUpdates.forEach(u => {
+                if (jmRawGrid[u.r]) {
+                    jmRawGrid[u.r][u.c] = u.v;
+                }
+            });
+
+            const juniorList = Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true);
+
+            const { error: errSb } = await sb
+                .from('jm_seasons')
+                .upsert({
+                    jahr: jmCurrentJahr,
+                    raw_grid: jmRawGrid,
+                    junior_exclusions: juniorList,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'jahr' });
+
+            if (errSb) throw errSb;
+
+            // Strukturierte Schützenliste im Hintergrund aktualisieren
+            if (typeof syncJMShootersToSupabase === 'function') {
+                syncJMShootersToSupabase(sb, jmCurrentJahr, jmRawGrid).catch(e => console.warn(e));
+            }
+
+            // Asynchroner Non-Blocking Dual-Write an Google Sheets (GAS)
+            const dualWritePayload = {
+                action: 'saveJahresmeisterschaft',
+                jahr: jmCurrentJahr,
+                updates: jmPendingUpdates,
+                moves: jmPendingMoves,
+                juniorExclusions: juniorList
+            };
+
+            fetch(WORKER_URL + "?module=jahresmeisterschaft", {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': getCsrfToken(),
+                    'X-User-Role': window.userRole,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(dualWritePayload)
+            }).then(r => r.json()).then(res => {
+                if (res.success) {
+                    console.log("✅ Dual-Write zu Google Sheets erfolgreich gespiegelt.");
+                } else {
+                    console.warn("⚠️ Dual-Write zu Google Sheets meldet:", res.error || res.message);
+                }
+            }).catch(err => {
+                console.warn("⚠️ Dual-Write Google Sheets Hintergrundfehler (Supabase blieb intakt):", err);
+            });
+
+            showSuccess("Erfolgreich in Supabase gespeichert! (Google Sheet Spiegelung läuft im Hintergrund)");
+            jmPendingUpdates = [];
+            jmPendingMoves = [];
+            jmExclusionsChanged = false;
+            AppState.clearUnsaved();
+            renderJahresmeisterschaft(jmRawGrid);
+            return;
+
+        } catch (sbErr) {
+            console.error("Fehler beim Speichern in Supabase, wechsle auf GAS Fallback:", sbErr);
+        } finally {
+            hideLoadingOverlay();
+        }
+    }
+
+    // --- 2. FALLBACK: GOOGLE APPS SCRIPT ---
     try {
         showLoadingOverlay('Speichere Jahresmeisterschaft... Bitte Geduld, Google Sheets berechnet alle Ränge neu (kann 10-15 Sek. dauern)...');
         
@@ -45,7 +120,6 @@ async function saveJahresmeisterschaftData() {
             jmPendingMoves = [];
             jmExclusionsChanged = false;
             AppState.clearUnsaved();
-            // Lade Daten neu, um Formeln (Totals/%) neu zu berechnen
             setTimeout(loadJahresmeisterschaftData, 1000);
         } else {
             throw new Error(data.error || "Unbekannter Fehler beim Speichern.");
@@ -58,9 +132,11 @@ async function saveJahresmeisterschaftData() {
 }
 
 async function runJMAction(functionName, actionLabel) {
-    if (!confirm(`Möchtest du die Aktion "${actionLabel}" im Hintergrund ausführen?`)) {
+    if (!confirm(`Möchtest du die Aktion "${actionLabel}" ausführen?`)) {
         return;
     }
+
+    const sb = getJMSupabaseClient();
 
     try {
         let archivJahr = null;
@@ -70,9 +146,55 @@ async function runJMAction(functionName, actionLabel) {
                 showError("Ungültiges Jahr eingegeben. Aktion abgebrochen.");
                 return;
             }
+
+            // Supabase-Archivierung
+            if (sb && window._jmIsSupabase) {
+                showLoadingOverlay(`Archiviere Saison ${archivJahr} in Supabase...`);
+                await sb.from('jm_seasons').upsert({
+                    jahr: archivJahr,
+                    title: `Jahresmeisterschaft ${archivJahr}`,
+                    raw_grid: jmRawGrid,
+                    junior_exclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true),
+                    is_archived: true,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'jahr' });
+
+                if (typeof syncJMShootersToSupabase === 'function') {
+                    await syncJMShootersToSupabase(sb, archivJahr, jmRawGrid);
+                }
+            }
+        } else if (functionName === 'jahresmeisterschaftZuruecksetzen') {
+            if (!confirm("ACHTUNG: Dies setzt alle Resultate für das neue Jahr auf 0 zurück!\n\nFortfahren?")) {
+                return;
+            }
+            if (sb && window._jmIsSupabase) {
+                showLoadingOverlay("Setze Jahresmeisterschaft in Supabase zurück...");
+                // Punkte auf 0 setzen
+                const resetGrid = JSON.parse(JSON.stringify(jmRawGrid));
+                for (let r = 5; r < resetGrid.length; r++) {
+                    if (!resetGrid[r]) continue;
+                    for (let c = 6; c < resetGrid[r].length; c++) {
+                        // Wenn es eine Punktspalte ist (Zahl)
+                        if (resetGrid[r][c] !== '' && !isNaN(parseFloat(resetGrid[r][c]))) {
+                            resetGrid[r][c] = '';
+                        }
+                    }
+                }
+                await sb.from('jm_seasons').upsert({
+                    jahr: 'current',
+                    title: 'Jahresmeisterschaft (aktuell)',
+                    raw_grid: resetGrid,
+                    junior_exclusions: [],
+                    is_archived: false,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'jahr' });
+
+                jmRawGrid = resetGrid;
+            }
         }
 
-        showLoadingOverlay(`Führe ${actionLabel} aus... Bitte Geduld, Google Sheets verarbeitet die Daten und berechnet alle Ränge neu...`);
+        // Parallel/Fallback Aufruf an Google Apps Script für Import-Aktionen oder Spiegelung
+        showLoadingOverlay(`Führe ${actionLabel} aus...`);
         
         const payload = {
             action: 'runFunction',
@@ -94,10 +216,21 @@ async function runJMAction(functionName, actionLabel) {
 
         if (data.success) {
             showSuccess(`Aktion erfolgreich: ${data.message || actionLabel}`);
-            // Lade aktuelle Daten neu
-            setTimeout(loadJahresmeisterschaftData, 1000);
+            // Bei Imports auch Supabase mit den neu berechneten Werten synchronisieren
+            if (functionName.startsWith('importiere') && sb) {
+                setTimeout(async () => {
+                    await window.migrateJMFromGoogleSheets();
+                }, 2000);
+            } else {
+                setTimeout(loadJahresmeisterschaftData, 1000);
+            }
         } else {
-            throw new Error(data.error || "Unbekannter Fehler bei der Ausführung.");
+            if (sb && window._jmIsSupabase && (functionName === 'archiviereJahresmeisterschaft' || functionName === 'jahresmeisterschaftZuruecksetzen')) {
+                showSuccess(`In Supabase erfolgreich ausgeführt (GAS meldet: ${data.error || 'Timeout'})`);
+                setTimeout(loadJahresmeisterschaftData, 1000);
+            } else {
+                throw new Error(data.error || "Unbekannter Fehler bei der Ausführung.");
+            }
         }
     } catch (e) {
         showError("Fehler bei der Aktion: " + e.message);
@@ -113,8 +246,15 @@ async function runDeleteArchivedYearAction(jahr) {
         return;
     }
     
+    const sb = getJMSupabaseClient();
+
     try {
-        showLoadingOverlay(`Lösche Archiv ${jahr}... Bitte Geduld, Google Sheets löscht das Tabellenblatt (kann einen Moment dauern)...`);
+        showLoadingOverlay(`Lösche Archiv ${jahr}...`);
+
+        if (sb && window._jmIsSupabase) {
+            await sb.from('jm_seasons').delete().eq('jahr', jahr);
+            await sb.from('jm_shooters').delete().eq('jahr', jahr);
+        }
         
         const payload = {
             action: 'runFunction',
@@ -134,10 +274,9 @@ async function runDeleteArchivedYearAction(jahr) {
 
         const data = await res.json();
 
-        if (data.success) {
+        if (data.success || (sb && window._jmIsSupabase)) {
             showSuccess(`Archiv ${jahr} wurde erfolgreich gelöscht!`);
             jmCurrentJahr = "current";
-            // Dropdown aktualisieren
             const select = document.getElementById('jm-history-select');
             if (select) {
                 select.value = "current";
@@ -166,7 +305,7 @@ async function addNewAuswaertigesSchiessen() {
     }
 
     try {
-        showLoadingOverlay('Erstelle neues Auswärtsschießen... Bitte Geduld, Google Sheets berechnet alle Ränge neu (kann 10-15 Sek. dauern)...');
+        showLoadingOverlay('Erstelle neues Auswärtsschießen...');
         
         const payload = {
             action: 'runFunction',
@@ -188,7 +327,13 @@ async function addNewAuswaertigesSchiessen() {
         const data = await res.json();
         if (data.success) {
             showSuccess(`Auswärtsschießen '${name}' wurde erfolgreich erstellt.`);
-            loadJahresmeisterschaftData();
+            setTimeout(async () => {
+                if (window.migrateJMFromGoogleSheets) {
+                    await window.migrateJMFromGoogleSheets();
+                } else {
+                    loadJahresmeisterschaftData();
+                }
+            }, 1500);
         } else {
             showError(data.message || "Fehler beim Erstellen.");
         }

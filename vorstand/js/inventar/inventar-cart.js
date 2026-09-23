@@ -448,6 +448,25 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                 };
 
                 console.log("Buche Bar-Verkauf in Buchhaltung...", bhPayload);
+                const sb = (typeof window.getBuchhaltungSupabaseClient === 'function') ? window.getBuchhaltungSupabaseClient() : (typeof window.getInventarSupabaseClient === 'function' ? window.getInventarSupabaseClient() : null);
+                if (sb) {
+                    sb.from('accounting_journal').insert({
+                        id: `bh_vk_${Date.now()}_${seqCounter}`,
+                        jahr: parseInt(bhPayload.jahr, 10),
+                        datum: new Date().toISOString().slice(0, 10),
+                        beleg_nr: bhPayload.beleg_nr,
+                        beschreibung: bhPayload.beschreibung,
+                        konto_soll: String(bhPayload.konto_soll).trim(),
+                        konto_haben: String(bhPayload.konto_haben).trim(),
+                        betrag: Number(bhPayload.betrag || 0),
+                        typ: 'Verkauf',
+                        created_at: new Date().toISOString()
+                    }).then(({ error }) => {
+                        if (error) console.warn('[Inventar -> FiBu] Supabase journal insert error:', error);
+                        else console.log('✅ Materialverkauf in Supabase FiBu gebucht.');
+                    }).catch(e => console.warn('[Inventar -> FiBu] Insert exception:', e));
+                }
+
                 const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) {
@@ -465,6 +484,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
 // =========================================================
 async function verarbeitePfandBuchhaltung(cart, action) {
     try {
+        const sb = (typeof window.getBuchhaltungSupabaseClient === 'function') ? window.getBuchhaltungSupabaseClient() : (typeof window.getInventarSupabaseClient === 'function' ? window.getInventarSupabaseClient() : null);
         if (action === 'checkout') {
             const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
             const kautionsKonto = rawKonto.split('|')[0].trim() || '2030';
@@ -485,6 +505,23 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                     jahr: new Date().getFullYear()
                 };
                 console.log("Buche Bar-Pfand Eingang auf Kautionskonto 2030...", bhPayload);
+                if (sb) {
+                    sb.from('accounting_journal').insert({
+                        id: `bh_depin_${Date.now()}_${seqCounter}`,
+                        jahr: parseInt(bhPayload.jahr, 10),
+                        datum: new Date().toISOString().slice(0, 10),
+                        beleg_nr: bhPayload.beleg_nr,
+                        beschreibung: bhPayload.beschreibung,
+                        konto_soll: String(bhPayload.konto_soll).trim(),
+                        konto_haben: String(bhPayload.konto_haben).trim(),
+                        betrag: betrag,
+                        typ: 'Kaution',
+                        created_at: new Date().toISOString()
+                    }).then(({ error }) => {
+                        if (error) console.warn('[Inventar -> FiBu] Supabase Pfand-Eingang error:', error);
+                    }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
+                }
+
                 const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) console.error("Fehler beim Buchen des Pfands:", resultBh.error);
@@ -513,6 +550,23 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                     jahr: new Date().getFullYear()
                 };
                 console.log("Buche Bar-Pfand Rückzahlung von Kautionskonto 2030...", bhPayload);
+                if (sb) {
+                    sb.from('accounting_journal').insert({
+                        id: `bh_depout_${Date.now()}_${seqCounter}`,
+                        jahr: parseInt(bhPayload.jahr, 10),
+                        datum: new Date().toISOString().slice(0, 10),
+                        beleg_nr: bhPayload.beleg_nr,
+                        beschreibung: bhPayload.beschreibung,
+                        konto_soll: String(bhPayload.konto_soll).trim(),
+                        konto_haben: String(bhPayload.konto_haben).trim(),
+                        betrag: betrag,
+                        typ: 'Kaution',
+                        created_at: new Date().toISOString()
+                    }).then(({ error }) => {
+                        if (error) console.warn('[Inventar -> FiBu] Supabase Pfand-Rückzahlung error:', error);
+                    }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
+                }
+
                 const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) console.error("Fehler beim Buchen der Pfand-Rückgabe:", resultBh.error);

@@ -935,12 +935,15 @@
 
             <!-- NEU: JAHRESMEISTERSCHAFT KK -->
             <div id="view-jahresmeisterschaft" class="module-view">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2>🏅 Jahresmeisterschaft KK</h2>
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <h2 class="mb-0">🏅 Jahresmeisterschaft KK</h2>
+                        <span id="jm-supabase-badge" class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fas fa-database me-1"></i>Supabase Live</span>
+                    </div>
                     <div class="d-flex gap-2 align-items-center">
                         <select id="jm-history-select" class="form-select form-select-sm" style="width: auto;" onchange="loadJahresmeisterschaftData()">
                             <!-- Wird dynamisch gefüllt -->
-                            <option value="current">JM 2025 (Aktuell)</option>
+                            <option value="current">Jahresmeisterschaft (aktuell)</option>
                         </select>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-primary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
