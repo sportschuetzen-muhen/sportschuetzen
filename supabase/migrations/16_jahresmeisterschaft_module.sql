@@ -153,6 +153,14 @@ CREATE POLICY "jm_competitions_delete_auth"
 -- ==============================================================================
 -- UPDATED_AT TRIGGER
 -- ==============================================================================
+CREATE OR REPLACE FUNCTION public.trigger_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE TRIGGER trg_jm_seasons_updated_at
     BEFORE UPDATE ON public.jm_seasons
     FOR EACH ROW

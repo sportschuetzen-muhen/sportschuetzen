@@ -267,7 +267,8 @@ async function saveTermineData() {
       console.log('✅ Supabase erfolgreich aktualisiert.');
     }
 
-    // 2. DUAL-WRITE: Asynchron zu Google Apps Script spiegeln
+    // 2. DUAL-WRITE: Asynchron zu Google Apps Script spiegeln (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     try {
       console.log('📡 Dual-Write zu Google Apps Script wird ausgeführt...');
       apiFetch('termine', '', {
@@ -277,6 +278,7 @@ async function saveTermineData() {
     } catch (gasErr) {
       console.warn('⚠️ Fehler beim Auslösen des Dual-Writes:', gasErr);
     }
+    ------------------------------------------------------- */
 
     if (window.clearUnsaved) window.clearUnsaved();
     if (window.AppCache) window.AppCache.invalidate('termine');

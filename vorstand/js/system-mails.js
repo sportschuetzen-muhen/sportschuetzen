@@ -244,7 +244,8 @@ async function saveSystemMailsData() {
     }
   }
 
-  // 2. DUAL-WRITE: Asynchron zu Google Apps Script (App_Info-Sheet) spiegeln
+  // 2. DUAL-WRITE: Asynchron zu Google Apps Script (App_Info-Sheet) spiegeln (DEAKTIVIERT - Supabase ist Single Source of Truth)
+  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
   try {
     const appInfoPayload = sysMailState.configs.map(cfg => ({
       bezeichnung: cfg.schluessel,  // Spalte A = schluessel (GAS-Kompatibilität)
@@ -267,6 +268,7 @@ async function saveSystemMailsData() {
   } catch (dualWriteErr) {
     console.warn('⚠️ Fehler beim Auslösen des Dual-Writes:', dualWriteErr);
   }
+  ------------------------------------------------------- */
 
   if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
   sysMailOriginal = JSON.parse(JSON.stringify(sysMailState.configs));

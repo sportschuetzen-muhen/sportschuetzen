@@ -677,7 +677,8 @@
       }
     }
 
-    // 4. DUAL-WRITE: Synchronisation zum Google Sheet (Test-Kopie)
+    // 4. DUAL-WRITE: Synchronisation zum Google Sheet (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     if (onProgress) onProgress('Synchronisiere Änderungen zur Google Sheet Test-Kopie (1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0)...');
     try {
       if (typeof apiFetch === 'function') {
@@ -693,8 +694,8 @@
       }
     } catch (sheetErr) {
       console.warn('⚠️ Google Sheet Sync Hintergrundwarnung:', sheetErr);
-      // Fällt nicht hart aus, da Supabase bereits aktuell ist
     }
+    ------------------------------------------------------- */
 
     return stats;
   }

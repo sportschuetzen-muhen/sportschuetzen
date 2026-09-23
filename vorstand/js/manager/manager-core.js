@@ -916,7 +916,8 @@ async function saveContest() {
             if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
             console.log(`✅ [Supabase] ${supaSetups.length} Schützen & ${teamRows.length} Teams erfolgreich gespeichert.`);
 
-            // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund
+            // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund (DEAKTIVIERT - Supabase ist Single Source of Truth)
+            /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
             apiFetch('manager', 'action=saveManagerData', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -933,6 +934,7 @@ async function saveContest() {
             }).catch(err => {
                 console.warn("⚠️ [Dual-Write] GAS-Spiegelung Hinweis:", err.message);
             });
+            ------------------------------------------------------- */
 
         } catch (supaErr) {
             console.warn("⚠️ [Supabase] Fehler beim Speichern, wechsle auf GAS Fallback:", supaErr.message);

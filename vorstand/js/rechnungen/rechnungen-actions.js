@@ -2168,23 +2168,22 @@ window.rnSaveCreateInvoice = async function(event) {
     }
   }
 
-  // 2. Dual-Write to Google Apps Script / Sheets (Background Sync)
+  // 2. Dual-Write to Google Apps Script / Sheets (DEAKTIVIERT - Supabase ist Single Source of Truth)
+  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
   try {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();
-
-    if (!result.success) {
-      console.warn("⚠️ Dual-Write GAS returned error:", result.error);
-    }
-    
-    // Server-Sync mit forceReload = true!
-    setTimeout(async () => {
-      await loadRechnungenData(true, true);
-      await loadInvoiceContactsData();
-    }, 1200);
+    if (!result.success) console.warn("⚠️ Dual-Write GAS returned error:", result.error);
   } catch (err) {
     console.warn("⚠️ Dual-write to Sheets failed (Supabase Master intact):", err);
   }
+  ------------------------------------------------------- */
+  
+  // Schneller UI-Refresh direkt aus Supabase
+  setTimeout(async () => {
+    await loadRechnungenData(true, true);
+    await loadInvoiceContactsData();
+  }, 200);
 };
 
 // EDIT MANUALLY INVOICE MODAL
@@ -2687,23 +2686,22 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
     }
   }
 
-  // 2. Dual-Write to Google Apps Script / Sheets (Background Sync)
+  // 2. Dual-Write to Google Apps Script / Sheets (DEAKTIVIERT - Supabase ist Single Source of Truth)
+  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
   try {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();
-
-    if (!result.success) {
-      console.warn("⚠️ Dual-Write GAS update returned error:", result.error);
-    }
-    
-    // Server-Sync mit forceReload = true!
-    setTimeout(async () => {
-      await loadRechnungenData(true, true);
-      await loadInvoiceContactsData();
-    }, 1200);
+    if (!result.success) console.warn("⚠️ Dual-Write GAS update returned error:", result.error);
   } catch (err) {
     console.warn("⚠️ Dual-write edit to Sheets failed (Supabase Master intact):", err);
   }
+  ------------------------------------------------------- */
+  
+  // Schneller UI-Refresh direkt aus Supabase
+  setTimeout(async () => {
+    await loadRechnungenData(true, true);
+    await loadInvoiceContactsData();
+  }, 200);
 };
 
 // DELETE INVOICE PROMPT
@@ -2735,22 +2733,21 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
     }
   }
 
-  // Dual-Write Delete to GAS / Sheets
+  // Dual-Write Delete to GAS / Sheets (DEAKTIVIERT - Supabase ist Single Source of Truth)
+  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
   try {
     const response = await apiFetch('rechnungen', { action: 'deleteInvoice', invoiceId }, 'POST');
     const result = await response.json();
-
-    if (!result.success) {
-      console.warn("⚠️ Dual-Write GAS delete returned error:", result.error);
-    }
-    
-    // Lazy sync after 1500ms
-    setTimeout(async () => {
-      await loadRechnungenData(true);
-    }, 1500);
+    if (!result.success) console.warn("⚠️ Dual-Write GAS delete returned error:", result.error);
   } catch (err) {
     console.warn("⚠️ Dual-write delete to Sheets failed (Supabase Master intact):", err);
   }
+  ------------------------------------------------------- */
+  
+  // Schneller UI-Refresh direkt aus Supabase
+  setTimeout(async () => {
+    await loadRechnungenData(true);
+  }, 200);
 };
 
 // =====================================================================

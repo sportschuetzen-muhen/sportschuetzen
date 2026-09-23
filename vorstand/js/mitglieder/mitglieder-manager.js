@@ -143,6 +143,8 @@ async function mglSaveMember(event, pn) {
       Niemahnen: nieMahnen ? '1' : '0'
     };
 
+    // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     apiFetch('mitglieder', dualWritePayload, 'POST')
       .then(res => res.json())
       .then(d => {
@@ -150,6 +152,7 @@ async function mglSaveMember(event, pn) {
         else console.log('📡 Dual-Write Google Sheet synchronisiert.');
       })
       .catch(e => console.warn('⚠️ Dual-Write Netzwerkfehler:', e));
+    ------------------------------------------------------- */
 
     // 4. LOKALEN STATE (RAM) AKTUALISIEREN
     if (idx >= 0) {
@@ -328,20 +331,8 @@ async function mglSaveNeu() {
       }
     }
 
-    // 2. DUAL-WRITE: Asynchron an Google Apps Script
-    const payload = {
-      action: 'createIntern',
-      PersonNumber: nextPn,
-      FirstName: vorname,
-      LastName: nachname,
-      BirthDate: geburt,
-      PrimaryEmail: email,
-      Street: strasse,
-      PostCode: plz,
-      City: ort,
-      PrivateMobilePhone: tel
-    };
-
+    // 2. DUAL-WRITE: Asynchron an Google Apps Script (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     apiFetch('mitglieder', payload, 'POST')
       .then(res => res.json())
       .then(resData => {
@@ -349,6 +340,7 @@ async function mglSaveNeu() {
         else console.log('📡 Dual-Write Google Sheet Mitglied angelegt.');
       })
       .catch(e => console.warn('⚠️ GAS Dual-Write Fehler:', e));
+    ------------------------------------------------------- */
 
     const modalEl = document.getElementById('mglModalNeu');
     const modalInstance = bootstrap.Modal.getInstance(modalEl);
