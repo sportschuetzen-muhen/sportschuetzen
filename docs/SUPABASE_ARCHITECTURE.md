@@ -33,7 +33,7 @@
    - [Fachmodul: MAIL-LOG & VERSANDPROTOKOLL](#611-fachmodul-mail-log--versandprotokoll-phase-13--abgeschlossen--im-testbetrieb)
    - [Fachmodul: SYSTEM-MAIL-KONFIGURATION](#612-fachmodul-system-mail-konfiguration-phase-14--abgeschlossen--im-testbetrieb)
    - [Fachmodul: FINANZBUCHHALTUNG (FiBu)](#613-fachmodul-finanzbuchhaltung-fibu-phase-11--abgeschlossen--im-testbetrieb)
-   - [Fachmodul: KK-JAHRESMEISTERSCHAFT](#614-fachmodul-kk-jahresmeisterschaft-phase-15--in-umsetzung)
+   - [Fachmodul: KK-JAHRESMEISTERSCHAFT](#614-fachmodul-kk-jahresmeisterschaft-phase-15--abgeschlossen--im-testbetrieb)
    - [Fachmodul: TEAM MANAGER SUPABASE-FIRST](#615-fachmodul-team-manager-supabase-first-phase-16--geplant)
    - [Fachmodul: GENERALVERSAMMLUNG & PRÄSENZ](#616-fachmodul-generalversammlung--präsenzkontrolle-phase-17--geplant)
    - [PWA & WEBSITE KONSOLIDIERUNG](#617-mitglieder-app--website-konsolidierung-phase-18--geplant)
@@ -1215,7 +1215,7 @@ Sämtliche Tabellen und Modale des Buchhaltungsmoduls wurden nahtlos an den `Tab
 
 ---
 
-### 6.14 Fachmodul: KK-JAHRESMEISTERSCHAFT (Phase 15 – In Umsetzung)
+### 6.14 Fachmodul: KK-JAHRESMEISTERSCHAFT (Phase 15 – Abgeschlossen & im Testbetrieb)
 
 Phase 15 überführt das gesamte Kernmodul der Kleinkaliber-Jahresmeisterschaft von Google Sheets (`Jahresmeisterschaft_GAS_Original` & `Jahresmeisterschaft_GAS_KI_Testcode...`, Spreadsheet-ID `1ye7nbT1lLLYzilwNhw6NnslwvUrtxFuT-ZZJRrG2sT0` / `1Dihy7Xey4DIko8Qw0qnzzRtVqx7TftLueCmUXT7Uv5g`) auf Supabase PostgreSQL.
 
@@ -1289,7 +1289,7 @@ Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden
 | **Phase 12** | **Resultate & Wettkämpfe** | Schiessresultate je Wettbewerb, Jahr & Runde; Team-Zuteilungen; KI-Standblatt-Erkennung Audit-Log (`12_results_module.sql`); Unterstützung Grenzlandcup, Mannschaft & Gruppenmeisterschaft | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 13** | **Mail-Log & Versandprotokoll** | Zentrales, modulübergreifendes E-Mail-Audit-Log (`13_mail_module.sql`, `public.mail_logs`); RPC-Funktion `log_mail_sent()` für GAS-Integration; Frontend-Tab «Versandprotokoll» mit Filtern, Lazy Loading & Detail-Modal | Supabase (Log) / GAS (Versand) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 14** | **System-Mail-Verteiler** | Migration aller automatischen Mail-Empfänger und Abo-Verteiler (`14_system_mail_configs.sql`, `public.system_mail_configs`); RPC-Funktion `get_system_mail()`; Supabase-First UI & Dual-Write zu `App_Info` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock; 1-Klick-Import alter Jahrgänge; Dual-Write (`16_jahresmeisterschaft_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 🚀 **In Umsetzung** |
+| **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock; 1-Klick-Import alter Jahrgänge; Dual-Write (`16_jahresmeisterschaft_module.sql`) | Supabase (Master) ⇄ Google Sheet (Spiegelung) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 📋 **Geplant** |
 | **Phase 17** | **Generalversammlung & Präsenz** | Migration von `gv.js` (Traktanden, Beschlüsse, Präsenz, Stimmberechtigung); Ablösung `Admin_GV_GAS` | Supabase (Master) ⇄ Google Sheet (Spiegelung) | 📋 **Geplant** |
 | **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, Standblatt-Upload und Website-Resultate | Supabase (Master) | 📋 **Geplant** |
@@ -1297,5 +1297,5 @@ Sobald alle Module im Parallelbetrieb mit Dual-Write erfolgreich getestet wurden
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 15 (KK-Jahresmeisterschaft) befindet sich nun in Umsetzung.
+> **Ergebnis:** Mit dieser Roadmap sind alle verbleibenden Arbeitspakete bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und priorisiert. Phase 15 (KK-Jahresmeisterschaft) wurde erfolgreich implementiert und in den Testbetrieb überführt.
 
