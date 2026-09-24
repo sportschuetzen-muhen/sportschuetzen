@@ -1448,6 +1448,8 @@ async function saveContest() {
         });
     });
 
+    // DUAL-WRITE / GOOGLE SHEETS SPIEGELUNG: Deaktiviert (Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     try {
         const res = await apiFetch('manager', 'action=saveManagerData', {
             method: 'POST',
@@ -1464,6 +1466,10 @@ async function saveContest() {
         alert("Fehler beim Speichern: " + e.message);
         setError();
     }
+    ------------------------------------------------------- */
+    appState.isDirty = false;
+    if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
+    setSuccess();
 }
 
 
