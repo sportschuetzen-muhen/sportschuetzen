@@ -57,9 +57,6 @@ window.renderBuchhaltung = function() {
         </button>
       </div>
       <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap" style="gap: 8px;">
-        <span id="bh-supabase-badge" class="badge ${window._bhIsSupabase ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-warning-subtle text-warning border border-warning-subtle'} px-2 py-1.5" title="${window._bhIsSupabase ? 'Supabase PostgreSQL ist aktiv (Live)' : 'Google Apps Script Fallback aktiv'}">
-          <i class="fas ${window._bhIsSupabase ? 'fa-bolt' : 'fa-cloud'} me-1"></i>${window._bhIsSupabase ? 'Supabase Live' : 'Google Sheet'}
-        </span>
         <button class="btn btn-sm btn-outline-secondary" onclick="migrateBuchhaltungFromGoogleSheets()" title="Bestehende Daten aus Google Sheets nach Supabase synchronisieren/importieren">
           <i class="fas fa-file-import me-1"></i>Aus Sheet importieren
         </button>

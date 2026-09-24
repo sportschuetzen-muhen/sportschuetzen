@@ -76,10 +76,6 @@ function showTermineOverlay(show, text) {
 function renderTermineUI(container) {
   if (!container || !adminState) return;
 
-  const isSupabaseBadge = adminState._isSupabase
-    ? '<span class="badge bg-success-subtle text-success border border-success-subtle ms-2"><i class="fas fa-bolt me-1"></i>Supabase Live</span>'
-    : '<span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-2"><i class="fas fa-file-excel me-1"></i>Google Sheets</span>';
-
   container.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <ul class="nav nav-pills" id="termine-tabs">
@@ -94,7 +90,6 @@ function renderTermineUI(container) {
           </a>
         </li>
       </ul>
-      <div>${isSupabaseBadge}</div>
     </div>
 
     <div class="tab-content">

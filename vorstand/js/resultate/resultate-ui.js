@@ -118,14 +118,7 @@ async function syncFallbackToSupabase(rows, contestType, year) {
 
 function updateBackendBadge() {
   const badge = document.getElementById("resultate-backend-badge");
-  if (!badge) return;
-  if (window._resultateIsSupabase) {
-    badge.className = "badge bg-success ms-2";
-    badge.innerHTML = '<i class="fas fa-database me-1"></i> Supabase Master';
-  } else {
-    badge.className = "badge bg-warning text-dark ms-2";
-    badge.innerHTML = '<i class="fas fa-sync me-1"></i> GAS Fallback';
-  }
+  if (badge) badge.remove();
 }
 
 function ensureResultateShell() {
@@ -142,7 +135,6 @@ function ensureResultateShell() {
         <div>
           <div class="d-flex align-items-center">
             <h4 class="m-0 fw-bold">🏁 Resultate – Grenzland</h4>
-            <span id="resultate-backend-badge" class="badge bg-secondary ms-2"><i class="fas fa-database me-1"></i> Prüfe...</span>
           </div>
           <div class="small text-muted mt-1">Teams (R2/R3) werden von der vorherigen Runde übernommen, solange nicht manuell geändert. (Max. 4 Schützen/Team)</div>
         </div>

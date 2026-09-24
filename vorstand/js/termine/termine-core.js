@@ -96,7 +96,7 @@ async function loadTermineData(force = false) {
         }
 
         renderTermineUI(document.getElementById('termine-ui'));
-        updateLastSyncLabel('Zuletzt aktualisiert: Supabase Live (' + new Date().toLocaleTimeString() + ')');
+        updateLastSyncLabel('Zuletzt aktualisiert: ' + new Date().toLocaleTimeString());
         showTermineOverlay(false);
         return;
       } else if (!termRes.error && termine.length === 0) {

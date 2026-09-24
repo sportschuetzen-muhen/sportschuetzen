@@ -148,30 +148,6 @@
             transition: var(--transition);
         }
 
-        /* Supabase Migrated Module Badges */
-        .module-supabase-badge {
-            background: rgba(16, 185, 129, 0.12);
-            color: #059669;
-            border: 1px solid rgba(16, 185, 129, 0.28);
-            font-size: 0.62rem;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 6px;
-            letter-spacing: 0.3px;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            white-space: nowrap;
-        }
-        .sidebar .nav-link .module-supabase-badge {
-            font-size: 0.58rem;
-            padding: 1px 5px;
-            margin-left: auto;
-        }
-        .overview-card-migrated {
-            border-left: 4px solid #10b981 !important;
-            background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(240,253,244,0.45) 100%) !important;
-        }
 
         .content {
             flex: 1;
@@ -603,63 +579,51 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('inventar', this)">
                     <i class="fas fa-boxes"></i> <span class="nav-text">Inventar</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('termine', this)">
                     <i class="fas fa-calendar-alt"></i> <span class="nav-text">Jahresprogramm</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
 
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('system-mails', this)">
                     <i class="fas fa-envelope-open-text"></i> <span class="nav-text">System-Mails</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('anlaesse', this)">
                     <i class="fas fa-calendar-star"></i> <span class="nav-text">Anlässe & Controlling</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('umfragen', this)">
                     <i class="fas fa-calendar-check"></i> <span class="nav-text">Anlässe & Umfragen</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('manager', this)">
                     <i class="fas fa-shield-alt"></i> <span class="nav-text">Team Manager</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('resultate', this)">
                     <i class="fas fa-trophy"></i> <span class="nav-text">Resultate</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,vermieter,kassier"
                      onclick="navTo('vermietung', this)">
                     <i class="fas fa-home"></i> <span class="nav-text">Vermietung</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('jahresmeisterschaft', this)">
                     <i class="fas fa-medal"></i> <span class="nav-text">Jahresmeisterschaft KK</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('mail', this)">
                     <i class="fas fa-envelope"></i> <span class="nav-text">Mail</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('jahresbeitrag', this)">
                     <i class="fas fa-coins"></i> <span class="nav-text">Jahresbeitrag</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('rechnungen', this)">
                     <i class="fas fa-file-invoice"></i> <span class="nav-text">Rechnungen</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,kassier"
                      onclick="navTo('buchhaltung', this)">
@@ -668,7 +632,6 @@
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar"
                      onclick="navTo('mitglieder', this)">
                     <i class="fas fa-users"></i> <span class="nav-text">Mitglieder</span>
-                    <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('archiv', this)">
@@ -716,147 +679,105 @@
                 </div>
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <p class="text-muted mb-0 fw-medium">Wähle einen Bereich im Menü aus:</p>
-                    <span class="module-supabase-badge" style="font-size: 0.72rem; padding: 4px 10px;">
-                        <i class="fas fa-database text-success me-1"></i> 7 Module migriert (Anlässe, Umfragen, Vermietung, Mitglieder, Inventar, Jahresprogramm, Resultate)
-                    </span>
                 </div>
                 <div class="row g-3 mt-1">
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('inventar')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🔫 Inventar</h5>
-                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Ausgabe, Rücknahme & Waffenkontrolle</p>
+                            <h5 class="mb-1">🔫 Inventar</h5>
+                            <p class="small text-muted mb-0">Ausgabe, Rücknahme & Waffenkontrolle</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('termine')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">📅 Jahresprogramm</h5>
-                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Termine, Anlässe & Orte</p>
+                            <h5 class="mb-1">📅 Jahresprogramm</h5>
+                            <p class="small text-muted mb-0">Termine, Anlässe & Orte</p>
                         </div>
                     </div>
 
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('system-mails')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">✉️ System-Mails</h5>
-                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Abo-Verteiler & App Info (Supabase Master)</p>
+                            <h5 class="mb-1">✉️ System-Mails</h5>
+                            <p class="small text-muted mb-0">Abo-Verteiler & App Info</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('anlaesse')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5>⭐ Anlässe & Controlling</h5>
-                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Mengenrechner, Helfer, Bestellungen & Marge (Supabase Master)</p>
+                            <h5 class="mb-1">⭐ Anlässe & Controlling</h5>
+                            <p class="small text-muted mb-0">Mengenrechner, Helfer, Bestellungen & Marge</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('umfragen')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5>🗓️ Anlässe & Umfragen</h5>
-                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Umfragen, RSVPs & Mails (Supabase Master)</p>
+                            <h5 class="mb-1">🗓️ Anlässe & Umfragen</h5>
+                            <p class="small text-muted mb-0">Umfragen, RSVPs & Mails</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('manager')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🛡️ Team Manager</h5>
-                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Teams & Schützen-Zuteilung (Supabase Master)</p>
+                            <h5 class="mb-1">🛡️ Team Manager</h5>
+                            <p class="small text-muted mb-0">Teams & Schützen-Zuteilung</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('resultate')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🏆 Resultate</h5>
-                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Ranglisten & Auswertung (Supabase Master)</p>
+                            <h5 class="mb-1">🏆 Resultate</h5>
+                            <p class="small text-muted mb-0">Ranglisten & Auswertung</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,vermieter,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('vermietung')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5>🏠 Vermietung</h5>
-                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Schützenhaus Vermietung verwalten (Supabase Master / Hybrid)</p>
+                            <h5 class="mb-1">🏠 Vermietung</h5>
+                            <p class="small text-muted mb-0">Schützenhaus Vermietung verwalten</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('jahresmeisterschaft')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">🏅 Jahresmeisterschaft KK</h5>
-                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Kleinkaliber Meisterschaft verwalten (Supabase Master)</p>
+                            <h5 class="mb-1">🏅 Jahresmeisterschaft KK</h5>
+                            <p class="small text-muted mb-0">Kleinkaliber Meisterschaft verwalten</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('mail')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5 class="mb-0">📧 Mail</h5>
-                                <span class="module-supabase-badge" title="Supabase Modul"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Verteiler & Versandprotokoll (Supabase-Log)</p>
+                            <h5 class="mb-1">📧 Mail</h5>
+                            <p class="small text-muted mb-0">Verteiler & Versandprotokoll</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('jahresbeitrag')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5>💰 Jahresbeitrag</h5>
-                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Beitragsverwaltung, Schnellerfassung & Gebühren (Supabase Master)</p>
+                            <h5 class="mb-1">💰 Jahresbeitrag</h5>
+                            <p class="small text-muted mb-0">Beitragsverwaltung, Schnellerfassung & Gebühren</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('rechnungen')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5>🧾 Rechnungen</h5>
-                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Zentrales Rechnungs-Management & QR-PDF</p>
+                            <h5 class="mb-1">🧾 Rechnungen</h5>
+                            <p class="small text-muted mb-0">Zentrales Rechnungs-Management & QR-PDF</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,kassier">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('buchhaltung')" style="cursor:pointer">
-                            <h5>📊 Buchhaltung</h5>
-                            <p class="small text-muted">Doppelte Buchhaltung & KMU-Berichte</p>
+                            <h5 class="mb-1">📊 Buchhaltung</h5>
+                            <p class="small text-muted mb-0">Doppelte Buchhaltung & KMU-Berichte</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar">
-                        <div class="card p-3 shadow-sm border-0 h-100 overview-card-migrated"
+                        <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('mitglieder')" style="cursor:pointer">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <h5>👥 Mitglieder</h5>
-                                <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase</span>
-                            </div>
-                            <p class="small text-muted">Mitgliederliste, SSV-Import & Dual-Sync (Supabase Master)</p>
+                            <h5 class="mb-1">👥 Mitglieder</h5>
+                            <p class="small text-muted mb-0">Mitgliederliste, SSV-Import & Stammdaten</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
@@ -935,7 +856,6 @@
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div class="d-flex align-items-center gap-2">
                         <h2 class="mb-0">🏠 Vermietung Cockpit</h2>
-                        <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase Master</span>
                     </div>
                 </div>
                 <div id="vermietung-container"></div>
@@ -946,7 +866,6 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2">
                         <h2 class="mb-0">🏅 Jahresmeisterschaft KK</h2>
-                        <span id="jm-supabase-badge" class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fas fa-database me-1"></i>Supabase Live</span>
                     </div>
                     <div class="d-flex gap-2 align-items-center">
                         <select id="jm-history-select" class="form-select form-select-sm" style="width: auto;" onchange="loadJahresmeisterschaftData()">
@@ -1106,7 +1025,6 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div class="d-flex align-items-center gap-2">
             <h2 class="mb-0">👥 Mitglieder</h2>
-            <span class="module-supabase-badge"><i class="fas fa-database"></i> Supabase Master</span>
         </div>
     </div>
     <div id="mitglieder-container"></div>

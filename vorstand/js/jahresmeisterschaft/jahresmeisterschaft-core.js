@@ -21,26 +21,8 @@ window.getJMSupabaseClient = getJMSupabaseClient;
 // Live Badge Aktualisierung
 function updateJMSupabaseBadge(isSupabase) {
     window._jmIsSupabase = Boolean(isSupabase);
-    let badge = document.getElementById('jm-supabase-badge');
-    if (!badge) {
-        const headerTitle = document.querySelector('#view-jahresmeisterschaft h2');
-        if (headerTitle) {
-            badge = document.createElement('span');
-            badge.id = 'jm-supabase-badge';
-            headerTitle.parentNode.insertBefore(badge, headerTitle.nextSibling);
-        }
-    }
-    if (badge) {
-        if (isSupabase) {
-            badge.className = 'badge bg-success-subtle text-success border border-success-subtle px-2 py-1 ms-2';
-            badge.innerHTML = '<i class="fas fa-database me-1"></i>Supabase Live';
-            badge.title = 'Daten werden mit Sub-Sekunden-Geschwindigkeit direkt aus Supabase PostgreSQL geladen.';
-        } else {
-            badge.className = 'badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1 ms-2';
-            badge.innerHTML = '<i class="fas fa-cloud me-1"></i>GAS Fallback';
-            badge.title = 'Daten werden über das Google Apps Script Backend geladen.';
-        }
-    }
+    const badge = document.getElementById('jm-supabase-badge');
+    if (badge) badge.remove();
 }
 window.updateJMSupabaseBadge = updateJMSupabaseBadge;
 

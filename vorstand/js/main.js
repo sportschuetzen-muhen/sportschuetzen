@@ -649,75 +649,10 @@ function showApp() {
 }
 
 // =========================================================
-//  PRELOAD STATUS INDIKATOREN (Subtiler Spinner / Checkmark)
+//  PRELOAD STATUS INDIKATOREN (Visuelle Indikatoren entfernt)
 // =========================================================
-function ensurePreloadStyles() {
-    if (document.getElementById('preload-spinner-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'preload-spinner-styles';
-    style.textContent = `
-        .preload-status {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            pointer-events: none;
-        }
-        .preload-spinner {
-            width: 9px;
-            height: 9px;
-            border: 1.5px solid rgba(13, 110, 253, 0.25);
-            border-top-color: #0d6efd;
-            border-radius: 50%;
-            animation: preload-spin 0.8s linear infinite;
-        }
-        .preload-success {
-            color: #198754;
-            font-size: 11px;
-            animation: preload-fade 1.6s forwards;
-        }
-        @keyframes preload-spin {
-            to { transform: rotate(360deg); }
-        }
-        @keyframes preload-fade {
-            0% { opacity: 1; transform: scale(1); }
-            70% { opacity: 1; transform: scale(1); }
-            100% { opacity: 0; transform: scale(0.8); }
-        }
-    `;
-    document.head.appendChild(style);
-}
-
 window.setPreloadStatus = function(viewId, status) {
-    ensurePreloadStyles();
-    const link = Array.from(document.querySelectorAll('#sidebar .nav-link, .card')).find(el => {
-        const oc = el.getAttribute('onclick') || '';
-        return oc.includes(`navTo('${viewId}'`) || oc.includes(`navTo("${viewId}"`);
-    });
-    if (!link) return;
-
-    link.style.position = 'relative';
-
-    const oldStatus = link.querySelector('.preload-status');
-    if (oldStatus) oldStatus.remove();
-
-    if (status === 'loading') {
-        const span = document.createElement('span');
-        span.className = 'preload-status preload-spinner';
-        span.title = 'Daten werden im Hintergrund nachgeladen...';
-        link.appendChild(span);
-    } else if (status === 'success') {
-        const span = document.createElement('span');
-        span.className = 'preload-status preload-success';
-        span.innerHTML = '<i class="fas fa-check"></i>';
-        span.title = 'Daten im Hintergrund geladen';
-        link.appendChild(span);
-        setTimeout(() => span.remove(), 1600);
-    }
+    // Visuelle Spinner & Häkchen deaktiviert – Hintergrund-Laden erfolgt lautlos
 };
 
 // =========================================================

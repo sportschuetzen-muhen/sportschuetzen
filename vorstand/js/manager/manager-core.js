@@ -749,9 +749,6 @@ function ensureManagerShell() {
                     <option value="mannschaft">👥 Mannschaft</option>
                     <option value="gruppe">🎯 Gruppe (SGM)</option>
                 </select>
-                <span id="manager-backend-badge" class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
-                    <i class="fas fa-database me-1"></i>Supabase Live
-                </span>
                 <button class="btn btn-outline-secondary btn-sm" onclick="addTeamToState()" title="Neues Team">
                     <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Team</span>
                 </button>

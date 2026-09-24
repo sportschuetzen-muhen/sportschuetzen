@@ -101,16 +101,7 @@ function processContestData(data, config) {
 
 function updateManagerBackendBadge() {
     const badge = document.getElementById('manager-backend-badge');
-    if (!badge) return;
-    if (window._managerIsSupabase) {
-        badge.className = 'badge bg-success-subtle text-success border border-success-subtle px-2 py-1';
-        badge.innerHTML = '<i class="fas fa-database me-1"></i>Supabase Live';
-        badge.title = 'Daten stammen direkt aus Supabase PostgreSQL (Master)';
-    } else {
-        badge.className = 'badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1';
-        badge.innerHTML = '<i class="fas fa-cloud me-1"></i>GAS Fallback';
-        badge.title = 'Fallback-Modus: Daten stammen aus Google Apps Script';
-    }
+    if (badge) badge.remove();
 }
 
 function renderContestUI() {

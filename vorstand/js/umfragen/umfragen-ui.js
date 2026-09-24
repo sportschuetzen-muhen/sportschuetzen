@@ -246,9 +246,6 @@ function renderUmfragenUI(container) {
                         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                             <div class="d-flex align-items-center gap-2">
                                 <h5 class="card-title mb-0">&#128640; Tools & GV-Steuerung</h5>
-                                <span id="gv-backend-badge" class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
-                                    <i class="fas fa-database me-1"></i>Supabase Live
-                                </span>
                             </div>
                             <div class="d-flex gap-2">
                                 <button class="btn btn-outline-secondary btn-sm write-protected" onclick="migrateGVFromGoogleSheets()" title="Aus Google Sheets importieren">
@@ -452,15 +449,6 @@ async function ensureMembersLookup() {
 
 function updateGVBackendBadge() {
     const badge = document.getElementById('gv-backend-badge');
-    if (!badge) return;
-    if (window._gvIsSupabase) {
-        badge.className = 'badge bg-success-subtle text-success border border-success-subtle px-2 py-1';
-        badge.innerHTML = '<i class="fas fa-database me-1"></i>Supabase Live';
-        badge.title = 'GV-Stammdaten & Präsenz stammen direkt aus Supabase PostgreSQL (Master)';
-    } else {
-        badge.className = 'badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1';
-        badge.innerHTML = '<i class="fas fa-cloud me-1"></i>GAS Fallback';
-        badge.title = 'Fallback-Modus: Daten stammen aus Google Apps Script';
-    }
+    if (badge) badge.remove();
 }
 window.updateGVBackendBadge = updateGVBackendBadge;

@@ -44,15 +44,6 @@ function renderInventarUI(container) {
     ➕ Admin
 </button>` : ''}
             <div class="ms-auto d-flex gap-2 align-items-center">
-                ${inventarState?._isSupabase ? `
-                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 small" title="Verbunden mit Supabase PostgreSQL">
-                        <i class="fas fa-database me-1"></i> Supabase Live
-                    </span>
-                ` : `
-                    <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1 small" title="Legacy Google Apps Script Mode">
-                        <i class="fas fa-file-excel me-1"></i> Google Sheets
-                    </span>
-                `}
                 <!-- Google Sheets Import (Deaktiviert nach Cut-Over) -->
                 <!--
                 <button class="btn btn-outline-secondary nav-btn btn-sm" onclick="syncInventarFromLegacy()" title="1-Klick Import aller Daten aus dem Google Sheet nach Supabase">
