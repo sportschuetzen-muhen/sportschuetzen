@@ -32,7 +32,7 @@ Im Rahmen von **Phase 15** und **Phase 19** wurde die Zielarchitektur auf **Supa
 * **Ja für Website und PWA:**
   * **Website (`sportschuetzen-website`):** [`resultate.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/js/resultate.js#L141-L166) (`loadJahresmeisterschaft()`) fragt `public.jm_shooters?jahr=eq.current&order=rang.asc` via Supabase REST API ab.
   * **Mitglieder-PWA:** [`app_jm.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/app_jm.html#L207-L225) (`loadJMData()`) fragt ebenfalls exklusiv `public.jm_shooters?jahr=eq.current&order=rang.asc` aus Supabase ab.
-* **Vorstand-Cockpit:** Verwendet eine **Supabase-First**-Strategie in [`jahresmeisterschaft-core.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-core.js#L68-L105). Falls Supabase Daten enthält, wird mit `< 30 ms` Latenz direkt aus `public.jm_seasons` geladen und das grüne Badge `Supabase Live` angezeigt. Ein GAS-Fallback existiert nur als passiver Notfallpfad.
+* **Vorstand-Cockpit:** Verwendet eine **Supabase-First**-Strategie in [`jahresmeisterschaft-core.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-core.js#L68-L105). Falls Supabase Daten enthält, wird mit `< 30 ms` Latenz direkt aus `public.jm_seasons` geladen. Ein GAS-Fallback existiert nur als passiver Notfallpfad.
 
 ### 2.3 Sind die komplexen Berechnungsfunktionen alle auf Supabase?
 * **Nein, nicht als Datenbank-Funktionen (PostgreSQL Stored Procedures / Triggers).**
@@ -71,7 +71,7 @@ Result: [] (Count: 0)
 ### 3.2 Die Kettenreaktion
 1. **Vorstandscockpit:**
    * [`loadJahresmeisterschaftData()`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-core.js#L72-L78) fragt Supabase ab. Da 0 Datensätze zurückkommen (`seasonsList.length === 0`), springt das Cockpit in den **GAS-Fallback**.
-   * Die Funktion ruft `updateJMSupabaseBadge(false)` auf -> Anzeige wechselt auf das gelbe Badge **`GAS Fallback`**.
+   * Die Funktion fällt auf GAS zurück und zeigt einen auffälligen Warn-Banner mit Import-Button an.
 2. **Website & PWA:**
    * Die Website ([`resultate.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/js/resultate.js#L143)) und die PWA ([`app_jm.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/app_jm.html#L213)) fragen `public.jm_shooters?jahr=eq.current` ab.
    * Da keine Zeilen in Supabase existieren, erhalten beide ein leeres Array `[]`.
@@ -103,7 +103,7 @@ Result: [] (Count: 0)
   * Speichert die 2D-Grids in `jm_seasons`.
   * Führt `syncJMShootersToSupabase()` aus, um `jm_shooters` zu befüllen.
 - [ ] **Erfolgsprüfung:**
-  * Prüfen, ob das Badge im Vorstand auf grün **`Supabase Live`** wechselt.
+  * Prüfen, ob der Fallback-Warnbanner im Vorstand verschwindet und die Daten direkt aus Supabase laden.
   * Prüfen, ob auf der Vereinswebsite (`/resultate.html`) Liga 1 und Liga 2 mit Rängen und Punkten gerendert werden.
   * Prüfen, ob in der Mitglieder-PWA (`/app/app_jm.html`) die Ranglisten sichtbar sind.
 

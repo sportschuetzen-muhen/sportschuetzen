@@ -117,7 +117,7 @@ Die Migration von Google Sheets / Google Apps Script (GAS) auf Supabase folgt f�
 └──────────────────────────────────────────────┘
 ```
 
-> **Visuelle Kennzeichnung im Vorstand-Portal:** Erfolgreich auf Supabase migrierte Module (**Anlässe & Controlling**, **Vermietung**, **Mitglieder**) sind in der linken Navigations-Sidebar sowie im Dashboard (Übersichtskarten) mit einem einheitlichen `Supabase`-Badge optisch hervorgehoben.
+> **UI-Design im Vorstand-Portal:** Da sämtliche Kernmodule erfolgreich auf Supabase migriert wurden, wurden temporäre Migrations-Badges und Banner entfernt. Das Vorstand-Portal präsentiert sich nun einheitlich im finalen Produktions-Design ohne visuelles Rauschen.
 
 ### Rollenverteilung der Teilsysteme
 
@@ -1028,8 +1028,8 @@ Die Verwaltung des gesamten Vereinsinventars (Sportwaffen, Schlüssel, Vereinskl
    - `inventar-cart.js`: Transaktionen werden sofort in Supabase persistiert (Status-Update der Artikel, Transaction-Insert, Kautionseintrag). Der asynchrone Dual-Write an das alte Google Apps Script (`183MBGdaNw_qSZdNQPTxui3gsend9pOkpEpC2K3G7O2U`) sowie die FiBu-Spiegelung an Google wurden deaktiviert (auskommentiert; Supabase Single Source of Truth).
    - `inventar-list.js`: Neuanlage, Bearbeitung und Löschung von Inventargegenständen direkt über Supabase REST. Der redundante Dual-Write an Google Sheets ist auskommentiert.
    - 1-Klick-Import (`syncInventarFromLegacy()`): Deaktiviert nach vollzogenem Cut-Over.
-3. **Optische Kennzeichnung:**
-   - Grüner `Supabase Live`-Badge in der Modul-Kopfzeile, Sidebar-Navigation und auf der Dashboard-Übersichtskarte.
+3. **UI-Design:**
+   - Bereinigt auf standardisiertes Produktions-Design ohne temporäre Migrations-Badges.
 
 ---
 
@@ -1179,8 +1179,7 @@ Phase 14 überführt alle systemweiten E-Mail-Verteiler und automatischen Benach
 **Frontend-Integration (`vorstand/js/system-mails.js`, `vorstand/index.html`):**
 - Supabase-First Laderoutine mit automatischem Fallback auf GAS `loadAdminData`.
 - Mitglieder-Dropdown wird dynamisch aus `public.members` befüllt.
-- Speichern erfolgt primär in Supabase (< 50 ms) mit asynchronem Dual-Write zu Google Apps Script (`App_Info`-Sheet).
-- Grüner `Supabase`-Badge in der Sidebar und auf der Dashboard-Übersichtskarte.
+- Speichern erfolgt primär in Supabase (< 50 ms) mit asynchronem Dual-Write zu Google Apps Script (`App_Info`-Sheet, im Cut-Over deaktiviert).
 
 ---
 
@@ -1244,7 +1243,6 @@ Phase 16 bindet das Frontend des Team Managers (`vorstand/js/manager/`) vollstä
 - **Asynchroner Dual-Write (Deaktiviert / Cut-Over):** Die redundante Hintergrundspiegelung an Google Sheets (`Setup_Grenzland`, `Setup_Mannschaft`, `Setup_Gruppe`) wurde auskommentiert; Supabase ist Single Source of Truth. Der Reaktivierungs-Codeblock bleibt im Code dokumentiert.
 - **Operative GAS-Dienste erhalten:** E-Mail-Versand (`action=sendMail`) via Gmail, 1-Klick-Import (`migrateManagerFromGoogleSheets()`) sowie Offline-Ladefallback bleiben für Notfälle voll funktionsfähig.
 - **Mail-Audit-Log:** Automatische Protokollierung aller Aufgebots- und Einladungs-Mails in `public.mail_logs` (Phase 13).
-- **Visuelle Badges:** Live-Badge `Supabase Live` in der Manager-Toolbar sowie Kennzeichnung in Sidebar und Dashboard.
 - **Nahtlose Resultate-Kopplung:** `syncSetupToResultate()` in Phase 12 greift direkt auf dieselben `contest_setups` zu.
 
 ---
@@ -1270,7 +1268,7 @@ Phase 17 überführt das gesamte Modul der Generalversammlung (GV-Stammdaten, Tr
 - `umfragen-controlling.js`: Supabase-First Laderoutine `initGVControllingTab()` mit automatischem Vorstandsabgleich aus `public.members` und Auto-Seed bei leeren Tabellen.
 - `saveGVData()`: Atomares Speichern in `public.gv_instances` mit asynchronem Dual-Write an Google Apps Script.
 - `loadGVParticipants(eventId)`: Direkte Verknüpfung von `public.members` mit `public.poll_responses` und automatische Synchronisation mit `public.gv_praesenz`.
-- `umfragen-ui.js`: Live-Backend-Badge `Supabase Live` und 1-Klick-Importfunktion `migrateGVFromGoogleSheets()`.
+- `umfragen-ui.js`: 1-Klick-Importfunktion `migrateGVFromGoogleSheets()`.
 - `gv.js`: Parität für Standalone-Referenz hergestellt.
 
 ---
@@ -1325,6 +1323,16 @@ Für die Module mit vollständigem Supabase-Datenbestand wurden die asynchronen 
 - Google Calendar Belegungs-Einträge
 - Mailversand über Gmail (Rechnungsmails, Verträge, Mahnungen, Team-Aufgebote)
 - Mobile PWA Standblatt-Uploads nach Cloudflare R2
+
+---
+
+### 6.19 UI-Konsolidierung & Bereinigung des Vorstand-Cockpits
+
+Nach Abschluss der Modul-Migrationen und Etablierung von Supabase als Single Source of Truth wurde die Cockpit-Benutzeroberfläche bereinigt:
+- **Entfernung visueller Migrations-Badges:** Die temporären grünen Badges (`.module-supabase-badge`) in der Sidebar-Navigation und auf den Dashboard-Karten wurden restlos entfernt.
+- **Wiederherstellung des Standard-Karten-Designs:** Die Klasse `.overview-card-migrated` (grüner Akzentrand & Farbverlauf) sowie das Fortschrittsbanner auf dem Dashboard wurden entfernt; alle Module präsentieren sich nun im einheitlichen, sauberen Produktions-Look.
+- **Deaktivierung visueller Preload-Häkchen:** Die Lade-Spinner und Häkchen (`preload-status`, `preload-success` mit `<i class="fas fa-check"></i>`) in `vorstand/js/main.js` wurden deaktiviert. Das Nachladen der Module im Hintergrund erfolgt nun komplett lautlos.
+- **Bereinigung von Modul-Kopfzeilen:** Dynamische `Supabase Live` / `Supabase Master`-Badges in den Titelleisten (Vermietung, Jahresmeisterschaft, Team Manager, Resultate, Jahresprogramm, Inventar, Buchhaltung, Umfragen/GV, Mitglieder) wurden entfernt.
 
 ---
 
