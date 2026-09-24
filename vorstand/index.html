@@ -953,11 +953,16 @@
                             <!-- Wird dynamisch gefüllt -->
                             <option value="current">Jahresmeisterschaft (aktuell)</option>
                         </select>
+                        <button class="btn btn-sm btn-outline-primary write-protected" onclick="migrateJMFromGoogleSheets()" title="Daten aus Google Sheets nach Supabase importieren">
+                            <i class="fas fa-file-import me-1"></i> Google Sheets Import
+                        </button>
                         <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-primary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
                                 ⚙️ Aktionen
                             </button>
                             <ul class="dropdown-menu" id="jm-actions-menu">
+                                <li><a class="dropdown-item text-primary fw-semibold" href="#" onclick="migrateJMFromGoogleSheets()"><i class="fas fa-file-import me-2"></i>Aus Google Sheet importieren</a></li>
+                                <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereKantonalstichDaten', 'Kantonalstich importieren')">Import: Kantonalstich</a></li>
                                 <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVerbandsschiessendaten', 'Verbandsschiessen importieren')">Import: Verband</a></li>
                                 <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVereinswettschiessendaten', 'Vereinswettschiessen importieren')">Import: Vereinswettschiessen</a></li>

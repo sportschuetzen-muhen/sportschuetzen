@@ -143,6 +143,23 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
         renderJahresmeisterschaft(jmRawGrid);
         updateJMSupabaseBadge(false);
 
+        // Auffälliger Migrations-Hinweis bei GAS-Fallback
+        const container = document.getElementById('jahresmeisterschaft-container');
+        if (container) {
+            const banner = document.createElement('div');
+            banner.className = 'alert alert-warning d-flex justify-content-between align-items-center mb-3 shadow-sm';
+            banner.innerHTML = `
+                <div>
+                    <i class="fas fa-exclamation-triangle me-2 fs-5"></i>
+                    <strong>Hinweis:</strong> Die Daten laufen derzeit im <b>Google Sheets Fallback</b>, weil Supabase noch keine Daten enthält. Website und PWA zeigen Resultate erst nach dem Import.
+                </div>
+                <button class="btn btn-sm btn-primary ms-3 text-nowrap" onclick="migrateJMFromGoogleSheets()">
+                    <i class="fas fa-file-import me-1"></i> Jetzt nach Supabase importieren
+                </button>
+            `;
+            container.prepend(banner);
+        }
+
         if (historySelect) {
             historySelect.dataset.loadedYear = jmCurrentJahr;
         }
