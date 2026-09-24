@@ -1210,7 +1210,7 @@ Sämtliche Tabellen und Modale des Buchhaltungsmoduls wurden nahtlos an den `Tab
 - **Inventar / Materialwart (`inventar-cart.js`):** Bar-Verkäufe und Kautionen/Depots (checkout/checkin) werden direkt in `accounting_journal` gebucht.
 
 **Migrations- & Synchronisationswerkzeuge:**
-- **1-Klick-Import (`migrateBuchhaltungFromGoogleSheets()`):** Automatische Übernahme aller Konten, Journal-Einträge, Budgets und Bankregeln aus Google Sheets (`Buchhaltung_GAS`) nach Supabase mit Live-Fortschrittsanzeige.
+- **1-Klick-Import (`migrateBuchhaltungFromGoogleSheets()`):** Automatische Übernahme aller Konten, Journal-Einträge, Budgets und Bankregeln aus Google Sheets (`Buchhaltung_GAS`) nach Supabase mit Live-Fortschrittsanzeige. Inklusive automatischer Erkennung und Nachführung von im Journal verwendeten, aber im Kontenrahmen fehlenden Konten (z. B. Spenden-/Gönnerkonto 3800), um Fremdschlüssel-Fehler (`accounting_journal_konto_haben_fkey`) zuverlässig auszuschliessen.
 - **Asynchroner Dual-Write:** Alle schreibenden Operationen schreiben primär in Supabase (< 50 ms) und spiegeln die Änderungen non-blocking im Hintergrund an Google Sheets.
 
 ---
@@ -1241,8 +1241,8 @@ Phase 15 überführt das gesamte Kernmodul der Kleinkaliber-Jahresmeisterschaft 
 
 Phase 16 bindet das Frontend des Team Managers (`vorstand/js/manager/`) vollständig an die relationalen PostgreSQL-Tabellen `public.contest_setups` und `public.contest_teams` an.
 - **Supabase-First Laden & Speichern:** Sub-Sekunden Ladezeit (< 30 ms) direkt via PostgREST aus `contest_setups`, `contest_teams` und `members` (aktive Mitglieder).
-- **Asynchroner Dual-Write:** Non-blocking Hintergrundspiegelung an Google Apps Script (`mannschaft_homepage_GAS`) und Google Sheets (`Setup_Grenzland`, `Setup_Mannschaft`, `Setup_Gruppe`).
-- **1-Klick-Import (`migrateManagerFromGoogleSheets()`):** Direkter Import bestehender Zuteilungen aus Google Sheets in Supabase.
+- **Asynchroner Dual-Write (Deaktiviert / Cut-Over):** Die redundante Hintergrundspiegelung an Google Sheets (`Setup_Grenzland`, `Setup_Mannschaft`, `Setup_Gruppe`) wurde auskommentiert; Supabase ist Single Source of Truth. Der Reaktivierungs-Codeblock bleibt im Code dokumentiert.
+- **Operative GAS-Dienste erhalten:** E-Mail-Versand (`action=sendMail`) via Gmail, 1-Klick-Import (`migrateManagerFromGoogleSheets()`) sowie Offline-Ladefallback bleiben für Notfälle voll funktionsfähig.
 - **Mail-Audit-Log:** Automatische Protokollierung aller Aufgebots- und Einladungs-Mails in `public.mail_logs` (Phase 13).
 - **Visuelle Badges:** Live-Badge `Supabase Live` in der Manager-Toolbar sowie Kennzeichnung in Sidebar und Dashboard.
 - **Nahtlose Resultate-Kopplung:** `syncSetupToResultate()` in Phase 12 greift direkt auf dieselben `contest_setups` zu.
