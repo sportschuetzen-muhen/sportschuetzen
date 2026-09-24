@@ -1024,12 +1024,12 @@ Die Verwaltung des gesamten Vereinsinventars (Sportwaffen, Schlüssel, Vereinskl
    - `public.inventory_audit_log`: Revisionssicheres Änderungsprotokoll für alle administrativen Mutationen.
    - `public.inventory_config`: Zentrale Konfiguration aller Dropdown-Wertelisten.
 2. **Modulares Vorstand-Cockpit (`vorstand/js/inventar/`):**
-   - `inventar-core.js`: Lädt alle Daten blitzschnell (< 60 ms) primär aus Supabase und verknüpft Besitzer und Empfänger direkt mit `public.members`. Transparenter Fallback auf Google Apps Script.
-   - `inventar-cart.js`: Transaktionen werden sofort in Supabase persistiert (Status-Update der Artikel, Transaction-Insert, Kautionseintrag). Ein paralleler, asynchroner Dual-Write an das alte Google Apps Script hält das bestehende Google Spreadsheet (`183MBGdaNw_qSZdNQPTxui3gsend9pOkpEpC2K3G7O2U`) synchron.
-   - `inventar-list.js`: Neuanlage, Bearbeitung und Löschung von Inventargegenständen direkt über Supabase REST.
-   - 1-Klick-Import (`syncInventarFromLegacy()`): Ermöglicht den sofortigen Transfer aller bestehenden Gegenstände, Historien und Pfanddaten aus Google Sheets nach Supabase.
+   - `inventar-core.js`: Lädt alle Daten blitzschnell (< 60 ms) autark aus Supabase und verknüpft Besitzer und Empfänger direkt mit `public.members`. Der Fallback auf Google Apps Script sowie der manuelle Adressbuch-Sync wurden sauber auskommentiert.
+   - `inventar-cart.js`: Transaktionen werden sofort in Supabase persistiert (Status-Update der Artikel, Transaction-Insert, Kautionseintrag). Der asynchrone Dual-Write an das alte Google Apps Script (`183MBGdaNw_qSZdNQPTxui3gsend9pOkpEpC2K3G7O2U`) sowie die FiBu-Spiegelung an Google wurden deaktiviert (auskommentiert; Supabase Single Source of Truth).
+   - `inventar-list.js`: Neuanlage, Bearbeitung und Löschung von Inventargegenständen direkt über Supabase REST. Der redundante Dual-Write an Google Sheets ist auskommentiert.
+   - 1-Klick-Import (`syncInventarFromLegacy()`): Deaktiviert nach vollzogenem Cut-Over.
 3. **Optische Kennzeichnung:**
-   - Grüner `Supabase`-Badge in der Sidebar-Navigation und auf der Dashboard-Übersichtskarte.
+   - Grüner `Supabase Live`-Badge in der Modul-Kopfzeile, Sidebar-Navigation und auf der Dashboard-Übersichtskarte.
 
 ---
 
@@ -1318,6 +1318,7 @@ Für die Module mit vollständigem Supabase-Datenbestand wurden die asynchronen 
 - **KK-Jahresmeisterschaft (`vorstand/js/jahresmeisterschaft/jahresmeisterschaft-manager.js`):** Grid- und Ranglistenmutationen speichern atomar in Supabase ohne Sheet-Lock-Verzögerung.
 - **Generalversammlung (`vorstand/js/umfragen/umfragen-controlling.js` & `vorstand/js/gv.js`):** GV-Stammdaten und Controlling-Einträge schreiben direkt nach Supabase `gv_instances`.
 - **Anlässe & Umfragen (`vorstand/js/umfragen/umfragen-events.js`):** Eventplaner und Umfragen-Konfigurationen schreiben rein nach `poll_events`.
+- **Inventar (`vorstand/js/inventar/`):** Asynchroner Dual-Write an `Vereinsinventar_GAS`, Fallback und Adressbuch-Sync deaktiviert; Supabase ist Single Source of Truth.
 
 **Operative Dienste bleiben 100% aktiv:**
 - PDF-Generierung für Rechnungen & Mietverträge
@@ -1338,7 +1339,7 @@ Für die Module mit vollständigem Supabase-Datenbestand wurden die asynchronen 
 | **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 5** | **Anlässe & Umfragen (Eventplaner)** | Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet | Supabase (Master) ⇄ Google Sheet (Parallelbetrieb) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet (auskommentiert) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 9** | **Jahresbeitrag & Beitragsverwaltung** | Beitragsrechnungen, Detailpositionen, Wettkampfteilnahmen & Gebührenordnung (`11_jahresbeitrag_module.sql`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Layouts & externe Kontakte (`10_invoices_module.sql`); QR-Rechnungs-PDF & Gmail-Versand via GAS | Supabase (Single Source of Truth, Dual-Write deaktiviert) / GAS (PDF/Mail) | ✅ **Abgeschlossen & im Testbetrieb** |
@@ -1350,7 +1351,7 @@ Für die Module mit vollständigem Supabase-Datenbestand wurden die asynchronen 
 | **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; 1-Klick-Import; Mail-Audit-Log (`17_team_manager_module.sql`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 17** | **Generalversammlung & Präsenz** | Migration von GV-Stammdaten, Traktanden, Beschlüssen, Präsenzkontrolle & Stimmberechtigung (`18_generalversammlung_module.sql`); Sub-Sekunden RSVP-Berechnung | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, RSVPs/Umfragen und Website-Resultate; kein Daten-Fallback auf GAS | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 19** | **Finaler Cut-Over (Sheets)** | Gezielte Deaktivierung der redundanten Google-Sheet Dual-Writes für geprüfte Module (Termine, Mitglieder, Rechnungen, Teams, System-Mails, FiBu, Jahresbeitrag, Jahresmeisterschaft, GV, Umfragen); operative Dienste (PDF, Gmail, Kalender) bleiben 100% aktiv | Supabase (Single Source of Truth) | 🟢 **Abgeschlossen (Reversibel)** |
+| **Phase 19** | **Finaler Cut-Over (Sheets)** | Gezielte Deaktivierung der redundanten Google-Sheet Dual-Writes für geprüfte Module (Termine, Mitglieder, Rechnungen, Teams, System-Mails, FiBu, Jahresbeitrag, Jahresmeisterschaft, GV, Umfragen, Inventar); operative Dienste (PDF, Gmail, Kalender) bleiben 100% aktiv | Supabase (Single Source of Truth) | 🟢 **Abgeschlossen (Reversibel)** |
 | **Phase 20** | **Zentrale Mail-Engine (`send-email`)** | Universelle Supabase Edge Function für SMTP-Mailversand. Unterstützt Gmail (aktuell mit App-Passwort) und Infomaniak (Domainhoster); automatische Protokollierung in `mail_logs` & Anbindung an `system_mail_configs`; Frontend Client-API | Supabase Edge Functions / SMTP | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 21** | **Zentrale PDF-Engine (`generate-pdf`)** | Server- und clientseitige PDF-Generierung für Rechnungen (inkl. Schweizer QR-Rechnung SPC 0200 1), Mietverträge und Quittungen; direkte Ablage in Supabase Storage (`operatives-storage`) & Paperless-NGX Integration (`21_pdf_engine_storage.sql`) | Supabase Edge Function / Supabase Storage | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 22** | **Infomaniak Cut-Over & CalDAV** | Umstellung der DNS- und Mailkonten auf Infomaniak; Switch der SMTP-Secrets auf `mail.infomaniak.com`; CalDAV-Kalendersynchronisation als Ersatz für Google Calendar | Infomaniak / Supabase | ⏳ Geplant |

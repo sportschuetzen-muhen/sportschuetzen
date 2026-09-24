@@ -310,7 +310,8 @@ async function saveNewInventarItem(e) {
             }]);
         }
 
-        // Asynchroner Dual-Write zu Google Apps Script
+        // Asynchroner Dual-Write zu Google Apps Script (DEAKTIVIERT - Supabase ist Single Source of Truth)
+        /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
         apiFetch('inventar', '', {
             method: 'POST',
             body: JSON.stringify({ action: isUpdate ? "updateItem" : "addNewItem", targetSheet: target, fields })
@@ -325,6 +326,7 @@ async function saveNewInventarItem(e) {
                 body: JSON.stringify({ action: isUpdate ? "updateItem" : "addNewItem", targetSheet: target, fields })
             });
         }
+        ------------------------------------------------------- */
 
         e.target.reset();
         const idField = document.getElementById('admin-edit-id');
@@ -333,7 +335,7 @@ async function saveNewInventarItem(e) {
         btn.innerText = "Speichern";
         btn.classList.replace('btn-warning','btn-success');
         await loadInventarData(true);
-        alert(isUpdate ? "✅ Änderung gespeichert (Supabase Master & Dual-Write)!" : "✅ Neu erfasst (Supabase Master & Dual-Write)!");
+        alert(isUpdate ? "✅ Änderung gespeichert (Supabase Master)!" : "✅ Neu erfasst (Supabase Master)!");
     } catch (err) {
         alert("Fehler: " + err.message);
     } finally {
@@ -373,7 +375,8 @@ async function deleteInventarItem(target, id) {
             }]);
         }
 
-        // Asynchroner Dual-Write zu Google Apps Script
+        // Asynchroner Dual-Write zu Google Apps Script (DEAKTIVIERT - Supabase ist Single Source of Truth)
+        /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
         apiFetch('inventar', '', {
             method: 'POST',
             body: JSON.stringify({
@@ -395,6 +398,7 @@ async function deleteInventarItem(target, id) {
                 })
             });
         }
+        ------------------------------------------------------- */
 
         await loadInventarData(true);
 

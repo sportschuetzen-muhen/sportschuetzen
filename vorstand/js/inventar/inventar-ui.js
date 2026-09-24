@@ -53,9 +53,12 @@ function renderInventarUI(container) {
                         <i class="fas fa-file-excel me-1"></i> Google Sheets
                     </span>
                 `}
+                <!-- Google Sheets Import (Deaktiviert nach Cut-Over) -->
+                <!--
                 <button class="btn btn-outline-secondary nav-btn btn-sm" onclick="syncInventarFromLegacy()" title="1-Klick Import aller Daten aus dem Google Sheet nach Supabase">
                     <i class="fas fa-cloud-download-alt me-1"></i> Sheet-Sync / Import
                 </button>
+                -->
                 <button class="btn btn-outline-info nav-btn btn-sm fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
                     <i class="fas fa-sync-alt me-1"></i> Neu laden
                 </button>
@@ -304,6 +307,8 @@ function renderInventarUI(container) {
                 </form>
             </div>
 
+            <!-- Adressbuch-Sync (Google Sheets) deaktiviert nach Cut-Over -->
+            <!--
             <div class="card border-0 shadow-sm p-4 mt-4">
                 <h4>🔄 Adressbuch synchronisieren</h4>
                 <p class="text-muted small">Aktualisiert die Personendaten mit der zentralen SSV-Mitgliederdatenbank. Spender und externe Personen bleiben erhalten.</p>
@@ -311,6 +316,7 @@ function renderInventarUI(container) {
                     <i class="fas fa-sync-alt me-2"></i>SSV-Daten jetzt synchronisieren
                 </button>
             </div>
+            -->
         </div>` : ''}
     `;
 }

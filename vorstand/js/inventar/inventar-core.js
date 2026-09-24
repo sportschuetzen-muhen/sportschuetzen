@@ -246,15 +246,18 @@ async function loadInventarData(force = false) {
 
                 initInventarUI(container);
                 return;
-            } else if (!itemsErr && Array.isArray(items) && items.length === 0) {
-                console.log("ℹ️ Supabase inventory_items noch leer. Fallback auf Google Apps Script...");
+            } else if (itemsErr) {
+                throw new Error(itemsErr.message || "Fehler beim Laden von inventory_items");
             }
         } catch (supaErr) {
-            console.warn("Supabase Abfrage für Inventar fehlgeschlagen, wechsle zu GAS:", supaErr);
+            console.error("Supabase Abfrage für Inventar fehlgeschlagen:", supaErr);
+            container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden aus Supabase: ${supaErr.message}</div>`;
+            return;
         }
     }
 
-    // 2. FALLBACK: Aus Google Apps Script laden
+    // 2. FALLBACK: Aus Google Apps Script laden (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     try {
         const res = await apiFetch('inventar', 'action=getInventarData');
         const data = await res.json();
@@ -282,6 +285,7 @@ async function loadInventarData(force = false) {
     } catch (e) {
         container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
     }
+    ------------------------------------------------------- */
 }
 
 function initInventarUI(container) {
@@ -306,9 +310,10 @@ function initInventarUI(container) {
 }
 
 // =========================================================
-//  1-KLICK SYNC VON GOOGLE SHEETS NACH SUPABASE
+//  1-KLICK SYNC VON GOOGLE SHEETS NACH SUPABASE (DEAKTIVIERT - Cut-Over vollzogen)
 // =========================================================
 async function syncInventarFromLegacy() {
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     const supa = getInventarSupabaseClient();
     if (!supa) {
         alert("❌ Supabase-Verbindung nicht verfügbar.");
@@ -497,6 +502,8 @@ async function syncInventarFromLegacy() {
     } finally {
         setInventarBusy(false);
     }
+    ------------------------------------------------------- */
+    alert("ℹ️ Hinweis: Der Google-Sheets-Import ist deaktiviert. Das Inventar läuft autark auf Supabase (Single Source of Truth).");
 }
 window.syncInventarFromLegacy = syncInventarFromLegacy;
 
@@ -531,6 +538,8 @@ function setInventarBusy(status) {
 //  SYNC MEMBERS
 // =========================================================
 async function syncInventarMembers() {
+    // Adressbuch-Sync via Google Apps Script (DEAKTIVIERT - Supabase public.members ist live angebunden)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     if (!confirm("SSV-Daten abrufen und Inventar-Adressbuch aktualisieren?\n\nDies betrifft nur Aktive und Passive aus der zentralen Datenbank. Externe Personen/Spender bleiben erhalten.")) return;
     
     const btn = document.getElementById('btn-sync-members');
@@ -559,6 +568,8 @@ async function syncInventarMembers() {
         btn.disabled = false;
         setInventarBusy(false);
     }
+    ------------------------------------------------------- */
+    alert("ℹ️ Hinweis: Das Inventar ist direkt mit der Supabase-Mitgliederdatenbank (public.members) verknüpft. Ein manueller Sync mit Google Sheets ist nicht mehr erforderlich.");
 }
 
 // =========================================================

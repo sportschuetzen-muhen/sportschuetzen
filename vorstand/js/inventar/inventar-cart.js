@@ -283,7 +283,8 @@ async function handleInventarSubmit(e) {
             console.log("✅ Buchung erfolgreich in Supabase gespeichert!");
         }
 
-        // --- ASYNCHRONER DUAL-WRITE AN GOOGLE APPS SCRIPT ---
+        // --- ASYNCHRONER DUAL-WRITE AN GOOGLE APPS SCRIPT (DEAKTIVIERT - Supabase ist Single Source of Truth) ---
+        /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
         apiFetch('inventar', '', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -301,6 +302,7 @@ async function handleInventarSubmit(e) {
             });
             result = await res.json();
         }
+        ------------------------------------------------------- */
 
         // PDF lokal generieren
         await generateQuittungPDF(
@@ -327,7 +329,7 @@ async function handleInventarSubmit(e) {
         sigPadMitglied?.clear();
         sigPadVorstand?.clear();
 
-        showJournalConfirmationAlert(`${warenkorb.length || 1} Position(en) erfolgreich erfasst (Supabase Master & Dual-Write). Bitte überprüfe die Buchung kurz unten in der Liste.`);
+        showJournalConfirmationAlert(`${warenkorb.length || 1} Position(en) erfolgreich erfasst (Supabase Master). Bitte überprüfe die Buchung kurz unten in der Liste.`);
         localStorage.setItem('inventar-activeTab', 'journal');
         showInventarSection('journal');
         
@@ -467,11 +469,14 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     }).catch(e => console.warn('[Inventar -> FiBu] Insert exception:', e));
                 }
 
+                // DUAL-WRITE: Spiegelung an Buchhaltung_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+                /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
                 const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) {
                     console.error("Fehler beim Buchen:", resultBh.error);
                 }
+                ------------------------------------------------------- */
             }
         }
     } catch (err) {
@@ -522,9 +527,12 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                     }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
                 }
 
+                // DUAL-WRITE: Spiegelung an Buchhaltung_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+                /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
                 const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) console.error("Fehler beim Buchen des Pfands:", resultBh.error);
+                ------------------------------------------------------- */
             }
         } else if (action === 'checkin') {
             // Bar-Pfand zurückbezahlt: Soll 2030 (Kautionen / Depots) an Haben 1000 (Kasse)
@@ -567,9 +575,12 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                     }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
                 }
 
+                // DUAL-WRITE: Spiegelung an Buchhaltung_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+                /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
                 const resBh = await apiFetch('buchhaltung', bhPayload, 'POST');
                 const resultBh = await resBh.json();
                 if (!resultBh.success) console.error("Fehler beim Buchen der Pfand-Rückgabe:", resultBh.error);
+                ------------------------------------------------------- */
             }
         }
     } catch (err) {
