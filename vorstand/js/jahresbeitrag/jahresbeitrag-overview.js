@@ -618,7 +618,8 @@ async function jbSaveZahlung() {
       }
     }
 
-    // 2. Asynchroner Dual-Write in Members100_GAS & Rechnungen_GAS
+    // 2. Asynchroner Dual-Write in Members100_GAS & Rechnungen_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     apiFetch('jahresbeitrag',
       `action=saveZahlung&headerId=${id}&datum=${datum}&methode=${encodeURIComponent(methode)}&beleg=${encodeURIComponent(beleg)}`
     ).then(res => res.json()).then(data => {
@@ -638,6 +639,7 @@ async function jbSaveZahlung() {
         console.warn("⚠️ Fehler bei Zahlungssynchronisierung mit Rechnungen_GAS:", payErr);
       });
     }
+    ------------------------------------------------------- */
 
     // 3. In Buchhaltung_GAS verbuchen via Splitbuchung
     if (typeof window.jbGetSplitBookings === 'function') {
@@ -676,6 +678,8 @@ async function jbSaveZahlung() {
               }).catch(e => console.warn('[Jahresbeitrag -> FiBu] Journal insert exception:', e));
           }
 
+          // Dual-Write zu Buchhaltung_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+          /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
           const payload = splits.length > 1 ? {
             action: 'addJournalEntries',
             jahr: Number(r?.year || new Date().getFullYear()),
@@ -695,6 +699,7 @@ async function jbSaveZahlung() {
             typ: isBar ? 'Kassa' : 'Bank'
           };
           await apiFetch('buchhaltung', payload, 'POST');
+          ------------------------------------------------------- */
         }
       } catch (bhErr) {
         console.warn("⚠️ Fehler bei Buchhaltung Splitbuchung:", bhErr);
@@ -889,7 +894,8 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     }
   }
 
-  // 2. Dual-Write an Rechnungen_GAS
+  // 2. Dual-Write an Rechnungen_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
   if (existingInv) {
     const diff = Math.abs(Number(existingInv.total_amount || 0) - Number(r.Gesamt || 0));
     if (diff > 0.01) {
@@ -951,7 +957,12 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     if (!createRes.success) console.warn("⚠️ Rechnungen_GAS Anlegen-Warnung:", createRes.error);
     if (typeof loadRechnungenData === 'function') loadRechnungenData(true, true);
   }).catch(err => console.warn("⚠️ Rechnungen_GAS Anlegen Netzwerkfehler:", err));
-  
+  ------------------------------------------------------- */
+
+  if (existingInv) {
+    r.invoiceId = existingInv.id;
+    return existingInv.id;
+  }
   r.invoiceId = invoiceId;
   return r.invoiceId;
 }
@@ -1193,12 +1204,14 @@ async function jbBerechnen() {
       }
     }
 
-    // 2. Dual-Write an GAS
+    // 2. Dual-Write an GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     const res  = await apiFetch('jahresbeitrag', `action=berechnen&year=${_jbYear}`);
     const data = await res.json();
     if (!data.success && newlyCalculatedCount === 0) throw new Error(data.error);
+    ------------------------------------------------------- */
 
-    alert(`✅ Beiträge für ${_jbYear} erfolgreich berechnet!`);
+    alert(`✅ Beiträge für ${_jbYear} erfolgreich in Supabase berechnet!`);
     await loadJahresbeitragData(true, false);
   } catch(e) {
     alert('Fehler: ' + e.message);

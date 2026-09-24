@@ -48,7 +48,8 @@ async function saveJahresmeisterschaftData() {
                 syncJMShootersToSupabase(sb, jmCurrentJahr, jmRawGrid).catch(e => console.warn(e));
             }
 
-            // Asynchroner Non-Blocking Dual-Write an Google Sheets (GAS)
+            // Asynchroner Non-Blocking Dual-Write an Google Sheets (GAS) (DEAKTIVIERT - Supabase ist Single Source of Truth)
+            /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
             const dualWritePayload = {
                 action: 'saveJahresmeisterschaft',
                 jahr: jmCurrentJahr,
@@ -74,8 +75,9 @@ async function saveJahresmeisterschaftData() {
             }).catch(err => {
                 console.warn("⚠️ Dual-Write Google Sheets Hintergrundfehler (Supabase blieb intakt):", err);
             });
+            ------------------------------------------------------- */
 
-            showSuccess("Erfolgreich in Supabase gespeichert! (Google Sheet Spiegelung läuft im Hintergrund)");
+            showSuccess("Erfolgreich in Supabase gespeichert!");
             jmPendingUpdates = [];
             jmPendingMoves = [];
             jmExclusionsChanged = false;

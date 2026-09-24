@@ -583,13 +583,15 @@ async function jbSaveGebuehrFromModal() {
       }
     }
 
-    // 2. Dual-Write an GAS
+    // 2. Dual-Write an GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     apiFetch('jahresbeitrag', '', {
       method: 'POST',
       body: JSON.stringify(payload)
     }).catch(err => console.warn("⚠️ Dual-Write GAS Gebühren-Speicherung:", err));
+    ------------------------------------------------------- */
 
-    showToast(`🎉 Gebühr ${key} erfolgreich gespeichert!`);
+    showToast(`🎉 Gebühr ${key} erfolgreich in Supabase gespeichert!`);
 
     // Modal schliessen
     const modalEl = document.getElementById('jbModalGebuehrEdit');

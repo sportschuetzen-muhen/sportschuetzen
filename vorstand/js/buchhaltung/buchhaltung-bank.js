@@ -2762,7 +2762,10 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
         jsonBh = await resBh.json();
         if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen der Splitbuchung im Journal');
       } else {
+        // Dual-Write an GAS deaktiviert (Supabase ist Single Source of Truth)
+        /* --- ZUM REAKTIVIEREN DIESE ZEILE EINKOMMENTIEREN ---
         apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Bank split error:', e));
+        ------------------------------------------------------- */
       }
     } else {
       const payloadBh = {
@@ -2781,7 +2784,10 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
         jsonBh = await resBh.json();
         if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen im Journal');
       } else {
+        // Dual-Write an GAS deaktiviert (Supabase ist Single Source of Truth)
+        /* --- ZUM REAKTIVIEREN DIESE ZEILE EINKOMMENTIEREN ---
         apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Bank single error:', e));
+        ------------------------------------------------------- */
       }
     }
 
@@ -3030,8 +3036,10 @@ window.bhBankBookAll = async function() {
       const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
       serverEntries.forEach(entry => window._bhJournal.push(entry));
     } else {
-      // Async dual write to GAS
+      // Async dual write to GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
       apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Batch all GAS error:', e));
+      ------------------------------------------------------- */
       window._bhJournal = window._bhJournal || [];
       createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
     }
@@ -3297,8 +3305,10 @@ window.bhBankBookSelected = async function() {
       const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
       serverEntries.forEach(entry => window._bhJournal.push(entry));
     } else {
-      // Async dual write to GAS
+      // Async dual write to GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
       apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Batch selected GAS error:', e));
+      ------------------------------------------------------- */
       window._bhJournal = window._bhJournal || [];
       createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
     }

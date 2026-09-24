@@ -1061,7 +1061,8 @@ async function saveGVData(silent = false) {
       if (typeof updateGVBackendBadge === 'function') updateGVBackendBadge();
       console.log(`✅ [Supabase] GV-Instanz für ${year} erfolgreich gespeichert.`);
 
-      // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund
+      // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund (DEAKTIVIERT - Supabase ist Single Source of Truth)
+      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
       const payload = {
         action: "saveAdminData",
         user: user,
@@ -1075,6 +1076,7 @@ async function saveGVData(silent = false) {
         .then(r => r.text())
         .then(txt => console.log("📡 [Dual-Write] GAS-Sync GV abgeschlossen:", txt.slice(0, 80)))
         .catch(err => console.warn("⚠️ [Dual-Write] GAS-Sync Hinweis:", err.message));
+      ------------------------------------------------------- */
 
     } catch (supaErr) {
       console.warn("⚠️ [Supabase] Fehler beim Speichern der GV-Daten, Fallback zu GAS:", supaErr.message);

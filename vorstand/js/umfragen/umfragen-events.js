@@ -399,15 +399,17 @@ async function saveUmfragenData() {
             console.log(`✅ ${pollRows.length} Events erfolgreich in Supabase gespeichert.`);
         }
 
-        // 2. DUAL-WRITE: Google Sheet im Hintergrund synchronisieren (Parallelbetrieb)
+        // 2. DUAL-WRITE: Google Sheet im Hintergrund synchronisieren (Parallelbetrieb) (DEAKTIVIERT - Supabase ist Single Source of Truth)
+        /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
         apiFetch('umfragen', '', {
             method: 'POST',
             body: JSON.stringify(payload)
         }).then(() => console.log("✅ Dual-Write zu Google Sheet erfolgreich"))
           .catch(err => console.warn("⚠️ Dual-Write zu Google Sheet fehlgeschlagen:", err));
+        ------------------------------------------------------- */
 
         window.clearUnsaved();
-        alert("✅ Umfragen erfolgreich gespeichert (Supabase Master & Dual-Write)");
+        alert("✅ Umfragen erfolgreich in Supabase gespeichert!");
         loadUmfragenData();
     } catch(e) {
         alert("Fehler beim Speichern der Umfragen: " + e.message);

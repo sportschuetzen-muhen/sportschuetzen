@@ -222,7 +222,8 @@ window.bhSaveKonto = async function(event) {
       }
     }
 
-    // 2. Dual-Write zu Google Apps Script (Hintergrund)
+    // 2. Dual-Write zu Google Apps Script (Hintergrund) (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     const budgetPayload = {
       action: 'saveBudget',
       konto: payload.konto,
@@ -235,6 +236,7 @@ window.bhSaveKonto = async function(event) {
     apiFetch('buchhaltung', payload, 'POST')
       .then(() => apiFetch('buchhaltung', budgetPayload, 'POST'))
       .catch(e => console.warn("⚠️ GAS Dual-Write saveKonto Warning:", e));
+    ------------------------------------------------------- */
 
     if (typeof showSuccess === 'function') {
       showSuccess(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) und Budget erfolgreich gespeichert!`);
@@ -1548,13 +1550,15 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
       }
     }
 
-    // 2. Dual-Write zu Google Apps Script (Hintergrund)
+    // 2. Dual-Write zu Google Apps Script (Hintergrund) (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     apiFetch('buchhaltung', payload, 'POST')
       .then(r => r.json())
       .then(res => {
         if (!savedEntry && res && res.data) savedEntry = res.data;
       })
       .catch(e => console.warn("⚠️ GAS Dual-Write saveJournalEntry Warning:", e));
+    ------------------------------------------------------- */
 
     showSuccess(payload.id ? "🎉 Buchungssatz erfolgreich aktualisiert!" : "🎉 Buchungssatz erfolgreich im Journal registriert!");
     
@@ -1634,9 +1638,11 @@ window.bhExecuteDeleteJournalDirect = async function(entryId) {
       }
     }
 
-    // 2. Dual-Write zu Google Apps Script (Hintergrund)
+    // 2. Dual-Write zu Google Apps Script (Hintergrund) (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: entryId }, 'POST')
       .catch(e => console.warn("⚠️ GAS Dual-Write deleteJournalEntry Warning:", e));
+    ------------------------------------------------------- */
 
     showSuccess("🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!");
     
@@ -1756,10 +1762,23 @@ window.bhExecuteDeleteSplitGroup = async function(baseBeleg, year) {
   if (siblings.length === 0) return;
 
   try {
+    // 1. Supabase Delete
+    const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      try {
+        await supa.from('accounting_journal').delete().in('id', siblings.map(s => Number(s.id)));
+      } catch (supaErr) {
+        console.warn("⚠️ Supabase delete split group Warning:", supaErr);
+      }
+    }
+
+    // 2. Dual-Write zu GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     for (const item of siblings) {
       await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: item.id }, 'POST');
-      window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(item.id));
     }
+    ------------------------------------------------------- */
+    window._bhJournal = (window._bhJournal || []).filter(j => !siblings.some(s => Number(s.id) === Number(j.id)));
 
     // Falls es ein Bank-Split war: Prüfe ob eine CAMT-Transaktion wieder entkoppelt werden kann
     if (window._bhBankMatchResults && window._bhBankMatchResults.length > 0) {
@@ -2102,15 +2121,20 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
       }
     }
 
-    // 2. Gelöschte Zeilen im GAS-Backend entfernen
+    // 2. Gelöschte Zeilen im GAS-Backend entfernen (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     for (const dId of (deletedIds || [])) {
       apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: dId }, 'POST').catch(() => {});
+    }
+    ------------------------------------------------------- */
+    for (const dId of (deletedIds || [])) {
       window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(dId));
     }
 
     const updatedEntries = [];
 
-    // 3. Bestehende Zeilen in GAS aktualisieren bzw. neue anlegen (Dual-Write)
+    // 3. Bestehende Zeilen in GAS aktualisieren bzw. neue anlegen (Dual-Write) (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     for (let i = 0; i < validRows.length; i++) {
       const vr = validRows[i];
       const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
@@ -2133,6 +2157,22 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
       if (!json.success) throw new Error(json.error || `Fehler bei Zeile #${i + 1}`);
 
       const savedItem = (json.data && json.data.id) ? json.data : { ...payload, id: vr.id || Date.now() + i };
+    ------------------------------------------------------- */
+    for (let i = 0; i < validRows.length; i++) {
+      const vr = validRows[i];
+      const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
+      const belegNr = `${baseBeleg}${subSuffix}`;
+      const savedItem = {
+        id: vr.id || Date.now() + i,
+        jahr: Number(year || new Date().getFullYear()),
+        datum: vr.datum || new Date().toISOString().split('T')[0],
+        beleg_nr: belegNr,
+        beschreibung: vr.beschreibung,
+        konto_soll: vr.konto_soll,
+        konto_haben: vr.konto_haben,
+        betrag: Number(vr.betrag || 0),
+        typ: vr.typ || 'Kassa'
+      };
       
       if (vr.id) {
         const idx = (window._bhJournal || []).findIndex(j => Number(j.id) === Number(vr.id));
@@ -2315,7 +2355,8 @@ window.bhExecuteBatchDeleteJournalEntries = async function() {
       }
     }
 
-    // 2. Dual-Write zu GAS
+    // 2. Dual-Write zu GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     try {
       const response = await apiFetch('buchhaltung', { action: 'deleteJournalEntriesBatch', ids: ids }, 'POST');
       const result = await response.json();
@@ -2346,6 +2387,7 @@ window.bhExecuteBatchDeleteJournalEntries = async function() {
         throw new Error(errorMessage || "Fehler beim Ausführen der Mehrfachlöschung.");
       }
     }
+    ------------------------------------------------------- */
 
     // Modal schliessen
     const modalEl = document.getElementById('bhModalBatchDeleteJournal');
@@ -3045,12 +3087,15 @@ window.bhSaveAllBudgets = async function() {
         .catch(err => console.warn('[Buchhaltung Dual-Write] Budget GAS sync failed:', err));
     });
 
+    // GAS-Dual-Write (DEAKTIVIERT - Supabase ist Single Source of Truth)
+    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
     if (!sb) {
       await Promise.all(savePromises);
     } else {
       // Run GAS sync non-blocking in background
       Promise.all(savePromises).catch(e => console.warn('[Buchhaltung Dual-Write] Background sync failed:', e));
     }
+    ------------------------------------------------------- */
 
     if (typeof showToast === 'function') {
       showToast(`🎉 Budget ${currentYear} für ${successCount} Konten erfolgreich gespeichert!`, 'success');

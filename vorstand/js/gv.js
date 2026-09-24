@@ -679,7 +679,8 @@ async function saveGVData(silent = false) {
       if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
       if (!silent) alert("✅ GV-Daten erfolgreich in Supabase gespeichert!");
 
-      // 2. Asynchroner Non-Blocking Dual-Write zu Google Apps Script
+      // 2. Asynchroner Non-Blocking Dual-Write zu Google Apps Script (DEAKTIVIERT - Supabase ist Single Source of Truth)
+      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
       const payload = {
         action: "saveAdminData",
         user: user,
@@ -694,6 +695,7 @@ async function saveGVData(silent = false) {
         .then(res => res.json())
         .then(gasData => console.log("📡 [GV Dual-Write] Google Apps Script synchronisiert:", gasData))
         .catch(gasErr => console.warn("⚠️ [GV Dual-Write] Warnung: Google Apps Script Sync fehlgeschlagen (Supabase war erfolgreich):", gasErr));
+      ------------------------------------------------------- */
 
       return;
     } catch (sbErr) {
