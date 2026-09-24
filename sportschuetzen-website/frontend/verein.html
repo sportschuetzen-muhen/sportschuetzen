@@ -268,43 +268,23 @@
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
                             <div>
                                 <h3 style="margin-bottom: 0.25rem;">📅 Jahresprogramm & Schiesstage</h3>
-                                <p style="color: var(--text-muted); font-size: 0.95rem;">Übersicht aller vereinsinternen Trainings- und Wettkampftermine.</p>
+                                <p style="color: var(--text-muted); font-size: 0.95rem;">Vollständige Übersicht aller Vereinsanlässe, Schiesstage und Schützenhaus-Belegungen.</p>
                             </div>
                             <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" class="btn btn-secondary" style="font-size: 0.9rem;">
                                 📲 In Schützen-App zu Terminen anmelden
                             </a>
                         </div>
-                        <div style="background: white; border-radius: 12px; padding: 1.5rem; border: 1px solid var(--glass-border);">
-                            <div style="display: flex; gap: 1rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid rgba(0,0,0,0.06);">
-                                <div style="background: rgba(15, 60, 92, 0.1); color: var(--primary-color); font-weight: 800; padding: 0.5rem 0.8rem; border-radius: 10px; text-align: center; min-width: 65px;">
-                                    <div style="font-size: 0.75rem; text-transform: uppercase;">März</div>
-                                    <div style="font-size: 1.3rem; line-height: 1;">28</div>
-                                </div>
-                                <div>
-                                    <h4 style="margin: 0 0 0.2rem; font-size: 1.05rem;">Eröffnungsschiessen 50m</h4>
-                                    <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted);">Saisonauftakt 50m Kleinkaliber im Schützenhaus Rüteli ab 17:30 Uhr</p>
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 1rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid rgba(0,0,0,0.06);">
-                                <div style="background: rgba(15, 60, 92, 0.1); color: var(--primary-color); font-weight: 800; padding: 0.5rem 0.8rem; border-radius: 10px; text-align: center; min-width: 65px;">
-                                    <div style="font-size: 0.75rem; text-transform: uppercase;">April</div>
-                                    <div style="font-size: 1.3rem; line-height: 1;">11</div>
-                                </div>
-                                <div>
-                                    <h4 style="margin: 0 0 0.2rem; font-size: 1.05rem;">Gruppenmeisterschaft 1. Runde</h4>
-                                    <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted);">1. Vorrunde Heimrunde Mannschaft & Einzelwertung</p>
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 1rem; align-items: center; padding: 1rem 0;">
-                                <div style="background: rgba(15, 60, 92, 0.1); color: var(--primary-color); font-weight: 800; padding: 0.5rem 0.8rem; border-radius: 10px; text-align: center; min-width: 65px;">
-                                    <div style="font-size: 0.75rem; text-transform: uppercase;">Mai</div>
-                                    <div style="font-size: 1.3rem; line-height: 1;">02</div>
-                                </div>
-                                <div>
-                                    <h4 style="margin: 0 0 0.2rem; font-size: 1.05rem;">Strohhausschiessen 2026</h4>
-                                    <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted);">Grossanlass mit Gastsektionen aus der ganzen Schweiz</p>
-                                </div>
-                            </div>
+
+                        <!-- Filter Leiste im Jahresprogramm -->
+                        <div class="termine-filter-bar" id="verein-termine-filter-bar" style="justify-content: flex-start; margin-bottom: 1.5rem;">
+                            <button class="termine-filter-btn active" data-filter="all">Alle Termine</button>
+                            <button class="termine-filter-btn" data-filter="jahresprogramm">📅 Jahresprogramm</button>
+                            <button class="termine-filter-btn" data-filter="schiesstermine">🎯 Schiessbetrieb</button>
+                            <button class="termine-filter-btn" data-filter="hauskalender">🏠 Schützenhaus-Kalender</button>
+                        </div>
+
+                        <div id="verein-termine-container" class="termine-list">
+                            <div class="loading-spinner">Jahresprogramm & Google Kalender werden geladen...</div>
                         </div>
                     </div>
                 </div>

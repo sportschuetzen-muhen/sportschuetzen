@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merkblatt & Checkliste Schützenhaus-Miete | Sportschützen Muhen</title>
+  <meta name="robots" content="noindex, follow">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-color: #0f3c5c;
+      --accent-color: #dc2626;
+      --text-dark: #1e293b;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --bg-light: #f8fafc;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-dark);
+      background-color: var(--bg-light);
+      line-height: 1.6;
+      padding: 30px 15px;
+    }
+    .document-page {
+      max-width: 820px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      border: 1px solid var(--border-color);
+    }
+    .top-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: none;
+    }
+    .btn-print {
+      background: var(--primary-color);
+      color: #ffffff;
+    }
+    .btn-print:hover {
+      background: #0a293f;
+    }
+    .btn-back {
+      background: #e2e8f0;
+      color: var(--text-dark);
+    }
+    .btn-back:hover {
+      background: #cbd5e1;
+    }
+    .header-section {
+      border-bottom: 2px solid var(--primary-color);
+      padding-bottom: 20px;
+      margin-bottom: 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+    }
+    .header-title h1 {
+      font-size: 1.8rem;
+      color: var(--primary-color);
+      margin-bottom: 4px;
+    }
+    .header-title p {
+      color: var(--text-muted);
+      font-size: 1rem;
+    }
+    .header-badge {
+      background: rgba(15, 60, 92, 0.08);
+      padding: 8px 14px;
+      border-radius: 6px;
+      text-align: right;
+      font-size: 0.85rem;
+      color: var(--primary-color);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    h2 {
+      font-size: 1.25rem;
+      color: var(--primary-color);
+      margin: 25px 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 6px;
+    }
+    .info-box {
+      background: #f1f5f9;
+      border-left: 4px solid var(--primary-color);
+      padding: 14px 18px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 0.95rem;
+    }
+    .info-box.highlight {
+      background: #fef2f2;
+      border-left-color: var(--accent-color);
+      color: #991b1b;
+    }
+    .rules-list {
+      list-style: none;
+      margin-bottom: 15px;
+    }
+    .rules-list li {
+      padding: 6px 0;
+      display: flex;
+      gap: 10px;
+      font-size: 0.95rem;
+    }
+    .rules-list li i {
+      color: var(--primary-color);
+      margin-top: 4px;
+    }
+    .checklist {
+      list-style: none;
+      margin-bottom: 25px;
+    }
+    .checklist li {
+      padding: 8px 12px;
+      border-bottom: 1px dashed var(--border-color);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 0.95rem;
+    }
+    .checklist li:nth-child(even) {
+      background-color: #fafbfc;
+    }
+    .checklist input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 3px;
+      cursor: pointer;
+    }
+    .contact-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-top: 15px;
+    }
+    .contact-card {
+      background: #f8fafc;
+      padding: 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      font-size: 0.9rem;
+    }
+    .contact-card strong {
+      display: block;
+      color: var(--primary-color);
+      margin-bottom: 4px;
+    }
+    .footer-doc {
+      margin-top: 35px;
+      padding-top: 15px;
+      border-top: 1px solid var(--border-color);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+        padding: 0;
+      }
+      .document-page {
+        box-shadow: none;
+        border: none;
+        padding: 0;
+        max-width: 100%;
+      }
+      .top-actions {
+        display: none !important;
+      }
+      a {
+        text-decoration: none;
+        color: inherit;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="document-page">
+    <div class="top-actions">
+      <a href="schuetzenhaus_vermietung.html" class="btn btn-back">
+        <i class="fa-solid fa-arrow-left"></i> Zurück zur Vermietungsseite
+      </a>
+      <button onclick="window.print()" class="btn btn-print">
+        <i class="fa-solid fa-print"></i> Drucken / Als PDF speichern
+      </button>
+    </div>
+
+    <header class="header-section">
+      <div class="header-title">
+        <h1>Merkblatt & Checkliste</h1>
+        <p>Vermietung Schützenhaus / Schützenstube Muhen</p>
+      </div>
+      <div class="header-badge">
+        Sportschützen Muhen<br>
+        5037 Muhen (AG)
+      </div>
+    </header>
+
+    <div class="info-box">
+      <strong>Grundsatz der Übergabe:</strong> Das Schützenhaus wird dem Mieter sauber übergeben. Die Rückgabe erfolgt durch den Mieter in <strong>besenreinem Zustand</strong>. Damit entfallen teure obligatorische Reinigungsgebühren. Bitte halten Sie sich an folgende Vorgaben.
+    </div>
+
+    <h2><i class="fa-solid fa-key"></i> 1. Schlüsselübergabe & Mietkonditionen</h2>
+    <ul class="rules-list">
+      <li><i class="fa-solid fa-check"></i> <strong>Mietpreis:</strong> CHF 300.- pauschal pro Anlasstag (inkl. Nebenkosten wie Wasser, Strom und Heizung).</li>
+      <li><i class="fa-solid fa-check"></i> <strong>Schlüsseldepot / Kaution:</strong> CHF 100.- in bar bei Schlüsselübergabe (Rückerstattung nach ordnungsgemässer, schadensfreier und besenreiner Abgabe).</li>
+      <li><i class="fa-solid fa-check"></i> <strong>Übergabetermin:</strong> Die Schlüsselübergabe und Abnahme werden im Vorfeld mit dem Hüttenwart vereinbart.</li>
+    </ul>
+
+    <h2><i class="fa-solid fa-house-chimney-user"></i> 2. Hausordnung & Nachtruhe</h2>
+    <ul class="rules-list">
+      <li><i class="fa-solid fa-volume-high"></i> <strong>Nachtruhe & Rücksichtnahme:</strong> Im Aussenbereich gilt ab <strong>22:00 Uhr</strong> strikte Nachtruhe. Musik und laute Unterhaltung sind danach zwingend ins Innere bei geschlossenen Fenstern und Türen zu verlegen.</li>
+      <li><i class="fa-solid fa-ban-smoking"></i> <strong>Rauchverbot:</strong> Im gesamten Gebäude gilt striktes Rauchverbot. Zigarettenkippen im Aussenbereich sind in den dafür vorgesehenen Aschenbechern zu entsorgen.</li>
+      <li><i class="fa-solid fa-square-parking"></i> <strong>Parkplätze:</strong> Fahrzeuge dürfen ausschliesslich auf den dafür vorgesehenen Parkflächen am Schützenhaus abgestellt werden (Zufahrtswege für Notfallfahrzeuge stets freihalten).</li>
+    </ul>
+
+    <h2><i class="fa-solid fa-kitchen-set"></i> 3. Küche & Gastro-Geschirrspüler</h2>
+    <ul class="rules-list">
+      <li><i class="fa-solid fa-utensils"></i> <strong>Gastro-Geschirrspüler:</strong> Bitte grobe Speisereste vor dem Spülen entfernen. Nach Gebrauchsende das Wasser ablaufen lassen, das Sieb kurz unter fliessendem Wasser spülen und die Maschine ausschalten.</li>
+      <li><i class="fa-solid fa-mug-saucer"></i> <strong>Kaffee-Vollautomat:</strong> Abrechnung erfolgt nach Tassenzähler. Vor Abgabe Kaffeesatzbehälter entleeren und Tropfschale spülen.</li>
+      <li><i class="fa-solid fa-temperature-arrow-down"></i> <strong>Kühlschrank:</strong> Sämtliche mitgebrachten Lebensmittel und Getränke vor Abgabe entfernen und Tablare feucht auswischen.</li>
+    </ul>
+
+    <h2><i class="fa-solid fa-clipboard-check"></i> 4. Checkliste zur besenreinen Abgabe (Rückgabe)</h2>
+    <ul class="checklist">
+      <li>
+        <input type="checkbox" id="chk-tables">
+        <label for="chk-tables"><strong>Tische & Stühle:</strong> Alle Tische feucht abwischen und Tische/Stühle wieder in die Grundordnung stellen.</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-dishes">
+        <label for="chk-dishes"><strong>Geschirr & Gläser:</strong> Alles benutzte Geschirr und Besteck sauber gespült und trocken in die Schränke eingeräumt.</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-kitchen">
+        <label for="chk-kitchen"><strong>Küche:</strong> Herdplatten, Spülbecken und Arbeitsflächen gründlich abgewischt. Gastro-Geschirrspüler entleert und ausgeschaltet.</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-fridge">
+        <label for="chk-fridge"><strong>Kühlschrank:</strong> Vollständig geleert und sauber ausgewischt.</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-floor">
+        <label for="chk-floor"><strong>Böden:</strong> Saal, Küche und Eingangsbereich besenrein wischen (bzw. bei feuchten Verschmutzungen feucht aufnehmen).</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-wc">
+        <label for="chk-wc"><strong>Toilettenanlage:</strong> Sichtreinigung durchgeführt, Waschbecken und Armaturen sauber hinterlassen.</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-trash">
+        <label for="chk-trash"><strong>Abfall & Kehricht:</strong> Alle Mülleimer entleeren. Abfallsäcke zubinden und wie vereinbart deponieren bzw. mitnehmen.</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-outdoor">
+        <label for="chk-outdoor"><strong>Aussenbereich:</strong> Umgebung nach Abfall, Bechern und Zigarettenkippen kontrolliert. Aufgestellte Festbänke versorgt.</label>
+      </li>
+      <li>
+        <input type="checkbox" id="chk-lights">
+        <label for="chk-lights"><strong>Abschlusskontrolle:</strong> Alle Fenster fest geschlossen, Lichter gelöscht, Heizung auf Normalstufe, Aussentür verriegelt.</label>
+      </li>
+    </ul>
+
+    <h2><i class="fa-solid fa-address-book"></i> 5. Kontakte & Notfälle</h2>
+    <div class="contact-grid">
+      <div class="contact-card">
+        <strong>Hüttenwart & Vermietung</strong>
+        Sportschützen Muhen<br>
+        E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color: var(--primary-color);">sportschuetzen.muhen@gmail.com</a><br>
+        Web: <a href="https://sportschuetzen-muhen.ch/schuetzenhaus_vermietung.html" target="_blank" style="color: var(--primary-color);">sportschuetzen-muhen.ch/vermietung</a>
+      </div>
+      <div class="contact-card">
+        <strong>Notfallnummern Schweiz</strong>
+        Sanität: <strong>144</strong><br>
+        Polizei: <strong>117</strong><br>
+        Feuerwehr: <strong>118</strong>
+      </div>
+    </div>
+
+    <footer class="footer-doc">
+      <span>Stand: 2026 | Sportschützen Muhen</span>
+      <span>Gültig für alle privaten & geschäftlichen Vermietungen</span>
+    </footer>
+  </div>
+
+</body>
+</html>

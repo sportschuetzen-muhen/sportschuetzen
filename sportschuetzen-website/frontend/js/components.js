@@ -47,10 +47,10 @@ class SiteHeader extends HTMLElement {
                         <a href="verein.html" class="${active === 'verein' ? 'active' : ''}">Verein</a>
                         <a href="verein.html#galerie" class="${active === 'galerie' ? 'active' : ''}">Galerie</a>
                         <a href="index.html#termine" class="${active === 'termine' ? 'active' : ''}">Termine</a>
-                        <a href="schuetzenhaus_vermietung.html" class="${active === 'vermietung' ? 'active' : ''}">Vermietung</a>
                         <a href="index.html#reports" class="${active === 'reports' ? 'active' : ''}">Berichte</a>
                         <a href="resultate.html" class="${active === 'resultate' ? 'active' : ''}">Resultate</a>
                         <a href="verein.html#mitglieder" class="${active === 'mitglieder' ? 'active' : ''}" style="color: var(--accent-color); font-weight: 700;">🔐 Mitglieder</a>
+                        <a href="schuetzenhaus_vermietung.html" class="nav-cta-btn ${active === 'vermietung' ? 'active' : ''}">🏠 Vermietung</a>
                         <div id="nav-member-badge" class="nav-member-badge" style="display: inline-flex; align-items: center; margin-left: 0.5rem;"></div>
                     </nav>
                 </div>

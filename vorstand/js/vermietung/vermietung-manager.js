@@ -64,9 +64,12 @@ function openVermietungModal(rowOrId) {
           <button class="btn btn-xs btn-outline-secondary" style="font-size:0.75rem; font-weight:600;" onclick="copyReservationDetails('${d.id || d.row}')">
             <i class="far fa-copy me-1"></i>Details kopieren
           </button>
+          <button class="btn btn-xs btn-outline-success" style="font-size:0.75rem; font-weight:600;" onclick="vmGenerateRentalContractPdf('${d.booking_number || d.vertragsnummer || d.id}')">
+            <i class="fas fa-file-pdf me-1"></i>PDF generieren
+          </button>
           ${d.contract_file_url ? `
             <a href="${escapeHtml(d.contract_file_url)}" target="_blank" class="btn btn-xs btn-outline-primary" style="font-size:0.75rem; font-weight:600;">
-              <i class="fas fa-file-pdf me-1"></i>Mietvertrag (PDF) öffnen
+              <i class="fas fa-external-link-alt me-1"></i>Mietvertrag öffnen
             </a>` : ''}
         </div>
       </div>

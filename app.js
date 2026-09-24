@@ -50,28 +50,62 @@ async function fetchTermineFromSupabase() {
  * 2. Hausbelegung / Vermietungen direkt aus Supabase (public.rental_requests)
  */
 async function fetchHausbelegungFromSupabase() {
+    const list = [];
+    // 1. Google Kalender Belegungen
+    try {
+        const gRes = await fetch("https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender");
+        if (gRes.ok) {
+            const gData = await gRes.json();
+            if (Array.isArray(gData)) {
+                gData.forEach(r => {
+                    list.push({
+                        id: 'cal_' + (r.datum_iso || r.datum || '') + '_' + Math.random().toString(36).substr(2, 6),
+                        datum: r.datum_iso || r.datum || '',
+                        datum_iso: r.datum_iso || r.datum || '',
+                        start: r.start || '',
+                        ende: r.ende || '',
+                        titel: r.titel || 'Schützenhaus Belegung',
+                        ort: r.ort || 'Schützenhaus',
+                        status: r.status || 'fix',
+                        typ: 'extern'
+                    });
+                });
+            }
+        }
+    } catch(e) {
+        console.warn('Google Hauskalender konnte nicht geladen werden:', e);
+    }
+
+    // 2. Supabase rental_requests
     try {
         const res = await fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, {
             headers: getSupabaseHeaders()
         });
-        if (!res.ok) return [];
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-
-        return data.map(r => ({
-            id: r.booking_number,
-            datum: r.start_date || '',
-            datum_iso: r.start_date || '',
-            start: r.festbeginn || '',
-            titel: r.is_inquiry ? 'Schützenhaus (Anfrage)' : 'Schützenhaus Vermietung',
-            ort: 'Schützenhaus',
-            status: 'fix',
-            typ: 'extern'
-        }));
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                data.forEach(r => {
+                    const exists = list.some(x => x.datum === r.start_date);
+                    if (!exists) {
+                        list.push({
+                            id: r.booking_number,
+                            datum: r.start_date || '',
+                            datum_iso: r.start_date || '',
+                            start: r.festbeginn || '',
+                            titel: r.is_inquiry ? 'Schützenhaus (Anfrage)' : 'Schützenhaus Vermietung',
+                            ort: 'Schützenhaus',
+                            status: 'fix',
+                            typ: 'extern'
+                        });
+                    }
+                });
+            }
+        }
     } catch (e) {
         console.error('Fehler beim Laden der Hausbelegung aus Supabase:', e);
-        return [];
     }
+
+    return list;
 }
 
 /**

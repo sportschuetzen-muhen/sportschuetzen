@@ -224,6 +224,36 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     layout: layout
   };
 
+  // Phase 21: Supabase-First PDF-Engine mit Schweizer QR-Rechnung (SPC 0200 1)
+  if (typeof window.generatePdfViaEngine === 'function') {
+    try {
+      const result = await window.generatePdfViaEngine({
+        action: 'generate-invoice',
+        invoiceId: invoiceId,
+        recipient: recipient,
+        sender: sender,
+        layout: layout,
+        totalAmount: inv.total_amount,
+        year: inv.year || new Date().getFullYear(),
+        type: inv.type || 'Rechnung'
+      });
+
+      if (result && result.success) {
+        showSuccess("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
+        if (result.pdfUrl) {
+          window.open(result.pdfUrl, '_blank');
+        } else if (result.pdfBase64) {
+          openPdfBase64(result.pdfBase64);
+        }
+        await loadRechnungenData(true);
+        return;
+      }
+    } catch (engineErr) {
+      console.warn("⚠️ PDF-Engine Fehler, greife auf Fallback zurück:", engineErr);
+    }
+  }
+
+  // Fallback (z.B. Offline-Betrieb)
   try {
     const response = await apiFetch('rechnungen', payload, 'POST');
     const result = await response.json();

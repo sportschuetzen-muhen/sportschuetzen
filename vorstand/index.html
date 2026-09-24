@@ -1034,7 +1034,10 @@
                 <input type="text" id="mail-log-search" class="form-control form-control-sm"
                        style="width:220px" placeholder="🔍 Empfänger / Betreff..."
                        oninput="filterMailLog()">
-                <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadMailLogData(true)">
+                <button class="btn btn-sm btn-outline-primary ms-auto" onclick="promptSmtpTest()" title="Sendet eine Test-Nachricht über die Supabase Mail-Engine (Gmail / Infomaniak)">
+                    <i class="fas fa-paper-plane me-1"></i> SMTP-Test senden
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadMailLogData(true)">
                     <i class="fas fa-sync me-1"></i> Aktualisieren
                 </button>
             </div>
@@ -1704,6 +1707,7 @@
 <script src="js/vermietung/vermietung-list.js"></script>
 <script src="js/vermietung/vermietung-manager.js"></script>
 <script src="js/mail.js"></script>
+<script src="js/mail-engine.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-core.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-calc.js"></script>
 <script src="js/jahresbeitrag/jahresbeitrag-accounting.js"></script>
@@ -1737,7 +1741,7 @@
 <script src="js/rechnungen/rechnungen-templates.js"></script>
 <script src="js/rechnungen/rechnungen-layouts.js"></script>
 <script src="js/rechnungen/rechnungen-actions.js"></script>
-
+<script src="js/pdf-engine.js"></script>
 
     
 <!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->

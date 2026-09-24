@@ -986,7 +986,42 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
     // 1. Sicherstellen, dass die Rechnung in Rechnungen_GAS existiert
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
     
-    // 2. PDF Generierung anstossen
+    // 2. Phase 21: Supabase-First PDF Generierung
+    if (typeof window.generatePdfViaEngine === 'function') {
+      try {
+        const engineRes = await window.generatePdfViaEngine({
+          action: 'generate-invoice',
+          invoiceId: invoiceId,
+          recipient: {
+            vorname: m.FirstName || '',
+            nachname: m.LastName || '',
+            name: name,
+            strasse: m.Street || '',
+            plz: m.PostCode || '',
+            ort: m.City || '',
+            email: m.PrimaryEmail || ''
+          },
+          totalAmount: r.total_amount || r.betrag || 0,
+          year: r.year || new Date().getFullYear(),
+          type: 'Jahresbeitrag'
+        });
+
+        if (engineRes && engineRes.success) {
+          showToast("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
+          if (engineRes.pdfUrl) {
+            window.open(engineRes.pdfUrl, '_blank');
+          } else if (engineRes.pdfBase64 && typeof openPdfBase64 === 'function') {
+            openPdfBase64(engineRes.pdfBase64);
+          }
+          await loadJahresbeitragData(true, false);
+          return;
+        }
+      } catch (engineErr) {
+        console.warn("⚠️ PDF-Engine Fehler in Jahresbeitrag:", engineErr);
+      }
+    }
+
+    // Fallback auf GAS falls Edge Function offline
     const sender = (typeof rnGetLoggedInSender === 'function')
       ? rnGetLoggedInSender('Jahresbeitrag')
       : jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag');

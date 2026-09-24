@@ -18,6 +18,7 @@
                 <h1 class="fade-in-up">Präzision & Tradition <br>in Muhen.</h1>
                 <p class="fade-in-up delay-1">Willkommen bei den Sportschützen Muhen. Entdecken Sie unsere Leidenschaft für den Schiesssport, Kameradschaft und Tradition seit vielen Generationen.</p>
                 <div class="hero-actions fade-in-up delay-2">
+                    <a href="schuetzenhaus_vermietung.html" class="btn btn-accent" style="display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 700;">🏠 Schützenhaus mieten</a>
                     <a href="#about" class="btn btn-primary">Unser Verein</a>
                     <a href="#reports" class="btn btn-secondary">Aktuelle Berichte</a>
                 </div>
@@ -69,8 +70,14 @@
                     <p style="color: var(--text-muted);">Erfahren Sie mehr über die Geschichte und Köpfe hinter den Sportschützen Muhen.</p>
                 </div>
 
-                <!-- 4 Pillars Links -->
+                <!-- 6 Pillars Links -->
                 <div class="grid-4">
+                    <a href="schuetzenhaus_vermietung.html" class="glass-card" style="border: 2px solid rgba(220, 38, 38, 0.25); background: linear-gradient(135deg, rgba(220, 38, 38, 0.04), rgba(15, 60, 92, 0.02)); position: relative;">
+                        <span style="position: absolute; top: 12px; right: 12px; background: var(--accent-color); color: #fff; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 999px;">CHF 300.-/Tag</span>
+                        <div class="card-icon">🏠</div>
+                        <h3>Schützenstube mieten</h3>
+                        <p>Location für bis zu 40 Personen mit Küche.</p>
+                    </a>
                     <a href="verein.html#geschichte" class="glass-card">
                         <div class="card-icon">📜</div>
                         <h3>Geschichte</h3>
@@ -102,11 +109,43 @@
 
         <section id="vermietung" class="vermietung-section">
             <div class="container">
-                <div class="vermietung-banner">
-                    <div class="vermietung-content">
-                        <h2>Schützenhaus <span class="text-red">mieten</span> in Muhen (Aargau)</h2>
-                        <p>Suchen Sie eine gemütliche und gut ausgestattete Location für Ihre Feier, Tagung oder Vereinsanlass? Unser Schützenhaus bietet Platz für ca. 40 Personen, eine voll ausgestattete Küche und vieles mehr!</p>
-                        <a href="schuetzenhaus_vermietung.html" class="btn btn-primary mt-4">Details & Kalender ansehen</a>
+                <div class="vermietung-showcase">
+                    <div class="vermietung-image-col">
+                        <img src="bilder_haus/Sicht_auf_Kuche.webp" alt="Schützenhaus Muhen gemütlicher Saal und Küche" loading="lazy">
+                        <div class="vermietung-img-badges">
+                            <span class="vermietung-badge highlight">CHF 300.- inkl. Nebenkosten</span>
+                            <span class="vermietung-badge">40 Sitzplätze</span>
+                            <span class="vermietung-badge">Besenreine Abgabe</span>
+                        </div>
+                    </div>
+                    <div class="vermietung-info-col">
+                        <span class="vermietung-tag">Eventlocation & Partyraum im Suhrental</span>
+                        <h2>Schützenstube <span class="text-red">mieten</span> in Muhen</h2>
+                        <p>Suchen Sie eine gemütliche, ungestörte Location für Geburtstage, Familienfeste, Vereinsanlässe oder Seminare? Unser Schützenhaus bietet modernste Ausstattung zu absolut fairen Konditionen.</p>
+                        
+                        <ul class="vermietung-usps">
+                            <li class="vermietung-usp-item">
+                                <span class="vermietung-usp-icon">👥</span>
+                                <div><strong>Bis zu 40 Sitzplätze:</strong> Gemütlicher Saal mit flexibler Bestuhlung und Tischen nach Wunsch.</div>
+                            </li>
+                            <li class="vermietung-usp-item">
+                                <span class="vermietung-usp-icon">🍽️</span>
+                                <div><strong>Moderne Küche & Gastro-Spüler:</strong> Komplett ausgestattetes Geschirr/Gläser & schneller Gastro-Geschirrspüler.</div>
+                            </li>
+                            <li class="vermietung-usp-item">
+                                <span class="vermietung-usp-icon">🧹</span>
+                                <div><strong>Faire & transparente Konditionen:</strong> CHF 300.-/Tag inkl. Strom & Wasser. Besenreine Rückgabe durch Mieter (keine Reinigungszuschläge) & Gratis-Parkplätze.</div>
+                            </li>
+                        </ul>
+
+                        <div class="vermietung-cta-group">
+                            <a href="schuetzenhaus_vermietung.html#kalender" class="btn btn-accent" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                                📅 Kalender & Buchung
+                            </a>
+                            <a href="schuetzenhaus_vermietung.html" class="btn btn-outline">
+                                Alle Details & Ausstattung →
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -116,10 +155,22 @@
             <div class="container">
                 <div class="section-header">
                     <h2>Nächste <span class="text-red">Termine</span></h2>
-                    <p>Was steht als nächstes an? Hier finden Sie unsere kommenden Vereinsanlässe und Schiessdaten.</p>
+                    <p>Was steht als nächstes an? Hier finden Sie unsere kommenden Vereinsanlässe, Jahresprogramm-Termine und Schiessdaten sowie Schützenhaus-Belegungen.</p>
+                </div>
+                <!-- Interaktiver Filter -->
+                <div class="termine-filter-bar" id="termine-filter-bar">
+                    <button class="termine-filter-btn active" data-filter="all">Alle Termine</button>
+                    <button class="termine-filter-btn" data-filter="jahresprogramm">📅 Jahresprogramm</button>
+                    <button class="termine-filter-btn" data-filter="schiesstermine">🎯 Schiessbetrieb</button>
+                    <button class="termine-filter-btn" data-filter="hauskalender">🏠 Schützenhaus-Belegung</button>
                 </div>
                 <div class="termine-list" id="termine-container">
-                    <div class="loading-spinner">Termine werden geladen...</div>
+                    <div class="loading-spinner">Termine & Google Kalender werden geladen...</div>
+                </div>
+                <div style="text-align: center; margin-top: 2rem;">
+                    <a href="verein.html#termine" class="btn btn-outline" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                        <span>📅</span> Vollständiges Jahresprogramm & Kalender ansehen →
+                    </a>
                 </div>
             </div>
         </section>
@@ -172,7 +223,17 @@
                         
                         <div class="form-group">
                             <label for="contact-subject">Betreff *</label>
-                            <input type="text" id="contact-subject" name="subject" class="form-control" placeholder="Z.B. Anfrage Schnuppertraining" required>
+                            <select id="contact-subject" name="subject" class="form-control" required style="cursor: pointer;">
+                                <option value="" disabled selected>Bitte Betreff auswählen...</option>
+                                <option value="Vermietung Schützenstube (Anfrage & Termine)">🏠 Vermietung Schützenstube (Anfrage & Termine)</option>
+                                <option value="Schnuppertraining / Schiesssport">🎯 Schnuppertraining / Schiesssport</option>
+                                <option value="Allgemeine Anfrage / Verein">ℹ️ Allgemeine Anfrage / Verein</option>
+                                <option value="Mitgliedschaft & Beitritt">🤝 Mitgliedschaft & Beitritt</option>
+                                <option value="Sonstiges Anliegen">✉️ Sonstiges Anliegen</option>
+                            </select>
+                            <small style="display:block; margin-top: 6px; color: var(--text-muted); font-size: 0.85rem;">
+                                Freie Termine für das Schützenhaus? Direkt im <a href="schuetzenhaus_vermietung.html#kalender" style="color: var(--accent-color); font-weight:600; text-decoration:underline;">Online-Belegungskalender</a> prüfen & reservieren.
+                            </small>
                         </div>
                         
                         <div class="form-group">

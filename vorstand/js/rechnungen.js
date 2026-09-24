@@ -994,6 +994,41 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
   // Suche Mitglied für Adresse
   const m = window._mglData.find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};
 
+  // Phase 21: Supabase-First PDF-Engine
+  if (typeof window.generatePdfViaEngine === 'function') {
+    try {
+      const result = await window.generatePdfViaEngine({
+        action: 'generate-invoice',
+        invoiceId: invoiceId,
+        recipient: {
+          vorname: m.FirstName || inv.name.split(' ')[0] || '',
+          nachname: m.LastName || inv.name.split(' ').slice(1).join(' ') || '',
+          name: inv.name,
+          strasse: m.Street || m.Strasse || '',
+          plz: m.ZipCode || m.PLZ || '',
+          ort: m.City || m.Ort || '',
+          email: m.Email || ''
+        },
+        totalAmount: inv.total_amount,
+        year: inv.year || new Date().getFullYear(),
+        type: inv.type || 'Rechnung'
+      });
+
+      if (result && result.success) {
+        showSuccess("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
+        if (result.pdfUrl) {
+          window.open(result.pdfUrl, '_blank');
+        } else if (result.pdfBase64 && typeof openPdfBase64 === 'function') {
+          openPdfBase64(result.pdfBase64);
+        }
+        await loadRechnungenData(true);
+        return;
+      }
+    } catch (e) {
+      console.warn("⚠️ PDF-Engine Fehler in rechnungen.js:", e);
+    }
+  }
+
   const payload = {
     action: 'generateInvoicePDF',
     invoiceId: invoiceId,

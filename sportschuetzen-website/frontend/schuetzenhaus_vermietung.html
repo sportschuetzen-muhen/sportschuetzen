@@ -94,6 +94,11 @@
       },
       {
         "@type": "LocationFeatureSpecification",
+        "name": "Besenreine Abgabe (keine obligatorischen Endreinigungsgebühren)",
+        "value": true
+      },
+      {
+        "@type": "LocationFeatureSpecification",
         "name": "Flexible Bestuhlung für ca. 40 Personen",
         "value": true
       }
@@ -112,7 +117,23 @@
         "name": "Wie viel kostet die Miete des Schützenhauses in Muhen?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Die Miete beträgt pauschal CHF 300.- pro Anlasstag. Im Preis sind alle Nebenkosten wie Strom, Wasser und die Nutzung der gesamten Infrastruktur (Küche, Gastro-Geschirrspüler, Geschirr für ca. 40 Personen, Parkplätze) inbegriffen."
+          "text": "Die Miete beträgt pauschal CHF 300.- pro Anlasstag. Im Preis sind alle Nebenkosten wie Strom, Wasser und die Nutzung der gesamten Infrastruktur (Küche, Gastro-Geschirrspüler, Geschirr für ca. 40 Personen, Parkplätze) inbegriffen. Die Rückgabe erfolgt besenrein durch den Mieter, wodurch keine teuren obligatorischen Endreinigungsgebühren anfallen."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Wie funktioniert die Endreinigung des Schützenhauses?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Die Übergabe erfolgt besenrein durch den Mieter: Tische feucht abwischen, benutztes Geschirr spülen und versorgen, Böden wischen/saugen und Kehricht entsorgen. Ein detailliertes Merkblatt mit Übergabe-Checkliste steht zur Verfügung."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Wird eine Kaution oder ein Schlüsseldepot erhoben?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Ja, bei der Schlüsselübergabe wird eine Kaution von CHF 100.- als Depot hinterlegt. Nach ordnungsgemässer, schadensfreier und besenreiner Abnahme wird der Betrag sofort vollumfänglich zurückerstattet."
         }
       },
       {
@@ -488,12 +509,12 @@
 
     /* Marketing Construction Notice Card */
     .notice-card {
-      background: #ffffff;
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.03), #ffffff);
       backdrop-filter: blur(10px);
       border: 1px solid var(--glass-border);
-      border-left: 6px solid var(--accent-color);
+      border-left: 5px solid #0284c7;
       border-radius: 12px;
-      padding: 25px;
+      padding: 22px 25px;
       margin-bottom: 45px;
       display: flex;
       gap: 20px;
@@ -502,7 +523,7 @@
 
     .notice-icon {
       font-size: 2rem;
-      color: var(--accent-color);
+      color: #0284c7;
       flex-shrink: 0;
       margin-top: 3px;
     }
@@ -1549,7 +1570,7 @@
         <div class="feature-icon"><i class="fa-solid fa-coins"></i></div>
         <div class="feature-info">
           <h3>Attraktiver Mietpreis</h3>
-          <p>Die Mietgebühr beträgt <strong>CHF 300.-</strong> pro Anlasstag (inklusive Strom und Wasser).</p>
+          <p><strong>CHF 300.-</strong> / Tag inkl. Nebenkosten. Abgabe erfolgt <strong>besenrein</strong> durch den Mieter – keine teuren Reinigungspauschalen!</p>
         </div>
       </div>
 
@@ -1631,23 +1652,29 @@
           </div>
         </div>
       </div>
+      <div style="margin-top: 14px; font-size: 0.95rem; color: var(--text-dark); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(15, 60, 92, 0.04); padding: 10px 16px; border-radius: 8px;">
+        <i class="fa-solid fa-tree" style="color: #15803d; font-size: 1.1rem;"></i>
+        <span><strong>Aussenbereich, Wiese & Festbänke:</strong> Ruhig im Grünen gelegen mit Festbankgarnituren für Grill- & Sommerfeste sowie vielen Gratis-Parkplätzen direkt vor dem Haus. <em>(Hinweis: Neue Aussenaufnahmen & ein virtueller 360°-Rundgang werden aktuell vorbereitet!)</em></span>
+      </div>
     </section>
 
-    <!-- Marketing Construction Notice -->
+    <!-- Marketing Construction Notice (Calm & Weekend Focused) -->
     <section class="notice-card">
       <div class="notice-icon">
-        <i class="fa-solid fa-circle-info"></i>
+        <i class="fa-solid fa-shield-halved"></i>
       </div>
       <div class="notice-text">
-        <h3>Informationen zu den Strassen- & Umgebungsarbeiten (2026 - 2027)</h3>
-        <p>Der Kanton Aargau modernisiert die Suhrentalstrasse sowie die Suhre-Brücke und verlegt die Erdgasleitung in den Boden. 
-        <strong>Das Wichtigste vorweg: Das Schützenhaus bleibt während der gesamten Bauzeit vollumfänglich geöffnet, uneingeschränkt mietbar und für deinen Anlass nutzbar!</strong></p>
+        <h3 style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span>Sorglos feiern: 100 % Baustellenruhe an Wochenenden</span>
+          <span style="background: rgba(16, 185, 129, 0.15); color: #047857; font-size: 0.8rem; padding: 2px 10px; border-radius: 999px; font-weight: 700;">Keine Beeinträchtigung</span>
+        </h3>
+        <p>Der Kanton Aargau modernisiert die Suhrentalstrasse montags bis freitags. 
+        <strong>Am Wochenende herrscht 100 % Baustellenruhe – Feiern vollkommen ungestört möglich!</strong> 
+        Das Schützenhaus bleibt durchgehend uneingeschränkt geöffnet und mietbar. Die Zufahrt über die Rütelistrasse bzw. die direkt angrenzende Hilfsbrücke sowie sämtliche Parkplätze bleiben jederzeit frei nutzbar.</p>
         <p style="margin-top: 8px; font-size: 0.95rem; line-height: 1.5; color: var(--text-dark);">
-          <strong>Was bedeutet das für deinen Anlass? (Provisorischer Zeitplan, abhängig von den finalen Baubewilligungen):</strong><br>
-          • <strong>Ruhiges Wochenende:</strong> Die Bauarbeiten finden ausschliesslich von Montag bis Freitag statt. An Samstagen und Sonntagen ruht die Baustelle komplett – ideal für ungestörte Feiern und Wochenendanlässe!<br>
-          • <strong>Juni – September 2026 (Leitungsumlegung):</strong> Die Bauarbeiten finden im Bereich des Schiessstandes statt. Die Zufahrt zum Schützenhaus über die Rütelistrasse bleibt für dich und deine Gäste jederzeit gewährleistet. Temporär kann es zu einer leicht angepassten Parksituation kommen.<br>
+          • <strong>Juni – September 2026 (Leitungsumlegung):</strong> Bauarbeiten finden im Bereich des Schiessstandes statt. Freie Zufahrt und Parkmöglichkeiten für dich und deine Gäste sind stets gewährleistet.<br>
           • <strong>Herbst 2026 – Ende 2027 (Brücken-Neubau):</strong> Der Verkehr wird über eine direkt angrenzende Hilfsbrücke geleitet, sodass die Erreichbarkeit deines Events durchgehend gesichert ist.<br>
-          • <strong>Ein Plus für die Natur:</strong> Als ökologischer Ausgleich wird die Uferböschung und die Gebüschlandschaft direkt rund um unser Schützenhaus ökologisch aufgewertet und verschönert!<br>
+          • <strong>Ökologische Aufwertung:</strong> Als natürlicher Ausgleich wird die Uferböschung und die Gebüschlandschaft direkt rund um das Schützenhaus ökologisch aufgewertet und verschönert.<br>
           • <strong>Weitere Details:</strong> Detaillierte Hintergrundinformationen findest du im <a href="https://www.aargauerzeitung.ch/aargau/wyna-suhre/muhenoberentfelden-die-leitung-kommt-unter-den-fluss-kanton-trifft-vorbereitungen-fuer-die-sanierung-der-suhrentalstrasse-ld.2750477" target="_blank" style="color: var(--primary-color); font-weight: 600; text-decoration: underline;">Bericht der Aargauer Zeitung</a>.
         </p>
       </div>
@@ -1655,8 +1682,15 @@
 
     <!-- PDF Downloads Container -->
     <section class="downloads-section" id="downloads">
-      <h2 class="section-title"><i class="fa-solid fa-file-arrow-down"></i> Unterlagen & Muster</h2>
+      <h2 class="section-title"><i class="fa-solid fa-file-arrow-down"></i> Unterlagen & Checklisten</h2>
       <div class="downloads-list">
+        <a href="merkblatt_mieter.html" target="_blank" class="download-item" style="border: 2px solid rgba(15, 60, 92, 0.15); background: linear-gradient(135deg, rgba(15,60,92,0.03), #ffffff);">
+          <div class="download-title">
+            <i class="fa-solid fa-clipboard-check" style="color: var(--accent-color);"></i>
+            <span>Merkblatt für Mieter & Checkliste (Besenreine Rückgabe, Hausordnung)</span>
+          </div>
+          <span class="download-size" style="background: rgba(220,38,38,0.1); color: var(--accent-color); font-weight:700;">Online / Drucken</span>
+        </a>
         <a href="Mustermietvertrag.pdf" target="_blank" class="download-item">
           <div class="download-title">
             <i class="fa-regular fa-file-pdf"></i>
@@ -1664,10 +1698,10 @@
           </div>
           <span class="download-size">184 KB</span>
         </a>
-        <a href="Fotos Innenbereich.pdf" target="_blank" class="download-item">
+        <a href="Fotos Innenbereich.pdf" target="_blank" class="download-item" style="opacity: 0.85;">
           <div class="download-title">
             <i class="fa-regular fa-file-pdf"></i>
-            <span>Bilder & Detailaufnahmen Innenbereich (PDF)</span>
+            <span>Foto-Übersicht Innenbereich Archiv (PDF)</span>
           </div>
           <span class="download-size">1.8 MB</span>
         </a>
@@ -1865,6 +1899,26 @@
 
         <details class="faq-card">
           <summary class="faq-question">
+            <span>Wie funktioniert die Endreinigung? (Besenreine Rückgabe)</span>
+            <i class="fa-solid fa-chevron-down faq-icon"></i>
+          </summary>
+          <div class="faq-answer">
+            <p>Die Rückgabe der Schützenstube erfolgt <strong>besenrein durch den Mieter</strong>. Das bedeutet für dich: Du sparst teure obligatorische Reinigungsgebühren! Nach deinem Fest wischst du die Tische feucht ab, versorgst das gespülte Geschirr sauber in den Schränken, wischst bzw. saugst die Böden und nimmst den Kehricht in den bereitgestellten Abfallsäcken mit. Eine genaue Übersicht findest du in unserem praktischen <a href="merkblatt_mieter.html" target="_blank" style="color: var(--primary-color); font-weight: 600; text-decoration: underline;">Merkblatt für Mieter (Checkliste)</a>.</p>
+          </div>
+        </details>
+
+        <details class="faq-card">
+          <summary class="faq-question">
+            <span>Wird eine Kaution oder ein Schlüsseldepot erhoben?</span>
+            <i class="fa-solid fa-chevron-down faq-icon"></i>
+          </summary>
+          <div class="faq-answer">
+            <p>Ja, für den Hausschlüssel und als Sicherheitsleistung wird eine Kaution von <strong>CHF 100.-</strong> erhoben (bar bei Schlüsselübergabe oder gemäss Mietvertrag). Nach ordnungsgemässer, schadensfreier und besenreiner Abnahme durch unseren Hüttenwart wird das Depot sofort und in voller Höhe zurückerstattet.</p>
+          </div>
+        </details>
+
+        <details class="faq-card">
+          <summary class="faq-question">
             <span>Wo liegt das Schützenhaus und wie ist die Anreise bzw. Parksituation?</span>
             <i class="fa-solid fa-chevron-down faq-icon"></i>
           </summary>
@@ -2009,14 +2063,34 @@
       };
 
       try {
-        const [resRentals, resTermine] = await Promise.all([
-          fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, { headers }),
-          fetch(`${SUPABASE_REST_URL}/termine?select=anlasstitel,datum,startzeit,endzeit,status&status=neq.abgesagt&order=datum.asc`, { headers })
+        const [resRentals, resTermine, resGoogle] = await Promise.all([
+          fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, { headers }).catch(() => null),
+          fetch(`${SUPABASE_REST_URL}/termine?select=anlasstitel,datum,startzeit,endzeit,status&status=neq.abgesagt&order=datum.asc`, { headers }).catch(() => null),
+          fetch('https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender').then(r => r.ok ? r.json() : []).catch(() => [])
         ]);
 
         calendarEventsMap = {};
 
-        if (resRentals.ok) {
+        // 1. Google Kalender Belegungen
+        if (Array.isArray(resGoogle)) {
+          resGoogle.forEach(g => {
+            const key = g.datum_iso || g.datum;
+            if (key) {
+              if (!calendarEventsMap[key]) calendarEventsMap[key] = [];
+              calendarEventsMap[key].push({
+                titel: g.titel || 'Belegt',
+                datum_iso: key,
+                start: g.start || '',
+                ende: g.ende || '',
+                status: 'fix',
+                typ: 'extern'
+              });
+            }
+          });
+        }
+
+        // 2. Supabase Rental Requests
+        if (resRentals && resRentals.ok) {
           const rentals = await resRentals.json();
           if (Array.isArray(rentals)) {
             rentals.forEach(r => {
@@ -2035,7 +2109,8 @@
           }
         }
 
-        if (resTermine.ok) {
+        // 3. Supabase Vereinstermine
+        if (resTermine && resTermine.ok) {
           const termine = await resTermine.json();
           if (Array.isArray(termine)) {
             termine.forEach(t => {

@@ -1327,7 +1327,7 @@ Für die Module mit vollständigem Supabase-Datenbestand wurden die asynchronen 
 
 ---
 
-## 7. Migrations-Roadmap (Phasen 0 bis 19)
+## 7. Migrations-Roadmap (Phasen 0 bis 23)
 
 | Phase | Bereich | Ziel / Inhalt | Führendes System | Status |
 |:---|:---|:---|:---|:---|
@@ -1350,10 +1350,69 @@ Für die Module mit vollständigem Supabase-Datenbestand wurden die asynchronen 
 | **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; 1-Klick-Import; Mail-Audit-Log (`17_team_manager_module.sql`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 17** | **Generalversammlung & Präsenz** | Migration von GV-Stammdaten, Traktanden, Beschlüssen, Präsenzkontrolle & Stimmberechtigung (`18_generalversammlung_module.sql`); Sub-Sekunden RSVP-Berechnung | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, RSVPs/Umfragen und Website-Resultate; kein Daten-Fallback auf GAS | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 19** | **Finaler Cut-Over** | Gezielte Deaktivierung der redundanten Google-Sheet Dual-Writes für geprüfte Module (Termine, Mitglieder, Rechnungen, Teams, System-Mails, FiBu, Jahresbeitrag, Jahresmeisterschaft, GV, Umfragen); operative Dienste (PDF, Gmail, Kalender) bleiben 100% aktiv | Supabase (Single Source of Truth) | 🟢 **Weitgehend abgeschlossen (Reversibel)** |
+| **Phase 19** | **Finaler Cut-Over (Sheets)** | Gezielte Deaktivierung der redundanten Google-Sheet Dual-Writes für geprüfte Module (Termine, Mitglieder, Rechnungen, Teams, System-Mails, FiBu, Jahresbeitrag, Jahresmeisterschaft, GV, Umfragen); operative Dienste (PDF, Gmail, Kalender) bleiben 100% aktiv | Supabase (Single Source of Truth) | 🟢 **Abgeschlossen (Reversibel)** |
+| **Phase 20** | **Zentrale Mail-Engine (`send-email`)** | Universelle Supabase Edge Function für SMTP-Mailversand. Unterstützt Gmail (aktuell mit App-Passwort) und Infomaniak (Domainhoster); automatische Protokollierung in `mail_logs` & Anbindung an `system_mail_configs`; Frontend Client-API | Supabase Edge Functions / SMTP | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 21** | **Zentrale PDF-Engine (`generate-pdf`)** | Server- und clientseitige PDF-Generierung für Rechnungen (inkl. Schweizer QR-Rechnung SPC 0200 1), Mietverträge und Quittungen; direkte Ablage in Supabase Storage (`operatives-storage`) & Paperless-NGX Integration (`21_pdf_engine_storage.sql`) | Supabase Edge Function / Supabase Storage | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 22** | **Infomaniak Cut-Over & CalDAV** | Umstellung der DNS- und Mailkonten auf Infomaniak; Switch der SMTP-Secrets auf `mail.infomaniak.com`; CalDAV-Kalendersynchronisation als Ersatz für Google Calendar | Infomaniak / Supabase | ⏳ Geplant |
+| **Phase 23** | **Automationen & vollständiger GAS-Rückbau** | Übernahme zeitgesteuerter Trigger (Mahnläufe, Vermietungs-Reminder, Status-Audits) durch `pg_cron` & `pg_net`; endgültige Stilllegung der Google Apps Scripts | Supabase PostgreSQL (`pg_cron`) | ⏳ Geplant |
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Sämtliche Mutationen laufen rein über Supabase REST, während alle operativen Dokument- und Maildienste über GAS dauerhaft stabil weiterlaufen.
+## 8. Ausbaustufen zur vollständigen Google-Unabhängigkeit (Phasen 20 bis 23)
+
+### Phase 20: Zentrale Mail-Engine (`send-email`)
+- **Ziel:** Vollständige Entkopplung des Mailversands von Google Apps Script (`MailApp` / `GmailApp`).
+- **Architektur:**
+  - Supabase Edge Function `send-email` (TypeScript / Deno), aufrufbar über REST via Supabase Auth JWT oder Service Key.
+  - Generischer SMTP-Versand mit Unterstützung für SSL (Port 465) und STARTTLS (Port 587).
+  - Konfigurierbar über Umgebungsvariablen (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`).
+  - Standardmässig auf Gmail vorkonfiguriert, ohne Code-Anpassung kompatibel mit Infomaniak.
+  - Automatische Erfassung jedes Versands in `public.mail_logs` (Phase 13) inkl. Status, Fehlerbeschreibung, Empfänger-Zusammenfassung und Modulbezug.
+  - Unterstützung für HTML-Mails, Text-Fallbacks, CC/BCC sowie Anhänge (Base64 oder Supabase Storage URIs).
+  - Client-API: `window.sendMailViaEngine(options)` in `vorstand/js/mail-engine.js`.
+
+### Phase 21: Zentrale Dokument- & PDF-Engine (`generate-pdf`)
+- **Ziel:** Vollständige Ablösung der Google Docs Template-Ersetzung und Google Drive PDF-Konvertierung durch native Supabase Edge Functions und Storage.
+- **Architektur & Komponenten:**
+  - **Migration (`21_pdf_engine_storage.sql`):**
+    - Erstellung des Buckets `operatives-storage` in `storage.buckets` mit öffentlichen Lese- und authentifizierten Schreibrichtlinien.
+    - Erweiterung von `public.invoices` um `pdf_storage_path`, `paperless_status`, `paperless_document_id`, `paperless_error_message`.
+    - Erweiterung von `public.rental_bookings` um `contract_storage_path` und `paperless_error_message`.
+    - Neue Audit-Tabelle `public.document_generation_logs` zur revisionssicheren Protokollierung aller erzeugten Dokumente.
+    - RPC-Funktionen `public.update_invoice_pdf` und `public.update_rental_contract_pdf`.
+  - **Supabase Edge Function (`supabase/functions/generate-pdf/index.ts`):**
+    - Vektorbasierte PDF-Erstellung mittels `pdf-lib` (DIN A4, Briefkopf Sportschützen Muhen, DIN 5008 Fenster rechts).
+    - Standardisierte Schweizer QR-Rechnung nach SIX-Spezifikation (`SPC 0200 1`):
+      - Empfangsschein (62 mm Breite) und Zahlteil (148 mm Breite) mit Perforationslinie bei 105 mm.
+      - Vektorgezeichneter QR-Code mit Error Correction Level M und exakt zentriertem Schweizerkreuz (7 mm × 7 mm).
+      - Automatische Adressformatierung für Firmen und Privatpersonen.
+    - Generierung von Rechnungen (`generate-invoice` / `generateInvoicePDF`) und Mietverträgen (`generate-contract` / `generateRentalContractPDF`).
+    - Automatischer Upload der generierten Binärdaten in den Bucket `operatives-storage` (`invoices/{year}/` bzw. `contracts/{year}/`).
+    - Optionale Anbindung an Paperless-NGX via REST-API (`POST /api/documents/post_document/`).
+  - **Frontend-Integration (`vorstand/js/pdf-engine.js`):**
+    - Stellt `window.generatePdfViaEngine(options)` modulübergreifend bereit.
+    - Ersetzt die alten GAS-Aufrufe in `rnGeneratePDFOnly` (Rechnungs-Cockpit), `jbGenerateInvoicePdfRemote` (Jahresbeitrag) und `vmGenerateRentalContractPdf` (Vermietung).
+    - Lokaler Browser-Fallback (`jsPDF`) bei Netzwerkunterbrüchen.
+    - Hilfsfunktion `window.createSwissQrBillPayload` für standardkonforme SPC-Payloads.
+
+### Phase 22: Infomaniak Cut-Over & CalDAV
+- **Ziel:** Umzug der Vereinsdomain auf Infomaniak (Schweizer Hosting, DSG-konform).
+- **Architektur:**
+  - Domain-Transfer und DNS-Aufschaltung bei Infomaniak mit SPF-, DKIM- und DMARC-Records für `@sportschuetzen-muhen.ch`.
+  - Anpassung der Supabase Secrets: `SMTP_HOST=mail.infomaniak.com`, `SMTP_USER=info@sportschuetzen-muhen.ch`.
+  - Ersatz des Google Calendars durch CalDAV-Schnittstelle von Infomaniak für die Schützenstuben-Belegungen.
+
+### Phase 23: Zeitgesteuerte Automationen via `pg_cron`
+- **Ziel:** Ablösung aller Google Time-Driven Trigger.
+- **Architektur:**
+  - Aktivierung der PostgreSQL-Erweiterungen `pg_cron` und `pg_net` in Supabase.
+  - Automatische Cronjobs für:
+    - Vermietungs-Erinnerungen (7 Tage vor Mietdatum Einweisung, 3 Tage nach Mietdatum Kautions-/Feedbackmail).
+    - Periodische Mahnlauf-Prüfung überfälliger Rechnungen.
+    - Bereinigung temporärer Dateien im Storage.
+
+---
+
+> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Phase 20 (Zentrale Mail-Engine) und Phase 21 (Zentrale PDF- & QR-Engine) entkoppeln nun den operativen Dokumenten- und Mailbetrieb vollständig von Google Drive & Google Docs.
 
 

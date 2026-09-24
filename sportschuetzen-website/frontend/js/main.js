@@ -38,133 +38,406 @@ if (mobileToggle && navLinks && !mobileToggle.hasAttribute('data-bound')) {
     });
 }
 
-// Fetch Termine
-async function loadTermine() {
-    const container = document.getElementById('termine-container');
-    if (!container) return;
+// === TERMINE & GOOGLE KALENDER INTEGRATION ===
 
+const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
+const GOOGLE_HAUS_KALENDER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender";
+const GOOGLE_HAUS_KALENDER_FALLBACK = "https://script.google.com/macros/s/AKfycbxETNWUOsdyF72caWlJ7gi7mlI_oSX2rWQJfUskim8umRF2ARrSCGfe6UWzTy26B_s5/exec";
+const WORKER_TERMINE_URL = "https://termine.dan-hunziker73.workers.dev?action=getTermine";
+
+let allMergedEvents = [];
+
+function normalizeDateStr(obj) {
+    if (!obj) return '';
+    const str = (obj.datum_iso || obj.datum || '').toString().trim();
+    if (!str) return '';
+    if (str.includes('.')) {
+        const p = str.split('.');
+        if (p.length >= 3) {
+            return `${p[2].trim()}-${p[1].trim().padStart(2, '0')}-${p[0].trim().padStart(2, '0')}`;
+        }
+    }
+    return str.split('T')[0].trim();
+}
+
+function parseEventDate(obj) {
+    const s = normalizeDateStr(obj);
+    if (!s) return null;
+    const parts = s.split('-');
+    if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d);
+    }
+    const fb = new Date(s);
+    return isNaN(fb.getTime()) ? null : fb;
+}
+
+// 1. Vereinstermine (Supabase mit Fallback auf Worker)
+async function fetchVereinsTermine() {
     try {
-        const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
-        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
-
         const response = await fetch(`${SUPABASE_REST_URL}/termine?select=*&status=neq.abgesagt&order=datum.asc,sort_order.asc`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
             }
         });
-        if (!response.ok) throw new Error('Netzwerk-Antwort war nicht ok: ' + response.status);
+        if (response.ok) {
+            const raw = await response.json();
+            if (Array.isArray(raw) && raw.length > 0) {
+                return raw.map(r => ({
+                    id: r.id,
+                    datum: r.datum || '',
+                    datum_iso: r.datum || '',
+                    start: r.startzeit || '',
+                    ende: r.endzeit || '',
+                    titel: r.anlasstitel || '',
+                    ort: r.ort || 'Schützenhaus Muhen',
+                    kategorie: r.kategorie || 'Jahresprogramm',
+                    status: r.status || 'fix',
+                    typ: 'verein',
+                    map: r.austragungsorte_map || ''
+                }));
+            }
+        }
+    } catch (e) {
+        console.warn('Supabase Termine nicht erreichbar, nutze Worker Fallback:', e);
+    }
 
-        const rawData = await response.json();
-        let termine = (Array.isArray(rawData) ? rawData : []).map(r => ({
-            id: r.id,
-            datum: r.datum || '',
-            datum_iso: r.datum || '',
-            start: r.startzeit || '',
-            titel: r.anlasstitel || '',
-            ort: r.ort || 'Schützenhaus Muhen',
-            status: r.status || 'fix'
-        }));
-        
-        // Prefix logic
-        const rules = {
-            "Gruppenmeisterschaft SSV": 3,
-            "Gruppenmeisterschaft AGSV": 3,
-            "Grenzland-Cup": 3,
-            "Mannschaftsmeisterschaft": 7
-        };
+    try {
+        const resp = await fetch(WORKER_TERMINE_URL);
+        if (resp.ok) {
+            const raw = await resp.json();
+            if (Array.isArray(raw) && raw.length > 0) {
+                return raw.map(r => ({
+                    id: r.id || 'wk_' + (r.datum || '').replace(/[^0-9]/g, ''),
+                    datum: r.datum_iso || r.datum || '',
+                    datum_iso: r.datum_iso || r.datum || '',
+                    start: r.start || '',
+                    ende: r.ende || '',
+                    titel: r.titel || '',
+                    ort: r.ort || 'Schützenhaus Muhen',
+                    kategorie: r.kategorie || 'Jahresprogramm',
+                    status: r.status || 'fix',
+                    typ: 'verein',
+                    map: r.map || ''
+                }));
+            }
+        }
+    } catch (e2) {
+        console.error('Auch Worker Termine fehlgeschlagen:', e2);
+    }
+    return [];
+}
 
-        const counters = {};
+// 2. Google Kalender Belegungen (Hauskalender)
+async function fetchGoogleHausKalender() {
+    // A. Primär: Cloudflare Worker
+    try {
+        const resp = await fetch(GOOGLE_HAUS_KALENDER_URL);
+        if (resp.ok) {
+            const raw = await resp.json();
+            if (Array.isArray(raw) && raw.length > 0) {
+                return raw.map(r => ({
+                    id: 'cal_' + (r.datum_iso || r.datum || '') + '_' + Math.random().toString(36).substr(2, 6),
+                    datum: r.datum_iso || r.datum || '',
+                    datum_iso: r.datum_iso || r.datum || '',
+                    start: r.start || '',
+                    ende: r.ende || '',
+                    titel: r.titel || 'Schützenhaus Belegung',
+                    ort: r.ort || 'Schützenhaus',
+                    kategorie: 'Hauskalender',
+                    status: r.status || 'fix',
+                    typ: 'extern',
+                    map: r.map || ''
+                }));
+            }
+        }
+    } catch (e) {
+        console.warn('Worker Hauskalender fehlgeschlagen, versuche Google Script direkt:', e);
+    }
 
-        termine = termine.map(t => {
-            const title = t.titel.trim();
-            if (title.toLowerCase().startsWith("final")) return t;
+    // B. Fallback: Google Apps Script direkt
+    try {
+        const gasResp = await fetch(GOOGLE_HAUS_KALENDER_FALLBACK);
+        if (gasResp.ok) {
+            const raw = await gasResp.json();
+            if (Array.isArray(raw) && raw.length > 0) {
+                return raw.map(r => ({
+                    id: 'gas_' + (r.datum_iso || r.datum || '') + '_' + Math.random().toString(36).substr(2, 6),
+                    datum: r.datum_iso || r.datum || '',
+                    datum_iso: r.datum_iso || r.datum || '',
+                    start: r.start || '',
+                    ende: r.ende || '',
+                    titel: r.titel || 'Schützenhaus Belegung',
+                    ort: r.ort || 'Schützenhaus',
+                    kategorie: 'Hauskalender',
+                    status: r.status || 'fix',
+                    typ: 'extern',
+                    map: r.map || ''
+                }));
+            }
+        }
+    } catch (e2) {
+        console.warn('GAS Hauskalender Fallback fehlgeschlagen:', e2);
+    }
 
-            for (const baseTitle in rules) {
-                if (title === baseTitle) {
-                    counters[baseTitle] = (counters[baseTitle] || 0) + 1;
-                    if (counters[baseTitle] <= rules[baseTitle]) {
-                        return {
-                            ...t,
-                            titel: `${counters[baseTitle]}. Runde ${title}`
-                        };
-                    }
+    // C. Fallback: Supabase rental_requests
+    try {
+        const supaResp = await fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        if (supaResp.ok) {
+            const rentals = await supaResp.json();
+            if (Array.isArray(rentals)) {
+                return rentals.map(r => ({
+                    id: r.booking_number,
+                    datum: r.start_date || '',
+                    datum_iso: r.start_date || '',
+                    start: r.festbeginn || '',
+                    ende: '',
+                    titel: r.is_inquiry ? 'Schützenhaus (Anfrage)' : 'Schützenhaus Vermietung',
+                    ort: 'Schützenhaus',
+                    kategorie: 'Hauskalender',
+                    status: 'fix',
+                    typ: 'extern',
+                    map: ''
+                }));
+            }
+        }
+    } catch (e3) {}
+
+    return [];
+}
+
+// 3. Merged Daten holen mit Duplikat-Erkennung & Runden-Präfixen
+async function fetchAllTermineAndCalendar() {
+    if (allMergedEvents && allMergedEvents.length > 0) {
+        return allMergedEvents;
+    }
+
+    const [termine, hausKalender] = await Promise.all([
+        fetchVereinsTermine(),
+        fetchGoogleHausKalender()
+    ]);
+
+    const normalizeTitle = (str) => (str || '').toLowerCase().replace(/[^a-z0-9äöü]/g, '');
+    const merged = [];
+
+    // Vereinstermine übernehmen
+    (termine || []).forEach(t => {
+        merged.push({ ...t, typ: 'verein' });
+    });
+
+    // Google Kalender Belegungen hinzufügen, Dubletten vermeiden
+    (hausKalender || []).forEach(ext => {
+        const extDate = normalizeDateStr(ext);
+        const extTitle = normalizeTitle(ext.titel);
+
+        const isDuplicate = merged.some(v => {
+            const vDate = normalizeDateStr(v);
+            const vTitle = normalizeTitle(v.titel);
+            return vDate && vDate === extDate && (
+                vTitle.includes(extTitle.substring(0, 10)) || 
+                extTitle.includes(vTitle.substring(0, 10))
+            );
+        });
+
+        if (!isDuplicate) {
+            merged.push({ ...ext, typ: 'extern', kategorie: 'Hauskalender' });
+        }
+    });
+
+    // Runden-Präfixe für Vereinsturniere vergeben
+    const rules = {
+        "Gruppenmeisterschaft SSV": 3,
+        "Gruppenmeisterschaft AGSV": 3,
+        "Grenzland-Cup": 3,
+        "Mannschaftsmeisterschaft": 7
+    };
+    const counters = {};
+
+    let processed = merged.map(t => {
+        const title = (t.titel || '').trim();
+        if (title.toLowerCase().startsWith("final")) return t;
+
+        for (const baseTitle in rules) {
+            if (title === baseTitle) {
+                counters[baseTitle] = (counters[baseTitle] || 0) + 1;
+                if (counters[baseTitle] <= rules[baseTitle]) {
+                    return {
+                        ...t,
+                        titel: `${counters[baseTitle]}. Runde ${title}`
+                    };
                 }
             }
-            return t;
-        });
+        }
+        return t;
+    });
 
-        // Filter out past events
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        
-        termine = termine.filter(t => {
-            const parse = (obj) => {
-                if (obj.datum_iso) return new Date(obj.datum_iso);
-                if (obj.datum && obj.datum.includes('.')) {
-                    const [d, m, y] = obj.datum.split('.');
-                    return new Date(y, m - 1, d);
-                }
-                return null;
-            };
-            const dateObj = parse(t);
-            if (!dateObj) return false;
-            dateObj.setHours(0,0,0,0);
-            return dateObj >= today;
-        });
+    // Nach Datum sortieren
+    processed.sort((a, b) => {
+        const dA = parseEventDate(a);
+        const dB = parseEventDate(b);
+        const tA = dA ? dA.getTime() : 8640000000000000;
+        const tB = dB ? dB.getTime() : 8640000000000000;
+        return tA - tB;
+    });
 
-        // Sort by date
-        termine.sort((a, b) => {
-            const parse = (obj) => {
-                if (obj.datum_iso) return new Date(obj.datum_iso);
-                if (obj.datum && obj.datum.includes('.')) {
-                    const [d, m, y] = obj.datum.split('.');
-                    return new Date(y, m - 1, d);
-                }
-                return new Date(8640000000000000);
-            };
-            return parse(a) - parse(b);
-        });
+    allMergedEvents = processed;
+    return allMergedEvents;
+}
 
-        // Take next 4 events
-        const nextTermine = termine.slice(0, 4);
-        
-        if (nextTermine.length === 0) {
-            container.innerHTML = '<p class="text-center text-muted">Zurzeit stehen keine Termine an.</p>';
-            return;
+// Rendert eine Liste von Terminen in einen Container
+function renderTerminCards(events, container) {
+    if (!container) return;
+    if (!events || events.length === 0) {
+        container.innerHTML = '<p class="text-center text-muted" style="padding: 2rem 0;">Zurzeit stehen keine passenden Termine an.</p>';
+        return;
+    }
+
+    container.innerHTML = '';
+    const months = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+
+    events.forEach(t => {
+        const dObj = parseEventDate(t);
+        const day = dObj ? dObj.getDate() : '--';
+        const month = dObj ? months[dObj.getMonth()] : '--';
+
+        // Kategorie-Badge bestimmen
+        let badgeHtml = '';
+        const kat = (t.kategorie || '').toLowerCase();
+        if (t.typ === 'extern' || kat === 'hauskalender') {
+            badgeHtml = '<span class="termin-badge badge-hauskalender">🏠 Schützenhaus-Belegung</span>';
+        } else if (kat === 'jahresprogramm') {
+            badgeHtml = '<span class="termin-badge badge-jahresprogramm">📅 Jahresprogramm</span>';
+        } else if (kat.includes('schiess')) {
+            badgeHtml = '<span class="termin-badge badge-schiesstermin">🎯 Schiessbetrieb</span>';
+        } else {
+            badgeHtml = '<span class="termin-badge badge-schiesstermin">📅 Vereinstermin</span>';
         }
 
-        container.innerHTML = '';
-        const months = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+        // Zeit & Ort aufbereiten
+        let timeStr = '';
+        if (t.start && t.start !== '00:00') {
+            timeStr = `🕒 ${t.start}${t.ende && t.ende !== '00:00' ? ' – ' + t.ende : ''} Uhr | `;
+        }
+        const ortStr = `📍 ${t.ort || 'Schützenhaus Muhen'}`;
 
-        nextTermine.forEach(t => {
-            let dObj;
-            if (t.datum_iso) dObj = new Date(t.datum_iso);
-            else if (t.datum && t.datum.includes('.')) {
-                const [d, m, y] = t.datum.split('.');
-                dObj = new Date(y, m - 1, d);
-            }
-            
-            const day = dObj.getDate();
-            const month = months[dObj.getMonth()];
-            
-            container.innerHTML += `
-                <div class="termin-item">
-                    <div class="termin-date">
-                        <span class="day">${day}</span>
-                        <span class="month">${month}</span>
-                    </div>
-                    <div class="termin-details">
-                        <h3>${t.titel}</h3>
-                        <p>${t.start ? '🕒 ' + t.start + ' Uhr | ' : ''}📍 ${t.ort || 'Schützenhaus Muhen'}</p>
-                    </div>
+        container.innerHTML += `
+            <div class="termin-item">
+                <div class="termin-date">
+                    <span class="day">${day}</span>
+                    <span class="month">${month}</span>
                 </div>
-            `;
+                <div class="termin-details">
+                    ${badgeHtml}
+                    <h3>${t.titel}</h3>
+                    <p>${timeStr}${ortStr}</p>
+                </div>
+            </div>
+        `;
+    });
+}
+
+// 4. Startseite: Nächste Termine laden & Filter initialisieren
+async function loadTermine() {
+    const container = document.getElementById('termine-container');
+    if (!container) return;
+
+    try {
+        const events = await fetchAllTermineAndCalendar();
+
+        // Nur zukünftige oder heutige Termine auf der Startseite
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        const upcomingEvents = events.filter(t => {
+            const d = parseEventDate(t);
+            return d && d >= today;
         });
+
+        // Filterfunktion anwenden
+        let currentFilter = 'all';
+        const applyFilter = (filterKey) => {
+            currentFilter = filterKey;
+            let filtered = upcomingEvents;
+            if (filterKey === 'jahresprogramm') {
+                filtered = upcomingEvents.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase() === 'jahresprogramm');
+            } else if (filterKey === 'schiesstermine') {
+                filtered = upcomingEvents.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase().includes('schiess'));
+            } else if (filterKey === 'hauskalender') {
+                filtered = upcomingEvents.filter(t => t.typ === 'extern' || (t.kategorie || '').toLowerCase() === 'hauskalender');
+            }
+            // Auf der Startseite bis zu 8 nächste Termine anzeigen
+            renderTerminCards(filtered.slice(0, 8), container);
+        };
+
+        // Filter Buttons binden
+        const filterBtns = document.querySelectorAll('#termine-filter-bar .termine-filter-btn');
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyFilter(btn.getAttribute('data-filter'));
+            });
+        });
+
+        applyFilter('all');
 
     } catch (error) {
         console.error('Fehler beim Laden der Termine:', error);
         container.innerHTML = '<p class="text-center text-muted">Termine konnten nicht geladen werden.</p>';
+    }
+}
+
+// 5. Verein.html: Vollständiges Jahresprogramm & Kalender laden
+async function loadVereinTermine() {
+    const container = document.getElementById('verein-termine-container');
+    if (!container) return;
+
+    try {
+        const events = await fetchAllTermineAndCalendar();
+
+        let currentFilter = 'all';
+        const applyFilter = (filterKey) => {
+            currentFilter = filterKey;
+            let filtered = events;
+            if (filterKey === 'jahresprogramm') {
+                filtered = events.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase() === 'jahresprogramm');
+            } else if (filterKey === 'schiesstermine') {
+                filtered = events.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase().includes('schiess'));
+            } else if (filterKey === 'hauskalender') {
+                filtered = events.filter(t => t.typ === 'extern' || (t.kategorie || '').toLowerCase() === 'hauskalender');
+            }
+            renderTerminCards(filtered, container);
+        };
+
+        const filterBtns = document.querySelectorAll('#verein-termine-filter-bar .termine-filter-btn');
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyFilter(btn.getAttribute('data-filter'));
+            });
+        });
+
+        applyFilter('all');
+
+        // Automatisches Öffnen des Termine-Tabs via Hash (#termine)
+        if (window.location.hash === '#termine') {
+            const tabBtn = document.querySelector('#mitglieder .gallery-filter-btn[data-tab="termine"]');
+            if (tabBtn) tabBtn.click();
+        }
+
+    } catch (error) {
+        console.error('Fehler beim Laden des Jahresprogramms:', error);
+        container.innerHTML = '<p class="text-center text-muted">Jahresprogramm konnte nicht geladen werden.</p>';
     }
 }
 
@@ -321,11 +594,19 @@ async function loadReports() {
     }
 }
 
-// Load Termine and Reports on DOM ready
+// Load Termine, Jahresprogramm and Reports on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
     loadTermine();
+    loadVereinTermine();
     loadReports();
     initContactForm();
+});
+
+window.addEventListener('hashchange', () => {
+    if (window.location.hash === '#termine') {
+        const tabBtn = document.querySelector('#mitglieder .gallery-filter-btn[data-tab="termine"]');
+        if (tabBtn) tabBtn.click();
+    }
 });
 
 // AJAX Contact Form Handler (Web3Forms)
