@@ -411,6 +411,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const resultRechnung = await resRechnung.json();
             
             if (resultRechnung.success) {
+                let mailResult = null;
                 // Rechnung per Mail versenden (sofern gültige E-Mail-Adresse vorhanden)
                 if (memberEmail && memberEmail.includes('@')) {
                     const mailPayload = {
@@ -419,8 +420,25 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         recipient: payloadRechnung.recipient
                     };
                     console.log("Sende Rechnung per E-Mail...", mailPayload);
-                    await apiFetch('rechnungen', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mailPayload) });
+                    try {
+                        const resMail = await apiFetch('rechnungen', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mailPayload) });
+                        mailResult = await resMail.json();
+                    } catch (mErr) {
+                        console.warn("⚠️ Fehler beim API-Mailversand:", mErr);
+                    }
                 }
+
+                // In Supabase Master schreiben (invoices, invoice_positions & mail_logs)
+                await saveInventarInvoiceToSupabase({
+                    invoiceId: invoiceId,
+                    personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
+                    recipientName: invoiceHeader.name,
+                    type: 'Materialverkauf',
+                    totalAmount: totalAmount,
+                    positions: positions,
+                    memberEmail: memberEmail,
+                    mailResult: mailResult
+                });
             } else {
                 console.error("Fehler beim Erstellen der Rechnung:", resultRechnung.error);
                 alert("⚠️ Die QR-Rechnung konnte nicht automatisch erstellt werden. Bitte manuell im Modul Rechnungen nachholen.");
@@ -653,6 +671,7 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         const resultRechnung = await resRechnung.json();
 
         if (resultRechnung.success) {
+            let mailResult = null;
             if (memberEmail && memberEmail.includes('@')) {
                 const mailPayload = {
                     action: 'sendInvoiceEmail',
@@ -660,8 +679,25 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     recipient: payloadRechnung.recipient
                 };
                 console.log("Sende Pfand-Rechnung per E-Mail...", mailPayload);
-                await apiFetch('rechnungen', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mailPayload) });
+                try {
+                    const resMail = await apiFetch('rechnungen', '', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mailPayload) });
+                    mailResult = await resMail.json();
+                } catch (mErr) {
+                    console.warn("⚠️ Fehler beim API-Mailversand:", mErr);
+                }
             }
+
+            // In Supabase Master schreiben (invoices, invoice_positions & mail_logs)
+            await saveInventarInvoiceToSupabase({
+                invoiceId: invoiceId,
+                personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
+                recipientName: invoiceHeader.name,
+                type: 'Depot / Pfand',
+                totalAmount: totalAmount,
+                positions: positions,
+                memberEmail: memberEmail,
+                mailResult: mailResult
+            });
         } else {
             console.error("Fehler beim Erstellen der Pfand-Rechnung:", resultRechnung.error);
             alert("⚠️ Die QR-Rechnung für das Depot konnte nicht automatisch erstellt werden. Bitte manuell im Modul Rechnungen nachholen.");
@@ -670,5 +706,87 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         console.error("Fehler in verarbeitePfandRechnungen:", err);
     }
 }
+
+// =========================================================
+//  INVENTAR-RECHNUNG & MAIL-LOG IN SUPABASE SICHERN
+// =========================================================
+async function saveInventarInvoiceToSupabase({
+    invoiceId,
+    personNumber,
+    recipientName,
+    type,
+    totalAmount,
+    positions,
+    memberEmail,
+    mailResult
+}) {
+    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+    if (!supa) return;
+
+    try {
+        const isSent = !!(memberEmail && memberEmail.includes('@'));
+        const nowIso = new Date().toISOString();
+
+        // 1. Invoices Header
+        const sbInvoice = {
+            id: invoiceId,
+            person_number: personNumber ? String(personNumber).trim() : null,
+            recipient_name: recipientName || 'Mitglied',
+            year: new Date().getFullYear(),
+            type: type || 'Materialverkauf',
+            status: 'offen',
+            total_amount: Number(totalAmount || 0),
+            mail_status: isSent ? 'gesendet' : 'entwurf',
+            send_date: isSent ? nowIso : null,
+            pdf_url: mailResult?.pdfUrl || null,
+            created_at: nowIso,
+            updated_at: nowIso
+        };
+        const { error: invErr } = await supa.from('invoices').upsert(sbInvoice);
+        if (invErr) console.warn("⚠️ [Inventar->Supabase] Fehler beim Speichern der Rechnung:", invErr);
+
+        // 2. Invoice Positions
+        if (positions && positions.length > 0) {
+            const sbPositions = positions.map(p => ({
+                invoice_id: invoiceId,
+                position_nr: p.position_nr,
+                description: p.description,
+                quantity: p.quantity,
+                unit_price: p.unit_price,
+                amount: p.amount,
+                konto: String(p.konto || '8501').trim()
+            }));
+            await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+            const { error: posErr } = await supa.from('invoice_positions').insert(sbPositions);
+            if (posErr) console.warn("⚠️ [Inventar->Supabase] Fehler beim Speichern der Positionen:", posErr);
+        }
+
+        // 3. Mail Log (Versandprotokoll)
+        if (isSent) {
+            const { error: mailErr } = await supa.from('mail_logs').insert([{
+                module_ref: 'rechnung',
+                record_id: invoiceId,
+                recipient_email: memberEmail,
+                recipient_name: recipientName,
+                subject: `Rechnung ${invoiceId} – ${type} | Sportschützen Muhen`,
+                body_snippet: `Guten Tag ${recipientName},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei senden wir dir die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.`,
+                status: 'gesendet',
+                sender_email: 'sportschuetzen.muhen@gmail.com',
+                sender_name: 'Sportschützen Muhen',
+                attachment_name: `Rechnung_${invoiceId}_${(recipientName || 'Rechnung').replace(/\\s+/g, '_')}.pdf`,
+                has_pdf: true,
+                sent_via: 'GAS_MailApp',
+                created_by: 'Inventar',
+                sent_at: nowIso
+            }]);
+            if (mailErr) console.warn("⚠️ [Inventar->Supabase] Fehler beim Eintrag in mail_logs:", mailErr);
+        }
+
+        console.log(`✅ [Inventar->Supabase] Rechnung ${invoiceId} und Mail-Log erfolgreich in Supabase synchronisiert.`);
+    } catch (e) {
+        console.error("❌ [Inventar->Supabase] Ausnahme bei Rechnungs-Speicherung:", e);
+    }
+}
+
 
 

@@ -105,6 +105,15 @@ window.rnGetDefaultLayouts = function() {
       notice: 'Letzte Zahlungsfrist: Zahlbar innert 7 Tagen. Den QR-Zahlteil findest du untenstehend.',
       mail_subject: '3. und LETZTE Mahnung vor rechtlichen Schritten: Rechnung {rechnungsnummer}',
       mail_body: 'Guten Tag {vorname} {nachname},\n\nfür die unten aufgeführte Rechnung konnte trotz mehrfacher Mahnung kein Zahlungseingang verbucht werden:\n\nRechnungsnummer: {rechnungsnummer}\nFälliger Betrag: CHF {gesamtbetrag}\n\nWir fordern Sie/dich hiermit letztmalig auf, den ausstehenden Betrag innert 7 Tagen zu überweisen.\n\nNach ungenutztem Ablauf dieser Frist werden wir ohne weiteren Verzug das rechtliche Betreibungsverfahren einleiten. Allfällige Mahn- und Verzugskosten gehen zu Ihren/deinen Lasten.\n\nVorstand Sportschützen Muhen'
+    },
+    'Freier Brief': {
+      type: 'Freier Brief',
+      title: 'Mitteilung',
+      intro: 'Sehr geehrte Damen und Herren, geschätzte Schützenkameradinnen und Schützenkameraden, lieber {vorname},\n\nanbei lassen wir Ihnen/dir folgende Mitteilung zukommen:',
+      outro: 'Bei allfälligen Fragen oder Anliegen stehen wir Ihnen/dir gerne zur Verfügung.\n\nFreundliche Grüsse\nSportschützen Muhen',
+      notice: '',
+      mail_subject: 'Mitteilung: {betreff} | Sportschützen Muhen',
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nanbei senden wir Ihnen unser offizielles Schreiben der Sportschützen Muhen.\n\nDas Dokument finden Sie als PDF-Brief im Anhang dieser E-Mail.\n\nFreundliche Grüsse\nSportschützen Muhen'
     }
   };
 };
@@ -134,6 +143,7 @@ window.renderTabLayouts = function(content) {
     { key: 'Schulsport', label: 'Schulsport', icon: 'fa-bullseye' },
     { key: 'Sponsoring', label: 'Sponsoring / Gönner', icon: 'fa-handshake' },
     { key: 'Sonstige', label: 'Sonstige / Diverse', icon: 'fa-file-alt' },
+    { key: 'Freier Brief', label: 'Freier Brief / Mitteilung', icon: 'fa-envelope-open-text text-info' },
     { key: 'Mahnung 1', label: '1. Zahlungserinnerung', icon: 'fa-bell text-warning' },
     { key: 'Mahnung 2', label: '2. Mahnung', icon: 'fa-exclamation-triangle text-orange' },
     { key: 'Mahnung 3', label: '3. Letzte Mahnung', icon: 'fa-radiation text-danger' }

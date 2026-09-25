@@ -164,5 +164,84 @@
         }
     };
 
+    /**
+     * Zentrales Rahmen-Layout (Shell / Corporate Identity) für Vereins-E-Mails.
+     * @param {Object} params
+     * @param {string} [params.title] - Haupttitel (z.B. 'Rechnung Jahresbeitrag', 'Mitteilung')
+     * @param {string} [params.subtitle] - Untertitel / Kategorie (z.B. 'Rechnungsversand', 'Vorstandsbrief')
+     * @param {string} params.contentHtml - Eigentlicher HTML-Inhalt des Moduls
+     * @param {string} [params.noticeHtml] - Auffällige Hinweisbox (z.B. Frist, Anmerkung)
+     * @param {string} [params.senderInfo] - Vorstandssignatur
+     * @returns {string} Vollständiges, mobil-optimiertes HTML
+     */
+    window.renderClubEmailHtml = function({
+        title = 'Sportschützen Muhen',
+        subtitle = 'Mitteilung',
+        contentHtml = '',
+        noticeHtml = '',
+        senderInfo = 'Vorstand Sportschützen Muhen'
+    } = {}) {
+        const logoUrl = 'https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-192.png';
+        const cleanTitle = (typeof escapeHtml === 'function') ? escapeHtml(title) : title;
+        const cleanSubtitle = (typeof escapeHtml === 'function') ? escapeHtml(subtitle) : subtitle;
+        return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:'Segoe UI',Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;color:#1e293b;">
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color:#f1f5f9;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:620px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -2px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
+          <tr>
+            <td style="background-color:#1a3a5a;padding:20px 24px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="width:56px;vertical-align:middle;">
+                    <img src="${logoUrl}" width="50" height="50" alt="Sportschützen Muhen" style="display:block;border-radius:8px;border:2px solid rgba(255,255,255,0.2);">
+                  </td>
+                  <td style="padding-left:16px;vertical-align:middle;">
+                    <div style="font-size:18px;font-weight:bold;color:#ffffff;line-height:1.2;">Sportschützen Muhen</div>
+                    <div style="font-size:12px;color:#94a3b8;letter-spacing:0.5px;margin-top:2px;">${cleanSubtitle || 'Offizielle Mitteilung'}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 24px;font-size:14px;line-height:1.6;color:#334155;">
+              ${title ? `<h2 style="margin:0 0 16px 0;font-size:18px;font-weight:700;color:#0f172a;">${cleanTitle}</h2>` : ''}
+              ${contentHtml}
+
+              ${noticeHtml ? `
+                <div style="margin-top:20px;background-color:#f8fafc;border-left:4px solid #0284c7;padding:12px 16px;border-radius:6px;font-size:13px;color:#475569;">
+                  ${noticeHtml}
+                </div>
+              ` : ''}
+
+              ${senderInfo ? `
+                <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b;">
+                  ${senderInfo.replace(/\n/g, '<br>')}
+                </div>
+              ` : ''}
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;line-height:1.5;text-align:center;">
+              <strong>Sportschützen Muhen</strong> &bull; Schützenhaus Muhen &bull; 5037 Muhen<br>
+              Web: <a href="https://sportschuetzen-muhen.ch" style="color:#0284c7;text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: sportschuetzen.muhen@gmail.com<br>
+              <em>Dieses Schreiben wurde über das Vereinsportal generiert.</em>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+    };
+
     console.log('✅ Supabase Mail-Engine (Phase 20) initialisiert.');
 })();

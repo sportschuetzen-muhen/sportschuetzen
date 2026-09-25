@@ -60,6 +60,11 @@ Die Migration von Google Sheets / Google Apps Script (GAS) auf Supabase folgt f�
    - **Paperless-NGX** ist das langfristige Revisionsarchiv für PDF-Dokumente.
 5. **Kein Ausbau der unsicheren Legacy-Authentifizierung:**  
    Klartext-Passwörter und unsalted SHA-256 Hashes werden nicht weitergeführt. Supabase Auth bildet die neue, unveränderliche Sicherheitsgrenze.
+6. **Striktes Verbot von stillen GAS-Fallbacks (Entkopplung):**  
+   Mit Ausnahme des Moduls **Vermietung** (welches weiterhin für Kalender-, Mietvertrags- und Buchungsprozesse im Hybrid-Betrieb angebunden bleibt) und des **Portal-Logins** (welches bis zum finalen Auth-Switch auf der bestehenden Lösung verbleibt) dürfen in den migrierten Fachmodulen (Rechnungen, Jahresbeitrag, Termine, Mitglieder, Inventar, Finanzbuchhaltung, Resultate, Umfragen/Eventplaner, GV, Team Manager, System-Mails) **keine stillen GAS-Fallbacks** mehr verwendet werden.  
+   - Alle Lese- und Schreibzugriffe laufen primär und verbindlich über Supabase.
+   - Dual-Writes zu Google Sheets sind deaktiviert.
+   - Tritt bei Supabase ein Fehler auf, wird ein klarer UI-Fehler gemeldet, anstatt veraltete Google Sheets anzusprechen oder Daten inkonsistent zu spalten.
 
 ---
 

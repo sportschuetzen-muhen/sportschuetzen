@@ -1644,7 +1644,7 @@ window.rnOpenCreateModal = async function(btnEl) {
               </div>
               <div class="col-md-4">
                 <label class="form-label fw-bold small text-muted">Rechnungstyp</label>
-                <select class="form-select" id="rnc-type" required>
+                <select class="form-select" id="rnc-type" required onchange="const idEl=document.getElementById('rnc-invoice-id'); if(this.value==='Freier Brief'){ if (typeof window.generateSafeInvoiceId === 'function') idEl.value = window.generateSafeInvoiceId('BR', window._bhYear); } else if(idEl && idEl.value.startsWith('BR-')) { if (typeof window.generateSafeInvoiceId === 'function') idEl.value = window.generateSafeInvoiceId('RE', window._bhYear); }">
                   <option value="Vermietung" selected>Vermietung</option>
                   <option value="Jahresbeitrag">Jahresbeitrag / Mitglieder</option>
                   <option value="Materialverkauf">Materialverkauf</option>
@@ -1652,6 +1652,7 @@ window.rnOpenCreateModal = async function(btnEl) {
                   <option value="Schulsport">Schulsport</option>
                   <option value="Sponsoring">Sponsoring / Gönner</option>
                   <option value="Sonstige">Sonstige / Diverse</option>
+                  <option value="Freier Brief">Freier Brief / Mitteilung</option>
                 </select>
               </div>
               <div class="col-md-4">
@@ -2046,16 +2047,29 @@ window.rnSaveCreateInvoice = async function(event) {
 
   invoiceHeader.total_amount = totalAmount;
 
-  if (positions.length === 0) {
+  const isFreierBrief = (invoiceHeader.type === 'Freier Brief');
+  if (positions.length === 0 && !isFreierBrief) {
     alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
     return;
   }
+  if (isFreierBrief && positions.length === 0) {
+    positions.push({
+      position_nr: 1,
+      description: 'Mitteilung / Schreiben',
+      quantity: 1,
+      unit_price: 0,
+      amount: 0,
+      konto: '9999'
+    });
+  }
 
-  // Strikte Validierung: Jede Position MUSS ein Gegenkonto haben
-  for (let i = 0; i < positions.length; i++) {
-    if (!positions[i].konto) {
-      alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
-      return;
+  // Strikte Validierung: Jede Position MUSS ein Gegenkonto haben (ausser bei Freier Brief)
+  if (!isFreierBrief) {
+    for (let i = 0; i < positions.length; i++) {
+      if (!positions[i].konto) {
+        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+        return;
+      }
     }
   }
 
@@ -2150,7 +2164,7 @@ window.rnSaveCreateInvoice = async function(event) {
       const sbInv = {
         id: invoiceId,
         person_number: personNumber || null,
-        name: finalInvoiceName,
+        recipient_name: finalInvoiceName,
         year: Number(document.getElementById('rnc-year').value),
         type: document.getElementById('rnc-type').value,
         total_amount: totalAmount,
@@ -2411,6 +2425,7 @@ window.rnOpenEditModal = async function(invoiceId) {
                   <option value="Schulsport" ${inv.type === 'Schulsport' ? 'selected' : ''}>Schulsport</option>
                   <option value="Sponsoring" ${inv.type === 'Sponsoring' ? 'selected' : ''}>Sponsoring / Gönner</option>
                   <option value="Sonstige" ${inv.type === 'Sonstige' ? 'selected' : ''}>Sonstige / Diverse</option>
+                  <option value="Freier Brief" ${inv.type === 'Freier Brief' ? 'selected' : ''}>Freier Brief / Mitteilung</option>
                 </select>
               </div>
               <div class="col-md-4">
@@ -2642,16 +2657,29 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
 
   invoiceHeader.total_amount = totalAmount;
 
-  if (positions.length === 0) {
+  const isFreierBriefEdit = (invoiceHeader.type === 'Freier Brief');
+  if (positions.length === 0 && !isFreierBriefEdit) {
     alert("❌ Bitte fügen Sie mindestens eine Rechnungsposition hinzu.");
     return;
   }
+  if (isFreierBriefEdit && positions.length === 0) {
+    positions.push({
+      position_nr: 1,
+      description: 'Mitteilung / Schreiben',
+      quantity: 1,
+      unit_price: 0,
+      amount: 0,
+      konto: '9999'
+    });
+  }
 
-  // Strikte Validierung: Jede Position MUSS ein Gegenkonto haben
-  for (let i = 0; i < positions.length; i++) {
-    if (!positions[i].konto) {
-      alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
-      return;
+  // Strikte Validierung: Jede Position MUSS ein Gegenkonto haben (ausser bei Freier Brief)
+  if (!isFreierBriefEdit) {
+    for (let i = 0; i < positions.length; i++) {
+      if (!positions[i].konto) {
+        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+        return;
+      }
     }
   }
 
@@ -2686,7 +2714,7 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   if (sb) {
     try {
       const sbInv = {
-        name: name,
+        recipient_name: name,
         year: Number(document.getElementById('rne-year').value),
         type: document.getElementById('rne-type').value,
         total_amount: totalAmount,
