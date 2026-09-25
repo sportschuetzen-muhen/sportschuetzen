@@ -1519,8 +1519,10 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - `vorstand/js/auth.js`: Native Anmeldung mit `supabase.auth.signInWithPassword`, Session Auto-Restore, verbesserte Lade-Zustände (`Prüfe Anmeldung...`) und Passwort-Toggle.
     - `vorstand/js/main.js`: Modernisierung des Gleichzeitigkeitsschutzes zur kollegialen Echtzeit-Präsenzanzeige (`ping_login_session`). Technische Absicherung erfolgt vollständig über PostgreSQL-Transaktionen und Zeilensperren; die Benutzeroberfläche dient als transparente Team-Koordinationshilfe gegen inhaltliche Doppelarbeit.
     - `vorstand/js/logins/logins-ui.js`: Umfassende Modernisierung des Moduls «Logins» (Ersatz der Google-Sheet-Begriffe durch «Vorstand & Admins», «Vereinsmitglieder (PIN)» und «Aktive Sitzungen & Audit», helle Bootstrap-Tabellenköpfe, Auth-Status-Pills, KPI-Metriken und Live-Online-Puls-Indikatoren).
-    - `vorstand/js/logins/logins-actions.js`: Vollständige Entkopplung von Google Apps Script für Admins, App-Mitglieder, Sitzungsprotokoll und Sync.
+    - `vorstand/js/logins/logins-actions.js`: Vollständige Entkopplung von Google Apps Script für Admins, App-Mitglieder, Sitzungsprotokoll und Sync; robuster separater Abruf von `admin_profiles` und `user_roles` ohne nicht-unterstützte Cross-Schema-Joins.
     - `vorstand/js/mitglieder/mitglieder-sync-ui.js`: Direkte Vorschau und Durchführung des Logins-Syncs gegen Supabase.
+    - `vorstand/js/main.js`: **Vollständige Stilllegung des Legacy `bgModuleLoader`** (kein Hintergrund-Polling/Preloading mehr; alle Module laden strikt on-demand in < 50 ms via Supabase REST). Bereinigung von übergeordneten `try/finally`-Blöcken in `manager-core.js`, `rechnungen-actions.js` und `jahresmeisterschaft-core.js`.
+    - **Cache-Busting (`?v=20260925_4`):** Aktualisierung aller Script-Referenzen in `vorstand/index.html`.
 
 ### Phase 23: Infomaniak Cut-Over & CalDAV
 - **Ziel:** Umzug der Vereinsdomain auf Infomaniak (Schweizer Hosting, DSG-konform).
@@ -1540,7 +1542,7 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Phase 20 (Zentrale Mail-Engine) und Phase 21 (Zentrale PDF- & QR-Engine) entkoppeln den operativen Dokumenten- und Mailbetrieb von Google Docs/Drive. Phase 22 stellt das gesamte Authentifizierungs- und Login-System auf Supabase Auth und PostgreSQL-basierte Profile um.
+> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Phase 20 (Zentrale Mail-Engine) und Phase 21 (Zentrale PDF- & QR-Engine) entkoppeln den operativen Dokumenten- und Mailbetrieb von Google Docs/Drive. Phase 22 stellt das gesamte Authentifizierungs- und Login-System auf Supabase Auth und PostgreSQL-basierte Profile um, schaltet das alte Hintergrund-Preloading ab und sichert die Stabilität aller Fachmodule ab.
 
 
 

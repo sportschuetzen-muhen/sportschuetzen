@@ -640,12 +640,6 @@ function showApp() {
 
     // 2. Online-Präsenz pingen
     startPresencePingTimer();
-
-    // Sequentielles Hintergrund-Laden: Startet nach 12s Idle auf dem Dashboard,
-    // sofern der Nutzer nicht vorher selbst ein Modul anklickt.
-    if (window.bgModuleLoader) {
-        window.bgModuleLoader.scheduleNext(12000);
-    }
 }
 
 // =========================================================
@@ -788,62 +782,19 @@ const bgModuleLoader = {
 
     // Wird aufgerufen, wenn der Benutzer ein Modul manuell geladen hat
     onUserModuleLoaded: function(viewId) {
-        console.log(`📌 Modul "${viewId}" fertig geladen. Prüfe verbleibende Module für Hintergrund-Laden...`);
         this.markLoaded(viewId);
         this.isUserActiveLoading = false;
-        // Nach Fertigstellung des manuellen Moduls 1s kurz warten, dann Warteschlange starten
-        this.scheduleNext(1000);
     },
 
-    // Plant den nächsten Hintergrundschritt mit Verzögerung ein
+    // Plant den nächsten Hintergrundschritt (Deaktiviert: Supabase lädt on-demand)
     scheduleNext: function(delayMs) {
-        if (this.nextTimerId) {
-            clearTimeout(this.nextTimerId);
-            this.nextTimerId = null;
-        }
-        const delay = typeof delayMs === 'number' ? delayMs : this.intervalMs;
-        this.nextTimerId = setTimeout(() => {
-            this.step();
-        }, delay);
+        // Stillgelegt gemäss Supabase-Architektur: Kein Hintergrund-Polling/Preloading mehr.
+        return;
     },
 
-    // Führt das nächste noch nicht geladene Modul aus
+    // Führt das nächste noch nicht geladene Modul aus (Deaktiviert)
     step: async function() {
-        if (this.isRunning) return;
-        if (this.isUserActiveLoading) {
-            this.scheduleNext(3000);
-            return;
-        }
-        if (window.hasUnsavedChanges) {
-            console.log("⏸️ Hintergrund-Laden pausiert: Ungespeicherte Änderungen vorhanden");
-            this.scheduleNext(10000);
-            return;
-        }
-
-        // Finde nächstes berechtigtes, ungeladenes Modul
-        const nextMod = this.modules.find(m => this.isAccessible(m.id) && !this.isLoaded(m));
-        if (!nextMod) {
-            console.log("🎉 Alle berechtigten Module sind im Hintergrund vorgeladen!");
-            return;
-        }
-
-        this.isRunning = true;
-        console.log(`⏳ Hintergrund-Laden: Starte Modul "${nextMod.label || nextMod.id}"...`);
-        window.setPreloadStatus(nextMod.id, 'loading');
-
-        try {
-            await nextMod.load();
-            this.markLoaded(nextMod.id);
-            window.setPreloadStatus(nextMod.id, 'success');
-            console.log(`✅ Hintergrund-Laden: Modul "${nextMod.label || nextMod.id}" geliefert. Nächstes Modul in ${Math.round(this.intervalMs / 1000)}s...`);
-        } catch (err) {
-            console.warn(`⚠️ Hintergrund-Laden fehlgeschlagen für ${nextMod.id}:`, err);
-            window.setPreloadStatus(nextMod.id, '');
-        } finally {
-            this.isRunning = false;
-            // Sobald GAS geliefert hat, nach Intervall (10s) das nächste anstossen
-            this.scheduleNext(this.intervalMs);
-        }
+        return;
     }
 };
 window.bgModuleLoader = bgModuleLoader;

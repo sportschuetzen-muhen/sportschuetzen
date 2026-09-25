@@ -570,19 +570,20 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
         isDirty: appState.isDirty
     } : null;
 
-    if (!isPreload) {
-        appState.activeModule = targetModule;
-        appState.isDirty = false;
-        window.clearUnsaved();
-        appState.mailList = [];
-        renderLoadingState();
-    } else {
-        // Beim Preload setzen wir temporär das aktive Modul für processContestData
-        appState.activeModule = targetModule;
-    }
+    try {
+        if (!isPreload) {
+            appState.activeModule = targetModule;
+            appState.isDirty = false;
+            window.clearUnsaved();
+            appState.mailList = [];
+            renderLoadingState();
+        } else {
+            // Beim Preload setzen wir temporär das aktive Modul für processContestData
+            appState.activeModule = targetModule;
+        }
 
-    const config = CONTEST_CONFIG[targetModule];
-    const supa = getManagerSupabaseClient();
+        const config = CONTEST_CONFIG[targetModule];
+        const supa = getManagerSupabaseClient();
 
     // 1. PRIMÄR: SUPABASE-FIRST LADEN
     if (supa) {

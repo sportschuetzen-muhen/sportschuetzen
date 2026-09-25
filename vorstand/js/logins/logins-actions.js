@@ -16,14 +16,34 @@ async function fetchLoginsData() {
     // 1. Admins aus public.admin_profiles
     const { data: admins, error: aErr } = await supa
       .from('admin_profiles')
-      .select('*, user_roles:auth_user_id(role)')
+      .select('*')
       .order('username');
     if (aErr) throw aErr;
 
+    // Rollen für verknüpfte Auth-Benutzer abfragen
+    const authIds = (admins || []).map(a => a.auth_user_id).filter(Boolean);
+    const rolesMap = {};
+    if (authIds.length > 0) {
+      try {
+        const { data: rData } = await supa
+          .from('user_roles')
+          .select('user_id, role')
+          .in('user_id', authIds);
+        if (rData) {
+          rData.forEach(r => {
+            if (!rolesMap[r.user_id]) rolesMap[r.user_id] = [];
+            rolesMap[r.user_id].push(r.role);
+          });
+        }
+      } catch (err) {
+        console.warn("Konnte user_roles nicht laden:", err);
+      }
+    }
+
     LoginsState.login_daten = (admins || []).map(a => {
       let rStr = 'vorstand';
-      if (a.user_roles && Array.isArray(a.user_roles) && a.user_roles.length > 0) {
-        rStr = a.user_roles.map(x => x.role).join(',');
+      if (a.auth_user_id && rolesMap[a.auth_user_id] && rolesMap[a.auth_user_id].length > 0) {
+        rStr = rolesMap[a.auth_user_id].join(',');
       }
       return {
         id: a.id,

@@ -197,10 +197,11 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     return;
   }
 
-  // Externe Kontakte laden, falls noch nicht im Speicher
-  if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
-    try { await loadInvoiceContactsData(); } catch (_) {}
-  }
+  try {
+    // Externe Kontakte laden, falls noch nicht im Speicher
+    if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
+      try { await loadInvoiceContactsData(); } catch (_) {}
+    }
 
   const recipient = (typeof rnGetRecipientForInvoice === 'function')
     ? rnGetRecipientForInvoice(inv)
@@ -276,6 +277,7 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     }
   } else {
     alert("❌ PDF-Engine nicht verfügbar.");
+  }
   } finally {
     hideLoadingOverlay();
   }

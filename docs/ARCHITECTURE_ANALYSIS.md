@@ -206,7 +206,7 @@ Im Gesamtprojekt existieren **drei separate Frontends**, die jeweils unterschied
 - `apiFetchWithLoading()` – API-Wrapper mit Loading-State
 - `userHasRole(role)` – Rollen-Check
 - `hasWriteAccess(module)` – Schreibrecht-Matrix-Prüfung
-- `bgModuleLoader` – Sequentieller Hintergrund-Modul-Loader (10s Intervall)
+- `bgModuleLoader` – Stillgelegt / Deaktiviert (Module laden on-demand via Supabase REST)
 - `silentInitialLoad()` – Initiales Bulk-Loading (Jahresbeitrag + Mitglieder)
 - `runBackgroundSync()` – 5-Minuten Background Sync
 

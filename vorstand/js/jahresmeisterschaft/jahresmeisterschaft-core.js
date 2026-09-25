@@ -47,10 +47,11 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
         showLoadingOverlay('Lade Jahresmeisterschaft...');
     }
 
-    // --- 1. SUPABASE-FIRST LADEN ---
-    const sb = getJMSupabaseClient();
-    if (sb) {
-        try {
+    try {
+        // --- 1. SUPABASE-FIRST LADEN ---
+        const sb = getJMSupabaseClient();
+        if (sb) {
+            try {
             const { data: seasonsList, error: errList } = await sb
                 .from('jm_seasons')
                 .select('jahr, title, is_archived')
@@ -117,6 +118,7 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
             }
             return;
         }
+    }
     } finally {
         if (historySelect) {
             historySelect.disabled = false;

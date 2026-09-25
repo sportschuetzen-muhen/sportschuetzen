@@ -421,3 +421,6 @@ BEGIN
 END;
 $$;
 
+-- Schema-Cache von PostgREST sofort aktualisieren
+NOTIFY pgrst, 'reload schema';
+
