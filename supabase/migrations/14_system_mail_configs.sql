@@ -97,11 +97,18 @@ CREATE POLICY sys_mail_select_auth ON public.system_mail_configs
     TO authenticated
     USING (true);
 
--- Schreiben: nur authenticated (Vorstand-Portal)
+-- Schreiben: authenticated und anon (Vorstand-Portal läuft mit ANON_KEY)
 DROP POLICY IF EXISTS sys_mail_manage_auth ON public.system_mail_configs;
 CREATE POLICY sys_mail_manage_auth ON public.system_mail_configs
     FOR ALL
     TO authenticated
+    USING (true)
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS sys_mail_manage_anon ON public.system_mail_configs;
+CREATE POLICY sys_mail_manage_anon ON public.system_mail_configs
+    FOR ALL
+    TO anon
     USING (true)
     WITH CHECK (true);
 
@@ -197,19 +204,11 @@ VALUES
         ''
     ),
     (
-        'Info_Mail_Kassier',
-        'Info-Mail: Kassier',
-        'allgemein',
-        'Benachrichtigungen für den Kassier (Rechnungen, Zahlungen)',
-        20,
-        ''
-    ),
-    (
         'Info_Mail_Aktuar',
         'Info-Mail: Aktuar',
         'allgemein',
         'Benachrichtigungen für den Aktuar (Protokolle, Anmeldungen)',
-        30,
+        20,
         ''
     )
 ON CONFLICT (schluessel) DO NOTHING;

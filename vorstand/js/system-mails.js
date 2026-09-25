@@ -61,7 +61,7 @@ async function loadSystemMailsData(force = false) {
 
       if (configRes.error) throw configRes.error;
 
-      sysMailState.configs = configRes.data || [];
+      sysMailState.configs = (configRes.data || []).filter(cfg => cfg.schluessel !== 'Info_Mail_Kassier');
       sysMailState.members = (memberRes.data || []).map(m => ({
         name: `${m.last_name} ${m.first_name}`.trim(),
         email: m.primary_email
@@ -83,7 +83,9 @@ async function loadSystemMailsData(force = false) {
     const data = await res.json();
 
     // app_info → configs konvertieren
-    sysMailState.configs = (data.app_info || []).map((info, i) => ({
+    sysMailState.configs = (data.app_info || [])
+      .filter(info => (info.bezeichnung || info.schluessel) !== 'Info_Mail_Kassier')
+      .map((info, i) => ({
       id:          null,
       schluessel:  info.bezeichnung || info.schluessel || `eintrag_${i}`,
       bezeichnung: info.bezeichnung || '',
@@ -236,6 +238,13 @@ async function saveSystemMailsData() {
         .upsert(payload, { onConflict: 'schluessel' });
 
       if (error) throw error;
+
+      // Sicherstellen, dass veralteter Schlüssel Info_Mail_Kassier aus Supabase entfernt wird
+      await supa
+        .from('system_mail_configs')
+        .delete()
+        .eq('schluessel', 'Info_Mail_Kassier');
+
       console.log('✅ system_mail_configs erfolgreich in Supabase gespeichert.');
 
     } catch (supaErr) {
