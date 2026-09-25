@@ -1165,9 +1165,9 @@ function updatePresenceUI(onlineUsers) {
 
     if (!onlineUsers || onlineUsers.length === 0) {
         const aloneHtml = `
-            <span class="badge bg-light text-muted border px-2 py-1 animate__animated animate__fadeIn" style="font-size: 0.8rem; font-weight: normal; border-radius: 20px;">
+            <span class="badge bg-light text-muted border px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.8rem; font-weight: normal; border-radius: 20px;">
                 <span class="spinner-grow spinner-grow-sm text-success me-1 align-middle" style="width: 8px; height: 8px;" role="status"></span>
-                Keine anderen Vorstandsmitglieder online (keine Gefahr von Doppeleingaben)
+                Allein im Portal (Multi-User & Supabase aktiv)
             </span>
         `;
         if (presenceBanner) presenceBanner.innerHTML = aloneHtml;
@@ -1175,7 +1175,7 @@ function updatePresenceUI(onlineUsers) {
         // PC Sidebar update
         if (sidebarPresenceBadge) {
             sidebarPresenceBadge.innerHTML = `
-                <span class="badge bg-light text-muted border px-2 py-1" style="font-size: 0.7rem; font-weight: 500; border-radius: 20px; display: inline-flex; align-items: center;">
+                <span class="badge bg-light text-muted border px-2.5 py-1" style="font-size: 0.72rem; font-weight: 500; border-radius: 20px; display: inline-flex; align-items: center;">
                     <span class="spinner-grow spinner-grow-sm text-success me-1.5" style="width: 6px; height: 6px;" role="status"></span>
                     Allein online
                 </span>
@@ -1195,7 +1195,7 @@ function updatePresenceUI(onlineUsers) {
                 <div class="text-center py-2 animate__animated animate__fadeIn">
                     <span class="spinner-grow spinner-grow-sm text-success me-2 align-middle" style="width: 12px; height: 12px;" role="status"></span>
                     <strong class="text-success">Keine anderen Vorstandsmitglieder online.</strong><br>
-                    <span class="text-muted mt-1 d-block small">Du kannst sicher arbeiten, es besteht keine Gefahr von Doppeleingaben.</span>
+                    <span class="text-muted mt-1 d-block small">Du kannst ungestört arbeiten. Alle Änderungen werden direkt in Supabase gespeichert.</span>
                 </div>
             `;
         }
@@ -1209,9 +1209,9 @@ function updatePresenceUI(onlineUsers) {
     } else {
         const namesHtml = onlineUsers.map(u => `<strong>${escapeHtml(u)}</strong>`).join(', ');
         const warningHtml = `
-            <span class="badge px-2 py-1 animate__animated animate__pulse animate__infinite" style="font-size: 0.8rem; font-weight: normal; color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 20px;">
-                <i class="fas fa-users-viewfinder text-warning me-1"></i>
-                Aktuell online: ${namesHtml} (Vorsicht vor Doppeleingaben bei zeitgleichen Änderungen!)
+            <span class="badge px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.8rem; font-weight: normal; color: #0f3a5d; background-color: #e8f0fe; border: 1px solid #c2dbfe; border-radius: 20px;">
+                <i class="fas fa-users-viewfinder text-primary me-1"></i>
+                Aktuell ebenfalls online: ${namesHtml} <span class="text-muted ms-1 small">(Bei gleichzeitigen Änderungen bitte kurz absprechen)</span>
             </span>
         `;
         if (presenceBanner) presenceBanner.innerHTML = warningHtml;
@@ -1219,8 +1219,8 @@ function updatePresenceUI(onlineUsers) {
         // PC Sidebar update
         if (sidebarPresenceBadge) {
             sidebarPresenceBadge.innerHTML = `
-                <span class="badge px-2 py-1.5 animate__animated animate__pulse animate__infinite" style="font-size: 0.7rem; font-weight: normal; color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 12px; display: block; text-align: left; white-space: normal; line-height: 1.3;" title="Doppeleingaben vermeiden!">
-                    <i class="fas fa-exclamation-triangle text-warning me-1"></i>
+                <span class="badge px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.72rem; font-weight: normal; color: #0f3a5d; background-color: #e8f0fe; border: 1px solid #c2dbfe; border-radius: 12px; display: block; text-align: left; white-space: normal; line-height: 1.3;" title="Team-Präsenz aktiv">
+                    <i class="fas fa-users text-primary me-1"></i>
                     Online: ${namesHtml}
                 </span>
             `;
@@ -1229,29 +1229,29 @@ function updatePresenceUI(onlineUsers) {
         // Mobile Header update
         if (mobilePresenceBanner) {
             mobilePresenceBanner.innerHTML = `
-                <span class="text-warning fw-bold animate__animated animate__flash animate__infinite" style="color: #d39e00; font-size: 0.65rem;"><i class="fas fa-users align-middle"></i> ${onlineUsers.length} online</span>
+                <span class="text-primary fw-bold" style="font-size: 0.65rem;"><i class="fas fa-users align-middle"></i> ${onlineUsers.length} online</span>
             `;
         }
 
         // Modal step 2 update
         if (welcomeText) {
             welcomeText.innerHTML = `
-                <div class="py-2 animate__animated animate__shakeX">
-                    <strong class="text-warning d-block mb-1 fs-6"><i class="fas fa-exclamation-triangle me-1"></i> Vorsicht: Andere Mitglieder online!</strong>
-                    <span class="text-dark d-block">Folgende Vorstandsmitglieder sind ebenfalls im Portal:</span>
-                    <div class="mt-2 p-2 rounded border text-center fw-bold" style="color: #856404; background-color: #fff3cd; border-color: #ffeeba;">
+                <div class="py-2 animate__animated animate__fadeIn">
+                    <strong class="text-primary d-block mb-1 fs-6"><i class="fas fa-users me-1"></i> Weitere Vorstandsmitglieder online</strong>
+                    <span class="text-dark d-block">Folgende Vorstandsmitglieder sind ebenfalls im Portal aktiv:</span>
+                    <div class="mt-2 p-2 rounded border text-center fw-bold" style="color: #0f3a5d; background-color: #e8f0fe; border-color: #c2dbfe;">
                         ${namesHtml}
                     </div>
-                    <span class="text-muted mt-2 d-block small">Bitte sprecht euch ab, falls ihr zeitgleich Änderungen (z.B. bei der Jahresmeisterschaft oder im Inventar) vornehmt!</span>
+                    <span class="text-muted mt-2 d-block small">Supabase sichert alle Schreibvorgänge ab. Sprecht euch kurz ab, falls ihr am selben Modul arbeitet.</span>
                 </div>
             `;
         }
         if (welcomeIcon) {
-            welcomeIcon.className = "fas fa-users-viewfinder fa-4x text-warning animate__animated animate__pulse animate__infinite";
+            welcomeIcon.className = "fas fa-users-viewfinder fa-4x text-primary animate__animated animate__pulse animate__infinite";
         }
         if (welcomeAlert) {
-            welcomeAlert.style.backgroundColor = "rgba(255,193,7,0.05)";
-            welcomeAlert.style.borderColor = "rgba(255,193,7,0.1)";
+            welcomeAlert.style.backgroundColor = "rgba(13,110,253,0.05)";
+            welcomeAlert.style.borderColor = "rgba(13,110,253,0.15)";
         }
     }
 }

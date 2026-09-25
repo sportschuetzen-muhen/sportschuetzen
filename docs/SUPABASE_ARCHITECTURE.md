@@ -1512,9 +1512,13 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - RPC `public.sync_logins_from_members`: Übernimmt fehlende E-Mails aus `public.members` für den Vorstand und gleicht PINs ab.
     - RPC `public.ping_login_session`: Echtzeit-Präsenzprüfung und automatisches Timeout inaktiver Sitzungen.
     - RPCs `public.save_admin_profile` und `public.delete_admin_profile`: Atomare Profil- und Rollenverwaltung.
-  - **Frontend-Integration:**
-    - `vorstand/js/auth.js`: Native Anmeldung mit `supabase.auth.signInWithPassword`, Session Auto-Restore und Logout via `supabase.auth.signOut`.
-    - `vorstand/js/main.js`: Umstellung von `pingPresence()` auf `ping_login_session` und `submitChangePassword()` auf `supabase.auth.updateUser`.
+  - **Frontend-Integration & UI/UX:**
+    - `vorstand/icons/logo.png` & `icons/logo.png`: Einführung des offiziellen, freigestellten Vereins-Emblems mit transparentem Hintergrund (Ablösung des alten blockhaften roten PWA-Icons).
+    - `vorstand/index.html`: Vollständiger UI/UX-Relaunch des Login-Screens (modernes Glassmorphism-Card-Design, Logo-Badge, Passwort-Sichtbarkeit per Auge-Icon, Enter-Taste-Workflow, strukturierte Fehlermeldungen und SSL-Sicherheitszertifikat).
+    - `index.html`: Einbindung des neuen Vereinslogos im Login-Overlay und im Begrüssungs-Bereich der Mitglieder-App.
+    - `vorstand/js/auth.js`: Native Anmeldung mit `supabase.auth.signInWithPassword`, Session Auto-Restore, verbesserte Lade-Zustände (`Prüfe Anmeldung...`) und Passwort-Toggle.
+    - `vorstand/js/main.js`: Modernisierung des Gleichzeitigkeitsschutzes zur kollegialen Echtzeit-Präsenzanzeige (`ping_login_session`). Technische Absicherung erfolgt vollständig über PostgreSQL-Transaktionen und Zeilensperren; die Benutzeroberfläche dient als transparente Team-Koordinationshilfe gegen inhaltliche Doppelarbeit.
+    - `vorstand/js/logins/logins-ui.js`: Umfassende Modernisierung des Moduls «Logins» (Ersatz der Google-Sheet-Begriffe durch «Vorstand & Admins», «Vereinsmitglieder (PIN)» und «Aktive Sitzungen & Audit», helle Bootstrap-Tabellenköpfe, Auth-Status-Pills, KPI-Metriken und Live-Online-Puls-Indikatoren).
     - `vorstand/js/logins/logins-actions.js`: Vollständige Entkopplung von Google Apps Script für Admins, App-Mitglieder, Sitzungsprotokoll und Sync.
     - `vorstand/js/mitglieder/mitglieder-sync-ui.js`: Direkte Vorschau und Durchführung des Logins-Syncs gegen Supabase.
 

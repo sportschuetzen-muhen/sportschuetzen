@@ -104,24 +104,51 @@ async function apiFetch(module, paramsOrObj, options) {
     return fetch(url, fetchOptions);
 }
 
+// =========================================================
+//  LOGIN UI HELPER
+// =========================================================
+function toggleLoginPasswordVisibility() {
+    const pw = document.getElementById('login-pw');
+    const icon = document.getElementById('login-pw-toggle-icon');
+    if (!pw) return;
+    if (pw.type === 'password') {
+        pw.type = 'text';
+        if (icon) {
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        }
+    } else {
+        pw.type = 'password';
+        if (icon) {
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
+    }
+}
+
+function setLoginError(msg) {
+    const errDiv = document.getElementById('login-error');
+    const errText = document.getElementById('login-error-text');
+    if (errText) errText.textContent = msg;
+    else if (errDiv) errDiv.textContent = msg;
+    if (errDiv) errDiv.classList.remove('d-none');
+}
+
 // === LOGIN / LOGOUT (Supabase Native Auth Integration) ===
 async function doLogin() {
     const u = (document.getElementById('login-user')?.value || '').trim();
     const p = (document.getElementById('login-pw')?.value || '').trim();
-    const btn = document.querySelector('button[onclick="doLogin()"]');
+    const btn = document.getElementById('btn-login-submit') || document.querySelector('button[onclick="doLogin()"]');
     const errDiv = document.getElementById('login-error');
     
     if (!u || !p) {
-        if (errDiv) {
-            errDiv.textContent = "Bitte Benutzername/E-Mail und Passwort eingeben.";
-            errDiv.classList.remove('d-none');
-        }
+        setLoginError("Bitte Benutzername/E-Mail und Passwort eingeben.");
         return;
     }
     
     if (btn) {
         btn.disabled = true;
-        btn.innerText = "Prüfe Anmeldung...";
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Prüfe Anmeldung...';
     }
     if (errDiv) errDiv.classList.add('d-none');
 
@@ -239,24 +266,18 @@ async function doLogin() {
                 showSuccess('Willkommen, ' + currentUser + '!');
                 if (typeof pingPresence === 'function') pingPresence();
             } else {
-                if (errDiv) {
-                    errDiv.textContent = "Login fehlgeschlagen: Ungültige Anmeldedaten.";
-                    errDiv.classList.remove('d-none');
-                }
+                setLoginError("Login fehlgeschlagen: Ungültige Anmeldedaten.");
                 showError("Login fehlgeschlagen. Bitte Benutzername und Passwort prüfen.");
             }
         }
     } catch (e) {
         console.error("❌ Login-Verbindungsfehler:", e);
-        if (errDiv) {
-            errDiv.textContent = "Verbindungsfehler: " + e.message;
-            errDiv.classList.remove('d-none');
-        }
+        setLoginError("Verbindungsfehler: " + e.message);
         showError("Verbindungsfehler: " + e.message);
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerText = "Einloggen";
+            btn.innerHTML = '<i class="fas fa-sign-in-alt me-1"></i> Anmelden';
         }
     }
 }

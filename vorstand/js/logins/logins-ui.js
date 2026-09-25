@@ -10,14 +10,14 @@ function renderLoginsShell() {
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div>
-        <h2 class="mb-0">🔐 Login-Verwaltung</h2>
-        <small class="text-muted">Admins (login_daten) und App-Mitglieder (app_login)</small>
+        <h2 class="mb-0 fw-bold text-primary"><i class="fas fa-user-lock me-2"></i>Login- & Zugangsverwaltung</h2>
+        <small class="text-muted">Benutzerkonten, Rollenrechte & Live-Sitzungen (Supabase PostgreSQL)</small>
       </div>
       <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-sm btn-outline-info write-protected" onclick="loginsSync()" id="btn-logins-sync">
+        <button class="btn btn-sm btn-outline-primary write-protected shadow-xs" onclick="loginsSync()" id="btn-logins-sync">
           <i class="fas fa-sync-alt me-1"></i> App-Users Synchronisieren
         </button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="fetchLoginsData()" id="btn-logins-reload">
+        <button class="btn btn-sm btn-outline-secondary shadow-xs" onclick="fetchLoginsData()" id="btn-logins-reload">
           <i class="fas fa-redo me-1"></i> Aktualisieren
         </button>
       </div>
@@ -26,21 +26,21 @@ function renderLoginsShell() {
     <!-- Tabs -->
     <ul class="nav nav-tabs mb-0" id="logins-tabs-nav">
       <li class="nav-item">
-        <a class="nav-link active" id="tab-btn-login_daten" href="#"
+        <a class="nav-link active fw-medium" id="tab-btn-login_daten" href="#"
            onclick="loginsSetTab('login_daten'); return false;">
-          <i class="fas fa-user-shield me-1"></i> Admins <span class="badge bg-secondary ms-1" id="logins-badge-login_daten">0</span>
+          <i class="fas fa-user-shield me-1 text-primary"></i> Vorstand & Admins <span class="badge bg-primary ms-1" id="logins-badge-login_daten">0</span>
         </a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" id="tab-btn-app_login" href="#"
+        <a class="nav-link fw-medium" id="tab-btn-app_login" href="#"
            onclick="loginsSetTab('app_login'); return false;">
-          <i class="fas fa-users me-1"></i> App-Mitglieder <span class="badge bg-secondary ms-1" id="logins-badge-app_login">0</span>
+          <i class="fas fa-users me-1 text-info"></i> Vereinsmitglieder (PIN) <span class="badge bg-secondary ms-1" id="logins-badge-app_login">0</span>
         </a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" id="tab-btn-login_sessions" href="#"
+        <a class="nav-link fw-medium" id="tab-btn-login_sessions" href="#"
            onclick="loginsSetTab('login_sessions'); return false;">
-          <i class="fas fa-history me-1"></i> Online-Protokoll <span class="badge bg-secondary ms-1" id="logins-badge-login_sessions">0</span>
+          <i class="fas fa-tower-broadcast me-1 text-success"></i> Aktive Sitzungen & Audit <span class="badge bg-secondary ms-1" id="logins-badge-login_sessions">0</span>
         </a>
       </li>
     </ul>
@@ -166,41 +166,54 @@ function renderLoginDatenTable(rows, canWrite) {
     `<th style="cursor:pointer;white-space:nowrap;user-select:none;" onclick="loginsSort('${key}')">${label}${loginsSortIcon(key)}</th>`;
 
   const editBtn = canWrite
-    ? (r) => `<button class="btn btn-xs btn-outline-primary btn-sm py-0 px-2" onclick='loginsOpenEdit(${JSON.stringify(r)})'>
+    ? (r) => `<button class="btn btn-sm btn-outline-primary py-0 px-2 rounded-2" title="Bearbeiten" onclick='loginsOpenEdit(${JSON.stringify(r)})'>
                 <i class="fas fa-pencil-alt"></i>
               </button>`
     : () => '';
 
   const rows_html = rows.map(r => `
     <tr>
-      <td><code class="text-primary fw-bold">${escapeHtml(r.username)}</code></td>
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          <div class="rounded-circle bg-primary-subtle text-primary fw-bold d-flex align-items-center justify-content-center" style="width:28px;height:28px;font-size:0.75rem;">
+            ${escapeHtml((r.username || '?').substring(0, 2).toUpperCase())}
+          </div>
+          <code class="text-primary fw-bold">${escapeHtml(r.username)}</code>
+        </div>
+      </td>
       <td>${r.personnumber ? `<span class="badge bg-light text-dark border font-monospace">${escapeHtml(r.personnumber)}</span>` : '<span class="text-muted">–</span>'}</td>
-      <td><span class="badge ${roleBadgeColor(r.rolle)}">${escapeHtml(r.rolle)}</span></td>
-      <td>${escapeHtml(r.anzeigename)}</td>
-      <td class="text-muted small">${escapeHtml(r.mailadresse || r.mailanzeige || '')}</td>
-      <td class="text-muted small">${escapeHtml(r.rolle_extern)}</td>
+      <td><span class="badge ${roleBadgeColor(r.rolle)} rounded-pill">${escapeHtml(r.rolle)}</span></td>
+      <td class="fw-medium">${escapeHtml(r.anzeigename)}</td>
+      <td class="text-muted small">${escapeHtml(r.mailadresse || r.mailanzeige || '—')}</td>
+      <td class="text-muted small">${escapeHtml(r.rolle_extern || '—')}</td>
       <td class="text-center">
-        ${r.passwort_hash ? '<i class="fas fa-check-circle text-success" title="Hash gesetzt"></i>' : '<i class="fas fa-times-circle text-danger" title="Kein Hash"></i>'}
+        ${r.passwort_hash 
+          ? '<span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 rounded-pill"><i class="fas fa-shield-alt me-1"></i>Supabase Auth</span>' 
+          : '<span class="badge bg-warning-subtle text-warning border border-warning-subtle py-1 px-2 rounded-pill"><i class="fas fa-clock me-1"></i>Ausstehend</span>'}
       </td>
       <td class="text-end">${editBtn(r)}</td>
     </tr>`).join('');
 
   return `
-    <table class="table table-hover table-sm align-middle mb-0" style="min-width:720px">
-      <thead class="table-dark">
-        <tr>
-          ${th('username','Benutzername')}
-          ${th('personnumber','PersonNumber')}
-          ${th('rolle','Rolle')}
-          ${th('anzeigename','Anzeigename')}
-          ${th('mailadresse','E-Mail-Adresse')}
-          ${th('rolle_extern','Rolle extern')}
-          <th class="text-center">Hash</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>${rows_html}</tbody>
-    </table>`;
+    <div class="card shadow-xs border rounded-3 overflow-hidden">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="min-width:750px">
+          <thead class="table-light text-secondary border-bottom" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+            <tr>
+              ${th('username','Benutzername')}
+              ${th('personnumber','PersonNr')}
+              ${th('rolle','Rolle')}
+              ${th('anzeigename','Anzeigename')}
+              ${th('mailadresse','E-Mail (Auth)')}
+              ${th('rolle_extern','Vorstandsfunktion')}
+              <th class="text-center">Auth-Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows_html}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function renderAppLoginTable(rows, canWrite) {
@@ -208,37 +221,45 @@ function renderAppLoginTable(rows, canWrite) {
     `<th style="cursor:pointer;white-space:nowrap;user-select:none;" onclick="loginsSort('${key}')">${label}${loginsSortIcon(key)}</th>`;
 
   const editBtn = canWrite
-    ? (r) => `<button class="btn btn-xs btn-outline-primary btn-sm py-0 px-2" onclick='loginsOpenEdit(${JSON.stringify(r)})'>
+    ? (r) => `<button class="btn btn-sm btn-outline-primary py-0 px-2 rounded-2" title="PIN bearbeiten" onclick='loginsOpenEdit(${JSON.stringify(r)})'>
                 <i class="fas fa-pencil-alt"></i>
               </button>`
     : () => '';
 
   const rows_html = rows.map(r => `
     <tr>
-      <td class="text-muted small"><code>${escapeHtml(r.personnumber)}</code></td>
-      <td><code class="text-success fw-bold">${escapeHtml(r.addressnumber_pin)}</code></td>
-      <td>${escapeHtml(r.firstname)}</td>
-      <td>${escapeHtml(r.lastname)}</td>
+      <td><span class="badge bg-light text-muted border font-monospace">${escapeHtml(r.personnumber)}</span></td>
+      <td><span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">${escapeHtml(r.addressnumber_pin)}</span></td>
+      <td class="fw-medium">${escapeHtml(r.firstname)}</td>
+      <td class="fw-medium">${escapeHtml(r.lastname)}</td>
+      <td class="text-muted small">${escapeHtml(r.email || '—')}</td>
       <td class="text-center">
-        ${r.passwort_hash ? '<i class="fas fa-check-circle text-success" title="Hash gesetzt"></i>' : '<i class="fas fa-minus text-muted" title="Kein Passwort"></i>'}
+        ${r.passwort_hash 
+          ? '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill py-1 px-2"><i class="fas fa-check-circle me-1"></i>Aktiv</span>' 
+          : '<span class="badge bg-light text-muted border rounded-pill py-1 px-2"><i class="fas fa-key me-1"></i>PIN</span>'}
       </td>
       <td class="text-end">${editBtn(r)}</td>
     </tr>`).join('');
 
   return `
-    <table class="table table-hover table-sm align-middle mb-0" style="min-width:550px">
-      <thead class="table-dark">
-        <tr>
-          ${th('personnumber','PersonNr')}
-          ${th('addressnumber_pin','PIN (AddressNr)')}
-          ${th('firstname','Vorname')}
-          ${th('lastname','Nachname')}
-          <th class="text-center">Hash</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>${rows_html}</tbody>
-    </table>`;
+    <div class="card shadow-xs border rounded-3 overflow-hidden">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="min-width:650px">
+          <thead class="table-light text-secondary border-bottom" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+            <tr>
+              ${th('personnumber','PersonNr (SSV)')}
+              ${th('addressnumber_pin','PIN (AddressNr)')}
+              ${th('firstname','Vorname')}
+              ${th('lastname','Nachname')}
+              ${th('email','E-Mail')}
+              <th class="text-center">Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows_html}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function renderLoginSessionsTable(rows) {
@@ -253,7 +274,7 @@ function renderLoginSessionsTable(rows) {
 
   rows.forEach(r => {
     const lat = parseGermanDate(r.lastActive).getTime();
-    if (now - lat < 300000) { // Letzte 5 Minuten aktiv
+    if (now - lat < 300000 || r.isOnline) { // Letzte 5 Minuten aktiv
       activeUserSet.add(r.username);
     }
     const dSec = parseInt(r.durationSec || '0');
@@ -271,13 +292,25 @@ function renderLoginSessionsTable(rows) {
     const formattedDur = formatDuration(r.durationSec);
     const friendlyUA = simplifyUserAgent(r.userAgent);
     const deviceIcon = getDeviceIcon(r.userAgent);
+    const lat = parseGermanDate(r.lastActive).getTime();
+    const isOnlineNow = (now - lat < 300000) || r.isOnline;
+
+    const statusBadge = isOnlineNow
+      ? '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><span class="spinner-grow spinner-grow-sm text-success me-1 align-middle" style="width:6px;height:6px;" role="status"></span>Online</span>'
+      : '<span class="badge bg-light text-muted border rounded-pill px-2 py-1">Beendet</span>';
+
     return `
     <tr>
-      <td><code class="text-primary fw-bold">${escapeHtml(r.username)}</code></td>
-      <td class="small">${escapeHtml(r.loginTime)}</td>
-      <td class="small">${escapeHtml(r.lastActive)}</td>
-      <td class="fw-medium">${escapeHtml(formattedDur)}</td>
-      <td class="small"><code>${escapeHtml(r.ip)}</code></td>
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          <code class="text-primary fw-bold">${escapeHtml(r.username)}</code>
+        </div>
+      </td>
+      <td>${statusBadge}</td>
+      <td class="small text-muted">${escapeHtml(r.loginTime)}</td>
+      <td class="small text-dark">${escapeHtml(r.lastActive)}</td>
+      <td class="fw-medium font-monospace small">${escapeHtml(formattedDur)}</td>
+      <td class="small"><span class="badge bg-light text-dark border font-monospace">${escapeHtml(r.ip)}</span></td>
       <td class="small text-muted" title="${escapeHtml(r.userAgent)}">
         <i class="fas ${deviceIcon} me-1 text-secondary"></i> ${escapeHtml(friendlyUA)}
       </td>
@@ -295,8 +328,11 @@ function renderLoginSessionsTable(rows) {
         </div>
         <div class="col-md-4">
           <div class="p-3 border rounded-3 text-center" style="background-color: #f0fdf4;">
-            <h6 class="text-muted mb-1 small text-uppercase fw-bold"><i class="fas fa-users me-1 text-success"></i> Aktive Nutzer (5 Min)</h6>
-            <h3 class="mb-0 text-success fw-bold">${activeUsersCount}</h3>
+            <h6 class="text-muted mb-1 small text-uppercase fw-bold"><i class="fas fa-users me-1 text-success"></i> Aktive Vorstände online</h6>
+            <h3 class="mb-0 text-success fw-bold d-flex align-items-center justify-content-center gap-2">
+              ${activeUsersCount > 0 ? '<span class="spinner-grow spinner-grow-sm text-success" style="width:10px;height:10px;"></span>' : ''}
+              ${activeUsersCount}
+            </h3>
           </div>
         </div>
         <div class="col-md-4">
@@ -308,19 +344,24 @@ function renderLoginSessionsTable(rows) {
       </div>
     </div>
 
-    <table class="table table-hover table-sm align-middle mb-0" style="min-width:650px">
-      <thead class="table-dark">
-        <tr>
-          ${th('username','Benutzer')}
-          ${th('loginTime','Login-Zeit')}
-          ${th('lastActive','Letzte Aktivität')}
-          ${th('durationSec','Dauer')}
-          ${th('ip','IP-Adresse')}
-          ${th('userAgent','Gerät / Browser')}
-        </tr>
-      </thead>
-      <tbody>${rows_html}</tbody>
-    </table>`;
+    <div class="card shadow-xs border rounded-3 overflow-hidden">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="min-width:750px">
+          <thead class="table-light text-secondary border-bottom" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+            <tr>
+              ${th('username','Benutzer')}
+              <th style="width: 100px;">Status</th>
+              ${th('loginTime','Login-Zeit')}
+              ${th('lastActive','Letzte Aktivität')}
+              ${th('durationSec','Dauer')}
+              ${th('ip','IP-Adresse')}
+              ${th('userAgent','Gerät / Browser')}
+            </tr>
+          </thead>
+          <tbody>${rows_html}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function loginDatenForm(r) {
