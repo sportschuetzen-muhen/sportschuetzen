@@ -897,110 +897,36 @@ async function silentInitialLoad() {
     }
 }
 
+// =========================================================
+//  ASYNCHRONER REFRESH (Obsoletes GAS-Polling deaktiviert -> Direktes Laden via Supabase)
+// =========================================================
+
 async function runBackgroundSync() {
-    // Wenn es ungespeicherte Änderungen gibt, überspringen wir den Sync,
-    // um ein Überschreiben aktiver Benutzereingaben zu verhindern.
     if (window.hasUnsavedChanges) {
         console.log("🔄 Background Sync: Übersprungen wegen ungespeicherten Änderungen");
         return;
     }
 
-    console.log("🔄 Background Sync: Starte Synchronisation im Hintergrund...");
-
     try {
         const activeView = document.querySelector('.module-view.active');
         const activeViewId = activeView ? activeView.id.replace('view-', '') : '';
 
-        // 1. Synchronisierung Jahresbeitrag (Alle Jahre im Hintergrund)
-        if (typeof loadJahresbeitragData === 'function') {
-            const year = typeof window._jbYear !== 'undefined' ? window._jbYear : new Date().getFullYear();
-            console.log(`🔄 Background Sync: Lade Jahresbeitrag für alle Jahre...`);
-
-            const [beitraege, members, participations, positions, gebuehren, invoices] = await Promise.all([
-                apiFetch('jahresbeitrag', `action=getBeitraege`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getMembers`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getParticipations`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getPositionen`).then(r => r.json()),
-                apiFetch('jahresbeitrag', `action=getGebuehren`).then(r => r.json()).catch(err => {
-                    console.warn("⚠️ Fehler beim Background Sync der Gebühren:", err);
-                    return { success: false, data: [] };
-                }),
-                apiFetch('rechnungen', 'action=getInvoices').then(r => r.json()).catch(err => {
-                    console.warn("⚠️ Fehler beim Background Sync der Rechnungen:", err);
-                    return { success: false, data: [] };
-                })
-            ]);
-
-            if (beitraege.success && members.success && participations.success && positions.success) {
-                window._jbGebuehren = gebuehren && gebuehren.success ? (gebuehren.data || []) : [];
-                window._jbAllInvoices = invoices && invoices.success ? (invoices.data || []) : [];
-                window._invoices = window._jbAllInvoices; // Sync both caches!
-                window._jbMembers = (members.data || []).filter(m => m.IsActive == 1 && m.Deceased != 1);
-                window._jbMemberMap = {};
-                (members.data || []).forEach(m => { 
-                    window._jbMemberMap[String(m.PersonNumber)] = m; 
-                });
-                
-                window._jbAllBeitraege = beitraege.data || [];
-                window._jbAllParticipations = participations.data || [];
-                window._jbAllPositions = positions.positions || [];
-                
-                window._jbData = window._jbAllBeitraege.filter(h => Number(h.year) === Number(year));
-
-                // Invoices mergen
-                if (typeof jbMergeInvoicesIntoData === 'function') {
-                    jbMergeInvoicesIntoData(window._jbAllInvoices || []);
-                }
-
-                window._jbParticipationsCache = {};
-                window._jbAllParticipations.forEach(p => {
-                    if (Number(p.year) === Number(year)) {
-                        const pn = String(p.PersonNumber).trim();
-                        if (!window._jbParticipationsCache[pn]) window._jbParticipationsCache[pn] = [];
-                        window._jbParticipationsCache[pn].push(p);
-                    }
-                });
-
-                window._jbPositionsCache = {};
-                window._jbAllPositions.forEach(p => {
-                    if (Number(p.year) === Number(year)) {
-                        const hid = String(p.headerid).trim();
-                        if (!window._jbPositionsCache[hid]) window._jbPositionsCache[hid] = [];
-                        window._jbPositionsCache[hid].push(p);
-                    }
-                });
-
-                if (typeof jbApplyTableSorting === 'function') jbApplyTableSorting();
-                if (typeof jbApplySidebarSorting === 'function') jbApplySidebarSorting();
-
-                if (activeViewId === 'jahresbeitrag' && typeof renderJahresbeitragView === 'function') {
-                    renderJahresbeitragView();
-                }
-                console.log("✅ Background Sync: Jahresbeitrag erfolgreich synchronisiert.");
-            }
-        }
-
-        // 2. Synchronisierung Mitglieder (über deduplizierten Loader)
-        if (typeof window.ensureMitgliederLoaded === 'function') {
-            console.log("🔄 Background Sync: Synchronisiere Mitglieder...");
+        // Supabase-first Reload nur falls relevant
+        if (activeViewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') {
+            await loadJahresbeitragData(true, false);
+        } else if (activeViewId === 'mitglieder' && typeof window.ensureMitgliederLoaded === 'function') {
             await window.ensureMitgliederLoaded(true);
-            if (activeViewId === 'mitglieder' && typeof renderMitgliederView === 'function') {
-                renderMitgliederView(window._mglData);
-                if (typeof mglFilter === 'function') mglFilter();
-            }
-            console.log("✅ Background Sync: Mitglieder erfolgreich synchronisiert.");
+            if (typeof renderMitgliederView === 'function') renderMitgliederView(window._mglData);
+            if (typeof mglFilter === 'function') mglFilter();
         }
-        
-        console.log("✅ Background Sync: Erfolgreich abgeschlossen.");
     } catch (err) {
-        console.error("❌ Fehler beim Background Sync:", err);
+        console.warn("⚠️ Fehler bei Hintergrund-Aktualisierung:", err);
     }
 }
 
 function startBackgroundSyncTimer() {
-    if (_backgroundSyncTimerId) return;
-    console.log("⏰ Background Sync: Timer gestartet (Intervall: 5 Minuten)");
-    _backgroundSyncTimerId = setInterval(runBackgroundSync, 300000); // alle 5 Minuten
+    // Deaktiviert: Dank nativer Supabase-Performance (< 50ms) ist 5-Minuten-Polling obsolet.
+    console.log("⚡ Direktes Laden via Supabase aktiv (5-Minuten-Hintergrund-Timer deaktiviert).");
 }
 
 // Globale Event Listener für Formular-Änderungen in allen views

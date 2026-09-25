@@ -21,13 +21,13 @@ window._mailSortDir = 1;
 // ============================================================
 // LADEN
 // ============================================================
-async function loadMailData(force = false) {
-  if (_mailLoaded && !force) return;
+async function loadMailData(forceReload = false) {
+  if (_mailLoaded && !forceReload) return;
 
   _mailSelected.clear();
 
   // Cache-First Integration:
-  if (!force && window._mglData && window._mglData.length > 0) {
+  if (!forceReload && window._mglData && window._mglData.length > 0) {
     console.log("⚡ loadMailData: Lade Mitglieder aus globalem Cache...");
     const seen = new Set();
     _mailAllMembers = window._mglData.filter(m => {

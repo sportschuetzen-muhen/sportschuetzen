@@ -196,7 +196,7 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
         supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true })
       ]);
 
-      if (!headRes.error && Array.isArray(headRes.data) && headRes.data.length > 0) {
+      if (!headRes.error && Array.isArray(headRes.data)) {
         console.log(`✅ ${headRes.data.length} Beitragsrechnungen & ${posRes.data?.length || 0} Positionen aus Supabase geladen (< 50 ms).`);
         window._jahresbeitragIsSupabase = true;
 
@@ -474,8 +474,19 @@ window.syncJahresbeitragFromLegacy = async function() {
         erfasst_von: String(p.erfasstvon || 'sync').trim()
       })).filter(p => !!p.person_number && !!p.year && !!p.event_key);
 
-      for (let i = 0; i < dbParts.length; i += 50) {
-        const chunk = dbParts.slice(i, i + 50);
+      // Deduplicate by person_number + year + event_key to avoid Postgres 21000 ON CONFLICT error
+      const seenParts = new Set();
+      const uniqueParts = [];
+      for (const p of dbParts) {
+        const key = `${p.person_number}_${p.year}_${p.event_key}`;
+        if (!seenParts.has(key)) {
+          seenParts.add(key);
+          uniqueParts.push(p);
+        }
+      }
+
+      for (let i = 0; i < uniqueParts.length; i += 50) {
+        const chunk = uniqueParts.slice(i, i + 50);
         const { error: errPart } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
         if (errPart) console.warn("Warnung bei Teilnahmen-Chunk-Import:", errPart);
         else importedParticipations += chunk.length;

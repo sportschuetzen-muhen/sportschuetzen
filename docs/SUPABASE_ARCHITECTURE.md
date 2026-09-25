@@ -1012,6 +1012,56 @@ Gemäss Architekturentscheidung bleiben das operative Controlling-Modul **ANLÄS
    - Direkte REST-Abfrage von Supabase mit Stale-While-Revalidate Caching.
    - Schnelle Speicherung von Zu-/Absagen in `poll_responses` und asynchroner Dual-Write an das Google Sheet.
 
+#### 6.4.1 Zukünftige Ausbaustufe: Dynamischer Fragen-Baukasten (Variante B – Geplant / Backlog)
+
+> **Architekturentscheid & Status:** Für die Erweiterbarkeit von Fragen bei Anlässen und Umfragen (Hinzufügen, Ändern, Entfernen/Ausblenden) wurde beschlossen, künftig **Variante B (Vollständig dynamischer Fragen-Baukasten)** umzusetzen.  
+> **Wichtiger Hinweis:** Die Umsetzung ist im Backlog vorgemerkt und **erfolgt ausdrücklich nicht jetzt** (Umsetzung in einer späteren Phase).
+
+**1. Motivation & Abgrenzung:**
+* Aktuell existieren 4 fest definierte Standard-Fragen (`frage_begleitung`, `frage_essen`, `frage_grund`, `options`), die bereits heute pro Anlass über Checkboxen ein- oder ausgeblendet werden können.
+* Mit Variante B soll die bisherige Begrenzung auf starre Standard-Flags aufgehoben werden, damit der Vorstand für jeden beliebigen Anlass frei konfigurierbare Zusatzfragen (z.B. Fahrdienst/Transport, Helfer-Einteilung, Buffet/Dessertspenden, spezielle Menüwünsche, Freitext-Anmerkungen) erstellen kann.
+
+**2. Geplante Zielarchitektur (PostgreSQL / Supabase):**
+* **Datenbank-Erweiterung (schemalos via `JSONB`):**
+  * `public.poll_events.custom_questions` (`JSONB NOT NULL DEFAULT '[]'::jsonb`): Speichert ein geordnetes Array von Frage-Objekten pro Anlass:
+    ```json
+    [
+      {
+        "id": "q_transport_1",
+        "text": "Benötigst du eine Mitfahrgelegenheit oder kannst du fahren?",
+        "type": "choice",
+        "options": ["Suche Mitfahrgelegenheit", "Biete Mitfahrgelegenheit (3 Plätze)", "Fahre selbst"],
+        "required": false,
+        "is_active": true,
+        "sort_order": 1
+      },
+      {
+        "id": "q_dessert_2",
+        "text": "Was bringst du für das Buffet mit?",
+        "type": "text",
+        "placeholder": "z.B. Tiramisu, Schoggikuchen...",
+        "required": false,
+        "is_active": true,
+        "sort_order": 2
+      }
+    ]
+    ```
+  * `public.poll_responses.answers` (`JSONB NOT NULL DEFAULT '{}'::jsonb`): Speichert die Antworten des Mitglieds strukturiert als Key-Value-Map (verknüpft über die Frage-ID):
+    ```json
+    {
+      "q_transport_1": "Biete Mitfahrgelegenheit (3 Plätze)",
+      "q_dessert_2": "Schoggikuchen"
+    }
+    ```
+* **Abwärtskompatibilität:**
+  * Die bestehenden Spalten (`frage_begleitung`, `frage_essen`, `frage_grund`) bleiben entweder als Standardfragen erhalten oder werden transparent als vorkonfigurierte System-Fragetypen im Schema geführt.
+* **Vorstand-Cockpit (`vorstand/js/umfragen/`):**
+  * Integrierter Fragebogen-Editor im Bearbeitungsbereich jedes Anlasses (Frage anlegen, Typ wählen [Text, Single-Choice, Multiple-Choice, Ja/Nein], Pflichtfeld definieren, Fragen per Drag & Drop sortieren, ausblenden oder löschen).
+* **Mitglieder-PWA (`app.js`):**
+  * Dynamischer Formular-Renderer im Anmelde-Dialog (`openRSVPForm`), der die im `custom_questions`-JSON definierten Felder automatisch für das Mitglied rendert und die Eingaben in `answers` serialisiert.
+* **Auswertung & Export (`umfragen-eval.js` / `umfragen-controlling.js`):**
+  * Automatische dynamische Spaltengenerierung in der Teilnehmer-Tabelle sowie im CSV-/Excel-Export basierend auf den aktiven Fragen des ausgewählten Anlasses.
+
 ### 6.5 Fachmodul INVENTAR-VERWALTUNG (Phase 7 – Abgeschlossen & im Testbetrieb)
 
 Die Verwaltung des gesamten Vereinsinventars (Sportwaffen, Schlüssel, Vereinskleidung, Schiessbekleidung, Ausleihe mit digitaler Signatur und Kautions-/Pfandkasse) wurde erfolgreich auf Supabase migriert.
@@ -1109,11 +1159,12 @@ Mit dem Modul Jahresbeitrag wurde die Verbindung zwischen Mitglieder-Stammdaten 
    - `public.member_participations`: Wettkampfteilnahmen für Beitragsrabatte & Schiessgelder.
    - `public.gebuehren_config`: Dynamische Gebührenordnung (JB001-JB007, LI001-LI003, GE001, Turniere und Zusatzpositionen).
 2. **Supabase-First Cockpit (`vorstand/js/jahresbeitrag/`):**
-   - `jahresbeitrag-core.js`: Blitzschnelles Laden aller Beitragsrechnungen, Positionen, Turniere und Gebühren direkt via Supabase REST (< 50 ms) mit automatischem Fallback auf GAS.
+   - `jahresbeitrag-core.js`: Blitzschnelles Laden aller Beitragsrechnungen, Positionen, Turniere und Gebühren direkt via Supabase REST (< 50 ms). Supabase ist Single Source of Truth; veraltetes Fallback-Kriterium (`headRes.data.length > 0`) entfernt.
    - `jahresbeitrag-overview.js`: Direkte Verbuchung von Zahlungen in Supabase, automatische Rechnungsanlage und -verknüpfung in `public.invoices`. TableKit Spaltenausblendung (`TableKit.setupColumnToggle`) in der Beitragsübersicht.
-   - `jahresbeitrag-schnellerfassung.js`: Sofortige Speicherung von Teilnahmen und Neuberechnungen in Supabase mit asynchronem Dual-Write an Google Sheets (`Members100_GAS`).
+   - `jahresbeitrag-schnellerfassung.js`: Sofortige Speicherung von Teilnahmen und Neuberechnungen in Supabase. Dual-Write an Google Sheets deaktiviert.
    - `jahresbeitrag-gebuehren.js`: Dynamische Verwaltung der Gebührenordnung direkt in Supabase.
-   - **1-Klick-Import (`syncJahresbeitragFromLegacy()`):** Bequeme Übernahme aller bestehenden Beitragsrechnungen, Positionen, Turnierteilnahmen und Gebühren aus Google Sheets nach Supabase mit einem einzigen Knopfdruck.
+   - **Migration abgeschlossen:** Vollständige Übernahme aller 59 Beitragsrechnungen, 145 Positionen, 71 Teilnahmen und 35 Gebühren nach Supabase.
+   - **Hintergrund-Sync bereinigt:** Das frühere 5-Minuten-GAS-Polling (`startBackgroundSyncTimer` in `main.js`) wurde vollständig stillgelegt; alle Daten laden sub-sekündlich nativ über Supabase REST.
 
 ---
 
@@ -1345,7 +1396,7 @@ Nach Abschluss der Modul-Migrationen und Etablierung von Supabase als Single Sou
 | **Phase 2** | **Pilotmodul ANLÄSSE** | Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Controlling (`02_events_module.sql`, `03_anon_dev_policies.sql`); Vollständige Integration ins Vorstand-Portal (`anlaesse.js`, `supabase-client.js`) | Supabase | ✅ **Abgeschlossen** |
 | **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
 | **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 5** | **Anlässe & Umfragen (Eventplaner)** | Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 5** | **Anlässe & Umfragen (Eventplaner)** | Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung. *(Zukünftige Erweiterung: Dynamischer Fragen-Baukasten / Variante B im Backlog vorgemerkt, nicht jetzt)* | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet (auskommentiert) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |

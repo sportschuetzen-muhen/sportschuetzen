@@ -217,17 +217,8 @@ window.renderTabBankabgleich = function(container) {
       }
     }).catch(() => {});
   }
-  if (!window._jbGebuehren || window._jbGebuehren.length === 0) {
-    apiFetch('jahresbeitrag', 'action=getGebuehren')
-      .then(r => r.json())
-      .then(json => { if (json && json.success) window._jbGebuehren = json.data || []; })
-      .catch(() => {});
-  }
-  if (!window._jbAllPositions || window._jbAllPositions.length === 0) {
-    apiFetch('jahresbeitrag', 'action=getPositionen')
-      .then(r => r.json())
-      .then(json => { if (json && json.success) window._jbAllPositions = json.positions || []; })
-      .catch(() => {});
+  if ((!window._jbGebuehren || window._jbGebuehren.length === 0 || !window._jbAllPositions || window._jbAllPositions.length === 0) && typeof window.loadJahresbeitragData === 'function') {
+    window.loadJahresbeitragData(false, false).catch(() => {});
   }
 
   const hasResults = window._bhBankMatchResults && window._bhBankMatchResults.length > 0;
