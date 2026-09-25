@@ -12,10 +12,12 @@ async function regeneratePDF(groupJson) {
         if (!group?.length) return;
         const first     = group[0];
         const aktion    = (first.Aktion||"").toUpperCase();
-        const isAusgabe = aktion==='AUSGABE'||aktion==='CHECKOUT';
+        const isVerkauf = aktion === 'VERKAUF';
+        const isAusgabe = aktion === 'AUSGABE' || aktion === 'CHECKOUT';
 
         const items = group.map(t => ({
             itemId:           t.Inventar_ID,
+            label:            getItemLabelFromTrans(t),
             kategorie:        (t.Kategorie||"").toLowerCase(),
             zustandAbgabe:    t.Zustand_Abgabe    || '-',
             zustandRueckgabe: t.Zustand_Rueckgabe || '-',
@@ -30,7 +32,7 @@ async function regeneratePDF(groupJson) {
         ]);
 
         await generateQuittungPDF({
-            action:                isAusgabe ? 'checkout' : 'checkin',
+            action:                isVerkauf ? 'verkauf' : (isAusgabe ? 'checkout' : 'checkin'),
             Aktion:                first.Aktion,
             Aktueller_Besitzer_ID: first.Aktueller_Besitzer_ID,
             mitgliedId:            first.Aktueller_Besitzer_ID,
@@ -39,7 +41,7 @@ async function regeneratePDF(groupJson) {
             sigMitglied:           sigMBase64,
             Sig_Vorstand:          sigVBase64,
             items
-        }, String(first.Inventar_ID || '?'));
+        }, String(first.Inventar_ID || '?'), sigMBase64, sigVBase64, isVerkauf);
     } catch (err) {
         alert("PDF konnte nicht wiederhergestellt werden: " + err.message);
     }

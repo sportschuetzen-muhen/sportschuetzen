@@ -1058,7 +1058,7 @@ function navTo(viewId, el) {
         else if (viewId === 'jahresmeisterschaft-kk' && typeof loadJahresmeisterschaftKKData === 'function') loadPromise = loadJahresmeisterschaftKKData();
         else if (viewId === 'mail'          && typeof loadMailData          === 'function') loadPromise = loadMailData();
         else if (viewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') loadPromise = loadJahresbeitragData();
-        else if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadPromise = loadRechnungenData();
+        else if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadPromise = loadRechnungenData(false, true);
         else if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadPromise = loadMitgliederData();
         else if (viewId === 'buchhaltung'      && typeof renderBuchhaltung     === 'function') loadPromise = renderBuchhaltung();
         else if (viewId === 'galerie'          && typeof initGalerieManager    === 'function') loadPromise = initGalerieManager();

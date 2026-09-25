@@ -139,7 +139,7 @@ function renderInventarUI(container) {
                                     </label>
                                     <div class="input-group input-group-sm">
                                         <input type="text" id="verkauf-konto" class="form-control font-monospace" list="inv-konten-datalist"
-                                               value="8501" readonly style="background-color: #e9ecef;"
+                                               value="${localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8501'}" readonly style="background-color: #e9ecef;"
                                                placeholder="Konto suchen oder wählen..."
                                                onchange="onVerkaufKontoChange(this.value)">
                                         <button class="btn btn-outline-secondary" type="button" id="btn-verkauf-konto-lock" 
@@ -425,18 +425,25 @@ function toggleBookingFields() {
     if (kontoContainer) {
         kontoContainer.classList.toggle('d-none', !isVerkauf && !isCheckout);
         if (isVerkauf) {
+            const savedVerkaufKonto = localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8501';
             if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-book me-1"></i>Haben-Konto (Ertrag Kleiderverkauf)';
-            if (inputKonto && (inputKonto.value === '2030' || inputKonto.value.startsWith('2030 '))) {
-                inputKonto.value = '8501';
+            if (inputKonto && (inputKonto.value === '2030' || inputKonto.value.startsWith('2030 ') || !inputKonto.value)) {
+                inputKonto.value = savedVerkaufKonto;
+            } else if (inputKonto && inputKonto.value === '8501' && savedVerkaufKonto !== '8501') {
+                inputKonto.value = savedVerkaufKonto;
             }
-            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>8501</code> (Kleiderverkauf). Ansonsten variabel aus Kontenrahmen wählbar.';
-            onVerkaufKontoChange(inputKonto ? inputKonto.value : '8501');
+            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>8501</code> (Kleiderverkauf). Ansonsten variabel aus Kontenrahmen wählbar (Auswahl wird gemerkt).';
+            onVerkaufKontoChange(inputKonto ? inputKonto.value : savedVerkaufKonto);
         } else if (isCheckout) {
+            const savedDepotKonto = localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030';
             if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-shield-alt me-1"></i>Haben-Konto (Kautionen / Depots)';
-            if (inputKonto && (inputKonto.value === '8501' || inputKonto.value.startsWith('8501 ') || inputKonto.value === '3200')) {
-                inputKonto.value = '2030';
+            if (inputKonto && (inputKonto.value === '8501' || inputKonto.value.startsWith('8501 ') || inputKonto.value === '3200' || !inputKonto.value)) {
+                inputKonto.value = savedDepotKonto;
+            } else if (inputKonto && inputKonto.value === '2030' && savedDepotKonto !== '2030') {
+                inputKonto.value = savedDepotKonto;
             }
-            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>2030</code> (Kautionen / Depots - Passivkonto). Ansonsten variabel aus Kontenrahmen wählbar.';
+            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>2030</code> (Kautionen / Depots - Passivkonto). Ansonsten variabel aus Kontenrahmen wählbar (Auswahl wird gemerkt).';
+            onVerkaufKontoChange(inputKonto ? inputKonto.value : savedDepotKonto);
         }
     }
     
@@ -457,6 +464,15 @@ window.onVerkaufKontoChange = function(val) {
     const cleanKonto = (val || '').split('|')[0].trim();
     const lbl = document.getElementById('label-verwendungs-konto');
     if (lbl) lbl.innerText = cleanKonto || '8501';
+
+    const action = document.getElementById('select-aktion')?.value;
+    if (cleanKonto) {
+        if (action === 'verkauf') {
+            localStorage.setItem('inventar_preferred_haben_konto_verkauf', cleanKonto);
+        } else if (action === 'checkout') {
+            localStorage.setItem('inventar_preferred_haben_konto_depot', cleanKonto);
+        }
+    }
 };
 
 window.toggleVerkaufKontoLock = function() {
