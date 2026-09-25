@@ -1,29 +1,90 @@
 // =========================================================
-//  LOGINS - Actions / Server Requests
+//  LOGINS - Actions / Server Requests (Supabase Migration)
 // =========================================================
 
 async function fetchLoginsData() {
   const wrapper = document.getElementById('logins-table-wrapper');
   if (wrapper) {
     wrapper.innerHTML = `<div class="text-center text-muted py-5">
-      <div class="spinner-border spinner-border-sm me-2"></div> Lade Daten...
+      <div class="spinner-border spinner-border-sm me-2"></div> Lade Daten aus Supabase...
     </div>`;
   }
   try {
-    const res  = await apiFetch('logins', 'action=getLogins');
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client ist nicht initialisiert.");
 
-    LoginsState.login_daten = data.login_daten || [];
-    LoginsState.app_login   = data.app_login   || [];
-    LoginsState.login_sessions = data.login_sessions || [];
-    LoginsState.loaded      = true;
+    // 1. Admins aus public.admin_profiles
+    const { data: admins, error: aErr } = await supa
+      .from('admin_profiles')
+      .select('*, user_roles:auth_user_id(role)')
+      .order('username');
+    if (aErr) throw aErr;
 
+    LoginsState.login_daten = (admins || []).map(a => {
+      let rStr = 'vorstand';
+      if (a.user_roles && Array.isArray(a.user_roles) && a.user_roles.length > 0) {
+        rStr = a.user_roles.map(x => x.role).join(',');
+      }
+      return {
+        id: a.id,
+        auth_user_id: a.auth_user_id,
+        username: a.username,
+        anzeigename: a.display_name,
+        mailadresse: a.email,
+        mailanzeige: a.email,
+        personnumber: a.person_number,
+        rolle: rStr,
+        rolle_extern: a.role_external || '',
+        passwort_hash: Boolean(a.auth_user_id)
+      };
+    });
+
+    // 2. App-Mitglieder aus public.members
+    const { data: members, error: mErr } = await supa
+      .from('members')
+      .select('person_number, address_number, first_name, last_name, primary_email, is_active, auth_user_id')
+      .eq('is_active', true)
+      .order('last_name');
+    if (mErr) throw mErr;
+
+    LoginsState.app_login = (members || []).map(m => ({
+      personnumber: m.person_number,
+      addressnumber_pin: m.address_number ? String(m.address_number).padStart(6, '0') : '',
+      firstname: m.first_name,
+      lastname: m.last_name,
+      email: m.primary_email,
+      passwort_hash: Boolean(m.auth_user_id)
+    }));
+
+    // 3. Login-Sessions aus public.login_sessions
+    const { data: sessions, error: sErr } = await supa
+      .from('login_sessions')
+      .select('*')
+      .order('login_time', { ascending: false })
+      .limit(100);
+    if (sErr) throw sErr;
+
+    LoginsState.login_sessions = (sessions || []).map(s => {
+      const lt = s.login_time ? new Date(s.login_time).toLocaleString('de-CH') : '';
+      const ls = s.last_seen ? new Date(s.last_seen).toLocaleString('de-CH') : '';
+      return {
+        id: s.id,
+        username: s.username,
+        loginTime: lt,
+        lastActive: ls,
+        durationSec: s.duration_sec || 0,
+        ip: s.ip_address || '—',
+        userAgent: s.user_agent || 'Browser',
+        isOnline: s.is_online
+      };
+    });
+
+    LoginsState.loaded = true;
     loginsUpdateBadges();
     loginsRenderTable();
   } catch (e) {
     if (wrapper) {
-      wrapper.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>${escapeHtml(e.message)}</div>`;
+      wrapper.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden der Logins: ${escapeHtml(e.message)}</div>`;
     }
   }
 }
@@ -44,54 +105,61 @@ async function loginsSave() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Speichern...';
 
-    let params = {};
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
 
     if (tab === 'login_daten') {
-      const rolle = (document.getElementById('lf-rolle-custom')?.value?.trim() ||
-                     document.getElementById('lf-rolle')?.value || '');
-      params = {
-        action:       mode === 'add' ? 'addLoginDaten' : 'saveLoginDaten',
-        username:     document.getElementById('lf-username')?.value?.trim()    || '',
-        personnumber: document.getElementById('lf-personnumber')?.value?.trim()|| '',
-        anzeigename:  document.getElementById('lf-anzeigename')?.value?.trim() || '',
-        rolle:        rolle,
-        passwort:     document.getElementById('lf-passwort')?.value            || '',
-        mailadresse:  document.getElementById('lf-mailadresse')?.value?.trim() || '',
-        mailanzeige:  document.getElementById('lf-mailadresse')?.value?.trim() || '', // Rückwärtskompatibilität
-        rolle_extern: document.getElementById('lf-rolle-extern')?.value?.trim()|| ''
-      };
-      if (mode === 'edit' && record) params.row = record._row;
+      const username = document.getElementById('lf-username')?.value?.trim() || '';
+      const anzeigename = document.getElementById('lf-anzeigename')?.value?.trim() || '';
+      const email = document.getElementById('lf-mailadresse')?.value?.trim() || '';
+      const personnumber = parseInt(document.getElementById('lf-personnumber')?.value?.trim()) || null;
+      const rolleRaw = document.getElementById('lf-rolle-custom')?.value?.trim() || document.getElementById('lf-rolle')?.value || 'vorstand';
+      const rolleExtern = document.getElementById('lf-rolle-extern')?.value?.trim() || '';
 
-      if (!params.username) { showError('Benutzername ist Pflicht.'); return; }
+      if (!username) throw new Error("Benutzername ist Pflicht.");
+      if (!email) throw new Error("E-Mail-Adresse ist Pflicht für das Supabase-Login.");
 
-    } else {
-      params = {
-        action:           mode === 'add' ? 'addAppLogin' : 'saveAppLogin',
-        personnumber:      document.getElementById('af-personnumber')?.value?.trim() || '',
-        addressnumber_pin: document.getElementById('af-pin')?.value?.trim()          || '',
-        firstname:         document.getElementById('af-firstname')?.value?.trim()    || '',
-        lastname:          document.getElementById('af-lastname')?.value?.trim()     || '',
-        passwort:          document.getElementById('af-passwort')?.value             || ''
-      };
-      if (mode === 'edit' && record) params.row = record._row;
+      const rolesArr = rolleRaw.split(',').map(r => r.trim()).filter(Boolean);
 
-      if (!params.addressnumber_pin) { showError('PIN (AddressNumber) ist Pflicht.'); return; }
-    }
+      const { data, error } = await supa.rpc('save_admin_profile', {
+        p_username: username,
+        p_display_name: anzeigename || username,
+        p_email: email,
+        p_role_external: rolleExtern,
+        p_person_number: personnumber,
+        p_roles: rolesArr
+      });
+      if (error) throw error;
 
-    const qs  = new URLSearchParams(params).toString();
-    const res = await apiFetch('logins', qs);
-    const data = await res.json();
-
-    if (data.success) {
       bootstrap.Modal.getInstance(document.getElementById('logins-modal'))?.hide();
-      showSuccess(data.message || 'Gespeichert!');
+      showSuccess('Admin-Profil erfolgreich in Supabase gespeichert!');
       await fetchLoginsData();
-    } else {
-      showError('Fehler: ' + (data.error || 'Unbekannt'));
-    }
 
+    } else {
+      const pn = parseInt(document.getElementById('af-personnumber')?.value?.trim());
+      const pin = document.getElementById('af-pin')?.value?.trim() || '';
+      const fn = document.getElementById('af-firstname')?.value?.trim() || '';
+      const ln = document.getElementById('af-lastname')?.value?.trim() || '';
+
+      if (!pn) throw new Error("PersonNumber ist Pflicht.");
+      if (!pin) throw new Error("PIN ist Pflicht.");
+
+      const paddedPin = pin.padStart(6, '0');
+      const { error } = await supa.from('members').update({
+        address_number: paddedPin,
+        first_name: fn,
+        last_name: ln,
+        updated_at: new Date().toISOString()
+      }).eq('person_number', pn);
+
+      if (error) throw error;
+
+      bootstrap.Modal.getInstance(document.getElementById('logins-modal'))?.hide();
+      showSuccess('App-Mitglied PIN/Daten in Supabase gespeichert!');
+      await fetchLoginsData();
+    }
   } catch (e) {
-    showError('Verbindungsfehler: ' + e.message);
+    showError("Fehler beim Speichern: " + e.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-save me-1"></i> Speichern';
@@ -112,45 +180,48 @@ async function loginsConfirmDelete() {
   const btn = document.getElementById('logins-btn-delete');
   try {
     btn.disabled = true;
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
 
-    const action = tab === 'login_daten' ? 'deleteLoginDaten' : 'deleteAppLogin';
-    const qs = new URLSearchParams({ action, row: record._row }).toString();
-    const res = await apiFetch('logins', qs);
-    const data = await res.json();
-
-    if (data.success) {
-      bootstrap.Modal.getInstance(document.getElementById('logins-modal'))?.hide();
-      showSuccess('Eintrag gelöscht.');
-      await fetchLoginsData();
+    if (tab === 'login_daten') {
+      const { error } = await supa.rpc('delete_admin_profile', { p_username: record.username });
+      if (error) throw error;
     } else {
-      showError('Fehler: ' + (data.error || 'Unbekannt'));
+      const { error } = await supa.from('members').update({
+        address_number: null,
+        updated_at: new Date().toISOString()
+      }).eq('person_number', record.personnumber);
+      if (error) throw error;
     }
+
+    bootstrap.Modal.getInstance(document.getElementById('logins-modal'))?.hide();
+    showSuccess('Eintrag gelöscht.');
+    await fetchLoginsData();
   } catch (e) {
-    showError('Verbindungsfehler: ' + e.message);
+    showError("Fehler beim Löschen: " + e.message);
   } finally {
     btn.disabled = false;
   }
 }
 
 async function loginsSync() {
-  if (!confirm('🔄 App-Users aus der Hauptdatenbank synchronisieren?\n\nDies aktualisiert alle Mitglieder in der app_login-Tabelle.')) return;
+  if (!confirm('🔄 Mitglieder-Stammdaten mit Logins synchronisieren?\n\nDies übernimmt fehlende E-Mails aus den Mitgliederdaten für den Vorstand und gleicht alle PINs ab.')) return;
 
   const btn = document.getElementById('btn-logins-sync');
   try {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Synchronisiere...';
 
-    const res  = await apiFetch('logins', 'action=syncAppUsers');
-    const data = await res.json();
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
 
-    if (data.success) {
-      showSuccess('✅ ' + (data.message || 'Sync abgeschlossen!'));
-      await fetchLoginsData();
-    } else {
-      showError('Sync-Fehler: ' + (data.error || 'Unbekannt'));
-    }
+    const { data, error } = await supa.rpc('sync_logins_from_members');
+    if (error) throw error;
+
+    showSuccess('✅ ' + (data.message || 'Sync erfolgreich abgeschlossen!'));
+    await fetchLoginsData();
   } catch (e) {
-    showError('Verbindungsfehler beim Sync: ' + e.message);
+    showError('Sync-Fehler: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i> App-Users Synchronisieren';

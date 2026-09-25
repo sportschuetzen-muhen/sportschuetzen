@@ -104,85 +104,215 @@ async function apiFetch(module, paramsOrObj, options) {
     return fetch(url, fetchOptions);
 }
 
-// === LOGIN / LOGOUT ===
+// === LOGIN / LOGOUT (Supabase Native Auth Integration) ===
 async function doLogin() {
-    const u = document.getElementById('login-user').value;
-    const p = document.getElementById('login-pw').value;
+    const u = (document.getElementById('login-user')?.value || '').trim();
+    const p = (document.getElementById('login-pw')?.value || '').trim();
     const btn = document.querySelector('button[onclick="doLogin()"]');
+    const errDiv = document.getElementById('login-error');
     
     if (!u || !p) {
-        document.getElementById('login-error').classList.remove('d-none');
+        if (errDiv) {
+            errDiv.textContent = "Bitte Benutzername/E-Mail und Passwort eingeben.";
+            errDiv.classList.remove('d-none');
+        }
         return;
     }
     
-    btn.disabled = true;
-    btn.innerText = "Prüfe...";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Prüfe Anmeldung...";
+    }
+    if (errDiv) errDiv.classList.add('d-none');
 
     try {
-        // Passwort mit SHA-256 hashen
-        const hashedPw = await hashPassword(p);
-        
-        console.log("🔐 Login versuch:", u);
-        console.log("🔑 Worker URL:", WORKER_URL);
-        
-        const res = await fetch(
-            `${WORKER_URL}?module=admin&action=checkLogin&user=${encodeURIComponent(u)}&pw=${encodeURIComponent(hashedPw)}`,
-            { headers: { 'X-CSRF-Token': getCsrfToken(), 'Content-Type': 'application/json' } }
-        );
-        
-        console.log("📡 Response Status:", res.status);
-        const data = await res.json();
-        console.log("📋 Response Data:", data);
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        let loginSuccessful = false;
 
-        if (data.success) {
-            currentUser = data.name;
-            const roles = Array.isArray(data.roles)
-                ? data.roles
-                : [data.role || 'gast'];
-            currentRoles = roles
-                .map(r => String(r || '').trim().toLowerCase())
-                .filter(Boolean);
-            userRole = currentRoles[0] || 'gast';
-            currentRole = userRole;
-            
-            // AppState aktualisieren
-            AppState.set('currentUser', currentUser);
-            AppState.set('currentRoles', currentRoles);
-            AppState.set('userRole', userRole);
-            
-            localStorage.setItem('portal_user', currentUser);
-            localStorage.setItem('portal_role', userRole);
-            localStorage.setItem('portal_roles', currentRoles.join(','));
-            localStorage.setItem('portal_login_id', u);
-            
-            // Neue Felder aus der DB für Mails speichern
-            localStorage.setItem('portal_mailadresse', data.mailadresse || data.Mailadresse || data.mailanzeige || data.Mailanzeige || '');
-            localStorage.setItem('portal_mailanzeige', data.mailadresse || data.Mailadresse || data.mailanzeige || data.Mailanzeige || ''); // Rückwärtskompatibilität
-            localStorage.setItem('portal_rolle_extern', data.rolle_extern || data.Rolle_extern || '');
-            localStorage.setItem('portal_personnumber', data.personnumber || data.PersonNumber || '');
+        // 1. PRIMÄRER WEG: Supabase Auth
+        if (supa) {
+            console.log("🔐 Starte Supabase Auth-Check für:", u);
+            let targetEmail = u.includes('@') ? u : null;
+            let resolvedData = null;
 
-            showApp();
-            showSuccess('Willkommen, ' + currentUser + '!');
-        } else {
-            document.getElementById('login-error').classList.remove('d-none');
-            showError("Login fehlgeschlagen: " + (data.error || "Unbekannt"));
+            // Identifikator auflösen (Username / SSV-PersonNumber / PIN -> E-Mail)
+            try {
+                const { data: res, error: rpcErr } = await supa.rpc('resolve_login_identifier', { p_identifier: u });
+                if (!rpcErr && res && res.success && res.email) {
+                    targetEmail = res.email;
+                    resolvedData = res;
+                    console.log("✅ Identifikator aufgelöst zu Auth-E-Mail:", targetEmail);
+                }
+            } catch (rpcEx) {
+                console.warn("⚠️ Identifier RPC fehlgeschlagen, versuche Direktanmeldung:", rpcEx.message);
+            }
+
+            if (targetEmail) {
+                const { data: authData, error: authErr } = await supa.auth.signInWithPassword({
+                    email: targetEmail,
+                    password: p
+                });
+
+                if (!authErr && authData && authData.user) {
+                    console.log("✅ Supabase Auth erfolgreich:", authData.user.email);
+                    const authUser = authData.user;
+
+                    // Rollen ermitteln (JWT app_metadata oder user_roles Tabelle)
+                    let roles = (authUser.app_metadata && Array.isArray(authUser.app_metadata.roles)) ? authUser.app_metadata.roles : [];
+                    if (roles.length === 0) {
+                        const { data: rData } = await supa.from('user_roles').select('role').eq('user_id', authUser.id);
+                        if (rData && rData.length > 0) roles = rData.map(x => x.role);
+                    }
+
+                    // Admin-Profil abfragen
+                    const { data: prof } = await supa.from('admin_profiles')
+                        .select('*')
+                        .or(`auth_user_id.eq.${authUser.id},email.eq.${targetEmail},username.eq.${u}`)
+                        .maybeSingle();
+
+                    currentUser = (prof && prof.display_name) || (resolvedData && resolvedData.name) || authUser.email.split('@')[0];
+                    currentRoles = roles.length > 0 ? roles.map(r => String(r).trim().toLowerCase()) : ['vorstand'];
+                    userRole = currentRoles[0] || 'vorstand';
+                    currentRole = userRole;
+
+                    // State setzen
+                    AppState.set('currentUser', currentUser);
+                    AppState.set('currentRoles', currentRoles);
+                    AppState.set('userRole', userRole);
+
+                    localStorage.setItem('portal_user', currentUser);
+                    localStorage.setItem('portal_role', userRole);
+                    localStorage.setItem('portal_roles', currentRoles.join(','));
+                    localStorage.setItem('portal_login_id', u);
+                    localStorage.setItem('portal_mailadresse', targetEmail);
+                    localStorage.setItem('portal_mailanzeige', targetEmail);
+                    localStorage.setItem('portal_personnumber', (prof && prof.person_number) || (resolvedData && resolvedData.person_number) || '');
+                    localStorage.setItem('portal_rolle_extern', (prof && prof.role_external) || '');
+
+                    // Letzten Login aktualisieren
+                    if (prof && prof.id) {
+                        supa.from('admin_profiles').update({ last_login_at: new Date().toISOString() }).eq('id', prof.id).then();
+                    }
+
+                    loginSuccessful = true;
+                    showApp();
+                    showSuccess('Willkommen, ' + currentUser + '! (Supabase Auth)');
+                    if (typeof pingPresence === 'function') pingPresence();
+                } else {
+                    console.warn("ℹ️ Supabase Auth Passwort-Check ergab:", authErr ? authErr.message : "Keine Session");
+                }
+            }
+        }
+
+        // 2. ÜBERGANGS-FALLBACK (falls Supabase-Passwort noch nicht gesetzt ist)
+        if (!loginSuccessful) {
+            console.log("🔄 Übergangs-Check via Worker für Migration...");
+            const hashedPw = await hashPassword(p);
+            const res = await fetch(
+                `${WORKER_URL}?module=admin&action=checkLogin&user=${encodeURIComponent(u)}&pw=${encodeURIComponent(hashedPw)}`,
+                { headers: { 'X-CSRF-Token': getCsrfToken(), 'Content-Type': 'application/json' } }
+            );
+            const data = await res.json();
+
+            if (data.success) {
+                currentUser = data.name;
+                const roles = Array.isArray(data.roles) ? data.roles : [data.role || 'vorstand'];
+                currentRoles = roles.map(r => String(r || '').trim().toLowerCase()).filter(Boolean);
+                userRole = currentRoles[0] || 'vorstand';
+                currentRole = userRole;
+
+                AppState.set('currentUser', currentUser);
+                AppState.set('currentRoles', currentRoles);
+                AppState.set('userRole', userRole);
+
+                localStorage.setItem('portal_user', currentUser);
+                localStorage.setItem('portal_role', userRole);
+                localStorage.setItem('portal_roles', currentRoles.join(','));
+                localStorage.setItem('portal_login_id', u);
+                localStorage.setItem('portal_mailadresse', data.mailadresse || data.Mailadresse || '');
+                localStorage.setItem('portal_mailanzeige', data.mailadresse || data.Mailadresse || '');
+                localStorage.setItem('portal_rolle_extern', data.rolle_extern || data.Rolle_extern || '');
+                localStorage.setItem('portal_personnumber', data.personnumber || data.PersonNumber || '');
+
+                loginSuccessful = true;
+                showApp();
+                showSuccess('Willkommen, ' + currentUser + '!');
+                if (typeof pingPresence === 'function') pingPresence();
+            } else {
+                if (errDiv) {
+                    errDiv.textContent = "Login fehlgeschlagen: Ungültige Anmeldedaten.";
+                    errDiv.classList.remove('d-none');
+                }
+                showError("Login fehlgeschlagen. Bitte Benutzername und Passwort prüfen.");
+            }
         }
     } catch (e) {
-        console.error("❌ Verbindungsfehler:", e);
+        console.error("❌ Login-Verbindungsfehler:", e);
+        if (errDiv) {
+            errDiv.textContent = "Verbindungsfehler: " + e.message;
+            errDiv.classList.remove('d-none');
+        }
         showError("Verbindungsfehler: " + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "Einloggen";
+        }
     }
-    btn.disabled = false;
-    btn.innerText = "Einloggen";
 }
 
-function doLogout() {
+async function doLogout() {
+    try {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (supa && supa.auth) {
+            await supa.auth.signOut();
+        }
+    } catch (err) {
+        console.warn("Fehler bei Supabase signOut:", err);
+    }
     localStorage.removeItem('portal_user');
     localStorage.removeItem('portal_role');
     localStorage.removeItem('portal_roles');
     localStorage.removeItem('portal_login_id');
     localStorage.removeItem('portal_personnumber');
+    localStorage.removeItem('portal_mailadresse');
+    localStorage.removeItem('portal_mailanzeige');
+    localStorage.removeItem('portal_rolle_extern');
     sessionStorage.removeItem('csrf_token');
+    sessionStorage.removeItem('portal_session_id');
     csrfToken = null;
     currentRoles = [];
     location.reload();
 }
+
+// Supabase Session Auto-Restore beim Seitenaufruf
+(async function initSupabaseAuthListener() {
+    try {
+        const checkSession = async () => {
+            const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+            if (!supa || !supa.auth) return;
+
+            const { data } = await supa.auth.getSession();
+            if (data && data.session && !window.currentUser) {
+                const user = data.session.user;
+                console.log("🔄 Supabase Session wiederhergestellt für:", user.email);
+                const { data: prof } = await supa.from('admin_profiles').select('*').eq('auth_user_id', user.id).maybeSingle();
+                
+                window.currentUser = (prof && prof.display_name) || user.email.split('@')[0];
+                window.userRole = 'vorstand';
+                window.currentRole = 'vorstand';
+                window.currentRoles = ['vorstand'];
+                if (typeof showApp === 'function') showApp();
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkSession);
+        } else {
+            setTimeout(checkSession, 500);
+        }
+    } catch (e) {
+        console.warn("Auth Listener Check fehlgeschlagen:", e);
+    }
+})();
+

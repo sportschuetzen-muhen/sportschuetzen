@@ -1114,32 +1114,36 @@ function getSessionId() {
 }
 
 async function pingPresence() {
-    console.log("🔍 pingPresence called. window.currentUser:", window.currentUser);
-    if (!window.currentUser) {
-        console.warn("⚠️ pingPresence: window.currentUser is falsy!");
-        return;
-    }
+    if (!window.currentUser) return;
     try {
         const sessId = getSessionId();
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+
+        if (supa) {
+            const friendlyUA = typeof simplifyUserAgent === 'function' ? simplifyUserAgent(navigator.userAgent) : navigator.userAgent;
+            const { data, error } = await supa.rpc('ping_login_session', {
+                p_session_id: sessId,
+                p_username: window.currentUser,
+                p_role: window.userRole || 'vorstand',
+                p_device: friendlyUA,
+                p_ip: 'Web Portal'
+            });
+            if (!error && data && data.success && Array.isArray(data.onlineUsers)) {
+                updatePresenceUI(data.onlineUsers);
+                return;
+            }
+        }
+
+        // Fallback Übergang
         const res = await apiFetch('logins', `action=ping&user=${encodeURIComponent(window.currentUser)}&sessionId=${sessId}`);
-        if (!res.ok) {
-            console.warn("⚠️ Presence-Ping HTTP Status nicht OK:", res.status);
-            return;
-        }
-        const text = await res.text();
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch (e) {
-            console.warn("⚠️ Presence-Ping: Server lieferte kein JSON (vorübergehendes Backend-Problem):", text.slice(0, 100));
-            return;
-        }
-        console.log("🔍 pingPresence response data:", data);
-        if (data.success && Array.isArray(data.onlineUsers)) {
-            updatePresenceUI(data.onlineUsers);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.onlineUsers)) {
+                updatePresenceUI(data.onlineUsers);
+            }
         }
     } catch (e) {
-        console.warn("⚠️ Fehler beim Presence-Ping (Netzwerkfehler):", e.message);
+        console.warn("⚠️ Fehler beim Presence-Ping:", e.message);
     }
 }
 
@@ -1284,8 +1288,8 @@ async function submitChangePassword(e) {
     const confirmPw = document.getElementById('cp-confirm-password').value;
     const submitBtn = document.getElementById('cp-submit-btn');
 
-    if (newPw.length < 4) {
-        showError("Das neue Passwort muss mindestens 4 Zeichen lang sein!");
+    if (newPw.length < 6) {
+        showError("Das neue Passwort muss mindestens 6 Zeichen lang sein!");
         return;
     }
 
@@ -1294,40 +1298,52 @@ async function submitChangePassword(e) {
         return;
     }
 
-    let loginId = localStorage.getItem('portal_login_id');
-    if (!loginId) {
-        loginId = prompt("🔑 Sicherheits-Bestätigung:\n\nBitte gib zur Verifizierung deines Kontos deinen Benutzernamen oder deine PIN (AddressNr) ein:");
-        if (!loginId) return;
-        localStorage.setItem('portal_login_id', loginId);
-    }
-
     try {
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Passwort wird geändert...';
         }
 
-        const oldPwHash = await hashPassword(oldPw);
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        let changed = false;
 
-        const res = await apiFetch('logins', {
-            action: 'changeMyPassword',
-            loginId: loginId,
-            oldPw: oldPwHash,
-            newPw: newPw
-        });
-
-        const data = await res.json();
-        if (data.success) {
-            showSuccess("Passwort erfolgreich geändert! Bitte logge dich mit deinem neuen Passwort erneut ein.", 5000);
-            const modalEl = document.getElementById('change-password-modal');
-            const modal = bootstrap.Modal.getInstance(modalEl);
-            if (modal) modal.hide();
-            setTimeout(doLogout, 5000);
-        } else {
-            showError("Fehler: " + (data.error || "Altes Passwort inkorrekt oder Benutzer nicht gefunden."));
+        // 1. Supabase Auth
+        if (supa && supa.auth) {
+            const { data: updateData, error: updateErr } = await supa.auth.updateUser({
+                password: newPw
+            });
+            if (!updateErr && updateData) {
+                changed = true;
+                console.log("✅ Passwort via Supabase Auth aktualisiert!");
+            }
         }
+
+        // 2. Legacy Fallback falls nicht in Supabase eingeloggt
+        if (!changed) {
+            let loginId = localStorage.getItem('portal_login_id');
+            if (!loginId) {
+                loginId = prompt("🔑 Sicherheits-Bestätigung:\n\nBitte gib zur Verifizierung deines Kontos deinen Benutzernamen oder deine PIN (AddressNr) ein:");
+                if (!loginId) return;
+                localStorage.setItem('portal_login_id', loginId);
+            }
+            const oldPwHash = await hashPassword(oldPw);
+            const res = await apiFetch('logins', {
+                action: 'changeMyPassword',
+                loginId: loginId,
+                oldPw: oldPwHash,
+                newPw: newPw
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || "Altes Passwort inkorrekt oder Benutzer nicht gefunden.");
+        }
+
+        showSuccess("Passwort erfolgreich geändert! Bitte logge dich mit deinem neuen Passwort erneut ein.", 5000);
+        const modalEl = document.getElementById('change-password-modal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        setTimeout(doLogout, 4000);
     } catch (err) {
-        showError("Verbindungsfehler: " + err.message);
+        showError("Fehler beim Ändern des Passworts: " + err.message);
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;

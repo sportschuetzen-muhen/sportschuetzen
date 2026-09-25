@@ -307,6 +307,34 @@ async function mglCheckSyncDiff(targetKey) {
   applyBtn.disabled = true;
 
   try {
+    // Spezifischer Supabase-Check für Login
+    if (targetKey === 'login') {
+      const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+      if (supa) {
+        const { data: admins } = await supa.from('admin_profiles').select('*');
+        const { data: members } = await supa.from('members').select('person_number, first_name, last_name, primary_email, address_number').eq('is_active', true);
+        
+        const diffs = [];
+        (admins || []).forEach(a => {
+          const needsEmail = !a.email || a.email === 'name@email.ch' || !a.email.includes('@');
+          const m = (members || []).find(x => x.person_number === a.person_number || (x.first_name + ' ' + x.last_name).toLowerCase() === (a.display_name || '').toLowerCase());
+          if (needsEmail && m && m.primary_email) {
+            diffs.push({
+              action: 'UPDATE',
+              nachname: a.username,
+              vorname: a.display_name,
+              wohnort: 'Admin-Profil',
+              details: `E-Mail fehlt -> Wird aus Stammdaten übernommen (${m.primary_email})`
+            });
+          }
+        });
+
+        _mglSyncCurrentDiffs = diffs;
+        mglRenderSingleDiffModal('Vorstand & App-Login (Supabase)', diffs);
+        return;
+      }
+    }
+
     const res = await apiFetch('mitglieder', `action=getSyncDiff&targetKey=${targetKey}`);
     const rawText = await res.text();
     let data;
@@ -449,6 +477,19 @@ async function mglApplyApprovedSync() {
   applyBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Schreibe Daten...`;
 
   try {
+    if (_mglSyncCurrentTarget === 'login') {
+      const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+      if (supa) {
+        const { data, error } = await supa.rpc('sync_logins_from_members');
+        if (error) throw error;
+        alert('✅ ' + (data.message || 'Logins erfolgreich aus Stammdaten aktualisiert!'));
+        const modalEl = document.getElementById('mglSyncModal');
+        const modalObj = bootstrap.Modal.getInstance(modalEl);
+        if (modalObj) modalObj.hide();
+        return;
+      }
+    }
+
     const selectedDiffs = [];
     document.querySelectorAll('.mgl-sync-diff-cb').forEach(cb => {
       selectedDiffs.push(cb.checked);
@@ -494,6 +535,16 @@ async function mglExecuteSyncDirect(targetKey) {
   if (!confirm(`Möchtest du den Sync für ${targetKey} jetzt ausführen?`)) return;
 
   try {
+    if (targetKey === 'login') {
+      const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+      if (supa) {
+        const { data, error } = await supa.rpc('sync_logins_from_members');
+        if (error) throw error;
+        alert('✅ ' + (data.message || 'Logins erfolgreich aus Stammdaten aktualisiert!'));
+        return;
+      }
+    }
+
     const payload = {
       action: 'executeSystemSync',
       targetKey: targetKey,

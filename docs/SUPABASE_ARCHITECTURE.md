@@ -1501,14 +1501,31 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - Lokaler Browser-Fallback (`jsPDF`) bei Netzwerkunterbrüchen.
     - Hilfsfunktion `window.createSwissQrBillPayload` für standardkonforme SPC-Payloads.
 
-### Phase 22: Infomaniak Cut-Over & CalDAV
+### Phase 22: Logins & Supabase Auth Integration (Portal, Website & PWA)
+- **Ziel:** Vollständige Ablösung der Google Sheets `login_daten`, `app_login` und `login_sessions` durch natives Supabase Auth, rollenbasierte Autorisierung (RLS) und Stammdaten-Synchronisation.
+- **Architektur & Komponenten:**
+  - **Migration (`22_logins_and_auth_module.sql`):**
+    - Tabelle `public.admin_profiles`: Speichert Vorstands-Profile (`username`, `display_name`, `email`, `role_external`, `person_number`, `auth_user_id`).
+    - Tabelle `public.login_sessions`: Protokolliert Anmeldezeit, letzte Aktivität, Dauer, IP-Adresse, Gerät/User-Agent und Online-Status.
+    - Privater Storage Bucket `vereins-dokumente`: Geschützt für Rollen `member`, `vorstand` und `admin` für vereinsinterne Dokumente und Protokolle auf der Website.
+    - RPC `public.resolve_login_identifier`: Löst Benutzername, SSV-Personennummer, PIN oder E-Mail für Supabase Auth auf.
+    - RPC `public.sync_logins_from_members`: Übernimmt fehlende E-Mails aus `public.members` für den Vorstand und gleicht PINs ab.
+    - RPC `public.ping_login_session`: Echtzeit-Präsenzprüfung und automatisches Timeout inaktiver Sitzungen.
+    - RPCs `public.save_admin_profile` und `public.delete_admin_profile`: Atomare Profil- und Rollenverwaltung.
+  - **Frontend-Integration:**
+    - `vorstand/js/auth.js`: Native Anmeldung mit `supabase.auth.signInWithPassword`, Session Auto-Restore und Logout via `supabase.auth.signOut`.
+    - `vorstand/js/main.js`: Umstellung von `pingPresence()` auf `ping_login_session` und `submitChangePassword()` auf `supabase.auth.updateUser`.
+    - `vorstand/js/logins/logins-actions.js`: Vollständige Entkopplung von Google Apps Script für Admins, App-Mitglieder, Sitzungsprotokoll und Sync.
+    - `vorstand/js/mitglieder/mitglieder-sync-ui.js`: Direkte Vorschau und Durchführung des Logins-Syncs gegen Supabase.
+
+### Phase 23: Infomaniak Cut-Over & CalDAV
 - **Ziel:** Umzug der Vereinsdomain auf Infomaniak (Schweizer Hosting, DSG-konform).
 - **Architektur:**
   - Domain-Transfer und DNS-Aufschaltung bei Infomaniak mit SPF-, DKIM- und DMARC-Records für `@sportschuetzen-muhen.ch`.
   - Anpassung der Supabase Secrets: `SMTP_HOST=mail.infomaniak.com`, `SMTP_USER=info@sportschuetzen-muhen.ch`.
   - Ersatz des Google Calendars durch CalDAV-Schnittstelle von Infomaniak für die Schützenstuben-Belegungen.
 
-### Phase 23: Zeitgesteuerte Automationen via `pg_cron`
+### Phase 24: Zeitgesteuerte Automationen via `pg_cron`
 - **Ziel:** Ablösung aller Google Time-Driven Trigger.
 - **Architektur:**
   - Aktivierung der PostgreSQL-Erweiterungen `pg_cron` und `pg_net` in Supabase.
@@ -1519,6 +1536,7 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Phase 20 (Zentrale Mail-Engine) und Phase 21 (Zentrale PDF- & QR-Engine) entkoppeln nun den operativen Dokumenten- und Mailbetrieb vollständig von Google Drive & Google Docs.
+> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Phase 20 (Zentrale Mail-Engine) und Phase 21 (Zentrale PDF- & QR-Engine) entkoppeln den operativen Dokumenten- und Mailbetrieb von Google Docs/Drive. Phase 22 stellt das gesamte Authentifizierungs- und Login-System auf Supabase Auth und PostgreSQL-basierte Profile um.
+
 
 
