@@ -247,42 +247,35 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
         }
         await loadRechnungenData(true);
         return;
+      } else {
+        throw new Error(result?.error || 'PDF-Erstellung fehlgeschlagen');
       }
     } catch (engineErr) {
-      console.warn("⚠️ PDF-Engine Fehler, greife auf Fallback zurück:", engineErr);
-    }
-  }
-
-  // Fallback (z.B. Offline-Betrieb)
-  try {
-    const response = await apiFetch('rechnungen', payload, 'POST');
-    const result = await response.json();
-
-    if (result.success) {
-      showSuccess("🎉 PDF erfolgreich generiert!");
-      if (result.pdfBase64) {
-        openPdfBase64(result.pdfBase64);
-      } else if (result.pdfUrl) {
-        window.open(result.pdfUrl, '_blank');
-      }
-
-      // Supabase State Update (pdf_url persistieren)
-      const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
-      if (supa && result.pdfUrl) {
+      console.warn("⚠️ PDF-Engine Fehler, versuche Client-Fallback:", engineErr);
+      if (typeof window.generatePdfClientFallback === 'function') {
         try {
-          await supa.from('invoices').update({
-            pdf_url: result.pdfUrl,
-            updated_at: new Date().toISOString()
-          }).eq('id', invoiceId);
-        } catch (e) { console.warn("Supabase pdf_url update:", e); }
+          const clientRes = await window.generatePdfClientFallback({
+            invoiceId: invoiceId,
+            recipient: recipient,
+            totalAmount: inv.total_amount,
+            year: inv.year || new Date().getFullYear(),
+            type: inv.type || 'Rechnung'
+          });
+          if (clientRes && clientRes.success) {
+            showSuccess("🎉 PDF erfolgreich über Browser generiert!");
+            if (clientRes.pdfUrl) window.open(clientRes.pdfUrl, '_blank');
+            await loadRechnungenData(true);
+            return;
+          }
+        } catch (cErr) {
+          alert("❌ PDF Fehler: " + cErr.message);
+          return;
+        }
       }
-
-      await loadRechnungenData(true);
-    } else {
-      throw new Error(result.error || "Generierung fehlgeschlagen.");
+      alert("❌ PDF Fehler: " + engineErr.message);
     }
-  } catch (err) {
-    alert("❌ PDF Fehler: " + err.message);
+  } else {
+    alert("❌ PDF-Engine nicht verfügbar.");
   } finally {
     hideLoadingOverlay();
   }
@@ -676,54 +669,125 @@ window.rnExecuteSendMail = async function(invoiceId) {
     mail_intro: targetBody || baseLayout.mail_intro // Kompatibilität
   });
 
-  const payload = {
-    action: 'sendInvoiceEmail',
-    invoiceId: invoiceId,
-    recipient: recipient,
-    sender: sender,
-    layout: customLayout
-  };
-
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Sende QR-Rechnung...';
   }
 
   try {
-    const response = await apiFetch('rechnungen', payload, 'POST');
-    const result = await response.json();
+    let pdfUrl = inv.pdf_url || '';
+    let pdfStoragePath = null;
+    let pdfBase64 = null;
 
-    if (result.success) {
-      const modalEl = document.getElementById('rnModalSendInvoiceMail');
-      if (modalEl) {
-        const bsModal = bootstrap.Modal.getInstance(modalEl);
-        if (bsModal) bsModal.hide();
+    // 1. PDF sicherstellen (generieren, falls noch nicht vorhanden)
+    if (!pdfUrl && typeof window.generatePdfViaEngine === 'function') {
+      try {
+        const pdfRes = await window.generatePdfViaEngine({
+          action: 'generate-invoice',
+          invoiceId: invoiceId,
+          recipient: recipient,
+          sender: sender,
+          layout: customLayout,
+          totalAmount: inv.total_amount,
+          year: inv.year || new Date().getFullYear(),
+          type: inv.type || 'Rechnung'
+        });
+        if (pdfRes && pdfRes.success) {
+          pdfUrl = pdfRes.pdfUrl || '';
+          pdfStoragePath = pdfRes.storagePath || null;
+          pdfBase64 = pdfRes.pdfBase64 || null;
+          inv.pdf_url = pdfUrl;
+        }
+      } catch (pdfErr) {
+        console.warn("⚠️ PDF-Engine vor Mailversand Hinweis:", pdfErr);
       }
-      showSuccess(`🎉 E-Mail erfolgreich an ${targetEmail} versandt!`);
-      const targetInv = (window._invoices || []).find(x => String(x.id).trim() === String(invoiceId).trim());
-      const sendDateStr = result.sendDate || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
-      if (targetInv) {
-        targetInv.mail_status = 'gesendet';
-        targetInv.send_date = sendDateStr;
-      }
-
-      // Supabase State Update (mail_status & send_date)
-      const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
-      if (supa) {
-        try {
-          await supa.from('invoices').update({
-            mail_status: 'gesendet',
-            send_date: new Date().toISOString(),
-            pdf_url: result.pdfUrl || targetInv?.pdf_url || '',
-            updated_at: new Date().toISOString()
-          }).eq('id', invoiceId);
-        } catch (e) { console.warn("Supabase mail_status update:", e); }
-      }
-
-      await loadRechnungenData(true);
-    } else {
-      throw new Error(result.error || "E-Mail-Versand fehlgeschlagen.");
     }
+
+    // 2. Anhang vorbereiten
+    const attachments = [];
+    if (pdfStoragePath) {
+      attachments.push({
+        filename: `Rechnung_${invoiceId}.pdf`,
+        storagePath: pdfStoragePath,
+        contentType: 'application/pdf'
+      });
+    } else if (pdfBase64) {
+      attachments.push({
+        filename: `Rechnung_${invoiceId}.pdf`,
+        contentBase64: pdfBase64,
+        contentType: 'application/pdf'
+      });
+    } else if (pdfUrl && pdfUrl.includes('/operatives-storage/')) {
+      const parts = pdfUrl.split('/operatives-storage/');
+      if (parts[1]) {
+        attachments.push({
+          filename: `Rechnung_${invoiceId}.pdf`,
+          storagePath: decodeURIComponent(parts[1].split('?')[0]),
+          contentType: 'application/pdf'
+        });
+      }
+    }
+
+    // 3. Mail-HTML mit Vereins-CI
+    const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+      ? window.renderClubEmailHtml({
+          title: customLayout.mail_subject || `Rechnung ${invoiceId}`,
+          subtitle: inv.type || 'Rechnung',
+          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`,
+          noticeHtml: inv.total_amount ? `<strong>Rechnungsbetrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
+          senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+        })
+      : `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`;
+
+    // 4. Versand über zentrale Supabase Mail-Engine (Edge Function send-email)
+    if (typeof window.sendMailViaEngine !== 'function') {
+      throw new Error("Zentrale Mail-Engine (sendMailViaEngine) ist nicht verfügbar.");
+    }
+
+    const mailResult = await window.sendMailViaEngine({
+      to: targetEmail,
+      subject: customLayout.mail_subject || `Rechnung ${invoiceId} | Sportschützen Muhen`,
+      html: emailHtml,
+      text: customLayout.mail_body || `Rechnung ${invoiceId}`,
+      senderName: sender?.name || 'Sportschützen Muhen',
+      senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
+      attachments: attachments,
+      moduleRef: 'rechnung',
+      recordId: String(invoiceId)
+    });
+
+    if (!mailResult.success) {
+      throw new Error(mailResult.error || "E-Mail-Versand über Supabase Mail-Engine fehlgeschlagen.");
+    }
+
+    const modalEl = document.getElementById('rnModalSendInvoiceMail');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+    showSuccess(`🎉 E-Mail erfolgreich an ${targetEmail} versandt!`);
+    const targetInv = (window._invoices || []).find(x => String(x.id).trim() === String(invoiceId).trim());
+    const sendDateStr = (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+    if (targetInv) {
+      targetInv.mail_status = 'gesendet';
+      targetInv.send_date = sendDateStr;
+      if (pdfUrl) targetInv.pdf_url = pdfUrl;
+    }
+
+    // 5. Supabase State Update (invoices table)
+    const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
+    if (supa) {
+      try {
+        await supa.from('invoices').update({
+          mail_status: 'gesendet',
+          send_date: new Date().toISOString(),
+          pdf_url: pdfUrl || targetInv?.pdf_url || '',
+          updated_at: new Date().toISOString()
+        }).eq('id', invoiceId);
+      } catch (e) { console.warn("Supabase mail_status update:", e); }
+    }
+
+    await loadRechnungenData(true);
   } catch (err) {
     console.error("Fehler beim E-Mail-Versand:", err);
     if (errAlert) {
@@ -3411,72 +3475,85 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
     mail_intro: targetBody || baseLayout.mail_intro
   });
 
-  const payload = {
-    action: 'sendMahnung',
-    invoiceId: invoiceId,
-    mahnstufe: targetStufe,
-    recipient: recipient,
-    sender: sender,
-    layout: customLayout
-  };
-
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Erstelle Mahnungs-PDF & sende E-Mail...';
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Erstelle Mahnung & sende E-Mail...';
   }
 
   try {
-    const response = await apiFetch('rechnungen', payload, 'POST');
-    const result = await response.json();
+    const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+      ? window.renderClubEmailHtml({
+          title: customLayout.mail_subject || `${stufenTitle}: Rechnung ${invoiceId}`,
+          subtitle: inv.type || 'Mahnung',
+          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`,
+          noticeHtml: inv.total_amount ? `<strong>Ausstehender Betrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
+          senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+        })
+      : `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`;
 
-    if (result.success) {
-      const modalEl = document.getElementById('rnModalSendMahnung');
-      if (modalEl) {
-        const bsModal = bootstrap.Modal.getInstance(modalEl);
-        if (bsModal) bsModal.hide();
-      }
-
-      // Optimistic Status Update in RAM-Datenbank
-      const nowStr = result.mahn_datum || (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
-      inv.status = 'gemahnt';
-      inv.mahnstufe = targetStufe;
-      inv.mahn_datum = nowStr;
-      window.renderRechnungen();
-
-      // Supabase PostgreSQL Master Update
-      const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-      if (sb) {
-        try {
-          let hist = [];
-          try {
-            if (inv.mahn_historie) hist = typeof inv.mahn_historie === 'string' ? JSON.parse(inv.mahn_historie) : inv.mahn_historie;
-          } catch (_) {}
-          if (!Array.isArray(hist)) hist = [];
-          hist.push({ stufe: targetStufe, datum: nowStr, email: targetEmail });
-          inv.mahn_historie = hist;
-
-          await sb.from('invoices').update({
-            status: 'gemahnt',
-            mahnstufe: targetStufe,
-            mahn_datum: nowStr,
-            mahn_historie: JSON.stringify(hist),
-            updated_at: new Date().toISOString()
-          }).eq('id', invoiceId);
-        } catch (sbErr) {
-          console.warn("⚠️ [Supabase] Dunning update warning:", sbErr);
-        }
-      }
-
-      showSuccess(`🎉 ${stufenTitle} für Rechnung ${invoiceId} erfolgreich an ${targetEmail} versandt!`, 4000);
-
-      setTimeout(async () => {
-        try {
-          await loadRechnungenData(true, true);
-        } catch (_) {}
-      }, 1000);
-    } else {
-      throw new Error(result.error || "Mahnungs-Versand fehlgeschlagen.");
+    if (typeof window.sendMailViaEngine !== 'function') {
+      throw new Error("Zentrale Mail-Engine (sendMailViaEngine) ist nicht verfügbar.");
     }
+
+    const mailResult = await window.sendMailViaEngine({
+      to: targetEmail,
+      subject: customLayout.mail_subject || `${stufenTitle}: Rechnung ${invoiceId} | Sportschützen Muhen`,
+      html: emailHtml,
+      text: customLayout.mail_body || `${stufenTitle}: Rechnung ${invoiceId}`,
+      senderName: sender?.name || 'Sportschützen Muhen',
+      senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
+      moduleRef: 'rechnung',
+      recordId: String(invoiceId)
+    });
+
+    if (!mailResult.success) {
+      throw new Error(mailResult.error || "Mahnungs-Versand fehlgeschlagen.");
+    }
+
+    const modalEl = document.getElementById('rnModalSendMahnung');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+
+    // Optimistic Status Update in RAM-Datenbank
+    const nowStr = (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+    inv.status = 'gemahnt';
+    inv.mahnstufe = targetStufe;
+    inv.mahn_datum = nowStr;
+    window.renderRechnungen();
+
+    // Supabase PostgreSQL Master Update
+    const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+    if (sb) {
+      try {
+        let hist = [];
+        try {
+          if (inv.mahn_historie) hist = typeof inv.mahn_historie === 'string' ? JSON.parse(inv.mahn_historie) : inv.mahn_historie;
+        } catch (_) {}
+        if (!Array.isArray(hist)) hist = [];
+        hist.push({ stufe: targetStufe, datum: nowStr, email: targetEmail });
+        inv.mahn_historie = hist;
+
+        await sb.from('invoices').update({
+          status: 'gemahnt',
+          mahnstufe: targetStufe,
+          mahn_datum: nowStr,
+          mahn_historie: JSON.stringify(hist),
+          updated_at: new Date().toISOString()
+        }).eq('id', invoiceId);
+      } catch (sbErr) {
+        console.warn("⚠️ [Supabase] Dunning update warning:", sbErr);
+      }
+    }
+
+    showSuccess(`🎉 ${stufenTitle} für Rechnung ${invoiceId} erfolgreich an ${targetEmail} versandt!`, 4000);
+
+    setTimeout(async () => {
+      try {
+        await loadRechnungenData(true, true);
+      } catch (_) {}
+    }, 1000);
   } catch (err) {
     console.error("Fehler beim Mahnungs-Versand:", err);
     if (errAlert) {
@@ -3745,34 +3822,78 @@ window.rnExecuteBatchMahnung = async function() {
   showLoadingOverlay(`Verarbeite Sammel-Mahnlauf (${items.length} Mahnungen werden erstellt und versendet)...`);
 
   try {
-    const response = await apiFetch('rechnungen', {
-      action: 'sendBatchMahnung',
-      items: items
-    }, 'POST');
-    const result = await response.json();
+    const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+    const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
+    let successCount = 0;
 
-    if (result.success) {
-      hideLoadingOverlay();
-      // Optimistic update
-      const nowStr = typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
-      items.forEach(itm => {
-        const inv = window._invoices.find(i => String(i.id) === String(itm.invoiceId));
-        if (inv) {
+    for (let idx = 0; idx < items.length; idx++) {
+      const itm = items[idx];
+      const inv = window._invoices.find(i => String(i.id) === String(itm.invoiceId));
+      if (!inv) continue;
+
+      const stufenTitle = itm.mahnstufe === 1 ? '1. Zahlungserinnerung' : (itm.mahnstufe === 2 ? '2. Mahnung' : '3. Letzte Mahnung');
+      const sender = (typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag') : null;
+      const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
+
+      const bodyText = `Guten Tag ${itm.recipient.vorname || ''} ${itm.recipient.nachname || ''},\n\nwir möchten dich freundlich daran erinnern, dass die Rechnung ${itm.invoiceId} über CHF ${Number(inv.total_amount || 0).toFixed(2)} noch zur Zahlung aussteht.\n\nBitte überweise den Betrag in den nächsten Tagen.`;
+      
+      const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+        ? window.renderClubEmailHtml({
+            title: `${stufenTitle}: Rechnung ${itm.invoiceId}`,
+            subtitle: inv.type || 'Mahnung',
+            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`,
+            noticeHtml: inv.total_amount ? `<strong>Ausstehender Betrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
+            senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+          })
+        : `<p>${bodyText.replace(/\n/g, '<br>')}</p>`;
+
+      if (typeof window.sendMailViaEngine === 'function') {
+        const mailRes = await window.sendMailViaEngine({
+          to: itm.recipient.email,
+          subject: `${stufenTitle}: Rechnung ${itm.invoiceId} | Sportschützen Muhen`,
+          html: emailHtml,
+          text: bodyText,
+          senderName: sender?.name || 'Sportschützen Muhen',
+          senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
+          moduleRef: 'rechnung',
+          recordId: String(itm.invoiceId)
+        });
+
+        if (mailRes.success) {
+          successCount++;
           inv.status = 'gemahnt';
           inv.mahnstufe = itm.mahnstufe;
           inv.mahn_datum = nowStr;
+
+          if (sb) {
+            let hist = [];
+            try {
+              if (inv.mahn_historie) hist = typeof inv.mahn_historie === 'string' ? JSON.parse(inv.mahn_historie) : inv.mahn_historie;
+            } catch (_) {}
+            if (!Array.isArray(hist)) hist = [];
+            hist.push({ stufe: itm.mahnstufe, datum: nowStr, email: itm.recipient.email });
+            inv.mahn_historie = hist;
+
+            await sb.from('invoices').update({
+              status: 'gemahnt',
+              mahnstufe: itm.mahnstufe,
+              mahn_datum: nowStr,
+              mahn_historie: JSON.stringify(hist),
+              updated_at: new Date().toISOString()
+            }).eq('id', itm.invoiceId);
+          }
         }
-      });
-      window.renderRechnungen();
-      showSuccess(`🎉 ${result.message || 'Sammel-Mahnlauf erfolgreich abgeschlossen!'}`, 4000);
-      setTimeout(async () => {
-        try {
-          await loadRechnungenData(true, true);
-        } catch (_) {}
-      }, 1000);
-    } else {
-      throw new Error(result.error || "Sammel-Mahnlauf fehlgeschlagen.");
+      }
     }
+
+    hideLoadingOverlay();
+    window.renderRechnungen();
+    showSuccess(`🎉 Sammel-Mahnlauf erfolgreich: ${successCount} von ${items.length} Mahnungen versandt!`, 4000);
+    setTimeout(async () => {
+      try {
+        await loadRechnungenData(true, true);
+      } catch (_) {}
+    }, 1000);
   } catch (err) {
     hideLoadingOverlay();
     alert("❌ Sammel-Mahnlauf Fehler: " + err.message);
@@ -4278,20 +4399,78 @@ window.rnExecuteMassSend = async function() {
         : null;
       const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
-      const response = await apiFetch('rechnungen', {
-        action: 'sendInvoiceEmail',
-        invoiceId: inv.id,
-        recipient: itm.recipient,
-        sender: sender,
-        layout: layout
-      }, 'POST');
+      let pdfUrl = inv.pdf_url || '';
+      let pdfStoragePath = null;
+      let pdfBase64 = null;
 
-      const result = await response.json();
-      if (result.success) {
+      if (!pdfUrl && typeof window.generatePdfViaEngine === 'function') {
+        try {
+          const pdfRes = await window.generatePdfViaEngine({
+            action: 'generate-invoice',
+            invoiceId: inv.id,
+            recipient: itm.recipient,
+            sender: sender,
+            layout: layout,
+            totalAmount: inv.total_amount,
+            year: inv.year || new Date().getFullYear(),
+            type: inv.type || 'Rechnung'
+          });
+          if (pdfRes && pdfRes.success) {
+            pdfUrl = pdfRes.pdfUrl || '';
+            pdfStoragePath = pdfRes.storagePath || null;
+            pdfBase64 = pdfRes.pdfBase64 || null;
+            inv.pdf_url = pdfUrl;
+          }
+        } catch (pdfErr) {
+          console.warn("⚠️ PDF-Engine Fehler im Massenversand:", pdfErr);
+        }
+      }
+
+      const attachments = [];
+      if (pdfStoragePath) {
+        attachments.push({ filename: `Rechnung_${inv.id}.pdf`, storagePath: pdfStoragePath, contentType: 'application/pdf' });
+      } else if (pdfBase64) {
+        attachments.push({ filename: `Rechnung_${inv.id}.pdf`, contentBase64: pdfBase64, contentType: 'application/pdf' });
+      } else if (pdfUrl && pdfUrl.includes('/operatives-storage/')) {
+        const parts = pdfUrl.split('/operatives-storage/');
+        if (parts[1]) {
+          attachments.push({ filename: `Rechnung_${inv.id}.pdf`, storagePath: decodeURIComponent(parts[1].split('?')[0]), contentType: 'application/pdf' });
+        }
+      }
+
+      const bodyText = (layout && layout.mail_body) || `Guten Tag ${itm.recipient.vorname || ''} ${itm.recipient.nachname || ''},\n\nanbei senden wir dir die Rechnung ${inv.id} über CHF ${Number(inv.total_amount || 0).toFixed(2)} mit beiliegender QR-Rechnung.\n\nFreundliche Grüsse\nSportschützen Muhen`;
+      const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+        ? window.renderClubEmailHtml({
+            title: (layout && layout.mail_subject) || `Rechnung ${inv.id}`,
+            subtitle: inv.type || 'Rechnung',
+            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`,
+            noticeHtml: inv.total_amount ? `<strong>Betrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
+            senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+          })
+        : `<p>${bodyText.replace(/\n/g, '<br>')}</p>`;
+
+      if (typeof window.sendMailViaEngine !== 'function') {
+        throw new Error("Mail-Engine nicht verfügbar");
+      }
+
+      const mailResult = await window.sendMailViaEngine({
+        to: itm.recipient.email,
+        subject: (layout && layout.mail_subject) || `Rechnung ${inv.id} | Sportschützen Muhen`,
+        html: emailHtml,
+        text: bodyText,
+        senderName: sender?.name || 'Sportschützen Muhen',
+        senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
+        attachments: attachments,
+        moduleRef: 'rechnung',
+        recordId: String(inv.id)
+      });
+
+      if (mailResult && mailResult.success) {
         successCount++;
         inv.mail_status = 'gesendet';
-        inv.send_date = result.sendDate || nowSwiss;
+        inv.send_date = nowSwiss;
         inv.updated_at = nowSwiss;
+        if (pdfUrl) inv.pdf_url = pdfUrl;
         if (badge) {
           badge.className = 'badge bg-success text-white py-1.5 px-2.5';
           badge.innerHTML = `<i class="fas fa-check me-1"></i>Gesendet`;
@@ -4301,12 +4480,13 @@ window.rnExecuteMassSend = async function() {
         if (sb) {
           sb.from('invoices').update({
             mail_status: 'gesendet',
-            send_date: inv.send_date,
+            send_date: new Date().toISOString(),
+            pdf_url: pdfUrl || inv.pdf_url || '',
             updated_at: new Date().toISOString()
           }).eq('id', inv.id).then(() => {}).catch(() => {});
         }
       } else {
-        throw new Error(result.error || 'Serverfehler beim Versand');
+        throw new Error(mailResult?.error || 'Serverfehler beim Versand');
       }
     } catch (sendErr) {
       failCount++;

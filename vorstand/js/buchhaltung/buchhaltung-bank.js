@@ -86,25 +86,9 @@ window.saveBhBankRules = function(rules) {
       })
       .catch(err => console.warn('[Buchhaltung Supabase] Bank rules save exception:', err));
   }
-
-  // 2. Dual-Write Übermittlung an das zentrale Google Sheet
-  try {
-    apiFetch('buchhaltung', { action: 'saveBankRules', rules: rules }, 'POST')
-      .then(res => res.json())
-      .then(json => {
-        if (json && json.success) {
-          console.log('✅ Bank-Regeln erfolgreich im zentralen Google Sheet gespeichert.');
-        }
-      })
-      .catch(err => {
-        console.warn('⚠️ Hinweis: Zentrale Regel-Speicherung im Sheet:', err);
-      });
-  } catch (err) {
-    console.warn('⚠️ Hinweis: apiFetch Fehler beim Speichern der Regeln:', err);
-  }
 };
 
-// Beim Modulstart zentrale Regeln aus Supabase oder Google Sheet abrufen
+// Beim Modulstart zentrale Regeln aus Supabase abrufen
 window.fetchBhBankServerRules = async function() {
   const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
   if (sb) {
@@ -136,38 +120,9 @@ window.fetchBhBankServerRules = async function() {
         return;
       }
     } catch (sbErr) {
-      console.warn('[Buchhaltung Supabase] Rules query failed, falling back to GAS:', sbErr);
+      console.warn('[Buchhaltung Supabase] Rules query failed:', sbErr);
     }
   }
-
-  // Fallback: Google Sheet
-  try {
-    apiFetch('buchhaltung', { action: 'getBankRules' }, 'GET')
-      .then(res => res.json())
-      .then(json => {
-        if (json && json.success && Array.isArray(json.data)) {
-          const oldRulesJson = localStorage.getItem('bh_bank_rules') || '';
-          const newRulesJson = JSON.stringify(json.data);
-          window._bhBankServerRules = json.data;
-          localStorage.setItem('bh_bank_rules', newRulesJson);
-          console.log(`✅ ${json.data.length} Bank-Regeln erfolgreich aus dem zentralen Google Sheet geladen.`);
-          
-          if (oldRulesJson === newRulesJson) return;
-
-          const active = document.activeElement;
-          if (active && active.classList && active.classList.contains('bh-konto-input')) {
-            console.log('Fokus aktiv in Konto-Eingabe, verzögere Hintergrund-Re-Matching...');
-            return;
-          }
-
-          if (window._bhBankTransactions && window._bhBankTransactions.length > 0) {
-            window._bhBankMatchResults = bhBankMatchAll(window._bhBankTransactions);
-            bhBankRenderResults(window._bhBankActiveFilter);
-          }
-        }
-      })
-      .catch(_ => {});
-  } catch (_) {}
 };
 
 function getBhDefaultRules() {
@@ -2738,63 +2693,23 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
       }
     }
 
-    // 2. Dual-Write to GAS
-    if (isSplit) {
-      const payloadBh = {
-        action: 'addJournalEntries',
-        jahr: entries[0].jahr,
-        datum: bookingDate,
-        beleg_nr: belegNr,
-        entries: entries,
-        typ: 'Bank'
-      };
-      if (!sbSuccess) {
-        const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-        jsonBh = await resBh.json();
-        if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen der Splitbuchung im Journal');
-      } else {
-        // Dual-Write an GAS deaktiviert (Supabase ist Single Source of Truth)
-        /* --- ZUM REAKTIVIEREN DIESE ZEILE EINKOMMENTIEREN ---
-        apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Bank split error:', e));
-        ------------------------------------------------------- */
-      }
-    } else {
-      const payloadBh = {
-        action: 'addJournalEntry',
-        jahr: entries[0].jahr,
-        datum: bookingDate,
-        beleg_nr: belegNr,
-        beschreibung: entries[0].beschreibung,
-        konto_soll: entries[0].konto_soll,
-        konto_haben: entries[0].konto_haben,
-        betrag: entries[0].betrag,
-        typ: 'Bank'
-      };
-      if (!sbSuccess) {
-        const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-        jsonBh = await resBh.json();
-        if (!jsonBh.success) throw new Error(jsonBh.error || 'Fehler beim Buchen im Journal');
-      } else {
-        // Dual-Write an GAS deaktiviert (Supabase ist Single Source of Truth)
-        /* --- ZUM REAKTIVIEREN DIESE ZEILE EINKOMMENTIEREN ---
-        apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Bank single error:', e));
-        ------------------------------------------------------- */
-      }
+    if (!sbSuccess) {
+      throw new Error('Fehler beim Buchen im Supabase Journal: Keine Buchung erstellt');
     }
 
-    // 2. Falls eine Rechnung erkannt wurde: im Rechnungs-Modul als bezahlt markieren (POST mit skipBooking: true)
+    // 2. Falls eine Rechnung erkannt wurde: im Rechnungs-Modul als bezahlt markieren
     if (matchedInvoice && matchedInvoice.id) {
       try {
-        const payloadInv = {
-          action: 'saveZahlung',
-          invoiceId: matchedInvoice.id,
-          datum: bookingDate,
-          methode: 'Überweisung',
-          beleg: belegNr,
-          skipBooking: true // Journalbuchung wurde bereits oben ausgeführt!
-        };
-        await apiFetch('rechnungen', payloadInv, 'POST');
-        
+        if (sb) {
+          await sb.from('invoices').update({
+            status: 'bezahlt',
+            payment_date: bookingDate,
+            payment_method: 'Überweisung',
+            document_ref: belegNr,
+            updated_at: new Date().toISOString()
+          }).eq('id', matchedInvoice.id);
+        }
+
         // Cache im Rechnungsmodul direkt aktualisieren
         const cachedInv = (window._invoices || []).find(i => String(i.id) === String(matchedInvoice.id));
         if (cachedInv) {
@@ -2808,18 +2723,19 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
       }
     }
 
-    // 3. Falls Jahresbeitrag: auch im Jahresbeitrags-Modul als bezahlt setzen (POST)
+    // 3. Falls Jahresbeitrag: auch im Jahresbeitrags-Modul als bezahlt setzen
     if (isJahresbeitrag && matchedBeitrag && matchedBeitrag.id) {
       try {
-        const payloadJb = {
-          action: 'saveZahlung',
-          headerId: matchedBeitrag.id,
-          datum: bookingDate,
-          methode: 'Überweisung',
-          beleg: belegNr
-        };
-        await apiFetch('jahresbeitrag', payloadJb, 'POST');
-        
+        if (sb) {
+          await sb.from('membership_fee_headers').update({
+            status: 'bezahlt',
+            payment_date: bookingDate,
+            payment_method: 'Überweisung',
+            document_ref: belegNr,
+            updated_at: new Date().toISOString()
+          }).eq('id', matchedBeitrag.id);
+        }
+
         // Cache im Beitragswesen updaten
         const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(matchedBeitrag.id));
         if (cachedJb) { cachedJb.status = 'bezahlt'; cachedJb.payment_date = bookingDate; }
@@ -3010,30 +2926,11 @@ window.bhBankBookAll = async function() {
       if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze an GAS (Dual-Write)...`;
     }
 
-    const payloadBh = {
-      action: 'addJournalEntries',
-      jahr: activeYear,
-      entries: allJournalEntries,
-      typ: 'Bank'
-    };
-
     if (!sbBatchSuccess) {
-      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-      const jsonBh = await resBh.json();
-      if (!jsonBh.success) {
-        throw new Error(jsonBh.error || 'Fehler beim Sammel-Buchen im Journal');
-      }
-      window._bhJournal = window._bhJournal || [];
-      const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
-      serverEntries.forEach(entry => window._bhJournal.push(entry));
-    } else {
-      // Async dual write to GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-      apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Batch all GAS error:', e));
-      ------------------------------------------------------- */
-      window._bhJournal = window._bhJournal || [];
-      createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
+      throw new Error('Fehler beim Sammel-Buchen im Supabase Journal');
     }
+    window._bhJournal = window._bhJournal || [];
+    createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
 
     // Alle vorbereiteten Transaktionen im UI als gebucht markieren
     const todayStr = new Date().toLocaleDateString('de-CH');
@@ -3069,7 +2966,7 @@ window.bhBankBookAll = async function() {
 
     showToast(`⚡ ${preparedList.length} Bank-Buchungen (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
 
-    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) non-blocking im Hintergrund abarbeiten
+    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) direkt in Supabase abarbeiten
     const secondaryTasks = [];
 
     preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, isJahresbeitrag }) => {
@@ -3082,14 +2979,15 @@ window.bhBankBookAll = async function() {
           cachedInv.payment_method = 'Überweisung';
           cachedInv.document_ref = belegNr;
         }
-        secondaryTasks.push(apiFetch('rechnungen', {
-          action: 'saveZahlung',
-          invoiceId: matchedInvoice.id,
-          datum: bookingDate,
-          methode: 'Überweisung',
-          beleg: belegNr,
-          skipBooking: true
-        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Rechnung:', err)));
+        if (sb) {
+          secondaryTasks.push(sb.from('invoices').update({
+            status: 'bezahlt',
+            payment_date: bookingDate,
+            payment_method: 'Überweisung',
+            document_ref: belegNr,
+            updated_at: new Date().toISOString()
+          }).eq('id', matchedInvoice.id));
+        }
       }
 
       // b) Jahresbeitrags-Zahlung: lokaler Cache sofort updaten
@@ -3099,19 +2997,21 @@ window.bhBankBookAll = async function() {
           cachedJb.status = 'bezahlt';
           cachedJb.payment_date = bookingDate;
         }
-        secondaryTasks.push(apiFetch('jahresbeitrag', {
-          action: 'saveZahlung',
-          headerId: matchedBeitrag.id,
-          datum: bookingDate,
-          methode: 'Überweisung',
-          beleg: belegNr
-        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Jahresbeitrag:', err)));
+        if (sb) {
+          secondaryTasks.push(sb.from('membership_fee_headers').update({
+            status: 'bezahlt',
+            payment_date: bookingDate,
+            payment_method: 'Überweisung',
+            document_ref: belegNr,
+            updated_at: new Date().toISOString()
+          }).eq('id', matchedBeitrag.id));
+        }
       }
     });
 
     if (secondaryTasks.length > 0) {
       Promise.allSettled(secondaryTasks).then(() => {
-        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen im Hintergrund abgeschlossen.`);
+        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen in Supabase abgeschlossen.`);
       });
     }
   } catch (err) {
@@ -3279,30 +3179,11 @@ window.bhBankBookSelected = async function() {
       if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze an GAS (Dual-Write)...`;
     }
 
-    const payloadBh = {
-      action: 'addJournalEntries',
-      jahr: activeYear,
-      entries: allJournalEntries,
-      typ: 'Bank'
-    };
-
     if (!sbBatchSuccess) {
-      const resBh = await apiFetch('buchhaltung', payloadBh, 'POST');
-      const jsonBh = await resBh.json();
-      if (!jsonBh.success) {
-        throw new Error(jsonBh.error || 'Fehler beim Sammel-Buchen im Journal');
-      }
-      window._bhJournal = window._bhJournal || [];
-      const serverEntries = Array.isArray(jsonBh.data) ? jsonBh.data : allJournalEntries;
-      serverEntries.forEach(entry => window._bhJournal.push(entry));
-    } else {
-      // Async dual write to GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-      apiFetch('buchhaltung', payloadBh, 'POST').catch(e => console.warn('[Buchhaltung Dual-Write] Batch selected GAS error:', e));
-      ------------------------------------------------------- */
-      window._bhJournal = window._bhJournal || [];
-      createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
+      throw new Error('Fehler beim Sammel-Buchen im Supabase Journal');
     }
+    window._bhJournal = window._bhJournal || [];
+    createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
 
     // Alle vorbereiteten Transaktionen im UI als gebucht markieren & aus Stapel entfernen
     const todayStr = new Date().toLocaleDateString('de-CH');
@@ -3341,7 +3222,7 @@ window.bhBankBookSelected = async function() {
 
     showToast(`⚡ ${preparedList.length} Bank-Buchung(en) (${allJournalEntries.length} Buchungssätze) erfolgreich ausgeführt!`, 'success', 'top-end', 4000);
 
-    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) non-blocking im Hintergrund abarbeiten
+    // 4. Nachgelagerte Modul-Aktualisierungen (Rechnungen & Jahresbeiträge) direkt in Supabase abarbeiten
     const secondaryTasks = [];
 
     preparedList.forEach(({ belegNr, bookingDate, matchedInvoice, matchedBeitrag, isJahresbeitrag }) => {
@@ -3354,14 +3235,15 @@ window.bhBankBookSelected = async function() {
           cachedInv.payment_method = 'Überweisung';
           cachedInv.document_ref = belegNr;
         }
-        secondaryTasks.push(apiFetch('rechnungen', {
-          action: 'saveZahlung',
-          invoiceId: matchedInvoice.id,
-          datum: bookingDate,
-          methode: 'Überweisung',
-          beleg: belegNr,
-          skipBooking: true
-        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Rechnung:', err)));
+        if (sb) {
+          secondaryTasks.push(sb.from('invoices').update({
+            status: 'bezahlt',
+            payment_date: bookingDate,
+            payment_method: 'Überweisung',
+            document_ref: belegNr,
+            updated_at: new Date().toISOString()
+          }).eq('id', matchedInvoice.id));
+        }
       }
 
       // b) Jahresbeitrags-Zahlung: lokaler Cache sofort updaten
@@ -3371,19 +3253,21 @@ window.bhBankBookSelected = async function() {
           cachedJb.status = 'bezahlt';
           cachedJb.payment_date = bookingDate;
         }
-        secondaryTasks.push(apiFetch('jahresbeitrag', {
-          action: 'saveZahlung',
-          headerId: matchedBeitrag.id,
-          datum: bookingDate,
-          methode: 'Überweisung',
-          beleg: belegNr
-        }, 'POST').catch(err => console.warn('⚠️ Hintergrund-Update Jahresbeitrag:', err)));
+        if (sb) {
+          secondaryTasks.push(sb.from('membership_fee_headers').update({
+            status: 'bezahlt',
+            payment_date: bookingDate,
+            payment_method: 'Überweisung',
+            document_ref: belegNr,
+            updated_at: new Date().toISOString()
+          }).eq('id', matchedBeitrag.id));
+        }
       }
     });
 
     if (secondaryTasks.length > 0) {
       Promise.allSettled(secondaryTasks).then(() => {
-        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen im Hintergrund abgeschlossen.`);
+        console.log(`✅ ${secondaryTasks.length} nachgelagerte Rechnungs-/Beitrags-Aktualisierungen in Supabase abgeschlossen.`);
       });
     }
   } catch (err) {

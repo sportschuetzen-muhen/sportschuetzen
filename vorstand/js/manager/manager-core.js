@@ -647,62 +647,48 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
                 console.log(`✅ [Supabase] ${targetModule} erfolgreich geladen (${supaSetups.length} Setups, ${supaTeams.length} Teams).`);
                 return;
             } else {
-                console.warn(`⚠️ [Supabase] Keine Setups/Teams für ${targetModule} (${year}) gefunden. Prüfe Google Sheets Fallback...`);
+                console.log(`ℹ️ [Supabase] Keine Setups für ${targetModule} (${year}) vorhanden. Initialisiere leere Teamstruktur.`);
+                window._managerIsSupabase = true;
+                appState.teams = (config.defaultTeams || []).map((t, idx) => ({
+                    id: `team_${idx + 1}`,
+                    name: t.name,
+                    max: t.max || 5,
+                    members: []
+                }));
+                appState.pool = (window._mglData || []).map(m => ({
+                    id: String(m.PersonNumber || m.ID || ''),
+                    name: `${m.FirstName || ''} ${m.LastName || ''}`.trim(),
+                    status: 'available',
+                    stellung: ''
+                })).filter(p => p.name);
+
+                mailWizard.cachedModules[targetModule] = {
+                    teams: JSON.parse(JSON.stringify(appState.teams)),
+                    pool: JSON.parse(JSON.stringify(appState.pool))
+                };
+
+                if (!isPreload) {
+                    renderContestUI();
+                    if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
+                    if (!window._managerDndInited) {
+                        initDragAndDrop();
+                        window._managerDndInited = true;
+                        appState._dndInited = true;
+                    }
+                    const sel = document.getElementById('module-selector');
+                    if (sel) sel.value = appState.activeModule;
+                }
+                return;
             }
         } catch (supaErr) {
-            console.warn("⚠️ [Supabase] Fehler beim Laden der Manager-Daten:", supaErr);
+            console.error("❌ [Supabase] Fehler beim Laden der Manager-Daten:", supaErr);
+            if (!isPreload) {
+                const c = document.getElementById('manager-inner');
+                if (c) c.innerHTML = `<div class="col-12"><div class="alert alert-danger">Fehler beim Laden aus Supabase: ${escapeHtml(supaErr.message)}</div></div>`;
+            }
+            return;
         }
     }
-
-    // 2. FALLBACK: GOOGLE APPS SCRIPT
-    window._managerIsSupabase = false;
-    try {
-        const params = `action=getManagerData&sheetName=${encodeURIComponent(config.sheetName)}`;
-        const res = await apiFetch('manager', params);
-
-        const txt = await res.text();
-        let data;
-        try { data = JSON.parse(txt); }
-        catch (e) { throw new Error("Backend-Antwort ist kein JSON (prüfe GAS Fehlerseite)"); }
-
-        if (data.error) throw new Error(data.error);
-
-        processContestData(data, config);
-        
-        // Deep-copy des geladenen Moduls cachen
-        mailWizard.cachedModules[targetModule] = {
-            teams: JSON.parse(JSON.stringify(appState.teams)),
-            pool: JSON.parse(JSON.stringify(appState.pool))
-        };
-
-        if (!isPreload) {
-            renderContestUI();
-            if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
-
-            // Singleton-Guard: DnD-Listener nur EINMAL an document binden
-            // (gilt für die gesamte App-Laufzeit, unabhängig von Modul-Wechseln)
-            if (!window._managerDndInited) {
-                initDragAndDrop();
-                window._managerDndInited = true;
-                appState._dndInited = true;
-            }
-
-            const sel = document.getElementById('module-selector');
-            if (sel) sel.value = appState.activeModule;
-        }
-
-        // Auto-Seed nach Supabase im Hintergrund, falls Supabase aktiv ist und noch leer war
-        if (supa && data && data.contestData && data.contestData.length > 0) {
-            autoSeedManagerToSupabase(targetModule, year, data, config);
-        }
-
-    } catch (e) {
-        if (!isPreload) {
-            const c = document.getElementById('manager-inner');
-            if (c) c.innerHTML = `<div class="col-12"><div class="alert alert-danger">Fehler: ${escapeHtml(e.message)}</div></div>`;
-        } else {
-            console.error(`Preload-Fehler für ${targetModule}:`, e);
-        }
     } finally {
         if (isPreload && prevState) {
             // Zustand wiederherstellen
@@ -913,55 +899,18 @@ async function saveContest() {
             if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
             console.log(`✅ [Supabase] ${supaSetups.length} Schützen & ${teamRows.length} Teams erfolgreich gespeichert.`);
 
-            // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund (DEAKTIVIERT - Supabase ist Single Source of Truth)
-            /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-            apiFetch('manager', 'action=saveManagerData', {
-                method: 'POST',
-                body: JSON.stringify({
-                    sheetName: config.sheetName,
-                    data: exportData.map(d => ({
-                        id: d.id,
-                        name: d.name,
-                        team: d.team,
-                        stellung: appState.activeModule === "gruppe" ? (d.stellung === "kniend" ? "Kniend" : "Liegend") : ""
-                    }))
-                })
-            }).then(r => r.text()).then(txt => {
-                console.log("📡 [Dual-Write] GAS-Spiegelung Team Manager abgeschlossen:", txt.slice(0, 80));
-            }).catch(err => {
-                console.warn("⚠️ [Dual-Write] GAS-Spiegelung Hinweis:", err.message);
-            });
-            ------------------------------------------------------- */
-
         } catch (supaErr) {
-            console.warn("⚠️ [Supabase] Fehler beim Speichern, wechsle auf GAS Fallback:", supaErr.message);
-        }
-    }
-
-    // 2. FALLBACK: GAS SPEICHERN falls Supabase nicht aktiv/erfolgreich
-    if (!supaSaved) {
-        try {
-            const res = await apiFetch('manager', 'action=saveManagerData', {
-                method: 'POST',
-                body: JSON.stringify({
-                    sheetName: config.sheetName,
-                    data: exportData.map(d => ({
-                        id: d.id,
-                        name: d.name,
-                        team: d.team,
-                        stellung: appState.activeModule === "gruppe" ? (d.stellung === "kniend" ? "Kniend" : "Liegend") : ""
-                    }))
-                })
-            });
-            const txt = await res.text();
-            let data;
-            try { data = JSON.parse(txt); } catch { throw new Error("Speichern: Backend-Antwort ist kein JSON"); }
-            if (data.error) throw new Error(data.error);
-        } catch (e) {
-            alert("Fehler beim Speichern: " + e.message);
+            console.error("❌ [Supabase] Fehler beim Speichern der Manager-Daten:", supaErr);
+            alert("Fehler beim Speichern in Supabase: " + supaErr.message);
             setError();
             return;
         }
+    }
+
+    if (!supaSaved) {
+        alert("Fehler beim Speichern: Supabase-Client nicht verfügbar.");
+        setError();
+        return;
     }
 
     // Cache nach erfolgreichem Speichern aktualisieren

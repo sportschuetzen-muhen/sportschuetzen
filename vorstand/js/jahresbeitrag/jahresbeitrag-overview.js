@@ -618,28 +618,7 @@ async function jbSaveZahlung() {
       }
     }
 
-    // 2. Asynchroner Dual-Write in Members100_GAS & Rechnungen_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    apiFetch('jahresbeitrag',
-      `action=saveZahlung&headerId=${id}&datum=${datum}&methode=${encodeURIComponent(methode)}&beleg=${encodeURIComponent(beleg)}`
-    ).then(res => res.json()).then(data => {
-      if (!data.success) console.warn("⚠️ Dual-Write Members100_GAS saveZahlung Warnung:", data.error);
-    }).catch(err => console.warn("⚠️ Dual-Write Members100_GAS saveZahlung Netzwerkfehler:", err));
 
-    if (r && r.invoiceId) {
-      const payPayload = {
-        action: 'saveZahlung',
-        invoiceId: r.invoiceId,
-        datum: datum,
-        methode: methode,
-        beleg: beleg || `PAY-${r.invoiceId}`,
-        skipBooking: true // Buchung erfolgt via Splitbuchung in Schritt 3
-      };
-      rechnungenApiFetch(payPayload).catch(payErr => {
-        console.warn("⚠️ Fehler bei Zahlungssynchronisierung mit Rechnungen_GAS:", payErr);
-      });
-    }
-    ------------------------------------------------------- */
 
     // 3. In Buchhaltung_GAS verbuchen via Splitbuchung
     if (typeof window.jbGetSplitBookings === 'function') {
@@ -894,70 +873,7 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     }
   }
 
-  // 2. Dual-Write an Rechnungen_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-  if (existingInv) {
-    const diff = Math.abs(Number(existingInv.total_amount || 0) - Number(r.Gesamt || 0));
-    if (diff > 0.01) {
-      console.log(`🔄 Rechnungsbetrag hat sich geändert (${existingInv.total_amount} -> ${r.Gesamt}). Aktualisiere Rechnung ${existingInv.id}…`);
-      
-      const updatePayload = {
-        action: 'updateInvoice',
-        invoice: {
-          id: existingInv.id,
-          PersonNumber: r.PersonNumber,
-          name: name,
-          year: Number(r.year),
-          type: 'Jahresbeitrag',
-          total_amount: Number(r.Gesamt)
-        },
-        positions: positions,
-        recipient: {
-          vorname: m.FirstName || '',
-          nachname: m.LastName || '',
-          strasse: m.Street || '',
-          plz: m.PostCode || '',
-          ort: m.City || '',
-          email: m.PrimaryEmail || ''
-        }
-      };
-      
-      rechnungenApiFetch(updatePayload).then(updateRes => {
-        if (!updateRes.success) console.warn("⚠️ Rechnungen_GAS Update-Warnung:", updateRes.error);
-        if (typeof loadRechnungenData === 'function') loadRechnungenData(true, true);
-      }).catch(err => console.warn("⚠️ Rechnungen_GAS Update Netzwerkfehler:", err));
-    }
-    r.invoiceId = existingInv.id;
-    return existingInv.id;
-  }
-  
-  // Rechnung neu anlegen in GAS (Dual-Write)
-  const invoicePayload = {
-    action: 'createInvoice',
-    invoice: {
-      id: invoiceId,
-      PersonNumber: r.PersonNumber,
-      name: name,
-      year: Number(r.year),
-      type: 'Jahresbeitrag',
-      total_amount: Number(r.Gesamt)
-    },
-    positions: positions,
-    recipient: {
-      vorname: m.FirstName || '',
-      nachname: m.LastName || '',
-      strasse: m.Street || '',
-      plz: m.PostCode || '',
-      ort: m.City || '',
-      email: m.PrimaryEmail || ''
-    }
-  };
-  
-  rechnungenApiFetch(invoicePayload).then(createRes => {
-    if (!createRes.success) console.warn("⚠️ Rechnungen_GAS Anlegen-Warnung:", createRes.error);
-    if (typeof loadRechnungenData === 'function') loadRechnungenData(true, true);
-  }).catch(err => console.warn("⚠️ Rechnungen_GAS Anlegen Netzwerkfehler:", err));
-  ------------------------------------------------------- */
+
 
   if (existingInv) {
     r.invoiceId = existingInv.id;
@@ -1015,49 +931,38 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
           }
           await loadJahresbeitragData(true, false);
           return;
+        } else {
+          throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
         }
       } catch (engineErr) {
         console.warn("⚠️ PDF-Engine Fehler in Jahresbeitrag:", engineErr);
+        if (typeof window.generatePdfClientFallback === 'function') {
+          const clientRes = await window.generatePdfClientFallback({
+            invoiceId: invoiceId,
+            recipient: {
+              vorname: m.FirstName || '',
+              nachname: m.LastName || '',
+              strasse: m.Street || '',
+              plz: m.PostCode || '',
+              ort: m.City || '',
+              email: m.PrimaryEmail || ''
+            },
+            totalAmount: r.total_amount || r.betrag || 0,
+            year: r.year || new Date().getFullYear(),
+            type: 'Jahresbeitrag'
+          });
+          if (clientRes && clientRes.success) {
+            showToast("🎉 PDF über Browser generiert!");
+            if (clientRes.pdfUrl) window.open(clientRes.pdfUrl, '_blank');
+            await loadJahresbeitragData(true, false);
+            return;
+          }
+        }
+        throw engineErr;
       }
+    } else {
+      throw new Error("PDF-Engine ist nicht verfügbar.");
     }
-
-    // Fallback auf GAS falls Edge Function offline
-    const sender = (typeof rnGetLoggedInSender === 'function')
-      ? rnGetLoggedInSender('Jahresbeitrag')
-      : jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag');
-
-    const layout = (window._invoiceLayouts && window._invoiceLayouts['Jahresbeitrag'])
-      || (typeof rnGetDefaultLayouts === 'function' ? rnGetDefaultLayouts()['Jahresbeitrag'] : null);
-
-    const pdfPayload = {
-      action: 'generateInvoicePDF',
-      invoiceId: invoiceId,
-      recipient: {
-        vorname: m.FirstName || '',
-        nachname: m.LastName || '',
-        strasse: m.Street || '',
-        plz: m.PostCode || '',
-        ort: m.City || '',
-        email: m.PrimaryEmail || ''
-      },
-      sender: sender,
-      layout: layout
-    };
-    
-    const res = await rechnungenApiFetch(pdfPayload);
-    if (!res.success) throw new Error(res.error);
-    
-    showToast("🎉 PDF-Rechnung erfolgreich generiert!");
-    
-    // PDF in neuem Tab öffnen
-    if (res.pdfBase64) {
-      openPdfBase64(res.pdfBase64);
-    } else if (res.pdfUrl) {
-      window.open(res.pdfUrl, '_blank');
-    }
-    
-    // Daten neu laden, um die UI zu aktualisieren (PDF-Link anzeigen)
-    await loadJahresbeitragData(true, false);
   } catch (err) {
     alert("Fehler bei PDF-Erstellung: " + err.message);
     if (btn) {
@@ -1090,42 +995,111 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     // 1. Sicherstellen, dass die Rechnung existiert
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
     
-    // 2. E-Mail Versand anstossen
+    // 2. Absender ermitteln
     const sender = (typeof rnGetLoggedInSender === 'function')
       ? rnGetLoggedInSender('Jahresbeitrag')
       : jbGetSenderForInvoiceType(r.type || 'Jahresbeitrag');
 
-    const layout = (window._invoiceLayouts && window._invoiceLayouts['Jahresbeitrag'])
-      || (typeof rnGetDefaultLayouts === 'function' ? rnGetDefaultLayouts()['Jahresbeitrag'] : null);
+    // 3. PDF vorbereiten falls nötig
+    let pdfUrl = r.pdf_url || '';
+    let pdfStoragePath = null;
+    let pdfBase64 = null;
 
-    const emailPayload = {
-      action: 'sendInvoiceEmail',
-      invoiceId: invoiceId,
-      recipient: {
-        vorname: m.FirstName || '',
-        nachname: m.LastName || '',
-        strasse: m.Street || '',
-        plz: m.PostCode || '',
-        ort: m.City || '',
-        email: email
-      },
-      sender: sender,
-      layout: layout
-    };
-    
-    const res = await rechnungenApiFetch(emailPayload);
-    if (!res.success) throw new Error(res.error);
-    
+    if (!pdfUrl && typeof window.generatePdfViaEngine === 'function') {
+      try {
+        const engineRes = await window.generatePdfViaEngine({
+          action: 'generate-invoice',
+          invoiceId: invoiceId,
+          recipient: {
+            vorname: m.FirstName || '',
+            nachname: m.LastName || '',
+            name: name,
+            strasse: m.Street || '',
+            plz: m.PostCode || '',
+            ort: m.City || '',
+            email: email
+          },
+          totalAmount: r.total_amount || r.betrag || r.Gesamt || 0,
+          year: r.year || new Date().getFullYear(),
+          type: 'Jahresbeitrag'
+        });
+        if (engineRes && engineRes.success) {
+          pdfUrl = engineRes.pdfUrl || '';
+          pdfStoragePath = engineRes.storagePath || null;
+          pdfBase64 = engineRes.pdfBase64 || null;
+          r.pdf_url = pdfUrl;
+        }
+      } catch (pErr) {
+        console.warn("⚠️ PDF-Engine Vorbereitung Hinweis:", pErr);
+      }
+    }
+
+    const attachments = [];
+    if (pdfStoragePath) {
+      attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, storagePath: pdfStoragePath, contentType: 'application/pdf' });
+    } else if (pdfBase64) {
+      attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, contentBase64: pdfBase64, contentType: 'application/pdf' });
+    } else if (pdfUrl && pdfUrl.includes('/operatives-storage/')) {
+      const parts = pdfUrl.split('/operatives-storage/');
+      if (parts[1]) {
+        attachments.push({ filename: `Rechnung_${invoiceId}.pdf`, storagePath: decodeURIComponent(parts[1].split('?')[0]), contentType: 'application/pdf' });
+      }
+    }
+
+    // 4. E-Mail über Supabase Mail-Engine senden
+    if (typeof window.sendMailViaEngine !== 'function') {
+      throw new Error("Mail-Engine nicht verfügbar");
+    }
+
+    const totalBetrag = Number(r.total_amount || r.betrag || r.Gesamt || 0);
+    const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+      ? window.renderClubEmailHtml({
+          title: `Rechnung Jahresbeitrag ${r.year || new Date().getFullYear()}`,
+          subtitle: 'Jahresbeitrag',
+          contentHtml: `<p>Guten Tag ${name},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} mit der Rechnungsnummer <strong>${invoiceId}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p>`,
+          noticeHtml: `<strong>Rechnungsbetrag:</strong> CHF ${totalBetrag.toFixed(2)}`,
+          senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Kassier Sportschützen Muhen'
+        })
+      : `<p>Guten Tag ${name}, anbei deine Rechnung ${invoiceId}.</p>`;
+
+    const mailRes = await window.sendMailViaEngine({
+      to: email,
+      subject: `Rechnung Jahresbeitrag ${r.year || new Date().getFullYear()} – ${invoiceId} | Sportschützen Muhen`,
+      html: emailHtml,
+      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} (${invoiceId}).`,
+      senderName: sender?.name || 'Sportschützen Muhen',
+      senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
+      attachments: attachments,
+      moduleRef: 'rechnung',
+      recordId: String(invoiceId)
+    });
+
+    if (!mailRes.success) {
+      throw new Error(mailRes.error || "E-Mail-Versand fehlgeschlagen.");
+    }
+
     // Status lokal sofort aktualisieren
     const nowSwissStr = (typeof formatSwissDate === 'function') ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH');
     r.mail_status = 'gesendet';
-    r.send_date = res.sendDate || nowSwissStr;
+    r.send_date = nowSwissStr;
     const allInvs = window._invoices || window._jbAllInvoices || [];
     const targetInv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
     if (targetInv) {
       targetInv.mail_status = 'gesendet';
-      targetInv.send_date = res.sendDate || nowSwissStr;
+      targetInv.send_date = nowSwissStr;
       targetInv.updated_at = nowSwissStr;
+      if (pdfUrl) targetInv.pdf_url = pdfUrl;
+    }
+
+    // In Supabase Master invoices Tabelle spiegeln
+    const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : null;
+    if (supa) {
+      supa.from('invoices').update({
+        mail_status: 'gesendet',
+        send_date: new Date().toISOString(),
+        pdf_url: pdfUrl || r.pdf_url || '',
+        updated_at: new Date().toISOString()
+      }).eq('id', invoiceId).then(() => {}).catch(() => {});
     }
     
     showToast(`✉️ E-Mail-Rechnung erfolgreich an ${name} (${email}) gesendet!`);

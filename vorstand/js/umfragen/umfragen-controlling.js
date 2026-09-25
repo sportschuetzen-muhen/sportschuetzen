@@ -878,22 +878,45 @@ async function submitGvManualRSVP() {
     saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Speichern...';
 
     try {
-        const payload = {
-            action: 'setRSVP',
-            eventid: String(eventId),
-            lizenz: lizenz,
-            attending: attendingParam,
-            count: countVal,
-            essen: essenVal,
-            vegi: vegiVal,
-            grund: grundVal
-        };
+        const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+        if (!supa) throw new Error("Supabase-Verbindung nicht verfügbar");
 
-        const res = await apiFetch('umfragen', payload, 'POST');
-        const data = await res.json();
+        if (statusVal === 'offen') {
+            const { error: delErr } = await supa.from('poll_responses')
+                .delete()
+                .eq('event_id', String(eventId))
+                .eq('lizenz', String(lizenz).trim());
+            if (delErr) throw new Error(delErr.message);
 
-        if (data.error) {
-            throw new Error(data.error);
+            await supa.from('poll_responses_log').insert({
+                event_id: String(eventId),
+                lizenz: String(lizenz).trim(),
+                action: 'reset_to_open',
+                zeitstempel: new Date().toISOString()
+            });
+        } else {
+            const isAttending = (statusVal === 'ja');
+            const { error: upErr } = await supa.from('poll_responses').upsert({
+                event_id: String(eventId),
+                lizenz: String(lizenz).trim(),
+                attending: isAttending,
+                count: countVal,
+                essen: essenVal,
+                vegi: vegiVal,
+                grund: grundVal
+            }, { onConflict: 'event_id,lizenz' });
+            if (upErr) throw new Error(upErr.message);
+
+            await supa.from('poll_responses_log').insert({
+                event_id: String(eventId),
+                lizenz: String(lizenz).trim(),
+                action: isAttending ? 'attending' : 'declined',
+                count: countVal,
+                essen: essenVal,
+                vegi: vegiVal,
+                grund: grundVal,
+                zeitstempel: new Date().toISOString()
+            });
         }
 
         // Lokalen State in window.currentGvData aktualisieren

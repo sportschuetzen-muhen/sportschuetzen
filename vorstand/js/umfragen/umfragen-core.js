@@ -368,150 +368,25 @@ async function loadUmfragenData(force = false) {
             console.log(`✅ ${umfragenState.length} Umfragen & Events aus Supabase geladen.`);
             renderUmfragenUI(container);
             return;
-        } else if (!error && Array.isArray(data) && data.length === 0) {
-            console.log("ℹ️ Supabase poll_events noch leer. Fallback auf Google Apps Script...");
         } else if (error) {
-            console.warn("Supabase poll_events Abfragefehler:", error.message);
+            console.error("Supabase poll_events Abfragefehler:", error.message);
+            container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden der Events aus Supabase: ${escapeHtml(error.message)}</div>`;
+            return;
         }
     } catch (supaErr) {
-        console.warn("Supabase Abfrage fehlgeschlagen:", supaErr);
+        console.error("Supabase Abfrage fehlgeschlagen:", supaErr);
+        container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Verbindungsfehler zu Supabase: ${escapeHtml(supaErr.message)}</div>`;
+        return;
     }
-  }
-
-  // 2. FALLBACK: Google Apps Script
-  try {
-    const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
-    const data = await res.json();
-    
-    if(data.error) throw new Error(data.error);
-
-    const rawEvents = Array.isArray(data) ? data : (data.events || []);
-    umfragenState = rawEvents.map(e => ({
-      ...e,
-      options: parsePollOptions(e.options)
-    }));
-    renderUmfragenUI(container);
-
-    // Falls Supabase verbunden ist, aber noch keine Daten hat, Hinweis einblenden
-    if (supa && umfragenState.length > 0) {
-        const infoBanner = document.createElement('div');
-        infoBanner.className = 'alert alert-warning alert-dismissible fade show d-flex justify-content-between align-items-center mb-3';
-        infoBanner.innerHTML = `
-            <div>
-                <i class="fas fa-database text-primary me-2"></i>
-                <b>Supabase-Migration bereit:</b> Daten wurden noch aus Google Sheets geladen. Du kannst bestehende Umfragen jetzt mit 1 Klick nach Supabase übernehmen!
-            </div>
-            <button class="btn btn-sm btn-primary ms-3 text-nowrap" onclick="syncPollsFromLegacy()">
-                <i class="fas fa-cloud-upload-alt me-1"></i> Nach Supabase migrieren
-            </button>
-        `;
-        const tabContent = container.querySelector('.tab-content') || container.firstChild;
-        if (tabContent && tabContent.parentNode) {
-            tabContent.parentNode.insertBefore(infoBanner, tabContent);
-        }
-    }
-  } catch (e) {
-    container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden der Events: ${escapeHtml(e.message)}</div>`;
+  } else {
+    container.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Supabase-Client nicht initialisiert.</div>`;
+    return;
   }
 }
 
-// === 1-KLICK SYNC VON GOOGLE SHEETS NACH SUPABASE ===
-async function syncPollsFromLegacy() {
-    const supa = getPollSupabaseClient();
-    if (!supa) {
-        alert("Supabase-Verbindung nicht verfügbar.");
-        return;
-    }
-
-    if (!confirm("Möchtest du alle Umfragen, Anmeldungen und Logs aus dem Google Sheet nach Supabase importieren?")) {
-        return;
-    }
-
-    const toast = document.createElement('div');
-    toast.className = 'custom-toast';
-    toast.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Importiere Umfragen & Anmeldungen nach Supabase...';
-    document.body.appendChild(toast);
-
-    try {
-        // 1. Events aus GAS laden
-        const resEvents = await apiFetch('umfragen', 'action=getAllEventsAdmin');
-        const rawEvents = await resEvents.json();
-        const eventsList = Array.isArray(rawEvents) ? rawEvents : (rawEvents.events || []);
-
-        if (eventsList.length > 0) {
-            const pollRows = eventsList.map(e => ({
-                id: String(e.id || ('pe_' + Date.now())),
-                title: String(e.title || 'Unbenannter Anlass'),
-                datum: e.datum ? formatISODate(e.datum) : null,
-                gruppe: String(e.gruppe || 'aktiv').trim(),
-                schiessanlass: isTrue(e.schiessanlass),
-                aktiv: isTrue(e.aktiv),
-                showparticipants: isTrue(e.showparticipants),
-                frage_begleitung: isTrue(e.frage_begleitung),
-                frage_essen: isTrue(e.frage_essen),
-                frage_grund: isTrue(e.frage_grund),
-                dokument_url: String(e.dokument_url || e.dokument || ''),
-                details: String(e.details || e.beschreibung || ''),
-                options: parsePollOptions(e.options)
-            }));
-
-            const { error: evErr } = await supa.from('poll_events').upsert(pollRows);
-            if (evErr) throw new Error("Fehler beim Importieren der Events: " + evErr.message);
-        }
-
-        // 2. Responses Log laden & in poll_responses und poll_responses_log spiegeln
-        try {
-            const resLog = await apiFetch('umfragen', 'action=getResponsesLog');
-            const logEntries = await resLog.json();
-            if (Array.isArray(logEntries) && logEntries.length > 0) {
-                // Letzten Status pro Event + Lizenz ermitteln
-                const latestMap = {};
-                logEntries.forEach(log => {
-                    const evId = String(log.eventid || log.event || '');
-                    const liz = String(log.lizenz || log['100id'] || '').trim();
-                    if (evId && liz) {
-                        const key = `${evId}_${liz}`;
-                        const t = log.timestamp ? new Date(log.timestamp).getTime() : 0;
-                        if (!latestMap[key] || t >= latestMap[key].time) {
-                            latestMap[key] = { log, time: t };
-                        }
-                    }
-                });
-
-                const responseRows = Object.values(latestMap).map(item => {
-                    const l = item.log;
-                    const att = isTrue(l.attending || l.teilnahme || l.status);
-                    return {
-                        event_id: String(l.eventid || l.event),
-                        lizenz: String(l.lizenz || l['100id']).trim(),
-                        attending: att,
-                        count: parseInt(l.count || l.anzahl_teilnehmer || 1) || 1,
-                        essen: parseInt(l.essen || l.food || 0) || 0,
-                        vegi: parseInt(l.vegi || 0) || 0,
-                        grund: String(l.grund || l.reason || l.bemerkung || '').trim(),
-                        optionids: String(l.optionids || l.option_ids || '').trim()
-                    };
-                });
-
-                if (responseRows.length > 0) {
-                    await supa.from('poll_responses').upsert(responseRows, { onConflict: 'event_id,lizenz' });
-                }
-            }
-        } catch (respLogErr) {
-            console.warn("Responses Log Import fehlgeschlagen:", respLogErr);
-        }
-
-        toast.className = 'custom-toast bg-success';
-        toast.innerHTML = '<i class="fas fa-check-circle me-2"></i> Migration nach Supabase erfolgreich abgeschlossen!';
-        setTimeout(() => toast.remove(), 4000);
-
-        await loadUmfragenData(true);
-
-    } catch (err) {
-        toast.className = 'custom-toast bg-danger';
-        toast.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i> Import fehlgeschlagen: ' + escapeHtml(err.message);
-        setTimeout(() => toast.remove(), 6000);
-    }
+// Legacy-Funktion (Migration abgeschlossen - keine GAS-Verbindung mehr)
+function syncPollsFromLegacy() {
+    alert("Google Sheet Migration ist abgeschlossen. Daten werden direkt über Supabase verwaltet.");
 }
 window.syncPollsFromLegacy = syncPollsFromLegacy;
 
@@ -537,68 +412,90 @@ function getEventIdFromLog(log) {
     return '';
 }
 
-// === HINTERGRUND-PRELOADER FÜR UMFRAGEN-DETAILS ===
+// === HINTERGRUND-PRELOADER FÜR UMFRAGEN-DETAILS (DIREKT AUS SUPABASE) ===
 async function preloadUmfragenAllDetails() {
-    console.log("🕒 Starte Hintergrund-Preloading für alle Umfragen-Details...");
+    console.log("🕒 Starte Hintergrund-Preloading für alle Umfragen-Details aus Supabase...");
     try {
         // 1. Adress-Lookup im Hintergrund vorverlegen
         await ensureMembersLookup();
 
-        // 2. Historie & Tracking Logs vorverlegen
+        const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+        if (!supa) return;
+
+        // 2. Historie & Tracking Logs vorverlegen direkt aus Supabase
         const hasLogs = rawResponsesLog.length > 0 && rawViewsLog.length > 0;
         if (!hasLogs) {
-            Promise.all([
-                apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
-                apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
-            ]).then(([resLog, resViews]) => {
-                rawResponsesLog = Array.isArray(resLog) ? resLog : [];
-                rawViewsLog = Array.isArray(resViews) ? resViews : [];
-                
-                const parseTime = (t) => t ? new Date(t).getTime() : 0;
-                rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
-                rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
-                console.log("✅ Historie & Tracking Logs im Hintergrund geladen.");
-                
-                // Falls der User bereits auf dem Tab ist, Daten direkt rendern
-                if (document.getElementById('hist-rsvp-body') && document.getElementById('hist-rsvp-body').innerHTML.includes('Lade')) {
-                    filterHistorieData();
+            try {
+                const [resLog, resViews] = await Promise.all([
+                    supa.from('poll_responses_log').select('*').order('zeitstempel', { ascending: false }).limit(200),
+                    supa.from('poll_views').select('*').order('zeitpunkt', { ascending: false }).limit(200)
+                ]);
+                if (!resLog.error && !resViews.error) {
+                    rawResponsesLog = (resLog.data || []).map(l => ({
+                        eventid: l.event_id,
+                        lizenz: l.lizenz,
+                        attending: l.action !== 'reset_to_open',
+                        count: l.count,
+                        essen: l.essen,
+                        vegi: l.vegi,
+                        grund: l.grund,
+                        timestamp: l.zeitstempel
+                    }));
+                    rawViewsLog = (resViews.data || []).map(v => ({
+                        eventid: v.event_id,
+                        lizenz: v.lizenz,
+                        zeitpunkt: v.zeitpunkt,
+                        info: v.info
+                    }));
+
+                    const parseTime = (t) => t ? new Date(t).getTime() : 0;
+                    rawResponsesLog.sort((a, b) => parseTime(b.timestamp) - parseTime(a.timestamp));
+                    rawViewsLog.sort((a, b) => parseTime(b.zeitpunkt || b.timestamp) - parseTime(a.zeitpunkt || a.timestamp));
+                    console.log("✅ Historie & Tracking Logs aus Supabase im Hintergrund geladen.");
+
+                    if (document.getElementById('hist-rsvp-body') && document.getElementById('hist-rsvp-body').innerHTML.includes('Lade')) {
+                        filterHistorieData();
+                    }
                 }
-            }).catch(err => console.warn("Hintergrund-Laden der Historie fehlgeschlagen:", err));
+            } catch (supaLogErr) {
+                console.warn("Supabase Tracking-Log Preload Warnung:", supaLogErr);
+            }
         }
 
-        // 3. Teilnehmer für alle Events im Hintergrund vorverlegen
+        // 3. Teilnehmer für alle Events im Hintergrund direkt via Supabase vorverlegen
         const events = umfragenState || [];
         window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
-        window._gvParticipantsCache = window._gvParticipantsCache || {};
 
-        // Wir rufen die Api-Anfragen parallel auf, um eine extrem schnelle Ladezeit zu erreichen
         const promises = events.map(async (e) => {
             const eventId = e.id;
             if (!eventId) return;
 
-            // Teilnehmer preloaden
             if (!window._umfragenParticipantsCache[eventId]) {
                 try {
-                    const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(eventId)}`);
-                    const pData = await res.json();
-                    window._umfragenParticipantsCache[eventId] = pData;
-                    console.log(`✅ Teilnehmer für Event ${eventId} im Hintergrund geladen.`);
-                } catch (err) {
-                    console.warn(`Fehler beim Preload der Teilnehmer für Event ${eventId}:`, err);
-                }
-            }
-
-            // GV Status preloaden
-            if (!window._gvParticipantsCache[eventId]) {
-                try {
-                    const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
-                    const result = await res.json();
-                    if (result.success) {
-                        window._gvParticipantsCache[eventId] = result.data || [];
-                        console.log(`✅ GV Status für Event ${eventId} im Hintergrund geladen.`);
+                    const { data, error } = await supa
+                        .from('poll_responses')
+                        .select('*')
+                        .eq('event_id', String(eventId))
+                        .eq('attending', true);
+                    if (!error && Array.isArray(data)) {
+                        const pData = data.map(r => {
+                            let liz = String(r.lizenz || '').trim();
+                            let m = (membersLookup && (membersLookup[liz] || membersLookup[liz.padStart(6, '0')]));
+                            let memberName = m ? `${m.LastName || ''} ${m.FirstName || ''}`.trim() : `Lizenz ${liz}`;
+                            return {
+                                lizenz: liz,
+                                name: memberName,
+                                count: parseInt(r.count) || 1,
+                                essen: parseInt(r.essen) || 0,
+                                vegi: parseInt(r.vegi) || 0,
+                                grund: r.grund || '',
+                                optionids: r.optionids || ''
+                            };
+                        });
+                        window._umfragenParticipantsCache[eventId] = pData;
                     }
                 } catch (err) {
-                    console.warn(`Fehler beim Preload des GV Status für Event ${eventId}:`, err);
+                    console.warn(`Fehler beim Preload der Teilnehmer für Event ${eventId}:`, err);
                 }
             }
         });

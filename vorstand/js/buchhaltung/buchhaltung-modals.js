@@ -222,21 +222,7 @@ window.bhSaveKonto = async function(event) {
       }
     }
 
-    // 2. Dual-Write zu Google Apps Script (Hintergrund) (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    const budgetPayload = {
-      action: 'saveBudget',
-      konto: payload.konto,
-      orig_konto: payload.orig_konto,
-      bezeichnung: payload.bezeichnung,
-      jahr: window._bhYear,
-      betrag: budgetVal
-    };
-
-    apiFetch('buchhaltung', payload, 'POST')
-      .then(() => apiFetch('buchhaltung', budgetPayload, 'POST'))
-      .catch(e => console.warn("⚠️ GAS Dual-Write saveKonto Warning:", e));
-    ------------------------------------------------------- */
+    // Supabase ist Single Source of Truth
 
     if (typeof showSuccess === 'function') {
       showSuccess(`🎉 Sachkonto ${payload.konto} (${payload.bezeichnung}) und Budget erfolgreich gespeichert!`);
@@ -1117,8 +1103,10 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
       const belegNr = `${baseBeleg}${subSuffix}`;
       const desc = validRows.length > 1 ? `${titel} (${vr.text})` : `${titel} - ${vr.text}`;
 
-      const payload = {
-        action: 'addJournalEntry',
+      const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : (window.supabaseClient || null);
+      if (!supa) throw new Error("Supabase-Client nicht verfügbar");
+
+      const insertPayload = {
         jahr: year,
         datum: datum,
         beleg_nr: belegNr,
@@ -1129,22 +1117,19 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
         typ: 'Kassa'
       };
 
-      const res = await apiFetch('buchhaltung', payload, 'POST');
-      const json = await res.json();
-      if (!json.success) {
-        throw new Error(json.error || `Fehler bei Position #${i + 1}`);
+      const { data: supaData, error: supaErr } = await supa.from('accounting_journal').insert(insertPayload).select().single();
+      if (supaErr) {
+        throw new Error(supaErr.message || `Fehler bei Position #${i + 1}`);
       }
 
-      const newEntry = (json.data && json.data.id) ? json.data : {
+      const newEntry = (supaData && supaData.id) ? {
+        ...supaData,
+        id: Number(supaData.id),
+        jahr: Number(supaData.jahr),
+        betrag: Number(supaData.betrag)
+      } : {
         id: Date.now() + i,
-        jahr: year,
-        datum: datum,
-        beleg_nr: belegNr,
-        beschreibung: desc,
-        konto_soll: vr.soll,
-        konto_haben: vr.haben,
-        betrag: vr.betrag,
-        typ: 'Kassa'
+        ...insertPayload
       };
 
       window._bhJournal = window._bhJournal || [];
@@ -1550,15 +1535,7 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
       }
     }
 
-    // 2. Dual-Write zu Google Apps Script (Hintergrund) (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    apiFetch('buchhaltung', payload, 'POST')
-      .then(r => r.json())
-      .then(res => {
-        if (!savedEntry && res && res.data) savedEntry = res.data;
-      })
-      .catch(e => console.warn("⚠️ GAS Dual-Write saveJournalEntry Warning:", e));
-    ------------------------------------------------------- */
+    // Supabase ist Single Source of Truth
 
     showSuccess(payload.id ? "🎉 Buchungssatz erfolgreich aktualisiert!" : "🎉 Buchungssatz erfolgreich im Journal registriert!");
     
@@ -1638,11 +1615,7 @@ window.bhExecuteDeleteJournalDirect = async function(entryId) {
       }
     }
 
-    // 2. Dual-Write zu Google Apps Script (Hintergrund) (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: entryId }, 'POST')
-      .catch(e => console.warn("⚠️ GAS Dual-Write deleteJournalEntry Warning:", e));
-    ------------------------------------------------------- */
+    // Supabase ist Single Source of Truth
 
     showSuccess("🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!");
     
@@ -1772,12 +1745,7 @@ window.bhExecuteDeleteSplitGroup = async function(baseBeleg, year) {
       }
     }
 
-    // 2. Dual-Write zu GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    for (const item of siblings) {
-      await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: item.id }, 'POST');
-    }
-    ------------------------------------------------------- */
+    // Supabase ist Single Source of Truth
     window._bhJournal = (window._bhJournal || []).filter(j => !siblings.some(s => Number(s.id) === Number(j.id)));
 
     // Falls es ein Bank-Split war: Prüfe ob eine CAMT-Transaktion wieder entkoppelt werden kann
@@ -2121,43 +2089,7 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
       }
     }
 
-    // 2. Gelöschte Zeilen im GAS-Backend entfernen (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    for (const dId of (deletedIds || [])) {
-      apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: dId }, 'POST').catch(() => {});
-    }
-    ------------------------------------------------------- */
-    for (const dId of (deletedIds || [])) {
-      window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(dId));
-    }
-
-    const updatedEntries = [];
-
-    // 3. Bestehende Zeilen in GAS aktualisieren bzw. neue anlegen (Dual-Write) (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    for (let i = 0; i < validRows.length; i++) {
-      const vr = validRows[i];
-      const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
-      const belegNr = `${baseBeleg}${subSuffix}`;
-      const payload = {
-        action: vr.id ? 'saveJournalEntry' : 'addJournalEntry',
-        id: vr.id || null,
-        jahr: year,
-        datum: vr.datum || new Date().toISOString().split('T')[0],
-        beleg_nr: belegNr,
-        beschreibung: vr.beschreibung,
-        konto_soll: vr.konto_soll,
-        konto_haben: vr.konto_haben,
-        betrag: vr.betrag,
-        typ: vr.typ || 'Kassa'
-      };
-
-      const res = await apiFetch('buchhaltung', payload, 'POST');
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || `Fehler bei Zeile #${i + 1}`);
-
-      const savedItem = (json.data && json.data.id) ? json.data : { ...payload, id: vr.id || Date.now() + i };
-    ------------------------------------------------------- */
+    // Supabase ist Single Source of Truth
     for (let i = 0; i < validRows.length; i++) {
       const vr = validRows[i];
       const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
@@ -2355,39 +2287,7 @@ window.bhExecuteBatchDeleteJournalEntries = async function() {
       }
     }
 
-    // 2. Dual-Write zu GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    try {
-      const response = await apiFetch('buchhaltung', { action: 'deleteJournalEntriesBatch', ids: ids }, 'POST');
-      const result = await response.json();
-      if (result.success) {
-        success = true;
-      } else {
-        errorMessage = result.error || '';
-      }
-    } catch (batchErr) {
-      errorMessage = batchErr.message || '';
-    }
-
-    // 2. Fallback: Falls Batch-Action noch nicht deployed ist, serielle Einzellöschungen durchführen
-    if (!success) {
-      let failedCount = 0;
-      for (const id of ids) {
-        try {
-          const res = await apiFetch('buchhaltung', { action: 'deleteJournalEntry', id: id }, 'POST');
-          const r = await res.json();
-          if (!r.success) failedCount++;
-        } catch (e) {
-          failedCount++;
-        }
-      }
-      if (failedCount === 0 || failedCount < ids.length) {
-        success = true;
-      } else {
-        throw new Error(errorMessage || "Fehler beim Ausführen der Mehrfachlöschung.");
-      }
-    }
-    ------------------------------------------------------- */
+    // Supabase ist Single Source of Truth
 
     // Modal schliessen
     const modalEl = document.getElementById('bhModalBatchDeleteJournal');
@@ -3066,36 +2966,6 @@ window.bhSaveAllBudgets = async function() {
         successCount = records.length;
       }
     }
-
-    // Dual-write to GAS
-    const savePromises = Array.from(inputs).map(inp => {
-      const kCode = inp.getAttribute('data-konto');
-      const val = Number(inp.value || 0);
-      const acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === String(kCode).trim());
-      
-      const payload = {
-        action: 'saveBudget',
-        konto: kCode,
-        bezeichnung: acc ? acc.bezeichnung : '',
-        jahr: currentYear,
-        betrag: val
-      };
-      
-      return apiFetch('buchhaltung', payload, 'POST')
-        .then(r => r.json())
-        .then(res => { if (res.success && !sb) successCount++; })
-        .catch(err => console.warn('[Buchhaltung Dual-Write] Budget GAS sync failed:', err));
-    });
-
-    // GAS-Dual-Write (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    if (!sb) {
-      await Promise.all(savePromises);
-    } else {
-      // Run GAS sync non-blocking in background
-      Promise.all(savePromises).catch(e => console.warn('[Buchhaltung Dual-Write] Background sync failed:', e));
-    }
-    ------------------------------------------------------- */
 
     if (typeof showToast === 'function') {
       showToast(`🎉 Budget ${currentYear} für ${successCount} Konten erfolgreich gespeichert!`, 'success');

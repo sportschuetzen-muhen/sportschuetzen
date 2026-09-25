@@ -21,7 +21,7 @@ async function fetchEventParticipants(eventId) {
                 .select('*')
                 .eq('event_id', String(eventId))
                 .eq('attending', true);
-            if (!error && Array.isArray(data) && data.length > 0) {
+            if (!error && Array.isArray(data)) {
                 const pData = data.map(r => {
                     let liz = String(r.lizenz || '').trim();
                     let m = (membersLookup && (membersLookup[liz] || membersLookup[liz.padStart(6, '0')]));
@@ -39,18 +39,15 @@ async function fetchEventParticipants(eventId) {
                 window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
                 window._umfragenParticipantsCache[eventId] = pData;
                 return pData;
+            } else if (error) {
+                console.error("Supabase fetchEventParticipants Fehler:", error.message);
             }
         } catch (supaErr) {
             console.warn("Supabase fetchEventParticipants fehlgeschlagen:", supaErr);
         }
     }
 
-    // 2. Fallback GAS
-    const res = await apiFetch('umfragen', `action=getParticipants&eventid=${encodeURIComponent(eventId)}`);
-    const pData = await res.json();
-    window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
-    window._umfragenParticipantsCache[eventId] = Array.isArray(pData) ? pData : [];
-    return window._umfragenParticipantsCache[eventId];
+    return [];
 }
 window.fetchEventParticipants = fetchEventParticipants;
 
@@ -527,22 +524,23 @@ async function generateGroupMail() {
     `;
 
     try {
-        const res = await apiFetch('umfragen', '', {
-            method: 'POST',
-            body: JSON.stringify({
-                action: "sendGroupMail",
+        const recipient = prompt("Empfänger E-Mail-Adresse für die Gruppenanmeldung:", "info@sportschuetzen-muhen.ch");
+        if (!recipient) return;
+
+        if (typeof window.sendMailViaEngine === 'function') {
+            const mailRes = await window.sendMailViaEngine({
+                to: [recipient.trim()],
                 subject: `Gruppenanmeldung Sportschützen Muhen für ${eventTitle}`,
                 html: html,
-                attachmentFileId: "1vXxjiaj9zwjz8aW0-BJF6RBGZ00oRki0"
-            })
-        });
-
-        const data = await res.json();
-        if (data.error) {
-            throw new Error(data.error);
+                module: 'umfragen'
+            });
+            if (!mailRes.success) {
+                throw new Error(mailRes.error || "E-Mail-Versand fehlgeschlagen");
+            }
+            alert("✅ Gruppenanmeldung erfolgreich versendet!");
+        } else {
+            throw new Error("Mail Engine steht nicht zur Verfügung.");
         }
-
-        alert("✅ " + (data.message || "Entwurf erfolgreich erstellt!"));
     } catch (e) {
         alert("Fehler beim Mailversand: " + e.message);
     }

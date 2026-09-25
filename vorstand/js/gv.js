@@ -308,11 +308,13 @@ function renderGVList() {
 
 async function fetchGVEvents() {
     const selectors = document.querySelectorAll('.gv-event-selector, #gv-event-selector');
-    if(selectors.length === 0) return;
     try {
-        const res = await apiFetch('umfragen', 'action=getAllEventsAdmin');
-        const data = await res.json();
-        const events = Array.isArray(data) ? data : (data.events || []);
+        const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+        let events = [];
+        if (supa) {
+            const { data, error } = await supa.from('poll_events').select('*').order('datum', { ascending: false });
+            if (!error && Array.isArray(data)) events = data;
+        }
         
         const html = '<option value="">-- Bitte wählen --</option>' + 
             events.map(e => `<option value="${escapeHtml(e.id)}" ${gvState.linked_event === e.id ? 'selected' : ''}>${escapeHtml(e.title)} (${formatSwissDate(e.datum)})</option>`).join('');

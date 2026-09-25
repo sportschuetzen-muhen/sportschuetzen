@@ -21,11 +21,6 @@ function renderUmfragenUI(container) {
                     <button class="btn btn-sm btn-success write-protected" onclick="addUmfrageEvent()">+ Neuer Event</button>
                     <button class="btn btn-sm btn-primary write-protected" onclick="saveUmfragenData()"><i class="fas fa-save me-1"></i> Speichern</button>
                 </div>
-                <div>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="syncPollsFromLegacy()" title="Events & Anmeldungen aus dem Google Sheet nach Supabase importieren">
-                        <i class="fas fa-sync-alt me-1"></i> Google Sheet Sync / Import
-                    </button>
-                </div>
             </div>
             <!-- Mobile Ansicht: Touch-optimierte Karten -->
             <div id="umfragen-events-cards" class="d-md-none"></div>

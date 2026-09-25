@@ -217,29 +217,9 @@ window.ensureMitgliederLoaded = async function(forceReload = false) {
 
           window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
           return window._mglData;
+        } else if (supaErr) {
+          throw supaErr;
         }
-      }
-
-      // 5. FALLBACK AUF GAS (falls Supabase noch leer ist oder Offline)
-      console.log("📡 ensureMitgliederLoaded: Supabase leer oder nicht erreichbar -> Fallback auf Google Apps Script...");
-      const res = await apiFetch('mitglieder', 'action=getAll');
-      const rawText = await res.text();
-
-      let data = null;
-      try {
-        data = JSON.parse(rawText);
-      } catch (jsonErr) {
-        console.warn('⚠️ Mitglieder API: HTML statt JSON erhalten:', rawText.slice(0, 180));
-      }
-
-      if (data && data.success && Array.isArray(data.data)) {
-        window._mglData = data.data;
-        if (window.AppCache) {
-          const prev = window.AppCache.get('mitglieder') || {};
-          window.AppCache.set('mitglieder', { ...prev, data: window._mglData }, 120);
-        }
-        window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
-        return window._mglData;
       }
 
       // Fallback auf gecachte Daten
@@ -251,6 +231,7 @@ window.ensureMitgliederLoaded = async function(forceReload = false) {
           return window._mglData;
         }
       }
+      return [];
     } catch (e) {
       console.error('❌ ensureMitgliederLoaded Fehler:', e);
     } finally {
@@ -443,81 +424,61 @@ async function loadMitgliederData(forceReload = false) {
       if (typeof mglFilter === 'function') mglFilter();
     }
 
-    // 3. Sekundäre Detail-Caches (Lizenzen, Funktionen, Historie)
-    // UNTERBINDUNG PARALLELER CALLS: Sequentiell und non-blocking im Hintergrund laden
+    // 3. Sekundäre Detail-Caches (Lizenzen, Funktionen, Historie) aus Supabase
     (async () => {
       try {
-        // 3a. Lizenzen
-        if (!window._mglLizenzenCache || Object.keys(window._mglLizenzenCache).length === 0 || forceReload) {
-          try {
-            const resLizz = await apiFetch('mitglieder', 'action=getLizenzen');
-            const lizzData = await resLizz.json();
-            if (lizzData && lizzData.success && Array.isArray(lizzData.data)) {
-              window._mglLizenzenCache = {};
-              lizzData.data.forEach(l => {
-                const pnKey = String(l.PersonNumber || '').trim();
-                if (pnKey) {
-                  if (!window._mglLizenzenCache[pnKey]) window._mglLizenzenCache[pnKey] = [];
-                  window._mglLizenzenCache[pnKey].push(l);
-                }
-              });
-            }
-          } catch (err) {
-            console.warn('⚠️ Lizenzen-Cache Hintergrund-Laden:', err);
-          }
-        }
+        const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
+        if (supa && (!window._mglLizenzenCache || Object.keys(window._mglLizenzenCache).length === 0 || forceReload)) {
+          const [{ data: lics }, { data: fns }, { data: hists }] = await Promise.all([
+            supa.from('member_licenses').select('*'),
+            supa.from('member_functions').select('*'),
+            supa.from('member_history').select('*').order('datum', { ascending: false }).limit(500)
+          ]);
 
-        // 3b. Funktionen
-        if (!window._mglFunktionenCache || Object.keys(window._mglFunktionenCache).length === 0 || forceReload) {
-          try {
-            const resFn = await apiFetch('mitglieder', 'action=getFunktionen');
-            const fnData = await resFn.json();
-            if (fnData && fnData.success && Array.isArray(fnData.data)) {
-              window._mglFunktionenCache = {};
-              fnData.data.forEach(f => {
-                const pnKey = String(f.PersonNumber || '').trim();
-                if (pnKey) {
-                  if (!window._mglFunktionenCache[pnKey]) window._mglFunktionenCache[pnKey] = [];
-                  window._mglFunktionenCache[pnKey].push(f);
-                }
-              });
-            }
-          } catch (err) {
-            console.warn('⚠️ Funktionen-Cache Hintergrund-Laden:', err);
+          if (Array.isArray(lics)) {
+            window._mglLizenzenCache = {};
+            lics.forEach(l => {
+              const pn = String(l.person_number || '').trim();
+              if (pn) {
+                if (!window._mglLizenzenCache[pn]) window._mglLizenzenCache[pn] = [];
+                window._mglLizenzenCache[pn].push(mapLicenseFromSupabase(l));
+              }
+            });
           }
-        }
 
-        // 3c. Historie
-        if (!window._mglHistoryCache || Object.keys(window._mglHistoryCache).length === 0 || forceReload) {
-          try {
-            const resHist = await apiFetch('mitglieder', 'action=getHistorie');
-            const histData = await resHist.json();
-            if (histData && histData.success && Array.isArray(histData.data)) {
-              window._mglHistoryCache = {};
-              histData.data.forEach(h => {
-                const pnKey = String(h.PersonNumber || '').trim();
-                if (pnKey) {
-                  if (!window._mglHistoryCache[pnKey]) window._mglHistoryCache[pnKey] = [];
-                  window._mglHistoryCache[pnKey].push(h);
-                }
-              });
-            }
-          } catch (err) {
-            console.warn('⚠️ Historie-Cache Hintergrund-Laden:', err);
+          if (Array.isArray(fns)) {
+            window._mglFunktionenCache = {};
+            fns.forEach(f => {
+              const pn = String(f.person_number || '').trim();
+              if (pn) {
+                if (!window._mglFunktionenCache[pn]) window._mglFunktionenCache[pn] = [];
+                window._mglFunktionenCache[pn].push(mapFunctionFromSupabase(f));
+              }
+            });
           }
-        }
 
-        // Im AppCache mit Details speichern
-        if (window.AppCache) {
-          window.AppCache.set('mitglieder', {
-            data: window._mglData,
-            lizenzen: window._mglLizenzenCache,
-            funktionen: window._mglFunktionenCache,
-            historie: window._mglHistoryCache
-          }, 120);
+          if (Array.isArray(hists)) {
+            window._mglHistoryCache = {};
+            hists.forEach(h => {
+              const pn = String(h.person_number || '').trim();
+              if (pn) {
+                if (!window._mglHistoryCache[pn]) window._mglHistoryCache[pn] = [];
+                window._mglHistoryCache[pn].push(h);
+              }
+            });
+          }
+
+          if (window.AppCache) {
+            window.AppCache.set('mitglieder', {
+              data: window._mglData,
+              lizenzen: window._mglLizenzenCache,
+              funktionen: window._mglFunktionenCache,
+              historie: window._mglHistoryCache
+            }, 120);
+          }
         }
       } catch (secErr) {
-        console.warn('⚠️ Detail-Caches Hintergrund-Laden:', secErr);
+        console.warn('⚠️ Supabase Detail-Caches Hintergrund-Laden:', secErr);
       }
     })();
 

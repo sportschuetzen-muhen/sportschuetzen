@@ -93,64 +93,30 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
                     }
                     console.log(`⚡ Jahresmeisterschaft (${jmCurrentJahr}) erfolgreich aus Supabase geladen.`);
                     return;
+                } else {
+                    console.log(`ℹ️ [Supabase] Keine Grid-Daten für ${jmCurrentJahr} gefunden.`);
+                    const container = document.getElementById('jahresmeisterschaft-container');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>Keine Jahresmeisterschafts-Daten für das Jahr "${escapeHtml(jmCurrentJahr)}" in Supabase gefunden.
+                            </div>`;
+                    }
+                    updateJMSupabaseBadge(true);
+                    return;
                 }
             }
         } catch (sbErr) {
-            console.warn("⚠️ Supabase Fehler in Jahresmeisterschaft, wechsle auf GAS Fallback:", sbErr);
+            console.error("❌ Supabase Fehler in Jahresmeisterschaft:", sbErr);
+            const container = document.getElementById('jahresmeisterschaft-container');
+            if (container) {
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden aus Supabase: ${escapeHtml(sbErr.message)}
+                    </div>`;
+            }
+            return;
         }
-    }
-
-    // --- 2. FALLBACK: GOOGLE APPS SCRIPT ---
-    try {
-        const data = await apiFetch('jahresmeisterschaft', { jahr: jmCurrentJahr });
-        const res = await data.json();
-
-        if (res.error) {
-            throw new Error(res.message);
-        }
-
-        jmRawGrid = res.rawGrid || [];
-        jmPendingUpdates = [];
-        jmPendingMoves = [];
-        jmJuniorExclusions = {};
-        if (Array.isArray(res.juniorExclusions)) {
-            res.juniorExclusions.forEach(k => {
-                jmJuniorExclusions[k] = true;
-            });
-        }
-        jmExclusionsChanged = false;
-        AppState.clearUnsaved();
-
-        renderHistoryDropdown(res.sheets);
-        renderJahresmeisterschaft(jmRawGrid);
-        updateJMSupabaseBadge(false);
-
-        // Auffälliger Migrations-Hinweis bei GAS-Fallback
-        const container = document.getElementById('jahresmeisterschaft-container');
-        if (container) {
-            const banner = document.createElement('div');
-            banner.className = 'alert alert-warning d-flex justify-content-between align-items-center mb-3 shadow-sm';
-            banner.innerHTML = `
-                <div>
-                    <i class="fas fa-exclamation-triangle me-2 fs-5"></i>
-                    <strong>Hinweis:</strong> Die Daten laufen derzeit im <b>Google Sheets Fallback</b>, weil Supabase noch keine Daten enthält. Website und PWA zeigen Resultate erst nach dem Import.
-                </div>
-                <button class="btn btn-sm btn-primary ms-3 text-nowrap" onclick="migrateJMFromGoogleSheets()">
-                    <i class="fas fa-file-import me-1"></i> Jetzt nach Supabase importieren
-                </button>
-            `;
-            container.prepend(banner);
-        }
-
-        if (historySelect) {
-            historySelect.dataset.loadedYear = jmCurrentJahr;
-        }
-
-    } catch (e) {
-        document.getElementById('jahresmeisterschaft-container').innerHTML = `
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden: ${escapeHtml(e.message)}
-            </div>`;
     } finally {
         if (historySelect) {
             historySelect.disabled = false;

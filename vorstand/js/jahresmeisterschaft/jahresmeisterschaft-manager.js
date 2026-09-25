@@ -48,35 +48,6 @@ async function saveJahresmeisterschaftData() {
                 syncJMShootersToSupabase(sb, jmCurrentJahr, jmRawGrid).catch(e => console.warn(e));
             }
 
-            // Asynchroner Non-Blocking Dual-Write an Google Sheets (GAS) (DEAKTIVIERT - Supabase ist Single Source of Truth)
-            /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-            const dualWritePayload = {
-                action: 'saveJahresmeisterschaft',
-                jahr: jmCurrentJahr,
-                updates: jmPendingUpdates,
-                moves: jmPendingMoves,
-                juniorExclusions: juniorList
-            };
-
-            fetch(WORKER_URL + "?module=jahresmeisterschaft", {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-Token': getCsrfToken(),
-                    'X-User-Role': window.userRole,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(dualWritePayload)
-            }).then(r => r.json()).then(res => {
-                if (res.success) {
-                    console.log("✅ Dual-Write zu Google Sheets erfolgreich gespiegelt.");
-                } else {
-                    console.warn("⚠️ Dual-Write zu Google Sheets meldet:", res.error || res.message);
-                }
-            }).catch(err => {
-                console.warn("⚠️ Dual-Write Google Sheets Hintergrundfehler (Supabase blieb intakt):", err);
-            });
-            ------------------------------------------------------- */
-
             showSuccess("Erfolgreich in Supabase gespeichert!");
             jmPendingUpdates = [];
             jmPendingMoves = [];
@@ -86,50 +57,13 @@ async function saveJahresmeisterschaftData() {
             return;
 
         } catch (sbErr) {
-            console.error("Fehler beim Speichern in Supabase, wechsle auf GAS Fallback:", sbErr);
+            console.error("❌ Fehler beim Speichern in Supabase:", sbErr);
+            showError("Fehler beim Speichern in Supabase: " + sbErr.message);
         } finally {
             hideLoadingOverlay();
         }
-    }
-
-    // --- 2. FALLBACK: GOOGLE APPS SCRIPT ---
-    try {
-        showLoadingOverlay('Speichere Jahresmeisterschaft... Bitte Geduld, Google Sheets berechnet alle Ränge neu (kann 10-15 Sek. dauern)...');
-        
-        const payload = {
-            action: 'saveJahresmeisterschaft',
-            jahr: jmCurrentJahr,
-            updates: jmPendingUpdates,
-            moves: jmPendingMoves,
-            juniorExclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true)
-        };
-
-        const res = await fetch(WORKER_URL + "?module=jahresmeisterschaft", {
-            method: 'POST',
-            headers: {
-                'X-CSRF-Token': getCsrfToken(),
-                'X-User-Role': window.userRole,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-            showSuccess("Erfolgreich gespeichert!");
-            jmPendingUpdates = [];
-            jmPendingMoves = [];
-            jmExclusionsChanged = false;
-            AppState.clearUnsaved();
-            setTimeout(loadJahresmeisterschaftData, 1000);
-        } else {
-            throw new Error(data.error || "Unbekannter Fehler beim Speichern.");
-        }
-    } catch (e) {
-        showError("Fehler beim Speichern: " + e.message);
-    } finally {
-        hideLoadingOverlay();
+    } else {
+        showError("Supabase-Client ist nicht verfügbar.");
     }
 }
 

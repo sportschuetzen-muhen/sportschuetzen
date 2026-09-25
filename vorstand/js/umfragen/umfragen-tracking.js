@@ -17,14 +17,13 @@ async function loadUmfragenHistorie(force = false) {
         if (force || !hasLogs) {
             // 1. Hole rohe Logs (zuerst Supabase, sonst Google Apps Script)
             const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
-            let loadedFromSupa = false;
             if (supa) {
                 try {
                     const [resLog, resViews] = await Promise.all([
                         supa.from('poll_responses_log').select('*').order('zeitstempel', { ascending: false }).limit(200),
                         supa.from('poll_views').select('*').order('zeitpunkt', { ascending: false }).limit(200)
                     ]);
-                    if (!resLog.error && !resViews.error && ((resLog.data && resLog.data.length > 0) || (resViews.data && resViews.data.length > 0))) {
+                    if (!resLog.error && !resViews.error) {
                         rawResponsesLog = (resLog.data || []).map(l => ({
                             eventid: l.event_id,
                             lizenz: l.lizenz,
@@ -41,24 +40,14 @@ async function loadUmfragenHistorie(force = false) {
                             zeitpunkt: v.zeitpunkt,
                             info: v.info
                         }));
-                        loadedFromSupa = true;
+                    } else {
+                        console.error("Supabase Tracking-Log Abfragefehler:", resLog.error || resViews.error);
                     }
                 } catch (supaErr) {
                     console.warn("Supabase Tracking-Log Abfrage fehlgeschlagen:", supaErr);
                 }
-            }
-
-            if (!loadedFromSupa) {
-                const [resLog, resViews] = await Promise.all([
-                    apiFetch('umfragen', 'action=getResponsesLog').then(r => r.json()),
-                    apiFetch('umfragen', 'action=getViewsLog').then(r => r.json())
-                ]);
-
-                if (resLog && resLog.error) throw new Error(resLog.error);
-                if (resViews && resViews.error) throw new Error(resViews.error);
-
-                rawResponsesLog = Array.isArray(resLog) ? resLog : [];
-                rawViewsLog = Array.isArray(resViews) ? resViews : [];
+            } else {
+                console.error("Supabase-Client nicht verfügbar für Tracking-Logs");
             }
 
             // Sortieren nach Timestamp absteigend
@@ -355,8 +344,13 @@ async function loadUmfragenPersonenkreise(force = false) {
     try {
         if (force || !hasMembers) {
             let data = [];
+            if (!window._mglData || window._mglData.length === 0) {
+                if (typeof window.ensureMitgliederLoaded === 'function') {
+                    await window.ensureMitgliederLoaded();
+                }
+            }
             if (window._mglData && window._mglData.length > 0) {
-                console.log("⚡ loadUmfragenPersonenkreise: Verwende vorverlegte Mitglieder-Daten aus Cache...");
+                console.log("⚡ loadUmfragenPersonenkreise: Verwende Mitglieder-Daten aus Supabase...");
                 const isTrue = val => val === true || val === 1 || val === '1' || String(val).toLowerCase() === 'ja' || String(val).toLowerCase() === 'true';
                 data = window._mglData.filter(m => {
                     if (isTrue(m.Deceased)) return false;
@@ -377,9 +371,6 @@ async function loadUmfragenPersonenkreise(force = false) {
                         gruppe: gruppe
                     };
                 });
-            } else {
-                const res = await apiFetch('umfragen', 'action=getMembers');
-                data = await res.json();
             }
 
             rawUmfragenMembers = Array.isArray(data) ? data : [];

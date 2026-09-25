@@ -1,7 +1,7 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
-**Stand:** 2026-09-23  
-**Phase:** 0 bis 19 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log, System-Mails, Finanzbuchhaltung, KK-Jahresmeisterschaft, Team Manager, Generalversammlung, App & Website, Cut-Over  
+**Stand:** 2026-09-25  
+**Phase:** 0 bis 21.1 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log, System-Mails, Finanzbuchhaltung, KK-Jahresmeisterschaft, Team Manager, Generalversammlung, App & Website, Cut-Over, Mail- & PDF-Engine, vollständige GAS-Entkopplung  
 **Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
@@ -1392,6 +1392,46 @@ Nach Abschluss der Modul-Migrationen und Etablierung von Supabase als Single Sou
 
 ---
 
+### 6.20 Vollständige Entkopplung der migrierten Module von Google Apps Script
+
+Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot stiller GAS-Fallbacks) wurden alle verbliebenen Lese-Fallbacks, Dual-Writes und Legacy-GAS-Endpunkte in den migrierten Fachbereichen eliminiert:
+
+1. **Rechnungen & Inventar (E-Mail-Versand & Mahnwesen):**
+   - Vollständiger Umstieg von `apiFetch('rechnungen', { action: 'sendInvoiceEmail' })` auf `window.sendMailViaEngine()` (Supabase Edge Function `send-email` mit SMTP-Versand und Protokollierung in `public.mail_logs`).
+   - Einzel- und Massenmahnungen (`rnExecuteSendMahnung`, `rnExecuteBatchMahnung`, `rnExecuteMassSend`) versenden direkt per SMTP und aktualisieren Mahnstufen sowie Rechnungsstatus per Supabase REST in `public.invoices`.
+   - Jahresbeitrags-Rechnungsversand (`jbSendInvoiceEmailRemote`) und PDF-Erzeugung (`jbGenerateInvoicePdfRemote`) laufen 100% über die native Mail- & PDF-Engine.
+   - Bereinigung aller auskommentierten Dual-Write-Routinen in `inventar-cart.js`.
+
+2. **Mitglieder (Lizenzen, Funktionen & Historie):**
+   - Entfernung des stillen Fallbacks auf GAS `getAll` in `ensureMitgliederLoaded()`. Supabase ist der alleinige Single Source of Truth für alle Mitgliederdaten.
+   - Sekundärabfragen für `member_licenses`, `member_functions` und `member_history` laden direkt aus den relationalen Supabase-Tabellen.
+
+3. **Grenzland-Cup / Manager:**
+   - Matchbericht-Versand mit PDF-Anhängen via `window.sendMailViaEngine()` abgewickelt.
+   - Speicherung von Teamstrukturen und Rundenresultaten (`contest_setups`, `contest_teams`) rein über Supabase; Dual-Write-Reste und Fallbacks restlos entfernt.
+
+4. **KK-Jahresmeisterschaft:**
+   - Lese-Fallback auf `apiFetch('jahresmeisterschaft', ...)` und auskommentierte Dual-Write-Blöcke in `jahresmeisterschaft-core.js` und `jahresmeisterschaft-manager.js` entfernt.
+
+5. **Anlässe, Umfragen & RSVP-System:**
+   - Entfernung des GAS-Fallbacks `getAllEventsAdmin` sowie der Legacy-Logs `getResponsesLog` und `getViewsLog`.
+   - `preloadUmfragenAllDetails()`, manuelle RSVP-Erfassung im Controlling (`poll_responses`, `poll_responses_log`) und Teilnehmerlisten (`fetchEventParticipants`) arbeiten ausschliesslich mit Supabase.
+   - Gruppenanmeldungs-Mailversand (`generateGroupMail`) auf `sendMailViaEngine()` umgestellt.
+   - Dokument-Uploads (`uploadUmfragenEventDoc`) speichern Dateien direkt im Supabase Storage Bucket `operatives-storage/event-documents/`.
+
+6. **Finanzbuchhaltung (FiBu):**
+   - Lese-Fallback auf GAS bei leerer Datenbank eliminiert; transparente UI-Fehlermeldungen bei Supabase-Verbindungsunterbrüchen.
+   - CAMT.053 Bankabgleich (Einzel- und Sammelbuchungen) bucht direkt und atomar in `public.accounting_journal`.
+   - Nachgelagerte Status-Updates auf Rechnungen und Jahresbeiträge (`status: 'bezahlt'`) erfolgen unmittelbar über die Supabase-Tabellen `invoices` und `membership_fee_headers`.
+   - Kassen-Sammelbelege (`bhSaveKassaSammelbeleg`) buchen nativ in Supabase.
+   - Entfernung des Legacy-Sheet-Import-Buttons in `buchhaltung-ui.js`.
+
+7. **Öffentliche Vereins-Website:**
+   - Entfernung von `WORKER_TERMINE_URL` und `GOOGLE_HAUS_KALENDER_FALLBACK` (`script.google.com`) in `sportschuetzen-website/frontend/js/main.js`.
+   - Termine beziehen sich direkt aus der Supabase REST API (`/termine`); Schützenhaus-Belegungen nutzen den Cloudflare Worker mit Supabase `rental_requests` als Fallback.
+
+---
+
 ## 7. Migrations-Roadmap (Phasen 0 bis 23)
 
 | Phase | Bereich | Ziel / Inhalt | Führendes System | Status |
@@ -1400,24 +1440,25 @@ Nach Abschluss der Modul-Migrationen und Etablierung von Supabase als Single Sou
 | **Phase 1** | **Auth, Rollen & RLS** | Supabase Auth, `user_roles` Tabelle, JWT Hook, 70 Permissions, SQL-Hilfsfunktionen (`01_auth_and_roles.sql`) | Supabase Auth | ✅ **Abgeschlossen** |
 | **Phase 2** | **Pilotmodul ANLÄSSE** | Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Controlling (`02_events_module.sql`, `03_anon_dev_policies.sql`); Vollständige Integration ins Vorstand-Portal (`anlaesse.js`, `supabase-client.js`) | Supabase | ✅ **Abgeschlossen** |
 | **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
-| **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 5** | **Anlässe & Umfragen (Eventplaner)** | Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung. *(Zukünftige Erweiterung: Dynamischer Fragen-Baukasten / Variante B im Backlog vorgemerkt, nicht jetzt)* | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Dual-Write zum Google Sheet (auskommentiert) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 9** | **Jahresbeitrag & Beitragsverwaltung** | Beitragsrechnungen, Detailpositionen, Wettkampfteilnahmen & Gebührenordnung (`11_jahresbeitrag_module.sql`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Layouts & externe Kontakte (`10_invoices_module.sql`); QR-Rechnungs-PDF & Gmail-Versand via GAS | Supabase (Single Source of Truth, Dual-Write deaktiviert) / GAS (PDF/Mail) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen, Journal, Budgets und CAMT.053 Bankregeln (`15_accounting_module.sql`); TableKit-Standard (ein-/ausblendbare Spalten & Persistenz) in allen Tabellen & Modalen; 1-Klick-Importtool mit FK-Safeguard | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 5** | **Anlässe & Umfragen (Eventplaner)** | Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung. | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`) | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 7** | **Inventar-Verwaltung** | Migration von Vereinsinventar, Ausleihe und Materialwart-Funktionen (`08_inventory_module.sql`); Rechnungs- und Mailanbindung an Supabase-Engines | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 8** | **Mitglieder (Write-Master)** | Supabase ist führender Master für Stammdaten; Mutationen direkt via Supabase REST; Revisions-Audit in `public.member_history`; Jugend (U21) Statusfilter & Badges | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 9** | **Jahresbeitrag & Beitragsverwaltung** | Beitragsrechnungen, Detailpositionen, Wettkampfteilnahmen & Gebührenordnung (`11_jahresbeitrag_module.sql`); E-Mail-Versand via Supabase Mail-Engine | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 10** | **Rechnungsmodul & Fakturierung** | Rechnungsverwaltung, Positionen, Layouts & externe Kontakte (`10_invoices_module.sql`); Schweizer QR-Rechnungs-PDF via PDF-Engine, Mail- & Mahnwesen via Supabase Mail-Engine | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 11** | **Finanzbuchhaltung (FiBu)** | Doppelte Buchhaltung, Kontenrahmen, Journal, Budgets und CAMT.053 Bankregeln (`15_accounting_module.sql`); TableKit-Standard; bankgestützte Rechnungs- & Beitragsabgleiche direkt via Supabase | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 12** | **Resultate & Wettkämpfe** | Schiessresultate je Wettbewerb, Jahr & Runde; Team-Zuteilungen; KI-Standblatt-Erkennung Audit-Log (`12_results_module.sql`); Unterstützung Grenzlandcup, Mannschaft & Gruppenmeisterschaft | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 13** | **Mail-Log & Versandprotokoll** | Zentrales, modulübergreifendes E-Mail-Audit-Log (`13_mail_module.sql`, `public.mail_logs`); RPC-Funktion `log_mail_sent()` für GAS-Integration; Frontend-Tab «Versandprotokoll» mit Filtern, Lazy Loading & Detail-Modal | Supabase (Log) / GAS (Versand) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 14** | **System-Mail-Verteiler** | Migration aller automatischen Mail-Empfänger und Abo-Verteiler (`14_system_mail_configs.sql`, `public.system_mail_configs`); RPC-Funktion `get_system_mail()`; Supabase-First UI | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock; 1-Klick-Import alter Jahrgänge (`16_jahresmeisterschaft_module.sql`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; 1-Klick-Import; Mail-Audit-Log (`17_team_manager_module.sql`) | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 17** | **Generalversammlung & Präsenz** | Migration von GV-Stammdaten, Traktanden, Beschlüssen, Präsenzkontrolle & Stimmberechtigung (`18_generalversammlung_module.sql`); Sub-Sekunden RSVP-Berechnung | Supabase (Single Source of Truth, Dual-Write deaktiviert) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 13** | **Mail-Log & Versandprotokoll** | Zentrales, modulübergreifendes E-Mail-Audit-Log (`13_mail_module.sql`, `public.mail_logs`); Direkte Protokollierung durch die Supabase Edge Function `send-email` | Supabase (Single Source of Truth) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 14** | **System-Mail-Verteiler** | Migration aller automatischen Mail-Empfänger und Abo-Verteiler (`14_system_mail_configs.sql`, `public.system_mail_configs`); RPC-Funktion `get_system_mail()`; Supabase-First UI | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 15** | **KK-Jahresmeisterschaft** | 2D-Matrix & Resultate-Import, Ligen 1 & 2 (Auf-/Abstieg), U21-Junioren, Streichresultate & Totals; Sub-Sekunden-Berechnung statt 15s Sheet-Lock | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 16** | **Team Manager (Supabase-First)** | Frontend-Anbindung von `manager-core.js` an `contest_setups` & `contest_teams`; Ablösung `mannschaft_homepage_GAS`; Matchbericht-Versand via Supabase Mail-Engine | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 17** | **Generalversammlung & Präsenz** | Migration von GV-Stammdaten, Traktanden, Beschlüssen, Präsenzkontrolle & Stimmberechtigung (`18_generalversammlung_module.sql`); Sub-Sekunden RSVP-Berechnung | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 18** | **PWA & Website Konsolidierung** | Direkte Supabase REST Anbindung für Termine, Hauskalender, RSVPs/Umfragen und Website-Resultate; kein Daten-Fallback auf GAS | Supabase (Master) | ✅ **Abgeschlossen & im Testbetrieb** |
-| **Phase 19** | **Finaler Cut-Over (Sheets)** | Gezielte Deaktivierung der redundanten Google-Sheet Dual-Writes für geprüfte Module (Termine, Mitglieder, Rechnungen, Teams, System-Mails, FiBu, Jahresbeitrag, Jahresmeisterschaft, GV, Umfragen, Inventar); operative Dienste (PDF, Gmail, Kalender) bleiben 100% aktiv | Supabase (Single Source of Truth) | 🟢 **Abgeschlossen (Reversibel)** |
+| **Phase 19** | **Finaler Cut-Over (Sheets)** | Gezielte Deaktivierung der redundanten Google-Sheet Dual-Writes für geprüfte Module (Termine, Mitglieder, Rechnungen, Teams, System-Mails, FiBu, Jahresbeitrag, Jahresmeisterschaft, GV, Umfragen, Inventar) | Supabase (Single Source of Truth) | 🟢 **Abgeschlossen (Reversibel)** |
 | **Phase 20** | **Zentrale Mail-Engine (`send-email`)** | Universelle Supabase Edge Function für SMTP-Mailversand. Unterstützt Gmail (aktuell mit App-Passwort) und Infomaniak (Domainhoster); automatische Protokollierung in `mail_logs` & Anbindung an `system_mail_configs`; Frontend Client-API | Supabase Edge Functions / SMTP | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 21** | **Zentrale PDF-Engine (`generate-pdf`)** | Server- und clientseitige PDF-Generierung für Rechnungen (inkl. Schweizer QR-Rechnung SPC 0200 1), Mietverträge und Quittungen; direkte Ablage in Supabase Storage (`operatives-storage`) & Paperless-NGX Integration (`21_pdf_engine_storage.sql`) | Supabase Edge Function / Supabase Storage | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 21.1** | **Vollständige GAS-Entkopplung** | Beseitigung aller stillen Lese-Fallbacks, Dual-Writes und Legacy-Endpunkte in Rechnungen, Inventar, Jahresbeitrag, Mitglieder, Manager, Jahresmeisterschaft, Umfragen, FiBu und Website | Supabase PostgreSQL / Supabase Storage | ✅ **Abgeschlossen** |
 | **Phase 22** | **Infomaniak Cut-Over & CalDAV** | Umstellung der DNS- und Mailkonten auf Infomaniak; Switch der SMTP-Secrets auf `mail.infomaniak.com`; CalDAV-Kalendersynchronisation als Ersatz für Google Calendar | Infomaniak / Supabase | ⏳ Geplant |
 | **Phase 23** | **Automationen & vollständiger GAS-Rückbau** | Übernahme zeitgesteuerter Trigger (Mahnläufe, Vermietungs-Reminder, Status-Audits) durch `pg_cron` & `pg_net`; endgültige Stilllegung der Google Apps Scripts | Supabase PostgreSQL (`pg_cron`) | ⏳ Geplant |
 

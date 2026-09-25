@@ -304,40 +304,43 @@ async function executeMailSend() {
             + (pdfList ? `Angehängte PDFs:\n${pdfList}\n\n` : '')
             + `Freundliche Grüsse\nSportschützen Muhen`;
 
-        const res = await apiFetch('manager', 'action=sendMail', {
-            method: 'POST',
-            body: JSON.stringify({
-                recipients: mails,
-                subject,
-                mailBody: bodyText,
-                attachments
-            })
-        });
-        const data = JSON.parse(await res.text());
-        if (data.error) throw new Error(data.error);
+        const engineAttachments = attachments.map(a => ({
+            filename: a.fileName,
+            contentBase64: a.pdfBase64,
+            contentType: 'application/pdf'
+        }));
 
-        // Audit-Log in Supabase public.mail_logs erfassen (Phase 13)
-        const supa = (typeof getManagerSupabaseClient === 'function' ? getManagerSupabaseClient() : (window.supabaseClient || null));
-        if (supa) {
-            try {
-                await supa.from('mail_logs').insert({
-                    id: 'mail_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-                    sender_email: 'sportschuetzen.muhen@gmail.com',
-                    recipient_count: mails.length,
-                    recipients_summary: mails.slice(0, 5).join(', ') + (mails.length > 5 ? ` (+${mails.length - 5} weitere)` : ''),
-                    subject: subject,
-                    body_preview: bodyText.slice(0, 200),
-                    module: 'manager',
-                    status: 'success',
-                    metadata: { modules: selectedModules, attachments_count: attachments.length }
-                });
-            } catch (logErr) {
-                console.warn('⚠️ [Mail-Log] Audit-Log Eintrag Hinweis:', logErr.message);
-            }
+        const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+            ? window.renderClubEmailHtml({
+                title: subject,
+                subtitle: 'Team Manager / Aufgebot',
+                contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`,
+                senderInfo: 'Team Manager\nSportschützen Muhen'
+            })
+            : `<div style="font-family: sans-serif; font-size: 14px;">${bodyText.replace(/\n/g, '<br>')}</div>`;
+
+        if (typeof window.sendMailViaEngine !== 'function') {
+            throw new Error("Zentrale Mail-Engine (sendMailViaEngine) ist nicht verfügbar.");
+        }
+
+        const mailResult = await window.sendMailViaEngine({
+            to: mails,
+            subject: subject,
+            text: bodyText,
+            html: emailHtml,
+            senderName: 'Sportschützen Muhen',
+            senderEmail: 'sportschuetzen.muhen@gmail.com',
+            attachments: engineAttachments,
+            moduleRef: 'manager',
+            recordId: 'mgr_' + Date.now()
+        });
+
+        if (!mailResult.success) {
+            throw new Error(mailResult.error || 'Fehler beim E-Mail-Versand');
         }
 
         bootstrap.Modal.getInstance(document.getElementById('mailWizardModal')).hide();
-        showToast(`✅ Entwurf für ${mails.length} Empfänger erstellt!`, 'success');
+        showToast(`✅ Aufgebot an ${mails.length} Empfänger erfolgreich versandt!`, 'success');
 
     } catch (e) {
         alert('Fehler: ' + e.message);

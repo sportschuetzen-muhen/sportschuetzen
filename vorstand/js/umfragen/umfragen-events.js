@@ -399,15 +399,6 @@ async function saveUmfragenData() {
             console.log(`✅ ${pollRows.length} Events erfolgreich in Supabase gespeichert.`);
         }
 
-        // 2. DUAL-WRITE: Google Sheet im Hintergrund synchronisieren (Parallelbetrieb) (DEAKTIVIERT - Supabase ist Single Source of Truth)
-        /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-        apiFetch('umfragen', '', {
-            method: 'POST',
-            body: JSON.stringify(payload)
-        }).then(() => console.log("✅ Dual-Write zu Google Sheet erfolgreich"))
-          .catch(err => console.warn("⚠️ Dual-Write zu Google Sheet fehlgeschlagen:", err));
-        ------------------------------------------------------- */
-
         window.clearUnsaved();
         alert("✅ Umfragen erfolgreich in Supabase gespeichert!");
         loadUmfragenData();
@@ -672,28 +663,25 @@ async function uploadEventDocumentFiles(fileList, idx, isMobile = false) {
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
-            const base64 = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
+            const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
+            if (!supa) throw new Error("Supabase-Client nicht verfügbar");
+
+            const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const storagePath = `event-documents/${Date.now()}_${cleanName}`;
+
+            const { error: upErr } = await supa.storage.from('operatives-storage').upload(storagePath, file, {
+                upsert: true,
+                contentType: file.type || 'application/octet-stream'
             });
 
-            const res = await apiFetch('umfragen', '', {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'uploadEventDocument',
-                    fileName: file.name,
-                    mimeType: file.type || 'application/pdf',
-                    base64: base64
-                })
-            });
+            if (upErr) throw new Error(upErr.message);
 
-            const data = await res.json();
-            if (data.success && (data.fileUrl || data.fileId)) {
-                uploadedUrls.push(data.fileUrl || data.fileId);
+            const { data: urlData } = supa.storage.from('operatives-storage').getPublicUrl(storagePath);
+            const publicUrl = urlData?.publicUrl;
+            if (publicUrl) {
+                uploadedUrls.push(publicUrl);
             } else {
-                errors.push(`${file.name}: ${data.error || 'Fehler'}`);
+                errors.push(`${file.name}: Keine öffentliche URL generiert`);
             }
         } catch (err) {
             errors.push(`${file.name}: ${err.message || 'Fehler'}`);

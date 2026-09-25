@@ -57,9 +57,6 @@ window.renderBuchhaltung = function() {
         </button>
       </div>
       <div class="d-flex align-items-center mb-2 mb-md-0 flex-wrap" style="gap: 8px;">
-        <button class="btn btn-sm btn-outline-secondary" onclick="migrateBuchhaltungFromGoogleSheets()" title="Bestehende Daten aus Google Sheets nach Supabase synchronisieren/importieren">
-          <i class="fas fa-file-import me-1"></i>Aus Sheet importieren
-        </button>
         <select class="form-select form-select-sm" id="bh-year-select" onchange="bhChangeYear(this.value)" style="width: auto;">
           <option value="2026" ${window._bhYear === 2026 ? 'selected' : ''}>Jahr: 2026</option>
           <option value="2025" ${window._bhYear === 2025 ? 'selected' : ''}>Jahr: 2025</option>

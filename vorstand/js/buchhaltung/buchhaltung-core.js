@@ -262,7 +262,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
         })()
       ]);
 
-      if (!accRes.error && !jnlRes.error && Array.isArray(accRes.data) && accRes.data.length > 0) {
+      if (!accRes.error && !jnlRes.error && Array.isArray(accRes.data)) {
         window._bhKontenrahmen = accRes.data.map((a, idx) => ({
           ...a,
           _rowIndex: idx + 2
@@ -301,97 +301,27 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
         window._bhIsSupabase = true;
         loadedFromSupabase = true;
         console.log(`✅ Buchhaltung erfolgreich aus Supabase geladen: ${window._bhKontenrahmen.length} Konten, ${window._bhJournal.length} Journal-Einträge.`);
+      } else {
+        console.error("❌ Fehler bei Supabase Buchhaltung Abfrage:", accRes.error || jnlRes.error);
       }
     } catch (supaErr) {
-      console.warn("⚠️ Supabase Buchhaltung Abfrage fehlgeschlagen, versuche Legacy GAS:", supaErr);
+      console.error("❌ Supabase Buchhaltung Abfrage fehlgeschlagen:", supaErr);
     }
   }
 
-  // Fallback auf GAS, falls Supabase noch leer ist oder nicht erreichbar war
   if (!loadedFromSupabase) {
-    console.log("ℹ️ Lade Buchhaltungsdaten via Google Apps Script (Fallback)...");
-    window._bhIsSupabase = false;
-
-    try {
-      const [resJournal, resKonten, resBudget, resRules] = await Promise.all([
-        apiFetch('buchhaltung', 'action=getJournal'),
-        apiFetch('buchhaltung', 'action=getKontenrahmen'),
-        apiFetch('buchhaltung', 'action=getBudget'),
-        apiFetch('buchhaltung', 'action=getBankRules'),
-        apiFetch('inventar', 'action=getInventarData').then(r => r.json()).then(resInv => {
-          if (resInv && resInv.gewehre) {
-            window._bhProMemoriaGewehreCount = resInv.gewehre.length;
-          }
-        }).catch(e => {
-          console.warn("⚠️ Inventar-Daten für Pro Memoria konnten nicht geladen werden:", e);
-        })
-      ]);
-
-      const txtJournal = await resJournal.text();
-      const txtKonten = await resKonten.text();
-      const txtBudget = await resBudget.text();
-      const txtRules = await resRules.text();
-
-      let dataJournal, dataKonten, dataBudget, dataRules;
-      try {
-        dataJournal = JSON.parse(txtJournal);
-        dataKonten = JSON.parse(txtKonten);
-        dataBudget = JSON.parse(txtBudget);
-        dataRules = JSON.parse(txtRules);
-      } catch (_) {
-        console.error('❌ Buchhaltung API: HTML statt JSON erhalten.');
-        const content = document.getElementById('bh-tab-content-container');
-        if (content) {
-          content.innerHTML = `
-            <div class="alert alert-warning">
-              <h5>⚠️ Backend nicht erreichbar</h5>
-              <p>Das Google Apps Script für <strong>Buchhaltung</strong> gibt kein JSON zurück. Mögliche Ursachen:</p>
-              <ul>
-                <li>Das Script ist noch nicht als <strong>Web App</strong> deployed</li>
-                <li>Die URL im <code>worker.js</code> ist inkorrekt oder abgelaufen</li>
-                <li>Ein Berechtigungs- oder Quotenlimit bei Google wurde überschritten</li>
-              </ul>
-              <details class="mt-2">
-                <summary class="small text-muted">Technische Details (Journal-Antwort)</summary>
-                <pre class="small mt-2 bg-light p-2 rounded">${escapeHtml(txtJournal.slice(0, 500))}</pre>
-              </details>
-            </div>`;
-        }
-        return;
+    console.error("❌ Buchhaltungsdaten konnten nicht aus Supabase geladen werden.");
+    if (!silent || !hasCachedData) {
+      const content = document.getElementById('bh-tab-content-container');
+      if (content) {
+        content.innerHTML = `
+          <div class="alert alert-danger shadow-sm rounded-3">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Verbindungsfehler:</strong> Die Buchhaltungsdaten konnten nicht aus Supabase geladen werden. Bitte Internetverbindung prüfen.
+          </div>`;
       }
-      
-      if (dataJournal.success && dataKonten.success && dataBudget.success) {
-        window._bhJournal = dataJournal.data || [];
-        window._bhKontenrahmen = dataKonten.data || [];
-        try {
-          localStorage.setItem('bh_kontenrahmen', JSON.stringify(dataKonten.data || []));
-        } catch(_) {}
-        window._bhBudget = dataBudget.data || [];
-
-        if (dataRules && dataRules.success && Array.isArray(dataRules.data)) {
-          window._bhBankServerRules = dataRules.data;
-          try {
-            localStorage.setItem('bh_bank_rules', JSON.stringify(dataRules.data));
-          } catch(_) {}
-        }
-      } else {
-        throw new Error(dataJournal.error || dataKonten.error || dataBudget.error || "Unerwarteter API Fehler.");
-      }
-    } catch (err) {
-      console.error("❌ Fehler beim Laden der Buchhaltungsdaten via GAS:", err);
-      if (!silent || !hasCachedData) {
-        const content = document.getElementById('bh-tab-content-container');
-        if (content) {
-          content.innerHTML = `
-            <div class="alert alert-danger shadow-sm rounded-3">
-              <i class="fas fa-exclamation-triangle me-2"></i>
-              <strong>Verbindungsfehler:</strong> Die Buchhaltungsdaten konnten nicht geladen werden.
-              <br><small class="text-muted">${err.message}</small>
-            </div>`;
-        }
-      }
-      return;
     }
+    return;
   }
 
   // Gemeinsame Nachbearbeitung (Live-Berechnungen, Filter, KPI)

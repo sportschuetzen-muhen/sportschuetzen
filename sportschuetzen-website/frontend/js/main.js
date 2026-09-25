@@ -43,8 +43,6 @@ if (mobileToggle && navLinks && !mobileToggle.hasAttribute('data-bound')) {
 const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 const GOOGLE_HAUS_KALENDER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender";
-const GOOGLE_HAUS_KALENDER_FALLBACK = "https://script.google.com/macros/s/AKfycbxETNWUOsdyF72caWlJ7gi7mlI_oSX2rWQJfUskim8umRF2ARrSCGfe6UWzTy26B_s5/exec";
-const WORKER_TERMINE_URL = "https://termine.dan-hunziker73.workers.dev?action=getTermine";
 
 let allMergedEvents = [];
 
@@ -75,7 +73,7 @@ function parseEventDate(obj) {
     return isNaN(fb.getTime()) ? null : fb;
 }
 
-// 1. Vereinstermine (Supabase mit Fallback auf Worker)
+// 1. Vereinstermine (Supabase Single Source of Truth)
 async function fetchVereinsTermine() {
     try {
         const response = await fetch(`${SUPABASE_REST_URL}/termine?select=*&status=neq.abgesagt&order=datum.asc,sort_order.asc`, {
@@ -103,36 +101,12 @@ async function fetchVereinsTermine() {
             }
         }
     } catch (e) {
-        console.warn('Supabase Termine nicht erreichbar, nutze Worker Fallback:', e);
-    }
-
-    try {
-        const resp = await fetch(WORKER_TERMINE_URL);
-        if (resp.ok) {
-            const raw = await resp.json();
-            if (Array.isArray(raw) && raw.length > 0) {
-                return raw.map(r => ({
-                    id: r.id || 'wk_' + (r.datum || '').replace(/[^0-9]/g, ''),
-                    datum: r.datum_iso || r.datum || '',
-                    datum_iso: r.datum_iso || r.datum || '',
-                    start: r.start || '',
-                    ende: r.ende || '',
-                    titel: r.titel || '',
-                    ort: r.ort || 'Schützenhaus Muhen',
-                    kategorie: r.kategorie || 'Jahresprogramm',
-                    status: r.status || 'fix',
-                    typ: 'verein',
-                    map: r.map || ''
-                }));
-            }
-        }
-    } catch (e2) {
-        console.error('Auch Worker Termine fehlgeschlagen:', e2);
+        console.error('Supabase Termine Abfragefehler:', e);
     }
     return [];
 }
 
-// 2. Google Kalender Belegungen (Hauskalender)
+// 2. Belegungen Hauskalender
 async function fetchGoogleHausKalender() {
     // A. Primär: Cloudflare Worker
     try {
@@ -156,35 +130,10 @@ async function fetchGoogleHausKalender() {
             }
         }
     } catch (e) {
-        console.warn('Worker Hauskalender fehlgeschlagen, versuche Google Script direkt:', e);
+        console.warn('Worker Hauskalender fehlgeschlagen, versuche Supabase:', e);
     }
 
-    // B. Fallback: Google Apps Script direkt
-    try {
-        const gasResp = await fetch(GOOGLE_HAUS_KALENDER_FALLBACK);
-        if (gasResp.ok) {
-            const raw = await gasResp.json();
-            if (Array.isArray(raw) && raw.length > 0) {
-                return raw.map(r => ({
-                    id: 'gas_' + (r.datum_iso || r.datum || '') + '_' + Math.random().toString(36).substr(2, 6),
-                    datum: r.datum_iso || r.datum || '',
-                    datum_iso: r.datum_iso || r.datum || '',
-                    start: r.start || '',
-                    ende: r.ende || '',
-                    titel: r.titel || 'Schützenhaus Belegung',
-                    ort: r.ort || 'Schützenhaus',
-                    kategorie: 'Hauskalender',
-                    status: r.status || 'fix',
-                    typ: 'extern',
-                    map: r.map || ''
-                }));
-            }
-        }
-    } catch (e2) {
-        console.warn('GAS Hauskalender Fallback fehlgeschlagen:', e2);
-    }
-
-    // C. Fallback: Supabase rental_requests
+    // B. Fallback: Supabase rental_requests
     try {
         const supaResp = await fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, {
             headers: {
