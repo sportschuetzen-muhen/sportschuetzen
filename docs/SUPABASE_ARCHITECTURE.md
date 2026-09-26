@@ -1459,12 +1459,14 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
 | **Phase 20** | **Zentrale Mail-Engine (`send-email`)** | Universelle Supabase Edge Function für SMTP-Mailversand. Unterstützt Gmail (aktuell mit App-Passwort) und Infomaniak (Domainhoster); automatische Protokollierung in `mail_logs` & Anbindung an `system_mail_configs`; Frontend Client-API | Supabase Edge Functions / SMTP | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 21** | **Zentrale PDF-Engine (`generate-pdf`)** | Server- und clientseitige PDF-Generierung für Rechnungen (inkl. Schweizer QR-Rechnung SPC 0200 1), Mietverträge und Quittungen; direkte Ablage in Supabase Storage (`operatives-storage`) & Paperless-NGX Integration (`21_pdf_engine_storage.sql`) | Supabase Edge Function / Supabase Storage | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 21.1** | **Vollständige GAS-Entkopplung** | Beseitigung aller stillen Lese-Fallbacks, Dual-Writes und Legacy-Endpunkte in Rechnungen, Inventar, Jahresbeitrag, Mitglieder, Manager, Jahresmeisterschaft, Umfragen, FiBu und Website | Supabase PostgreSQL / Supabase Storage | ✅ **Abgeschlossen** |
-| **Phase 22** | **Infomaniak Cut-Over & CalDAV** | Umstellung der DNS- und Mailkonten auf Infomaniak; Switch der SMTP-Secrets auf `mail.infomaniak.com`; CalDAV-Kalendersynchronisation als Ersatz für Google Calendar | Infomaniak / Supabase | ⏳ Geplant |
-| **Phase 23** | **Automationen & vollständiger GAS-Rückbau** | Übernahme zeitgesteuerter Trigger (Mahnläufe, Vermietungs-Reminder, Status-Audits) durch `pg_cron` & `pg_net`; endgültige Stilllegung der Google Apps Scripts | Supabase PostgreSQL (`pg_cron`) | ⏳ Geplant |
+| **Phase 22** | **Logins & Supabase Auth Integration** | Vollständige Ablösung der Google Sheets `login_daten`, `app_login` und `login_sessions` durch natives Supabase Auth, rollenbasierte Autorisierung (RLS), Präsenz-Tracking (`public.login_sessions`), modernes Glassmorphism Login-Screen & Logo-Relaunch (`22_logins_and_auth_module.sql`) | Supabase PostgreSQL & Auth | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 23** | **RBAC-Matrix, Passwort-Reset & Magic-Link** | Interaktives Berechtigungs-Grid im Modul Logins (`public.role_permissions`), RPC `toggle_role_permission` für alle 8 Vereinsrollen; Passwort-Wiederherstellung via E-Mail (`resetPasswordForEmail`) und passwortloser Login (`signInWithOtp`) (`23_role_permissions_and_auth_enhancements.sql`) | Supabase Auth & PostgreSQL | ✅ **Abgeschlossen & im Testbetrieb** |
+| **Phase 24** | **Infomaniak Cut-Over & CalDAV** | Umstellung der DNS- und Mailkonten auf Infomaniak; Switch der SMTP-Secrets auf `mail.infomaniak.com`; CalDAV-Kalendersynchronisation als Ersatz für Google Calendar | Infomaniak / Supabase | ⏳ Geplant |
+| **Phase 25** | **Automationen & vollständiger GAS-Rückbau** | Übernahme zeitgesteuerter Trigger (Mahnläufe, Vermietungs-Reminder, Status-Audits) durch `pg_cron` & `pg_net`; endgültige Stilllegung der Google Apps Scripts | Supabase PostgreSQL (`pg_cron`) | ⏳ Geplant |
 
 ---
 
-## 8. Ausbaustufen zur vollständigen Google-Unabhängigkeit (Phasen 20 bis 23)
+## 8. Ausbaustufen zur vollständigen Google-Unabhängigkeit (Phasen 20 bis 25)
 
 ### Phase 20: Zentrale Mail-Engine (`send-email`)
 - **Ziel:** Vollständige Entkopplung des Mailversands von Google Apps Script (`MailApp` / `GmailApp`).
@@ -1522,16 +1524,27 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - `vorstand/js/logins/logins-actions.js`: Vollständige Entkopplung von Google Apps Script für Admins, App-Mitglieder, Sitzungsprotokoll und Sync; robuster separater Abruf von `admin_profiles` und `user_roles` ohne nicht-unterstützte Cross-Schema-Joins.
     - `vorstand/js/mitglieder/mitglieder-sync-ui.js`: Direkte Vorschau und Durchführung des Logins-Syncs gegen Supabase.
     - `vorstand/js/main.js`: **Vollständige Stilllegung des Legacy `bgModuleLoader`** (kein Hintergrund-Polling/Preloading mehr; alle Module laden strikt on-demand in < 50 ms via Supabase REST). Bereinigung von übergeordneten `try/finally`-Blöcken in `manager-core.js`, `rechnungen-actions.js` und `jahresmeisterschaft-core.js`.
-    - **Cache-Busting (`?v=20260925_4`):** Aktualisierung aller Script-Referenzen in `vorstand/index.html`.
+### Phase 23: RBAC-Berechtigungsmatrix, Passwort-Reset & Magic-Link
+- **Ziel:** Bereitstellung eines interaktiven Berechtigungs-Grids für alle Rollen sowie vollständige E-Mail-Authentifizierung (Passwort-Reset und Magic Link).
+- **Architektur & Komponenten:**
+  - **Migration (`23_role_permissions_and_auth_enhancements.sql`):**
+    - Initialisierung aller granularen Berechtigungen für 8 Vereinsrollen (`public.role_permissions`).
+    - RPC `public.toggle_role_permission(p_role, p_permission, p_enable, p_description)` mit Berechtigungsprüfung.
+    - RLS-Policies für Lese- und Schreibzugriff auf `role_permissions`.
+  - **Frontend-Integration & UI/UX:**
+    - `vorstand/index.html`: Links «Per Mail anmelden» und «Passwort vergessen?», drei moderne Modals (`#forgot-password-modal`, `#magic-link-modal`, `#recovery-password-modal`).
+    - `vorstand/js/auth.js`: Passwort-Reset (`supabase.auth.resetPasswordForEmail`), Magic Link (`supabase.auth.signInWithOtp`), Event-Listener auf `PASSWORD_RECOVERY` & `#type=recovery`, einheitliche Session-Initialisierung (`applyAuthenticatedUser`).
+    - `vorstand/js/logins/`: 4. Tab *«Rollen & Berechtigungen»* mit interaktiver RBAC-Matrix (`renderRolePermissionsGrid`), Modul-Gruppierung, Live-Switches, Volltextsuche, administrativer Wildcard-Kennzeichnung und optimistischem State-Update (`toggleRolePermission`).
+    - **Cache-Busting (`?v=20260926_1`):** Aktualisierung aller Script-Referenzen in `vorstand/index.html`.
 
-### Phase 23: Infomaniak Cut-Over & CalDAV
+### Phase 24: Infomaniak Cut-Over & CalDAV
 - **Ziel:** Umzug der Vereinsdomain auf Infomaniak (Schweizer Hosting, DSG-konform).
 - **Architektur:**
   - Domain-Transfer und DNS-Aufschaltung bei Infomaniak mit SPF-, DKIM- und DMARC-Records für `@sportschuetzen-muhen.ch`.
   - Anpassung der Supabase Secrets: `SMTP_HOST=mail.infomaniak.com`, `SMTP_USER=info@sportschuetzen-muhen.ch`.
   - Ersatz des Google Calendars durch CalDAV-Schnittstelle von Infomaniak für die Schützenstuben-Belegungen.
 
-### Phase 24: Zeitgesteuerte Automationen via `pg_cron`
+### Phase 25: Zeitgesteuerte Automationen via `pg_cron`
 - **Ziel:** Ablösung aller Google Time-Driven Trigger.
 - **Architektur:**
   - Aktivierung der PostgreSQL-Erweiterungen `pg_cron` und `pg_net` in Supabase.
@@ -1542,7 +1555,7 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
 
 ---
 
-> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Phase 20 (Zentrale Mail-Engine) und Phase 21 (Zentrale PDF- & QR-Engine) entkoppeln den operativen Dokumenten- und Mailbetrieb von Google Docs/Drive. Phase 22 stellt das gesamte Authentifizierungs- und Login-System auf Supabase Auth und PostgreSQL-basierte Profile um, schaltet das alte Hintergrund-Preloading ab und sichert die Stabilität aller Fachmodule ab.
+> **Ergebnis:** Mit dieser Roadmap sind alle Fachmodule bis zur 100%igen Unabhängigkeit von Google Sheets und Google Apps Script strukturiert und migriert. Phase 18 (PWA & Website Konsolidierung) sowie der Cut-Over in Phase 19 für 10 Fachmodule wurden erfolgreich umgesetzt. Phase 20 (Zentrale Mail-Engine) und Phase 21 (Zentrale PDF- & QR-Engine) entkoppeln den operativen Dokumenten- und Mailbetrieb von Google Docs/Drive. Phase 22 & 23 stellen das gesamte Authentifizierungs- und Login-System auf Supabase Auth, PostgreSQL-Profile, Mail-Recovery/Magic-Link und die interaktive RBAC-Berechtigungsmatrix um, schalten das alte Hintergrund-Preloading ab und sichern die Stabilität aller Fachmodule ab.
 
 
 

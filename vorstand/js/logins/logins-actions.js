@@ -99,12 +99,84 @@ async function fetchLoginsData() {
       };
     });
 
+    // 4. Rollen-Berechtigungen aus public.role_permissions
+    try {
+      const { data: perms, error: pErr } = await supa
+        .from('role_permissions')
+        .select('*');
+      if (!pErr && perms) {
+        LoginsState.role_permissions = perms;
+      }
+    } catch (permErr) {
+      console.warn("Konnte role_permissions nicht laden:", permErr);
+    }
+
     LoginsState.loaded = true;
     loginsUpdateBadges();
     loginsRenderTable();
   } catch (e) {
     if (wrapper) {
       wrapper.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden der Logins: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+}
+
+async function toggleRolePermission(role, permission, isChecked, description) {
+  const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+  if (!supa) {
+    if (typeof showError === 'function') showError("Supabase Client nicht verfügbar.");
+    return;
+  }
+
+  // Optimistisches Update im State
+  const idx = LoginsState.role_permissions.findIndex(p => p.role === role && p.permission === permission);
+  if (isChecked && idx === -1) {
+    LoginsState.role_permissions.push({ role, permission, description: description || '' });
+  } else if (!isChecked && idx !== -1) {
+    LoginsState.role_permissions.splice(idx, 1);
+  }
+  loginsUpdateBadges();
+
+  try {
+    // 1. Primär: RPC toggle_role_permission
+    const { data: res, error: rpcErr } = await supa.rpc('toggle_role_permission', {
+      p_role: role,
+      p_permission: permission,
+      p_enable: isChecked,
+      p_description: description || null
+    });
+
+    if (rpcErr) {
+      // 2. Fallback: direkter REST Aufruf
+      if (isChecked) {
+        const { error: insErr } = await supa.from('role_permissions').upsert({
+          role: role,
+          permission: permission,
+          description: description || null
+        }, { onConflict: 'role,permission' });
+        if (insErr) throw insErr;
+      } else {
+        const { error: delErr } = await supa.from('role_permissions').delete().eq('role', role).eq('permission', permission);
+        if (delErr) throw delErr;
+      }
+    }
+
+    if (typeof showSuccess === 'function') {
+      showSuccess(`Berechtigung «${permission}» für Rolle «${role}» ${isChecked ? 'erteilt' : 'entzogen'}.`);
+    }
+  } catch (err) {
+    console.error("Fehler bei toggleRolePermission:", err);
+    // Rollback im State
+    if (isChecked) {
+      const rollbackIdx = LoginsState.role_permissions.findIndex(p => p.role === role && p.permission === permission);
+      if (rollbackIdx !== -1) LoginsState.role_permissions.splice(rollbackIdx, 1);
+    } else {
+      LoginsState.role_permissions.push({ role, permission, description: description || '' });
+    }
+    loginsUpdateBadges();
+    loginsRenderTable();
+    if (typeof showError === 'function') {
+      showError(`Fehler beim Ändern der Berechtigung: ${err.message}`);
     }
   }
 }

@@ -448,9 +448,9 @@ Im Gesamtsystem gibt es derzeit **zwei aktive Login-Mechanismen** und ein **drit
 4. **Backend-Schutz:** Worker prüft `X-User-Role` Header (Zeile 139), aber **KEINE serverseitige Rollenvalidierung** gegen die DB
 5. **GAS-Ebene:** Keine Berechtigungsprüfung – GAS führt jede Aktion aus, die über den Worker kommt
 
-> **⚠️ SICHERHEITSRISIKO:** Die Rollenprüfung erfolgt ausschliesslich im Frontend. Ein böswilliger Benutzer könnte durch manuelle API-Requests die Rollenprüfung umgehen. Dies ist ein Kernargument für RLS in Supabase.
+> **✅ GELÖST (Phase 23):** Die statische Rollenprüfung wurde durch ein dreistufiges, entkoppeltes RBAC-Modell (`public.user_roles`, `public.role_permissions`) abgelöst. Das Sicherheitsmodell wird serverseitig über PostgreSQL Row Level Security (RLS) und `auth.has_permission()` erzwungen. Im Vorstandsportal (Modul «Logins») steht Administratoren ein dynamisches Berechtigungs-Grid zur Verfügung, mit dem Berechtigungen in Echtzeit geändert werden können.
 
-### Schreibrecht-Matrix (Frontend)
+### Schreibrecht-Matrix (Migriert auf Supabase RBAC)
 
 | Modul | admin | vorstand | schuetzenmeister | aktuar | kassier | vermieter | materialwart |
 |:------|:-----:|:--------:|:----------------:|:------:|:-------:|:---------:|:------------:|

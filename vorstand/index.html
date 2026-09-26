@@ -582,6 +582,15 @@
                 </button>
             </div>
 
+            <div class="d-flex justify-content-between align-items-center mb-3 px-1">
+                <a href="#" onclick="openMagicLinkModal(); return false;" class="text-decoration-none small text-muted hover-primary" style="font-size: 0.8rem;">
+                    <i class="fas fa-paper-plane me-1 text-primary"></i> Per Mail anmelden
+                </a>
+                <a href="#" onclick="openForgotPasswordModal(); return false;" class="text-decoration-none small text-primary fw-medium" style="font-size: 0.8rem;">
+                    Passwort vergessen?
+                </a>
+            </div>
+
             <button id="btn-login-submit" type="submit" class="btn btn-primary w-100 py-2.5 fw-bold shadow-sm rounded-3">
                 <i class="fas fa-sign-in-alt me-1"></i> Anmelden
             </button>
@@ -595,6 +604,125 @@
         <div class="mt-4 pt-3 border-top d-flex justify-content-center align-items-center gap-2 text-muted" style="font-size: 0.72rem;">
             <i class="fas fa-shield-halved text-success"></i>
             <span>Gesichert via Supabase Auth & SSL</span>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: PASSWORT VERGESSEN -->
+<div class="modal fade" id="forgot-password-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 440px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white border-0 py-3 px-4">
+                <h5 class="modal-title fw-bold" style="font-size: 1.1rem;">
+                    <i class="fas fa-key me-2"></i>Passwort zurücksetzen
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted small mb-3">
+                    Gib deine E-Mail-Adresse oder deinen Benutzernamen ein. Wir senden dir einen sicheren Link zum Zurücksetzen deines Passworts.
+                </p>
+                <form id="forgot-password-form" onsubmit="submitForgotPassword(event)">
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="forgot-pw-input" placeholder="Benutzername oder E-Mail" required autocomplete="username">
+                        <label for="forgot-pw-input"><i class="fas fa-user text-muted me-1"></i> Benutzername oder E-Mail</label>
+                    </div>
+
+                    <div id="forgot-pw-alert" class="alert d-none py-2 px-3 small mb-3"></div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="btn-forgot-pw-submit">
+                            <i class="fas fa-paper-plane me-1"></i> Reset-Link anfordern
+                        </button>
+                        <button type="button" class="btn btn-light py-2 text-muted small" data-bs-dismiss="modal">
+                            Abbrechen
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: MAGIC LINK (PASSWORTLOSER LOGIN) -->
+<div class="modal fade" id="magic-link-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 440px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white border-0 py-3 px-4">
+                <h5 class="modal-title fw-bold" style="font-size: 1.1rem;">
+                    <i class="fas fa-envelope-open-text me-2"></i>Per E-Mail anmelden
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted small mb-3">
+                    Melde dich ohne Passwort an! Gib deine E-Mail-Adresse oder deinen Benutzernamen ein. Du erhältst einen Einmalklick-Anmeldelink direkt per E-Mail.
+                </p>
+                <form id="magic-link-form" onsubmit="submitMagicLink(event)">
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="magic-link-input" placeholder="Benutzername oder E-Mail" required autocomplete="username">
+                        <label for="magic-link-input"><i class="fas fa-envelope text-muted me-1"></i> Benutzername oder E-Mail</label>
+                    </div>
+
+                    <div id="magic-link-alert" class="alert d-none py-2 px-3 small mb-3"></div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="btn-magic-link-submit">
+                            <i class="fas fa-magic me-1"></i> Anmelde-Link senden
+                        </button>
+                        <button type="button" class="btn btn-light py-2 text-muted small" data-bs-dismiss="modal">
+                            Abbrechen
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: NEUES PASSWORT FESTLEGEN (RECOVERY) -->
+<div class="modal fade" id="recovery-password-modal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 440px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-success text-white border-0 py-3 px-4">
+                <h5 class="modal-title fw-bold" style="font-size: 1.1rem;">
+                    <i class="fas fa-shield-alt me-2"></i>Neues Passwort festlegen
+                </h5>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted small mb-3">
+                    Dein Identitätsnachweis war erfolgreich. Bitte vergib jetzt ein neues Passwort für dein Vorstands-Konto (mind. 6 Zeichen).
+                </p>
+                <form id="recovery-password-form" onsubmit="submitRecoveryPassword(event)">
+                    <div class="position-relative mb-3">
+                        <div class="form-floating">
+                            <input type="password" class="form-control pe-5" id="recovery-new-pw" placeholder="Neues Passwort" required minlength="6" autocomplete="new-password">
+                            <label for="recovery-new-pw"><i class="fas fa-lock text-muted me-1"></i> Neues Passwort</label>
+                        </div>
+                        <button type="button" class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted text-decoration-none pe-3 z-3" tabindex="-1" onclick="togglePasswordVisibility('recovery-new-pw', 'rec-pw1-icon')">
+                            <i class="fas fa-eye" id="rec-pw1-icon"></i>
+                        </button>
+                    </div>
+
+                    <div class="position-relative mb-3">
+                        <div class="form-floating">
+                            <input type="password" class="form-control pe-5" id="recovery-confirm-pw" placeholder="Passwort bestätigen" required minlength="6" autocomplete="new-password">
+                            <label for="recovery-confirm-pw"><i class="fas fa-lock text-muted me-1"></i> Passwort bestätigen</label>
+                        </div>
+                        <button type="button" class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-muted text-decoration-none pe-3 z-3" tabindex="-1" onclick="togglePasswordVisibility('recovery-confirm-pw', 'rec-pw2-icon')">
+                            <i class="fas fa-eye" id="rec-pw2-icon"></i>
+                        </button>
+                    </div>
+
+                    <div id="recovery-alert" class="alert d-none py-2 px-3 small mb-3"></div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success py-2.5 fw-bold rounded-3 shadow-sm text-white" id="btn-recovery-submit">
+                            <i class="fas fa-check-circle me-1"></i> Passwort speichern & anmelden
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 </div>
@@ -1639,13 +1767,13 @@
 </div>
 
 
-<!-- SCRIPTS – Reihenfolge wichtig! -->
-<script src="js/auth.js?v=20260925_4"></script>
-<script src="js/main.js?v=20260925_4"></script>
-
 <!-- Supabase SDK & Global Client -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabase-client.js?v=20260925_4"></script>
+<script src="js/supabase-client.js?v=20260926_1"></script>
+
+<!-- SCRIPTS – Reihenfolge wichtig! -->
+<script src="js/auth.js?v=20260926_1"></script>
+<script src="js/main.js?v=20260926_1"></script>
 <script src="js/inventar/inventar-core.js"></script>
 <script src="js/inventar/inventar-ui.js"></script>
 <script src="js/inventar/inventar-cart.js"></script>
@@ -1663,11 +1791,11 @@
 <script src="js/umfragen/umfragen-eval.js"></script>
 <script src="js/umfragen/umfragen-controlling.js"></script>
 <script src="js/umfragen/umfragen-tracking.js"></script>
-<script src="js/logins/logins-core.js?v=20260925_4"></script>
-<script src="js/logins/logins-ui.js?v=20260925_4"></script>
-<script src="js/logins/logins-events.js?v=20260925_4"></script>
+<script src="js/logins/logins-core.js?v=20260926_1"></script>
+<script src="js/logins/logins-ui.js?v=20260926_1"></script>
+<script src="js/logins/logins-events.js?v=20260926_1"></script>
 <script src="js/news.js"></script>
-<script src="js/logins/logins-actions.js?v=20260925_4"></script>
+<script src="js/logins/logins-actions.js?v=20260926_1"></script>
 <script src="js/manager/manager-core.js?v=20260925_4"></script>
 <script src="js/manager/manager-ui.js"></script>
 <script src="js/manager/manager-dnd.js"></script>

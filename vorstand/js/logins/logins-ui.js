@@ -43,6 +43,12 @@ function renderLoginsShell() {
           <i class="fas fa-tower-broadcast me-1 text-success"></i> Aktive Sitzungen & Audit <span class="badge bg-secondary ms-1" id="logins-badge-login_sessions">0</span>
         </a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link fw-medium" id="tab-btn-role_permissions" href="#"
+           onclick="loginsSetTab('role_permissions'); return false;">
+          <i class="fas fa-th me-1 text-warning"></i> Rollen & Berechtigungen <span class="badge bg-secondary ms-1" id="logins-badge-role_permissions">0</span>
+        </a>
+      </li>
     </ul>
 
     <!-- Search bar -->
@@ -94,9 +100,11 @@ function loginsUpdateBadges() {
   const b1 = document.getElementById('logins-badge-login_daten');
   const b2 = document.getElementById('logins-badge-app_login');
   const b3 = document.getElementById('logins-badge-login_sessions');
+  const b4 = document.getElementById('logins-badge-role_permissions');
   if (b1) b1.textContent = LoginsState.login_daten.length;
   if (b2) b2.textContent = LoginsState.app_login.length;
   if (b3) b3.textContent = LoginsState.login_sessions.length;
+  if (b4) b4.textContent = LoginsState.role_permissions.length;
 }
 
 function loginsRenderTable() {
@@ -112,11 +120,17 @@ function loginsRenderTable() {
   // Show/Hide Add button
   const addBtn = document.getElementById('btn-logins-add');
   if (addBtn) {
-    if (tab === 'login_sessions') {
+    if (tab === 'login_sessions' || tab === 'role_permissions') {
       addBtn.classList.add('d-none');
     } else {
       if (canWrite) addBtn.classList.remove('d-none');
     }
+  }
+
+  // 4. Tab: Rollen & Berechtigungs-Grid
+  if (tab === 'role_permissions') {
+    wrapper.innerHTML = renderRolePermissionsGrid(canWrite);
+    return;
   }
 
   // Daten
@@ -159,6 +173,129 @@ function loginsRenderTable() {
   } else {
     wrapper.innerHTML = renderLoginSessionsTable(rows);
   }
+}
+
+function renderRolePermissionsGrid(canWrite) {
+  const search = (document.getElementById('logins-search')?.value || '').toLowerCase().trim();
+  const perms = LoginsState.role_permissions || [];
+
+  // Lookup-Set: role + '::' + permission
+  const activeSet = new Set(perms.map(p => `${p.role}::${p.permission}`));
+
+  let filteredModules = RBAC_MODULES.map(m => {
+    const matchedPerms = m.permissions.filter(p => {
+      if (!search) return true;
+      return (
+        m.module.toLowerCase().includes(search) ||
+        p.key.toLowerCase().includes(search) ||
+        p.label.toLowerCase().includes(search) ||
+        (p.desc && p.desc.toLowerCase().includes(search))
+      );
+    });
+    return { ...m, permissions: matchedPerms };
+  }).filter(m => m.permissions.length > 0);
+
+  if (filteredModules.length === 0) {
+    return `<div class="alert alert-secondary text-center py-4">Keine Berechtigungen zu diesem Suchbegriff gefunden.</div>`;
+  }
+
+  // Header Spalten für Rollen
+  const roleHeadersHtml = RBAC_ROLES.map(r => `
+    <th class="text-center" style="width: 100px; font-size: 0.78rem;">
+      <span class="badge ${r.badge} py-1 px-2 rounded-pill d-inline-block text-truncate" style="max-width: 90px;" title="${escapeHtml(r.label)}">
+        ${escapeHtml(r.label)}
+      </span>
+    </th>
+  `).join('');
+
+  let tableBodyHtml = '';
+
+  filteredModules.forEach(mod => {
+    // Gruppen-Header Zeile
+    tableBodyHtml += `
+      <tr class="table-light">
+        <td colspan="${2 + RBAC_ROLES.length}" class="py-2 px-3 fw-bold text-primary">
+          <i class="fas ${mod.icon} me-2 text-primary"></i>${escapeHtml(mod.module)}
+          <span class="badge bg-light text-muted border ms-2" style="font-size: 0.7rem;">${mod.permissions.length} Aktionen</span>
+        </td>
+      </tr>
+    `;
+
+    mod.permissions.forEach(p => {
+      const cellsHtml = RBAC_ROLES.map(r => {
+        // Admin ist Wildcard: immer voll aktiv und geschützt
+        if (r.key === 'admin') {
+          return `
+            <td class="text-center bg-danger-subtle bg-opacity-25" style="vertical-align: middle;">
+              <span class="badge bg-danger text-white rounded-pill px-2 py-0.5" style="font-size: 0.68rem;" title="System-Administrator besitzt Wildcard-Vollzugriff">
+                <i class="fas fa-check me-0.5"></i> Aktiv
+              </span>
+            </td>
+          `;
+        }
+
+        const isChecked = activeSet.has(`${r.key}::${p.key}`);
+        const disabledAttr = canWrite ? '' : 'disabled';
+
+        return `
+          <td class="text-center" style="vertical-align: middle;">
+            <div class="form-check form-switch d-inline-block m-0 p-0" style="min-height: auto;">
+              <input class="form-check-input" type="checkbox" role="switch"
+                     style="cursor: ${canWrite ? 'pointer' : 'not-allowed'};"
+                     ${isChecked ? 'checked' : ''}
+                     ${disabledAttr}
+                     onchange="toggleRolePermission('${r.key}', '${p.key}', this.checked, '${escapeHtml(p.desc || p.label)}')"
+                     title="${r.label}: ${p.key}">
+            </div>
+          </td>
+        `;
+      }).join('');
+
+      tableBodyHtml += `
+        <tr>
+          <td style="vertical-align: middle; min-width: 220px;">
+            <div class="fw-bold text-dark" style="font-size: 0.88rem;">${escapeHtml(p.label)}</div>
+            <code class="text-muted" style="font-size: 0.72rem;">${escapeHtml(p.key)}</code>
+          </td>
+          <td class="text-muted small" style="vertical-align: middle; min-width: 200px; font-size: 0.8rem;">
+            ${escapeHtml(p.desc || '—')}
+          </td>
+          ${cellsHtml}
+        </tr>
+      `;
+    });
+  });
+
+  return `
+    <div class="alert alert-info py-2.5 px-3 small mb-3 border-0 shadow-xs d-flex align-items-center justify-content-between flex-wrap gap-2 rounded-3" style="background-color: #f0f7ff; color: #0b4375;">
+      <div>
+        <i class="fas fa-shield-halved me-2 text-primary"></i>
+        <strong>Entkoppeltes RBAC-Berechtigungsmodell:</strong> Diese Matrix definiert die granularen Berechtigungen (<code>public.role_permissions</code>). Jede Änderung wird direkt in PostgreSQL persistiert und steuert Row Level Security (RLS) sowie Frontend-Schreibrechte.
+      </div>
+      <div>
+        <span class="badge bg-primary rounded-pill px-2.5 py-1">
+          <i class="fas fa-key me-1"></i> ${perms.length} Aktive Rollenzuweisungen
+        </span>
+      </div>
+    </div>
+
+    <div class="card shadow-xs border rounded-3 overflow-hidden">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="min-width: 1050px;">
+          <thead class="table-light text-secondary border-bottom" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+            <tr>
+              <th style="min-width: 220px;">Modul & Granulare Aktion</th>
+              <th style="min-width: 200px;">Beschreibung / Wirkung</th>
+              ${roleHeadersHtml}
+            </tr>
+          </thead>
+          <tbody>
+            ${tableBodyHtml}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function renderLoginDatenTable(rows, canWrite) {

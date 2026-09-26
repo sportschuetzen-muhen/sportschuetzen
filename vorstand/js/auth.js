@@ -134,6 +134,342 @@ function setLoginError(msg) {
     if (errDiv) errDiv.classList.remove('d-none');
 }
 
+function togglePasswordVisibility(inputId, iconId) {
+    const inp = document.getElementById(inputId);
+    const icon = document.getElementById(iconId);
+    if (!inp) return;
+    if (inp.type === 'password') {
+        inp.type = 'text';
+        if (icon) {
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        }
+    } else {
+        inp.type = 'password';
+        if (icon) {
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
+    }
+}
+
+// =========================================================
+//  AUTHENTICATED STATE HELPER
+// =========================================================
+async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resolvedData) {
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    const targetEmail = authUser.email;
+
+    // Rollen ermitteln (JWT app_metadata oder user_roles Tabelle)
+    let roles = (authUser.app_metadata && Array.isArray(authUser.app_metadata.roles)) ? authUser.app_metadata.roles : [];
+    if (roles.length === 0 && supa) {
+        try {
+            const { data: rData } = await supa.from('user_roles').select('role').eq('user_id', authUser.id);
+            if (rData && rData.length > 0) roles = rData.map(x => x.role);
+        } catch (rErr) {
+            console.warn("Konnte user_roles nicht abfragen:", rErr);
+        }
+    }
+
+    let prof = profData;
+    if (!prof && supa) {
+        const { data: p } = await supa.from('admin_profiles')
+            .select('*')
+            .or(`auth_user_id.eq.${authUser.id},email.eq.${targetEmail}`)
+            .maybeSingle();
+        prof = p;
+    }
+
+    window.currentUser = (prof && prof.display_name) || (resolvedData && resolvedData.name) || authUser.email.split('@')[0];
+    window.currentRoles = roles.length > 0 ? roles.map(r => String(r).trim().toLowerCase()) : ['vorstand'];
+    window.userRole = window.currentRoles[0] || 'vorstand';
+    window.currentRole = window.userRole;
+
+    if (window.AppState) {
+        AppState.set('currentUser', window.currentUser);
+        AppState.set('currentRoles', window.currentRoles);
+        AppState.set('userRole', window.userRole);
+    }
+
+    localStorage.setItem('portal_user', window.currentUser);
+    localStorage.setItem('portal_role', window.userRole);
+    localStorage.setItem('portal_roles', window.currentRoles.join(','));
+    localStorage.setItem('portal_login_id', loginIdentifier || targetEmail);
+    localStorage.setItem('portal_mailadresse', targetEmail);
+    localStorage.setItem('portal_mailanzeige', targetEmail);
+    localStorage.setItem('portal_personnumber', (prof && prof.person_number) || (resolvedData && resolvedData.person_number) || '');
+    localStorage.setItem('portal_rolle_extern', (prof && prof.role_external) || '');
+
+    // Letzten Login aktualisieren
+    if (prof && prof.id && supa) {
+        supa.from('admin_profiles').update({ last_login_at: new Date().toISOString() }).eq('id', prof.id).then();
+    }
+
+    if (typeof showApp === 'function') showApp();
+    if (typeof pingPresence === 'function') pingPresence();
+}
+
+// =========================================================
+//  MODALS & PASSWORT-RESET / MAGIC-LINK
+// =========================================================
+function openForgotPasswordModal() {
+    const alertDiv = document.getElementById('forgot-pw-alert');
+    if (alertDiv) alertDiv.classList.add('d-none');
+    const existingVal = (document.getElementById('login-user')?.value || '').trim();
+    const input = document.getElementById('forgot-pw-input');
+    if (input && existingVal) input.value = existingVal;
+
+    const modal = new bootstrap.Modal(document.getElementById('forgot-password-modal'));
+    modal.show();
+}
+
+function openMagicLinkModal() {
+    const alertDiv = document.getElementById('magic-link-alert');
+    if (alertDiv) alertDiv.classList.add('d-none');
+    const existingVal = (document.getElementById('login-user')?.value || '').trim();
+    const input = document.getElementById('magic-link-input');
+    if (input && existingVal) input.value = existingVal;
+
+    const modal = new bootstrap.Modal(document.getElementById('magic-link-modal'));
+    modal.show();
+}
+
+function openRecoveryPasswordModal() {
+    const alertDiv = document.getElementById('recovery-alert');
+    if (alertDiv) alertDiv.classList.add('d-none');
+    const modalEl = document.getElementById('recovery-password-modal');
+    if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    }
+}
+
+async function submitForgotPassword(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const inputVal = (document.getElementById('forgot-pw-input')?.value || '').trim();
+    const btn = document.getElementById('btn-forgot-pw-submit');
+    const alertDiv = document.getElementById('forgot-pw-alert');
+
+    if (!inputVal) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Bitte Benutzername oder E-Mail eingeben.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa || !supa.auth) {
+        showError("Supabase Auth ist nicht verfügbar.");
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Prüfe & sende...';
+    }
+
+    try {
+        let targetEmail = inputVal.includes('@') ? inputVal : null;
+
+        // Falls Username / PersonNumber eingegeben wurde: auflösen
+        if (!targetEmail) {
+            try {
+                const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
+                if (res && res.success && res.email) {
+                    targetEmail = res.email;
+                }
+            } catch (rpcEx) {
+                console.warn("Identifier resolution failed:", rpcEx);
+            }
+        }
+
+        if (!targetEmail) {
+            throw new Error(`Keine hinterlegte E-Mail-Adresse für «${inputVal}» gefunden. Bitte Admin kontaktieren.`);
+        }
+
+        const redirectUrl = window.location.origin + window.location.pathname;
+        const { error: resetErr } = await supa.auth.resetPasswordForEmail(targetEmail, {
+            redirectTo: redirectUrl
+        });
+
+        if (resetErr) throw resetErr;
+
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-success py-2.5 px-3 small mb-3';
+            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Ein Reset-Link wurde erfolgreich an <strong>${escapeHtml(targetEmail)}</strong> gesendet! Bitte prüfe deinen Posteingang.`;
+            alertDiv.classList.remove('d-none');
+        }
+        if (btn) btn.classList.add('d-none');
+    } catch (err) {
+        console.error("Fehler bei submitForgotPassword:", err);
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = err.message || 'Fehler beim Versenden des Links.';
+            alertDiv.classList.remove('d-none');
+        }
+    } finally {
+        if (btn && !alertDiv?.classList.contains('alert-success')) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i> Reset-Link anfordern';
+        }
+    }
+}
+
+async function submitMagicLink(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const inputVal = (document.getElementById('magic-link-input')?.value || '').trim();
+    const btn = document.getElementById('btn-magic-link-submit');
+    const alertDiv = document.getElementById('magic-link-alert');
+
+    if (!inputVal) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Bitte Benutzername oder E-Mail eingeben.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa || !supa.auth) {
+        showError("Supabase Auth ist nicht verfügbar.");
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sende Anmelde-Link...';
+    }
+
+    try {
+        let targetEmail = inputVal.includes('@') ? inputVal : null;
+
+        if (!targetEmail) {
+            try {
+                const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
+                if (res && res.success && res.email) {
+                    targetEmail = res.email;
+                }
+            } catch (rpcEx) {
+                console.warn("Identifier resolution failed:", rpcEx);
+            }
+        }
+
+        if (!targetEmail) {
+            throw new Error(`Keine E-Mail-Adresse für «${inputVal}» gefunden. Bitte Admin kontaktieren.`);
+        }
+
+        const redirectUrl = window.location.origin + window.location.pathname;
+        const { error: otpErr } = await supa.auth.signInWithOtp({
+            email: targetEmail,
+            options: {
+                emailRedirectTo: redirectUrl
+            }
+        });
+
+        if (otpErr) throw otpErr;
+
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-success py-2.5 px-3 small mb-3';
+            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Der Anmelde-Link wurde an <strong>${escapeHtml(targetEmail)}</strong> gesendet! Klicke in der E-Mail auf den Link, um dich sofort anzumelden.`;
+            alertDiv.classList.remove('d-none');
+        }
+        if (btn) btn.classList.add('d-none');
+    } catch (err) {
+        console.error("Fehler bei submitMagicLink:", err);
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = err.message || 'Fehler beim Versenden des Anmelde-Links.';
+            alertDiv.classList.remove('d-none');
+        }
+    } finally {
+        if (btn && !alertDiv?.classList.contains('alert-success')) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic me-1"></i> Anmelde-Link senden';
+        }
+    }
+}
+
+async function submitRecoveryPassword(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const newPw = (document.getElementById('recovery-new-pw')?.value || '').trim();
+    const confirmPw = (document.getElementById('recovery-confirm-pw')?.value || '').trim();
+    const btn = document.getElementById('btn-recovery-submit');
+    const alertDiv = document.getElementById('recovery-alert');
+
+    if (newPw.length < 6) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Das Passwort muss mindestens 6 Zeichen lang sein.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    if (newPw !== confirmPw) {
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = 'Die Passwörter stimmen nicht überein.';
+            alertDiv.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa || !supa.auth) {
+        showError("Supabase Auth nicht verfügbar.");
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Speichere neues Passwort...';
+    }
+
+    try {
+        const { data: updateData, error: updateErr } = await supa.auth.updateUser({
+            password: newPw
+        });
+
+        if (updateErr) throw updateErr;
+
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-success py-2 px-3 small mb-3';
+            alertDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i> Passwort erfolgreich geändert! Du wirst angemeldet...';
+            alertDiv.classList.remove('d-none');
+        }
+
+        setTimeout(async () => {
+            const modalEl = document.getElementById('recovery-password-modal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+
+            if (updateData && updateData.user) {
+                await applyAuthenticatedUser(updateData.user, updateData.user.email);
+                showSuccess("Willkommen zurück! Passwort wurde erfolgreich aktualisiert.");
+            } else {
+                location.reload();
+            }
+        }, 1200);
+
+    } catch (err) {
+        console.error("Fehler bei submitRecoveryPassword:", err);
+        if (alertDiv) {
+            alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
+            alertDiv.textContent = err.message || 'Passwort-Aktualisierung fehlgeschlagen.';
+            alertDiv.classList.remove('d-none');
+        }
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check-circle me-1"></i> Passwort speichern & anmelden';
+        }
+    }
+}
+
 // === LOGIN / LOGOUT (Supabase Native Auth Integration) ===
 async function doLogin() {
     const u = (document.getElementById('login-user')?.value || '').trim();
@@ -182,49 +518,10 @@ async function doLogin() {
 
                 if (!authErr && authData && authData.user) {
                     console.log("✅ Supabase Auth erfolgreich:", authData.user.email);
-                    const authUser = authData.user;
-
-                    // Rollen ermitteln (JWT app_metadata oder user_roles Tabelle)
-                    let roles = (authUser.app_metadata && Array.isArray(authUser.app_metadata.roles)) ? authUser.app_metadata.roles : [];
-                    if (roles.length === 0) {
-                        const { data: rData } = await supa.from('user_roles').select('role').eq('user_id', authUser.id);
-                        if (rData && rData.length > 0) roles = rData.map(x => x.role);
-                    }
-
-                    // Admin-Profil abfragen
-                    const { data: prof } = await supa.from('admin_profiles')
-                        .select('*')
-                        .or(`auth_user_id.eq.${authUser.id},email.eq.${targetEmail},username.eq.${u}`)
-                        .maybeSingle();
-
-                    currentUser = (prof && prof.display_name) || (resolvedData && resolvedData.name) || authUser.email.split('@')[0];
-                    currentRoles = roles.length > 0 ? roles.map(r => String(r).trim().toLowerCase()) : ['vorstand'];
-                    userRole = currentRoles[0] || 'vorstand';
-                    currentRole = userRole;
-
-                    // State setzen
-                    AppState.set('currentUser', currentUser);
-                    AppState.set('currentRoles', currentRoles);
-                    AppState.set('userRole', userRole);
-
-                    localStorage.setItem('portal_user', currentUser);
-                    localStorage.setItem('portal_role', userRole);
-                    localStorage.setItem('portal_roles', currentRoles.join(','));
-                    localStorage.setItem('portal_login_id', u);
-                    localStorage.setItem('portal_mailadresse', targetEmail);
-                    localStorage.setItem('portal_mailanzeige', targetEmail);
-                    localStorage.setItem('portal_personnumber', (prof && prof.person_number) || (resolvedData && resolvedData.person_number) || '');
-                    localStorage.setItem('portal_rolle_extern', (prof && prof.role_external) || '');
-
-                    // Letzten Login aktualisieren
-                    if (prof && prof.id) {
-                        supa.from('admin_profiles').update({ last_login_at: new Date().toISOString() }).eq('id', prof.id).then();
-                    }
+                    await applyAuthenticatedUser(authData.user, u, null, resolvedData);
 
                     loginSuccessful = true;
-                    showApp();
-                    showSuccess('Willkommen, ' + currentUser + '! (Supabase Auth)');
-                    if (typeof pingPresence === 'function') pingPresence();
+                    showSuccess('Willkommen, ' + window.currentUser + '! (Supabase Auth)');
                 } else {
                     console.warn("ℹ️ Supabase Auth Passwort-Check ergab:", authErr ? authErr.message : "Keine Session");
                 }
@@ -306,34 +603,53 @@ async function doLogout() {
     location.reload();
 }
 
-// Supabase Session Auto-Restore beim Seitenaufruf
+// Supabase Session Auto-Restore & Auth Event Listener
 (async function initSupabaseAuthListener() {
     try {
-        const checkSession = async () => {
+        const setupAuth = async () => {
             const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
             if (!supa || !supa.auth) return;
 
+            // 1. URL Hash prüfen (z.B. type=recovery von Supabase Reset-Mail)
+            const hash = window.location.hash || '';
+            if (hash.includes('type=recovery')) {
+                console.log("🔑 Recovery-Token im URL-Hash erkannt!");
+                setTimeout(() => openRecoveryPasswordModal(), 300);
+            }
+
+            // 2. Auth State Listener
+            supa.auth.onAuthStateChange(async (event, session) => {
+                console.log("🔔 Supabase Auth Event:", event);
+                if (event === 'PASSWORD_RECOVERY') {
+                    console.log("🔑 PASSWORD_RECOVERY Event ausgelöst!");
+                    openRecoveryPasswordModal();
+                } else if (event === 'SIGNED_IN' && session && session.user) {
+                    if (!window.currentUser) {
+                        console.log("✨ Automatische Anmeldung via Auth Event:", session.user.email);
+                        await applyAuthenticatedUser(session.user, session.user.email);
+                    }
+                } else if (event === 'SIGNED_OUT') {
+                    console.log("🚪 Abgemeldet via Supabase Auth");
+                }
+            });
+
+            // 3. Bestehende Session beim Seitenstart prüfen
             const { data } = await supa.auth.getSession();
             if (data && data.session && !window.currentUser) {
                 const user = data.session.user;
                 console.log("🔄 Supabase Session wiederhergestellt für:", user.email);
-                const { data: prof } = await supa.from('admin_profiles').select('*').eq('auth_user_id', user.id).maybeSingle();
-                
-                window.currentUser = (prof && prof.display_name) || user.email.split('@')[0];
-                window.userRole = 'vorstand';
-                window.currentRole = 'vorstand';
-                window.currentRoles = ['vorstand'];
-                if (typeof showApp === 'function') showApp();
+                await applyAuthenticatedUser(user, user.email);
             }
         };
 
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', checkSession);
+            document.addEventListener('DOMContentLoaded', setupAuth);
         } else {
-            setTimeout(checkSession, 500);
+            setTimeout(setupAuth, 400);
         }
     } catch (e) {
         console.warn("Auth Listener Check fehlgeschlagen:", e);
     }
 })();
+
 
