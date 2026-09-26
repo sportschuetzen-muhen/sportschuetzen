@@ -1535,7 +1535,12 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - `vorstand/index.html`: Links «Per Mail anmelden» und «Passwort vergessen?», drei moderne Modals (`#forgot-password-modal`, `#magic-link-modal`, `#recovery-password-modal`).
     - `vorstand/js/auth.js`: Passwort-Reset (`supabase.auth.resetPasswordForEmail`), Magic Link (`supabase.auth.signInWithOtp`), Event-Listener auf `PASSWORD_RECOVERY` & `#type=recovery`, einheitliche Session-Initialisierung (`applyAuthenticatedUser`).
     - `vorstand/js/logins/`: 4. Tab *«Rollen & Berechtigungen»* mit interaktiver RBAC-Matrix (`renderRolePermissionsGrid`), Modul-Gruppierung, Live-Switches, Volltextsuche, administrativer Wildcard-Kennzeichnung und optimistischem State-Update (`toggleRolePermission`).
-    - **Cache-Busting (`?v=20260926_1`):** Aktualisierung aller Script-Referenzen in `vorstand/index.html`.
+    - **Cache-Busting (`?v=20260926_3`):** Aktualisierung aller Script-Referenzen in `vorstand/index.html`.
+  - **Login UI/UX & Server-Härtung:**
+    - `server.js`: Einführung eines performanten, asynchronen Node.js-Dev-Servers auf Port 8085 (Ersatz des blockierenden, synchronen Python-`http.server`, Beseitigung von `socket hang up`-Hängern bei parallelen Skript-Ladevorgängen).
+    - `vorstand/index.html`: `bootstrap.bundle.min.js` in den `<head>` verschoben (Verfügbarkeit der Bootstrap-Modal-Engine vor Modulausführung); Deklarative `data-bs-toggle="modal"`-Attribute an «Per Mail anmelden» und «Passwort vergessen?».
+    - `vorstand/index.html` (CSS): `margin: auto` auf `.login-card` für barrierefreies, zentriertes Scrollen auf Notebooks und niedrigen Viewports ohne Abschneiden von Formularen oder Links.
+    - `vorstand/js/auth.js`: Behebung des `PGRST116`-Fehlers in `applyAuthenticatedUser` (sichere Auflösung bei geteilten Mail-Adressen mehrerer Benutzerkonten wie `admin` und `danhu`), automatische Synchronisation von `auth_user_id` in `admin_profiles` und robuster Fallback in Modal-Öffnungsfunktionen.
 
 ### Phase 24: Infomaniak Cut-Over & CalDAV
 - **Ziel:** Umzug der Vereinsdomain auf Infomaniak (Schweizer Hosting, DSG-konform).

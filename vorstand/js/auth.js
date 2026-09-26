@@ -173,11 +173,27 @@ async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resol
 
     let prof = profData;
     if (!prof && supa) {
-        const { data: p } = await supa.from('admin_profiles')
-            .select('*')
-            .or(`auth_user_id.eq.${authUser.id},email.eq.${targetEmail}`)
-            .maybeSingle();
-        prof = p;
+        try {
+            const { data: pList } = await supa.from('admin_profiles')
+                .select('*')
+                .or(`auth_user_id.eq.${authUser.id},email.eq.${targetEmail}`);
+            if (pList && pList.length > 0) {
+                if (loginIdentifier) {
+                    prof = pList.find(x => x.username && x.username.toLowerCase() === loginIdentifier.toLowerCase())
+                        || pList.find(x => x.auth_user_id === authUser.id)
+                        || pList[0];
+                } else {
+                    prof = pList.find(x => x.auth_user_id === authUser.id) || pList[0];
+                }
+            }
+        } catch (profErr) {
+            console.warn("admin_profiles Suche fehlgeschlagen:", profErr);
+        }
+    }
+
+    // Falls auth_user_id im Profil noch fehlt: verknüpfen
+    if (prof && prof.id && !prof.auth_user_id && authUser.id && supa) {
+        supa.from('admin_profiles').update({ auth_user_id: authUser.id }).eq('id', prof.id).then();
     }
 
     window.currentUser = (prof && prof.display_name) || (resolvedData && resolvedData.name) || authUser.email.split('@')[0];
@@ -219,9 +235,19 @@ function openForgotPasswordModal() {
     const input = document.getElementById('forgot-pw-input');
     if (input && existingVal) input.value = existingVal;
 
-    const modal = new bootstrap.Modal(document.getElementById('forgot-password-modal'));
-    modal.show();
+    const modalEl = document.getElementById('forgot-password-modal');
+    if (modalEl) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        } else {
+            modalEl.classList.add('show');
+            modalEl.style.display = 'block';
+        }
+        setTimeout(() => input?.focus(), 300);
+    }
 }
+window.openForgotPasswordModal = openForgotPasswordModal;
 
 function openMagicLinkModal() {
     const alertDiv = document.getElementById('magic-link-alert');
@@ -230,19 +256,35 @@ function openMagicLinkModal() {
     const input = document.getElementById('magic-link-input');
     if (input && existingVal) input.value = existingVal;
 
-    const modal = new bootstrap.Modal(document.getElementById('magic-link-modal'));
-    modal.show();
+    const modalEl = document.getElementById('magic-link-modal');
+    if (modalEl) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        } else {
+            modalEl.classList.add('show');
+            modalEl.style.display = 'block';
+        }
+        setTimeout(() => input?.focus(), 300);
+    }
 }
+window.openMagicLinkModal = openMagicLinkModal;
 
 function openRecoveryPasswordModal() {
     const alertDiv = document.getElementById('recovery-alert');
     if (alertDiv) alertDiv.classList.add('d-none');
     const modalEl = document.getElementById('recovery-password-modal');
     if (modalEl) {
-        const modal = new bootstrap.Modal(modalEl);
-        modal.show();
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        } else {
+            modalEl.classList.add('show');
+            modalEl.style.display = 'block';
+        }
     }
 }
+window.openRecoveryPasswordModal = openRecoveryPasswordModal;
 
 async function submitForgotPassword(e) {
     if (e && e.preventDefault) e.preventDefault();
@@ -471,7 +513,9 @@ async function submitRecoveryPassword(e) {
 }
 
 // === LOGIN / LOGOUT (Supabase Native Auth Integration) ===
+let isLoggingIn = false;
 async function doLogin() {
+    if (isLoggingIn) return;
     const u = (document.getElementById('login-user')?.value || '').trim();
     const p = (document.getElementById('login-pw')?.value || '').trim();
     const btn = document.getElementById('btn-login-submit') || document.querySelector('button[onclick="doLogin()"]');
@@ -482,6 +526,7 @@ async function doLogin() {
         return;
     }
     
+    isLoggingIn = true;
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Prüfe Anmeldung...';
@@ -490,81 +535,58 @@ async function doLogin() {
 
     try {
         const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
-        let loginSuccessful = false;
-
-        // 1. PRIMÄRER WEG: Supabase Auth
-        if (supa) {
-            console.log("🔐 Starte Supabase Auth-Check für:", u);
-            let targetEmail = u.includes('@') ? u : null;
-            let resolvedData = null;
-
-            // Identifikator auflösen (Username / SSV-PersonNumber / PIN -> E-Mail)
-            try {
-                const { data: res, error: rpcErr } = await supa.rpc('resolve_login_identifier', { p_identifier: u });
-                if (!rpcErr && res && res.success && res.email) {
-                    targetEmail = res.email;
-                    resolvedData = res;
-                    console.log("✅ Identifikator aufgelöst zu Auth-E-Mail:", targetEmail);
-                }
-            } catch (rpcEx) {
-                console.warn("⚠️ Identifier RPC fehlgeschlagen, versuche Direktanmeldung:", rpcEx.message);
-            }
-
-            if (targetEmail) {
-                const { data: authData, error: authErr } = await supa.auth.signInWithPassword({
-                    email: targetEmail,
-                    password: p
-                });
-
-                if (!authErr && authData && authData.user) {
-                    console.log("✅ Supabase Auth erfolgreich:", authData.user.email);
-                    await applyAuthenticatedUser(authData.user, u, null, resolvedData);
-
-                    loginSuccessful = true;
-                    showSuccess('Willkommen, ' + window.currentUser + '! (Supabase Auth)');
-                } else {
-                    console.warn("ℹ️ Supabase Auth Passwort-Check ergab:", authErr ? authErr.message : "Keine Session");
-                }
-            }
+        if (!supa || !supa.auth) {
+            throw new Error("Supabase Auth-Dienst ist momentan nicht erreichbar.");
         }
 
-        // 2. ÜBERGANGS-FALLBACK (falls Supabase-Passwort noch nicht gesetzt ist)
-        if (!loginSuccessful) {
-            console.log("🔄 Übergangs-Check via Worker für Migration...");
-            const hashedPw = await hashPassword(p);
-            const res = await fetch(
-                `${WORKER_URL}?module=admin&action=checkLogin&user=${encodeURIComponent(u)}&pw=${encodeURIComponent(hashedPw)}`,
-                { headers: { 'X-CSRF-Token': getCsrfToken(), 'Content-Type': 'application/json' } }
-            );
-            const data = await res.json();
+        console.log("🔐 Starte Supabase Auth-Check für:", u);
+        let targetEmail = u.includes('@') ? u : null;
+        let resolvedData = null;
 
-            if (data.success) {
-                currentUser = data.name;
-                const roles = Array.isArray(data.roles) ? data.roles : [data.role || 'vorstand'];
-                currentRoles = roles.map(r => String(r || '').trim().toLowerCase()).filter(Boolean);
-                userRole = currentRoles[0] || 'vorstand';
-                currentRole = userRole;
+        // Identifikator auflösen (Username / SSV-PersonNumber / PIN -> E-Mail)
+        try {
+            const { data: res, error: rpcErr } = await supa.rpc('resolve_login_identifier', { p_identifier: u });
+            if (!rpcErr && res && res.success && res.email) {
+                targetEmail = res.email;
+                resolvedData = res;
+                console.log("✅ Identifikator aufgelöst zu Auth-E-Mail:", targetEmail);
+            }
+        } catch (rpcEx) {
+            console.warn("⚠️ Identifier RPC fehlgeschlagen, versuche Direktanmeldung:", rpcEx.message);
+        }
 
-                AppState.set('currentUser', currentUser);
-                AppState.set('currentRoles', currentRoles);
-                AppState.set('userRole', userRole);
+        if (!targetEmail) {
+            setLoginError("Anmeldung fehlgeschlagen: Benutzername oder E-Mail nicht gefunden.");
+            showError("Benutzername oder E-Mail nicht gefunden.");
+            const userInput = document.getElementById('login-user');
+            if (userInput) {
+                userInput.focus();
+                userInput.select();
+            }
+            return;
+        }
 
-                localStorage.setItem('portal_user', currentUser);
-                localStorage.setItem('portal_role', userRole);
-                localStorage.setItem('portal_roles', currentRoles.join(','));
-                localStorage.setItem('portal_login_id', u);
-                localStorage.setItem('portal_mailadresse', data.mailadresse || data.Mailadresse || '');
-                localStorage.setItem('portal_mailanzeige', data.mailadresse || data.Mailadresse || '');
-                localStorage.setItem('portal_rolle_extern', data.rolle_extern || data.Rolle_extern || '');
-                localStorage.setItem('portal_personnumber', data.personnumber || data.PersonNumber || '');
+        const { data: authData, error: authErr } = await supa.auth.signInWithPassword({
+            email: targetEmail,
+            password: p
+        });
 
-                loginSuccessful = true;
-                showApp();
-                showSuccess('Willkommen, ' + currentUser + '!');
-                if (typeof pingPresence === 'function') pingPresence();
-            } else {
-                setLoginError("Login fehlgeschlagen: Ungültige Anmeldedaten.");
-                showError("Login fehlgeschlagen. Bitte Benutzername und Passwort prüfen.");
+        if (!authErr && authData && authData.user) {
+            console.log("✅ Supabase Auth erfolgreich:", authData.user.email);
+            await applyAuthenticatedUser(authData.user, u, null, resolvedData);
+            showSuccess('Willkommen, ' + window.currentUser + '! (Supabase Auth)');
+        } else {
+            console.warn("ℹ️ Supabase Auth Passwort-Check ergab:", authErr ? authErr.message : "Keine Session");
+            let errorMsg = "Login fehlgeschlagen: Passwort oder Benutzername ungültig.";
+            if (authErr && authErr.message && authErr.message.includes('Email not confirmed')) {
+                errorMsg = "E-Mail-Adresse wurde noch nicht bestätigt. Bitte Posteingang prüfen.";
+            }
+            setLoginError(errorMsg);
+            showError(errorMsg);
+            const pwInput = document.getElementById('login-pw');
+            if (pwInput) {
+                pwInput.value = '';
+                pwInput.focus();
             }
         }
     } catch (e) {
@@ -572,6 +594,7 @@ async function doLogin() {
         setLoginError("Verbindungsfehler: " + e.message);
         showError("Verbindungsfehler: " + e.message);
     } finally {
+        isLoggingIn = false;
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-sign-in-alt me-1"></i> Anmelden';
@@ -624,10 +647,8 @@ async function doLogout() {
                     console.log("🔑 PASSWORD_RECOVERY Event ausgelöst!");
                     openRecoveryPasswordModal();
                 } else if (event === 'SIGNED_IN' && session && session.user) {
-                    if (!window.currentUser) {
-                        console.log("✨ Automatische Anmeldung via Auth Event:", session.user.email);
-                        await applyAuthenticatedUser(session.user, session.user.email);
-                    }
+                    console.log("✨ Anmeldung via Auth Event:", session.user.email);
+                    await applyAuthenticatedUser(session.user, localStorage.getItem('portal_login_id') || session.user.email);
                 } else if (event === 'SIGNED_OUT') {
                     console.log("🚪 Abgemeldet via Supabase Auth");
                 }
@@ -635,10 +656,10 @@ async function doLogout() {
 
             // 3. Bestehende Session beim Seitenstart prüfen
             const { data } = await supa.auth.getSession();
-            if (data && data.session && !window.currentUser) {
+            if (data && data.session && data.session.user) {
                 const user = data.session.user;
                 console.log("🔄 Supabase Session wiederhergestellt für:", user.email);
-                await applyAuthenticatedUser(user, user.email);
+                await applyAuthenticatedUser(user, localStorage.getItem('portal_login_id') || user.email);
             }
         };
 
