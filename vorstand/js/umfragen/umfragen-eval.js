@@ -44,20 +44,23 @@ async function loadParticipantsIfEventSelected() {
             sumVegi += parseInt(p.vegi) || 0;
         });
 
+        const currentEv = (umfragenState || []).find(e => String(e.id) === String(currentEventId));
+        const isRaclette = currentEv && (String(currentEv.title || '') + ' ' + String(currentEv.details || '')).toLowerCase().includes('raclette');
+
         // Cross-Referenz Adresse
         let html = '';
         if (pData.length > 0) {
             html += `
-            <div class="d-flex gap-3 justify-content-center bg-light p-2 rounded border mb-3 text-center">
+            <div class="d-flex gap-3 justify-content-center bg-light p-2 rounded border mb-3 text-center flex-wrap">
                 <span class="text-primary fw-bold" style="font-size:0.85rem;"><i class="fas fa-users"></i> Personen: ${sumCount}</span>
-                <span class="text-success fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> Standard-Essen: ${sumEssen}</span>
-                <span class="text-warning fw-bold" style="font-size:0.85rem;"><i class="fas fa-leaf text-success"></i> Vegi-Essen: ${sumVegi}</span>
+                <span class="${isRaclette ? 'text-warning text-dark' : 'text-success'} fw-bold" style="font-size:0.85rem;"><i class="fas fa-utensils"></i> ${isRaclette ? '🧀 Raclette: ' : 'Standard-Essen: '}${sumEssen}</span>
+                <span class="${isRaclette ? 'text-danger' : 'text-warning'} fw-bold" style="font-size:0.85rem;"><i class="fas fa-${isRaclette ? 'bowl-food' : 'leaf'}"></i> ${isRaclette ? '🍝 Teigwaren: ' : 'Vegi-Essen: '}${sumVegi}</span>
             </div>
             `;
         }
 
         html += `<div class="table-responsive"><table class="table table-sm table-striped">
-            <thead><tr><th>Lizenz</th><th>Name</th><th>Adresse (aus DB)</th><th>Begl.</th><th>Essen</th><th>Vegi</th></tr></thead>
+            <thead><tr><th>Lizenz</th><th>Name / Aufteilung</th><th>Adresse (aus DB)</th><th>Begl.</th><th>${isRaclette ? '🧀 Raclette' : 'Essen'}</th><th>${isRaclette ? '🍝 Teigwaren' : 'Vegi'}</th></tr></thead>
             <tbody>`;
 
         if(pData.length === 0) {
@@ -103,6 +106,7 @@ async function loadParticipantsIfEventSelected() {
                     count: p.count,
                     essen: p.essen,
                     vegi: p.vegi || 0,
+                    grund: p.grund || "",
                     vorname: vorname,
                     nachname: nachname,
                     jahrgang: jahrgang,
@@ -113,7 +117,10 @@ async function loadParticipantsIfEventSelected() {
 
                 html += `<tr>
                     <td><small class="text-muted">${escapeHtml(liz)}</small></td>
-                    <td><b>${escapeHtml(nameVorname)}</b></td>
+                    <td>
+                        <b>${escapeHtml(nameVorname)}</b>
+                        ${p.grund ? `<br><small class="text-primary fw-semibold"><i class="fas fa-ticket-alt me-1"></i>${escapeHtml(p.grund)}</small>` : ''}
+                    </td>
                     <td><small>${escapeHtml(addrStr)}</small></td>
                     <td>${p.count > 1 ? '<span class="badge bg-info text-dark">+'+(p.count-1)+'</span>' : '-'}</td>
                     <td>${p.essen > 0 ? '<span class="badge bg-success">'+p.essen+'</span>' : '-'}</td>
@@ -127,8 +134,8 @@ async function loadParticipantsIfEventSelected() {
                 <tr>
                     <td colspan="3" class="text-end text-muted small">Summe / Totale:</td>
                     <td class="text-center"><span class="badge bg-info text-dark" title="Gesamtzahl Personen">${sumCount} Pers.</span></td>
-                    <td class="text-center"><span class="badge bg-success" title="Gesamtzahl Essen">${sumEssen}</span></td>
-                    <td class="text-center"><span class="badge bg-warning text-dark" title="Gesamtzahl Vegi">${sumVegi}</span></td>
+                    <td class="text-center"><span class="badge bg-success" title="${isRaclette ? 'Raclette' : 'Standard'}">${isRaclette ? 'Raclette: ' : ''}${sumEssen}</span></td>
+                    <td class="text-center"><span class="badge bg-warning text-dark" title="${isRaclette ? 'Teigwaren' : 'Vegi'}">${isRaclette ? 'Teigwaren: ' : ''}${sumVegi}</span></td>
                 </tr>
             </tfoot>`;
         }

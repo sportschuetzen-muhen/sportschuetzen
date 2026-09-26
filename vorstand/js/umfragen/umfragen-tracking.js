@@ -204,6 +204,8 @@ function filterHistorieData() {
 
             if (!attending && grundText) {
                 statusBadge += `<br><small class="text-danger-emphasis fst-italic mt-1 d-block">💬 ${escapeHtml(grundText)}</small>`;
+            } else if (attending && grundText) {
+                statusBadge += `<br><small class="text-secondary fw-semibold mt-1 d-block"><i class="fas fa-ticket-alt text-primary me-1"></i>${escapeHtml(grundText)}</small>`;
             }
 
             const countVal = log.anzahl_teilnehmer !== undefined ? log.anzahl_teilnehmer : log.count;
