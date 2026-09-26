@@ -50,7 +50,7 @@ async function saveResultateData() {
 
   let savedSuccessfully = false;
 
-  // 3. PRIMÄR: SUPABASE UPSERT
+  // 3. PRIMÄR: SUPABASE UPSERT (Single Source of Truth)
   if (supa) {
     try {
       const supaRows = resultateState.rows.map(r => mapContestResultToSupabase(r, contestType, year));
@@ -69,42 +69,17 @@ async function saveResultateData() {
       window._resultateIsSupabase = true;
       if (typeof updateBackendBadge === 'function') updateBackendBadge();
       console.log("✅ [Supabase] Resultate erfolgreich gesichert.");
-
-      // DUAL-WRITE: Asynchron an Google Sheets spiegeln (ohne Blockade)
-      apiFetch("manager", "action=saveResultateData", {
-        method: "POST",
-        body: JSON.stringify({ sheetName: "aktuell_Grenzland", rows: payloadRows })
-      }).then(r => r.text()).then(txt => {
-        console.log("📡 [Dual-Write] GAS-Sync Resultate abgeschlossen.");
-      }).catch(err => {
-        console.warn("⚠️ [Dual-Write] GAS-Sync Hinweis:", err.message);
-      });
-
     } catch (supaErr) {
-      console.warn("⚠️ [Supabase] Fallback auf GAS wegen:", supaErr.message);
-    }
-  }
-
-  // 4. FALLBACK: GAS SPEICHERN (falls Supabase nicht erreichbar war)
-  if (!savedSuccessfully) {
-    try {
-      const res = await apiFetch("manager", "action=saveResultateData", {
-        method: "POST",
-        body: JSON.stringify({ sheetName: "aktuell_Grenzland", rows: payloadRows })
-      });
-      const txt = await res.text();
-      let data;
-      try { data = JSON.parse(txt); } catch { throw new Error("Speichern: Backend-Antwort ist kein JSON"); }
-      if (data.error) throw new Error(data.error);
-
-      savedSuccessfully = true;
-      console.log("✅ [GAS] Resultate erfolgreich gesichert.");
-    } catch (e) {
-      alert("Fehler beim Speichern: " + e.message);
+      alert("Fehler beim Speichern in Supabase: " + (supaErr.message || supaErr));
       if (btn) { btn.disabled = false; btn.innerText = original; }
       setStatus("Fehler beim Speichern", true);
       return;
     }
+  } else {
+    alert("Fehler: Kein Supabase Client verfügbar.");
+    if (btn) { btn.disabled = false; btn.innerText = original; }
+    setStatus("Fehler beim Speichern", true);
+    return;
   }
 
   if (savedSuccessfully) {
@@ -177,44 +152,13 @@ async function syncSetupToResultate() {
       }
     } catch (err) {
       console.warn("Supabase Setup-Sync:", err);
+      alert("Fehler beim Synchronisieren des Setups: " + (err.message || err));
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = origText; }
     }
-  }
-
-  // 2. FALLBACK: GAS SYNC
-  try {
-    const res = await apiFetch(
-      'manager',
-      'action=syncSetupToResultate&setupSheetName=Setup_Grenzland&resultateSheetName=aktuell_Grenzland'
-    );
-    const txt = await res.text();
-    let data;
-    try { data = JSON.parse(txt); } catch { throw new Error('Backend-Antwort ist kein JSON'); }
-    if (data.error) throw new Error(data.error);
-
-    const added = data.added || 0;
-    if (added === 0) {
-      alert('Alle Setup-Schützen sind bereits in Resultate vorhanden – nichts hinzugefügt.');
-    } else {
-      alert(`✅ ${added} Schütze${added === 1 ? '' : 'n'} aus Setup_Grenzland übernommen.`);
-      await loadResultateData(true);
-    }
-  } catch (e) {
-    alert('Fehler beim Sync: ' + e.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = origText; }
   }
 }
 
 async function pushOneSignalGrenzland() {
-  try {
-    const res = await apiFetch("manager", "action=push_onesignal_grenzland");
-    const txt = await res.text();
-    let data;
-    try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-    if (data.error) throw new Error(data.error);
-
-    alert("Push OK" + (data.message ? (": " + data.message) : ""));
-  } catch (e) {
-    alert("Push Fehler: " + e.message);
-  }
+  alert("ℹ️ Push-Mitteilungen: Das Google Apps Script Backend ist entkoppelt. Mobile Push Notifications werden künftig über native Supabase Edge Functions verwaltet.");
 }

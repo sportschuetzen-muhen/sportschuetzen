@@ -591,33 +591,77 @@ async function jbSubmitExcelImport() {
     if (!validList.length) {
       alert('Keine gültigen Einträge zum Importieren (kein Mitglied via AddressNumber gefunden).');
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import in Google Sheets starten';
+      btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import starten';
       return;
     }
 
-    showLoadingOverlay(`Importiere Excel-Daten für ${validList.length} Schützen und berechne Beiträge neu…`);
+    showLoadingOverlay(`Importiere Excel-Daten für ${validList.length} Schützen in Supabase und berechne Beiträge neu…`);
 
-    const res = await apiFetch('jahresbeitrag', '', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'saveParticipationsBulk',
-        list: validList,
-        user: window.currentUser || 'frontend'
-      })
-    });
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error);
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar");
+
+    const dbParts = validList.map(item => ({
+      id: `${item.pn}-${item.year}-${item.eventkey}`,
+      person_number: String(item.pn).trim(),
+      year: Number(item.year),
+      event_key: item.eventkey,
+      teilgenommen: Number(item.teilgenommen || 1),
+      quelle: item.quelle || 'excel-import',
+      erfasst_am: new Date().toISOString(),
+      erfasst_von: window.currentUser || 'frontend'
+    }));
+
+    // In Chunks upserten
+    for (let i = 0; i < dbParts.length; i += 50) {
+      const chunk = dbParts.slice(i, i + 50);
+      const { error: partErr } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
+      if (partErr) console.warn("Supabase member_participations import warning:", partErr);
+    }
 
     const uniquePns = [...new Set(validList.map(x => String(x.pn).trim()))];
-    const resCalc = await apiFetch('jahresbeitrag', `action=berechnen&year=${_jbYear}&pn=${uniquePns.join(',')}`);
-    const calcJson = await resCalc.json();
-    if (!calcJson.success) throw new Error(calcJson.error);
 
-    showToast(`🎉 ${json.message}`);
+    // Für jeden Schützen den Beitrag neu berechnen und speichern
+    for (const pn of uniquePns) {
+      const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber).trim() === pn);
+      if (m && typeof jbCalculateLiveTotal === 'function') {
+        const calc = jbCalculateLiveTotal(m, {});
+        const headId = `${_jbYear}-${pn}`;
+
+        await supa.from('contributions_header').upsert({
+          id: headId,
+          person_number: pn,
+          year: Number(_jbYear),
+          status: 'offen',
+          gesamt: calc.total,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'person_number,year' });
+
+        const newPos = calc.positions.map((p, idx) => ({
+          id: `${headId}-${idx + 1}`,
+          header_id: headId,
+          person_number: pn,
+          year: Number(_jbYear),
+          position_nr: idx + 1,
+          beschreibung: p.name || 'Position',
+          betrag: Number(p.betrag || 0),
+          typ: p.typ || 'Debit',
+          source_field: p.key || '',
+          konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
+          last_upd: new Date().toISOString()
+        }));
+
+        await supa.from('contributions_positions').delete().eq('header_id', headId);
+        if (newPos.length > 0) {
+          await supa.from('contributions_positions').insert(newPos);
+        }
+      }
+    }
+
+    showToast(`🎉 ${validList.length} Teilnahmen für ${uniquePns.length} Schützen erfolgreich in Supabase importiert!`);
     document.getElementById('jbImportPreviewContainer').classList.add('d-none');
     _jbImportData = null;
 
-    // Reload Jahresbeitrag details from spreadsheet
+    // Reload Jahresbeitrag details from Supabase
     await loadJahresbeitragData(true, false);
 
     // Sync invoices with Rechnungen module

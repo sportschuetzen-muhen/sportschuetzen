@@ -126,72 +126,22 @@ async function initGVControllingTab() {
         console.log(`✅ [Supabase] GV-Stammdaten für ${currentYear} erfolgreich geladen.`);
         return;
       }
+      throw new Error(`Keine GV-Instanz für ${currentYear} in Supabase gefunden.`);
     } catch (supaErr) {
-      console.warn("⚠️ [Supabase] Fehler beim Laden der GV-Instanz, wechsle auf GAS Fallback:", supaErr);
-    }
-  }
-
-  // 2. FALLBACK: GOOGLE APPS SCRIPT
-  window._gvIsSupabase = false;
-  try {
-    let loadedAdminData = null;
-    let loadedVorstandData = null;
-
-    if (typeof adminState !== 'undefined' && adminState) {
-      console.log("⚡ initGVControllingTab: Verwende vorverlegte Admin-Daten aus Cache...");
-      loadedAdminData = JSON.parse(JSON.stringify(adminState));
-    } else {
-      const res = await apiFetch('termine', 'action=loadAdminData');
-      const text = await res.text();
-      try {
-        loadedAdminData = JSON.parse(text);
-      } catch (err) {
-        console.error("Non-JSON Server response:", text);
-        throw new Error("Ungültige Antwort vom Server (Google Apps Script). Bitte prüfe das Deployment in Google Apps Script.");
+      console.error("❌ [Supabase] Fehler beim Laden der GV-Instanz:", supaErr);
+      if (listDiv) {
+        listDiv.innerHTML = `<div class="alert alert-danger shadow-sm">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          <strong>Fehler:</strong> GV-Daten konnten nicht aus Supabase geladen werden: ${escapeHtml(supaErr.message || String(supaErr))}
+        </div>`;
       }
     }
-
-    if (window._mglData && window._mglFunktionenCache) {
-      const vorstandPNs = {};
-      Object.entries(window._mglFunktionenCache).forEach(([pn, funcs]) => {
-        funcs.forEach(f => {
-          if (!String(f.OfficialFunctionExitDate || '').trim()) {
-            const cat = String(f.OfficialFunctionCategory || '').toLowerCase();
-            if (!cat.includes('hausmeister') && !cat.includes('hauswart')) {
-              vorstandPNs[String(pn)] = true;
-            }
-          }
-        });
-      });
-      loadedVorstandData = window._mglData
-        .filter(m => vorstandPNs[String(m.PersonNumber)])
-        .map(m => ({
-          name: (String(m.FirstName || '') + " " + String(m.LastName || '')).trim() || m.PrimaryEmail,
-          email: String(m.PrimaryEmail || m.Email || '').trim()
-        }))
-        .filter(x => x.email);
-      loadedVorstandData.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
-      const resVorstand = await apiFetch('mitglieder', 'action=getVorstand');
-      const vorstandData = await resVorstand.json();
-      loadedVorstandData = vorstandData.success ? vorstandData.data : [];
-    }
-
-    gvState = loadedAdminData;
-    gvState.vorstandMembers = loadedVorstandData;
-    originalGvState = JSON.parse(JSON.stringify(gvState));
-
-    renderGVListEmbedded();
-    fetchGVEventsEmbedded();
-    if (typeof updateGVBackendBadge === 'function') updateGVBackendBadge();
-
-    // Auto-Seed nach Supabase im Hintergrund
-    if (supa && loadedAdminData) {
-      autoSeedGVToSupabase(loadedAdminData);
-    }
-  } catch (e) {
+  } else {
     if (listDiv) {
-      listDiv.innerHTML = '<div class="alert alert-danger">Fehler beim Laden: ' + escapeHtml(e.message) + '</div>';
+      listDiv.innerHTML = `<div class="alert alert-danger shadow-sm">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Konfigurationsfehler:</strong> Supabase Client ist nicht initialisiert.
+      </div>`;
     }
   }
 }
@@ -478,18 +428,13 @@ async function loadGVParticipants(eventId) {
                     syncPraesenzToSupabase(pData, gvState.jahr || new Date().getFullYear());
                 }
             } catch(supaErr) {
-                console.warn("⚠️ [Supabase] Fehler bei Teilnehmerberechnung, Fallback zu GAS:", supaErr);
+            } catch(supaErr) {
+                console.error("❌ [Supabase] Fehler bei Teilnehmerberechnung:", supaErr);
             }
         }
 
-        // 2. FALLBACK: GAS RUNTOOL getGVStatus
         if (!pData) {
-            const res = await apiFetch('termine', { action: 'runTool', tool: 'getGVStatus', eventId: eventId }, 'POST');
-            const result = await res.json();
-            if (!result.success) throw new Error(result.error || "Fehler beim Laden");
-            pData = result.data || [];
-            window._gvParticipantsCache = window._gvParticipantsCache || {};
-            window._gvParticipantsCache[eventId] = pData;
+            pData = [];
         }
         
         window.currentGvData = pData;
@@ -1013,13 +958,13 @@ async function runGVTool(toolName) {
                 payload.participants = window.currentGvData;
             }
         }
-
-        const res = await apiFetch('termine', '', {
-            method: 'POST', body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        alert(data.success ? "✅ " + data.msg : "❌ Fehler: " + data.error);
-    } catch(e) { alert("Netzwerkfehler: " + e); }
+        if (toolName === 'sendMails' || toolName === 'sendReminders' || toolName === 'sendPraesenz' || toolName === 'sendSummary') {
+            alert(`ℹ️ Tool "${toolName}": Bitte den Versand über das Einladungs-Mail Modal der zentralen Mail-Engine ausführen.`);
+            return;
+        }
+        alert(`ℹ️ Tool "${toolName}": Google Apps Script ist entkoppelt. Alle Funktionen laufen direkt über Supabase.`);
+        return;
+    } catch(e) { alert("Fehler: " + e); }
 }
 
 async function saveGVData(silent = false) {
@@ -1083,53 +1028,14 @@ async function saveGVData(silent = false) {
       window._gvIsSupabase = true;
       if (typeof updateGVBackendBadge === 'function') updateGVBackendBadge();
       console.log(`✅ [Supabase] GV-Instanz für ${year} erfolgreich gespeichert.`);
-
-      // DUAL-WRITE: Asynchrone Spiegelung an Google Sheets im Hintergrund (DEAKTIVIERT - Supabase ist Single Source of Truth)
-      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-      const payload = {
-        action: "saveAdminData",
-        user: user,
-        termine: stateToSave.termine,
-        platzhalter: stateToSave.platzhalter,
-        app_info: stateToSave.app_info,
-        dropdowns: stateToSave.dropdowns,
-        logDetails: "GV-Daten aktualisiert (Supabase Dual-Write)"
-      };
-      apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) })
-        .then(r => r.text())
-        .then(txt => console.log("📡 [Dual-Write] GAS-Sync GV abgeschlossen:", txt.slice(0, 80)))
-        .catch(err => console.warn("⚠️ [Dual-Write] GAS-Sync Hinweis:", err.message));
-      ------------------------------------------------------- */
-
     } catch (supaErr) {
-      console.warn("⚠️ [Supabase] Fehler beim Speichern der GV-Daten, Fallback zu GAS:", supaErr.message);
-    }
-  }
-
-  // 2. FALLBACK: GAS SPEICHERN falls Supabase fehlschlug
-  if (!supaSaved) {
-    const payload = {
-      action: "saveAdminData",
-      user: user,
-      termine: stateToSave.termine,
-      platzhalter: stateToSave.platzhalter,
-      app_info: stateToSave.app_info,
-      dropdowns: stateToSave.dropdowns,
-      logDetails: "GV-Daten aktualisiert"
-    };
-    try {
-      const res = await apiFetch('termine', '', { method: 'POST', body: JSON.stringify(payload) });
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); } catch(e) { data = { error: "Ungueltige Server-Antwort" }; }
-      if (!data.status && !data.success) {
-        if (!silent) alert("Fehler beim Speichern: " + (data.error || data.message || "Unbekannt"));
-        return;
-      }
-    } catch(e) {
-      if (!silent) alert("Netzwerk/Skript-Fehler: " + e);
+      console.error("❌ [Supabase] Fehler beim Speichern der GV-Daten:", supaErr);
+      if (!silent) alert("Fehler beim Speichern in Supabase: " + (supaErr.message || supaErr));
       return;
     }
+  } else {
+    if (!silent) alert("Fehler: Kein Supabase-Client verfügbar.");
+    return;
   }
 
   if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
@@ -1208,26 +1114,7 @@ async function autoSeedGVToSupabase(data) {
 }
 
 async function migrateGVFromGoogleSheets() {
-  if (!confirm("Möchtest du die aktuellen GV-Stammdaten und Platzhalter aus dem Google Sheet nach Supabase importieren?")) {
-    return;
-  }
-  const supa = getGVSupabaseClient();
-  if (!supa) {
-    alert("Fehler: Supabase-Client nicht verfügbar.");
-    return;
-  }
-  try {
-    if (typeof showToast === 'function') showToast("⏳ Lade Daten aus Google Sheets...", "info");
-    const res = await apiFetch('termine', 'action=loadAdminData');
-    const text = await res.text();
-    const data = JSON.parse(text);
-    await autoSeedGVToSupabase(data);
-    if (typeof showToast === 'function') showToast("✅ GV-Daten erfolgreich nach Supabase importiert!", "success");
-    gvState = null;
-    await initGVControllingTab();
-  } catch(e) {
-    alert("Fehler beim Import: " + e.message);
-  }
+  alert("ℹ️ Migration bereits abgeschlossen:\n\nAlle GV-Stammdaten, Checklisten und Präsenzen werden direkt über Supabase PostgreSQL verwaltet. Die Google Sheets / GAS-Schnittstelle ist entkoppelt.");
 }
 window.migrateGVFromGoogleSheets = migrateGVFromGoogleSheets;
 
@@ -1247,7 +1134,7 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
     if (fileInputEl) fileInputEl.value = '';
 
     if (statusEl) {
-        statusEl.innerHTML = `<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade ${files.length} Datei(en) hoch nach Google Drive...</span>`;
+        statusEl.innerHTML = `<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Lade ${files.length} Datei(en) in Supabase Storage hoch...</span>`;
     }
 
     const state = getGVState();
@@ -1258,40 +1145,33 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
     const label = item ? (item.bezeichnung_app || item.platzhaltername || '') : '';
     const isMulti = label.toLowerCase().includes('anhänge');
 
+    const supa = getGVSupabaseClient();
+    if (!supa) {
+        if (statusEl) statusEl.innerHTML = `<span class="text-danger">Fehler: Kein Supabase-Client verfügbar.</span>`;
+        return;
+    }
+
     let uploadedIds = [];
     let uploadedNames = [];
     let errors = [];
 
+    const year = state?.jahr || new Date().getFullYear();
+
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
-            const base64 = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const storagePath = `gv/${year}/${Date.now()}_${safeName}`;
+            const { error: upErr } = await supa.storage.from('operatives-storage').upload(storagePath, file, { upsert: true });
+            if (upErr) throw upErr;
 
-            const res = await apiFetch('termine', '', {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'uploadGVDocument',
-                    fileName: file.name,
-                    mimeType: file.type || 'application/pdf',
-                    base64: base64,
-                    user: localStorage.getItem('portal_user') || 'Admin'
-                })
-            });
-            const data = await res.json();
+            const { data: urlData } = supa.storage.from('operatives-storage').getPublicUrl(storagePath);
+            const publicUrl = urlData?.publicUrl || storagePath;
 
-            if (data.success && data.fileId) {
-                uploadedIds.push(data.fileId);
-                uploadedNames.push(data.fileName || file.name);
-            } else {
-                errors.push(`${file.name}: ${data.error || 'Fehler'}`);
-            }
+            uploadedIds.push(publicUrl);
+            uploadedNames.push(file.name);
         } catch(err) {
-            errors.push(`${file.name}: ${err.message || 'Netzwerkfehler'}`);
+            errors.push(`${file.name}: ${err.message || 'Uploadfehler'}`);
         }
     }
 
@@ -1338,7 +1218,7 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
         if (statusEl) {
             const badgesHtml = renderGVFileBadges(idx, finalIdsString, finalNamesString, inputId, statusId);
             statusEl.innerHTML = `${badgesHtml}
-            <div class="text-primary small mt-1"><i class="fas fa-spinner fa-spin me-1"></i> Speichere automatisch in Google Sheets...</div>`;
+            <div class="text-primary small mt-1"><i class="fas fa-spinner fa-spin me-1"></i> Speichere in Supabase...</div>`;
         }
 
         await saveGVData(true);
@@ -1346,7 +1226,14 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
         if (statusEl) {
             const badgesHtml = renderGVFileBadges(idx, finalIdsString, finalNamesString, inputId, statusId);
             statusEl.innerHTML = `${badgesHtml}
-            <div class="text-success small mt-1"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen & in Google Sheets gespeichert!</div>`;
+            <div class="text-success small mt-1"><i class="fas fa-check-circle me-1"></i> '${escapeHtml(uploadedNames.join(', '))}' hochgeladen & in Supabase gespeichert!</div>`;
+        }
+    }
+
+    if (errors.length > 0) {
+        alert("Upload-Fehler:\n" + errors.join('\n'));
+    }
+}
         }
     } else if (errors.length > 0 && statusEl) {
         statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload fehlgeschlagen: ${escapeHtml(errors.join('; '))}</span>`;
@@ -1667,41 +1554,53 @@ async function executeGVMailSend() {
   if (spinner) spinner.classList.remove('d-none');
 
   try {
-    // 1. Text im State & Sheets sichern
+    // 1. Text im State & Supabase sichern
     setGVMailTextInState(text);
     await saveGVData(true);
 
-    // 2. Mails versenden via Google Apps Script
-    let evId = "";
-    const dropdown = document.getElementById('gv-event-selector');
-    if (dropdown && dropdown.value) evId = dropdown.value;
+    // 2. Mails versenden via zentrale Mail-Engine (Gmail SMTP)
+    if (typeof window.sendMailViaEngine !== 'function') {
+      throw new Error("Zentrale Mail-Engine (sendMailViaEngine) ist nicht verfügbar.");
+    }
 
-    const payload = {
-      action: 'runTool',
-      tool: 'sendMails',
-      eventId: evId,
-      customText: text,
-      user: localStorage.getItem('portal_user') || 'Admin'
-    };
+    const supa = getGVSupabaseClient();
+    let members = [];
+    if (supa) {
+      const { data: mData } = await supa.from('members').select('person_number, first_name, last_name, primary_email').eq('is_active', true);
+      members = (mData || []).filter(m => m.primary_email && m.primary_email.includes('@'));
+    } else if (window._mglData) {
+      members = window._mglData.filter(m => (m.PrimaryEmail || m.Email) && (m.IsActive == 1 || m._istAktiv));
+    }
 
-    const res = await apiFetch('termine', '', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
+    if (members.length === 0) {
+      throw new Error("Keine aktiven Mitglieder mit E-Mail-Adresse gefunden.");
+    }
 
-    if (data.success) {
-      alert("✅ " + (data.msg || "GV-Einladungs-Mails wurden erfolgreich versendet!"));
-      const modalEl = document.getElementById('gv-mail-modal');
-      if (modalEl && typeof bootstrap !== 'undefined') {
-        const inst = bootstrap.Modal.getInstance(modalEl);
-        if (inst) inst.hide();
-      }
-    } else {
-      alert("❌ Fehler beim Versenden: " + (data.error || "Unbekannter Fehler"));
+    let sentCount = 0;
+    for (const m of members) {
+      const mEmail = m.primary_email || m.PrimaryEmail || m.Email;
+      const mName = (m.first_name ? `${m.first_name} ${m.last_name}` : `${m.FirstName} ${m.LastName}`).trim();
+      const personalizedBody = text
+        .replace(/{{Name}}/g, mName)
+        .replace(/{{Vorname}}/g, m.first_name || m.FirstName || '');
+
+      await window.sendMailViaEngine({
+        to: mEmail,
+        subject: `Einladung zur Generalversammlung ${state?.jahr || new Date().getFullYear()}`,
+        bodyHtml: personalizedBody.replace(/\n/g, '<br>'),
+        module: 'Generalversammlung'
+      });
+      sentCount++;
+    }
+
+    alert(`✅ GV-Einladungs-Mails wurden an ${sentCount} Mitglieder via zentrale Mail-Engine versendet!`);
+    const modalEl = document.getElementById('gv-mail-modal');
+    if (modalEl && typeof bootstrap !== 'undefined') {
+      const inst = bootstrap.Modal.getInstance(modalEl);
+      if (inst) inst.hide();
     }
   } catch (err) {
-    alert("Netzwerk-/Serverfehler: " + err.message);
+    alert("Fehler beim Mailversand: " + err.message);
   } finally {
     if (sendBtn) sendBtn.disabled = false;
     if (sendBtnText) sendBtnText.classList.remove('d-none');

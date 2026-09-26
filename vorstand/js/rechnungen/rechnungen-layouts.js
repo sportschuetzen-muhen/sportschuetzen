@@ -484,39 +484,16 @@ window.rnSaveLayout = async function(event, type) {
         mail_body: mail_body || null,
         updated_at: new Date().toISOString()
       });
-      console.log(`✅ [Supabase] Layout for '${type}' saved to Supabase.`);
-    } catch (sbErr) {
-      console.warn("⚠️ [Supabase] Layout save warning:", sbErr);
-    }
-  }
-
-  const submitBtn = document.getElementById('rnl-submit-btn');
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Speichere Layout...';
-  }
-
-  // 2. Dual-Write to GAS
-  try {
-    const response = await apiFetch('rechnungen', {
-      action: 'saveLayout',
-      layout: layoutData
-    }, 'POST');
-    const result = await response.json();
-
-    if (result.success) {
       showSuccess(`🎉 Layout & Texte für '${type}' erfolgreich gespeichert!`);
       await loadInvoiceLayoutsData();
-    } else {
-      throw new Error(result.error || "GAS returned success false");
-    }
-  } catch (err) {
-    console.warn("⚠️ Fehler beim Speichern des Layouts auf dem Server, verwende LocalStorage Fallback:", err);
-    showSuccess(`🎉 Layout & Texte für '${type}' lokal gespeichert!`);
-  } finally {
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = `<i class="fas fa-save me-1.5"></i> Layout für '${type}' speichern`;
+    } catch (sbErr) {
+      console.warn("⚠️ [Supabase] Layout save warning:", sbErr);
+      showError("Fehler beim Speichern des Layouts in Supabase: " + (sbErr.message || sbErr));
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fas fa-save me-1.5"></i> Layout für '${type}' speichern`;
+      }
     }
   }
 };

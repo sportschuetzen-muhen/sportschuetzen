@@ -9,8 +9,7 @@
 (function(window) {
   'use strict';
 
-  // --- 1. KONSTANTEN & FELDER (1:1 aus Members100 config.js) ---
-  const TEST_SPREADSHEET_ID = '1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0';
+  // --- 1. KONSTANTEN & FELDER ---
 
   const BOOLEANFIELDS = ['IsActive', 'IsPassive', 'Deceased', 'IsHonoraryMember', 'Ist_Aktuell'];
   const PHONEFIELDS = [
@@ -677,32 +676,11 @@
       }
     }
 
-    // 4. DUAL-WRITE: Synchronisation zum Google Sheet (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    if (onProgress) onProgress('Synchronisiere Änderungen zur Google Sheet Test-Kopie (1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0)...');
-    try {
-      if (typeof apiFetch === 'function') {
-        const syncPayload = {
-          action: 'applySSVDiff',
-          importId: importId,
-          diffRows: approvedRows,
-          targetSpreadsheetId: TEST_SPREADSHEET_ID
-        };
-        const res = await apiFetch('mitglieder', syncPayload, 'POST');
-        const resData = await res.json();
-        console.log('✅ Google Sheet Test-Kopie synchronisiert:', resData);
-      }
-    } catch (sheetErr) {
-      console.warn('⚠️ Google Sheet Sync Hintergrundwarnung:', sheetErr);
-    }
-    ------------------------------------------------------- */
-
     return stats;
   }
 
   // Exports an das globale Window-Objekt
   window.SSVImportEngine = {
-    TEST_SPREADSHEET_ID,
     runClientSSVDiffCalculation,
     applySSVDiffClient,
     normalizePhone,

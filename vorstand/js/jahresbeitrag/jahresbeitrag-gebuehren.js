@@ -583,14 +583,6 @@ async function jbSaveGebuehrFromModal() {
       }
     }
 
-    // 2. Dual-Write an GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    apiFetch('jahresbeitrag', '', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    }).catch(err => console.warn("⚠️ Dual-Write GAS Gebühren-Speicherung:", err));
-    ------------------------------------------------------- */
-
     showToast(`🎉 Gebühr ${key} erfolgreich in Supabase gespeichert!`);
 
     // Modal schliessen
@@ -623,16 +615,27 @@ async function jbSaveGebuehrFromModal() {
 
 async function jbReloadGebuehrenData() {
   try {
-    showToast("Lade Gebührenkonfiguration neu…");
-    const t = Date.now();
-    const res = await apiFetch('jahresbeitrag', `action=getGebuehren&_t=${t}`).then(r => r.json());
-    if (res.success) {
-      window._jbGebuehren = res.data || [];
-      jbPopulateFilterDropdowns();
-      jbRenderGebuehrenTable();
-      showToast("✅ Gebühren aktualisiert!");
+    showToast("Lade Gebührenkonfiguration aus Supabase neu…");
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (supa) {
+      const { data, error } = await supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true });
+      if (!error && Array.isArray(data)) {
+        window._jbGebuehren = data.map(g => ({
+          key: g.key,
+          bezeichnung: g.bezeichnung,
+          bezeichnungfrontend: g.bezeichnung_frontend || g.bezeichnung,
+          betrag: Number(g.betrag || 0),
+          konto: g.konto_haben || '3000',
+          kategorie: g.kategorie || 'Jahresbeitrag',
+          sort_order: g.sort_order || 10
+        }));
+        jbPopulateFilterDropdowns();
+        jbRenderGebuehrenTable();
+        showToast("✅ Gebühren aus Supabase aktualisiert!");
+        return;
+      }
     }
   } catch(e) {
-    console.error("Fehler beim Neuladen der Gebühren:", e);
+    console.error("Fehler beim Neuladen der Gebühren aus Supabase:", e);
   }
 }

@@ -310,24 +310,6 @@ async function saveNewInventarItem(e) {
             }]);
         }
 
-        // Asynchroner Dual-Write zu Google Apps Script (DEAKTIVIERT - Supabase ist Single Source of Truth)
-        /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-        apiFetch('inventar', '', {
-            method: 'POST',
-            body: JSON.stringify({ action: isUpdate ? "updateItem" : "addNewItem", targetSheet: target, fields })
-        }).then(r => r.json())
-          .then(res => console.log("✅ Dual-Write Item erfolgreich:", res))
-          .catch(e => console.warn("⚠️ Dual-Write Item Fehler:", e));
-
-        // Falls kein Supabase aktiv war, synchron auf GAS warten
-        if (!supa || target === 'Personendaten') {
-            await apiFetch('inventar', '', {
-                method: 'POST',
-                body: JSON.stringify({ action: isUpdate ? "updateItem" : "addNewItem", targetSheet: target, fields })
-            });
-        }
-        ------------------------------------------------------- */
-
         e.target.reset();
         const idField = document.getElementById('admin-edit-id');
         if (idField) idField.remove();
@@ -375,30 +357,48 @@ async function deleteInventarItem(target, id) {
             }]);
         }
 
-        // Asynchroner Dual-Write zu Google Apps Script (DEAKTIVIERT - Supabase ist Single Source of Truth)
-        /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-        apiFetch('inventar', '', {
-            method: 'POST',
-            body: JSON.stringify({
-                action: "deleteItem",
-                targetSheet: target,
-                itemId: id
-            })
-        }).then(r => r.json())
-          .then(res => console.log("✅ Dual-Write Delete erfolgreich:", res))
-          .catch(e => console.warn("⚠️ Dual-Write Delete Fehler:", e));
+        await loadInventarData(true);
+        alert(isUpdate ? "✅ Änderung gespeichert (Supabase Master)!" : "✅ Neu erfasst (Supabase Master)!");
+    } catch (err) {
+        alert("Fehler: " + err.message);
+    } finally {
+        setInventarBusy(false);
+    }
+}
 
-        if (!supa || target === 'Personendaten') {
-            await apiFetch('inventar', '', {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: "deleteItem",
-                    targetSheet: target,
-                    itemId: id
-                })
-            });
+// =========================================================
+//  DELETE
+// =========================================================
+async function deleteInventarItem(target, id) {
+    if (!canDelete()) {
+        alert("❌ Keine Berechtigung zum Löschen.");
+        return;
+    }
+
+    if (!confirm(`Eintrag ${id} wirklich löschen?`)) return;
+
+    setInventarBusy(true);
+
+    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+
+    try {
+        if (supa && target !== 'Personendaten') {
+            const { error: delErr } = await supa
+                .from('inventory_items')
+                .delete()
+                .eq('id', String(id).trim());
+
+            if (delErr) throw new Error("Supabase Löschfehler: " + delErr.message);
+
+            await supa.from('inventory_audit_log').insert([{
+                timestamp: new Date().toISOString(),
+                user_name: currentUser || 'Vorstand',
+                action: 'deleteItem',
+                details: `${target}: ID ${id} gelöscht`
+            }]);
         }
-        ------------------------------------------------------- */
+
+                
 
         await loadInventarData(true);
 

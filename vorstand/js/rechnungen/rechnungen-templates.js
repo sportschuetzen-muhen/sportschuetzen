@@ -202,42 +202,21 @@ window.rnSaveTemplate = async function(event, templateId) {
         konto: habenkonto || null,
         updated_at: new Date().toISOString()
       });
-      console.log(`✅ [Supabase] Template ${desc} saved to Supabase.`);
-    } catch (sbErr) {
-      console.warn("⚠️ [Supabase] Template save warning:", sbErr);
-    }
-  }
-  
-  // 2. Dual-Write to GAS
-  const payload = {
-    action: 'saveTemplate',
-    templateId: isNew ? '' : String(templateId),
-    template: newTemplate
-  };
-  
-  try {
-    const response = await apiFetch('rechnungen', payload, 'POST');
-    const result = await response.json();
-    
-    if (result.success) {
       showSuccess(isNew ? "🎉 Standard-Position erfolgreich hinzugefügt!" : "🎉 Standard-Position aktualisiert!");
       const modalEl = document.getElementById('rnModalTemplateEdit');
       const modal = bootstrap.Modal.getInstance(modalEl);
       if (modal) modal.hide();
       
-      // Reload from server
+      // Reload from Supabase
       await loadInvoiceTemplatesData();
       renderActiveRechnungenTab();
-    } else {
-      throw new Error(result.error || "GAS returned success false");
+      return;
+    } catch (sbErr) {
+      console.warn("⚠️ [Supabase] Template save warning:", sbErr);
+      showError("Fehler beim Speichern der Vorlage in Supabase: " + (sbErr.message || sbErr));
+      return;
     }
-  } catch (err) {
-    console.warn("⚠️ Fehler beim Speichern auf dem Server, benutze LocalStorage Fallback:", err);
-    rnInitializeTemplates();
-    let templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-    
-    if (isNew) {
-      const maxId = templates.reduce((max, t) => Math.max(max, Number(t.id || 0)), 0);
+  }
       newTemplate.id = maxId + 1;
       templates.push(newTemplate);
     } else {
@@ -273,35 +252,14 @@ window.rnDeleteTemplate = async function(templateId, desc) {
     try {
       await sb.from('invoice_templates').delete().eq('id', String(templateId));
       console.log(`✅ [Supabase] Template ${templateId} deleted from Supabase.`);
+      showSuccess("🗑️ Standard-Position erfolgreich gelöscht!");
+      await loadInvoiceTemplatesData();
+      renderActiveRechnungenTab();
+      return;
     } catch (sbErr) {
       console.warn("⚠️ [Supabase] Template delete warning:", sbErr);
-    }
-  }
-
-  if (isServerTpl) {
-    const payload = {
-      action: 'deleteTemplate',
-      templateId: String(templateId)
-    };
-    
-    showLoadingOverlay(`Lösche Standard-Position...`);
-    try {
-      const response = await apiFetch('rechnungen', payload, 'POST');
-      const result = await response.json();
-      
-      if (result.success) {
-        showSuccess("🗑️ Standard-Position erfolgreich gelöscht!");
-        await loadInvoiceTemplatesData();
-        renderActiveRechnungenTab();
-        hideLoadingOverlay();
-        return;
-      } else {
-        throw new Error(result.error || "Fehler beim Löschen auf dem Server");
-      }
-    } catch (err) {
-      console.warn("⚠️ Fehler beim Löschen auf dem Server, lösche aus LocalStorage:", err);
-    } finally {
-      hideLoadingOverlay();
+      showError("Fehler beim Löschen in Supabase: " + (sbErr.message || sbErr));
+      return;
     }
   }
   

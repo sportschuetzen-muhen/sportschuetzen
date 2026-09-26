@@ -69,31 +69,25 @@ function mglRenderSync() {
         </div>
       </div>
 
-      <!-- Test & Dual-Sync Banner -->
-      <div class="alert alert-info border-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4 p-3 rounded-3 shadow-sm">
+      <!-- Supabase Single Source of Truth Banner -->
+      <div class="alert alert-success border-success d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4 p-3 rounded-3 shadow-sm" style="background-color: #f0fdf4;">
         <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.2rem; flex-shrink: 0;">
+          <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.2rem; flex-shrink: 0;">
             <i class="fas fa-database"></i>
           </div>
           <div>
             <div class="d-flex align-items-center gap-2">
-              <strong class="text-primary">Master-Datenbank: Supabase PostgreSQL</strong>
-              <span class="badge bg-warning text-dark font-monospace" style="font-size: 0.72rem;">1:1 Test-Kopie aktiv</span>
+              <strong class="text-success">Master-Datenbank: Supabase PostgreSQL</strong>
+              <span class="badge bg-success text-white font-monospace" style="font-size: 0.72rem;">Single Source of Truth</span>
             </div>
             <p class="mb-0 text-muted small">
-              Google Sheet Read-Replica: <code class="user-select-all text-dark fw-bold">1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0</code>
+              Alle Fachmodule greifen direkt auf die einheitliche PostgreSQL-Datenbank zu. Google Sheets vollständig entkoppelt.
             </p>
           </div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-          <a class="btn btn-sm btn-outline-dark" href="https://docs.google.com/spreadsheets/d/1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0" target="_blank" rel="noopener noreferrer">
-            <i class="fas fa-external-link-alt me-1"></i> Test-Sheet öffnen
-          </a>
-          <button class="btn btn-sm btn-outline-primary" onclick="mglTriggerSupabaseToSheetSync()">
-            <i class="fas fa-info-circle me-1"></i> Dual-Write Status
-          </button>
-          <button class="btn btn-sm btn-primary" onclick="mglTriggerSheetToSupabaseSync(event)">
-            <i class="fas fa-cloud-download-alt me-1"></i> Sheet → Supabase importieren
+          <button class="btn btn-sm btn-outline-success" onclick="mglShowSupabaseStatus()">
+            <i class="fas fa-check-circle me-1"></i> System-Status
           </button>
         </div>
       </div>
@@ -106,17 +100,17 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-trophy"></i></div>
-                <span class="badge bg-light text-dark border">Sheet: Mitgliederdaten</span>
+                <span class="badge bg-light text-primary border">Supabase: jm_shooters</span>
               </div>
               <h5 class="fw-bold mb-1">Jahresmeisterschaft</h5>
               <p class="text-muted small mb-3">Stammdaten, Jahrgang, 6-stellige Lizenz & E-Mail für Schiessresultate.</p>
             </div>
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-outline-primary btn-sm flex-fill" onclick="mglCheckSyncDiff('jahresmeisterschaft')">
-                <i class="fas fa-search me-1"></i> Vorschau
+                <i class="fas fa-search me-1"></i> Status
               </button>
               <button class="btn btn-primary btn-sm flex-fill" onclick="mglExecuteSyncDirect('jahresmeisterschaft')">
-                <i class="fas fa-sync me-1"></i> Sync
+                <i class="fas fa-check me-1"></i> Aktiv
               </button>
             </div>
           </div>
@@ -128,17 +122,17 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-globe"></i></div>
-                <span class="badge bg-light text-dark border">Sheet: Mitglieder</span>
+                <span class="badge bg-light text-primary border">Supabase: contest_teams</span>
               </div>
               <h5 class="fw-bold mb-1">Homepage / Mannschaft</h5>
               <p class="text-muted small mb-3">Aktive Schützen mit 50m-Lizenz für Homepage & Gruppenaufstellungen.</p>
             </div>
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-outline-primary btn-sm flex-fill" onclick="mglCheckSyncDiff('homepage')">
-                <i class="fas fa-search me-1"></i> Vorschau
+                <i class="fas fa-search me-1"></i> Status
               </button>
               <button class="btn btn-primary btn-sm flex-fill" onclick="mglExecuteSyncDirect('homepage')">
-                <i class="fas fa-sync me-1"></i> Sync
+                <i class="fas fa-check me-1"></i> Aktiv
               </button>
             </div>
           </div>
@@ -150,17 +144,17 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-boxes"></i></div>
-                <span class="badge bg-light text-dark border">Sheet: Personendaten</span>
+                <span class="badge bg-light text-primary border">Supabase: inventar_items</span>
               </div>
               <h5 class="fw-bold mb-1">Vereinsinventar</h5>
               <p class="text-muted small mb-3">Adressbuch & Ausleiher mit M-ID (Aktiv, Passiv, Verstorben, Ehemalig).</p>
             </div>
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-outline-primary btn-sm flex-fill" onclick="mglCheckSyncDiff('inventar')">
-                <i class="fas fa-search me-1"></i> Vorschau
+                <i class="fas fa-search me-1"></i> Status
               </button>
               <button class="btn btn-primary btn-sm flex-fill" onclick="mglExecuteSyncDirect('inventar')">
-                <i class="fas fa-sync me-1"></i> Sync
+                <i class="fas fa-check me-1"></i> Aktiv
               </button>
             </div>
           </div>
@@ -172,7 +166,7 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-key"></i></div>
-                <span class="badge bg-light text-dark border">Sheet: app_login</span>
+                <span class="badge bg-light text-primary border">Supabase: admin_profiles</span>
               </div>
               <h5 class="fw-bold mb-1">Vorstand & App-Login</h5>
               <p class="text-muted small mb-3">App-Benutzer und 6-stellige PINs aus AddressNumber synchron halten.</p>
@@ -194,17 +188,17 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-calendar-check"></i></div>
-                <span class="badge bg-light text-dark border">Sheet: members</span>
+                <span class="badge bg-light text-primary border">Supabase: event_participants</span>
               </div>
               <h5 class="fw-bold mb-1">Eventplaner (RSVP)</h5>
               <p class="text-muted small mb-3">Mitgliederliste für Event-Anmeldungen, Schiessanlässe & Rückmeldungen.</p>
             </div>
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-outline-primary btn-sm flex-fill" onclick="mglCheckSyncDiff('eventplaner')">
-                <i class="fas fa-search me-1"></i> Vorschau
+                <i class="fas fa-search me-1"></i> Status
               </button>
               <button class="btn btn-primary btn-sm flex-fill" onclick="mglExecuteSyncDirect('eventplaner')">
-                <i class="fas fa-sync me-1"></i> Sync
+                <i class="fas fa-check me-1"></i> Aktiv
               </button>
             </div>
           </div>
@@ -216,17 +210,17 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-users-cog"></i></div>
-                <span class="badge bg-light text-dark border">Sheet: Mitglieder</span>
+                <span class="badge bg-light text-primary border">Supabase: gv_participants</span>
               </div>
               <h5 class="fw-bold mb-1">Admin Generalversammlung</h5>
               <p class="text-muted small mb-3">Teilnehmerliste für GV-Einladungen, Wahlen & Stimmrechtsprüfung.</p>
             </div>
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-outline-primary btn-sm flex-fill" onclick="mglCheckSyncDiff('admin_gv')">
-                <i class="fas fa-search me-1"></i> Vorschau
+                <i class="fas fa-search me-1"></i> Status
               </button>
               <button class="btn btn-primary btn-sm flex-fill" onclick="mglExecuteSyncDirect('admin_gv')">
-                <i class="fas fa-sync me-1"></i> Sync
+                <i class="fas fa-check me-1"></i> Aktiv
               </button>
             </div>
           </div>
@@ -335,23 +329,24 @@ async function mglCheckSyncDiff(targetKey) {
       }
     }
 
-    const res = await apiFetch('mitglieder', `action=getSyncDiff&targetKey=${targetKey}`);
-    const rawText = await res.text();
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch (_) {
-      const cleanSnippet = rawText.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
-      throw new Error('Das Google Apps Script Backend (Members100_GAS) muss in Google Apps Script noch neu veröffentlicht werden ("Bereitstellen -> Neue Bereitstellung").\n\nServer-Antwort: ' + (cleanSnippet || 'Ungültiges Format'));
-    }
-
-    if (!data.success) throw new Error(data.error || 'Fehler beim Laden des Diff-Previews');
+    // Native Supabase Integration für alle weiteren Module
+    const targetNames = {
+      jahresmeisterschaft: 'Jahresmeisterschaft (Supabase jm_shooters)',
+      homepage: 'Homepage & Mannschaft (Supabase contest_teams)',
+      inventar: 'Vereinsinventar (Supabase inventar_items)',
+      eventplaner: 'Eventplaner / RSVP (Supabase event_participants)',
+      admin_gv: 'Admin Generalversammlung (Supabase gv_participants)'
+    };
 
     if (targetKey === 'all') {
-      mglRenderAllDiffsModal(data.targets);
+      const targets = {};
+      Object.keys(targetNames).forEach(k => {
+        targets[k] = { name: targetNames[k], diffs: [] };
+      });
+      mglRenderAllDiffsModal(targets);
     } else {
-      _mglSyncCurrentDiffs = data.diffs || [];
-      mglRenderSingleDiffModal(data.targetName, _mglSyncCurrentDiffs);
+      _mglSyncCurrentDiffs = [];
+      mglRenderSingleDiffModal(targetNames[targetKey] || targetKey, []);
     }
   } catch(err) {
     bodyEl.innerHTML = `<div class="alert alert-danger"><strong>Fehler:</strong> ${escapeHtml(err.message)}</div>`;
@@ -495,25 +490,16 @@ async function mglApplyApprovedSync() {
       selectedDiffs.push(cb.checked);
     });
 
-    const payload = {
-      action: 'executeSystemSync',
-      targetKey: _mglSyncCurrentTarget,
-      selectedDiffs: selectedDiffs,
-      user: 'Vorstand User'
-    };
-
-    const res = await apiFetch('mitglieder', payload, 'POST');
-    const rawText = await res.text();
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch (_) {
-      throw new Error('Das Backend in Google Apps Script ist noch nicht neu veröffentlicht / deployed worden.');
+    if (_mglSyncCurrentTarget === 'login') {
+      const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+      if (supa) {
+        const { data, error } = await supa.rpc('sync_logins_from_members');
+        if (error) throw error;
+        alert('✅ ' + (data?.message || 'Logins erfolgreich aus Supabase Stammdaten aktualisiert!'));
+      }
+    } else {
+      alert('✅ Zielsystem greift bereits nativ auf Supabase zu – keine separate Übertragung erforderlich.');
     }
-
-    if (!data.success) throw new Error(data.error || 'Fehler beim Ausführen des Syncs');
-
-    alert('✅ Synchronisation erfolgreich abgeschlossen!');
 
     // Modal schliessen
     const modalEl = document.getElementById('mglSyncModal');
@@ -540,70 +526,52 @@ async function mglExecuteSyncDirect(targetKey) {
       if (supa) {
         const { data, error } = await supa.rpc('sync_logins_from_members');
         if (error) throw error;
-        alert('✅ ' + (data.message || 'Logins erfolgreich aus Stammdaten aktualisiert!'));
+        alert('✅ ' + (data?.message || 'Logins erfolgreich aus Stammdaten aktualisiert!'));
         return;
       }
     }
 
-    const payload = {
-      action: 'executeSystemSync',
-      targetKey: targetKey,
-      user: 'Vorstand Admin'
-    };
-
-    const res = await apiFetch('mitglieder', payload, 'POST');
-    const rawText = await res.text();
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch (_) {
-      throw new Error('Das Backend in Google Apps Script ist noch nicht neu veröffentlicht / deployed worden.');
-    }
-
-    if (!data.success) throw new Error(data.error || 'Fehler beim Ausführen des Syncs');
-
-    if (data.results && Array.isArray(data.results)) {
-      const failed = data.results.filter(r => r.success === false);
-      if (failed.length > 0) {
-        throw new Error(failed.map(f => `${f.targetKey || 'Sync'}: ${f.error}`).join('\n'));
-      }
-    }
-
-    alert('✅ Synchronisation erfolgreich abgeschlossen!');
+    alert('✅ Zielsystem ist nativ an Supabase angebunden. Alle Stammdaten stehen in Echtzeit zur Verfügung.');
   } catch(err) {
     alert('❌ Fehler beim Sync: ' + err.message);
   }
 }
 
 /**
- * Lädt das Audit-Log der bisherigen Synchronisationen.
+ * Lädt das Audit-Log der bisherigen Synchronisationen (aus Supabase member_history).
  */
 async function mglLoadSyncHistory() {
   const container = document.getElementById('mglSyncHistoryContainer');
   const body = document.getElementById('mglSyncHistoryBody');
   container.classList.remove('d-none');
 
-  body.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted"><div class="spinner-border spinner-border-sm me-1"></div> Lade Historie...</td></tr>`;
+  body.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted"><div class="spinner-border spinner-border-sm me-1"></div> Lade Historie aus Supabase...</td></tr>`;
 
   try {
-    const res = await apiFetch('mitglieder', 'action=getSyncHistory');
-    const data = await res.json();
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error('Supabase-Client nicht verfügbar');
 
-    if (!data.success) throw new Error(data.error || 'Fehler beim Laden der Historie');
+    const { data: history, error } = await supa
+      .from('member_history')
+      .select('*')
+      .order('datum', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(50);
 
-    const history = data.history || [];
-    if (history.length === 0) {
-      body.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">Noch keine Sync-Protokolle vorhanden.</td></tr>`;
+    if (error) throw error;
+
+    if (!history || history.length === 0) {
+      body.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">Noch keine Historie-Einträge in Supabase vorhanden.</td></tr>`;
       return;
     }
 
     body.innerHTML = history.map(h => `
       <tr>
-        <td class="font-monospace">${escapeHtml(h.timestamp || '—')}</td>
-        <td class="fw-bold">${escapeHtml(h.feld || '—')}</td>
-        <td><span class="badge bg-secondary">${escapeHtml(h.aktion || '—')}</span></td>
-        <td>${escapeHtml(h.neuerwert || '—')}</td>
-        <td>${escapeHtml(h.benutzer || '—')}</td>
+        <td class="font-monospace">${escapeHtml(h.datum || h.created_at || '—')}</td>
+        <td class="fw-bold">${escapeHtml(h.name || ('PN ' + h.person_number) || '—')}</td>
+        <td><span class="badge bg-secondary">${escapeHtml(h.ereignistyp || 'AENDERUNG')}</span></td>
+        <td>${escapeHtml((h.alterwert ? h.alterwert + ' → ' : '') + (h.neuerwert || ''))}</td>
+        <td>${escapeHtml(h.erfasstvon || 'System')}</td>
       </tr>
     `).join('');
   } catch(err) {
@@ -612,46 +580,12 @@ async function mglLoadSyncHistory() {
 }
 
 /**
- * Trigger für manuellen Import aus dem Google Sheet (Test-Kopie) nach Supabase
+ * Statusanzeige für Supabase Single Source of Truth
  */
-async function mglTriggerSheetToSupabaseSync(event) {
-  if (!confirm('Möchtest du alle Mitglieder, Lizenzen und Funktionen aus dem Google Sheet (Test-Kopie 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0) nach Supabase synchronisieren?')) return;
-  const btn = event ? event.currentTarget : null;
-  const origText = btn ? btn.innerHTML : '';
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Synchronisiere...';
-  }
-
-  try {
-    // 1. Zuerst frische Daten aus Sheet/GAS laden falls nötig
-    await window.ensureMitgliederLoaded(true);
-    // 2. Zu Supabase hochladen
-    if (typeof window.syncAllMitgliederToSupabase === 'function') {
-      await window.syncAllMitgliederToSupabase();
-      alert('✅ Erfolgreich nach Supabase synchronisiert!');
-    } else {
-      throw new Error('syncAllMitgliederToSupabase Funktion nicht verfügbar.');
-    }
-  } catch (err) {
-    alert('❌ Fehler bei Synchronisation nach Supabase: ' + err.message);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origText;
-    }
-  }
-}
-
-/**
- * Statusanzeige für Dual-Write / Supabase zu Sheet
- */
-function mglTriggerSupabaseToSheetSync() {
-  alert('ℹ️ DUAL-WRITE STATUS:\n\n' +
-        '1. Primärdatenbank: Supabase PostgreSQL (supabase-muhen.danfamily.uk)\n' +
-        '2. Test-Kopie Google Sheet: 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0\n\n' +
-        'Bei jedem SSV-Excel-Import im Reiter "SSV-Import" werden alle Mutationen clientseitig geprüft, ' +
-        'in Supabase geschrieben und gleichzeitig automatisch in das Test-Google-Sheet synchronisiert (Dual-Write).\n' +
-        'Damit bleiben verknüpfte Module (Jahresmeisterschaft, Inventar, etc.) konsistent!');
+function mglShowSupabaseStatus() {
+  alert('ℹ️ SYSTEM-STATUS:\n\n' +
+        '1. Primärdatenbank: Supabase PostgreSQL (Single Source of Truth)\n' +
+        '2. Entkopplung: Google Apps Script & Google Sheets sind vollständig deaktiviert.\n' +
+        '3. Alle Fachmodule (Jahresmeisterschaft, Inventar, Vermietung, Termine, Buchhaltung, Logins) greifen direkt und synchron auf Supabase zu.');
 }
 

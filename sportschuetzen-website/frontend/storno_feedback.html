@@ -423,8 +423,9 @@
   </div>
 
   <script>
-    // Config: Live-URL eures Cloudflare Worker CORS-Proxys
-    const WEB_APP_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=vermietung&action=feedback";
+    // Config: Supabase Single Source of Truth
+    const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
     let selectedReasonVal = "";
 
@@ -466,41 +467,69 @@
       btn.disabled = true;
       btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Übermittle Rückmeldung...`;
 
-      // Payload aufbauen
+      const isUrgent = selectedReasonVal.indexOf("Zahlung bereits getätigt") !== -1;
+
+      // Payload direkt für Supabase rental_cancellation_feedbacks
       const payload = {
-        action: "feedback",
-        vertragsnummer: vnr,
-        grund: selectedReasonVal,
-        bemerkung: bemerkung
+        booking_number: vnr || "Unbekannt",
+        reason: selectedReasonVal,
+        remarks: bemerkung || null,
+        is_urgent: isUrgent
       };
 
       try {
-        const response = await fetch(WEB_APP_URL, {
+        const response = await fetch(`${SUPABASE_REST_URL}/rental_cancellation_feedbacks`, {
           method: 'POST',
-          mode: 'cors',
           headers: {
-            'Content-Type': 'application/json'
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
           },
           body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
-          throw new Error("HTTP Fehler " + response.status);
+          const errText = await response.text();
+          throw new Error("Supabase Fehler " + response.status + ": " + errText);
         }
 
-        const result = await response.json();
-
-        if (result.success) {
-          document.getElementById('feedback-form').style.display = 'none';
-          document.getElementById('form-header').style.display = 'none';
-          document.getElementById('success-view').classList.add('active');
-        } else {
-          showErrorToast(result.error || "Rückmeldung fehlgeschlagen. Bitte versuche es später nochmals.");
+        // Falls dringend (Zahlung bereits getätigt), Alarm-Mail via send-email Edge Function anstoßen
+        if (isUrgent) {
+          fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              to: 'sportschuetzen.muhen@gmail.com',
+              subject: `⚠️ Dringend: Rückmeldung zu Stornierung ${vnr}`,
+              html: `
+                <div style="font-family:sans-serif; max-width:600px; padding:20px; border:1px solid #dc3545; border-radius:8px;">
+                  <h2 style="color:#d00000; margin-top:0;">⚠️ Dringende Rückmeldung zu Stornierung</h2>
+                  <p>Ein Mieter hat sich bezüglich der stornierten Reservation gemeldet und wünscht eine Kontaktaufnahme (Zahlung bereits getätigt / möchte Datum behalten).</p>
+                  <table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse; font-family:sans-serif; width:100%; border-color:#ddd; margin:15px 0;">
+                    <tr style="background:#f8f9fa;"><td><strong>Vertragsnummer:</strong></td><td><strong>${vnr || "Unbekannt"}</strong></td></tr>
+                    <tr><td><strong>Ausgewählter Grund:</strong></td><td>${selectedReasonVal}</td></tr>
+                    <tr style="background:#f8f9fa;"><td><strong>Bemerkung des Mieters:</strong></td><td>${bemerkung || "Keine Bemerkung hinterlassen"}</td></tr>
+                  </table>
+                </div>
+              `,
+              module: 'vermietung',
+              referenceId: vnr
+            })
+          }).catch(e => console.warn("Alarm-Mail Hinweis:", e));
         }
+
+        document.getElementById('feedback-form').style.display = 'none';
+        document.getElementById('form-header').style.display = 'none';
+        document.getElementById('success-view').classList.add('active');
 
       } catch (error) {
         console.error("Fehler beim Senden des Feedbacks:", error);
-        showErrorToast("Verbindungsfehler. Bitte wende dich direkt an sportschuetzen.muhen@gmail.com.");
+        showErrorToast("Verbindungsfehler: " + error.message);
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;

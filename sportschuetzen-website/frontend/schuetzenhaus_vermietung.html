@@ -1983,8 +1983,7 @@
 
   <!-- JS Logic -->
   <script>
-    // Config: Live-URLs
-    const WEB_APP_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=vermietung&action=booking";
+    // Config: Supabase Single Source of Truth
     const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
@@ -2497,90 +2496,112 @@
       }
 
       try {
-        const response = await fetch(WEB_APP_URL, {
+        const parts = payload.mietdatum.split('.');
+        const isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+
+        const supaPayload = {
+          is_inquiry: isCurrentlyInquiry,
+          inquiry_type: payload.inquiry_type || null,
+          inquiry_note: payload.inquiry_note || null,
+          salutation: payload.anrede,
+          first_name: payload.vorname,
+          last_name: payload.nachname,
+          email: payload.email,
+          phone: payload.telefon,
+          street: payload.strasse,
+          post_code: payload.plz,
+          city: payload.wohnort,
+          start_date: isoDate,
+          end_date: isoDate,
+          festbeginn: payload.festbeginn,
+          total_amount_chf: 300.00,
+          status: isCurrentlyInquiry ? 'inquiry' : 'contract_sent',
+          datum_vertrag: new Date().toISOString().split('T')[0]
+        };
+
+        const response = await fetch(`${SUPABASE_REST_URL}/rental_requests`, {
           method: 'POST',
-          mode: 'cors',
           headers: {
-            'Content-Type': 'application/json'
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(supaPayload)
         });
 
         if (!response.ok) {
-          throw new Error("HTTP Fehler " + response.status);
+          const errText = await response.text();
+          throw new Error("HTTP Fehler " + response.status + ": " + errText);
         }
 
-        const result = await response.json();
+        const insertedRecords = await response.json();
+        const newRecord = Array.isArray(insertedRecords) ? insertedRecords[0] : insertedRecords;
+        const vnr = newRecord?.booking_number || '';
 
-        if (result.success) {
-          if (isCurrentlyInquiry) {
-            showCustomToast(
-              "success",
-              "Terminanfrage übermittelt",
-              `Vielen Dank! Deine Terminanfrage ${result.vertragsnummer ? '(' + result.vertragsnummer + ') ' : ''}für den ${payload.mietdatum} wurde erfolgreich eingereicht. Wir prüfen die zeitliche Machbarkeit und melden uns in Kürze bei dir.`
-            );
-          } else {
-            showCustomToast(
-              "success",
-              "Reservierung übermittelt",
-              `Deine Reservierung (${result.vertragsnummer || ""}) wurde erfolgreich eingereicht! Bitte prüfe in wenigen Minuten dein E-Mail-Postfach auf den Mietvertrag.`
-            );
-          }
-          
-          // Parallel in Supabase eintragen (Direkte REST-Schnittstelle)
-          try {
-            const parts = payload.mietdatum.split('.');
-            const isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-            fetch(`${SUPABASE_REST_URL}/rental_requests`, {
-              method: 'POST',
-              headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                booking_number: result.vertragsnummer || null,
-                is_inquiry: isCurrentlyInquiry,
-                inquiry_type: payload.inquiry_type || null,
-                inquiry_note: payload.inquiry_note || null,
-                salutation: payload.anrede,
-                first_name: payload.vorname,
-                last_name: payload.nachname,
-                email: payload.email,
-                phone: payload.telefon,
-                street: payload.strasse,
-                post_code: payload.plz,
-                city: payload.wohnort,
-                start_date: isoDate,
-                end_date: isoDate,
-                festbeginn: payload.festbeginn,
-                total_amount_chf: 300.00,
-                status: isCurrentlyInquiry ? 'inquiry' : 'contract_sent',
-                datum_vertrag: new Date().toISOString().split('T')[0]
-              })
-            }).catch(e => console.warn("Supabase Sync Hintergrund:", e));
-          } catch (supaErr) {
-            console.warn("Supabase Sync Fehler:", supaErr);
-          }
-
-          document.getElementById('res-form').reset();
-          document.getElementById('inquiry-banner').style.display = 'none';
-          const freeB = document.getElementById('selection-banner-free');
-          if (freeB) freeB.style.display = 'none';
-          document.getElementById('form-heading').textContent = 'Online-Reservation einreichen';
-          btn.classList.remove('inquiry-mode');
-          btn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Jetzt verbindlich reservieren`;
-          selectedDateISO = null;
-          
-          // Kalenderdaten neu laden
-          loadCalendarEvents();
+        if (isCurrentlyInquiry) {
+          showCustomToast(
+            "success",
+            "Terminanfrage übermittelt",
+            `Vielen Dank! Deine Terminanfrage ${vnr ? '(' + vnr + ') ' : ''}für den ${payload.mietdatum} wurde erfolgreich eingereicht. Wir prüfen die zeitliche Machbarkeit und melden uns in Kürze bei dir.`
+          );
         } else {
-          showCustomToast("error", "Übermittlung fehlgeschlagen", result.error || "Ein unbekannter Fehler ist aufgetreten.");
+          showCustomToast(
+            "success",
+            "Reservierung übermittelt",
+            `Deine Reservierung (${vnr}) wurde erfolgreich eingereicht! Wir haben die Buchung verbucht und senden dir in Kürze den Mietvertrag.`
+          );
         }
+
+        // Automatische Benachrichtigungs-Mail an den Vorstand auslösen
+        try {
+          fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+            method: 'POST',
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              to: 'sportschuetzen.muhen@gmail.com',
+              subject: `🏠 Neue Schützenhaus-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'}: ${vnr} (${payload.mietdatum})`,
+              html: `
+                <div style="font-family:sans-serif; max-width:600px; padding:20px; border:1px solid #ddd; border-radius:8px;">
+                  <h3 style="color:#0f3c5c;">Neue Online-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'} Schützenstube</h3>
+                  <table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse; width:100%;">
+                    <tr><td><strong>Buchungsnr:</strong></td><td><strong>${vnr}</strong></td></tr>
+                    <tr><td><strong>Mietdatum:</strong></td><td>${payload.mietdatum} (Beginn: ${payload.festbeginn})</td></tr>
+                    <tr><td><strong>Mieter:</strong></td><td>${payload.anrede} ${payload.vorname} ${payload.nachname}</td></tr>
+                    <tr><td><strong>Kontakt:</strong></td><td>${payload.email} / ${payload.telefon}</td></tr>
+                    <tr><td><strong>Adresse:</strong></td><td>${payload.strasse}, ${payload.plz} ${payload.wohnort}</td></tr>
+                    ${isCurrentlyInquiry ? `<tr><td><strong>Notiz:</strong></td><td>${payload.inquiry_note || '–'}</td></tr>` : ''}
+                  </table>
+                  <p style="margin-top:15px;"><a href="https://sportschuetzen-muhen.ch/vorstand/#vermietung" style="color:#0f3c5c; font-weight:bold;">Im Vorstands-Cockpit öffnen &rarr;</a></p>
+                </div>
+              `,
+              module: 'vermietung',
+              referenceId: vnr
+            })
+          }).catch(e => console.warn("Vorstands-Benachrichtigung Hinweis:", e));
+        } catch (mailErr) {
+          console.warn("Mail-Trigger Fehler:", mailErr);
+        }
+
+        document.getElementById('res-form').reset();
+        document.getElementById('inquiry-banner').style.display = 'none';
+        const freeB = document.getElementById('selection-banner-free');
+        if (freeB) freeB.style.display = 'none';
+        document.getElementById('form-heading').textContent = 'Online-Reservation einreichen';
+        btn.classList.remove('inquiry-mode');
+        btn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Jetzt verbindlich reservieren`;
+        selectedDateISO = null;
+        
+        // Kalenderdaten neu laden
+        loadCalendarEvents();
 
       } catch (error) {
         console.error("Fehler beim Senden der Buchung:", error);
-        showCustomToast("error", "Verbindungsfehler", "Die Buchung/Anfrage konnte nicht gesendet werden. Bitte wende dich direkt an sportschuetzen.muhen@gmail.com.");
+        showCustomToast("error", "Verbindungsfehler", "Die Buchung/Anfrage konnte nicht gespeichert werden: " + error.message);
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;

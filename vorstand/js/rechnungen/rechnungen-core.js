@@ -159,29 +159,20 @@ window._invoiceLayouts = {};
 window._externalContacts = [];
 window._rechnungenActiveTab = 'archiv';
 
-// API Endpoint to fetch external contacts (Supabase First mit GAS-Fallback)
+// API Endpoint to fetch external contacts (Supabase Single Source of Truth)
 window.loadInvoiceContactsData = async function() {
   const supa = getRechnungenSupabaseClient();
   if (supa) {
     try {
       const { data, error } = await supa.from('external_contacts').select('*').order('nachname', { ascending: true });
-      if (!error && Array.isArray(data) && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         window._externalContacts = data.map(mapContactFromSupabase);
         return window._externalContacts;
       }
+      if (error) throw error;
     } catch (e) {
-      console.warn("⚠️ Supabase Kontakte-Abfrage fehlgeschlagen, nutze GAS:", e);
+      console.warn("⚠️ Supabase Kontakte-Abfrage fehlgeschlagen:", e);
     }
-  }
-
-  try {
-    const response = await apiFetch('rechnungen', 'action=getContacts');
-    const result = await response.json();
-    if (result.success && result.data) {
-      window._externalContacts = result.data || [];
-    }
-  } catch (err) {
-    console.warn("⚠️ Fehler beim Abrufen der externen Kontakte:", err);
   }
   return window._externalContacts || [];
 };
@@ -236,46 +227,36 @@ window.rnEnsureContactsLoaded = async function(force = false) {
   return window._externalContacts || [];
 };
 
-// API Endpoint to fetch template positions (Supabase First mit GAS-Fallback)
+// API Endpoint to fetch template positions (Supabase Single Source of Truth)
 window.loadInvoiceTemplatesData = async function() {
   const supa = getRechnungenSupabaseClient();
   if (supa) {
     try {
       const { data, error } = await supa.from('invoice_templates').select('*').order('sort_order', { ascending: true }).order('description', { ascending: true });
-      if (!error && Array.isArray(data) && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         window._invoiceTemplates = data.map(mapTemplateFromSupabase);
         localStorage.setItem('portal_invoice_templates', JSON.stringify(window._invoiceTemplates));
         return window._invoiceTemplates;
       }
+      if (error) throw error;
     } catch (e) {
-      console.warn("⚠️ Supabase Vorlagen-Abfrage fehlgeschlagen, nutze GAS:", e);
+      console.warn("⚠️ Supabase Vorlagen-Abfrage fehlgeschlagen:", e);
     }
   }
 
-  try {
-    const response = await apiFetch('rechnungen', 'action=getTemplates');
-    const result = await response.json();
-    if (result.success && result.data) {
-      window._invoiceTemplates = result.data || [];
-      localStorage.setItem('portal_invoice_templates', JSON.stringify(window._invoiceTemplates));
-    } else {
-      throw new Error(result.error || "GAS success was false");
-    }
-  } catch (err) {
-    console.warn("⚠️ Fehler beim Abrufen der Standard-Positionen vom Server, benutze LocalStorage:", err);
-    rnInitializeTemplates();
-    window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-  }
+  // Fallback to local storage if offline
+  rnInitializeTemplates();
+  window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
   return window._invoiceTemplates || [];
 };
 
-// API Endpoint to fetch layout configuration (Supabase First mit GAS-Fallback)
+// API Endpoint to fetch layout configuration (Supabase Single Source of Truth)
 window.loadInvoiceLayoutsData = async function() {
   const supa = getRechnungenSupabaseClient();
   if (supa) {
     try {
       const { data, error } = await supa.from('invoice_layouts').select('*');
-      if (!error && Array.isArray(data) && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         const map = {};
         data.forEach(item => {
           if (item.type) map[item.type] = item;
@@ -288,40 +269,22 @@ window.loadInvoiceLayoutsData = async function() {
         localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
         return window._invoiceLayouts;
       }
+      if (error) throw error;
     } catch (e) {
-      console.warn("⚠️ Supabase Layouts-Abfrage fehlgeschlagen, nutze GAS:", e);
+      console.warn("⚠️ Supabase Layouts-Abfrage fehlgeschlagen:", e);
     }
   }
 
-  try {
-    const response = await apiFetch('rechnungen', 'action=getLayouts');
-    const result = await response.json();
-    if (result.success && result.data) {
-      const map = {};
-      (result.data || []).forEach(item => {
-        if (item.type) map[item.type] = item;
-      });
-      if (typeof rnGetDefaultLayouts === 'function') {
-        window._invoiceLayouts = { ...rnGetDefaultLayouts(), ...map };
-      } else {
-        window._invoiceLayouts = map;
-      }
-      localStorage.setItem('portal_invoice_layouts', JSON.stringify(window._invoiceLayouts));
-    } else {
-      throw new Error(result.error || "GAS success was false");
-    }
-  } catch (err) {
-    console.warn("⚠️ Fehler beim Abrufen der Layout-Texte vom Server, benutze LocalStorage / Defaults:", err);
-    if (typeof rnGetDefaultLayouts === 'function') {
-      window._invoiceLayouts = rnGetDefaultLayouts();
-    }
-    try {
-      const stored = localStorage.getItem('portal_invoice_layouts');
-      if (stored) {
-        window._invoiceLayouts = { ...window._invoiceLayouts, ...JSON.parse(stored) };
-      }
-    } catch (_) {}
+  // Fallback to default layouts / local storage
+  if (typeof rnGetDefaultLayouts === 'function') {
+    window._invoiceLayouts = rnGetDefaultLayouts();
   }
+  try {
+    const stored = localStorage.getItem('portal_invoice_layouts');
+    if (stored) {
+      window._invoiceLayouts = { ...window._invoiceLayouts, ...JSON.parse(stored) };
+    }
+  } catch (_) {}
   return window._invoiceLayouts || {};
 };
 
@@ -346,7 +309,7 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
     }
   }
 
-  // 1. SUPABASE-FIRST VERSUCH
+  // 1. SUPABASE MASTER LOAD
   const supa = getRechnungenSupabaseClient();
   if (supa) {
     try {
@@ -358,8 +321,8 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
         loadInvoiceContactsData()
       ]);
 
-      if (!invRes.error && Array.isArray(invRes.data) && invRes.data.length > 0) {
-        console.log(`✅ ${invRes.data.length} Rechnungen & ${posRes.data?.length || 0} Positionen aus Supabase geladen (< 50 ms).`);
+      if (!invRes.error && Array.isArray(invRes.data)) {
+        console.log(`✅ ${invRes.data.length} Rechnungen & ${posRes.data?.length || 0} Positionen aus Supabase geladen.`);
         window._rechnungenIsSupabase = true;
 
         // Positions-Map aufbauen
@@ -377,77 +340,27 @@ window.loadRechnungenData = async function(silent = false, forceReload = false) 
         window.rnEnsureMembersLoaded().catch(e => console.warn("Mitglieder Preload:", e));
         window.renderRechnungen();
         return;
-      } else if (!invRes.error && invRes.data.length === 0) {
-        console.log("ℹ️ Supabase Invoices noch leer. Wechsle zu Google Apps Script zum Laden bestehender Daten...");
       }
+      if (invRes.error) throw invRes.error;
     } catch (supaErr) {
-      console.warn("⚠️ Supabase Abfrage fehlgeschlagen, wechsle zu GAS Fallback:", supaErr);
-    }
-  }
-
-  // 2. FALLBACK: GOOGLE APPS SCRIPT
-  try {
-    const [invRes, _a, _b, _c] = await Promise.all([
-      apiFetch('rechnungen', 'action=getInvoices'),
-      loadInvoiceTemplatesData(),
-      loadInvoiceLayoutsData(),
-      loadInvoiceContactsData()
-    ]);
-    
-    window.rnEnsureMembersLoaded().catch(e => console.warn("Mitglieder Preload:", e));
-    window.rnEnsureContactsLoaded().catch(e => console.warn("Kontakte Preload:", e));
-    
-    const rawText = await invRes.text();
-    let result;
-    try {
-      result = JSON.parse(rawText);
-    } catch (_) {
-      console.error('❌ Rechnungen API: HTML statt JSON erhalten:', rawText.slice(0, 300));
-      if (container) {
+      console.error("❌ Supabase Rechnungen Abfrage fehlgeschlagen:", supaErr);
+      if (container && (!silent || !hasCachedData)) {
         container.innerHTML = `
-          <div class="alert alert-warning">
-            <h5>⚠️ Backend nicht erreichbar</h5>
-            <p>Das Google Apps Script für <strong>Rechnungen</strong> gibt kein JSON zurück. Mögliche Ursachen:</p>
-            <ul>
-              <li>Das Script ist noch nicht als <strong>Web App</strong> deployed</li>
-              <li>Die URL im <code>worker.js</code> ist inkorrekt oder abgelaufen</li>
-              <li>Ein Berechtigungs- oder Quotenlimit bei Google wurde überschritten</li>
-            </ul>
-            <details class="mt-2">
-              <summary class="small text-muted">Technische Details</summary>
-              <pre class="small mt-2 bg-light p-2 rounded">${escapeHtml(rawText.slice(0, 500))}</pre>
-            </details>
+          <div class="alert alert-danger shadow-sm rounded-3">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Fehler:</strong> Rechnungsdaten konnten nicht aus Supabase geladen werden.
+            <br><small class="text-muted">${supaErr.message || supaErr}</small>
           </div>`;
       }
       return;
     }
-    
-    if (result.success) {
-      window._rechnungenIsSupabase = false;
-      window._invoices = result.data || [];
-      window._jbAllInvoices = window._invoices;
-      window._invoicePositionsCache = window._invoicePositionsCache || {};
-      window._invoices.forEach(inv => {
-        if (Array.isArray(inv.positions) && inv.positions.length > 0) {
-          window._invoicePositionsCache[String(inv.id).trim()] = inv.positions;
-        }
-      });
-      window.renderRechnungen();
-    } else {
-      throw new Error(result.error || "API returned success: false");
-    }
-  } catch (err) {
-    console.error("❌ Fehler beim Laden der Rechnungen:", err);
-    if (!window._invoiceTemplates || window._invoiceTemplates.length === 0) {
-      rnInitializeTemplates();
-      window._invoiceTemplates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
-    }
+  } else {
+    console.error("❌ Kein Supabase Client verfügbar für Rechnungen.");
     if (container && (!silent || !hasCachedData)) {
       container.innerHTML = `
         <div class="alert alert-danger shadow-sm rounded-3">
           <i class="fas fa-exclamation-triangle me-2"></i>
-          <strong>Verbindungsfehler:</strong> Die Rechnungsdaten konnten nicht abgerufen werden.
-          <br><small class="text-muted">${err.message}</small>
+          <strong>Konfigurationsfehler:</strong> Supabase Client ist nicht initialisiert.
         </div>`;
     }
   }
@@ -475,20 +388,8 @@ window.syncRechnungenFromLegacy = async function() {
   }
 
   try {
-    // 1. Daten aus GAS abrufen
-    const [invRes, tmplRes, layRes, contRes] = await Promise.all([
-      apiFetch('rechnungen', 'action=getInvoices'),
-      apiFetch('rechnungen', 'action=getTemplates'),
-      apiFetch('rechnungen', 'action=getLayouts'),
-      apiFetch('rechnungen', 'action=getContacts')
-    ]);
-
-    const [invJson, tmplJson, layJson, contJson] = await Promise.all([
-      invRes.json(),
-      tmplRes.json(),
-      layRes.json(),
-      contRes.json()
-    ]);
+    alert("ℹ️ Migration bereits abgeschlossen:\n\nAlle Rechnungen, Positionen, Vorlagen und Kontakte werden direkt über Supabase PostgreSQL verwaltet. Die Google Sheets / GAS-Schnittstelle ist entkoppelt.");
+    return;
 
     let importedInvoices = 0;
     let importedPositions = 0;
@@ -671,7 +572,7 @@ window.rnGetInvoicePositions = async function(invoiceId) {
   
   // Supabase Nachladen
   const supa = getRechnungenSupabaseClient();
-  if (supa && window._rechnungenIsSupabase) {
+  if (supa) {
     try {
       const { data, error } = await supa.from('invoice_positions').select('*').eq('invoice_id', idStr).order('position_nr', { ascending: true });
       if (!error && Array.isArray(data) && data.length > 0) {
@@ -683,18 +584,6 @@ window.rnGetInvoicePositions = async function(invoiceId) {
     } catch (_) {}
   }
 
-  // Remote Nachladen via getInvoiceDetails (Live-GAS Fallback)
-  try {
-    const res = await apiFetch('rechnungen', { action: 'getInvoiceDetails', invoiceId: idStr });
-    const json = await res.json();
-    if (json && json.success && Array.isArray(json.positions)) {
-      window._invoicePositionsCache[idStr] = json.positions;
-      if (inv) inv.positions = json.positions;
-      return json.positions;
-    }
-  } catch (err) {
-    console.warn("⚠️ rnGetInvoicePositions Nachladen fehlgeschlagen für " + idStr, err);
-  }
   return [];
 };
 

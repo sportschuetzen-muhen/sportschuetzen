@@ -265,248 +265,33 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
         renderJahresbeitragView();
         return;
       }
+      }
+      if (headRes.error) throw headRes.error;
     } catch (supaErr) {
-      console.warn("⚠️ Supabase Jahresbeitrag Abfrage fehlgeschlagen, nutze GAS-Fallback:", supaErr);
+      console.error("❌ Supabase Jahresbeitrag Abfrage fehlgeschlagen:", supaErr);
+      if (container) {
+        container.innerHTML = `<div class="alert alert-danger shadow-sm">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          <strong>Fehler:</strong> Jahresbeiträge konnten nicht aus Supabase geladen werden: ${supaErr.message || supaErr}
+        </div>`;
+      }
     }
-  }
-
-  // 2. FALLBACK: GOOGLE APPS SCRIPT / SHEETS
-  try {
-    const t = Date.now();
-    const [beitraege, members, participations, positions, invoicesRes, gebuehrenRes] = await Promise.all([
-      apiFetch('jahresbeitrag', `action=getBeitraege&_t=${t}`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getMembers&_t=${t}`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getParticipations&_t=${t}`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getPositionen&_t=${t}`).then(r => r.json()),
-      apiFetch('rechnungen', `action=getInvoices&_t=${t}`)
-        .then(r => r.json())
-        .catch(err => {
-          console.warn("⚠️ Fehler beim Abrufen der Rechnungen:", err);
-          return { success: false, data: [] };
-        }),
-      apiFetch('jahresbeitrag', `action=getGebuehren&_t=${t}`).then(r => r.json()).catch(err => {
-        console.warn("⚠️ Fehler beim Abrufen der Gebühren:", err);
-        return { success: false, data: [] };
-      })
-    ]);
-
-    if (!beitraege.success) throw new Error(beitraege.error);
-    if (!members.success)   throw new Error(members.error);
-    if (!participations.success) throw new Error(participations.error);
-    if (!positions.success) throw new Error(positions.error);
-
-    window._jahresbeitragIsSupabase = false;
-
-    // Alle aktiven, passiven und ehrenwerten lebenden Mitglieder filtern
-    _jbMembers = (members.data || []).filter(m => 
-      m.Deceased != 1 && 
-      (m.IsActive == 1 || m.IsPassive == 1 || m._istPassiv || m.IsHonoraryMember == 1 || m._istEhren)
-    );
-    
-    _jbMemberMap = {};
-    (members.data || []).forEach(m => { 
-      _jbMemberMap[String(m.PersonNumber)] = m; 
-    });
-
-    // In globalen Caches speichern
-    window._jbAllBeitraege = beitraege.data || [];
-    window._jbAllParticipations = participations.data || [];
-    window._jbAllPositions = positions.positions || [];
-    _jbAllBeitraege = window._jbAllBeitraege;
-    _jbAllParticipations = window._jbAllParticipations;
-    _jbAllPositions = window._jbAllPositions;
-    window._jbAllInvoices = invoicesRes.success ? (invoicesRes.data || []) : [];
-    window._invoices = window._jbAllInvoices; // Sync both caches!
-    window._jbGebuehren = gebuehrenRes.success ? (gebuehrenRes.data || []) : [];
-
-    // Für das aktive Jahr filtern
-    _jbData = _jbAllBeitraege.filter(h => Number(h.year) === Number(_jbYear));
-
-    // Turnierteilnahmen-Cache aufbauen (nur für das aktive Jahr)
-    _jbParticipationsCache = {};
-    _jbAllParticipations.forEach(p => {
-      if (Number(p.year) === Number(_jbYear)) {
-        const pn = String(p.PersonNumber).trim();
-        if (!_jbParticipationsCache[pn]) _jbParticipationsCache[pn] = [];
-        _jbParticipationsCache[pn].push(p);
-      }
-    });
-
-    // Rechnungspositionen-Cache aufbauen (nur für das aktive Jahr)
-    _jbPositionsCache = {};
-    _jbAllPositions.forEach(p => {
-      if (Number(p.year) === Number(_jbYear)) {
-        const hid = String(p.headerid).trim();
-        if (!_jbPositionsCache[hid]) _jbPositionsCache[hid] = [];
-        _jbPositionsCache[hid].push(p);
-      }
-    });
-    
-    // Invoices mergen
-    jbMergeInvoicesIntoData(window._jbAllInvoices);
-
-    // Sortierungen anwenden
-    jbApplyTableSorting();
-    jbApplySidebarSorting();
-    
-    renderJahresbeitragView();
-  } catch(e) {
-    container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
+  } else {
+    if (container) {
+      container.innerHTML = `<div class="alert alert-danger shadow-sm">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Konfigurationsfehler:</strong> Supabase Client ist nicht initialisiert.
+      </div>`;
+    }
   }
 }
 
 // ============================================================
-// 1-KLICK-MIGRATION: ALLE BEITRÄGE AUS GOOGLE SHEETS NACH SUPABASE
+// MIGRATIONSSTATUS: ALLE BEITRÄGE IN SUPABASE
 // ============================================================
 window.syncJahresbeitragFromLegacy = async function() {
-  const supa = getJahresbeitragSupabaseClient();
-  if (!supa) {
-    alert("❌ Supabase Client ist nicht initialisiert. Bitte Seite neu laden.");
-    return;
-  }
-
-  if (!confirm("Möchtest du jetzt alle Beitragsrechnungen, Positionen, Turnierteilnahmen und die Gebührenordnung aus Google Sheets nach Supabase importieren?")) {
-    return;
-  }
-
-  const btn = document.getElementById('jb-sync-legacy-btn');
-  const originalHtml = btn ? btn.innerHTML : '';
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Importiere...';
-  }
-
-  try {
-    const t = Date.now();
-    const [beitraegeRes, positionsRes, partRes, gebRes] = await Promise.all([
-      apiFetch('jahresbeitrag', `action=getBeitraege&_t=${t}`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getPositionen&_t=${t}`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getParticipations&_t=${t}`).then(r => r.json()),
-      apiFetch('jahresbeitrag', `action=getGebuehren&_t=${t}`).then(r => r.json())
-    ]);
-
-    let importedHeaders = 0;
-    let importedPositions = 0;
-    let importedParticipations = 0;
-    let importedGebuehren = 0;
-
-    // 1. Gebührenordnung importieren
-    const gebList = gebRes.data || [];
-    if (gebList.length > 0) {
-      const dbGebuehren = gebList.map(g => ({
-        key: String(g.key || '').trim(),
-        bezeichnung: String(g.bezeichnung || '').trim(),
-        bezeichnung_frontend: String(g.bezeichnungfrontend || g.bezeichnung || '').trim(),
-        betrag: Number(g.betrag || 0),
-        konto_haben: String(g['Haben-Konto-Jahresbeitrag-Buchhaltung'] || g.konto_haben || g.konto || '3000').trim(),
-        kategorie: String(g.kategorie || g.ui_gruppe || 'Jahresbeitrag').trim(),
-        sort_order: Number(g.ui_sort || g.sort_order || 10),
-        updated_at: new Date().toISOString()
-      })).filter(g => !!g.key);
-
-      const { error: errGeb } = await supa.from('gebuehren_config').upsert(dbGebuehren, { onConflict: 'key' });
-      if (errGeb) console.warn("Warnung bei Gebühren-Import:", errGeb);
-      else importedGebuehren = dbGebuehren.length;
-    }
-
-    // 2. Beitrags-Header importieren
-    const headers = beitraegeRes.data || [];
-    if (headers.length > 0) {
-      const dbHeaders = headers.map(h => ({
-        id: String(h.id || `${h.year}-${h.PersonNumber}`),
-        person_number: String(h.PersonNumber || '').trim(),
-        year: Number(h.year),
-        status: h.status || 'offen',
-        gesamt: Number(h.Gesamt || 0),
-        payment_date: h.payment_date || h.paymentdate || null,
-        payment_method: h.payment_method || h.paymentmethod || null,
-        document_ref: h.document_ref || h.documentref || null,
-        invoice_id: h.invoiceId || null,
-        created_at: h.createdat ? new Date(h.createdat).toISOString() : new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })).filter(h => !!h.person_number && !!h.year);
-
-      // In Chunks von 50 hochladen
-      for (let i = 0; i < dbHeaders.length; i += 50) {
-        const chunk = dbHeaders.slice(i, i + 50);
-        const { error: errHead } = await supa.from('contributions_header').upsert(chunk, { onConflict: 'person_number,year' });
-        if (errHead) console.warn("Warnung bei Header-Chunk-Import:", errHead);
-        else importedHeaders += chunk.length;
-      }
-    }
-
-    // 3. Positionen importieren
-    const positions = positionsRes.positions || [];
-    if (positions.length > 0) {
-      const dbPositions = positions.map(p => ({
-        id: String(p.id || `${p.headerid}-${p.position_nr || 1}`),
-        header_id: String(p.headerid || '').trim(),
-        person_number: String(p.PersonNumber || '').trim(),
-        year: Number(p.year),
-        position_nr: Number(p.position_nr || 1),
-        beschreibung: String(p.beschreibung || p.name || 'Position').trim(),
-        betrag: Number(p.betrag || 0),
-        typ: String(p.typ || 'Debit').trim(),
-        source_field: String(p.sourcefield || p.source_field || p.key || '').trim(),
-        konto: String(p.konto || '3000').trim(),
-        last_upd: new Date().toISOString()
-      })).filter(p => !!p.header_id && !!p.person_number);
-
-      for (let i = 0; i < dbPositions.length; i += 50) {
-        const chunk = dbPositions.slice(i, i + 50);
-        const { error: errPos } = await supa.from('contributions_positions').upsert(chunk, { onConflict: 'id' });
-        if (errPos) console.warn("Warnung bei Positionen-Chunk-Import:", errPos);
-        else importedPositions += chunk.length;
-      }
-    }
-
-    // 4. Turnierteilnahmen importieren
-    const partList = partRes.data || [];
-    if (partList.length > 0) {
-      const dbParts = partList.map(p => ({
-        id: String(p.id || `${p.PersonNumber}-${p.year}-${p.eventkey}`),
-        person_number: String(p.PersonNumber || '').trim(),
-        year: Number(p.year),
-        event_key: String(p.eventkey || '').trim(),
-        teilgenommen: Number(p.teilgenommen || 0),
-        quelle: String(p.quelle || 'legacy-sync').trim(),
-        erfasst_am: p.erfasstam ? new Date(p.erfasstam).toISOString() : new Date().toISOString(),
-        erfasst_von: String(p.erfasstvon || 'sync').trim()
-      })).filter(p => !!p.person_number && !!p.year && !!p.event_key);
-
-      // Deduplicate by person_number + year + event_key to avoid Postgres 21000 ON CONFLICT error
-      const seenParts = new Set();
-      const uniqueParts = [];
-      for (const p of dbParts) {
-        const key = `${p.person_number}_${p.year}_${p.event_key}`;
-        if (!seenParts.has(key)) {
-          seenParts.add(key);
-          uniqueParts.push(p);
-        }
-      }
-
-      for (let i = 0; i < uniqueParts.length; i += 50) {
-        const chunk = uniqueParts.slice(i, i + 50);
-        const { error: errPart } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
-        if (errPart) console.warn("Warnung bei Teilnahmen-Chunk-Import:", errPart);
-        else importedParticipations += chunk.length;
-      }
-    }
-
-    alert(`🎉 Migration erfolgreich!\n\n${importedHeaders} Beitragsrechnungen\n${importedPositions} Positionen\n${importedParticipations} Wettkampfteilnahmen\n${importedGebuehren} Gebühren\nerfolgreich nach Supabase importiert.`);
-    
-    // Daten neu laden
-    await loadJahresbeitragData(true, true);
-
-  } catch (err) {
-    console.error("❌ Fehler bei Synchronisation:", err);
-    alert("Fehler beim Import: " + err.message);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-    }
-  }
+  alert("ℹ️ Migration bereits abgeschlossen:\n\nAlle Beitragsrechnungen, Positionen, Turnierteilnahmen und die Gebührenordnung werden direkt über Supabase PostgreSQL verwaltet. Die Google Sheets / GAS-Schnittstelle ist entkoppelt.");
+  return;
 };
 
 // Invoices aus Rechnungen_GAS mit den Beitrags-Header-Einträgen mergen

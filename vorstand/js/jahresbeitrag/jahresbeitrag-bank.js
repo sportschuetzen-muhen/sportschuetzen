@@ -413,16 +413,17 @@ async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {
   if (modal) bootstrap.Modal.getInstance(modal)?.hide();
 
   try {
-    const params = new URLSearchParams({
-      action: 'saveZahlung',
-      headerId,
-      datum: dateStr,
-      methode: 'Überweisung',
-      beleg: 'CAMT053'
-    });
-    const res = await apiFetch('jahresbeitrag', params.toString());
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || 'Fehler beim Speichern');
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (supa) {
+      const { error: updErr } = await supa.from('contributions_header').update({
+        status: 'bezahlt',
+        payment_date: dateStr,
+        payment_method: 'Überweisung',
+        document_ref: 'CAMT053',
+        updated_at: new Date().toISOString()
+      }).eq('id', headerId);
+      if (updErr) console.warn("Supabase contributions_header update warning:", updErr);
+    }
 
     if (_jbBankMatchResults[txIdx]) {
       _jbBankMatchResults[txIdx].alreadyPaid     = true;
@@ -434,7 +435,15 @@ async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {
       const cachedInv = (window._invoices || []).find(i => String(i.PersonNumber) === String(cached.PersonNumber) && String(i.type || '').toLowerCase().includes('jahresbeitrag'));
       if (cachedInv) {
         cachedInv.status = 'bezahlt'; cachedInv.payment_date = dateStr; cachedInv.payment_method = 'Überweisung';
-        try { apiFetch('rechnungen', { action: 'saveZahlung', invoiceId: cachedInv.id, datum: dateStr, methode: 'Überweisung', beleg: 'CAMT053', skipBooking: true }, 'POST').catch(() => {}); } catch (_) {}
+        if (supa) {
+          supa.from('invoices').update({
+            status: 'Bezahlt',
+            payment_date: dateStr,
+            payment_method: 'Überweisung',
+            payment_reference: 'CAMT053',
+            updated_at: new Date().toISOString()
+          }).eq('id', cachedInv.id).then(() => {}).catch(e => console.warn('Invoices status update warning:', e));
+        }
       }
     }
 
@@ -699,20 +708,21 @@ function escHtml(s) {
 async function jbBankBookOne(headerId, dateStr, resultIdx) {
   if (!headerId || !dateStr) { alert('Fehlende Daten zum Buchen.'); return; }
 
-  const confirmed = confirm(`Zahlung vom ${dateStr} ins Sheet buchen?\nZahlungsmethode: Überweisung (Bank)`);
+  const confirmed = confirm(`Zahlung vom ${dateStr} buchen?\nZahlungsmethode: Überweisung (Bank)`);
   if (!confirmed) return;
 
   try {
-    const params = new URLSearchParams({
-      action: 'saveZahlung',
-      headerId,
-      datum: dateStr,
-      methode: 'Überweisung',
-      beleg: 'CAMT053'
-    });
-    const res = await apiFetch('jahresbeitrag', params.toString());
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || 'Fehler beim Speichern');
+    const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+    if (supa) {
+      const { error: updErr } = await supa.from('contributions_header').update({
+        status: 'bezahlt',
+        payment_date: dateStr,
+        payment_method: 'Überweisung',
+        document_ref: 'CAMT053',
+        updated_at: new Date().toISOString()
+      }).eq('id', headerId);
+      if (updErr) console.warn("Supabase contributions_header update warning:", updErr);
+    }
 
     const idx = Number(resultIdx);
     if (_jbBankMatchResults[idx]) {
@@ -727,7 +737,15 @@ async function jbBankBookOne(headerId, dateStr, resultIdx) {
         const cachedInv = (window._invoices || []).find(i => String(i.PersonNumber) === String(cached.PersonNumber) && String(i.type || '').toLowerCase().includes('jahresbeitrag'));
         if (cachedInv) {
           cachedInv.status = 'bezahlt'; cachedInv.payment_date = dateStr; cachedInv.payment_method = 'Überweisung';
-          try { apiFetch('rechnungen', { action: 'saveZahlung', invoiceId: cachedInv.id, datum: dateStr, methode: 'Überweisung', beleg: 'CAMT053', skipBooking: true }, 'POST').catch(() => {}); } catch (_) {}
+          if (supa) {
+            supa.from('invoices').update({
+              status: 'Bezahlt',
+              payment_date: dateStr,
+              payment_method: 'Überweisung',
+              payment_reference: 'CAMT053',
+              updated_at: new Date().toISOString()
+            }).eq('id', cachedInv.id).then(() => {}).catch(e => console.warn('Invoices status update warning:', e));
+          }
         }
       }
     }
@@ -760,34 +778,43 @@ async function jbBankBookAll() {
   if (!ok) return;
 
   let booked = 0;
+  const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+
   for (const { r, i } of toBook) {
     try {
-      const params = new URLSearchParams({
-        action: 'saveZahlung',
-        headerId: r.matchedBeitrag.id,
-        datum: r.bookingDate,
-        methode: 'Überweisung',
-        beleg: 'CAMT053'
-      });
-      const res = await apiFetch('jahresbeitrag', params.toString());
-      const json = await res.json();
-      if (json.success) {
-        _jbBankMatchResults[i].alreadyPaid = true;
-        _jbBankMatchResults[i].alreadyPaidDate = r.bookingDate;
-        const bid = String(r.matchedBeitrag.id);
-        const cached = (_jbAllBeitraege || []).find(h => String(h.id) === bid);
-        if (cached) {
-          cached.status = 'bezahlt'; cached.payment_date = r.bookingDate; cached.payment_method = 'Überweisung';
-          const cachedInv = (window._invoices || []).find(i => String(i.PersonNumber) === String(cached.PersonNumber) && String(i.type || '').toLowerCase().includes('jahresbeitrag'));
-          if (cachedInv) {
-            cachedInv.status = 'bezahlt'; cachedInv.payment_date = r.bookingDate; cachedInv.payment_method = 'Überweisung';
-            try { apiFetch('rechnungen', { action: 'saveZahlung', invoiceId: cachedInv.id, datum: r.bookingDate, methode: 'Überweisung', beleg: 'CAMT053', skipBooking: true }, 'POST').catch(() => {}); } catch (_) {}
-          }
-          booked++;
-        }
-        // Splitbuchung für jeden gebuchten Beitrag ins Journal schreiben
-        await jbBankSyncToBuchhaltung(r.matchedBeitrag.id, r.matchedMember, r.amount, r.bookingDate, 'CAMT053');
+      if (supa) {
+        await supa.from('contributions_header').update({
+          status: 'bezahlt',
+          payment_date: r.bookingDate,
+          payment_method: 'Überweisung',
+          document_ref: 'CAMT053',
+          updated_at: new Date().toISOString()
+        }).eq('id', r.matchedBeitrag.id);
       }
+
+      _jbBankMatchResults[i].alreadyPaid = true;
+      _jbBankMatchResults[i].alreadyPaidDate = r.bookingDate;
+      const bid = String(r.matchedBeitrag.id);
+      const cached = (_jbAllBeitraege || []).find(h => String(h.id) === bid);
+      if (cached) {
+        cached.status = 'bezahlt'; cached.payment_date = r.bookingDate; cached.payment_method = 'Überweisung';
+        const cachedInv = (window._invoices || []).find(inv => String(inv.PersonNumber) === String(cached.PersonNumber) && String(inv.type || '').toLowerCase().includes('jahresbeitrag'));
+        if (cachedInv) {
+          cachedInv.status = 'bezahlt'; cachedInv.payment_date = r.bookingDate; cachedInv.payment_method = 'Überweisung';
+          if (supa) {
+            supa.from('invoices').update({
+              status: 'Bezahlt',
+              payment_date: r.bookingDate,
+              payment_method: 'Überweisung',
+              payment_reference: 'CAMT053',
+              updated_at: new Date().toISOString()
+            }).eq('id', cachedInv.id).then(() => {}).catch(e => console.warn('Invoices status update warning:', e));
+          }
+        }
+        booked++;
+      }
+      // Splitbuchung für jeden gebuchten Beitrag ins Journal schreiben
+      await jbBankSyncToBuchhaltung(r.matchedBeitrag.id, r.matchedMember, r.amount, r.bookingDate, 'CAMT053');
     } catch(_) {}
   }
 
@@ -797,7 +824,7 @@ async function jbBankBookAll() {
   if (banner) banner.innerHTML = jbBankStatsBannerHTML();
 }
 
-// Hilfsfunktion zum Synchronisieren der Splitbuchung in die Buchhaltung
+// Hilfsfunktion zum Synchronisieren der Splitbuchung in die Buchhaltung (Supabase Single Source of Truth)
 async function jbBankSyncToBuchhaltung(headerId, member, amount, dateStr, belegNr) {
   if (typeof window.jbGetSplitBookings !== 'function') return;
   try {
@@ -811,25 +838,24 @@ async function jbBankSyncToBuchhaltung(headerId, member, amount, dateStr, belegN
       year: new Date(dateStr).getFullYear()
     });
     if (splits && splits.length > 0) {
-      const payload = splits.length > 1 ? {
-        action: 'addJournalEntries',
-        jahr: new Date(dateStr).getFullYear(),
-        datum: dateStr,
-        beleg_nr: belegNr || 'CAMT053',
-        entries: splits,
-        typ: 'Bank'
-      } : {
-        action: 'addJournalEntry',
-        jahr: new Date(dateStr).getFullYear(),
-        datum: dateStr,
-        beleg_nr: belegNr || 'CAMT053',
-        beschreibung: splits[0].beschreibung,
-        konto_soll: splits[0].konto_soll,
-        konto_haben: splits[0].konto_haben,
-        betrag: splits[0].betrag,
-        typ: 'Bank'
-      };
-      await apiFetch('buchhaltung', payload, 'POST');
+      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+      if (supa) {
+        const rowsToInsert = splits.map((s, sIdx) => ({
+          id: `bh_jb_bank_${headerId}_${Date.now()}_${sIdx}`,
+          jahr: new Date(dateStr).getFullYear(),
+          datum: dateStr,
+          beleg_nr: belegNr || 'CAMT053',
+          beschreibung: s.beschreibung,
+          konto_soll: String(s.konto_soll).trim(),
+          konto_haben: String(s.konto_haben).trim(),
+          betrag: Number(s.betrag || 0),
+          typ: 'Bank',
+          split_group_id: splits.length > 1 ? `grp_${belegNr || 'CAMT053'}_${headerId}_${Date.now()}` : null,
+          created_at: new Date().toISOString()
+        }));
+        await supa.from('accounting_journal').insert(rowsToInsert);
+        console.log(`✅ [Supabase FiBu] Bank-Zahlung für ${headerId} ins Journal gebucht.`);
+      }
     }
   } catch (e) {
     console.warn('⚠️ Buchhaltung Split-Sync:', e);

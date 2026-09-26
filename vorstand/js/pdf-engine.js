@@ -531,13 +531,13 @@
 
         let booking = null;
         if (supa) {
-            const { data } = await supa.from('rental_bookings').select('*').or(`booking_number.eq.${bookingId},id.eq.${bookingId}`).single();
+            const { data } = await supa.from('rental_requests').select('*').or(`booking_number.eq.${bookingId},id.eq.${bookingId}`).single();
             booking = data;
         }
 
         const payload = {
             action: 'generate-contract',
-            bookingId: bookingId,
+            bookingId: booking?.booking_number || bookingId,
             recipient: {
                 vorname: booking?.first_name || '',
                 nachname: booking?.last_name || '',
@@ -549,7 +549,7 @@
                 telefon: booking?.phone || ''
             },
             mietdatum: booking?.start_date ? new Date(booking.start_date).toLocaleDateString('de-CH') : new Date().toLocaleDateString('de-CH'),
-            festbeginn: '14:00 Uhr',
+            festbeginn: booking?.festbeginn || '14:00 Uhr',
             mietbetrag: booking?.total_amount_chf || 300,
             kaution: booking?.deposit_amount_chf || 200,
             type: 'Vermietung'
@@ -562,6 +562,11 @@
             }
 
             if (res.success) {
+                if (res.pdfUrl && supa && booking?.id) {
+                    await supa.from('rental_requests').update({
+                        contract_file_url: res.pdfUrl
+                    }).eq('id', booking.id);
+                }
                 if (typeof showSuccess === 'function') {
                     showSuccess("🎉 Mietvertrag PDF erfolgreich generiert!");
                 }

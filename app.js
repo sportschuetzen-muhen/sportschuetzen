@@ -1094,41 +1094,101 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
     const inputHash = await sha256(pwdInput.trim());
 
     try {
-        // SICHERER BACKEND-LOGIN
-        const AUTH_WORKER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev";
-        const resp = await fetch(`${AUTH_WORKER_URL}?action=checkLogin&user=${userId}&pw=${inputHash}`);
-        let result;
-        try {
-            result = await resp.json();
-        } catch (_) {
-            throw new Error("Fehler beim Lesen der Server-Antwort.");
+        const cleanPin = pwdInput.trim();
+        let authenticatedUser = null;
+
+        // 1. Zuerst prüfen, ob es sich um ein Mitglied aus Supabase public.members handelt
+        const cleanId = String(userId).trim();
+        const memberRes = await fetch(`${SUPABASE_REST_URL}/members?select=person_number,address_number,first_name,last_name,primary_email&or=(address_number.eq.${encodeURIComponent(cleanId)},person_number.eq.${encodeURIComponent(cleanId)})&limit=1`, {
+            headers: getSupabaseHeaders()
+        });
+
+        if (memberRes.ok) {
+            const mList = await memberRes.json();
+            if (Array.isArray(mList) && mList.length > 0) {
+                const m = mList[0];
+                const expectedPin = String(m.address_number || '').trim();
+                const expectedPinPadded = expectedPin.padStart(6, '0');
+                const cleanPinPadded = cleanPin.padStart(6, '0');
+
+                if (cleanPin === expectedPin || cleanPinPadded === expectedPinPadded || cleanPin === String(m.person_number)) {
+                    authenticatedUser = {
+                        id: String(m.address_number || m.person_number).padStart(6, '0'),
+                        lizenz: String(m.address_number || m.person_number).padStart(6, '0'),
+                        vorname: m.first_name || '',
+                        nachname: m.last_name || '',
+                        name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
+                        role: 'member'
+                    };
+                }
+            }
         }
 
-        if (result.success) {
-            const nameParts = result.name.split(' ');
-            const userData = {
-                id: userId,
-                lizenz: String(userId).padStart(6, '0'),
-                vorname: nameParts[0],
-                nachname: nameParts.slice(1).join(' '),
-                name: result.name,
-                role: result.role
-            };
-            localStorage.setItem('sportschuetzen_user', JSON.stringify(userData));
-            syncOneSignal(userData);
+        // 2. Falls kein Match bei Mitgliedern, prüfe admin_profiles & Supabase Auth
+        if (!authenticatedUser) {
+            try {
+                const idRes = await fetch(`${SUPABASE_REST_URL}/rpc/resolve_login_identifier`, {
+                    method: 'POST',
+                    headers: { ...getSupabaseHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ p_identifier: cleanId })
+                });
+                if (idRes.ok) {
+                    const idData = await idRes.json();
+                    if (idData && idData.success && idData.email) {
+                        const authRes = await fetch(`https://supabase-muhen.danfamily.uk/auth/v1/token?grant_type=password`, {
+                            method: 'POST',
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: idData.email, password: cleanPin })
+                        });
+                        if (authRes.ok) {
+                            const fullName = idData.name || 'Vorstand';
+                            const nameParts = fullName.split(' ');
+                            authenticatedUser = {
+                                id: cleanId,
+                                lizenz: String(idData.person_number || cleanId).padStart(6, '0'),
+                                vorname: nameParts[0] || fullName,
+                                nachname: nameParts.slice(1).join(' ') || '',
+                                name: fullName,
+                                role: idData.type || 'vorstand'
+                            };
+                        }
+                    }
+                }
+            } catch (authErr) {
+                console.warn("Admin-Auth Check Hinweis:", authErr);
+            }
+        }
+
+        if (authenticatedUser) {
+            localStorage.setItem('sportschuetzen_user', JSON.stringify(authenticatedUser));
+            syncOneSignal(authenticatedUser);
             errorDiv.style.display = 'none';
+
+            // Protokolliere Sitzung in public.login_sessions
+            try {
+                fetch(`${SUPABASE_REST_URL}/login_sessions`, {
+                    method: 'POST',
+                    headers: { ...getSupabaseHeaders(), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+                    body: JSON.stringify({
+                        session_id: 'pwa_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+                        username: authenticatedUser.name,
+                        role: authenticatedUser.role,
+                        user_agent: navigator.userAgent || 'PWA'
+                    })
+                }).catch(() => {});
+            } catch (_) {}
 
             // SSO-Check: Wenn von Website weitergeleitet, Session-Ticket zurücksenden
             const urlParams = new URLSearchParams(window.location.search);
             const redirectTarget = urlParams.get('redirect') || urlParams.get('returnUrl');
             if (redirectTarget) {
                 const sessionPayload = {
-                    id: userData.id,
-                    lizenz: userData.lizenz,
-                    name: userData.name,
-                    vorname: userData.vorname,
-                    nachname: userData.nachname,
-                    role: userData.role || 'member',
+                    id: authenticatedUser.id,
+                    lizenz: authenticatedUser.lizenz,
+                    name: authenticatedUser.name,
+                    vorname: authenticatedUser.vorname,
+                    nachname: authenticatedUser.nachname,
+                    role: authenticatedUser.role || 'member',
                     ts: Date.now()
                 };
                 const token = btoa(encodeURIComponent(JSON.stringify(sessionPayload)));
@@ -1138,14 +1198,14 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
             }
 
             document.getElementById('login-overlay').style.display = 'none';
-            showApp(userData);
+            showApp(authenticatedUser);
         } else {
-            errorDiv.textContent = result.error || "Login fehlgeschlagen. Bitte PIN überprüfen.";
+            errorDiv.textContent = "Login fehlgeschlagen. Bitte PIN oder Passwort überprüfen.";
             errorDiv.style.display = 'block';
         }
     } catch (e) {
         console.error("Login Fehler:", e);
-        errorDiv.textContent = (e.message && e.message !== "Failed to fetch") ? e.message : "Verbindungsfehler zum Backend. Bitte versuche es erneut.";
+        errorDiv.textContent = (e.message && e.message !== "Failed to fetch") ? e.message : "Verbindungsfehler zur Datenbank. Bitte versuche es erneut.";
         errorDiv.style.display = 'block';
     } finally {
         document.getElementById('login-btn').textContent = "Einloggen";

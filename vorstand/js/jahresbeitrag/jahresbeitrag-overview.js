@@ -657,28 +657,6 @@ async function jbSaveZahlung() {
               }).catch(e => console.warn('[Jahresbeitrag -> FiBu] Journal insert exception:', e));
           }
 
-          // Dual-Write zu Buchhaltung_GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-          /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-          const payload = splits.length > 1 ? {
-            action: 'addJournalEntries',
-            jahr: Number(r?.year || new Date().getFullYear()),
-            datum: datum,
-            beleg_nr: beleg || `PAY-${id}`,
-            entries: splits,
-            typ: isBar ? 'Kassa' : 'Bank'
-          } : {
-            action: 'addJournalEntry',
-            jahr: Number(r?.year || new Date().getFullYear()),
-            datum: datum,
-            beleg_nr: beleg || `PAY-${id}`,
-            beschreibung: splits[0].beschreibung,
-            konto_soll: splits[0].konto_soll,
-            konto_haben: splits[0].konto_haben,
-            betrag: splits[0].betrag,
-            typ: isBar ? 'Kassa' : 'Bank'
-          };
-          await apiFetch('buchhaltung', payload, 'POST');
-          ------------------------------------------------------- */
         }
       } catch (bhErr) {
         console.warn("⚠️ Fehler bei Buchhaltung Splitbuchung:", bhErr);
@@ -711,13 +689,6 @@ async function jbSaveZahlung() {
   } finally {
     btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Zahlung speichern';
   }
-}
-
-// Hilfsfunktion zur Kommunikation mit der Rechnungen_GAS Web-App über den Worker
-async function rechnungenApiFetch(payload) {
-  const response = await apiFetch('rechnungen', payload, 'POST');
-  const data = await response.json();
-  return data;
 }
 
 // Ermittelt ein Vorstandsmitglied anhand einer bestimmten Funktion (z.B. 'Kassier', 'Juniorenleiter Gewehr 50 m')
@@ -1213,13 +1184,6 @@ async function jbBerechnen() {
       }
     }
 
-    // 2. Dual-Write an GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    const res  = await apiFetch('jahresbeitrag', `action=berechnen&year=${_jbYear}`);
-    const data = await res.json();
-    if (!data.success && newlyCalculatedCount === 0) throw new Error(data.error);
-    ------------------------------------------------------- */
-
     alert(`✅ Beiträge für ${_jbYear} erfolgreich in Supabase berechnet!`);
     await loadJahresbeitragData(true, false);
   } catch(e) {
@@ -1245,23 +1209,27 @@ async function jbResetYear(mode) {
     return;
   }
   
-  showLoadingOverlay(`Setze das Jahr ${_jbYear} zurück (${mode === 'all' ? 'Alles' : 'Rechnungen'}) und berechne neu…`);
+  showLoadingOverlay(`Setze das Jahr ${_jbYear} in Supabase zurück (${mode === 'all' ? 'Alles' : 'Rechnungen'})…`);
   
   try {
-    const res = await apiFetch('jahresbeitrag', '', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'resetYear',
-        year: _jbYear,
-        mode: mode,
-        user: window.currentUser || 'frontend'
-      })
-    });
+    const supa = typeof getJahresbeitragSupabaseClient === 'function' ? getJahresbeitragSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar");
+
+    const yr = Number(_jbYear);
+    // Positionen für das Jahr löschen
+    const { error: posErr } = await supa.from('contributions_positions').delete().eq('year', yr);
+    if (posErr) console.warn("Supabase positions delete warning:", posErr);
+
+    // Beitrags-Header für das Jahr löschen
+    const { error: headErr } = await supa.from('contributions_header').delete().eq('year', yr);
+    if (headErr) console.warn("Supabase header delete warning:", headErr);
+
+    if (mode === 'all') {
+      const { error: partErr } = await supa.from('member_participations').delete().eq('year', yr);
+      if (partErr) console.warn("Supabase participations delete warning:", partErr);
+    }
     
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error);
-    
-    showToast(`🎉 Zurücksetzen des Jahres ${_jbYear} erfolgreich abgeschlossen!`);
+    showToast(`🎉 Zurücksetzen des Jahres ${_jbYear} in Supabase erfolgreich abgeschlossen!`);
     await loadJahresbeitragData(true, false);
   } catch (e) {
     alert("Fehler beim Zurücksetzen: " + e.message);

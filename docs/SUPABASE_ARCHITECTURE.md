@@ -1426,9 +1426,16 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
    - Kassen-Sammelbelege (`bhSaveKassaSammelbeleg`) buchen nativ in Supabase.
    - Entfernung des Legacy-Sheet-Import-Buttons in `buchhaltung-ui.js`.
 
-7. **Öffentliche Vereins-Website:**
-   - Entfernung von `WORKER_TERMINE_URL` und `GOOGLE_HAUS_KALENDER_FALLBACK` (`script.google.com`) in `sportschuetzen-website/frontend/js/main.js`.
-   - Termine beziehen sich direkt aus der Supabase REST API (`/termine`); Schützenhaus-Belegungen nutzen den Cloudflare Worker mit Supabase `rental_requests` als Fallback.
+8. **Endgültiges Kappen aller GAS- und Google-Sheet-Verbindungen (Systemweiter Audit):**
+   - **Mitglieder (`mitglieder-sync-ui.js` & `mitglieder-import-engine.js`):** Entfernung aller `apiFetch('mitglieder')`-Aufrufe (`mglCheckSyncDiff`, `mglApplyApprovedSync`, `mglExecuteSyncDirect`), Entfernung der Google Sheet Test-Kopie Verlinkung (`1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0`) und `TEST_SPREADSHEET_ID`; Ausrichtung der Sync-Cards auf native Supabase-Tabellen (`jm_shooters`, `contest_teams`, `inventar_items`, `admin_profiles`, `event_participants`, `gv_participants`); Audit-Log lädt direkt aus `public.member_history`.
+   - **Termine & Jahresprogramm (`termine-core.js`):** Bereinigung des Legacy-Sheet-Imports (`syncTermineFromLegacy`) und Entfernung auskommentierter Dual-Write- und GAS-Fallback-Blöcke.
+   - **Finanzbuchhaltung (`buchhaltung-core.js`):** Bereinigung von `migrateBuchhaltungFromGoogleSheets` (Entfernung der 4 parallelen GAS-Calls `getJournal`, `getKontenrahmen`, `getBudget`, `getBankRules`); 100% native Supabase-Persistierung.
+   - **Team Manager (`manager-core.js`):** Kappen des GAS-Imports in `migrateManagerFromGoogleSheets`.
+   - **KK-Jahresmeisterschaft (`jahresmeisterschaft-core.js`):** Kappen des GAS-Imports in `migrateJMFromGoogleSheets` für die aktuelle Saison und alle Archivjahre.
+   - **Vereinsinventar (`inventar-core.js` & `inventar-list.js`):** Bereinigung von `syncInventarFromLegacy` und `syncInventarMembers` sowie Entfernung aller auskommentierten GAS-Dual-Write-Blöcke beim Erfassen, Ändern und Löschen.
+   - **Portal-Kern & Auth (`main.js` & `mail.js`):** Entfernung des Notfall-Fallbacks auf `apiFetch('logins')` in `pingPresence` (Präsenz läuft strikt über RPC `ping_login_session`) und in `submitChangePassword` (Passwortänderung strikt via Supabase Auth `updateUser`); Umstellung des Mitglieder-Notfall-Ladens in `mail.js` auf direkten Supabase-Zugriff.
+   - **Bereinigung historischer Monolithen:** Umwandlung aller 11 veralteten Root-Dateien (`vermietung.js`, `umfragen.js`, `rechnungen.js`, `mitglieder.js`, `manager.js`, `jahresbeitrag.js`, `jahresmeisterschaft.js`, `buchhaltung.js`, `inventar.js`, `logins.js`, `gv.js`) in schlanke Bridges analog zu `termine.js` und `resultate.js`.
+   - **Explizite Ausnahmen:** Erhalt des offiziellen iCal-Kalenderfeeds für die Schützenhaus-Belegung (`calendar.google.com`) und des GMail SMTP-Transports via Supabase Edge Function `send-email` (`sportschuetzen.muhen@gmail.com`).
 
 ---
 
@@ -1439,7 +1446,7 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
 | **Phase 0** | **Zielarchitektur & Datenmodell** | Detailliertes PostgreSQL Schema, Tabellen, Fremdschlüssel, Enums, RLS-Entwurf | – | ✅ **Abgeschlossen** |
 | **Phase 1** | **Auth, Rollen & RLS** | Supabase Auth, `user_roles` Tabelle, JWT Hook, 70 Permissions, SQL-Hilfsfunktionen (`01_auth_and_roles.sql`) | Supabase Auth | ✅ **Abgeschlossen** |
 | **Phase 2** | **Pilotmodul ANLÄSSE** | Event-Management, Mengenrechner, Bestellwesen, Checklisten, Helfer/Stände, Vorlagen & Controlling (`02_events_module.sql`, `03_anon_dev_policies.sql`); Vollständige Integration ins Vorstand-Portal (`anlaesse.js`, `supabase-client.js`) | Supabase | ✅ **Abgeschlossen** |
-| **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Master, Hybridbetrieb mit GAS für PDF/QR/Kalender/Mails, Bereinigung WhatsApp/Clubdesk, Raiffeisen E-Banking Gmail-Scan & Doppelversand-Schutz; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Master) / Google Calendar (Termine) / GAS (PDF/Mail) | ✅ **Abgeschlossen** |
+| **Phase 3** | **Modul VERMIETUNG** | Vollständige Integration der Vermietungsverwaltung (Supabase Single Source of Truth, vollständige GAS-Entkopplung, native PDF/QR-Mietverträge, SMTP-Mailversand via Edge Function, Storno-Feedback & Belegungsanzeige; `04_rental_module.sql`, `05_rental_dev_policies.sql`, Vorstands-Cockpit `vorstand/js/vermietung/`) | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 4** | **Mitglieder & SSV-Import** | Browser-native SSV-Diff-Engine (ohne GAS), relationale Tabellen (`members`, `member_licenses`, `member_functions`, `member_training`, `member_history`), Dual-Write zu Google Sheet Test-Kopie | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 5** | **Anlässe & Umfragen (Eventplaner)** | Eigenständige Supabase-Migration des RSVP- und Umfragen-Moduls (`poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `07_eventplaner_module.sql`); Beibehaltung der Modultrennung. | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
 | **Phase 6** | **Jahresprogramm (Termine & Orte)** | Migration von Jahresprogramm, Schiessterminen und Austragungsorten & Maps (`09_termine_module.sql`); Einführung des zentralen UI-Standards `TableKit` (`ui-table-kit.js`) | Supabase (Single Source of Truth, GAS-Entkopplung komplett) | ✅ **Abgeschlossen & im Testbetrieb** |
@@ -1535,8 +1542,29 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
   - Strikte Prüfung des Rückgabewerts von `supa.storage.upload`: Schlägt ein Upload fehl, wird kein toter Storage-Link mehr in die Datenbank geschrieben.
 - **Stammdaten-Korrektur:**
   - Automatische Nachgenerierung und Ablage der QR-Rechnungen für bestehende Inventar-Verkäufe (`MV-26-3PH3` und `MV-26-5QGD`), wodurch alle hinterlegten Links sofort `HTTP 200 OK` liefern.
-- **Cache-Busting (`?v=20260926_7`):**
-  - Aktualisierung der Skript-Referenzen in `vorstand/index.html` für `rechnungen-ui.js`, `rechnungen-actions.js` und `pdf-engine.js`.
+
+### Phase 21.3: Vollständige GAS-Entkopplung Fachmodul Vermietung
+- **Ziel:** Vollständige Entkopplung der Schützenstuben-Vermietung von Google Apps Script, Google Docs und Google Sheets.
+- **Architektur & Komponenten:**
+  - **Single Source of Truth in Supabase:**
+    - `public.rental_requests`: Buchungen, Anfragen und Workflow-Status (`inquiry`, `contract_sent`, `reminded`, `paid`, `keys_issued`, `completed`, `cancelled`).
+    - `public.rental_pricing`: Tarife (`standard_tag`, `mitglied_rabatt`, `abend_kurz`).
+    - `public.rental_settings`: Dynamische Konfiguration (Preise, Vorlagen, IBAN, Kontaktdaten).
+    - `public.rental_status_logs`: Revisionssicherer Audit-Trail für jede Statusänderung.
+    - `public.rental_cancellation_feedbacks`: Mieter-Feedback bei Stornierungen inkl. Dringlichkeits-Alarm (`is_urgent`).
+  - **Mietvertrag & Schweizer QR-Rechnung (`generate-pdf` & `pdf-engine.js`):**
+    - Mietverträge werden über `window.vmGenerateRentalContractPdf` mit normkonformer Schweizer QR-Rechnung (SPC 0200 1) erzeugt.
+    - Automatischer Upload in Supabase Storage (`operatives-storage/contracts/{year}/`) und Verlinkung in `public.rental_requests.contract_file_url`.
+  - **E-Mail-Versand (`send-email` & `mail-engine.js`):**
+    - Alle Workflow-Mails (Mahnung, Zahlungsbestätigung, Schlüsselübergabe, Stornierung mit Feedbacklink, Vertragsversand) werden nativ über SMTP versendet.
+    - Revisionssichere Protokollierung jedes Versands direkt in `public.mail_logs`.
+  - **Frontend-Härtung (`vorstand/js/vermietung/`):**
+    - `vermietung-core.js`: Beseitigung aller `apiFetch('vermietung', ...)`-Fallbacks und des Sheet-Reconciliations-Pollings.
+    - `vermietung-manager.js`: Direkte Abwicklung aller Aktionen gegen Supabase ohne GAS.
+  - **Website & öffentliche Formulare (`sportschuetzen-website`):**
+    - `schuetzenhaus_vermietung.html`: Online-Reservationen und Terminanfragen schreiben direkt via Supabase REST API in `rental_requests`.
+    - `storno_feedback.html`: Rückmeldungen schreiben direkt via Supabase REST API in `rental_cancellation_feedbacks`.
+    - Cloudflare Worker Proxy-Endpunkt auf `vermietung_GAS` stillgelegt.
 
 ### Phase 22: Logins & Supabase Auth Integration (Portal, Website & PWA)
 - **Ziel:** Vollständige Ablösung der Google Sheets `login_daten`, `app_login` und `login_sessions` durch natives Supabase Auth, rollenbasierte Autorisierung (RLS) und Stammdaten-Synchronisation.

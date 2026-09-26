@@ -1083,15 +1083,8 @@ async function pingPresence() {
                 updatePresenceUI(data.onlineUsers);
                 return;
             }
-        }
-
-        // Fallback Übergang
-        const res = await apiFetch('logins', `action=ping&user=${encodeURIComponent(window.currentUser)}&sessionId=${sessId}`);
-        if (res.ok) {
-            const data = await res.json();
-            if (data.success && Array.isArray(data.onlineUsers)) {
-                updatePresenceUI(data.onlineUsers);
-            }
+        } else {
+            console.warn("⚠️ Supabase Client für Presence-Ping nicht bereit.");
         }
     } catch (e) {
         console.warn("⚠️ Fehler beim Presence-Ping:", e.message);
@@ -1277,25 +1270,13 @@ async function submitChangePassword(e) {
                 changed = true;
                 console.log("✅ Passwort via Supabase Auth aktualisiert!");
             }
+            if (updateErr) {
+                throw new Error("Fehler bei Supabase Auth: " + updateErr.message);
+            }
         }
 
-        // 2. Legacy Fallback falls nicht in Supabase eingeloggt
         if (!changed) {
-            let loginId = localStorage.getItem('portal_login_id');
-            if (!loginId) {
-                loginId = prompt("🔑 Sicherheits-Bestätigung:\n\nBitte gib zur Verifizierung deines Kontos deinen Benutzernamen oder deine PIN (AddressNr) ein:");
-                if (!loginId) return;
-                localStorage.setItem('portal_login_id', loginId);
-            }
-            const oldPwHash = await hashPassword(oldPw);
-            const res = await apiFetch('logins', {
-                action: 'changeMyPassword',
-                loginId: loginId,
-                oldPw: oldPwHash,
-                newPw: newPw
-            });
-            const data = await res.json();
-            if (!data.success) throw new Error(data.error || "Altes Passwort inkorrekt oder Benutzer nicht gefunden.");
+            throw new Error("Das Passwort konnte nicht aktualisiert werden. Bitte stelle sicher, dass du angemeldet bist.");
         }
 
         showSuccess("Passwort erfolgreich geändert! Bitte logge dich mit deinem neuen Passwort erneut ein.", 5000);

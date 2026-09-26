@@ -982,32 +982,7 @@ async function autoSeedManagerToSupabase(moduleKey, year, data, config) {
 async function migrateManagerFromGoogleSheets(moduleKey = null) {
     const targetModule = moduleKey || appState.activeModule;
     const config = CONTEST_CONFIG[targetModule];
-    const year = appState.activeYear || new Date().getFullYear();
-
-    if (!confirm(`Möchtest du die aktuellen Teams und Zuteilungen für "${config.title}" aus dem Google Sheet (${config.sheetName}) nach Supabase importieren?`)) {
-        return;
-    }
-
-    const supa = getManagerSupabaseClient();
-    if (!supa) {
-        alert("Fehler: Supabase-Client nicht verfügbar.");
-        return;
-    }
-
-    try {
-        if (typeof showToast === 'function') showToast("⏳ Lade Daten aus Google Sheets...", "info");
-        const params = `action=getManagerData&sheetName=${encodeURIComponent(config.sheetName)}`;
-        const res = await apiFetch('manager', params);
-        const data = JSON.parse(await res.text());
-        if (data.error) throw new Error(data.error);
-
-        await autoSeedManagerToSupabase(targetModule, year, data, config);
-        delete mailWizard.cachedModules[targetModule];
-        if (typeof showToast === 'function') showToast("✅ Import nach Supabase erfolgreich abgeschlossen!", "success");
-        await loadContestData(targetModule, true);
-    } catch (e) {
-        alert("Fehler beim Importieren: " + e.message);
-    }
+    alert(`ℹ️ Die Team- und Aufstellungsdaten für "${config ? config.title : 'Wettkämpfe'}" werden bereits nativ aus Supabase geladen.\n\nDas Legacy Google Sheet Backend ist entkoppelt.`);
 }
 window.migrateManagerFromGoogleSheets = migrateManagerFromGoogleSheets;
 

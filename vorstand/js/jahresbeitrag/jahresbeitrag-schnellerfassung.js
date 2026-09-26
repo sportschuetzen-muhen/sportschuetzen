@@ -977,13 +977,6 @@ function jbTriggerAutoSave(pnClean) {
         user: window.currentUser || 'frontend'
       };
 
-      // 2. Asynchroner Dual-Write an GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-      /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-      apiFetch('jahresbeitrag', '', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      }).catch(err => console.warn("⚠️ Dual-Write GAS Participations Auto-Save:", err));
-      ------------------------------------------------------- */
       
       // Memory Caches updaten
       if (!_jbParticipationsCache[pnClean]) _jbParticipationsCache[pnClean] = [];
@@ -1355,24 +1348,6 @@ async function jbSaveAllBulkLocalChanges() {
       }
     }
 
-    // 2. Dual-Write an GAS (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    const resSave = await apiFetch('jahresbeitrag', '', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'saveParticipationsBulk',
-        list: list,
-        licenses: licenses,
-        user: window.currentUser || 'frontend'
-      })
-    });
-    const saveJson = await resSave.json();
-    if (!saveJson.success && !supa) throw new Error(saveJson.error);
-
-    const resCalc = await apiFetch('jahresbeitrag', `action=berechnen&year=${year}&pn=${editedPNs.join(',')}`);
-    const calcJson = await resCalc.json();
-    if (!calcJson.success && !supa) throw new Error(calcJson.error);
-    ------------------------------------------------------- */
 
     showToast(`🎉 ${count} Schützen erfolgreich gespeichert und Beiträge neu berechnet!`);
     

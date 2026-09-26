@@ -64,22 +64,14 @@ async function loadMailData(forceReload = false) {
     if (typeof window.ensureMitgliederLoaded === 'function') {
       list = await window.ensureMitgliederLoaded(forceReload);
     } else {
-      const res  = await apiFetch('mitglieder', 'action=getAll');
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); }
-      catch (e) {
-        document.getElementById('mail-container').innerHTML =
-          `<div class="alert alert-danger"><strong>Parse-Fehler:</strong><br>
-           <pre style="font-size:0.75rem;max-height:200px;overflow:auto">${text.substring(0,500)}</pre></div>`;
-        return;
+      const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+      if (supa) {
+        const { data, error } = await supa.from('members').select('*').eq('is_active', true);
+        if (error) throw error;
+        list = data || [];
+      } else {
+        throw new Error('Supabase Client nicht verfügbar.');
       }
-      if (!data.success) {
-        document.getElementById('mail-container').innerHTML =
-          `<div class="alert alert-danger">Fehler: ${data.error || JSON.stringify(data)}</div>`;
-        return;
-      }
-      list = Array.isArray(data.data) ? data.data : [];
     }
 
     window._mglData = list;

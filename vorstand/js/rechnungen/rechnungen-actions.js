@@ -152,37 +152,10 @@ window.rnSavePayment = async function(event, invoiceId) {
     }
   }
 
-  // 2. Dual-Write: Asynchrone Spiegelung an Google Apps Script & Buchhaltung
-  const payload = {
-    action: 'saveZahlung',
-    invoiceId: invoiceId,
-    datum: datum,
-    methode: methode,
-    beleg: beleg || `PAY-${invoiceId}`,
-    skipBooking: !syncBookkeeping
-  };
-
-  try {
-    const response = await apiFetch('rechnungen', payload, 'POST');
-    const result = await response.json();
-
-    if (!result.success) {
-      throw new Error(result.error || "Fehler beim Speichern der Zahlung.");
-    }
-    
-    // Lazy sync after 1500ms
-    setTimeout(async () => {
-      await loadRechnungenData(true);
-    }, 1500);
-  } catch (err) {
-    console.error("❌ Optimistic Save Payment failed:", err);
-    // Revert optimistic update!
-    if (invIndex !== -1 && oldInv) {
-      window._invoices[invIndex] = oldInv;
-      window.renderRechnungen();
-    }
-    alert("❌ Fehler beim Speichern der Zahlung (Revert durchgeführt): " + err.message);
-  }
+  // UI Refresh nach Buchung in Supabase
+  setTimeout(async () => {
+    await loadRechnungenData(true);
+  }, 200);
 };
 
 
@@ -1555,17 +1528,9 @@ window.rnOpenCreateModal = async function(btnEl) {
   if (typeof window.rnEnsureContactsLoaded === 'function') {
     loadTasks.push(window.rnEnsureContactsLoaded().catch(e => console.warn("Contacts load error:", e)));
   } else if (!window._externalContacts || window._externalContacts.length === 0) {
-    loadTasks.push((async () => {
-      try {
-        const response = await apiFetch('rechnungen', 'action=getContacts');
-        const result = await response.json();
-        if (result.success) {
-          window._externalContacts = result.data || [];
-        }
-      } catch (err) {
-        console.error("⚠️ Fehler beim Laden der externen Kontakte:", err);
-      }
-    })());
+    if (typeof loadInvoiceContactsData === 'function') {
+      loadTasks.push(loadInvoiceContactsData().catch(e => console.warn("Contacts load error:", e)));
+    }
   }
 
   if (typeof rnInitializeTemplates === 'function') {
@@ -2312,16 +2277,6 @@ window.rnSaveCreateInvoice = async function(event) {
     }
   }
 
-  // 2. Dual-Write to Google Apps Script / Sheets (DEAKTIVIERT - Supabase ist Single Source of Truth)
-  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-  try {
-    const response = await apiFetch('rechnungen', payload, 'POST');
-    const result = await response.json();
-    if (!result.success) console.warn("⚠️ Dual-Write GAS returned error:", result.error);
-  } catch (err) {
-    console.warn("⚠️ Dual-write to Sheets failed (Supabase Master intact):", err);
-  }
-  ------------------------------------------------------- */
   
   // Schneller UI-Refresh direkt aus Supabase
   setTimeout(async () => {
@@ -2860,16 +2815,6 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
     }
   }
 
-  // 2. Dual-Write to Google Apps Script / Sheets (DEAKTIVIERT - Supabase ist Single Source of Truth)
-  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-  try {
-    const response = await apiFetch('rechnungen', payload, 'POST');
-    const result = await response.json();
-    if (!result.success) console.warn("⚠️ Dual-Write GAS update returned error:", result.error);
-  } catch (err) {
-    console.warn("⚠️ Dual-write edit to Sheets failed (Supabase Master intact):", err);
-  }
-  ------------------------------------------------------- */
   
   // Schneller UI-Refresh direkt aus Supabase
   setTimeout(async () => {
@@ -2907,16 +2852,6 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
     }
   }
 
-  // Dual-Write Delete to GAS / Sheets (DEAKTIVIERT - Supabase ist Single Source of Truth)
-  /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-  try {
-    const response = await apiFetch('rechnungen', { action: 'deleteInvoice', invoiceId }, 'POST');
-    const result = await response.json();
-    if (!result.success) console.warn("⚠️ Dual-Write GAS delete returned error:", result.error);
-  } catch (err) {
-    console.warn("⚠️ Dual-write delete to Sheets failed (Supabase Master intact):", err);
-  }
-  ------------------------------------------------------- */
   
   // Schneller UI-Refresh direkt aus Supabase
   setTimeout(async () => {

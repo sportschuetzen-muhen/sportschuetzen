@@ -34,8 +34,8 @@ async function loadResultateData(force = false) {
       const supaMembers = (membersResult.status === 'fulfilled' && !membersResult.value.error) ? (membersResult.value.data || []) : [];
       const supaTeams = (teamsResult.status === 'fulfilled' && !teamsResult.value.error) ? (teamsResult.value.data || []).map(t => t.team_name) : [];
 
-      // Wenn Supabase Daten liefert
-      if (supaRows && supaRows.length > 0) {
+      // Wenn Supabase Daten liefert (auch leeres Array wenn noch keine Zeilen erfasst)
+      if (supaRows !== null) {
         window._resultateIsSupabase = true;
         console.log(`✅ [Supabase] ${supaRows.length} Resultate-Zeilen geladen.`);
 
@@ -55,64 +55,23 @@ async function loadResultateData(force = false) {
         setStatus("Alles geladen (Supabase)", false);
         return;
       }
-      console.warn("⚠️ [Supabase] Noch keine Resultate-Zeilen für dieses Jahr vorhanden. Wechsle zu GAS-Fallback...");
+      throw new Error("Supabase Resultate-Abfrage fehlgeschlagen");
     } catch (supaErr) {
-      console.warn("⚠️ [Supabase] Fehler beim Laden der Resultate:", supaErr);
-    }
-  }
-
-  // 2. FALLBACK: Google Apps Script API
-  window._resultateIsSupabase = false;
-  return apiFetch("manager", "action=getResultateData&sheetName=aktuell_Grenzland")
-    .then(r => r.text())
-    .then(txt => {
-      let data;
-      try { data = JSON.parse(txt); } catch { throw new Error("Backend-Antwort ist kein JSON"); }
-      if (data.error) throw new Error(data.error);
-
-      resultateState.members = (data.members || []).map(m => ({
-        id: String(m.id),
-        vorname: m.vorname || "",
-        nachname: m.nachname || "",
-        email: m.email || ""
-      }));
-
-      const incoming = (data.rows || []).map(r => normalizeRow(r));
-      resultateState.rows = incoming;
-
-      resultateState.teams = buildTeamsList(data.teams || [], resultateState.rows);
-      resultateState.isDirty = false;
-
-      renderUI();
-      updateBackendBadge();
-      setStatus("Alles geladen (GAS)", false);
-
-      // Auto-Seed in Supabase im Hintergrund, falls Supabase aktiv ist
-      if (supa && incoming.length > 0) {
-        syncFallbackToSupabase(incoming, contestType, year);
-      }
-    })
-    .catch(e => {
+      console.error("❌ [Supabase] Fehler beim Laden der Resultate:", supaErr);
       const wrap = document.getElementById("resultate-wrap");
-      if (wrap) wrap.innerHTML = `<div class="alert alert-danger">Fehler: ${escapeHtml(e.message)}</div>`;
+      if (wrap) wrap.innerHTML = `<div class="alert alert-danger shadow-sm">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Fehler:</strong> Resultate konnten nicht aus Supabase geladen werden: ${escapeHtml(supaErr.message || String(supaErr))}
+      </div>`;
       setStatus("Fehler", false);
-    });
-}
-
-// Hilfsfunktion: Dual-Seed von GAS nach Supabase
-async function syncFallbackToSupabase(rows, contestType, year) {
-  const supa = getResultateSupabaseClient();
-  if (!supa || !rows || rows.length === 0) return;
-  try {
-    const payload = rows.map(r => mapContestResultToSupabase(r, contestType, year));
-    const { error } = await supa.from('contest_results').upsert(payload, { onConflict: 'contest_type,year,person_number' });
-    if (!error) {
-      console.log(`✅ [Supabase Seed] ${payload.length} Zeilen erfolgreich aus GAS nach Supabase gespiegelt.`);
-      window._resultateIsSupabase = true;
-      updateBackendBadge();
     }
-  } catch (err) {
-    console.warn("Supabase Seed Hinweis:", err);
+  } else {
+    const wrap = document.getElementById("resultate-wrap");
+    if (wrap) wrap.innerHTML = `<div class="alert alert-danger shadow-sm">
+      <i class="fas fa-exclamation-triangle me-2"></i>
+      <strong>Konfigurationsfehler:</strong> Supabase Client ist nicht initialisiert.
+    </div>`;
+    setStatus("Fehler", false);
   }
 }
 

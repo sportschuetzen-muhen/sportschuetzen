@@ -113,39 +113,7 @@ async function loadTermineData(force = false) {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────
-  // [GAS-FALLBACK DEAKTIVIERT 2026-09-21]
-  // Grund: Supabase ist Master. GAS-Read nicht mehr benötigt.
-  // Bei Bedarf wieder einkommentieren.
-  // ──────────────────────────────────────────────────────────────
-  // try {
-  //   const res = await apiFetch('termine', 'action=loadAdminData');
-  //   adminState = await res.json();
-  //   adminState._isSupabase = false;
-  //
-  //   if (adminState.dropdowns?.orteMitMaps) {
-  //     adminState.dropdowns.orteMitMaps = adminState.dropdowns.orteMitMaps
-  //       .filter(p => p?.[0]?.trim() || p?.[1]?.trim());
-  //   }
-  //
-  //   originalAdminState = JSON.parse(JSON.stringify(adminState));
-  //
-  //   if (window.AppCache) {
-  //     window.AppCache.set('termine', adminState, 120);
-  //   }
-  //
-  //   renderTermineUI(document.getElementById('termine-ui'));
-  //   updateLastSyncLabel('Zuletzt aktualisiert: Google Sheets (' + new Date().toLocaleTimeString() + ')');
-  //
-  //   // Falls Supabase erreichbar ist, aber noch leer war: 1-Klick Migration anbieten
-  //   if (supa && !adminState._isSupabase) {
-  //     showMigrationBanner();
-  //   }
-  // } catch (e) {
-  //   container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
-  // } finally {
-  //   showTermineOverlay(false);
-  // }
+  // Kein GAS-Fallback – Supabase ist die verbindliche Datenquelle
 
   // Kein GAS-Fallback mehr – Supabase ist einzige Datenquelle
   console.warn('⚠️ Supabase Client nicht verfügbar. Termine können nicht geladen werden.');
@@ -267,18 +235,7 @@ async function saveTermineData() {
       console.log('✅ Supabase erfolgreich aktualisiert.');
     }
 
-    // 2. DUAL-WRITE: Asynchron zu Google Apps Script spiegeln (DEAKTIVIERT - Supabase ist Single Source of Truth)
-    /* --- ZUM REAKTIVIEREN DIESEN BLOCK EINKOMMENTIEREN ---
-    try {
-      console.log('📡 Dual-Write zu Google Apps Script wird ausgeführt...');
-      apiFetch('termine', '', {
-        method: 'POST',
-        body: JSON.stringify(payloadGAS)
-      }).catch(err => console.warn('⚠️ Asynchroner Dual-Write Fehler:', err));
-    } catch (gasErr) {
-      console.warn('⚠️ Fehler beim Auslösen des Dual-Writes:', gasErr);
-    }
-    ------------------------------------------------------- */
+
 
     if (window.clearUnsaved) window.clearUnsaved();
     if (window.AppCache) window.AppCache.invalidate('termine');
@@ -297,57 +254,7 @@ async function saveTermineData() {
 // =========================================================
 //  1-KLICK IMPORT (Von Google Sheet nach Supabase)
 // =========================================================
-async function syncTermineFromLegacy() {
-  const supa = getTermineSupabaseClient();
-  if (!supa) {
-    alert('Supabase Client nicht bereit.');
-    return;
-  }
-
-  if (!confirm('Alle bestehenden Termine und Stammdaten jetzt aus dem Google Sheet nach Supabase importieren?')) return;
-
-  showTermineOverlay(true, 'Importiere Termine nach Supabase…');
-
-  try {
-    const res = await apiFetch('termine', 'action=loadAdminData');
-    const legacyData = await res.json();
-
-    const termine = (legacyData.termine || []).map((t, idx) => mapTerminToSupabase(t, idx));
-    const anlaesse = (legacyData.dropdowns?.anlaesse || []).filter(Boolean).map((name, idx) => ({
-      name: String(name).trim(),
-      category: 'Jahresprogramm',
-      sort_order: idx + 1
-    }));
-    const orte = (legacyData.dropdowns?.orteMitMaps || []).filter(p => p[0]).map((pair, idx) => ({
-      name: String(pair[0]).trim(),
-      map_link: String(pair[1] || '').trim(),
-      sort_order: idx + 1
-    }));
-
-    if (termine.length > 0) {
-      const { error: tErr } = await supa.from('termine').upsert(termine, { onConflict: 'id' });
-      if (tErr) throw tErr;
-    }
-
-    if (anlaesse.length > 0) {
-      await supa.from('termine_event_types').upsert(anlaesse, { onConflict: 'name' });
-    }
-
-    if (orte.length > 0) {
-      await supa.from('termine_locations').upsert(orte, { onConflict: 'name' });
-    }
-
-    if (window.AppCache) window.AppCache.invalidate('termine');
-    alert(`🎉 Migration erfolgreich!\n\n${termine.length} Termine, ${anlaesse.length} Anlass-Typen und ${orte.length} Orte wurden nach Supabase übertragen.`);
-    await loadTermineData(true);
-
-  } catch (err) {
-    console.error('Fehler bei Migration:', err);
-    alert('Fehler beim Importieren: ' + err.message);
-  } finally {
-    showTermineOverlay(false);
-  }
-}
+  alert('ℹ️ Alle Termine und Stammdaten werden bereits nativ aus Supabase geladen und gespeichert.\n\nDas Legacy Google Sheet Backend ist vollständig entkoppelt.');
 window.syncTermineFromLegacy = syncTermineFromLegacy;
 
 // =========================================================
@@ -360,7 +267,7 @@ function renderTermineContainerShell(container) {
         <div class="small text-muted" id="last-sync">Zuletzt aktualisiert: -</div>
         <div class="d-flex gap-2">
           <button class="btn btn-sm btn-outline-primary" onclick="syncTermineFromLegacy()" title="Bestehende Daten aus Google Sheets nach Supabase synchronisieren">
-            <i class="fas fa-sync-alt me-1"></i> Sheet-Sync / Import
+            <i class="fas fa-check-circle me-1"></i> Supabase Status
           </button>
         </div>
       </div>
@@ -370,21 +277,10 @@ function renderTermineContainerShell(container) {
   `;
 }
 
-function showMigrationBanner() {
-  const banner = document.getElementById('termine-migration-banner');
-  if (!banner) return;
-  banner.innerHTML = `
-    <div class="alert alert-info border-info d-flex justify-content-between align-items-center flex-wrap gap-2 my-2 py-2 px-3 rounded-3 shadow-sm">
-      <div>
-        <strong class="text-primary"><i class="fas fa-database me-2"></i>Supabase-Migration bereit:</strong>
-        Aktuell werden die Daten noch aus Google Sheets geladen. Du kannst alle Termine, Anlässe & Orte jetzt mit 1 Klick nach Supabase übernehmen!
-      </div>
-      <button class="btn btn-sm btn-primary fw-bold" onclick="syncTermineFromLegacy()">
-        <i class="fas fa-cloud-upload-alt me-1"></i> Jetzt nach Supabase migrieren
-      </button>
-    </div>
-  `;
+async function syncTermineFromLegacy() {
+  alert('ℹ️ Alle Termine und Stammdaten werden bereits nativ aus Supabase geladen und gespeichert.\n\nDas Legacy Google Sheet Backend ist vollständig entkoppelt.');
 }
+window.syncTermineFromLegacy = syncTermineFromLegacy;
 
 function updateLastSyncLabel(text) {
   const last = document.getElementById('last-sync');

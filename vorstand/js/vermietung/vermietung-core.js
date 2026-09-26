@@ -82,48 +82,26 @@ async function loadVermietungData(force = false) {
 
         loadedFromSupa = true;
         console.log(`✅ ${vermietungDaten.length} Vermietungen aus Supabase geladen.`);
-
-        // Automatischer Hintergrund-Abgleich für Raiffeisen-Zahlungseingänge aus Gmail / Sheet
-        setTimeout(() => {
-          reconcileRaiffeisenPaymentsFromSheet(supa);
-        }, 150);
+      } else if (resReqs.error) {
+        throw resReqs.error;
       }
     } catch (supaErr) {
-      console.warn("⚠️ Supabase Abfrage fehlgeschlagen, versuche Legacy-API:", supaErr);
-    }
-  }
-
-  // Fallback auf Legacy GAS-Proxy falls Supabase-Tabellen noch nicht migriert sind
-  if (!loadedFromSupa) {
-    try {
-      const [resReservations, resFeedback] = await Promise.all([
-        apiFetch('vermietung', 'action=getAll'),
-        apiFetch('vermietung', 'action=getFeedback')
-      ]);
-
-      const data = await resReservations.json();
-      if (data.success) {
-        vermietungDaten = (data.data || []).map(d => ({
-          ...d,
-          id: d.row || d.vertragsnr,
-          betrag_raw: parseFloat((d.mietbetrag || '0').replace(/[^\d.]/g, '') || 0)
-        }));
-      }
-
-      try {
-        const feedbackData = await resFeedback.json();
-        if (feedbackData.success) {
-          stornoFeedbackDaten = feedbackData.data;
-        }
-      } catch (errFeedback) {
-        console.warn("Feedback JSON Parser Fehler:", errFeedback);
-      }
-    } catch(e) {
-      console.error("Fehler beim Laden:", e);
+      console.error("❌ Supabase Abfrage fehlgeschlagen:", supaErr);
       if (container) {
-        container.innerHTML = `<div class="alert alert-danger">Fehler beim Laden des Cockpits: ${e.message}</div>`;
+        container.innerHTML = `
+          <div class="alert alert-danger my-4 p-4 shadow-sm rounded-3">
+            <h5 class="fw-bold"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden der Vermietungsdaten</h5>
+            <p class="mb-2">Die Vermietungsdaten konnten nicht aus Supabase geladen werden.</p>
+            <p class="small text-muted mb-0 font-monospace">${escapeHtml(supaErr.message || JSON.stringify(supaErr))}</p>
+          </div>
+        `;
         return;
       }
+    }
+  } else {
+    if (container) {
+      container.innerHTML = `<div class="alert alert-danger my-4">Supabase Client ist nicht initialisiert.</div>`;
+      return;
     }
   }
 
@@ -212,72 +190,4 @@ function showToast(msg) {
   return toast;
 }
 
-// Prüft im Hintergrund, ob Raiffeisen-Zahlungseingänge im Google Sheet vorhanden sind,
-// die in Supabase noch nicht als bezahlt markiert wurden, und synchronisiert diese automatisch.
-async function reconcileRaiffeisenPaymentsFromSheet(supa) {
-  if (!supa || typeof apiFetch !== 'function') return;
-  try {
-    const res = await apiFetch('vermietung', 'action=getAll');
-    const json = await res.json();
-    if (!json.success || !Array.isArray(json.data)) return;
-
-    let hasUpdates = false;
-
-    for (const sheetRow of json.data) {
-      const vnr = (sheetRow.vertragsnr || '').trim();
-      const statusStr = (sheetRow.status || '').toLowerCase();
-      const isPaidInSheet = statusStr.includes('03') || statusStr.includes('04') || statusStr.includes('zahlung erhalten');
-      const datumRaiffeisen = sheetRow.datum_raiffeisen || sheetRow.datum_zahlung || '';
-
-      if (vnr && isPaidInSheet) {
-        // Finde passenden Datensatz in Supabase-Liste
-        const local = vermietungDaten.find(x => x.vertragsnr === vnr);
-        if (local) {
-          const s = String(local.status || '').toLowerCase();
-          const alreadyPaidInSupa = s === 'paid' || s === 'keys_issued' || s === 'completed';
-
-          if (!alreadyPaidInSupa) {
-            console.log(`💳 Neuer Raiffeisen-Zahlungseingang für ${vnr} im Sheet erkannt. Synchronisiere nach Supabase...`);
-
-            let rDate = new Date().toISOString().split('T')[0];
-            if (datumRaiffeisen) {
-              if (datumRaiffeisen.includes('.')) {
-                const parts = datumRaiffeisen.split('.');
-                if (parts.length === 3) rDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-              } else {
-                rDate = datumRaiffeisen;
-              }
-            }
-
-            const updatePayload = {
-              status: 'paid',
-              is_paid: true,
-              datum_raiffeisen: rDate,
-              status_raiffeisen: 'E-Banking Eingang (automatisch abgeglichen)'
-            };
-
-            const { error: patchErr } = await supa
-              .from('rental_requests')
-              .update(updatePayload)
-              .eq('id', local.id);
-
-            if (!patchErr) {
-              local.status = 'paid';
-              local.datum_raiffeisen = typeof isoToDisplay === 'function' ? isoToDisplay(rDate) : rDate;
-              hasUpdates = true;
-            }
-          }
-        }
-      }
-    }
-
-    if (hasUpdates) {
-      console.log("✅ Raiffeisen-Zahlungen erfolgreich nach Supabase synchronisiert.");
-      // UI mit neuem Zahlungsstatus reaktiv auffrischen
-      renderVermietungCockpit(vermietungDaten);
-    }
-  } catch (err) {
-    console.warn("Hintergrund-Abgleich Raiffeisen fehlgeschlagen:", err);
-  }
-}
 
