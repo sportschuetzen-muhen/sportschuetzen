@@ -210,12 +210,14 @@ async function loginsSave() {
       const personnumber = parseInt(document.getElementById('lf-personnumber')?.value?.trim()) || null;
       const rolleRaw = document.getElementById('lf-rolle-custom')?.value?.trim() || document.getElementById('lf-rolle')?.value || 'vorstand';
       const rolleExtern = document.getElementById('lf-rolle-extern')?.value?.trim() || '';
+      const passwort = document.getElementById('lf-passwort')?.value?.trim() || '';
 
       if (!username) throw new Error("Benutzername ist Pflicht.");
       if (!email) throw new Error("E-Mail-Adresse ist Pflicht für das Supabase-Login.");
 
       const rolesArr = rolleRaw.split(',').map(r => r.trim()).filter(Boolean);
 
+      // 1. Profil in public.admin_profiles & public.user_roles speichern
       const { data, error } = await supa.rpc('save_admin_profile', {
         p_username: username,
         p_display_name: anzeigename || username,
@@ -226,7 +228,46 @@ async function loginsSave() {
       });
       if (error) throw error;
 
-      bootstrap.Modal.getInstance(document.getElementById('logins-modal'))?.hide();
+      // 2. Falls ein neues Passwort eingegeben wurde: Supabase Auth Registrierung / Sync
+      if (passwort) {
+        if (passwort.length < 6) throw new Error("Das Passwort muss mindestens 6 Zeichen lang sein.");
+        try {
+          const { data: signData, error: signErr } = await supa.auth.signUp({
+            email: email,
+            password: passwort,
+            options: {
+              data: { name: anzeigename || username }
+            }
+          });
+          if (!signErr && signData?.user?.id) {
+            await supa.from('admin_profiles').update({
+              auth_user_id: signData.user.id
+            }).eq('username', username);
+          }
+        } catch (authErr) {
+          console.warn("Hinweis zu Supabase Auth Provisioning:", authErr.message);
+        }
+      }
+
+      // 3. Modal sicher schliessen und Backdrops rückstandslos entfernen
+      const modalEl = document.getElementById('logins-modal');
+      if (modalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+        modalInstance.hide();
+      }
+      setTimeout(() => {
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+      }, 300);
+
+      // Suchfilter leeren, damit der neu gespeicherte Admin sofort in der Tabelle sichtbar ist
+      const searchInp = document.getElementById('logins-search');
+      if (searchInp && searchInp.value) {
+        searchInp.value = '';
+      }
+
       showSuccess('Admin-Profil erfolgreich in Supabase gespeichert!');
       await fetchLoginsData();
 
@@ -249,7 +290,18 @@ async function loginsSave() {
 
       if (error) throw error;
 
-      bootstrap.Modal.getInstance(document.getElementById('logins-modal'))?.hide();
+      const modalEl = document.getElementById('logins-modal');
+      if (modalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+        modalInstance.hide();
+      }
+      setTimeout(() => {
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+      }, 300);
+
       showSuccess('App-Mitglied PIN/Daten in Supabase gespeichert!');
       await fetchLoginsData();
     }
@@ -364,9 +416,39 @@ window.loginsOnMemberSelect = function(personNumber) {
     }
   }
 
-  // Falls Funktion vorhanden und Rolle extern noch leer
-  if (rolleExtInput && !rolleExtInput.value.trim() && m.Funktion) {
-    rolleExtInput.value = m.Funktion;
+  // Vorstandsfunktion / Rolle extern aus Stammdaten ermitteln
+  let detectedFunction = '';
+  // 1. Aus member_functions Cache
+  const cachedFns = window._mglFunktionenCache?.[pn] || [];
+  const activeFns = cachedFns.filter(f => !f.OfficialFunctionExitDate);
+  if (activeFns.length > 0) {
+    detectedFunction = activeFns.map(f => f.OfficialFunctionCategory || f.OfficialFunctionRemark).filter(Boolean).join(', ');
+  }
+  // 2. Aus Member-Objekt direkt
+  if (!detectedFunction && m.OfficialFunctionCategory) {
+    detectedFunction = m.OfficialFunctionCategory;
+  }
+  if (!detectedFunction && m.Funktion) {
+    detectedFunction = m.Funktion;
+  }
+  // 3. Aus bekannten Vereinsfunktionen
+  if (!detectedFunction) {
+    const knownRoles = {
+      '1070293': 'Mitgliederverwalter',
+      '1073722': 'Präsident / IT',
+      '1073588': 'Aktuar',
+      '1073746': 'Aktuarin',
+      '1073758': 'Beisitzer',
+      '1073943': 'Schützenmeister 10m',
+      '1080350': 'Schützenmeister 50m'
+    };
+    if (knownRoles[pn]) {
+      detectedFunction = knownRoles[pn];
+    }
+  }
+
+  if (rolleExtInput && detectedFunction) {
+    rolleExtInput.value = detectedFunction;
   }
 };
 
@@ -377,3 +459,43 @@ window.loginsOnPersonNumberInput = function(val) {
     sel.value = pn;
   }
 };
+
+window.loginsSendInvite = async function(email, username) {
+  if (!email) {
+    showError("Keine E-Mail-Adresse hinterlegt.");
+    return;
+  }
+  if (!confirm(`Möchtest du eine Aktivierungs- / Passwort-Reset-Mail an ${email} (${username || 'Admin'}) senden?`)) {
+    return;
+  }
+  try {
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    const { error } = await supa.auth.resetPasswordForEmail(email, {
+      redirectTo: 'https://sportschuetzen-muhen.ch'
+    });
+    if (error) throw error;
+
+    // Protokollieren in public.mail_logs (Projekt-Richtlinie 2)
+    try {
+      await supa.from('mail_logs').insert([{
+        recipient_email: email,
+        recipient_name: username || 'Admin',
+        subject: 'Aktivierung Vorstand-Zugang / Passwort setzen (Supabase Auth)',
+        status: 'gesendet',
+        sender_email: 'sportschuetzen.muhen@gmail.com',
+        sender_name: 'Sportschützen Muhen (Auth)',
+        sent_via: 'Supabase_Auth_GoTrue',
+        created_by: window.currentUser || 'admin'
+      }]);
+    } catch (logErr) {
+      console.warn("Mail-Log Protokollierung fehlgeschlagen:", logErr);
+    }
+
+    showSuccess(`✅ Aktivierungs-Mail erfolgreich an ${email} gesendet!`);
+  } catch (err) {
+    showError(`Fehler beim Senden der Aktivierungs-Mail: ${err.message}`);
+  }
+};
+

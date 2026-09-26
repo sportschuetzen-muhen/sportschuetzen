@@ -94,7 +94,8 @@ function loginsOpenAdd() {
   window._loginsEditMode = 'add';
   window._loginsEditRow  = null;
 
-  const modal = new bootstrap.Modal(document.getElementById('logins-modal'));
+  const modalEl = document.getElementById('logins-modal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 }
 
@@ -115,6 +116,7 @@ function loginsOpenEdit(record) {
   window._loginsEditMode = 'edit';
   window._loginsEditRow  = record;
 
-  const modal = new bootstrap.Modal(document.getElementById('logins-modal'));
+  const modalEl = document.getElementById('logins-modal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 }

@@ -322,11 +322,14 @@ function renderLoginDatenTable(rows, canWrite) {
       <td><span class="badge ${roleBadgeColor(r.rolle)} rounded-pill">${escapeHtml(r.rolle)}</span></td>
       <td class="fw-medium">${escapeHtml(r.anzeigename)}</td>
       <td class="text-muted small">${escapeHtml(r.mailadresse || r.mailanzeige || '—')}</td>
-      <td class="text-muted small">${escapeHtml(r.rolle_extern || '—')}</td>
+      <td class="text-muted small fw-medium">${escapeHtml(r.rolle_extern || '—')}</td>
       <td class="text-center">
         ${r.passwort_hash 
           ? '<span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 rounded-pill"><i class="fas fa-shield-alt me-1"></i>Supabase Auth</span>' 
-          : '<span class="badge bg-warning-subtle text-warning border border-warning-subtle py-1 px-2 rounded-pill"><i class="fas fa-clock me-1"></i>Ausstehend</span>'}
+          : `<div class="d-inline-flex align-items-center gap-1">
+               <span class="badge bg-warning-subtle text-warning border border-warning-subtle py-1 px-2 rounded-pill"><i class="fas fa-clock me-1"></i>Ausstehend</span>
+               ${canWrite && (r.mailadresse || r.mailanzeige) ? `<button class="btn btn-xs btn-outline-primary py-0 px-2 rounded-pill shadow-xs" style="font-size:0.72rem;" title="Aktivierungs- / Reset-Mail senden" onclick="loginsSendInvite('${escapeHtml(r.mailadresse || r.mailanzeige)}', '${escapeHtml(r.username)}')"><i class="fas fa-paper-plane me-1"></i>Einladen</button>` : ''}
+             </div>`}
       </td>
       <td class="text-end">${editBtn(r)}</td>
     </tr>`).join('');
@@ -577,12 +580,27 @@ function loginDatenForm(r) {
         ${r && r.passwort_hash ? '<div class="form-text text-success"><i class="fas fa-check-circle"></i> Hash vorhanden</div>' : '<div class="form-text text-danger"><i class="fas fa-times-circle"></i> Kein Hash gesetzt</div>'}
       </div>
       <div class="col-md-6">
-        <label class="form-label">E-Mail-Adresse</label>
+        <label class="form-label fw-bold">E-Mail-Adresse (Supabase Auth) *</label>
         <input type="email" class="form-control" id="lf-mailadresse" value="${escapeHtml(r ? (r.mailadresse || r.mailanzeige || '') : '')}" placeholder="name@email.ch">
+        <div class="form-text">Dient als Login-Adresse und für Passwort-Reset / Magic Link.</div>
       </div>
       <div class="col-md-6">
-        <label class="form-label">Rolle extern</label>
-        <input type="text" class="form-control" id="lf-rolle-extern" value="${v('rolle_extern')}" placeholder="z.B. Kassier">
+        <label class="form-label fw-bold">Vorstandsfunktion (z.B. Kassier, Aktuar) *</label>
+        <input type="text" class="form-control" id="lf-rolle-extern" value="${v('rolle_extern')}" placeholder="z.B. Mitgliederverwalter, Kassier, Aktuar..." list="vorstandsfunktionen-list">
+        <datalist id="vorstandsfunktionen-list">
+          <option value="Präsident">
+          <option value="Vizepräsident">
+          <option value="Kassier">
+          <option value="Aktuar">
+          <option value="Aktuarin">
+          <option value="Mitgliederverwalter">
+          <option value="Schützenmeister 10m">
+          <option value="Schützenmeister 50m">
+          <option value="Vermieter">
+          <option value="Materialwart">
+          <option value="Beisitzer">
+        </datalist>
+        <div class="form-text">Wird in der Übersicht als Vorstandsfunktion ausgewiesen.</div>
       </div>
     </div>`;
 }

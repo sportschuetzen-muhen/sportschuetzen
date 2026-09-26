@@ -376,6 +376,20 @@ BEGIN
         updated_at = now()
     RETURNING id, auth_user_id INTO v_admin_id, v_auth_uid;
 
+    -- Automatische Verknüpfung mit auth.users herstellen, falls noch nicht verknüpft
+    IF v_auth_uid IS NULL THEN
+        SELECT id INTO v_auth_uid 
+        FROM auth.users 
+        WHERE LOWER(email) = LOWER(TRIM(p_email)) 
+        LIMIT 1;
+
+        IF v_auth_uid IS NOT NULL THEN
+            UPDATE public.admin_profiles 
+            SET auth_user_id = v_auth_uid 
+            WHERE id = v_admin_id;
+        END IF;
+    END IF;
+
     -- Falls mit auth.users verknüpft: Rollen aktualisieren
     IF v_auth_uid IS NOT NULL AND p_roles IS NOT NULL THEN
         DELETE FROM public.user_roles WHERE user_id = v_auth_uid;
