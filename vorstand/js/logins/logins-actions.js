@@ -40,10 +40,13 @@ async function fetchLoginsData() {
       }
     }
 
+    const authEmails = new Set((admins || []).filter(x => x.auth_user_id && x.email).map(x => x.email.toLowerCase()));
+
     LoginsState.login_daten = (admins || []).map(a => {
       let rStr = 'vorstand';
-      if (a.auth_user_id && rolesMap[a.auth_user_id] && rolesMap[a.auth_user_id].length > 0) {
-        rStr = rolesMap[a.auth_user_id].join(',');
+      const effectiveAuthId = a.auth_user_id || (admins.find(x => x.auth_user_id && x.email && x.email.toLowerCase() === (a.email || '').toLowerCase())?.auth_user_id);
+      if (effectiveAuthId && rolesMap[effectiveAuthId] && rolesMap[effectiveAuthId].length > 0) {
+        rStr = rolesMap[effectiveAuthId].join(',');
       }
       return {
         id: a.id,
@@ -55,7 +58,7 @@ async function fetchLoginsData() {
         personnumber: a.person_number,
         rolle: rStr,
         rolle_extern: a.role_external || '',
-        passwort_hash: Boolean(a.auth_user_id)
+        passwort_hash: Boolean(a.auth_user_id || (a.email && authEmails.has(a.email.toLowerCase())))
       };
     });
 

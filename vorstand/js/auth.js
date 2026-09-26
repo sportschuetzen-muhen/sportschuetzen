@@ -347,9 +347,28 @@ async function submitForgotPassword(e) {
 
         if (resetErr) throw resetErr;
 
+        // Audit-Log in public.mail_logs (Single Source of Truth / Postausgang)
+        try {
+            await supa.from('mail_logs').insert([{
+                module_ref: 'auth',
+                record_id: 'pwd_reset_' + Date.now(),
+                recipient_email: targetEmail,
+                recipient_name: inputVal,
+                subject: 'Passwort zurücksetzen | Vorstandsportal Sportschützen Muhen',
+                body_snippet: `Passwort-Reset-Link angefordert für «${inputVal}» (${targetEmail}) via Supabase Auth`,
+                status: 'gesendet',
+                sender_email: 'sportschuetzen.muhen@gmail.com',
+                sender_name: 'Sportschützen Muhen (Auth)',
+                sent_via: 'Supabase_Auth_GoTrue',
+                created_by: 'vorstand_auth'
+            }]);
+        } catch (logErr) {
+            console.warn("Konnte mail_logs nicht aktualisieren:", logErr);
+        }
+
         if (alertDiv) {
             alertDiv.className = 'alert alert-success py-2.5 px-3 small mb-3';
-            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Ein Reset-Link wurde erfolgreich an <strong>${escapeHtml(targetEmail)}</strong> gesendet! Bitte prüfe deinen Posteingang.`;
+            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Ein Reset-Link wurde erfolgreich an <strong>${escapeHtml(targetEmail)}</strong> gesendet!<br><span class="mt-1 d-block">Bitte prüfe deinen Posteingang sowie den <strong>Spam-/Junk-Ordner</strong>.</span><small class="text-muted d-block mt-1"><i class="fas fa-paper-plane me-1"></i>Vorgang im System-Postausgang (Mail-Log) erfasst.</small>`;
             alertDiv.classList.remove('d-none');
         }
         if (btn) btn.classList.add('d-none');
@@ -358,6 +377,8 @@ async function submitForgotPassword(e) {
         let msg = err.message || 'Fehler beim Versenden des Links.';
         if (msg.includes('Error sending confirmation email') || msg.includes('unexpected_failure')) {
             msg = 'Der E-Mail-Dienst (GoTrue SMTP) auf der Supabase-Instanz konnte die Nachricht nicht versenden. Bitte mit Benutzername und Passwort anmelden oder den Server-Admin bezüglich SMTP kontaktieren.';
+        } else if (msg.includes('over_email_send_rate_limit')) {
+            msg = 'Aus Sicherheitsgründen kann nur eine Anfrage pro Minute gesendet werden. Bitte warte kurz vor einem erneuten Versuch.';
         }
         if (alertDiv) {
             alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
@@ -437,9 +458,28 @@ async function submitMagicLink(e) {
 
         if (otpErr) throw otpErr;
 
+        // Audit-Log in public.mail_logs (Single Source of Truth / Postausgang)
+        try {
+            await supa.from('mail_logs').insert([{
+                module_ref: 'auth',
+                record_id: 'magic_link_' + Date.now(),
+                recipient_email: targetEmail,
+                recipient_name: inputVal,
+                subject: 'Anmelde-Link (Magic Link) | Vorstandsportal Sportschützen Muhen',
+                body_snippet: `Einmalklick-Anmelde-Link angefordert für «${inputVal}» (${targetEmail}) via Supabase Auth`,
+                status: 'gesendet',
+                sender_email: 'sportschuetzen.muhen@gmail.com',
+                sender_name: 'Sportschützen Muhen (Auth)',
+                sent_via: 'Supabase_Auth_GoTrue',
+                created_by: 'vorstand_auth'
+            }]);
+        } catch (logErr) {
+            console.warn("Konnte mail_logs nicht aktualisieren:", logErr);
+        }
+
         if (alertDiv) {
             alertDiv.className = 'alert alert-success py-2.5 px-3 small mb-3';
-            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Der Anmelde-Link wurde an <strong>${escapeHtml(targetEmail)}</strong> gesendet! Klicke in der E-Mail auf den Link, um dich sofort anzumelden.`;
+            alertDiv.innerHTML = `<i class="fas fa-check-circle me-1"></i> Der Anmelde-Link wurde an <strong>${escapeHtml(targetEmail)}</strong> gesendet!<br><span class="mt-1 d-block">Klicke in der E-Mail auf den Link, um dich sofort anzumelden (bitte auch <strong>Spam-/Junk-Ordner</strong> prüfen).</span><small class="text-muted d-block mt-1"><i class="fas fa-paper-plane me-1"></i>Vorgang im System-Postausgang (Mail-Log) erfasst.</small>`;
             alertDiv.classList.remove('d-none');
         }
         if (btn) btn.classList.add('d-none');
@@ -450,6 +490,8 @@ async function submitMagicLink(e) {
             msg = 'Der E-Mail-Dienst (GoTrue SMTP) auf der Supabase-Instanz konnte die Nachricht nicht versenden. Bitte mit Benutzername und Passwort anmelden oder den Server-Admin bezüglich SMTP kontaktieren.';
         } else if (msg.includes('Signups not allowed for otp') || msg.includes('otp_disabled')) {
             msg = 'Für diese Vorstands-E-Mail existiert noch kein aktives Supabase-Auth-Konto. Bitte zuerst mit Benutzername und Passwort anmelden.';
+        } else if (msg.includes('over_email_send_rate_limit')) {
+            msg = 'Aus Sicherheitsgründen kann nur eine Anfrage pro Minute gesendet werden. Bitte warte kurz vor einem erneuten Versuch.';
         }
         if (alertDiv) {
             alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';

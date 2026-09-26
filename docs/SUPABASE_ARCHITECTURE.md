@@ -1545,13 +1545,14 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - `vorstand/index.html`: `bootstrap.bundle.min.js` in den `<head>` verschoben (Verfügbarkeit der Bootstrap-Modal-Engine vor Modulausführung); Deklarative `data-bs-toggle="modal"`-Attribute an «Per Mail anmelden» und «Passwort vergessen?».
     - `vorstand/index.html` (CSS): `margin: auto` auf `.login-card` für barrierefreies, zentriertes Scrollen auf Notebooks und niedrigen Viewports ohne Abschneiden von Formularen oder Links.
     - `vorstand/js/auth.js`: Behebung des `PGRST116`-Fehlers in `applyAuthenticatedUser` (sichere Auflösung bei geteilten Mail-Adressen mehrerer Benutzerkonten wie `admin` und `danhu`), automatische Synchronisation von `auth_user_id` in `admin_profiles` und robuster Fallback in Modal-Öffnungsfunktionen.
-    - `vorstand/js/auth.js`: **Strikte Vorab-Prüfung gegen `admin_profiles`** in `submitForgotPassword()` und `submitMagicLink()`: Verhindert irreführende Erfolgsmeldungen bei unbekannten Mailadressen (wie `@bluewin.ch`) und fängt Supabase GoTrue SMTP-Verbindungsfehler (`Error sending confirmation email`) mit verständlichen deutschsprachigen Hinweisen ab.
+    - `vorstand/js/auth.js`: **Strikte Vorab-Prüfung gegen `admin_profiles`** in `submitForgotPassword()` und `submitMagicLink()`: Verhindert irreführende Erfolgsmeldungen bei unbekannten Mailadressen (wie `@bluewin.ch`), fängt Supabase GoTrue SMTP-Verbindungsfehler (`Error sending confirmation email`) sowie Auth-Rate-Limits (`over_email_send_rate_limit`) mit verständlichen deutschsprachigen Hinweisen ab und protokolliert jede Anforderung automatisch in `public.mail_logs` (Projekt-Richtlinie 2).
+    - `vorstand/js/logins/logins-actions.js`: Robuste Auth-Status-Ermittlung in `login_daten` auch bei geteilten Vorstands-E-Mail-Adressen.
   - **Server-Level Auth SMTP & Domain-Konfiguration (CT 117):**
     - GoTrue Auth Daemon (`/opt/supabase/docker/.env`):
       - SMTP-Credentials: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587` (STARTTLS), `SMTP_USER=sportschuetzen.muhen@gmail.com`, `SMTP_ADMIN_EMAIL=sportschuetzen.muhen@gmail.com`, Google App-Passwort gesichert auf Serverebene (`chmod 600`, kein Git-Commit).
       - Domain Routing: `API_EXTERNAL_URL=https://supabase-muhen.danfamily.uk/auth/v1` (ermöglicht Verifizierungs- und Recovery-Links über mobiles Netz und von extern ohne interne IP-Blockade).
       - Whitelisting: `SITE_URL=https://sportschuetzen-muhen.ch` sowie `ADDITIONAL_REDIRECT_URLS` für `https://sportschuetzen-muhen.ch/*`, `https://sportschuetzen-muhen.github.io/*`, `https://sps-b55.pages.dev/*`, `http://localhost:8085/*` und `http://localhost:3000/*`.
-    - Live-Verifikation: Aufrufe von `/auth/v1/recover` und `/auth/v1/otp` quittieren mit HTTP `200 OK` und senden reale Mails über Gmail SMTP an das Postfach des Benutzers.
+    - Live-Provisioning & Verifikation: Auth-Konto `dan.hunziker@hotmail.ch` (ID `576b0cb4-6922-4a4d-914a-13d61053d0d0`) erfolgreich in `auth.users` initialisiert, mit `admin_profiles` und Rollen (`admin`, `vorstand`) verknüpft; Aufrufe von `/auth/v1/recover` und `/auth/v1/otp` quittieren mit HTTP `200 OK` und senden reale Mails über Gmail SMTP an das Postfach des Benutzers.
 
 ### Phase 24: Infomaniak Cut-Over & CalDAV
 - **Ziel:** Umzug der Vereinsdomain auf Infomaniak (Schweizer Hosting, DSG-konform).
