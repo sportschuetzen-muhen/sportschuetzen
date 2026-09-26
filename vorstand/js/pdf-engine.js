@@ -22,9 +22,12 @@
     const CLUB_IBAN = 'CH0680808003633131892';
     const CLUB_IBAN_FORMATTED = 'CH06 8080 8003 6331 3189 2';
     const CLUB_NAME = 'Sportschützen Muhen';
+    const CLUB_STREET = 'Schiessanlage Hard';
     const CLUB_ZIP = '5037';
     const CLUB_CITY = 'Muhen';
     const CLUB_COUNTRY = 'CH';
+    const CLUB_EMAIL = 'sportschuetzen.muhen@gmail.com';
+    const CLUB_WEBSITE = 'www.sportschuetzen-muhen.ch';
 
     /**
      * Erzeugt den standardisierten Schweizer QR-Rechnungstext nach SIX SPC 0200 1
@@ -256,6 +259,32 @@
         doc.text("CHF", 67, 285);
         doc.text(total.toFixed(2), 85, 285);
 
+        // QR-Code im Zahlteil (46x46 mm ab X=67, Y=209)
+        const qrFn = (typeof window.qrcode === 'function') ? window.qrcode : ((typeof qrcode === 'function') ? qrcode : null);
+        if (qrFn) {
+            try {
+                const qrText = (typeof window.createSwissQrBillPayload === 'function')
+                    ? window.createSwissQrBillPayload(options, recipient)
+                    : `${CLUB_IBAN}\n${total.toFixed(2)}\n${invId}`;
+                const qr = qrFn(0, 'M');
+                qr.addData(qrText);
+                qr.make();
+                const qrDataUrl = qr.createDataURL(4);
+                doc.addImage(qrDataUrl, 'PNG', 67, 209, 46, 46);
+
+                // Schweizer Kreuz im Zentrum (7x7 mm schwarzes Quadrat mit weissem Kreuz)
+                const cx = 67 + 23;
+                const cy = 209 + 23;
+                doc.setFillColor(0, 0, 0);
+                doc.rect(cx - 3.5, cy - 3.5, 7, 7, 'F');
+                doc.setFillColor(255, 255, 255);
+                doc.rect(cx - 0.75, cy - 2.5, 1.5, 5, 'F');
+                doc.rect(cx - 2.5, cy - 0.75, 5, 1.5, 'F');
+            } catch (qrErr) {
+                console.warn("⚠️ QR-Code Rendering im Client-Fallback fehlgeschlagen:", qrErr);
+            }
+        }
+
         // Blob erzeugen & in Supabase Storage hochladen
         const pdfBlob = doc.output('blob');
         const safeName = (recipient.nachname || recipient.name || 'Rechnung').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -324,13 +353,34 @@
 
         const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
+        // Positionen aus Cache oder Supabase nachladen
+        let positions = inv.positions || (window._invoicePositionsCache && window._invoicePositionsCache[invoiceId]) || [];
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        if ((!positions || positions.length === 0) && supa) {
+            try {
+                const { data: posData } = await supa.from('invoice_positions').select('*').eq('invoice_id', invoiceId).order('position_nr', { ascending: true });
+                if (posData && posData.length > 0) {
+                    positions = (typeof mapPositionFromSupabase === 'function') ? posData.map(mapPositionFromSupabase) : posData;
+                    if (!window._invoicePositionsCache) window._invoicePositionsCache = {};
+                    window._invoicePositionsCache[invoiceId] = positions;
+                    inv.positions = positions;
+                }
+            } catch (_) {}
+        }
+
+        const totalAmount = Number(inv.total_amount || (positions.reduce((s, p) => s + (Number(p.amount) || 0), 0)) || 0);
+
         const payload = {
             action: 'generate-invoice',
             invoiceId: invoiceId,
             recipient: recipient,
             sender: sender,
             layout: layout,
-            totalAmount: inv.total_amount,
+            positions: positions,
+            totalAmount: totalAmount,
             year: inv.year || new Date().getFullYear(),
             type: inv.type || 'Rechnung'
         };

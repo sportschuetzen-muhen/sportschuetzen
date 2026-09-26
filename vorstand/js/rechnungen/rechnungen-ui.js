@@ -725,12 +725,43 @@ window.rnOpenDetailsModal = async function(invoiceId) {
   modal.show();
 
   try {
-    const res = await apiFetch('rechnungen', { action: 'getInvoiceDetails', invoiceId });
-    const data = await res.json();
-    
-    if (data.success) {
-      const inv = data.invoice;
-      const positions = data.positions || [];
+    let inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim());
+    let positions = (window._invoicePositionsCache && window._invoicePositionsCache[String(invoiceId).trim()]) || [];
+
+    const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
+    if (supa) {
+      if (!inv) {
+        const { data: invRow } = await supa.from('invoices').select('*').eq('id', invoiceId).maybeSingle();
+        if (invRow) {
+          inv = (typeof mapInvoiceFromSupabase === 'function') ? mapInvoiceFromSupabase(invRow) : invRow;
+        }
+      }
+      if (!positions || positions.length === 0) {
+        const { data: posData } = await supa.from('invoice_positions').select('*').eq('invoice_id', invoiceId).order('position_nr', { ascending: true });
+        if (posData && posData.length > 0) {
+          positions = (typeof mapPositionFromSupabase === 'function') ? posData.map(mapPositionFromSupabase) : posData;
+          if (!window._invoicePositionsCache) window._invoicePositionsCache = {};
+          window._invoicePositionsCache[String(invoiceId).trim()] = positions;
+        }
+      }
+    }
+
+    if (!inv) {
+      throw new Error(`Rechnung ${invoiceId} wurde im System nicht gefunden.`);
+    }
+
+    if (!positions || positions.length === 0) {
+      positions = [{
+        position_nr: 1,
+        description: inv.type || 'Rechnungsposition',
+        quantity: 1,
+        unit_price: Number(inv.total_amount || 0),
+        amount: Number(inv.total_amount || 0),
+        type: 'standard'
+      }];
+    }
+
+    if (true) {
       
       const posRows = positions.map(p => {
         const qty = Number(p.quantity || 1);
@@ -875,8 +906,6 @@ window.rnOpenDetailsModal = async function(invoiceId) {
           storageKey: 'rn_detail_positions_table_cols'
         });
       }
-    } else {
-      throw new Error(data.error || "Unerwarteter Fehler.");
     }
   } catch (err) {
     document.getElementById('rn-details-modal-body').innerHTML = `

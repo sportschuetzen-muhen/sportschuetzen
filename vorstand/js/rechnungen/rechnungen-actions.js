@@ -2264,7 +2264,6 @@ window.rnSaveCreateInvoice = async function(event) {
           firma: recipientPayload.firma || null,
           vorname: recipientPayload.vorname || null,
           nachname: recipientPayload.nachname || null,
-          name: recipientPayload.name || finalInvoiceName,
           strasse: recipientPayload.strasse || null,
           plz: recipientPayload.plz || null,
           ort: recipientPayload.ort || null,
@@ -2315,31 +2314,47 @@ window.rnOpenEditModal = async function(invoiceId) {
   let recipient = null;
 
   try {
-    const res = await apiFetch('rechnungen', { action: 'getInvoiceDetails', invoiceId });
-    data = await res.json();
-    if (data.success) {
-      inv = data.invoice;
-      positions = data.positions || [];
-      recipient = data.recipient || null;
-    } else {
-      throw new Error(data.error || "Unerwarteter Fehler.");
+    inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim());
+    positions = (window._invoicePositionsCache && window._invoicePositionsCache[String(invoiceId).trim()]) || [];
+
+    const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
+    if (supa) {
+      if (!inv) {
+        const { data: invRow } = await supa.from('invoices').select('*').eq('id', invoiceId).maybeSingle();
+        if (invRow) {
+          inv = (typeof mapInvoiceFromSupabase === 'function') ? mapInvoiceFromSupabase(invRow) : invRow;
+        }
+      }
+      if (!positions || positions.length === 0) {
+        const { data: posData } = await supa.from('invoice_positions').select('*').eq('invoice_id', invoiceId).order('position_nr', { ascending: true });
+        if (posData && posData.length > 0) {
+          positions = (typeof mapPositionFromSupabase === 'function') ? posData.map(mapPositionFromSupabase) : posData;
+          if (!window._invoicePositionsCache) window._invoicePositionsCache = {};
+          window._invoicePositionsCache[String(invoiceId).trim()] = positions;
+        }
+      }
     }
-  } catch (err) {
-    console.warn("⚠️ getInvoiceDetails Server-Fehler, versuche lokalen Fallback:", err);
-    // Fallback: Aus lokalem Cache laden
-    inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+
     if (!inv) {
       hideLoadingOverlay();
-      alert("❌ Fehler beim Laden der Rechnungsdetails: " + err.message);
+      alert(`❌ Rechnung ${invoiceId} wurde nicht gefunden.`);
       return;
     }
-    positions = [{
-      position_nr: 1,
-      description: inv.type || 'Rechnungsposition',
-      quantity: 1,
-      unit_price: inv.total_amount || 0,
-      amount: inv.total_amount || 0
-    }];
+
+    if (!positions || positions.length === 0) {
+      positions = [{
+        position_nr: 1,
+        description: inv.type || 'Rechnungsposition',
+        quantity: 1,
+        unit_price: inv.total_amount || 0,
+        amount: inv.total_amount || 0
+      }];
+    }
+  } catch (err) {
+    console.warn("⚠️ Fehler beim Laden der Rechnungsdetails:", err);
+    hideLoadingOverlay();
+    alert("❌ Fehler beim Laden der Rechnungsdetails: " + err.message);
+    return;
   }
   hideLoadingOverlay();
 
@@ -4862,49 +4877,48 @@ window.rnSaveContactForm = async function(event) {
 
   showLoadingOverlay('Speichere externen Kontakt...');
   
-  // 1. Supabase PostgreSQL Master Save
-  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-  if (sb) {
-    try {
-      const targetId = id || ('EXT-' + Date.now());
-      await sb.from('external_contacts').upsert({
-        id: targetId,
-        typ: typ || 'privat',
-        kategorie: kategorie || null,
-        firma: firma || null,
-        abteilung: abteilung || null,
-        anrede: anrede || null,
-        vorname: vorname || null,
-        nachname: nachname || null,
-        name: name,
-        strasse: strasse || null,
-        adresszusatz: adresszusatz || null,
-        plz: plz || null,
-        ort: ort || null,
-        land: land || 'CH',
-        email: email || null,
-        telefon: telefon || null,
-        bemerkungen: bemerkungen || null,
-        updated_at: new Date().toISOString()
-      });
-      contactObj.id = targetId;
-      console.log(`✅ [Supabase] External contact ${targetId} saved.`);
-    } catch (sbErr) {
-      console.warn("⚠️ [Supabase] Contact upsert warning:", sbErr);
-    }
+  // 1. Supabase PostgreSQL Master Save (Single Source of Truth)
+  const sb = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
+  if (!sb) {
+    hideLoadingOverlay();
+    alert('❌ Fehler: Supabase-Client ist nicht verfügbar.');
+    return;
   }
 
+  const targetId = id || ('EXT-' + Date.now());
+  const sbContact = {
+    id: targetId,
+    typ: typ || 'privat',
+    kategorie: kategorie || null,
+    firma: firma || null,
+    abteilung: abteilung || null,
+    anrede: anrede || null,
+    vorname: vorname || null,
+    nachname: nachname || null,
+    strasse: strasse || null,
+    adresszusatz: adresszusatz || null,
+    plz: plz || null,
+    ort: ort || null,
+    land: land || 'CH',
+    email: email || null,
+    telefon: telefon || null,
+    bemerkungen: bemerkungen || null,
+    updated_at: new Date().toISOString()
+  };
+
   try {
-    const res = await apiFetch('rechnungen', { action: 'saveContact', contact: contactObj }, 'POST');
-    const result = await res.json();
-    if (!result.success) {
-      console.warn('⚠️ GAS contact save returned warning:', result.error);
+    const { error: sbErr } = await sb.from('external_contacts').upsert(sbContact);
+    if (sbErr) {
+      console.error("❌ [Supabase] External contact upsert error:", sbErr);
+      throw new Error(`Fehler beim Speichern in Supabase: ${sbErr.message}`);
     }
+    contactObj.id = targetId;
+    console.log(`✅ [Supabase] External contact ${targetId} saved.`);
     
-    showSuccess(result.message || 'Kontakt erfolgreich gespeichert.');
+    showSuccess('Kontakt erfolgreich gespeichert.');
     await loadInvoiceContactsData();
 
-    const savedId = result.id || contactObj.id || id;
+    const savedId = targetId;
 
     // Falls das "Neue Rechnung"-Modal geöffnet ist: Dropdown aktualisieren & Kontakt direkt anwählen
     const memberSelectEl = document.getElementById('rnc-member-select');
@@ -4956,7 +4970,9 @@ window.rnSaveContactForm = async function(event) {
     }
 
     if (window._rechnungenActiveTab === 'kontakte') {
-      renderActiveRechnungenTab();
+      if (typeof renderActiveRechnungenTab === 'function') {
+        renderActiveRechnungenTab();
+      }
     }
   } catch (err) {
     alert('❌ Fehler: ' + err.message);
@@ -4973,25 +4989,26 @@ window.rnDeleteContactPrompt = async function(contactId) {
   showLoadingOverlay('Lösche Kontakt...');
 
   // Supabase PostgreSQL Master Delete
-  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
-  if (sb) {
-    try {
-      await sb.from('external_contacts').delete().eq('id', String(contactId));
-      console.log(`✅ [Supabase] External contact ${contactId} deleted.`);
-    } catch (sbErr) {
-      console.warn("⚠️ [Supabase] Contact delete warning:", sbErr);
-    }
+  const sb = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
+  if (!sb) {
+    hideLoadingOverlay();
+    alert('❌ Fehler: Supabase-Client nicht verfügbar.');
+    return;
   }
 
   try {
-    const res = await apiFetch('rechnungen', { action: 'deleteContact', id: contactId }, 'POST');
-    const result = await res.json();
-    if (!result.success) throw new Error(result.error || 'Fehler beim Löschen');
+    const { error: sbErr } = await sb.from('external_contacts').delete().eq('id', String(contactId));
+    if (sbErr) {
+      throw new Error(`Fehler beim Löschen in Supabase: ${sbErr.message}`);
+    }
+    console.log(`✅ [Supabase] External contact ${contactId} deleted.`);
 
     showSuccess('Kontakt gelöscht.');
     window._externalContacts = window._externalContacts.filter(x => String(x.id).trim() !== String(contactId).trim());
     if (window._rechnungenActiveTab === 'kontakte') {
-      renderActiveRechnungenTab();
+      if (typeof renderActiveRechnungenTab === 'function') {
+        renderActiveRechnungenTab();
+      }
     }
   } catch (err) {
     alert('❌ Fehler: ' + err.message);

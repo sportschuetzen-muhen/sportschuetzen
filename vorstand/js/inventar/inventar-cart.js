@@ -391,9 +391,11 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
 
             // 1. Rechnungs-PDF via Supabase PDF-Engine erzeugen
             let pdfUrl = null;
+            let pdfStoragePath = null;
+            let pdfBase64 = null;
             if (typeof window.generatePdfViaEngine === 'function') {
                 try {
-                    const pdfRes = await window.generatePdfViaEngine({
+                    let pdfRes = await window.generatePdfViaEngine({
                         action: 'generate-invoice',
                         invoiceId: invoiceId,
                         recipient: payloadRechnung.recipient,
@@ -402,11 +404,44 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         year: new Date().getFullYear(),
                         type: 'Materialverkauf'
                     });
-                    if (pdfRes && pdfRes.pdfUrl) {
-                        pdfUrl = pdfRes.pdfUrl;
+                    if (!pdfRes || !pdfRes.success) {
+                        if (typeof window.generatePdfClientFallback === 'function') {
+                            pdfRes = await window.generatePdfClientFallback({
+                                invoiceId: invoiceId,
+                                recipient: payloadRechnung.recipient,
+                                positions: positions,
+                                totalAmount: totalAmount,
+                                year: new Date().getFullYear(),
+                                type: 'Materialverkauf'
+                            });
+                        }
+                    }
+                    if (pdfRes && (pdfRes.pdfUrl || pdfRes.storagePath || pdfRes.pdfBase64)) {
+                        pdfUrl = pdfRes.pdfUrl || null;
+                        pdfStoragePath = pdfRes.storagePath || null;
+                        pdfBase64 = pdfRes.pdfBase64 || null;
                     }
                 } catch (pdfErr) {
                     console.warn("⚠️ Supabase PDF-Engine Fehler bei Materialverkauf:", pdfErr);
+                    if (typeof window.generatePdfClientFallback === 'function') {
+                        try {
+                            const fbRes = await window.generatePdfClientFallback({
+                                invoiceId: invoiceId,
+                                recipient: payloadRechnung.recipient,
+                                positions: positions,
+                                totalAmount: totalAmount,
+                                year: new Date().getFullYear(),
+                                type: 'Materialverkauf'
+                            });
+                            if (fbRes && (fbRes.pdfUrl || fbRes.storagePath || fbRes.pdfBase64)) {
+                                pdfUrl = fbRes.pdfUrl || null;
+                                pdfStoragePath = fbRes.storagePath || null;
+                                pdfBase64 = fbRes.pdfBase64 || null;
+                            }
+                        } catch (fbErr) {
+                            console.warn("⚠️ PDF Client Fallback ebenfalls fehlgeschlagen:", fbErr);
+                        }
+                    }
                 }
             }
 
@@ -414,7 +449,23 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             let mailResult = null;
             if (memberEmail && memberEmail.includes('@') && typeof window.sendMailViaEngine === 'function') {
                 try {
-                    console.log("Sende Rechnung per E-Mail via Supabase Mail-Engine an", memberEmail);
+                    const attachments = [];
+                    if (pdfStoragePath) {
+                        attachments.push({
+                            filename: `Rechnung_${invoiceId}.pdf`,
+                            contentType: 'application/pdf',
+                            storagePath: pdfStoragePath,
+                            storageBucket: 'operatives-storage'
+                        });
+                    } else if (pdfBase64) {
+                        attachments.push({
+                            filename: `Rechnung_${invoiceId}.pdf`,
+                            contentType: 'application/pdf',
+                            contentBase64: pdfBase64.replace(/^data:application\/pdf;base64,/, '')
+                        });
+                    }
+
+                    console.log("Sende Rechnung per E-Mail via Supabase Mail-Engine an", memberEmail, "Anhänge:", attachments.length);
                     mailResult = await window.sendMailViaEngine({
                         to: memberEmail,
                         subject: `Rechnung ${invoiceId} – Materialverkauf | Sportschützen Muhen`,
@@ -423,7 +474,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         senderName: 'Sportschützen Muhen',
                         senderEmail: 'sportschuetzen.muhen@gmail.com',
                         moduleRef: 'rechnung',
-                        recordId: invoiceId
+                        recordId: invoiceId,
+                        attachments: attachments
                     });
                 } catch (mErr) {
                     console.warn("⚠️ Fehler beim Supabase-Mailversand:", mErr);
@@ -440,6 +492,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                 positions: positions,
                 memberEmail: memberEmail,
                 pdfUrl: pdfUrl,
+                pdfStoragePath: pdfStoragePath,
                 mailResult: mailResult
             });
         }
@@ -646,9 +699,11 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
 
         // 1. Rechnungs-PDF via Supabase PDF-Engine erzeugen
         let pdfUrl = null;
+        let pdfStoragePath = null;
+        let pdfBase64 = null;
         if (typeof window.generatePdfViaEngine === 'function') {
             try {
-                const pdfRes = await window.generatePdfViaEngine({
+                let pdfRes = await window.generatePdfViaEngine({
                     action: 'generate-invoice',
                     invoiceId: invoiceId,
                     recipient: payloadRechnung.recipient,
@@ -657,11 +712,44 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     year: new Date().getFullYear(),
                     type: 'Depot / Pfand'
                 });
-                if (pdfRes && pdfRes.pdfUrl) {
-                    pdfUrl = pdfRes.pdfUrl;
+                if (!pdfRes || !pdfRes.success) {
+                    if (typeof window.generatePdfClientFallback === 'function') {
+                        pdfRes = await window.generatePdfClientFallback({
+                            invoiceId: invoiceId,
+                            recipient: payloadRechnung.recipient,
+                            positions: positions,
+                            totalAmount: totalAmount,
+                            year: new Date().getFullYear(),
+                            type: 'Depot / Pfand'
+                        });
+                    }
+                }
+                if (pdfRes && (pdfRes.pdfUrl || pdfRes.storagePath || pdfRes.pdfBase64)) {
+                    pdfUrl = pdfRes.pdfUrl || null;
+                    pdfStoragePath = pdfRes.storagePath || null;
+                    pdfBase64 = pdfRes.pdfBase64 || null;
                 }
             } catch (pdfErr) {
                 console.warn("⚠️ Supabase PDF-Engine Fehler bei Pfand-Rechnung:", pdfErr);
+                if (typeof window.generatePdfClientFallback === 'function') {
+                    try {
+                        const fbRes = await window.generatePdfClientFallback({
+                            invoiceId: invoiceId,
+                            recipient: payloadRechnung.recipient,
+                            positions: positions,
+                            totalAmount: totalAmount,
+                            year: new Date().getFullYear(),
+                            type: 'Depot / Pfand'
+                        });
+                        if (fbRes && (fbRes.pdfUrl || fbRes.storagePath || fbRes.pdfBase64)) {
+                            pdfUrl = fbRes.pdfUrl || null;
+                            pdfStoragePath = fbRes.storagePath || null;
+                            pdfBase64 = fbRes.pdfBase64 || null;
+                        }
+                    } catch (fbErr) {
+                        console.warn("⚠️ PDF Client Fallback für Pfand ebenfalls fehlgeschlagen:", fbErr);
+                    }
+                }
             }
         }
 
@@ -669,7 +757,23 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         let mailResult = null;
         if (memberEmail && memberEmail.includes('@') && typeof window.sendMailViaEngine === 'function') {
             try {
-                console.log("Sende Pfand-Rechnung per E-Mail via Supabase Mail-Engine an", memberEmail);
+                const attachments = [];
+                if (pdfStoragePath) {
+                    attachments.push({
+                        filename: `Rechnung_${invoiceId}.pdf`,
+                        contentType: 'application/pdf',
+                        storagePath: pdfStoragePath,
+                        storageBucket: 'operatives-storage'
+                    });
+                } else if (pdfBase64) {
+                    attachments.push({
+                        filename: `Rechnung_${invoiceId}.pdf`,
+                        contentType: 'application/pdf',
+                        contentBase64: pdfBase64.replace(/^data:application\/pdf;base64,/, '')
+                    });
+                }
+
+                console.log("Sende Pfand-Rechnung per E-Mail via Supabase Mail-Engine an", memberEmail, "Anhänge:", attachments.length);
                 mailResult = await window.sendMailViaEngine({
                     to: memberEmail,
                     subject: `Rechnung ${invoiceId} – Depot / Pfand | Sportschützen Muhen`,
@@ -678,7 +782,8 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     senderName: 'Sportschützen Muhen',
                     senderEmail: 'sportschuetzen.muhen@gmail.com',
                     moduleRef: 'rechnung',
-                    recordId: invoiceId
+                    recordId: invoiceId,
+                    attachments: attachments
                 });
             } catch (mErr) {
                 console.warn("⚠️ Fehler beim Supabase-Mailversand:", mErr);
@@ -695,6 +800,7 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
             positions: positions,
             memberEmail: memberEmail,
             pdfUrl: pdfUrl,
+            pdfStoragePath: pdfStoragePath,
             mailResult: mailResult
         });
     } catch (err) {
@@ -714,6 +820,7 @@ async function saveInventarInvoiceToSupabase({
     positions,
     memberEmail,
     pdfUrl,
+    pdfStoragePath,
     mailResult
 }) {
     const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
@@ -735,6 +842,7 @@ async function saveInventarInvoiceToSupabase({
             mail_status: isSent ? 'gesendet' : 'entwurf',
             send_date: isSent ? nowIso : null,
             pdf_url: pdfUrl || mailResult?.pdfUrl || null,
+            pdf_storage_path: pdfStoragePath || mailResult?.storagePath || null,
             created_at: nowIso,
             updated_at: nowIso
         };

@@ -1504,8 +1504,22 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
   - **Frontend-Integration (`vorstand/js/pdf-engine.js`):**
     - Stellt `window.generatePdfViaEngine(options)` modulübergreifend bereit.
     - Ersetzt die alten GAS-Aufrufe in `rnGeneratePDFOnly` (Rechnungs-Cockpit), `jbGenerateInvoicePdfRemote` (Jahresbeitrag) und `vmGenerateRentalContractPdf` (Vermietung).
-    - Lokaler Browser-Fallback (`jsPDF`) bei Netzwerkunterbrüchen.
+    - Lokaler Browser-Fallback (`jsPDF` + `qrcode-generator`) bei Ausfall oder Unerreichbarkeit der Edge Function. Generiert normkonforme Schweizer QR-Rechnungen mit Vektor-QR-Code und Schweizerkreuz im Zahlteil.
+    - Vollständige Vereins-Stammdaten (`CLUB_NAME`, `CLUB_STREET`, `CLUB_ZIP`, `CLUB_CITY`, `CLUB_EMAIL`, `CLUB_IBAN_FORMATTED`) fest hinterlegt.
+    - Automatischer Upload der generierten Binärdaten in den Bucket `operatives-storage` und Verknüpfung der `pdf_url` und `pdf_storage_path` im Supabase-Datensatz.
     - Hilfsfunktion `window.createSwissQrBillPayload` für standardkonforme SPC-Payloads.
+
+### Phase 21.1: Vollständige GAS-Entkopplung & Modul-Härtung (Rechnungen & Inventar)
+- **Inventar-Verkauf & Pfand mit Rechnungsstellung (`vorstand/js/inventar/inventar-cart.js`):**
+  - Automatischer Fallback auf Client-PDF-Engine, falls Edge Function nicht antwortet.
+  - Verbindliche Übergabe von `attachments` (Base64 oder Storage-Pfad) an `window.sendMailViaEngine`, sodass Rechnungen und QR-Zahlscheine tatsächlich als PDF-Anhang per SMTP versendet werden.
+  - Speicherung von `pdf_url` und `pdf_storage_path` in `public.invoices`.
+- **Rechnungen Detail- & Bearbeitungsansicht (`vorstand/js/rechnungen/rechnungen-ui.js` & `rechnungen-actions.js`):**
+  - Vollständiger Rückbau des Legacy-GAS-Aufrufs `getInvoiceDetails`.
+  - Details und Positionen werden primär aus dem RAM-Cache (`window._invoices`, `window._invoicePositionsCache`) und Supabase REST (`invoices`, `invoice_positions`) bezogen. Neu im System generierte Rechnungen (z.B. `MV-26-3PH3`) werden sofort gefunden und mit allen Positionen dargestellt.
+- **Externe Kontakte Master-Verwaltung (`vorstand/js/rechnungen/rechnungen-actions.js`):**
+  - Bereinigung des Payload-Schemas beim Upsert in `public.external_contacts` (Entfernung der nicht existierenden Spalte `name`, welche zu PostgREST 400-Fehlern führte).
+  - Speicherung und Löschung (`rnDeleteContactPrompt`) laufen nun verbindlich und mit striktem Error-Handling über Supabase als Single Source of Truth ohne GAS-Fallbacks.
 
 ### Phase 22: Logins & Supabase Auth Integration (Portal, Website & PWA)
 - **Ziel:** Vollständige Ablösung der Google Sheets `login_daten`, `app_login` und `login_sessions` durch natives Supabase Auth, rollenbasierte Autorisierung (RLS) und Stammdaten-Synchronisation.
