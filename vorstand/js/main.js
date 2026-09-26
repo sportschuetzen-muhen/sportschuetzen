@@ -573,7 +573,22 @@ function showApp() {
     }
 
     const dbUserName = document.getElementById('dashboard-user-name');
-    if (dbUserName) dbUserName.innerText = currentUser;
+    if (dbUserName) dbUserName.innerText = currentUser || window.currentUser || '';
+
+    // Sidebar & Mobile Benutzeranzeige aktualisieren
+    const userInfo = document.getElementById('user-info');
+    if (userInfo) {
+        const uDisplay = window.currentUser || currentUser || 'Vorstand';
+        userInfo.innerHTML = `<span class="fw-semibold text-dark">${escapeHtml(uDisplay)}</span> <span class="badge bg-primary-subtle text-primary rounded-pill ms-1" style="font-size:0.7rem;">${escapeHtml(primaryRole)}</span>`;
+    }
+    const userBadgeMobile = document.getElementById('user-badge-mobile');
+    if (userBadgeMobile) userBadgeMobile.textContent = primaryRole;
+
+    // Etwaige hängende Modals und Backdrops zuverlässig entfernen (verhindert ausgegrauten Bildschirm)
+    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
 
     // Kacheln & Nav-Links nach data-roles filtern
     document.querySelectorAll('.role-protected').forEach(el => {
@@ -594,7 +609,7 @@ function showApp() {
         }
     });
 
-    // 1. Letzten Login ausgeben & in Modal einsetzen
+    // 1. Letzten Login ausgeben
     const lastLogin = localStorage.getItem('portal_last_login');
     const nowStr = new Date().toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' Uhr';
     localStorage.setItem('portal_last_login', nowStr);
@@ -602,14 +617,6 @@ function showApp() {
     const tsElem = document.getElementById('welcome-login-timestamp');
     if (tsElem) {
         tsElem.textContent = lastLogin || "Erste Anmeldung in dieser Sitzung";
-    }
-
-    // Modal Schritte zurücksetzen
-    const step1 = document.getElementById('welcome-step-login');
-    const step2 = document.getElementById('welcome-step-presence');
-    if (step1 && step2) {
-        step1.classList.remove('d-none');
-        step2.classList.add('d-none');
     }
 
     const lastLoginBanner = document.getElementById('last-login-banner');
@@ -628,15 +635,6 @@ function showApp() {
             `;
         }
     }
-
-    // Modal anzeigen
-    setTimeout(() => {
-        const welcomeModalEl = document.getElementById('welcome-security-modal');
-        if (welcomeModalEl) {
-            const welcomeModal = new bootstrap.Modal(welcomeModalEl);
-            welcomeModal.show();
-        }
-    }, 200);
 
     // 2. Online-Präsenz pingen
     startPresencePingTimer();
@@ -897,8 +895,9 @@ function setupGlobalChangeTracking() {
 
 // Hilfsfunktion zur Rollenprüfung
 function userHasRole(requiredRole) {
-    if (!currentRoles || currentRoles.length === 0) return false;
-    return currentRoles.includes(requiredRole.toLowerCase());
+    const roles = (window.currentRoles && window.currentRoles.length > 0) ? window.currentRoles : (currentRoles || []);
+    if (!roles || roles.length === 0) return false;
+    return roles.map(r => String(r).toLowerCase()).includes(requiredRole.toLowerCase());
 }
 
 // Matrix-Prüfung für Schreibrechte
@@ -926,7 +925,8 @@ function hasWriteAccess(module) {
     };
 
     const allowedRoles = writeRoles[module] || [];
-    return currentRoles.some(r => allowedRoles.includes(r));
+    const roles = (window.currentRoles && window.currentRoles.length > 0) ? window.currentRoles : (currentRoles || []);
+    return roles.some(r => allowedRoles.includes(String(r).toLowerCase()));
 }
 
 function navTo(viewId, el) {
@@ -1114,7 +1114,13 @@ function updatePresenceUI(onlineUsers) {
     const welcomeIcon = document.getElementById('presence-modal-icon');
     const welcomeAlert = document.getElementById('welcome-presence-alert');
 
-    if (!onlineUsers || onlineUsers.length === 0) {
+    const myName = (window.currentUser || '').toLowerCase();
+    const otherUsers = (onlineUsers || []).filter(u => {
+        const uName = (typeof u === 'string' ? u : (u.username || '')).trim().toLowerCase();
+        return uName && uName !== myName;
+    });
+
+    if (otherUsers.length === 0) {
         const aloneHtml = `
             <span class="badge bg-light text-muted border px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.8rem; font-weight: normal; border-radius: 20px;">
                 <span class="spinner-grow spinner-grow-sm text-success me-1 align-middle" style="width: 8px; height: 8px;" role="status"></span>
@@ -1158,7 +1164,11 @@ function updatePresenceUI(onlineUsers) {
             welcomeAlert.style.borderColor = "rgba(40,167,69,0.1)";
         }
     } else {
-        const namesHtml = onlineUsers.map(u => `<strong>${escapeHtml(u)}</strong>`).join(', ');
+        const namesHtml = otherUsers.map(u => {
+            const rawName = typeof u === 'string' ? u : (u.username || 'Vorstand');
+            return `<strong>${escapeHtml(rawName)}</strong>`;
+        }).join(', ');
+
         const warningHtml = `
             <span class="badge px-2.5 py-1.5 animate__animated animate__fadeIn" style="font-size: 0.8rem; font-weight: normal; color: #0f3a5d; background-color: #e8f0fe; border: 1px solid #c2dbfe; border-radius: 20px;">
                 <i class="fas fa-users-viewfinder text-primary me-1"></i>
@@ -1180,7 +1190,7 @@ function updatePresenceUI(onlineUsers) {
         // Mobile Header update
         if (mobilePresenceBanner) {
             mobilePresenceBanner.innerHTML = `
-                <span class="text-primary fw-bold" style="font-size: 0.65rem;"><i class="fas fa-users align-middle"></i> ${onlineUsers.length} online</span>
+                <span class="text-primary fw-bold" style="font-size: 0.65rem;"><i class="fas fa-users align-middle"></i> ${otherUsers.length} online</span>
             `;
         }
 
