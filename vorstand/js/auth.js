@@ -313,22 +313,31 @@ async function submitForgotPassword(e) {
     }
 
     try {
-        let targetEmail = inputVal.includes('@') ? inputVal : null;
+        let targetEmail = null;
 
-        // Falls Username / PersonNumber eingegeben wurde: auflösen
-        if (!targetEmail) {
-            try {
-                const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
-                if (res && res.success && res.email) {
-                    targetEmail = res.email;
-                }
-            } catch (rpcEx) {
-                console.warn("Identifier resolution failed:", rpcEx);
+        // 1. Zuerst via RPC auflösen (Username / SSV-Nummer / Mail)
+        try {
+            const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
+            if (res && res.success && res.type === 'admin' && res.email) {
+                targetEmail = res.email;
+            }
+        } catch (rpcEx) {
+            console.warn("Identifier resolution failed:", rpcEx);
+        }
+
+        // 2. Falls noch nicht gefunden und Eingabe eine E-Mail ist: strikt in admin_profiles prüfen
+        if (!targetEmail && inputVal.includes('@')) {
+            const { data: apList } = await supa.from('admin_profiles')
+                .select('email')
+                .ilike('email', inputVal.trim())
+                .limit(1);
+            if (apList && apList.length > 0) {
+                targetEmail = apList[0].email;
             }
         }
 
         if (!targetEmail) {
-            throw new Error(`Keine hinterlegte E-Mail-Adresse für «${inputVal}» gefunden. Bitte Admin kontaktieren.`);
+            throw new Error(`Keine hinterlegte Vorstands-E-Mail-Adresse für «${inputVal}» gefunden. Bitte die für das Vorstandsportal registrierte Adresse eingeben.`);
         }
 
         const redirectUrl = window.location.origin + window.location.pathname;
@@ -346,9 +355,13 @@ async function submitForgotPassword(e) {
         if (btn) btn.classList.add('d-none');
     } catch (err) {
         console.error("Fehler bei submitForgotPassword:", err);
+        let msg = err.message || 'Fehler beim Versenden des Links.';
+        if (msg.includes('Error sending confirmation email') || msg.includes('unexpected_failure')) {
+            msg = 'Der E-Mail-Dienst (GoTrue SMTP) auf der Supabase-Instanz konnte die Nachricht nicht versenden. Bitte mit Benutzername und Passwort anmelden oder den Server-Admin bezüglich SMTP kontaktieren.';
+        }
         if (alertDiv) {
             alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
-            alertDiv.textContent = err.message || 'Fehler beim Versenden des Links.';
+            alertDiv.textContent = msg;
             alertDiv.classList.remove('d-none');
         }
     } finally {
@@ -386,28 +399,39 @@ async function submitMagicLink(e) {
     }
 
     try {
-        let targetEmail = inputVal.includes('@') ? inputVal : null;
+        let targetEmail = null;
 
-        if (!targetEmail) {
-            try {
-                const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
-                if (res && res.success && res.email) {
-                    targetEmail = res.email;
-                }
-            } catch (rpcEx) {
-                console.warn("Identifier resolution failed:", rpcEx);
+        // 1. Zuerst via RPC auflösen (Username / SSV-Nummer / Mail)
+        try {
+            const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
+            if (res && res.success && res.type === 'admin' && res.email) {
+                targetEmail = res.email;
+            }
+        } catch (rpcEx) {
+            console.warn("Identifier resolution failed:", rpcEx);
+        }
+
+        // 2. Falls noch nicht gefunden und Eingabe eine E-Mail ist: strikt in admin_profiles prüfen
+        if (!targetEmail && inputVal.includes('@')) {
+            const { data: apList } = await supa.from('admin_profiles')
+                .select('email')
+                .ilike('email', inputVal.trim())
+                .limit(1);
+            if (apList && apList.length > 0) {
+                targetEmail = apList[0].email;
             }
         }
 
         if (!targetEmail) {
-            throw new Error(`Keine E-Mail-Adresse für «${inputVal}» gefunden. Bitte Admin kontaktieren.`);
+            throw new Error(`Keine hinterlegte Vorstands-E-Mail-Adresse für «${inputVal}» gefunden. Bitte die für das Vorstandsportal registrierte Adresse eingeben.`);
         }
 
         const redirectUrl = window.location.origin + window.location.pathname;
         const { error: otpErr } = await supa.auth.signInWithOtp({
             email: targetEmail,
             options: {
-                emailRedirectTo: redirectUrl
+                emailRedirectTo: redirectUrl,
+                shouldCreateUser: false
             }
         });
 
@@ -421,9 +445,15 @@ async function submitMagicLink(e) {
         if (btn) btn.classList.add('d-none');
     } catch (err) {
         console.error("Fehler bei submitMagicLink:", err);
+        let msg = err.message || 'Fehler beim Versenden des Anmelde-Links.';
+        if (msg.includes('Error sending confirmation email') || msg.includes('unexpected_failure')) {
+            msg = 'Der E-Mail-Dienst (GoTrue SMTP) auf der Supabase-Instanz konnte die Nachricht nicht versenden. Bitte mit Benutzername und Passwort anmelden oder den Server-Admin bezüglich SMTP kontaktieren.';
+        } else if (msg.includes('Signups not allowed for otp') || msg.includes('otp_disabled')) {
+            msg = 'Für diese Vorstands-E-Mail existiert noch kein aktives Supabase-Auth-Konto. Bitte zuerst mit Benutzername und Passwort anmelden.';
+        }
         if (alertDiv) {
             alertDiv.className = 'alert alert-danger py-2 px-3 small mb-3';
-            alertDiv.textContent = err.message || 'Fehler beim Versenden des Anmelde-Links.';
+            alertDiv.textContent = msg;
             alertDiv.classList.remove('d-none');
         }
     } finally {
