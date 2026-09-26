@@ -258,7 +258,10 @@ async function loadTermine() {
             if (existing) {
                 // Bestehenden Termin mit RSVP-Daten anreichern
                 existing.isRSVP = true;
-                existing.id = r.id; // RSVP-ID für Formular-Aktionen beibehalten
+                existing.id = r.id;
+                if (r.title) existing.title = r.title;
+                if (r.title) existing.titel = r.title;
+                if (r.titel) existing.titel = r.titel; // RSVP-ID für Formular-Aktionen beibehalten
                 existing.frage_begleitung = r.frage_begleitung;
                 existing.frage_essen = r.frage_essen;
                 existing.frage_grund = r.frage_grund;
@@ -446,6 +449,29 @@ function renderTermine(data, activeLizenz) {
         return isNaN(fallback.getTime()) ? null : fallback;
     };
 
+        // FORMULAR-SCHUTZ: Falls der Benutzer gerade ein RSVP-Formular ausfüllt,
+    // darf der asynchrone Hintergrund-Refresh das Formular nicht schliessen!
+    let openCardBackup = null;
+    let openCardId = null;
+    if (heroWrap) {
+        const activeFormInput = heroWrap.querySelector('input[type="number"], input[type="text"], textarea');
+        if (activeFormInput) {
+            const card = activeFormInput.closest('.hero-card, .poll-card');
+            if (card && card.id) {
+                openCardId = card.id;
+                openCardBackup = card.cloneNode(true);
+                const origInputs = card.querySelectorAll('input, textarea, select');
+                const cloneInputs = openCardBackup.querySelectorAll('input, textarea, select');
+                origInputs.forEach((inp, idx) => {
+                    if (cloneInputs[idx]) {
+                        cloneInputs[idx].value = inp.value;
+                        if (inp.checked !== undefined) cloneInputs[idx].checked = inp.checked;
+                    }
+                });
+            }
+        }
+    }
+
     wrap.innerHTML = "";
     if (heroWrap) heroWrap.innerHTML = "";
     
@@ -631,6 +657,14 @@ function renderTermine(data, activeLizenz) {
             </div>
         </div>`;
     });
+
+        // FORMULAR-SCHUTZ WIEDERHERSTELLEN:
+    if (openCardId && openCardBackup && heroWrap) {
+        const freshlyRendered = document.getElementById(openCardId);
+        if (freshlyRendered) {
+            freshlyRendered.replaceWith(openCardBackup);
+        }
+    }
 
     if (normalCount === 0) wrap.innerHTML = "Keine Termine gefunden.";
 }
@@ -1015,12 +1049,25 @@ window.updateRacletteCount = function(eventId) {
     if (cntEl) cntEl.value = total;
 };
 
+window.cancelRSVPForm = function() {
+    const activeForm = document.querySelector('#hero-rsvps input, #hero-rsvps textarea');
+    if (activeForm) {
+        const card = activeForm.closest('.hero-card, .poll-card');
+        if (card) card.remove();
+    }
+    loadTermine();
+};
+
 window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount = 1, currentEssen = 1, currentVegi = 0) {
     const heroCard = document.getElementById(`rsvp-${eventId}`);
     if (!heroCard) return;
 
     const t = (allTermine || []).find(x => String(x.id) === String(eventId));
-    const isRaclette = t && (String(t.titel || '') + ' ' + String(t.title || '') + ' ' + String(t.details || '')).toLowerCase().includes('raclette');
+    const cardText = heroCard.textContent || '';
+    const isRaclette = (
+        (t && (String(t.titel || '') + ' ' + String(t.title || '') + ' ' + String(t.details || '') + ' ' + String(t.dokument_url || '')).toLowerCase().includes('raclette')) ||
+        cardText.toLowerCase().includes('raclette')
+    );
 
     let html = `
         <div class="hero-card-inner">
@@ -1146,7 +1193,7 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount 
             </div>
             <div class="hero-actions" style="margin-top: 20px;">
                 <button class="hero-btn success" onclick="submitRSVP('${eventId}', true)">Speichern</button>
-                <button class="hero-btn error" style="background:#94a3b8;" onclick="loadTermine()">Abbruch</button>
+                <button class="hero-btn error" style="background:#94a3b8;" onclick="cancelRSVPForm()">Abbruch</button>
             </div>
         </div>
     `;
@@ -1184,7 +1231,7 @@ window.openAbmeldeForm = function(eventId) {
                 <button class="hero-btn error" style="flex:1;" onclick="submitRSVP('${eventId}', false)">
                     Abmeldung absenden
                 </button>
-                <button class="hero-btn" style="background:#94a3b8; color:white;" onclick="loadTermine()">
+                <button class="hero-btn" style="background:#94a3b8; color:white;" onclick="cancelRSVPForm()">
                     Zurück
                 </button>
             </div>
