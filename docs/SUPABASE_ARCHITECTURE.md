@@ -1550,7 +1550,7 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - GoTrue Auth Daemon (`/opt/supabase/docker/.env`):
       - SMTP-Credentials: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587` (STARTTLS), `SMTP_USER=sportschuetzen.muhen@gmail.com`, `SMTP_ADMIN_EMAIL=sportschuetzen.muhen@gmail.com`, Google App-Passwort gesichert auf Serverebene (`chmod 600`, kein Git-Commit).
       - Domain Routing: `API_EXTERNAL_URL=https://supabase-muhen.danfamily.uk/auth/v1` (ermöglicht Verifizierungs- und Recovery-Links über mobiles Netz und von extern ohne interne IP-Blockade).
-      - Whitelisting: `SITE_URL=https://sportschuetzen-muhen.ch` sowie `ADDITIONAL_REDIRECT_URLS` für `https://sportschuetzen-muhen.ch/*`, `https://sportschuetzen-muhen.github.io/*`, `http://localhost:8085/*` und `http://localhost:3000/*`.
+      - Whitelisting: `SITE_URL=https://sportschuetzen-muhen.ch` sowie `ADDITIONAL_REDIRECT_URLS` für `https://sportschuetzen-muhen.ch/*`, `https://sportschuetzen-muhen.github.io/*`, `https://sps-b55.pages.dev/*`, `http://localhost:8085/*` und `http://localhost:3000/*`.
     - Live-Verifikation: Aufrufe von `/auth/v1/recover` und `/auth/v1/otp` quittieren mit HTTP `200 OK` und senden reale Mails über Gmail SMTP an das Postfach des Benutzers.
 
 ### Phase 24: Infomaniak Cut-Over & CalDAV
