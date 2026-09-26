@@ -1003,36 +1003,143 @@ window.addEventListener('load', () => {
 });
 
 // --- RSVP API ---
+window.updateRacletteCount = function(eventId) {
+    const s = parseInt(document.getElementById(`cat-schiess-${eventId}`)?.value) || 0;
+    const p = parseInt(document.getElementById(`cat-partner-${eventId}`)?.value) || 0;
+    const k = parseInt(document.getElementById(`cat-kinder-${eventId}`)?.value) || 0;
+    const g = parseInt(document.getElementById(`cat-gratis-${eventId}`)?.value) || 0;
+    const total = s + p + k + g;
+    const totEl = document.getElementById(`cat-total-${eventId}`);
+    if (totEl) totEl.textContent = total;
+    const cntEl = document.getElementById(`input-count-${eventId}`);
+    if (cntEl) cntEl.value = total;
+};
+
 window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount = 1, currentEssen = 1, currentVegi = 0) {
     const heroCard = document.getElementById(`rsvp-${eventId}`);
     if (!heroCard) return;
 
+    const t = (allTermine || []).find(x => String(x.id) === String(eventId));
+    const isRaclette = t && (String(t.titel || '') + ' ' + String(t.title || '') + ' ' + String(t.details || '')).toLowerCase().includes('raclette');
+
     let html = `
         <div class="hero-card-inner">
-            <h2 style="font-size:1.1rem; color: #1e293b; margin-bottom:15px;">Zusatzinfos</h2>
-            <div style="display:flex; flex-direction:column; gap:12px; text-align:left;">
     `;
 
-    if (asksBegleitung) {
-        html += `
-            <div>
-                <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Personen (inkl. dir):</label>
-                <input type="number" id="input-count-${eventId}" value="${currentCount}" min="1" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
-            </div>
-        `;
-    }
+    if (isRaclette) {
+        // --- SPEZIFISCHES FORMULAR FÜR RACLETTE- / ESSENS-ANLASS ---
+        let sCount = currentCount > 0 ? 1 : 0;
+        let pCount = 0;
+        let kCount = 0;
+        let gCount = 0;
 
-    if (asksEssen) {
+        if (t && t.grund) {
+            const mS = t.grund.match(/(\d+)x?\s*Schiessend/i);
+            const mP = t.grund.match(/(\d+)x?\s*Partner/i);
+            const mK = t.grund.match(/(\d+)x?\s*Kinder\s*6-12/i);
+            const mG = t.grund.match(/(\d+)x?\s*Kinder\s*<6/i);
+            if (mS || mP || mK || mG) {
+                sCount = mS ? parseInt(mS[1]) : 0;
+                pCount = mP ? parseInt(mP[1]) : 0;
+                kCount = mK ? parseInt(mK[1]) : 0;
+                gCount = mG ? parseInt(mG[1]) : 0;
+            } else if (currentCount > 1) {
+                sCount = 1;
+                pCount = currentCount - 1;
+            }
+        } else if (currentCount > 1) {
+            sCount = 1;
+            pCount = currentCount - 1;
+        }
+
         html += `
-            <div>
-                <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Standard):</label>
-                <input type="number" id="input-essen-${eventId}" value="${currentEssen}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
-            </div>
-            <div style="margin-top:12px;">
-                <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Vegetarisch):</label>
-                <input type="number" id="input-vegi-${eventId}" value="${currentVegi}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
-            </div>
+            <h2 style="font-size:1.15rem; color:#1e293b; margin-top:0; margin-bottom:4px;">🧀 Anmeldung & Menüwahl</h2>
+            <p style="font-size:0.85rem; color:#64748b; margin-top:0; margin-bottom:14px;">Mittagessen inkl. Getränke (Alkoholfrei)</p>
+            <div style="display:flex; flex-direction:column; gap:12px; text-align:left;">
         `;
+
+        if (asksBegleitung) {
+            html += `
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                    <div style="font-size:0.85rem; font-weight:700; color:#334155; margin-bottom:10px;">👥 Personen & Kosten:</div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label for="cat-schiess-${eventId}" style="font-size:0.85rem; color:#1e293b; font-weight:500;">🎯 Schiessende (25 Fr.):</label>
+                        <input type="number" id="cat-schiess-${eventId}" value="${sCount}" min="0" max="10" oninput="updateRacletteCount('${eventId}')" style="width:65px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:center; font-size:0.95rem;">
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label for="cat-partner-${eventId}" style="font-size:0.85rem; color:#1e293b; font-weight:500;">👫 Partner (22 Fr.):</label>
+                        <input type="number" id="cat-partner-${eventId}" value="${pCount}" min="0" max="10" oninput="updateRacletteCount('${eventId}')" style="width:65px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:center; font-size:0.95rem;">
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label for="cat-kinder-${eventId}" style="font-size:0.85rem; color:#1e293b; font-weight:500;">🧒 Kinder 6–12 Jahre (10 Fr.):</label>
+                        <input type="number" id="cat-kinder-${eventId}" value="${kCount}" min="0" max="10" oninput="updateRacletteCount('${eventId}')" style="width:65px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:center; font-size:0.95rem;">
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label for="cat-gratis-${eventId}" style="font-size:0.85rem; color:#1e293b; font-weight:500;">👶 Kinder unter 6 Jahre (Gratis):</label>
+                        <input type="number" id="cat-gratis-${eventId}" value="${gCount}" min="0" max="10" oninput="updateRacletteCount('${eventId}')" style="width:65px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:center; font-size:0.95rem;">
+                    </div>
+
+                    <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #cbd5e1; display:flex; justify-content:space-between; align-items:center; font-size:0.85rem; font-weight:700; color:#475569;">
+                        <span>Total Personen:</span>
+                        <span id="cat-total-${eventId}" style="color:#0f172a; font-size:0.95rem;">${currentCount}</span>
+                    </div>
+                    <input type="hidden" id="input-count-${eventId}" value="${currentCount}">
+                </div>
+            `;
+        } else {
+            html += `<input type="hidden" id="input-count-${eventId}" value="1">`;
+        }
+
+        if (asksEssen) {
+            html += `
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                    <div style="font-size:0.85rem; font-weight:700; color:#334155; margin-bottom:10px;">🧀 Menüauswahl:</div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label for="input-essen-${eventId}" style="font-size:0.85rem; color:#1e293b; font-weight:500;">🧀 Raclette (Portionen):</label>
+                        <input type="number" id="input-essen-${eventId}" value="${currentEssen}" min="0" max="10" style="width:65px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:center; font-size:0.95rem;">
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label for="input-vegi-${eventId}" style="font-size:0.85rem; color:#1e293b; font-weight:500;">🍝 Teigwaren mit Sauce:</label>
+                        <input type="number" id="input-vegi-${eventId}" value="${currentVegi}" min="0" max="10" style="width:65px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:center; font-size:0.95rem;">
+                    </div>
+                </div>
+            `;
+        }
+
+    } else {
+        // --- STANDARD-FORMULAR FÜR ALLE ANDEREN ANLÄSSE ---
+        html += `
+            <h2 style="font-size:1.1rem; color: #1e293b; margin-bottom:15px;">Zusatzinfos</h2>
+            <div style="display:flex; flex-direction:column; gap:12px; text-align:left;">
+        `;
+
+        if (asksBegleitung) {
+            html += `
+                <div>
+                    <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Personen (inkl. dir):</label>
+                    <input type="number" id="input-count-${eventId}" value="${currentCount}" min="1" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                </div>
+            `;
+        }
+
+        if (asksEssen) {
+            html += `
+                <div>
+                    <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Standard):</label>
+                    <input type="number" id="input-essen-${eventId}" value="${currentEssen}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                </div>
+                <div style="margin-top:12px;">
+                    <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Vegetarisch):</label>
+                    <input type="number" id="input-vegi-${eventId}" value="${currentVegi}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                </div>
+            `;
+        }
     }
 
     html += `
@@ -1111,14 +1218,42 @@ window.submitRSVP = async function(eventId, attending) {
     let grund = '';
     
     if (attending) {
-        const countInput = document.getElementById(`input-count-${eventId}`);
-        if (countInput) count = parseInt(countInput.value) || 1;
+        const catSchiess = document.getElementById(`cat-schiess-${eventId}`);
+        if (catSchiess) {
+            const s = parseInt(catSchiess.value) || 0;
+            const p = parseInt(document.getElementById(`cat-partner-${eventId}`)?.value) || 0;
+            const k = parseInt(document.getElementById(`cat-kinder-${eventId}`)?.value) || 0;
+            const g = parseInt(document.getElementById(`cat-gratis-${eventId}`)?.value) || 0;
+            count = s + p + k + g;
+            if (count === 0) {
+                alert('Bitte gib mindestens 1 Person an.');
+                return;
+            }
+            const parts = [];
+            if (s > 0) parts.push(`${s}x Schiessend`);
+            if (p > 0) parts.push(`${p}x Partner`);
+            if (k > 0) parts.push(`${k}x Kinder 6-12`);
+            if (g > 0) parts.push(`${g}x Kinder <6`);
+            grund = parts.join(', ');
+        } else {
+            const countInput = document.getElementById(`input-count-${eventId}`);
+            if (countInput) count = parseInt(countInput.value) || 1;
+        }
         
         const essenInput = document.getElementById(`input-essen-${eventId}`);
         if (essenInput) essen = parseInt(essenInput.value) || 0;
 
         const vegiInput = document.getElementById(`input-vegi-${eventId}`);
         if (vegiInput) vegi = parseInt(vegiInput.value) || 0;
+
+        // Plausibilitätsprüfung für Menüs bei Essensabfrage
+        if (catSchiess && (essenInput || vegiInput)) {
+            const totalMenues = essen + vegi;
+            if (totalMenues !== count) {
+                const ok = confirm(`Hinweis:\nDu hast ${count} Person(en) angemeldet, aber ${totalMenues} Menü(s) ausgewählt (Raclette: ${essen}, Teigwaren: ${vegi}).\n\nMöchtest du trotzdem so speichern?`);
+                if (!ok) return;
+            }
+        }
     } else {
         const grundInput = document.getElementById(`input-grund-${eventId}`);
         if (grundInput) grund = grundInput.value.trim();
@@ -1139,7 +1274,6 @@ window.submitRSVP = async function(eventId, attending) {
         alert("Fehler: Deine Antwort konnte nicht gespeichert werden. Bitte versuche es erneut.");
     }
 };
-
 
 // ============================================================
 // POLL-KARTE: Auswärtsschiessen mit Mehrfach-Checkboxen & Telegram-Style Bars
