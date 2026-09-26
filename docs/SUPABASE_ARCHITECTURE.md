@@ -1,8 +1,8 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
-**Stand:** 2026-09-25  
-**Phase:** 0 bis 21.1 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log, System-Mails, Finanzbuchhaltung, KK-Jahresmeisterschaft, Team Manager, Generalversammlung, App & Website, Cut-Over, Mail- & PDF-Engine, vollständige GAS-Entkopplung  
-**Status:** DEFINITIV – Basiert auf Bestandsanalyse und verifizierten Architekturentscheidungen  
+**Stand:** 2026-09-26  
+**Phase:** 0 bis 23 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log, System-Mails, Finanzbuchhaltung, KK-Jahresmeisterschaft, Team Manager, Generalversammlung, App & Website, Cut-Over, Mail- & PDF-Engine, vollständige GAS-Entkopplung, Auth & RBAC-Matrix, Server-Level SMTP & Mail-Engine  
+**Status:** DEFINITIV – Basiert auf Bestandsanalyse, verifizierten Architekturentscheidungen und Live-Server-Deployment  
 **Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
 
 ---
@@ -1478,6 +1478,10 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
   - Automatische Erfassung jedes Versands in `public.mail_logs` (Phase 13) inkl. Status, Fehlerbeschreibung, Empfänger-Zusammenfassung und Modulbezug.
   - Unterstützung für HTML-Mails, Text-Fallbacks, CC/BCC sowie Anhänge (Base64 oder Supabase Storage URIs).
   - Client-API: `window.sendMailViaEngine(options)` in `vorstand/js/mail-engine.js`.
+- **Live Server-Deployment & Härtung (CT 117):**
+  - Quellcode und CORS-Module bereitgestellt unter `/opt/supabase/docker/volumes/functions/send-email/` und `_shared/`.
+  - Service-Konfiguration in `/opt/supabase/docker/docker-compose.yml` (`functions`): Direkte Durchreichung von `SMTP_HOST`, `SMTP_PORT=465` (Direct SSL/TLS via Deno), `SMTP_USER` und `SMTP_PASS`.
+  - Vollständiger SMTP-Versandtest gegen `smtp.gmail.com` live verifiziert (`success: true, simulated: false`).
 
 ### Phase 21: Zentrale Dokument- & PDF-Engine (`generate-pdf`)
 - **Ziel:** Vollständige Ablösung der Google Docs Template-Ersetzung und Google Drive PDF-Konvertierung durch native Supabase Edge Functions und Storage.
@@ -1542,6 +1546,12 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
     - `vorstand/index.html` (CSS): `margin: auto` auf `.login-card` für barrierefreies, zentriertes Scrollen auf Notebooks und niedrigen Viewports ohne Abschneiden von Formularen oder Links.
     - `vorstand/js/auth.js`: Behebung des `PGRST116`-Fehlers in `applyAuthenticatedUser` (sichere Auflösung bei geteilten Mail-Adressen mehrerer Benutzerkonten wie `admin` und `danhu`), automatische Synchronisation von `auth_user_id` in `admin_profiles` und robuster Fallback in Modal-Öffnungsfunktionen.
     - `vorstand/js/auth.js`: **Strikte Vorab-Prüfung gegen `admin_profiles`** in `submitForgotPassword()` und `submitMagicLink()`: Verhindert irreführende Erfolgsmeldungen bei unbekannten Mailadressen (wie `@bluewin.ch`) und fängt Supabase GoTrue SMTP-Verbindungsfehler (`Error sending confirmation email`) mit verständlichen deutschsprachigen Hinweisen ab.
+  - **Server-Level Auth SMTP & Domain-Konfiguration (CT 117):**
+    - GoTrue Auth Daemon (`/opt/supabase/docker/.env`):
+      - SMTP-Credentials: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587` (STARTTLS), `SMTP_USER=sportschuetzen.muhen@gmail.com`, `SMTP_ADMIN_EMAIL=sportschuetzen.muhen@gmail.com`, Google App-Passwort gesichert auf Serverebene (`chmod 600`, kein Git-Commit).
+      - Domain Routing: `API_EXTERNAL_URL=https://supabase-muhen.danfamily.uk/auth/v1` (ermöglicht Verifizierungs- und Recovery-Links über mobiles Netz und von extern ohne interne IP-Blockade).
+      - Whitelisting: `SITE_URL=https://sportschuetzen-muhen.ch` sowie `ADDITIONAL_REDIRECT_URLS` für `https://sportschuetzen-muhen.ch/*`, `https://sportschuetzen-muhen.github.io/*`, `http://localhost:8085/*` und `http://localhost:3000/*`.
+    - Live-Verifikation: Aufrufe von `/auth/v1/recover` und `/auth/v1/otp` quittieren mit HTTP `200 OK` und senden reale Mails über Gmail SMTP an das Postfach des Benutzers.
 
 ### Phase 24: Infomaniak Cut-Over & CalDAV
 - **Ziel:** Umzug der Vereinsdomain auf Infomaniak (Schweizer Hosting, DSG-konform).
