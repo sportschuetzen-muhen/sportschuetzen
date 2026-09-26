@@ -1521,6 +1521,23 @@ Gemäss den Projekt-Richtlinien ([AGENTS.md](file:///AGENTS.md), striktes Verbot
   - Bereinigung des Payload-Schemas beim Upsert in `public.external_contacts` (Entfernung der nicht existierenden Spalte `name`, welche zu PostgREST 400-Fehlern führte).
   - Speicherung und Löschung (`rnDeleteContactPrompt`) laufen nun verbindlich und mit striktem Error-Handling über Supabase als Single Source of Truth ohne GAS-Fallbacks.
 
+### Phase 21.2: Storage-Bucket Aktivierung & 404-Resistente PDF-Engine (`operatives-storage`)
+- **Bucket-Bereitstellung & RLS (`21_pdf_engine_storage.sql`):**
+  - Erstellung und Aktivierung des Supabase Storage Buckets `operatives-storage` (`public: true`, 50 MB Dateigrössenlimit, MIME-Whitelisting für PDF/PNG/JPEG/JSON).
+  - Bereinigung der Migration 21 hinsichtlich der Tabellenreferenz (`rental_requests` statt `rental_bookings`), sodass die Migration sauber und idempotent in PostgreSQL durchläuft.
+  - Aktivierung der RLS-Policies auf `storage.objects` für öffentlichen Lesezugriff (`Public Read operatives-storage`), authentifizierte Schreibzugriffe (`Authenticated Insert/Update`) sowie Web-Cockpit Sitzungen (`Dev Anon operatives-storage`).
+  - Bereitstellung der Audit-Tabelle `public.document_generation_logs` sowie der RPC-Funktion `update_invoice_pdf`.
+- **404-Resistente PDF-Anzeige & automatische On-The-Fly Generierung (`rechnungen-actions.js` & `rechnungen-ui.js`):**
+  - Neue Hilfsfunktion `window.rnOpenInvoicePdf(invoiceId, pdfUrl, name, event)` fängt Klicks auf PDF-Links und Buttons ab.
+  - Prüft vor dem Öffnen die Erreichbarkeit der Supabase Storage URL. Sollte ein Storage-Objekt jemals fehlen (z.B. durch Erstellung vor Bucket-Existenz), wird die Schweizer QR-Rechnung vollautomatisch on-the-fly neu generiert, in `operatives-storage` hochgeladen, in `public.invoices` verlinkt und direkt im Browser geöffnet.
+  - Verhindert zuverlässig 404-Fehler (`NoSuchBucket` / `NoSuchKey`) für Anwender.
+- **Härtung Client-Fallback (`vorstand/js/pdf-engine.js`):**
+  - Strikte Prüfung des Rückgabewerts von `supa.storage.upload`: Schlägt ein Upload fehl, wird kein toter Storage-Link mehr in die Datenbank geschrieben.
+- **Stammdaten-Korrektur:**
+  - Automatische Nachgenerierung und Ablage der QR-Rechnungen für bestehende Inventar-Verkäufe (`MV-26-3PH3` und `MV-26-5QGD`), wodurch alle hinterlegten Links sofort `HTTP 200 OK` liefern.
+- **Cache-Busting (`?v=20260926_7`):**
+  - Aktualisierung der Skript-Referenzen in `vorstand/index.html` für `rechnungen-ui.js`, `rechnungen-actions.js` und `pdf-engine.js`.
+
 ### Phase 22: Logins & Supabase Auth Integration (Portal, Website & PWA)
 - **Ziel:** Vollständige Ablösung der Google Sheets `login_daten`, `app_login` und `login_sessions` durch natives Supabase Auth, rollenbasierte Autorisierung (RLS) und Stammdaten-Synchronisation.
 - **Architektur & Komponenten:**

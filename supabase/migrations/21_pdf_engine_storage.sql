@@ -83,11 +83,26 @@ ALTER TABLE public.invoices
 
 CREATE INDEX IF NOT EXISTS idx_invoices_paperless_status ON public.invoices(paperless_status);
 
--- 5. TABELLEN-ERWEITERUNG: public.rental_bookings
+-- 5. TABELLEN-ERWEITERUNG: public.rental_requests / rental_bookings
 -- ------------------------------------------------------------------------------
-ALTER TABLE public.rental_bookings
-    ADD COLUMN IF NOT EXISTS contract_storage_path TEXT,
-    ADD COLUMN IF NOT EXISTS paperless_error_message TEXT;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'rental_requests') THEN
+        ALTER TABLE public.rental_requests
+            ADD COLUMN IF NOT EXISTS contract_storage_path TEXT,
+            ADD COLUMN IF NOT EXISTS paperless_status public.archive_sync_status DEFAULT 'not_applicable',
+            ADD COLUMN IF NOT EXISTS paperless_document_id INTEGER,
+            ADD COLUMN IF NOT EXISTS paperless_error_message TEXT;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'rental_bookings') THEN
+        ALTER TABLE public.rental_bookings
+            ADD COLUMN IF NOT EXISTS contract_storage_path TEXT,
+            ADD COLUMN IF NOT EXISTS paperless_status public.archive_sync_status DEFAULT 'not_applicable',
+            ADD COLUMN IF NOT EXISTS paperless_document_id INTEGER,
+            ADD COLUMN IF NOT EXISTS paperless_error_message TEXT;
+    END IF;
+END$$;
 
 -- 6. TABELLE: public.document_generation_logs (PDF-Audit-Trail)
 -- ------------------------------------------------------------------------------
@@ -145,7 +160,7 @@ BEGIN
         title,
         storage_bucket,
         storage_path,
-        pdf_url,
+        file_url,
         file_size_bytes,
         paperless_status,
         paperless_document_id
@@ -183,15 +198,26 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
-    -- Unterstützt Suche nach booking_number (z.B. 'MV-2026-0012') oder UUID
-    UPDATE public.rental_bookings
-    SET
-        contract_file_url       = p_pdf_url,
-        contract_storage_path   = p_storage_path,
-        paperless_status        = COALESCE(p_paperless_status, paperless_status),
-        paperless_document_id   = COALESCE(p_paperless_id, paperless_document_id),
-        updated_at              = now()
-    WHERE booking_number = p_booking_id OR id::text = p_booking_id;
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'rental_requests') THEN
+        UPDATE public.rental_requests
+        SET
+            contract_storage_path   = p_storage_path,
+            paperless_status        = COALESCE(p_paperless_status, paperless_status),
+            paperless_document_id   = COALESCE(p_paperless_id, paperless_document_id),
+            updated_at              = now()
+        WHERE booking_number = p_booking_id OR id::text = p_booking_id;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'rental_bookings') THEN
+        UPDATE public.rental_bookings
+        SET
+            contract_file_url       = p_pdf_url,
+            contract_storage_path   = p_storage_path,
+            paperless_status        = COALESCE(p_paperless_status, paperless_status),
+            paperless_document_id   = COALESCE(p_paperless_id, paperless_document_id),
+            updated_at              = now()
+        WHERE booking_number = p_booking_id OR id::text = p_booking_id;
+    END IF;
 
     INSERT INTO public.document_generation_logs (
         document_type,
@@ -199,7 +225,7 @@ BEGIN
         title,
         storage_bucket,
         storage_path,
-        pdf_url,
+        file_url,
         file_size_bytes,
         paperless_status,
         paperless_document_id

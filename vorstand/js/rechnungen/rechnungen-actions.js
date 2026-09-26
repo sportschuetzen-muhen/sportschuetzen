@@ -284,6 +284,41 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
 };
 
 // =====================================================================
+// OPEN OR REGENERATE INVOICE PDF (404-Resistant Helper)
+// =====================================================================
+window.rnOpenInvoicePdf = async function(invoiceId, pdfUrl, name, event) {
+  if (event) {
+    try { event.preventDefault(); } catch (_) {}
+    try { event.stopPropagation(); } catch (_) {}
+  }
+
+  // Falls Google Drive URL: direkt im neuen Tab öffnen
+  if (pdfUrl && pdfUrl.includes('drive.google.com')) {
+    window.open(pdfUrl, '_blank');
+    return;
+  }
+
+  // Falls Supabase Storage URL vorhanden: prüfen, ob sie erreichbar ist
+  if (pdfUrl && pdfUrl.startsWith('http')) {
+    try {
+      const checkResp = await fetch(pdfUrl, { method: 'HEAD' });
+      if (checkResp.ok) {
+        window.open(pdfUrl, '_blank');
+        return;
+      }
+      console.warn(`[PDF] Storage-Objekt für ${invoiceId} nicht gefunden (HTTP ${checkResp.status}). Generiere on-the-fly neu...`);
+    } catch (_) {
+      window.open(pdfUrl, '_blank');
+      return;
+    }
+  }
+
+  // Falls noch kein PDF existiert oder 404 zurückgegeben wurde:
+  console.log(`[PDF] Generiere QR-Rechnung für ${invoiceId} on-the-fly...`);
+  await window.rnGeneratePDFOnly(invoiceId, name || 'Rechnung');
+};
+
+// =====================================================================
 // MODAL FOR SENDING INVOICE WITH ATTACHED SWISS QR-BILL PDF
 // =====================================================================
 window.rnOpenSendMailModal = async function(invoiceId, name) {

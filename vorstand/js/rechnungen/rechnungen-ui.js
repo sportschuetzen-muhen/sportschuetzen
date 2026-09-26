@@ -607,7 +607,7 @@ window.rnRenderTable = function() {
         <td class="text-end tk-col-actions" style="white-space: nowrap; width: 160px;">
           <div class="d-inline-flex align-items-center gap-1.5 justify-content-end">
             ${item.pdf_url ? `
-              <a href="${item.pdf_url}" target="_blank" class="btn btn-sm btn-outline-danger shadow-xs fw-semibold px-2 py-1" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
+              <a href="${item.pdf_url}" onclick="rnOpenInvoicePdf('${item.id}', '${escapeJs(item.pdf_url)}', '${escapeJs(item.name)}', event)" target="_blank" class="btn btn-sm btn-outline-danger shadow-xs fw-semibold px-2 py-1" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
                 <i class="fas fa-file-pdf me-1"></i>PDF
               </a>
             ` : `
@@ -874,7 +874,7 @@ window.rnOpenDetailsModal = async function(invoiceId) {
         footerEl.innerHTML = `
           <div class="d-flex flex-wrap gap-2 align-items-center">
             ${inv.pdf_url ? `
-              <a href="${inv.pdf_url}" target="_blank" class="btn btn-sm btn-outline-danger fw-semibold">
+              <a href="${inv.pdf_url}" onclick="rnOpenInvoicePdf('${inv.id}', '${escapeJs(inv.pdf_url)}', '${escapeJs(inv.name)}', event)" target="_blank" class="btn btn-sm btn-outline-danger fw-semibold">
                 <i class="fas fa-file-pdf me-1.5"></i>PDF öffnen
               </a>
             ` : `

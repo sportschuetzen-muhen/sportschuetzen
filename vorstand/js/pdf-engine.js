@@ -297,17 +297,21 @@
         let publicUrl = '';
         if (supa) {
             try {
-                await supa.storage.from(STORAGE_BUCKET).upload(storagePath, pdfBlob, { upsert: true, contentType: 'application/pdf' });
-                const { data } = supa.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
-                publicUrl = data?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
+                const { error: upErr } = await supa.storage.from(STORAGE_BUCKET).upload(storagePath, pdfBlob, { upsert: true, contentType: 'application/pdf' });
+                if (upErr) {
+                    console.warn("⚠️ Storage Upload Fallback Fehler:", upErr);
+                } else {
+                    const { data } = supa.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+                    publicUrl = data?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
 
-                await supa.from('invoices').update({
-                    pdf_url: publicUrl,
-                    pdf_storage_path: storagePath,
-                    updated_at: new Date().toISOString()
-                }).eq('id', invId);
+                    await supa.from('invoices').update({
+                        pdf_url: publicUrl,
+                        pdf_storage_path: storagePath,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', invId);
+                }
             } catch (upErr) {
-                console.warn("Storage Upload Fallback Fehler:", upErr);
+                console.warn("⚠️ Storage Upload Fallback Exception:", upErr);
             }
         }
 
