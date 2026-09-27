@@ -918,6 +918,7 @@ function hasWriteAccess(module) {
         'mail':                ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
         'jahresbeitrag':       ['admin', 'kassier', 'vorstand'],
         'rechnungen':          ['admin', 'kassier', 'vorstand'],
+        'dokument-vorlagen':   ['admin', 'kassier', 'vorstand', 'vermieter'],
         'mitglieder':          ['admin', 'schuetzenmeister', 'aktuar', 'vorstand'],
         'meeting-recorder':    ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
         'anlaesse':            ['admin', 'vorstand', 'schuetzenmeister', 'aktuar', 'kassier', 'vermieter'],
@@ -1010,6 +1011,7 @@ function navTo(viewId, el) {
         else if (viewId === 'mail'          && typeof loadMailData          === 'function') loadPromise = loadMailData();
         else if (viewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') loadPromise = loadJahresbeitragData();
         else if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadPromise = loadRechnungenData(false, true);
+        else if (viewId === 'dokument-vorlagen' && typeof window.renderDokumentVorlagen === 'function') loadPromise = window.renderDokumentVorlagen();
         else if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadPromise = loadMitgliederData();
         else if (viewId === 'buchhaltung'      && typeof renderBuchhaltung     === 'function') loadPromise = renderBuchhaltung();
         else if (viewId === 'galerie'          && typeof initGalerieManager    === 'function') loadPromise = initGalerieManager();

@@ -194,6 +194,7 @@ CREATE TABLE rechnungspositionen (
 | **Phase 9** | **Jahresbeiträge-Integration (Client 3)** | ✅ | In [`jahresbeitrag-overview.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-overview.js):<br>• `ensureInvoiceCreatedRemote` erzeugt Rechnungen für Mitgliederbeiträge via `RechnungsCore.createInvoice()` inklusive Adress-Snapshot<br>• `jbSaveZahlung()` verbucht Zahlungen via `RechnungsCore.recordPayment()`<br>• `jbGenerateInvoicePdfRemote()` nutzt `RechnungsCore.renderPdf()` |
 | **Phase 10** | **CAMT.054 / 053 Bankabgleich** | ✅ | In [`buchhaltung-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/buchhaltung-bank.js) & [`jahresbeitrag-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-bank.js):<br>• Gematchte Banktransaktionen verbuchen Rechnungszahlungen direkt über `RechnungsCore.recordPayment()`<br>• Batch-Bankbuchung im Jahresbeitrag synchronisiert `invoice_payments` und `invoices`<br>• `accounting_journal.id` Bereinigung (Postgres `BIGSERIAL`) verhindert SQL-Typenkonflikte |
 | **Phase 11** | **PDF-Geometrie & Atomare Nummernvergabe** | ✅ | Behebung der 5 kritischen Sollbruchstellen im Rechnungs- und PDF-Betrieb:<br>• **Dynamischer $Y$-Cursor & Text-Wrapping:** Keine starre `length > 8` Schwelle; automatischer Textumbruch (`wrapText`) mit flexibler Zeilenhöhe in [`supabase/functions/generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts)<br>• **Intelligenter Lookahead:** Verhindert "Orphan Payment Slips" (leere Folgeseiten nur mit QR-Zahlteil); hält passende Rechnungen exakt auf 1 Seite<br>• **Logo-Handling:** Zentral in `operatives-storage/assets/logo.png`, In-Memory-Caching im Deno-Scope (`cachedLogoBytes`) und dynamische Skalierung via `scaleToFit()` (keine Verzerrung)<br>• **Atomare Rechnungsnummern:** Migration [`26_atomic_invoice_numbers.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/26_atomic_invoice_numbers.sql) (`invoice_number_seq` & Stored Procedure `next_invoice_number()`) verhindert Race Conditions im Frontend<br>• **UTF-8 & WinAnsi-Schutz:** `sanitizeText()` schützt `pdf-lib` vor Zeichensatz-Crashes bei Schweizer Umlauten und Sonderzeichen |
+| **Phase 12** | **Zentraler Dokumenten- & Vorlagen-Pool** | ⏳ | Entkopplung von Layout & Textbausteinen aus dem Rechnungsmodul in eine eigenständige Modul-Kachel:<br>• **Revisionssicherheit (OR 957ff):** Binäres Archiv (`operatives-storage/archive/...`) & Unveränderlichkeits-Garantie<br>• **Deterministisches Höhen-Budgeting:** Exakte Paginierung & dedizierte QR-Schlussseite bei $\ge 105\text{ mm}$ Platzbedarf<br>• **Relationale Vorlagen-Struktur:** `document_templates` & `document_template_clauses` mit Postgres-ENUM statt unvalidiertem JSONB<br>• **Cold-Start-Beseitigung:** Base64-Inlining von Brand-Assets im Deno-Bundle<br>• **Edge Function Server-Side-Resolution:** Vorlagenauflösung primär im Backend, Entlastung des Frontends |
 
 ---
 
@@ -249,4 +250,177 @@ CREATE TABLE rechnungspositionen (
 3. **Zahlungsmodal & Aktionen umgebaut:** [`rechnungen-actions.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/rechnungen/rechnungen-actions.js) unterstützt jetzt Teilzahlungen mit Live-Neuberechnung.
 4. **UI-Cockpit erweitert:** [`rechnungen-ui.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/rechnungen/rechnungen-ui.js) rendert Status-Tokens für `Teilbezahlt`, `Entwurf` und `Storniert`.
 5. **Automatische Tests:** 8/8 Tests in `test_rechnungs_core.js` erfolgreich bestanden.
+
+---
+
+## 6. Architektur-Spezifikation: Zentraler Vorlagen- & Dokumenten-Pool (Phase 12)
+
+### 6.1 Ausgangslage & Entkopplung des PDF-Bereichs
+* **Standard-Positionen verbleiben im Rechnungsmodul:** Die Verwaltung der Standard-Rechnungspositionen (`rechnungen-templates.js` -> `invoice_templates`) bleibt als operativer Artikelstamm weiterhin fester Bestandteil des Rechnungs-Cockpits.
+* **Auslagerung PDF-Bereich:** Lediglich der Tab „Layouts & Texte“ (`rechnungen-layouts.js`) sowie die vertragsspezifischen Vorlagen (Mietverträge, Mahnstufen, Vorstandsbriefe) werden in eine eigenständige Modul-Kachel **„PDF- & Dokumenten-Vorlagen“** ausgelagert.
+* **100% Stabilität des `RechnungsCore`-Payloads:**
+  Am Rechnungsmodul und der Schnittstelle `RechnungsCore.renderPdf()` werden **keinerlei Änderungen** vorgenommen. Der bestehende Payload (`invoiceId`, `recipient`, `sender`, `positions`, `totalAmount`, `year`, `type`) ist vollkommen ausreichend. Die Edge Function löst das zuständige Template serverseitig anhand des Dokumenttyps (`type`) aus der Datenbank auf.
+* **Europäische Umlaut-Garantie (ä, ö, ü, Ä, Ö, Ü, é, è, à):**
+  Umlaute und Sonderzeichen werden in nativer europäischer Schreibweise dargestellt (keine Konvertierung in `ae/oe/ue`). Die Sanitizer-Routine garantiert sauberes WinAnsi-Mapping (ISO-8859-1), um Zeichensatz-Crashes bei gleichzeitig vollem Erhalt aller Schweizer Umlaute und Akzente auszuschliessen.
+
+---
+
+### 6.2 Die 4 Architektur-Säulen der Ziel-Implementierung
+
+#### Säule 1: Revisionssicherheit & Beleg-Unveränderlichkeit (OR 957ff)
+* **Binäres Archiv (Single Source of Truth für fertige Belege):**
+  Sobald ein Dokument (Rechnung, Mietvertrag, Mahnung) festgeschrieben wird (`status = 'gestellt'` / `'offen'`), wird das finale PDF deterministisch im Storage abgelegt:
+  `operatives-storage/archive/{year}/{category}/{document_id}.pdf`
+  Folgeaufrufe zum Drucken oder Herunterladen servieren ausschliesslich dieses unveränderbare Blob.
+* **Snapshot-Absicherung im Datensatz:**
+  Jeder Beleg speichert einen `template_snapshot` (JSONB) mit dem exakten Wortlaut von Titel, Einleitung, Klauseln und Zahlungskonditionen zum Zeitpunkt des Abschlusses. Vorlagenänderungen in Folgejahren beeinflussen historische Belege zu 0%.
+
+#### Säule 2: Deterministisches Seitenumbruch- & Höhen-Budgeting (SIX SPC 0200 1)
+* **Das Problem:** Der Schweizer QR-Zahlteil beansprucht zwingend **105 mm am unteren Seitenrand** und darf weder gestaucht noch skaliert werden.
+* **Das Höhen-Budgeting:**
+  $$\text{Verfügbare Höhe } Y_{\text{avail}} = Y_{\text{cursor}} - \text{MarginBottom}$$
+  $$\text{Benötigter Platz } H_{\text{block}} = H_{\text{content}} + H_{\text{footer}} + H_{\text{qr}} + \text{SafetyMargin (6 mm)}$$
+* **Schlussseiten-Strategie:**
+  Reicht $Y_{\text{cursor}} - H_{\text{block}} < 111\text{ mm}$, platziert die Engine den QR-Zahlteil **deterministisch auf einer dedizierten Nachlaufseite**, statt ihn abzuschneiden oder unkontrolliert zu brechen. Dies gilt künftig identisch für Rechnungen, Mietverträge und Mitteilungen.
+
+#### Säule 3: Relationale Vorlagen-Struktur statt unvalidiertem JSONB
+* **Postgres ENUM:**
+  ```sql
+  CREATE TYPE document_category AS ENUM (
+      'jahresbeitrag', 'vermietung', 'schulsport', 'sponsoring',
+      'materialverkauf', 'depot_pfand', 'mahnung_1', 'mahnung_2',
+      'mahnung_3', 'freier_brief', 'mietvertrag', 'gv_einladung'
+  );
+  ```
+* **Kopf-Tabelle `public.document_templates`:**
+  Enthält Metadaten, Standard-Zahlungsziel (Tage), Titel, Einleitung, Schlusstext, Footer-Hinweis, E-Mail-Betreff und E-Mail-Body.
+* **Klausel-Tabelle `public.document_template_clauses` (1:n):**
+  Für nummerierte Paragraphen, Reglemente und Traktanden:
+  * **Mietvertrag Schützenstube Rüteli:** Ziffern 1 bis 8 (1. Zweckbestimmung, 2. Benutzungsrecht & Cheminée, 3. Sorgfaltspflicht & Reinigung CHF 35/h, 4. Dekoration, 5. Haftung, 6. Vermietungskontakt, 7. Reservation & Stornogebühr CHF 100, 8. Gebühren & Übergabe-Checkliste).
+  * **GV-Einladung (Modul Umfragen/GV):** Traktandenliste, Begleittext, Wort des Präsidenten, Termine.
+  * Schema: `template_id (FK)`, `sort_order (INT)`, `clause_title (VARCHAR)`, `clause_text (TEXT)`, `is_mandatory (BOOLEAN)`.
+* **System-Stammdaten (`public.organization_settings`):**
+  Bankverbindungen (IBAN/QR-IBAN), Absenderadressen und statische Vereinsdaten werden nicht in Vorlagen dupliziert, sondern zentral bereitgestellt.
+
+#### Säule 4: Cold-Start-Optimierung & Server-Side Template Resolution
+* **Base64-Inlining:** Vereinslogo und Standard-Grafiken werden als kompilierte Base64-Konstante direkt im TypeScript-Bundle der Edge Function geführt (Dateigrösse $< 30\text{ KB}$). Keine Latenz und keine Ausfälle bei Serverless Cold Starts auf Deno Deploy.
+* **Backend-First Template Resolution:** Die Edge Function `generate-pdf` lädt das passende Template primär direkt aus Postgres (`document_templates` + `clauses`), falls der Aufrufer keine expliziten temporären Overrides sendet.
+* **GV-Planung & Umfragen Integration:**
+  Das GV-Modul (`umfragen-controlling.js`) ersetzt den alten entkoppelten GAS-Aufruf von `genPDF` durch einen sauberen Aufruf von `window.generatePdfViaEngine({ action: 'generate-gv-invitation', year, gvData })`. Die PDF-Engine rendert die mehrseitige GV-Broschüre/Einladung vollautomatisch in das Storage-Bucket und verknüpft sie mit der E-Mail-Versandpipeline.
+* **Serverseitige Vorschau-Pipeline:** Im neuen Editor speichert der Benutzer erst nach erfolgreichem Test-Render via Edge Function (Rendering-Check verhindert Syntax- oder Umbruchsfehler).
+
+---
+
+### 6.3 Umsetzungs-Fahrplan (Schritte 1 bis 5)
+
+#### ✅ Schritt 1: Datenbank-Konsolidierung (Migration 27) – ABGESCHLOSSEN
+* **Datei:** [`supabase/migrations/27_document_templates_and_clauses.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/27_document_templates_and_clauses.sql)
+* **Master-Tabellen:**
+  - `public.document_templates`: Kopfdaten (Titel, Einleitung, Schlusstext, Footer, Zahlungsziel, E-Mail-Betreff/Body, Version).
+  - `public.document_template_clauses`: 1:n Paragraphen, Reglemente & Traktanden mit `sort_order`, `clause_title`, `clause_text`, `is_mandatory`.
+* **Zero-Breaking-Change Kompatibilität:**
+  - Updatable View `public.invoice_layouts` leitet Lese- und Schreibzugriffe transparent auf `document_templates` um.
+  - Gehärteter `INSTEAD OF`-Trigger unterscheidet strikt `NEW` (INSERT/UPDATE) und `OLD` (DELETE).
+  - `DISTINCT ON (LOWER(TRIM(type)))` schützt vor Postgres-Kardinalitätskonflikten (`ERROR: 21000`).
+* **Initiales Seeding aus Vereinsdokumenten:**
+  - Rechnungen (Standard) & Mahnstufen 1 bis 3.
+  - Mietvertrag Schützenstube Rüteli (Benützungsreglement Ziffern 1–8 + Übergabe-Checkliste).
+  - GV-Einladungen: Normaljahr (12 Traktanden) & Wahljahr (13 Traktanden).
+* **Sicherheit:** RLS aktiviert für `authenticated` und `anon` mit PostgREST-GRANTS.
+
+---
+
+#### ✅ Schritt 2: Frontend-Entkopplung & Kachel „Dokumenten-Vorlagen“ – ABGESCHLOSSEN
+* **Ziel:** Saubere Trennung zwischen operativem Artikelstamm (Rechnungen) und zentralen Dokumenten-Vorlagen (Portal).
+* **Umgesetzte Komponenten:**
+  1. [`rechnungen-ui.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/rechnungen/rechnungen-ui.js):
+     - Tab `#rn-tab-btn-templates` umbenannt in **„Artikelstamm & Positionen“** (`fa-boxes-stacked`).
+     - Tab `#rn-tab-btn-layouts` ersatzlos entfernt.
+     - `RechnungsCore`-Schnittstelle und `InvoiceOrder`-Payload bleiben zu 100% stabil.
+  2. [`rechnungen-templates.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/rechnungen/rechnungen-templates.js):
+     - Titel und Beschreibungen auf Artikelstamm & Standard-Positionen angepasst.
+  3. [`vorstand/js/vorlagen/templates-ui.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/vorlagen/templates-ui.js):
+     - Komplettes Modul-Cockpit für `document_templates` und `document_template_clauses`.
+     - Tab-Filterung nach Kategorien (Rechnungen, Mahnungen, Mietverträge, GV, Briefe).
+     - Live-Klausel-Editor mit Drag-and-Drop-Sortierung und Sofortspeicherung.
+     - Serverseitiger Vorschau-Render via `docTestRenderPdf()`.
+  4. [`vorstand/index.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/index.html):
+     - Sidebar-Nav-Link hinzugefügt (`navTo('dokument-vorlagen', this)` mit Rollenschutz `admin,vorstand,kassier,vermieter`).
+     - Kachel auf Dashboard integriert.
+     - Modul-View-Container eingefügt: `<div id="view-dokument-vorlagen" class="module-view"><div id="dokument-vorlagen-container"></div></div>`.
+     - Script eingebunden: `<script src="js/vorlagen/templates-ui.js"></script>`.
+  5. [`vorstand/js/main.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/main.js):
+     - In `navTo(viewId)` Routing für `'dokument-vorlagen'` ergänzt (ruft `window.renderDokumentVorlagen()` auf).
+     - Rollenberechtigung für `dokument-vorlagen` hinterlegt.
+
+---
+
+#### ⏳ Schritt 3: Edge Function `generate-pdf` Upgrade & Harmonisierung
+* **Datei:** [`supabase/functions/generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts)
+* **Architektur-Spezifikation der 6 Kernkomponenten:**
+  1. **Logo Base64-Inlining:**
+     - Vereinslogo (`Muhen_32_mit_Namen_roter_Balken.png`) wird als kompilierte Base64-Konstante direkt im TypeScript-Code hinterlegt.
+     - Eliminiert Storage-Netzwerkanfragen und Cold-Start-Verzögerungen auf Deno Deploy.
+  2. **Zweistufige Text-Normalisierung (`sanitizeWinAnsiText`):**
+     - Stufe 1 (Typografie & Whitespace):
+       * `«`, `»`, `“`, `”`, `„`, `”` $\rightarrow$ `"`
+       * `‘`, `’`, `‚` $\rightarrow$ `'`
+       * `–` (U+2013 En-Dash), `—` (U+2014 Em-Dash) $\rightarrow$ `-`
+       * `•` (U+2022 Bullet) $\rightarrow$ `-`
+       * `…` (U+2026 Ellipsis) $\rightarrow$ `...`
+       * `\u00A0` (NBSP), `\u202F` (Narrow NBSP) $\rightarrow$ einfaches Leerzeichen
+     - Stufe 2 (ISO-8859-1 / WinAnsi Schutz mit Umlaut-Garantie):
+       * Europäische Umlaute und Sonderzeichen (`ä, ö, ü, Ä, Ö, Ü, é, è, ê, à, â, ç`) bleiben im Klartext erhalten.
+       * Nicht darstellbare Unicode-Zeichen (Code-Points $> 255$) werden sicher durch ASCII-Äquivalente ersetzt oder gefiltert, um Laufzeitabbrüche von `pdf-lib` (`cannot encode glyph`) deterministisch zu verhindern.
+  3. **SIX SPC 0200 1 QR-Zahlteil Nachlaufseite:**
+     - Prüft vertikales Platzbudget: $Y_{\text{cursor}} - H_{\text{block}} < 111\text{ mm}$ (105 mm Zahlteil + 6 mm Sicherheitsabstand).
+     - Bei Platzmangel: Automatisches Einfügen einer Folgeseite.
+     - Folgeseite erhält oberhalb der 105-mm-Schnittlinie einen standardisierten **Belegbezugs-Kopf**:
+       * Dokumenttyp, Rechnungs-Nr., Empfängername, Rechnungsbetrag, Fälligkeit.
+       * Gestrichelte Schnittlinie mit Scherensymbol und Hinweistext.
+  4. **Mietvertrag Schützenstube Rüteli (Dynamische Klauseln):**
+     - Liest Ziffern 1–8 und Checkliste direkt aus `document_template_clauses` (kein hartverdrahteter Text mehr).
+     - Flexible Zeilenhöhenberechnung mit automatischem Seitenumbruch zwischen Reglement und Übergabeprotokoll.
+  5. **Neuer Action-Handler `generate-gv-invitation`:**
+     - **Input:** `{ action: 'generate-gv-invitation', year: 2026, eventId?: string }`.
+     - **Datenquellen:**
+       * Template & Begleittext aus `document_templates` (`category = 'gv_einladung'`).
+       * Traktanden aus `gv_traktanden` (oder `document_template_clauses`).
+       * Jahresprogramm-Termine aus `public.termine` (`WHERE EXTRACT(YEAR FROM datum) = year ORDER BY datum ASC`).
+     - **Dynamischer Paginator:**
+       * Automatische Aufteilung über 2 bis 4 Seiten.
+       * Wiederholung der Tabellenkopfzeile bei Seitenwechsel.
+       * 2-Pass-Seitennummerierung („Seite X von Y“).
+  6. **WORM-Archivierung (OR 957ff):**
+     - Festgeschriebene Dokumente werden in `operatives-storage/archive/{year}/{category}/{id}.pdf` gespeichert.
+     - Bei erneutem Aufruf wird direkt das existierende Archiv-Blob zurückgegeben.
+
+---
+
+#### ⏳ Schritt 4: GV-Modul Anbindung
+* **Datei:** [`vorstand/js/umfragen/umfragen-controlling.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/umfragen/umfragen-controlling.js)
+* **Ablauf:**
+  1. Button `runGVTool('genPDF')` wird von altem GAS-Aufruf entkoppelt.
+  2. Ruft direkt die Supabase Edge Function `generate-pdf` mit `{ action: 'generate-gv-invitation', year }` auf.
+  3. Nach erfolgreicher Generierung:
+     - Speicherung des PDF-Pfads / der Signierten URL in `public.gv_instances.doc_einladung_url`.
+     - Sofortige Öffnung im integrierten PDF-Viewer / neuem Tab.
+     - Bereitstellung als Anhang für den GV-Einladungs-Mail-Assistenten (`#gv-mail-modal`).
+
+---
+
+#### ⏳ Schritt 5: End-to-End Verifikation & Tests
+* **Prüfpunkte:**
+  1. **Rechnungen & Mahnungen:**
+     - 1-seitige Kurzrechnung (QR-Zahlteil direkt auf Seite 1).
+     - Mehrseitige Rechnung mit vielen Positionen (QR-Zahlteil auf Nachlaufseite mit Belegbezugskopf).
+     - Rückwärtskompatibilität des Views `invoice_layouts` bei bestehenden Rechnungs-Core-Aufrufen.
+  2. **Mietvertrag Rüteli:**
+     - Korrekte Darstellung von Ziffern 1–8 und Checkliste aus `document_template_clauses`.
+  3. **GV-Einladung:**
+     - Vollständiger Durchlauf mit 30–50 Terminen aus `public.termine`.
+     - Seitenumbruch-Konsistenz und Seitennummerierung „Seite X von Y“.
+  4. **Umlaut- & Zeichensatzprüfung:**
+     - Validierung von `ä, ö, ü, Ä, Ö, Ü, é, è, à` sowie typografischen Anführungszeichen ohne Absturz oder Darstellungsfehler.
+
 

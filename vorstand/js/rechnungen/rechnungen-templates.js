@@ -56,17 +56,17 @@ window.renderTabTemplates = function(content) {
   content.innerHTML = `
     <div class="card border border-light shadow-sm p-4">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h5 class="fw-bold text-primary mb-0"><i class="fas fa-magic me-2"></i>Standard-Rechnungspositionen verwalten</h5>
+        <h5 class="fw-bold text-primary mb-0"><i class="fas fa-boxes-stacked me-2"></i>Artikelstamm & Standard-Positionen verwalten</h5>
         <div class="d-flex gap-2 align-items-center">
           <div id="rn-templates-col-toggle"></div>
           <button class="btn btn-sm btn-success fw-bold shadow-sm write-protected" onclick="rnOpenTemplateModal(null)">
-            <i class="fas fa-plus-circle me-1"></i> Position hinzufügen
+            <i class="fas fa-plus-circle me-1"></i> Artikel / Position hinzufügen
           </button>
         </div>
       </div>
       
       <p class="text-muted small mb-4">
-        Hier können Sie die Vorlagen verwalten, die in den Rechnungserstellungs- und Bearbeitungsdialogen unter <strong>„Standard-Positionen“</strong> zur Schnellauswahl angeboten werden.
+        Hier können Sie den Artikelstamm und die Standard-Positionen verwalten, die in den Rechnungserstellungs- und Bearbeitungsdialogen unter <strong>„Standard-Positionen“</strong> zur Schnellauswahl angeboten werden.
       </p>
       
       <div class="table-responsive">

@@ -815,6 +815,10 @@
                      onclick="navTo('rechnungen', this)">
                     <i class="fas fa-file-invoice"></i> <span class="nav-text">Rechnungen</span>
                 </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier,vermieter"
+                     onclick="navTo('dokument-vorlagen', this)">
+                    <i class="fas fa-file-lines"></i> <span class="nav-text">Dokumenten-Vorlagen</span>
+                </div>
                 <div class="nav-link role-protected" data-roles="admin,kassier"
                      onclick="navTo('buchhaltung', this)">
                     <i class="fas fa-book"></i> <span class="nav-text">Buchhaltung</span>
@@ -954,6 +958,13 @@
                              onclick="navTo('rechnungen')" style="cursor:pointer">
                             <h5 class="mb-1">🧾 Rechnungen</h5>
                             <p class="small text-muted mb-0">Zentrales Rechnungs-Management & QR-PDF</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier,vermieter">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('dokument-vorlagen')" style="cursor:pointer">
+                            <h5 class="mb-1">📄 Dokumenten-Vorlagen</h5>
+                            <p class="small text-muted mb-0">Zentraler Vorlagen-Pool & Klauseln</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,kassier">
@@ -1546,6 +1557,11 @@
 <!-- LOGINS - wird vollstaendig durch logins.js gerendert -->
 <div id="view-logins" class="module-view"></div>
 
+<!-- DOKUMENTEN-VORLAGEN (Zentraler Vorlagen- & Klausel-Pool) -->
+<div id="view-dokument-vorlagen" class="module-view">
+    <div id="dokument-vorlagen-container"></div>
+</div>
+
         </main>
     </div>
 </div>
@@ -1856,6 +1872,8 @@
 <script src="js/rechnungen/rechnungen-layouts.js"></script>
 <script src="js/rechnungen/rechnungen-actions.js?v=20260926_8"></script>
 <script src="js/pdf-engine.js?v=20260926_8"></script>
+<!-- Zentraler Vorlagen- & Klausel-Pool -->
+<script src="js/vorlagen/templates-ui.js"></script>
 
     
 <!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->

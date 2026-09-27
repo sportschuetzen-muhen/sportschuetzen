@@ -40,7 +40,7 @@ BEGIN
     v_seq_val := nextval('public.invoice_number_seq');
     
     -- Zweistelliges Jahr (z.B. '26' für 2026)
-    v_short_year := to_char(p_year, 'YY');
+    v_short_year := RIGHT(p_year::text, 2);
     
     -- Bereinigtes Präfix (Standard 'RE')
     v_clean_prefix := UPPER(COALESCE(NULLIF(TRIM(p_prefix), ''), 'RE'));

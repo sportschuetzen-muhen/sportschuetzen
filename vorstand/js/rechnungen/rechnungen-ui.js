@@ -130,10 +130,7 @@ window.renderRechnungen = function() {
           <i class="fas fa-list-ol me-1.5"></i> Offene Posten (Nebenrechnung)
         </button>
         <button class="bh-tab-btn ${window._rechnungenActiveTab === 'templates' ? 'active' : ''}" id="rn-tab-btn-templates" onclick="rnSwitchTab('templates')">
-          <i class="fas fa-magic me-1.5"></i> Standard-Positionen verwalten
-        </button>
-        <button class="bh-tab-btn ${window._rechnungenActiveTab === 'layouts' ? 'active' : ''}" id="rn-tab-btn-layouts" onclick="rnSwitchTab('layouts')">
-          <i class="fas fa-sliders-h me-1.5"></i> Layouts & Texte
+          <i class="fas fa-boxes-stacked me-1.5"></i> Artikelstamm & Positionen
         </button>
       </div>
     </div>
@@ -169,10 +166,9 @@ window.renderActiveRechnungenTab = function() {
     renderTabTemplates(content);
   } else if (window._rechnungenActiveTab === 'offen') {
     renderTabOffenePosten(content);
-  } else if (window._rechnungenActiveTab === 'layouts') {
-    if (typeof renderTabLayouts === 'function') {
-      renderTabLayouts(content);
-    }
+  } else {
+    window._rechnungenActiveTab = 'archiv';
+    renderTabArchiv(content);
   }
 };
 

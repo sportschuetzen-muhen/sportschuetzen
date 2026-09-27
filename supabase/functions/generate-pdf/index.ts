@@ -16,7 +16,7 @@
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
-import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.9";
+import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 import qrcode from "https://esm.sh/qrcode-generator@1.4.4";
 
 // Vereins-Standard-Konstanten
@@ -1413,9 +1413,11 @@ Deno.serve(async (req: Request) => {
       console.warn("⚠️ Storage-Upload Warnung:", uploadErr);
     }
 
-    // Öffentliche URL abrufen
+    // Öffentliche URL abrufen (stellt sicher, dass keine interne Docker-URL 'api-gw:8000' an Clients geliefert wird)
+    const externalDomain = Deno.env.get("API_EXTERNAL_URL") || "https://supabase-muhen.danfamily.uk";
     const { data: urlData } = supabase.storage.from(storageBucket).getPublicUrl(storagePath);
-    publicUrl = urlData?.publicUrl || `${supabaseUrl}/storage/v1/object/public/${storageBucket}/${storagePath}`;
+    publicUrl = (urlData?.publicUrl || `${externalDomain}/storage/v1/object/public/${storageBucket}/${storagePath}`)
+      .replace(/^http:\/\/api-gw:8000/, externalDomain);
 
     // --------------------------------------------------------------------------
     // OPTIONALE PAPERLESS-NGX INTEGRATION
