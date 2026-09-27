@@ -194,11 +194,23 @@ CREATE TABLE rechnungspositionen (
 | **Phase 9** | **Jahresbeiträge-Integration (Client 3)** | ✅ | In [`jahresbeitrag-overview.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-overview.js):<br>• `ensureInvoiceCreatedRemote` erzeugt Rechnungen für Mitgliederbeiträge via `RechnungsCore.createInvoice()` inklusive Adress-Snapshot<br>• `jbSaveZahlung()` verbucht Zahlungen via `RechnungsCore.recordPayment()`<br>• `jbGenerateInvoicePdfRemote()` nutzt `RechnungsCore.renderPdf()` |
 | **Phase 10** | **CAMT.054 / 053 Bankabgleich** | ✅ | In [`buchhaltung-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/buchhaltung-bank.js) & [`jahresbeitrag-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-bank.js):<br>• Gematchte Banktransaktionen verbuchen Rechnungszahlungen direkt über `RechnungsCore.recordPayment()`<br>• Batch-Bankbuchung im Jahresbeitrag synchronisiert `invoice_payments` und `invoices`<br>• `accounting_journal.id` Bereinigung (Postgres `BIGSERIAL`) verhindert SQL-Typenkonflikte |
 | **Phase 11** | **PDF-Geometrie & Atomare Nummernvergabe** | ✅ | Behebung der 5 kritischen Sollbruchstellen im Rechnungs- und PDF-Betrieb:<br>• **Dynamischer $Y$-Cursor & Text-Wrapping:** Keine starre `length > 8` Schwelle; automatischer Textumbruch (`wrapText`) mit flexibler Zeilenhöhe in [`supabase/functions/generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts)<br>• **Intelligenter Lookahead:** Verhindert "Orphan Payment Slips" (leere Folgeseiten nur mit QR-Zahlteil); hält passende Rechnungen exakt auf 1 Seite<br>• **Logo-Handling:** Zentral in `operatives-storage/assets/logo.png`, In-Memory-Caching im Deno-Scope (`cachedLogoBytes`) und dynamische Skalierung via `scaleToFit()` (keine Verzerrung)<br>• **Atomare Rechnungsnummern:** Migration [`26_atomic_invoice_numbers.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/26_atomic_invoice_numbers.sql) (`invoice_number_seq` & Stored Procedure `next_invoice_number()`) verhindert Race Conditions im Frontend<br>• **UTF-8 & WinAnsi-Schutz:** `sanitizeText()` schützt `pdf-lib` vor Zeichensatz-Crashes bei Schweizer Umlauten und Sonderzeichen |
-| **Phase 12** | **Zentraler Dokumenten- & Vorlagen-Pool** | 🔄 | Entkopplung von Layout & Textbausteinen aus dem Rechnungsmodul in eine eigenständige Modul-Kachel:<br>• **Schritt 1 (DB):** Migration [`27_document_templates_and_clauses.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/27_document_templates_and_clauses.sql) mit `document_templates`, `document_template_clauses`, View `invoice_layouts` & RLS ✅<br>• **Schritt 2 (UI):** Kachel „Dokumenten-Vorlagen“ (`templates-ui.js`, Navigation in `index.html` & `main.js`) ✅<br>• **Schritt 3 (Engine):** Upgrade Edge Function [`generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts) mit Base64-Inlining, `sanitizeWinAnsiText`, SIX SPC 0200 1 Nachlaufseite, dynamischen Mietvertragsklauseln, GV-Einladung (`generate-gv-invitation`) & WORM-Archivierung ✅<br>• **Schritt 4 (GV-Anbindung):** Umfragen/GV Controlling entkoppeln ⏳<br>• **Schritt 5 (E2E-Tests):** Vollständige Verifikation ⏳ |
+| **Phase 12** | **Zentraler Dokumenten- & Vorlagen-Pool** | 🔄 | Entkopplung von Layout & Textbausteinen aus dem Rechnungsmodul in eine eigenständige Modul-Kachel:<br>• **Schritt 1 (DB):** Migration [`27_document_templates_and_clauses.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/27_document_templates_and_clauses.sql) mit `document_templates`, `document_template_clauses`, View `invoice_layouts` & RLS ✅<br>• **Schritt 2 (UI):** Kachel „Dokumenten-Vorlagen“ (`templates-ui.js`, Navigation in `index.html` & `main.js`) ✅<br>• **Schritt 3 (Engine):** Upgrade Edge Function [`generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts) mit Base64-Inlining, `sanitizeWinAnsiText`, SIX SPC 0200 1 Nachlaufseite, dynamischen Mietvertragsklauseln, GV-Einladung (`generate-gv-invitation`) & WORM-Archivierung ✅<br>• **Schritt 4 (GV-Anbindung):** Umfragen/GV Controlling entkoppelt, PDF-Engine & Mail-Engine voll integriert ✅<br>• **Schritt 5 (E2E-Tests):** Vollständige Verifikation ⏳ |
 
 ---
 
 ## 5. Changelog der Umsetzungen
+
+### [2026-09-27] Phase 12 / Schritt 4 abgeschlossen: GV-Modul Anbindung an PDF- & Mail-Engine
+1. **Zentraler Generator `window.gvGenerateInvitationPdf` in `pdf-engine.js`:**
+   * Validierung in `generatePdfViaEngine` für Aktionen mit `action: 'generate-gv-invitation'` und `year` freigegeben.
+   * Wrapper `window.gvGenerateInvitationPdf(year, gvData, options)` generiert die Broschüre inkl. Jahresprogramm und aktualisiert `gv_instances.doc_einladung_url`.
+2. **`runGVTool('genPDF')` in `umfragen-controlling.js` vollständig aktiviert:**
+   * Liest Jahr, Wahljahr-Status, Datum, Zeit, Ort und GV-Nummer atomar aus dem aktuellen GV-State.
+   * Ruft die zentrale Edge Function auf, sichert das PDF in Supabase Storage (`operatives-storage/gv/{year}/GV_Einladung_{year}.pdf`) und öffnet das fertige Dokument im neuen Browser-Tab.
+   * Aktualisiert den Platzhalter `{{Dokument_Einladung}}` und rendert die Embedded-Liste (`#gv-list-embedded`) unmittelbar neu.
+3. **Automatischer E-Mail-Anhang im GV-Mail-Wizard:**
+   * `openGVMailWizard` prüft verknüpfte Einladungs-PDFs über standardisierte Platzhalternamen (`{{Dokument_Einladung}}`, `Dokument Einladung`, `doc_einladung_url`).
+   * `executeGVMailSend` übergibt die generierte PDF-Datei als Storage-Attachment an `sendMailViaEngine`, sodass jedes Mitglied das Einladungs-PDF direkt als E-Mail-Anhang erhält.
 
 ### [2026-09-27] Phase 12 / Schritt 3 abgeschlossen: Edge Function generate-pdf Upgrade & Harmonisierung
 1. **Logo Base64-Inlining (`logo-base64.ts`):**
@@ -419,15 +431,13 @@ CREATE TABLE rechnungspositionen (
 
 ---
 
-#### ⏳ Schritt 4: GV-Modul Anbindung
-* **Datei:** [`vorstand/js/umfragen/umfragen-controlling.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/umfragen/umfragen-controlling.js)
-* **Ablauf:**
-  1. Button `runGVTool('genPDF')` wird von altem GAS-Aufruf entkoppelt.
-  2. Ruft direkt die Supabase Edge Function `generate-pdf` mit `{ action: 'generate-gv-invitation', year }` auf.
-  3. Nach erfolgreicher Generierung:
-     - Speicherung des PDF-Pfads / der Signierten URL in `public.gv_instances.doc_einladung_url`.
-     - Sofortige Öffnung im integrierten PDF-Viewer / neuem Tab.
-     - Bereitstellung als Anhang für den GV-Einladungs-Mail-Assistenten (`#gv-mail-modal`).
+#### ✅ Schritt 4: GV-Modul Anbindung – ABGESCHLOSSEN
+* **Dateien:** [`vorstand/js/umfragen/umfragen-controlling.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/umfragen/umfragen-controlling.js) & [`vorstand/js/pdf-engine.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/pdf-engine.js)
+* **Umgesetzte Funktionen:**
+  1. `runGVTool('genPDF')` ist vollständig von GAS entkoppelt und generiert das Einladungs-PDF über `window.gvGenerateInvitationPdf`.
+  2. Nach der Generierung wird `public.gv_instances.doc_einladung_url` via Supabase aktualisiert, im lokalen State abgelegt und im Embedded-Container neu gerendert.
+  3. Der GV-Mail-Wizard (`openGVMailWizard`) erkennt das Einladungs-PDF verlässlich als Anhang (grünes Badge).
+  4. Der E-Mail-Versand (`executeGVMailSend`) übergibt das generierte PDF aus `operatives-storage/gv/{year}/GV_Einladung_{year}.pdf` automatisiert als Anhang an `window.sendMailViaEngine`.
 
 ---
 

@@ -934,6 +934,8 @@ async function runGVTool(toolName) {
         } else {
             if (!confirm("Möchtest du die GV-Einladungs-Mails inkl. PDF-Anhang jetzt versenden?")) return;
         }
+    } else if (toolName === 'genPDF') {
+        if (!confirm("Möchtest du das GV-Einladungs-PDF inkl. Jahresprogramm jetzt via zentrale PDF-Engine generieren?")) return;
     } else {
         if(!confirm('Tool "'+toolName+'" starten?')) return;
     }
@@ -950,7 +952,76 @@ async function runGVTool(toolName) {
         if (toolName === 'genPDF') {
             const sw1 = document.getElementById('gv-wahljahr-switch');
             const sw2 = document.getElementById('gv-wahljahr-switch-embedded');
-            payload.isElectionYear = (sw1 && sw1.checked) || (sw2 && sw2.checked) || false;
+            const isElectionYear = (sw1 && sw1.checked) || (sw2 && sw2.checked) || false;
+
+            const state = getGVState();
+            const year = state?.jahr || new Date().getFullYear();
+
+            const findVal = (term) => {
+                const item = state?.platzhalter?.find(p => (p.bezeichnung_app || p.platzhaltername || '').toLowerCase().includes(term));
+                return item ? (item.inhalt || '') : '';
+            };
+
+            const gvData = {
+                gvNummer: parseInt(findVal('welche gv')) || 100,
+                datum: findVal('datum gv') || '',
+                zeit: findVal('zeit gv') || '19:30',
+                ort: findVal('ort gv') || 'Schützenhaus Muhen',
+                isElectionYear: isElectionYear
+            };
+
+            let res;
+            if (typeof window.gvGenerateInvitationPdf === 'function') {
+                res = await window.gvGenerateInvitationPdf(year, gvData, { forceRecreate: true });
+            } else if (typeof window.generatePdfViaEngine === 'function') {
+                res = await window.generatePdfViaEngine({
+                    action: 'generate-gv-invitation',
+                    year: year,
+                    gvData: gvData,
+                    forceRecreate: true
+                });
+            } else {
+                throw new Error("Zentrale PDF-Engine (gvGenerateInvitationPdf) nicht verfügbar.");
+            }
+
+            if (res && res.success && res.pdfUrl) {
+                // Lokalen State & Platzhalter aktualisieren
+                if (state) {
+                    state.doc_einladung_url = res.pdfUrl;
+                    if (Array.isArray(state.platzhalter)) {
+                        const pl = state.platzhalter.find(p => {
+                            const n = (p.bezeichnung_app || p.platzhaltername || '').toLowerCase();
+                            return (n.includes('einladung') && n.includes('dokument')) || n.includes('dokument einladung');
+                        });
+                        if (pl) {
+                            pl.inhalt = res.pdfUrl;
+                        }
+                    }
+                }
+
+                // In public.gv_instances absichern
+                const supa = getGVSupabaseClient();
+                if (supa) {
+                    await supa.from('gv_instances').update({
+                        doc_einladung_url: res.pdfUrl,
+                        updated_at: new Date().toISOString()
+                    }).eq('year', Number(year));
+                }
+
+                // Embedded Liste neu zeichnen, damit neuer Link direkt sichtbar ist
+                if (typeof renderGVListEmbedded === 'function') {
+                    renderGVListEmbedded();
+                }
+
+                if (typeof showToast === 'function') {
+                    showToast(`✅ GV-Einladung ${year} erfolgreich generiert und verknüpft!`, 'success');
+                } else {
+                    alert(`✅ GV-Einladung ${year} erfolgreich generiert!`);
+                }
+            } else {
+                throw new Error(res?.error || "Fehler beim Generieren der Einladungs-PDF.");
+            }
+            return;
         }
 
         if (toolName === 'sendSummary' || toolName === 'sendPraesenz' || toolName === 'sendReminders') {
@@ -1362,15 +1433,21 @@ function openGVMailWizard() {
   // Anhang Status prüfen
   let hasDoc = false;
   let docNames = [];
+  let docUrl = state?.doc_einladung_url || '';
   if (Array.isArray(state.platzhalter)) {
     const docItem = state.platzhalter.find(p => {
       const name = String(p.platzhaltername || p.bezeichnung_app || '').toLowerCase();
-      return name.includes('einladung_dokument') || name.includes('aktuelle_gv_einladung');
+      return (name.includes('einladung') && name.includes('dokument')) || name.includes('aktuelle_gv_einladung');
     });
     if (docItem && docItem.inhalt && docItem.inhalt.trim()) {
       hasDoc = true;
+      docUrl = docItem.inhalt.trim();
       docNames.push(docItem.erklaerung || 'Einladungs-PDF');
     }
+  }
+  if (!hasDoc && docUrl) {
+    hasDoc = true;
+    docNames.push('Einladungs-PDF');
   }
 
   const statusEl = document.getElementById('gv-modal-attachment-status');
@@ -1526,13 +1603,21 @@ async function executeGVMailSend() {
 
   // Anhang prüfen
   const state = getGVState();
+  const gvYear = Number(state?.jahr || new Date().getFullYear());
   let hasDoc = false;
+  let docUrl = state?.doc_einladung_url || '';
   if (state && Array.isArray(state.platzhalter)) {
     const item = state.platzhalter.find(p => {
       const name = String(p.platzhaltername || p.bezeichnung_app || '').toLowerCase();
-      return name.includes('einladung_dokument') || name.includes('aktuelle_gv_einladung');
+      return (name.includes('einladung') && name.includes('dokument')) || name.includes('aktuelle_gv_einladung');
     });
-    if (item && item.inhalt && item.inhalt.trim()) hasDoc = true;
+    if (item && item.inhalt && item.inhalt.trim()) {
+      hasDoc = true;
+      docUrl = item.inhalt.trim();
+    }
+  }
+  if (!hasDoc && docUrl) {
+    hasDoc = true;
   }
 
   if (!hasDoc) {
@@ -1576,6 +1661,21 @@ async function executeGVMailSend() {
       throw new Error("Keine aktiven Mitglieder mit E-Mail-Adresse gefunden.");
     }
 
+    // Anhänge für zentrale Mail-Engine vorbereiten
+    const attachments = [];
+    if (hasDoc && docUrl) {
+      const filename = `GV_Einladung_${gvYear}.pdf`;
+      let storagePath = `gv/${gvYear}/${filename}`;
+      if (docUrl.includes('operatives-storage/')) {
+        storagePath = docUrl.split('operatives-storage/')[1].split('?')[0];
+      }
+      attachments.push({
+        filename: filename,
+        storagePath: storagePath,
+        storageBucket: 'operatives-storage'
+      });
+    }
+
     let sentCount = 0;
     for (const m of members) {
       const mEmail = m.primary_email || m.PrimaryEmail || m.Email;
@@ -1586,9 +1686,10 @@ async function executeGVMailSend() {
 
       await window.sendMailViaEngine({
         to: mEmail,
-        subject: `Einladung zur Generalversammlung ${state?.jahr || new Date().getFullYear()}`,
+        subject: `Einladung zur Generalversammlung ${gvYear}`,
         bodyHtml: personalizedBody.replace(/\n/g, '<br>'),
-        module: 'Generalversammlung'
+        module: 'Generalversammlung',
+        attachments: attachments.length > 0 ? attachments : undefined
       });
       sentCount++;
     }

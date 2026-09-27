@@ -101,8 +101,8 @@
      * @returns {Promise<{success: boolean, pdfUrl?: string, storagePath?: string, pdfBase64?: string, error?: string}>}
      */
     window.generatePdfViaEngine = async function (options) {
-        if (!options || (!options.invoiceId && !options.bookingId)) {
-            return { success: false, error: 'Rechnungs-ID oder Buchungs-ID ist erforderlich.' };
+        if (!options || (!options.invoiceId && !options.bookingId && !options.year && !options.action)) {
+            return { success: false, error: 'Rechnungs-ID, Buchungs-ID oder Aktions-Parameter erforderlich.' };
         }
 
         const supa = (typeof window.getSupabaseClient === 'function')
@@ -130,7 +130,7 @@
         };
 
         const targetUrl = `${SUPABASE_URL}/functions/v1/${FUNCTION_NAME}`;
-        console.log(`📄 [PDF-Engine] Erzeuge PDF via Supabase Edge Function (${options.action || 'generate-invoice'}):`, options.invoiceId || options.bookingId);
+        console.log(`📄 [PDF-Engine] Erzeuge PDF via Supabase Edge Function (${options.action || 'generate-invoice'}):`, options.invoiceId || options.bookingId || options.year || options.action);
 
         try {
             const resp = await fetch(targetUrl, {
@@ -440,5 +440,77 @@
         }
     };
 
-    console.log("🚀 [PDF-Engine] Modul geladen: window.generatePdfViaEngine, window.rnGeneratePDFOnly, window.jbGenerateInvoicePdfRemote & window.vmGenerateRentalContractPdf aktiv.");
+    /**
+     * Zentrale PDF-Generierung für GV-Einladungsbroschüre (vorstand/js/umfragen/umfragen-controlling.js)
+     * @param {number|string} year - Das Jahr der GV (z.B. 2026)
+     * @param {Object} [gvData] - Optional: { gvNummer, datum, zeit, ort, isElectionYear }
+     * @param {Object} [options] - Zusätzliche Optionen (z.B. forceRecreate, openInNewTab)
+     */
+    window.gvGenerateInvitationPdf = async function (year, gvData = {}, options = {}) {
+        const curYear = Number(year || new Date().getFullYear());
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere GV-Einladungsbroschüre & Jahresprogramm für ${curYear}...`);
+        }
+
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        const payload = {
+            action: 'generate-gv-invitation',
+            year: curYear,
+            gvData: gvData,
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung der GV-Einladung fehlgeschlagen.");
+            }
+
+            // In public.gv_instances absichern
+            if (res.pdfUrl && supa) {
+                try {
+                    await supa.from('gv_instances').update({
+                        doc_einladung_url: res.pdfUrl,
+                        updated_at: new Date().toISOString()
+                    }).eq('year', curYear);
+                } catch (e) {
+                    console.warn("⚠️ [PDF-Engine] gv_instances doc_einladung_url Update Warnung:", e);
+                }
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 GV-Einladung ${curYear} erfolgreich generiert!`);
+            } else if (typeof showToast === 'function') {
+                showToast(`GV-Einladung ${curYear} erfolgreich generiert!`, 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("GV-Einladung PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren der GV-Einladung: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren der GV-Einladung: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    console.log("🚀 [PDF-Engine] Modul geladen: window.generatePdfViaEngine, window.rnGeneratePDFOnly, window.jbGenerateInvoicePdfRemote, window.vmGenerateRentalContractPdf & window.gvGenerateInvitationPdf aktiv.");
 })();

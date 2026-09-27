@@ -1,9 +1,9 @@
 # Zielarchitektur: Supabase Vereinsportal Sportschützen Muhen
 
-**Stand:** 2026-09-26  
-**Phase:** 0 bis 23 – Zielarchitektur, Auth, Anlässe, Vermietung, Mitglieder (Write-Master), Umfragen, Termine, Inventar, Jahresbeitrag, Rechnungen, Resultate, Mail-Log, System-Mails, Finanzbuchhaltung, KK-Jahresmeisterschaft, Team Manager, Generalversammlung, App & Website, Cut-Over, Mail- & PDF-Engine, vollständige GAS-Entkopplung, Auth & RBAC-Matrix, Server-Level SMTP & Mail-Engine  
-**Status:** DEFINITIV – Basiert auf Bestandsanalyse, verifizierten Architekturentscheidungen und Live-Server-Deployment  
-**Referenz:** [ARCHITECTURE_ANALYSIS.md](file:///docs/ARCHITECTURE_ANALYSIS.md)
+**Stand:** 2026-09-27  
+**Status:** TECHNISCHES SCHEMA- & RLS-REFERENZHANDBUCH  
+**Führendes Master-Dokument:** [SYSTEM_ARCHITECTURE_MASTER.md](file:///docs/SYSTEM_ARCHITECTURE_MASTER.md)  
+**Historische Analyse:** [Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md](file:///docs/Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md)
 
 ---
 
