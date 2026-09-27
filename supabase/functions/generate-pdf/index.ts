@@ -18,6 +18,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 import qrcode from "https://esm.sh/qrcode-generator@1.4.4";
+import { EMBEDDED_LOGO_BASE64 } from "./logo-base64.ts";
 
 // Vereins-Standard-Konstanten
 const CLUB_IBAN = "CH0680808003633131892";
@@ -36,22 +37,73 @@ const MM = 72 / 25.4;
 // Globaler In-Memory Cache für Logo-Bytes (Latenz- & Cold-Start-Optimierung)
 let cachedLogoBytes: Uint8Array | null = null;
 
-// Text-Sanitizer für sicheres WinAnsi-Encoding in StandardFonts.Helvetica (schützt vor UTF-8 Crashes)
-function sanitizeText(str: string | null | undefined): string {
+// Hilfsfunktion: Logo mit In-Memory Cache, Base64-Inlining und Storage-Fallback laden
+async function getOrLoadLogoBytes(supabaseClient?: any): Promise<Uint8Array | null> {
+  if (cachedLogoBytes) return cachedLogoBytes;
+
+  // 1. Primär: Kompiliertes Base64-Logo nutzen (Cold-Start Latenz: 0 ms)
+  if (EMBEDDED_LOGO_BASE64) {
+    try {
+      const binStr = atob(EMBEDDED_LOGO_BASE64);
+      const len = binStr.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binStr.charCodeAt(i);
+      }
+      cachedLogoBytes = bytes;
+      return cachedLogoBytes;
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] Base64-Logo Decode Warnung:", err);
+    }
+  }
+
+  // 2. Sekundär: Supabase Storage Bucket 'operatives-storage'
+  if (supabaseClient) {
+    try {
+      const { data: logoBlob } = await supabaseClient.storage.from("operatives-storage").download("assets/logo.png");
+      if (logoBlob) {
+        cachedLogoBytes = new Uint8Array(await logoBlob.arrayBuffer());
+        return cachedLogoBytes;
+      }
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] Storage Logo-Download Warnung:", err);
+    }
+  }
+
+  return null;
+}
+
+// Zweistufiger Text-Sanitizer für sicheres WinAnsi-Encoding (StandardFonts.Helvetica)
+// Stufe 1: Typografie & Sonderzeichen (Anführungszeichen, Gedankenstriche, Aufzählungspunkte, NBSP)
+// Stufe 2: Europäische Umlaut-Garantie (ä, ö, ü, Ä, Ö, Ü, é, è, ê, à, â, ç) & WinAnsi-Crash-Schutz
+function sanitizeWinAnsiText(str: string | null | undefined): string {
   if (!str) return "";
-  return String(str)
-    .normalize("NFC")
-    .replace(/[–—]/g, "-")
-    .replace(/[“”„]/g, '"')
-    .replace(/[‘’‚]/g, "'")
-    .replace(/…/g, "...")
-    .replace(/•/g, "·")
-    .replace(/[^\x00-\xFF]/g, (char) => {
-      const map: Record<string, string> = {
-        'Š': 'S', 'š': 's', 'Ž': 'Z', 'ž': 'z', 'Œ': 'OE', 'œ': 'oe', 'Ÿ': 'Y'
-      };
-      return map[char] || "?";
-    });
+  let text = String(str).normalize("NFC");
+
+  // Stufe 1: Typografische Zeichen & Whitespace
+  text = text
+    .replace(/[\u00AB\u00BB\u201C\u201D\u201E\u201F]/g, '"') // « » “ ” „
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")             // ‘ ’ ‚
+    .replace(/[\u2013\u2014]/g, "-")                         // – —
+    .replace(/\u2022/g, "-")                                 // •
+    .replace(/\u2026/g, "...")                               // …
+    .replace(/[\u00A0\u202F]/g, " ");                        // Non-breaking spaces
+
+  // Stufe 2: WinAnsi-Bereich (0x00 - 0xFF) sicherstellen
+  // Bekannte Sonderzeichen oberhalb von 255 sauber mappen
+  const extendedMap: Record<string, string> = {
+    'Š': 'S', 'š': 's', 'Ž': 'Z', 'ž': 'z', 'Œ': 'OE', 'œ': 'oe', 'Ÿ': 'Y',
+    '€': 'CHF', '’': "'", '–': "-", '—': "-", '™': "TM", '•': "-"
+  };
+
+  return text.replace(/[^\x00-\xFF]/g, (char) => {
+    return extendedMap[char] || "?";
+  });
+}
+
+// Abwärtskompatibler Alias
+function sanitizeText(str: string | null | undefined): string {
+  return sanitizeWinAnsiText(str);
 }
 
 // Text-Wrapping für dynamische Beschreibungszeilen
@@ -614,23 +666,35 @@ async function generateInvoicePdf(
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  // 1. Logo mit In-Memory Cache laden & Seitenverhältnis wahren (scaleToFit)
-  let logoImage: any = null;
-  if (!cachedLogoBytes && supabaseClient) {
+  // 0. Server-Side Resolution: Vorlage aus document_templates nachladen falls unvollständig
+  let resolvedLayout: LayoutData = { ...layout };
+  if ((!resolvedLayout.title || !resolvedLayout.notice) && supabaseClient) {
     try {
-      const { data: logoBlob } = await supabaseClient.storage
-        .from("operatives-storage")
-        .download("assets/logo.png");
-      if (logoBlob) {
-        cachedLogoBytes = new Uint8Array(await logoBlob.arrayBuffer());
+      const typeKey = (docType || "jahresbeitrag").toLowerCase().trim();
+      const { data: tmpl } = await supabaseClient
+        .from("document_templates")
+        .select("*")
+        .or(`code.eq.${typeKey},category.eq.${typeKey}`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (tmpl) {
+        resolvedLayout = {
+          title: resolvedLayout.title || tmpl.title,
+          intro: resolvedLayout.intro || tmpl.intro,
+          outro: resolvedLayout.outro || tmpl.outro,
+          notice: resolvedLayout.notice || tmpl.notice,
+        };
       }
-    } catch (logoErr) {
-      console.warn("⚠️ [PDF-Engine] Logo-Download Warnung:", logoErr);
-    }
+    } catch (_) {}
   }
-  if (cachedLogoBytes) {
+
+  // 1. Logo mit In-Memory Cache & Base64-Inlining laden (scaleToFit)
+  let logoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
     try {
-      logoImage = await pdfDoc.embedPng(cachedLogoBytes);
+      logoImage = await pdfDoc.embedPng(logoBytes);
     } catch (embedErr) {
       console.warn("⚠️ [PDF-Engine] Logo-Embed Warnung:", embedErr);
     }
@@ -748,7 +812,7 @@ async function generateInvoicePdf(
 
     y -= 8.5 * MM;
 
-    const noticeRaw = (layout.notice || "Zahlbar innert 30 Tagen mit beiliegendem QR-Zahlteil. Besten Dank für deine Unterstützung!")
+    const noticeRaw = (resolvedLayout.notice || "Zahlbar innert 30 Tagen mit beiliegendem QR-Zahlteil. Besten Dank für deine Unterstützung!")
       .replace(/{rechnungsnummer}/g, invoiceId)
       .replace(/{rechnungsjahr}/g, yearStr);
     const noticeClean = sanitizeText(noticeRaw);
@@ -878,7 +942,7 @@ async function generateInvoicePdf(
 
   // Rechnungstitel
   const defaultTitle = `Rechnung ${invoiceId} – ${docType || "Jahresbeitrag"} ${yearStr}`;
-  const finalTitle = sanitizeText(layout.title ? layout.title.replace(/{rechnungsnummer}/g, invoiceId).replace(/{rechnungsjahr}/g, yearStr) : defaultTitle);
+  const finalTitle = sanitizeText(resolvedLayout.title ? resolvedLayout.title.replace(/{rechnungsnummer}/g, invoiceId).replace(/{rechnungsjahr}/g, yearStr) : defaultTitle);
   currentPage.drawText(finalTitle, {
     x: 20 * MM,
     y: 223 * MM,
@@ -902,7 +966,7 @@ async function generateInvoicePdf(
     }
   }
 
-  const introRaw = (layout.intro || "anbei erhalten Sie die Rechnung für das Vereinsjahr {rechnungsjahr}.")
+  const introRaw = (resolvedLayout.intro || "anbei erhalten Sie die Rechnung für das Vereinsjahr {rechnungsjahr}.")
     .replace(/{rechnungsnummer}/g, invoiceId)
     .replace(/{rechnungsjahr}/g, yearStr)
     .replace(/{vorname}/g, recipient.vorname || "")
@@ -1001,10 +1065,31 @@ async function generateInvoicePdf(
     }
 
     // Falls alle Zeilen gezeichnet sind, der QR-Zahlteil aber nicht mehr passte:
-    // Dedizierte Schlussseite anlegen
+    // Dedizierte Schlussseite mit standardisiertem Belegbezugs-Kopf anlegen (SIX SPC 0200 1)
     if (!qrPlaced) {
       currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
       curY = renderFollowUpHeader(currentPage);
+
+      // Standardisierter Belegbezugs-Kopf
+      currentPage.drawText(`Zahlteil & Belegdetails zu Rechnung: ${invoiceId}`, {
+        x: 20 * MM,
+        y: curY,
+        size: 11,
+        font: fontBold,
+        color: rgb(0.1, 0.15, 0.3),
+      });
+      curY -= 5.5 * MM;
+
+      const recSummary = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || recipient.firma || recipient.name || "Rechnungsempfänger";
+      currentPage.drawText(sanitizeWinAnsiText(`Rechnungsempfänger: ${recSummary}   |   Gesamtbetrag: CHF ${totalAmount.toFixed(2)}`), {
+        x: 20 * MM,
+        y: curY,
+        size: 9,
+        font: fontRegular,
+        color: rgb(0.3, 0.3, 0.3),
+      });
+      curY -= 8 * MM;
+
       drawTotalsAndFooter(currentPage, curY);
       drawSwissQrBillSection(currentPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
     }
@@ -1044,7 +1129,7 @@ async function generateInvoicePdf(
   return await pdfDoc.save();
 }
 
-// Erstellt das Mietvertrags-PDF inkl. Benützungsordnung und Schweizer QR-Rechnung
+// Erstellt das Mietvertrags-PDF inkl. dynamischer Benützungsordnung (Klauseln Ziffern 1-8), Übergabeprotokoll und Schweizer QR-Rechnung
 async function generateRentalContractPdf(
   bookingId: string,
   recipient: RecipientData,
@@ -1056,33 +1141,73 @@ async function generateRentalContractPdf(
   supabaseClient?: any
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([595.28, 841.89]);
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   const curYear = new Date().getFullYear().toString();
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
 
-  // Logo aus In-Memory Cache bzw. Storage laden
+  // Logo laden (Base64-Inlining / Storage)
   let logoImage: any = null;
-  if (!cachedLogoBytes && supabaseClient) {
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
     try {
-      const { data: logoBlob } = await supabaseClient.storage.from("operatives-storage").download("assets/logo.png");
-      if (logoBlob) {
-        cachedLogoBytes = new Uint8Array(await logoBlob.arrayBuffer());
-      }
-    } catch (_) {}
-  }
-  if (cachedLogoBytes) {
-    try {
-      logoImage = await pdfDoc.embedPng(cachedLogoBytes);
+      logoImage = await pdfDoc.embedPng(logoBytes);
     } catch (_) {}
   }
 
-  // 1. Briefkopf: Logo proportional skaliert (scaleToFit)
+  // Dynamische Klauseln aus Supabase laden
+  let clauses: any[] = [];
+  if (supabaseClient) {
+    try {
+      const { data: tData } = await supabaseClient
+        .from("document_templates")
+        .select("*")
+        .eq("category", "vertrag")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (tData) {
+        const { data: cData } = await supabaseClient
+          .from("document_template_clauses")
+          .select("*")
+          .eq("template_id", tData.id)
+          .order("sort_order", { ascending: true });
+
+        if (cData && cData.length > 0) {
+          clauses = cData;
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] Fehler beim Laden der Vertragsklauseln:", err);
+    }
+  }
+
+  // Fallback-Klauseln (Ziffern 1–8 nach Benützungsreglement Schützenstube Rüteli)
+  if (!clauses || clauses.length === 0) {
+    clauses = [
+      { clause_number: "1", clause_title: "Zweckbestimmung", clause_text: "Die Schützenstube dient geselligen Anlässen. Politische Extremveranstaltungen sind untersagt." },
+      { clause_number: "2", clause_title: "Benutzungsrecht & Cheminée", clause_text: "Beinhaltet Saal, Küche, Geschirr und WC-Anlagen. Cheminéeholz ist massvoll zu verwenden; Abzugsklappe stets öffnen." },
+      { clause_number: "3", clause_title: "Sorgfaltspflicht & Reinigung", clause_text: "Räume sind besenrein abzugeben. Geschirr gereinigt versorgen. Nachreinigung wird mit CHF 35.00/h verrechnet." },
+      { clause_number: "4", clause_title: "Dekoration & Lärmschutz", clause_text: "Keine Nägel/Klammern an Decken und Wänden. Nachtruhe ab 22:00 Uhr im Aussenbereich strikte einhalten." },
+      { clause_number: "5", clause_title: "Haftung & Schäden", clause_text: "Der Mieter haftet vollumfänglich für Personen- und Sachschäden sowie für Beschädigungen der Schiessanlage." },
+      { clause_number: "6", clause_title: "Vermietungskontakt & Notfall", clause_text: "Schlüsselübergabe und Notfallkontakt erfolgen über die zuständige Vermietungsstelle der Sportschützen Muhen." },
+      { clause_number: "7", clause_title: "Reservation & Stornogebühr", clause_text: "Bei Absage weniger als 30 Tage vor Mietbeginn wird eine Stornogebühr von CHF 100.00 fällig." },
+      { clause_number: "8", clause_title: "Gebühren & Kaution", clause_text: "Mietgebühr und Kaution sind vor Antritt zu begleichen. Rückerstattung der Kaution erfolgt nach beanstandungsloser Abnahme." }
+    ];
+  }
+
+  // ============================================================================
+  // SEITE 1: PARTEIEN, MIETOBJEKT, GEBÜHREN & KLAUSELN 1-4
+  // ============================================================================
+  const page1 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
   let textStartX = 20 * MM;
   if (logoImage) {
     const scaledLogo = logoImage.scaleToFit(38 * MM, 18 * MM);
-    page.drawImage(logoImage, {
+    page1.drawImage(logoImage, {
       x: 20 * MM,
       y: 280 * MM - scaledLogo.height,
       width: scaledLogo.width,
@@ -1091,14 +1216,14 @@ async function generateRentalContractPdf(
     textStartX = 20 * MM + scaledLogo.width + 4 * MM;
   }
 
-  page.drawText(CLUB_NAME.toUpperCase(), {
+  page1.drawText(CLUB_NAME.toUpperCase(), {
     x: textStartX,
     y: 278 * MM,
     size: 13,
     font: fontBold,
     color: rgb(0.12, 0.23, 0.54),
   });
-  page.drawText("Vermietung Schützenstube Hard · 5037 Muhen", {
+  page1.drawText("Vermietung Schützenstube Hard · 5037 Muhen · info@sportschuetzen-muhen.ch", {
     x: textStartX,
     y: 273 * MM,
     size: 8.5,
@@ -1106,20 +1231,19 @@ async function generateRentalContractPdf(
     color: rgb(0.4, 0.45, 0.55),
   });
 
-  // 2. Titel
-  page.drawText(`Mietvertrag & Benützungsvereinbarung: ${bookingId}`, {
+  page1.drawText(`Mietvertrag & Benützungsvereinbarung: ${bookingId}`, {
     x: 20 * MM,
-    y: 258 * MM,
+    y: 257 * MM,
     size: 13,
     font: fontBold,
     color: rgb(0.1, 0.15, 0.3),
   });
 
-  let curY = 248 * MM;
+  let curY = 247 * MM;
 
-  // 3. Parteien
-  page.drawText("Vermieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page.drawText(`${CLUB_NAME}, 5037 Muhen (Vertretung: ${sender.vorname || "Vermietung"} ${sender.nachname || ""})`, {
+  // Parteien
+  page1.drawText("Vermieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(`${CLUB_NAME}, 5037 Muhen (Vertretung: ${sender.vorname || "Vermietung"} ${sender.nachname || ""})`, {
     x: 50 * MM,
     y: curY,
     size: 9,
@@ -1128,34 +1252,34 @@ async function generateRentalContractPdf(
   curY -= 5 * MM;
 
   const mieterName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ") || recipient.name || "–";
-  page.drawText("Mieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page.drawText(`${mieterName}, ${recipient.strasse || ""}, ${recipient.plz || ""} ${recipient.ort || ""}`, {
+  page1.drawText("Mieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(`${mieterName}, ${recipient.strasse || ""}, ${recipient.plz || ""} ${recipient.ort || ""}`, {
     x: 50 * MM,
     y: curY,
     size: 9,
     font: fontRegular,
   });
   curY -= 4 * MM;
-  page.drawText(`Kontakt: ${recipient.email || "–"} | Tel: ${recipient.telefon || "–"}`, {
+  page1.drawText(`Kontakt: ${recipient.email || "–"} | Tel: ${recipient.telefon || "–"}`, {
     x: 50 * MM,
     y: curY,
     size: 8.5,
     font: fontRegular,
     color: rgb(0.3, 0.3, 0.3),
   });
-  curY -= 7 * MM;
+  curY -= 6.5 * MM;
 
-  // 4. Mietobjekt & Konditionen
-  page.drawText("Mietdatum:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page.drawText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`, { x: 50 * MM, y: curY, size: 9, font: fontRegular });
+  // Mietobjekt & Konditionen
+  page1.drawText("Mietdatum:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`, { x: 50 * MM, y: curY, size: 9, font: fontRegular });
   curY -= 5 * MM;
 
-  page.drawText("Mietobjekt:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page.drawText("Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen", { x: 50 * MM, y: curY, size: 9, font: fontRegular });
+  page1.drawText("Mietobjekt:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText("Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen", { x: 50 * MM, y: curY, size: 9, font: fontRegular });
   curY -= 5 * MM;
 
-  page.drawText("Gebühren:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page.drawText(`Mietgebühr: CHF ${mietbetrag.toFixed(2)}  |  Kaution (Depot): CHF ${kaution.toFixed(2)}`, {
+  page1.drawText("Gebühren:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(`Mietgebühr: CHF ${mietbetrag.toFixed(2)}   |   Kaution (Depot): CHF ${kaution.toFixed(2)}`, {
     x: 50 * MM,
     y: curY,
     size: 9,
@@ -1163,39 +1287,452 @@ async function generateRentalContractPdf(
   });
   curY -= 8 * MM;
 
-  // 5. Bestimmungen
-  page.drawText("Wichtige Vereinbarungen & Benützungsordnung:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  curY -= 4.5 * MM;
+  // Trennlinie
+  page1.drawLine({ start: { x: 20 * MM, y: curY }, end: { x: 190 * MM, y: curY }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
+  curY -= 6 * MM;
 
-  const terms = [
-    "1. Der Vertrag tritt in Kraft, sobald die Mietgebühr via untenstehendem QR-Zahlteil innert 14 Tagen beglichen ist.",
-    "2. Das Mietobjekt ist besenrein und mit gereinigtem Geschirr abzugeben. Abfälle sind selbst zu entsorgen.",
-    "3. Die Nachtruhe (ab 22:00 Uhr im Aussenbereich) ist strikte einzuhalten. Fenster und Türen sind geschlossen zu halten.",
-    "4. Allfällige Schäden an Einrichtung oder Schiessanlage sind dem Vermieter unverzüglich zu melden.",
-    "5. Die Kaution wird nach erfolgter, beanstandungsloser Schlüssel- und Raumrückgabe rückerstattet.",
-  ];
+  page1.drawText("Benützungsordnung & Vereinbarungen (Ziffern 1 bis 4):", { x: 20 * MM, y: curY, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  curY -= 5.5 * MM;
 
-  terms.forEach((t) => {
-    page.drawText(t, { x: 20 * MM, y: curY, size: 7.8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+  // Ziffern 1 bis 4
+  const firstHalf = clauses.slice(0, 4);
+  firstHalf.forEach((c, idx) => {
+    const num = c.clause_number || String(idx + 1);
+    page1.drawText(`${num}. ${sanitizeWinAnsiText(c.clause_title)}:`, { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
     curY -= 4 * MM;
+    const lines = wrapText(c.clause_text || "", fontRegular, 8, 170 * MM);
+    lines.forEach(l => {
+      page1.drawText(sanitizeWinAnsiText(l), { x: 24 * MM, y: curY, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      curY -= 3.8 * MM;
+    });
+    curY -= 2 * MM;
   });
 
-  curY -= 3 * MM;
+  // Hinweis am Fuss von Seite 1
+  page1.drawText("Fortsetzung der Bestimmungen, Übergabeprotokoll und Einzahlungsschein auf Seite 2...", {
+    x: 20 * MM,
+    y: 16 * MM,
+    size: 7.5,
+    font: fontRegular,
+    color: rgb(0.45, 0.45, 0.45),
+  });
+
+  // ============================================================================
+  // SEITE 2: KLAUSELN 5-8, ÜBERGABEPROTOKOLL, UNTERSCHRIFTEN & QR-BILL
+  // ============================================================================
+  const page2 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  page2.drawText(sanitizeWinAnsiText(`${CLUB_NAME} · Mietvertrag & Vereinbarung ${bookingId} (Seite 2)`), {
+    x: 20 * MM,
+    y: 278 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+  page2.drawLine({ start: { x: 20 * MM, y: 274 * MM }, end: { x: 190 * MM, y: 274 * MM }, thickness: 0.3, color: rgb(0.7, 0.7, 0.7) });
+
+  let curY2 = 267 * MM;
+
+  page2.drawText("Benützungsordnung & Vereinbarungen (Ziffern 5 bis 8):", { x: 20 * MM, y: curY2, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  curY2 -= 5.5 * MM;
+
+  const secondHalf = clauses.slice(4);
+  secondHalf.forEach((c, idx) => {
+    const num = c.clause_number || String(idx + 5);
+    page2.drawText(`${num}. ${sanitizeWinAnsiText(c.clause_title)}:`, { x: 20 * MM, y: curY2, size: 8.5, font: fontBold });
+    curY2 -= 4 * MM;
+    const lines = wrapText(c.clause_text || "", fontRegular, 8, 170 * MM);
+    lines.forEach(l => {
+      page2.drawText(sanitizeWinAnsiText(l), { x: 24 * MM, y: curY2, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      curY2 -= 3.8 * MM;
+    });
+    curY2 -= 2 * MM;
+  });
+
+  curY2 -= 2 * MM;
+
+  // Checkliste / Übergabeprotokoll-Kästchen
+  page2.drawRectangle({
+    x: 20 * MM,
+    y: curY2 - 14 * MM,
+    width: 170 * MM,
+    height: 14 * MM,
+    color: rgb(0.96, 0.97, 0.99),
+  });
+  page2.drawText("Übergabe- und Rücknahmeprotokoll:", { x: 23 * MM, y: curY2 - 3.5 * MM, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+  page2.drawText("[  ] Raum & Mobiliar intakt      [  ] Küche & Geschirr gereinigt      [  ] Abfall entsorgt      [  ] Schlüssel zurück", {
+    x: 23 * MM,
+    y: curY2 - 9 * MM,
+    size: 7.5,
+    font: fontRegular,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+  curY2 -= 18 * MM;
 
   // Unterschriften
   const dateStr = new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
-  page.drawText(`Muhen, den ${dateStr}`, { x: 20 * MM, y: curY, size: 8.5, font: fontRegular });
-  curY -= 6 * MM;
+  page2.drawText(`Muhen, den ${dateStr}`, { x: 20 * MM, y: curY2, size: 8, font: fontRegular });
+  curY2 -= 4.5 * MM;
 
-  page.drawText("Für den Verein: Sportschützen Muhen", { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
-  page.drawText("Der Mieter (gelesen & akzeptiert):", { x: 110 * MM, y: curY, size: 8.5, font: fontBold });
+  page2.drawText("Für den Verein: Sportschützen Muhen", { x: 20 * MM, y: curY2, size: 8, font: fontBold });
+  page2.drawText("Der Mieter (gelesen & akzeptiert):", { x: 110 * MM, y: curY2, size: 8, font: fontBold });
 
-  curY -= 12 * MM;
-  page.drawLine({ start: { x: 20 * MM, y: curY }, end: { x: 80 * MM, y: curY }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
-  page.drawLine({ start: { x: 110 * MM, y: curY }, end: { x: 180 * MM, y: curY }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
+  curY2 -= 9 * MM;
+  page2.drawLine({ start: { x: 20 * MM, y: curY2 }, end: { x: 80 * MM, y: curY2 }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
+  page2.drawLine({ start: { x: 110 * MM, y: curY2 }, end: { x: 180 * MM, y: curY2 }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
 
-  // QR-Bill für den Mietvertrag
-  drawSwissQrBillSection(page, fontRegular, fontBold, bookingId, mietbetrag, recipient, curYear, "Miete Schützenhaus");
+  // QR-Bill auf Seite 2 (105mm am unteren Rand)
+  drawSwissQrBillSection(page2, fontRegular, fontBold, bookingId, mietbetrag, recipient, curYear, "Miete Schützenhaus");
+
+  // ============================================================================
+  // SEITENNUMMERIERUNG (2-Pass)
+  // ============================================================================
+  page1.drawText("Seite 1 von 2", { x: 175 * MM, y: 12 * MM, size: 7.5, font: fontRegular, color: rgb(0.45, 0.45, 0.45) });
+  page2.drawText("Seite 2 von 2", { x: 175 * MM, y: 108.5 * MM, size: 7.5, font: fontRegular, color: rgb(0.45, 0.45, 0.45) });
+
+  return await pdfDoc.save();
+}
+
+// Erstellt die mehrseitige Einladungsbroschüre zur Generalversammlung inkl. Traktanden und Jahresprogramm
+async function generateGVInvitationPdf(
+  year: number,
+  gvData: any,
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // 1. Logo laden
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  let logoImage: any = null;
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {}
+  }
+
+  // 2. Daten aus Supabase laden (Template, Traktanden/Klauseln, Termine)
+  let templateTitle = `Einladung zur ${gvData.gvNummer || ''}. ordentlichen Generalversammlung`;
+  let templateIntro = `Liebe Schützinnen, liebe Schützen, geschätzte Ehren- und Freimitglieder\n\nWir laden euch herzlich zu unserer ordentlichen Generalversammlung ein.`;
+  let templateNotice = "Der Vorstand freut sich über eine zahlreiche und pünktliche Teilnahme!";
+  let clauses: any[] = [];
+  let termine: any[] = [];
+
+  if (supabaseClient) {
+    try {
+      // Template laden
+      const { data: tData } = await supabaseClient
+        .from("document_templates")
+        .select("*")
+        .eq("category", "gv")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (tData) {
+        if (tData.title) templateTitle = tData.title.replace(/{jahr}/g, String(year));
+        if (tData.intro) templateIntro = tData.intro.replace(/{jahr}/g, String(year));
+        if (tData.notice) templateNotice = tData.notice.replace(/{jahr}/g, String(year));
+
+        // Traktanden/Klauseln laden
+        const { data: cData } = await supabaseClient
+          .from("document_template_clauses")
+          .select("*")
+          .eq("template_id", tData.id)
+          .order("sort_order", { ascending: true });
+
+        if (cData && cData.length > 0) {
+          clauses = cData;
+        }
+      }
+
+      // Termine aus public.termine für das GV-Jahr laden
+      const { data: termData } = await supabaseClient
+        .from("termine")
+        .select("*")
+        .gte("datum", `${year}-01-01`)
+        .lte("datum", `${year}-12-31`)
+        .order("datum", { ascending: true });
+
+      if (termData && termData.length > 0) {
+        termine = termData;
+      }
+    } catch (err) {
+      console.warn("⚠️ [PDF-Engine] GV Datenabfrage Warnung:", err);
+    }
+  }
+
+  // Fallback-Traktanden falls in DB noch nicht angelegt
+  if (!clauses || clauses.length === 0) {
+    clauses = [
+      { clause_number: "1", clause_title: "Begrüssung und Appell", clause_text: "" },
+      { clause_number: "2", clause_title: "Wahl der Stimmenzähler", clause_text: "" },
+      { clause_number: "3", clause_title: "Genehmigung des Protokolls der letzten GV", clause_text: "" },
+      { clause_number: "4", clause_title: "Jahresberichte (Präsident, Schützenmeister, Jungschützen)", clause_text: "" },
+      { clause_number: "5", clause_title: "Kassa- und Revisorenbericht, Entlastung des Vorstands", clause_text: "" },
+      { clause_number: "6", clause_title: "Mutationen (Aufnahmen, Austritte, Ehrungen)", clause_text: "" },
+      { clause_number: "7", clause_title: "Wahlen (Vorstand, Rechnungsrevisoren)", clause_text: "" },
+      { clause_number: "8", clause_title: `Festsetzung Jahresprogramm ${year}`, clause_text: "" },
+      { clause_number: "9", clause_title: `Budget ${year} und Festsetzung der Jahresbeiträge`, clause_text: "" },
+      { clause_number: "10", clause_title: "Anträge von Mitgliedern", clause_text: "Schriftlich einzureichen gemäss Statuten" },
+      { clause_number: "11", clause_title: "Ehrungen und Auszeichnungen", clause_text: "" },
+      { clause_number: "12", clause_title: "Verschiedenes und Umfrage", clause_text: "" },
+    ];
+  }
+
+  // ============================================================================
+  // SEITE 1: EINLADUNG, ORT/ZEIT, BEGLEITTEXT & TRAKTANDEN
+  // ============================================================================
+  const page1 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  // Briefkopf
+  let textStartX = 20 * MM;
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(38 * MM, 18 * MM);
+    page1.drawImage(logoImage, {
+      x: 20 * MM,
+      y: 280 * MM - scaledLogo.height,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+    textStartX = 20 * MM + scaledLogo.width + 4 * MM;
+  }
+
+  page1.drawText(CLUB_NAME.toUpperCase(), {
+    x: textStartX,
+    y: 277 * MM,
+    size: 13,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  page1.drawText("Schiessanlage Hard · 5037 Muhen · www.sportschuetzen-muhen.ch", {
+    x: textStartX,
+    y: 272 * MM,
+    size: 8,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  // Titel
+  page1.drawText(sanitizeWinAnsiText(templateTitle), {
+    x: 20 * MM,
+    y: 254 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+
+  // Datum / Zeit / Ort - Banner
+  page1.drawRectangle({
+    x: 20 * MM,
+    y: 236 * MM,
+    width: 170 * MM,
+    height: 14 * MM,
+    color: rgb(0.94, 0.96, 0.99),
+  });
+
+  const gvDatum = gvData.datum || `Freitag, im März ${year}`;
+  const gvZeit = gvData.zeit || "19:30 Uhr";
+  const gvOrt = gvData.ort || "Schützenstube Hard, Muhen";
+
+  page1.drawText(`Datum & Zeit:  ${sanitizeWinAnsiText(gvDatum)}, ${sanitizeWinAnsiText(gvZeit)}`, {
+    x: 24 * MM,
+    y: 244 * MM,
+    size: 9.5,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  page1.drawText(`Ort:                 ${sanitizeWinAnsiText(gvOrt)}`, {
+    x: 24 * MM,
+    y: 239 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+
+  let curY = 227 * MM;
+
+  // Einleitungstext
+  const introLines = templateIntro.split("\n");
+  for (const line of introLines) {
+    if (line.trim()) {
+      const wrapped = wrapText(line, fontRegular, 8.5, 170 * MM);
+      for (const w of wrapped) {
+        page1.drawText(sanitizeWinAnsiText(w), { x: 20 * MM, y: curY, size: 8.5, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+        curY -= 3.8 * MM;
+      }
+    } else {
+      curY -= 2.5 * MM;
+    }
+  }
+
+  curY -= 2 * MM;
+
+  // Traktandenliste
+  page1.drawText("TRAKTANDENLISTE:", {
+    x: 20 * MM,
+    y: curY,
+    size: 10,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+  curY -= 5 * MM;
+
+  clauses.forEach((c, idx) => {
+    const num = c.clause_number || String(idx + 1);
+    page1.drawText(`${num}.`, { x: 22 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+    page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: 30 * MM, y: curY, size: 8.5, font: fontBold });
+
+    if (c.clause_text && c.clause_text.trim()) {
+      curY -= 3.5 * MM;
+      page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
+        x: 30 * MM,
+        y: curY,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.4, 0.4, 0.4),
+      });
+      curY -= 4.5 * MM;
+    } else {
+      curY -= 4.2 * MM;
+    }
+  });
+
+  curY -= 2 * MM;
+
+  // Gruss & Schluss
+  page1.drawText(sanitizeWinAnsiText(templateNotice), {
+    x: 20 * MM,
+    y: curY,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  curY -= 4.5 * MM;
+  page1.drawText("Freundliche Schützengrüsse", { x: 20 * MM, y: curY, size: 8.5, font: fontRegular });
+  curY -= 4 * MM;
+  page1.drawText("Der Vorstand der Sportschützen Muhen", { x: 20 * MM, y: curY, size: 9, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+
+  // ============================================================================
+  // SEITE 2+: JAHRESPROGRAMM / TERMINLISTE
+  // ============================================================================
+  const drawProgHeader = (p: any, y: number) => {
+    p.drawText(`Sportschützen Muhen · Jahresprogramm ${year}`, {
+      x: 20 * MM,
+      y: y,
+      size: 12,
+      font: fontBold,
+      color: rgb(0.1, 0.15, 0.3),
+    });
+    p.drawText("Übersicht aller Termine, Schiessanlässe, Trainings und Meisterschaften", {
+      x: 20 * MM,
+      y: y - 4.5 * MM,
+      size: 8,
+      font: fontRegular,
+      color: rgb(0.4, 0.45, 0.55),
+    });
+    p.drawLine({
+      start: { x: 20 * MM, y: y - 6.5 * MM },
+      end: { x: 190 * MM, y: y - 6.5 * MM },
+      thickness: 0.5,
+      color: rgb(0.7, 0.7, 0.7),
+    });
+    return y - 12 * MM;
+  };
+
+  const drawProgTableHeader = (p: any, y: number) => {
+    p.drawRectangle({
+      x: 20 * MM,
+      y: y - 2 * MM,
+      width: 170 * MM,
+      height: 6 * MM,
+      color: rgb(0.93, 0.95, 0.98),
+    });
+    p.drawText("Datum", { x: 22 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+    p.drawText("Tag", { x: 44 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+    p.drawText("Zeit", { x: 55 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+    p.drawText("Anlass / Schiessprogramm", { x: 74 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+    p.drawText("Ort / Stand", { x: 150 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+    return y - 6 * MM;
+  };
+
+  if (termine && termine.length > 0) {
+    let curProgPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    let progY = drawProgHeader(curProgPage, 275 * MM);
+    progY = drawProgTableHeader(curProgPage, progY);
+
+    termine.forEach((term, idx) => {
+      // Prüfen, ob noch Platz auf Seite
+      if (progY < 25 * MM) {
+        curProgPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+        progY = drawProgHeader(curProgPage, 275 * MM);
+        progY = drawProgTableHeader(curProgPage, progY);
+      }
+
+      const dObj = new Date(term.datum);
+      const dStr = !isNaN(dObj.getTime())
+        ? dObj.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" })
+        : (term.datum || "–");
+      const weekdayStr = !isNaN(dObj.getTime())
+        ? dObj.toLocaleDateString("de-CH", { weekday: "short" })
+        : "";
+      const zeitStr = term.zeit || "–";
+      const titleStr = term.titel || term.anlass || "–";
+      const ortStr = term.ort || "Schiessanlage Hard";
+
+      // Zebrastreifen
+      if (idx % 2 === 1) {
+        curProgPage.drawRectangle({
+          x: 20 * MM,
+          y: progY - 1.5 * MM,
+          width: 170 * MM,
+          height: 4.8 * MM,
+          color: rgb(0.98, 0.98, 0.99),
+        });
+      }
+
+      curProgPage.drawText(sanitizeWinAnsiText(dStr), { x: 22 * MM, y: progY, size: 7.5, font: fontRegular });
+      curProgPage.drawText(sanitizeWinAnsiText(weekdayStr), { x: 44 * MM, y: progY, size: 7.5, font: fontRegular });
+      curProgPage.drawText(sanitizeWinAnsiText(zeitStr), { x: 55 * MM, y: progY, size: 7.5, font: fontRegular });
+      
+      const titleClean = sanitizeWinAnsiText(titleStr);
+      const maxTitleLen = 42;
+      const displayTitle = titleClean.length > maxTitleLen ? titleClean.substring(0, maxTitleLen) + "..." : titleClean;
+      curProgPage.drawText(displayTitle, { x: 74 * MM, y: progY, size: 7.5, font: fontBold });
+
+      const ortClean = sanitizeWinAnsiText(ortStr);
+      const displayOrt = ortClean.length > 24 ? ortClean.substring(0, 24) + "..." : ortClean;
+      curProgPage.drawText(displayOrt, { x: 150 * MM, y: progY, size: 7.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+
+      progY -= 4.8 * MM;
+    });
+  }
+
+  // ============================================================================
+  // SEITENNUMMERIERUNG (2-Pass)
+  // ============================================================================
+  const totalPages = pdfDoc.getPageCount();
+  const allPages = pdfDoc.getPages();
+  allPages.forEach((p, idx) => {
+    p.drawText(`Seite ${idx + 1} von ${totalPages}`, {
+      x: 175 * MM,
+      y: 12 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+    p.drawText(`Sportschützen Muhen · Generalversammlung ${year}`, {
+      x: 20 * MM,
+      y: 12 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  });
 
   return await pdfDoc.save();
 }
@@ -1391,14 +1928,80 @@ Deno.serve(async (req: Request) => {
       fileName = `Mietvertrag_${bookId}_${safeName}.pdf`;
       storageSubDir = `contracts/${curYear}`;
       docTitle = `Mietvertrag ${bookId} – ${recipient.name || ""}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 3: GENERALVERSAMMLUNGS-EINLADUNG & TERMINLISTE GENERIEREN
+    // --------------------------------------------------------------------------
+    else if (action === "generate-gv-invitation" || action === "generateGVInvitationPDF") {
+      const year = Number(payload.year || curYear);
+      const gvData = (payload as any).gvData || {};
+      recordId = `GV-${year}`;
+
+      pdfBytes = await generateGVInvitationPdf(
+        year,
+        gvData,
+        supabase
+      );
+
+      fileName = `GV_Einladung_${year}.pdf`;
+      storageSubDir = `gv/${curYear}`;
+      docTitle = `Einladung zur ${gvData.gvNummer || ''}. Generalversammlung ${year}`;
     } else {
       throw new Error(`Unbekannte Aktion: ${action}`);
     }
 
     // --------------------------------------------------------------------------
-    // UPLOAD IN SUPABASE STORAGE (Bucket: 'operatives-storage')
+    // WORM-ARCHIVIERUNG (OR 957ff): Existierendes Archiv prüfen
     // --------------------------------------------------------------------------
     const storageBucket = "operatives-storage";
+    const archiveCategory = action.includes("contract") ? "contracts" : (action.includes("gv") ? "gv" : "invoices");
+    const archivePath = `archive/${curYear}/${archiveCategory}/${recordId || "doc"}.pdf`;
+
+    if (payload.saveToStorage !== false && !payload.forceRecreate && recordId) {
+      try {
+        const { data: archBlob } = await supabase.storage.from(storageBucket).download(archivePath);
+        if (archBlob) {
+          const archBytes = new Uint8Array(await archBlob.arrayBuffer());
+          const { data: urlData } = supabase.storage.from(storageBucket).getPublicUrl(archivePath);
+          const externalDomain = Deno.env.get("API_EXTERNAL_URL") || "https://supabase-muhen.danfamily.uk";
+          const publicUrl = (urlData?.publicUrl || `${externalDomain}/storage/v1/object/public/${storageBucket}/${archivePath}`)
+            .replace(/^http:\/\/api-gw:8000/, externalDomain);
+
+          let pdfBase64 = "";
+          try {
+            let binary = "";
+            const len = archBytes.byteLength;
+            for (let i = 0; i < len; i++) {
+              binary += String.fromCharCode(archBytes[i]);
+            }
+            pdfBase64 = btoa(binary);
+          } catch (_) {}
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              isArchived: true,
+              recordId: recordId,
+              pdfUrl: publicUrl,
+              storagePath: archivePath,
+              storageBucket: storageBucket,
+              fileName: `${archiveCategory}_${recordId}.pdf`,
+              fileSizeBytes: archBytes.byteLength,
+              pdfBase64: pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : null,
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+      } catch (_) {}
+    }
+
+    // --------------------------------------------------------------------------
+    // UPLOAD IN SUPABASE STORAGE (Bucket: 'operatives-storage')
+    // --------------------------------------------------------------------------
     const storagePath = `${storageSubDir}/${fileName}`;
     let publicUrl = "";
 
@@ -1411,6 +2014,18 @@ Deno.serve(async (req: Request) => {
 
     if (uploadErr) {
       console.warn("⚠️ Storage-Upload Warnung:", uploadErr);
+    }
+
+    // WORM-Archivierung: Kopie im unveränderlichen Revisions-Archiv ablegen
+    if (payload.saveToStorage !== false && recordId) {
+      try {
+        await supabase.storage
+          .from(storageBucket)
+          .upload(archivePath, pdfBytes, {
+            contentType: "application/pdf",
+            upsert: false,
+          });
+      } catch (_) {}
     }
 
     // Öffentliche URL abrufen (stellt sicher, dass keine interne Docker-URL 'api-gw:8000' an Clients geliefert wird)
@@ -1464,6 +2079,13 @@ Deno.serve(async (req: Request) => {
         p_paperless_status: paperlessStatus,
         p_paperless_id: paperlessDocId || null,
       });
+    } else if (action.includes("gv") || action === "generate-gv-invitation") {
+      try {
+        await supabase
+          .from("gv_instances")
+          .update({ doc_einladung_url: publicUrl, updated_at: new Date().toISOString() })
+          .eq("year", Number(curYear));
+      } catch (_) {}
     }
 
     // Base64 für direkte Browser-Vorschau erzeugen

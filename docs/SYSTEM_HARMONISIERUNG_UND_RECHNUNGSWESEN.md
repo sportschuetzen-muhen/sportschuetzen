@@ -194,11 +194,33 @@ CREATE TABLE rechnungspositionen (
 | **Phase 9** | **Jahresbeiträge-Integration (Client 3)** | ✅ | In [`jahresbeitrag-overview.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-overview.js):<br>• `ensureInvoiceCreatedRemote` erzeugt Rechnungen für Mitgliederbeiträge via `RechnungsCore.createInvoice()` inklusive Adress-Snapshot<br>• `jbSaveZahlung()` verbucht Zahlungen via `RechnungsCore.recordPayment()`<br>• `jbGenerateInvoicePdfRemote()` nutzt `RechnungsCore.renderPdf()` |
 | **Phase 10** | **CAMT.054 / 053 Bankabgleich** | ✅ | In [`buchhaltung-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/buchhaltung-bank.js) & [`jahresbeitrag-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-bank.js):<br>• Gematchte Banktransaktionen verbuchen Rechnungszahlungen direkt über `RechnungsCore.recordPayment()`<br>• Batch-Bankbuchung im Jahresbeitrag synchronisiert `invoice_payments` und `invoices`<br>• `accounting_journal.id` Bereinigung (Postgres `BIGSERIAL`) verhindert SQL-Typenkonflikte |
 | **Phase 11** | **PDF-Geometrie & Atomare Nummernvergabe** | ✅ | Behebung der 5 kritischen Sollbruchstellen im Rechnungs- und PDF-Betrieb:<br>• **Dynamischer $Y$-Cursor & Text-Wrapping:** Keine starre `length > 8` Schwelle; automatischer Textumbruch (`wrapText`) mit flexibler Zeilenhöhe in [`supabase/functions/generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts)<br>• **Intelligenter Lookahead:** Verhindert "Orphan Payment Slips" (leere Folgeseiten nur mit QR-Zahlteil); hält passende Rechnungen exakt auf 1 Seite<br>• **Logo-Handling:** Zentral in `operatives-storage/assets/logo.png`, In-Memory-Caching im Deno-Scope (`cachedLogoBytes`) und dynamische Skalierung via `scaleToFit()` (keine Verzerrung)<br>• **Atomare Rechnungsnummern:** Migration [`26_atomic_invoice_numbers.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/26_atomic_invoice_numbers.sql) (`invoice_number_seq` & Stored Procedure `next_invoice_number()`) verhindert Race Conditions im Frontend<br>• **UTF-8 & WinAnsi-Schutz:** `sanitizeText()` schützt `pdf-lib` vor Zeichensatz-Crashes bei Schweizer Umlauten und Sonderzeichen |
-| **Phase 12** | **Zentraler Dokumenten- & Vorlagen-Pool** | ⏳ | Entkopplung von Layout & Textbausteinen aus dem Rechnungsmodul in eine eigenständige Modul-Kachel:<br>• **Revisionssicherheit (OR 957ff):** Binäres Archiv (`operatives-storage/archive/...`) & Unveränderlichkeits-Garantie<br>• **Deterministisches Höhen-Budgeting:** Exakte Paginierung & dedizierte QR-Schlussseite bei $\ge 105\text{ mm}$ Platzbedarf<br>• **Relationale Vorlagen-Struktur:** `document_templates` & `document_template_clauses` mit Postgres-ENUM statt unvalidiertem JSONB<br>• **Cold-Start-Beseitigung:** Base64-Inlining von Brand-Assets im Deno-Bundle<br>• **Edge Function Server-Side-Resolution:** Vorlagenauflösung primär im Backend, Entlastung des Frontends |
+| **Phase 12** | **Zentraler Dokumenten- & Vorlagen-Pool** | 🔄 | Entkopplung von Layout & Textbausteinen aus dem Rechnungsmodul in eine eigenständige Modul-Kachel:<br>• **Schritt 1 (DB):** Migration [`27_document_templates_and_clauses.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/27_document_templates_and_clauses.sql) mit `document_templates`, `document_template_clauses`, View `invoice_layouts` & RLS ✅<br>• **Schritt 2 (UI):** Kachel „Dokumenten-Vorlagen“ (`templates-ui.js`, Navigation in `index.html` & `main.js`) ✅<br>• **Schritt 3 (Engine):** Upgrade Edge Function [`generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts) mit Base64-Inlining, `sanitizeWinAnsiText`, SIX SPC 0200 1 Nachlaufseite, dynamischen Mietvertragsklauseln, GV-Einladung (`generate-gv-invitation`) & WORM-Archivierung ✅<br>• **Schritt 4 (GV-Anbindung):** Umfragen/GV Controlling entkoppeln ⏳<br>• **Schritt 5 (E2E-Tests):** Vollständige Verifikation ⏳ |
 
 ---
 
 ## 5. Changelog der Umsetzungen
+
+### [2026-09-27] Phase 12 / Schritt 3 abgeschlossen: Edge Function generate-pdf Upgrade & Harmonisierung
+1. **Logo Base64-Inlining (`logo-base64.ts`):**
+   * Kompiliertes Vereinslogo als Base64-Konstante direkt im Function-Scope eingebunden.
+   * `getOrLoadLogoBytes()` garantiert 0 ms Latenz bei Cold-Starts auf Deno Deploy (mit optionalem Supabase-Storage Fallback).
+2. **Zweistufige Text-Normalisierung (`sanitizeWinAnsiText`):**
+   * Stufe 1: Typografische Anführungszeichen (`«», “”, „“`), Gedankenstriche (`–, —`), Aufzählungspunkte (`•`) und geschützte Leerzeichen (`\u00A0, \u202F`) normalisiert.
+   * Stufe 2: Native europäische Umlaut-Garantie (`ä, ö, ü, Ä, Ö, Ü, é, è, ê, à, â, ç`) bei gleichzeitig 100%igem WinAnsi-Crash-Schutz vor nicht darstellbaren Zeichen (> 255).
+3. **SIX SPC 0200 1 QR-Zahlteil Nachlaufseite & Belegbezugskopf:**
+   * Platzbudget-Prüfung ($Y_{\text{cursor}} - H_{\text{block}} < 111\text{ mm}$).
+   * Bei mehrseitigen Dokumenten wird auf der dedizierten Nachlaufseite ein standardisierter Belegbezugs-Kopf mit Rechnungs-Nr., Empfängername, Betrag und Schnittlinie gerendert.
+4. **Mietvertrag Schützenstube Rüteli (Dynamische Klauseln):**
+   * Vollständig aus `document_templates` und `document_template_clauses` gespeist (Ziffern 1–8).
+   * Deterministisches 2-Seiten-Budgeting mit Benützungsordnung auf Seite 1 & 2, Übergabeprotokoll/Checkliste, Unterschriften und QR-Zahlteil auf Seite 2.
+5. **Neuer Action-Handler `generate-gv-invitation`:**
+   * Action `{ action: 'generate-gv-invitation', year }` implementiert.
+   * Generiert eine mehrseitige GV-Einladungsbroschüre mit Traktandenliste aus `document_template_clauses` und dynamischem Jahresprogramm aus `public.termine` mit wiederholendem Tabellenkopf und 2-Pass Seitennummerierung ("Seite X von Y").
+   * Automatische Verknüpfung der generierten PDF-URL in `public.gv_instances.doc_einladung_url`.
+6. **WORM-Archivierung (OR 957ff):**
+   * Vor Neu-Generierung wird geprüft, ob unter `operatives-storage/archive/{year}/{category}/{recordId}.pdf` bereits ein unveränderbares WORM-Belegarchiv existiert.
+   * Bei existierenden Belegen wird direkt das revisionssichere Archiv-Blob geliefert.
+   * Neu erzeugte Dokumente werden zusätzlich unveränderlich im Archiv-Pfad gesichert.
 
 ### [2026-09-27] Phase 11 abgeschlossen: PDF-Geometrie, Lookahead & Atomare Rechnungsnummern
 1. **Behebung Schwachstelle 1 (Positionszähler-Irrtum & Text-Wrapping):**
@@ -355,8 +377,8 @@ CREATE TABLE rechnungspositionen (
 
 ---
 
-#### ⏳ Schritt 3: Edge Function `generate-pdf` Upgrade & Harmonisierung
-* **Datei:** [`supabase/functions/generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts)
+#### ✅ Schritt 3: Edge Function `generate-pdf` Upgrade & Harmonisierung – ABGESCHLOSSEN
+* **Dateien:** [`supabase/functions/generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts) & [`supabase/functions/generate-pdf/logo-base64.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/logo-base64.ts)
 * **Architektur-Spezifikation der 6 Kernkomponenten:**
   1. **Logo Base64-Inlining:**
      - Vereinslogo (`Muhen_32_mit_Namen_roter_Balken.png`) wird als kompilierte Base64-Konstante direkt im TypeScript-Code hinterlegt.
