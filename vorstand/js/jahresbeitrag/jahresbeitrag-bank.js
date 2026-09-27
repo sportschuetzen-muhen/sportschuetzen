@@ -435,9 +435,17 @@ async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {
       const cachedInv = (window._invoices || []).find(i => String(i.PersonNumber) === String(cached.PersonNumber) && String(i.type || '').toLowerCase().includes('jahresbeitrag'));
       if (cachedInv) {
         cachedInv.status = 'bezahlt'; cachedInv.payment_date = dateStr; cachedInv.payment_method = 'Überweisung';
-        if (supa) {
+        if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+          window.RechnungsCore.recordPayment(cachedInv.id, {
+            amount: Number(cachedInv.open_amount || cachedInv.total_amount || 0),
+            paymentDate: dateStr,
+            method: 'Bank',
+            reference: 'CAMT053',
+            notes: `CAMT Bankabgleich Jahresbeitrag (${memberName || ''})`
+          }).catch(e => console.warn('RechnungsCore recordPayment warning:', e));
+        } else if (supa) {
           supa.from('invoices').update({
-            status: 'Bezahlt',
+            status: 'bezahlt',
             payment_date: dateStr,
             payment_method: 'Überweisung',
             payment_reference: 'CAMT053',
@@ -801,9 +809,17 @@ async function jbBankBookAll() {
         const cachedInv = (window._invoices || []).find(inv => String(inv.PersonNumber) === String(cached.PersonNumber) && String(inv.type || '').toLowerCase().includes('jahresbeitrag'));
         if (cachedInv) {
           cachedInv.status = 'bezahlt'; cachedInv.payment_date = r.bookingDate; cachedInv.payment_method = 'Überweisung';
-          if (supa) {
+          if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+            window.RechnungsCore.recordPayment(cachedInv.id, {
+              amount: Number(cachedInv.open_amount || cachedInv.total_amount || 0),
+              paymentDate: r.bookingDate,
+              method: 'Bank',
+              reference: 'CAMT053',
+              notes: `CAMT Batch-Bankabgleich Jahresbeitrag`
+            }).catch(e => console.warn('RechnungsCore recordPayment warning:', e));
+          } else if (supa) {
             supa.from('invoices').update({
-              status: 'Bezahlt',
+              status: 'bezahlt',
               payment_date: r.bookingDate,
               payment_method: 'Überweisung',
               payment_reference: 'CAMT053',

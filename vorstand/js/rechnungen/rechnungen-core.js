@@ -86,8 +86,17 @@ function mapInvoiceFromSupabase(r, posMap = {}) {
     name: r.recipient_name || '',
     year: Number(r.year || new Date().getFullYear()),
     type: r.type || 'Jahresbeitrag',
+    source_module: r.source_module || 'manuell',
+    source_id: r.source_id || '',
+    recipient_address: r.recipient_address || {},
     status: r.status || 'offen',
     total_amount: Number(r.total_amount || 0),
+    open_amount: (r.open_amount !== undefined && r.open_amount !== null) ? Number(r.open_amount) : Number(r.total_amount || 0),
+    due_date: r.due_date ? rnFmtSwissDate(r.due_date) : '',
+    raw_due_date: r.due_date || '',
+    currency: r.currency || 'CHF',
+    cancel_reason: r.cancel_reason || '',
+    cancelled_at: r.cancelled_at ? rnFmtSwissDate(r.cancelled_at) : '',
     payment_date: r.payment_date || '',
     payment_method: r.payment_method || '',
     document_ref: r.document_ref || '',
@@ -898,3 +907,586 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
   // Falls nicht in Mitglieder-DB gematcht werden konnte: Verwende Fallback
   return fallbackSender;
 };
+
+// =====================================================================
+// ZENTRALER SERVICE: RechnungsCore (Harmonisierung & Entkopplung)
+// =====================================================================
+/**
+ * RechnungsCore: Verbindliche Schnittstelle für alle Vereinsmodule
+ * (Inventar, Vermietung, Jahresbeitrag, Sponsoring, Manuell)
+ *
+ * Verantwortlichkeiten:
+ * 1. Rechnungs-Lifecycle (entwurf -> gestellt/offen -> teilbezahlt -> bezahlt -> storniert)
+ * 2. Unveränderlicher Adress- und Positions-Snapshot
+ * 3. Nummernkreisvergabe (CAMT-konform)
+ * 4. Zahlungsverkehr & Teilzahlungen (invoice_payments)
+ * 5. Buchungsanschluss an doppelte Buchhaltung (accounting_journal)
+ * 6. Entkopplung von Fachmodulen (Fachmodule kennen nur InvoiceOrder)
+ */
+window.RechnungsCore = {
+  /**
+   * Validiert ein InvoiceOrder-Payload nach dem zentralen Datenvertrag
+   * @param {Object} order
+   * @throws {Error} wenn Pflichtfelder fehlen
+   */
+  validateOrder(order) {
+    if (!order || typeof order !== 'object') {
+      throw new Error("Rechnungsauftrag (InvoiceOrder) fehlt oder ist ungültig.");
+    }
+    if (!order.recipient || typeof order.recipient !== 'object') {
+      throw new Error("Empfängerdaten (recipient) fehlen im Rechnungsauftrag.");
+    }
+    const name = order.recipient.name || 
+      [order.recipient.firstName || order.recipient.vorname, order.recipient.lastName || order.recipient.nachname].filter(Boolean).join(' ').trim() || 
+      order.recipient.firma;
+    if (!name) {
+      throw new Error("Empfängername oder Vor-/Nachname/Firma ist zwingend erforderlich.");
+    }
+    if (!Array.isArray(order.positions) || order.positions.length === 0) {
+      throw new Error("Rechnung muss mindestens eine gültige Position enthalten.");
+    }
+    for (let i = 0; i < order.positions.length; i++) {
+      const p = order.positions[i];
+      const desc = p.title || p.description;
+      if (!desc) {
+        throw new Error(`Position #${i + 1}: Beschreibung/Titel fehlt.`);
+      }
+      const qty = Number(p.quantity !== undefined ? p.quantity : 1);
+      const price = Number(p.unitPrice !== undefined ? p.unitPrice : 0);
+      if (isNaN(qty) || qty <= 0) {
+        throw new Error(`Position #${i + 1}: Menge muss eine Zahl grösser als 0 sein.`);
+      }
+      if (isNaN(price)) {
+        throw new Error(`Position #${i + 1}: Einzelpreis ist ungültig.`);
+      }
+    }
+    return true;
+  },
+
+  /**
+   * Berechnet Hilfsdaten (Totals, standardisierte Positionsobjekte)
+   * @param {Array} rawPositions
+   */
+  calculateTotals(rawPositions) {
+    let total = 0;
+    const computedPositions = rawPositions.map((p, idx) => {
+      const qty = Number(p.quantity !== undefined ? p.quantity : 1);
+      const unitPrice = Number(p.unitPrice !== undefined ? p.unitPrice : 0);
+      const amount = (p.amount !== undefined && p.amount !== null && !isNaN(Number(p.amount)))
+        ? Number(p.amount)
+        : Number((qty * unitPrice).toFixed(2));
+      total += amount;
+      return {
+        position_nr: p.positionNr || (idx + 1),
+        description: (p.title || p.description || '').trim(),
+        quantity: qty,
+        unit_price: unitPrice,
+        amount: amount,
+        konto: String(p.accountHaben || p.konto || '3000').trim(),
+        type: p.type || 'standard',
+        source_field: p.sourceField || null
+      };
+    });
+    return {
+      totalAmount: Number(total.toFixed(2)),
+      positions: computedPositions
+    };
+  },
+
+  /**
+   * 1. RECHNUNG ERSTELLEN (Lifecycle: Status 'entwurf' oder bei autoIssue 'offen')
+   * @param {Object} order - Typisiertes InvoiceOrder Payload
+   * @returns {Promise<{success: boolean, invoice: Object, positions: Array}>}
+   */
+  async createInvoice(order) {
+    this.validateOrder(order);
+    const supa = getRechnungenSupabaseClient();
+    if (!supa) {
+      throw new Error("Supabase Client ist nicht initialisiert. Rechnung kann nicht angelegt werden.");
+    }
+
+    const sourceModule = (order.source && order.source.module) ? String(order.source.module).toLowerCase() : 'manuell';
+    const sourceId = (order.source && order.source.entityId) ? String(order.source.entityId) : null;
+    const year = Number(order.year || new Date().getFullYear());
+
+    // CAMT-konformes Präfix je nach Quellmodul
+    let prefix = 'RE';
+    if (sourceModule === 'inventar') prefix = 'MV';
+    else if (sourceModule === 'vermietung') prefix = 'VM';
+    else if (sourceModule === 'jahresbeitrag') prefix = 'JB';
+    else if (sourceModule === 'sponsoring') prefix = 'SP';
+
+    const invoiceId = order.id || window.generateSafeInvoiceId(prefix, year);
+
+    // Totale & Positionen berechnen
+    const { totalAmount, positions } = this.calculateTotals(order.positions);
+
+    // Fälligkeit festlegen
+    const issueDate = order.issueDate || new Date().toISOString().split('T')[0];
+    const dueDays = Number(order.dueDays || 30);
+    let dueDate = order.dueDate;
+    if (!dueDate) {
+      const d = new Date(issueDate);
+      d.setDate(d.getDate() + dueDays);
+      dueDate = d.toISOString().split('T')[0];
+    }
+
+    // Empfänger-Snapshot festschreiben (Schutz vor nachträglichen Adressänderungen)
+    const rec = order.recipient;
+    const recipientName = rec.name || 
+      [rec.firstName || rec.vorname, rec.lastName || rec.nachname].filter(Boolean).join(' ').trim() || 
+      rec.firma || 'Unbekannt';
+
+    const recipientSnapshot = {
+      type: rec.type || (rec.memberId ? 'mitglied' : (rec.firma ? 'firma' : 'extern')),
+      name: recipientName,
+      first_name: rec.firstName || rec.vorname || '',
+      last_name: rec.lastName || rec.nachname || '',
+      firma: rec.firma || '',
+      contact_person: rec.contactPerson || rec.kontaktperson || '',
+      street: rec.street || rec.strasse || '',
+      zip: String(rec.zip || rec.plz || ''),
+      city: rec.city || rec.ort || '',
+      country: rec.country || rec.land || 'Schweiz',
+      email: rec.email || '',
+      phone: rec.phone || rec.telefon || '',
+      member_id: rec.memberId || rec.mitgliedId || null,
+      contact_id: rec.contactId || null,
+      person_number: rec.personNumber || rec.PersonNumber || null
+    };
+
+    const initialStatus = (order.options && order.options.autoIssue) ? 'offen' : 'entwurf';
+    const nowIso = new Date().toISOString();
+
+    const invoiceRow = {
+      id: invoiceId,
+      person_number: recipientSnapshot.person_number ? String(recipientSnapshot.person_number) : (recipientSnapshot.member_id ? String(recipientSnapshot.member_id) : null),
+      recipient_name: recipientName,
+      year: year,
+      type: order.type || (sourceModule === 'inventar' ? 'Materialverkauf' : (sourceModule === 'vermietung' ? 'Vermietung' : (sourceModule === 'jahresbeitrag' ? 'Jahresbeitrag' : 'Sonstige'))),
+      source_module: sourceModule,
+      source_id: sourceId,
+      recipient_address: recipientSnapshot,
+      status: initialStatus,
+      total_amount: totalAmount,
+      open_amount: totalAmount,
+      due_date: dueDate,
+      currency: order.currency || 'CHF',
+      notes: order.notes || null,
+      mail_status: 'entwurf',
+      created_at: nowIso,
+      updated_at: nowIso
+    };
+
+    // 1. Supabase Insert: Invoice
+    const { data: invData, error: invErr } = await supa
+      .from('invoices')
+      .insert([invoiceRow])
+      .select()
+      .single();
+
+    if (invErr) {
+      console.error("❌ [RechnungsCore] Fehler beim Anlegen der Rechnung in Supabase:", invErr);
+      throw new Error(`Rechnung konnte nicht angelegt werden: ${invErr.message}`);
+    }
+
+    // 2. Supabase Insert: Positions
+    const posRows = positions.map(p => ({
+      invoice_id: invoiceId,
+      position_nr: p.position_nr,
+      description: p.description,
+      quantity: p.quantity,
+      unit_price: p.unit_price,
+      amount: p.amount,
+      konto: p.konto,
+      type: p.type,
+      source_field: p.source_field
+    }));
+
+    const { data: posData, error: posErr } = await supa
+      .from('invoice_positions')
+      .insert(posRows)
+      .select();
+
+    if (posErr) {
+      console.error("❌ [RechnungsCore] Fehler beim Anlegen der Rechnungspositionen:", posErr);
+      // Rollback Kopfzeile
+      await supa.from('invoices').delete().eq('id', invoiceId);
+      throw new Error(`Rechnungspositionen konnten nicht gespeichert werden: ${posErr.message}`);
+    }
+
+    const createdInvoice = mapInvoiceFromSupabase(invData || invoiceRow, { [invoiceId]: (posData || posRows).map(mapPositionFromSupabase) });
+
+    // Lokalen RAM-Cache aktualisieren
+    if (Array.isArray(window._invoices)) {
+      window._invoices.unshift(createdInvoice);
+      if (typeof window.renderRechnungen === 'function') {
+        window.renderRechnungen();
+      }
+    }
+
+    return {
+      success: true,
+      invoice: createdInvoice,
+      positions: posData || posRows
+    };
+  },
+
+  /**
+   * 2. RECHNUNG FESTSCHREIBEN / STELLEN (Lifecycle: 'entwurf' -> 'offen')
+   * Macht die Rechnung unveränderlich für den Empfängerversand
+   * @param {string} invoiceId
+   * @returns {Promise<{success: boolean, status: string, invoice: Object}>}
+   */
+  async issueInvoice(invoiceId) {
+    const supa = getRechnungenSupabaseClient();
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supa
+      .from('invoices')
+      .update({
+        status: 'offen',
+        updated_at: nowIso
+      })
+      .eq('id', invoiceId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Rechnung ${invoiceId} konnte nicht gestellt werden: ${error.message}`);
+    }
+
+    // Cache synchronisieren
+    const cached = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+    if (cached) {
+      cached.status = 'offen';
+      cached.updated_at = rnFmtSwissDate(nowIso);
+      if (typeof window.renderRechnungen === 'function') window.renderRechnungen();
+    }
+
+    return { success: true, status: 'offen', invoice: data };
+  },
+
+  /**
+   * 3. ZAHLUNGSERFASSUNG (Lifecycle & Buchungssatz)
+   * Saubere Trennung:
+   *  - Rechnung (Forderung)
+   *  - Zahlung (invoice_payments)
+   *  - FiBu (accounting_journal)
+   * Unterstützt Vollzahlung, Teilzahlung, Bar, TWINT, Bank und CAMT.054
+   * @param {string} invoiceId
+   * @param {Object} paymentInput
+   * @returns {Promise<{success: boolean, paymentId: string, status: string, openAmount: number, journalId: number|null}>}
+   */
+  async recordPayment(invoiceId, paymentInput) {
+    const supa = getRechnungenSupabaseClient();
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    const amount = Number(paymentInput.amount);
+    if (isNaN(amount) || amount <= 0) {
+      throw new Error(`Ungültiger Zahlungsbetrag: ${paymentInput.amount}`);
+    }
+
+    const payDate = paymentInput.paymentDate || new Date().toISOString().split('T')[0];
+    const payMethod = paymentInput.paymentMethod || 'Bank';
+    const docRef = paymentInput.documentRef || `ZAL-${invoiceId}`;
+    const syncFibu = paymentInput.syncBookkeeping !== false;
+
+    // A. Versuche primär die atomare RPC-Funktion record_invoice_payment
+    try {
+      const { data: rpcRes, error: rpcErr } = await supa.rpc('record_invoice_payment', {
+        p_invoice_id: invoiceId,
+        p_amount: amount,
+        p_payment_date: payDate,
+        p_payment_method: payMethod,
+        p_document_ref: docRef,
+        p_notes: paymentInput.notes || null,
+        p_sync_fibu: syncFibu,
+        p_soll_konto: paymentInput.sollKonto || null,
+        p_haben_konto: paymentInput.habenKonto || null
+      });
+
+      if (!rpcErr && rpcRes && rpcRes.success) {
+        // Lokalen Cache aktualisieren
+        const cached = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+        if (cached) {
+          cached.status = rpcRes.status;
+          cached.open_amount = Number(rpcRes.open_amount || 0);
+          cached.payment_date = payDate;
+          cached.payment_method = payMethod;
+          cached.document_ref = docRef;
+          if (typeof window.renderRechnungen === 'function') window.renderRechnungen();
+        }
+        return {
+          success: true,
+          paymentId: rpcRes.payment_id,
+          status: rpcRes.status,
+          openAmount: Number(rpcRes.open_amount || 0),
+          journalId: rpcRes.journal_entry_id
+        };
+      }
+      if (rpcErr) {
+        console.warn("[RechnungsCore] RPC record_invoice_payment Rückmeldung:", rpcErr.message);
+      }
+    } catch (rpcEx) {
+      console.warn("[RechnungsCore] RPC Ausführung fehlgeschlagen, nutze REST Ablauf:", rpcEx);
+    }
+
+    // B. Robuster REST-Ablauf
+    const { data: inv, error: invErr } = await supa.from('invoices').select('*').eq('id', invoiceId).single();
+    if (invErr || !inv) throw new Error(`Rechnung ${invoiceId} nicht gefunden.`);
+    if (inv.status === 'storniert') throw new Error(`Rechnung ${invoiceId} ist storniert und kann keine Zahlungen empfangen.`);
+
+    let journalId = null;
+
+    // 1. FiBu Buchungssatz anlegen
+    if (syncFibu) {
+      let sollKonto = paymentInput.sollKonto;
+      if (!sollKonto) {
+        const m = payMethod.toLowerCase();
+        sollKonto = (m.includes('bar') || m.includes('kasse')) ? '1000' : '1020';
+      }
+      let habenKonto = paymentInput.habenKonto;
+      if (!habenKonto) {
+        const { data: pos } = await supa.from('invoice_positions').select('konto').eq('invoice_id', invoiceId).limit(1);
+        habenKonto = (pos && pos[0] && pos[0].konto) ? pos[0].konto : '3400';
+      }
+      const payYear = new Date(payDate).getFullYear() || new Date().getFullYear();
+      const { data: jData, error: jErr } = await supa.from('accounting_journal').insert([{
+        jahr: payYear,
+        datum: payDate,
+        beleg_nr: docRef,
+        beschreibung: `Zahlungseingang ${invoiceId} (${inv.recipient_name})`,
+        konto_soll: sollKonto,
+        konto_haben: habenKonto,
+        betrag: amount,
+        typ: 'Rechnung',
+        buchungstyp: 'DEBITOR'
+      }]).select('id').single();
+
+      if (!jErr && jData) {
+        journalId = jData.id;
+      }
+    }
+
+    // 2. Zahlung eintragen (triggert Postgres Statusneuberechnung)
+    const { data: payData, error: payErr } = await supa.from('invoice_payments').insert([{
+      invoice_id: invoiceId,
+      payment_date: payDate,
+      amount: amount,
+      payment_method: payMethod,
+      document_ref: docRef,
+      camt_entry_id: paymentInput.camtEntryId || null,
+      journal_entry_id: journalId,
+      notes: paymentInput.notes || null
+    }]).select('id').single();
+
+    if (payErr) {
+      throw new Error(`Zahlungseintrag konnte nicht gespeichert werden: ${payErr.message}`);
+    }
+
+    // 3. Saldo und Status abfragen
+    const { data: updatedInv } = await supa.from('invoices').select('status, open_amount').eq('id', invoiceId).single();
+    const finalStatus = updatedInv ? updatedInv.status : 'bezahlt';
+    const finalOpen = updatedInv ? Number(updatedInv.open_amount) : 0;
+
+    const cached = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+    if (cached) {
+      cached.status = finalStatus;
+      cached.open_amount = finalOpen;
+      cached.payment_date = payDate;
+      cached.payment_method = payMethod;
+      cached.document_ref = docRef;
+      if (typeof window.renderRechnungen === 'function') window.renderRechnungen();
+    }
+
+    return {
+      success: true,
+      paymentId: payData?.id,
+      status: finalStatus,
+      openAmount: finalOpen,
+      journalId: journalId
+    };
+  },
+
+  /**
+   * 4. STORNIERUNG (Revisionssicher)
+   * @param {string} invoiceId
+   * @param {string} reason
+   * @returns {Promise<{success: boolean}>}
+   */
+  async cancelInvoice(invoiceId, reason = '') {
+    const supa = getRechnungenSupabaseClient();
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supa
+      .from('invoices')
+      .update({
+        status: 'storniert',
+        cancel_reason: reason || 'Manuell storniert',
+        cancelled_at: nowIso,
+        open_amount: 0.00,
+        updated_at: nowIso
+      })
+      .eq('id', invoiceId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Rechnung ${invoiceId} konnte nicht storniert werden: ${error.message}`);
+    }
+
+    const cached = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+    if (cached) {
+      cached.status = 'storniert';
+      cached.open_amount = 0;
+      cached.cancel_reason = reason;
+      cached.cancelled_at = rnFmtSwissDate(nowIso);
+      if (typeof window.renderRechnungen === 'function') window.renderRechnungen();
+    }
+
+    return { success: true, invoice: data };
+  },
+
+  /**
+   * 5. AGGREGIERTE RECHNUNG LADEN (Kopf + Positionen + Zahlungsverlauf)
+   * @param {string} invoiceId
+   */
+  async getInvoice(invoiceId) {
+    const supa = getRechnungenSupabaseClient();
+    if (!supa) throw new Error("Supabase Client nicht verfügbar.");
+
+    const [invRes, posRes, payRes] = await Promise.all([
+      supa.from('invoices').select('*').eq('id', invoiceId).single(),
+      supa.from('invoice_positions').select('*').eq('invoice_id', invoiceId).order('position_nr', { ascending: true }),
+      supa.from('invoice_payments').select('*').eq('invoice_id', invoiceId).order('payment_date', { ascending: true })
+    ]);
+
+    if (invRes.error || !invRes.data) {
+      throw new Error(`Rechnung ${invoiceId} nicht gefunden: ${invRes.error?.message || 'Kein Eintrag'}`);
+    }
+
+    const positions = (posRes.data || []).map(mapPositionFromSupabase);
+    const payments = payRes.data || [];
+    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+    const invoice = mapInvoiceFromSupabase(invRes.data, { [invoiceId]: positions });
+    invoice.payments = payments;
+    invoice.total_paid = Number(totalPaid.toFixed(2));
+    invoice.open_amount = Number((invRes.data.open_amount !== undefined && invRes.data.open_amount !== null)
+      ? invRes.data.open_amount
+      : Math.max(0, invoice.total_amount - totalPaid).toFixed(2));
+
+    return invoice;
+  },
+
+  /**
+   * 6. OFFENE RECHNUNGEN ABFRAGEN
+   * @param {string|null} sourceModule - z.B. 'inventar', 'vermietung'
+   */
+  async getOpenInvoices(sourceModule = null) {
+    const supa = getRechnungenSupabaseClient();
+    if (!supa) return [];
+    let query = supa.from('invoices').select('*').in('status', ['offen', 'teilbezahlt', 'gemahnt']).order('due_date', { ascending: true });
+    if (sourceModule) {
+      query = query.eq('source_module', sourceModule);
+    }
+    const { data, error } = await query;
+    if (error || !data) return [];
+    return data.map(r => mapInvoiceFromSupabase(r));
+  },
+
+  /**
+   * 7. ZAHLUNGEN ZU EINER RECHNUNG LADEN
+   * @param {string} invoiceId
+   */
+  async getPayments(invoiceId) {
+    const supa = getRechnungenSupabaseClient();
+    if (!supa) return [];
+    const { data, error } = await supa
+      .from('invoice_payments')
+      .select('*')
+      .eq('invoice_id', invoiceId)
+      .order('payment_date', { ascending: true });
+    return data || [];
+  },
+
+  /**
+   * 8. HILFSFUNKTION: Betrag Schweizer Franken formatieren
+   */
+  formatSwissAmount(val) {
+    const num = Number(val || 0);
+    return num.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  },
+
+  /**
+   * 9. DOKUMENTENAUSGABE: Rechnungs-PDF & Schweizer QR-Zahlteil (SIX SPC 0200 1)
+   * Das PDF ist eine reine Darstellung des Rechnungs-Aggregats.
+   * @param {string} invoiceId
+   * @param {Object} [customOptions]
+   * @returns {Promise<{success: boolean, pdfUrl?: string, storagePath?: string, pdfBase64?: string}>}
+   */
+  async renderPdf(invoiceId, customOptions = {}) {
+    const inv = await this.getInvoice(invoiceId);
+    if (!inv) throw new Error(`Rechnung ${invoiceId} wurde nicht gefunden.`);
+
+    const recipient = (inv.recipient_address && Object.keys(inv.recipient_address).length > 0)
+      ? inv.recipient_address
+      : (typeof rnGetRecipientForInvoice === 'function' ? rnGetRecipientForInvoice(inv) : {
+          name: inv.name,
+          strasse: '', plz: '', ort: '', email: ''
+        });
+
+    const sender = customOptions.sender || (typeof rnGetLoggedInSender === 'function' ? rnGetLoggedInSender(inv.type) : null);
+    const layout = customOptions.layout || (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
+
+    const renderPayload = {
+      action: 'generate-invoice',
+      invoiceId: inv.id,
+      recipient: recipient,
+      sender: sender,
+      layout: layout,
+      positions: inv.positions,
+      totalAmount: inv.total_amount,
+      year: inv.year || new Date().getFullYear(),
+      type: inv.type || 'Rechnung',
+      ...customOptions
+    };
+
+    let result = null;
+    if (typeof window.generatePdfViaEngine === 'function') {
+      try {
+        result = await window.generatePdfViaEngine(renderPayload);
+      } catch (e) {
+        console.warn("[RechnungsCore] Edge Function Fehler, versuche Browser-Fallback:", e);
+      }
+    }
+
+    if (!result || !result.success) {
+      if (typeof window.generatePdfClientFallback === 'function') {
+        result = await window.generatePdfClientFallback(renderPayload);
+      }
+    }
+
+    if (!result || !result.success) {
+      throw new Error(result?.error || "PDF konnte weder serverseitig noch clientseitig erzeugt werden.");
+    }
+
+    // Storage Links an Rechnung aktualisieren
+    if (result.pdfUrl || result.storagePath) {
+      const supa = getRechnungenSupabaseClient();
+      if (supa) {
+        await supa.from('invoices').update({
+          pdf_url: result.pdfUrl || null,
+          pdf_storage_path: result.storagePath || null,
+          updated_at: new Date().toISOString()
+        }).eq('id', invoiceId);
+      }
+    }
+
+    return result;
+  }
+};
+

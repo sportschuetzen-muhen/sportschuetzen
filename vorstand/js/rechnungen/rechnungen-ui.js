@@ -446,8 +446,10 @@ window.rnRenderTable = function() {
       matchesStatus = isPaid;
     }
 
-    const matchesType = window._invoicesFilterType === 'alle' || 
-      String(i.type).toLowerCase().includes(window._invoicesFilterType.toLowerCase());
+    const filterType = String(window._invoicesFilterType || 'alle').toLowerCase();
+    const matchesType = filterType === 'alle' || 
+      String(i.type || '').toLowerCase().includes(filterType) ||
+      String(i.source_module || '').toLowerCase().includes(filterType);
 
     return matchesSearch && matchesStatus && matchesType;
   });
@@ -504,10 +506,17 @@ window.rnRenderTable = function() {
       else if (st.includes('mahn') || st.includes('erinnerung')) mStufe = 1;
     }
     
-    // Differenzierte Statusanzeige nach Schweizer 3-Stufen-Mahnwesen
+    // Differenzierte Statusanzeige nach Schweizer 3-Stufen-Mahnwesen & neuem Lifecycle
     let statusBadge = '';
     if (isPaid) {
       statusBadge = '<span class="badge bg-success px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>';
+    } else if (st === 'teilbezahlt') {
+      const restChf = fmtChf(item.open_amount !== undefined ? item.open_amount : 0);
+      statusBadge = `<span class="badge bg-info text-dark px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;" title="Restbetrag: ${restChf}"><i class="fas fa-adjust me-1"></i>Teilbezahlt (${restChf})</span>`;
+    } else if (st === 'entwurf') {
+      statusBadge = '<span class="badge bg-light text-dark border px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;"><i class="fas fa-file-signature me-1"></i>Entwurf</span>';
+    } else if (st === 'storniert') {
+      statusBadge = '<span class="badge bg-dark text-white px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;"><i class="fas fa-ban me-1"></i>Storniert</span>';
     } else if (st === 'gemahnt' || mStufe > 0 || st.includes('mahn') || st === '2' || st === '3') {
       if (mStufe === 1) {
         statusBadge = '<span class="badge bg-warning text-dark px-2.5 py-1.5 rounded-pill" style="font-size:12.5px;" title="1. Zahlungserinnerung versendet"><i class="fas fa-bell me-1"></i>Erinnerung (1/3)</span>';

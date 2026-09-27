@@ -604,13 +604,27 @@ async function jbSaveZahlung() {
         }).eq('id', id);
 
         if (r && r.invoiceId) {
-          await supa.from('invoices').update({
-            status: 'bezahlt',
-            payment_date: datum,
-            payment_method: methode,
-            document_ref: beleg || `PAY-${r.invoiceId}`,
-            updated_at: new Date().toISOString()
-          }).eq('id', r.invoiceId);
+          if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+            try {
+              await window.RechnungsCore.recordPayment(r.invoiceId, {
+                amount: Number(r.Gesamt || r.betrag || 0),
+                paymentDate: datum,
+                method: methode || 'Bank',
+                reference: beleg || `PAY-${r.invoiceId}`,
+                notes: `Jahresbeitrag Zahlung ${r.year} (${r.PersonNumber})`
+              });
+            } catch (corePayErr) {
+              console.warn("⚠️ RechnungsCore Zahlungseingang Jahresbeitrag:", corePayErr);
+            }
+          } else {
+            await supa.from('invoices').update({
+              status: 'bezahlt',
+              payment_date: datum,
+              payment_method: methode,
+              document_ref: beleg || `PAY-${r.invoiceId}`,
+              updated_at: new Date().toISOString()
+            }).eq('id', r.invoiceId);
+          }
         }
         console.log(`✅ [Supabase] Zahlung für Beitrag ${id} (und ggf. Rechnung ${r?.invoiceId}) direkt verbucht.`);
       } catch (errSup) {
@@ -807,7 +821,54 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     };
   });
 
-  // 1. Direkt in Supabase persistieren (falls aktiv)
+  // 1. RechnungsCore-Integration (Single Source of Truth)
+  if (!existingInv && window.RechnungsCore && typeof window.RechnungsCore.createInvoice === 'function') {
+    try {
+      const invoiceOrder = {
+        source: {
+          module: 'jahresbeitrag',
+          id: String(r.id)
+        },
+        recipient: {
+          memberId: m.id || null,
+          personNumber: String(r.PersonNumber || '').trim(),
+          name: name,
+          salutation: m.Salutation || m.Anrede || '',
+          street: m.Street || m.Strasse || '',
+          zip: m.PostCode || m.PLZ || '5037',
+          city: m.City || m.Ort || 'Muhen',
+          email: m.PrimaryEmail || m.Email || ''
+        },
+        positions: positions.map(p => ({
+          title: p.description,
+          quantity: p.quantity,
+          unitPrice: p.unit_price,
+          total: p.amount,
+          account: p.konto || '3000'
+        })),
+        options: {
+          dueDateDays: 30,
+          type: 'Jahresbeitrag',
+          year: Number(r.year),
+          notes: `Jahresbeitrag ${r.year} (${name})`
+        }
+      };
+
+      const createdInv = await window.RechnungsCore.createInvoice(invoiceOrder);
+      r.invoiceId = createdInv.id;
+
+      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+      if (supa) {
+        await supa.from('contributions_header').update({ invoice_id: createdInv.id }).eq('id', r.id);
+      }
+      console.log(`✅ [RechnungsCore] Jahresbeitrags-Rechnung ${createdInv.id} erstellt & verknüpft.`);
+      return createdInv.id;
+    } catch (coreErr) {
+      console.warn("⚠️ RechnungsCore Fehler bei Jahresbeitrag, nutze Fallback:", coreErr);
+    }
+  }
+
+  // Fallback: Direkt in Supabase persistieren
   const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
   if (supa) {
     try {
@@ -818,6 +879,9 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
         year: Number(r.year),
         type: 'Jahresbeitrag',
         total_amount: Number(r.Gesamt || 0),
+        open_amount: Number(r.Gesamt || 0),
+        source_module: 'jahresbeitrag',
+        source_id: String(r.id),
         status: r.status || 'offen',
         updated_at: new Date().toISOString()
       };
@@ -844,8 +908,6 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     }
   }
 
-
-
   if (existingInv) {
     r.invoiceId = existingInv.id;
     return existingInv.id;
@@ -870,45 +932,40 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
     const m = _jbMemberMap[String(pn)] || {};
     const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
     
-    // 1. Sicherstellen, dass die Rechnung in Rechnungen_GAS existiert
+    // 1. Sicherstellen, dass die Rechnung existiert
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
     
-    // 2. Phase 21: Supabase-First PDF Generierung
-    if (typeof window.generatePdfViaEngine === 'function') {
+    // 2. Primär: Zentrale RechnungsCore.renderPdf-Methode
+    let engineRes = null;
+    if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
       try {
-        const engineRes = await window.generatePdfViaEngine({
-          action: 'generate-invoice',
-          invoiceId: invoiceId,
-          recipient: {
-            vorname: m.FirstName || '',
-            nachname: m.LastName || '',
-            name: name,
-            strasse: m.Street || '',
-            plz: m.PostCode || '',
-            ort: m.City || '',
-            email: m.PrimaryEmail || ''
-          },
-          totalAmount: r.total_amount || r.betrag || 0,
-          year: r.year || new Date().getFullYear(),
-          type: 'Jahresbeitrag'
-        });
+        engineRes = await window.RechnungsCore.renderPdf(invoiceId);
+      } catch (cErr) {
+        console.warn("⚠️ RechnungsCore.renderPdf fehlgeschlagen, versuche Engine-Fallback:", cErr);
+      }
+    }
 
-        if (engineRes && engineRes.success) {
-          showToast("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
-          if (engineRes.pdfUrl) {
-            window.open(engineRes.pdfUrl, '_blank');
-          } else if (engineRes.pdfBase64 && typeof openPdfBase64 === 'function') {
-            openPdfBase64(engineRes.pdfBase64);
-          }
-          await loadJahresbeitragData(true, false);
-          return;
-        } else {
-          throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
-        }
-      } catch (engineErr) {
-        console.warn("⚠️ PDF-Engine Fehler in Jahresbeitrag:", engineErr);
+    // Fallback falls RechnungsCore nicht verfügbar
+    if (!engineRes && typeof window.generatePdfViaEngine === 'function') {
+      engineRes = await window.generatePdfViaEngine({
+        action: 'generate-invoice',
+        invoiceId: invoiceId,
+        recipient: {
+          vorname: m.FirstName || '',
+          nachname: m.LastName || '',
+          name: name,
+          strasse: m.Street || '',
+          plz: m.PostCode || '',
+          ort: m.City || '',
+          email: m.PrimaryEmail || ''
+        },
+        totalAmount: r.total_amount || r.betrag || 0,
+        year: r.year || new Date().getFullYear(),
+        type: 'Jahresbeitrag'
+      });
+      if (!engineRes || !engineRes.success) {
         if (typeof window.generatePdfClientFallback === 'function') {
-          const clientRes = await window.generatePdfClientFallback({
+          engineRes = await window.generatePdfClientFallback({
             invoiceId: invoiceId,
             recipient: {
               vorname: m.FirstName || '',
@@ -922,20 +979,25 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
             year: r.year || new Date().getFullYear(),
             type: 'Jahresbeitrag'
           });
-          if (clientRes && clientRes.success) {
-            showToast("🎉 PDF über Browser generiert!");
-            if (clientRes.pdfUrl) window.open(clientRes.pdfUrl, '_blank');
-            await loadJahresbeitragData(true, false);
-            return;
-          }
         }
-        throw engineErr;
       }
+    }
+
+    if (engineRes && engineRes.success) {
+      showToast("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
+      if (engineRes.pdfUrl && engineRes.pdfUrl.startsWith('http')) {
+        window.open(engineRes.pdfUrl, '_blank');
+      } else if (engineRes.pdfBase64 && typeof openPdfBase64 === 'function') {
+        openPdfBase64(engineRes.pdfBase64);
+      }
+      await loadJahresbeitragData(true, false);
+      return;
     } else {
-      throw new Error("PDF-Engine ist nicht verfügbar.");
+      throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
     }
   } catch (err) {
     alert("Fehler bei PDF-Erstellung: " + err.message);
+  } finally {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = oldHtml;

@@ -23,6 +23,7 @@ WORKER/
 *.bak
 *.tmp
 *.temp
+*.zip
 *~
 *.swp
 scratch/

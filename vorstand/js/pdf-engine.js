@@ -32,7 +32,7 @@
     /**
      * Erzeugt den standardisierten Schweizer QR-Rechnungstext nach SIX SPC 0200 1
      */
-    window.createSwissQrBillPayload = function (invoice, recipient) {
+    window.createSwissQrBillPayload = function (invoice, recipient = {}) {
         const cleanIban = CLUB_IBAN.replace(/\s/g, '');
         const isFirma = recipient.typ === 'firma' ||
             Boolean(recipient.firma) ||
@@ -46,28 +46,40 @@
         }
         if (debtorName.length > 70) debtorName = debtorName.substring(0, 70);
 
-        // Strasse und Nummer aufteilen
+        // Strasse und Hausnummer aufteilen
         const strasse = (recipient.strasse || '').trim();
         const parts = strasse.split(/\s+(?=\d)/);
-        const streetName = parts[0] || '–';
-        const houseNumber = parts.slice(1).join(' ') || ' ';
+        const streetName = (parts[0] || '–').substring(0, 70);
+        const houseNumber = (parts.slice(1).join(' ') || '').substring(0, 16);
 
         const totalAmount = Number(invoice.total_amount || invoice.amount || 0);
         const formattedAmount = totalAmount > 0 ? totalAmount.toFixed(2) : '';
-        const qrRefText = `${invoice.id || 'RECHNUNG'} / ${invoice.type || 'Rechnung'} ${invoice.year || new Date().getFullYear()}`;
+        const qrRefText = `${invoice.id || 'RECHNUNG'} / ${invoice.type || 'Rechnung'} ${invoice.year || new Date().getFullYear()}`.substring(0, 140);
+
+        // Referenz-Typ nach SIX Spezifikation (QRR = 27-stellig, SCOR = ISO 11649, NON = Keine)
+        let refType = "NON";
+        let refValue = "";
+        const rawRef = (invoice.qr_reference || invoice.reference || '').replace(/\s/g, '');
+        if (rawRef.length === 27 && /^\d{27}$/.test(rawRef)) {
+            refType = "QRR";
+            refValue = rawRef;
+        } else if (rawRef.startsWith('RF') && rawRef.length >= 5 && rawRef.length <= 25) {
+            refType = "SCOR";
+            refValue = rawRef;
+        }
 
         return [
             "SPC", "0200", "1",
             cleanIban,
-            "S", CLUB_NAME, "", "", CLUB_ZIP, CLUB_CITY, CLUB_COUNTRY,
+            "S", CLUB_NAME, CLUB_STREET, "", CLUB_ZIP, CLUB_CITY, CLUB_COUNTRY,
             "", "", "", "", "", "", "",
             formattedAmount, "CHF",
             "S", debtorName || "Debitor",
             streetName, houseNumber,
-            recipient.plz || CLUB_ZIP,
-            recipient.ort || CLUB_CITY,
+            (recipient.plz || CLUB_ZIP).substring(0, 16),
+            (recipient.ort || CLUB_CITY).substring(0, 35),
             recipient.land || "CH",
-            "NON", "",
+            refType, refValue,
             qrRefText,
             "EPD"
         ].join('\n');
@@ -336,76 +348,89 @@
             showLoadingOverlay(`Generiere QR-Rechnung PDF für ${name || invoiceId}...`);
         }
 
-        const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim()) || { id: invoiceId, name: name };
-        const m = (window._mglData || []).find(x => String(x.PersonNumber).trim() === String(inv.PersonNumber || '').trim()) || {};
-
-        const recipient = (typeof rnGetRecipientForInvoice === 'function')
-            ? rnGetRecipientForInvoice(inv)
-            : {
-                vorname: m.FirstName || (inv.name ? inv.name.split(' ')[0] : ''),
-                nachname: m.LastName || (inv.name ? inv.name.split(' ').slice(1).join(' ') : ''),
-                name: inv.name || `${m.FirstName || ''} ${m.LastName || ''}`.trim(),
-                strasse: m.Street || m.Strasse || '',
-                plz: m.ZipCode || m.PLZ || m.PostCode || '5037',
-                ort: m.City || m.Ort || 'Muhen',
-                email: m.Email || m.PrimaryEmail || ''
-            };
-
-        const sender = (typeof rnGetLoggedInSender === 'function')
-            ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
-            : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
-
-        const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
-
-        // Positionen aus Cache oder Supabase nachladen
-        let positions = inv.positions || (window._invoicePositionsCache && window._invoicePositionsCache[invoiceId]) || [];
-        const supa = (typeof window.getSupabaseClient === 'function')
-            ? window.getSupabaseClient()
-            : (window.supabaseClient || null);
-
-        if ((!positions || positions.length === 0) && supa) {
-            try {
-                const { data: posData } = await supa.from('invoice_positions').select('*').eq('invoice_id', invoiceId).order('position_nr', { ascending: true });
-                if (posData && posData.length > 0) {
-                    positions = (typeof mapPositionFromSupabase === 'function') ? posData.map(mapPositionFromSupabase) : posData;
-                    if (!window._invoicePositionsCache) window._invoicePositionsCache = {};
-                    window._invoicePositionsCache[invoiceId] = positions;
-                    inv.positions = positions;
-                }
-            } catch (_) {}
-        }
-
-        const totalAmount = Number(inv.total_amount || (positions.reduce((s, p) => s + (Number(p.amount) || 0), 0)) || 0);
-
-        const payload = {
-            action: 'generate-invoice',
-            invoiceId: invoiceId,
-            recipient: recipient,
-            sender: sender,
-            layout: layout,
-            positions: positions,
-            totalAmount: totalAmount,
-            year: inv.year || new Date().getFullYear(),
-            type: inv.type || 'Rechnung'
-        };
-
         try {
-            let result = await window.generatePdfViaEngine(payload);
+            let result = null;
 
-            // Fallback auf Browser jsPDF falls Edge Function nicht antwortet
-            if (!result.success) {
-                console.warn("⚠️ Edge Function nicht erreichbar, nutze Browser-Fallback...", result.error);
-                result = await window.generatePdfClientFallback(payload);
+            // 1. Primär: Zentrale RechnungsCore-Engine nutzen (Single Source of Truth)
+            if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+                try {
+                    result = await window.RechnungsCore.renderPdf(invoiceId);
+                } catch (coreErr) {
+                    console.warn("⚠️ RechnungsCore.renderPdf fehlgeschlagen, versuche Legacy-Pipeline:", coreErr);
+                }
             }
 
-            if (result.success) {
+            // 2. Fallback falls RechnungsCore noch nicht verfügbar
+            if (!result || !result.success) {
+                const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim()) || { id: invoiceId, name: name };
+                const m = (window._mglData || []).find(x => String(x.PersonNumber).trim() === String(inv.PersonNumber || '').trim()) || {};
+
+                const recipient = (typeof rnGetRecipientForInvoice === 'function')
+                    ? rnGetRecipientForInvoice(inv)
+                    : {
+                        vorname: m.FirstName || (inv.name ? inv.name.split(' ')[0] : ''),
+                        nachname: m.LastName || (inv.name ? inv.name.split(' ').slice(1).join(' ') : ''),
+                        name: inv.name || `${m.FirstName || ''} ${m.LastName || ''}`.trim(),
+                        strasse: m.Street || m.Strasse || '',
+                        plz: m.ZipCode || m.PLZ || m.PostCode || '5037',
+                        ort: m.City || m.Ort || 'Muhen',
+                        email: m.Email || m.PrimaryEmail || ''
+                    };
+
+                const sender = (typeof rnGetLoggedInSender === 'function')
+                    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+                    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+
+                const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
+
+                let positions = inv.positions || (window._invoicePositionsCache && window._invoicePositionsCache[invoiceId]) || [];
+                const supa = (typeof window.getSupabaseClient === 'function')
+                    ? window.getSupabaseClient()
+                    : (window.supabaseClient || null);
+
+                if ((!positions || positions.length === 0) && supa) {
+                    try {
+                        const { data: posData } = await supa.from('invoice_positions').select('*').eq('invoice_id', invoiceId).order('position_nr', { ascending: true });
+                        if (posData && posData.length > 0) {
+                            positions = (typeof mapPositionFromSupabase === 'function') ? posData.map(mapPositionFromSupabase) : posData;
+                            if (!window._invoicePositionsCache) window._invoicePositionsCache = {};
+                            window._invoicePositionsCache[invoiceId] = positions;
+                            inv.positions = positions;
+                        }
+                    } catch (_) {}
+                }
+
+                const totalAmount = Number(inv.total_amount || (positions.reduce((s, p) => s + (Number(p.amount) || 0), 0)) || 0);
+
+                const payload = {
+                    action: 'generate-invoice',
+                    invoiceId: invoiceId,
+                    recipient: recipient,
+                    sender: sender,
+                    layout: layout,
+                    positions: positions,
+                    totalAmount: totalAmount,
+                    year: inv.year || new Date().getFullYear(),
+                    type: inv.type || 'Rechnung'
+                };
+
+                result = await window.generatePdfViaEngine(payload);
+                if (!result || !result.success) {
+                    result = await window.generatePdfClientFallback(payload);
+                }
+            }
+
+            if (result && result.success) {
                 if (typeof showSuccess === 'function') {
                     showSuccess("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
                 }
 
-                // URL im lokalen In-Memory-Array aktualisieren
-                inv.pdf_url = result.pdfUrl || inv.pdf_url;
-                inv.pdf_storage_path = result.storagePath || inv.pdf_storage_path;
+                // In-Memory-Array synchronisieren
+                const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim());
+                if (inv) {
+                    inv.pdf_url = result.pdfUrl || inv.pdf_url;
+                    inv.pdf_storage_path = result.storagePath || inv.pdf_storage_path;
+                }
 
                 // PDF im neuen Browser-Tab öffnen
                 if (result.pdfUrl && result.pdfUrl.startsWith('http')) {
@@ -423,7 +448,7 @@
                     await loadRechnungenData(true);
                 }
             } else {
-                throw new Error(result.error || "Generierung fehlgeschlagen.");
+                throw new Error(result?.error || "Generierung fehlgeschlagen.");
             }
         } catch (err) {
             console.error("PDF Fehler:", err);

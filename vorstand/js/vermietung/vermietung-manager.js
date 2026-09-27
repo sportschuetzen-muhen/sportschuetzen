@@ -391,6 +391,33 @@ async function vermietungAktion(action, idOrRow) {
       }]);
     }
 
+    // 1.1 RechnungsCore-Synchronisation (Single Source of Truth)
+    if (action === 'bestaetigen' && window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+      try {
+        const inv = await ensureRentalInvoice(d);
+        if (inv && (inv.status === 'offen' || inv.status === 'teilbezahlt' || inv.status === 'entwurf')) {
+          await window.RechnungsCore.recordPayment(inv.id, {
+            amount: inv.open_amount || inv.total_amount,
+            method: 'Bank',
+            notes: `Zahlungseingang Mietvertrag ${d.vertragsnr}`
+          });
+          console.log(`✅ [Vermietung] RechnungsCore-Zahlung verbucht: ${inv.id}`);
+        }
+      } catch (payErr) {
+        console.warn("⚠️ [Vermietung] RechnungsCore Zahlungseingang:", payErr);
+      }
+    } else if (action === 'stornieren' && window.RechnungsCore && typeof window.RechnungsCore.cancelInvoice === 'function') {
+      try {
+        const inv = await ensureRentalInvoice(d);
+        if (inv && inv.status !== 'storniert' && inv.status !== 'bezahlt') {
+          await window.RechnungsCore.cancelInvoice(inv.id, 'Reservation im Vermietungsmodul storniert');
+          console.log(`✅ [Vermietung] RechnungsCore-Storno verbucht: ${inv.id}`);
+        }
+      } catch (stornoErr) {
+        console.warn("⚠️ [Vermietung] RechnungsCore Stornierung:", stornoErr);
+      }
+    }
+
     // 2. E-Mail-Versand über Supabase Mail-Engine
     const mailRes = await sendRentalWorkflowEmail(action, d, window._rentalSettings);
     if (!mailRes.success) {
@@ -554,6 +581,13 @@ async function saveNewReservation() {
 
     if (error) throw error;
 
+    // RechnungsCore: Zentrale Forderung/Rechnung automatisch anlegen
+    try {
+      await ensureRentalInvoice(data);
+    } catch (invErr) {
+      console.warn("⚠️ RechnungsCore Erstellung Vermietung:", invErr);
+    }
+
     // Automatisches Generieren des Mietvertrags-PDFs mit Schweizer QR-Rechnung
     if (typeof window.vmGenerateRentalContractPdf === 'function') {
       try {
@@ -574,5 +608,73 @@ async function saveNewReservation() {
   } catch (err) {
     console.error("Fehler beim Speichern der Reservation:", err);
     alert("❌ Fehler beim Speichern: " + err.message);
+  }
+}
+
+/**
+ * Stellt sicher, dass zu einer Vermietung ein zentraler Rechnungsdatensatz via RechnungsCore existiert
+ * @param {Object} d Vermietungsdatensatz
+ * @returns {Promise<Object|null>} Rechnungsdatensatz
+ */
+async function ensureRentalInvoice(d) {
+  if (!d) return null;
+  const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+  if (!supa) return null;
+
+  const bookingNr = d.booking_number || d.vertragsnr || d.id;
+
+  try {
+    // 1. Prüfen, ob bereits eine Rechnung vorhanden ist
+    const { data: existing } = await supa
+      .from('invoices')
+      .select('id, total_amount, open_amount, status, recipient_address')
+      .eq('source_module', 'vermietung')
+      .or(`source_id.eq.${bookingNr},source_id.eq.${d.id}`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    if (!window.RechnungsCore || typeof window.RechnungsCore.createInvoice !== 'function') {
+      return null;
+    }
+
+    // 2. Einheitliches InvoiceOrder-Payload nach Vertragsstandard
+    const invoiceOrder = {
+      source: {
+        module: 'vermietung',
+        id: bookingNr
+      },
+      recipient: {
+        name: `${d.first_name || d.vorname || ''} ${d.last_name || d.nachname || ''}`.trim() || 'Mieter Schützenstube',
+        salutation: d.salutation || d.anrede || '',
+        street: d.street || d.strasse || '',
+        zip: d.post_code || d.plz || '',
+        city: d.city || d.wohnort || '',
+        email: d.email || ''
+      },
+      positions: [
+        {
+          title: `Miete Schützenstube Muhen (${d.start_date || d.mietdatum || 'Reservation'})`,
+          quantity: 1,
+          unitPrice: Number(d.total_amount_chf || d.betrag_raw || 300),
+          account: '3400' // Ertrag Vermietung Schützenhaus
+        }
+      ],
+      options: {
+        dueDateDays: 14,
+        type: 'Vermietung',
+        notes: `Mietvertrag ${bookingNr}`,
+        bookingNumber: bookingNr
+      }
+    };
+
+    const newInvoice = await window.RechnungsCore.createInvoice(invoiceOrder);
+    console.log(`✅ [Vermietung] Zentrale Rechnung erfolgreich via RechnungsCore erstellt: ${newInvoice.id}`);
+    return newInvoice;
+  } catch (err) {
+    console.warn("⚠️ [Vermietung] Fehler bei ensureRentalInvoice:", err);
+    return null;
   }
 }

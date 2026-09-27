@@ -33,6 +33,12 @@ window.rnOpenPaymentModal = function(invoiceId, amount) {
             </div>
 
             <div class="mb-3">
+              <label class="form-label fw-bold small text-muted">Zahlungsbetrag (CHF)</label>
+              <input type="number" step="0.05" class="form-control fw-bold font-monospace text-primary fs-5" id="rnp-amount" value="${Number(amount || 0).toFixed(2)}" required min="0.05">
+              <div class="form-text text-muted small">Unterstützt Voll- und Teilzahlungen.</div>
+            </div>
+
+            <div class="mb-3">
               <label class="form-label fw-bold small text-muted">Zahlungsdatum</label>
               <input type="date" class="form-control" id="rnp-datum" required value="${new Date().toISOString().split('T')[0]}">
             </div>
@@ -85,20 +91,28 @@ window.rnOpenPaymentModal = function(invoiceId, amount) {
 window.rnSavePayment = async function(event, invoiceId) {
   event.preventDefault();
 
-  const syncBookkeeping = document.getElementById('rnp-sync-bookkeeping').checked;
+  const syncBookkeeping = document.getElementById('rnp-sync-bookkeeping')?.checked ?? true;
   const datum = document.getElementById('rnp-datum').value;
   const methode = document.getElementById('rnp-methode').value;
   const beleg = document.getElementById('rnp-beleg').value.trim();
+  const payAmt = parseFloat(document.getElementById('rnp-amount')?.value) || 0;
+
+  if (payAmt <= 0) {
+    alert("❌ Bitte geben Sie einen gültigen Betrag grösser als 0 ein.");
+    return;
+  }
 
   // 1. Optimistic Update
   const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
-  let oldInv = null;
   if (invIndex !== -1) {
-    oldInv = { ...window._invoices[invIndex] };
-    window._invoices[invIndex].status = 'bezahlt';
-    window._invoices[invIndex].zahlungsdatum = datum;
-    window._invoices[invIndex].zahlungsmethode = methode;
-    window._invoices[invIndex].beleg_nr = beleg || `PAY-${invoiceId}`;
+    const inv = window._invoices[invIndex];
+    const prevOpen = (inv.open_amount !== undefined && inv.open_amount !== null) ? Number(inv.open_amount) : Number(inv.total_amount || 0);
+    const newOpen = Math.max(0, prevOpen - payAmt);
+    inv.status = newOpen <= 0 ? 'bezahlt' : 'teilbezahlt';
+    inv.open_amount = newOpen;
+    inv.payment_date = datum;
+    inv.payment_method = methode;
+    inv.document_ref = beleg || `PAY-${invoiceId}`;
     window.renderRechnungen(); // Render table instantly!
   }
 
@@ -109,99 +123,73 @@ window.rnSavePayment = async function(event, invoiceId) {
     if (modal) modal.hide();
   }
 
-  showSuccess(`🎉 Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (Hintergrund-Synchronisation läuft)...`);
+  showSuccess(`🎉 Zahlung für Rechnung ${invoiceId} wird verbucht...`);
 
-  // 1. Primärspeicher: Supabase REST
-  const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
-  if (supa) {
-    try {
-      await supa.from('invoices').update({
-        status: 'bezahlt',
-        payment_date: datum,
-        payment_method: methode,
-        document_ref: beleg || `PAY-${invoiceId}`,
-        updated_at: new Date().toISOString()
-      }).eq('id', invoiceId);
-
-      if (syncBookkeeping) {
-        const invObj = window._invoices.find(i => String(i.id) === String(invoiceId));
-        const sollKonto = (methode === 'Bar' || methode === 'Kasse') ? '1000' : '1020';
-        const habenKonto = (invObj && invObj.account_haben) ? String(invObj.account_haben).trim() : '3400';
-        const payYear = new Date(datum).getFullYear() || new Date().getFullYear();
-        const payAmt = Number(invObj ? invObj.total_amount : 0);
-        if (payAmt > 0) {
-          supa.from('accounting_journal').insert({
-            id: `bh_inv_${invoiceId}_${Date.now()}`,
-            jahr: payYear,
-            datum: datum,
-            beleg_nr: beleg || `RE-${invoiceId}`,
-            beschreibung: `Zahlung Rechnung ${invoiceId} ${invObj ? invObj.name || '' : ''}`.trim(),
-            konto_soll: sollKonto,
-            konto_haben: habenKonto,
-            betrag: payAmt,
-            typ: 'Rechnung',
-            created_at: new Date().toISOString()
-          }).then(({ error }) => {
-            if (error) console.warn('[Rechnungen -> FiBu] Supabase journal insert error:', error);
-            else console.log('✅ Rechnungszahlung direkt in Supabase FiBu gebucht.');
-          }).catch(e => console.warn('[Rechnungen -> FiBu] Journal insert exception:', e));
-        }
+  // 2. Primärspeicher: RechnungsCore (Zahlungseingang -> Rechnungsstatus -> FiBu)
+  try {
+    if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+      const res = await window.RechnungsCore.recordPayment(invoiceId, {
+        amount: payAmt,
+        paymentDate: datum,
+        paymentMethod: methode,
+        documentRef: beleg || `PAY-${invoiceId}`,
+        syncBookkeeping: syncBookkeeping
+      });
+      showSuccess(`✅ Zahlung für Rechnung ${invoiceId} erfolgreich erfasst (${res.status.toUpperCase()}, Rest: CHF ${window.RechnungsCore.formatSwissAmount(res.openAmount)}).`);
+    } else {
+      // Fallback direkt Supabase REST
+      const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
+      if (supa) {
+        await supa.from('invoices').update({
+          status: 'bezahlt',
+          payment_date: datum,
+          payment_method: methode,
+          document_ref: beleg || `PAY-${invoiceId}`,
+          updated_at: new Date().toISOString()
+        }).eq('id', invoiceId);
       }
-    } catch (supaErr) {
-      console.warn("⚠️ Supabase savePayment Warning:", supaErr);
     }
+  } catch (err) {
+    console.error("❌ Fehler bei Zahlungsverbuchung:", err);
+    alert("❌ Fehler beim Speichern der Zahlung: " + err.message);
   }
 
   // UI Refresh nach Buchung in Supabase
   setTimeout(async () => {
-    await loadRechnungenData(true);
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
   }, 200);
 };
 
 
 // PDF GENERATION ONLY
 window.rnGeneratePDFOnly = async function(invoiceId, name) {
-  showLoadingOverlay(`Generiere QR-Rechnung PDF für ${name}...`);
-  
-  const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
-  if (!inv) {
-    hideLoadingOverlay();
-    alert("❌ Rechnung nicht gefunden.");
-    return;
-  }
+  showLoadingOverlay(`Generiere QR-Rechnung PDF für ${name || invoiceId}...`);
 
   try {
-    // Externe Kontakte laden, falls noch nicht im Speicher
-    if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
-      try { await loadInvoiceContactsData(); } catch (_) {}
-    }
+    let result = null;
 
-  const recipient = (typeof rnGetRecipientForInvoice === 'function')
-    ? rnGetRecipientForInvoice(inv)
-    : {
-        vorname: inv.name.split(' ')[0] || '',
-        nachname: inv.name.split(' ').slice(1).join(' ') || '',
-        strasse: '', plz: '', ort: '', email: ''
-      };
+    // 1. Primär: Zentraler Aufruf an RechnungsCore (Single Source of Truth)
+    if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+      try {
+        result = await window.RechnungsCore.renderPdf(invoiceId);
+      } catch (coreErr) {
+        console.warn("⚠️ RechnungsCore.renderPdf Fehler:", coreErr);
+        throw coreErr;
+      }
+    } else if (typeof window.generatePdfViaEngine === 'function') {
+      // 2. Fallback nur wenn RechnungsCore noch nicht initialisiert
+      const inv = window._invoices.find(i => String(i.id) === String(invoiceId));
+      if (!inv) throw new Error("Rechnung nicht im Speicher gefunden.");
 
-  const sender = (typeof rnGetLoggedInSender === 'function')
-    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
-    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+      const recipient = (typeof rnGetRecipientForInvoice === 'function')
+        ? rnGetRecipientForInvoice(inv)
+        : { vorname: inv.name.split(' ')[0] || '', nachname: inv.name.split(' ').slice(1).join(' ') || '' };
+      const sender = (typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Rechnung') : null;
+      const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
-  const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
-
-  const payload = {
-    action: 'generateInvoicePDF',
-    invoiceId: invoiceId,
-    recipient: recipient,
-    sender: sender,
-    layout: layout
-  };
-
-  // Phase 21: Supabase-First PDF-Engine mit Schweizer QR-Rechnung (SPC 0200 1)
-  if (typeof window.generatePdfViaEngine === 'function') {
-    try {
-      const result = await window.generatePdfViaEngine({
+      result = await window.generatePdfViaEngine({
         action: 'generate-invoice',
         invoiceId: invoiceId,
         recipient: recipient,
@@ -211,46 +199,39 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
         year: inv.year || new Date().getFullYear(),
         type: inv.type || 'Rechnung'
       });
-
-      if (result && result.success) {
-        showSuccess("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
-        if (result.pdfUrl) {
-          window.open(result.pdfUrl, '_blank');
-        } else if (result.pdfBase64) {
-          openPdfBase64(result.pdfBase64);
-        }
-        await loadRechnungenData(true);
-        return;
-      } else {
-        throw new Error(result?.error || 'PDF-Erstellung fehlgeschlagen');
-      }
-    } catch (engineErr) {
-      console.warn("⚠️ PDF-Engine Fehler, versuche Client-Fallback:", engineErr);
-      if (typeof window.generatePdfClientFallback === 'function') {
-        try {
-          const clientRes = await window.generatePdfClientFallback({
+      if (!result || !result.success) {
+        if (typeof window.generatePdfClientFallback === 'function') {
+          result = await window.generatePdfClientFallback({
             invoiceId: invoiceId,
             recipient: recipient,
             totalAmount: inv.total_amount,
             year: inv.year || new Date().getFullYear(),
             type: inv.type || 'Rechnung'
           });
-          if (clientRes && clientRes.success) {
-            showSuccess("🎉 PDF erfolgreich über Browser generiert!");
-            if (clientRes.pdfUrl) window.open(clientRes.pdfUrl, '_blank');
-            await loadRechnungenData(true);
-            return;
-          }
-        } catch (cErr) {
-          alert("❌ PDF Fehler: " + cErr.message);
-          return;
         }
       }
-      alert("❌ PDF Fehler: " + engineErr.message);
+    } else {
+      throw new Error("Weder RechnungsCore noch PDF-Engine verfügbar.");
     }
-  } else {
-    alert("❌ PDF-Engine nicht verfügbar.");
-  }
+
+    if (result && result.success) {
+      showSuccess("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
+      if (result.pdfUrl && result.pdfUrl.startsWith('http')) {
+        window.open(result.pdfUrl, '_blank');
+      } else if (result.pdfBase64) {
+        if (typeof openPdfBase64 === 'function') {
+          openPdfBase64(result.pdfBase64);
+        } else {
+          window.open(result.pdfBase64, '_blank');
+        }
+      }
+      await loadRechnungenData(true);
+    } else {
+      throw new Error(result?.error || 'PDF-Erstellung fehlgeschlagen');
+    }
+  } catch (err) {
+    console.error("❌ PDF Fehler:", err);
+    alert("❌ PDF Fehler: " + err.message);
   } finally {
     hideLoadingOverlay();
   }

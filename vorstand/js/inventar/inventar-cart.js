@@ -327,18 +327,15 @@ async function handleInventarSubmit(e) {
 }
 
 // =========================================================
-//  VERKAUF NACHBEREITUNG (Rechnung/Buchhaltung)
+//  VERKAUF NACHBEREITUNG (Rechnung via RechnungsCore / Buchhaltung)
 // =========================================================
 async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
     try {
         const invoiceItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Einzahlungsschein');
-        const barTwintItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Bar' || w.verkaufMethode === 'Twint');
+        const barItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Bar');
 
-        // 1. RECHNUNGEN GENERIEREN
+        // 1. RECHNUNGEN ÜBER ZENTRALEN RECHNUNGSCORE GENERIEREN
         if (invoiceItems.length > 0) {
-            const invoiceId = (typeof window.generateSafeInvoiceId === 'function')
-                ? window.generateSafeInvoiceId('MV', new Date().getFullYear())
-                : `MV-${String(new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
             const m = (inventarState.mitglieder || []).find(x => String(x.ID) === String(mitgliedId)) || {};
             const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
 
@@ -346,50 +343,58 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const memberStrasse = mglMaster.Street || m.Strasse || '';
             const memberPlz = mglMaster.PostCode || m.PLZ || '';
             const memberOrt = mglMaster.City || m.Ort || '';
-            
+            const recipientName = `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim() || 'Mitglied';
+
             const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-            const customKontoHaben = rawKonto.split('|')[0].trim() || '8501';
+            const customKontoHaben = rawKonto.split('|')[0].trim() || '3200';
 
-            let totalAmount = 0;
-            const positions = invoiceItems.map((w, index) => {
-                totalAmount += w.pfandBetrag;
-                return {
-                    position_nr: index + 1,
-                    description: `Kleiderverkauf: ${w.label}`,
-                    quantity: 1,
-                    unit_price: w.pfandBetrag,
-                    amount: w.pfandBetrag,
-                    konto: customKontoHaben
-                };
-            });
-
-            const invoiceHeader = {
-                id: invoiceId,
-                PersonNumber: m.PersonNumber || m.ID || '',
-                name: `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim(),
-                year: new Date().getFullYear(),
-                type: 'Materialverkauf',
-                total_amount: totalAmount,
-                status: 'Offen'
-            };
-
-            const payloadRechnung = {
-                action: 'createInvoice',
-                invoice: invoiceHeader,
-                positions: positions,
+            // Einheitlicher Datenvertrag: InvoiceOrder
+            const invoiceOrder = {
+                source: {
+                    module: 'inventar',
+                    entityId: (invoiceItems[0] && invoiceItems[0].itemId) ? String(invoiceItems[0].itemId) : null,
+                    referenceCode: `INV-VERKAUF-${new Date().getFullYear()}`
+                },
                 recipient: {
-                    vorname: m.Vorname || mglMaster.FirstName || '',
-                    nachname: m.Nachname || mglMaster.LastName || '',
-                    strasse: memberStrasse,
-                    plz: memberPlz,
-                    ort: memberOrt,
+                    type: 'mitglied',
+                    memberId: mitgliedId,
+                    personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
+                    name: recipientName,
+                    firstName: m.Vorname || mglMaster.FirstName || '',
+                    lastName: m.Nachname || mglMaster.LastName || '',
+                    street: memberStrasse,
+                    zip: memberPlz,
+                    city: memberOrt,
                     email: memberEmail
+                },
+                type: 'Materialverkauf',
+                positions: invoiceItems.map((w, index) => ({
+                    positionNr: index + 1,
+                    title: `Kleiderverkauf: ${w.label}`,
+                    quantity: 1,
+                    unitPrice: parseFloat(w.pfandBetrag) || 0,
+                    amount: parseFloat(w.pfandBetrag) || 0,
+                    accountHaben: customKontoHaben,
+                    sourceField: String(w.itemId)
+                })),
+                notes: `Materialverkauf über Vereinsinventar (${invoiceItems.length} Positionen)`,
+                options: {
+                    autoIssue: true // Status direkt auf 'offen'
                 }
             };
 
-            console.log("Erstelle Rechnung direkt in Supabase Master...", { invoiceId, totalAmount, recipient: payloadRechnung.recipient });
+            console.log("Erstelle Rechnung über zentralen RechnungsCore...", invoiceOrder);
+            if (!window.RechnungsCore || typeof window.RechnungsCore.createInvoice !== 'function') {
+                throw new Error("RechnungsCore ist nicht verfügbar. Bitte Seite neu laden.");
+            }
 
-            // 1. Rechnungs-PDF via Supabase PDF-Engine erzeugen
+            const coreRes = await window.RechnungsCore.createInvoice(invoiceOrder);
+            const createdInv = coreRes.invoice;
+            const invoiceId = createdInv.id;
+            const totalAmount = createdInv.total_amount;
+            const positions = createdInv.positions || [];
+
+            // 1. Rechnungs-PDF via Supabase PDF-Engine erzeugen & im Storage sichern
             let pdfUrl = null;
             let pdfStoragePath = null;
             let pdfBase64 = null;
@@ -398,7 +403,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     let pdfRes = await window.generatePdfViaEngine({
                         action: 'generate-invoice',
                         invoiceId: invoiceId,
-                        recipient: payloadRechnung.recipient,
+                        recipient: invoiceOrder.recipient,
                         positions: positions,
                         totalAmount: totalAmount,
                         year: new Date().getFullYear(),
@@ -408,7 +413,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         if (typeof window.generatePdfClientFallback === 'function') {
                             pdfRes = await window.generatePdfClientFallback({
                                 invoiceId: invoiceId,
-                                recipient: payloadRechnung.recipient,
+                                recipient: invoiceOrder.recipient,
                                 positions: positions,
                                 totalAmount: totalAmount,
                                 year: new Date().getFullYear(),
@@ -420,33 +425,22 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         pdfUrl = pdfRes.pdfUrl || null;
                         pdfStoragePath = pdfRes.storagePath || null;
                         pdfBase64 = pdfRes.pdfBase64 || null;
-                    }
-                } catch (pdfErr) {
-                    console.warn("⚠️ Supabase PDF-Engine Fehler bei Materialverkauf:", pdfErr);
-                    if (typeof window.generatePdfClientFallback === 'function') {
-                        try {
-                            const fbRes = await window.generatePdfClientFallback({
-                                invoiceId: invoiceId,
-                                recipient: payloadRechnung.recipient,
-                                positions: positions,
-                                totalAmount: totalAmount,
-                                year: new Date().getFullYear(),
-                                type: 'Materialverkauf'
-                            });
-                            if (fbRes && (fbRes.pdfUrl || fbRes.storagePath || fbRes.pdfBase64)) {
-                                pdfUrl = fbRes.pdfUrl || null;
-                                pdfStoragePath = fbRes.storagePath || null;
-                                pdfBase64 = fbRes.pdfBase64 || null;
-                            }
-                        } catch (fbErr) {
-                            console.warn("⚠️ PDF Client Fallback ebenfalls fehlgeschlagen:", fbErr);
+
+                        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+                        if (supa) {
+                            await supa.from('invoices').update({
+                                pdf_url: pdfUrl,
+                                pdf_storage_path: pdfStoragePath,
+                                updated_at: new Date().toISOString()
+                            }).eq('id', invoiceId);
                         }
                     }
+                } catch (pdfErr) {
+                    console.warn("⚠️ PDF-Generierung fehlgeschlagen:", pdfErr);
                 }
             }
 
             // 2. Mailversand via Supabase Mail-Engine (Edge Function send-email)
-            let mailResult = null;
             if (memberEmail && memberEmail.includes('@') && typeof window.sendMailViaEngine === 'function') {
                 try {
                     const attachments = [];
@@ -465,65 +459,57 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         });
                     }
 
-                    console.log("Sende Rechnung per E-Mail via Supabase Mail-Engine an", memberEmail, "Anhänge:", attachments.length);
-                    mailResult = await window.sendMailViaEngine({
+                    await window.sendMailViaEngine({
                         to: memberEmail,
                         subject: `Rechnung ${invoiceId} – Materialverkauf | Sportschützen Muhen`,
-                        html: `<p>Guten Tag ${invoiceHeader.name},</p><p>vielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei findest du die Rechnung <strong>${invoiceId}</strong> über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.</p>`,
-                        text: `Guten Tag ${invoiceHeader.name},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei findest du die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.`,
+                        html: `<p>Guten Tag ${recipientName},</p><p>vielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei findest du die Rechnung <strong>${invoiceId}</strong> über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.</p>`,
+                        text: `Guten Tag ${recipientName},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei findest du die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.`,
                         senderName: 'Sportschützen Muhen',
                         senderEmail: 'sportschuetzen.muhen@gmail.com',
                         moduleRef: 'rechnung',
                         recordId: invoiceId,
                         attachments: attachments
                     });
+
+                    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+                    if (supa) {
+                        await supa.from('invoices').update({
+                            mail_status: 'gesendet',
+                            send_date: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        }).eq('id', invoiceId);
+                    }
                 } catch (mErr) {
                     console.warn("⚠️ Fehler beim Supabase-Mailversand:", mErr);
                 }
             }
-
-            // 3. In Supabase Master schreiben (invoices, invoice_positions & mail_logs)
-            await saveInventarInvoiceToSupabase({
-                invoiceId: invoiceId,
-                personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
-                recipientName: invoiceHeader.name,
-                type: 'Materialverkauf',
-                totalAmount: totalAmount,
-                positions: positions,
-                memberEmail: memberEmail,
-                pdfUrl: pdfUrl,
-                pdfStoragePath: pdfStoragePath,
-                mailResult: mailResult
-            });
         }
 
         // 2. NUR BAR IN BUCHHALTUNG VERBUCHEN
         // (Twint wird NICHT sofort gebucht, da Twint erst Tage später als Netto-Sammelüberweisung auf der Bank eingeht)
-        const barItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Bar');
         if (barItems.length > 0) {
             const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-            const customKontoHaben = rawKonto.split('|')[0].trim() || '8501';
+            const customKontoHaben = rawKonto.split('|')[0].trim() || '3200';
 
             let seqCounter = 1;
             for (let w of barItems) {
                 const uniqueBeleg = `VK-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
-                
+
                 const bhPayload = {
-                    action: 'addJournalEntry',
                     beleg_nr: uniqueBeleg,
                     beschreibung: `Materialverkauf (Bar): ${w.label}`,
                     konto_soll: '1000', // Kasse
                     konto_haben: customKontoHaben, // z.B. 3200 Ertrag Materialverkauf
-                    betrag: w.pfandBetrag,
+                    betrag: parseFloat(w.pfandBetrag) || 0,
                     typ: 'Verkauf',
+                    buchungstyp: 'KASSE',
                     jahr: new Date().getFullYear()
                 };
 
                 console.log("Buche Bar-Verkauf in Buchhaltung...", bhPayload);
                 const sb = (typeof window.getBuchhaltungSupabaseClient === 'function') ? window.getBuchhaltungSupabaseClient() : (typeof window.getInventarSupabaseClient === 'function' ? window.getInventarSupabaseClient() : null);
                 if (sb) {
-                    sb.from('accounting_journal').insert({
-                        id: `bh_vk_${Date.now()}_${seqCounter}`,
+                    sb.from('accounting_journal').insert([{
                         jahr: parseInt(bhPayload.jahr, 10),
                         datum: new Date().toISOString().slice(0, 10),
                         beleg_nr: bhPayload.beleg_nr,
@@ -532,8 +518,9 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         konto_haben: String(bhPayload.konto_haben).trim(),
                         betrag: Number(bhPayload.betrag || 0),
                         typ: 'Verkauf',
+                        buchungstyp: 'KASSE',
                         created_at: new Date().toISOString()
-                    }).then(({ error }) => {
+                    }]).then(({ error }) => {
                         if (error) console.warn('[Inventar -> FiBu] Supabase journal insert error:', error);
                         else console.log('✅ Materialverkauf in Supabase FiBu gebucht.');
                     }).catch(e => console.warn('[Inventar -> FiBu] Insert exception:', e));
@@ -561,19 +548,18 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                 const betrag = parseFloat(w.pfandBetrag) || 0;
                 const uniqueBeleg = `DEP-IN-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
                 const bhPayload = {
-                    action: 'addJournalEntry',
                     beleg_nr: uniqueBeleg,
                     beschreibung: `Pfand Kasse (Eingang): ${w.label}`,
                     konto_soll: '1000', // Kasse
                     konto_haben: kautionsKonto, // z.B. 2030 Kautionen / Depots (Passivkonto)
                     betrag: betrag,
                     typ: 'Kaution',
+                    buchungstyp: 'KASSE',
                     jahr: new Date().getFullYear()
                 };
                 console.log("Buche Bar-Pfand Eingang auf Kautionskonto 2030...", bhPayload);
                 if (sb) {
-                    sb.from('accounting_journal').insert({
-                        id: `bh_depin_${Date.now()}_${seqCounter}`,
+                    sb.from('accounting_journal').insert([{
                         jahr: parseInt(bhPayload.jahr, 10),
                         datum: new Date().toISOString().slice(0, 10),
                         beleg_nr: bhPayload.beleg_nr,
@@ -582,8 +568,9 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                         konto_haben: String(bhPayload.konto_haben).trim(),
                         betrag: betrag,
                         typ: 'Kaution',
+                        buchungstyp: 'KASSE',
                         created_at: new Date().toISOString()
-                    }).then(({ error }) => {
+                    }]).then(({ error }) => {
                         if (error) console.warn('[Inventar -> FiBu] Supabase Pfand-Eingang error:', error);
                     }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
                 }
@@ -602,19 +589,18 @@ async function verarbeitePfandBuchhaltung(cart, action) {
 
                 const uniqueBeleg = `DEP-OUT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}${seqCounter++}`;
                 const bhPayload = {
-                    action: 'addJournalEntry',
                     beleg_nr: uniqueBeleg,
                     beschreibung: `Pfand Rückzahlung (Bar): ${w.label}`,
                     konto_soll: '2030', // Kautionen / Depots (Passivkonto)
                     konto_haben: '1000', // Kasse
                     betrag: betrag,
                     typ: 'Kaution',
+                    buchungstyp: 'KASSE',
                     jahr: new Date().getFullYear()
                 };
                 console.log("Buche Bar-Pfand Rückzahlung von Kautionskonto 2030...", bhPayload);
                 if (sb) {
-                    sb.from('accounting_journal').insert({
-                        id: `bh_depout_${Date.now()}_${seqCounter}`,
+                    sb.from('accounting_journal').insert([{
                         jahr: parseInt(bhPayload.jahr, 10),
                         datum: new Date().toISOString().slice(0, 10),
                         beleg_nr: bhPayload.beleg_nr,
@@ -623,8 +609,9 @@ async function verarbeitePfandBuchhaltung(cart, action) {
                         konto_haben: String(bhPayload.konto_haben).trim(),
                         betrag: betrag,
                         typ: 'Kaution',
+                        buchungstyp: 'KASSE',
                         created_at: new Date().toISOString()
-                    }).then(({ error }) => {
+                    }]).then(({ error }) => {
                         if (error) console.warn('[Inventar -> FiBu] Supabase Pfand-Rückzahlung error:', error);
                     }).catch(e => console.warn('[Inventar -> FiBu] Exception:', e));
                 }
@@ -636,16 +623,13 @@ async function verarbeitePfandBuchhaltung(cart, action) {
 }
 
 // =========================================================
-//  PFAND / DEPOT RECHNUNG GENERIEREN (falls QR-Rechnung gewählt)
+//  PFAND / DEPOT RECHNUNG GENERIEREN (via zentralem RechnungsCore)
 // =========================================================
 async function verarbeitePfandRechnungen(cart, mitgliedId) {
     try {
         const invoicePfandItems = cart.filter(w => w.pfandMethode === 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
         if (invoicePfandItems.length === 0) return;
 
-        const invoiceId = (typeof window.generateSafeInvoiceId === 'function')
-            ? window.generateSafeInvoiceId('DP', new Date().getFullYear())
-            : `DP-${String(new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
         const m = (inventarState.mitglieder || []).find(x => String(x.ID) === String(mitgliedId)) || {};
         const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
 
@@ -653,49 +637,59 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         const memberStrasse = mglMaster.Street || m.Strasse || '';
         const memberPlz = mglMaster.PostCode || m.PLZ || '';
         const memberOrt = mglMaster.City || m.Ort || '';
+        const recipientName = `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim() || 'Mitglied';
 
         const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
         const kautionsKonto = rawKonto.split('|')[0].trim() || '2030';
 
-        let totalAmount = 0;
-        const positions = invoicePfandItems.map((w, index) => {
-            const betrag = parseFloat(w.pfandBetrag) || 0;
-            totalAmount += betrag;
-            return {
-                position_nr: index + 1,
-                description: `Depot / Kaution: ${w.label} (wird bei Rückgabe erstattet)`,
-                quantity: 1,
-                unit_price: betrag,
-                amount: betrag,
-                konto: kautionsKonto
-            };
-        });
-
-        const invoiceHeader = {
-            id: invoiceId,
-            PersonNumber: m.PersonNumber || m.ID || '',
-            name: `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim(),
-            year: new Date().getFullYear(),
-            type: 'Depot / Pfand',
-            total_amount: totalAmount,
-            status: 'Offen'
-        };
-
-        const payloadRechnung = {
-            action: 'createInvoice',
-            invoice: invoiceHeader,
-            positions: positions,
+        // Typisiertes InvoiceOrder Payload
+        const invoiceOrder = {
+            source: {
+                module: 'inventar',
+                entityId: (invoicePfandItems[0] && invoicePfandItems[0].itemId) ? String(invoicePfandItems[0].itemId) : null,
+                referenceCode: `DEP-${new Date().getFullYear()}`
+            },
             recipient: {
-                vorname: m.Vorname || mglMaster.FirstName || '',
-                nachname: m.Nachname || mglMaster.LastName || '',
-                strasse: memberStrasse,
-                plz: memberPlz,
-                ort: memberOrt,
+                type: 'mitglied',
+                memberId: mitgliedId,
+                personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
+                name: recipientName,
+                firstName: m.Vorname || mglMaster.FirstName || '',
+                lastName: m.Nachname || mglMaster.LastName || '',
+                street: memberStrasse,
+                zip: memberPlz,
+                city: memberOrt,
                 email: memberEmail
+            },
+            type: 'Depot / Pfand',
+            positions: invoicePfandItems.map((w, index) => {
+                const betrag = parseFloat(w.pfandBetrag) || 0;
+                return {
+                    positionNr: index + 1,
+                    title: `Depot / Kaution: ${w.label} (wird bei Rückgabe erstattet)`,
+                    quantity: 1,
+                    unitPrice: betrag,
+                    amount: betrag,
+                    accountHaben: kautionsKonto,
+                    sourceField: String(w.itemId)
+                };
+            }),
+            notes: `Depot/Pfand für Vereinsinventar (${invoicePfandItems.length} Positionen)`,
+            options: {
+                autoIssue: true
             }
         };
 
-        console.log("Erstelle QR-Rechnung für Pfand/Depot direkt in Supabase Master...", { invoiceId, totalAmount, recipient: payloadRechnung.recipient });
+        console.log("Erstelle QR-Rechnung für Pfand/Depot via RechnungsCore...", invoiceOrder);
+        if (!window.RechnungsCore || typeof window.RechnungsCore.createInvoice !== 'function') {
+            throw new Error("RechnungsCore ist nicht verfügbar. Bitte Seite neu laden.");
+        }
+
+        const coreRes = await window.RechnungsCore.createInvoice(invoiceOrder);
+        const createdInv = coreRes.invoice;
+        const invoiceId = createdInv.id;
+        const totalAmount = createdInv.total_amount;
+        const positions = createdInv.positions || [];
 
         // 1. Rechnungs-PDF via Supabase PDF-Engine erzeugen
         let pdfUrl = null;
@@ -706,7 +700,7 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                 let pdfRes = await window.generatePdfViaEngine({
                     action: 'generate-invoice',
                     invoiceId: invoiceId,
-                    recipient: payloadRechnung.recipient,
+                    recipient: invoiceOrder.recipient,
                     positions: positions,
                     totalAmount: totalAmount,
                     year: new Date().getFullYear(),
@@ -716,7 +710,7 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     if (typeof window.generatePdfClientFallback === 'function') {
                         pdfRes = await window.generatePdfClientFallback({
                             invoiceId: invoiceId,
-                            recipient: payloadRechnung.recipient,
+                            recipient: invoiceOrder.recipient,
                             positions: positions,
                             totalAmount: totalAmount,
                             year: new Date().getFullYear(),
@@ -728,33 +722,22 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     pdfUrl = pdfRes.pdfUrl || null;
                     pdfStoragePath = pdfRes.storagePath || null;
                     pdfBase64 = pdfRes.pdfBase64 || null;
-                }
-            } catch (pdfErr) {
-                console.warn("⚠️ Supabase PDF-Engine Fehler bei Pfand-Rechnung:", pdfErr);
-                if (typeof window.generatePdfClientFallback === 'function') {
-                    try {
-                        const fbRes = await window.generatePdfClientFallback({
-                            invoiceId: invoiceId,
-                            recipient: payloadRechnung.recipient,
-                            positions: positions,
-                            totalAmount: totalAmount,
-                            year: new Date().getFullYear(),
-                            type: 'Depot / Pfand'
-                        });
-                        if (fbRes && (fbRes.pdfUrl || fbRes.storagePath || fbRes.pdfBase64)) {
-                            pdfUrl = fbRes.pdfUrl || null;
-                            pdfStoragePath = fbRes.storagePath || null;
-                            pdfBase64 = fbRes.pdfBase64 || null;
-                        }
-                    } catch (fbErr) {
-                        console.warn("⚠️ PDF Client Fallback für Pfand ebenfalls fehlgeschlagen:", fbErr);
+
+                    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+                    if (supa) {
+                        await supa.from('invoices').update({
+                            pdf_url: pdfUrl,
+                            pdf_storage_path: pdfStoragePath,
+                            updated_at: new Date().toISOString()
+                        }).eq('id', invoiceId);
                     }
                 }
+            } catch (pdfErr) {
+                console.warn("⚠️ PDF-Generierung fehlgeschlagen:", pdfErr);
             }
         }
 
         // 2. Mailversand via Supabase Mail-Engine (Edge Function send-email)
-        let mailResult = null;
         if (memberEmail && memberEmail.includes('@') && typeof window.sendMailViaEngine === 'function') {
             try {
                 const attachments = [];
@@ -773,36 +756,30 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     });
                 }
 
-                console.log("Sende Pfand-Rechnung per E-Mail via Supabase Mail-Engine an", memberEmail, "Anhänge:", attachments.length);
-                mailResult = await window.sendMailViaEngine({
+                await window.sendMailViaEngine({
                     to: memberEmail,
                     subject: `Rechnung ${invoiceId} – Depot / Pfand | Sportschützen Muhen`,
-                    html: `<p>Guten Tag ${invoiceHeader.name},</p><p>für deine Ausleihe aus unserem Vereinsinventar stellen wir dir hiermit das Pfand / Depot mit der Rechnung <strong>${invoiceId}</strong> über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein zu.</p>`,
-                    text: `Guten Tag ${invoiceHeader.name},\n\nfür deine Ausleihe aus unserem Vereinsinventar stellen wir dir hiermit das Pfand / Depot mit der Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein zu.`,
+                    html: `<p>Guten Tag ${recipientName},</p><p>für deine Ausleihe aus unserem Vereinsinventar stellen wir dir hiermit das Pfand / Depot mit der Rechnung <strong>${invoiceId}</strong> über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein zu.</p>`,
+                    text: `Guten Tag ${recipientName},\n\nfür deine Ausleihe aus unserem Vereinsinventar stellen wir dir hiermit das Pfand / Depot mit der Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein zu.`,
                     senderName: 'Sportschützen Muhen',
                     senderEmail: 'sportschuetzen.muhen@gmail.com',
                     moduleRef: 'rechnung',
                     recordId: invoiceId,
                     attachments: attachments
                 });
+
+                const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+                if (supa) {
+                    await supa.from('invoices').update({
+                        mail_status: 'gesendet',
+                        send_date: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    }).eq('id', invoiceId);
+                }
             } catch (mErr) {
                 console.warn("⚠️ Fehler beim Supabase-Mailversand:", mErr);
             }
         }
-
-        // 3. In Supabase Master schreiben (invoices, invoice_positions & mail_logs)
-        await saveInventarInvoiceToSupabase({
-            invoiceId: invoiceId,
-            personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
-            recipientName: invoiceHeader.name,
-            type: 'Depot / Pfand',
-            totalAmount: totalAmount,
-            positions: positions,
-            memberEmail: memberEmail,
-            pdfUrl: pdfUrl,
-            pdfStoragePath: pdfStoragePath,
-            mailResult: mailResult
-        });
     } catch (err) {
         console.error("Fehler in verarbeitePfandRechnungen:", err);
     }

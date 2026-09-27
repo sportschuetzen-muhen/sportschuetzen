@@ -2667,23 +2667,26 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
 
     if (sb) {
       try {
-        const rowsToInsert = entries.map((e, eIdx) => ({
-          id: e.id || `bh_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${eIdx}`,
-          jahr: parseInt(e.jahr, 10),
-          datum: bookingDate,
-          beleg_nr: belegNr,
-          beschreibung: e.beschreibung,
-          konto_soll: String(e.konto_soll).trim(),
-          konto_haben: String(e.konto_haben).trim(),
-          betrag: Number(e.betrag || 0),
-          typ: 'Bank',
-          split_group_id: isSplit ? (e.split_group_id || `grp_${belegNr}_${Date.now()}`) : null,
-          created_at: new Date().toISOString()
-        }));
+        const rowsToInsert = entries.map((e, eIdx) => {
+          const row = {
+            jahr: parseInt(e.jahr, 10),
+            datum: bookingDate,
+            beleg_nr: belegNr,
+            beschreibung: e.beschreibung,
+            konto_soll: String(e.konto_soll).trim(),
+            konto_haben: String(e.konto_haben).trim(),
+            betrag: Number(e.betrag || 0),
+            typ: 'Bank',
+            split_group_id: isSplit ? (e.split_group_id || `grp_${belegNr}_${Date.now()}`) : null,
+            created_at: new Date().toISOString()
+          };
+          if (typeof e.id === 'number') row.id = e.id;
+          return row;
+        });
 
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
-          console.warn('[Buchhaltung Supabase] Insert failed, falling back to GAS:', sbErr);
+          console.warn('[Buchhaltung Supabase] Insert failed:', sbErr);
         } else {
           sbSuccess = true;
           createdEntries = sbData || rowsToInsert;
@@ -2697,10 +2700,19 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
       throw new Error('Fehler beim Buchen im Supabase Journal: Keine Buchung erstellt');
     }
 
-    // 2. Falls eine Rechnung erkannt wurde: im Rechnungs-Modul als bezahlt markieren
+    // 2. Falls eine Rechnung erkannt wurde: über RechnungsCore als bezahlt verbuchen
     if (matchedInvoice && matchedInvoice.id) {
       try {
-        if (sb) {
+        if (window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+          await window.RechnungsCore.recordPayment(matchedInvoice.id, {
+            amount: Number(tx.amount || matchedInvoice.total_amount || 0),
+            paymentDate: bookingDate,
+            method: 'Bank',
+            reference: belegNr,
+            notes: `Bankabgleich CAMT: ${tx.partyName || ''} (${belegNr})`
+          });
+          console.log(`✅ [RechnungsCore] Zahlung via Bankabgleich verbucht für Rechnung ${matchedInvoice.id}`);
+        } else if (sb) {
           await sb.from('invoices').update({
             status: 'bezahlt',
             payment_date: bookingDate,
