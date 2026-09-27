@@ -1425,18 +1425,32 @@ async function generateGVInvitationPdf(
   if (supabaseClient) {
     try {
       // Template laden
-      const { data: tData } = await supabaseClient
+      let tQuery = supabaseClient
         .from("document_templates")
-        .select("*")
-        .eq("category", "gv")
+        .select("*");
+      if (gvData.templateId) {
+        tQuery = tQuery.eq("id", gvData.templateId);
+      } else if (gvData.templateCode) {
+        tQuery = tQuery.eq("code", gvData.templateCode);
+      } else {
+        tQuery = tQuery.eq("category", "gv");
+      }
+      const { data: tData } = await tQuery
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (tData) {
-        if (tData.title) templateTitle = tData.title.replace(/{jahr}/g, String(year));
-        if (tData.intro) templateIntro = tData.intro.replace(/{jahr}/g, String(year));
-        if (tData.notice) templateNotice = tData.notice.replace(/{jahr}/g, String(year));
+        const replacePlaceholders = (text: string) => {
+          return text
+            .replace(/{jahr}/gi, String(year))
+            .replace(/{rechnungsjahr}/gi, String(year))
+            .replace(/{gv_nummer}/gi, String(gvData.gvNummer || ""));
+        };
+
+        if (tData.title) templateTitle = replacePlaceholders(tData.title);
+        if (tData.intro) templateIntro = replacePlaceholders(tData.intro);
+        if (tData.notice) templateNotice = replacePlaceholders(tData.notice);
 
         // Traktanden/Klauseln laden
         const { data: cData } = await supabaseClient

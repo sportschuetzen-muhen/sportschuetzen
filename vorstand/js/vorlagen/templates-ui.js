@@ -495,8 +495,9 @@
       } else if (t.category === 'gv') {
         payload = {
           action: 'generate-gv-invitation',
+          templateId: t.id,
           year: new Date().getFullYear(),
-          gvData: { gvNummer: 100, datum: '20.03.2026', zeit: '19:30' }
+          gvData: { templateId: t.id, templateCode: t.code, gvNummer: 100, datum: '20.03.2026', zeit: '19:30' }
         };
       } else {
         payload = {
