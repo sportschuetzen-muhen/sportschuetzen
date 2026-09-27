@@ -193,10 +193,33 @@ CREATE TABLE rechnungspositionen (
 | **Phase 8** | **Vermietung-Integration (Client 2)** | ✅ | In [`vermietung-manager.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/vermietung/vermietung-manager.js):<br>• `ensureRentalInvoice(d)` erstellt automatisiert eine `InvoiceOrder` für Reservierungen<br>• `vermietungAktion('bestaetigen')` bucht Zahlungseingänge über `RechnungsCore.recordPayment()`<br>• `vermietungAktion('stornieren')` storniert offene Rechnungen über `RechnungsCore.cancelInvoice()` |
 | **Phase 9** | **Jahresbeiträge-Integration (Client 3)** | ✅ | In [`jahresbeitrag-overview.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-overview.js):<br>• `ensureInvoiceCreatedRemote` erzeugt Rechnungen für Mitgliederbeiträge via `RechnungsCore.createInvoice()` inklusive Adress-Snapshot<br>• `jbSaveZahlung()` verbucht Zahlungen via `RechnungsCore.recordPayment()`<br>• `jbGenerateInvoicePdfRemote()` nutzt `RechnungsCore.renderPdf()` |
 | **Phase 10** | **CAMT.054 / 053 Bankabgleich** | ✅ | In [`buchhaltung-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/buchhaltung/buchhaltung-bank.js) & [`jahresbeitrag-bank.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/jahresbeitrag-bank.js):<br>• Gematchte Banktransaktionen verbuchen Rechnungszahlungen direkt über `RechnungsCore.recordPayment()`<br>• Batch-Bankbuchung im Jahresbeitrag synchronisiert `invoice_payments` und `invoices`<br>• `accounting_journal.id` Bereinigung (Postgres `BIGSERIAL`) verhindert SQL-Typenkonflikte |
+| **Phase 11** | **PDF-Geometrie & Atomare Nummernvergabe** | ✅ | Behebung der 5 kritischen Sollbruchstellen im Rechnungs- und PDF-Betrieb:<br>• **Dynamischer $Y$-Cursor & Text-Wrapping:** Keine starre `length > 8` Schwelle; automatischer Textumbruch (`wrapText`) mit flexibler Zeilenhöhe in [`supabase/functions/generate-pdf/index.ts`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/functions/generate-pdf/index.ts)<br>• **Intelligenter Lookahead:** Verhindert "Orphan Payment Slips" (leere Folgeseiten nur mit QR-Zahlteil); hält passende Rechnungen exakt auf 1 Seite<br>• **Logo-Handling:** Zentral in `operatives-storage/assets/logo.png`, In-Memory-Caching im Deno-Scope (`cachedLogoBytes`) und dynamische Skalierung via `scaleToFit()` (keine Verzerrung)<br>• **Atomare Rechnungsnummern:** Migration [`26_atomic_invoice_numbers.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/26_atomic_invoice_numbers.sql) (`invoice_number_seq` & Stored Procedure `next_invoice_number()`) verhindert Race Conditions im Frontend<br>• **UTF-8 & WinAnsi-Schutz:** `sanitizeText()` schützt `pdf-lib` vor Zeichensatz-Crashes bei Schweizer Umlauten und Sonderzeichen |
 
 ---
 
 ## 5. Changelog der Umsetzungen
+
+### [2026-09-27] Phase 11 abgeschlossen: PDF-Geometrie, Lookahead & Atomare Rechnungsnummern
+1. **Behebung Schwachstelle 1 (Positionszähler-Irrtum & Text-Wrapping):**
+   * Starre Begrenzung `positions.length > 8` komplett eliminiert.
+   * `wrapText` bricht lange Beschreibungen dynamisch um. Tabellenzeilen berechnen ihre Höhe flexibel anhand der Zeilenzahl.
+   * Fließender Y-Cursor steuert Paginierung präzise über `minAllowedY`.
+2. **Behebung Schwachstelle 2 (Orphan Payment Slip Prevention):**
+   * Intelligenter Lookahead prüft vorab die Gesamthöhe aller Positionen + Schlusstext.
+   * Wenn Positionen über den 105-mm-Schnitt passen, bleibt das Dokument strikt einseitig.
+   * Bei mehrseitigen Dokumenten wird Seite 1 bis 22 mm Rand gefüllt; die Folgeseite bindet den QR-Zahlteil nahtlos ein.
+3. **Behebung Schwachstelle 3 (Logo-Verzerrung & Storage-Latenz):**
+   * Vereinslogo in `operatives-storage/assets/logo.png` zentralisiert.
+   * `cachedLogoBytes` im globalen Deno-Scope verhindert redundante Downloads bei Folgeaufrufen.
+   * Proportionale Skalierung mit `scaleToFit(38 * MM, 18 * MM)` verhindert jede Streckung/Stauchung von Bannern oder Quadraten.
+4. **Behebung Schwachstelle 4 (Atomare Rechnungsnummern in PostgreSQL):**
+   * Migration [`26_atomic_invoice_numbers.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/26_atomic_invoice_numbers.sql) etabliert `public.invoice_number_seq` und `public.next_invoice_number(prefix, year)`.
+   * [`rechnungen-core.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/rechnungen/rechnungen-core.js) ruft vor dem Insert atomar die Sequenz ab.
+   * Dialoge laden über `RechnungsCore.fetchNextInvoiceNumber` asynchron die nächste offizielle Nummer.
+5. **Behebung Schwachstelle 5 (UTF-8 & Schweizer Umlaute):**
+   * `sanitizeText()` normalisiert NFC-Unicode, wandelt typografische Bindestriche/Anführungszeichen und fängt WinAnsi-Inkompatibilitäten sicher ab.
+6. **Strikte Entkopplung & Decommissioning:**
+   * Browserbasierter `jsPDF`-Fallback vollständig dekommissioniert; Fehler werden im UI klar angezeigt.
 
 ### [2026-09-27] Phase 6 bis 10 abgeschlossen: Systemweite Harmonisierung
 1. **PDF-Engine & SIX Swiss QR-Bill (Phasen 6 & 7):**

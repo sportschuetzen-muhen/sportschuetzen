@@ -161,180 +161,12 @@
     };
 
     /**
-     * Browser-Fallback: Erzeugt ein Basis-PDF direkt im Browser via jsPDF,
-     * lädt es in den Supabase Storage Bucket hoch und aktualisiert den Datensatz.
+     * Browser-Fallback bewusst deaktiviert:
+     * Gemäss Architektur-Richtlinie (Single Source of Truth auf Supabase & striktes Verbot
+     * stiller Fallbacks) werden PDFs ausschliesslich über die zentrale Supabase Edge Function
+     * 'generate-pdf' erzeugt.
      */
-    window.generatePdfClientFallback = async function (options) {
-        if (!window.jspdf?.jsPDF) {
-            throw new Error("Weder Edge Function noch jsPDF im Browser verfügbar.");
-        }
-
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-        const curYear = options.year || new Date().getFullYear();
-        const invId = options.invoiceId || options.bookingId || 'RE';
-        const recipient = options.recipient || {};
-        const total = Number(options.totalAmount || 0);
-
-        // Header
-        doc.setFontSize(16);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(30, 58, 138);
-        doc.text(CLUB_NAME, 20, 20);
-
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(100, 116, 139);
-        doc.text(`${CLUB_STREET} · ${CLUB_ZIP} ${CLUB_CITY} · ${CLUB_EMAIL}`, 20, 26);
-
-        // Empfänger
-        doc.setFontSize(10);
-        doc.setTextColor(0, 0, 0);
-        let y = 45;
-        if (recipient.firma) { doc.text(recipient.firma, 125, y); y += 5; }
-        const rName = [recipient.vorname, recipient.nachname].filter(Boolean).join(' ') || recipient.name || '';
-        if (rName) { doc.text(rName, 125, y); y += 5; }
-        if (recipient.strasse) { doc.text(recipient.strasse, 125, y); y += 5; }
-        doc.text(`${recipient.plz || ''} ${recipient.ort || ''}`.trim(), 125, y);
-
-        // Titel
-        doc.setFontSize(13);
-        doc.setFont(undefined, 'bold');
-        doc.text(`Rechnung ${invId} – ${options.type || 'Jahresbeitrag'} ${curYear}`, 20, 75);
-
-        // Einleitung
-        doc.setFontSize(9.5);
-        doc.setFont(undefined, 'normal');
-        const salutation = recipient.vorname ? `Guten Tag ${recipient.vorname},` : 'Guten Tag,';
-        doc.text(salutation, 20, 85);
-        doc.text(`anbei erhalten Sie die Rechnung über CHF ${total.toFixed(2)}.`, 20, 92);
-
-        // Positionen
-        doc.setLineWidth(0.3);
-        doc.rect(20, 100, 170, 7, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text("Pos.", 22, 105);
-        doc.text("Beschreibung", 35, 105);
-        doc.text("Betrag (CHF)", 165, 105);
-
-        doc.setFont(undefined, 'normal');
-        let py = 113;
-        const positions = options.positions || [{ description: options.type || "Rechnung", amount: total }];
-        positions.forEach((p, i) => {
-            doc.text(String(i + 1), 22, py);
-            doc.text(String(p.description || '').substring(0, 50), 35, py);
-            doc.text(Number(p.amount || p.unit_price || 0).toFixed(2), 165, py);
-            py += 6;
-        });
-
-        doc.line(20, py, 190, py);
-        py += 5;
-        doc.setFont(undefined, 'bold');
-        doc.text("Gesamtbetrag:", 130, py);
-        doc.text(`CHF ${total.toFixed(2)}`, 165, py);
-
-        // QR-Zahlteil Trennlinie bei 105mm von unten (297 - 105 = 192mm)
-        doc.setLineDash([2, 2], 0);
-        doc.line(0, 192, 210, 192);
-        doc.line(62, 192, 62, 297);
-        doc.setLineDash([], 0);
-
-        // Empfangsschein
-        doc.setFontSize(11);
-        doc.text("Empfangsschein", 5, 200);
-        doc.setFontSize(7);
-        doc.text("Konto / Zahlbar an", 5, 208);
-        doc.text(CLUB_IBAN_FORMATTED, 5, 212);
-        doc.text(CLUB_NAME, 5, 215);
-        doc.text(`${CLUB_ZIP} ${CLUB_CITY}`, 5, 218);
-        doc.text("Zahlbar durch", 5, 226);
-        doc.text(rName, 5, 230);
-        doc.text(recipient.strasse || '', 5, 233);
-        doc.text(`${recipient.plz || ''} ${recipient.ort || ''}`.trim(), 5, 236);
-        doc.text("CHF", 5, 285);
-        doc.text(total.toFixed(2), 20, 285);
-
-        // Zahlteil
-        doc.setFontSize(11);
-        doc.text("Zahlteil", 67, 200);
-        doc.setFontSize(8);
-        doc.text("Konto / Zahlbar an", 118, 208);
-        doc.text(CLUB_IBAN_FORMATTED, 118, 212);
-        doc.text(CLUB_NAME, 118, 216);
-        doc.text(`${CLUB_ZIP} ${CLUB_CITY}`, 118, 220);
-        doc.text("Zusätzliche Informationen", 118, 228);
-        doc.text(`${invId} / ${options.type || 'Rechnung'} ${curYear}`, 118, 232);
-        doc.text("Zahlbar durch", 118, 240);
-        doc.text(rName, 118, 244);
-        doc.text(recipient.strasse || '', 118, 247);
-        doc.text(`${recipient.plz || ''} ${recipient.ort || ''}`.trim(), 118, 250);
-        doc.text("CHF", 67, 285);
-        doc.text(total.toFixed(2), 85, 285);
-
-        // QR-Code im Zahlteil (46x46 mm ab X=67, Y=209)
-        const qrFn = (typeof window.qrcode === 'function') ? window.qrcode : ((typeof qrcode === 'function') ? qrcode : null);
-        if (qrFn) {
-            try {
-                const qrText = (typeof window.createSwissQrBillPayload === 'function')
-                    ? window.createSwissQrBillPayload(options, recipient)
-                    : `${CLUB_IBAN}\n${total.toFixed(2)}\n${invId}`;
-                const qr = qrFn(0, 'M');
-                qr.addData(qrText);
-                qr.make();
-                const qrDataUrl = qr.createDataURL(4);
-                doc.addImage(qrDataUrl, 'PNG', 67, 209, 46, 46);
-
-                // Schweizer Kreuz im Zentrum (7x7 mm schwarzes Quadrat mit weissem Kreuz)
-                const cx = 67 + 23;
-                const cy = 209 + 23;
-                doc.setFillColor(0, 0, 0);
-                doc.rect(cx - 3.5, cy - 3.5, 7, 7, 'F');
-                doc.setFillColor(255, 255, 255);
-                doc.rect(cx - 0.75, cy - 2.5, 1.5, 5, 'F');
-                doc.rect(cx - 2.5, cy - 0.75, 5, 1.5, 'F');
-            } catch (qrErr) {
-                console.warn("⚠️ QR-Code Rendering im Client-Fallback fehlgeschlagen:", qrErr);
-            }
-        }
-
-        // Blob erzeugen & in Supabase Storage hochladen
-        const pdfBlob = doc.output('blob');
-        const safeName = (recipient.nachname || recipient.name || 'Rechnung').replace(/[^a-zA-Z0-9_-]/g, '_');
-        const storagePath = `invoices/${curYear}/Rechnung_${invId}_${safeName}.pdf`;
-
-        const supa = (typeof window.getSupabaseClient === 'function')
-            ? window.getSupabaseClient()
-            : (window.supabaseClient || null);
-
-        let publicUrl = '';
-        if (supa) {
-            try {
-                const { error: upErr } = await supa.storage.from(STORAGE_BUCKET).upload(storagePath, pdfBlob, { upsert: true, contentType: 'application/pdf' });
-                if (upErr) {
-                    console.warn("⚠️ Storage Upload Fallback Fehler:", upErr);
-                } else {
-                    const { data } = supa.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
-                    publicUrl = data?.publicUrl || `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
-
-                    await supa.from('invoices').update({
-                        pdf_url: publicUrl,
-                        pdf_storage_path: storagePath,
-                        updated_at: new Date().toISOString()
-                    }).eq('id', invId);
-                }
-            } catch (upErr) {
-                console.warn("⚠️ Storage Upload Fallback Exception:", upErr);
-            }
-        }
-
-        const pdfBase64 = doc.output('datauristring');
-        return {
-            success: true,
-            pdfUrl: publicUrl || pdfBase64,
-            storagePath: storagePath,
-            pdfBase64: pdfBase64
-        };
-    };
+    window.generatePdfClientFallback = null;
 
     // ==========================================================================
     // MODUL-ÜBERSCHREIBUNGEN: ABLÖSUNG DER GOOGLE APPS SCRIPTS
@@ -356,11 +188,12 @@
                 try {
                     result = await window.RechnungsCore.renderPdf(invoiceId);
                 } catch (coreErr) {
-                    console.warn("⚠️ RechnungsCore.renderPdf fehlgeschlagen, versuche Legacy-Pipeline:", coreErr);
+                    console.warn("⚠️ RechnungsCore.renderPdf Fehler:", coreErr);
+                    throw coreErr;
                 }
             }
 
-            // 2. Fallback falls RechnungsCore noch nicht verfügbar
+            // 2. Direktaufruf an Engine falls RechnungsCore nicht im Scope
             if (!result || !result.success) {
                 const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim()) || { id: invoiceId, name: name };
                 const m = (window._mglData || []).find(x => String(x.PersonNumber).trim() === String(inv.PersonNumber || '').trim()) || {};
@@ -415,9 +248,6 @@
                 };
 
                 result = await window.generatePdfViaEngine(payload);
-                if (!result || !result.success) {
-                    result = await window.generatePdfClientFallback(payload);
-                }
             }
 
             if (result && result.success) {
@@ -512,11 +342,7 @@
             };
 
             let res = await window.generatePdfViaEngine(payload);
-            if (!res.success) {
-                res = await window.generatePdfClientFallback(payload);
-            }
-
-            if (!res.success) throw new Error(res.error);
+            if (!res.success) throw new Error(res.error || "PDF-Erstellung auf Supabase fehlgeschlagen.");
 
             if (typeof showToast === 'function') {
                 showToast("🎉 QR-Rechnung erfolgreich generiert!");
@@ -583,7 +409,7 @@
         try {
             let res = await window.generatePdfViaEngine(payload);
             if (!res.success) {
-                res = await window.generatePdfClientFallback(payload);
+                throw new Error(res.error || "Generierung fehlgeschlagen.");
             }
 
             if (res.success) {

@@ -451,6 +451,7 @@ window.rnSaveLayout = async function(event, type) {
   const notice = document.getElementById('rnl-notice').value.trim();
   const mail_subject = document.getElementById('rnl-mail-subject').value.trim();
   const mail_body = document.getElementById('rnl-mail-body').value.trim();
+  const submitBtn = document.getElementById('rnl-submit-btn') || event.target?.querySelector('button[type="submit"]');
 
   const layoutData = {
     type: type,

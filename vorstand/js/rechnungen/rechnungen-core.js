@@ -994,6 +994,31 @@ window.RechnungsCore = {
   },
 
   /**
+   * Holt die nächste atomare Rechnungsnummer aus PostgreSQL via Sequence
+   * @param {string} prefix - z. B. 'RE', 'MV', 'VM', 'JB'
+   * @param {number|string} [year] - Rechnungsjahr
+   * @returns {Promise<string>}
+   */
+  async fetchNextInvoiceNumber(prefix = 'RE', year = null) {
+    const supa = getRechnungenSupabaseClient();
+    const y = Number(year || window._bhYear || new Date().getFullYear());
+    if (supa) {
+      try {
+        const { data: seqId, error: seqErr } = await supa.rpc('next_invoice_number', { p_prefix: prefix, p_year: y });
+        if (!seqErr && seqId) {
+          return seqId;
+        }
+        if (seqErr) {
+          console.warn("⚠️ [RechnungsCore] RPC next_invoice_number fehlgeschlagen:", seqErr);
+        }
+      } catch (err) {
+        console.warn("⚠️ [RechnungsCore] Fehler beim Aufruf von next_invoice_number:", err);
+      }
+    }
+    return window.generateSafeInvoiceId(prefix, y);
+  },
+
+  /**
    * 1. RECHNUNG ERSTELLEN (Lifecycle: Status 'entwurf' oder bei autoIssue 'offen')
    * @param {Object} order - Typisiertes InvoiceOrder Payload
    * @returns {Promise<{success: boolean, invoice: Object, positions: Array}>}
@@ -1016,7 +1041,22 @@ window.RechnungsCore = {
     else if (sourceModule === 'jahresbeitrag') prefix = 'JB';
     else if (sourceModule === 'sponsoring') prefix = 'SP';
 
-    const invoiceId = order.id || window.generateSafeInvoiceId(prefix, year);
+    // Atomare Rechnungsnummernvergabe direkt via PostgreSQL Sequence (Schutz vor Race Conditions)
+    let invoiceId = order.id || order.invoice_number;
+    if (!invoiceId) {
+      try {
+        const { data: seqId, error: seqErr } = await supa.rpc('next_invoice_number', { p_prefix: prefix, p_year: year });
+        if (!seqErr && seqId) {
+          invoiceId = seqId;
+        } else {
+          console.warn("⚠️ [RechnungsCore] RPC next_invoice_number nicht verfügbar, nutze lokales Fallback:", seqErr);
+          invoiceId = window.generateSafeInvoiceId(prefix, year);
+        }
+      } catch (err) {
+        console.warn("⚠️ [RechnungsCore] Fehler beim RPC next_invoice_number:", err);
+        invoiceId = window.generateSafeInvoiceId(prefix, year);
+      }
+    }
 
     // Totale & Positionen berechnen
     const { totalAmount, positions } = this.calculateTotals(order.positions);

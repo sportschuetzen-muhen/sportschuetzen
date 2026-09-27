@@ -217,28 +217,32 @@ window.rnSaveTemplate = async function(event, templateId) {
       return;
     }
   }
-      newTemplate.id = maxId + 1;
-      templates.push(newTemplate);
+
+  // 2. Fallback: LocalStorage
+  let templates = JSON.parse(localStorage.getItem('portal_invoice_templates') || '[]');
+  if (isNew) {
+    const maxId = templates.reduce((max, t) => Math.max(max, parseInt(t.id) || 0), 0);
+    newTemplate.id = maxId + 1;
+    templates.push(newTemplate);
+  } else {
+    const idx = templates.findIndex(t => String(t.id) === String(templateId));
+    if (idx !== -1) {
+      templates[idx] = { ...templates[idx], ...newTemplate };
     } else {
-      const idx = templates.findIndex(t => String(t.id) === String(templateId));
-      if (idx !== -1) {
-        templates[idx] = { ...templates[idx], ...newTemplate };
-      } else {
-        newTemplate.id = templateId;
-        templates.push(newTemplate);
-      }
+      newTemplate.id = templateId;
+      templates.push(newTemplate);
     }
-    
-    localStorage.setItem('portal_invoice_templates', JSON.stringify(templates));
-    window._invoiceTemplates = templates;
-    
-    const modalEl = document.getElementById('rnModalTemplateEdit');
-    const modal = bootstrap.Modal.getInstance(modalEl);
-    if (modal) modal.hide();
-    
-    showSuccess(isNew ? "🎉 Standard-Position lokal gespeichert!" : "🎉 Standard-Position lokal aktualisiert!");
-    renderActiveRechnungenTab();
   }
+  
+  localStorage.setItem('portal_invoice_templates', JSON.stringify(templates));
+  window._invoiceTemplates = templates;
+  
+  const modalEl = document.getElementById('rnModalTemplateEdit');
+  const modal = bootstrap.Modal.getInstance(modalEl);
+  if (modal) modal.hide();
+  
+  showSuccess(isNew ? "🎉 Standard-Position lokal gespeichert!" : "🎉 Standard-Position lokal aktualisiert!");
+  renderActiveRechnungenTab();
 };
 
 window.rnDeleteTemplate = async function(templateId, desc) {

@@ -199,17 +199,6 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
         year: inv.year || new Date().getFullYear(),
         type: inv.type || 'Rechnung'
       });
-      if (!result || !result.success) {
-        if (typeof window.generatePdfClientFallback === 'function') {
-          result = await window.generatePdfClientFallback({
-            invoiceId: invoiceId,
-            recipient: recipient,
-            totalAmount: inv.total_amount,
-            year: inv.year || new Date().getFullYear(),
-            type: inv.type || 'Rechnung'
-          });
-        }
-      }
     } else {
       throw new Error("Weder RechnungsCore noch PDF-Engine verfügbar.");
     }
@@ -1776,9 +1765,17 @@ window.rnOpenCreateModal = async function(btnEl) {
     </div>
   `;
 
-  document.getElementById('rnc-invoice-id').value = (typeof window.generateSafeInvoiceId === 'function')
-    ? window.generateSafeInvoiceId('RE', window._bhYear)
-    : `RE-${String(window._bhYear || new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+  const idEl = document.getElementById('rnc-invoice-id');
+  if (idEl) {
+    idEl.value = (typeof window.generateSafeInvoiceId === 'function')
+      ? window.generateSafeInvoiceId('RE', window._bhYear)
+      : `RE-${String(window._bhYear || new Date().getFullYear()).slice(-2)}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+    if (window.RechnungsCore && typeof window.RechnungsCore.fetchNextInvoiceNumber === 'function') {
+      window.RechnungsCore.fetchNextInvoiceNumber('RE', window._bhYear).then(atomicId => {
+        if (atomicId && idEl) idEl.value = atomicId;
+      }).catch(() => {});
+    }
+  }
 
   const defaultTpl = (window._invoiceTemplates || []).find(t => t.desc && t.desc.toLowerCase().includes('miete schützenhaus'));
   const defaultKonto = defaultTpl ? (defaultTpl.habenkonto || defaultTpl.konto || '') : '3650';
