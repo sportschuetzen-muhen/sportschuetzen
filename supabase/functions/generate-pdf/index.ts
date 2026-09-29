@@ -24,12 +24,20 @@ import { EMBEDDED_LOGO_BASE64 } from "./logo-base64.ts";
 const CLUB_IBAN = "CH0680808003633131892";
 const CLUB_IBAN_FORMATTED = "CH06 8080 8003 6331 3189 2";
 const CLUB_NAME = "Sportschützen Muhen";
-const CLUB_STREET = "Schiessanlage Hard";
+const CLUB_STREET = "Schiessanlage Rüteli";
 const CLUB_ZIP = "5037";
 const CLUB_CITY = "Muhen";
 const CLUB_COUNTRY = "CH";
 const CLUB_EMAIL = "sportschuetzen.muhen@gmail.com";
 const CLUB_WEBSITE = "www.sportschuetzen-muhen.ch";
+
+// Schweizer Tausendertrennzeichen (Apostroph: 2'280.00)
+function formatSwissChf(num: number | string | null | undefined): string {
+  const n = Number(num || 0);
+  const parts = n.toFixed(2).split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+  return parts.join(".");
+}
 
 // mm zu PDF-Points (72 pt pro Inch = 72 / 25.4 pt/mm)
 const MM = 72 / 25.4;
@@ -155,6 +163,7 @@ interface SenderData {
   vorname?: string;
   nachname?: string;
   funktion?: string;
+  bereich?: string;
   verein?: string;
   strasse?: string;
   plz?: string;
@@ -748,35 +757,33 @@ async function generateInvoicePdf(
     };
   });
 
-  // Hilfsfunktion: Tabellenkopf zeichnen
+  // Hilfsfunktion: Tabellenkopf zeichnen (schlichte Linien nach Referenz-Layout)
   const drawTableHeader = (p: any, y: number) => {
-    p.drawRectangle({
-      x: tblX,
-      y: y - 2 * MM,
-      width: tblW,
-      height: 6.5 * MM,
-      color: rgb(0.93, 0.95, 0.98),
+    p.drawLine({
+      start: { x: tblX, y: y + 2 * MM },
+      end: { x: tblX + tblW, y: y + 2 * MM },
+      thickness: 0.8,
+      color: rgb(0.1, 0.1, 0.1),
     });
-    p.drawText("Pos.", { x: tblX + 2 * MM, y: y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Beschreibung", { x: tblX + colW.pos + 2 * MM, y: y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Menge", { x: tblX + colW.pos + colW.desc + 2 * MM, y: y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Ansatz", { x: tblX + colW.pos + colW.desc + colW.qty + 2 * MM, y: y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Betrag (CHF)", { x: tblX + tblW - 25 * MM, y: y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    return y - 6.5 * MM;
+
+    p.drawText("Pos", { x: tblX + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Beschreibung", { x: tblX + colW.pos + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Menge", { x: tblX + colW.pos + colW.desc + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Einzelpreis", { x: tblX + colW.pos + colW.desc + colW.qty + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Preis (CHF)", { x: tblX + tblW - 25 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+
+    p.drawLine({
+      start: { x: tblX, y: y - 4 * MM },
+      end: { x: tblX + tblW, y: y - 4 * MM },
+      thickness: 0.6,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+
+    return y - 8 * MM;
   };
 
-  // Hilfsfunktion: Tabellenzeile mit mehrzeiligem Text zeichnen
-  const drawTableRow = (p: any, row: PreparedRow, idx: number, y: number) => {
-    if (idx % 2 === 1) {
-      p.drawRectangle({
-        x: tblX,
-        y: y - row.rowHeight + 3.8 * MM,
-        width: tblW,
-        height: row.rowHeight,
-        color: rgb(0.98, 0.98, 0.99),
-      });
-    }
-
+  // Hilfsfunktion: Tabellenzeile zeichnen
+  const drawTableRow = (p: any, row: PreparedRow, _idx: number, y: number) => {
     // Pos.-Nummer
     p.drawText(row.posNr, { x: tblX + 2 * MM, y, size: 8.5, font: fontRegular });
 
@@ -790,41 +797,61 @@ async function generateInvoicePdf(
       });
     });
 
-    // Menge, Ansatz, Betrag auf erster Zeile
+    // Menge, Ansatz, Betrag auf erster Zeile mit Tabellenziffern
     p.drawText(row.qtyStr, { x: tblX + colW.pos + colW.desc + 2 * MM, y, size: 8.5, font: fontRegular });
     p.drawText(row.unitStr, { x: tblX + colW.pos + colW.desc + colW.qty + 2 * MM, y, size: 8.5, font: fontRegular });
-    p.drawText(row.totalStr, { x: tblX + tblW - 20 * MM, y, size: 8.5, font: fontRegular });
+    p.drawText(row.totalStr, { x: tblX + tblW - 22 * MM, y, size: 8.5, font: fontRegular });
 
     return y - row.rowHeight;
   };
 
-  // Hilfsfunktion: Summenzeile, Zahlungsfrist & Grussformel
+  // Hilfsfunktion: Summenzeile, Zahlungsfrist & Grussformel (Referenz-Design)
   const drawTotalsAndFooter = (p: any, y: number) => {
     p.drawLine({
       start: { x: tblX, y: y + 1 * MM },
       end: { x: tblX + tblW, y: y + 1 * MM },
       thickness: 0.8,
-      color: rgb(0.2, 0.2, 0.2),
+      color: rgb(0.1, 0.1, 0.1),
     });
 
-    p.drawText("Gesamtbetrag (CHF):", { x: tblX + tblW - 65 * MM, y: y - 3 * MM, size: 9.5, font: fontBold });
-    p.drawText(totalAmount.toFixed(2), { x: tblX + tblW - 20 * MM, y: y - 3 * MM, size: 10, font: fontBold });
+    p.drawText("Total", { x: tblX + 20 * MM, y: y - 3.5 * MM, size: 9.5, font: fontBold });
+    p.drawText(formatSwissChf(totalAmount), { x: tblX + tblW - 24 * MM, y: y - 3.5 * MM, size: 10, font: fontBold });
 
-    y -= 8.5 * MM;
+    p.drawLine({
+      start: { x: tblX, y: y - 6 * MM },
+      end: { x: tblX + tblW, y: y - 6 * MM },
+      thickness: 1.0,
+      color: rgb(0.1, 0.1, 0.1),
+    });
 
-    const noticeRaw = (resolvedLayout.notice || "Zahlbar innert 30 Tagen mit beiliegendem QR-Zahlteil. Besten Dank für deine Unterstützung!")
+    y -= 14 * MM;
+
+    // Outro / Notiz
+    const noticeDefault = "Bei allfälligen Fragen bitte bei mir melden.\nVielen Dank für das Vertrauen.";
+    const noticeRaw = (resolvedLayout.outro || resolvedLayout.notice || noticeDefault)
       .replace(/{rechnungsnummer}/g, invoiceId)
       .replace(/{rechnungsjahr}/g, yearStr);
-    const noticeClean = sanitizeText(noticeRaw);
+    const noticeLines = noticeRaw.split("\n");
+    noticeLines.forEach((nl: string) => {
+      if (nl.trim()) {
+        p.drawText(sanitizeText(nl.trim()), { x: 20 * MM, y, size: 9, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
+        y -= 4.5 * MM;
+      }
+    });
 
-    p.drawText(noticeClean, { x: 20 * MM, y, size: 8.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
-    y -= 4.8 * MM;
-
-    const senderName = [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME;
-    const senderFunc = sender.funktion || "Vorstand Sportschützen Muhen";
-    p.drawText("Freundliche Grüsse", { x: 20 * MM, y, size: 9, font: fontRegular });
     y -= 4 * MM;
-    p.drawText(sanitizeText(`${senderName} (${senderFunc})`), { x: 20 * MM, y, size: 9, font: fontBold });
+
+    // Grusszeile & Absendersignatur
+    p.drawText("Mit besten Grüssen", { x: 20 * MM, y, size: 9, font: fontRegular });
+    y -= 5 * MM;
+    p.drawText(CLUB_NAME, { x: 20 * MM, y, size: 9.5, font: fontBold });
+    y -= 8 * MM;
+
+    const senderFullName = [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME;
+    p.drawText(sanitizeText(senderFullName), { x: 20 * MM, y, size: 9, font: fontRegular });
+    y -= 4.2 * MM;
+    const senderRole = sender.funktion || sender.bereich || "Vorstand";
+    p.drawText(sanitizeText(senderRole), { x: 20 * MM, y, size: 9, font: fontRegular });
 
     return y - 5 * MM;
   };
@@ -847,151 +874,165 @@ async function generateInvoicePdf(
     return 265 * MM;
   };
 
+  // Hilfsfunktion: Juristischer Vereins-Footer über dem QR-Zahlteil
+  const drawClubLegalFooter = (p: any, yPos: number = 108 * MM) => {
+    p.drawLine({
+      start: { x: 20 * MM, y: yPos + 2 * MM },
+      end: { x: 190 * MM, y: yPos + 2 * MM },
+      thickness: 0.3,
+      color: rgb(0.75, 0.75, 0.75),
+    });
+    p.drawText("Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com", {
+      x: 20 * MM,
+      y: yPos - 1.5 * MM,
+      size: 6.8,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  };
+
   // ============================================================================
   // SEITE 1 INITIALISIEREN & KOPFBEREICH ZEICHNEN
   // ============================================================================
   let currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
 
-  // Briefkopf: Logo proportional skaliert (scaleToFit)
-  let textStartX = 20 * MM;
+  // 1. Logo freistehend oben links (Box: 32 x 32 mm, kein Text daneben)
   if (logoImage) {
-    const scaledLogo = logoImage.scaleToFit(38 * MM, 18 * MM);
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     currentPage.drawImage(logoImage, {
       x: 20 * MM,
       y: 280 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
-    textStartX = 20 * MM + scaledLogo.width + 4 * MM;
   }
 
-  currentPage.drawText(CLUB_NAME.toUpperCase(), {
-    x: textStartX,
-    y: 277 * MM,
-    size: 13,
-    font: fontBold,
-    color: rgb(0.12, 0.23, 0.54), // Vereinsblau
-  });
-  currentPage.drawText("Gegründet 1933 · Schiessanlage Hard · 5037 Muhen", {
-    x: textStartX,
-    y: 272 * MM,
-    size: 8,
-    font: fontRegular,
-    color: rgb(0.4, 0.45, 0.55),
-  });
-  currentPage.drawText(`${CLUB_EMAIL} · ${CLUB_WEBSITE}`, {
-    x: textStartX,
-    y: 267 * MM,
-    size: 8,
-    font: fontRegular,
-    color: rgb(0.4, 0.45, 0.55),
-  });
+  // 2. Absenderblock links unter dem Logo (ab ca. 240 mm)
+  let sendY = 240 * MM;
+  const clubSubTitle = sender.bereich ? `${CLUB_NAME} ${sender.bereich}` : (sender.funktion ? `${CLUB_NAME} ${sender.funktion}` : CLUB_NAME);
+  currentPage.drawText(sanitizeText(clubSubTitle), { x: 20 * MM, y: sendY, size: 9.5, font: fontBold });
+  sendY -= 4.2 * MM;
 
-  // DIN 5008 Fensterzeile Absender
-  currentPage.drawText(`${CLUB_NAME} · Postfach · 5037 Muhen`, {
-    x: 125 * MM,
-    y: 262 * MM,
-    size: 7,
-    font: fontRegular,
-    color: rgb(0.4, 0.4, 0.4),
-  });
-  currentPage.drawLine({
-    start: { x: 125 * MM, y: 260.5 * MM },
-    end: { x: 195 * MM, y: 260.5 * MM },
-    thickness: 0.3,
-    color: rgb(0.7, 0.7, 0.7),
-  });
+  const senderNameStr = [sender.vorname, sender.nachname].filter(Boolean).join(" ");
+  if (senderNameStr) {
+    currentPage.drawText(sanitizeText(senderNameStr), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.strasse) {
+    currentPage.drawText(sanitizeText(sender.strasse), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  const senderPlzOrt = `${sender.plz || ""} ${sender.ort || ""}`.trim();
+  if (senderPlzOrt) {
+    currentPage.drawText(sanitizeText(senderPlzOrt), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.mobil) {
+    currentPage.drawText(sanitizeText(`Mobil ${sender.mobil}`), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.email) {
+    currentPage.drawText(sanitizeText(sender.email), {
+      x: 20 * MM,
+      y: sendY,
+      size: 9,
+      font: fontRegular,
+      color: rgb(0.08, 0.35, 0.75), // Vereinsblau für Mail
+    });
+    sendY -= 4.0 * MM;
+  }
 
-  // Empfänger-Adresse (DIN 5008 Fenster rechts)
-  let addrY = 255 * MM;
+  // Datum & Zahlbar bis unter dem Absender
+  sendY -= 3 * MM;
+  currentPage.drawText(`Datum:`, { x: 20 * MM, y: sendY, size: 8.5, font: fontRegular });
+  currentPage.drawText(dateStr, { x: 44 * MM, y: sendY, size: 8.5, font: fontRegular });
+  sendY -= 4.0 * MM;
+
+  const dueDays = 30;
+  const dueDateObj = new Date();
+  dueDateObj.setDate(dueDateObj.getDate() + dueDays);
+  const dueDateStr = dueDateObj.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  currentPage.drawText(`Zahlbar bis:`, { x: 20 * MM, y: sendY, size: 8.5, font: fontRegular });
+  currentPage.drawText(dueDateStr, { x: 44 * MM, y: sendY, size: 8.5, font: fontRegular });
+
+  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, auf gleicher Höhe ab 240 mm)
+  let addrY = 240 * MM;
+  if (recipient.abteilung || (recipient as any).zusatz) {
+    currentPage.drawText(sanitizeText(recipient.abteilung || (recipient as any).zusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
+  }
   if (recipient.firma) {
-    currentPage.drawText(sanitizeText(recipient.firma), { x: 125 * MM, y: addrY, size: 10, font: fontBold });
-    addrY -= 4.5 * MM;
-  }
-  if (recipient.abteilung) {
-    currentPage.drawText(sanitizeText(recipient.abteilung), { x: 125 * MM, y: addrY, size: 9, font: fontRegular });
-    addrY -= 4.5 * MM;
+    currentPage.drawText(sanitizeText(recipient.firma), { x: 125 * MM, y: addrY, size: 9.5, font: fontBold });
+    addrY -= 4.2 * MM;
   }
   const fullRecName = [recipient.anrede, recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || (recipient.name || "");
-  if (fullRecName) {
-    currentPage.drawText(sanitizeText(fullRecName), { x: 125 * MM, y: addrY, size: 10, font: fontRegular });
-    addrY -= 4.5 * MM;
+  if (fullRecName && (!recipient.firma || fullRecName !== recipient.firma)) {
+    currentPage.drawText(sanitizeText(fullRecName), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
   }
   if (recipient.strasse) {
-    currentPage.drawText(sanitizeText(recipient.strasse), { x: 125 * MM, y: addrY, size: 10, font: fontRegular });
-    addrY -= 4.5 * MM;
+    currentPage.drawText(sanitizeText(recipient.strasse), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
   }
   const plzOrt = `${recipient.plz || ""} ${recipient.ort || ""}`.trim();
   if (plzOrt) {
-    currentPage.drawText(sanitizeText(plzOrt), { x: 125 * MM, y: addrY, size: 10, font: fontRegular });
-    addrY -= 4.5 * MM;
+    currentPage.drawText(sanitizeText(plzOrt), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
   }
   if (recipient.land && recipient.land !== "CH" && recipient.land !== "Schweiz") {
-    currentPage.drawText(sanitizeText(recipient.land), { x: 125 * MM, y: addrY, size: 10, font: fontRegular });
-    addrY -= 4.5 * MM;
+    currentPage.drawText(sanitizeText(recipient.land), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
   }
 
-  // Datum & Ort
-  currentPage.drawText(`Muhen, ${dateStr}`, {
-    x: 20 * MM,
-    y: 232 * MM,
-    size: 9.5,
-    font: fontRegular,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-
-  // Rechnungstitel
-  const defaultTitle = `Rechnung ${invoiceId} – ${docType || "Jahresbeitrag"} ${yearStr}`;
+  // 4. Rechnungstitel (H1, linksbündig ab ca. 195 mm)
+  const defaultTitle = docType || "Rechnung";
   const finalTitle = sanitizeText(resolvedLayout.title ? resolvedLayout.title.replace(/{rechnungsnummer}/g, invoiceId).replace(/{rechnungsjahr}/g, yearStr) : defaultTitle);
   currentPage.drawText(finalTitle, {
     x: 20 * MM,
-    y: 223 * MM,
-    size: 13,
+    y: 195 * MM,
+    size: 14,
     font: fontBold,
-    color: rgb(0.1, 0.15, 0.3),
+    color: rgb(0.05, 0.05, 0.05),
   });
 
-  // Anrede & Einleitung
-  let curY = 214 * MM;
-  let salutation = "Guten Tag,";
-  if (isFirma) {
-    salutation = recipient.nachname
-      ? (recipient.anrede === "Frau" ? "Sehr geehrte Frau " : "Sehr geehrter Herr ") + recipient.nachname + ","
-      : "Sehr geehrte Damen und Herren,";
+  // 5. Anrede & Einleitung (ab ca. 180 mm)
+  let curY = 180 * MM;
+  let salutation = "Guten Tag";
+  if (recipient.vorname) {
+    salutation = `Guten Tag ${recipient.vorname}`;
+  } else if (recipient.nachname) {
+    salutation = isFirma
+      ? (recipient.anrede === "Frau" ? "Sehr geehrte Frau " : "Sehr geehrter Herr ") + recipient.nachname
+      : `Guten Tag ${recipient.anrede || ""} ${recipient.nachname}`.trim();
   } else {
-    if (recipient.vorname) {
-      salutation = `Guten Tag ${recipient.vorname},`;
-    } else if (recipient.nachname) {
-      salutation = `Guten Tag ${recipient.anrede || ""} ${recipient.nachname},`.trim();
-    }
+    salutation = "Guten Tag";
   }
 
-  const introRaw = (resolvedLayout.intro || "anbei erhalten Sie die Rechnung für das Vereinsjahr {rechnungsjahr}.")
+  currentPage.drawText(sanitizeText(salutation), { x: 20 * MM, y: curY, size: 10, font: fontRegular });
+  curY -= 6 * MM;
+
+  const introRaw = (resolvedLayout.intro || "Anbei die Rechnung für den durchgeführten Kurs.")
     .replace(/{rechnungsnummer}/g, invoiceId)
     .replace(/{rechnungsjahr}/g, yearStr)
     .replace(/{vorname}/g, recipient.vorname || "")
     .replace(/{nachname}/g, recipient.nachname || "");
 
-  currentPage.drawText(sanitizeText(salutation), { x: 20 * MM, y: curY, size: 9.5, font: fontRegular });
-  curY -= 5 * MM;
-
   const introLines = introRaw.split("\n");
   introLines.forEach((l) => {
     if (l.trim()) {
-      currentPage.drawText(sanitizeText(l.trim()), { x: 20 * MM, y: curY, size: 9, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
-      curY -= 4.2 * MM;
-    } else {
-      curY -= 2 * MM;
+      currentPage.drawText(sanitizeText(l.trim()), { x: 20 * MM, y: curY, size: 9.5, font: fontRegular, color: rgb(0.1, 0.1, 0.1) });
+      curY -= 4.5 * MM;
     }
   });
 
-  curY -= 3 * MM;
+  curY -= 4 * MM;
 
   // ============================================================================
   // 3. INTELLIGENTER LOOKAHEAD: PASST ALLES AUF SEITE 1 INKL. QR-ZAHLTEIL?
   // ============================================================================
   const totalRowsHeight = preparedRows.reduce((acc, r) => acc + r.rowHeight, 0);
-  const tableHeaderHeight = 6.5 * MM;
+  const tableHeaderHeight = 8 * MM;
   const singlePageRequiredSpace = tableHeaderHeight + totalRowsHeight + TOTALS_FOOTER_HEIGHT;
   const fitsOnSinglePage = (curY - singlePageRequiredSpace) >= QR_SAFE_FLOOR;
 
@@ -1006,6 +1047,7 @@ async function generateInvoicePdf(
     });
 
     drawTotalsAndFooter(currentPage, curY);
+    drawClubLegalFooter(currentPage);
     drawSwissQrBillSection(currentPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
   } else {
     // --------------------------------------------------------------------------
@@ -1048,6 +1090,7 @@ async function generateInvoicePdf(
           rowIndex++;
         }
         drawTotalsAndFooter(currentPage, curY);
+        drawClubLegalFooter(currentPage);
         drawSwissQrBillSection(currentPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
         qrPlaced = true;
         break;
@@ -1081,7 +1124,7 @@ async function generateInvoicePdf(
       curY -= 5.5 * MM;
 
       const recSummary = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || recipient.firma || recipient.name || "Rechnungsempfänger";
-      currentPage.drawText(sanitizeWinAnsiText(`Rechnungsempfänger: ${recSummary}   |   Gesamtbetrag: CHF ${totalAmount.toFixed(2)}`), {
+      currentPage.drawText(sanitizeWinAnsiText(`Rechnungsempfänger: ${recSummary}   |   Gesamtbetrag: CHF ${formatSwissChf(totalAmount)}`), {
         x: 20 * MM,
         y: curY,
         size: 9,
@@ -1091,6 +1134,7 @@ async function generateInvoicePdf(
       curY -= 8 * MM;
 
       drawTotalsAndFooter(currentPage, curY);
+      drawClubLegalFooter(currentPage);
       drawSwissQrBillSection(currentPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
     }
   }
@@ -1889,6 +1933,33 @@ Deno.serve(async (req: Request) => {
         verein: CLUB_NAME,
         email: CLUB_EMAIL,
       };
+
+      // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
+      if ((!sender.vorname || !sender.strasse) && supabase) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.id) {
+            const { data: prof } = await supabase
+              .from("admin_profiles")
+              .select("*, members(*)")
+              .eq("auth_user_id", user.id)
+              .maybeSingle();
+            if (prof) {
+              const m = prof.members || {};
+              sender.vorname = sender.vorname || m.first_name || (prof.display_name ? prof.display_name.split(" ")[0] : "");
+              sender.nachname = sender.nachname || m.last_name || (prof.display_name ? prof.display_name.split(" ").slice(1).join(" ") : "");
+              sender.funktion = sender.funktion || prof.role_external || "Vorstand";
+              sender.bereich = sender.bereich || prof.role_external || "";
+              sender.strasse = sender.strasse || m.street || "";
+              sender.plz = sender.plz || String(m.post_code || "5037");
+              sender.ort = sender.ort || m.city || "Muhen";
+              sender.mobil = sender.mobil || m.private_mobile_phone || m.business_mobile_phone || "";
+              sender.email = sender.email || m.primary_email || prof.email || CLUB_EMAIL;
+            }
+          }
+        } catch (_) {}
+      }
+
       const layout = payload.layout || {};
 
       pdfBytes = await generateInvoicePdf(
