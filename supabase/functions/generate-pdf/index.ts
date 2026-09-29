@@ -180,9 +180,11 @@ interface LayoutData {
 }
 
 interface GeneratePdfPayload {
-  action?: string; // 'generate-invoice' | 'generateInvoicePDF' | 'generate-contract' | 'generateRentalContractPDF' | 'generate-swiss-qr'
+  action?: string; // 'generate-invoice' | 'generateInvoicePDF' | 'generate-contract' | 'generateRentalContractPDF' | 'generate-swiss-qr' | 'generate-gv-invitation' | 'compile-gv-dossier'
   invoiceId?: string;
   bookingId?: string;
+  campaignId?: string;
+  gvData?: any;
   recipient?: RecipientData;
   sender?: SenderData;
   layout?: LayoutData;
@@ -197,6 +199,7 @@ interface GeneratePdfPayload {
   kaution?: number | string;
   saveToStorage?: boolean;
   syncPaperless?: boolean;
+  forceRecreate?: boolean;
 }
 
 // Hilfsfunktion: Strasse und Hausnummer trennen
@@ -1795,6 +1798,138 @@ async function generateGVInvitationPdf(
   return await pdfDoc.save();
 }
 
+// ==============================================================================
+// MODULARER GV-DOSSIER-COMPILER (PDF-ASSEMBLER & CORPORATE STEMPEL)
+// ==============================================================================
+async function compileGvDossierPdf(
+  campaignId: string,
+  year: number,
+  gvData: any,
+  supabaseClient: any
+): Promise<{ pdfBytes: Uint8Array; pageCount: number; attachmentsCompiled: number }> {
+  const masterDoc = await PDFDocument.create();
+  const fontRegular = await masterDoc.embedFont(StandardFonts.Helvetica);
+
+  // 1. DYNAMISCHE BASIS-SEITEN GENERIEREN (Einladung S.1 + Jahresprogramm S.2ff)
+  const baseBytes = await generateGVInvitationPdf(year, gvData, supabaseClient);
+  const baseDoc = await PDFDocument.load(baseBytes);
+  const basePageIndices = baseDoc.getPageIndices();
+  const copiedBasePages = await masterDoc.copyPages(baseDoc, basePageIndices);
+  copiedBasePages.forEach((p) => masterDoc.addPage(p));
+
+  // 2. BEILAGEN AUS campaign_attachments LADEN & ZUSAMMENFÜGEN
+  let attachmentsCompiled = 0;
+  if (campaignId && supabaseClient) {
+    const { data: attachments, error: attErr } = await supabaseClient
+      .from("campaign_attachments")
+      .select("*")
+      .eq("campaign_id", campaignId)
+      .order("sort_order", { ascending: true });
+
+    if (!attErr && attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        if (!att.storage_path) continue;
+
+        try {
+          // Versuche Download aus campaign-assets oder operatives-storage
+          let fileBytes: Uint8Array | null = null;
+          const bucketCandidates = ["campaign-assets", "operatives-storage"];
+          for (const b of bucketCandidates) {
+            const { data: fileBlob } = await supabaseClient.storage.from(b).download(att.storage_path);
+            if (fileBlob) {
+              fileBytes = new Uint8Array(await fileBlob.arrayBuffer());
+              break;
+            }
+          }
+
+          if (fileBytes) {
+            const extDoc = await PDFDocument.load(fileBytes);
+            const extPageIndices = extDoc.getPageIndices();
+            const copiedExtPages = await masterDoc.copyPages(extDoc, extPageIndices);
+            copiedExtPages.forEach((p) => masterDoc.addPage(p));
+
+            // Status in DB aktualisieren
+            await supabaseClient
+              .from("campaign_attachments")
+              .update({
+                page_count: extDoc.getPageCount(),
+                status: "compiled",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", att.id);
+
+            attachmentsCompiled++;
+          }
+        } catch (attLoadErr) {
+          console.warn(`⚠️ [GV-Compiler] Fehler beim Laden von Beilage ${att.title}:`, attLoadErr);
+          await supabaseClient
+            .from("campaign_attachments")
+            .update({
+              status: "error",
+              error_message: String(attLoadErr),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", att.id);
+        }
+      }
+    }
+  }
+
+  // 3. CORPORATE STEMPEL (2-Pass über ALLE Seiten des Master-Dossiers)
+  const totalPages = masterDoc.getPageCount();
+  const allPages = masterDoc.getPages();
+
+  allPages.forEach((p, idx) => {
+    const pageNum = idx + 1;
+    const { width, height } = p.getSize();
+
+    // Dezente Kopfzeile (ab Seite 2)
+    if (pageNum > 1) {
+      p.drawLine({
+        start: { x: 20 * MM, y: height - 12 * MM },
+        end: { x: width - 20 * MM, y: height - 12 * MM },
+        thickness: 0.3,
+        color: rgb(0.75, 0.75, 0.75),
+      });
+
+      p.drawText(`Sportschützen Muhen · Generalversammlung ${year}`, {
+        x: 20 * MM,
+        y: height - 10 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.55),
+      });
+    }
+
+    // Fortlaufende Seitennummerierung unten zentriert
+    const pageStr = `Seite ${pageNum} von ${totalPages}`;
+    const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+    const centerX = (width - pageStrW) / 2;
+
+    p.drawLine({
+      start: { x: 20 * MM, y: 15 * MM },
+      end: { x: width - 20 * MM, y: 15 * MM },
+      thickness: 0.3,
+      color: rgb(0.75, 0.75, 0.75),
+    });
+
+    p.drawText(pageStr, {
+      x: centerX,
+      y: 11 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+  });
+
+  const finalPdfBytes = await masterDoc.save();
+  return {
+    pdfBytes: finalPdfBytes,
+    pageCount: totalPages,
+    attachmentsCompiled: attachmentsCompiled,
+  };
+}
+
 // Optionaler Paperless-NGX REST-Upload
 async function syncToPaperlessNgx(
   pdfBytes: Uint8Array,
@@ -2032,6 +2167,28 @@ Deno.serve(async (req: Request) => {
       fileName = `GV_Einladung_${year}.pdf`;
       storageSubDir = `gv/${curYear}`;
       docTitle = `Einladung zur ${gvData.gvNummer || ''}. Generalversammlung ${year}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 4: VOLLSTÄNDIGES GV-DOSSIER ASSEMBLIEREN & STEMPELN
+    // --------------------------------------------------------------------------
+    else if (action === "compile-gv-dossier" || action === "compileGVDossier") {
+      const year = Number(payload.year || curYear);
+      const campId = payload.campaignId || "";
+      const gvData = (payload as any).gvData || {};
+      recordId = campId || `GV-DOSSIER-${year}`;
+
+      const res = await compileGvDossierPdf(
+        campId,
+        year,
+        gvData,
+        supabase
+      );
+
+      pdfBytes = res.pdfBytes;
+      fileName = `GV_Dossier_${year}_Gesamt.pdf`;
+      storageSubDir = `gv-dossiers/${year}`;
+      docTitle = `GV-Dossier ${year} Gesamt (${res.pageCount} Seiten)`;
     } else {
       throw new Error(`Unbekannte Aktion: ${action}`);
     }
@@ -2164,6 +2321,24 @@ Deno.serve(async (req: Request) => {
         p_paperless_status: paperlessStatus,
         p_paperless_id: paperlessDocId || null,
       });
+    } else if (action === "compile-gv-dossier" || action === "compileGVDossier") {
+      try {
+        if (payload.campaignId) {
+          await supabase
+            .from("communication_campaigns")
+            .update({
+              dossier_pdf_url: publicUrl,
+              dossier_storage_path: storagePath,
+              status: "ready",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", payload.campaignId);
+        }
+        await supabase
+          .from("gv_instances")
+          .update({ doc_anhaenge_url: publicUrl, updated_at: new Date().toISOString() })
+          .eq("year", Number(curYear));
+      } catch (_) {}
     } else if (action.includes("gv") || action === "generate-gv-invitation") {
       try {
         await supabase
