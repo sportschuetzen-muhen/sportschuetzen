@@ -210,6 +210,44 @@ interface GeneratePdfPayload {
   forceRecreate?: boolean;
 }
 
+// Hilfsfunktion: Empfänger-Daten universell normalisieren (deutsche & englische Keys)
+function normalizeRecipient(r: any): RecipientData {
+  if (!r) return { name: "Mitglied" };
+  const vorname = (r.vorname || r.first_name || r.firstName || "").trim();
+  const nachname = (r.nachname || r.last_name || r.lastName || "").trim();
+  let name = (r.name || "").trim();
+  if (!name && (vorname || nachname)) {
+    name = [vorname, nachname].filter(Boolean).join(" ");
+  }
+
+  const anrede = (r.anrede || r.salutation || "").trim();
+  const strasse = (r.strasse || r.street || r.adresse || "").trim();
+  const plz = String(r.plz || r.zip || r.post_code || r.postCode || "").trim();
+  const ort = (r.ort || r.city || "").trim();
+  const firma = (r.firma || "").trim();
+  const abteilung = (r.abteilung || r.zusatz || "").trim();
+  const email = (r.email || r.mail || r.primary_email || "").trim();
+  const telefon = (r.telefon || r.phone || r.mobil || "").trim();
+  const land = (r.land || r.country || "Schweiz").trim();
+  const typ = (r.typ || r.type || (firma ? "firma" : "privat")).trim();
+
+  return {
+    vorname,
+    nachname,
+    name: name || [vorname, nachname].filter(Boolean).join(" ") || firma || "Mitglied",
+    firma,
+    abteilung,
+    anrede,
+    strasse,
+    plz,
+    ort,
+    land,
+    email,
+    telefon,
+    typ,
+  };
+}
+
 // Hilfsfunktion: Strasse und Hausnummer trennen
 function splitStreetAndNumber(strasse: string): { streetName: string; houseNumber: string } {
   if (!strasse) return { streetName: "–", houseNumber: "" };
@@ -682,6 +720,7 @@ async function generateInvoicePdf(
   docType: string,
   supabaseClient?: any
 ): Promise<Uint8Array> {
+  const normRecipient = normalizeRecipient(recipient);
   const pdfDoc = await PDFDocument.create();
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -721,9 +760,9 @@ async function generateInvoicePdf(
   }
 
   const isFirma =
-    recipient.typ === "firma" ||
-    Boolean(recipient.firma) ||
-    Boolean(recipient.name && recipient.name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
+    normRecipient.typ === "firma" ||
+    Boolean(normRecipient.firma) ||
+    Boolean(normRecipient.name && normRecipient.name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
 
   const validPositions = (positions && positions.length > 0)
     ? positions
@@ -845,9 +884,9 @@ async function generateInvoicePdf(
     const noticeRaw = (resolvedLayout.outro || resolvedLayout.notice || noticeDefault)
       .replace(/{rechnungsnummer}/g, invoiceId)
       .replace(/{rechnungsjahr}/g, yearStr)
-      .replace(/{anrede}/g, recipient.anrede || "")
-      .replace(/{vorname}/g, recipient.vorname || "")
-      .replace(/{nachname}/g, recipient.nachname || "")
+      .replace(/{anrede}/g, normRecipient.anrede || "")
+      .replace(/{vorname}/g, normRecipient.vorname || "")
+      .replace(/{nachname}/g, normRecipient.nachname || "")
       .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
       .replace(/{absender_vorname}/g, sender.vorname || "")
       .replace(/{absender_nachname}/g, sender.nachname || "")
@@ -919,35 +958,35 @@ async function generateInvoicePdf(
   // ============================================================================
   let currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
 
-  // 1. Logo oben links (Box: 32 x 32 mm) + zweizeiliger Vereinskopf daneben
-  let textStartX = 20 * MM;
+  // 1. Logo oben links + zweizeiliger Vereinskopf daneben (harmonisiert: weiter links oben, 14pt)
+  let textStartX = 15 * MM;
   if (logoImage) {
     const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     currentPage.drawImage(logoImage, {
-      x: 20 * MM,
-      y: 280 * MM - scaledLogo.height,
+      x: 15 * MM,
+      y: 287 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
-    textStartX = 20 * MM + scaledLogo.width + 4 * MM;
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
   }
   currentPage.drawText(CLUB_NAME.toUpperCase(), {
     x: textStartX,
-    y: 275 * MM,
-    size: 11,
+    y: 281.5 * MM,
+    size: 14,
     font: fontBold,
     color: rgb(0.12, 0.23, 0.54),
   });
   currentPage.drawText("gegründet 1919 · Schiessanlage Rüteli", {
     x: textStartX,
-    y: 270 * MM,
-    size: 8.5,
+    y: 275.5 * MM,
+    size: 9,
     font: fontRegular,
     color: rgb(0.4, 0.45, 0.55),
   });
 
-  // 2. Absenderblock links unter dem Logo (ab ca. 240 mm) - Nur Funktion ohne 'Sportschützen Muhen'
-  let sendY = 240 * MM;
+  // 2. Absenderblock links unter dem Logo (ab ca. 246 mm) - Nur Funktion ohne 'Sportschützen Muhen'
+  let sendY = 246 * MM;
   const senderRole = sender.funktion || sender.bereich || "Vorstand";
   currentPage.drawText(sanitizeText(senderRole), { x: 20 * MM, y: sendY, size: 9.5, font: fontBold });
   sendY -= 4.2 * MM;
@@ -995,36 +1034,36 @@ async function generateInvoicePdf(
   currentPage.drawText(`Zahlbar bis:`, { x: 20 * MM, y: sendY, size: 8.5, font: fontRegular });
   currentPage.drawText(dueDateStr, { x: 44 * MM, y: sendY, size: 8.5, font: fontRegular });
 
-  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, ab 240 mm) mit Anrede
-  let addrY = 240 * MM;
-  if (recipient.abteilung || (recipient as any).zusatz) {
-    currentPage.drawText(sanitizeText(recipient.abteilung || (recipient as any).zusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, ab 246 mm) mit Anrede
+  let addrY = 246 * MM;
+  if (normRecipient.abteilung || (normRecipient as any).zusatz) {
+    currentPage.drawText(sanitizeText(normRecipient.abteilung || (normRecipient as any).zusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
   }
-  if (recipient.firma) {
-    currentPage.drawText(sanitizeText(recipient.firma), { x: 125 * MM, y: addrY, size: 9.5, font: fontBold });
+  if (normRecipient.firma) {
+    currentPage.drawText(sanitizeText(normRecipient.firma), { x: 125 * MM, y: addrY, size: 9.5, font: fontBold });
     addrY -= 4.2 * MM;
   }
-  if (recipient.anrede && !recipient.firma) {
-    currentPage.drawText(sanitizeText(recipient.anrede), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+  if (normRecipient.anrede && !normRecipient.firma) {
+    currentPage.drawText(sanitizeText(normRecipient.anrede), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
   }
-  const fullRecName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || (recipient.name || "");
-  if (fullRecName && (!recipient.firma || fullRecName !== recipient.firma)) {
+  const fullRecName = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim() || (normRecipient.name || "");
+  if (fullRecName && (!normRecipient.firma || fullRecName !== normRecipient.firma)) {
     currentPage.drawText(sanitizeText(fullRecName), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
   }
-  if (recipient.strasse) {
-    currentPage.drawText(sanitizeText(recipient.strasse), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+  if (normRecipient.strasse) {
+    currentPage.drawText(sanitizeText(normRecipient.strasse), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
   }
-  const plzOrt = `${recipient.plz || ""} ${recipient.ort || ""}`.trim();
+  const plzOrt = `${normRecipient.plz || ""} ${normRecipient.ort || ""}`.trim();
   if (plzOrt) {
     currentPage.drawText(sanitizeText(plzOrt), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
   }
-  if (recipient.land && recipient.land !== "CH" && recipient.land !== "Schweiz") {
-    currentPage.drawText(sanitizeText(recipient.land), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+  if (normRecipient.land && normRecipient.land !== "CH" && normRecipient.land !== "Schweiz") {
+    currentPage.drawText(sanitizeText(normRecipient.land), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
   }
 
@@ -1239,29 +1278,29 @@ async function generateRentalContractPdf(
   // ============================================================================
   const page1 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
 
-  let textStartX = 20 * MM;
+  let textStartX = 15 * MM;
   if (logoImage) {
-    const scaledLogo = logoImage.scaleToFit(38 * MM, 18 * MM);
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     page1.drawImage(logoImage, {
-      x: 20 * MM,
-      y: 280 * MM - scaledLogo.height,
+      x: 15 * MM,
+      y: 287 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
-    textStartX = 20 * MM + scaledLogo.width + 4 * MM;
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
   }
 
   page1.drawText(CLUB_NAME.toUpperCase(), {
     x: textStartX,
-    y: 278 * MM,
-    size: 13,
+    y: 281.5 * MM,
+    size: 14,
     font: fontBold,
     color: rgb(0.12, 0.23, 0.54),
   });
-  page1.drawText("Vermietung Schützenstube Hard · 5037 Muhen · info@sportschuetzen-muhen.ch", {
+  page1.drawText("gegründet 1919 · Schiessanlage Rüteli", {
     x: textStartX,
-    y: 273 * MM,
-    size: 8.5,
+    y: 275.5 * MM,
+    size: 9,
     font: fontRegular,
     color: rgb(0.4, 0.45, 0.55),
   });
@@ -1539,29 +1578,29 @@ async function generateGVInvitationPdf(
   const page1 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
 
   // Briefkopf
-  let textStartX = 20 * MM;
+  let textStartX = 15 * MM;
   if (logoImage) {
-    const scaledLogo = logoImage.scaleToFit(38 * MM, 18 * MM);
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     page1.drawImage(logoImage, {
-      x: 20 * MM,
-      y: 280 * MM - scaledLogo.height,
+      x: 15 * MM,
+      y: 287 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
-    textStartX = 20 * MM + scaledLogo.width + 4 * MM;
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
   }
 
   page1.drawText(CLUB_NAME.toUpperCase(), {
     x: textStartX,
-    y: 277 * MM,
-    size: 13,
+    y: 281.5 * MM,
+    size: 14,
     font: fontBold,
     color: rgb(0.12, 0.23, 0.54),
   });
-  page1.drawText("Schiessanlage Hard · 5037 Muhen · www.sportschuetzen-muhen.ch", {
+  page1.drawText("gegründet 1919 · Schiessanlage Rüteli", {
     x: textStartX,
-    y: 272 * MM,
-    size: 8,
+    y: 275.5 * MM,
+    size: 9,
     font: fontRegular,
     color: rgb(0.4, 0.45, 0.55),
   });
@@ -1866,22 +1905,40 @@ async function generateLetterPdf(
   // ============================================================================
   // SEITE 1: KOPFBEREICH & ADRESSEN (DIN 5008)
   // ============================================================================
+  const normRecipient = normalizeRecipient(recipient);
   let currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
   let pageCount = 1;
 
-  // Logo freistehend oben links (Box: 32 x 32 mm)
+  // Logo freistehend oben links + zweizeiliger Vereinskopf daneben (harmonisiert)
+  let textStartX = 15 * MM;
   if (logoImage) {
     const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     currentPage.drawImage(logoImage, {
-      x: 20 * MM,
-      y: 280 * MM - scaledLogo.height,
+      x: 15 * MM,
+      y: 287 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
+    textStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
   }
 
-  // Absenderblock links unter dem Logo (ab ca. 240 mm)
-  let sendY = 240 * MM;
+  currentPage.drawText(CLUB_NAME.toUpperCase(), {
+    x: textStartX,
+    y: 281.5 * MM,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  currentPage.drawText("gegründet 1919 · Schiessanlage Rüteli", {
+    x: textStartX,
+    y: 275.5 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  // Absenderblock links unter dem Logo (ab ca. 246 mm)
+  let sendY = 246 * MM;
   const clubSubTitle = sender.bereich
     ? `${CLUB_NAME} ${sender.bereich}`
     : (sender.funktion ? `${CLUB_NAME} ${sender.funktion}` : CLUB_NAME);
@@ -1917,10 +1974,10 @@ async function generateLetterPdf(
     sendY -= 4.0 * MM;
   }
 
-  // Empfänger-Adresse (DIN 5008 Fenster rechts ab 125 mm, Höhe 240 mm)
-  let addrY = 240 * MM;
-  if (recipient.abteilung || (recipient as any).zusatz) {
-    currentPage.drawText(sanitizeWinAnsiText(recipient.abteilung || (recipient as any).zusatz), {
+  // Empfänger-Adresse (DIN 5008 Fenster rechts ab 125 mm, Höhe 246 mm) mit separater Anredezeile
+  let addrY = 246 * MM;
+  if (normRecipient.abteilung) {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.abteilung), {
       x: 125 * MM,
       y: addrY,
       size: 9.5,
@@ -1928,8 +1985,8 @@ async function generateLetterPdf(
     });
     addrY -= 4.2 * MM;
   }
-  if (recipient.firma) {
-    currentPage.drawText(sanitizeWinAnsiText(recipient.firma), {
+  if (normRecipient.firma) {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.firma), {
       x: 125 * MM,
       y: addrY,
       size: 9.5,
@@ -1937,8 +1994,17 @@ async function generateLetterPdf(
     });
     addrY -= 4.2 * MM;
   }
-  const fullRecName = [recipient.anrede, recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || (recipient.name || "");
-  if (fullRecName && (!recipient.firma || fullRecName !== recipient.firma)) {
+  if (normRecipient.anrede && !normRecipient.firma) {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.anrede), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+  const fullRecName = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim() || (normRecipient.name || "");
+  if (fullRecName && (!normRecipient.firma || fullRecName !== normRecipient.firma)) {
     currentPage.drawText(sanitizeWinAnsiText(fullRecName), {
       x: 125 * MM,
       y: addrY,
@@ -1947,8 +2013,8 @@ async function generateLetterPdf(
     });
     addrY -= 4.2 * MM;
   }
-  if (recipient.strasse) {
-    currentPage.drawText(sanitizeWinAnsiText(recipient.strasse), {
+  if (normRecipient.strasse) {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.strasse), {
       x: 125 * MM,
       y: addrY,
       size: 9.5,
@@ -1956,7 +2022,7 @@ async function generateLetterPdf(
     });
     addrY -= 4.2 * MM;
   }
-  const recPlzOrt = `${recipient.plz || ""} ${recipient.ort || ""}`.trim();
+  const recPlzOrt = `${normRecipient.plz || ""} ${normRecipient.ort || ""}`.trim();
   if (recPlzOrt) {
     currentPage.drawText(sanitizeWinAnsiText(recPlzOrt), {
       x: 125 * MM,
@@ -1966,8 +2032,8 @@ async function generateLetterPdf(
     });
     addrY -= 4.2 * MM;
   }
-  if (recipient.land && recipient.land !== "CH") {
-    currentPage.drawText(sanitizeWinAnsiText(recipient.land), {
+  if (normRecipient.land && normRecipient.land !== "CH" && normRecipient.land !== "Schweiz") {
+    currentPage.drawText(sanitizeWinAnsiText(normRecipient.land), {
       x: 125 * MM,
       y: addrY,
       size: 9.5,
@@ -2752,14 +2818,42 @@ Deno.serve(async (req: Request) => {
       }
 
       const totalAmount = Number(payload.totalAmount || invRow?.total_amount || 0);
-      const recipient = payload.recipient || {
-        name: invRow?.recipient_name || "Mitglied",
-        vorname: "",
-        nachname: invRow?.recipient_name || "",
-        strasse: "",
-        plz: "5037",
-        ort: "Muhen",
+      // Falls invRow noch nicht geladen ist, laden wir die Rechnung aus Supabase
+      if (!invRow && supabase) {
+        const { data: invData } = await supabase.from("invoices").select("*").eq("id", invId).maybeSingle();
+        if (invData) invRow = invData;
+      }
+
+      // Zusammenführung: Payload-Empfänger + gespeicherte DB-Adresse (invoices.recipient_address)
+      const mergedRec = {
+        ...(invRow?.recipient_address || {}),
+        ...(payload.recipient || {}),
       };
+
+      let recipient = normalizeRecipient(mergedRec);
+
+      // Auto-Hydration der Empfänger-Adresse & Anrede aus members, falls strasse oder anrede noch fehlen
+      const pNr = mergedRec.person_number || mergedRec.personNumber || mergedRec.member_id || mergedRec.memberId || invRow?.person_number;
+      if ((!recipient.strasse || !recipient.anrede || !recipient.vorname) && pNr && supabase) {
+        try {
+          const { data: memberData } = await supabase
+            .from("members")
+            .select("salutation, first_name, last_name, street, post_code, city, primary_email")
+            .eq("person_number", pNr)
+            .maybeSingle();
+
+          if (memberData) {
+            recipient.anrede = recipient.anrede || memberData.salutation || "";
+            recipient.vorname = recipient.vorname || memberData.first_name || "";
+            recipient.nachname = recipient.nachname || memberData.last_name || "";
+            recipient.strasse = recipient.strasse || memberData.street || "";
+            recipient.plz = recipient.plz || String(memberData.post_code || "");
+            recipient.ort = recipient.ort || memberData.city || "";
+            recipient.email = recipient.email || memberData.primary_email || "";
+            recipient.name = recipient.name || [recipient.vorname, recipient.nachname].filter(Boolean).join(" ");
+          }
+        } catch (_) {}
+      }
       const sender = payload.sender || {
         vorname: "",
         nachname: "",
@@ -2992,7 +3086,13 @@ Deno.serve(async (req: Request) => {
     const archiveCategory = action.includes("contract") ? "contracts" : (action.includes("gv") ? "gv" : (action.includes("letter") ? "letters" : (action.includes("endschiessen") ? "endschiessen" : "invoices")));
     const archivePath = `archive/${curYear}/${archiveCategory}/${recordId || "doc"}.pdf`;
 
-    if (payload.saveToStorage !== false && !payload.forceRecreate && recordId) {
+    const isTestRun = Boolean(
+      payload.saveToStorage === false ||
+      payload.forceRecreate ||
+      (recordId && (recordId.startsWith("TEST") || recordId.startsWith("RE-TEST") || recordId.startsWith("PREVIEW")))
+    );
+
+    if (!isTestRun && payload.saveToStorage !== false && !payload.forceRecreate && recordId) {
       try {
         const { data: archBlob } = await supabase.storage.from(storageBucket).download(archivePath);
         if (archBlob) {

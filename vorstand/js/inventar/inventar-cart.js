@@ -365,9 +365,14 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     name: recipientName,
                     firstName: m.Vorname || mglMaster.FirstName || '',
                     lastName: m.Nachname || mglMaster.LastName || '',
+                    vorname: m.Vorname || mglMaster.FirstName || '',
+                    nachname: m.Nachname || mglMaster.LastName || '',
                     street: memberStrasse,
+                    strasse: memberStrasse,
                     zip: memberPlz,
+                    plz: memberPlz,
                     city: memberOrt,
+                    ort: memberOrt,
                     email: memberEmail
                 },
                 type: 'Materialverkauf',
@@ -410,7 +415,10 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     let pdfRes = await window.generatePdfViaEngine({
                         action: 'generate-invoice',
                         invoiceId: invoiceId,
-                        recipient: invoiceOrder.recipient,
+                        recipient: {
+                            ...(createdInv.recipient_address || {}),
+                            ...(invoiceOrder.recipient || {})
+                        },
                         sender: createdInv.sender_address || invoiceOrder.sender,
                         positions: positions,
                         totalAmount: totalAmount,
@@ -667,9 +675,14 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                 name: recipientName,
                 firstName: m.Vorname || mglMaster.FirstName || '',
                 lastName: m.Nachname || mglMaster.LastName || '',
+                vorname: m.Vorname || mglMaster.FirstName || '',
+                nachname: m.Nachname || mglMaster.LastName || '',
                 street: memberStrasse,
+                strasse: memberStrasse,
                 zip: memberPlz,
+                plz: memberPlz,
                 city: memberOrt,
+                ort: memberOrt,
                 email: memberEmail
             },
             type: 'Depot / Pfand',
@@ -715,7 +728,10 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                 let pdfRes = await window.generatePdfViaEngine({
                     action: 'generate-invoice',
                     invoiceId: invoiceId,
-                    recipient: invoiceOrder.recipient,
+                    recipient: {
+                        ...(createdInv.recipient_address || {}),
+                        ...(invoiceOrder.recipient || {})
+                    },
                     sender: createdInv.sender_address || invoiceOrder.sender,
                     positions: positions,
                     totalAmount: totalAmount,

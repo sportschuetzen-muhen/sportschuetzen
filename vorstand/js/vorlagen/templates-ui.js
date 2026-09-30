@@ -101,16 +101,38 @@
 
     // HTML Sub-Tabs (Vorlagen innerhalb der Kategorie)
     const getCleanTemplateTitle = (t) => {
-      if (!t || !t.title) return t?.code || 'Vorlage';
-      if (t.title.includes('–')) {
-        const parts = t.title.split('–');
-        return parts.slice(1).join('–').trim() || t.code;
+      if (!t) return 'Vorlage';
+      const friendlyMap = {
+        'materialverkauf': 'Materialverkauf (Kleider/Munition)',
+        'depot_pfand': 'Depot & Kaution (Inventar)',
+        'depot / pfand': 'Depot & Kaution (Inventar)',
+        'jahresbeitrag': 'Jahresbeitrag',
+        'vermietung': 'Miete Schützenhaus',
+        'schulsport': 'Schulsport / Kurse',
+        'sponsoring': 'Sponsoring & Gönner',
+        'sonstige': 'Sonstige Rechnungen',
+        'mahnung_1': '1. Mahnung (Erinnerung)',
+        'mahnung_2': '2. Mahnung',
+        'mahnung_3': '3. Mahnung (Letzte Frist)',
+        'mahnung': 'Mahnung (Standard)',
+        'mietvertrag': 'Mietvertrag Rüteli',
+        'gv_normal': 'GV-Einladung (Standard)',
+        'gv_wahljahr': 'GV-Einladung (Wahljahr)',
+        'freier_brief': 'Freier Vorstandsbrief'
+      };
+      if (friendlyMap[t.code?.toLowerCase()]) return friendlyMap[t.code.toLowerCase()];
+      if (t.title) {
+        if (t.title.includes('–')) {
+          const parts = t.title.split('–');
+          return parts.slice(1).join('–').trim() || t.title;
+        }
+        if (t.title.includes('-')) {
+          const parts = t.title.split('-');
+          return parts.slice(1).join('-').trim() || t.title;
+        }
+        return t.title;
       }
-      if (t.title.includes('-')) {
-        const parts = t.title.split('-');
-        return parts.slice(1).join('-').trim() || t.code;
-      }
-      return t.title;
+      return t.code || 'Vorlage';
     };
 
     const subTabsHtml = templatesInCat.map(t => `
@@ -508,12 +530,46 @@
       const t = window._docTemplatesData.find(x => x.id === templateId);
       if (!t) throw new Error("Vorlage nicht gefunden.");
 
-      let payload = {};
+      const formTitle = document.getElementById('doc-f-title')?.value.trim() || t.title;
+      const formIntro = document.getElementById('doc-f-intro')?.value.trim() || t.intro;
+      const formOutro = document.getElementById('doc-f-outro')?.value.trim() || t.outro;
+      const formNotice = document.getElementById('doc-f-notice')?.value.trim() || t.notice;
+
+      const testRecipient = {
+        anrede: 'Herr',
+        salutation: 'Herr',
+        vorname: 'Max',
+        firstName: 'Max',
+        nachname: 'Muster',
+        lastName: 'Muster',
+        name: 'Max Muster',
+        strasse: 'Hauptstrasse 42',
+        street: 'Hauptstrasse 42',
+        plz: '5037',
+        zip: '5037',
+        ort: 'Muhen',
+        city: 'Muhen',
+        email: 'max.muster@example.ch'
+      };
+
+      const testId = `TEST-PREVIEW-${Date.now().toString().slice(-6)}`;
+      let payload = {
+        forceRecreate: true,
+        saveToStorage: false,
+        layout: {
+          title: formTitle,
+          intro: formIntro,
+          outro: formOutro,
+          notice: formNotice
+        }
+      };
+
       if (t.category === 'vertrag') {
         payload = {
+          ...payload,
           action: 'generate-contract',
-          bookingId: 'TEST-MIETE-2026',
-          recipient: { name: 'Muster Mieter', strasse: 'Musterweg 1', plz: '5037', ort: 'Muhen', email: 'mieter@example.com' },
+          bookingId: testId,
+          recipient: testRecipient,
           mietdatum: '15.08.2026',
           festbeginn: '14:00 Uhr',
           mietbetrag: 300,
@@ -521,6 +577,7 @@
         };
       } else if (t.category === 'gv') {
         payload = {
+          ...payload,
           action: 'generate-gv-invitation',
           templateId: t.id,
           year: new Date().getFullYear(),
@@ -528,24 +585,12 @@
         };
       } else if (t.category === 'brief') {
         payload = {
+          ...payload,
           action: 'generate-letter',
-          letterId: 'TEST-BRIEF-2026',
-          recipient: {
-            anrede: 'Herr',
-            vorname: 'Hans',
-            nachname: 'Muster',
-            strasse: 'Dorfstrasse 12',
-            plz: '5037',
-            ort: 'Muhen',
-            email: 'hans.muster@example.ch'
-          },
-          layout: {
-            title: t.title || 'Wichtige Mitteilung des Vorstands',
-            intro: t.intro || '',
-            outro: t.outro || ''
-          },
-          subject: t.title || 'Wichtige Mitteilung des Vorstands',
-          bodyText: 'Wir freuen uns, Ihnen mitteilen zu können, dass die Vorbereitungen für die kommende Saison planmässig verlaufen.\n\nBitte beachten Sie die folgenden wichtigen Termine und Richtlinien:\n- Frist für Lizenzanträge: 15. November 2026\n- Standabnahme Kleinkaliber: 24. März 2026\n- Beginn Trainingsbetrieb: Ab Anfang April 2026\n\nBei allfälligen Fragen steht der Vorstand jederzeit gerne zur Verfügung.',
+          letterId: testId,
+          recipient: testRecipient,
+          subject: formTitle || 'Wichtige Mitteilung des Vorstands',
+          bodyText: formIntro || 'Wir freuen uns, Ihnen mitteilen zu können, dass die Vorbereitungen für die kommende Saison planmässig verlaufen.',
           signers: [
             { name: 'Andrea Rossi', role: 'Präsident' },
             { name: 'Daniel Humbel', role: 'Aktuar' }
@@ -554,24 +599,26 @@
         };
       } else if (t.category === 'sonstige' || t.code?.includes('endschiessen') || t.category === 'endschiessen') {
         payload = {
+          ...payload,
           action: 'generate-endschiessen',
           year: new Date().getFullYear(),
           endschiessenData: {
-            title: t.title || 'Endschiessen & Absenden',
-            intro: t.intro || undefined,
+            title: formTitle || 'Endschiessen & Absenden',
+            intro: formIntro || undefined,
             subtitle: 'Offizieller Festführer, Schiessplan & Menü-Einladung'
           }
         };
       } else {
         payload = {
+          ...payload,
           action: 'generate-invoice',
-          invoiceId: 'RE-TEST-0001',
-          recipient: { name: 'Max Muster', strasse: 'Hauptstrasse 42', plz: '5037', ort: 'Muhen' },
+          invoiceId: testId,
+          recipient: testRecipient,
           type: t.code,
           totalAmount: 150.00,
           year: new Date().getFullYear(),
           positions: [
-            { position_nr: 1, description: t.title || 'Muster-Leistung', quantity: 1, unit_price: 150.00, amount: 150.00 }
+            { position_nr: 1, description: formTitle || t.title || 'Muster-Leistung', quantity: 1, unit_price: 150.00, amount: 150.00 }
           ]
         };
       }
