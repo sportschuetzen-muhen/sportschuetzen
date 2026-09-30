@@ -252,12 +252,6 @@ async function saveTermineData() {
 }
 
 // =========================================================
-//  1-KLICK IMPORT (Von Google Sheet nach Supabase)
-// =========================================================
-  alert('ℹ️ Alle Termine und Stammdaten werden bereits nativ aus Supabase geladen und gespeichert.\n\nDas Legacy Google Sheet Backend ist vollständig entkoppelt.');
-window.syncTermineFromLegacy = syncTermineFromLegacy;
-
-// =========================================================
 //  HELFER-FUNKTIONEN
 // =========================================================
 function renderTermineContainerShell(container) {
@@ -265,22 +259,11 @@ function renderTermineContainerShell(container) {
     <div id="termine-shell">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
         <div class="small text-muted" id="last-sync">Zuletzt aktualisiert: -</div>
-        <div class="d-flex gap-2">
-          <button class="btn btn-sm btn-outline-primary" onclick="syncTermineFromLegacy()" title="Bestehende Daten aus Google Sheets nach Supabase synchronisieren">
-            <i class="fas fa-check-circle me-1"></i> Supabase Status
-          </button>
-        </div>
       </div>
-      <div id="termine-migration-banner"></div>
       <div id="termine-ui"></div>
     </div>
   `;
 }
-
-async function syncTermineFromLegacy() {
-  alert('ℹ️ Alle Termine und Stammdaten werden bereits nativ aus Supabase geladen und gespeichert.\n\nDas Legacy Google Sheet Backend ist vollständig entkoppelt.');
-}
-window.syncTermineFromLegacy = syncTermineFromLegacy;
 
 function updateLastSyncLabel(text) {
   const last = document.getElementById('last-sync');

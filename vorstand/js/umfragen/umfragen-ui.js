@@ -243,9 +243,6 @@ function renderUmfragenUI(container) {
                                 <h5 class="card-title mb-0">&#128640; Tools & GV-Steuerung</h5>
                             </div>
                             <div class="d-flex gap-2">
-                                <button class="btn btn-outline-secondary btn-sm write-protected" onclick="migrateGVFromGoogleSheets()" title="Aus Google Sheets importieren">
-                                    <i class="fas fa-file-import me-1"></i> Aus Sheets importieren
-                                </button>
                                 <button class="btn btn-success btn-sm write-protected fw-bold" onclick="saveGVData()">
                                     &#128190; GV-Stammdaten speichern
                                 </button>

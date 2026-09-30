@@ -44,12 +44,6 @@ function renderInventarUI(container) {
     ➕ Admin
 </button>` : ''}
             <div class="ms-auto d-flex gap-2 align-items-center">
-                <!-- Google Sheets Import (Deaktiviert nach Cut-Over) -->
-                <!--
-                <button class="btn btn-outline-secondary nav-btn btn-sm" onclick="syncInventarFromLegacy()" title="1-Klick Import aller Daten aus dem Google Sheet nach Supabase">
-                    <i class="fas fa-cloud-download-alt me-1"></i> Sheet-Sync / Import
-                </button>
-                -->
                 <button class="btn btn-outline-info nav-btn btn-sm fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
                     <i class="fas fa-sync-alt me-1"></i> Neu laden
                 </button>

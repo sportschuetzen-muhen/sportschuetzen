@@ -85,11 +85,6 @@ function mglRenderSync() {
             </p>
           </div>
         </div>
-        <div class="d-flex gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline-success" onclick="mglShowSupabaseStatus()">
-            <i class="fas fa-check-circle me-1"></i> System-Status
-          </button>
-        </div>
       </div>
 
       <!-- 6 System Cards Grid -->
@@ -579,13 +574,4 @@ async function mglLoadSyncHistory() {
   }
 }
 
-/**
- * Statusanzeige für Supabase Single Source of Truth
- */
-function mglShowSupabaseStatus() {
-  alert('ℹ️ SYSTEM-STATUS:\n\n' +
-        '1. Primärdatenbank: Supabase PostgreSQL (Single Source of Truth)\n' +
-        '2. Entkopplung: Google Apps Script & Google Sheets sind vollständig deaktiviert.\n' +
-        '3. Alle Fachmodule (Jahresmeisterschaft, Inventar, Vermietung, Termine, Buchhaltung, Logins) greifen direkt und synchron auf Supabase zu.');
-}
 

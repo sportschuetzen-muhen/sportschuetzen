@@ -739,9 +739,6 @@ function ensureManagerShell() {
                 <button class="btn btn-outline-secondary btn-sm" onclick="addTeamToState()" title="Neues Team">
                     <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Team</span>
                 </button>
-                <button class="btn btn-outline-secondary btn-sm" onclick="migrateManagerFromGoogleSheets()" title="Aus Google Sheet importieren">
-                    <i class="fas fa-file-import me-1"></i> <span class="d-none d-lg-inline">Aus Sheets importieren</span>
-                </button>
             </div>
             <div class="d-none d-md-flex gap-2">
                 <button class="btn btn-outline-dark btn-sm" onclick="exportPDF()" title="PDF Export">
@@ -979,12 +976,6 @@ async function autoSeedManagerToSupabase(moduleKey, year, data, config) {
     }
 }
 
-async function migrateManagerFromGoogleSheets(moduleKey = null) {
-    const targetModule = moduleKey || appState.activeModule;
-    const config = CONTEST_CONFIG[targetModule];
-    alert(`ℹ️ Die Team- und Aufstellungsdaten für "${config ? config.title : 'Wettkämpfe'}" werden bereits nativ aus Supabase geladen.\n\nDas Legacy Google Sheet Backend ist entkoppelt.`);
-}
-window.migrateManagerFromGoogleSheets = migrateManagerFromGoogleSheets;
 
 
 // escapeJs() wird von main.js bereitgestellt (vollständige Version mit ", \n, \r).

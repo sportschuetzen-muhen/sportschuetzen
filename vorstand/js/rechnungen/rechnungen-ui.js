@@ -263,9 +263,6 @@ window.renderTabArchiv = function(content) {
         <h5 class="fw-bold text-primary mb-0"><i class="fas fa-filter me-2"></i>Filter & Rechnungs-Archiv</h5>
         <div class="d-flex gap-2 flex-wrap align-items-center">
           <div id="rn-column-toggle" class="d-inline-block"></div>
-          <button class="btn btn-sm btn-outline-info fw-bold shadow-sm" id="rn-sync-legacy-btn" onclick="syncRechnungenFromLegacy()" title="Rechnungen, Positionen & Vorlagen aus Google Sheets nach Supabase synchronisieren">
-            <i class="fas fa-sync me-1"></i> Sheets &rarr; Supabase Sync
-          </button>
           <button class="btn btn-sm btn-outline-warning fw-bold shadow-sm write-protected" onclick="rnOpenBatchMahnungModal()" title="Alle fälligen offenen Rechnungen prüfen und per Klick gesammelt mahnen">
             <i class="fas fa-bullhorn me-1"></i> Fällige Mahnungen (${dueCount > 0 ? dueCount : 'Mahnlauf'})
           </button>

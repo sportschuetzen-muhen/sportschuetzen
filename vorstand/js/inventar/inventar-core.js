@@ -280,13 +280,6 @@ function initInventarUI(container) {
     showInventarSection(lastTab);
 }
 
-// =========================================================
-//  1-KLICK SYNC VON GOOGLE SHEETS NACH SUPABASE (DEAKTIVIERT - Cut-Over vollzogen)
-// =========================================================
-async function syncInventarFromLegacy() {
-    alert("ℹ️ Hinweis: Der Google-Sheets-Import ist deaktiviert. Das Inventar läuft autark auf Supabase (Single Source of Truth).");
-}
-window.syncInventarFromLegacy = syncInventarFromLegacy;
 
 function formatISODateSafe(val) {
     if (!val) return null;

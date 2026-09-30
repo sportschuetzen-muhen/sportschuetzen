@@ -38,9 +38,6 @@ function renderOverviewTab(canEdit, years) {
 
       ${canEdit ? `
       <div class="ms-auto d-inline-flex gap-2 align-items-center flex-wrap">
-        <button class="btn btn-sm btn-outline-success" id="jb-sync-legacy-btn" onclick="syncJahresbeitragFromLegacy()" title="1-Klick Datenabgleich aller Beiträge, Positionen, Turniere und Gebühren von Google Sheets nach Supabase">
-          <i class="fas fa-cloud-download-alt me-1"></i> Sheets-Sync
-        </button>
         <button class="btn btn-sm btn-outline-primary" onclick="jbOpenSammelversandModal()" title="Alle Rechnungen für das aktive Jahr gesammelt per E-Mail versenden">
           <i class="fas fa-paper-plane me-1"></i> Sammelversand E-Mail
         </button>

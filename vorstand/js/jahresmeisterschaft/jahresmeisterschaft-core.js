@@ -237,10 +237,6 @@ function hasValidTitle(grid, c) {
     return title !== '' && !title.toLowerCase().startsWith('spalte');
 }
 
-// 1-Klick-Import aller Daten aus Google Sheets nach Supabase
-window.migrateJMFromGoogleSheets = async function() {
-    alert("ℹ️ Die Jahresmeisterschaft (aktuelle Saison & Archivjahre) ist bereits vollständig in Supabase (jm_seasons & jm_shooters) gespeichert.\n\nDas Legacy Google Sheet Backend ist entkoppelt.");
-};
 
 // Hilfsfunktion: Synchronisiert strukturierte Schützenlisten nach public.jm_shooters
 async function syncJMShootersToSupabase(sb, jahr, grid) {

@@ -1184,11 +1184,6 @@ async function autoSeedGVToSupabase(data) {
   }
 }
 
-async function migrateGVFromGoogleSheets() {
-  alert("ℹ️ Migration bereits abgeschlossen:\n\nAlle GV-Stammdaten, Checklisten und Präsenzen werden direkt über Supabase PostgreSQL verwaltet. Die Google Sheets / GAS-Schnittstelle ist entkoppelt.");
-}
-window.migrateGVFromGoogleSheets = migrateGVFromGoogleSheets;
-
 async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
     if (!fileOrFileList) return;
     const files = (fileOrFileList instanceof FileList || Array.isArray(fileOrFileList))
@@ -1589,7 +1584,7 @@ async function saveGVMailTextOnly() {
 
   setGVMailTextInState(text);
   await saveGVData(false);
-  if (typeof showToast === 'function') showToast("Einladungstext in Google Sheets gespeichert!", "success");
+  if (typeof showToast === 'function') showToast("Einladungstext erfolgreich gespeichert!", "success");
 }
 
 async function executeGVMailSend() {

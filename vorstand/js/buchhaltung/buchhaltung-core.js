@@ -360,12 +360,6 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
   }
 };
 
-// =====================================================================
-// 1-KLICK DATENMIGRATION: GOOGLE SHEET -> SUPABASE
-// =====================================================================
-window.migrateBuchhaltungFromGoogleSheets = async function() {
-  alert("ℹ️ Die Finanzbuchhaltung (Konten, Journal, Budgets, Bankregeln) ist bereits vollständig auf Supabase migriert und als Single Source of Truth aktiv.\n\nDas Legacy Google Sheet Backend ist entkoppelt.");
-};
 
 // Berechnet die Salden der Konten live im Browser
 window.recalculateLiveAccountBalances = function() {

@@ -384,11 +384,6 @@ async function loadUmfragenData(force = false) {
   }
 }
 
-// Legacy-Funktion (Migration abgeschlossen - keine GAS-Verbindung mehr)
-function syncPollsFromLegacy() {
-    alert("Google Sheet Migration ist abgeschlossen. Daten werden direkt über Supabase verwaltet.");
-}
-window.syncPollsFromLegacy = syncPollsFromLegacy;
 
 function getEventIdFromLog(log) {
     if (!log) return '';

@@ -63,7 +63,7 @@ function renderExcelImportTab() {
         <h5 class="mb-3 d-flex justify-content-between align-items-center">
           <span>👀 Vorschau für importierte Daten:</span>
           <button class="btn btn-sm btn-success" onclick="jbSubmitExcelImport()">
-            <i class="fas fa-cloud-upload-alt me-1"></i> Import in Google Sheets starten
+            <i class="fas fa-cloud-upload-alt me-1"></i> Import nach Supabase starten
           </button>
         </h5>
         <div class="table-responsive border rounded bg-light" style="max-height: 400px; overflow-y: auto;">
@@ -699,6 +699,6 @@ async function jbSubmitExcelImport() {
   } finally {
     hideLoadingOverlay();
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import in Google Sheets starten';
+    btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import nach Supabase starten';
   }
 }

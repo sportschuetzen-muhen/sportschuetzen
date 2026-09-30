@@ -287,12 +287,7 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
 }
 
 // ============================================================
-// MIGRATIONSSTATUS: ALLE BEITRÄGE IN SUPABASE
-// ============================================================
-window.syncJahresbeitragFromLegacy = async function() {
-  alert("ℹ️ Migration bereits abgeschlossen:\n\nAlle Beitragsrechnungen, Positionen, Turnierteilnahmen und die Gebührenordnung werden direkt über Supabase PostgreSQL verwaltet. Die Google Sheets / GAS-Schnittstelle ist entkoppelt.");
-  return;
-};
+
 
 // Invoices aus Rechnungen_GAS mit den Beitrags-Header-Einträgen mergen
 function jbMergeInvoicesIntoData(invoices) {
