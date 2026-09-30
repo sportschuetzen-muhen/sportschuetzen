@@ -258,6 +258,7 @@ function renderUmfragenUI(container) {
                             </div>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">&#128196; Einladungs-PDF</button>
                             <button class="btn btn-primary btn-sm fw-bold shadow-sm" onclick="openGVMailWizard()">📧 GV Mails senden</button>
+                            <button class="btn btn-outline-dark btn-sm fw-bold" onclick="navTo('gv-dossier')" title="Zur neuen GV-Schaltzentrale wechseln">🏛️ Zur GV-Schaltzentrale</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">&#128276; Mahnungen senden</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendSummary')">&#128202; Uebersicht senden</button>
                             <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendPraesenz')">&#128221; Praesenzliste senden</button>

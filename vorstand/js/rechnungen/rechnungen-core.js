@@ -89,6 +89,7 @@ function mapInvoiceFromSupabase(r, posMap = {}) {
     source_module: r.source_module || 'manuell',
     source_id: r.source_id || '',
     recipient_address: r.recipient_address || {},
+    sender_address: r.sender_address || {},
     status: r.status || 'offen',
     total_amount: Number(r.total_amount || 0),
     open_amount: (r.open_amount !== undefined && r.open_amount !== null) ? Number(r.open_amount) : Number(r.total_amount || 0),
@@ -846,7 +847,8 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
     ort:      'Muhen',
     mobil:    '',
     email:    'sportschuetzen.muhen@gmail.com',
-    funktion: 'Vorstand'
+    funktion: 'Vorstand',
+    bereich:  invoiceType || 'Rechnung'
   };
 
   if (!loggedInName) {
@@ -864,13 +866,13 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
   const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
   let member = null;
   if (loggedInPN) {
-    member = members.find(m => String(m.PersonNumber || '').trim() === loggedInPN);
+    member = members.find(m => String(m.PersonNumber || m.person_number || '').trim() === loggedInPN);
   }
+  const cleanLogin = loggedInName.toLowerCase();
   if (!member) {
-    const cleanLogin = loggedInName.toLowerCase();
     member = members.find(m => {
-      const fn = String(m.FirstName || '').trim().toLowerCase();
-      const ln = String(m.LastName || '').trim().toLowerCase();
+      const fn = String(m.FirstName || m.first_name || '').trim().toLowerCase();
+      const ln = String(m.LastName || m.last_name || '').trim().toLowerCase();
       return `${fn} ${ln}` === cleanLogin || `${ln} ${fn}` === cleanLogin || fn === cleanLogin || ln === cleanLogin;
     });
   }
@@ -878,14 +880,15 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
   if (member) {
     return {
       verein:   'Sportschützen Muhen',
-      vorname:  member.FirstName || '',
-      nachname: member.LastName || '',
-      strasse:  member.Street || member.Strasse || '',
-      plz:      String(member.PostCode || member.ZipCode || member.PLZ || '5037'),
-      ort:      member.City || member.Ort || 'Muhen',
-      mobil:    member.PrivateMobilePhone || member.BusinessMobilePhone || '',
-      email:    member.PrimaryEmail || member.Email || 'sportschuetzen.muhen@gmail.com',
-      funktion: loggedInRoleExtern || 'Vorstand'
+      vorname:  member.FirstName || member.first_name || '',
+      nachname: member.LastName || member.last_name || '',
+      strasse:  member.Street || member.street || member.Strasse || '',
+      plz:      String(member.PostCode || member.post_code || member.ZipCode || member.PLZ || '5037'),
+      ort:      member.City || member.city || member.Ort || 'Muhen',
+      mobil:    member.PrivateMobilePhone || member.private_mobile_phone || member.BusinessMobilePhone || member.business_mobile_phone || '',
+      email:    member.PrimaryEmail || member.primary_email || member.Email || 'sportschuetzen.muhen@gmail.com',
+      funktion: loggedInRoleExtern || 'Vorstand',
+      bereich:  invoiceType || 'Rechnung'
     };
   }
 
@@ -900,7 +903,8 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
       ort:      'Hunzenschwil',
       mobil:    '+41 79 578 51 68',
       email:    'dan.hunziker@me.com',
-      funktion: loggedInRoleExtern || 'Vizepräsident'
+      funktion: loggedInRoleExtern || 'Vizepräsident',
+      bereich:  invoiceType || 'Rechnung'
     };
   }
 
@@ -990,6 +994,92 @@ window.RechnungsCore = {
     return {
       totalAmount: Number(total.toFixed(2)),
       positions: computedPositions
+    };
+  },
+
+  /**
+   * Löst die Absenderdaten für einen Rechnungsauftrag auf.
+   * - Primär: Aktuell angemeldete Person (vollständig aus Stammdaten ermittelt).
+   * - Sekundär: Übersteuert durch senderInput (explizites Objekt, personNumber/memberId oder Teildaten wie bereich/funktion).
+   * @param {Object|null} senderInput
+   * @param {string|null} invoiceType
+   * @returns {Promise<Object>}
+   */
+  async resolveSender(senderInput = null, invoiceType = null) {
+    // 1. Primärer Standard: Eingeloggte Person
+    const primary = (typeof window.rnGetLoggedInSender === 'function')
+      ? window.rnGetLoggedInSender(invoiceType)
+      : {
+          verein: 'Sportschützen Muhen',
+          vorname: '', nachname: '', strasse: '', plz: '5037', ort: 'Muhen',
+          mobil: '', email: 'sportschuetzen.muhen@gmail.com', funktion: 'Vorstand', bereich: invoiceType || 'Rechnung'
+        };
+
+    if (!senderInput || typeof senderInput !== 'object' || Object.keys(senderInput).length === 0) {
+      return primary;
+    }
+
+    // 2. Sekundär: Falls senderInput eine personNumber oder memberId mitgibt
+    let resolvedSecondary = null;
+    const targetPN = senderInput.personNumber || senderInput.PersonNumber || senderInput.person_number;
+    const targetId = senderInput.memberId || senderInput.id;
+
+    if (targetPN || targetId) {
+      let members = window._mglData || [];
+      if (members.length === 0 && window.AppCache) {
+        const cached = window.AppCache.get('mitglieder');
+        if (cached && Array.isArray(cached.data)) members = cached.data;
+      }
+      let found = null;
+      if (targetPN) {
+        found = members.find(m => String(m.PersonNumber || m.person_number || '').trim() === String(targetPN).trim());
+      }
+      if (!found && targetId) {
+        found = members.find(m => String(m.id || m.member_id || '').trim() === String(targetId).trim());
+      }
+      // Falls nicht im Cache gefunden, direkt aus Supabase nachladen
+      if (!found) {
+        const supa = getRechnungenSupabaseClient();
+        if (supa) {
+          try {
+            let q = supa.from('members').select('*');
+            if (targetPN) q = q.eq('person_number', targetPN);
+            else if (targetId) q = q.eq('id', targetId);
+            const { data } = await q.maybeSingle();
+            if (data) found = data;
+          } catch (_) {}
+        }
+      }
+
+      if (found) {
+        resolvedSecondary = {
+          verein: 'Sportschützen Muhen',
+          vorname: found.first_name || found.FirstName || '',
+          nachname: found.last_name || found.LastName || '',
+          strasse: found.street || found.Street || found.Strasse || '',
+          plz: String(found.post_code || found.PostCode || found.ZipCode || found.PLZ || '5037'),
+          ort: found.city || found.City || found.Ort || 'Muhen',
+          mobil: found.private_mobile_phone || found.PrivateMobilePhone || found.business_mobile_phone || found.BusinessMobilePhone || '',
+          email: found.primary_email || found.PrimaryEmail || found.Email || 'sportschuetzen.muhen@gmail.com',
+          funktion: senderInput.funktion || found.function || 'Vorstand',
+          bereich: senderInput.bereich || invoiceType || 'Rechnung'
+        };
+      }
+    }
+
+    // 3. Mergen: Falls senderInput explizite Kontaktdaten enthält oder nur Teildaten (z.B. nur bereich)
+    const base = resolvedSecondary || primary;
+    return {
+      verein: senderInput.verein || base.verein || 'Sportschützen Muhen',
+      vorname: senderInput.vorname !== undefined ? senderInput.vorname : base.vorname,
+      nachname: senderInput.nachname !== undefined ? senderInput.nachname : base.nachname,
+      strasse: senderInput.strasse !== undefined ? senderInput.strasse : base.strasse,
+      plz: String(senderInput.plz !== undefined ? senderInput.plz : base.plz || '5037'),
+      ort: senderInput.ort !== undefined ? senderInput.ort : base.ort || 'Muhen',
+      mobil: senderInput.mobil !== undefined ? senderInput.mobil : base.mobil,
+      email: senderInput.email !== undefined ? senderInput.email : base.email,
+      funktion: senderInput.funktion || base.funktion || 'Vorstand',
+      bereich: senderInput.bereich || base.bereich || invoiceType || 'Rechnung'
     };
   },
 
@@ -1098,15 +1188,19 @@ window.RechnungsCore = {
     const initialStatus = (order.options && order.options.autoIssue) ? 'offen' : 'entwurf';
     const nowIso = new Date().toISOString();
 
+    const invoiceType = order.type || (sourceModule === 'inventar' ? 'Materialverkauf' : (sourceModule === 'vermietung' ? 'Vermietung' : (sourceModule === 'jahresbeitrag' ? 'Jahresbeitrag' : 'Sonstige')));
+    const senderSnapshot = await this.resolveSender(order.sender, invoiceType);
+
     const invoiceRow = {
       id: invoiceId,
       person_number: recipientSnapshot.person_number ? String(recipientSnapshot.person_number) : (recipientSnapshot.member_id ? String(recipientSnapshot.member_id) : null),
       recipient_name: recipientName,
       year: year,
-      type: order.type || (sourceModule === 'inventar' ? 'Materialverkauf' : (sourceModule === 'vermietung' ? 'Vermietung' : (sourceModule === 'jahresbeitrag' ? 'Jahresbeitrag' : 'Sonstige'))),
+      type: invoiceType,
       source_module: sourceModule,
       source_id: sourceId,
       recipient_address: recipientSnapshot,
+      sender_address: senderSnapshot,
       status: initialStatus,
       total_amount: totalAmount,
       open_amount: totalAmount,
@@ -1479,7 +1573,9 @@ window.RechnungsCore = {
           strasse: '', plz: '', ort: '', email: ''
         });
 
-    const sender = customOptions.sender || (typeof rnGetLoggedInSender === 'function' ? rnGetLoggedInSender(inv.type) : null);
+    const sender = customOptions.sender || 
+      (inv.sender_address && Object.keys(inv.sender_address).length > 0 ? inv.sender_address : null) || 
+      (typeof rnGetLoggedInSender === 'function' ? rnGetLoggedInSender(inv.type) : null);
     const layout = customOptions.layout || (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
     const renderPayload = {

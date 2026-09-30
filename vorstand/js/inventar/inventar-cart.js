@@ -378,6 +378,10 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     sourceField: String(w.itemId)
                 })),
                 notes: `Materialverkauf über Vereinsinventar (${invoiceItems.length} Positionen)`,
+                sender: {
+                    bereich: 'Materialverkauf',
+                    funktion: 'Materialwart'
+                },
                 options: {
                     autoIssue: true // Status direkt auf 'offen'
                 }
@@ -404,6 +408,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         action: 'generate-invoice',
                         invoiceId: invoiceId,
                         recipient: invoiceOrder.recipient,
+                        sender: createdInv.sender_address || invoiceOrder.sender,
                         positions: positions,
                         totalAmount: totalAmount,
                         year: new Date().getFullYear(),
@@ -675,6 +680,10 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                 };
             }),
             notes: `Depot/Pfand für Vereinsinventar (${invoicePfandItems.length} Positionen)`,
+            sender: {
+                bereich: 'Depot & Kautionen',
+                funktion: 'Materialwart'
+            },
             options: {
                 autoIssue: true
             }
@@ -701,6 +710,7 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     action: 'generate-invoice',
                     invoiceId: invoiceId,
                     recipient: invoiceOrder.recipient,
+                    sender: createdInv.sender_address || invoiceOrder.sender,
                     positions: positions,
                     totalAmount: totalAmount,
                     year: new Date().getFullYear(),

@@ -210,9 +210,11 @@
                         email: m.Email || m.PrimaryEmail || ''
                     };
 
-                const sender = (typeof rnGetLoggedInSender === 'function')
-                    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
-                    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+                const sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
+                    ? inv.sender_address
+                    : ((typeof rnGetLoggedInSender === 'function')
+                        ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+                        : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null));
 
                 const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
@@ -386,6 +388,10 @@
             booking = data;
         }
 
+        const sender = (typeof rnGetLoggedInSender === 'function')
+            ? rnGetLoggedInSender('Vermietung')
+            : { vorname: 'Vermietung', nachname: 'Sportschützen Muhen', funktion: 'Vermieter', bereich: 'Vermietung Schützenstube' };
+
         const payload = {
             action: 'generate-contract',
             bookingId: booking?.booking_number || bookingId,
@@ -399,6 +405,7 @@
                 email: booking?.email || '',
                 telefon: booking?.phone || ''
             },
+            sender: sender,
             mietdatum: booking?.start_date ? new Date(booking.start_date).toLocaleDateString('de-CH') : new Date().toLocaleDateString('de-CH'),
             festbeginn: booking?.festbeginn || '14:00 Uhr',
             mietbetrag: booking?.total_amount_chf || 300,
@@ -512,5 +519,207 @@
         }
     };
 
-    console.log("🚀 [PDF-Engine] Modul geladen: window.generatePdfViaEngine, window.rnGeneratePDFOnly, window.jbGenerateInvoicePdfRemote, window.vmGenerateRentalContractPdf & window.gvGenerateInvitationPdf aktiv.");
+    /**
+     * Kompiliert das vollständige GV-Dossier (Einladung + Jahresprogramm + Beilagen-PDFs)
+     * mit automatischem Corporate Stempel und fortlaufenden Seitennummern.
+     * @param {string} campaignId - UUID der Kampagne in public.communication_campaigns
+     * @param {number|string} year - Das Jahr der GV (z.B. 2026)
+     * @param {Object} [gvData] - Optional: { gvNummer, datum, zeit, ort }
+     * @param {Object} [options] - Optionen: { openInNewTab, forceRecreate }
+     */
+    window.gvCompileDossierPdf = async function (campaignId, year, gvData = {}, options = {}) {
+        const curYear = Number(year || new Date().getFullYear());
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Kompiliere vollständiges GV-Dossier ${curYear} (Assembler & Stempel)...`);
+        }
+
+        const supa = (typeof window.getSupabaseClient === 'function')
+            ? window.getSupabaseClient()
+            : (window.supabaseClient || null);
+
+        const payload = {
+            action: 'compile-gv-dossier',
+            campaignId: campaignId,
+            year: curYear,
+            gvData: gvData,
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Assemblierung des GV-Dossiers fehlgeschlagen.");
+            }
+
+            // In public.gv_instances doc_anhaenge_url absichern
+            if (res.pdfUrl && supa) {
+                try {
+                    await supa.from('gv_instances').update({
+                        doc_anhaenge_url: res.pdfUrl,
+                        updated_at: new Date().toISOString()
+                    }).eq('year', curYear);
+                } catch (e) {
+                    console.warn("⚠️ [PDF-Engine] gv_instances doc_anhaenge_url Update Warnung:", e);
+                }
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 GV-Dossier ${curYear} erfolgreich assembliert & gestempelt!`);
+            } else if (typeof showToast === 'function') {
+                showToast(`GV-Dossier ${curYear} erfolgreich assembliert!`, 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("GV-Dossier PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Kompilieren des GV-Dossiers: " + err.message);
+            } else {
+                alert("❌ Fehler beim Kompilieren des GV-Dossiers: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Zentrale PDF-Generierung für offizielle Vorstandsbriefe (Typ 2)
+     * @param {Object} options
+     * @param {string} [options.letterId]
+     * @param {Object} options.recipient - { vorname, nachname, name, firma, strasse, plz, ort, email }
+     * @param {Object} [options.sender] - { vorname, nachname, funktion, bereich, strasse, plz, ort, email, mobil }
+     * @param {string} [options.subject] - Betreffzeile des Briefes
+     * @param {string} [options.bodyText] - Fliesstext / Inhalt des Briefes
+     * @param {Object} [options.layout] - { title, intro, outro, notice }
+     * @param {Array}  [options.signers] - [{ name, role }]
+     * @param {string} [options.letterDate] - Optionales Datum (z. B. "30. September 2026")
+     * @param {boolean} [options.openInNewTab=true]
+     * @param {boolean} [options.forceRecreate=false]
+     * @returns {Promise<{success: boolean, pdfUrl?: string, storagePath?: string, pdfBase64?: string, error?: string}>}
+     */
+    window.generateLetterPdfRemote = async function (options = {}) {
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere Vorstandsbrief PDF (${options.subject || 'Mitteilung'})...`);
+        }
+
+        const payload = {
+            action: 'generate-letter',
+            letterId: options.letterId || `BRIEF-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+            recipient: options.recipient || { name: 'Empfänger' },
+            sender: options.sender || (typeof rnGetLoggedInSender === 'function' ? rnGetLoggedInSender('Brief') : null),
+            layout: options.layout || {},
+            subject: options.subject || options.layout?.title || 'Offizielle Mitteilung',
+            bodyText: options.bodyText || '',
+            signers: options.signers || [],
+            letterDate: options.letterDate || '',
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung des Vorstandsbriefs fehlgeschlagen.");
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess("🎉 Vorstandsbrief erfolgreich generiert!");
+            } else if (typeof showToast === 'function') {
+                showToast("Vorstandsbrief erfolgreich generiert!", 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("Vorstandsbrief PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren des Vorstandsbriefs: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren des Vorstandsbriefs: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
+     * Generiert ein Endschiessen-Festführer- & Einladungs-PDF (Typ 4) via Edge Function
+     * @param {number} [year] - Saisonjahr
+     * @param {object} [endschiessenData] - Spezifische Stich-, Datums- und Menükonfiguration
+     * @param {object} [options]
+     * @returns {Promise<{success: boolean, pdfUrl?: string, storagePath?: string, pdfBase64?: string, error?: string}>}
+     */
+    window.generateEndschiessenPdfRemote = async function (year, endschiessenData = {}, options = {}) {
+        const curYear = year || new Date().getFullYear();
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere Endschiessen Festführer ${curYear}...`);
+        }
+
+        const payload = {
+            action: 'generate-endschiessen',
+            year: curYear,
+            endschiessenData: endschiessenData || {},
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung des Endschiessen-Festführers fehlgeschlagen.");
+            }
+
+            if (typeof showSuccess === 'function') {
+                showSuccess(`🎉 Endschiessen-Festführer ${curYear} erfolgreich generiert!`);
+            } else if (typeof showToast === 'function') {
+                showToast(`Endschiessen-Festführer ${curYear} erfolgreich generiert!`, 'success');
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("Endschiessen PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren des Endschiessen-PDFs: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren des Endschiessen-PDFs: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    console.log("🚀 [PDF-Engine] Modul geladen: generatePdfViaEngine, rnGeneratePDFOnly, jbGenerateInvoicePdfRemote, vmGenerateRentalContractPdf, gvGenerateInvitationPdf, gvCompileDossierPdf, generateLetterPdfRemote & generateEndschiessenPdfRemote aktiv.");
 })();

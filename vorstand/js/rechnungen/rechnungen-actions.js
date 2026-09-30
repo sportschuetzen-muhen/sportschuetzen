@@ -186,7 +186,9 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
       const recipient = (typeof rnGetRecipientForInvoice === 'function')
         ? rnGetRecipientForInvoice(inv)
         : { vorname: inv.name.split(' ')[0] || '', nachname: inv.name.split(' ').slice(1).join(' ') || '' };
-      const sender = (typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Rechnung') : null;
+      const sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
+        ? inv.sender_address
+        : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Rechnung') : null);
       const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
       result = await window.generatePdfViaEngine({
@@ -2204,13 +2206,19 @@ window.rnSaveCreateInvoice = async function(event) {
   // 1. Supabase PostgreSQL Master Write (< 50ms)
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
   if (sb) {
-    try {
+      const invType = document.getElementById('rnc-type').value;
+      const senderSnapshot = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
+        ? await window.RechnungsCore.resolveSender(null, invType)
+        : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(invType) : {});
+
       const sbInv = {
         id: invoiceId,
         person_number: personNumber || null,
         recipient_name: finalInvoiceName,
+        recipient_address: recipientPayload || {},
+        sender_address: senderSnapshot || {},
         year: Number(document.getElementById('rnc-year').value),
-        type: document.getElementById('rnc-type').value,
+        type: invType,
         total_amount: totalAmount,
         status: 'offen',
         created_at: new Date().toISOString(),

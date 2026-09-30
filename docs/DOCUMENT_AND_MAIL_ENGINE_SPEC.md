@@ -39,10 +39,10 @@ Aufbau einer zentralen, robusten Dokumenten- und Kommunikations-Engine für den 
 
 ### 1.3 Bestandsaufnahme: Was bereits existiert (Ist-Zustand)
 1. **Bestehende PDF-Engine (`supabase/functions/generate-pdf/index.ts`):**
-   - Beherrscht bereits vollvektoriell `generate-invoice` (QR-Bill nach SIX-Norm, Perforation, Schweizerkreuz-Vektor), `generate-contract` (Mietvertrag Rüteli) und `generate-gv-invitation` (Einladung + Jahresprogramm-Tabelle aus Terminen).
+   - Beherrscht vollvektoriell `generate-invoice` (QR-Bill nach SIX-Norm, Perforation, Schweizerkreuz-Vektor), `generate-contract` (Mietvertrag Rüteli), `generate-gv-invitation` (Einladung + Jahresprogramm-Tabelle aus Terminen), `compile-gv-dossier` (Assembler mit Corporate Stempel) sowie `generate-letter` (Freier Vorstandsbrief DIN 5008 Fenster rechts mit 2-spaltigem Unterschriftenblock).
    - Besitzt WORM-Archivierung und Paperless-NGX-Synchronisation.
 2. **Bestehende Client-Wrapper (`vorstand/js/pdf-engine.js`):**
-   - Stellt `window.generatePdfViaEngine(options)`, `window.createSwissQrBillPayload(invoice, recipient)`, `window.rnGeneratePDFOnly()`, `window.jbGenerateInvoicePdfRemote()` und `window.vmGenerateRentalContractPdf()` bereit.
+   - Stellt `window.generatePdfViaEngine(options)`, `window.createSwissQrBillPayload(invoice, recipient)`, `window.rnGeneratePDFOnly()`, `window.jbGenerateInvoicePdfRemote()`, `window.vmGenerateRentalContractPdf()`, `window.gvGenerateInvitationPdf()`, `window.gvCompileDossierPdf()` und `window.generateLetterPdfRemote()` bereit.
 3. **Bestehende Vorlagen-Verwaltung (`supabase/migrations/27_document_templates_and_clauses.sql`):**
    - Tabellen `public.document_templates` und `public.document_template_clauses` sind bereits migriert und über `vorstand/js/vorlagen/templates-ui.js` im Vorstands-Cockpit editierbar.
 4. **Bestehende GV-Stammdaten (`supabase/migrations/18_generalversammlung_module.sql`):**
@@ -251,10 +251,13 @@ Damit das Dossier wie aus einem Guss wirkt, stempelt die Edge Function über all
 ```
 
 ### 6.2 Dynamische Absender-Ermittlung (Backend & Frontend)
-> **Wichtiger Architektur-Hinweis für Frontend-Client (`rnGetLoggedInSender`):**  
-> Im Frontend-Portal (`vorstand/js/rechnungen/rechnungen-core.js` & `vorstand/js/pdf-engine.js`) ist für eine spätere Phase verbindlich festzuhalten:  
-> Die Funktion `rnGetLoggedInSender()` bestückt alle Felder (`mobil`, `email`, `strasse`, `plz`, `ort`, `bereich`) vollständig aus der Mitgliedertabelle `public.members` über die `person_number` des angemeldeten Benutzers (`admin_profiles`).  
-> *Status: In dieser Phase noch keine Code-Änderungen an diesen Frontend-Dateien vornehmen; die Edge Function `generate-pdf` dient als primäre Berechnungs- und Fallback-Instanz.*
+> **Architektur-Standard für Frontend & RechnungsCore (`rnGetLoggedInSender` & `RechnungsCore.resolveSender`):**  
+> Die Funktion `rnGetLoggedInSender()` und `RechnungsCore.resolveSender()` bestücken alle Felder (`mobil`, `email`, `strasse`, `plz`, `ort`, `bereich`, `funktion`) vollständig aus der Mitgliedertabelle `public.members` über die `person_number` des angemeldeten Benutzers (`admin_profiles` / Auth).  
+> **Revisionssicherer DB-Snapshot:** Bei der Erstellung einer Rechnung (`RechnungsCore.createInvoice`) wird der Absender als unveränderlicher JSONB-Snapshot in `public.invoices.sender_address` festgeschrieben.  
+> **2-stufiges Absender-Modell:**
+> 1. *Primär (Default):* Automatisch die angemeldete Person (mit Fachbereich des Quellmoduls).
+> 2. *Sekundär (Übersteuerung):* Explizite Angabe im `InvoiceOrder` (`sender`-Objekt, `personNumber` oder gezielte Rollen/Funktionen).
+> *Status: Vollständig implementiert in `rechnungen-core.js`, Fachmodulen (Inventar, Vermietung, Jahresbeitrag) und Migration 29.*
 
 ### 6.3 Pre-Flight-Validierung (Missing Variables Check)
 - Vor dem Start des Batch-Renderings prüft das System alle Tags im Template gegen den Datensatz der Empfänger.
@@ -378,3 +381,15 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
    - Für formale Briefe und Rechnungen gilt ein festes Höhenbudget.
    - Überschreitet der Fliesstext die Höhe von Seite 1, sodass ein „Waisen-Absatz“ mit wenigen Zeilen auf Seite 2 entsteht, warnt das Vorstands-UI aktiv:  
      *⚠️ „Achtung: Der Brieftext erzeugt eine 2. Seite mit nur wenigen Zeilen. Text bitte kürzen oder Schriftgrösse anpassen.“*
+
+---
+
+## 11. Implementierungs- und Integrationsstatus (Stand: September 2026)
+
+| Dokumenttyp / Komponente | Backend (`generate-pdf`) | Frontend UI / Workspace | Status |
+| :--- | :--- | :--- | :--- |
+| **Typ 1: Rechnung & QR-Rechnung** | ✅ `generate-invoice` (`operatives-storage/invoices/`) | ✅ Rechnungs-Dashboard (`rechnungen/`) | **Produktiv** |
+| **Typ 2: Freier Vorstandsbrief** | ✅ `generate-letter` (DIN 5008, WORM-Archiv, Paperless) | ✅ Vorlagen-Pool & Live-PDF-Test (`templates-ui.js`) | **Vollständig implementiert** |
+| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` (`campaign_attachments`, Stempel) | ✅ 2-Spalten-Workspace (`gv-dossier.js`, Index, Router) | **Vollständig implementiert** |
+| **Typ 4: Endschiessen / Festführer** | ✅ `generate-endschiessen` (Schiesstage, Ablösung, Gaben) | ✅ Vorlagen-Pool & Remote-Generator (`pdf-engine.js`) | **Vollständig implementiert** |
+

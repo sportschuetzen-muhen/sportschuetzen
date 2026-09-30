@@ -819,6 +819,10 @@
                      onclick="navTo('dokument-vorlagen', this)">
                     <i class="fas fa-file-lines"></i> <span class="nav-text">Dokumenten-Vorlagen</span>
                 </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,aktuar"
+                     onclick="navTo('gv-dossier', this)">
+                    <i class="fas fa-book-open"></i> <span class="nav-text">GV-Dossier & Kampagnen</span>
+                </div>
                 <div class="nav-link role-protected" data-roles="admin,kassier"
                      onclick="navTo('buchhaltung', this)">
                     <i class="fas fa-book"></i> <span class="nav-text">Buchhaltung</span>
@@ -965,6 +969,13 @@
                              onclick="navTo('dokument-vorlagen')" style="cursor:pointer">
                             <h5 class="mb-1">📄 Dokumenten-Vorlagen</h5>
                             <p class="small text-muted mb-0">Zentraler Vorlagen-Pool & Klauseln</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,aktuar">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('gv-dossier')" style="cursor:pointer">
+                            <h5 class="mb-1">🏛️ GV-Dossier & Kampagnen</h5>
+                            <p class="small text-muted mb-0">Dossier-Compiler, Beilagen & Live-Monitor</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,kassier">
@@ -1562,6 +1573,11 @@
     <div id="dokument-vorlagen-container"></div>
 </div>
 
+<!-- GV-DOSSIER & KAMPAGNEN (2-Spalten Workspace) -->
+<div id="view-gv-dossier" class="module-view">
+    <div id="gv-dossier-container"></div>
+</div>
+
         </main>
     </div>
 </div>
@@ -1874,6 +1890,8 @@
 <script src="js/pdf-engine.js?v=20260926_8"></script>
 <!-- Zentraler Vorlagen- & Klausel-Pool -->
 <script src="js/vorlagen/templates-ui.js"></script>
+<!-- GV-Schaltzentrale & Dossier-Compiler -->
+<script src="js/gv-dossier.js"></script>
 
     
 <!-- NEU: Skript für Jahresmeisterschaft (falls benötigt) -->

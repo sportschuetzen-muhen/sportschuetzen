@@ -41,6 +41,8 @@ function formatSwissChf(num: number | string | null | undefined): string {
 
 // mm zu PDF-Points (72 pt pro Inch = 72 / 25.4 pt/mm)
 const MM = 72 / 25.4;
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
 
 // Globaler In-Memory Cache für Logo-Bytes (Latenz- & Cold-Start-Optimierung)
 let cachedLogoBytes: Uint8Array | null = null;
@@ -180,10 +182,16 @@ interface LayoutData {
 }
 
 interface GeneratePdfPayload {
-  action?: string; // 'generate-invoice' | 'generateInvoicePDF' | 'generate-contract' | 'generateRentalContractPDF' | 'generate-swiss-qr' | 'generate-gv-invitation' | 'compile-gv-dossier'
+  action?: string; // 'generate-invoice' | 'generateInvoicePDF' | 'generate-contract' | 'generateRentalContractPDF' | 'generate-swiss-qr' | 'generate-gv-invitation' | 'compile-gv-dossier' | 'generate-letter' | 'generateLetterPDF'
   invoiceId?: string;
   bookingId?: string;
   campaignId?: string;
+  campaignRecipientId?: string;
+  letterId?: string;
+  subject?: string;
+  bodyText?: string;
+  letterDate?: string;
+  signers?: Array<{ name: string; role: string }>;
   gvData?: any;
   recipient?: RecipientData;
   sender?: SenderData;
@@ -1799,6 +1807,717 @@ async function generateGVInvitationPdf(
 }
 
 // ==============================================================================
+// TYP 2: OFFIZIELLER VORSTANDSBRIEF (DIN 5008 FENSTER RECHTS)
+// ==============================================================================
+async function generateLetterPdf(
+  docId: string,
+  recipient: RecipientData,
+  sender: SenderData,
+  layout: LayoutData,
+  subject: string,
+  content: string,
+  signers?: Array<{ name: string; role: string }>,
+  letterDate?: string,
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // 1. Logo laden
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  let logoImage: any = null;
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {}
+  }
+
+  // 2. Datum
+  const dateStr = letterDate || new Date().toLocaleDateString("de-CH", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  // 3. Betreff & Bereinigung
+  const docSubject = subject || layout.title || "Mitteilung";
+
+  // Hilfsfunktion: Folgeseiten-Header mit Dokument-Metadaten
+  const renderFollowUpHeader = (p: any, pageNum: number) => {
+    p.drawLine({
+      start: { x: 20 * MM, y: 278 * MM },
+      end: { x: 190 * MM, y: 278 * MM },
+      thickness: 0.3,
+      color: rgb(0.75, 0.75, 0.75),
+    });
+
+    p.drawText(`${CLUB_NAME} · ${sanitizeWinAnsiText(docSubject)}`, {
+      x: 20 * MM,
+      y: 280.5 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.55),
+    });
+
+    return 265 * MM;
+  };
+
+  // Hilfsfunktion: Juristischer Vereins-Footer ganz unten
+  const drawClubLegalFooter = (p: any) => {
+    p.drawLine({
+      start: { x: 20 * MM, y: 15 * MM },
+      end: { x: 190 * MM, y: 15 * MM },
+      thickness: 0.3,
+      color: rgb(0.75, 0.75, 0.75),
+    });
+    p.drawText("Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com", {
+      x: 20 * MM,
+      y: 11.5 * MM,
+      size: 6.8,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  };
+
+  // ============================================================================
+  // SEITE 1: KOPFBEREICH & ADRESSEN (DIN 5008)
+  // ============================================================================
+  let currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let pageCount = 1;
+
+  // Logo freistehend oben links (Box: 32 x 32 mm)
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
+    currentPage.drawImage(logoImage, {
+      x: 20 * MM,
+      y: 280 * MM - scaledLogo.height,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+  }
+
+  // Absenderblock links unter dem Logo (ab ca. 240 mm)
+  let sendY = 240 * MM;
+  const clubSubTitle = sender.bereich
+    ? `${CLUB_NAME} ${sender.bereich}`
+    : (sender.funktion ? `${CLUB_NAME} ${sender.funktion}` : CLUB_NAME);
+  currentPage.drawText(sanitizeWinAnsiText(clubSubTitle), { x: 20 * MM, y: sendY, size: 9.5, font: fontBold });
+  sendY -= 4.2 * MM;
+
+  const senderNameStr = [sender.vorname, sender.nachname].filter(Boolean).join(" ");
+  if (senderNameStr) {
+    currentPage.drawText(sanitizeWinAnsiText(senderNameStr), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.strasse) {
+    currentPage.drawText(sanitizeWinAnsiText(sender.strasse), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  const senderPlzOrt = `${sender.plz || ""} ${sender.ort || ""}`.trim();
+  if (senderPlzOrt) {
+    currentPage.drawText(sanitizeWinAnsiText(senderPlzOrt), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.mobil) {
+    currentPage.drawText(sanitizeWinAnsiText(`Mobil ${sender.mobil}`), { x: 20 * MM, y: sendY, size: 9, font: fontRegular });
+    sendY -= 4.0 * MM;
+  }
+  if (sender.email) {
+    currentPage.drawText(sanitizeWinAnsiText(sender.email), {
+      x: 20 * MM,
+      y: sendY,
+      size: 9,
+      font: fontRegular,
+      color: rgb(0.08, 0.35, 0.75),
+    });
+    sendY -= 4.0 * MM;
+  }
+
+  // Empfänger-Adresse (DIN 5008 Fenster rechts ab 125 mm, Höhe 240 mm)
+  let addrY = 240 * MM;
+  if (recipient.abteilung || (recipient as any).zusatz) {
+    currentPage.drawText(sanitizeWinAnsiText(recipient.abteilung || (recipient as any).zusatz), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+  if (recipient.firma) {
+    currentPage.drawText(sanitizeWinAnsiText(recipient.firma), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontBold,
+    });
+    addrY -= 4.2 * MM;
+  }
+  const fullRecName = [recipient.anrede, recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || (recipient.name || "");
+  if (fullRecName && (!recipient.firma || fullRecName !== recipient.firma)) {
+    currentPage.drawText(sanitizeWinAnsiText(fullRecName), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+  if (recipient.strasse) {
+    currentPage.drawText(sanitizeWinAnsiText(recipient.strasse), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+  const recPlzOrt = `${recipient.plz || ""} ${recipient.ort || ""}`.trim();
+  if (recPlzOrt) {
+    currentPage.drawText(sanitizeWinAnsiText(recPlzOrt), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+  if (recipient.land && recipient.land !== "CH") {
+    currentPage.drawText(sanitizeWinAnsiText(recipient.land), {
+      x: 125 * MM,
+      y: addrY,
+      size: 9.5,
+      font: fontRegular,
+    });
+    addrY -= 4.2 * MM;
+  }
+
+  // Ort & Datum (Höhe 195 mm)
+  const fullDateText = `Muhen, ${dateStr}`;
+  currentPage.drawText(sanitizeWinAnsiText(fullDateText), {
+    x: 125 * MM,
+    y: 195 * MM,
+    size: 9,
+    font: fontRegular,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+
+  // Betreff (H1)
+  let curY = 180 * MM;
+  currentPage.drawText(sanitizeWinAnsiText(docSubject), {
+    x: 20 * MM,
+    y: curY,
+    size: 14,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+  curY -= 9 * MM;
+
+  // Anrede
+  let anredeText = "";
+  if (recipient.vorname) {
+    anredeText = `Guten Tag ${recipient.vorname} ${recipient.nachname || ""}`.trim() + ",";
+  } else if (recipient.name) {
+    anredeText = `Guten Tag ${recipient.name},`;
+  } else {
+    anredeText = "Sehr geehrte Damen und Herren, liebe Schützenkameradinnen und Schützenkameraden,";
+  }
+
+  // Textzusammensetzung: intro, content, outro
+  const fullText = [layout.intro, content, layout.outro].filter(Boolean).join("\n\n").trim();
+  if (fullText.startsWith("Liebe") || fullText.startsWith("Sehr geehrte") || fullText.startsWith("Guten Tag") || fullText.startsWith("Hallo")) {
+    // Anrede ist bereits im Text enthalten
+  } else {
+    currentPage.drawText(sanitizeWinAnsiText(anredeText), {
+      x: 20 * MM,
+      y: curY,
+      size: 10,
+      font: fontRegular,
+    });
+    curY -= 7 * MM;
+  }
+
+  // Fliesstext in Absätze aufteilen
+  const paragraphs = (fullText || "Wir bedanken uns für Ihre geschätzte Aufmerksamkeit.").split(/\n\n+/);
+  const maxTextWidth = 170 * MM;
+  const lineSpacing = 4.8 * MM; // ca. 13.6 pt
+
+  for (const para of paragraphs) {
+    const rawLines = para.split("\n");
+    for (const rawLine of rawLines) {
+      const isBullet = rawLine.trim().startsWith("- ") || rawLine.trim().startsWith("• ") || rawLine.trim().startsWith("* ");
+      const isNumbered = /^\d+[\.\)]\s/.test(rawLine.trim());
+      const indentX = (isBullet || isNumbered) ? 25 * MM : 20 * MM;
+      const effectiveMaxWidth = (isBullet || isNumbered) ? maxTextWidth - 5 * MM : maxTextWidth;
+
+      const wrapped = wrapText(rawLine.trim(), fontRegular, 9.5, effectiveMaxWidth);
+
+      for (let wIdx = 0; wIdx < wrapped.length; wIdx++) {
+        if (curY < 38 * MM) {
+          drawClubLegalFooter(currentPage);
+          currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          pageCount++;
+          curY = renderFollowUpHeader(currentPage, pageCount);
+        }
+
+        const lineToDraw = wrapped[wIdx];
+        currentPage.drawText(sanitizeWinAnsiText(lineToDraw), {
+          x: indentX,
+          y: curY,
+          size: 9.5,
+          font: fontRegular,
+          color: rgb(0.12, 0.16, 0.2),
+        });
+        curY -= lineSpacing;
+      }
+    }
+    curY -= 3.0 * MM; // Absatzabstand
+  }
+
+  // ============================================================================
+  // UNTERSCHRIFTENBLOCK (Zweispaltig)
+  // ============================================================================
+  if (curY < 45 * MM) {
+    drawClubLegalFooter(currentPage);
+    currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    pageCount++;
+    curY = renderFollowUpHeader(currentPage, pageCount);
+  }
+
+  curY -= 4 * MM;
+  currentPage.drawText("Mit freundlichen Grüssen", { x: 20 * MM, y: curY, size: 9.5, font: fontRegular });
+  curY -= 5 * MM;
+  currentPage.drawText(CLUB_NAME, { x: 20 * MM, y: curY, size: 10, font: fontBold });
+  curY -= 15 * MM; // Freiraum für handschriftliche Signatur
+
+  // Signer 1 (links)
+  const signer1Name = (signers && signers[0]?.name) || senderNameStr || CLUB_NAME;
+  const signer1Role = (signers && signers[0]?.role) || sender.funktion || sender.bereich || "Präsident";
+
+  // Signer 2 (rechts)
+  const signer2Name = (signers && signers[1]?.name) || "";
+  const signer2Role = (signers && signers[1]?.role) || (signer2Name ? "Vorstand" : "");
+
+  // Unterschriftenlinie links
+  currentPage.drawLine({
+    start: { x: 20 * MM, y: curY + 3 * MM },
+    end: { x: 85 * MM, y: curY + 3 * MM },
+    thickness: 0.5,
+    color: rgb(0.6, 0.6, 0.6),
+  });
+  currentPage.drawText(sanitizeWinAnsiText(signer1Name), { x: 20 * MM, y: curY - 1 * MM, size: 9, font: fontBold });
+  currentPage.drawText(sanitizeWinAnsiText(signer1Role), { x: 20 * MM, y: curY - 5 * MM, size: 8.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+
+  // Unterschriftenlinie rechts
+  if (signer2Name || signer2Role) {
+    currentPage.drawLine({
+      start: { x: 115 * MM, y: curY + 3 * MM },
+      end: { x: 180 * MM, y: curY + 3 * MM },
+      thickness: 0.5,
+      color: rgb(0.6, 0.6, 0.6),
+    });
+    currentPage.drawText(sanitizeWinAnsiText(signer2Name), { x: 115 * MM, y: curY - 1 * MM, size: 9, font: fontBold });
+    currentPage.drawText(sanitizeWinAnsiText(signer2Role), { x: 115 * MM, y: curY - 5 * MM, size: 8.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+  }
+
+  // Footer auf letzter Seite
+  drawClubLegalFooter(currentPage);
+
+  // ============================================================================
+  // 2-PASS SEITENNUMMERIERUNG ("Seite X von Y")
+  // ============================================================================
+  const totalPages = pdfDoc.getPageCount();
+  if (totalPages > 1) {
+    const allPages = pdfDoc.getPages();
+    allPages.forEach((p, idx) => {
+      const pageStr = `Seite ${idx + 1} von ${totalPages}`;
+      const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+      const centerX = (A4_WIDTH - pageStrW) / 2;
+      p.drawText(pageStr, {
+        x: centerX,
+        y: 8 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+    });
+  }
+
+  return await pdfDoc.save();
+}
+
+// ==============================================================================
+// GENERATOR: ENDSCHIESSEN-FESTFÜHRER & EINLADUNG (TYP 4)
+// ==============================================================================
+async function generateEndschiessenPdf(
+  year: number,
+  data: any,
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+  // Logo laden
+  let logoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {
+      try {
+        logoImage = await pdfDoc.embedJpg(logoBytes);
+      } catch (_) {}
+    }
+  }
+
+  // Seite 1 anlegen
+  const page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+
+  // Kopfzeile & Logo
+  // Links: Vereinsabsender
+  page.drawText(CLUB_NAME, {
+    x: 20 * MM,
+    y: A4_HEIGHT - 20 * MM,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+  page.drawText(`${CLUB_STREET} · ${CLUB_ZIP} ${CLUB_CITY}`, {
+    x: 20 * MM,
+    y: A4_HEIGHT - 24 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+  page.drawText(`${CLUB_WEBSITE} · ${CLUB_EMAIL}`, {
+    x: 20 * MM,
+    y: A4_HEIGHT - 28 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+
+  // Rechts: Logo
+  if (logoImage) {
+    const logoDims = logoImage.scaleToFit(32 * MM, 22 * MM);
+    page.drawImage(logoImage, {
+      x: A4_WIDTH - 20 * MM - logoDims.width,
+      y: A4_HEIGHT - 30 * MM,
+      width: logoDims.width,
+      height: logoDims.height,
+    });
+  }
+
+  // Trennlinie oben
+  page.drawLine({
+    start: { x: 20 * MM, y: A4_HEIGHT - 32 * MM },
+    end: { x: A4_WIDTH - 20 * MM, y: A4_HEIGHT - 32 * MM },
+    thickness: 1.0,
+    color: rgb(0.1, 0.25, 0.5), // Schützenblau
+  });
+
+  // H1 Haupttitel
+  let curY = A4_HEIGHT - 43 * MM;
+  const mainTitle = data.title || `Endschiessen & Absenden ${year}`;
+  page.drawText(sanitizeWinAnsiText(mainTitle), {
+    x: 20 * MM,
+    y: curY,
+    size: 17,
+    font: fontBold,
+    color: rgb(0.08, 0.15, 0.35),
+  });
+
+  curY -= 5.5 * MM;
+  const subtitle = data.subtitle || "Offizieller Festführer, Schiessplan & Menü-Einladung";
+  page.drawText(sanitizeWinAnsiText(subtitle), {
+    x: 20 * MM,
+    y: curY,
+    size: 10,
+    font: fontItalic,
+    color: rgb(0.3, 0.3, 0.4),
+  });
+
+  // Begrüssung / Einleitungstext
+  curY -= 7.5 * MM;
+  const defaultIntro = data.intro || `Liebe Schützinnen, liebe Schützen, geschätzte Ehren- und Passivmitglieder\n\nZum traditionellen Saisonabschluss laden die Sportschützen Muhen herzlich zum Endschiessen ${year} in die Schiessanlage Rüteli ein. Neben dem sportlichen Wettkampf steht die Kameradschaft und das gemütliche Beisammensein beim gemeinsamen Absenden im Mittelpunkt.`;
+  
+  const introParas = defaultIntro.split("\n\n");
+  for (const para of introParas) {
+    const wrapped = wrapText(para, fontRegular, 9, 170 * MM);
+    for (const line of wrapped) {
+      page.drawText(sanitizeWinAnsiText(line), {
+        x: 20 * MM,
+        y: curY,
+        size: 9,
+        font: fontRegular,
+        color: rgb(0.12, 0.15, 0.2),
+      });
+      curY -= 4.0 * MM;
+    }
+    curY -= 1.8 * MM;
+  }
+
+  curY -= 2 * MM;
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 1: SCHIESSTAGE & SCHIESSZEITEN (2-Spalten-Boxen)
+  // ----------------------------------------------------------------------------
+  page.drawText("1. Schiesstage & Schiesszeiten", {
+    x: 20 * MM,
+    y: curY,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 4.5 * MM;
+
+  const shootingDays = data.shootingDays || [
+    { day: "Freitag", date: data.dateFriday || `Herbst ${year}`, time: "16:30 – 19:15 Uhr", note: "Standblattausgabe bis 18:45 Uhr" },
+    { day: "Samstag", date: data.dateSaturday || `Herbst ${year}`, time: "09:00 – 11:45 Uhr / 13:30 – 17:00 Uhr", note: "Standblattausgabe bis 16:30 Uhr" },
+  ];
+
+  // Box-Layout für Schiesstage
+  const boxWidth = 82 * MM;
+  const boxHeight = 20 * MM;
+  shootingDays.forEach((sd: any, idx: number) => {
+    const boxX = (idx % 2 === 0) ? 20 * MM : 108 * MM;
+    const boxY = curY - boxHeight;
+
+    // Hintergrund
+    page.drawRectangle({
+      x: boxX,
+      y: boxY,
+      width: boxWidth,
+      height: boxHeight,
+      color: rgb(0.95, 0.97, 1.0),
+      borderColor: rgb(0.75, 0.82, 0.92),
+      borderWidth: 0.8,
+    });
+
+    page.drawText(sanitizeWinAnsiText(`${sd.day}, ${sd.date}`), {
+      x: boxX + 4 * MM,
+      y: boxY + boxHeight - 5.5 * MM,
+      size: 9,
+      font: fontBold,
+      color: rgb(0.1, 0.2, 0.4),
+    });
+
+    page.drawText(sanitizeWinAnsiText(`Schiesszeit: ${sd.time}`), {
+      x: boxX + 4 * MM,
+      y: boxY + boxHeight - 10.5 * MM,
+      size: 8,
+      font: fontRegular,
+      color: rgb(0.15, 0.15, 0.15),
+    });
+
+    page.drawText(sanitizeWinAnsiText(sd.note), {
+      x: boxX + 4 * MM,
+      y: boxY + boxHeight - 15.5 * MM,
+      size: 7.5,
+      font: fontItalic,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+  });
+
+  curY -= (boxHeight + 7 * MM);
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 2: WETTKAMPFPROGRAMM & STICHE (Tabelle)
+  // ----------------------------------------------------------------------------
+  page.drawText("2. Stichprogramm & Scheibenwertung (300m)", {
+    x: 20 * MM,
+    y: curY,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 5.5 * MM;
+
+  // Tabellenkopf
+  const colX = [20 * MM, 75 * MM, 125 * MM, 160 * MM]; // Stich | Programm / Scheibe | Auszeichnung | Einsatz
+  page.drawRectangle({
+    x: 20 * MM,
+    y: curY - 5 * MM,
+    width: 170 * MM,
+    height: 5.5 * MM,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  page.drawText("Stich / Wettbewerb", { x: colX[0] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  page.drawText("Programm / Scheibe", { x: colX[1] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  page.drawText("Wertung / Zählung", { x: colX[2] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  page.drawText("Einsatz", { x: colX[3] + 2 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
+  curY -= 6.0 * MM;
+
+  const stiche = data.stiche || [
+    { name: "Vereinsstich (Hauptstich)", prog: "2 Probe, 10 Einzel (Scheibe A10)", val: "Zählt zur Jahresmeisterschaft", fee: "CHF 15.00" },
+    { name: "Gabenstich", prog: "5 Schuss Einzel (Scheibe A100)", val: "Gabentempel (bester Schuss)", fee: "CHF 18.00" },
+    { name: "Glücksstich / Differenzler", prog: "3 Schuss Einzel (Scheibe A10)", val: "Zielvorgabe / Tiefschuss", fee: "CHF 8.00" },
+    { name: "Nachdoppel", prog: "Serien à 5 Schuss (A100)", val: "Unbeschränkt nachlösbar", fee: "CHF 6.00 / Serie" },
+    { name: "Junioren / Nachwuchs", prog: "Hauptstich (reduziert)", val: "U17 / U21 Spezialpreis", fee: "CHF 8.00" },
+  ];
+
+  stiche.forEach((st: any, sIdx: number) => {
+    const isEven = sIdx % 2 === 0;
+    const rowH = 5.8 * MM;
+    if (isEven) {
+      page.drawRectangle({
+        x: 20 * MM,
+        y: curY - 4.5 * MM,
+        width: 170 * MM,
+        height: rowH,
+        color: rgb(0.96, 0.97, 0.98),
+      });
+    }
+
+    page.drawText(sanitizeWinAnsiText(st.name), { x: colX[0] + 2 * MM, y: curY - 3 * MM, size: 7.5, font: fontBold, color: rgb(0.1, 0.15, 0.25) });
+    page.drawText(sanitizeWinAnsiText(st.prog), { x: colX[1] + 2 * MM, y: curY - 3 * MM, size: 7.0, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+    page.drawText(sanitizeWinAnsiText(st.val), { x: colX[2] + 2 * MM, y: curY - 3 * MM, size: 7.0, font: fontRegular, color: rgb(0.25, 0.25, 0.25) });
+    page.drawText(sanitizeWinAnsiText(st.fee), { x: colX[3] + 2 * MM, y: curY - 3 * MM, size: 7.5, font: fontBold, color: rgb(0.1, 0.25, 0.4) });
+
+    curY -= rowH;
+  });
+
+  // Munitionshinweis
+  curY -= 1.5 * MM;
+  page.drawText("Munition: GP90 & GP11 zum Vereinstarif an der Standblattausgabe erhältlich. Sportgeräte nach SSV-Reglement.", {
+    x: 20 * MM,
+    y: curY,
+    size: 7.0,
+    font: fontItalic,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+
+  curY -= 7 * MM;
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 3: ABSENDEN & GEMEINSAMES NACHTESSEN (Festwirtschaft)
+  // ----------------------------------------------------------------------------
+  page.drawText("3. Absenden, Rangverkündigung & Nachtessen", {
+    x: 20 * MM,
+    y: curY,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 4.5 * MM;
+
+  const dinnerDate = data.dinnerDate || `Samstagabend nach Schiessende (ab 18:30 Uhr)`;
+  const dinnerLoc = data.dinnerLocation || "Schützenstube Rüteli, Muhen";
+  const dinnerMenu = data.dinnerMenu || "Herbstliches Nachtessen vom Schützenwirt mit Salat & Dessert";
+  const dinnerDeadline = data.dinnerDeadline || "Anmeldung bis 3 Tage vor dem Anlass erbeten";
+
+  // Box für Absenden
+  page.drawRectangle({
+    x: 20 * MM,
+    y: curY - 22 * MM,
+    width: 170 * MM,
+    height: 22 * MM,
+    color: rgb(0.98, 0.97, 0.93), // Warm beige
+    borderColor: rgb(0.85, 0.78, 0.65),
+    borderWidth: 0.8,
+  });
+
+  page.drawText(`Festakt & Zeit: ${dinnerDate} · Ort: ${dinnerLoc}`, {
+    x: 24 * MM,
+    y: curY - 5.5 * MM,
+    size: 8.5,
+    font: fontBold,
+    color: rgb(0.4, 0.2, 0.05),
+  });
+
+  page.drawText(`Menü: ${dinnerMenu}`, {
+    x: 24 * MM,
+    y: curY - 10.5 * MM,
+    size: 8.0,
+    font: fontRegular,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+
+  page.drawText(`Rangverkündigung: Jeder Schütze erhält einen Preis vom reich bestückten Gabentempel!`, {
+    x: 24 * MM,
+    y: curY - 15.0 * MM,
+    size: 8.0,
+    font: fontBold,
+    color: rgb(0.1, 0.35, 0.15),
+  });
+
+  page.drawText(`Anmeldung Nachtessen: ${dinnerDeadline} via Portal oder an Schützenmeister / Wirt.`, {
+    x: 24 * MM,
+    y: curY - 19.5 * MM,
+    size: 7.5,
+    font: fontItalic,
+    color: rgb(0.45, 0.3, 0.1),
+  });
+
+  curY -= (22 * MM + 6 * MM);
+
+  // ----------------------------------------------------------------------------
+  // SEKTION 4: VORSCHRIFTEN & UNTERSCHRIFT
+  // ----------------------------------------------------------------------------
+  page.drawText("4. Allgemeine Bestimmungen & Schiessvorschriften", {
+    x: 20 * MM,
+    y: curY,
+    size: 9.5,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.4),
+  });
+  curY -= 4 * MM;
+
+  const rulesText = "Es gelten die aktuellen Sicherheitsbestimmungen des SSV und des AGSV. Die Laufkontrolle vor dem Verlassen des Standes ist obligatorisch. Verschlüsse bleiben ausserhalb des Schützenstandes stets geöffnet. Wir freuen uns auf eine hohe Beteiligung und faire Wettkämpfe!";
+  const wrappedRules = wrapText(rulesText, fontRegular, 7.5, 170 * MM);
+  for (const rLine of wrappedRules) {
+    page.drawText(sanitizeWinAnsiText(rLine), {
+      x: 20 * MM,
+      y: curY,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    curY -= 3.3 * MM;
+  }
+
+  curY -= 3.5 * MM;
+
+  // Unterschriftenzeile Schützenmeister & Vorstand
+  page.drawText("Sportschützen Muhen", { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
+  page.drawText("Die Schützenmeister & der Vorstand", { x: 20 * MM, y: curY - 3.8 * MM, size: 7.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+
+  // Footer
+  page.drawLine({
+    start: { x: 20 * MM, y: 15 * MM },
+    end: { x: 190 * MM, y: 15 * MM },
+    thickness: 0.3,
+    color: rgb(0.75, 0.75, 0.75),
+  });
+  page.drawText("Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com", {
+    x: 20 * MM,
+    y: 11.5 * MM,
+    size: 6.8,
+    font: fontRegular,
+    color: rgb(0.45, 0.45, 0.45),
+  });
+
+  // Seitenzahl
+  const pageStr = "Seite 1 von 1";
+  const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+  page.drawText(pageStr, {
+    x: (A4_WIDTH - pageStrW) / 2,
+    y: 8 * MM,
+    size: 7.5,
+    font: fontRegular,
+    color: rgb(0.45, 0.45, 0.45),
+  });
+
+  return await pdfDoc.save();
+}
+
+// ==============================================================================
 // MODULARER GV-DOSSIER-COMPILER (PDF-ASSEMBLER & CORPORATE STEMPEL)
 // ==============================================================================
 async function compileGvDossierPdf(
@@ -2189,6 +2908,99 @@ Deno.serve(async (req: Request) => {
       fileName = `GV_Dossier_${year}_Gesamt.pdf`;
       storageSubDir = `gv-dossiers/${year}`;
       docTitle = `GV-Dossier ${year} Gesamt (${res.pageCount} Seiten)`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 5: FREIER VORSTANDSBRIEF (DIN 5008 FENSTER RECHTS)
+    // --------------------------------------------------------------------------
+    else if (action === "generate-letter" || action === "generateLetterPDF") {
+      const letId = payload.letterId || `BRIEF-${curYear}-${Date.now().toString().slice(-4)}`;
+      recordId = letId;
+
+      const recipient = payload.recipient || {
+        name: "Mitglied",
+        vorname: "",
+        nachname: "Mitglied",
+        strasse: "",
+        plz: "5037",
+        ort: "Muhen",
+      };
+      const sender = payload.sender || {
+        vorname: "",
+        nachname: "",
+        funktion: "Vorstand",
+        verein: CLUB_NAME,
+        email: CLUB_EMAIL,
+      };
+
+      // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
+      if ((!sender.vorname || !sender.strasse) && supabase) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.id) {
+            const { data: prof } = await supabase
+              .from("admin_profiles")
+              .select("*, members(*)")
+              .eq("auth_user_id", user.id)
+              .maybeSingle();
+            if (prof) {
+              const m = prof.members || {};
+              sender.vorname = sender.vorname || m.first_name || (prof.display_name ? prof.display_name.split(" ")[0] : "");
+              sender.nachname = sender.nachname || m.last_name || (prof.display_name ? prof.display_name.split(" ").slice(1).join(" ") : "");
+              sender.funktion = sender.funktion || prof.role_external || "Vorstand";
+              sender.bereich = sender.bereich || prof.role_external || "";
+              sender.strasse = sender.strasse || m.street || "";
+              sender.plz = sender.plz || String(m.post_code || "5037");
+              sender.ort = sender.ort || m.city || "Muhen";
+              sender.mobil = sender.mobil || m.private_mobile_phone || m.business_mobile_phone || "";
+              sender.email = sender.email || m.primary_email || prof.email || CLUB_EMAIL;
+            }
+          }
+        } catch (_) {}
+      }
+
+      const layout = payload.layout || {};
+      const subject = payload.subject || layout.title || "Mitteilung";
+      const bodyText = payload.bodyText || "";
+      const signers = payload.signers || [];
+      const letterDate = payload.letterDate || "";
+
+      pdfBytes = await generateLetterPdf(
+        letId,
+        recipient,
+        sender,
+        layout,
+        subject,
+        bodyText,
+        signers,
+        letterDate,
+        supabase
+      );
+
+      const safeName = (recipient.nachname || recipient.firma || recipient.name || "Brief")
+        .replace(/[^a-zA-Z0-9_-]/g, "_");
+      fileName = `Brief_${letId}_${safeName}.pdf`;
+      storageSubDir = `letters/${curYear}`;
+      docTitle = `Brief: ${subject} – ${recipient.name || recipient.firma || ""}`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 6: ENDSCHIESSEN-FESTFÜHRER & EINLADUNG (TYP 4)
+    // --------------------------------------------------------------------------
+    else if (action === "generate-endschiessen" || action === "generateEndschiessenPDF") {
+      const year = Number(payload.year || curYear);
+      const endschiessenData = (payload as any).endschiessenData || (payload as any).data || {};
+      recordId = `ENDSCHIESSEN-${year}`;
+
+      pdfBytes = await generateEndschiessenPdf(
+        year,
+        endschiessenData,
+        supabase
+      );
+
+      fileName = `Endschiessen_Festfuehrer_${year}.pdf`;
+      storageSubDir = `endschiessen/${year}`;
+      docTitle = `Endschiessen & Festführer ${year} – Sportschützen Muhen`;
     } else {
       throw new Error(`Unbekannte Aktion: ${action}`);
     }
@@ -2197,7 +3009,7 @@ Deno.serve(async (req: Request) => {
     // WORM-ARCHIVIERUNG (OR 957ff): Existierendes Archiv prüfen
     // --------------------------------------------------------------------------
     const storageBucket = "operatives-storage";
-    const archiveCategory = action.includes("contract") ? "contracts" : (action.includes("gv") ? "gv" : "invoices");
+    const archiveCategory = action.includes("contract") ? "contracts" : (action.includes("gv") ? "gv" : (action.includes("letter") ? "letters" : (action.includes("endschiessen") ? "endschiessen" : "invoices")));
     const archivePath = `archive/${curYear}/${archiveCategory}/${recordId || "doc"}.pdf`;
 
     if (payload.saveToStorage !== false && !payload.forceRecreate && recordId) {
@@ -2289,7 +3101,7 @@ Deno.serve(async (req: Request) => {
         fileName,
         docTitle,
         CLUB_NAME,
-        [action.includes("contract") ? "Mietvertrag" : "Rechnung", curYear]
+        [action.includes("contract") ? "Mietvertrag" : (action.includes("gv") ? "GV" : (action.includes("letter") ? "Brief" : (action.includes("endschiessen") ? "Endschiessen" : "Rechnung"))), curYear]
       );
       if (pRes.success) {
         paperlessStatus = "archived";
@@ -2345,6 +3157,15 @@ Deno.serve(async (req: Request) => {
           .from("gv_instances")
           .update({ doc_einladung_url: publicUrl, updated_at: new Date().toISOString() })
           .eq("year", Number(curYear));
+      } catch (_) {}
+    } else if (action.includes("letter") || action === "generate-letter" || action === "generateLetterPDF") {
+      try {
+        if (payload.campaignRecipientId) {
+          await supabase
+            .from("campaign_recipients")
+            .update({ pdf_storage_path: storagePath, updated_at: new Date().toISOString() })
+            .eq("id", payload.campaignRecipientId);
+        }
       } catch (_) {}
     }
 

@@ -654,6 +654,10 @@ async function ensureRentalInvoice(d) {
         city: d.city || d.wohnort || '',
         email: d.email || ''
       },
+      sender: {
+        bereich: 'Vermietung Schützenstube',
+        funktion: 'Vermieter'
+      },
       positions: [
         {
           title: `Miete Schützenstube Muhen (${d.start_date || d.mietdatum || 'Reservation'})`,

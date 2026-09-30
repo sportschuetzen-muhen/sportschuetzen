@@ -839,6 +839,10 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
           city: m.City || m.Ort || 'Muhen',
           email: m.PrimaryEmail || m.Email || ''
         },
+        sender: {
+          bereich: 'Jahresbeitrag',
+          funktion: 'Kassier'
+        },
         positions: positions.map(p => ({
           title: p.description,
           quantity: p.quantity,

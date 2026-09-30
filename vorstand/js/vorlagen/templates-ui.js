@@ -499,6 +499,42 @@
           year: new Date().getFullYear(),
           gvData: { templateId: t.id, templateCode: t.code, gvNummer: 100, datum: '20.03.2026', zeit: '19:30' }
         };
+      } else if (t.category === 'brief') {
+        payload = {
+          action: 'generate-letter',
+          letterId: 'TEST-BRIEF-2026',
+          recipient: {
+            anrede: 'Herr',
+            vorname: 'Hans',
+            nachname: 'Muster',
+            strasse: 'Dorfstrasse 12',
+            plz: '5037',
+            ort: 'Muhen',
+            email: 'hans.muster@example.ch'
+          },
+          layout: {
+            title: t.title || 'Wichtige Mitteilung des Vorstands',
+            intro: t.intro || '',
+            outro: t.outro || ''
+          },
+          subject: t.title || 'Wichtige Mitteilung des Vorstands',
+          bodyText: 'Wir freuen uns, Ihnen mitteilen zu können, dass die Vorbereitungen für die kommende Saison planmässig verlaufen.\n\nBitte beachten Sie die folgenden wichtigen Termine und Richtlinien:\n- Frist für Lizenzanträge: 15. November 2026\n- Standabnahme Kleinkaliber: 24. März 2026\n- Beginn Trainingsbetrieb: Ab Anfang April 2026\n\nBei allfälligen Fragen steht der Vorstand jederzeit gerne zur Verfügung.',
+          signers: [
+            { name: 'Andrea Rossi', role: 'Präsident' },
+            { name: 'Daniel Humbel', role: 'Aktuar' }
+          ],
+          letterDate: new Date().toLocaleDateString('de-CH', { day: 'numeric', month: 'long', year: 'numeric' })
+        };
+      } else if (t.category === 'sonstige' || t.code?.includes('endschiessen') || t.category === 'endschiessen') {
+        payload = {
+          action: 'generate-endschiessen',
+          year: new Date().getFullYear(),
+          endschiessenData: {
+            title: t.title || 'Endschiessen & Absenden',
+            intro: t.intro || undefined,
+            subtitle: 'Offizieller Festführer, Schiessplan & Menü-Einladung'
+          }
+        };
       } else {
         payload = {
           action: 'generate-invoice',
