@@ -208,7 +208,8 @@ window.rnGeneratePDFOnly = async function(invoiceId, name) {
     if (result && result.success) {
       showSuccess("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
       if (result.pdfUrl && result.pdfUrl.startsWith('http')) {
-        window.open(result.pdfUrl, '_blank');
+        const urlToOpen = result.pdfUrl.includes('?') ? `${result.pdfUrl}&t=${Date.now()}` : `${result.pdfUrl}?t=${Date.now()}`;
+        window.open(urlToOpen, '_blank');
       } else if (result.pdfBase64) {
         if (typeof openPdfBase64 === 'function') {
           openPdfBase64(result.pdfBase64);

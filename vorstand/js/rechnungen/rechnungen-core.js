@@ -269,7 +269,11 @@ window.loadInvoiceLayoutsData = async function() {
       if (!error && Array.isArray(data)) {
         const map = {};
         data.forEach(item => {
-          if (item.type) map[item.type] = item;
+          if (item.type) {
+            map[item.type] = item;
+            const capKey = item.type.charAt(0).toUpperCase() + item.type.slice(1);
+            map[capKey] = item;
+          }
         });
         if (typeof rnGetDefaultLayouts === 'function') {
           window._invoiceLayouts = { ...rnGetDefaultLayouts(), ...map };

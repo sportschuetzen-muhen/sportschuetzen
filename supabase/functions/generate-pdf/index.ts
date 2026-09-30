@@ -725,18 +725,29 @@ async function generateInvoicePdf(
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  // 0. Server-Side Resolution: Vorlage aus document_templates nachladen falls unvollständig
+  // 0. Server-Side Resolution: Vorlage aus document_templates nachladen
   let resolvedLayout: LayoutData = { ...layout };
-  if ((!resolvedLayout.title || !resolvedLayout.notice) && supabaseClient) {
+  if (supabaseClient) {
     try {
       const typeKey = (docType || "jahresbeitrag").toLowerCase().trim();
-      const { data: tmpl } = await supabaseClient
+      let { data: tmpl } = await supabaseClient
         .from("document_templates")
         .select("*")
-        .or(`code.eq.${typeKey},category.eq.${typeKey}`)
-        .order("created_at", { ascending: false })
+        .or(`code.eq.${typeKey},id.eq.${typeKey}`)
         .limit(1)
         .maybeSingle();
+
+      if (!tmpl) {
+        const { data: tmplCat } = await supabaseClient
+          .from("document_templates")
+          .select("*")
+          .eq("category", typeKey)
+          .order("is_default", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        tmpl = tmplCat;
+      }
+
       if (tmpl) {
         resolvedLayout = {
           title: resolvedLayout.title || tmpl.title,
@@ -807,6 +818,13 @@ async function generateInvoicePdf(
     };
   });
 
+  // Koordinaten für Spalten
+  const xPos = tblX + 2 * MM;
+  const xDesc = tblX + colW.pos + 2 * MM;
+  const xQty = tblX + colW.pos + colW.desc + 2 * MM;
+  const xPriceRight = tblX + colW.pos + colW.desc + colW.qty + colW.price - 2 * MM;
+  const xTotalRight = tblX + tblW - 2 * MM;
+
   // Hilfsfunktion: Tabellenkopf zeichnen (schlichte Linien nach Referenz-Layout)
   const drawTableHeader = (p: any, y: number) => {
     p.drawLine({
@@ -816,11 +834,14 @@ async function generateInvoicePdf(
       color: rgb(0.1, 0.1, 0.1),
     });
 
-    p.drawText("Pos", { x: tblX + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
-    p.drawText("Beschreibung", { x: tblX + colW.pos + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
-    p.drawText("Menge", { x: tblX + colW.pos + colW.desc + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
-    p.drawText("Einzelpreis", { x: tblX + colW.pos + colW.desc + colW.qty + 2 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
-    p.drawText("Preis (CHF)", { x: tblX + tblW - 25 * MM, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Pos", { x: xPos, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Beschreibung", { x: xDesc, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText("Menge", { x: xQty, y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+
+    const priceHdr = "Einzelpreis";
+    const totalHdr = "Preis (CHF)";
+    p.drawText(priceHdr, { x: xPriceRight - fontBold.widthOfTextAtSize(priceHdr, 8), y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
+    p.drawText(totalHdr, { x: xTotalRight - fontBold.widthOfTextAtSize(totalHdr, 8), y: y - 2 * MM, size: 8, font: fontBold, color: rgb(0, 0, 0) });
 
     p.drawLine({
       start: { x: tblX, y: y - 4 * MM },
@@ -835,12 +856,12 @@ async function generateInvoicePdf(
   // Hilfsfunktion: Tabellenzeile zeichnen
   const drawTableRow = (p: any, row: PreparedRow, _idx: number, y: number) => {
     // Pos.-Nummer
-    p.drawText(row.posNr, { x: tblX + 2 * MM, y, size: 8.5, font: fontRegular });
+    p.drawText(row.posNr, { x: xPos, y, size: 8.5, font: fontRegular });
 
     // Beschreibung (mehrzeilig gerendert)
     row.lines.forEach((line, lIdx) => {
       p.drawText(sanitizeText(line), {
-        x: tblX + colW.pos + 2 * MM,
+        x: xDesc,
         y: y - (lIdx * 3.8 * MM),
         size: 8.5,
         font: fontRegular,
@@ -848,9 +869,9 @@ async function generateInvoicePdf(
     });
 
     // Menge, Ansatz, Betrag auf erster Zeile mit Tabellenziffern
-    p.drawText(row.qtyStr, { x: tblX + colW.pos + colW.desc + 2 * MM, y, size: 8.5, font: fontRegular });
-    p.drawText(row.unitStr, { x: tblX + colW.pos + colW.desc + colW.qty + 2 * MM, y, size: 8.5, font: fontRegular });
-    p.drawText(row.totalStr, { x: tblX + tblW - 22 * MM, y, size: 8.5, font: fontRegular });
+    p.drawText(row.qtyStr, { x: xQty, y, size: 8.5, font: fontRegular });
+    p.drawText(row.unitStr, { x: xPriceRight - fontRegular.widthOfTextAtSize(row.unitStr, 8.5), y, size: 8.5, font: fontRegular });
+    p.drawText(row.totalStr, { x: xTotalRight - fontRegular.widthOfTextAtSize(row.totalStr, 8.5), y, size: 8.5, font: fontRegular });
 
     return y - row.rowHeight;
   };
@@ -864,8 +885,13 @@ async function generateInvoicePdf(
       color: rgb(0.1, 0.1, 0.1),
     });
 
-    p.drawText("Total", { x: tblX + 20 * MM, y: y - 3.5 * MM, size: 9.5, font: fontBold });
-    p.drawText(formatSwissChf(totalAmount), { x: tblX + tblW - 24 * MM, y: y - 3.5 * MM, size: 10, font: fontBold });
+    // "Total" bündig links (wie Pos-Spalte)
+    p.drawText("Total", { x: xPos, y: y - 3.5 * MM, size: 9.5, font: fontBold });
+
+    // Betrag exakt rechtsbündig unter Spalte Preis (CHF)
+    const totalAmountStr = formatSwissChf(totalAmount);
+    const totalW = fontBold.widthOfTextAtSize(totalAmountStr, 10);
+    p.drawText(totalAmountStr, { x: xTotalRight - totalW, y: y - 3.5 * MM, size: 10, font: fontBold });
 
     p.drawLine({
       start: { x: tblX, y: y - 6 * MM },
@@ -876,7 +902,7 @@ async function generateInvoicePdf(
 
     y -= 12 * MM;
 
-    // Outro / Notiz mit vollständiger Variablen-Ersetzung
+    // Outro / Notiz mit vollständiger Variablen-Ersetzung und automatischem Umbruch
     const senderFullName = [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME;
     const senderRole = sender.funktion || sender.bereich || "Vorstand";
 
@@ -896,9 +922,15 @@ async function generateInvoicePdf(
 
     const noticeLines = noticeRaw.split("\n");
     noticeLines.forEach((nl: string) => {
-      if (nl.trim()) {
-        p.drawText(sanitizeText(nl.trim()), { x: 20 * MM, y, size: 9, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
-        y -= 4.2 * MM;
+      const trimmed = nl.trim();
+      if (!trimmed) {
+        y -= 3.2 * MM;
+      } else {
+        const wrapped = wrapText(trimmed, fontRegular, 9, 170 * MM);
+        wrapped.forEach((wl) => {
+          p.drawText(sanitizeText(wl), { x: 20 * MM, y, size: 9, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
+          y -= 4.2 * MM;
+        });
       }
     });
 
@@ -936,7 +968,7 @@ async function generateInvoicePdf(
     return 265 * MM;
   };
 
-  // Hilfsfunktion: Juristischer Vereins-Footer (nur auf Inhaltsseiten, nicht auf der QR-Seite)
+  // Hilfsfunktion: Juristischer Vereins-Footer (nur auf Inhaltsseiten, zentriert)
   const drawClubLegalFooter = (p: any, yPos: number = 12 * MM) => {
     p.drawLine({
       start: { x: 20 * MM, y: yPos + 3 * MM },
@@ -944,8 +976,10 @@ async function generateInvoicePdf(
       thickness: 0.3,
       color: rgb(0.75, 0.75, 0.75),
     });
-    p.drawText("Sportschützen Muhen · sportschützen.muhen@gmail.com · www.sportschuetzen-muhen.ch", {
-      x: 20 * MM,
+    const footerStr = "Sportschützen Muhen · sportschützen.muhen@gmail.com · www.sportschuetzen-muhen.ch";
+    const strW = fontRegular.widthOfTextAtSize(footerStr, 7.5);
+    p.drawText(footerStr, {
+      x: (A4_WIDTH - strW) / 2,
       y: yPos,
       size: 7.5,
       font: fontRegular,
@@ -964,7 +998,7 @@ async function generateInvoicePdf(
     const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     currentPage.drawImage(logoImage, {
       x: 15 * MM,
-      y: 287 * MM - scaledLogo.height,
+      y: 291 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
@@ -1084,15 +1118,15 @@ async function generateInvoicePdf(
     color: rgb(0.05, 0.05, 0.05),
   });
 
-  // 5. Einleitung (ab ca. 182 mm) - Zeile 1023 (fixe Anrede) entfernt
+  // 5. Einleitung (ab ca. 182 mm) mit Absätzen und automatischem Zeilenumbruch
   let curY = 182 * MM;
 
   let introRaw = (resolvedLayout.intro || "Anbei erhalten Sie die Rechnung.")
     .replace(/{rechnungsnummer}/g, invoiceId)
     .replace(/{rechnungsjahr}/g, yearStr)
-    .replace(/{anrede}/g, recipient.anrede || "")
-    .replace(/{vorname}/g, recipient.vorname || "")
-    .replace(/{nachname}/g, recipient.nachname || "")
+    .replace(/{anrede}/g, normRecipient.anrede || "")
+    .replace(/{vorname}/g, normRecipient.vorname || "")
+    .replace(/{nachname}/g, normRecipient.nachname || "")
     .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
     .replace(/{absender_vorname}/g, sender.vorname || "")
     .replace(/{absender_nachname}/g, sender.nachname || "")
@@ -1102,9 +1136,15 @@ async function generateInvoicePdf(
 
   const introLines = introRaw.split("\n");
   introLines.forEach((l) => {
-    if (l.trim()) {
-      currentPage.drawText(sanitizeText(l.trim()), { x: 20 * MM, y: curY, size: 9.5, font: fontRegular, color: rgb(0.1, 0.1, 0.1) });
-      curY -= 4.5 * MM;
+    const trimmed = l.trim();
+    if (!trimmed) {
+      curY -= 3.5 * MM;
+    } else {
+      const wrapped = wrapText(trimmed, fontRegular, 9.5, 170 * MM);
+      wrapped.forEach((wl) => {
+        currentPage.drawText(sanitizeText(wl), { x: 20 * MM, y: curY, size: 9.5, font: fontRegular, color: rgb(0.1, 0.1, 0.1) });
+        curY -= 4.5 * MM;
+      });
     }
   });
 
@@ -1283,7 +1323,7 @@ async function generateRentalContractPdf(
     const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     page1.drawImage(logoImage, {
       x: 15 * MM,
-      y: 287 * MM - scaledLogo.height,
+      y: 291 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
@@ -1583,7 +1623,7 @@ async function generateGVInvitationPdf(
     const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     page1.drawImage(logoImage, {
       x: 15 * MM,
-      y: 287 * MM - scaledLogo.height,
+      y: 291 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
@@ -1893,8 +1933,10 @@ async function generateLetterPdf(
       thickness: 0.3,
       color: rgb(0.75, 0.75, 0.75),
     });
-    p.drawText("Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com", {
-      x: 20 * MM,
+    const footerStr = "Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com";
+    const strW = fontRegular.widthOfTextAtSize(footerStr, 6.8);
+    p.drawText(footerStr, {
+      x: (A4_WIDTH - strW) / 2,
       y: 11.5 * MM,
       size: 6.8,
       font: fontRegular,
@@ -1915,7 +1957,7 @@ async function generateLetterPdf(
     const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     currentPage.drawImage(logoImage, {
       x: 15 * MM,
-      y: 287 * MM - scaledLogo.height,
+      y: 291 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
@@ -2854,13 +2896,17 @@ Deno.serve(async (req: Request) => {
           }
         } catch (_) {}
       }
-      const sender = payload.sender || {
-        vorname: "",
-        nachname: "",
-        funktion: "Kassier",
-        verein: CLUB_NAME,
-        email: CLUB_EMAIL,
+      let parsedSenderAddress: any = invRow?.sender_address;
+      if (typeof parsedSenderAddress === "string") {
+        try { parsedSenderAddress = JSON.parse(parsedSenderAddress); } catch (_) {}
+      }
+      const sender = {
+        ...(parsedSenderAddress || {}),
+        ...(payload.sender || {}),
       };
+      if (!sender.funktion) sender.funktion = parsedSenderAddress?.funktion || "Kassier";
+      if (!sender.email) sender.email = parsedSenderAddress?.email || CLUB_EMAIL;
+      if (!sender.verein) sender.verein = CLUB_NAME;
 
       // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
       if ((!sender.vorname || !sender.strasse) && supabase) {

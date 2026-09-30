@@ -54,12 +54,12 @@ window.rnGetDefaultLayouts = function() {
     },
     'Materialverkauf': {
       type: 'Materialverkauf',
-      title: 'Rechnung – Material- & Kleiderbezug',
-      intro: 'Guten Tag {vorname} {nachname},\n\nvielen Dank für deinen Materialbezug aus unserem Vereinsinventar. Nachfolgend stellen wir dir die bezogenen Artikel in Rechnung.',
-      outro: 'Vielen Dank für deine Unterstützung unseres Vereins.\n\nSportliche Grüsse\nSportschützen Muhen',
+      title: 'Rechnung {rechnungsnummer} – Material- & Kleiderbezug',
+      intro: 'Guten Tag {vorname} {nachname}\n\nVielen Dank für deinen Materialbezug aus unserem Vereinsinventar. Nachfolgend stellen wir dir die bezogenen Artikel in Rechnung.',
+      outro: 'Vielen Dank für deine Unterstützung unseres Vereins.\n\nFreundliche Grüsse\n\nSportschützen Muhen\n\n\n{absender_vorname} {absender_nachname}\n{absender_funktion}',
       notice: 'Zahlbar innert 30 Tagen mit beiliegendem QR-Einzahlungsschein.',
-      mail_subject: 'Rechnung {rechnungsnummer} – Materialverkauf | Sportschützen Muhen',
-      mail_body: 'Guten Tag {vorname} {nachname},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar.\n\nAnbei senden wir dir die Rechnung {rechnungsnummer} über CHF {gesamtbetrag} inkl. QR-Einzahlungsschein.\n\nBitte überweise den Betrag innert 30 Tagen.\n\nSportliche Grüsse\nSportschützen Muhen'
+      mail_subject: 'Rechnung {rechnungsnummer} – Material- & Kleiderbezug | Sportschützen Muhen',
+      mail_body: 'Guten Tag {vorname} {nachname},\n\nanbei senden wir dir die Rechnung {rechnungsnummer} für deinen Materialbezug aus unserem Vereinsinventar.\n\nGesamtbetrag: CHF {gesamtbetrag}\nZahlungsziel: 30 Tage\n\nAm Ende des angehängten PDF findest du deinen persönlichen QR-Einzahlungsschein.\n\nMit freundlichen Grüssen\nSportschützen Muhen'
     },
     'Depot / Pfand': {
       type: 'Depot / Pfand',

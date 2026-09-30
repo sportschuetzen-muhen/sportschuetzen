@@ -51,6 +51,8 @@
           mail_subject: t.mail_subject,
           mail_body: t.mail_body
         };
+        const capKey = t.code.charAt(0).toUpperCase() + t.code.slice(1);
+        window._invoiceLayouts[capKey] = window._invoiceLayouts[t.code];
       });
       console.log(`✅ [Vorlagen-Pool] ${window._docTemplatesData.length} Vorlagen & ${window._docClausesData.length} Klauseln geladen.`);
     } catch (err) {
@@ -626,7 +628,8 @@
       if (typeof window.generatePdfViaEngine === 'function') {
         const res = await window.generatePdfViaEngine(payload);
         if (res && res.success && res.pdfUrl) {
-          window.open(res.pdfUrl, '_blank');
+          const urlToOpen = res.pdfUrl.includes('?') ? `${res.pdfUrl}&t=${Date.now()}` : `${res.pdfUrl}?t=${Date.now()}`;
+          window.open(urlToOpen, '_blank');
         } else {
           showError("PDF-Generierung fehlgeschlagen: " + (res?.error || 'Unbekannter Fehler'));
         }
