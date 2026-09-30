@@ -835,36 +835,48 @@ async function generateInvoicePdf(
       color: rgb(0.1, 0.1, 0.1),
     });
 
-    y -= 14 * MM;
+    y -= 12 * MM;
 
-    // Outro / Notiz
+    // Outro / Notiz mit vollständiger Variablen-Ersetzung
+    const senderFullName = [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME;
+    const senderRole = sender.funktion || sender.bereich || "Vorstand";
+
     const noticeDefault = "Bei allfälligen Fragen bitte bei mir melden.\nVielen Dank für das Vertrauen.";
     const noticeRaw = (resolvedLayout.outro || resolvedLayout.notice || noticeDefault)
       .replace(/{rechnungsnummer}/g, invoiceId)
-      .replace(/{rechnungsjahr}/g, yearStr);
+      .replace(/{rechnungsjahr}/g, yearStr)
+      .replace(/{anrede}/g, recipient.anrede || "")
+      .replace(/{vorname}/g, recipient.vorname || "")
+      .replace(/{nachname}/g, recipient.nachname || "")
+      .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
+      .replace(/{absender_vorname}/g, sender.vorname || "")
+      .replace(/{absender_nachname}/g, sender.nachname || "")
+      .replace(/{absender_funktion}/g, senderRole)
+      .replace(/{absender_email}/g, sender.email || "")
+      .replace(/{absender_mobil}/g, sender.mobil || "");
+
     const noticeLines = noticeRaw.split("\n");
     noticeLines.forEach((nl: string) => {
       if (nl.trim()) {
         p.drawText(sanitizeText(nl.trim()), { x: 20 * MM, y, size: 9, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
-        y -= 4.5 * MM;
+        y -= 4.2 * MM;
       }
     });
 
-    y -= 4 * MM;
+    // Grusszeile & Signatur nur anhängen, wenn im Outro nicht bereits eine Grussformel enthalten ist
+    const hasGreetingInOutro = /freundliche gr[üu]sse|beste gr[üu]sse|sportliche gr[üu]sse/i.test(noticeRaw);
+    if (!hasGreetingInOutro) {
+      y -= 3.5 * MM;
+      p.drawText("Mit besten Grüssen", { x: 20 * MM, y, size: 9, font: fontRegular });
+      y -= 4.8 * MM;
+      p.drawText(CLUB_NAME, { x: 20 * MM, y, size: 9.5, font: fontBold });
+      y -= 7.5 * MM;
+      p.drawText(sanitizeText(senderFullName), { x: 20 * MM, y, size: 9, font: fontRegular });
+      y -= 4.0 * MM;
+      p.drawText(sanitizeText(senderRole), { x: 20 * MM, y, size: 9, font: fontRegular });
+    }
 
-    // Grusszeile & Absendersignatur
-    p.drawText("Mit besten Grüssen", { x: 20 * MM, y, size: 9, font: fontRegular });
-    y -= 5 * MM;
-    p.drawText(CLUB_NAME, { x: 20 * MM, y, size: 9.5, font: fontBold });
-    y -= 8 * MM;
-
-    const senderFullName = [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME;
-    p.drawText(sanitizeText(senderFullName), { x: 20 * MM, y, size: 9, font: fontRegular });
-    y -= 4.2 * MM;
-    const senderRole = sender.funktion || sender.bereich || "Vorstand";
-    p.drawText(sanitizeText(senderRole), { x: 20 * MM, y, size: 9, font: fontRegular });
-
-    return y - 5 * MM;
+    return y - 4 * MM;
   };
 
   // Hilfsfunktion: Folgeseiten-Header mit Dokument-Metadaten
@@ -885,29 +897,30 @@ async function generateInvoicePdf(
     return 265 * MM;
   };
 
-  // Hilfsfunktion: Juristischer Vereins-Footer über dem QR-Zahlteil
-  const drawClubLegalFooter = (p: any, yPos: number = 108 * MM) => {
+  // Hilfsfunktion: Juristischer Vereins-Footer (nur auf Inhaltsseiten, nicht auf der QR-Seite)
+  const drawClubLegalFooter = (p: any, yPos: number = 12 * MM) => {
     p.drawLine({
-      start: { x: 20 * MM, y: yPos + 2 * MM },
-      end: { x: 190 * MM, y: yPos + 2 * MM },
+      start: { x: 20 * MM, y: yPos + 3 * MM },
+      end: { x: 190 * MM, y: yPos + 3 * MM },
       thickness: 0.3,
       color: rgb(0.75, 0.75, 0.75),
     });
-    p.drawText("Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com", {
+    p.drawText("Sportschützen Muhen · sportschützen.muhen@gmail.com · www.sportschuetzen-muhen.ch", {
       x: 20 * MM,
-      y: yPos - 1.5 * MM,
-      size: 6.8,
+      y: yPos,
+      size: 7.5,
       font: fontRegular,
       color: rgb(0.45, 0.45, 0.45),
     });
   };
 
   // ============================================================================
-  // SEITE 1 INITIALISIEREN & KOPFBEREICH ZEICHNEN
+  // SEITE 1: RECHNUNGSINHALT (KOPF, ADRESSEN, TABELLE, TOTAL & SIGNATUR)
   // ============================================================================
   let currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
 
-  // 1. Logo freistehend oben links (Box: 32 x 32 mm, kein Text daneben)
+  // 1. Logo oben links (Box: 32 x 32 mm) + zweizeiliger Vereinskopf daneben
+  let textStartX = 20 * MM;
   if (logoImage) {
     const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     currentPage.drawImage(logoImage, {
@@ -916,12 +929,27 @@ async function generateInvoicePdf(
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
+    textStartX = 20 * MM + scaledLogo.width + 4 * MM;
   }
+  currentPage.drawText(CLUB_NAME.toUpperCase(), {
+    x: textStartX,
+    y: 275 * MM,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  currentPage.drawText("gegründet 1919 · Schiessanlage Rüteli", {
+    x: textStartX,
+    y: 270 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
 
-  // 2. Absenderblock links unter dem Logo (ab ca. 240 mm)
+  // 2. Absenderblock links unter dem Logo (ab ca. 240 mm) - Nur Funktion ohne 'Sportschützen Muhen'
   let sendY = 240 * MM;
-  const clubSubTitle = sender.bereich ? `${CLUB_NAME} ${sender.bereich}` : (sender.funktion ? `${CLUB_NAME} ${sender.funktion}` : CLUB_NAME);
-  currentPage.drawText(sanitizeText(clubSubTitle), { x: 20 * MM, y: sendY, size: 9.5, font: fontBold });
+  const senderRole = sender.funktion || sender.bereich || "Vorstand";
+  currentPage.drawText(sanitizeText(senderRole), { x: 20 * MM, y: sendY, size: 9.5, font: fontBold });
   sendY -= 4.2 * MM;
 
   const senderNameStr = [sender.vorname, sender.nachname].filter(Boolean).join(" ");
@@ -967,7 +995,7 @@ async function generateInvoicePdf(
   currentPage.drawText(`Zahlbar bis:`, { x: 20 * MM, y: sendY, size: 8.5, font: fontRegular });
   currentPage.drawText(dueDateStr, { x: 44 * MM, y: sendY, size: 8.5, font: fontRegular });
 
-  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, auf gleicher Höhe ab 240 mm)
+  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, ab 240 mm) mit Anrede
   let addrY = 240 * MM;
   if (recipient.abteilung || (recipient as any).zusatz) {
     currentPage.drawText(sanitizeText(recipient.abteilung || (recipient as any).zusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
@@ -977,7 +1005,11 @@ async function generateInvoicePdf(
     currentPage.drawText(sanitizeText(recipient.firma), { x: 125 * MM, y: addrY, size: 9.5, font: fontBold });
     addrY -= 4.2 * MM;
   }
-  const fullRecName = [recipient.anrede, recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || (recipient.name || "");
+  if (recipient.anrede && !recipient.firma) {
+    currentPage.drawText(sanitizeText(recipient.anrede), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+    addrY -= 4.2 * MM;
+  }
+  const fullRecName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || (recipient.name || "");
   if (fullRecName && (!recipient.firma || fullRecName !== recipient.firma)) {
     currentPage.drawText(sanitizeText(fullRecName), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
@@ -996,38 +1028,38 @@ async function generateInvoicePdf(
     addrY -= 4.2 * MM;
   }
 
-  // 4. Rechnungstitel (H1, linksbündig ab ca. 195 mm)
-  const defaultTitle = docType || "Rechnung";
-  const finalTitle = sanitizeText(resolvedLayout.title ? resolvedLayout.title.replace(/{rechnungsnummer}/g, invoiceId).replace(/{rechnungsjahr}/g, yearStr) : defaultTitle);
-  currentPage.drawText(finalTitle, {
+  // 4. Rechnungstitel (H1, linksbündig ab ca. 195 mm) - Rechnungsnummer zwingend enthalten
+  const rawTitle = resolvedLayout.title || `${docType || "Rechnung"}`;
+  let finalTitle = rawTitle
+    .replace(/{rechnungsnummer}/g, invoiceId)
+    .replace(/{rechnungsjahr}/g, yearStr);
+  if (!finalTitle.includes(invoiceId)) {
+    const cleanDocTitle = finalTitle.replace(/^Rechnung\s*[-–]?\s*/i, "").trim();
+    finalTitle = `Rechnung ${invoiceId} – ${cleanDocTitle || docType || "Materialverkauf"}`;
+  }
+  currentPage.drawText(sanitizeText(finalTitle), {
     x: 20 * MM,
     y: 195 * MM,
-    size: 14,
+    size: 13.5,
     font: fontBold,
     color: rgb(0.05, 0.05, 0.05),
   });
 
-  // 5. Anrede & Einleitung (ab ca. 180 mm)
-  let curY = 180 * MM;
-  let salutation = "Guten Tag";
-  if (recipient.vorname) {
-    salutation = `Guten Tag ${recipient.vorname}`;
-  } else if (recipient.nachname) {
-    salutation = isFirma
-      ? (recipient.anrede === "Frau" ? "Sehr geehrte Frau " : "Sehr geehrter Herr ") + recipient.nachname
-      : `Guten Tag ${recipient.anrede || ""} ${recipient.nachname}`.trim();
-  } else {
-    salutation = "Guten Tag";
-  }
+  // 5. Einleitung (ab ca. 182 mm) - Zeile 1023 (fixe Anrede) entfernt
+  let curY = 182 * MM;
 
-  currentPage.drawText(sanitizeText(salutation), { x: 20 * MM, y: curY, size: 10, font: fontRegular });
-  curY -= 6 * MM;
-
-  const introRaw = (resolvedLayout.intro || "Anbei die Rechnung für den durchgeführten Kurs.")
+  let introRaw = (resolvedLayout.intro || "Anbei erhalten Sie die Rechnung.")
     .replace(/{rechnungsnummer}/g, invoiceId)
     .replace(/{rechnungsjahr}/g, yearStr)
+    .replace(/{anrede}/g, recipient.anrede || "")
     .replace(/{vorname}/g, recipient.vorname || "")
-    .replace(/{nachname}/g, recipient.nachname || "");
+    .replace(/{nachname}/g, recipient.nachname || "")
+    .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
+    .replace(/{absender_vorname}/g, sender.vorname || "")
+    .replace(/{absender_nachname}/g, sender.nachname || "")
+    .replace(/{absender_funktion}/g, senderRole)
+    .replace(/{absender_email}/g, sender.email || "")
+    .replace(/{absender_mobil}/g, sender.mobil || "");
 
   const introLines = introRaw.split("\n");
   introLines.forEach((l) => {
@@ -1037,143 +1069,91 @@ async function generateInvoicePdf(
     }
   });
 
-  curY -= 4 * MM;
+  curY -= 3.5 * MM;
 
-  // ============================================================================
-  // 3. INTELLIGENTER LOOKAHEAD: PASST ALLES AUF SEITE 1 INKL. QR-ZAHLTEIL?
-  // ============================================================================
-  const totalRowsHeight = preparedRows.reduce((acc, r) => acc + r.rowHeight, 0);
-  const tableHeaderHeight = 8 * MM;
-  const singlePageRequiredSpace = tableHeaderHeight + totalRowsHeight + TOTALS_FOOTER_HEIGHT;
-  const fitsOnSinglePage = (curY - singlePageRequiredSpace) >= QR_SAFE_FLOOR;
+  // 6. Tabelle der Rechnungspositionen
+  curY = drawTableHeader(currentPage, curY);
 
-  if (fitsOnSinglePage) {
-    // --------------------------------------------------------------------------
-    // EINSEITIGE RECHNUNG: Kein Umbruch nötig, verhindert leere Folgeseiten
-    // --------------------------------------------------------------------------
-    curY = drawTableHeader(currentPage, curY);
-
-    preparedRows.forEach((row, idx) => {
-      curY = drawTableRow(currentPage, row, idx, curY);
-    });
-
-    drawTotalsAndFooter(currentPage, curY);
-    drawClubLegalFooter(currentPage);
-    drawSwissQrBillSection(currentPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
-  } else {
-    // --------------------------------------------------------------------------
-    // MEHRSEITIGE RECHNUNG MIT DYNAMISCHEM Y-CURSOR
-    // --------------------------------------------------------------------------
-    // Seite 1: Nutzt den vollen Raum nach unten bis MARGIN_BOTTOM (kein QR-Teil auf S.1)
-    curY = drawTableHeader(currentPage, curY);
-
-    let rowIndex = 0;
-    while (rowIndex < preparedRows.length) {
-      const nextRow = preparedRows[rowIndex];
-      if (curY - nextRow.rowHeight < MARGIN_BOTTOM) {
-        break; // Seite 1 voll, Umbruch auf Folgeseite
-      }
-      curY = drawTableRow(currentPage, nextRow, rowIndex, curY);
-      rowIndex++;
-    }
-
-    let qrPlaced = false;
-
-    // Folgeseite(n)
-    while (rowIndex < preparedRows.length) {
+  let rowIndex = 0;
+  while (rowIndex < preparedRows.length) {
+    const nextRow = preparedRows[rowIndex];
+    // Falls die Zeile unter 28mm fallen würde, neue Inhaltsseite anlegen
+    if (curY - nextRow.rowHeight < 28 * MM) {
+      drawClubLegalFooter(currentPage, 12 * MM);
       currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
       curY = renderFollowUpHeader(currentPage);
       curY = drawTableHeader(currentPage, curY);
-
-      // Berechnen, wie viel Platz die verbleibenden Zeilen insgesamt benötigen
-      let remainingHeight = 0;
-      for (let r = rowIndex; r < preparedRows.length; r++) {
-        remainingHeight += preparedRows[r].rowHeight;
-      }
-
-      // Prüfen, ob alle verbleibenden Positionen + Footer noch über den QR-Zahlteil passen
-      const canFinishOnThisPage = (curY - (remainingHeight + TOTALS_FOOTER_HEIGHT)) >= QR_SAFE_FLOOR;
-
-      if (canFinishOnThisPage) {
-        // Diese Folgeseite wird die finale Schlussseite mit QR-Teil!
-        while (rowIndex < preparedRows.length) {
-          curY = drawTableRow(currentPage, preparedRows[rowIndex], rowIndex, curY);
-          rowIndex++;
-        }
-        drawTotalsAndFooter(currentPage, curY);
-        drawClubLegalFooter(currentPage);
-        drawSwissQrBillSection(currentPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
-        qrPlaced = true;
-        break;
-      } else {
-        // Nicht alle passen -> Fülle bis MARGIN_BOTTOM und nächste Seite
-        while (rowIndex < preparedRows.length) {
-          const nextRow = preparedRows[rowIndex];
-          if (curY - nextRow.rowHeight < MARGIN_BOTTOM) {
-            break;
-          }
-          curY = drawTableRow(currentPage, nextRow, rowIndex, curY);
-          rowIndex++;
-        }
-      }
     }
-
-    // Falls alle Zeilen gezeichnet sind, der QR-Zahlteil aber nicht mehr passte:
-    // Dedizierte Schlussseite mit standardisiertem Belegbezugs-Kopf anlegen (SIX SPC 0200 1)
-    if (!qrPlaced) {
-      currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-      curY = renderFollowUpHeader(currentPage);
-
-      // Standardisierter Belegbezugs-Kopf
-      currentPage.drawText(`Zahlteil & Belegdetails zu Rechnung: ${invoiceId}`, {
-        x: 20 * MM,
-        y: curY,
-        size: 11,
-        font: fontBold,
-        color: rgb(0.1, 0.15, 0.3),
-      });
-      curY -= 5.5 * MM;
-
-      const recSummary = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || recipient.firma || recipient.name || "Rechnungsempfänger";
-      currentPage.drawText(sanitizeWinAnsiText(`Rechnungsempfänger: ${recSummary}   |   Gesamtbetrag: CHF ${formatSwissChf(totalAmount)}`), {
-        x: 20 * MM,
-        y: curY,
-        size: 9,
-        font: fontRegular,
-        color: rgb(0.3, 0.3, 0.3),
-      });
-      curY -= 8 * MM;
-
-      drawTotalsAndFooter(currentPage, curY);
-      drawClubLegalFooter(currentPage);
-      drawSwissQrBillSection(currentPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
-    }
+    curY = drawTableRow(currentPage, nextRow, rowIndex, curY);
+    rowIndex++;
   }
 
+  // Totals & Grusszeile zeichnen (falls nicht genug Platz auf aktueller Inhaltsseite, Folgeseite anlegen)
+  if (curY - TOTALS_FOOTER_HEIGHT < 28 * MM) {
+    drawClubLegalFooter(currentPage, 12 * MM);
+    currentPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    curY = renderFollowUpHeader(currentPage);
+  }
+  drawTotalsAndFooter(currentPage, curY);
+  drawClubLegalFooter(currentPage, 12 * MM);
+
   // ============================================================================
-  // 4. SEITENNUMMERIERUNG & SIX-KONFORME STEMPELUNG
+  // FINALE SEITE: DEDIZIERTER SCHWEIZER QR-ZAHLTEIL (ES ALLEIN AUF SEITE)
+  // ============================================================================
+  const qrPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  renderFollowUpHeader(qrPage);
+
+  // Belegbezugs-Kopf oberhalb des Zahlteils
+  qrPage.drawText(`Zahlteil & Beleg zu Rechnung: ${invoiceId}`, {
+    x: 20 * MM,
+    y: 258 * MM,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+
+  const recSummary = [recipient.anrede, recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || recipient.firma || recipient.name || "Rechnungsempfänger";
+  qrPage.drawText(sanitizeWinAnsiText(`Rechnungsempfänger: ${recSummary}   |   Rechnungsbetrag: CHF ${formatSwissChf(totalAmount)}   |   Zahlbar bis: ${dueDateStr}`), {
+    x: 20 * MM,
+    y: 252 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.35, 0.35, 0.35),
+  });
+
+  // Schweizer QR-Zahlteil (SIX SPC 0200 1) auf den unteren 105 mm (kein Footer auf dieser Seite!)
+  drawSwissQrBillSection(qrPage, fontRegular, fontBold, invoiceId, totalAmount, recipient, yearStr, docType);
+
+  // ============================================================================
+  // SEITENNUMMERIERUNG & FORTSETZUNGSHINWEISE
   // ============================================================================
   const totalPages = pdfDoc.getPageCount();
   const allPages = pdfDoc.getPages();
   allPages.forEach((p, idx) => {
     const pageNum = idx + 1;
-    const isLastPage = (pageNum === totalPages);
-    // Auf der letzten Seite liegt der QR-Teil bei 0..105mm -> Stempel oberhalb der Trennlinie bei 108.5mm
-    // Auf Zwischenseiten -> Stempel unten bei 12mm
-    const stampY = isLastPage ? (QR_BILL_HEIGHT + 3.5 * MM) : (12 * MM);
+    const isQrPage = (pageNum === totalPages);
 
-    p.drawText(`Seite ${pageNum} von ${totalPages}`, {
-      x: 175 * MM,
-      y: stampY,
-      size: 7.5,
-      font: fontRegular,
-      color: rgb(0.45, 0.45, 0.45),
-    });
-
-    if (!isLastPage) {
-      p.drawText("Fortsetzung auf der nächsten Seite...", {
+    if (isQrPage) {
+      // Auf der QR-Seite: Stempel leicht oberhalb der Trennlinie des ES bei 108.5 mm
+      p.drawText(`Seite ${pageNum} von ${totalPages}`, {
+        x: 175 * MM,
+        y: 108.5 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+    } else {
+      // Auf Inhaltsseiten: Fortsetzungshinweis und Seitenzahl bei Y = 17 mm
+      p.drawText("Fortsetzung mit QR-Zahlteil auf der nächsten Seite...", {
         x: 20 * MM,
-        y: stampY,
+        y: 17 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+      p.drawText(`Seite ${pageNum} von ${totalPages}`, {
+        x: 175 * MM,
+        y: 17 * MM,
         size: 7.5,
         font: fontRegular,
         color: rgb(0.45, 0.45, 0.45),

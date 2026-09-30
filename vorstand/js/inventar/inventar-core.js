@@ -202,7 +202,7 @@ async function loadInventarData(force = false) {
                     supa.from('inventory_config').select('*').order('sort_order', { ascending: true }),
                     (window._mglData && window._mglData.length > 0)
                         ? Promise.resolve({ data: window._mglData })
-                        : supa.from('members').select('person_number, first_name, last_name, primary_email, birth_date, is_active, is_passive, deceased').order('last_name')
+                        : supa.from('members').select('person_number, salutation, first_name, last_name, street, post_code, city, primary_email, birth_date, is_active, is_passive, deceased').order('last_name')
                 ]);
 
                 // Mitglieder-Lookup aufbereiten
@@ -210,8 +210,12 @@ async function loadInventarData(force = false) {
                 const mappedMembers = rawMembers.map(m => ({
                     ID: String(m.person_number || m.PersonNumber),
                     PersonNumber: m.person_number || m.PersonNumber,
+                    Salutation: m.salutation || m.Salutation || '',
                     Vorname: m.first_name || m.FirstName || '',
                     Nachname: m.last_name || m.LastName || '',
+                    Strasse: m.street || m.Street || m.Strasse || '',
+                    PLZ: String(m.post_code || m.PostCode || m.PLZ || ''),
+                    Ort: m.city || m.City || m.Ort || '',
                     email: m.primary_email || m.PrimaryEmail || '',
                     BirthDate: m.birth_date || m.BirthDate || '',
                     Status: (m.deceased || m.Deceased) ? 'Verstorben' : ((m.is_active || m.IsActive) && !(m.is_passive || m.IsPassive) ? 'Aktiv' : ((m.is_passive || m.IsPassive) ? 'Passiv' : 'Ehemalig'))

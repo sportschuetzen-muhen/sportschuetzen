@@ -340,9 +340,10 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
 
             const memberEmail = (m.email || m.Email || mglMaster.PrimaryEmail || mglMaster.email || '').trim();
-            const memberStrasse = mglMaster.Street || m.Strasse || '';
-            const memberPlz = mglMaster.PostCode || m.PLZ || '';
-            const memberOrt = mglMaster.City || m.Ort || '';
+            const memberSalutation = m.Salutation || mglMaster.Salutation || m.salutation || '';
+            const memberStrasse = m.Strasse || mglMaster.Street || mglMaster.street || '';
+            const memberPlz = m.PLZ || mglMaster.PostCode || mglMaster.post_code || '';
+            const memberOrt = m.Ort || mglMaster.City || mglMaster.city || '';
             const recipientName = `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim() || 'Mitglied';
 
             const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
@@ -359,6 +360,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     type: 'mitglied',
                     memberId: mitgliedId,
                     personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
+                    anrede: memberSalutation,
+                    salutation: memberSalutation,
                     name: recipientName,
                     firstName: m.Vorname || mglMaster.FirstName || '',
                     lastName: m.Nachname || mglMaster.LastName || '',
@@ -639,9 +642,10 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         const mglMaster = (window._mglData || []).find(x => String(x.PersonNumber) === String(m.PersonNumber || m.ID) || String(x.ID) === String(mitgliedId)) || {};
 
         const memberEmail = (m.email || m.Email || mglMaster.PrimaryEmail || mglMaster.email || '').trim();
-        const memberStrasse = mglMaster.Street || m.Strasse || '';
-        const memberPlz = mglMaster.PostCode || m.PLZ || '';
-        const memberOrt = mglMaster.City || m.Ort || '';
+        const memberSalutation = m.Salutation || mglMaster.Salutation || m.salutation || '';
+        const memberStrasse = m.Strasse || mglMaster.Street || mglMaster.street || '';
+        const memberPlz = m.PLZ || mglMaster.PostCode || mglMaster.post_code || '';
+        const memberOrt = m.Ort || mglMaster.City || mglMaster.city || '';
         const recipientName = `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim() || 'Mitglied';
 
         const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
@@ -658,6 +662,8 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                 type: 'mitglied',
                 memberId: mitgliedId,
                 personNumber: m.PersonNumber || mglMaster.PersonNumber || m.ID || '',
+                anrede: memberSalutation,
+                salutation: memberSalutation,
                 name: recipientName,
                 firstName: m.Vorname || mglMaster.FirstName || '',
                 lastName: m.Nachname || mglMaster.LastName || '',

@@ -217,7 +217,7 @@ VALUES
      30),
 
     ('materialverkauf', 'rechnung', 'materialverkauf',
-     'Rechnung – Material- & Kleiderbezug',
+     'Rechnung {rechnungsnummer} – Material- & Kleiderbezug',
      'Guten Tag {vorname} {nachname},' || E'\n\n' || 'vielen Dank für deinen Materialbezug aus unserem Vereinsinventar. Nachfolgend stellen wir dir die bezogenen Artikel in Rechnung.',
      'Vielen Dank für deine Unterstützung unseres Vereins.' || E'\n\n' || 'Sportliche Grüsse' || E'\n' || 'Sportschützen Muhen',
      'Zahlbar innert 30 Tagen mit beiliegendem QR-Einzahlungsschein.',

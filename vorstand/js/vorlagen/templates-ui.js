@@ -100,10 +100,45 @@
     `).join('');
 
     // HTML Sub-Tabs (Vorlagen innerhalb der Kategorie)
+    const getCleanTemplateTitle = (t) => {
+      if (!t || !t.title) return t?.code || 'Vorlage';
+      if (t.title.includes('–')) {
+        const parts = t.title.split('–');
+        return parts.slice(1).join('–').trim() || t.code;
+      }
+      if (t.title.includes('-')) {
+        const parts = t.title.split('-');
+        return parts.slice(1).join('-').trim() || t.code;
+      }
+      return t.title;
+    };
+
     const subTabsHtml = templatesInCat.map(t => `
       <button class="btn btn-xs ${window._selectedDocCode === t.code ? 'btn-dark fw-bold' : 'btn-light border text-dark'}" onclick="docSelectTemplate('${t.code}')">
-        ${escapeHtml(t.title?.split('–')[0]?.trim() || t.code)}
+        ${escapeHtml(getCleanTemplateTitle(t))}
       </button>
+    `).join('');
+
+    // Dynamische Platzhalter je nach Dokumenten-Kategorie
+    const basePlaceholders = [
+      '{vorname}', '{nachname}', '{anrede}', '{strasse}', '{plz}', '{ort}',
+      '{absender_vorname}', '{absender_nachname}', '{absender_funktion}', '{absender_email}', '{absender_mobil}'
+    ];
+
+    let categoryPlaceholders = [];
+    if (currentCat === 'rechnung' || currentCat === 'mahnung') {
+      categoryPlaceholders = ['{rechnungsnummer}', '{rechnungsjahr}', '{gesamtbetrag}', '{faelligkeitsdatum}'];
+    } else if (currentCat === 'vertrag') {
+      categoryPlaceholders = ['{mietdatum}', '{mietbetrag}', '{buchungsnummer}'];
+    } else if (currentCat === 'gv') {
+      categoryPlaceholders = ['{gv_nummer}', '{gv_datum}', '{gv_zeit}', '{praesident_name}'];
+    } else if (currentCat === 'brief') {
+      categoryPlaceholders = ['{betreff}', '{datum}'];
+    }
+
+    const allVisiblePlaceholders = [...categoryPlaceholders, ...basePlaceholders];
+    const placeholdersHtml = allVisiblePlaceholders.map(ph => `
+      <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('${ph}')">${ph}</button>
     `).join('');
 
     container.innerHTML = `
@@ -149,15 +184,7 @@
                 </div>
                 
                 <div class="d-flex gap-1 flex-wrap">
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{vorname}')">{vorname}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{nachname}')">{nachname}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{rechnungsnummer}')">{rechnungsnummer}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{rechnungsjahr}')">{rechnungsjahr}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{gesamtbetrag}')">{gesamtbetrag}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{mietdatum}')">{mietdatum}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{mietbetrag}')">{mietbetrag}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{gv_nummer}')">{gv_nummer}</button>
-                  <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('{gv_datum}')">{gv_datum}</button>
+                  ${placeholdersHtml}
                 </div>
               </div>
 

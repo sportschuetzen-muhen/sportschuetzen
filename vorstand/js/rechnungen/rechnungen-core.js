@@ -693,6 +693,17 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
   }
 
   if (member) {
+    const rawEmails = [
+      member.AdditionalEmail, member.additional_email,
+      localStorage.getItem('portal_user_email'),
+      member.PrimaryEmail, member.primary_email, member.Email
+    ].filter(Boolean).map(e => String(e).trim()).filter(e => e.includes('@'));
+
+    // Persönliche Mail bevorzugen (falls vorhanden ungleich allgemeine Vereinsmail)
+    const personalSenderEmail = rawEmails.find(e => !e.toLowerCase().includes('sportschuetzen.muhen@gmail.com')) 
+      || rawEmails[0] 
+      || 'sportschuetzen.muhen@gmail.com';
+
     return {
       verein:   'Sportschützen Muhen',
       vorname:  member.FirstName || member.first_name || '',
@@ -701,7 +712,7 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
       plz:      String(member.PostCode || member.post_code || member.ZipCode || member.PLZ || '5037'),
       ort:      member.City || member.city || member.Ort || 'Muhen',
       mobil:    member.PrivateMobilePhone || member.private_mobile_phone || member.BusinessMobilePhone || member.business_mobile_phone || '',
-      email:    member.PrimaryEmail || member.primary_email || member.Email || 'sportschuetzen.muhen@gmail.com',
+      email:    personalSenderEmail,
       funktion: loggedInRoleExtern || 'Vorstand',
       bereich:  invoiceType || 'Rechnung'
     };
@@ -982,22 +993,62 @@ window.RechnungsCore = {
       [rec.firstName || rec.vorname, rec.lastName || rec.nachname].filter(Boolean).join(' ').trim() || 
       rec.firma || 'Unbekannt';
 
+    let recAnrede = rec.anrede || rec.salutation || '';
+    let recStreet = rec.street || rec.strasse || '';
+    let recZip = String(rec.zip || rec.plz || '');
+    let recCity = rec.city || rec.ort || '';
+    let recEmail = rec.email || '';
+    let recPhone = rec.phone || rec.telefon || '';
+    const targetPN = rec.personNumber || rec.PersonNumber || null;
+    const targetMId = rec.memberId || rec.mitgliedId || null;
+
+    // Falls Adresse oder Anrede unvollständig, automatisch aus members nachladen
+    if ((!recStreet || !recZip || !recAnrede) && (targetPN || targetMId)) {
+      try {
+        let members = window._mglData || [];
+        if (members.length === 0 && window.AppCache) {
+          const cached = window.AppCache.get('mitglieder');
+          if (cached && Array.isArray(cached.data)) members = cached.data;
+        }
+        let found = members.find(m => (targetPN && String(m.PersonNumber || m.person_number || '').trim() === String(targetPN).trim()) ||
+                                      (targetMId && String(m.ID || m.id || m.member_id || '').trim() === String(targetMId).trim()));
+        if (!found && supa) {
+          let q = supa.from('members').select('*');
+          if (targetPN) q = q.eq('person_number', targetPN);
+          else if (targetMId) q = q.eq('person_number', targetMId);
+          const { data: dbM } = await q.maybeSingle();
+          if (dbM) found = dbM;
+        }
+        if (found) {
+          if (!recAnrede) recAnrede = found.salutation || found.Salutation || '';
+          if (!recStreet) recStreet = found.street || found.Street || found.Strasse || '';
+          if (!recZip) recZip = String(found.post_code || found.PostCode || found.PLZ || '');
+          if (!recCity) recCity = found.city || found.City || found.Ort || '';
+          if (!recEmail) recEmail = found.primary_email || found.PrimaryEmail || '';
+          if (!recPhone) recPhone = found.private_mobile_phone || found.PrivateMobilePhone || '';
+        }
+      } catch (mErr) {
+        console.warn("⚠️ [RechnungsCore] Adress-Nachladung fehlgeschlagen:", mErr);
+      }
+    }
+
     const recipientSnapshot = {
       type: rec.type || (rec.memberId ? 'mitglied' : (rec.firma ? 'firma' : 'extern')),
+      anrede: recAnrede,
       name: recipientName,
       first_name: rec.firstName || rec.vorname || '',
       last_name: rec.lastName || rec.nachname || '',
       firma: rec.firma || '',
       contact_person: rec.contactPerson || rec.kontaktperson || '',
-      street: rec.street || rec.strasse || '',
-      zip: String(rec.zip || rec.plz || ''),
-      city: rec.city || rec.ort || '',
+      street: recStreet,
+      zip: recZip,
+      city: recCity,
       country: rec.country || rec.land || 'Schweiz',
-      email: rec.email || '',
-      phone: rec.phone || rec.telefon || '',
-      member_id: rec.memberId || rec.mitgliedId || null,
+      email: recEmail,
+      phone: recPhone,
+      member_id: targetMId,
       contact_id: rec.contactId || null,
-      person_number: rec.personNumber || rec.PersonNumber || null
+      person_number: targetPN
     };
 
     const initialStatus = (order.options && order.options.autoIssue) ? 'offen' : 'entwurf';
