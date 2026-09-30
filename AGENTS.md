@@ -14,3 +14,35 @@
 ## 4. Stabilität des zentralen Rechnungsmoduls (`RechnungsCore`)
 - Das Rechnungsmodul (`vorstand/js/rechnungen/`) und der `RechnungsCore` sind der verbindliche zentrale Standard für das gesamte Vereinsportal und bleiben in ihrer Architektur und Schnittstellendefinition (`InvoiceOrder`-Payload) unverändert wie spezifiziert.
 - Fachmodule (Inventar, Vermietung, Jahresbeitrag etc.) müssen ihre Datenanlieferung strikt an die `InvoiceOrder`-Schnittstelle des `RechnungsCore` anpassen. Der `RechnungsCore` wird nicht durch modulspezifische Sonderlogiken verwässert.
+
+## 5. Verbindliche Synchronisations- & Deployment-Pflicht (CT 117 & GitHub Push)
+Nach **jeder** vorgenommenen Code- oder Schemaänderung müssen der lokale Entwicklungsstand (`scratch`), die Live-Supabase-Instanz auf Proxmox Container **CT 117** (`192.168.68.117`) und das GitHub-Repository (`migration-supabase`) unmittelbar synchronisiert werden.
+
+### Standard-Ablauf nach Änderungen:
+
+1. **Edge Functions übertragen & neustarten (bei Änderungen in `supabase/functions/`):**
+   ```powershell
+   # Datei(en) auf CT 117 kopieren:
+   scp supabase/functions/generate-pdf/index.ts root@192.168.68.117:/opt/supabase/docker/volumes/functions/generate-pdf/index.ts
+   
+   # Deno Edge Functions Container neustarten:
+   ssh root@192.168.68.117 "docker restart supabase-edge-functions"
+   ```
+
+2. **Datenbank-Migrationen einspielen (bei neuen/geänderten SQL-Dateien in `supabase/migrations/`):**
+   ```powershell
+   # Migration direkt per Pipe in den PostgreSQL-Container einspielen:
+   Get-Content -Raw 'supabase/migrations/<dateiname>.sql' | ssh root@192.168.68.117 'docker exec -i supabase-db psql -U postgres -d postgres'
+   ```
+
+3. **Verifikation (Smoke- / E2E-Test):**
+   - Bei Edge Functions: Test-Aufruf an `https://supabase-muhen.danfamily.uk/functions/v1/<funktion>` senden und `200 OK` prüfen.
+   - Bei DB-Migrationen: Schema-Integrität (Tabellen, Spalten, RLS-Policies) per `psql`-Query verifizieren.
+
+4. **GitHub Commit & Push (Single Source of Truth im Repository):**
+   ```powershell
+   git add <dateien>
+   git commit -m "<typ>(<scope>): <prägnante beschreibung>"
+   git push origin migration-supabase
+   ```
+
