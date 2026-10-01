@@ -238,6 +238,12 @@ window.rnOpenInvoicePdf = async function(invoiceId, pdfUrl, name, event) {
     try { event.stopPropagation(); } catch (_) {}
   }
 
+  const getBustedUrl = (u) => {
+    if (!u) return u;
+    const sep = u.includes('?') ? '&' : '?';
+    return `${u}${sep}t=${Date.now()}`;
+  };
+
   // Falls Google Drive URL: direkt im neuen Tab öffnen
   if (pdfUrl && pdfUrl.includes('drive.google.com')) {
     window.open(pdfUrl, '_blank');
@@ -249,12 +255,12 @@ window.rnOpenInvoicePdf = async function(invoiceId, pdfUrl, name, event) {
     try {
       const checkResp = await fetch(pdfUrl, { method: 'HEAD' });
       if (checkResp.ok) {
-        window.open(pdfUrl, '_blank');
+        window.open(getBustedUrl(pdfUrl), '_blank');
         return;
       }
       console.warn(`[PDF] Storage-Objekt für ${invoiceId} nicht gefunden (HTTP ${checkResp.status}). Generiere on-the-fly neu...`);
     } catch (_) {
-      window.open(pdfUrl, '_blank');
+      window.open(getBustedUrl(pdfUrl), '_blank');
       return;
     }
   }
@@ -2304,18 +2310,64 @@ window.rnSaveCreateInvoice = async function(event) {
     const existingContact = (window._externalContacts || []).find(c => String(c.id).trim() === String(contactId).trim());
     if (existingContact) {
       recipientPayload = { ...existingContact };
+      const isF = existingContact.typ === 'firma' || Boolean(existingContact.firma);
+      recipientPayload.typ = isF ? 'firma' : 'privat';
+      recipientPayload.type = recipientPayload.typ;
+      if (!isF) recipientPayload.firma = '';
+    }
+  } else if (personNumber && !personNumber.startsWith('EXT')) {
+    const members = (typeof window.rnGetMembersList === 'function')
+      ? window.rnGetMembersList()
+      : (window._mglData || []);
+    const m = members.find(x => String(x.PersonNumber || x.person_number).trim() === String(personNumber).trim());
+    if (m) {
+      const fName = m.FirstName || m.first_name || '';
+      const lName = m.LastName || m.last_name || '';
+      const sal = m.Salutation || m.salutation || '';
+      recipientPayload = {
+        type: 'mitglied',
+        typ: 'privat',
+        person_number: m.PersonNumber || m.person_number,
+        member_id: m.PersonNumber || m.person_number,
+        anrede: sal,
+        salutation: sal,
+        vorname: fName,
+        first_name: fName,
+        nachname: lName,
+        last_name: lName,
+        name: `${fName} ${lName}`.trim() || name,
+        firma: '',
+        strasse: m.Street || m.street || strasse,
+        street: m.Street || m.street || strasse,
+        adresszusatz: m.Addition || m.addition || '',
+        plz: String(m.PostCode || m.ZipCode || m.post_code || plz),
+        zip: String(m.PostCode || m.ZipCode || m.post_code || plz),
+        ort: m.City || m.city || ort,
+        city: m.City || m.city || ort,
+        land: m.Country || m.country || 'Schweiz',
+        country: m.Country || m.country || 'Schweiz',
+        email: m.PrimaryEmail || m.Email || m.primary_email || email
+      };
     }
   }
   if (!recipientPayload) {
+    const isFirma = Boolean(name && name.match(/\b(AG|GmbH|Genossenschaft|Verein|Verband|Stiftung|Gemeinde)\b/i));
+    const nameParts = name.split(/\s+/);
+    const vName = !isFirma && nameParts.length > 1 ? nameParts[0] : '';
+    const nName = !isFirma && nameParts.length > 1 ? nameParts.slice(1).join(' ') : (isFirma ? '' : name);
     recipientPayload = {
       id: contactId || '',
+      type: isFirma ? 'firma' : 'privat',
+      typ: isFirma ? 'firma' : 'privat',
       name: name,
-      firma: name,
-      vorname: '',
-      nachname: '',
+      firma: isFirma ? name : '',
+      anrede: '',
+      vorname: vName,
+      nachname: nName,
       strasse: strasse,
       plz: plz,
       ort: ort,
+      land: 'CH',
       email: email
     };
   }
@@ -2388,6 +2440,16 @@ window.rnSaveCreateInvoice = async function(event) {
         });
       }
       console.log(`✅ [Supabase] Invoice ${invoiceId} and positions saved to Supabase.`);
+
+      // PDF automatisch im Hintergrund generieren!
+      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+        try {
+          await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
+          console.log(`✅ [PDF] Rechnungs-PDF für ${invoiceId} automatisch generiert.`);
+        } catch (pdfErr) {
+          console.warn("⚠️ [PDF] Automatische PDF-Erstellung fehlgeschlagen:", pdfErr);
+        }
+      }
     } catch (sbEx) {
       console.warn("⚠️ [Supabase] Create Invoice error:", sbEx);
     }
@@ -2444,6 +2506,19 @@ window.rnOpenEditModal = async function(invoiceId) {
     if (!inv) {
       hideLoadingOverlay();
       alert(`❌ Rechnung ${invoiceId} wurde nicht gefunden.`);
+      return;
+    }
+
+    if (inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
+      hideLoadingOverlay();
+      alert(`🔒 Rechnung ${invoiceId} ist bereits bezahlt und kann nicht mehr bearbeitet werden.`);
+      return;
+    }
+
+    if (inv.mail_status === 'versendet' || inv.send_date) {
+      hideLoadingOverlay();
+      const sendDateDisplay = inv.send_date ? (typeof isoToDisplay === 'function' ? isoToDisplay(inv.send_date) : inv.send_date) : 'bereits';
+      alert(`🔒 Rechnung ${invoiceId} wurde am ${sendDateDisplay} an den Empfänger versandt.\n\nZur Vermeidung von Abweichungen beim Debitor können versandte Rechnungen nicht mehr inhaltlich editiert werden.\n\nFalls die Rechnung fehlerhaft ist, lösche oder storniere diese bitte und erstelle eine korrigierte Rechnung.`);
       return;
     }
 
@@ -2826,6 +2901,18 @@ window.rnOpenEditModal = async function(invoiceId) {
 window.rnSaveEditInvoice = async function(event, invoiceId) {
   event.preventDefault();
 
+  const existingInv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+  if (existingInv) {
+    if (existingInv.status === 'bezahlt' || (existingInv.total_paid && Number(existingInv.total_paid) > 0)) {
+      alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann nicht mehr geändert werden.`);
+      return;
+    }
+    if (existingInv.mail_status === 'versendet' || existingInv.send_date) {
+      alert(`🔒 Rechnung ${invoiceId} wurde bereits versandt und kann inhaltlich nicht mehr verändert werden.`);
+      return;
+    }
+  }
+
   const name = document.getElementById('rne-name') ? document.getElementById('rne-name').value.trim() : '';
   const contactId = document.getElementById('rne-contact-id') ? document.getElementById('rne-contact-id').value.trim() : '';
 
@@ -2958,12 +3045,21 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
         if (posErr) console.warn("⚠️ [Supabase] Positions update warning:", posErr);
       }
       console.log(`✅ [Supabase] Invoice ${invoiceId} and positions updated in Supabase.`);
+
+      // PDF automatisch im Hintergrund neu generieren & Storage aktualisieren!
+      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+        try {
+          await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
+          console.log(`✅ [PDF] Rechnungs-PDF für ${invoiceId} nach Bearbeitung automatisch neu generiert.`);
+        } catch (pdfErr) {
+          console.warn("⚠️ [PDF] Fehler bei automatischer Neugenerierung nach Bearbeitung:", pdfErr);
+        }
+      }
     } catch (sbEx) {
       console.warn("⚠️ [Supabase] Update Invoice error:", sbEx);
     }
   }
 
-  
   // Schneller UI-Refresh direkt aus Supabase
   setTimeout(async () => {
     await loadRechnungenData(true, true);
@@ -2973,7 +3069,20 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
 
 // DELETE INVOICE PROMPT
 window.rnDeleteInvoicePrompt = async function(invoiceId) {
-  if (!confirm(`⚠️ Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?\n\nDadurch werden die Rechnungsdaten und alle Positionen in der Tabelle gelöscht.`)) {
+  const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+  if (inv) {
+    if (inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0)) {
+      alert(`🔒 Rechnung ${invoiceId} ist bezahlt und kann aus buchhalterischen Gründen nicht gelöscht werden.`);
+      return;
+    }
+  }
+
+  const isSent = inv && (inv.mail_status === 'versendet' || inv.send_date);
+  const warnText = isSent
+    ? `⚠️ ACHTUNG: Die Rechnung ${invoiceId} wurde bereits an den Empfänger versandt!\n\nWenn du sie löschst, beachte bitte, dass der Empfänger das Dokument bereits vorliegen hat.\n\nMöchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?`
+    : `⚠️ Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?\n\nDadurch werden die Rechnungsdaten und alle Positionen in der Tabelle gelöscht.`;
+
+  if (!confirm(warnText)) {
     return;
   }
 
@@ -2994,6 +3103,8 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
     try {
       await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
       await sb.from('invoices').delete().eq('id', invoiceId);
+      // Quellmodul Vermietung entkoppeln falls verknüpft
+      await sb.from('rental_requests').update({ invoice_id: null }).eq('invoice_id', invoiceId);
       console.log(`✅ [Supabase] Invoice ${invoiceId} deleted from Supabase.`);
     } catch (sbEx) {
       console.warn("⚠️ [Supabase] Delete Invoice error:", sbEx);
@@ -5032,12 +5143,13 @@ window.rnSaveContactForm = async function(event) {
   }
 
   const targetId = id || ('EXT-' + Date.now());
+  const isF = typ === 'firma';
   const sbContact = {
     id: targetId,
-    typ: typ || 'privat',
+    typ: isF ? 'firma' : 'privat',
     kategorie: kategorie || null,
-    firma: firma || null,
-    abteilung: abteilung || null,
+    firma: isF ? (firma || null) : null,
+    abteilung: isF ? (abteilung || null) : null,
     anrede: anrede || null,
     vorname: vorname || null,
     nachname: nachname || null,

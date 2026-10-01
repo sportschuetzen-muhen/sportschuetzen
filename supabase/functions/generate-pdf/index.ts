@@ -224,12 +224,26 @@ function normalizeRecipient(r: any): RecipientData {
   const strasse = (r.strasse || r.street || r.adresse || "").trim();
   const plz = String(r.plz || r.zip || r.post_code || r.postCode || "").trim();
   const ort = (r.ort || r.city || "").trim();
-  const firma = (r.firma || "").trim();
+  let firma = (r.firma || "").trim();
   const abteilung = (r.abteilung || r.zusatz || "").trim();
   const email = (r.email || r.mail || r.primary_email || "").trim();
   const telefon = (r.telefon || r.phone || r.mobil || "").trim();
   const land = (r.land || r.country || "Schweiz").trim();
-  const typ = (r.typ || r.type || (firma ? "firma" : "privat")).trim();
+  let typ = (r.typ || r.type || (firma ? "firma" : "privat")).trim().toLowerCase();
+
+  // Schutz gegen versehentlich als Firma gesetzte Personennamen
+  if (typ === "privat" || typ === "mitglied") {
+    firma = "";
+  } else if (firma) {
+    const fnLn = `${vorname} ${nachname}`.trim().toLowerCase();
+    const lnFn = `${nachname} ${vorname}`.trim().toLowerCase();
+    const fLower = firma.trim().toLowerCase();
+    const nLower = name.trim().toLowerCase();
+    if (fLower === fnLn || fLower === lnFn || fLower === nLower) {
+      firma = "";
+      typ = "privat";
+    }
+  }
 
   return {
     vorname,
@@ -514,9 +528,18 @@ function drawSwissQrBillSection(
   });
 
   const debtorLines: string[] = [];
-  if (recipient.firma) debtorLines.push(sanitizeText(recipient.firma));
   const pName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ").trim() || recipient.name || "";
-  if (pName && (!recipient.firma || debtorLines.length === 1)) debtorLines.push(sanitizeText(pName));
+  const isComp = Boolean(recipient.firma && recipient.typ !== "privat" && recipient.typ !== "mitglied");
+
+  if (isComp) {
+    debtorLines.push(sanitizeText(recipient.firma!));
+    if (pName && pName.toLowerCase() !== recipient.firma!.toLowerCase() && debtorLines.length < 2) {
+      debtorLines.push(sanitizeText(pName));
+    }
+  } else if (pName) {
+    debtorLines.push(sanitizeText(pName));
+  }
+
   if (recipient.strasse) debtorLines.push(sanitizeText(recipient.strasse));
   const plzOrt = `${recipient.plz || ""} ${recipient.ort || ""}`.trim();
   if (plzOrt) debtorLines.push(sanitizeText(plzOrt));
@@ -1073,25 +1096,50 @@ async function generateInvoicePdf(
   currentPage.drawText(`Zahlbar bis:`, { x: 20 * MM, y: sendY, size: 8.5, font: fontRegular });
   currentPage.drawText(dueDateStr, { x: 44 * MM, y: sendY, size: 8.5, font: fontRegular });
 
-  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, ab 246 mm) mit Anrede
+  // 3. Empfänger-Adresse (DIN 5008 Fenster rechts, ab 246 mm)
   let addrY = 246 * MM;
-  if (normRecipient.abteilung || (normRecipient as any).zusatz) {
-    currentPage.drawText(sanitizeText(normRecipient.abteilung || (normRecipient as any).zusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
-    addrY -= 4.2 * MM;
-  }
-  if (normRecipient.firma) {
-    currentPage.drawText(sanitizeText(normRecipient.firma), { x: 125 * MM, y: addrY, size: 9.5, font: fontBold });
-    addrY -= 4.2 * MM;
-  }
-  if (normRecipient.anrede && !normRecipient.firma) {
-    currentPage.drawText(sanitizeText(normRecipient.anrede), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
-    addrY -= 4.2 * MM;
-  }
+  const isCompany = Boolean(normRecipient.firma && normRecipient.typ !== 'privat' && normRecipient.typ !== 'mitglied');
   const fullRecName = [normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim() || (normRecipient.name || "");
-  if (fullRecName && (!normRecipient.firma || fullRecName !== normRecipient.firma)) {
-    currentPage.drawText(sanitizeText(fullRecName), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+
+  if (isCompany) {
+    // 1. Firmenname (Fett)
+    currentPage.drawText(sanitizeText(normRecipient.firma!), { x: 125 * MM, y: addrY, size: 9.5, font: fontBold });
     addrY -= 4.2 * MM;
+
+    // 2. Abteilung (falls vorhanden)
+    if (normRecipient.abteilung || (normRecipient as any).zusatz) {
+      currentPage.drawText(sanitizeText(normRecipient.abteilung || (normRecipient as any).zusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+
+    // 3. Ansprechperson mit Anrede (falls vorhanden und weicht von Firma ab)
+    const contactPerson = [normRecipient.anrede, normRecipient.vorname, normRecipient.nachname].filter(Boolean).join(" ").trim();
+    if (contactPerson && contactPerson.toLowerCase() !== normRecipient.firma!.toLowerCase()) {
+      currentPage.drawText(sanitizeText(contactPerson), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+  } else {
+    // PRIVATPERSON / VEREINSMITGLIED
+    // 1. Anrede (Herr / Frau)
+    if (normRecipient.anrede) {
+      currentPage.drawText(sanitizeText(normRecipient.anrede), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+
+    // 2. Vorname Nachname (Normalschrift, KEIN Fett)
+    if (fullRecName) {
+      currentPage.drawText(sanitizeText(fullRecName), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
+
+    // 3. Adresszusatz / Postfach (falls vorhanden)
+    if (normRecipient.abteilung || (normRecipient as any).zusatz || (normRecipient as any).adresszusatz) {
+      currentPage.drawText(sanitizeText(normRecipient.abteilung || (normRecipient as any).zusatz || (normRecipient as any).adresszusatz), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
+      addrY -= 4.2 * MM;
+    }
   }
+
+  // 4. Strasse
   if (normRecipient.strasse) {
     currentPage.drawText(sanitizeText(normRecipient.strasse), { x: 125 * MM, y: addrY, size: 9.5, font: fontRegular });
     addrY -= 4.2 * MM;
@@ -2890,6 +2938,8 @@ Deno.serve(async (req: Request) => {
             .maybeSingle();
 
           if (memberData) {
+            recipient.firma = "";
+            recipient.typ = "privat";
             recipient.anrede = recipient.anrede || memberData.salutation || "";
             recipient.vorname = recipient.vorname || memberData.first_name || "";
             recipient.nachname = recipient.nachname || memberData.last_name || "";

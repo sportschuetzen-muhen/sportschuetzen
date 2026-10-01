@@ -660,11 +660,19 @@ window.rnRenderTable = function() {
                   </li>
                 ` : `
                   ${!isPaid ? `
-                    <li>
-                      <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenEditModal('${item.id}'); return false;">
-                        <i class="fas fa-edit text-info me-2 fa-fw"></i>Rechnung bearbeiten
-                      </a>
-                    </li>
+                    ${(!item.mail_status || item.mail_status === 'entwurf' || !item.send_date) ? `
+                      <li>
+                        <a class="dropdown-item py-2 write-protected" href="#" onclick="rnOpenEditModal('${item.id}'); return false;">
+                          <i class="fas fa-edit text-info me-2 fa-fw"></i>Rechnung bearbeiten
+                        </a>
+                      </li>
+                    ` : `
+                      <li>
+                        <span class="dropdown-item py-2 text-muted" title="Rechnung wurde bereits am ${item.send_date ? (typeof isoToDisplay === 'function' ? isoToDisplay(item.send_date) : item.send_date) : 'Empfänger'} versandt und kann inhaltlich nicht mehr verändert werden.">
+                          <i class="fas fa-lock text-muted me-2 fa-fw"></i>Bearbeiten gesperrt (versandt)
+                        </span>
+                      </li>
+                    `}
                     <li><hr class="dropdown-divider my-1"></li>
                     <li>
                       <a class="dropdown-item py-2 text-danger write-protected" href="#" onclick="rnDeleteInvoicePrompt('${item.id}'); return false;">

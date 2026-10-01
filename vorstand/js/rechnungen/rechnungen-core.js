@@ -143,6 +143,8 @@ function mapTemplateFromSupabase(r) {
 }
 
 function mapContactFromSupabase(r) {
+  const isF = r.typ === 'firma' || Boolean(r.firma);
+  const derivedName = isF ? (r.firma || r.name || '') : ([r.vorname, r.nachname].filter(Boolean).join(' ') || r.name || '');
   return {
     id: r.id,
     typ: r.typ || 'privat',
@@ -152,6 +154,7 @@ function mapContactFromSupabase(r) {
     anrede: r.anrede || '',
     vorname: r.vorname || '',
     nachname: r.nachname || '',
+    name: derivedName,
     strasse: r.strasse || '',
     adresszusatz: r.adresszusatz || '',
     plz: r.plz || '',
@@ -568,12 +571,22 @@ window.rnGetRecipientForInvoice = function(inv) {
            || {};
     const firstName = m.FirstName || (inv.name ? inv.name.split(' ')[0] : '');
     const lastName = m.LastName || (inv.name ? inv.name.split(' ').slice(1).join(' ') : '');
+    const fullName = `${firstName} ${lastName}`.trim() || inv.name || '';
+    const salutation = m.Salutation || m.salutation || '';
     return {
+      type: 'mitglied',
+      typ: 'privat',
+      person_number: m.PersonNumber || inv.PersonNumber,
+      anrede: salutation,
+      salutation: salutation,
       vorname: firstName || '',
       nachname: lastName || '',
+      name: fullName,
+      firma: '',
       strasse: m.Street || m.Strasse || '',
       plz: String(m.PostCode || m.ZipCode || m.PLZ || ''),
       ort: m.City || m.Ort || '',
+      land: m.Country || m.country || 'Schweiz',
       email: m.PrimaryEmail || m.Email || ''
     };
   }
