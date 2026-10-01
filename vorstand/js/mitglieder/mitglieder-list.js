@@ -160,12 +160,34 @@ function mglRenderRows(data) {
   const canEdit = (window.currentRoles || []).some(r => ['admin','vorstand','schuetzenmeister'].includes(r));
 
   if (!data.length) {
-    container.innerHTML = `
+    const isDbEmpty = !window._mglData || window._mglData.length === 0;
+    container.innerHTML = isDbEmpty ? `
+      <div class="card border-0 shadow-sm p-5 text-center text-muted">
+        <i class="fas fa-users fa-3x mb-3 text-muted opacity-50"></i>
+        <h5 class="text-dark fw-bold">Keine Mitglieder in der Datenbank vorhanden</h5>
+        <p class="text-muted small mb-4">Die Mitgliederdatenbank ist aktuell leer. Führen Sie den SSV-Verbandsimport durch, um den initialen Mitgliederstamm einzulesen, oder erfassen Sie ein Mitglied manuell.</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button class="btn btn-primary btn-sm px-3" onclick="mglSwitchTab('import')">
+            <i class="fas fa-file-upload me-1"></i> Zum SSV-Import
+          </button>
+          ${canEdit ? `
+          <button class="btn btn-outline-secondary btn-sm px-3" onclick="mglNeuesMitglied()">
+            <i class="fas fa-plus me-1"></i> Manuell erfassen
+          </button>` : ''}
+        </div>
+      </div>` : `
       <div class="card border-0 shadow-sm p-5 text-center text-muted">
         <i class="fas fa-users-slash fa-3x mb-3 text-muted opacity-50"></i>
         <h5>Keine Mitglieder gefunden</h5>
+        <p class="text-muted small">Für die gewählten Filter- und Suchkriterien wurden keine Einträge gefunden.</p>
+        <div class="mt-2">
+          <button class="btn btn-sm btn-outline-primary" onclick="const s = document.getElementById('mglSearch'); if (s) s.value=''; mglSetTypeFilter('alle');">
+            Filter zurücksetzen
+          </button>
+        </div>
       </div>`;
-    document.getElementById('mglCount').textContent = '0 Mitglieder';
+    const countEl = document.getElementById('mglCount');
+    if (countEl) countEl.textContent = '0 Mitglieder';
     return;
   }
 

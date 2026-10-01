@@ -1,9 +1,8 @@
 // === SUB-MODUL: MITGLIEDER - MANAGER & CRUD (SUPABASE WRITE-MASTER) ===
 
 /**
- * Speichert vollständige Mitglieds-Mutationen primär in Supabase PostgreSQL,
- * protokolliert die Änderung im Revisions-Audit (member_history) und spiegelt
- * die Daten asynchron an das Google Sheet (Dual-Write).
+ * Speichert vollständige Mitglieds-Mutationen in Supabase PostgreSQL
+ * und protokolliert die Änderung im Revisions-Audit (member_history).
  */
 async function mglSaveMember(event, pn) {
   if (event) event.preventDefault();
@@ -125,27 +124,7 @@ async function mglSaveMember(event, pn) {
       }
     }
 
-    // 3. ASYNCHRONER DUAL-WRITE: Spiegelung an Google Apps Script / Sheet
-    const dualWritePayload = {
-      action: 'saveVerein',
-      pn,
-      FirstName: firstName,
-      LastName: lastName,
-      PrimaryEmail: email,
-      Street: street,
-      PostCode: postCode,
-      City: city,
-      IBAN: iban,
-      BIC: bic,
-      Kontoinhaber: konto,
-      Rechnungsversand: rv,
-      Vereinsaustritt: austritt,
-      Niemahnen: nieMahnen ? '1' : '0'
-    };
-
-
-
-    // 4. LOKALEN STATE (RAM) AKTUALISIEREN
+    // 3. LOKALEN STATE (RAM) AKTUALISIEREN
     if (idx >= 0) {
       Object.assign(_mglData[idx], {
         FirstName: firstName,
@@ -238,7 +217,7 @@ function mglNeuesMitglied() {
 
 /**
  * Legt ein neues Mitglied direkt in Supabase PostgreSQL mit einer freien internen
- * Personennummer an und spiegelt den Eintrag an Google Sheets.
+ * Personennummer an.
  */
 async function mglSaveNeu() {
   const vorname = (document.getElementById('nmVorname')?.value || '').trim();

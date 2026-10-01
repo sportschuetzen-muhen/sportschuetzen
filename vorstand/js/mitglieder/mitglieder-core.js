@@ -119,7 +119,7 @@ function mapFunctionFromSupabase(r) {
   };
 }
 
-// Zentraler, deduplizierter Loader für Mitgliederdaten (Supabase First, Fallback auf GAS)
+// Zentraler, deduplizierter Loader für Mitgliederdaten (Supabase Single Source of Truth)
 window.ensureMitgliederLoaded = async function(forceReload = false) {
   // 1. Bereits im RAM vorhanden?
   if (!forceReload && Array.isArray(window._mglData) && window._mglData.length > 0) {
@@ -143,102 +143,109 @@ window.ensureMitgliederLoaded = async function(forceReload = false) {
     return window._mglLoadPromise;
   }
 
-  // 4. SUPABASE FIRST LOADER (< 50 ms Ladezeit)
+  // 4. SUPABASE LOADER (< 50 ms Ladezeit)
   window._mglLoadPromise = (async () => {
     try {
       const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
-      if (supa) {
-        console.log("⚡ ensureMitgliederLoaded: Lade Mitglieder blitzschnell aus Supabase...");
-        const { data: supaMembers, error: supaErr } = await supa
-          .from('members')
-          .select('*')
-          .order('last_name', { ascending: true });
+      if (!supa) {
+        throw new Error('Supabase Client nicht initialisiert.');
+      }
 
-        if (!supaErr && Array.isArray(supaMembers) && supaMembers.length > 0) {
-          window._mglData = supaMembers.map(mapMemberFromSupabase);
+      console.log("⚡ ensureMitgliederLoaded: Lade Mitglieder blitzschnell aus Supabase...");
+      const { data: supaMembers, error: supaErr } = await supa
+        .from('members')
+        .select('*')
+        .order('last_name', { ascending: true });
 
-          // Parallel Lizenzen und Funktionen im Hintergrund laden
-          (async () => {
-            try {
-              const [{ data: lics }, { data: fns }, { data: hists }] = await Promise.all([
-                supa.from('member_licenses').select('*'),
-                supa.from('member_functions').select('*'),
-                supa.from('member_history').select('*').order('datum', { ascending: false }).limit(500)
-              ]);
+      if (supaErr) {
+        throw supaErr;
+      }
 
-              if (Array.isArray(lics)) {
-                window._mglLizenzenCache = {};
-                lics.forEach(l => {
-                  const pn = String(l.person_number);
+      const list = Array.isArray(supaMembers) ? supaMembers : [];
+      window._mglData = list.map(mapMemberFromSupabase);
+
+      if (list.length > 0) {
+        // Parallel Lizenzen und Funktionen im Hintergrund laden
+        (async () => {
+          try {
+            const [{ data: lics }, { data: fns }, { data: hists }] = await Promise.all([
+              supa.from('member_licenses').select('*'),
+              supa.from('member_functions').select('*'),
+              supa.from('member_history').select('*').order('datum', { ascending: false }).limit(500)
+            ]);
+
+            if (Array.isArray(lics)) {
+              window._mglLizenzenCache = {};
+              lics.forEach(l => {
+                const pn = String(l.person_number || '').trim();
+                if (pn) {
                   if (!window._mglLizenzenCache[pn]) window._mglLizenzenCache[pn] = [];
                   window._mglLizenzenCache[pn].push(mapLicenseFromSupabase(l));
-                });
-              }
+                }
+              });
+            }
 
-              if (Array.isArray(fns)) {
-                window._mglFunktionenCache = {};
-                fns.forEach(f => {
-                  const pn = String(f.person_number);
+            if (Array.isArray(fns)) {
+              window._mglFunktionenCache = {};
+              fns.forEach(f => {
+                const pn = String(f.person_number || '').trim();
+                if (pn) {
                   if (!window._mglFunktionenCache[pn]) window._mglFunktionenCache[pn] = [];
                   window._mglFunktionenCache[pn].push(mapFunctionFromSupabase(f));
-                });
-              }
+                }
+              });
+            }
 
-              if (Array.isArray(hists)) {
-                window._mglHistoryCache = {};
-                hists.forEach(h => {
-                  const pn = String(h.person_number);
+            if (Array.isArray(hists)) {
+              window._mglHistoryCache = {};
+              hists.forEach(h => {
+                const pn = String(h.person_number || '').trim();
+                if (pn) {
                   if (!window._mglHistoryCache[pn]) window._mglHistoryCache[pn] = [];
                   window._mglHistoryCache[pn].push(h);
-                });
-              }
-
-              // Enrichment-Counts für Badges direkt auf _mglData anheften
-              window._mglData.forEach(m => {
-                const pn = String(m.PersonNumber);
-                const mLics = window._mglLizenzenCache[pn] || [];
-                const mFns = window._mglFunktionenCache[pn] || [];
-                m._aktiveLizenzenCount = mLics.filter(l => l.IsActive && !l.ExitDate).length;
-                m._aktiveFunktionenCount = mFns.filter(f => !f.OfficialFunctionExitDate).length;
+                }
               });
-
-              if (window.AppCache) {
-                window.AppCache.set('mitglieder', {
-                  data: window._mglData,
-                  lizenzen: window._mglLizenzenCache,
-                  funktionen: window._mglFunktionenCache,
-                  historie: window._mglHistoryCache
-                }, 120);
-              }
-            } catch (bgErr) {
-              console.warn('⚠️ Supabase Detail-Cache Hintergrundfehler:', bgErr);
             }
-          })();
 
-          window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
-          return window._mglData;
-        } else if (supaErr) {
-          throw supaErr;
+            // Enrichment-Counts für Badges direkt auf _mglData anheften
+            window._mglData.forEach(m => {
+              const pn = String(m.PersonNumber);
+              const mLics = window._mglLizenzenCache[pn] || [];
+              const mFns = window._mglFunktionenCache[pn] || [];
+              m._aktiveLizenzenCount = mLics.filter(l => l.IsActive && !l.ExitDate).length;
+              m._aktiveFunktionenCount = mFns.filter(f => !f.OfficialFunctionExitDate).length;
+            });
+
+            if (window.AppCache) {
+              window.AppCache.set('mitglieder', {
+                data: window._mglData,
+                lizenzen: window._mglLizenzenCache,
+                funktionen: window._mglFunktionenCache,
+                historie: window._mglHistoryCache
+              }, 120);
+            }
+          } catch (bgErr) {
+            console.warn('⚠️ Supabase Detail-Cache Hintergrundfehler:', bgErr);
+          }
+        })();
+      } else {
+        // Leere Datenbank (z.B. vor dem initialen Verbandsimport)
+        window._mglLizenzenCache = {};
+        window._mglFunktionenCache = {};
+        window._mglHistoryCache = {};
+        if (window.AppCache) {
+          window.AppCache.remove('mitglieder');
         }
       }
 
-      // Fallback auf gecachte Daten
-      if (window.AppCache) {
-        const fallback = window.AppCache.get('mitglieder');
-        if (fallback && Array.isArray(fallback.data) && fallback.data.length > 0) {
-          window._mglData = fallback.data;
-          window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
-          return window._mglData;
-        }
-      }
-      return [];
+      window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));
+      return window._mglData;
     } catch (e) {
       console.error('❌ ensureMitgliederLoaded Fehler:', e);
+      throw e;
     } finally {
       window._mglLoadPromise = null;
     }
-
-    return window._mglData || [];
   })();
 
   return window._mglLoadPromise;
@@ -404,23 +411,11 @@ async function loadMitgliederData(forceReload = false) {
 
   try {
     // 2. Mitgliederliste abrufen (dedupliziert, einzelner fokussierter Call)
-    const list = await window.ensureMitgliederLoaded(forceReload);
+    await window.ensureMitgliederLoaded(forceReload);
 
-    if (!list || list.length === 0) {
-      if (container) {
-        container.innerHTML = `
-          <div class="alert alert-warning">
-            <h5>⚠️ Mitglieder konnten nicht geladen werden</h5>
-            <p>Das Google Apps Script Backend antwortete nicht rechtzeitig oder lieferte ein ungültiges Format.</p>
-            <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadMitgliederData(true)">Erneut versuchen</button>
-          </div>`;
-      }
-      return;
-    }
-
-    // Mitglieder sofort anzeigen!
+    // Mitglieder sofort anzeigen (auch bei leerem Datenbestand, damit Tabs & SSV-Import bedienbar sind!)
     if (container) {
-      renderMitgliederView(window._mglData);
+      renderMitgliederView(window._mglData || []);
       if (typeof mglFilter === 'function') mglFilter();
     }
 
@@ -428,7 +423,7 @@ async function loadMitgliederData(forceReload = false) {
     (async () => {
       try {
         const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
-        if (supa && (!window._mglLizenzenCache || Object.keys(window._mglLizenzenCache).length === 0 || forceReload)) {
+        if (supa && (window._mglData && window._mglData.length > 0) && (!window._mglLizenzenCache || Object.keys(window._mglLizenzenCache).length === 0 || forceReload)) {
           const [{ data: lics }, { data: fns }, { data: hists }] = await Promise.all([
             supa.from('member_licenses').select('*'),
             supa.from('member_functions').select('*'),
@@ -483,9 +478,16 @@ async function loadMitgliederData(forceReload = false) {
     })();
 
   } catch (e) {
-    console.error('❌ loadMitgliederData:', e);
+    console.error('❌ loadMitgliederData Fehler:', e);
     if (container) {
-      container.innerHTML = `<div class="alert alert-danger"><strong>Fehler:</strong> ${escapeHtml(e.message)}</div>`;
+      container.innerHTML = `
+        <div class="alert alert-danger shadow-sm">
+          <h5><i class="fas fa-exclamation-triangle me-2"></i>Mitglieder konnten nicht geladen werden</h5>
+          <p class="mb-2">Fehler bei der Supabase-Datenbankabfrage: ${escapeHtml(e.message || String(e))}</p>
+          <button class="btn btn-sm btn-outline-danger mt-2" onclick="loadMitgliederData(true)">
+            <i class="fas fa-redo me-1"></i> Erneut versuchen
+          </button>
+        </div>`;
     }
   }
 }

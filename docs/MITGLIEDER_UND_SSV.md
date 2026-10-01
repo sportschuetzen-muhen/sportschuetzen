@@ -75,9 +75,12 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 
 ### 5.1 Erstimport (Initialer Verbandsdatenbestand ab Januar)
 * **Zweck:** Schaffung einer sauberen, revisionssicheren Ausgangsbasis (Baseline) zum Jahresbeginn (z. B. 01. Januar).
+* **Resilientes Verhalten bei leerer Datenbank (Zero-State-Robustheit):**
+  - Befindet sich das System im Ausgangszustand vor dem Erstimport (`count(*) = 0` in `public.members`), darf dies vom Frontend **niemals als Systemfehler** interpretiert werden.
+  - Das Modul rendert die Navigationsleiste vollständig und zeigt eine benutzerfreundliche Empty-State-Card mit Direktlink auf den Tab *«SSV-Import»*. Sämtliche Altlasten und irreführende Google Apps Script Fehlermeldungen wurden restlos eliminiert (striktes GAS-Fallback-Verbot).
 * **Ablauf:**
   1. Die betroffenen Tabellen (`member_history`, `member_training`, `member_licenses`, `member_functions`, `members`) sind initial leer.
-  2. Der Verwalter lädt die Januar-Arbeitsmappe (`.xlsx`) im Vorstandscockpit hoch.
+  2. Der Verwalter wechselt direkt in den Tab *«SSV-Import»* und lädt die Januar-Arbeitsmappe (`.xlsx`) hoch.
   3. Die Diff-Engine erkennt alle Datensätze automatisch zu 100 % als **«NEU» (Grün)**.
   4. Mit Klick auf *«Änderungen anwenden»* persistiert `apply_ssv_import_batch` die Stammdaten, Lizenzen und Funktionen atomar in PostgreSQL. Es entstehen keine Vorher-Nachher-Diskrepanzen.
 
