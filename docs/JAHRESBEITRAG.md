@@ -46,6 +46,13 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 * **Massenabgleich:** Nach dem Versand der Beitragsrechnungen treffen viele Zahlungen gleichzeitig auf dem Vereinskonto ein.
 * **Automatisierung:** Das Bankabgleichsmodul (`jahresbeitrag-bank.js`) liest den `CAMT.054`-XML-Kontoauszug, erkennt die 27-stelligen QR-Referenzen, setzt `contributions_header.status = 'bezahlt'` und bucht den Zahlungseingang in `public.invoice_payments` sowie im Finanzjournal (`accounting_journal`).
 
+### 2.6 Warum KMU-Kontenrahmen (`accounting_accounts`) & Saubere Konto-Übergabe an `RechnungsCore`?
+* **Problem:** Werden Gegenkonten statisch codiert oder Freitextnummern ohne Validierung eingetippt, entstehen Fehlbuchungen im Journal. Zudem gingen Kontierungszuordnungen verloren, wenn Fachmodule abweichende Key-Namen (`account` statt `konto`/`accountHaben`) an `RechnungsCore` schickten.
+* **Lösung:** Alle Gebühren (`gebuehren_config`) und variablen Zusatzpositionen (Freie Beträge in Schnellerfassung) sind live an `public.accounting_accounts` angebunden. Bei Rechnungsfinalisierung übergibt `ensureInvoiceCreatedRemote` die aufgelösten Haben-Konten (`konto` & `accountHaben`) verbindlich an `RechnungsCore.createInvoice()`, sodass `invoice_positions.konto` und das Journal stets exakt kontiert sind.
+
+### 2.7 Warum einheitlicher TableKit-Standard?
+* **Konsistenz:** Sämtliche Tabellen (`jbTable`, `jbGebuehrenTable`, `jbModalPositionsTable`, `jbBankTransactionsTable`) implementieren den zentralen `TableKit`-Standard (`ui-table-kit.js`) mit hellem Sticky-Header, persistenten Spaltenbreiten (`makeResizable`), Spaltenauswahl (`setupColumnToggle`) und barrierefreiem Scrollen.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
@@ -53,9 +60,10 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 | Tabelle | Primärschlüssel | Zweck & Invarianten |
 | :--- | :--- | :--- |
 | `public.contributions_header` | `id` (VARCHAR) | Beitrags-Kopfdatensatz je Mitglied & Jahr (`person_number`, `year`, `gesamt`, `status`, `payment_date`, `payment_method`, `invoice_id`). Eindeutiger Constraint `(person_number, year)`. |
-| `public.contributions_positions` | `id` (VARCHAR) | Detaillierte Einzelpositionen (Grundbeitrag, Lizenzen, Schiessgelder, Haben-Konto `3000`). Fremdschlüssel `header_id` mit `ON DELETE CASCADE`. |
+| `public.contributions_positions` | `id` (VARCHAR) | Detaillierte Einzelpositionen (Grundbeitrag, Lizenzen, Schiessgelder, Haben-Konto). Fremdschlüssel `header_id` mit `ON DELETE CASCADE`. |
 | `public.member_participations` | `id` (VARCHAR) | Erfasste Schiessanlass-Teilnahmen zur Rabatt- und Schiessgeldberechnung je Mitglied & Saison. |
-| `public.gebuehren_config` | `code` (VARCHAR) | Dynamischer Gebührentarif (`code`, `bezeichnung`, `betrag`, `konto`, `gueltig_ab`). |
+| `public.gebuehren_config` | `key` (VARCHAR) | Dynamischer Gebührentarif (`key`, `bezeichnung`, `bezeichnung_frontend`, `betrag`, `konto_haben`, `kategorie`, `sort_order`). |
+| `public.accounting_accounts` | `konto` (VARCHAR) | Vollständiger KMU-Kontenrahmen als Single Source of Truth für Gegenkonten. |
 
 ---
 
@@ -63,3 +71,4 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 
 * **Einsehen (`jahresbeitrag.view`):** Kassier, Vorstand, Admin, Revisoren.
 * **Berechnen & Mutieren (`jahresbeitrag.manage`):** Strikt beschränkt auf `kassier` und `admin`.
+
