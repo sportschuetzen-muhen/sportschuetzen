@@ -94,16 +94,16 @@ function renderOverviewTab(canEdit, years) {
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover table-sm mb-0" id="jbTable">
-            <thead class="table-dark">
+            <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px;">
               <tr>
-                <th onclick="jbSortTable('name')" style="cursor: pointer; user-select: none;">Name${_jbSortCol === 'name' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
-                <th onclick="jbSortTable('kat')" style="cursor: pointer; user-select: none;">Kategorie${_jbSortCol === 'kat' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
-                <th onclick="jbSortTable('gesamt')" class="text-end pe-4" style="cursor: pointer; user-select: none;">Gesamt${_jbSortCol === 'gesamt' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
-                <th onclick="jbSortTable('status')" style="cursor: pointer; user-select: none;">Status${_jbSortCol === 'status' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
-                <th onclick="jbSortTable('date')" style="cursor: pointer; user-select: none;">Bezahlt am${_jbSortCol === 'date' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
-                <th onclick="jbSortTable('method')" style="cursor: pointer; user-select: none;">Methode${_jbSortCol === 'method' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
-                <th onclick="jbSortTable('beleg')" style="cursor: pointer; user-select: none;">Beleg${_jbSortCol === 'beleg' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
-                ${canEdit ? '<th></th>' : ''}
+                <th data-col-id="name" data-col-name="Name" data-sort-key="name" onclick="jbSortTable('name')" style="cursor: pointer; user-select: none;">Name${_jbSortCol === 'name' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="kat" data-col-name="Kategorie" data-sort-key="kat" onclick="jbSortTable('kat')" style="cursor: pointer; user-select: none;">Kategorie${_jbSortCol === 'kat' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="gesamt" data-col-name="Gesamt" data-sort-key="gesamt" onclick="jbSortTable('gesamt')" class="text-end pe-4" style="cursor: pointer; user-select: none;">Gesamt${_jbSortCol === 'gesamt' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="status" data-col-name="Status" data-sort-key="status" onclick="jbSortTable('status')" style="cursor: pointer; user-select: none;">Status${_jbSortCol === 'status' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="date" data-col-name="Bezahlt am" data-sort-key="date" onclick="jbSortTable('date')" style="cursor: pointer; user-select: none;">Bezahlt am${_jbSortCol === 'date' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="method" data-col-name="Methode" data-sort-key="method" onclick="jbSortTable('method')" style="cursor: pointer; user-select: none;">Methode${_jbSortCol === 'method' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                <th data-col-id="beleg" data-col-name="Beleg / Ref" data-sort-key="beleg" onclick="jbSortTable('beleg')" style="cursor: pointer; user-select: none;">Beleg${_jbSortCol === 'beleg' ? (_jbSortAsc ? ' ▲' : ' ▼') : ''}</th>
+                ${canEdit ? '<th data-col-id="actions" data-col-name="Aktionen" class="text-end" style="width: 140px;">Aktionen</th>' : ''}
               </tr>
             </thead>
             <tbody id="jbTableBody"></tbody>
@@ -240,19 +240,19 @@ function jbRenderRows(data) {
     const rowStyle = isOffen ? '' : 'style="opacity: 0.85;"';
 
     return `<tr class="${rowBg}" ${rowStyle}>
-      <td class="align-middle py-2">
+      <td class="align-middle py-2 tk-col-name">
         <a href="#" class="text-decoration-none fw-semibold ${isOffen ? 'text-primary' : 'text-secondary'}"
            onclick="jbShowPositionen(${r.id}); return false;">${name}</a>
         <div class="text-muted small" style="font-size: 11px;">${r.PersonNumber}</div>
       </td>
-      <td class="align-middle">${katHtml}</td>
-      <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'}" style="font-size: 14px;">${fmtChf(r.Gesamt)}</td>
-      <td class="align-middle">${statusHtml}</td>
-      <td class="small align-middle">${fmtDate(r.payment_date)}</td>
-      <td class="align-middle">${methodHtml}</td>
-      <td class="small align-middle text-muted">${r.document_ref || '–'}</td>
+      <td class="align-middle tk-col-kat">${katHtml}</td>
+      <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'} tk-col-gesamt" style="font-size: 14px;">${fmtChf(r.Gesamt)}</td>
+      <td class="align-middle tk-col-status">${statusHtml}</td>
+      <td class="small align-middle tk-col-date">${fmtDate(r.payment_date)}</td>
+      <td class="align-middle tk-col-method">${methodHtml}</td>
+      <td class="small align-middle text-muted tk-col-beleg">${r.document_ref || '–'}</td>
       ${canEdit ? `
-      <td class="align-middle text-end">
+      <td class="align-middle text-end tk-col-actions">
         <div class="d-inline-flex gap-1">
           <!-- 0. IN SCHNELLERFASSUNG BEARBEITEN -->
           <button class="btn btn-xs btn-outline-primary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
@@ -302,6 +302,22 @@ function jbRenderRows(data) {
 
   document.getElementById('jbCount').textContent =
     `${data.length} Einträge · ${data.filter(r => r.status !== 'bezahlt').length} offen`;
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#jbTable', {
+      storageKey: 'jb_overview_col_widths',
+      minWidth: 50,
+      columns: {
+        actions: { minWidth: 100, defaultWidth: 140 }
+      }
+    });
+  }
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleDropdown')) {
+    window.TableKit.setupColumnToggle('#jbTable', {
+      container: '#jbTableColToggleDropdown',
+      storageKey: 'portal_jb_overview_cols'
+    });
+  }
 }
 
 function jbFilter() {
@@ -374,23 +390,31 @@ function jbRenderModalContent(header, pos, m, name) {
     if (typeof mglKatBadge === 'function') katHtml += ' ' + mglKatBadge('Junior');
   }
 
-  // Positions-Zeilen
-  const posRows = pos.length > 0 ? pos.map(p => `
+  // Positions-Zeilen mit Haben-Konto
+  const posRows = pos.length > 0 ? pos.map(p => {
+    const rawKonto = p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.source_field || p.sourcefield || p.key, p.beschreibung || p.name) : '3000');
+    return `
     <tr>
-      <td class="text-muted small">${p.position_nr || p.positionnr || '–'}</td>
-      <td class="fw-semibold text-dark">${p.beschreibung || '–'}</td>
-      <td>
+      <td class="text-muted small tk-col-nr">${p.position_nr || p.positionnr || '–'}</td>
+      <td class="fw-semibold text-dark tk-col-desc">${p.beschreibung || p.name || '–'}</td>
+      <td class="tk-col-typ">
         <span class="badge ${p.typ === 'Kredit' ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle'}">
           ${p.typ}
         </span>
       </td>
-      <td class="text-end fw-bold ${p.typ === 'Kredit' ? 'text-success' : 'text-dark'}">
+      <td class="tk-col-konto">
+        <span class="badge bg-light text-primary font-monospace border" style="font-size: 11px;">
+          ${escapeHtml(rawKonto)}
+        </span>
+      </td>
+      <td class="text-end fw-bold ${p.typ === 'Kredit' ? 'text-success' : 'text-dark'} tk-col-amount">
         ${p.typ === 'Kredit' ? '-' : ''}${fmtChf(Math.abs(p.betrag))}
       </td>
     </tr>
-  `).join('') : `
+  `;
+  }).join('') : `
     <tr>
-      <td colspan="4" class="text-center py-4 text-muted">
+      <td colspan="5" class="text-center py-4 text-muted">
         <i class="fas fa-info-circle me-1"></i> Keine separaten Einzelpositionen vorhanden.
       </td>
     </tr>
@@ -436,13 +460,14 @@ function jbRenderModalContent(header, pos, m, name) {
         </button>
       </div>
       <div class="table-responsive mb-0">
-        <table class="table table-hover table-sm align-middle mb-0">
-          <thead class="table-light small text-muted">
+        <table class="table table-hover table-sm align-middle mb-0" id="jbModalPositionsTable">
+          <thead class="table-light small text-muted text-uppercase" style="font-size: 11px;">
             <tr>
-              <th style="width: 45px;">#</th>
-              <th>Bezeichnung</th>
-              <th style="width: 90px;">Typ</th>
-              <th class="text-end" style="width: 120px;">Betrag</th>
+              <th data-col-id="nr" data-col-name="#" style="width: 45px;">#</th>
+              <th data-col-id="desc" data-col-name="Bezeichnung">Bezeichnung</th>
+              <th data-col-id="typ" data-col-name="Typ" style="width: 90px;">Typ</th>
+              <th data-col-id="konto" data-col-name="Konto (Haben)" style="width: 130px;">Konto (Haben)</th>
+              <th data-col-id="amount" data-col-name="Betrag" class="text-end" style="width: 120px;">Betrag</th>
             </tr>
           </thead>
           <tbody>
@@ -450,7 +475,7 @@ function jbRenderModalContent(header, pos, m, name) {
           </tbody>
           <tfoot class="table-secondary fw-bold">
             <tr>
-              <td colspan="3" class="text-end">Gesamtsumme</td>
+              <td colspan="4" class="text-end">Gesamtsumme</td>
               <td class="text-end text-dark">${fmtChf(header.Gesamt)}</td>
             </tr>
           </tfoot>
@@ -523,6 +548,13 @@ function jbRenderModalContent(header, pos, m, name) {
       </button>
     </div>
   `;
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#jbModalPositionsTable', {
+      storageKey: 'jb_modal_positions_col_widths',
+      minWidth: 40
+    });
+  }
 }
 
 function jbOpenZahlungFromModal(id, name, betrag) {
@@ -845,7 +877,9 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
           quantity: p.quantity,
           unitPrice: p.unit_price,
           total: p.amount,
-          account: p.konto || '3000'
+          konto: String(p.konto || '3000').trim(),
+          accountHaben: String(p.konto || '3000').trim(),
+          account: String(p.konto || '3000').trim()
         })),
         options: {
           dueDateDays: 30,

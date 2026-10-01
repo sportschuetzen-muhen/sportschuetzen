@@ -120,6 +120,66 @@ function mapGebuehrFromSupabase(r) {
   };
 }
 
+// Kontenrahmen-Cache & Helper für Jahresbeitrag
+window.jbEnsureKontenrahmen = async function() {
+  if (Array.isArray(window._bhKontenrahmen) && window._bhKontenrahmen.length > 0) {
+    return window._bhKontenrahmen;
+  }
+  try {
+    const cached = localStorage.getItem('bh_kontenrahmen');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        window._bhKontenrahmen = parsed;
+        return parsed;
+      }
+    }
+  } catch (_) {}
+
+  const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+  if (supa) {
+    try {
+      const { data, error } = await supa
+        .from('accounting_accounts')
+        .select('*')
+        .order('sort_order', { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        window._bhKontenrahmen = data.map((a, idx) => ({
+          _rowIndex: idx + 2,
+          konto: a.konto,
+          bezeichnung: a.bezeichnung,
+          klasse: a.klasse,
+          hauptgruppe: a.hauptgruppe,
+          gruppe: a.gruppe,
+          untergruppe: a.untergruppe,
+          soll_haben: a.soll_haben,
+          eroeffnungssaldo: Number(a.eroeffnungssaldo || 0),
+          sort_order: a.sort_order
+        }));
+        try {
+          localStorage.setItem('bh_kontenrahmen', JSON.stringify(window._bhKontenrahmen));
+        } catch (_) {}
+        return window._bhKontenrahmen;
+      }
+    } catch (err) {
+      console.warn("⚠️ Fehler beim Laden des Kontenrahmens für Jahresbeitrag:", err);
+    }
+  }
+  return window._bhKontenrahmen || [];
+};
+
+window.jbGetKontenDatalistHtml = function(datalistId = 'jb-konten-datalist') {
+  let list = window._bhKontenrahmen;
+  if (!list || list.length === 0) {
+    try {
+      const cached = localStorage.getItem('bh_kontenrahmen');
+      if (cached) list = JSON.parse(cached);
+    } catch (e) {}
+  }
+  const options = (list || []).map(k => `<option value="${(k.konto || '').replace(/"/g, '&quot;')} | ${(k.bezeichnung || '').replace(/"/g, '&quot;')}">`).join('');
+  return `<datalist id="${datalistId}">${options}</datalist>`;
+};
+
 // ============================================================
 // EINSTIEGSPUNKT
 // ============================================================
@@ -193,7 +253,8 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
         supa.from('contributions_header').select('*').order('created_at', { ascending: true }),
         supa.from('contributions_positions').select('*').order('position_nr', { ascending: true }),
         supa.from('member_participations').select('*'),
-        supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true })
+        supa.from('gebuehren_config').select('*').order('sort_order', { ascending: true }),
+        window.jbEnsureKontenrahmen()
       ]);
 
       if (!headRes.error && Array.isArray(headRes.data)) {
@@ -371,14 +432,23 @@ function renderJahresbeitragView() {
 
   if (_jbActiveTab === 'overview') {
     jbRenderRows(_jbData);
-    if (typeof TableKit !== 'undefined' && typeof TableKit.setupColumnToggle === 'function') {
+    if (typeof TableKit !== 'undefined') {
       setTimeout(() => {
-        TableKit.setupColumnToggle({
-          tableId: 'jbTable',
-          dropdownId: 'jbTableColToggleDropdown',
-          badgeId: 'jbTableColToggleBadge',
-          storageKey: 'portal_jb_overview_cols'
-        });
+        if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleDropdown')) {
+          TableKit.setupColumnToggle('#jbTable', {
+            container: '#jbTableColToggleDropdown',
+            storageKey: 'portal_jb_overview_cols'
+          });
+        }
+        if (typeof TableKit.makeResizable === 'function' && document.getElementById('jbTable')) {
+          TableKit.makeResizable('#jbTable', {
+            storageKey: 'jb_overview_col_widths',
+            minWidth: 50,
+            columns: {
+              actions: { minWidth: 100, defaultWidth: 140 }
+            }
+          });
+        }
       }, 50);
     }
   } else if (_jbActiveTab === 'entry') {

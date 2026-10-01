@@ -53,10 +53,11 @@ function renderSchnellerfassungTab() {
         <div class="text-center my-auto text-muted py-5">
           <i class="fas fa-users fa-3x mb-3 text-primary" style="opacity: 0.3;"></i>
           <h5>Wählen Sie ein Mitglied aus der linken Liste aus</h5>
-          <p class="small">Nutzen Sie das Mausrad oder die Pfeiltasten zur schnellen Navigation.</p>
+          <p class="small">Nutzen Sie die Liste oder die Pfeiltasten (▲/▼) zur schnellen Navigation.</p>
         </div>
       </div>
 
+      ${typeof window.jbGetKontenDatalistHtml === 'function' ? window.jbGetKontenDatalistHtml('jb-konten-datalist') : ''}
     </div>
   `;
 }
@@ -805,14 +806,17 @@ function jbRenderEntryForm(m) {
                 </div>
               </div>
               <div class="col-auto">
-                <div class="input-group input-group-sm" style="width: 110px;">
+                <div class="input-group input-group-sm" style="width: 155px;">
                   <input type="text" id="z1_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
+                         list="jb-konten-datalist"
+                         placeholder="Konto..."
                          value="${_jbParticipationsState.z1_konto || jbGetDefaultAccountForExtra('Z001', '8500')}" 
                          ${_jbParticipationsState.z1_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
-                         onchange="jbUpdateState('z1_konto', this.value, '${m.PersonNumber}')">
+                         onchange="jbHandleExtraKontoChange('z1_konto', this.value, '${m.PersonNumber}')"
+                         title="${jbGetAccountTitle(_jbParticipationsState.z1_konto || jbGetDefaultAccountForExtra('Z001', '8500'))}">
                   <button class="btn btn-outline-secondary" type="button" 
                           onclick="jbToggleKontoLock('z1_unlocked', '${m.PersonNumber}')" 
-                          title="${_jbParticipationsState.z1_unlocked ? 'Konto sperren' : 'Konto bearbeiten'}">
+                          title="${_jbParticipationsState.z1_unlocked ? 'Konto sperren' : 'Konto aus Kontenrahmen wählen'}">
                     <i class="fas ${_jbParticipationsState.z1_unlocked ? 'fa-lock-open text-warning' : 'fa-lock'}"></i>
                   </button>
                 </div>
@@ -842,14 +846,17 @@ function jbRenderEntryForm(m) {
                 </div>
               </div>
               <div class="col-auto">
-                <div class="input-group input-group-sm" style="width: 110px;">
+                <div class="input-group input-group-sm" style="width: 155px;">
                   <input type="text" id="z2_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
+                         list="jb-konten-datalist"
+                         placeholder="Konto..."
                          value="${_jbParticipationsState.z2_konto || jbGetDefaultAccountForExtra('Z002', '1300')}" 
                          ${_jbParticipationsState.z2_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
-                         onchange="jbUpdateState('z2_konto', this.value, '${m.PersonNumber}')">
+                         onchange="jbHandleExtraKontoChange('z2_konto', this.value, '${m.PersonNumber}')"
+                         title="${jbGetAccountTitle(_jbParticipationsState.z2_konto || jbGetDefaultAccountForExtra('Z002', '1300'))}">
                   <button class="btn btn-outline-secondary" type="button" 
                           onclick="jbToggleKontoLock('z2_unlocked', '${m.PersonNumber}')" 
-                          title="${_jbParticipationsState.z2_unlocked ? 'Konto sperren' : 'Konto bearbeiten'}">
+                          title="${_jbParticipationsState.z2_unlocked ? 'Konto sperren' : 'Konto aus Kontenrahmen wählen'}">
                     <i class="fas ${_jbParticipationsState.z2_unlocked ? 'fa-lock-open text-warning' : 'fa-lock'}"></i>
                   </button>
                 </div>
@@ -1397,24 +1404,15 @@ async function jbSaveAllBulkLocalChanges() {
   }
 }
 
-// 8. TASTENSTEUERUNG UND MAUSRAD-SUPPORT
+// 8. TASTENSTEUERUNG (Mausrad scrollt die Liste natuerlich)
 function jbAddScrollSupport() {
   const listEl = document.getElementById('jbEntryMemberList');
   if (!listEl) return;
 
-  listEl.addEventListener('wheel', function(e) {
-    e.preventDefault();
-    if (e.deltaY > 0) {
-      jbEntrySelectNext();
-    } else {
-      jbEntrySelectPrev();
-    }
-  });
-
   document.onkeydown = function(e) {
     if (_jbActiveTab !== 'entry' || !_jbSelectedMemberPN) return;
     
-    if (document.activeElement.tagName === 'INPUT') return;
+    if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1425,6 +1423,25 @@ function jbAddScrollSupport() {
     }
   };
 }
+
+function jbHandleExtraKontoChange(field, rawVal, pn) {
+  const code = String(rawVal || '').split('|')[0].trim();
+  jbUpdateState(field, code, pn);
+  const inputEl = document.getElementById(`${field}_${pn}`);
+  if (inputEl) {
+    inputEl.value = code;
+    inputEl.title = jbGetAccountTitle(code);
+  }
+}
+window.jbHandleExtraKontoChange = jbHandleExtraKontoChange;
+
+function jbGetAccountTitle(code) {
+  if (!code) return '';
+  const konten = window._bhKontenrahmen || [];
+  const acc = konten.find(a => String(a.konto).trim() === String(code).trim());
+  return acc ? `${acc.konto} - ${acc.bezeichnung}` : `Konto ${code}`;
+}
+window.jbGetAccountTitle = jbGetAccountTitle;
 
 function jbApplySidebarSorting() {
   _jbMembers.sort((a, b) => {

@@ -49,7 +49,10 @@ function renderGebuehrenConfigTab() {
             <option value="">Alle UI-Gruppen (ui_gruppe)</option>
           </select>
         </div>
-        <div class="col-md-2 text-end text-muted small" id="jbGebuehrenCount">
+        <div class="col-md-2" id="jbGebuehrenColToggleContainer">
+          <!-- TableKit Spaltenauswahl Dropdown -->
+        </div>
+        <div class="col-md-2 text-end text-muted small ms-auto" id="jbGebuehrenCount">
           <!-- Anzahl -->
         </div>
       </div>
@@ -59,18 +62,18 @@ function renderGebuehrenConfigTab() {
         <table class="table table-hover table-sm align-middle mb-0" id="jbGebuehrenTable">
           <thead class="table-light small text-muted text-uppercase" style="font-size: 11px;">
             <tr>
-              <th style="width: 75px;">Key</th>
-              <th style="width: 105px;">Kategorie</th>
-              <th style="width: 95px;">Zielgruppe</th>
-              <th>Bezeichnung Frontend</th>
-              <th class="text-end" style="width: 90px;">Betrag</th>
-              <th style="width: 95px;">Konto</th>
-              <th>UI-Gruppe (Card)</th>
-              <th>UI-Feld</th>
-              <th style="width: 110px;">UI-Typ</th>
-              <th class="text-center" style="width: 55px;">Sort</th>
-              <th class="text-center" style="width: 60px;">Aktiv</th>
-              <th class="text-end" style="width: 65px;">Aktion</th>
+              <th data-col-id="key" data-col-name="Key" style="width: 75px;">Key</th>
+              <th data-col-id="kategorie" data-col-name="Kategorie" style="width: 105px;">Kategorie</th>
+              <th data-col-id="zielgruppe" data-col-name="Zielgruppe" style="width: 95px;">Zielgruppe</th>
+              <th data-col-id="bezeichnung" data-col-name="Bezeichnung Frontend">Bezeichnung Frontend</th>
+              <th data-col-id="betrag" data-col-name="Betrag" class="text-end" style="width: 90px;">Betrag</th>
+              <th data-col-id="konto" data-col-name="Haben-Konto" style="width: 105px;">Haben-Konto</th>
+              <th data-col-id="ui_gruppe" data-col-name="UI-Gruppe">UI-Gruppe (Card)</th>
+              <th data-col-id="ui_feld" data-col-name="UI-Feld">UI-Feld</th>
+              <th data-col-id="ui_typ" data-col-name="UI-Typ" style="width: 110px;">UI-Typ</th>
+              <th data-col-id="sort" data-col-name="Sortierung" class="text-center" style="width: 55px;">Sort</th>
+              <th data-col-id="aktiv" data-col-name="Aktiv" class="text-center" style="width: 60px;">Aktiv</th>
+              <th data-col-id="actions" data-col-name="Aktion" class="text-end" style="width: 65px;">Aktion</th>
             </tr>
           </thead>
           <tbody id="jbGebuehrenTableBody">
@@ -189,15 +192,24 @@ function renderGebuehrenConfigModals() {
                 </div>
               </div>
 
-              <!-- Zeile 3: Buchhaltungskonto -->
+              <!-- Zeile 3: Buchhaltungskonto (Kontenrahmen-Anbindung) -->
               <div class="row g-3 mb-3">
-                <div class="col-md-4">
-                  <label class="form-label small fw-bold text-muted">Haben-Konto</label>
-                  <input type="text" class="form-control form-control-sm font-monospace" id="g_konto" placeholder="z.B. 4426">
+                <div class="col-md-5">
+                  <label class="form-label small fw-bold text-muted">Haben-Konto (Ertragskonto) *</label>
+                  <div class="input-group input-group-sm">
+                    <input type="text" class="form-control font-monospace fw-bold" id="g_konto" list="jb-konten-datalist" placeholder="z.B. 3000 oder 3200" onchange="jbOnGebuehrKontoChanged(this.value)" required>
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Aus Kontenrahmen wählen">
+                      <i class="fas fa-book"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow p-2" id="jb-gebuehr-konten-dropdown" style="max-height: 280px; overflow-y: auto; font-size: 12px; min-width: 280px;">
+                      <!-- Dynamisch aus Kontenrahmen befüllt -->
+                    </ul>
+                  </div>
+                  <div class="form-text text-muted small" style="font-size: 10px;">Aus KMU-Kontenrahmen wählen oder eingeben</div>
                 </div>
-                <div class="col-md-8">
-                  <label class="form-label small fw-bold text-muted">Kontobezeichnung (KMU)</label>
-                  <input type="text" class="form-control form-control-sm" id="g_kontobezeichnung" placeholder="z.B. Ertrag Wettschiessen">
+                <div class="col-md-7">
+                  <label class="form-label small fw-bold text-muted">Kontobezeichnung (KMU-Kontenrahmen)</label>
+                  <input type="text" class="form-control form-control-sm bg-light" id="g_kontobezeichnung" placeholder="Wird automatisch ermittelt..." readonly>
                 </div>
               </div>
 
@@ -348,26 +360,26 @@ function jbRenderGebuehrenTable() {
 
     return `
       <tr class="${isAktiv ? '' : 'table-light opacity-75'}">
-        <td><strong class="font-monospace text-primary">${k}</strong></td>
-        <td><span class="badge bg-light text-secondary border">${f.kategorie || '–'}</span></td>
-        <td>${zgBadge}</td>
-        <td>
+        <td class="tk-col-key"><strong class="font-monospace text-primary">${k}</strong></td>
+        <td class="tk-col-kategorie"><span class="badge bg-light text-secondary border">${f.kategorie || '–'}</span></td>
+        <td class="tk-col-zielgruppe">${zgBadge}</td>
+        <td class="tk-col-bezeichnung">
           <div class="fw-semibold text-dark">${f.bezeichnungfrontend || f.bezeichnung || '–'}</div>
           ${f.bezeichnung && f.bezeichnung !== f.bezeichnungfrontend ? `<div class="text-muted small" style="font-size:10px;">${f.bezeichnung}</div>` : ''}
         </td>
-        <td class="text-end fw-bold text-dark">CHF ${Number(f.betrag || 0).toFixed(2)}</td>
-        <td>
+        <td class="tk-col-betrag text-end fw-bold text-dark">CHF ${Number(f.betrag || 0).toFixed(2)}</td>
+        <td class="tk-col-konto">
           <span class="badge bg-light text-dark border font-monospace">${konto}</span>
           ${kontoBezeichnung ? `<div class="text-muted small" style="font-size:10px;">${escHtml(kontoBezeichnung)}</div>` : ''}
         </td>
-        <td><small class="text-secondary">${f.ui_gruppe || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
-        <td><small class="text-dark">${f.ui_feld || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
-        <td>${typBadge}</td>
-        <td class="text-center small">${f.ui_sort !== undefined && f.ui_sort !== '' ? f.ui_sort : '–'}</td>
-        <td class="text-center">
+        <td class="tk-col-ui_gruppe"><small class="text-secondary">${f.ui_gruppe || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
+        <td class="tk-col-ui_feld"><small class="text-dark">${f.ui_feld || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
+        <td class="tk-col-ui_typ">${typBadge}</td>
+        <td class="tk-col-sort text-center small">${f.ui_sort !== undefined && f.ui_sort !== '' ? f.ui_sort : '–'}</td>
+        <td class="tk-col-aktiv text-center">
           <i class="fas ${isAktiv ? 'fa-check-circle text-success' : 'fa-times-circle text-danger'}"></i>
         </td>
-        <td class="text-end">
+        <td class="tk-col-actions text-end">
           <button class="btn btn-xs btn-outline-primary py-1 px-2 rounded" onclick="jbOpenEditGebuehrModal('${k}')" title="Gebühr bearbeiten">
             <i class="fas fa-edit"></i>
           </button>
@@ -375,7 +387,34 @@ function jbRenderGebuehrenTable() {
       </tr>
     `;
   }).join('');
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#jbGebuehrenTable', {
+      storageKey: 'jb_gebuehren_table_col_widths',
+      minWidth: 40
+    });
+  }
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbGebuehrenColToggleContainer')) {
+    window.TableKit.setupColumnToggle('#jbGebuehrenTable', {
+      container: '#jbGebuehrenColToggleContainer',
+      storageKey: 'jb_gebuehren_table_cols'
+    });
+  }
 }
+
+function jbOnGebuehrKontoChanged(val) {
+  const code = String(val || '').split('|')[0].trim();
+  const inputEl = document.getElementById('g_konto');
+  if (inputEl) inputEl.value = code;
+
+  const bezeichnungEl = document.getElementById('g_kontobezeichnung');
+  const konten = window._bhKontenrahmen || [];
+  const acc = konten.find(a => String(a.konto).trim() === code);
+  if (bezeichnungEl) {
+    bezeichnungEl.value = acc ? acc.bezeichnung : '';
+  }
+}
+window.jbOnGebuehrKontoChanged = jbOnGebuehrKontoChanged;
 
 function jbPopulateModalDropdowns(selectedKat, selectedGrp, selectedFeld) {
   const fees = window._jbGebuehren || [];
@@ -478,6 +517,20 @@ function jbOpenEditGebuehrModal(key) {
   const keyInput = document.getElementById('g_key');
   const isNew = !key;
 
+  // Dropdown für Kontenrahmen initialisieren
+  const ddEl = document.getElementById('jb-gebuehr-konten-dropdown');
+  if (ddEl) {
+    const list = window._bhKontenrahmen || [];
+    ddEl.innerHTML = list.map(k => `
+      <li>
+        <a class="dropdown-item py-1 px-2 d-flex justify-content-between align-items-center cursor-pointer" href="#" onclick="jbOnGebuehrKontoChanged('${k.konto}'); return false;">
+          <span>${escHtml(k.bezeichnung)}</span>
+          <span class="badge bg-light text-primary font-monospace ms-2 border">${escHtml(k.konto)}</span>
+        </a>
+      </li>
+    `).join('') || '<li class="text-muted small px-2">Keine Konten geladen</li>';
+  }
+
   if (isNew) {
     if (titleEl) titleEl.innerHTML = '➕ Neue Gebühr erfassen';
     keyInput.readOnly = false;
@@ -487,8 +540,7 @@ function jbOpenEditGebuehrModal(key) {
     document.getElementById('g_bezeichnungfrontend').value = '';
     document.getElementById('g_bezeichnung').value = '';
     document.getElementById('g_betrag').value = '15.00';
-    document.getElementById('g_konto').value = '4426';
-    document.getElementById('g_kontobezeichnung').value = '';
+    jbOnGebuehrKontoChanged('3000');
     document.getElementById('g_ui_typ').value = 'checkbox';
     document.getElementById('g_ui_sort').value = '10';
     document.getElementById('g_aktiv').checked = true;
@@ -504,8 +556,8 @@ function jbOpenEditGebuehrModal(key) {
     document.getElementById('g_bezeichnungfrontend').value = f.bezeichnungfrontend || '';
     document.getElementById('g_bezeichnung').value = f.bezeichnung || '';
     document.getElementById('g_betrag').value = f.betrag !== undefined ? f.betrag : '';
-    document.getElementById('g_konto').value = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto || '';
-    document.getElementById('g_kontobezeichnung').value = f['Kontobezeichnung im KMU-Kontenrahmen'] || f.kontobezeichnung || '';
+    const initialKonto = f['Haben-Konto-Jahresbeitrag-Buchhaltung'] || f.konto_haben || f.konto || '3000';
+    jbOnGebuehrKontoChanged(initialKonto);
     document.getElementById('g_ui_typ').value = (f.ui_typ || 'checkbox').toLowerCase();
     document.getElementById('g_ui_sort').value = f.ui_sort !== undefined ? f.ui_sort : '10';
     document.getElementById('g_aktiv').checked = f.aktiv !== false && f.aktiv !== 'FALSE' && f.aktiv !== '0' && f.aktiv !== 0;

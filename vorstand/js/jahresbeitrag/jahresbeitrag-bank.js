@@ -219,16 +219,16 @@ function jbBankRenderResults(filter) {
 
   container.innerHTML = `
     <div class="table-responsive">
-      <table class="table table-hover table-sm mb-0" style="font-size: 13px;">
-        <thead class="table-dark sticky-top">
+      <table class="table table-hover table-sm mb-0" id="jbBankTransactionsTable" style="font-size: 13px;">
+        <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px;">
           <tr>
-            <th>Datum</th>
-            <th>Zahler (Bank)</th>
-            <th class="text-end">Betrag</th>
-            <th>Verwendungszweck</th>
-            <th>Status</th>
-            <th>Matched Mitglied</th>
-            ${canEdit ? '<th>Aktion</th>' : ''}
+            <th data-col-id="date" data-col-name="Datum" style="width: 100px;">Datum</th>
+            <th data-col-id="debtor" data-col-name="Zahler (Bank)">Zahler (Bank)</th>
+            <th data-col-id="amount" data-col-name="Betrag" class="text-end" style="width: 100px;">Betrag</th>
+            <th data-col-id="purpose" data-col-name="Verwendungszweck">Verwendungszweck</th>
+            <th data-col-id="status" data-col-name="Status" style="width: 110px;">Status</th>
+            <th data-col-id="matched" data-col-name="Matched Mitglied">Matched Mitglied</th>
+            ${canEdit ? '<th data-col-id="actions" data-col-name="Aktion" class="text-end" style="width: 90px;">Aktion</th>' : ''}
           </tr>
         </thead>
         <tbody>${rowsHTML}</tbody>
@@ -236,6 +236,13 @@ function jbBankRenderResults(filter) {
     </div>
     <div class="text-muted small mt-2 px-1">${filtered.length} von ${rows.length} Buchungen angezeigt</div>
   `;
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#jbBankTransactionsTable', {
+      storageKey: 'jb_bank_tx_col_widths',
+      minWidth: 50
+    });
+  }
 }
 
 // ---- Reassign Modal Candidates ----------------------------

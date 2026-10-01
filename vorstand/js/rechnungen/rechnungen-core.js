@@ -841,7 +841,7 @@ window.RechnungsCore = {
         quantity: qty,
         unit_price: unitPrice,
         amount: amount,
-        konto: String(p.accountHaben || p.konto || '3000').trim(),
+        konto: String(p.accountHaben || p.konto || p.account || '3000').trim(),
         type: p.type || 'standard',
         source_field: p.sourceField || null
       };
