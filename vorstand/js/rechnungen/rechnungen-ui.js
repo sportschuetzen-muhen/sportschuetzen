@@ -24,6 +24,8 @@ window.rnEnsureCustomStyles = function() {
       color: #334155 !important;
       background-color: #f8fafc !important;
       border-bottom: 2px solid #e2e8f0 !important;
+      position: relative !important;
+      white-space: nowrap !important;
     }
     #rn-invoices-table td {
       padding: 13px 14px !important;
@@ -687,6 +689,17 @@ window.rnRenderTable = function() {
     window.TableKit.setupColumnToggle('#rn-invoices-table', {
       container: '#rn-column-toggle',
       storageKey: 'rn_invoices_table_cols'
+    });
+  }
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#rn-invoices-table', {
+      storageKey: 'rn_invoices_table_col_widths',
+      minWidth: 45,
+      columns: {
+        check: { resizable: false, minWidth: 44, defaultWidth: 44 },
+        actions: { minWidth: 100, defaultWidth: 150 }
+      }
     });
   }
 };

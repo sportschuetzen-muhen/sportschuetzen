@@ -125,6 +125,42 @@
       .tk-col-hidden {
         display: none !important;
       }
+      /* TableKit: Spalten-Resizing */
+      th.tk-col-resizable {
+        position: relative !important;
+        overflow: visible !important;
+      }
+      .tk-col-resizer {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: -5px;
+        width: 10px;
+        height: 100%;
+        cursor: col-resize;
+        user-select: none;
+        z-index: 25;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        touch-action: none;
+      }
+      .tk-col-resizer-line {
+        width: 2px;
+        height: 60%;
+        background-color: #cbd5e1;
+        border-radius: 1px;
+        pointer-events: none;
+        transition: background-color 0.15s ease, height 0.15s ease, opacity 0.15s ease, width 0.15s ease;
+        opacity: 0.5;
+      }
+      .tk-col-resizer:hover .tk-col-resizer-line,
+      .tk-col-resizer.tk-is-dragging .tk-col-resizer-line {
+        background-color: #0d6efd;
+        height: 90%;
+        opacity: 1;
+        width: 3px;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -151,8 +187,8 @@
       }
 
       th.addEventListener('click', (e) => {
-        // Nicht sortieren wenn Klick auf interaktives Element im Header
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
+        // Nicht sortieren wenn Klick auf interaktives Element im Header oder Resizer
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.closest('.tk-col-resizer')) return;
 
         const sortKey = th.dataset.sortKey;
         if (!sortKey) return;
@@ -673,6 +709,199 @@
     };
   }
 
+  // =========================================================
+  // 6. SPALTENBREITEN ANPASSEN (TableKit.makeResizable)
+  // =========================================================
+  function makeResizable(tableOrSelector, options = {}) {
+    ensureStyles();
+    const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+    if (!table) return;
+
+    const storageKey = options.storageKey || (table.id ? `tk_col_widths_${table.id}` : null);
+    const minColWidth = options.minWidth || 45;
+    const columnsConfig = options.columns || {};
+
+    // 1. Gespeicherte Breiten laden
+    let savedWidths = {};
+    if (storageKey) {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) savedWidths = JSON.parse(raw);
+      } catch (_) {}
+    }
+
+    const ths = Array.from(table.querySelectorAll('thead th'));
+    if (!ths.length) return;
+
+    function saveAllWidths() {
+      if (!storageKey) return;
+      try {
+        const toSave = {};
+        ths.forEach((th, idx) => {
+          const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+          if (th.style.width && th.style.width !== 'auto') {
+            const val = parseInt(th.style.width, 10);
+            if (!isNaN(val) && val > 20) {
+              toSave[colId] = val;
+            }
+          }
+        });
+        localStorage.setItem(storageKey, JSON.stringify(toSave));
+      } catch (err) {
+        console.warn('Fehler beim Speichern der Spaltenbreiten:', err);
+      }
+    }
+
+    ths.forEach((th, idx) => {
+      const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+      const colConf = columnsConfig[colId] || {};
+
+      // Gespeicherte Breite anwenden
+      if (savedWidths[colId]) {
+        const sw = savedWidths[colId];
+        th.style.width = sw + 'px';
+        th.style.minWidth = sw + 'px';
+      }
+
+      if (colConf.resizable === false) return;
+
+      th.classList.add('tk-col-resizable');
+
+      // Resizer-Element nicht mehrfach einhängen
+      let resizer = th.querySelector('.tk-col-resizer');
+      if (!resizer) {
+        resizer = document.createElement('div');
+        resizer.className = 'tk-col-resizer';
+        resizer.title = 'Spaltenbreite anpassen (Ziehen zum Ändern, Doppelklick zum Zurücksetzen)';
+
+        const line = document.createElement('div');
+        line.className = 'tk-col-resizer-line';
+        resizer.appendChild(line);
+
+        // Klicks abfangen (damit Sortierung nicht versehentlich triggert)
+        resizer.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        });
+
+        // Doppelklick zum Zurücksetzen
+        resizer.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (colConf.defaultWidth) {
+            th.style.width = colConf.defaultWidth + 'px';
+            th.style.minWidth = colConf.defaultWidth + 'px';
+          } else {
+            th.style.width = '';
+            th.style.minWidth = '';
+          }
+          if (storageKey) {
+            try {
+              const raw = localStorage.getItem(storageKey);
+              if (raw) {
+                const map = JSON.parse(raw);
+                delete map[colId];
+                localStorage.setItem(storageKey, JSON.stringify(map));
+              }
+            } catch (_) {}
+          }
+          if (typeof options.onResize === 'function') {
+            options.onResize(colId, null);
+          }
+        });
+
+        // Dragging per Pointer Events (Maus + Touch vereint)
+        const onPointerDown = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+
+          const startX = e.pageX || (e.touches && e.touches[0] ? e.touches[0].pageX : 0);
+          const startWidth = th.getBoundingClientRect().width;
+          const currentMinWidth = colConf.minWidth || minColWidth;
+
+          resizer.classList.add('tk-is-dragging');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+
+          const onPointerMove = (ev) => {
+            const currentX = ev.pageX || (ev.touches && ev.touches[0] ? ev.touches[0].pageX : 0);
+            const diff = currentX - startX;
+            const newWidth = Math.max(currentMinWidth, Math.round(startWidth + diff));
+            th.style.width = newWidth + 'px';
+            th.style.minWidth = newWidth + 'px';
+          };
+
+          const onPointerUp = () => {
+            resizer.classList.remove('tk-is-dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('touchmove', onPointerMove);
+            window.removeEventListener('touchend', onPointerUp);
+
+            saveAllWidths();
+
+            if (typeof options.onResize === 'function') {
+              const finalWidth = parseInt(th.style.width, 10);
+              options.onResize(colId, finalWidth);
+            }
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('touchmove', onPointerMove, { passive: false });
+          window.addEventListener('touchend', onPointerUp);
+        };
+
+        resizer.addEventListener('pointerdown', onPointerDown);
+        resizer.addEventListener('touchstart', onPointerDown, { passive: false });
+
+        th.appendChild(resizer);
+      }
+    });
+
+    return {
+      apply: () => {
+        if (storageKey) {
+          try {
+            const raw = localStorage.getItem(storageKey);
+            if (raw) {
+              const map = JSON.parse(raw);
+              ths.forEach((th, idx) => {
+                const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+                if (map[colId]) {
+                  th.style.width = map[colId] + 'px';
+                  th.style.minWidth = map[colId] + 'px';
+                }
+              });
+            }
+          } catch (_) {}
+        }
+      },
+      reset: () => {
+        if (storageKey) {
+          try { localStorage.removeItem(storageKey); } catch (_) {}
+        }
+        ths.forEach(th => {
+          th.style.width = '';
+          th.style.minWidth = '';
+        });
+      },
+      setWidth: (colId, width) => {
+        const targetTh = ths.find((th, idx) => {
+          const id = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+          return id === colId;
+        });
+        if (targetTh) {
+          targetTh.style.width = width + 'px';
+          targetTh.style.minWidth = width + 'px';
+          saveAllWidths();
+        }
+      }
+    };
+  }
+
   // Globale Registrierung
   window.TableKit = {
     makeSortable,
@@ -680,6 +909,7 @@
     setupFilter,
     setupCollapsible,
     setupColumnToggle,
+    makeResizable,
     ensureStyles
   };
 

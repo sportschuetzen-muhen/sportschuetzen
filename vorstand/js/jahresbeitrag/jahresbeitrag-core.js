@@ -265,7 +265,6 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
         renderJahresbeitragView();
         return;
       }
-      }
       if (headRes.error) throw headRes.error;
     } catch (supaErr) {
       console.error("❌ Supabase Jahresbeitrag Abfrage fehlgeschlagen:", supaErr);

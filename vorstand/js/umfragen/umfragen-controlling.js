@@ -428,7 +428,6 @@ async function loadGVParticipants(eventId) {
                     syncPraesenzToSupabase(pData, gvState.jahr || new Date().getFullYear());
                 }
             } catch(supaErr) {
-            } catch(supaErr) {
                 console.error("❌ [Supabase] Fehler bei Teilnehmerberechnung:", supaErr);
             }
         }
@@ -1297,12 +1296,10 @@ async function uploadGVDocumentFile(fileOrFileList, idx, inputId, statusId) {
     }
 
     if (errors.length > 0) {
-        alert("Upload-Fehler:\n" + errors.join('\n'));
-    }
-}
+        if (statusEl) {
+            statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload fehlgeschlagen: ${escapeHtml(errors.join('; '))}</span>`;
         }
-    } else if (errors.length > 0 && statusEl) {
-        statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload fehlgeschlagen: ${escapeHtml(errors.join('; '))}</span>`;
+        alert("Upload-Fehler:\n" + errors.join('\n'));
     }
 }
 

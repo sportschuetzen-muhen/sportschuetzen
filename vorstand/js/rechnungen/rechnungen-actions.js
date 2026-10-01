@@ -2207,6 +2207,7 @@ window.rnSaveCreateInvoice = async function(event) {
   // 1. Supabase PostgreSQL Master Write (< 50ms)
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
   if (sb) {
+    try {
       const invType = document.getElementById('rnc-type').value;
       const senderSnapshot = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
         ? await window.RechnungsCore.resolveSender(null, invType)
