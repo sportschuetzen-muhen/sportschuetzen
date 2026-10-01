@@ -89,23 +89,23 @@ function mglRenderImport() {
         <div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center" style="font-size: 0.85rem;">
           <i class="fas fa-info-circle me-2 text-info" style="font-size: 1.1rem;"></i>
           <div>
-            <strong>Hinweis:</strong> Nur Mutationen mit einem <strong>aktivierten blauen Häkchen</strong> werden beim Klick auf <em>"Änderungen anwenden"</em> in die Google-Datenbank übernommen. Nicht ausgewählte Mutationen werden verworfen.
+            <strong>Hinweis:</strong> Nur Mutationen mit einem <strong>aktivierten Häkchen</strong> werden beim Klick auf <em>"Änderungen anwenden"</em> atomar in die Supabase-Datenbank übernommen. Nicht ausgewählte Mutationen werden verworfen.
           </div>
         </div>
 
-        <div class="table-responsive rounded-3 border">
-          <table class="table table-hover table-import-preview mb-0">
-            <thead class="table-dark">
+        <div class="table-responsive rounded-3 border" style="max-height: 540px; overflow-y: auto;">
+          <table class="table table-hover table-sm mb-0 align-middle" id="mglImportDiffTable">
+            <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px; z-index: 10;">
               <tr>
-                <th width="40" class="text-center">
+                <th width="44" class="text-center py-2" data-col-id="select">
                   <input type="checkbox" id="mglSelectAllDiffs" checked onchange="mglToggleSelectAllDiffs(this)">
                 </th>
-                <th>Mitglied</th>
-                <th>Bereich</th>
-                <th>Feld</th>
-                <th>Alter Wert</th>
-                <th>Neuer Wert</th>
-                <th>Mutationstyp</th>
+                <th data-col-id="member" data-col-name="Mitglied" class="py-2">Mitglied</th>
+                <th data-col-id="section" data-col-name="Bereich" class="py-2">Bereich</th>
+                <th data-col-id="field" data-col-name="Feld" class="py-2">Feld</th>
+                <th data-col-id="old" data-col-name="Alter Wert" class="py-2">Alter Wert</th>
+                <th data-col-id="new" data-col-name="Neuer Wert" class="py-2">Neuer Wert</th>
+                <th data-col-id="type" data-col-name="Mutationstyp" class="py-2">Mutationstyp</th>
               </tr>
             </thead>
             <tbody id="mglImportDiffBody"></tbody>
@@ -303,6 +303,13 @@ function mglDisplayDiffs() {
       </tr>
     `;
   }).join('');
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#mglImportDiffTable', {
+      storageKey: 'portal_mgl_import_diff_widths',
+      minWidth: 40
+    });
+  }
 }
 
 function mglUpdateDiffDecision(idx, checked) {
@@ -341,12 +348,14 @@ async function mglApplyImport() {
       (msg) => { loadingText.textContent = msg; }
     );
 
-    alert(`✅ Import erfolgreich abgeschlossen!\n\n` +
-          `• In Supabase gespeichert & verarbeitet\n` +
-          `• Mutiert/Korrigiert: ${stats.updated}\n` +
-          `• Neu angelegt: ${stats.created}\n` +
-          `• Übersprungen: ${stats.skipped}\n` +
-          `• Google Sheet Test-Kopie synchronisiert (1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0)`);
+    alert(`✅ SSV-Import erfolgreich abgeschlossen!\n\n` +
+          `• In Supabase gespeichert (Atomare Transaktion)\n` +
+          `• Mitglieder aktualisiert: ${stats.updated}\n` +
+          `• Mitglieder neu angelegt: ${stats.created}\n` +
+          `• Lizenzen synchronisiert: ${stats.licenses || 0}\n` +
+          `• Funktionen synchronisiert: ${stats.functions || 0}\n` +
+          `• Trainings synchronisiert: ${stats.training || 0}\n` +
+          `• Audit-Historie protokolliert: ${stats.history || 0}`);
 
     // Zurücksetzen und Mitgliederliste neu laden
     _mglImportId = null;

@@ -254,16 +254,16 @@ function mglOpenDetail(pn) {
               <span class="text-muted small fw-semibold">Lizenzen & Abteilungen</span>
               <div id="mgl-detail-liz-col-toggle"></div>
             </div>
-            <div class="table-responsive">
-              <table class="table table-sm mgl-table" id="mgl-detail-liz-table">
-                <thead>
+            <div class="table-responsive border rounded-2">
+              <table class="table table-sm table-hover mb-0 align-middle" id="mgl-detail-liz-table">
+                <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px;">
                   <tr>
-                    <th data-col-id="kat" data-col-name="Kategorie">Kategorie</th>
-                    <th data-col-id="eintritt" data-col-name="Eintritt">Eintritt</th>
-                    <th data-col-id="austritt" data-col-name="Austritt">Austritt</th>
-                    <th data-col-id="typ" data-col-name="Typ">Typ</th>
-                    <th data-col-id="zahlstelle" data-col-name="Zahlstelle (SSV)">Zahlstelle (SSV)</th>
-                    <th data-col-id="status" data-col-name="Status">Status</th>
+                    <th data-col-id="kat" data-col-name="Kategorie" class="py-2">Kategorie</th>
+                    <th data-col-id="eintritt" data-col-name="Eintritt" class="py-2">Eintritt</th>
+                    <th data-col-id="austritt" data-col-name="Austritt" class="py-2">Austritt</th>
+                    <th data-col-id="typ" data-col-name="Typ" class="py-2">Typ</th>
+                    <th data-col-id="zahlstelle" data-col-name="Zahlstelle (SSV)" class="py-2">Zahlstelle (SSV)</th>
+                    <th data-col-id="status" data-col-name="Status" class="py-2">Status</th>
                   </tr>
                 </thead>
                 <tbody>${lizRows}</tbody>
@@ -276,15 +276,15 @@ function mglOpenDetail(pn) {
               <span class="text-muted small fw-semibold">Vereinsfunktionen & Ämter</span>
               <div id="mgl-detail-fn-col-toggle"></div>
             </div>
-            <div class="table-responsive">
-              <table class="table table-sm" id="mgl-detail-fn-table">
-                <thead class="table-light">
+            <div class="table-responsive border rounded-2">
+              <table class="table table-sm table-hover mb-0 align-middle" id="mgl-detail-fn-table">
+                <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px;">
                   <tr>
-                    <th data-col-id="fn" data-col-name="Funktion">Funktion</th>
-                    <th data-col-id="eintritt" data-col-name="Eintritt">Eintritt</th>
-                    <th data-col-id="austritt" data-col-name="Austritt">Austritt</th>
-                    <th data-col-id="rabatt" data-col-name="Rabatt">Rabatt</th>
-                    <th data-col-id="status" data-col-name="Status">Status</th>
+                    <th data-col-id="fn" data-col-name="Funktion" class="py-2">Funktion</th>
+                    <th data-col-id="eintritt" data-col-name="Eintritt" class="py-2">Eintritt</th>
+                    <th data-col-id="austritt" data-col-name="Austritt" class="py-2">Austritt</th>
+                    <th data-col-id="rabatt" data-col-name="Rabatt" class="py-2">Rabatt</th>
+                    <th data-col-id="status" data-col-name="Status" class="py-2">Status</th>
                   </tr>
                 </thead>
                 <tbody>${fnRows}</tbody>
@@ -462,11 +462,22 @@ function mglOpenDetail(pn) {
     if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
       window.TableKit.setupColumnToggle('#mgl-detail-liz-table', {
         container: '#mgl-detail-liz-col-toggle',
-        storageKey: 'mgl_detail_liz_table_cols'
+        storageKey: 'portal_mgl_detail_liz_table_cols'
       });
       window.TableKit.setupColumnToggle('#mgl-detail-fn-table', {
         container: '#mgl-detail-fn-col-toggle',
-        storageKey: 'mgl_detail_fn_table_cols'
+        storageKey: 'portal_mgl_detail_fn_table_cols'
+      });
+    }
+
+    if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+      window.TableKit.makeResizable('#mgl-detail-liz-table', {
+        storageKey: 'portal_mgl_detail_liz_widths',
+        minWidth: 50
+      });
+      window.TableKit.makeResizable('#mgl-detail-fn-table', {
+        storageKey: 'portal_mgl_detail_fn_widths',
+        minWidth: 50
       });
     }
   } catch (e) {

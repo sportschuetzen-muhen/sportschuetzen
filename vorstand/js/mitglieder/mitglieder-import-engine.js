@@ -1,9 +1,8 @@
 // ==============================================================================
 // mitglieder-import-engine.js
-// 1:1 Portierung der SSV-Import- und Diff-Berechnungs-Logik von Google Apps Script
-// ins Client-Frontend für ultraschnellen Import und direkte Supabase-Persistierung.
-// Unterstützt Dual-Write / Synchronisation zur Test-Spreadsheet-Kopie:
-// 1GdoopFudDXcmrP-DH8z2Ge_ALG3YDmHybJpXe1HgZQ0
+// Client-native SSV-Import- und Diff-Engine für ultraschnellen Import und
+// atomare Persistierung via PostgreSQL RPC (apply_ssv_import_batch).
+// Supabase Single Source of Truth (Sportschützen Muhen)
 // ==============================================================================
 
 (function(window) {
@@ -549,7 +548,7 @@
     };
   }
 
-  // --- 5. SPEICHERUNG IN SUPABASE & DUAL-WRITE ZUM GOOGLE SHEET ---
+  // --- 5. ATOMARE SPEICHERUNG IN SUPABASE POSTGRESQL ---
 
   async function applySSVDiffClient(importId, diffRows, byPerson, onProgress) {
     const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
@@ -557,12 +556,15 @@
 
     const approvedRows = diffRows.filter(r => r[8] === 'Update');
     if (approvedRows.length === 0) {
-      return { created: 0, updated: 0, skipped: diffRows.length };
+      return { created: 0, updated: 0, licenses: 0, functions: 0, training: 0, history: 0, skipped: diffRows.length };
     }
 
-    if (onProgress) onProgress('Speichere Mutationen in Supabase PostgreSQL...');
+    if (onProgress) onProgress('Bereite Datenpaket für atomare Persistierung in Supabase vor...');
 
-    let stats = { created: 0, updated: 0, skipped: diffRows.length - approvedRows.length };
+    const membersToSync = [];
+    const licensesToSync = [];
+    const functionsToSync = [];
+    const trainingToSync = [];
     const historyEntries = [];
 
     // Nach PersonNumber gruppieren
@@ -573,15 +575,16 @@
       approvedByPn[pn].push(row);
     });
 
+    const currentUserStr = (window.currentUser ? window.currentUser.email || window.currentUser.name : 'Vorstand Admin');
+
     for (const [pn, pDiffs] of Object.entries(approvedByPn)) {
       const ssvRows = byPerson[pn] || [];
       const base = ssvRows[0] || {};
       const status = extractMembershipStatus(ssvRows);
-      const isNeu = pDiffs.some(d => d[7] === 'NEU');
       const isAbgang = pDiffs.some(d => d[7] === 'ABGANG');
 
-      // 1. Stammdaten-Datensatz für Supabase bauen
-      const memberRecord = {
+      // 1. Stammdaten-Datensatz
+      membersToSync.push({
         person_number: parseInt(pn, 10),
         address_number: base.AddressNumber ? String(base.AddressNumber) : null,
         salutation: base.Salutation || null,
@@ -613,22 +616,13 @@
         honorary_member_since: normalizeDateValue(status.HonoraryMemberSince) || null,
         first_club_entry_date_ssv: normalizeDateValue(status.FirstClubEntryDateSSV) || null,
         deceased: status.Deceased === 1,
-        raw_data: base,
-        last_updated_by: 'SSV-Import (' + importId + ')',
-        synced_at: new Date().toISOString()
-      };
+        raw_data: base
+      });
 
-      // In Supabase upserten
-      const { error: mErr } = await supa.from('members').upsert(memberRecord, { onConflict: 'person_number' });
-      if (mErr) console.warn('⚠️ Fehler beim Speichern von Mitglied ' + pn + ' in Supabase:', mErr);
-
-      if (isNeu) stats.created++;
-      else stats.updated++;
-
-      // 2. Lizenzen aktualisieren
+      // 2. Lizenzen
       const ssvLicenses = extractAllLicenses(ssvRows);
       for (const lic of ssvLicenses) {
-        const licRecord = {
+        licensesToSync.push({
           person_number: parseInt(pn, 10),
           membership_category: lic.MembershipCategory,
           entry_date: normalizeDateValue(lic.EntryDate) || null,
@@ -639,18 +633,37 @@
           license_invoicing_club_name: lic.LicenseInvoicingClubName || null,
           is_active: lic.IsActive === 1,
           import_quelle: 'SSV-Import'
-        };
-        try {
-          const { error: licErr } = await supa.from('member_licenses').upsert(licRecord, {
-            onConflict: 'person_number,membership_category,entry_date'
-          });
-          if (licErr) console.warn('⚠️ Lizenz-Fehler bei Mitglied ' + pn + ':', licErr);
-        } catch (e) {
-          console.warn('⚠️ Lizenz-Fehler bei Mitglied ' + pn + ':', e);
-        }
+        });
       }
 
-      // 3. Historie-Einträge für jedes freigegebene Diff erzeugen
+      // 3. Funktionen
+      const ssvFunctions = extractActiveFunctions(ssvRows);
+      for (const fn of ssvFunctions) {
+        functionsToSync.push({
+          person_number: parseInt(pn, 10),
+          official_function_category: fn.OfficialFunctionCategory,
+          official_function_remark: fn.OfficialFunctionRemark || null,
+          official_function_entry_date: normalizeDateValue(fn.OfficialFunctionEntryDate) || null,
+          official_function_exit_date: normalizeDateValue(fn.OfficialFunctionExitDate) || null,
+          use_on_board_and_functionary_report: fn.UseOnBoardAndFunctionaryReport === true,
+          import_quelle: 'SSV-Import'
+        });
+      }
+
+      // 4. Training
+      const ssvTraining = extractTraining(ssvRows);
+      for (const tr of ssvTraining) {
+        trainingToSync.push({
+          person_number: parseInt(pn, 10),
+          course_category: tr.CourseCategory || null,
+          module: tr.Module || null,
+          completed_training_date: normalizeDateValue(tr.CompletedTrainingDate) || null,
+          training_status: tr.TrainingStatus || null,
+          completed_training_expiration_date: normalizeDateValue(tr.CompletedTrainingExpirationDate) || null
+        });
+      }
+
+      // 5. Historie-Einträge
       pDiffs.forEach(diff => {
         historyEntries.push({
           person_number: parseInt(pn, 10),
@@ -661,22 +674,38 @@
           neuerwert: String(diff[6] || ''),
           source: 'SSV-Import',
           importid: importId,
-          erfasstvon: (window.currentUser ? window.currentUser.email || window.currentUser.name : 'System')
+          erfasstvon: currentUserStr
         });
       });
     }
 
-    // Historie batch-eintragen
-    if (historyEntries.length > 0) {
-      try {
-        const { error: histErr } = await supa.from('member_history').insert(historyEntries);
-        if (histErr) console.warn('⚠️ History Insert Fehler:', histErr);
-      } catch (e) {
-        console.warn('⚠️ History Insert Exception:', e);
-      }
+    if (onProgress) onProgress('Speichere Datensätze atomar in Supabase PostgreSQL...');
+
+    const payload = {
+      import_id: importId,
+      user: currentUserStr,
+      members: membersToSync,
+      licenses: licensesToSync,
+      functions: functionsToSync,
+      training: trainingToSync,
+      history: historyEntries
+    };
+
+    const { data: res, error: rpcErr } = await supa.rpc('apply_ssv_import_batch', { p_payload: payload });
+    if (rpcErr) {
+      console.error('❌ Fehler beim Ausführen von apply_ssv_import_batch:', rpcErr);
+      throw new Error(rpcErr.message || 'Fehler beim Speichern in Supabase.');
     }
 
-    return stats;
+    return {
+      created: res?.members_created || 0,
+      updated: res?.members_updated || 0,
+      licenses: res?.licenses_synced || 0,
+      functions: res?.functions_synced || 0,
+      training: res?.training_synced || 0,
+      history: res?.history_logged || 0,
+      skipped: diffRows.length - approvedRows.length
+    };
   }
 
   // Exports an das globale Window-Objekt

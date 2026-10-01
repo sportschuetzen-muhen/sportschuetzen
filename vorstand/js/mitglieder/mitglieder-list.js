@@ -176,18 +176,18 @@ function mglRenderRows(data) {
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-hover table-sm mb-0 align-middle" id="mgl-table">
-              <thead class="table-dark">
+              <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px; z-index: 10;">
                 <tr>
-                  <th data-col-id="nr" data-col-name="Nr. / Lizenz" class="mgl-clickable-sort tk-col-nr" onclick="mglSetSort('AddressNumber')">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
-                  <th data-col-id="name" data-col-name="Name" class="mgl-clickable-sort tk-col-name" onclick="mglSetSort('LastName')">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
-                  <th data-col-id="geburt" data-col-name="Geburtsdatum" class="mgl-clickable-sort tk-col-geburt" onclick="mglSetSort('BirthDate')">Geburtsdatum <span class="mgl-sort-ind">${mglSortIndicator('BirthDate')}</span></th>
-                  <th data-col-id="email" data-col-name="E-Mail" class="tk-col-email">E-Mail</th>
-                  <th data-col-id="telefon" data-col-name="Telefon" class="tk-col-telefon">Telefon</th>
-                  <th data-col-id="kategorie" data-col-name="Kategorie" class="mgl-clickable-sort tk-col-kategorie" onclick="mglSetSort('_kategorie')">Kategorie <span class="mgl-sort-ind">${mglSortIndicator('_kategorie')}</span></th>
-                  <th data-col-id="lizenzen" data-col-name="Lizenzen" class="mgl-clickable-sort tk-col-lizenzen" onclick="mglSetSort('_aktiveLizenzenCount')">Lizenzen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveLizenzenCount')}</span></th>
-                  <th data-col-id="funktionen" data-col-name="Funktionen" class="mgl-clickable-sort tk-col-funktionen" onclick="mglSetSort('_aktiveFunktionenCount')">Funktionen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveFunktionenCount')}</span></th>
-                  <th data-col-id="status" data-col-name="Status" class="tk-col-status">Status</th>
-                  <th style="width: 75px;"></th>
+                  <th data-col-id="nr" data-col-name="Nr. / Lizenz" class="mgl-clickable-sort tk-col-nr py-2" onclick="mglSetSort('AddressNumber')" style="cursor: pointer; user-select: none;">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
+                  <th data-col-id="name" data-col-name="Name" class="mgl-clickable-sort tk-col-name py-2" onclick="mglSetSort('LastName')" style="cursor: pointer; user-select: none;">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
+                  <th data-col-id="geburt" data-col-name="Geburtsdatum" class="mgl-clickable-sort tk-col-geburt py-2" onclick="mglSetSort('BirthDate')" style="cursor: pointer; user-select: none;">Geburtsdatum <span class="mgl-sort-ind">${mglSortIndicator('BirthDate')}</span></th>
+                  <th data-col-id="email" data-col-name="E-Mail" class="tk-col-email py-2">E-Mail</th>
+                  <th data-col-id="telefon" data-col-name="Telefon" class="tk-col-telefon py-2">Telefon</th>
+                  <th data-col-id="kategorie" data-col-name="Kategorie" class="mgl-clickable-sort tk-col-kategorie py-2" onclick="mglSetSort('_kategorie')" style="cursor: pointer; user-select: none;">Kategorie <span class="mgl-sort-ind">${mglSortIndicator('_kategorie')}</span></th>
+                  <th data-col-id="lizenzen" data-col-name="Lizenzen" class="mgl-clickable-sort tk-col-lizenzen py-2" onclick="mglSetSort('_aktiveLizenzenCount')" style="cursor: pointer; user-select: none;">Lizenzen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveLizenzenCount')}</span></th>
+                  <th data-col-id="funktionen" data-col-name="Funktionen" class="mgl-clickable-sort tk-col-funktionen py-2" onclick="mglSetSort('_aktiveFunktionenCount')" style="cursor: pointer; user-select: none;">Funktionen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveFunktionenCount')}</span></th>
+                  <th data-col-id="status" data-col-name="Status" class="tk-col-status py-2">Status</th>
+                  <th data-col-id="actions" data-col-name="Aktionen" class="text-end py-2" style="width: 85px;"></th>
                 </tr>
               </thead>
               <tbody id="mglTableBody">
@@ -241,7 +241,7 @@ function mglRenderRows(data) {
                     <td class="tk-col-lizenzen"><span class="badge bg-primary">${aktiveLiz}</span></td>
                     <td class="tk-col-funktionen"><span class="badge bg-info text-dark">${aktiveFn}</span></td>
                     <td class="tk-col-status">${statusBadge}</td>
-                    <td class="text-nowrap text-end">
+                    <td class="text-nowrap text-end tk-col-actions">
                       <button class="btn btn-outline-primary btn-sm py-0 px-2"
                               onclick="mglOpenDetail('${pn}')">
                         <i class="fas fa-eye"></i>
@@ -262,10 +262,20 @@ function mglRenderRows(data) {
       </div>
     `;
 
+    if (typeof window.TableKit?.makeResizable === 'function') {
+      window.TableKit.makeResizable('#mgl-table', {
+        storageKey: 'portal_mgl_col_widths',
+        minWidth: 50,
+        columns: {
+          actions: { minWidth: 75, defaultWidth: 85 }
+        }
+      });
+    }
+
     if (typeof window.TableKit?.setupColumnToggle === 'function') {
       window._mglColToggle = window.TableKit.setupColumnToggle('#mgl-table', {
         container: '#mgl-column-toggle',
-        storageKey: 'mgl_columns_visibility'
+        storageKey: 'portal_mgl_columns_visibility'
       });
     }
   } else {

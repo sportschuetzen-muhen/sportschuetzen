@@ -19,14 +19,20 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 
 ## 2. Kern-Architektur & Das «Warum» hinter den Designentscheidungen
 
-### 2.1 Warum browser-native SSV-Diff-Engine statt Server-Cronjob?
-* **Problem:** Der Verband (SSV) bietet keine direkte REST-Webservice-Schnittstelle; Mutationen müssen periodisch als Excel-Arbeitsmappe exportiert werden. Frühere Google Apps Scripts liefen dabei in 60-Sekunden-Timeouts.
+### 2.1 Warum browser-native SSV-Diff-Engine & atomare PostgreSQL Batch-RPC (`apply_ssv_import_batch`)?
+* **Problem:** Der Verband (SSV) bietet keine direkte REST-Webservice-Schnittstelle; Mutationen müssen periodisch als Excel-Arbeitsmappe exportiert werden. Frühere Google Apps Scripts liefen dabei in 60-Sekunden-Timeouts und führten langsame Einzeloperationen durch.
 * **Lösung & Warum:** Die Import-Engine ([`mitglieder-import-engine.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/mitglieder/mitglieder-import-engine.js)) parst die Verbands-XLSX direkt im Browser mittels SheetJS in `< 100 ms`.
-* **Menschliche Kontrolle (Human-in-the-Loop):** Ein automatischer Server-Cronjob birgt das Risiko, fehlerhafte Verbandsdaten unbemerkt zu importieren. Die Browser-Engine zeigt dem Mitgliederverwalter eine transparente 3-Kategorie-Diff-Vorschau:
+* **Menschliche Kontrolle (Human-in-the-Loop):** Ein automatischer Server-Cronjob birgt das Risiko, fehlerhafte Verbandsdaten unbemerkt zu importieren. Die Browser-Engine zeigt dem Mitgliederverwalter eine transparente 3-Kategorie-Diff-Vorschau (im globalen TableKit-Standard mit hellem Sticky-Header):
   1. *Neu aufzunehmende Mitglieder* (Grün)
   2. *Geänderte Stammdaten / Lizenzen* (Gelb mit Vorher/Nachher-Gegenüberstellung)
   3. *Im SSV nicht mehr geführte Personen* (Rot)
-* Erst nach expliziter Prüfung und Klick auf «Änderungen anwenden» werden die Datensätze atomar in Supabase geschrieben.
+* **Atomare Massenpersistierung:** Nach Prüfung und Klick auf «Änderungen anwenden» wird das gesamte Datenpaket in einem einzigen RPC-Aufruf an die Stored Procedure `public.apply_ssv_import_batch` übergeben. In PostgreSQL werden `members`, `member_licenses`, `member_functions`, `member_training` und das Revisions-Log `member_history` in einer einzigen ACID-Transaktion in `< 40 ms` synchronisiert.
+
+### 2.1.1 Einheitlicher TableKit-Standard im gesamten Modul
+* Sämtliche Tabellen des Mitgliederbereichs (Hauptliste `#mgl-table`, Import-Vorschau `#mglImportDiffTable` und Detail-Tabellen für Lizenzen und Funktionen) implementieren den globalen `TableKit`-Standard (`ui-table-kit.js`):
+  - Heller Sticky-Header (`thead.table-light sticky-top small text-muted text-uppercase`) mit `z-index: 10`.
+  - Persistente Spaltenbreiten via `TableKit.makeResizable` mit lokalem Browser-Speicher.
+  - Spaltenauswahl via `TableKit.setupColumnToggle`.
 
 ### 2.2 Warum zwingender Quellschutz für Passiv- & Ehrenmitglieder?
 * **Invariante:** Der SSV-Export enthält ausschliesslich lizenzierte Aktivschützen. Passivmitglieder, Gönner, Veteranen und Ehrenmitglieder ohne Schiesslizenz tauchen in der Verbandsdatei nicht auf.
