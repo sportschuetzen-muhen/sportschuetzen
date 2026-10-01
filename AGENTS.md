@@ -46,3 +46,17 @@ Nach **jeder** vorgenommenen Code- oder Schemaänderung müssen der lokale Entwi
    git push origin migration-supabase
    ```
 
+## 6. Rechnungs-Lebenszyklus, Adress-Kontrakt & PDF-Synchronisation
+- **Lebenszyklus & Mutations-Sperren:**
+  - `mail_status === 'entwurf'` & `total_paid === 0`: Rechnung und Positionen dürfen frei bearbeitet oder gelöscht werden.
+  - `mail_status === 'versendet'` & `total_paid === 0`: Bearbeitung (`rnOpenEditModal` / `rnSaveEditInvoice`) ist **strikt gesperrt** (Schutz vor Debitor-Diskrepanzen und Belegverfälschung, da das PDF bereits zugestellt wurde). Löschen nur mit expliziter Warnung; fachlich bevorzugt ist die Stornierung via `RechnungsCore.cancelInvoice()`.
+  - `status === 'bezahlt'` oder `total_paid > 0`: Bearbeitung und Löschung sind **vollständig gesperrt** (Revisionssicherheit & GoBD-Grundsätze).
+  - Typ `Jahresbeitrag`: Bearbeitung im Rechnungsmodul generell gesperrt; Steuerung erfolgt ausschliesslich über das Jahresbeitragsmodul (`jahresbeitrag-overview.js`).
+- **Adress- & Empfänger-Kontrakt (DIN 5008 & SIX Swiss QR SPC 0200 1):**
+  - **Privatperson / Mitglied:** Anrede (`Herr`/`Frau`) in separater Zeile, Vorname Nachname im normalen Schriftgewicht (**kein Fett**, keine Doppelung des Namens!). Das Feld `firma` muss zwingend **leer / `null`** sein!
+  - **Firma / Institution:** Firmenname in Zeile 1 (**fett**), danach optionale Abteilung/Zusatz, danach Ansprechperson mit Anrede (`Herr`/`Frau` Vorname Nachname im normalen Schriftgewicht).
+  - **Externe Kontakte:** Bei `typ === 'privat'` darf niemals der Personenname in das Feld `firma` geschrieben werden. Bei `typ === 'firma'` ist `firma` ein Pflichtfeld.
+- **Automatische PDF-Neugenerierung & Cache-Busting:**
+  - Jede Mutation an einer Rechnung (Erstellen, Bearbeiten, Zahlung, Storno) muss im Hintergrund automatisch die Neugenerierung anstossen: `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })`.
+  - Jede PDF-Anzeige oder Verlinkung im Frontend muss zwingend mit Cache-Busting aufgerufen werden (`?t=${Date.now()}`), um veraltete Browser- und CDN-Caches zu umgehen.
+

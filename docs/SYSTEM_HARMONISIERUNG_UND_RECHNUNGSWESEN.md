@@ -145,6 +145,42 @@ CREATE TABLE rechnungspositionen (
 
 ---
 
+### 2.5 Verbindlicher Rechnungs-Lebenszyklus, Mutationsgrenzen & Adress-Kontrakt
+
+Um Fehler bei künftigen Code-Erweiterungen zu verhindern, sind hier die fachlichen Hintergründe (**das «Warum»**) und die verbindlichen Datenverträge definiert:
+
+#### A. Das «Warum» hinter den Mutations- und Löschgrenzen
+1. **Warum ist die Bearbeitung nach dem Rechnungsversand gesperrt?**  
+   Sobald eine Rechnung per E-Mail versendet wurde (`mail_status === 'versendet'`), befindet sich das offizielle PDF mit unveränderlicher Rechnungsnummer und QR-Referenz beim Empfänger. Würde der Vorstand die Rechnung danach im System mutieren (z. B. Betrag, Positionen oder Debitor anpassen), entstünde eine Beleg-Diskrepanz zwischen dem Dokument beim Kunden und den Forderungs- und Buchungsdaten in der Vereinsbuchhaltung.  
+   *Regel:* Nach dem Versand ist eine In-Place-Bearbeitung strikt gesperrt. Korrekturen müssen über Stornierung (`RechnungsCore.cancelInvoice`) oder vor Zahlungseingang über kontrolliertes Löschen und Neuerstellen erfolgen.
+2. **Warum sind bezahlte Rechnungen absolut unveränderlich?**  
+   Sobald eine Rechnung ganz oder teilweise bezahlt wurde (`status === 'bezahlt'` oder `total_paid > 0`), existieren verknüpfte Buchungssätze in `public.accounting_journal` und Zahlungsbelege in `public.invoice_payments`. Das Löschen oder Ändern einer bezahlten Rechnung verstösst gegen Schweizer Rechnungslegungsrecht (OR 957ff) und Grundsätze ordnungsmässiger Buchführung (GoBD).  
+   *Regel:* Weder Bearbeiten noch Löschen ist für bezahlte Rechnungen zulässig.
+3. **Warum ist der Typ «Jahresbeitrag» im Rechnungs-Cockpit gesperrt?**  
+   Jahresbeiträge basieren auf der Vereins-Gebührenordnung, Lizenzen und Schiessprogrammen. Sie werden vom Modul `jahresbeitrag-overview.js` synchronisiert. Manuelle Eingriffe im Rechnungsmodul würden die Konsistenz mit `contributions_header` zerstören.
+
+#### B. Das «Warum» hinter dem DIN 5008- & QR-Adress-Kontrakt
+* **Rechtsform-Unterscheidung im Adressfenster:**  
+  Nach DIN 5008 und SIX SPC 0200 1 bestimmt die erste Zeile im Adressfenster, ob der Empfänger eine juristische Person (Firma/Verband) oder eine natürliche Person (Privatperson/Mitglied) ist.
+  - **Privatperson / Mitglied:**  
+    Zeile 1: Anrede (`Herr` / `Frau`) im normalen Schriftgewicht.  
+    Zeile 2: `[Vorname Nachname]` im normalen Schriftgewicht (**niemals fett**, niemals Name doppelt!).  
+    *Zwingende Invariante:* Das Feld `firma` muss zwingend **leer (`""`) oder `null`** sein!
+  - **Firma / Verein / Institution:**  
+    Zeile 1: `[Firmenname]` im Fettdruck (**bold**).  
+    Zeile 2: Optionale Abteilung oder Zusatz (`abteilung`).  
+    Zeile 3: Ansprechperson mit Anrede (`Herr` / `Frau` `[Vorname Nachname]` im normalen Schriftgewicht).
+  - **Externe Kontakte:**  
+    Bei `typ === 'privat'` darf der Personenname niemals in das Feld `firma` geschrieben werden. Bei `typ === 'firma'` ist `firma` ein Pflichtfeld.
+
+#### C. Automatische PDF-Synchronisation & Cache-Busting
+* **Vollautomatische Neugenerierung:**  
+  Jede Mutation an einer Rechnung (Erstellung, Statusänderung, Zahlungsverbuchung, Storno) ruft im Hintergrund unmittelbar `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })` auf.
+* **Cache-Busting:**  
+  Weil Browser und Cloudflare PDFs aggressiv zwischenspeichern, müssen alle Frontend-Aufrufe (`rnOpenInvoicePdf`) zwingend mit einem Zeitstempel-Query-Parameter versehen werden (`?t=${Date.now()}`).
+
+---
+
 ## 3. Konkreter Fahrplan zur Umsetzung
 
 1. **`inventar-pdf.js` entkernen:**
