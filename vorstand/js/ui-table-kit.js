@@ -761,6 +761,9 @@
         const sw = savedWidths[colId];
         th.style.width = sw + 'px';
         th.style.minWidth = sw + 'px';
+      } else if (colConf.defaultWidth) {
+        th.style.width = colConf.defaultWidth + 'px';
+        th.style.minWidth = colConf.defaultWidth + 'px';
       }
 
       if (colConf.resizable === false) return;
@@ -883,9 +886,16 @@
         if (storageKey) {
           try { localStorage.removeItem(storageKey); } catch (_) {}
         }
-        ths.forEach(th => {
-          th.style.width = '';
-          th.style.minWidth = '';
+        ths.forEach((th, idx) => {
+          const colId = th.dataset.colId || th.dataset.col || th.getAttribute('data-col') || `col_${idx}`;
+          const colConf = columnsConfig[colId] || {};
+          if (colConf.defaultWidth) {
+            th.style.width = colConf.defaultWidth + 'px';
+            th.style.minWidth = colConf.defaultWidth + 'px';
+          } else {
+            th.style.width = '';
+            th.style.minWidth = '';
+          }
         });
       },
       setWidth: (colId, width) => {

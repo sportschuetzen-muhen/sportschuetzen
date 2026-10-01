@@ -921,6 +921,12 @@ window.rnOpenDetailsModal = async function(invoiceId) {
           storageKey: 'rn_detail_positions_table_cols'
         });
       }
+      if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+        window.TableKit.makeResizable('#rn-detail-positions-table', {
+          storageKey: 'rn_detail_positions_table_col_widths',
+          minWidth: 40
+        });
+      }
     }
   } catch (err) {
     document.getElementById('rn-details-modal-body').innerHTML = `
@@ -1414,6 +1420,19 @@ window.renderTabContacts = function(content) {
     window.TableKit.setupColumnToggle('#rn-contacts-table', {
       container: '#rn-contacts-col-toggle',
       storageKey: 'rn_contacts_table_cols'
+    });
+  }
+  if (window.TableKit && typeof window.TableKit.makeSortable === 'function') {
+    window.TableKit.makeSortable(document.getElementById('rn-contacts-table'));
+  }
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#rn-contacts-table', {
+      storageKey: 'rn_contacts_table_col_widths',
+      minWidth: 40,
+      columns: {
+        idx: { minWidth: 40, defaultWidth: 40, resizable: false },
+        actions: { minWidth: 100, defaultWidth: 150 }
+      }
     });
   }
 };

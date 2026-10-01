@@ -94,6 +94,18 @@ window.renderTabTemplates = function(content) {
       storageKey: 'rn_templates_table_cols'
     });
   }
+  if (window.TableKit && typeof window.TableKit.makeSortable === 'function') {
+    window.TableKit.makeSortable(document.getElementById('rn-templates-table'));
+  }
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#rn-templates-table', {
+      storageKey: 'rn_templates_table_col_widths',
+      minWidth: 50,
+      columns: {
+        actions: { minWidth: 90, defaultWidth: 110 }
+      }
+    });
+  }
 };
 
 // Modal for Template Add/Edit

@@ -287,9 +287,11 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
         strasse: '', plz: '', ort: '', email: ''
       };
 
-  const sender = (typeof rnGetLoggedInSender === 'function')
-    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
-    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+  const sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
+    ? inv.sender_address
+    : ((typeof rnGetLoggedInSender === 'function')
+        ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
+        : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null));
 
   const senderEmail = (sender && sender.email) ? sender.email : 'kassier@sportschuetzen-muhen.ch';
   const senderName = (sender && (sender.vorname || sender.nachname))
@@ -420,12 +422,17 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
 
               <!-- Absender -->
               <div class="col-md-5">
-                <label class="form-label fw-bold small text-muted">Absender</label>
-                <div class="input-group">
-                  <span class="input-group-text bg-light"><i class="fas fa-user-shield text-muted"></i></span>
-                  <input type="text" class="form-control bg-light" readonly value="${escapeHtml(senderName)} <${escapeHtml(senderEmail)}>">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <label class="form-label fw-bold small text-muted mb-0">Absender</label>
+                  <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="rnm-sender-only-vorstand" checked onchange="rnPopulateSenderSelect('rnm-sender-select', document.getElementById('rnm-sender-select')?.value, this.checked); rnOnMailSenderChanged('${inv.id}');">
+                    <label class="form-check-label small fw-semibold" for="rnm-sender-only-vorstand" style="font-size: 10px;">Auf Vorstand beschränken</label>
+                  </div>
                 </div>
-                <div class="form-text text-muted" style="font-size: 11px;">
+                <select class="form-select form-select-sm fw-semibold" id="rnm-sender-select" onchange="rnOnMailSenderChanged('${inv.id}')">
+                  <!-- Dynamisch geladen -->
+                </select>
+                <div class="form-text text-muted" id="rnm-sender-info" style="font-size: 11px;">
                   Zustelladresse des Vorstands
                 </div>
               </div>
@@ -540,6 +547,10 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
   const modal = new bootstrap.Modal(modalEl);
   modal.show();
   rnMakeModalMovableAndResizable(modalEl);
+
+  const initialSenderPN = (sender && (sender.personNumber || sender.person_number || sender.PersonNumber)) || null;
+  rnPopulateSenderSelect('rnm-sender-select', initialSenderPN, true);
+  rnOnMailSenderChanged(inv.id);
 };
 
 // Hilfsfunktionen für Mail-Modal Tabs und Vorlagen-Reset
@@ -638,9 +649,18 @@ window.rnExecuteSendMail = async function(invoiceId) {
       };
   recipient.email = targetEmail;
 
-  const sender = (typeof rnGetLoggedInSender === 'function')
-    ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
-    : (typeof jbGetSenderForInvoiceType === 'function' ? jbGetSenderForInvoiceType(inv.type || 'Jahresbeitrag') : null);
+  const senderPn = document.getElementById('rnm-sender-select')?.value;
+  let sender = null;
+  if (senderPn) {
+    sender = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
+      ? await window.RechnungsCore.resolveSender({ personNumber: senderPn }, inv.type)
+      : null;
+  }
+  if (!sender) {
+    sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
+      ? inv.sender_address
+      : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag') : null);
+  }
 
   const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
   const cleanTargetSubject = (targetSubject || baseLayout.mail_subject || '')
@@ -1055,195 +1075,271 @@ function rnEnsurePositionsTableStyles() {
 }
 
 // ---------------------------------------------------------------------
-// Spaltenbreiten der Rechnungspositionen-Tabelle anpassbar machen & in localStorage speichern
+// Spaltenbreiten der Rechnungspositionen-Tabelle: TableKit Integration & Reset
 // ---------------------------------------------------------------------
-const RN_POS_COL_WIDTHS_STORAGE_KEY = 'rn_positions_table_col_widths_v2';
-const RN_DEFAULT_POS_COL_WIDTHS = {
-  idx: 38,
-  desc: 380,
-  qty: 75,
-  unitprice: 150,
-  amt: 150,
-  konto: 140,
-  action: 45
-};
-
-function rnApplyPositionsTableColWidths(tableEl) {
-  if (!tableEl) return;
-  rnEnsurePositionsTableStyles();
-
-  tableEl.style.borderCollapse = 'separate';
-  tableEl.style.borderSpacing = '0';
-  tableEl.style.tableLayout = 'fixed';
-
-  let savedWidths = {};
-  try {
-    const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
-    if (raw) savedWidths = JSON.parse(raw) || {};
-  } catch (e) {}
-
-  const ths = tableEl.querySelectorAll('thead th[data-col]');
-  ths.forEach(th => {
-    th.style.position = 'relative';
-    th.style.overflow = 'visible';
-    th.style.boxSizing = 'border-box';
-    const col = th.getAttribute('data-col');
-    if (!col) return;
-    const width = (savedWidths && typeof savedWidths[col] === 'number' && savedWidths[col] > 25)
-      ? savedWidths[col]
-      : RN_DEFAULT_POS_COL_WIDTHS[col];
-
-    if (width) {
-      th.style.width = width + 'px';
-      th.style.minWidth = width + 'px';
-      th.style.maxWidth = width + 'px';
-    }
-  });
-}
-window.rnApplyPositionsTableColWidths = rnApplyPositionsTableColWidths;
-
-function rnSavePositionsTableColWidths(tableEl) {
-  if (!tableEl) return;
-  try {
-    const ths = tableEl.querySelectorAll('thead th[data-col]');
-    let saved = {};
-    try {
-      const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
-      if (raw) saved = JSON.parse(raw) || {};
-    } catch (e) {}
-
-    ths.forEach(th => {
-      const col = th.getAttribute('data-col');
-      if (col && th.style.width && th.style.width !== 'auto') {
-        const val = parseInt(th.style.width, 10);
-        if (!isNaN(val) && val > 25) {
-          saved[col] = val;
-        }
-      }
-    });
-    localStorage.setItem(RN_POS_COL_WIDTHS_STORAGE_KEY, JSON.stringify(saved));
-  } catch (e) {
-    console.warn('Fehler beim Speichern der Spaltenbreiten:', e);
-  }
-}
-window.rnSavePositionsTableColWidths = rnSavePositionsTableColWidths;
-
 function rnResetPositionsTableColWidths(btnEl) {
-  try {
-    localStorage.removeItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
-  } catch (e) {}
   const modal = btnEl ? btnEl.closest('.modal') : null;
   const table = modal ? modal.querySelector('table[id$="-positions-table"]') : null;
-  if (table) {
-    rnApplyPositionsTableColWidths(table);
+  if (!table) return;
+  const storageKey = table.id === 'rne-positions-table' ? 'rne_positions_table_col_widths' : 'rnc_positions_table_col_widths';
+  try {
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem('rn_positions_table_col_widths_v2');
+  } catch (_) {}
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    const resizer = window.TableKit.makeResizable(table, {
+      storageKey: storageKey,
+      minWidth: 35,
+      columns: {
+        idx: { minWidth: 35, defaultWidth: 38, resizable: false },
+        desc: { minWidth: 150, defaultWidth: 350 },
+        qty: { minWidth: 50, defaultWidth: 80 },
+        unitprice: { minWidth: 90, defaultWidth: 150 },
+        amt: { minWidth: 90, defaultWidth: 150 },
+        konto: { minWidth: 90, defaultWidth: 140 },
+        action: { minWidth: 45, defaultWidth: 45, resizable: false }
+      }
+    });
+    if (resizer && typeof resizer.reset === 'function') {
+      resizer.reset();
+    }
   }
 }
 window.rnResetPositionsTableColWidths = rnResetPositionsTableColWidths;
 
 function rnInitPositionsTableResizable(tableEl) {
   if (!tableEl) return;
-
-  rnApplyPositionsTableColWidths(tableEl);
-
-  const resizableCols = ['desc', 'qty', 'unitprice', 'amt', 'konto'];
-  const ths = tableEl.querySelectorAll('thead th[data-col]');
-
-  ths.forEach(th => {
-    const col = th.getAttribute('data-col');
-    if (!resizableCols.includes(col)) return;
-    if (th.querySelector('.rn-col-resizer')) return;
-
-    th.style.position = 'relative';
-    th.style.overflow = 'visible';
-
-    const resizer = document.createElement('div');
-    resizer.className = 'rn-col-resizer';
-    resizer.style.cssText = 'position:absolute; top:0; bottom:0; right:-6px; width:12px; height:100%; min-height:36px; cursor:col-resize; user-select:none; z-index:25; display:flex; align-items:center; justify-content:center; touch-action:none;';
-    resizer.title = 'Spaltenbreite anpassen (Ziehen zum Ändern, Doppelklick zum Zurücksetzen)';
-
-    const handleLine = document.createElement('div');
-    handleLine.style.cssText = 'width:2px; height:80%; background-color:#94a3b8; border-radius:1px; pointer-events:none; opacity:0.6; transition:opacity 0.15s, background-color 0.15s, width 0.15s;';
-    resizer.appendChild(handleLine);
-
-    resizer.addEventListener('mouseenter', () => {
-      handleLine.style.opacity = '1';
-      handleLine.style.backgroundColor = '#0d6efd';
-      handleLine.style.width = '3px';
-      resizer.style.zIndex = '30';
-    });
-    resizer.addEventListener('mouseleave', () => {
-      if (!resizer.dataset.dragging) {
-        handleLine.style.opacity = '0.6';
-        handleLine.style.backgroundColor = '#94a3b8';
-        handleLine.style.width = '2px';
-        resizer.style.zIndex = '25';
+  const storageKey = tableEl.id === 'rne-positions-table' ? 'rne_positions_table_col_widths' : 'rnc_positions_table_col_widths';
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    return window.TableKit.makeResizable(tableEl, {
+      storageKey: storageKey,
+      minWidth: 35,
+      columns: {
+        idx: { minWidth: 35, defaultWidth: 38, resizable: false },
+        desc: { minWidth: 150, defaultWidth: 350 },
+        qty: { minWidth: 50, defaultWidth: 80 },
+        unitprice: { minWidth: 90, defaultWidth: 150 },
+        amt: { minWidth: 90, defaultWidth: 150 },
+        konto: { minWidth: 90, defaultWidth: 140 },
+        action: { minWidth: 45, defaultWidth: 45, resizable: false }
       }
     });
-
-    let startX = 0;
-    let startWidth = 0;
-
-    const onMouseDown = (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      startX = e.pageX;
-      startWidth = th.getBoundingClientRect().width;
-      resizer.dataset.dragging = 'true';
-      handleLine.style.opacity = '1';
-      handleLine.style.backgroundColor = '#0d6efd';
-      handleLine.style.width = '3px';
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-
-      const minWidth = (col === 'desc') ? 120 : (col === 'qty' ? 45 : 80);
-
-      const onMouseMove = (ev) => {
-        const diff = ev.pageX - startX;
-        const newWidth = Math.max(minWidth, Math.round(startWidth + diff));
-        th.style.width = newWidth + 'px';
-        th.style.minWidth = newWidth + 'px';
-        th.style.maxWidth = newWidth + 'px';
-      };
-
-      const onMouseUp = () => {
-        delete resizer.dataset.dragging;
-        handleLine.style.opacity = '0.6';
-        handleLine.style.backgroundColor = '#94a3b8';
-        handleLine.style.width = '2px';
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-        rnSavePositionsTableColWidths(tableEl);
-      };
-
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
-    };
-
-    resizer.addEventListener('mousedown', onMouseDown);
-
-    resizer.addEventListener('dblclick', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const def = RN_DEFAULT_POS_COL_WIDTHS[col] || 150;
-      th.style.width = def + 'px';
-      th.style.minWidth = def + 'px';
-      th.style.maxWidth = def + 'px';
-      try {
-        const raw = localStorage.getItem(RN_POS_COL_WIDTHS_STORAGE_KEY);
-        if (raw) {
-          const saved = JSON.parse(raw);
-          delete saved[col];
-          localStorage.setItem(RN_POS_COL_WIDTHS_STORAGE_KEY, JSON.stringify(saved));
-        }
-      } catch (err) {}
-    });
-
-    th.appendChild(resizer);
-  });
+  }
 }
 window.rnInitPositionsTableResizable = rnInitPositionsTableResizable;
+
+// ---------------------------------------------------------------------
+// Absender-Verwaltung & Filterlogik (Aktive Mitglieder & Vorstand)
+// ---------------------------------------------------------------------
+window.rnIsVorstandMember = function(m) {
+  if (!m) return false;
+  const pn = String(m.PersonNumber || m.person_number || '').trim();
+  // 1. Aus Funktionen-Cache
+  if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
+    const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
+    const hasBoardFn = activeFns.some(f => {
+      const cat = String(f.OfficialFunctionCategory || '').toLowerCase();
+      return !cat.includes('hauswart') && !cat.includes('hausmeister');
+    });
+    if (hasBoardFn) return true;
+  }
+  // 2. Aus Badge / Zähler
+  if (Number(m._aktiveFunktionenCount || 0) > 0) return true;
+  // 3. Aus Textfeldern
+  const fnStr = String(m.Function || m.funktion || m.Funktion || m.OfficialFunctionCategory || m.Rolle_extern || m.rolle_extern || '').toLowerCase();
+  if (fnStr.includes('vorstand') || fnStr.includes('präsident') || fnStr.includes('kassier') || fnStr.includes('leiter') || fnStr.includes('aktuar') || fnStr.includes('beirat')) {
+    return true;
+  }
+  return false;
+};
+
+window.rnPopulateSenderSelect = function(selectElId, selectedPN = null, onlyVorstand = true, previewElId = null) {
+  const selectEl = typeof selectElId === 'string' ? document.getElementById(selectElId) : selectElId;
+  if (!selectEl) return;
+
+  const memberSource = (typeof window.rnGetMembersList === 'function' ? window.rnGetMembersList() : null)
+    || (window._mglData || []);
+
+  // Filter: alle Mitglieder, welche nicht ausgetreten sind (und nicht verstorben)
+  let activeMembers = memberSource.filter(m => {
+    const isExited = typeof window.rnIsMemberExited === 'function' ? window.rnIsMemberExited(m) : false;
+    const isDeceased = typeof window.rnIsMemberDeceased === 'function' ? window.rnIsMemberDeceased(m) : false;
+    return !isExited && !isDeceased;
+  });
+
+  if (onlyVorstand) {
+    activeMembers = activeMembers.filter(m => {
+      if (selectedPN && String(m.PersonNumber) === String(selectedPN)) return true;
+      return window.rnIsVorstandMember(m);
+    });
+  }
+
+  activeMembers.sort((a, b) => {
+    const na = `${(a.LastName || '').trim()} ${(a.FirstName || '').trim()}`.trim();
+    const nb = `${(b.LastName || '').trim()} ${(b.FirstName || '').trim()}`.trim();
+    return na.localeCompare(nb, 'de', { sensitivity: 'base' });
+  });
+
+  // Falls selectedPN noch nicht bestimmt ist, ermitteln wir die eingeloggte Person
+  let targetPN = selectedPN;
+  if (!targetPN) {
+    const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
+    if (loggedInPN && activeMembers.some(m => String(m.PersonNumber) === loggedInPN)) {
+      targetPN = loggedInPN;
+    } else if (typeof window.rnGetLoggedInSender === 'function') {
+      const loggedIn = window.rnGetLoggedInSender();
+      const match = activeMembers.find(m => {
+        const fn = String(m.FirstName || '').toLowerCase();
+        const ln = String(m.LastName || '').toLowerCase();
+        return fn === String(loggedIn.vorname || '').toLowerCase() && ln === String(loggedIn.nachname || '').toLowerCase();
+      });
+      if (match) targetPN = String(match.PersonNumber);
+    }
+    // Fallback falls nichts gematcht: erstes Vorstandsmitglied
+    if (!targetPN && activeMembers.length > 0) {
+      targetPN = String(activeMembers[0].PersonNumber);
+    }
+  }
+
+  selectEl.innerHTML = activeMembers.map(m => {
+    const pn = String(m.PersonNumber || '');
+    const name = `${m.LastName || ''} ${m.FirstName || ''}`.trim();
+    const isBoard = window.rnIsVorstandMember(m);
+    let fnLabel = '';
+    if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
+      const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
+      if (activeFns.length > 0) {
+        fnLabel = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
+      }
+    }
+    if (!fnLabel && m.Function) fnLabel = m.Function;
+    const tag = fnLabel ? ` [${fnLabel}]` : (isBoard ? ' [Vorstand]' : '');
+    const isSel = String(targetPN) === pn ? 'selected' : '';
+    return `<option value="${escapeHtml(pn)}" ${isSel}>👤 ${escapeHtml(name)}${escapeHtml(tag)} (Nr: ${escapeHtml(pn)})</option>`;
+  }).join('');
+
+  if (previewElId) {
+    window.rnUpdateSenderPreview(previewElId, selectEl.value);
+  }
+};
+
+window.rnUpdateSenderPreview = function(previewElId, personNumber) {
+  const el = typeof previewElId === 'string' ? document.getElementById(previewElId) : previewElId;
+  if (!el) return;
+
+  const memberSource = (typeof window.rnGetMembersList === 'function' ? window.rnGetMembersList() : null)
+    || (window._mglData || []);
+  const m = memberSource.find(x => String(x.PersonNumber) === String(personNumber));
+
+  if (!m) {
+    el.innerHTML = '<span class="text-muted small">Standard-Vereinsabsender (Sportschützen Muhen)</span>';
+    return;
+  }
+
+  const pn = String(m.PersonNumber || '');
+  let fnLabel = 'Vorstand';
+  if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
+    const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
+    if (activeFns.length > 0) {
+      fnLabel = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
+    }
+  } else if (m.Function) {
+    fnLabel = m.Function;
+  }
+
+  const name = `${m.FirstName || ''} ${m.LastName || ''}`.trim();
+  const email = m.PrimaryEmail || m.Email || 'sportschuetzen.muhen@gmail.com';
+  const street = m.Street || m.Strasse || '';
+  const city = `${m.PostCode || m.ZipCode || m.PLZ || '5037'} ${m.City || m.Ort || 'Muhen'}`.trim();
+  const phone = m.PrivateMobilePhone || m.BusinessMobilePhone || '';
+
+  el.innerHTML = `
+    <div class="d-flex align-items-center justify-content-between p-2 rounded-2 bg-white border shadow-xs" style="font-size: 11.5px;">
+      <div>
+        <strong class="text-dark"><i class="fas fa-user-tie text-primary me-1"></i>${escapeHtml(name)}</strong>
+        <span class="badge bg-secondary-subtle text-secondary border ms-1">${escapeHtml(fnLabel)}</span>
+        <div class="text-muted mt-0.5">${street ? escapeHtml(street) + ', ' : ''}${escapeHtml(city)}</div>
+      </div>
+      <div class="text-end text-muted font-monospace">
+        <div><i class="fas fa-envelope text-muted me-1"></i>${escapeHtml(email)}</div>
+        ${phone ? `<div><i class="fas fa-phone text-muted me-1"></i>${escapeHtml(phone)}</div>` : ''}
+      </div>
+    </div>
+  `;
+};
+
+window.rnOnMailSenderChanged = function(invoiceId) {
+  const sel = document.getElementById('rnm-sender-select');
+  if (!sel) return;
+  const pn = sel.value;
+  const memberSource = (typeof window.rnGetMembersList === 'function' ? window.rnGetMembersList() : null)
+    || (window._mglData || []);
+  const m = memberSource.find(x => String(x.PersonNumber) === String(pn));
+  const infoEl = document.getElementById('rnm-sender-info');
+
+  let senderName = 'Sportschützen Muhen';
+  let senderEmail = 'sportschuetzen.muhen@gmail.com';
+  let senderVorname = '';
+  let senderNachname = '';
+  let senderFunktion = 'Vorstand';
+  let senderVerein = 'Sportschützen Muhen';
+
+  if (m) {
+    senderVorname = m.FirstName || '';
+    senderNachname = m.LastName || '';
+    senderName = `${senderVorname} ${senderNachname}`.trim();
+    senderEmail = m.PrimaryEmail || m.Email || 'sportschuetzen.muhen@gmail.com';
+    if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
+      const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
+      if (activeFns.length > 0) senderFunktion = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
+    } else if (m.Function) {
+      senderFunktion = m.Function;
+    }
+  }
+
+  if (infoEl) {
+    infoEl.innerHTML = `<i class="fas fa-check-circle text-success me-1"></i>${escapeHtml(senderName)} &lt;${escapeHtml(senderEmail)}&gt; (${escapeHtml(senderFunktion)})`;
+  }
+
+  window._rnmCurrentSender = {
+    personNumber: pn,
+    vorname: senderVorname,
+    nachname: senderNachname,
+    name: senderName,
+    email: senderEmail,
+    funktion: senderFunktion,
+    verein: senderVerein
+  };
+};
+
+window.rnOnMahnungSenderChanged = function(invoiceId) {
+  const sel = document.getElementById('rn-mahnung-sender-select');
+  if (!sel) return;
+  const pn = sel.value;
+  const memberSource = (typeof window.rnGetMembersList === 'function' ? window.rnGetMembersList() : null)
+    || (window._mglData || []);
+  const m = memberSource.find(x => String(x.PersonNumber) === String(pn));
+  const infoEl = document.getElementById('rn-mahnung-sender-info');
+
+  let senderName = 'Sportschützen Muhen';
+  let senderEmail = 'sportschuetzen.muhen@gmail.com';
+  let senderFunktion = 'Vorstand';
+
+  if (m) {
+    senderName = `${m.FirstName || ''} ${m.LastName || ''}`.trim();
+    senderEmail = m.PrimaryEmail || m.Email || 'sportschuetzen.muhen@gmail.com';
+    if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
+      const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
+      if (activeFns.length > 0) senderFunktion = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
+    } else if (m.Function) {
+      senderFunktion = m.Function;
+    }
+  }
+
+  if (infoEl) {
+    infoEl.innerHTML = `<i class="fas fa-check-circle text-success me-1"></i>${escapeHtml(senderName)} &lt;${escapeHtml(senderEmail)}&gt; (${escapeHtml(senderFunktion)})`;
+  }
+};
 
 // Hilfsfunktionen für sortierte Empfänger & Buchstabensuche
 window._rnShowInactiveMembers = false;
@@ -1700,6 +1796,29 @@ window.rnOpenCreateModal = async function(btnEl) {
               </div>
             </div>
 
+            <!-- Absender-Daten (Rechnungsaussteller) -->
+            <div class="mb-4 p-3 bg-light rounded-3 border border-light">
+              <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <label class="form-label fw-bold small text-muted mb-0">
+                  <i class="fas fa-user-check me-1.5 text-primary"></i>Absender (Rechnungsaussteller / Unterschrift)
+                </label>
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" id="rnc-sender-only-vorstand" checked onchange="rnPopulateSenderSelect('rnc-sender-select', document.getElementById('rnc-sender-select')?.value, this.checked, 'rnc-sender-preview')">
+                  <label class="form-check-label small fw-semibold" for="rnc-sender-only-vorstand" style="font-size: 11px;">Auf Vorstand beschränken</label>
+                </div>
+              </div>
+              <div class="row g-2 align-items-center">
+                <div class="col-12">
+                  <select class="form-select form-select-sm fw-semibold" id="rnc-sender-select" onchange="rnUpdateSenderPreview('rnc-sender-preview', this.value)">
+                    <!-- Dynamisch geladen -->
+                  </select>
+                </div>
+                <div class="col-12 mt-1" id="rnc-sender-preview">
+                  <!-- Live Vorschau der Absenderdaten -->
+                </div>
+              </div>
+            </div>
+
             <!-- Positionen verfassen -->
             <div class="mb-4">
               <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -1789,8 +1908,12 @@ window.rnOpenCreateModal = async function(btnEl) {
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
   window.rnPopulateRecipientSelect('');
+  window.rnPopulateSenderSelect('rnc-sender-select', null, true, 'rnc-sender-preview');
   if (typeof window.rnEnsureMembersLoaded === 'function') {
-    window.rnEnsureMembersLoaded().then(() => window.rnPopulateRecipientSelect('')).catch(() => {});
+    window.rnEnsureMembersLoaded().then(() => {
+      window.rnPopulateRecipientSelect('');
+      window.rnPopulateSenderSelect('rnc-sender-select', document.getElementById('rnc-sender-select')?.value, true, 'rnc-sender-preview');
+    }).catch(() => {});
   }
   if (typeof window.rnEnsureContactsLoaded === 'function') {
     window.rnEnsureContactsLoaded().then(() => window.rnPopulateRecipientSelect('')).catch(() => {});
@@ -2209,9 +2332,14 @@ window.rnSaveCreateInvoice = async function(event) {
   if (sb) {
     try {
       const invType = document.getElementById('rnc-type').value;
+      const senderPn = document.getElementById('rnc-sender-select') ? document.getElementById('rnc-sender-select').value : null;
       const senderSnapshot = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
-        ? await window.RechnungsCore.resolveSender(null, invType)
+        ? await window.RechnungsCore.resolveSender(senderPn ? { personNumber: senderPn } : null, invType)
         : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(invType) : {});
+
+      // In Memory spiegeln
+      const inMemoryInv = window._invoices.find(i => String(i.id) === String(invoiceId));
+      if (inMemoryInv) inMemoryInv.sender_address = senderSnapshot;
 
       const sbInv = {
         id: invoiceId,
@@ -2493,6 +2621,29 @@ window.rnOpenEditModal = async function(invoiceId) {
               </div>
             </div>
 
+            <!-- Absender-Daten (Rechnungsaussteller) -->
+            <div class="mb-4 p-3 bg-light rounded-3 border border-light">
+              <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <label class="form-label fw-bold small text-muted mb-0">
+                  <i class="fas fa-user-check me-1.5 text-primary"></i>Absender (Rechnungsaussteller / Unterschrift)
+                </label>
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" id="rne-sender-only-vorstand" checked onchange="rnPopulateSenderSelect('rne-sender-select', document.getElementById('rne-sender-select')?.value, this.checked, 'rne-sender-preview')">
+                  <label class="form-check-label small fw-semibold" for="rne-sender-only-vorstand" style="font-size: 11px;">Auf Vorstand beschränken</label>
+                </div>
+              </div>
+              <div class="row g-2 align-items-center">
+                <div class="col-12">
+                  <select class="form-select form-select-sm fw-semibold" id="rne-sender-select" onchange="rnUpdateSenderPreview('rne-sender-preview', this.value)">
+                    <!-- Dynamisch geladen -->
+                  </select>
+                </div>
+                <div class="col-12 mt-1" id="rne-sender-preview">
+                  <!-- Live Vorschau der Absenderdaten -->
+                </div>
+              </div>
+            </div>
+
             <!-- Positionen verfassen -->
             <div class="mb-4">
               <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -2658,6 +2809,8 @@ window.rnOpenEditModal = async function(invoiceId) {
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
   rnMakeModalMovableAndResizable(modalEl);
+  const existingSenderPN = (inv.sender_address && (inv.sender_address.personNumber || inv.sender_address.person_number || inv.sender_address.PersonNumber)) || null;
+  rnPopulateSenderSelect('rne-sender-select', existingSenderPN, true, 'rne-sender-preview');
   const posTable = modalEl.querySelector('#rne-positions-table');
   if (posTable) rnInitPositionsTableResizable(posTable);
 
@@ -2745,9 +2898,15 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   // 1. Optimistic Update
   const invIndex = window._invoices.findIndex(i => String(i.id) === String(invoiceId));
   let oldInv = null;
+  const senderPn = document.getElementById('rne-sender-select') ? document.getElementById('rne-sender-select').value : null;
+  const editType = document.getElementById('rne-type').value;
+  const senderSnapshot = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
+    ? await window.RechnungsCore.resolveSender(senderPn ? { personNumber: senderPn } : null, editType)
+    : ((window._invoices[invIndex] && window._invoices[invIndex].sender_address) || {});
+
   if (invIndex !== -1) {
     oldInv = { ...window._invoices[invIndex] };
-    window._invoices[invIndex] = { ...window._invoices[invIndex], ...invoiceHeader };
+    window._invoices[invIndex] = { ...window._invoices[invIndex], ...invoiceHeader, sender_address: senderSnapshot };
     window.renderRechnungen(); // Render table instantly!
   }
 
@@ -2775,9 +2934,10 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
       const sbInv = {
         recipient_name: name,
         year: Number(document.getElementById('rne-year').value),
-        type: document.getElementById('rne-type').value,
+        type: editType,
         total_amount: totalAmount,
         person_number: personNumber || null,
+        sender_address: senderSnapshot || {},
         updated_at: new Date().toISOString()
       };
       const { error: invErr } = await sb.from('invoices').update(sbInv).eq('id', invoiceId);
@@ -3109,12 +3269,17 @@ window.rnOpenMahnungModal = async function(invoiceId, name) {
 
               <!-- Absender -->
               <div class="col-md-5">
-                <label class="form-label fw-bold small text-muted">Absender</label>
-                <div class="input-group">
-                  <span class="input-group-text bg-light"><i class="fas fa-user-shield text-muted"></i></span>
-                  <input type="text" class="form-control bg-light" readonly value="${escapeHtml(senderName)} <${escapeHtml(senderEmail)}>">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <label class="form-label fw-bold small text-muted mb-0">Absender</label>
+                  <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="rn-mahnung-sender-only-vorstand" checked onchange="rnPopulateSenderSelect('rn-mahnung-sender-select', document.getElementById('rn-mahnung-sender-select')?.value, this.checked); rnOnMahnungSenderChanged('${inv.id}');">
+                    <label class="form-check-label small fw-semibold" for="rn-mahnung-sender-only-vorstand" style="font-size: 10px;">Auf Vorstand beschränken</label>
+                  </div>
                 </div>
-                <div class="form-text text-muted" style="font-size: 11px;">
+                <select class="form-select form-select-sm fw-semibold" id="rn-mahnung-sender-select" onchange="rnOnMahnungSenderChanged('${inv.id}')">
+                  <!-- Dynamisch geladen -->
+                </select>
+                <div class="form-text text-muted" id="rn-mahnung-sender-info" style="font-size: 11px;">
                   Zustelladresse des Vorstands
                 </div>
               </div>
@@ -3230,6 +3395,10 @@ window.rnOpenMahnungModal = async function(invoiceId, name) {
   const modal = new bootstrap.Modal(modalEl);
   modal.show();
   rnMakeModalMovableAndResizable(modalEl);
+
+  const initialSenderPN = (sender && (sender.personNumber || sender.person_number || sender.PersonNumber)) || null;
+  rnPopulateSenderSelect('rn-mahnung-sender-select', initialSenderPN, true);
+  rnOnMahnungSenderChanged(inv.id);
 };
 
 // Hilfsfunktion: Stufenauswahl im Mahn-Modal umschalten
@@ -3694,16 +3863,16 @@ window.rnOpenBatchMahnungModal = async function() {
           </div>
 
           <div class="table-responsive border rounded-3 mb-3" style="max-height: 420px; overflow-y: auto;">
-            <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+            <table class="table table-hover align-middle mb-0" id="rn-batch-table" style="font-size: 13px;">
               <thead class="table-light sticky-top">
                 <tr>
-                  <th style="width: 40px;" class="text-center">
+                  <th data-col-id="check" style="width: 40px;" class="text-center">
                     <input type="checkbox" class="form-check-input" id="rn-batch-select-all" checked onchange="rnToggleBatchSelectAll(this.checked)">
                   </th>
-                  <th>Empfänger / Rechnung</th>
-                  <th class="text-end" style="width: 130px;">Offener Betrag</th>
-                  <th>Vorgeschlagene Mahnung</th>
-                  <th>E-Mail & Prüfstatus</th>
+                  <th data-col-id="recipient">Empfänger / Rechnung</th>
+                  <th data-col-id="amount" class="text-end" style="width: 130px;">Offener Betrag</th>
+                  <th data-col-id="mahnung">Vorgeschlagene Mahnung</th>
+                  <th data-col-id="email">E-Mail & Prüfstatus</th>
                 </tr>
               </thead>
               <tbody>
@@ -3732,6 +3901,16 @@ window.rnOpenBatchMahnungModal = async function() {
   modal.show();
 
   rnUpdateBatchSelectedCount();
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#rn-batch-table', {
+      storageKey: 'rn_batch_table_col_widths',
+      minWidth: 40,
+      columns: {
+        check: { resizable: false, minWidth: 40, defaultWidth: 40 }
+      }
+    });
+  }
 };
 
 // Hilfsfunktion: Select-All Checkbox im Batch-Mahnlauf
@@ -4203,6 +4382,15 @@ window.rnRenderMassSendModalContent = function(modalEl) {
     window.TableKit.setupColumnToggle('#rn-mass-send-table', {
       container: '#rn-mass-col-toggle',
       storageKey: 'rn_mass_send_table_cols'
+    });
+  }
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#rn-mass-send-table', {
+      storageKey: 'rn_mass_send_table_col_widths',
+      minWidth: 44,
+      columns: {
+        check: { resizable: false, minWidth: 44, defaultWidth: 44 }
+      }
     });
   }
 };
