@@ -620,40 +620,17 @@ async function jbSubmitExcelImport() {
 
     const uniquePns = [...new Set(validList.map(x => String(x.pn).trim()))];
 
-    // Für jeden Schützen den Beitrag neu berechnen und speichern
-    for (const pn of uniquePns) {
-      const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber).trim() === pn);
-      if (m && typeof jbCalculateLiveTotal === 'function') {
-        const calc = jbCalculateLiveTotal(m, {});
-        const headId = `${_jbYear}-${pn}`;
-
-        await supa.from('contributions_header').upsert({
-          id: headId,
-          person_number: pn,
-          year: Number(_jbYear),
-          status: 'offen',
-          gesamt: calc.total,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'person_number,year' });
-
-        const newPos = calc.positions.map((p, idx) => ({
-          id: `${headId}-${idx + 1}`,
-          header_id: headId,
-          person_number: pn,
-          year: Number(_jbYear),
-          position_nr: idx + 1,
-          beschreibung: p.name || 'Position',
-          betrag: Number(p.betrag || 0),
-          typ: p.typ || 'Debit',
-          source_field: p.key || '',
-          konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
-          last_upd: new Date().toISOString()
-        }));
-
-        await supa.from('contributions_positions').delete().eq('header_id', headId);
-        if (newPos.length > 0) {
-          await supa.from('contributions_positions').insert(newPos);
-        }
+    // Für alle betroffenen Schützen den Beitrag serverseitig neu berechnen
+    if (uniquePns.length > 0) {
+      console.log(`🤖 Berechne ${uniquePns.length} Schützen nach Excel-Import via Supabase RPC neu...`);
+      const { data: rpcRes, error: rpcErr } = await supa.rpc('calculate_member_contributions', {
+        p_year: Number(_jbYear),
+        p_target_pns: uniquePns
+      });
+      if (rpcErr) {
+        console.warn("⚠️ Fehler bei RPC Neuberechnung nach Import:", rpcErr);
+      } else {
+        console.log(`✅ [Supabase RPC] ${rpcRes?.message || 'Neuberechnung abgeschlossen'}`);
       }
     }
 

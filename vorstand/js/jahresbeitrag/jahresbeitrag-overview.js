@@ -1222,66 +1222,28 @@ async function jbBerechnen() {
     btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Berechne…';
   }
   try {
-    // 1. Supabase Berechnung & Persistierung
+    // 1. Supabase atomare Backend-Berechnung (RPC)
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-    let newlyCalculatedCount = 0;
-    if (supa && Array.isArray(_jbMembers) && _jbMembers.length > 0) {
-      try {
-        const existingPns = new Set((_jbData || []).map(d => String(d.PersonNumber).trim()));
-        const toCalculate = _jbMembers.filter(m => !existingPns.has(String(m.PersonNumber).trim()));
+    if (!supa) throw new Error("Supabase Client nicht verfügbar");
 
-        if (toCalculate.length > 0) {
-          console.log(`🤖 Berechne ${toCalculate.length} fehlende Beiträge für ${_jbYear} in Supabase...`);
-          const newHeaders = [];
-          const newPositions = [];
+    const yr = Number(_jbYear);
+    console.log(`🤖 Starte serverseitige Beitragsberechnung für ${yr} via Supabase RPC...`);
+    
+    const { data: rpcRes, error: rpcErr } = await supa.rpc('calculate_member_contributions', {
+      p_year: yr,
+      p_target_pns: null
+    });
 
-          for (const m of toCalculate) {
-            const pn = String(m.PersonNumber).trim();
-            const headId = `${_jbYear}-${pn}`;
-            const calc = typeof jbCalculateLiveTotal === 'function' ? jbCalculateLiveTotal(m, {}) : { total: 0, positions: [] };
-
-            newHeaders.push({
-              id: headId,
-              person_number: pn,
-              year: Number(_jbYear),
-              status: 'offen',
-              gesamt: calc.total,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            });
-
-            calc.positions.forEach((p, idx) => {
-              newPositions.push({
-                id: `${headId}-${idx + 1}`,
-                header_id: headId,
-                person_number: pn,
-                year: Number(_jbYear),
-                position_nr: idx + 1,
-                beschreibung: p.name || 'Position',
-                betrag: Number(p.betrag || 0),
-                typ: p.typ || 'Debit',
-                source_field: p.key || '',
-                konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
-                last_upd: new Date().toISOString()
-              });
-            });
-          }
-
-          if (newHeaders.length > 0) {
-            await supa.from('contributions_header').upsert(newHeaders, { onConflict: 'person_number,year' });
-            if (newPositions.length > 0) {
-              await supa.from('contributions_positions').upsert(newPositions, { onConflict: 'id' });
-            }
-            newlyCalculatedCount = newHeaders.length;
-            console.log(`✅ [Supabase] ${newHeaders.length} neue Beiträge und ${newPositions.length} Positionen angelegt.`);
-          }
-        }
-      } catch (errSup) {
-        console.warn("⚠️ Fehler bei Supabase Vorberechnung:", errSup);
-      }
+    if (rpcErr) {
+      console.error("❌ RPC calculate_member_contributions Fehler:", rpcErr);
+      throw new Error(rpcErr.message || "Fehler bei der Beitragsberechnung in Supabase");
     }
 
-    alert(`✅ Beiträge für ${_jbYear} erfolgreich in Supabase berechnet!`);
+    const calcCount = rpcRes?.calculated_count ?? 0;
+    const msg = rpcRes?.message || `Beiträge für ${yr} erfolgreich berechnet (${calcCount} Mitglieder).`;
+    console.log(`✅ [Supabase RPC] ${msg}`);
+
+    alert(`✅ ${msg}`);
     await loadJahresbeitragData(true, false);
   } catch(e) {
     alert('Fehler: ' + e.message);

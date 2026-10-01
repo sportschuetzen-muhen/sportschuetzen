@@ -40,3 +40,9 @@ yarn-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Datenschutz: SSV Mitgliederdaten & Personenlisten
+SSV Daten/
+SSV/
+*.xlsx
+*.csv

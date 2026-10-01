@@ -61,3 +61,26 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 * **Lesen (`members.view`):** Alle authentifizierten Vorstandsmitglieder und Revisoren.
 * **Mutieren (`members.edit`):** Strikt beschränkt auf Rollen `admin`, `vorstand` und die Funktion *Mitgliederverwalter*.
 * **Mitglieder-App:** Angemeldete Mitglieder sehen über ihre eigene Session ausschliesslich ihr eigenes Profil (`auth_user_id = auth.uid()`).
+
+---
+
+## 5. Erkenntnisse aus dem SSV-Verbandsdatenbestand & Datenschutz
+
+### 5.1 Datenschutz & Ausschluss von Git-Commits
+* **Strikter Datenschutz:** Sämtliche Rohdatenexporte des SSV (Ordner `SSV Daten/`, `SSV/` sowie alle `.xlsx`/`.csv`-Dateien) enthalten schützenswerte Personendaten nach Schweizer DSG (Adressen, Geburtsdaten, Telefonnummern, E-Mails, Lizenzdaten).
+* **Git-Schutz:** Diese Ordner und Dateitypen sind ausnahmslos in [`.gitignore`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/.gitignore) eingetragen und dürfen **niemals** in das GitHub-Repository committet oder gepusht werden.
+
+### 5.2 SSV-Tabellenstruktur & Lizenz-Erkennung
+Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_20092026 (1).xlsx`) liefert im Sheet `DataSource` sämtliche Mitgliedszeilen mit folgenden massgeblichen Spalten:
+1. `MembershipCategory`: Spezifiziert die Disziplin und Stufe (z. B. `Aktiv-A G50m`, `Aktiv-B G50m`, `Aktiv-A G10m`, `Aktiv-A G10m Auflage`).
+2. `LicenseCategory`: `A` (Voll-Lizenz / Meisterschaften) oder `B` (B-Lizenz / Zweitverein).
+3. `LicenseType`: SSV-Typisierung (`LizenzG50m`, `LizenzG10m`).
+4. `LicenseInvoicingClubNumber`: Rechnungsstellender Verein des SSV.
+   - `1.19.0.01.029`: Muhen (Stammverein $\rightarrow$ beitragspflichtig für Vereinslizenz `LI001` / `LI002`).
+   - Abweichende Vereinsnummer: Fremdlizenz ($\rightarrow$ Abrechnung über Drittverein, in Muhen `LI003` CHF 0.00).
+5. `OfficialFunctionCategory`: Vereins- und Verbandsfunktionen (Präsident, Kassier, Aktuar, Schützenmeister, Juniorenleiter $\rightarrow$ rabattberechtigt für Vorstand `RA001`).
+
+### 5.3 Relation zu Fachmodulen
+* Die Tabellen `public.member_licenses` und `public.member_functions` dienen als relationale Grundlage für die serverseitige Beitragsberechnung ([`calculate_member_contributions`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/30_calculate_contributions_rpc.sql)).
+* Beim Import werden Lizenzen und Chargen dedupliziert und synchronisiert.
+

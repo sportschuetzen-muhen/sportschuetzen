@@ -50,7 +50,20 @@ function jbCalculateLiveTotal(m, settings) {
     jbDesc = 'Jahresbeitrag Junior';
   } else {
     // Aktiv
-    const haupt = m._hauptlizenz || '';
+    let haupt = m._hauptlizenz || '';
+    if (!haupt) {
+      const lics = (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
+      const g50 = lics.find(l => (l.MembershipCategory || '').toLowerCase().includes('50m') || (l.MembershipCategory || '').toLowerCase().includes('g50'));
+      const g10 = lics.find(l => (l.MembershipCategory || '').toLowerCase().includes('10m') || (l.MembershipCategory || '').toLowerCase().includes('g10'));
+      if (g50) {
+        const isA = (g50.LicenseCategory || '').toUpperCase() === 'A' || (g50.MembershipCategory || '').toLowerCase().includes('aktiv-a') || (g50.MembershipCategory || '').toLowerCase().includes('aktiv a');
+        haupt = isA ? 'Aktiv-A G50m' : 'Aktiv-B G50m';
+      } else if (g10) {
+        const isA = (g10.LicenseCategory || '').toUpperCase() === 'A' || (g10.MembershipCategory || '').toLowerCase().includes('aktiv-a') || (g10.MembershipCategory || '').toLowerCase().includes('aktiv a');
+        haupt = isA ? 'Aktiv-A G10m' : 'Aktiv-B G10m';
+      }
+    }
+
     if (haupt.includes('G50m')) {
       if (haupt.includes('Aktiv-A')) {
         jbBetrag = getFee('JB001', 100);
