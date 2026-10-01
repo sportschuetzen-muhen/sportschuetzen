@@ -5,6 +5,17 @@
 -- ==============================================================================
 
 -- 1. Deduplizierung bestehender Daten vor Indexerstellung
+DELETE FROM public.member_licenses a
+USING public.member_licenses b
+WHERE a.person_number = b.person_number
+  AND a.membership_category = b.membership_category
+  AND (a.entry_date = b.entry_date OR (a.entry_date IS NULL AND b.entry_date IS NULL))
+  AND (
+    (a.is_active = false AND b.is_active = true)
+    OR (a.is_active = b.is_active AND a.updated_at < b.updated_at)
+    OR (a.is_active = b.is_active AND a.updated_at = b.updated_at AND a.ctid < b.ctid)
+  );
+
 DELETE FROM public.member_functions a
 USING public.member_functions b
 WHERE a.ctid < b.ctid
@@ -21,6 +32,10 @@ WHERE a.ctid < b.ctid
   AND COALESCE(a.completed_training_date, '1900-01-01'::DATE) = COALESCE(b.completed_training_date, '1900-01-01'::DATE);
 
 -- 2. Eindeutige Indizes für idempotentes Upserting
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_unique 
+ON public.member_licenses(person_number, membership_category, entry_date)
+NULLS NOT DISTINCT;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_member_functions_unique 
 ON public.member_functions(person_number, official_function_category, COALESCE(official_function_entry_date, '1900-01-01'::DATE));
 

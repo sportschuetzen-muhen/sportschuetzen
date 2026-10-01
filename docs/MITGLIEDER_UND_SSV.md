@@ -51,14 +51,15 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 
 ---
 
-## 3. Datenmodell (Kern-Tabellen)
+## 3. Datenmodell (Kern-Tabellen & Indizes)
 
-| Tabelle | Primärschlüssel | Zweck & Invarianten |
-| :--- | :--- | :--- |
-| `public.members` | `id` (UUID) | Stammdaten (`person_number` = SSV-Nummer UNIQUE, `first_name`, `last_name`, `email`, `status`, `address`, `zip`, `city`, `birth_date`). |
-| `public.member_licenses` | `id` (UUID) | Schiesslizenzen (Gewehr 50m, 10m, Lizenzstatus aktiv/inaktiv). |
-| `public.member_functions` | `id` (UUID) | Vereinsfunktionen (Vorstand, Präsident, Schützenmeister, Revisor). |
-| `public.member_history` | `id` (UUID) | Unveränderliches Audit-Log jeder Stammdaten-Mutation. |
+| Tabelle | Primärschlüssel | Eindeutige Indizes (Idempotenz) | Zweck & Invarianten |
+| :--- | :--- | :--- | :--- |
+| `public.members` | `person_number` (INT) | `members_pkey (person_number)` | Stammdaten (`person_number` = SSV-Nummer, `first_name`, `last_name`, `email`, `address`, `post_code`, `city`, `birth_date`). |
+| `public.member_licenses` | `id` (UUID) | `idx_licenses_unique (person_number, membership_category, entry_date) NULLS NOT DISTINCT` | Schiesslizenzen (Gewehr 50m, 10m, Lizenzstatus aktiv/inaktiv). `NULLS NOT DISTINCT` stellt sicher, dass auch Lizenzen ohne explizites Eintrittsdatum konfliktfrei via `ON CONFLICT` aktualisiert werden. |
+| `public.member_functions` | `id` (UUID) | `idx_member_functions_unique (person_number, official_function_category, COALESCE(official_function_entry_date, '1900-01-01'))` | Vereinsfunktionen (Vorstand, Präsident, Schützenmeister, Revisor). |
+| `public.member_training` | `id` (UUID) | `idx_member_training_unique (person_number, course_category, module, COALESCE(completed_training_date, '1900-01-01'))` | J+S- und Schiessleiter-Ausbildungen. |
+| `public.member_history` | `id` (UUID) | – | Unveränderliches Audit-Log jeder Stammdaten- und Lizenzmutation. |
 
 ---
 
@@ -70,13 +71,34 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 
 ---
 
-## 5. Erkenntnisse aus dem SSV-Verbandsdatenbestand & Datenschutz
+## 5. Erstimport vs. Periodische Monats-Synchronisation
 
-### 5.1 Datenschutz & Ausschluss von Git-Commits
+### 5.1 Erstimport (Initialer Verbandsdatenbestand ab Januar)
+* **Zweck:** Schaffung einer sauberen, revisionssicheren Ausgangsbasis (Baseline) zum Jahresbeginn (z. B. 01. Januar).
+* **Ablauf:**
+  1. Die betroffenen Tabellen (`member_history`, `member_training`, `member_licenses`, `member_functions`, `members`) sind initial leer.
+  2. Der Verwalter lädt die Januar-Arbeitsmappe (`.xlsx`) im Vorstandscockpit hoch.
+  3. Die Diff-Engine erkennt alle Datensätze automatisch zu 100 % als **«NEU» (Grün)**.
+  4. Mit Klick auf *«Änderungen anwenden»* persistiert `apply_ssv_import_batch` die Stammdaten, Lizenzen und Funktionen atomar in PostgreSQL. Es entstehen keine Vorher-Nachher-Diskrepanzen.
+
+### 5.2 Periodische Folge-Synchronisation (Monatliche SSV-Updates)
+* **Ablauf:**
+  1. Hochladen des aktuellen SSV-Exportes (z. B. Februar, März oder Herbst).
+  2. Die Diff-Engine gleicht den Verbandsdatenbestand mit der PostgreSQL-Datenbank ab und visualisiert exakt die Mutationen:
+     - **Grün:** Neu aufgenommene Personen / neue Lizenzen.
+     - **Gelb:** Adressänderungen, Namenskorrekturen, Lizenz-Kategorie-Wechsel.
+     - **Rot:** Personen, die im SSV nicht mehr als aktiv geführt werden (Quellschutz beachten: manuelle Ehren- und Passivmitglieder werden nicht gelöscht).
+  3. Beim Anwenden werden Mutationen in `members` und via `ON CONFLICT` in `member_licenses` bzw. `member_functions` eingepflegt und sekundengenau in `member_history` archiviert.
+
+---
+
+## 6. Erkenntnisse aus dem SSV-Verbandsdatenbestand & Datenschutz
+
+### 6.1 Datenschutz & Ausschluss von Git-Commits
 * **Strikter Datenschutz:** Sämtliche Rohdatenexporte des SSV (Ordner `SSV Daten/`, `SSV/` sowie alle `.xlsx`/`.csv`-Dateien) enthalten schützenswerte Personendaten nach Schweizer DSG (Adressen, Geburtsdaten, Telefonnummern, E-Mails, Lizenzdaten).
 * **Git-Schutz:** Diese Ordner und Dateitypen sind ausnahmslos in [`.gitignore`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/.gitignore) eingetragen und dürfen **niemals** in das GitHub-Repository committet oder gepusht werden.
 
-### 5.2 SSV-Tabellenstruktur & Lizenz-Erkennung
+### 6.2 SSV-Tabellenstruktur & Lizenz-Erkennung
 Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_20092026 (1).xlsx`) liefert im Sheet `DataSource` sämtliche Mitgliedszeilen mit folgenden massgeblichen Spalten:
 1. `MembershipCategory`: Spezifiziert die Disziplin und Stufe (z. B. `Aktiv-A G50m`, `Aktiv-B G50m`, `Aktiv-A G10m`, `Aktiv-A G10m Auflage`).
 2. `LicenseCategory`: `A` (Voll-Lizenz / Meisterschaften) oder `B` (B-Lizenz / Zweitverein).
@@ -86,7 +108,7 @@ Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_200920
    - Abweichende Vereinsnummer: Fremdlizenz ($\rightarrow$ Abrechnung über Drittverein, in Muhen `LI003` CHF 0.00).
 5. `OfficialFunctionCategory`: Vereins- und Verbandsfunktionen (Präsident, Kassier, Aktuar, Schützenmeister, Juniorenleiter $\rightarrow$ rabattberechtigt für Vorstand `RA001`).
 
-### 5.3 Relation zu Fachmodulen
+### 6.3 Relation zu Fachmodulen
 * Die Tabellen `public.member_licenses` und `public.member_functions` dienen als relationale Grundlage für die serverseitige Beitragsberechnung ([`calculate_member_contributions`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/30_calculate_contributions_rpc.sql)).
 * Beim Import werden Lizenzen und Chargen dedupliziert und synchronisiert.
 
