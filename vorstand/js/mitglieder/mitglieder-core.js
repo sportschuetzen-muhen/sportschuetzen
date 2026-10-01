@@ -234,7 +234,7 @@ window.ensureMitgliederLoaded = async function(forceReload = false) {
         window._mglFunktionenCache = {};
         window._mglHistoryCache = {};
         if (window.AppCache) {
-          window.AppCache.remove('mitglieder');
+          window.AppCache.invalidate('mitglieder');
         }
       }
 

@@ -179,6 +179,10 @@ const AppCache = {
         try {
             localStorage.removeItem(this.PREFIX + key);
         } catch (e) {}
+    },
+
+    remove(key) {
+        this.invalidate(key);
     }
 };
 window.AppCache = AppCache;
