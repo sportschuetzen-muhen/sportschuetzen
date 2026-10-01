@@ -729,7 +729,12 @@ async function generateInvoicePdf(
   let resolvedLayout: LayoutData = { ...layout };
   if (supabaseClient) {
     try {
-      const typeKey = (docType || "jahresbeitrag").toLowerCase().trim();
+      let typeKey = (docType || "jahresbeitrag").toLowerCase().trim();
+      if (typeKey === "depot / pfand" || typeKey === "depot/pfand" || typeKey === "depot" || typeKey === "pfand" || typeKey === "kaution" || typeKey === "depot & kaution") {
+        typeKey = "depot_pfand";
+      } else if (typeKey === "material- & kleiderbezug" || typeKey === "material" || typeKey === "kleiderverkauf") {
+        typeKey = "materialverkauf";
+      }
       let { data: tmpl } = await supabaseClient
         .from("document_templates")
         .select("*")

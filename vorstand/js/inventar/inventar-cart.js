@@ -327,6 +327,50 @@ async function handleInventarSubmit(e) {
 }
 
 // =========================================================
+//  INVENTAR-VORLAGEN & MAIL-VARIABLEN HELPER
+// =========================================================
+async function getInventarInvoiceTemplate(typeKey) {
+    if (!window._invoiceLayouts || Object.keys(window._invoiceLayouts).length === 0) {
+        if (typeof window.loadInvoiceLayoutsData === 'function') {
+            try {
+                await window.loadInvoiceLayoutsData();
+            } catch (_) {}
+        }
+    }
+    if (window._invoiceLayouts) {
+        if (window._invoiceLayouts[typeKey]) return window._invoiceLayouts[typeKey];
+        if (typeKey === 'Depot / Pfand' && window._invoiceLayouts['depot_pfand']) return window._invoiceLayouts['depot_pfand'];
+        if (typeKey === 'Materialverkauf' && window._invoiceLayouts['materialverkauf']) return window._invoiceLayouts['materialverkauf'];
+    }
+
+    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+    if (supa) {
+        try {
+            const cleanCode = (typeKey.toLowerCase().includes('depot') || typeKey.toLowerCase().includes('pfand')) ? 'depot_pfand' : 'materialverkauf';
+            const { data } = await supa.from('document_templates').select('*').or(`code.eq.${cleanCode},id.eq.${cleanCode}`).maybeSingle();
+            if (data) return data;
+        } catch (_) {}
+    }
+    return null;
+}
+
+function replaceInventarMailVars(text, vars) {
+    if (!text) return '';
+    return String(text)
+        .replace(/{vorname}/g, vars.vorname || '')
+        .replace(/{nachname}/g, vars.nachname || '')
+        .replace(/{anrede}/g, vars.anrede || '')
+        .replace(/{rechnungsnummer}/g, vars.rechnungsnummer || '')
+        .replace(/{rechnungsjahr}/g, String(vars.rechnungsjahr || new Date().getFullYear()))
+        .replace(/{gesamtbetrag}/g, Number(vars.gesamtbetrag || 0).toFixed(2))
+        .replace(/{absender_vorname}/g, vars.absender_vorname || '')
+        .replace(/{absender_nachname}/g, vars.absender_nachname || '')
+        .replace(/{absender_funktion}/g, vars.absender_funktion || 'Materialwart')
+        .replace(/{absender_email}/g, vars.absender_email || 'sportschuetzen.muhen@gmail.com')
+        .replace(/{absender_mobil}/g, vars.absender_mobil || '');
+}
+
+// =========================================================
 //  VERKAUF NACHBEREITUNG (Rechnung via RechnungsCore / Buchhaltung)
 // =========================================================
 async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
@@ -475,13 +519,45 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         });
                     }
 
+                    const tmpl = await getInventarInvoiceTemplate('Materialverkauf');
+                    const sender = createdInv.sender_address || invoiceOrder.sender || {};
+                    const mailVars = {
+                        vorname: m.Vorname || mglMaster.FirstName || (recipientName.split(' ')[1] || recipientName.split(' ')[0]),
+                        nachname: m.Nachname || mglMaster.LastName || (recipientName.split(' ')[0] || ''),
+                        anrede: memberSalutation,
+                        rechnungsnummer: invoiceId,
+                        rechnungsjahr: new Date().getFullYear(),
+                        gesamtbetrag: totalAmount,
+                        absender_vorname: sender.vorname || '',
+                        absender_nachname: sender.nachname || '',
+                        absender_funktion: sender.funktion || 'Materialwart',
+                        absender_email: sender.email || 'sportschuetzen.muhen@gmail.com',
+                        absender_mobil: sender.mobil || ''
+                    };
+
+                    const defaultSubject = `Rechnung ${invoiceId} – Materialverkauf | Sportschützen Muhen`;
+                    const defaultBody = `Guten Tag ${mailVars.vorname} ${mailVars.nachname},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar.\n\nAnbei senden wir dir die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.\n\nBitte überweise den Betrag innert 30 Tagen.\n\nFreundliche Grüsse\n\nSportschützen Muhen\n\n${mailVars.absender_vorname} ${mailVars.absender_nachname}\n${mailVars.absender_funktion}`.trim();
+
+                    const finalSubject = tmpl?.mail_subject ? replaceInventarMailVars(tmpl.mail_subject, mailVars) : defaultSubject;
+                    const finalBody = tmpl?.mail_body ? replaceInventarMailVars(tmpl.mail_body, mailVars) : defaultBody;
+
+                    const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+                        ? window.renderClubEmailHtml({
+                            title: finalSubject,
+                            subtitle: 'Materialverkauf',
+                            contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`,
+                            noticeHtml: `<strong>Rechnungsbetrag:</strong> CHF ${Number(totalAmount).toFixed(2)}`,
+                            senderInfo: sender ? `${[sender.vorname, sender.nachname].filter(Boolean).join(' ')}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+                        })
+                        : `<p>${finalBody.replace(/\n/g, '<br>')}</p>`;
+
                     await window.sendMailViaEngine({
                         to: memberEmail,
-                        subject: `Rechnung ${invoiceId} – Materialverkauf | Sportschützen Muhen`,
-                        html: `<p>Guten Tag ${recipientName},</p><p>vielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei findest du die Rechnung <strong>${invoiceId}</strong> über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.</p>`,
-                        text: `Guten Tag ${recipientName},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar. Anbei findest du die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.`,
-                        senderName: 'Sportschützen Muhen',
-                        senderEmail: 'sportschuetzen.muhen@gmail.com',
+                        subject: finalSubject,
+                        html: emailHtml,
+                        text: finalBody,
+                        senderName: sender?.name || [sender?.vorname, sender?.nachname].filter(Boolean).join(' ') || 'Sportschützen Muhen',
+                        senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
                         moduleRef: 'rechnung',
                         recordId: invoiceId,
                         attachments: attachments
@@ -666,6 +742,7 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                 entityId: (invoicePfandItems[0] && invoicePfandItems[0].itemId) ? String(invoicePfandItems[0].itemId) : null,
                 referenceCode: `DEP-${new Date().getFullYear()}`
             },
+            prefix: 'DP',
             recipient: {
                 type: 'mitglied',
                 memberId: mitgliedId,
@@ -788,13 +865,45 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     });
                 }
 
+                const tmpl = await getInventarInvoiceTemplate('Depot / Pfand');
+                const sender = createdInv.sender_address || invoiceOrder.sender || {};
+                const mailVars = {
+                    vorname: m.Vorname || mglMaster.FirstName || (recipientName.split(' ')[1] || recipientName.split(' ')[0]),
+                    nachname: m.Nachname || mglMaster.LastName || (recipientName.split(' ')[0] || ''),
+                    anrede: memberSalutation,
+                    rechnungsnummer: invoiceId,
+                    rechnungsjahr: new Date().getFullYear(),
+                    gesamtbetrag: totalAmount,
+                    absender_vorname: sender.vorname || '',
+                    absender_nachname: sender.nachname || '',
+                    absender_funktion: sender.funktion || 'Materialwart',
+                    absender_email: sender.email || 'sportschuetzen.muhen@gmail.com',
+                    absender_mobil: sender.mobil || ''
+                };
+
+                const defaultSubject = `Rechnung ${invoiceId} – Depot / Kaution | Sportschützen Muhen`;
+                const defaultBody = `Guten Tag ${mailVars.vorname} ${mailVars.nachname},\n\nanbei senden wir dir die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} für das hinterlegte Depot / Pfand für das bezogene Vereinsmaterial.\n\nDieses Depot wird dir bei unversehrter Rückgabe des Materials vollumfänglich zurückerstattet.\n\nSportliche Grüsse\n\nSportschützen Muhen\n\n${mailVars.absender_vorname} ${mailVars.absender_nachname}\n${mailVars.absender_funktion}`.trim();
+
+                const finalSubject = tmpl?.mail_subject ? replaceInventarMailVars(tmpl.mail_subject, mailVars) : defaultSubject;
+                const finalBody = tmpl?.mail_body ? replaceInventarMailVars(tmpl.mail_body, mailVars) : defaultBody;
+
+                const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+                    ? window.renderClubEmailHtml({
+                        title: finalSubject,
+                        subtitle: 'Depot / Kaution',
+                        contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`,
+                        noticeHtml: `<strong>Rechnungsbetrag:</strong> CHF ${Number(totalAmount).toFixed(2)}`,
+                        senderInfo: sender ? `${[sender.vorname, sender.nachname].filter(Boolean).join(' ')}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+                    })
+                    : `<p>${finalBody.replace(/\n/g, '<br>')}</p>`;
+
                 await window.sendMailViaEngine({
                     to: memberEmail,
-                    subject: `Rechnung ${invoiceId} – Depot / Pfand | Sportschützen Muhen`,
-                    html: `<p>Guten Tag ${recipientName},</p><p>für deine Ausleihe aus unserem Vereinsinventar stellen wir dir hiermit das Pfand / Depot mit der Rechnung <strong>${invoiceId}</strong> über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein zu.</p>`,
-                    text: `Guten Tag ${recipientName},\n\nfür deine Ausleihe aus unserem Vereinsinventar stellen wir dir hiermit das Pfand / Depot mit der Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein zu.`,
-                    senderName: 'Sportschützen Muhen',
-                    senderEmail: 'sportschuetzen.muhen@gmail.com',
+                    subject: finalSubject,
+                    html: emailHtml,
+                    text: finalBody,
+                    senderName: sender?.name || [sender?.vorname, sender?.nachname].filter(Boolean).join(' ') || 'Sportschützen Muhen',
+                    senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
                     moduleRef: 'rechnung',
                     recordId: invoiceId,
                     attachments: attachments

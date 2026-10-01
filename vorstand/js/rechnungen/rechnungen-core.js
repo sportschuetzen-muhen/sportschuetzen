@@ -273,6 +273,18 @@ window.loadInvoiceLayoutsData = async function() {
             map[item.type] = item;
             const capKey = item.type.charAt(0).toUpperCase() + item.type.slice(1);
             map[capKey] = item;
+            // Aliase für konsistentes Type-Mapping
+            if (item.type === 'depot_pfand') {
+              map['Depot / Pfand'] = item;
+              map['depot / pfand'] = item;
+            } else if (item.type === 'materialverkauf') {
+              map['Materialverkauf'] = item;
+              map['Material- & Kleiderbezug'] = item;
+            } else if (item.type === 'jahresbeitrag') {
+              map['Jahresbeitrag'] = item;
+            } else if (item.type === 'vermietung') {
+              map['Vermietung'] = item;
+            }
           }
         });
         if (typeof rnGetDefaultLayouts === 'function') {
@@ -954,12 +966,24 @@ window.RechnungsCore = {
     const sourceId = (order.source && order.source.entityId) ? String(order.source.entityId) : null;
     const year = Number(order.year || new Date().getFullYear());
 
-    // CAMT-konformes Präfix je nach Quellmodul
-    let prefix = 'RE';
-    if (sourceModule === 'inventar') prefix = 'MV';
-    else if (sourceModule === 'vermietung') prefix = 'VM';
-    else if (sourceModule === 'jahresbeitrag') prefix = 'JB';
-    else if (sourceModule === 'sponsoring') prefix = 'SP';
+    // CAMT-konformes Präfix je nach Quellmodul / Vorgangstyp
+    let prefix = order.prefix ? String(order.prefix).toUpperCase().trim() : null;
+    if (!prefix) {
+      const orderTypeLower = String(order.type || '').toLowerCase();
+      if (orderTypeLower.includes('depot') || orderTypeLower.includes('pfand') || orderTypeLower.includes('kaution')) {
+        prefix = 'DP';
+      } else if (sourceModule === 'inventar') {
+        prefix = 'MV';
+      } else if (sourceModule === 'vermietung') {
+        prefix = 'VM';
+      } else if (sourceModule === 'jahresbeitrag') {
+        prefix = 'JB';
+      } else if (sourceModule === 'sponsoring') {
+        prefix = 'SP';
+      } else {
+        prefix = 'RE';
+      }
+    }
 
     // Atomare Rechnungsnummernvergabe direkt via PostgreSQL Sequence (Schutz vor Race Conditions)
     let invoiceId = order.id || order.invoice_number;
