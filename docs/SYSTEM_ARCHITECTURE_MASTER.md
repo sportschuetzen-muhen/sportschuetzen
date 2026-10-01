@@ -152,8 +152,20 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 
 ## 6. Dokumenten-Governance & Referenzen
 
-* **Master-Architektur (dieses Dokument):** [`docs/SYSTEM_ARCHITECTURE_MASTER.md`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/SYSTEM_ARCHITECTURE_MASTER.md) – Verbindliche Referenz für Architektur, Standards und Phasenstand.
-* **Historische Vor-Migrationsanalyse (Archiv):** [`docs/Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md) – Beschreibt den ursprünglichen Stand mit Google Sheets und GAS vor der Migration.
-* **Fachkonzept KK-Jahresmeisterschaft:** [`docs/JAHRESMEISTERSCHAFT.md`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/JAHRESMEISTERSCHAFT.md) – Detailerklärung zur 2D-Matrix, Streichresultaten, U21-Wertung und Gemini Vision OCR.
-* **Rechnungswesen & Vorlagen-Harmonisierung:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md) – Vertiefte Spezifikation der Phasen 25–27 (RechnungsCore, PDF-Geometrie, Vorlagen-Cockpit).
-* **Datenbank- & RLS-Referenzhandbuch:** [`docs/SUPABASE_ARCHITECTURE.md`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/SUPABASE_ARCHITECTURE.md) – Detailliertes Nachschlagewerk für Tabellenschemata und Sicherheitsrichtlinien.
+### 6.1 Systemweite Master- & Regel-Dokumente
+* **Systemweite Projekt-Richtlinien:** [`AGENTS.md`](../AGENTS.md) – Verbindliche Grundregeln (GAS-Verbot, Single Source of Truth, Rechnungs-Lifecycle & Adress-Kontrakt, Deployment-Pflicht).
+* **Master-Architektur (dieses Dokument):** [`docs/SYSTEM_ARCHITECTURE_MASTER.md`](SYSTEM_ARCHITECTURE_MASTER.md) – Verbindliche Gesamtsystem-Übersicht, 3-Frontend-Modell, Shared Engines und Phasenstand.
+* **Datenbank- & RLS-Referenzhandbuch:** [`docs/SUPABASE_ARCHITECTURE.md`](SUPABASE_ARCHITECTURE.md) – Bereinigtes Nachschlagewerk für Tabellenschemata, Typen, Relationen und Row Level Security (RLS).
+
+### 6.2 Modulspezifische Fachkonzepte (Das «Warum» & Business-Invarianten)
+* **Rechnungswesen, Vorlagen & FiBu-Kopplung:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md) – `RechnungsCore`, Zahlungsverbuchung, Adress-Kontrakt, Unveränderlichkeitsgrenzen.
+* **Dokumenten- & Mail-Engine:** [`docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md`](DOCUMENT_AND_MAIL_ENGINE_SPEC.md) – DIN 5008 Geometrie, SIX Swiss QR SPC 0200 1 Norm, WinAnsi-Schutz, SMTP-Dispatch.
+* **KK-Jahresmeisterschaft:** [`docs/JAHRESMEISTERSCHAFT.md`](JAHRESMEISTERSCHAFT.md) – 2D-Matrix Snapshot (`raw_grid`), Streichresultate, U21-Wertung, Gemini Vision OCR.
+* **Mitglieder & SSV-Verbandsimport:** [`docs/MITGLIEDER_UND_SSV.md`](MITGLIEDER_UND_SSV.md) – Browser-native SSV-Diff-Engine, Quellschutz für Ehrenmitglieder, `member_history` Audit.
+* **Finanzbuchhaltung & Bankabgleich:** [`docs/FINANZBUCHHALTUNG_UND_BANK.md`](FINANZBUCHHALTUNG_UND_BANK.md) – KMU-Kontenrahmen, doppelter Buchungssatz bei Rechnungen, CAMT.054 XML-Abgleich via QRR, `BIGSERIAL` Journal.
+* **Vermietung Schützenstube Rüteli:** [`docs/VERMIETUNG_SCHUETZENSTUBE.md`](VERMIETUNG_SCHUETZENSTUBE.md) – Workflow-Maschine, dynamische Mietvertragsklauseln, Google Calendar iCal-Proxy.
+
+### 6.3 Historische Archive
+* **Migrations-Chronik (Phasen 0 bis 23):** [`docs/Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md`](Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md) – Vollständiges Umsetzungstagebuch aller Entwicklungsschritte.
+* **Historische Vor-Migrationsanalyse:** [`docs/Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md`](Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md) – Ursprünglicher Stand mit Google Sheets und GAS vor Beginn der Migration.
+
