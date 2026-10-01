@@ -155,9 +155,11 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 ### 6.1 Systemweite Master- & Regel-Dokumente
 * **Systemweite Projekt-Richtlinien:** [`AGENTS.md`](../AGENTS.md) – Verbindliche Grundregeln (GAS-Verbot, Single Source of Truth, Rechnungs-Lifecycle & Adress-Kontrakt, Deployment-Pflicht).
 * **Master-Architektur (dieses Dokument):** [`docs/SYSTEM_ARCHITECTURE_MASTER.md`](SYSTEM_ARCHITECTURE_MASTER.md) – Verbindliche Gesamtsystem-Übersicht, 3-Frontend-Modell, Shared Engines und Phasenstand.
+* **Entwickler- & User-Leitfaden:** [`docs/USER_DOKUMENTATIONS_GUIDE.md`](USER_DOKUMENTATIONS_GUIDE.md) – Schnellübersicht für den Entwickler (Dokumentations-Lebenszyklus, KI-Zusammenspiel, Deployment).
 * **Datenbank- & RLS-Referenzhandbuch:** [`docs/SUPABASE_ARCHITECTURE.md`](SUPABASE_ARCHITECTURE.md) – Bereinigtes Nachschlagewerk für Tabellenschemata, Typen, Relationen und Row Level Security (RLS).
 
 ### 6.2 Modulspezifische Fachkonzepte (Das «Warum» & Business-Invarianten)
+* **Jahresbeitrag & Beitragsverwaltung:** [`docs/JAHRESBEITRAG.md`](JAHRESBEITRAG.md) – Dynamische Gebührenordnung, Rechnungs-Kopplung via `RechnungsCore`, Bearbeitungssperre im Rechnungsmodul, CAMT.054 Batch-Abgleich.
 * **Rechnungswesen, Vorlagen & FiBu-Kopplung:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md) – `RechnungsCore`, Zahlungsverbuchung, Adress-Kontrakt, Unveränderlichkeitsgrenzen.
 * **Dokumenten- & Mail-Engine:** [`docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md`](DOCUMENT_AND_MAIL_ENGINE_SPEC.md) – DIN 5008 Geometrie, SIX Swiss QR SPC 0200 1 Norm, WinAnsi-Schutz, SMTP-Dispatch.
 * **KK-Jahresmeisterschaft:** [`docs/JAHRESMEISTERSCHAFT.md`](JAHRESMEISTERSCHAFT.md) – 2D-Matrix Snapshot (`raw_grid`), Streichresultate, U21-Wertung, Gemini Vision OCR.
@@ -168,4 +170,5 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 ### 6.3 Historische Archive
 * **Migrations-Chronik (Phasen 0 bis 23):** [`docs/Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md`](Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md) – Vollständiges Umsetzungstagebuch aller Entwicklungsschritte.
 * **Historische Vor-Migrationsanalyse:** [`docs/Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md`](Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md) – Ursprünglicher Stand mit Google Sheets und GAS vor Beginn der Migration.
+
 
