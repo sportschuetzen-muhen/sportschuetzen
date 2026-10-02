@@ -465,30 +465,39 @@
           const lokEntry = normalizeDateValue(lokDispActive.EntryDate || lokDispActive.entry_date);
           const ssvEntry = normalizeDateValue(ssvDispActive.EntryDate);
 
+          const isSsvA = ssvCat.includes('Aktiv-A') || ssvDispActive.LicenseCategory === 'A';
+          const isLokA = lokCat.includes('Aktiv-A') || (lokDispActive.LicenseCategory === 'A');
+          const isSsvB = ssvCat.includes('Aktiv-B') || ssvDispActive.LicenseCategory === 'B';
+          const isLokB = lokCat.includes('Aktiv-B') || (lokDispActive.LicenseCategory === 'B');
+
+          // Neuer Wert Anzeige: Bei A-Lizenz ohne Klammerzusatz, bei B-Lizenz mit Stammverein in Klammern
+          const ssvDisplayVal = isSsvA ? ssvCat : `${ssvCat} [${ssvClubName}]`;
+          const lokDisplayVal = isLokA ? lokCat : `${lokCat} [${lokClubName}]`;
+
           // 1a: Stammverein-Wechsel zu Muhen (Übernahme B ➔ A)
-          if (ssvClubNr === MUHEN_CLUB_NUMBER && lokClubNr !== MUHEN_CLUB_NUMBER) {
+          if ((isSsvA && isLokB) || (isSsvA && ssvClubNr === MUHEN_CLUB_NUMBER && lokClubNr !== MUHEN_CLUB_NUMBER)) {
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
-              `${lokCat} [${lokClubName}]`, `${ssvCat} [${ssvClubName}]`,
+              lokDisplayVal, ssvDisplayVal,
               'LIZENZ-UEBERNAHME', 'Update',
               `Stammverein zu Muhen gewechselt (vorher ${lokClubName}).`
             ]);
           }
           // 1b: Stammverein-Wechsel weg von Muhen (Abgabe A ➔ B/Drittclub)
-          else if (lokClubNr === MUHEN_CLUB_NUMBER && ssvClubNr !== MUHEN_CLUB_NUMBER) {
+          else if ((isLokA && isSsvB) || (isLokA && lokClubNr === MUHEN_CLUB_NUMBER && ssvClubNr !== MUHEN_CLUB_NUMBER && !isSsvA)) {
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
-              `${lokCat} [${lokClubName}]`, `${ssvCat} [${ssvClubName}]`,
+              lokDisplayVal, ssvDisplayVal,
               'LIZENZ-ABGABE', 'Update',
               `Stammverein wechselt von Muhen zu ${ssvClubName}.`
             ]);
           }
           // 1c: Kategoriewechsel
           else if (lokCat !== ssvCat) {
-            const isUpgrade = ssvCat.includes('Aktiv-A') && lokCat.includes('Aktiv-B');
+            const isUpgrade = isSsvA && isLokB;
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
-              `${lokCat} [${lokClubName}]`, `${ssvCat} [${ssvClubName}]`,
+              lokDisplayVal, ssvDisplayVal,
               isUpgrade ? 'LIZENZ-UEBERNAHME' : 'LIZENZAENDERUNG', 'Update',
               `Lizenzkategorie angepasst (${lokCat} ➔ ${ssvCat}).`
             ]);
@@ -509,14 +518,18 @@
           const ssvClubNr = String(ssvDispActive.LicenseInvoicingClubNumber || '').trim();
           const ssvClubName = String(ssvDispActive.LicenseInvoicingClubName || (ssvClubNr === MUHEN_CLUB_NUMBER ? 'Muhen Sportschützen' : 'Fremdverein')).trim();
 
-          if (ssvClubNr === MUHEN_CLUB_NUMBER) {
+          const isALic = ssvCat.includes('Aktiv-A') || ssvDispActive.LicenseCategory === 'A';
+
+          if (isALic) {
+            // A-Lizenz: Bei A-Lizenz Angabe in der Klammer weglassen
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
-              '—', `${ssvCat} [Muhen Sportschützen]`,
+              '—', ssvCat,
               'A-LIZENZ-NEU', 'Update',
               'Neue Voll-Lizenz bei Muhen als Stammverein.'
             ]);
           } else {
+            // B-Lizenz (z.B. Patrick Fleischli): Mit Stammverein in Klammern
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
               '—', `${ssvCat} [${ssvClubName}]`,
@@ -529,13 +542,15 @@
         else if (lokDispActive && !ssvDispActive) {
           const lokCat = String(lokDispActive.MembershipCategory || lokDispActive.membership_category || '').trim();
           const lokClubName = String(lokDispActive.license_invoicing_club_name || lokDispActive.LicenseInvoicingClubName || 'Muhen Sportschützen').trim();
+          const isLokA = lokCat.includes('Aktiv-A') || (lokDispActive.LicenseCategory === 'A');
+          const lokDisplayVal = isLokA ? lokCat : `${lokCat} [${lokClubName}]`;
 
           if (ssvDispHist && ssvDispHist.LicenseInvoicingClubNumber && ssvDispHist.LicenseInvoicingClubNumber !== MUHEN_CLUB_NUMBER) {
             const foreignClub = String(ssvDispHist.LicenseInvoicingClubName || 'Fremdverein').trim();
             const exitDateStr = normalizeDateValue(ssvDispHist.ExitDate) || '';
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
-              `${lokCat} [${lokClubName}]`, exitDateStr ? `ExitDate ${exitDateStr} [${foreignClub}]` : `Wechsel [${foreignClub}]`,
+              lokDisplayVal, exitDateStr ? `ExitDate ${exitDateStr} [${foreignClub}]` : `Wechsel [${foreignClub}]`,
               'LIZENZ-ABGABE', 'Update',
               `Stammverein wechselt von Muhen zu ${foreignClub}.`
             ]);
@@ -543,14 +558,14 @@
             const exitDateStr = normalizeDateValue(ssvDispHist.ExitDate);
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
-              `${lokCat} [${lokClubName}]`, `ExitDate ${exitDateStr}`,
+              lokDisplayVal, `ExitDate ${exitDateStr}`,
               'LIZENZWEG', 'Update',
               `Lizenz in dieser Disziplin beendet (ExitDate ${exitDateStr}).`
             ]);
           } else {
             diffRows.push([
               importId, pn, fullName, 'memberlicenses', disp,
-              `${lokCat} [${lokClubName}]`, 'Austritt (Export)',
+              lokDisplayVal, 'Austritt (Export)',
               'LIZENZWEG', 'Update',
               'Im aktuellen Verbandsexport nicht mehr aufgeführt.'
             ]);
@@ -577,7 +592,7 @@
           diffRows.push([
             importId, pn, fullName, 'memberfunctions', 'OfficialFunctionCategory',
             '', fn.OfficialFunctionCategory, 'FUNKTIONNEU', entscheidung,
-            'Vereinsfunktion im Verband neu erfasst.'
+            'Vereinsfunktion im Verein neu erfasst.'
           ]);
         }
       });
@@ -596,13 +611,13 @@
           diffRows.push([
             importId, pn, fullName, 'memberfunctions', 'OfficialFunctionCategory',
             k, 'ExitDate ' + normalizeDateValue(histMatch.OfficialFunctionExitDate), 'FUNKTIONWEG', 'Update',
-            'Vereinsfunktion im Verband beendet.'
+            'Vereinsfunktion im Verein beendet.'
           ]);
         } else if (!ssvFnKeys.has(k)) {
           diffRows.push([
             importId, pn, fullName, 'memberfunctions', 'OfficialFunctionCategory',
             k, 'Austritt (Export)', 'FUNKTIONWEG', 'Update',
-            'Vereinsfunktion im Verband beendet.'
+            'Vereinsfunktion im Verein beendet.'
           ]);
         }
       });

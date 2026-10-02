@@ -16,26 +16,30 @@ async function mglSaveMember(event, pn) {
   const idx = _mglData.findIndex(m => String(m.PersonNumber) === String(pn));
   const oldMember = idx >= 0 ? _mglData[idx] : {};
 
-  // Formular-Felder auslesen
-  const firstName = (document.getElementById('mglEditFirstName')?.value || '').trim();
-  const lastName = (document.getElementById('mglEditLastName')?.value || '').trim();
-  const salutation = document.getElementById('mglEditSalutation')?.value || '';
-  const birthDate = document.getElementById('mglEditBirthDate')?.value || '';
-  const gender = document.getElementById('mglEditGender')?.value || '';
+  // Formular-Felder auslesen (Stammdaten via SSV, Formular fokussiert auf Bank- & Zahlungsdaten)
+  const firstName = (document.getElementById('mglEditFirstName')?.value || oldMember.FirstName || oldMember.first_name || '').trim();
+  const lastName = (document.getElementById('mglEditLastName')?.value || oldMember.LastName || oldMember.last_name || '').trim();
+  const salutation = document.getElementById('mglEditSalutation')?.value || oldMember.Salutation || oldMember.salutation || null;
+  const birthDate = document.getElementById('mglEditBirthDate')?.value || oldMember.BirthDate || oldMember.birth_date || null;
+  const gender = document.getElementById('mglEditGender')?.value || oldMember.Gender || oldMember.gender || null;
 
-  const street = (document.getElementById('mglEditStreet')?.value || '').trim();
-  const postCode = (document.getElementById('mglEditPostCode')?.value || '').trim();
-  const city = (document.getElementById('mglEditCity')?.value || '').trim();
-  const email = (document.getElementById('mglEditEmail')?.value || '').trim();
-  const mobile = (document.getElementById('mglEditMobilePhone')?.value || '').trim();
-  const landline = (document.getElementById('mglEditLandlinePhone')?.value || '').trim();
+  const street = (document.getElementById('mglEditStreet')?.value || oldMember.Street || oldMember.street || '').trim();
+  const postCode = (document.getElementById('mglEditPostCode')?.value || oldMember.PostCode || oldMember.post_code || '').trim();
+  const city = (document.getElementById('mglEditCity')?.value || oldMember.City || oldMember.city || '').trim();
+  const email = (document.getElementById('mglEditEmail')?.value || oldMember.PrimaryEmail || oldMember.primary_email || '').trim();
+  const mobile = (document.getElementById('mglEditMobilePhone')?.value || oldMember.PrivateMobilePhone || oldMember.private_mobile_phone || '').trim();
+  const landline = (document.getElementById('mglEditLandlinePhone')?.value || oldMember.PrivateLandlinePhone || oldMember.private_landline_phone || '').trim();
 
-  const isPassive = document.getElementById('mglEditIsPassive')?.checked || false;
-  const isHonorary = document.getElementById('mglEditIsHonorary')?.checked || false;
-  const honorarySince = document.getElementById('mglEditHonorarySince')?.value || '';
-  const clubEntry = document.getElementById('mglEditClubEntry')?.value || '';
-  const austritt = document.getElementById('mglEditAustritt')?.value || '';
-  const remark = (document.getElementById('mglEditRemark')?.value || '').trim();
+  const isPassive = document.getElementById('mglEditIsPassive')
+    ? document.getElementById('mglEditIsPassive').checked
+    : Boolean(oldMember._istPassiv || oldMember.IsPassive || oldMember.is_passive);
+  const isHonorary = document.getElementById('mglEditIsHonorary')
+    ? document.getElementById('mglEditIsHonorary').checked
+    : Boolean(oldMember._istEhren || oldMember.IsHonoraryMember || oldMember.is_honorary);
+  const honorarySince = document.getElementById('mglEditHonorarySince')?.value || oldMember.HonoraryMemberSince || oldMember.honorary_member_since || null;
+  const clubEntry = document.getElementById('mglEditClubEntry')?.value || oldMember.ClubEntryDate || oldMember.club_entry_date || oldMember.FirstClubEntryDateSSV || null;
+  const austritt = document.getElementById('mglEditAustritt')?.value || oldMember.Vereinsaustritt || oldMember.club_exit_date || null;
+  const remark = (document.getElementById('mglEditRemark')?.value || oldMember.Remark || oldMember.remark || '').trim();
 
   const iban = (document.getElementById('mglEditIBAN')?.value || '').trim();
   const bic = (document.getElementById('mglEditBIC')?.value || '').trim();
@@ -44,10 +48,10 @@ async function mglSaveMember(event, pn) {
   const nieMahnen = document.getElementById('mglEditMahnen')?.checked || false;
 
   if (!firstName || !lastName) {
-    alert('Vorname und Nachname dürfen nicht leer sein.');
+    alert('Mitgliedsdaten unvollständig (Vorname/Nachname fehlt).');
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-save me-1"></i> Änderungen speichern';
+      btn.innerHTML = '<i class="fas fa-save me-1"></i> Zahlungsdaten speichern';
     }
     return;
   }
@@ -102,11 +106,14 @@ async function mglSaveMember(event, pn) {
 
       // 2. REVISIONS-AUDIT: In public.member_history protokollieren
       const changesSummary = [];
-      if (oldMember.Street !== street || oldMember.City !== city) changesSummary.push(`Adresse geändert zu ${street}, ${postCode} ${city}`);
-      if (oldMember.PrimaryEmail !== email) changesSummary.push(`E-Mail geändert: ${email}`);
-      if (oldMember.IBAN !== iban) changesSummary.push(`IBAN geändert`);
-      if (Boolean(oldMember.IsPassive) !== isPassive) changesSummary.push(`Status: ${isPassive ? 'Passiv' : 'Aktiv'}`);
-      if (Boolean(oldMember.IsHonoraryMember) !== isHonorary) changesSummary.push(`Ehrenmitglied: ${isHonorary ? 'Ja' : 'Nein'}`);
+      if (oldMember.IBAN !== iban) changesSummary.push(`IBAN geändert: ${oldMember.IBAN || '–'} ➔ ${iban || '–'}`);
+      if (oldMember.BIC !== bic) changesSummary.push(`BIC geändert`);
+      if (oldMember.Kontoinhaber !== konto) changesSummary.push(`Kontoinhaber: ${konto || '–'}`);
+      if (oldMember.Rechnungsversand !== rv) changesSummary.push(`Rechnungsversand: ${rv}`);
+      if (Boolean(oldMember.Niemahnen) !== nieMahnen) changesSummary.push(`Nie mahnen: ${nieMahnen ? 'Ja' : 'Nein'}`);
+      if (oldMember.Remark !== remark) changesSummary.push(`Notiz aktualisiert`);
+      if (oldMember.Street !== street || oldMember.City !== city) changesSummary.push(`Adresse geändert`);
+      if (oldMember.PrimaryEmail !== email) changesSummary.push(`E-Mail geändert`);
 
       try {
         const { error: histErr } = await supa.from('member_history').insert({

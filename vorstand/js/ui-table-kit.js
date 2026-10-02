@@ -912,6 +912,236 @@
     };
   }
 
+  // ===========================================================================
+  // 7. MODAL DRAG & RESIZE STANDARD (UIModalKit)
+  // ===========================================================================
+  function makeModalMovableAndResizable(modalEl, options = {}) {
+    if (typeof modalEl === 'string') modalEl = document.querySelector(modalEl);
+    if (!modalEl) return;
+    const dialog = modalEl.querySelector('.modal-dialog');
+    const content = modalEl.querySelector('.modal-content');
+    const header = modalEl.querySelector('.modal-header');
+
+    if (!dialog || !content || !header) return;
+    if (modalEl._uiModalKitInitialized) return;
+    modalEl._uiModalKitInitialized = true;
+
+    const modalBody = modalEl.querySelector('.modal-body');
+    let maxBtn = modalEl.querySelector('.rn-modal-maximize-btn, .modal-maximize-btn');
+    let resizer = modalEl.querySelector('.rn-modal-resizer, .modal-resizer');
+
+    // Auto-inject Maximize-Button vor Close-Button falls nicht vorhanden
+    if (!maxBtn) {
+      const closeBtn = header.querySelector('.btn-close');
+      if (closeBtn) {
+        maxBtn = document.createElement('button');
+        maxBtn.type = 'button';
+        const isHeaderWhite = header.classList.contains('text-white') || header.classList.contains('bg-primary') || header.classList.contains('bg-dark');
+        maxBtn.className = `btn btn-sm btn-link ${isHeaderWhite ? 'text-white' : 'text-secondary'} p-0 rn-modal-maximize-btn me-2`;
+        maxBtn.title = 'Maximieren / Wiederherstellen';
+        maxBtn.style.textDecoration = 'none';
+        maxBtn.style.fontSize = '0.95rem';
+        maxBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        closeBtn.parentNode.insertBefore(maxBtn, closeBtn);
+      }
+    }
+
+    // Auto-inject Resizer Grip falls nicht vorhanden
+    if (!resizer) {
+      resizer = document.createElement('div');
+      resizer.className = 'rn-modal-resizer';
+      resizer.title = 'Grösse durch Ziehen verändern';
+      resizer.style.cssText = 'position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;';
+      resizer.innerHTML = '<i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>';
+      content.style.position = 'relative';
+      content.appendChild(resizer);
+    }
+
+    header.style.cursor = 'grab';
+    header.style.userSelect = 'none';
+
+    if (modalBody) {
+      modalBody.style.overflowY = 'auto';
+      modalBody.style.maxHeight = 'calc(85vh - 65px)';
+    }
+
+    let isDragging = false;
+    let isResizing = false;
+    let isMaximized = false;
+    let savedState = null;
+    let startX, startY, initialLeft, initialTop, initialWidth, initialHeight;
+
+    function ensureFixedPosition() {
+      const rect = dialog.getBoundingClientRect();
+      if (dialog.classList.contains('modal-dialog-centered') || dialog.style.position !== 'fixed') {
+        dialog.classList.remove('modal-dialog-centered');
+        dialog.style.position = 'fixed';
+        dialog.style.margin = '0';
+        dialog.style.left = Math.round(rect.left) + 'px';
+        dialog.style.top = Math.max(10, Math.round(rect.top)) + 'px';
+        dialog.style.width = Math.round(rect.width) + 'px';
+        dialog.style.maxWidth = 'none';
+        dialog.style.zIndex = '1060';
+      }
+      return rect;
+    }
+
+    // Header Drag (Verschieben bei jeglicher Grösse)
+    header.addEventListener('pointerdown', function(e) {
+      if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a') || e.target.closest('select')) {
+        return;
+      }
+      if (isMaximized) return;
+
+      e.preventDefault();
+      ensureFixedPosition();
+
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      initialLeft = parseFloat(dialog.style.left) || dialog.getBoundingClientRect().left;
+      initialTop = parseFloat(dialog.style.top) || dialog.getBoundingClientRect().top;
+
+      header.style.cursor = 'grabbing';
+      document.body.style.userSelect = 'none';
+
+      function onPointerMove(ev) {
+        if (!isDragging) return;
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+
+        const rect = dialog.getBoundingClientRect();
+        let nextLeft = initialLeft + dx;
+        let nextTop = initialTop + dy;
+
+        nextLeft = Math.max(-rect.width + 120, Math.min(window.innerWidth - 120, nextLeft));
+        nextTop = Math.max(0, Math.min(window.innerHeight - 60, nextTop));
+
+        dialog.style.left = Math.round(nextLeft) + 'px';
+        dialog.style.top = Math.round(nextTop) + 'px';
+      }
+
+      function onPointerUp() {
+        isDragging = false;
+        header.style.cursor = 'grab';
+        document.body.style.userSelect = '';
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+      }
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    });
+
+    // Doppelklick auf Header = Maximieren / Wiederherstellen
+    header.addEventListener('dblclick', function(e) {
+      if (e.target.closest('button') || e.target.closest('input')) return;
+      if (maxBtn) maxBtn.click();
+    });
+
+    // Resizing via Grip unten rechts
+    if (resizer) {
+      resizer.addEventListener('pointerdown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isMaximized) return;
+
+        ensureFixedPosition();
+        const rect = dialog.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        initialWidth = rect.width;
+        initialHeight = contentRect.height;
+
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'nwse-resize';
+
+        function onResizeMove(ev) {
+          if (!isResizing) return;
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+
+          const currentLeft = parseFloat(dialog.style.left) || rect.left;
+          const currentTop = parseFloat(dialog.style.top) || rect.top;
+
+          const maxW = window.innerWidth - currentLeft - 10;
+          const maxH = window.innerHeight - currentTop - 10;
+          const newW = Math.max(450, Math.min(maxW, initialWidth + dx));
+          const newH = Math.max(280, Math.min(maxH, initialHeight + dy));
+
+          dialog.style.width = Math.round(newW) + 'px';
+          content.style.height = Math.round(newH) + 'px';
+          if (modalBody) {
+            modalBody.style.maxHeight = `calc(${Math.round(newH)}px - 62px)`;
+          }
+        }
+
+        function onResizeUp() {
+          isResizing = false;
+          document.body.style.userSelect = '';
+          document.body.style.cursor = '';
+          window.removeEventListener('pointermove', onResizeMove);
+          window.removeEventListener('pointerup', onResizeUp);
+        }
+
+        window.addEventListener('pointermove', onResizeMove);
+        window.addEventListener('pointerup', onResizeUp);
+      });
+    }
+
+    // Button Maximieren / Wiederherstellen
+    if (maxBtn) {
+      maxBtn.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const icon = maxBtn.querySelector('i');
+
+        if (!isMaximized) {
+          const rect = dialog.getBoundingClientRect();
+          const contentRect = content.getBoundingClientRect();
+          savedState = {
+            left: dialog.style.left || (Math.round(rect.left) + 'px'),
+            top: dialog.style.top || (Math.round(rect.top) + 'px'),
+            width: dialog.style.width || (Math.round(rect.width) + 'px'),
+            height: content.style.height || (Math.round(contentRect.height) + 'px'),
+            bodyMaxHeight: modalBody ? modalBody.style.maxHeight : ''
+          };
+
+          dialog.classList.remove('modal-dialog-centered');
+          dialog.style.position = 'fixed';
+          dialog.style.margin = '0';
+          dialog.style.left = '12px';
+          dialog.style.top = '12px';
+          dialog.style.width = 'calc(100vw - 24px)';
+          dialog.style.maxWidth = 'none';
+          content.style.height = 'calc(100vh - 24px)';
+          if (modalBody) {
+            modalBody.style.maxHeight = 'calc(100vh - 24px - 62px)';
+          }
+          if (icon) icon.className = 'fas fa-compress';
+          maxBtn.title = 'Wiederherstellen';
+          isMaximized = true;
+        } else {
+          if (savedState) {
+            dialog.style.left = savedState.left;
+            dialog.style.top = savedState.top;
+            dialog.style.width = savedState.width;
+            content.style.height = savedState.height;
+            if (modalBody) {
+              modalBody.style.maxHeight = savedState.bodyMaxHeight || 'calc(85vh - 65px)';
+            }
+          }
+          if (icon) icon.className = 'fas fa-expand';
+          maxBtn.title = 'Maximieren / Verkleinern';
+          isMaximized = false;
+        }
+      };
+    }
+  }
+
   // Globale Registrierung
   window.TableKit = {
     makeSortable,
@@ -923,5 +1153,9 @@
     ensureStyles
   };
 
-  console.log('✅ TableKit Standard geladen (Sportschützen Muhen UI Toolkit)');
+  window.UIModalKit = {
+    makeMovableAndResizable: makeModalMovableAndResizable
+  };
+
+  console.log('✅ TableKit & UIModalKit Standard geladen (Sportschützen Muhen UI Toolkit)');
 })();

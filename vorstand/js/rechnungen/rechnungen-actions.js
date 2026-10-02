@@ -822,6 +822,9 @@ window.rnSendMailPrompt = async function(invoiceId, name) {
  * Macht ein Bootstrap-Modal interaktiv frei verschiebbar und in der Grösse veränderbar (verkleinern / vergrössern)
  */
 function rnMakeModalMovableAndResizable(modalEl) {
+  if (window.UIModalKit?.makeMovableAndResizable) {
+    return window.UIModalKit.makeMovableAndResizable(modalEl);
+  }
   if (!modalEl) return;
   const dialog = modalEl.querySelector('.modal-dialog');
   const content = modalEl.querySelector('.modal-content');

@@ -200,6 +200,7 @@ function mglRenderRows(data) {
             <table class="table table-hover table-sm mb-0 align-middle" id="mgl-table">
               <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px; z-index: 10;">
                 <tr>
+                  <th data-col-id="idx" data-col-name="#" class="tk-col-idx py-2 text-center" style="width: 44px; min-width: 40px; max-width: 50px;">#</th>
                   <th data-col-id="nr" data-col-name="Nr. / Lizenz" class="mgl-clickable-sort tk-col-nr py-2" onclick="mglSetSort('AddressNumber')" style="cursor: pointer; user-select: none;">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
                   <th data-col-id="name" data-col-name="Name" class="mgl-clickable-sort tk-col-name py-2" onclick="mglSetSort('LastName')" style="cursor: pointer; user-select: none;">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
                   <th data-col-id="geburt" data-col-name="Geburtsdatum" class="mgl-clickable-sort tk-col-geburt py-2" onclick="mglSetSort('BirthDate')" style="cursor: pointer; user-select: none;">Geburtsdatum <span class="mgl-sort-ind">${mglSortIndicator('BirthDate')}</span></th>
@@ -213,7 +214,7 @@ function mglRenderRows(data) {
                 </tr>
               </thead>
               <tbody id="mglTableBody">
-                ${data.map(m => {
+                ${data.map((m, idx) => {
                   const statusBadge = mglStatusBadge(m);
                   const katBadge = (m._kategorien && m._kategorien.length > 0) 
                     ? m._kategorien.map(k => mglKatBadge(k)).join(' ') 
@@ -240,6 +241,7 @@ function mglRenderRows(data) {
                   }
 
                   return `<tr>
+                    <td class="small text-muted text-center tk-col-idx font-monospace" style="font-size:0.8rem">${idx + 1}</td>
                     <td class="small tk-col-nr">
                       <div class="fw-bold text-dark font-monospace" style="font-size:0.9rem">${addrNum}</div>
                       <div class="text-muted small d-flex align-items-center mt-1" style="font-size:0.75rem">
@@ -289,7 +291,8 @@ function mglRenderRows(data) {
         storageKey: 'portal_mgl_col_widths',
         minWidth: 50,
         columns: {
-          actions: { minWidth: 75, defaultWidth: 85 }
+          idx: { minWidth: 35, defaultWidth: 44, resizable: false },
+          actions: { minWidth: 75, defaultWidth: 85, resizable: false }
         }
       });
     }

@@ -58,11 +58,16 @@ function mglAssembleTimeline(m, liz, fn, his) {
 }
 
 function mglOpenDetail(pn) {
-  const modal = new bootstrap.Modal(document.getElementById('mglModalDetail'));
+  const modalEl = document.getElementById('mglModalDetail');
+  const modal = new bootstrap.Modal(modalEl);
   const body = document.getElementById('mglDetailBody');
   body.innerHTML = '';
   document.getElementById('mglDetailTitle').textContent = 'Lade Mitglied…';
   modal.show();
+
+  if (window.UIModalKit?.makeMovableAndResizable) {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  }
 
   try {
     const m = _mglData.find(x => String(x.PersonNumber) === String(pn));
@@ -193,19 +198,15 @@ function mglOpenDetail(pn) {
 
       <div class="mgl-tab-wrap">
         <ul class="nav nav-tabs px-3 pt-2" id="mglDetailTabs">
-          <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#mglTabTimeline">Timeline</a></li>
-          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabStamm">Stammdaten</a></li>
+          <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#mglTabStamm">Stammdaten</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabLiz">Lizenzen</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabFn">Funktionen</a></li>
-          ${canEditVerein ? `<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabEdit">✏️ Bearbeiten</a></li>` : ''}
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabTimeline">Timeline</a></li>
+          ${canEditVerein ? `<li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mglTabEdit">✏️ Zahlungsdaten</a></li>` : ''}
         </ul>
 
         <div class="tab-content p-3">
-          <div class="tab-pane fade show active" id="mglTabTimeline">
-            <div class="mgl-timeline mt-2">${timeline}</div>
-          </div>
-
-          <div class="tab-pane fade" id="mglTabStamm">
+          <div class="tab-pane fade show active" id="mglTabStamm">
             <div class="row">
               <div class="col-md-6">
                 <h6 class="fw-bold mb-2">Personalien <small class="text-muted fw-normal">(SSV – nur lesen)</small></h6>
@@ -223,7 +224,7 @@ function mglOpenDetail(pn) {
                 </div>
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">IBAN</div>
-                  <div class="col-7 small">${m.IBAN || '–'}</div>
+                  <div class="col-7 small font-monospace">${m.IBAN || '–'}</div>
                 </div>
                 <div class="row border-bottom py-1">
                   <div class="col-5 text-muted small">Kontoinhaber</div>
@@ -292,133 +293,30 @@ function mglOpenDetail(pn) {
             </div>
           </div>
 
+          <div class="tab-pane fade" id="mglTabTimeline">
+            <div class="mgl-timeline mt-2">${timeline}</div>
+          </div>
+
           ${canEditVerein ? `
           <div class="tab-pane fade" id="mglTabEdit">
+            <div class="alert alert-info border-0 shadow-sm d-flex align-items-start mb-3" style="background-color: #e0f2fe; color: #0369a1; border-radius: 8px;">
+              <i class="fas fa-info-circle fa-lg me-3 mt-1"></i>
+              <div class="small">
+                <strong>Zentraler SSV-Verbandsstamm:</strong><br>
+                Personalien und Kontaktdaten (Name, Adresse, E-Mail, Telefon) werden verbindlich in der offiziellen SSV-Verbandsdatenbank gepflegt und über den periodischen SSV-Import synchronisiert.<br>
+                Hier können ausschliesslich vereinsinterne <strong>Zahlungs- und Bankdaten</strong> für Beitragsfakturierung und Rechnungsversand sowie interne Notizen hinterlegt werden.
+              </div>
+            </div>
+
             <form id="mglEditForm" onsubmit="mglSaveMember(event, '${pn}')">
               
-              <!-- Sektion 1: Personalien -->
-              <div class="card border mb-3 shadow-xs rounded-3">
-                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase d-flex justify-content-between align-items-center">
-                  <span><i class="fas fa-user text-primary me-1"></i> Personalien</span>
-                  <span class="badge bg-primary-subtle text-primary fw-semibold" style="font-size:0.7rem">Supabase Write-Master</span>
-                </div>
-                <div class="card-body p-3">
-                  <div class="row g-2">
-                    <div class="col-md-2">
-                      <label class="form-label small fw-bold text-muted">Anrede</label>
-                      <select class="form-select form-select-sm" id="mglEditSalutation">
-                        <option value="Herr" ${m.Salutation === 'Herr' ? 'selected' : ''}>Herr</option>
-                        <option value="Frau" ${m.Salutation === 'Frau' ? 'selected' : ''}>Frau</option>
-                        <option value="Familie" ${m.Salutation === 'Familie' ? 'selected' : ''}>Familie</option>
-                        <option value="" ${!m.Salutation ? 'selected' : ''}>–</option>
-                      </select>
-                    </div>
-                    <div class="col-md-3">
-                      <label class="form-label small fw-bold text-muted">Vorname *</label>
-                      <input type="text" class="form-control form-control-sm" id="mglEditFirstName" value="${escapeHtml(m.FirstName || '')}" required>
-                    </div>
-                    <div class="col-md-3">
-                      <label class="form-label small fw-bold text-muted">Nachname *</label>
-                      <input type="text" class="form-control form-control-sm" id="mglEditLastName" value="${escapeHtml(m.LastName || '')}" required>
-                    </div>
-                    <div class="col-md-2">
-                      <label class="form-label small fw-bold text-muted">Geburtsdatum</label>
-                      <input type="date" class="form-control form-control-sm" id="mglEditBirthDate" value="${mglFmtDateIso(m.BirthDate)}">
-                    </div>
-                    <div class="col-md-2">
-                      <label class="form-label small fw-bold text-muted">Geschlecht</label>
-                      <select class="form-select form-select-sm" id="mglEditGender">
-                        <option value="m" ${String(m.Gender || '').toLowerCase().startsWith('m') ? 'selected' : ''}>Männlich</option>
-                        <option value="w" ${String(m.Gender || '').toLowerCase().startsWith('w') || String(m.Gender || '').toLowerCase().startsWith('f') ? 'selected' : ''}>Weiblich</option>
-                        <option value="" ${!m.Gender ? 'selected' : ''}>–</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Sektion 2: Adresse & Kommunikation -->
-              <div class="card border mb-3 shadow-xs rounded-3">
-                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
-                  <i class="fas fa-map-marker-alt text-primary me-1"></i> Adresse & Kommunikation
-                </div>
-                <div class="card-body p-3">
-                  <div class="row g-2">
-                    <div class="col-md-6">
-                      <label class="form-label small fw-bold text-muted">Strasse / Nr.</label>
-                      <input type="text" class="form-control form-control-sm" id="mglEditStreet" value="${escapeHtml(m.Street || '')}">
-                    </div>
-                    <div class="col-md-2">
-                      <label class="form-label small fw-bold text-muted">PLZ</label>
-                      <input type="text" class="form-control form-control-sm" id="mglEditPostCode" value="${escapeHtml(m.PostCode || '')}">
-                    </div>
-                    <div class="col-md-4">
-                      <label class="form-label small fw-bold text-muted">Ort</label>
-                      <input type="text" class="form-control form-control-sm" id="mglEditCity" value="${escapeHtml(m.City || '')}">
-                    </div>
-                    <div class="col-md-4">
-                      <label class="form-label small fw-bold text-muted">E-Mail (Haupt)</label>
-                      <input type="email" class="form-control form-control-sm" id="mglEditEmail" value="${escapeHtml(m.PrimaryEmail || '')}">
-                    </div>
-                    <div class="col-md-4">
-                      <label class="form-label small fw-bold text-muted">Mobiltelefon</label>
-                      <input type="tel" class="form-control form-control-sm" id="mglEditMobilePhone" value="${escapeHtml(m.PrivateMobilePhone || '')}">
-                    </div>
-                    <div class="col-md-4">
-                      <label class="form-label small fw-bold text-muted">Festnetz / Büro</label>
-                      <input type="tel" class="form-control form-control-sm" id="mglEditLandlinePhone" value="${escapeHtml(m.PrivateLandlinePhone || m.BusinessLandlinePhone || '')}">
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Sektion 3: Vereinsstatus & Quellschutz -->
-              <div class="card border mb-3 shadow-xs rounded-3">
-                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
-                  <i class="fas fa-shield-alt text-primary me-1"></i> Vereinsstatus & Quellschutz
-                </div>
-                <div class="card-body p-3">
-                  <div class="row g-3">
-                    <div class="col-md-3">
-                      <div class="form-check form-switch mt-1">
-                        <input class="form-check-input" type="checkbox" id="mglEditIsPassive" ${m._istPassiv || m.IsPassive ? 'checked' : ''}>
-                        <label class="form-check-label fw-semibold small" for="mglEditIsPassive">Passivmitglied</label>
-                      </div>
-                      <div class="form-text small text-muted" style="font-size: 0.72rem;">Schützt vor unbedachtem SSV-Überschreiben</div>
-                    </div>
-                    <div class="col-md-3">
-                      <div class="form-check form-switch mt-1">
-                        <input class="form-check-input" type="checkbox" id="mglEditIsHonorary" ${m._istEhren || m.IsHonoraryMember ? 'checked' : ''}>
-                        <label class="form-check-label fw-semibold small" for="mglEditIsHonorary">Ehrenmitglied</label>
-                      </div>
-                    </div>
-                    <div class="col-md-3">
-                      <label class="form-label small fw-bold text-muted">Ehrenmitglied seit</label>
-                      <input type="date" class="form-control form-control-sm" id="mglEditHonorarySince" value="${mglFmtDateIso(m.HonoraryMemberSince)}">
-                    </div>
-                    <div class="col-md-3">
-                      <label class="form-label small fw-bold text-muted">Vereinseintritt</label>
-                      <input type="date" class="form-control form-control-sm" id="mglEditClubEntry" value="${mglFmtDateIso(m.ClubEntryDate || m.FirstClubEntryDateSSV)}">
-                    </div>
-                    <div class="col-md-3">
-                      <label class="form-label small fw-bold text-muted">Vereinsaustritt</label>
-                      <input type="date" class="form-control form-control-sm" id="mglEditAustritt" value="${mglFmtDateIso(m.Vereinsaustritt)}">
-                    </div>
-                    <div class="col-md-9">
-                      <label class="form-label small fw-bold text-muted">Bemerkungen / Notizen</label>
-                      <input type="text" class="form-control form-control-sm" id="mglEditRemark" value="${escapeHtml(m.Remark || '')}" placeholder="Interne Bemerkungen...">
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Sektion 4: Zahlungsdaten & Rechnungen -->
+              <!-- Sektion: Zahlungsdaten & Rechnungen -->
               <div class="card border mb-3 shadow-xs rounded-3">
                 <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">
                   <i class="fas fa-file-invoice text-primary me-1"></i> Zahlungsdaten & Beitragsfakturierung
                 </div>
                 <div class="card-body p-3">
-                  <div class="row g-2">
+                  <div class="row g-3">
                     <div class="col-md-6">
                       <label class="form-label small fw-bold text-muted">IBAN</label>
                       <input type="text" class="form-control form-control-sm font-monospace" id="mglEditIBAN" value="${escapeHtml(m.IBAN || '')}" placeholder="CH...">
@@ -444,14 +342,18 @@ function mglOpenDetail(pn) {
                         <label class="form-check-label fw-semibold small" for="mglEditMahnen">Nie mahnen</label>
                       </div>
                     </div>
+                    <div class="col-12">
+                      <label class="form-label small fw-bold text-muted">Vereinsinterne Bemerkungen / Notizen</label>
+                      <textarea class="form-control form-control-sm" id="mglEditRemark" rows="2" placeholder="Interne Bemerkungen (nur Vorstand)...">${escapeHtml(m.Remark || '')}</textarea>
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
-                <span class="small text-muted"><i class="fas fa-lock me-1"></i>Speicherung erfolgt primär in Supabase PostgreSQL mit Revisions-Audit</span>
+                <span class="small text-muted"><i class="fas fa-lock me-1"></i>Speicherung erfolgt direkt in Supabase PostgreSQL</span>
                 <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" id="mglEditSubmitBtn">
-                  <i class="fas fa-save me-1"></i> Änderungen speichern
+                  <i class="fas fa-save me-1"></i> Zahlungsdaten speichern
                 </button>
               </div>
             </form>

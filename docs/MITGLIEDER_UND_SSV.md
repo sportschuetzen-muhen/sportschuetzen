@@ -113,9 +113,11 @@ Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_200920
 
 ### 6.3 Disziplinen-basiertes Lizenz-Matching & Klare Mutationstypen (Variante A)
 * **Problem isolierter String-Vergleiche:** Ein Schütze, der den Stammverein zu Muhen wechselt (z. B. von Frick als B-Mitglied zu Muhen als A-Mitglied), erhielt im SSV eine beendete B-Zeile und eine neue A-Zeile. Eine naive String-Vergleichslogik erzeugte daraus fälschlicherweise zwei unverbundene Operationen: *«Lizenz Neu»* (Grün) und *«Lizenz Ende»* (Rot/Entzug).
-* **Lösung (Disziplinen-basiertes Matching):** Lizenzen werden innerhalb einer Person nach Disziplin (`G50m`, `G10m`, `G10m Auflage`, `G50m Auflage`, `G300m`, `Pistole`) abgeglichen:
-  1. `LIZENZ-UEBERNAHME` (Gelb): Wechsel von `Aktiv-B` zu `Aktiv-A` bzw. Wechsel des rechnungsstellenden Vereins zu Muhen (`1.19.0.01.029`). Erläuterung: *«Stammverein zu Muhen gewechselt (vorher {AlterVerein}).»*
-  2. `B-LIZENZ (ZWEITVEREIN)` (Blau): Schütze schiesst als B-Mitglied in Muhen; der Verbandsbeitrag wird vom Erstclub getragen (`license_invoicing_club_number != '1.19.0.01.029'`). Erläuterung: *«Zweitmitgliedschaft (Stammverein {ClubName}).»*
+* **Priorität der A-Lizenz (Voll-Lizenz Muhen):** Wenn eine Person in Muhen eine aktive 10m- oder 50m-Lizenz der Kategorie `Aktiv-A` (oder `LicenseCategory = 'A'`) besitzt, ist Muhen in dieser Disziplin Stammverein mit Voll-Lizenz – selbst wenn `LicenseInvoicingClubNumber` eine fremde Vereinsnummer ausweist (z. B. ein 300m- oder Pistolenverein wie Kölliken Pistolenschützen bei Leonardo Iapello).
+* **Darstellung in der Vorschau:** Bei A-Lizenzen wird der neue Wert ohne verwirrenden Klammerzusatz ausgegeben (`Aktiv-A G10m Auflage`). Bei B-Lizenzen (wie Patrick Fleischli) wird der tatsächliche Stammverein in Klammern mitgeführt (`Aktiv-B G10m [Buchs LU Schützengesellschaft]`).
+* **Klassifizierung der Lizenzmutationen:**
+  1. `LIZENZ-UEBERNAHME` (Gelb): Wechsel von `Aktiv-B` zu `Aktiv-A` bzw. Wechsel des Stammvereins zu Muhen. Erläuterung: *«Stammverein zu Muhen gewechselt (vorher {AlterVerein}).»*
+  2. `B-LIZENZ (ZWEITVEREIN)` (Blau): Schütze schiesst als B-Mitglied in Muhen; der Verbandsbeitrag wird vom Erstclub getragen (`MembershipCategory` enthält `Aktiv-B`). Erläuterung: *«Zweitmitgliedschaft (Stammverein {ClubName}).»*
   3. `A-LIZENZ NEU (MUHEN)` (Grün): Echte Neulizenzierung direkt über Muhen als Stammverein. Erläuterung: *«Neue Voll-Lizenz bei Muhen als Stammverein.»*
   4. `LIZENZ-ABGABE` (Orange): Stammverein wechselt von Muhen weg zu einem Fremdverein (z. B. Kölliken). Erläuterung: *«Stammverein wechselt von Muhen zu {NeuerClub}.»*
   5. `LIZENZ BEENDET` (Rot): Lizenz in dieser Disziplin beendet (kein Folgeverein). Erläuterung: *«Lizenz in dieser Disziplin beendet (ExitDate {Datum}).»*
@@ -123,7 +125,7 @@ Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_200920
 
 ### 6.4 Dedizierte Spalte «Erläuterung» in der Vorschau-Tabelle
 * Die Vorschau-Tabelle (`#mglImportDiffTable`) besitzt direkt nach der Spalte *Mutationstyp* die Spalte **Erläuterung**.
-* Sie liefert dem Vorstand auf einen Blick die verständliche Begründung (z.B. *«Stammverein zu Muhen gewechselt (vorher Frick Sportschützen)»* oder *«Zweitmitgliedschaft (Stammverein Wettingen-Würenlos Sportschützen)»*).
+* Sie liefert dem Vorstand auf einen Blick die verständliche Begründung (z.B. *«Stammverein zu Muhen gewechselt (vorher Frick Sportschützen)»*, *«Zweitmitgliedschaft (Stammverein Wettingen-Würenlos Sportschützen)»* oder *«Vereinsfunktion im Verein neu erfasst»*).
 
 ### 6.5 Relation zu Fachmodulen (Jahresbeitrag & Finanzen)
 * Die Tabellen `public.member_licenses` und `public.member_functions` dienen als relationale Grundlage für die serverseitige Beitragsberechnung ([`calculate_member_contributions`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/30_calculate_contributions_rpc.sql)).

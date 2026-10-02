@@ -107,12 +107,20 @@ function renderMitgliederView(data) {
     <!-- DETAIL MODAL -->
     <div class="modal fade" id="mglModalDetail" tabindex="-1">
       <div class="modal-dialog modal-xl modal-fullscreen-lg-down">
-        <div class="modal-content border-0 shadow-lg">
+        <div class="modal-content border-0 shadow-lg position-relative">
           <div class="modal-header border-0 bg-primary text-white" style="border-radius: 8px 8px 0 0;">
             <h5 class="modal-title fw-bold" id="mglDetailTitle">Mitglied</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-link text-white p-0 rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="font-size: 0.95rem; text-decoration: none;">
+                <i class="fas fa-expand"></i>
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
           </div>
           <div class="modal-body p-0" id="mglDetailBody"></div>
+          <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+            <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
+          </div>
         </div>
       </div>
     </div>
@@ -652,7 +660,13 @@ function mglRenderAnalyse(data) {
     .filter(m => m._istEhren)
     .sort((a, b) => String(a.HonoraryMemberSince || '').localeCompare(String(b.HonoraryMemberSince || '')));
 
-  const vorstandListe = activeMembers.filter(m => Number(m._aktiveFunktionenCount || 0) > 0);
+  const vorstandListe = activeMembers
+    .filter(m => Number(m._aktiveFunktionenCount || 0) > 0)
+    .sort((a, b) => String(a.LastName || '').localeCompare(String(b.LastName || '')));
+
+  const passivListe = activeMembers
+    .filter(m => m._istPassiv)
+    .sort((a, b) => String(a.LastName || '').localeCompare(String(b.LastName || '')));
 
   document.getElementById('mglTabContent').innerHTML = `
     <div class="row g-3 mb-4">
@@ -766,38 +780,88 @@ function mglRenderAnalyse(data) {
     </div>
 
     <div class="row g-4">
-      <div class="col-12 col-md-6">
+      <div class="col-12 col-lg-4">
         <div class="card border-0 shadow-sm p-4 h-100">
           <h5 class="fw-bold mb-3 text-dark text-warning"><i class="fas fa-trophy me-2"></i>🏆 Ehrentafel</h5>
-          <div style="max-height: 250px; overflow-y: auto;">
+          <div style="max-height: 280px; overflow-y: auto;">
             ${ehrenListe.length > 0 ? `
               <ul class="list-group list-group-flush">
-                ${ehrenListe.map(m => `
-                  <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                    <span class="fw-bold text-dark">${escapeHtml(m.FirstName)} ${escapeHtml(m.LastName)}</span>
-                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3">seit ${mglFmtDate(m.HonoraryMemberSince)}</span>
-                  </li>
-                `).join('')}
+                ${ehrenListe.map(m => {
+                  const pn = String(m.PersonNumber || '').trim();
+                  return `
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                      <div>
+                        <a href="#" class="text-decoration-none fw-bold text-dark" onclick="mglOpenDetail('${escapeJs(pn)}'); return false;">
+                          ${escapeHtml(m.FirstName)} ${escapeHtml(m.LastName)}
+                        </a>
+                      </div>
+                      <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2 py-1 small">seit ${mglFmtDate(m.HonoraryMemberSince)}</span>
+                    </li>
+                  `;
+                }).join('')}
               </ul>
             ` : '<div class="text-center text-muted py-4">Keine Ehrenmitglieder eingetragen</div>'}
           </div>
         </div>
       </div>
 
-      <div class="col-12 col-md-6">
+      <div class="col-12 col-lg-4">
         <div class="card border-0 shadow-sm p-4 h-100">
           <h5 class="fw-bold mb-3 text-dark"><i class="fas fa-user-tie text-primary me-2"></i>💼 Vorstand & Funktionäre</h5>
-          <div style="max-height: 250px; overflow-y: auto;">
+          <div style="max-height: 280px; overflow-y: auto;">
             ${vorstandListe.length > 0 ? `
               <ul class="list-group list-group-flush">
-                ${vorstandListe.map(m => `
-                  <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                    <span class="fw-bold text-dark">${escapeHtml(m.FirstName)} ${escapeHtml(m.LastName)}</span>
-                    <span class="text-muted small">${escapeHtml(m._kategorie)}</span>
-                  </li>
-                `).join('')}
+                ${vorstandListe.map(m => {
+                  const pn = String(m.PersonNumber || '').trim();
+                  const activeFns = (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+                  const fnList = activeFns.map(f => f.OfficialFunctionCategory).join(', ') || m._kategorie || 'Funktionär';
+                  return `
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                      <div>
+                        <a href="#" class="text-decoration-none fw-bold text-dark" onclick="mglOpenDetail('${escapeJs(pn)}'); return false;">
+                          ${escapeHtml(m.FirstName)} ${escapeHtml(m.LastName)}
+                        </a>
+                        <div class="text-primary small" style="font-size: 0.78rem;">
+                          <i class="fas fa-briefcase me-1 opacity-75"></i>${escapeHtml(fnList)}
+                        </div>
+                      </div>
+                      <button class="btn btn-outline-primary btn-sm py-0 px-2" onclick="mglOpenDetail('${escapeJs(pn)}')" title="Profil öffnen">
+                        <i class="fas fa-eye"></i>
+                      </button>
+                    </li>
+                  `;
+                }).join('')}
               </ul>
             ` : '<div class="text-center text-muted py-4">Keine Funktionäre eingetragen</div>'}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm p-4 h-100">
+          <h5 class="fw-bold mb-3 text-dark"><i class="fas fa-users text-secondary me-2"></i>👥 Passivmitglieder</h5>
+          <div style="max-height: 280px; overflow-y: auto;">
+            ${passivListe.length > 0 ? `
+              <ul class="list-group list-group-flush">
+                ${passivListe.map(m => {
+                  const pn = String(m.PersonNumber || '').trim();
+                  const ort = [m.PostCode, m.City].filter(Boolean).join(' ');
+                  return `
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                      <div>
+                        <a href="#" class="text-decoration-none fw-bold text-dark" onclick="mglOpenDetail('${escapeJs(pn)}'); return false;">
+                          ${escapeHtml(m.FirstName)} ${escapeHtml(m.LastName)}
+                        </a>
+                        ${ort ? `<div class="text-muted small" style="font-size: 0.75rem;"><i class="fas fa-map-marker-alt me-1 opacity-75"></i>${escapeHtml(ort)}</div>` : ''}
+                      </div>
+                      <button class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="mglOpenDetail('${escapeJs(pn)}')" title="Profil öffnen">
+                        <i class="fas fa-eye"></i>
+                      </button>
+                    </li>
+                  `;
+                }).join('')}
+              </ul>
+            ` : '<div class="text-center text-muted py-4">Keine Passivmitglieder eingetragen</div>'}
           </div>
         </div>
       </div>
