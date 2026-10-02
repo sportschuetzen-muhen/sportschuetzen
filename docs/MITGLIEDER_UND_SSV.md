@@ -111,7 +111,22 @@ Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_200920
    - Abweichende Vereinsnummer: Fremdlizenz ($\rightarrow$ Abrechnung über Drittverein, in Muhen `LI003` CHF 0.00).
 5. `OfficialFunctionCategory`: Vereins- und Verbandsfunktionen (Präsident, Kassier, Aktuar, Schützenmeister, Juniorenleiter $\rightarrow$ rabattberechtigt für Vorstand `RA001`).
 
-### 6.3 Relation zu Fachmodulen
+### 6.3 Disziplinen-basiertes Lizenz-Matching & Klare Mutationstypen (Variante A)
+* **Problem isolierter String-Vergleiche:** Ein Schütze, der den Stammverein zu Muhen wechselt (z. B. von Frick als B-Mitglied zu Muhen als A-Mitglied), erhielt im SSV eine beendete B-Zeile und eine neue A-Zeile. Eine naive String-Vergleichslogik erzeugte daraus fälschlicherweise zwei unverbundene Operationen: *«Lizenz Neu»* (Grün) und *«Lizenz Ende»* (Rot/Entzug).
+* **Lösung (Disziplinen-basiertes Matching):** Lizenzen werden innerhalb einer Person nach Disziplin (`G50m`, `G10m`, `G10m Auflage`, `G50m Auflage`, `G300m`, `Pistole`) abgeglichen:
+  1. `LIZENZ-UEBERNAHME` (Gelb): Wechsel von `Aktiv-B` zu `Aktiv-A` bzw. Wechsel des rechnungsstellenden Vereins zu Muhen (`1.19.0.01.029`). Erläuterung: *«Stammverein zu Muhen gewechselt (vorher {AlterVerein}).»*
+  2. `B-LIZENZ (ZWEITVEREIN)` (Blau): Schütze schiesst als B-Mitglied in Muhen; der Verbandsbeitrag wird vom Erstclub getragen (`license_invoicing_club_number != '1.19.0.01.029'`). Erläuterung: *«Zweitmitgliedschaft (Stammverein {ClubName}).»*
+  3. `A-LIZENZ NEU (MUHEN)` (Grün): Echte Neulizenzierung direkt über Muhen als Stammverein. Erläuterung: *«Neue Voll-Lizenz bei Muhen als Stammverein.»*
+  4. `LIZENZ-ABGABE` (Orange): Stammverein wechselt von Muhen weg zu einem Fremdverein (z. B. Kölliken). Erläuterung: *«Stammverein wechselt von Muhen zu {NeuerClub}.»*
+  5. `LIZENZ BEENDET` (Rot): Lizenz in dieser Disziplin beendet (kein Folgeverein). Erläuterung: *«Lizenz in dieser Disziplin beendet (ExitDate {Datum}).»*
+  6. `DATUMSKORREKTUR` (Gelb): Reines Eintrittsdatum im Verband angepasst. Erläuterung: *«Verbandsdatum synchronisiert.»*
+
+### 6.4 Dedizierte Spalte «Erläuterung» in der Vorschau-Tabelle
+* Die Vorschau-Tabelle (`#mglImportDiffTable`) besitzt direkt nach der Spalte *Mutationstyp* die Spalte **Erläuterung**.
+* Sie liefert dem Vorstand auf einen Blick die verständliche Begründung (z.B. *«Stammverein zu Muhen gewechselt (vorher Frick Sportschützen)»* oder *«Zweitmitgliedschaft (Stammverein Wettingen-Würenlos Sportschützen)»*).
+
+### 6.5 Relation zu Fachmodulen (Jahresbeitrag & Finanzen)
 * Die Tabellen `public.member_licenses` und `public.member_functions` dienen als relationale Grundlage für die serverseitige Beitragsberechnung ([`calculate_member_contributions`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/30_calculate_contributions_rpc.sql)).
+* Anhand von `license_invoicing_club_number` entscheidet die Stored Procedure, ob `LI001` (CHF 18.00 bei Stammverein Muhen) oder `LI003` (CHF 0.00 informativ bei Fremdlizenz) in Rechnung gestellt wird.
 * Beim Import werden Lizenzen und Chargen dedupliziert und synchronisiert.
 

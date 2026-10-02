@@ -34,6 +34,8 @@ function mglRenderImport() {
       .diff-row-green { background-color: #d9ead3 !important; }
       .diff-row-yellow { background-color: #fff2cc !important; }
       .diff-row-red { background-color: #f4cccc !important; }
+      .diff-row-blue { background-color: #e1f5fe !important; }
+      .diff-row-orange { background-color: #ffe0b2 !important; }
       
       .diff-badge {
         font-size: 0.72rem;
@@ -42,10 +44,13 @@ function mglRenderImport() {
         border-radius: 4px;
         text-transform: uppercase;
         display: inline-block;
+        white-space: nowrap;
       }
       .diff-badge.green { background: #2e7d32; color: white; }
       .diff-badge.yellow { background: #f57f17; color: white; }
       .diff-badge.red { background: #c2185b; color: white; }
+      .diff-badge.blue { background: #0288d1; color: white; }
+      .diff-badge.orange { background: #e65100; color: white; }
       
       .table-import-preview td {
         vertical-align: middle;
@@ -102,10 +107,11 @@ function mglRenderImport() {
                 </th>
                 <th data-col-id="member" data-col-name="Mitglied" class="py-2">Mitglied</th>
                 <th data-col-id="section" data-col-name="Bereich" class="py-2">Bereich</th>
-                <th data-col-id="field" data-col-name="Feld" class="py-2">Feld</th>
+                <th data-col-id="field" data-col-name="Feld" class="py-2">Feld / Disziplin</th>
                 <th data-col-id="old" data-col-name="Alter Wert" class="py-2">Alter Wert</th>
                 <th data-col-id="new" data-col-name="Neuer Wert" class="py-2">Neuer Wert</th>
                 <th data-col-id="type" data-col-name="Mutationstyp" class="py-2">Mutationstyp</th>
+                <th data-col-id="expl" data-col-name="Erläuterung" class="py-2">Erläuterung</th>
               </tr>
             </thead>
             <tbody id="mglImportDiffBody"></tbody>
@@ -221,7 +227,7 @@ function mglDisplayDiffs() {
   if (!_mglImportRows || _mglImportRows.length === 0) {
     diffBody.innerHTML = `
       <tr>
-        <td colspan="7" class="text-center py-4 text-success fw-bold">
+        <td colspan="8" class="text-center py-4 text-success fw-bold">
           <i class="fas fa-check-circle me-1"></i> Keine Mutationen gefunden! Deine Datenbank ist bereits 100% synchron mit dem SSV.
         </td>
       </tr>
@@ -235,7 +241,7 @@ function mglDisplayDiffs() {
   statsEl.textContent = `${_mglImportRows.length} Mutationen identifiziert.`;
 
   diffBody.innerHTML = _mglImportRows.map((row, idx) => {
-    // Row layout: [importId, pn, name, sheet, feld, alt, neu, differenztyp, entscheid, bearbeitetam]
+    // Row layout: [importId, pn, name, sheet, feld, alt, neu, differenztyp, entscheid, erlaeuterung]
     const pn = row[1];
     const name = row[2];
     const sheet = row[3];
@@ -244,6 +250,7 @@ function mglDisplayDiffs() {
     const neu = row[6];
     const type = row[7];
     const defaultChecked = row[8] === 'Update' ? 'checked' : '';
+    const erlaeuterung = row[9] || '';
 
     // Translation maps
     const sheetTrans = {
@@ -255,18 +262,23 @@ function mglDisplayDiffs() {
 
     const typeLabels = {
       'NEU': { label: 'Neues Mitglied', class: 'green' },
-      'LIZENZNEU': { label: 'Lizenz Neu', class: 'green' },
-      'FUNKTIONNEU': { label: 'Funktion Neu', class: 'green' },
-      'TRAININGNEU': { label: 'Training Neu', class: 'green' },
-      
       'AENDERUNG': { label: 'Änderung', class: 'yellow' },
-      'LIZENZAENDERUNG': { label: 'Lizenz Update', class: 'yellow' },
-      'LIZENZDATUMSKORREKTUR': { label: 'Datumskorrektur', class: 'yellow' },
-      'FUNKTIONAENDERUNG': { label: 'Funktion Update', class: 'yellow' },
-      
       'ABGANG': { label: 'Austritt', class: 'red' },
-      'LIZENZWEG': { label: 'Lizenz Ende', class: 'red' },
-      'FUNKTIONWEG': { label: 'Funktion Ende', class: 'red' }
+
+      // Lizenzen nach Variante A
+      'LIZENZ-UEBERNAHME': { label: 'Lizenz-Übernahme', class: 'yellow' },
+      'B-LIZENZ-NEU': { label: 'B-Lizenz (Zweitverein)', class: 'blue' },
+      'A-LIZENZ-NEU': { label: 'A-Lizenz Neu (Muhen)', class: 'green' },
+      'LIZENZ-ABGABE': { label: 'Lizenz-Abgabe', class: 'orange' },
+      'LIZENZWEG': { label: 'Lizenz Beendet', class: 'red' },
+      'LIZENZDATUMSKORREKTUR': { label: 'Datumskorrektur', class: 'yellow' },
+      'LIZENZAENDERUNG': { label: 'Lizenz Update', class: 'yellow' },
+
+      'FUNKTIONNEU': { label: 'Funktion Neu', class: 'green' },
+      'FUNKTIONWEG': { label: 'Funktion Ende', class: 'red' },
+      'FUNKTIONAENDERUNG': { label: 'Funktion Update', class: 'yellow' },
+
+      'TRAININGNEU': { label: 'Training Neu', class: 'green' }
     };
 
     const displayType = typeLabels[type] || { label: type, class: 'yellow' };
@@ -274,6 +286,8 @@ function mglDisplayDiffs() {
     let rowClass = 'diff-row-yellow';
     if (displayType.class === 'green') rowClass = 'diff-row-green';
     if (displayType.class === 'red') rowClass = 'diff-row-red';
+    if (displayType.class === 'blue') rowClass = 'diff-row-blue';
+    if (displayType.class === 'orange') rowClass = 'diff-row-orange';
 
     // Format display values nicely
     let altDisplay = alt;
@@ -295,10 +309,13 @@ function mglDisplayDiffs() {
         </td>
         <td class="fw-medium">${sheetTrans[sheet] || sheet}</td>
         <td class="small text-muted font-monospace">${feld}</td>
-        <td class="text-muted" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${altDisplay || '—'}</td>
-        <td class="fw-bold" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${neuDisplay || '—'}</td>
+        <td class="text-muted" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${altDisplay || '—'}</td>
+        <td class="fw-bold" style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${neuDisplay || '—'}</td>
         <td>
           <span class="diff-badge ${displayType.class}">${displayType.label}</span>
+        </td>
+        <td class="small text-secondary" style="max-width: 320px;">
+          ${erlaeuterung || '—'}
         </td>
       </tr>
     `;

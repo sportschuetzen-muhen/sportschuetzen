@@ -143,6 +143,8 @@
     return String(value).trim();
   }
 
+  const MUHEN_CLUB_NUMBER = '1.19.0.01.029';
+
   function isStatusCategory(cat) {
     const s = String(cat || '').trim().toLowerCase();
     return s === 'passiv' || s.startsWith('ehren');
@@ -150,6 +152,18 @@
 
   function isLicenseCategory(cat) {
     return String(cat || '').trim().toLowerCase().startsWith('aktiv-');
+  }
+
+  function getDisciplineKey(cat) {
+    const s = String(cat || '').trim();
+    if (/g10m.*auflage/i.test(s)) return 'G10m Auflage';
+    if (/g50m.*auflage/i.test(s)) return 'G50m Auflage';
+    if (/g50m|50m/i.test(s)) return 'G50m';
+    if (/g10m|10m/i.test(s)) return 'G10m';
+    if (/300m/i.test(s)) return 'G300m';
+    if (/pisto/i.test(s)) return 'Pistole';
+    const clean = s.replace(/^Aktiv-[AB]\s*/i, '').trim();
+    return clean || 'Lizenz';
   }
 
   function getFullName(obj) {
@@ -322,7 +336,8 @@
         if (isActive) {
           diffRows.push([
             importId, pn, getFullName(m), 'members', 'IsActive',
-            'WAHR', 'FALSCH', 'ABGANG', 'Update', ''
+            'WAHR', 'FALSCH', 'ABGANG', 'Update',
+            'Im aktuellen Verbandsexport nicht mehr aufgeführt.'
           ]);
         }
       }
@@ -337,7 +352,11 @@
 
       if (!existing) {
         // Neues Mitglied
-        diffRows.push([importId, pn, fullName, 'members', 'PersonNumber', '', pn, 'NEU', 'Update', '']);
+        diffRows.push([
+          importId, pn, fullName, 'members', 'PersonNumber',
+          '', pn, 'NEU', 'Update',
+          'Neues Vereinsmitglied im Verband erfasst. Neue Stammdaten anlegen.'
+        ]);
       } else {
         // Stammdaten-Vergleich
         STAMMDATENFELDER.forEach(feld => {
@@ -349,7 +368,8 @@
             diffRows.push([
               importId, pn, fullName, 'members', feld,
               formatValueForDiff(feld, alt), formatValueForDiff(feld, neu),
-              'AENDERUNG', 'Update', ''
+              'AENDERUNG', 'Update',
+              `Stammdaten im Verband aktualisiert (${feld} abgeglichen).`
             ]);
           }
         });
@@ -368,41 +388,47 @@
           diffRows.push([
             importId, pn, fullName, 'members', 'IsActive',
             formatValueForDiff('IsActive', localIsActive), formatValueForDiff('IsActive', status.IsActive),
-            'AENDERUNG', 'Update', ''
+            'AENDERUNG', 'Update',
+            'Stammdaten im Verband aktualisiert (Aktiv-Status).'
           ]);
         }
         if (status.Deceased !== localIsDeceased) {
           diffRows.push([
             importId, pn, fullName, 'members', 'Deceased',
             formatValueForDiff('Deceased', localIsDeceased), formatValueForDiff('Deceased', status.Deceased),
-            'AENDERUNG', 'Update', ''
+            'AENDERUNG', 'Update',
+            'Stammdaten im Verband aktualisiert (Todesfall).'
           ]);
         }
         if (status.IsPassive !== localIsPassive && !passiveProt) {
           diffRows.push([
             importId, pn, fullName, 'members', 'IsPassive',
             formatValueForDiff('IsPassive', localIsPassive), formatValueForDiff('IsPassive', status.IsPassive),
-            'AENDERUNG', 'Update', ''
+            'AENDERUNG', 'Update',
+            'Stammdaten im Verband aktualisiert (Passiv-Status).'
           ]);
         }
         if (status.IsHonoraryMember !== localIsHonorary && !honoraryProt) {
           diffRows.push([
             importId, pn, fullName, 'members', 'IsHonoraryMember',
             formatValueForDiff('IsHonoraryMember', localIsHonorary), formatValueForDiff('IsHonoraryMember', status.IsHonoraryMember),
-            'AENDERUNG', 'Update', ''
+            'AENDERUNG', 'Update',
+            'Stammdaten im Verband aktualisiert (Ehrenmitglied-Status).'
           ]);
         }
         if (status.HonoraryMemberSince && normalizeDateValue(status.HonoraryMemberSince) !== normalizeDateValue(localHonorarySince) && !honoraryProt) {
           diffRows.push([
             importId, pn, fullName, 'members', 'HonoraryMemberSince',
             formatValueForDiff('HonoraryMemberSince', localHonorarySince), formatValueForDiff('HonoraryMemberSince', status.HonoraryMemberSince),
-            'AENDERUNG', 'Update', ''
+            'AENDERUNG', 'Update',
+            'Stammdaten im Verband aktualisiert (Ehrenmitglied seit).'
           ]);
         }
       }
 
-      // 3. LIZENZEN-VERGLEICH
-      const ssvLizenzenAktiv = extractAllLicenses(rows).filter(l =>
+      // 3. LIZENZEN-VERGLEICH (Disziplinen-basiert nach Variante A)
+      const ssvAllLizenzen = extractAllLicenses(rows);
+      const ssvLizenzenAktiv = ssvAllLizenzen.filter(l =>
         isLicenseCategory(l.MembershipCategory) &&
         isTruthy(l.IsActive) &&
         !l.ExitDate
@@ -412,67 +438,123 @@
         !(l.ExitDate || l.exit_date)
       );
 
-      const matchedSsvKeys = new Set();
-      const matchedLokKeys = new Set();
+      const dispSet = new Set();
+      ssvAllLizenzen.forEach(l => {
+        if (isLicenseCategory(l.MembershipCategory)) dispSet.add(getDisciplineKey(l.MembershipCategory));
+      });
+      lokLicAktiv.forEach(l => {
+        const cat = l.MembershipCategory || l.membership_category;
+        if (isLicenseCategory(cat)) dispSet.add(getDisciplineKey(cat));
+      });
 
-      ssvLizenzenAktiv.forEach(ssvLic => {
-        const ssvK = [ssvLic.MembershipCategory, normalizeDateValue(ssvLic.EntryDate)].join('|');
-        const matchingLok = lokLicAktiv.find(lokLic => {
-          const cat = lokLic.MembershipCategory || lokLic.membership_category;
-          const entry = lokLic.EntryDate || lokLic.entry_date;
-          return String(cat || '').trim() === String(ssvLic.MembershipCategory || '').trim() &&
-            normalizeDateValue(entry) !== normalizeDateValue(ssvLic.EntryDate);
-        });
+      const processedDisciplines = Array.from(dispSet).sort();
 
-        if (matchingLok) {
-          const lokCat = matchingLok.MembershipCategory || matchingLok.membership_category;
-          const lokEntry = matchingLok.EntryDate || matchingLok.entry_date;
-          const lokK = [lokCat, normalizeDateValue(lokEntry)].join('|');
-          if (!matchedLokKeys.has(lokK)) {
-            matchedSsvKeys.add(ssvK);
-            matchedLokKeys.add(lokK);
+      processedDisciplines.forEach(disp => {
+        const ssvDispActive = ssvLizenzenAktiv.find(l => getDisciplineKey(l.MembershipCategory) === disp);
+        const lokDispActive = lokLicAktiv.find(l => getDisciplineKey(l.MembershipCategory || l.membership_category) === disp);
+        const ssvDispHist = ssvAllLizenzen.find(l => getDisciplineKey(l.MembershipCategory) === disp && (l.ExitDate || !isTruthy(l.IsActive)));
+
+        // Fall 1: Sowohl lokal als auch im SSV aktiv vorhanden
+        if (lokDispActive && ssvDispActive) {
+          const lokCat = String(lokDispActive.MembershipCategory || lokDispActive.membership_category || '').trim();
+          const ssvCat = String(ssvDispActive.MembershipCategory || '').trim();
+          const lokClubNr = String(lokDispActive.license_invoicing_club_number || lokDispActive.LicenseInvoicingClubNumber || '').trim();
+          const ssvClubNr = String(ssvDispActive.LicenseInvoicingClubNumber || '').trim();
+          const lokClubName = String(lokDispActive.license_invoicing_club_name || lokDispActive.LicenseInvoicingClubName || 'Fremdverein').trim();
+          const ssvClubName = String(ssvDispActive.LicenseInvoicingClubName || (ssvClubNr === MUHEN_CLUB_NUMBER ? 'Muhen Sportschützen' : 'Fremdverein')).trim();
+          const lokEntry = normalizeDateValue(lokDispActive.EntryDate || lokDispActive.entry_date);
+          const ssvEntry = normalizeDateValue(ssvDispActive.EntryDate);
+
+          // 1a: Stammverein-Wechsel zu Muhen (Übernahme B ➔ A)
+          if (ssvClubNr === MUHEN_CLUB_NUMBER && lokClubNr !== MUHEN_CLUB_NUMBER) {
             diffRows.push([
-              importId, pn, fullName, 'memberlicenses', 'EntryDate',
-              lokK, ssvK, 'LIZENZDATUMSKORREKTUR', 'Update', ''
+              importId, pn, fullName, 'memberlicenses', disp,
+              `${lokCat} [${lokClubName}]`, `${ssvCat} [${ssvClubName}]`,
+              'LIZENZ-UEBERNAHME', 'Update',
+              `Stammverein zu Muhen gewechselt (vorher ${lokClubName}).`
+            ]);
+          }
+          // 1b: Stammverein-Wechsel weg von Muhen (Abgabe A ➔ B/Drittclub)
+          else if (lokClubNr === MUHEN_CLUB_NUMBER && ssvClubNr !== MUHEN_CLUB_NUMBER) {
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              `${lokCat} [${lokClubName}]`, `${ssvCat} [${ssvClubName}]`,
+              'LIZENZ-ABGABE', 'Update',
+              `Stammverein wechselt von Muhen zu ${ssvClubName}.`
+            ]);
+          }
+          // 1c: Kategoriewechsel
+          else if (lokCat !== ssvCat) {
+            const isUpgrade = ssvCat.includes('Aktiv-A') && lokCat.includes('Aktiv-B');
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              `${lokCat} [${lokClubName}]`, `${ssvCat} [${ssvClubName}]`,
+              isUpgrade ? 'LIZENZ-UEBERNAHME' : 'LIZENZAENDERUNG', 'Update',
+              `Lizenzkategorie angepasst (${lokCat} ➔ ${ssvCat}).`
+            ]);
+          }
+          // 1d: Datumskorrektur
+          else if (lokEntry !== ssvEntry && ssvEntry) {
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              `${lokCat} (ab ${lokEntry})`, `${ssvCat} (ab ${ssvEntry})`,
+              'LIZENZDATUMSKORREKTUR', 'Update',
+              'Verbandsdatum synchronisiert.'
             ]);
           }
         }
-      });
+        // Fall 2: In lokaler DB nicht aktiv, aber im SSV aktiv vorhanden (neue Lizenz)
+        else if (!lokDispActive && ssvDispActive) {
+          const ssvCat = String(ssvDispActive.MembershipCategory || '').trim();
+          const ssvClubNr = String(ssvDispActive.LicenseInvoicingClubNumber || '').trim();
+          const ssvClubName = String(ssvDispActive.LicenseInvoicingClubName || (ssvClubNr === MUHEN_CLUB_NUMBER ? 'Muhen Sportschützen' : 'Fremdverein')).trim();
 
-      const lokKeys = new Set(lokLicAktiv.map(l => [
-        l.MembershipCategory || l.membership_category,
-        normalizeDateValue(l.EntryDate || l.entry_date)
-      ].join('|')));
-
-      // Lizenzen neu
-      ssvLizenzenAktiv.forEach(lic => {
-        const k = [lic.MembershipCategory, normalizeDateValue(lic.EntryDate)].join('|');
-        if (!matchedSsvKeys.has(k) && !lokKeys.has(k)) {
-          diffRows.push([
-            importId, pn, fullName, 'memberlicenses', 'MembershipCategory',
-            '', lic.MembershipCategory, 'LIZENZNEU', 'Update', ''
-          ]);
+          if (ssvClubNr === MUHEN_CLUB_NUMBER) {
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              '—', `${ssvCat} [Muhen Sportschützen]`,
+              'A-LIZENZ-NEU', 'Update',
+              'Neue Voll-Lizenz bei Muhen als Stammverein.'
+            ]);
+          } else {
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              '—', `${ssvCat} [${ssvClubName}]`,
+              'B-LIZENZ-NEU', 'Update',
+              `Zweitmitgliedschaft (Stammverein ${ssvClubName}).`
+            ]);
+          }
         }
-      });
+        // Fall 3: In lokaler DB aktiv, aber im SSV nicht mehr aktiv vorhanden
+        else if (lokDispActive && !ssvDispActive) {
+          const lokCat = String(lokDispActive.MembershipCategory || lokDispActive.membership_category || '').trim();
+          const lokClubName = String(lokDispActive.license_invoicing_club_name || lokDispActive.LicenseInvoicingClubName || 'Muhen Sportschützen').trim();
 
-      // Lizenzen weg
-      const ssvAllLizenzen = extractAllLicenses(rows);
-      const ssvKeysActive = new Set(ssvLizenzenAktiv.map(l => [l.MembershipCategory, normalizeDateValue(l.EntryDate)].join('|')));
-      lokLicAktiv.forEach(lic => {
-        const cat = lic.MembershipCategory || lic.membership_category;
-        const entry = lic.EntryDate || lic.entry_date;
-        const k = [cat, normalizeDateValue(entry)].join('|');
-        if (!matchedLokKeys.has(k) && !ssvKeysActive.has(k)) {
-          const histMatch = ssvAllLizenzen.find(l =>
-            l.MembershipCategory === cat &&
-            normalizeDateValue(l.EntryDate) === normalizeDateValue(entry) &&
-            l.ExitDate
-          );
-          const neuValue = histMatch ? 'ExitDate ' + histMatch.ExitDate : 'Austritt (Export)';
-          diffRows.push([
-            importId, pn, fullName, 'memberlicenses', 'MembershipCategory',
-            k, neuValue, 'LIZENZWEG', 'Update', ''
-          ]);
+          if (ssvDispHist && ssvDispHist.LicenseInvoicingClubNumber && ssvDispHist.LicenseInvoicingClubNumber !== MUHEN_CLUB_NUMBER) {
+            const foreignClub = String(ssvDispHist.LicenseInvoicingClubName || 'Fremdverein').trim();
+            const exitDateStr = normalizeDateValue(ssvDispHist.ExitDate) || '';
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              `${lokCat} [${lokClubName}]`, exitDateStr ? `ExitDate ${exitDateStr} [${foreignClub}]` : `Wechsel [${foreignClub}]`,
+              'LIZENZ-ABGABE', 'Update',
+              `Stammverein wechselt von Muhen zu ${foreignClub}.`
+            ]);
+          } else if (ssvDispHist && ssvDispHist.ExitDate) {
+            const exitDateStr = normalizeDateValue(ssvDispHist.ExitDate);
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              `${lokCat} [${lokClubName}]`, `ExitDate ${exitDateStr}`,
+              'LIZENZWEG', 'Update',
+              `Lizenz in dieser Disziplin beendet (ExitDate ${exitDateStr}).`
+            ]);
+          } else {
+            diffRows.push([
+              importId, pn, fullName, 'memberlicenses', disp,
+              `${lokCat} [${lokClubName}]`, 'Austritt (Export)',
+              'LIZENZWEG', 'Update',
+              'Im aktuellen Verbandsexport nicht mehr aufgeführt.'
+            ]);
+          }
         }
       });
 
@@ -494,7 +576,8 @@
           const entscheidung = String(fn.OfficialFunctionCategory).toLowerCase().includes('hausmeister') ? 'Verworfen' : 'Update';
           diffRows.push([
             importId, pn, fullName, 'memberfunctions', 'OfficialFunctionCategory',
-            '', fn.OfficialFunctionCategory, 'FUNKTIONNEU', entscheidung, ''
+            '', fn.OfficialFunctionCategory, 'FUNKTIONNEU', entscheidung,
+            'Vereinsfunktion im Verband neu erfasst.'
           ]);
         }
       });
@@ -512,12 +595,14 @@
         if (histMatch) {
           diffRows.push([
             importId, pn, fullName, 'memberfunctions', 'OfficialFunctionCategory',
-            k, 'ExitDate ' + normalizeDateValue(histMatch.OfficialFunctionExitDate), 'FUNKTIONWEG', 'Update', ''
+            k, 'ExitDate ' + normalizeDateValue(histMatch.OfficialFunctionExitDate), 'FUNKTIONWEG', 'Update',
+            'Vereinsfunktion im Verband beendet.'
           ]);
         } else if (!ssvFnKeys.has(k)) {
           diffRows.push([
             importId, pn, fullName, 'memberfunctions', 'OfficialFunctionCategory',
-            k, 'Austritt (Export)', 'FUNKTIONWEG', 'Update', ''
+            k, 'Austritt (Export)', 'FUNKTIONWEG', 'Update',
+            'Vereinsfunktion im Verband beendet.'
           ]);
         }
       });
@@ -535,7 +620,8 @@
         if (!existingTr.has(k)) {
           diffRows.push([
             importId, pn, fullName, 'membertraining', 'CourseCategory',
-            '', tr.CourseCategory + '|' + tr.Module, 'TRAININGNEU', 'Update', ''
+            '', tr.CourseCategory + '|' + tr.Module, 'TRAININGNEU', 'Update',
+            'Ausbildung / Kurs im Verband erfasst.'
           ]);
         }
       });
