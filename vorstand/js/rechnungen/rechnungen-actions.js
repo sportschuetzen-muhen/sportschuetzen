@@ -758,9 +758,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
       ? window.renderClubEmailHtml({
           title: customLayout.mail_subject || `Rechnung ${invoiceId}`,
           subtitle: inv.type || 'Rechnung',
-          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`,
-          noticeHtml: inv.total_amount ? `<strong>Rechnungsbetrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
-          senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`
         })
       : `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`;
 
@@ -3797,9 +3795,7 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       ? window.renderClubEmailHtml({
           title: customLayout.mail_subject || `${stufenTitle}: Rechnung ${invoiceId}`,
           subtitle: inv.type || 'Mahnung',
-          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`,
-          noticeHtml: inv.total_amount ? `<strong>Ausstehender Betrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
-          senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`
         })
       : `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`;
 
@@ -4163,9 +4159,7 @@ window.rnExecuteBatchMahnung = async function() {
         ? window.renderClubEmailHtml({
             title: `${stufenTitle}: Rechnung ${itm.invoiceId}`,
             subtitle: inv.type || 'Mahnung',
-            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`,
-            noticeHtml: inv.total_amount ? `<strong>Ausstehender Betrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
-            senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`
           })
         : `<p>${bodyText.replace(/\n/g, '<br>')}</p>`;
 
@@ -4884,9 +4878,7 @@ window.rnExecuteMassSend = async function() {
         ? window.renderClubEmailHtml({
             title: (layout && layout.mail_subject) || `Rechnung ${inv.id}`,
             subtitle: inv.type || 'Rechnung',
-            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`,
-            noticeHtml: inv.total_amount ? `<strong>Betrag:</strong> CHF ${Number(inv.total_amount).toFixed(2)}` : '',
-            senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`
           })
         : `<p>${bodyText.replace(/\n/g, '<br>')}</p>`;
 

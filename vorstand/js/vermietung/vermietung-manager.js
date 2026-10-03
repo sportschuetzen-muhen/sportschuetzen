@@ -170,9 +170,10 @@ function buildRentalEmailHtml(title, bannerColor, bodyHtml, settings) {
       <div style="padding:28px 25px; color:#333333; line-height:1.6; font-size:15px;">
         ${bodyHtml}
       </div>
-      <div style="background:#f8f9fa; padding:15px 25px; border-top:1px solid #eeeeee; font-size:12px; color:#6c757d; text-align:center;">
-        Sportschützen Muhen • Schiessanlage Hard • 5037 Muhen<br>
-        Kontakt: <a href="mailto:${clubEmail}" style="color:#0f3c5c; text-decoration:none;">${clubEmail}</a>
+      <div style="background:#f8f9fa; padding:15px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#94a3b8; text-align:center; line-height:1.6;">
+        <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+        <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">Facebook</a><br>
+        <em>Dieses Schreiben wurde über das Vereinsportal generiert.</em>
       </div>
     </div>
   `;

@@ -130,7 +130,13 @@ Aufbau einer zentralen, robusten Dokumenten- und Kommunikations-Engine für den 
       `Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com`
   - **Swiss QR-Bill Integration:**
     - Auf den unteren 105 mm der A4-Seite (SIX SPC 0200 1 konform) oder als separate QR-Beilage per `pdf-lib` Merge.
-- **E-Mail:** Höfliche Information mit Fälligkeitsdatum, Betrag in CHF, Verweis auf das angehängte Original-PDF.
+- **E-Mail (Shell & Corporate Footer via `renderClubEmailHtml`):**
+  - Höfliche Information mit Fälligkeitsdatum, Betrag in CHF, Verweis auf das angehängte Original-PDF.
+  - Der Textkörper (`contentHtml`) enthält die vollständige Grussformel und Absendersignatur. Keine nachgelagerten doppelten Infoboxen oder redundanten `senderInfo`-Blöcke.
+  - **Globaler E-Mail-Footer:** Dezent zentriert am E-Mail-Ende:  
+    `Sportschützen Muhen (gegründet 1919) • Schiessanlage Rüteli • 5037 Muhen`  
+    `Instagram: https://www.instagram.com/sportschuetzen.muhen/ • Facebook: https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE`  
+    `Dieses Schreiben wurde über das Vereinsportal generiert.`
 
 ### Typ 2: Freier Vorstandsbrief (Formal)
 *Differenziertes Layout für offizielle Mitteilungen ohne Rechnungscharakter:*

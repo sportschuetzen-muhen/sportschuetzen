@@ -179,11 +179,12 @@
         subtitle = 'Mitteilung',
         contentHtml = '',
         noticeHtml = '',
-        senderInfo = 'Vorstand Sportschützen Muhen'
+        senderInfo = ''
     } = {}) {
         const logoUrl = 'https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-192.png';
         const cleanTitle = (typeof escapeHtml === 'function') ? escapeHtml(title) : title;
         const cleanSubtitle = (typeof escapeHtml === 'function') ? escapeHtml(subtitle) : subtitle;
+        const cleanSender = String(senderInfo || '').replace(/undefined/gi, '').trim();
         return `<!DOCTYPE html>
 <html>
 <head>
@@ -221,17 +222,17 @@
                 </div>
               ` : ''}
 
-              ${senderInfo ? `
+              ${cleanSender ? `
                 <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b;">
-                  ${senderInfo.replace(/\n/g, '<br>')}
+                  ${cleanSender.replace(/\n/g, '<br>')}
                 </div>
               ` : ''}
             </td>
           </tr>
           <tr>
-            <td style="background-color:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;line-height:1.5;text-align:center;">
-              <strong>Sportschützen Muhen</strong> &bull; Schützenhaus Muhen &bull; 5037 Muhen<br>
-              Web: <a href="https://sportschuetzen-muhen.ch" style="color:#0284c7;text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: sportschuetzen.muhen@gmail.com<br>
+            <td style="background-color:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;line-height:1.6;text-align:center;">
+              <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+              <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7;text-decoration:none;">Facebook</a><br>
               <em>Dieses Schreiben wurde über das Vereinsportal generiert.</em>
             </td>
           </tr>

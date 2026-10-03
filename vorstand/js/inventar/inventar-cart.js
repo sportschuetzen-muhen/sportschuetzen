@@ -545,9 +545,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                         ? window.renderClubEmailHtml({
                             title: finalSubject,
                             subtitle: 'Materialverkauf',
-                            contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`,
-                            noticeHtml: `<strong>Rechnungsbetrag:</strong> CHF ${Number(totalAmount).toFixed(2)}`,
-                            senderInfo: sender ? `${[sender.vorname, sender.nachname].filter(Boolean).join(' ')}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+                            contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`
                         })
                         : `<p>${finalBody.replace(/\n/g, '<br>')}</p>`;
 
@@ -891,9 +889,7 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
                     ? window.renderClubEmailHtml({
                         title: finalSubject,
                         subtitle: 'Depot / Kaution',
-                        contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`,
-                        noticeHtml: `<strong>Rechnungsbetrag:</strong> CHF ${Number(totalAmount).toFixed(2)}`,
-                        senderInfo: sender ? `${[sender.vorname, sender.nachname].filter(Boolean).join(' ')}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Vorstand Sportschützen Muhen'
+                        contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`
                     })
                     : `<p>${finalBody.replace(/\n/g, '<br>')}</p>`;
 

@@ -1342,21 +1342,23 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     }
 
     const totalBetrag = Number(r.total_amount || r.betrag || r.Gesamt || 0);
+    const senderDisplayName = sender ? [sender.vorname, sender.nachname].filter(Boolean).join(' ') : 'Daniel Hunziker';
+    const senderRole = sender?.funktion || 'Kassier';
+    const bodyHtml = `<p>Guten Tag ${name},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} mit der Rechnungsnummer <strong>${invoiceId}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p><p>Vielen Dank für deine wertvolle Unterstützung als Mitglied!</p><p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong><br>${senderDisplayName}<br>${senderRole}</p>`;
+
     const emailHtml = (typeof window.renderClubEmailHtml === 'function')
       ? window.renderClubEmailHtml({
           title: `Rechnung Jahresbeitrag ${r.year || new Date().getFullYear()}`,
           subtitle: 'Jahresbeitrag',
-          contentHtml: `<p>Guten Tag ${name},</p><p>anbei senden wir dir die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} mit der Rechnungsnummer <strong>${invoiceId}</strong> über CHF ${totalBetrag.toFixed(2)} inkl. beiliegender QR-Rechnung.</p>`,
-          noticeHtml: `<strong>Rechnungsbetrag:</strong> CHF ${totalBetrag.toFixed(2)}`,
-          senderInfo: sender ? `${sender.name}\n${sender.funktion || ''}\nSportschützen Muhen` : 'Kassier Sportschützen Muhen'
+          contentHtml: bodyHtml
         })
-      : `<p>Guten Tag ${name}, anbei deine Rechnung ${invoiceId}.</p>`;
+      : bodyHtml;
 
     const mailRes = await window.sendMailViaEngine({
       to: email,
       subject: `Rechnung Jahresbeitrag ${r.year || new Date().getFullYear()} – ${invoiceId} | Sportschützen Muhen`,
       html: emailHtml,
-      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} (${invoiceId}).`,
+      text: `Guten Tag ${name},\n\nanbei die Rechnung für den Jahresbeitrag ${r.year || new Date().getFullYear()} (${invoiceId}).\n\nVielen Dank für deine wertvolle Unterstützung als Mitglied!\n\nFreundliche Grüsse\nSportschützen Muhen\n${senderDisplayName}\n${senderRole}`,
       senderName: sender?.name || 'Sportschützen Muhen',
       senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
       attachments: attachments,
