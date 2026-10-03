@@ -95,11 +95,10 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitgliederkategorie, Lizenzen, Anlagennutzung, Wettkampfteilnahmen und Rabatten:
 
 ### 5.1 Kaskade für den Grundbeitrag (JB001–JB007)
-1. **Ehrenmitglied:** `is_honorary = true` $\rightarrow$ `JB004` (CHF 0.00).
-2. **Passivmitglied:** `is_passive = true` $\rightarrow$ `JB005` (CHF 20.00).
-3. **Schüler intern (ohne SSV-Lizenz):** `person_number` beginnt mit `INT-` $\rightarrow$ `JB006` (CHF 0.00).
-4. **Junior / Nachwuchs:** Alter am Stichtag $\le$ 20 Jahre (SSV U21-Definition) $\rightarrow$ `JB007` (CHF 20.00).
-5. **Aktivmitglied (Erwachsene mit SSV-Lizenz):**
+1. **Passivmitglied:** `is_passive = true` $\rightarrow$ `JB005` (CHF 20.00).
+2. **Schüler intern (ohne SSV-Lizenz):** `person_number` beginnt mit `INT-` und Junior $\rightarrow$ `JB006` (CHF 0.00).
+3. **Junior / Nachwuchs:** Alter am Stichtag $\le$ 20 Jahre (SSV U21-Definition) $\rightarrow$ `JB007` (CHF 20.00).
+4. **Aktivmitglied (Erwachsene mit SSV-Lizenz):**
    - Prüfung aktiver Lizenzen in `member_licenses` (`is_active = true` und `exit_date IS NULL`):
      - **Gewehr 50m (G50m):**
        - **Aktiv-A:** Wenn `license_category = 'A'` oder Kategorie `'Aktiv-A'` enthält $\rightarrow$ **`JB001` (CHF 100.00)**.
@@ -109,7 +108,13 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
      - **Keine eigene Muhen-Lizenz (z. B. nur Fremdlizenz G300):**
        - $\rightarrow$ **`JB005` (CHF 20.00, Passivbeitrag)**.
 
-### 5.2 SSV-Lizenzen (LI001–LI003)
+### 5.2 Ehrenmitglieder & Ausweisung mit Rabatt (RA003)
+- **Regel:** Ehrenmitglieder sind vom Grundbeitrag befreit. Sie erhalten ihren regulären Grundbeitrag (Aktiv A CHF 100.-, Aktiv B CHF 70.- bzw. Passiv CHF 20.-) ausgewiesen.
+- **Gegenzeile:** Direkt darunter wird als Gegenposition **`Ehrenmitgliedschaft`** (`RA003`) mit negativem Betrag in exakt derselben Höhe eingefügt (`CHF -100.00` bzw. `CHF -20.00`, Konto `3410`).
+- **Schutz vor Minusbetrag:** Da der Abzug exakt auf die Höhe des Grundbeitrags begrenzt ist, entsteht auch bei Passiv-Ehrenmitgliedern niemals ein negativer Saldo.
+- **Gebühren-Invariante:** Lizenzen (SSV `LI001`) und Schützenhaus (`GE001`) sowie allfällige Wettkämpfe werden **weiterhin regulär verrechnet** (keine Befreiung durch Ehrenmitgliedschaft).
+
+### 5.3 SSV-Lizenzen (LI001–LI003)
 - **Eigener Verein (Muhen, `license_invoicing_club_number = '1.19.0.01.029'`):**
   - Genau einmal pro Schütze abgerechnet:
     - Junior ($\le$ 20 Jahre): `LI002` (CHF 0.00).
@@ -117,26 +122,26 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
 - **Fremdlizenz (Anderer Verein rechnet SSV ab):**
   - Für jede Fremdlizenz: `LI003` (CHF 0.00, informative Position mit Vereinsname).
 
-### 5.3 Gebäudebeitrag / Schützenhaus (GE001)
-- Ansatz: `GE001` (CHF 50.00).
+### 5.4 Gebäudebeitrag / Schützenhaus (GE001)
+- Ansatz: `GE001` (CHF 50.00, Ertragskonto `3413`).
+- **Standard:** Pflichtig für alle Nicht-Junioren, Nicht-Passiven mit aktiver **G50m-Lizenz** in Muhen (unabhängig davon, ob die SSV-Lizenz über Muhen oder einen Fremdverein wie Oberentfelden abgerechnet wird).
 - **Manueller Override:** Falls in `member_participations` für `event_key = 'GE001'` ein Eintrag existiert, gilt dessen Wert (`teilgenommen = 1` bzw. `0`).
-- **Standard:** Pflichtig für alle Nicht-Junioren, Nicht-Passiven mit aktiver **G50m-Lizenz** in Muhen.
 
-### 5.4 Wettkämpfe & Turniere (KK001–KK008, LG001–LG007)
+### 5.5 Wettkämpfe & Turniere (KK001–KK008, LG001–LG007)
 - Liest alle erfassten Teilnahmen aus `member_participations` je Mitglied und Beitragsjahr (`teilgenommen > 0`).
 - **Einzelfeld:** Betrag = 1 $\times$ Tarifansatz aus `gebuehren_config`.
 - **Counter-Feld (z. B. KK008 Volksschiessen):** Betrag = `teilgenommen` $\times$ Tarifansatz.
 
-### 5.5 Rabatte (RA001, RA002)
-- Aus `member_functions`:
-  - Vorstand (`RA001`): CHF -100.00 (Kredit), entfällt für Ehrenmitglieder.
-  - Hausmeister / Unterhalt (`RA002`): CHF -300.00 (Kredit).
+### 5.6 Rabatte & Gutschriften (RA001, RA002, RA003)
+- **Vorstand (`RA001`):** CHF -100.00 (Kredit). Bleibt auf den Grundbeitrag beschränkt und greift nicht auf Schützenhaus oder Lizenzen über. Entfällt für Ehrenmitglieder, da diese bereits durch `RA003` vollständig vom Grundbeitrag entlastet sind.
+- **Hausmeister / Unterhalt (`RA002`):** CHF -300.00 (Kredit). Reine Gutschrift (keine Belastung wie bei Junioren). Das Gegenkonto wird dynamisch aus `public.gebuehren_config` gelesen (Standard: `6002`, keine feste Verdrahtung).
+- **Ehrenmitgliedschaft (`RA003`):** Negativer Ausgleich in Höhe des Grundbeitrags (Konto `3410`).
 
-### 5.6 Jugendförderung (Kostenübernahme Verein)
+### 5.7 Jugendförderung (Kostenübernahme Verein)
 - Bei Junioren werden alle Wettkampfpositionen der Kategorie `Kostenübernahme_Jugend` saldiert und als Gegenposition `KOSTENUEBERNAHME_JUGEND` gutgeschrieben.
 
-### 5.7 Floor-Regel
-- Rechnungsbetrag wird auf mindestens CHF 0.00 begrenzt, ausser bei Hausmeister-Gutschriften (`RA002`), wo negative Auszahlungsbeträge zulässig sind.
+### 5.8 Floor-Regel
+- Rechnungsbetrag wird auf mindestens CHF 0.00 begrenzt, ausser bei Hausmeister-Gutschriften (`RA002`), wo negative Auszahlungsbeträge für Unterhaltsentschädigungen zulässig sind.
 
 ---
 

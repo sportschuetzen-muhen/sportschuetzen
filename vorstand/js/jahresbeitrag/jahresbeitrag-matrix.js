@@ -319,6 +319,7 @@ function jbGetMatrixColumns() {
     if (k === 'GE001') label = 'Schützenhaus';
     else if (k === 'RA001') label = 'Rabatt Vorstand';
     else if (k === 'RA002') label = 'Hausmeister';
+    else if (k === 'RA003') label = 'Ehrenmitgliedschaft';
     else if (k === 'LI001') label = 'Lizenz Verein';
     else if (k === 'LI002') label = 'Lizenz Junior';
     else if (k === 'LI003') label = 'Lizenz Fremd';
@@ -413,8 +414,8 @@ function jbRenderMatrixTable() {
 
   columns.forEach(col => {
     thHtml += `
-      <th class="text-end" style="min-width: 85px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('${col.key}')" title="${escHtml(col.bezeichnung)} (${col.key})">
-        <div style="font-size: 10px; font-weight: 700; white-space: nowrap;">${escHtml(col.label)}</div>
+      <th class="text-end" style="min-width: 45px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('${col.key}')" title="${escHtml(col.bezeichnung)} (${col.key})">
+        <div style="font-size: 10px; font-weight: 700; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${escHtml(col.label)}</div>
         <div class="text-muted" style="font-size: 9px; font-weight: normal; font-family: monospace;">${col.key}</div>
       </th>
     `;

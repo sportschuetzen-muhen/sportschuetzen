@@ -439,9 +439,9 @@ function renderJahresbeitragView() {
     jbRenderRows(_jbData);
     if (typeof TableKit !== 'undefined') {
       setTimeout(() => {
-        if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleDropdown')) {
+        if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleContainer')) {
           TableKit.setupColumnToggle('#jbTable', {
-            container: '#jbTableColToggleDropdown',
+            container: '#jbTableColToggleContainer',
             storageKey: 'portal_jb_overview_cols'
           });
         }

@@ -161,8 +161,10 @@ async function jbEntrySelectMember(pn) {
     // Initialisiere lokalen State für Radio-Buttons / Checkboxen
     const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
     const isJunior = age > 0 && age <= 20;
-    const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
-    const defaultGe = !isJunior && hatG50mOwn && !m._istPassiv;
+    const hatG50m = (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).some(l => 
+      (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate && (l.MembershipCategory || '').toLowerCase().includes('g50')
+    );
+    const defaultGe = !isJunior && hatG50m && !m._istPassiv;
 
     _jbParticipationsState = {
       lizenz: m._istPassiv ? 'passiv' : 'verein', // Default
@@ -1177,8 +1179,10 @@ function jbEntryResetForm(pn) {
   const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
   const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
   const isJunior = age > 0 && age <= 20;
-  const hatG50mOwn = m && (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
-  const defaultGe = m ? (!isJunior && hatG50mOwn && !m._istPassiv) : false;
+  const hatG50m = m && (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).some(l => 
+    (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate && (l.MembershipCategory || '').toLowerCase().includes('g50')
+  );
+  const defaultGe = m ? (!isJunior && hatG50m && !m._istPassiv) : false;
 
   _jbParticipationsState = {
     lizenz: 'keine',

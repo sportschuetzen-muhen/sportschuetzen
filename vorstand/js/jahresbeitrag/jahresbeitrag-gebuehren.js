@@ -93,14 +93,14 @@ function renderGebuehrenConfigTab() {
 
 function renderGebuehrenConfigModals() {
   return `
-    <div class="modal fade" id="jbModalGebuehrEdit" tabindex="-1">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content shadow">
-          <div class="modal-header bg-primary text-white">
-            <h5 class="modal-title" id="jbModalGebuehrTitle">⚙️ Gebühr bearbeiten</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    <div class="modal fade" id="jbModalGebuehrEdit" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+          <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+            <h5 class="modal-title fw-bold" id="jbModalGebuehrTitle"><i class="fas fa-sliders-h me-2"></i>Gebühr bearbeiten</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
           </div>
-          <div class="modal-body">
+          <div class="modal-body p-4">
             <form id="jbFormGebuehr" onsubmit="event.preventDefault(); jbSaveGebuehrFromModal();">
               
               <!-- 💡 Aufklappbarer Spickzettel & Erklärung der UI-Felder -->
@@ -264,9 +264,9 @@ function renderGebuehrenConfigModals() {
                 </div>
               </div>
 
-              <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                <button type="submit" class="btn btn-success fw-bold px-4" id="btnSaveGebuehr">
+              <div class="modal-footer bg-light border-top px-4 py-3 rounded-bottom-4 d-flex justify-content-between">
+                <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+                <button type="submit" class="btn btn-success fw-bold px-4 shadow-sm" id="btnSaveGebuehr">
                   <i class="fas fa-save me-1"></i> Gebühr speichern
                 </button>
               </div>
@@ -589,6 +589,10 @@ function jbOpenEditGebuehrModal(key) {
   const modalEl = document.getElementById('jbModalGebuehrEdit');
   if (!modalEl) return;
   const modal = new bootstrap.Modal(modalEl);
+
+  if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal('#jbModalGebuehrEdit');
+  }
 
   const titleEl = document.getElementById('jbModalGebuehrTitle');
   const keyInput = document.getElementById('g_key');

@@ -36,18 +36,20 @@ function jbCalculateLiveTotal(m, settings) {
   // 1. Jahresbeitrag
   let jbBetrag = 0;
   let jbDesc = '';
-  if (isEhren) {
-    jbBetrag = getFee('JB004', 0);
-    jbDesc = 'Jahresbeitrag Ehrenmitglied';
-  } else if (isPassiv) {
+  let jbKey = '';
+
+  if (isPassiv) {
     jbBetrag = getFee('JB005', 20);
     jbDesc = 'Jahresbeitrag Passivmitglied';
-  } else if (isIntern) {
+    jbKey = 'JB005';
+  } else if (isIntern && isJunior) {
     jbBetrag = getFee('JB006', 0);
     jbDesc = 'Schüler intern (ohne Lizenz)';
+    jbKey = 'JB006';
   } else if (isJunior) {
     jbBetrag = getFee('JB007', 20);
     jbDesc = 'Jahresbeitrag Junior';
+    jbKey = 'JB007';
   } else {
     // Aktiv
     let haupt = m._hauptlizenz || '';
@@ -68,22 +70,35 @@ function jbCalculateLiveTotal(m, settings) {
       if (haupt.includes('Aktiv-A')) {
         jbBetrag = getFee('JB001', 100);
         jbDesc = 'Jahresbeitrag Aktiv A G50m';
+        jbKey = 'JB001';
       } else {
         jbBetrag = getFee('JB002', 70);
         jbDesc = 'Jahresbeitrag Aktiv B G50m';
+        jbKey = 'JB002';
       }
     } else if (haupt.includes('G10m')) {
       jbBetrag = getFee('JB003', 10);
       jbDesc = 'Jahresbeitrag Aktiv nur 10m';
+      jbKey = 'JB003';
     } else {
-      // Kein eigener Muhen-Lizenz-Typ erkannt (z.B. nur Fremdlizenz G300)
-      // → Mitglied gilt als Passivmitglied (JB005 = 20 CHF)
       jbBetrag = getFee('JB005', 20);
       jbDesc = 'Jahresbeitrag Passivmitglied (keine eigene Lizenz)';
+      jbKey = 'JB005';
     }
   }
   
-  positions.push({ name: jbDesc, betrag: jbBetrag, typ: 'Debit' });
+  positions.push({ name: jbDesc, betrag: jbBetrag, typ: 'Debit', key: jbKey, konto: getFeeAccount(jbKey, '3410') });
+
+  // Ehrenmitgliedschaft als Rabattzeile in Höhe des Grundbeitrags
+  if (isEhren && jbBetrag > 0) {
+    positions.push({
+      name: 'Ehrenmitgliedschaft',
+      betrag: -jbBetrag,
+      typ: 'Credit',
+      key: 'RA003',
+      konto: getFeeAccount('RA003', '3410')
+    });
+  }
   
   // 2. Lizenzen
   const licType = settings.lizenz || 'keine';
@@ -106,8 +121,10 @@ function jbCalculateLiveTotal(m, settings) {
     if (settings && settings.schuetzenhaus !== undefined) {
       chargeGe = !!settings.schuetzenhaus;
     } else {
-      const hatG50mOwn = (m._lizenzen || []).some(l => l.istMuhen && l.MembershipCategory.toLowerCase().includes('g50'));
-      chargeGe = !isJunior && hatG50mOwn && !isPassiv;
+      const hatG50m = (m._lizenzen || window._mglLizenzenCache?.[String(m.PersonNumber)] || []).some(l => 
+        (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate && (l.MembershipCategory || '').toLowerCase().includes('g50')
+      );
+      chargeGe = !isJunior && hatG50m && !isPassiv;
     }
     if (chargeGe) eventsMap['GE001'] = 1;
 
@@ -144,6 +161,7 @@ function jbCalculateLiveTotal(m, settings) {
     const keyClean = String(eventKey).trim().toUpperCase();
     const numVal = Number(val || 0);
     if (numVal <= 0) return;
+    if (keyClean === 'RA001' || keyClean === 'RA002' || keyClean === 'RA003') return;
 
     const feeObj = (window._jbGebuehren || []).find(f => String(f.key || '').trim().toUpperCase() === keyClean);
     const unitPrice = feeObj ? Number(feeObj.betrag || 0) : getFee(keyClean, 0);
@@ -262,11 +280,24 @@ function jbCalculateLiveTotal(m, settings) {
   
   let hasRA002 = false;
   if (isVorstand && !isEhren) {
-    positions.push({ name: 'Rabatt Vorstand', betrag: getFee('RA001', -100), typ: 'Kredit', key: 'RA001' });
+    positions.push({
+      name: 'Rabatt Vorstand',
+      betrag: getFee('RA001', -100),
+      typ: 'Kredit',
+      key: 'RA001',
+      konto: getFeeAccount('RA001', '3410')
+    });
   }
   
   if (isHausmeister) {
-    positions.push({ name: 'Gutschrift Unterhalt Anlage (Hausmeister)', betrag: getFee('RA002', -300), typ: 'Kredit', key: 'RA002' });
+    const hmKonto = getFeeAccount('RA002', '6002');
+    positions.push({
+      name: 'Gutschrift Unterhalt Anlage (Hausmeister)',
+      betrag: getFee('RA002', -300),
+      typ: 'Kredit',
+      key: 'RA002',
+      konto: hmKonto
+    });
     hasRA002 = true;
   }
   

@@ -27,14 +27,8 @@ function renderOverviewTab(canEdit, years) {
         <option value="bezahlt">Bezahlt</option>
       </select>
 
-      <!-- Spalten-Ausblender -->
-      <div class="dropdown d-inline-block" id="jbTableColToggleDropdown">
-        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Spalten ein- oder ausblenden">
-          <i class="fas fa-columns me-1"></i> Spalten <span class="badge bg-light text-dark border ms-1" id="jbTableColToggleBadge">8/8</span>
-        </button>
-        <ul class="dropdown-menu dropdown-menu-end shadow-sm p-2" style="min-width: 200px;" id="jbTableColToggleList">
-        </ul>
-      </div>
+      <!-- Spalten-Ausblender (TableKit Standard) -->
+      <div id="jbTableColToggleContainer" class="d-inline-block"></div>
 
       ${canEdit ? `
       <div class="ms-auto d-inline-flex gap-2 align-items-center flex-wrap">
@@ -314,9 +308,9 @@ function jbRenderRows(data) {
       }
     });
   }
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleDropdown')) {
-    window.TableKit.setupColumnToggle('#jbTable', {
-      container: '#jbTableColToggleDropdown',
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleContainer')) {
+    window._jbOverviewColToggle = window.TableKit.setupColumnToggle('#jbTable', {
+      container: '#jbTableColToggleContainer',
       storageKey: 'portal_jb_overview_cols'
     });
   }
