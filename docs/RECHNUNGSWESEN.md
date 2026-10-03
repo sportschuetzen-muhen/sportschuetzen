@@ -118,6 +118,13 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
 | **Mahnung generieren** | ❌ Nicht fällig | ✅ Wenn überfällig | ✅ Für Restsaldo | ❌ **Gesperrt** | ❌ **Gesperrt** |
 | **PDF herunterladen / ansehen** | ✅ Vorschau | ✅ Originalbeleg | ✅ Originalbeleg | ✅ Quittungsbeleg | ✅ Stornobeleg |
 
+### 3.1 Entkoppelung von Quellmodulen beim Löschen von Rechnungsentwürfen
+Wird ein Rechnungsentwurf im Rechnungsmodul gelöscht (`rnDeleteInvoicePrompt`), entkoppelt das System die verknüpften Fachmodule atomar:
+- **Jahresbeitrag (`contributions_header`):** Setzt `invoice_id = NULL`. Der Status im Jahresbeitragsmodul fällt von `entwurf` sauber auf `berechnet` zurück.
+- **Vermietung Schützenstube (`rental_requests`):** Setzt `invoice_id = NULL`. Die Buchung bleibt bestätigt und kann neu fakturiert werden.
+
+Dies verhindert verwaiste Fremdschlüssel und gewährleistet, dass Fachmodule und Rechnungsmodul stets konsistent synchronisiert bleiben.
+
 ---
 
 ## 4. Datenmodell (Supabase PostgreSQL)

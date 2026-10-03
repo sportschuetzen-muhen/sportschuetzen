@@ -234,7 +234,66 @@ Statt einer fehleranfälligen N-fachen HTTP-Schleife im Browser wird die persist
 | **Bankabgleich (CAMT.054)** | ✅ Vollständig matchbar | ✅ **Vollständig matchbar** | ❌ Nicht matchbar für nicht-geklickte Belege |
 
 > **Fazit & Architektur-Standard:**  
-> **Variante B ist der verbindliche Standard.** Die fachliche Beitragsbemessung (Stufe 1) bleibt sauber von der buchhalterischen Forderungsentstehung (Stufe 2) entkoppelt. Vor dem Sammelversand oder auf Knopfdruck stellt das System sicher, dass für alle aktiven Beitragspositionen eine offizielle Rechnung im `RechnungsCore` existiert (`ensureAllInvoicesCreatedRemote`).
+> **Variante B ist der verbindliche Standard.** Die fachliche Beitragsbemessung (Stufe 1) bleibt sauber von der buchhalterischen Forderungsentstehung (Stufe 2) entkoppelt. Vor dem Sammelversand oder auf Knopfdruck stellt das System sicher, dass für alle aktiven Beitragspositionen eine offizielle Rechnung im `RechnungsCore` existiert (`jbRechnungenBereitstellenBatch`).
+
+---
+
+### 8.4 Der 6-stufige effektive Status-Lebenszyklus (`jbGetEffectiveStatus`)
+
+Da die Beitragsabwicklung sich über mehrere Phasen erstreckt (von der internen Kalkulation bis zum Buchhaltungsabgleich), reicht ein einfaches `'offen'` / `'bezahlt'` nicht aus. Das System ermittelt den tatsächlichen Zustand dynamisch über `jbGetEffectiveStatus(r)`:
+
+```text
+┌──────────────┐     Rechnungen      ┌──────────────┐      Sammel- /       ┌──────────────┐
+│  berechnet   │ ──────────────────► │   entwurf    │ ───────────────────► │  versendet   │
+│  (Total > 0, │   bereitstellen     │ (JB-26-XXXX, │    Einzelversand     │ (Ausstehend, │
+│  keine RE)   │ ◄────────────────── │ mail:entwurf)│                      │ Mail gesandt)│
+└──────────────┘    Rechnung löschen └──────────────┘                      └──────┬───────┘
+                                                                                  │
+       ┌──────────────┐                       Zahlungseingang /                   │
+       │   befreit    │                       Bankabgleich (CAMT.054)             │
+       │  (Total = 0) │                                                           │
+       └──────────────┘                                                           ▼
+                                     ┌──────────────┐      Vollzahlung     ┌──────────────┐
+                                     │   bezahlt    │ ◄─────────────────── │ teilbezahlt  │
+                                     │ (Salde = 0)  │                      │ (Rest offen) │
+                                     └──────────────┘                      └──────────────┘
+```
+
+#### Status-Definitionen & Systemzustände
+
+| Status | Bedingung im Datenmodell | Fachliche Bedeutung & Rechte |
+| :--- | :--- | :--- |
+| **`berechnet`** | `contributions_header.gesamt > 0` UND `invoice_id IS NULL` | Beitrag ist rein intern im Fachmodul berechnet. Es existiert noch keine Rechnungsnummer im RechnungsCore. Tarife und Teilnahmen dürfen frei recalculiert werden. |
+| **`entwurf`** | `contributions_header.invoice_id` vorhanden, Beleg in `invoices` hat `mail_status === 'entwurf'` und `total_paid === 0` | Offizielle Rechnung mit Schweizer QR-Code existiert im RechnungsCore (`JB-26-XXXX`). Wurde noch nicht an das Mitglied zugestellt. Darf im Rechnungsmodul gelöscht werden (setzt `invoice_id` wieder auf `NULL`). |
+| **`versendet`** | Beleg in `invoices` hat `mail_status === 'versendet'` und `open_amount > 0` | Rechnung wurde dem Mitglied per Mail zugestellt oder gedruckt. **Bearbeitungssperre aktiv** (Schutz vor GoBD-/Revisionsdiskrepanzen). |
+| **`teilbezahlt`**| `invoices.status === 'teilbezahlt'` oder `total_paid > 0` und `< total_amount` | Teilzahlung über Bankabgleich oder Kasse verbucht. Mahnwesen mahnt Restsaldo an. |
+| **`bezahlt`** | `invoices.status === 'bezahlt'` oder `contributions_header.status === 'bezahlt'` | Vollständig beglichen. Bearbeitung und Löschung vollständig gesperrt. |
+| **`befreit`** | `contributions_header.gesamt === 0` | Befreiter Schütze (z.B. Ehrenmitglieder mit Vollbefreiung oder Nachwuchsschützen ohne Gebührenpflicht). Keine Rechnungsstellung nötig. |
+
+---
+
+### 8.5 Batch-Bereitstellung & Sammelversand Pre-Flight
+
+1. **Button «Rechnungen bereitstellen (${uncreatedCount})»:**
+   - Berechnet alle Datensätze des aktiven Jahres mit `gesamt > 0` und ohne `invoice_id`.
+   - Ruft `window.jbRechnungenBereitstellenBatch()` auf.
+   - Legt für jedes unübertragene Mitglied via `window.RechnungsCore.createInvoice(order)` atomar einen Rechnungsentwurf im RechnungsCore an, verknüpft `contributions_header.invoice_id` und erzeugt die QR-Bill.
+2. **Pre-Flight Check bei Klick auf «Sammelversand» (`jbOpenSammelversandModal`):**
+   - Prüft vor dem Öffnen des Massenversand-Modals, ob es noch unübertragene Mitglieder gibt.
+   - Falls ja, fragt ein Bestätigungsdialog, ob diese vor dem Versand automatisch bereitgestellt werden sollen.
+   - Übergibt anschliessend alle `JB-26-XXXX`-Rechnungs-IDs an `rnOpenMassSendModal`.
+
+---
+
+### 8.6 Entkoppelung bei Löschung im Rechnungsmodul
+
+Wird ein Rechnungsentwurf (`JB-26-XXXX`) im Rechnungsmodul gelöscht (`rnDeleteInvoicePrompt` in `rechnungen-actions.js`):
+1. Löscht `invoice_positions` und `invoices`.
+2. Führt atomar `UPDATE contributions_header SET invoice_id = NULL WHERE invoice_id = :id` aus.
+3. Aktualisiert den lokalen Frontend-RAM-Cache (`window._jbData`, `window._jbAllBeitraege`).
+4. Der Datensatz im Jahresbeitragsmodul wechselt nahtlos vom Status **`entwurf`** zurück auf **`berechnet`**.
+5. Es entstehen keine verwaisten Rechnungs-IDs oder Inkonsistenzen.
+
 
 
 
