@@ -231,10 +231,10 @@ function renderGebuehrenConfigModals() {
                 <div class="row g-3">
                   <div class="col-md-4">
                     <label class="form-label small fw-bold text-muted">UI-Gruppe (Card-Überschrift) *</label>
-                    <select class="form-select form-select-sm" id="g_ui_gruppe_select" onchange="jbHandleSmartSelect(this, 'g_ui_gruppe'); jbUpdateGebuehrLivePreview();">
+                    <select class="form-select form-select-sm" id="g_ui_gruppe_select" onchange="jbOnModalGruppeSelectChanged(this)">
                       <!-- Dynamisch geladen -->
                     </select>
-                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_gruppe" placeholder="UI-Gruppe eingeben" style="display: none;" oninput="jbUpdateGebuehrLivePreview()">
+                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_gruppe" placeholder="UI-Gruppe eingeben" style="display: none;" oninput="jbOnModalCustomGruppeInput(this.value)">
                   </div>
                   <div class="col-md-4">
                     <label class="form-label small fw-bold text-muted">UI-Feld (Steuerelement-Name) *</label>
@@ -257,7 +257,7 @@ function renderGebuehrenConfigModals() {
                 <div class="row g-3 mt-1">
                   <div class="col-md-4">
                     <label class="form-label small fw-bold text-muted">Sortierung (ui_sort)</label>
-                    <input type="number" class="form-control form-control-sm" id="g_ui_sort" value="10">
+                    <input type="number" class="form-control form-control-sm" id="g_ui_sort" value="10" oninput="jbUpdateGebuehrLivePreview()">
                   </div>
                   <div class="col-md-4 d-flex align-items-center mt-4">
                     <div class="form-check form-switch mb-0">
@@ -276,11 +276,11 @@ function renderGebuehrenConfigModals() {
               <div class="card border border-2 border-primary-subtle p-3 rounded-3 bg-white mb-3 shadow-sm">
                 <div class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
                   <span class="small fw-bold text-primary text-uppercase" style="font-size: 11px;">
-                    <i class="fas fa-eye me-1"></i> Live-Vorschau: So sieht das Element in der Schnellerfassung aus
+                    <i class="fas fa-eye me-1"></i> Live-Vorschau: Schnellerfassungs-Card & Anordnung
                   </span>
-                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle small font-monospace" id="jbGebuehrPreviewTypeBadge">Typ: Checkbox</span>
+                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle small font-monospace" id="jbGebuehrPreviewTypeBadge">Card-Vorschau</span>
                 </div>
-                <div class="p-3 bg-light rounded-2 border" id="jbGebuehrLivePreviewContainer">
+                <div class="p-2 bg-light rounded-2 border" id="jbGebuehrLivePreviewContainer">
                   <!-- Dynamisch gerendert über jbUpdateGebuehrLivePreview() -->
                 </div>
               </div>
@@ -517,6 +517,8 @@ function jbOnGebuehrKontoChanged(val) {
 }
 window.jbOnGebuehrKontoChanged = jbOnGebuehrKontoChanged;
 
+let _jbModalSiblingSortChanges = {};
+
 function jbPopulateModalDropdowns(selectedKat, selectedGrp, selectedFeld) {
   const fees = window._jbGebuehren || [];
   
@@ -568,30 +570,77 @@ function jbPopulateModalDropdowns(selectedKat, selectedGrp, selectedFeld) {
     }
   }
 
-  // 3. UI-Feld Select
-  const felder = Array.from(new Set(fees.map(f => String(f.ui_feld || '').trim()).filter(Boolean))).sort();
+  // 3. UI-Feld Select kaskadiert nach UI-Gruppe
+  jbPopulateUiFeldDropdown(selectedGrp, selectedFeld);
+}
+
+// Kaskadierendes UI-Feld Dropdown basierend auf UI-Gruppe
+function jbPopulateUiFeldDropdown(selectedGrp, selectedFeld) {
+  const fees = window._jbGebuehren || [];
+  const grpClean = String(selectedGrp || '').trim().toLowerCase();
+
+  let filteredFees = fees;
+  if (grpClean) {
+    filteredFees = fees.filter(f => String(f.ui_gruppe || '').trim().toLowerCase() === grpClean);
+  }
+
+  const felder = Array.from(new Set(filteredFees.map(f => String(f.ui_feld || '').trim()).filter(Boolean))).sort();
   const feldSelect = document.getElementById('g_ui_feld_select');
   const feldInput = document.getElementById('g_ui_feld');
-  if (feldSelect && feldInput) {
-    let html = '<option value="">-- Bestehendes Feld wählen oder neu --</option>';
-    let found = false;
-    felder.forEach(fld => {
-      const sel = fld === selectedFeld;
-      if (sel) found = true;
-      html += `<option value="${escHtml(fld)}"${sel ? ' selected' : ''}>${escHtml(fld)}</option>`;
-    });
-    html += '<option value="__custom__">➕ [ Neues Feld erfassen… ]</option>';
-    feldSelect.innerHTML = html;
-    if (!found && selectedFeld) {
+  if (!feldSelect || !feldInput) return;
+
+  const placeholder = grpClean ? `-- Feld in «${escHtml(selectedGrp)}» wählen --` : '-- UI-Feld wählen oder neu --';
+  let html = `<option value="">${placeholder}</option>`;
+  let found = false;
+
+  felder.forEach(fld => {
+    const sel = fld === selectedFeld;
+    if (sel) found = true;
+    html += `<option value="${escHtml(fld)}"${sel ? ' selected' : ''}>${escHtml(fld)}</option>`;
+  });
+  html += '<option value="__custom__">➕ [ Neues Feld erfassen… ]</option>';
+  feldSelect.innerHTML = html;
+
+  if (selectedFeld) {
+    if (found) {
+      feldSelect.value = selectedFeld;
+      feldInput.value = selectedFeld;
+      feldInput.style.display = 'none';
+    } else {
       feldSelect.value = '__custom__';
       feldInput.value = selectedFeld;
       feldInput.style.display = 'block';
+    }
+  } else {
+    if (felder.length === 0 && grpClean) {
+      feldSelect.value = '__custom__';
+      feldInput.value = '';
+      feldInput.style.display = 'block';
+      feldInput.placeholder = 'Neues Feld für diese Gruppe eingeben';
     } else {
-      feldInput.value = selectedFeld || '';
+      feldSelect.value = '';
+      feldInput.value = '';
       feldInput.style.display = 'none';
     }
   }
 }
+window.jbPopulateUiFeldDropdown = jbPopulateUiFeldDropdown;
+
+function jbOnModalGruppeSelectChanged(selectEl) {
+  jbHandleSmartSelect(selectEl, 'g_ui_gruppe');
+  const grpVal = document.getElementById('g_ui_gruppe')?.value || selectEl.value;
+  const currentFeld = document.getElementById('g_ui_feld')?.value || document.getElementById('g_ui_feld_select')?.value || '';
+  jbPopulateUiFeldDropdown(grpVal, currentFeld);
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalGruppeSelectChanged = jbOnModalGruppeSelectChanged;
+
+function jbOnModalCustomGruppeInput(val) {
+  const currentFeld = document.getElementById('g_ui_feld')?.value || document.getElementById('g_ui_feld_select')?.value || '';
+  jbPopulateUiFeldDropdown(val, currentFeld);
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalCustomGruppeInput = jbOnModalCustomGruppeInput;
 
 function jbHandleSmartSelect(selectEl, inputId) {
   const inputEl = document.getElementById(inputId);
@@ -677,117 +726,281 @@ function jbOnModalBezeichnungFrontendInput(val) {
 }
 window.jbOnModalBezeichnungFrontendInput = jbOnModalBezeichnungFrontendInput;
 
-// Live-Vorschau in der Schnellerfassung
+// Live-Vorschau der gesamten Schnellerfassungs-Card inkl. Drag & Drop
 function jbUpdateGebuehrLivePreview() {
   const container = document.getElementById('jbGebuehrLivePreviewContainer');
   const badge = document.getElementById('jbGebuehrPreviewTypeBadge');
   if (!container) return;
 
-  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
+  const key = (document.getElementById('g_key')?.value || 'NEU').trim().toUpperCase();
+  const grpInput = document.getElementById('g_ui_gruppe');
+  const grpSelect = document.getElementById('g_ui_gruppe_select');
+  const ui_gruppe = (grpInput?.value || grpSelect?.value || '').trim();
+
+  const fldInput = document.getElementById('g_ui_feld');
+  const fldSelect = document.getElementById('g_ui_feld_select');
   const bezeichnung = document.getElementById('g_bezeichnungfrontend')?.value?.trim() || '';
-  const ui_feld = document.getElementById('g_ui_feld')?.value?.trim() || bezeichnung || 'Muster-Gebühr';
+  const ui_feld = (fldInput?.value || fldSelect?.value || bezeichnung || 'Muster-Gebühr').trim();
+
+  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
   const betrag = parseFloat(document.getElementById('g_betrag')?.value) || 0;
   const konto = document.getElementById('g_konto')?.value?.trim() || '3000';
   const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
+  const ui_sort = parseInt(document.getElementById('g_ui_sort')?.value, 10) || 10;
+  const aktiv = document.getElementById('g_aktiv')?.checked !== false;
 
   if (badge) {
     const typeNames = {
-      checkbox: '☑️ Checkbox (Ja/Nein)',
-      counter: '🔢 Counter (Stiche-Zähler)',
-      singleselect: '🔘 Einzelauswahl (Pills)',
-      multiselect: '🔲 Mehrfachauswahl',
-      amount: '💵 Freier Betrag (Variable Zusatzkosten)'
+      checkbox: '☑️ Checkbox',
+      counter: '🔢 Counter (1-3)',
+      singleselect: '🔘 Singleselect',
+      multiselect: '🔲 Multiselect',
+      amount: '💵 Freier Betrag'
     };
-    badge.textContent = `UI-Typ: ${typeNames[ui_typ] || ui_typ}`;
+    badge.textContent = `Typ: ${typeNames[ui_typ] || ui_typ}`;
   }
 
-  let html = '';
-  if (ui_typ === 'checkbox') {
-    html = `
-      <div class="d-flex align-items-center justify-content-between bg-white p-2.5 rounded-2 border shadow-xs">
-        <div class="d-flex align-items-center gap-2">
+  if (!ui_gruppe) {
+    container.innerHTML = `
+      <div class="alert alert-light border text-center text-muted py-3 small mb-0">
+        <i class="fas fa-info-circle me-1 text-primary"></i>
+        Bitte wählen Sie oben eine <strong>UI-Gruppe</strong> aus, um die Schnellerfassungs-Card und Sortierung anzuzeigen.
+      </div>`;
+    return;
+  }
+
+  // Icon der Gruppe bestimmen
+  let icon = 'fa-bullseye text-primary';
+  const gLower = ui_gruppe.toLowerCase();
+  if (gLower.includes('50m') || gLower.includes('kk')) icon = 'fa-bullseye text-danger';
+  else if (gLower.includes('10m') || gLower.includes('lg')) icon = 'fa-bullseye text-primary';
+  else if (gLower.includes('300m')) icon = 'fa-crosshairs text-success';
+  else if (gLower.includes('pistole')) icon = 'fa-shield-alt text-warning';
+  else if (gLower.includes('infrastruktur') || gLower.includes('schützenhaus')) icon = 'fa-home text-success';
+  else if (gLower.includes('zusatz') || gLower.includes('variabel')) icon = 'fa-plus-circle text-info';
+  else icon = 'fa-trophy text-info';
+
+  // Geschwister-Elemente sammeln
+  const allFees = window._jbGebuehren || [];
+  const siblings = allFees.filter(f => {
+    const fGrp = String(f.ui_gruppe || '').trim().toLowerCase();
+    const fKey = String(f.key || '').trim().toUpperCase();
+    return fGrp === ui_gruppe.toLowerCase() && fKey !== key;
+  }).map(f => {
+    const fKey = String(f.key || '').trim().toUpperCase();
+    const sortVal = _jbModalSiblingSortChanges[fKey] !== undefined ? _jbModalSiblingSortChanges[fKey] : (f.ui_sort !== undefined && f.ui_sort !== '' ? Number(f.ui_sort) : (f.sort_order || 99));
+    return {
+      key: fKey,
+      ui_gruppe: f.ui_gruppe,
+      ui_feld: f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || fKey,
+      ui_typ: (f.ui_typ || 'checkbox').toLowerCase(),
+      betrag: Number(f.betrag || 0),
+      konto: f.konto_haben || f.konto || '3000',
+      zielgruppe: f.zielgruppe || 'Alle',
+      ui_sort: sortVal,
+      isCurrent: false
+    };
+  });
+
+  const currentItem = {
+    key: key,
+    ui_gruppe: ui_gruppe,
+    ui_feld: ui_feld,
+    ui_typ: ui_typ,
+    betrag: betrag,
+    konto: konto,
+    zielgruppe: zielgruppe,
+    ui_sort: ui_sort,
+    isCurrent: true
+  };
+
+  const groupItems = [...siblings, currentItem];
+  groupItems.sort((a, b) => (a.ui_sort || 99) - (b.ui_sort || 99));
+
+  // Items rendern
+  const itemsHtml = groupItems.map(item => {
+    let controlHtml = '';
+    if (item.ui_typ === 'checkbox') {
+      controlHtml = `
+        <div class="d-flex align-items-center justify-content-between p-2 bg-light rounded-2 border">
           <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" checked style="cursor: pointer;">
+            <input class="form-check-input" type="checkbox" checked disabled>
+            <label class="form-check-label small fw-semibold text-dark ms-1">${escHtml(item.ui_feld)}</label>
+            ${item.zielgruppe === 'Junioren' ? '<span class="badge bg-info-subtle text-info ms-2" style="font-size:9px;">Jugend</span>' : ''}
           </div>
-          <div>
-            <span class="fw-semibold text-dark small">${escHtml(ui_feld)}</span>
-            ${zielgruppe === 'Junioren' ? '<span class="badge bg-info-subtle text-info ms-2" style="font-size:10px;">Jugendförderung</span>' : ''}
+          <span class="badge bg-white text-dark border font-monospace small">CHF ${item.betrag.toFixed(2)}</span>
+        </div>
+      `;
+    } else if (item.ui_typ === 'counter') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-semibold text-dark">${escHtml(item.ui_feld)}</span>
+            <span class="badge bg-white text-muted border small font-monospace">CHF ${item.betrag.toFixed(2)} / Stich</span>
+          </div>
+          <div class="btn-group btn-group-sm w-100 opacity-75">
+            <button type="button" class="btn btn-outline-secondary py-0.5">Kein Stich</button>
+            <button type="button" class="btn btn-primary active py-0.5 fw-bold">1 Stich</button>
+            <button type="button" class="btn btn-outline-secondary py-0.5">2 Stiche</button>
+            <button type="button" class="btn btn-outline-secondary py-0.5">3 Stiche</button>
           </div>
         </div>
-        <span class="badge bg-light text-dark border font-monospace small">CHF ${betrag.toFixed(2)}</span>
-      </div>
-    `;
-  } else if (ui_typ === 'counter') {
-    html = `
-      <div class="bg-white p-2.5 rounded-2 border shadow-xs">
-        <div class="d-flex justify-content-between align-items-center mb-1.5">
-          <span class="fw-semibold text-dark small">${escHtml(ui_feld)}</span>
-          <span class="badge bg-light text-muted border small font-monospace">Einzelpreis: CHF ${betrag.toFixed(2)}</span>
-        </div>
-        <div class="btn-group btn-group-sm w-100" role="group">
-          <button type="button" class="btn btn-outline-secondary">Kein Stich</button>
-          <button type="button" class="btn btn-primary active fw-bold">1 Stich (CHF ${betrag.toFixed(2)})</button>
-          <button type="button" class="btn btn-outline-secondary">2 Stiche (CHF ${(betrag * 2).toFixed(2)})</button>
-          <button type="button" class="btn btn-outline-secondary">3 Stiche (CHF ${(betrag * 3).toFixed(2)})</button>
-        </div>
-      </div>
-    `;
-  } else if (ui_typ === 'singleselect') {
-    html = `
-      <div class="bg-white p-2.5 rounded-2 border shadow-xs">
-        <div class="small fw-semibold text-muted mb-1.5">${escHtml(ui_feld)}</div>
-        <div class="d-flex gap-1.5 flex-wrap">
-          <button type="button" class="btn btn-sm btn-primary active py-1 px-3 rounded-pill fw-bold">
-            ${escHtml(ui_feld)} (CHF ${betrag.toFixed(2)})
-          </button>
-          <button type="button" class="btn btn-sm btn-light border py-1 px-3 rounded-pill text-muted">
-            Andere Option
-          </button>
-        </div>
-      </div>
-    `;
-  } else if (ui_typ === 'multiselect') {
-    html = `
-      <div class="bg-white p-2.5 rounded-2 border shadow-xs">
-        <div class="small fw-semibold text-muted mb-1.5">${escHtml(ui_feld)}</div>
-        <div class="d-flex gap-1.5 flex-wrap">
-          <button type="button" class="btn btn-sm btn-primary active py-1 px-2.5 rounded-pill">
-            <i class="fas fa-check me-1"></i>${escHtml(ui_feld)} (CHF ${betrag.toFixed(2)})
-          </button>
-        </div>
-      </div>
-    `;
-  } else if (ui_typ === 'amount') {
-    html = `
-      <div class="p-2.5 bg-white rounded-2 border shadow-xs">
-        <div class="row g-2 align-items-center">
-          <div class="col-auto">
-            <input class="form-check-input" type="checkbox" checked style="cursor: pointer;">
+      `;
+    } else if (item.ui_typ === 'singleselect') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="small fw-semibold text-dark mb-1">${escHtml(item.ui_feld)} <span class="badge bg-light text-muted border" style="font-size:9px;">Einzelauswahl</span></div>
+          <div class="d-flex gap-1.5 flex-wrap">
+            <button type="button" class="btn btn-sm btn-primary active py-0.5 px-2.5 rounded-pill fw-bold" style="font-size:11px;">
+              ${escHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
+            </button>
+            <button type="button" class="btn btn-sm btn-light border py-0.5 px-2 rounded-pill text-muted" style="font-size:11px;" disabled>
+              Weitere Stufe…
+            </button>
           </div>
-          <div class="col">
-            <input type="text" class="form-control form-control-sm bg-light" value="${escHtml(ui_feld)}" readonly>
+        </div>
+      `;
+    } else if (item.ui_typ === 'multiselect') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="small fw-semibold text-dark mb-1">${escHtml(item.ui_feld)} <span class="badge bg-info text-dark" style="font-size:9px;">Mehrfachauswahl</span></div>
+          <div class="d-flex gap-1.5 flex-wrap">
+            <button type="button" class="btn btn-sm btn-primary active py-0.5 px-2 rounded-pill" style="font-size:11px;">
+              <i class="fas fa-check me-1"></i>${escHtml(item.ui_feld)} (CHF ${item.betrag.toFixed(2)})
+            </button>
           </div>
-          <div class="col-3">
-            <div class="input-group input-group-sm">
-              <span class="input-group-text px-1">CHF</span>
-              <input type="text" class="form-control form-control-sm text-end fw-bold bg-light" value="${betrag.toFixed(2)}" readonly>
+        </div>
+      `;
+    } else if (item.ui_typ === 'amount') {
+      controlHtml = `
+        <div class="p-2 bg-light rounded-2 border">
+          <div class="row g-2 align-items-center">
+            <div class="col-auto">
+              <input class="form-check-input" type="checkbox" checked disabled>
+            </div>
+            <div class="col">
+              <input type="text" class="form-control form-control-sm bg-white" value="${escHtml(item.ui_feld)}" readonly style="font-size: 11px;">
+            </div>
+            <div class="col-3">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text px-1" style="font-size:10px;">CHF</span>
+                <input type="text" class="form-control form-control-sm text-end fw-bold bg-white" value="${item.betrag.toFixed(2)}" readonly style="font-size: 11px;">
+              </div>
+            </div>
+            <div class="col-auto">
+              <div class="input-group input-group-sm" style="width: 110px;">
+                <input type="text" class="form-control form-control-sm font-monospace" value="${escHtml(item.konto)}" readonly style="background-color: #e9ecef; font-size:10px;">
+                <button class="btn btn-outline-secondary" type="button" disabled><i class="fas fa-lock" style="font-size:9px;"></i></button>
+              </div>
             </div>
           </div>
-          <div class="col-auto">
-            <div class="input-group input-group-sm" style="width: 140px;">
-              <input type="text" class="form-control form-control-sm font-monospace" value="${escHtml(konto)}" readonly style="background-color: #e9ecef;">
-              <button class="btn btn-outline-secondary" type="button" disabled title="Konto gesperrt">
-                <i class="fas fa-lock"></i>
+        </div>
+      `;
+    }
+
+    const isCurrent = item.isCurrent;
+    const cardBorder = isCurrent ? 'border-primary border-2 shadow-sm bg-primary-subtle bg-opacity-10' : 'border bg-white shadow-2xs';
+
+    return `
+      <div class="tk-draggable-item card p-2 mb-2 rounded-2 ${cardBorder}" data-id="${escHtml(item.key)}" draggable="true" style="transition: all 0.15s ease;">
+        <div class="d-flex align-items-center justify-content-between mb-1.5 pb-1 border-bottom">
+          <div class="d-flex align-items-center gap-1.5">
+            <span class="tk-drag-handle text-muted cursor-grab px-1 py-0.5 rounded" title="Anfassen und verschieben" style="cursor: grab;">
+              <i class="fas fa-grip-vertical"></i>
+            </span>
+            <div class="btn-group btn-group-xs me-1">
+              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${escHtml(item.key)}', -1); return false;" title="Nach oben">
+                <i class="fas fa-chevron-up" style="font-size: 9px;"></i>
+              </button>
+              <button type="button" class="btn btn-outline-secondary py-0 px-1 border" onclick="jbMovePreviewItem('${escHtml(item.key)}', 1); return false;" title="Nach unten">
+                <i class="fas fa-chevron-down" style="font-size: 9px;"></i>
               </button>
             </div>
+            <strong class="font-monospace small ${isCurrent ? 'text-primary' : 'text-dark'}">${escHtml(item.key)}</strong>
+            ${isCurrent ? '<span class="badge bg-primary text-white" style="font-size: 9px;"><i class="fas fa-pen me-1"></i>In Bearbeitung</span>' : '<span class="badge bg-light text-muted border" style="font-size: 9px;">Bestehend</span>'}
+          </div>
+          <div class="d-flex align-items-center gap-1">
+            <span class="badge bg-light text-dark border font-monospace" style="font-size: 10px;">
+              Pos (ui_sort): <strong>${item.ui_sort}</strong>
+            </span>
           </div>
         </div>
+        ${controlHtml}
       </div>
     `;
-  }
+  }).join('');
 
-  container.innerHTML = html;
+  container.innerHTML = `
+    <div class="card p-3 border-0 shadow-sm rounded-3 bg-white" id="jbPreviewDraggableContainer">
+      <div class="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom">
+        <h6 class="text-secondary fw-bold mb-0 text-uppercase" style="font-size: 12px; letter-spacing: 0.5px;">
+          <i class="fas ${icon} me-2"></i>${escHtml(ui_gruppe)}
+        </h6>
+        <span class="badge bg-light text-muted border font-monospace small">
+          ${groupItems.length} Elemente in Card
+        </span>
+      </div>
+      <div class="d-flex align-items-center justify-content-between text-muted small mb-2 px-1" style="font-size: 11px;">
+        <span><i class="fas fa-arrows-alt-v me-1 text-primary"></i><strong>Drag & Drop oder ▲/▼:</strong> An gewünschte Position verschieben.</span>
+        <span class="text-success fw-semibold"><i class="fas fa-check-circle me-1"></i>ui_sort synchron</span>
+      </div>
+      <div id="jbPreviewItemsList">
+        ${itemsHtml}
+      </div>
+    </div>
+  `;
+
+  // TableKit Drag & Drop initialisieren
+  const listEl = document.getElementById('jbPreviewItemsList');
+  if (listEl && window.TableKit && typeof window.TableKit.makeDraggable === 'function') {
+    window.TableKit.makeDraggable(listEl, {
+      itemSelector: '.tk-draggable-item',
+      onReorder: (newOrderKeys) => {
+        jbApplyNewPreviewOrder(newOrderKeys);
+      }
+    });
+  }
 }
+window.jbUpdateGebuehrLivePreview = jbUpdateGebuehrLivePreview;
+
+// Anordnung bei Drag & Drop oder Verschieben übernehmen
+function jbApplyNewPreviewOrder(newOrderKeys) {
+  if (!Array.isArray(newOrderKeys) || newOrderKeys.length === 0) return;
+  const currentKey = (document.getElementById('g_key')?.value || 'NEU').trim().toUpperCase();
+
+  newOrderKeys.forEach((k, idx) => {
+    const kUpper = String(k || '').trim().toUpperCase();
+    const newSort = (idx + 1) * 10;
+    if (kUpper === currentKey || kUpper === 'NEU') {
+      const sortInput = document.getElementById('g_ui_sort');
+      if (sortInput) sortInput.value = newSort;
+    } else {
+      _jbModalSiblingSortChanges[kUpper] = newSort;
+    }
+  });
+
+  jbUpdateGebuehrLivePreview();
+}
+window.jbApplyNewPreviewOrder = jbApplyNewPreviewOrder;
+
+function jbMovePreviewItem(itemKey, delta) {
+  const listEl = document.getElementById('jbPreviewItemsList');
+  if (!listEl) return;
+  const items = Array.from(listEl.querySelectorAll('.tk-draggable-item'));
+  const keys = items.map(el => el.dataset.id).filter(Boolean);
+  const idx = keys.indexOf(itemKey);
+  if (idx < 0) return;
+
+  const targetIdx = idx + delta;
+  if (targetIdx < 0 || targetIdx >= keys.length) return;
+
+  const temp = keys[idx];
+  keys[idx] = keys[targetIdx];
+  keys[targetIdx] = temp;
+
+  jbApplyNewPreviewOrder(keys);
+}
+window.jbMovePreviewItem = jbMovePreviewItem;
 window.jbUpdateGebuehrLivePreview = jbUpdateGebuehrLivePreview;
 
 function jbOpenEditGebuehrModal(key) {
@@ -806,6 +1019,11 @@ function jbOpenEditGebuehrModal(key) {
   const keyHelp = document.getElementById('g_key_help');
   const isNew = !key;
   _jbGebuehrIsNewModal = isNew;
+  _jbModalSiblingSortChanges = {};
+
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    _jbModalSiblingSortChanges = {};
+  }, { once: true });
 
   // Fehlermeldungen zurücksetzen
   document.querySelectorAll('#jbFormGebuehr .is-invalid').forEach(el => el.classList.remove('is-invalid'));
@@ -1056,7 +1274,29 @@ async function jbSaveGebuehrFromModal() {
 
       if (supaErr) throw supaErr;
       console.log(`✅ [Supabase] Gebühr ${key} erfolgreich mit allen UI-Spalten gespeichert.`);
+
+      // 2. Falls Geschwister-Elemente per Drag & Drop umsortiert wurden: Batch-Update!
+      const siblingEntries = Object.entries(_jbModalSiblingSortChanges);
+      if (siblingEntries.length > 0) {
+        for (const [sKey, sSort] of siblingEntries) {
+          const { error: sibErr } = await supa.from('gebuehren_config')
+            .update({ sort_order: Number(sSort), updated_at: new Date().toISOString() })
+            .eq('key', sKey);
+          if (sibErr) {
+            console.warn(`Warnung beim Sortier-Update für ${sKey}:`, sibErr);
+          } else {
+            const sibInMem = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === sKey.toUpperCase());
+            if (sibInMem) {
+              sibInMem.sort_order = Number(sSort);
+              sibInMem.ui_sort = Number(sSort);
+            }
+          }
+        }
+        console.log(`✅ [Supabase] ${siblingEntries.length} Geschwister-Gebühren mit neuer Sortierung synchronisiert.`);
+      }
     }
+
+    _jbModalSiblingSortChanges = {};
 
     showToast(`🎉 Gebühr ${key} erfolgreich in Supabase gespeichert!`);
 
@@ -1099,8 +1339,17 @@ async function jbReloadGebuehrenData() {
           bezeichnungfrontend: g.bezeichnung_frontend || g.bezeichnung,
           betrag: Number(g.betrag || 0),
           konto: g.konto_haben || '3000',
+          'Haben-Konto-Jahresbeitrag-Buchhaltung': g.konto_haben || '3000',
           kategorie: g.kategorie || 'Jahresbeitrag',
-          sort_order: g.sort_order || 10
+          sort_order: g.sort_order || 10,
+          ui_gruppe: g.ui_gruppe || '',
+          ui_feld: g.ui_feld || g.bezeichnung_frontend || g.bezeichnung || '',
+          ui_typ: (g.ui_typ || 'checkbox').toLowerCase(),
+          ui_sort: Number(g.sort_order || 10),
+          zielgruppe: g.zielgruppe || 'Alle',
+          aktiv: g.aktiv !== false && g.aktiv !== 'FALSE' && g.aktiv !== '0' && g.aktiv !== 0,
+          bem: g.bemerkung || '',
+          bemerkung: g.bemerkung || ''
         }));
         jbPopulateFilterDropdowns();
         jbRenderGebuehrenTable();
