@@ -77,6 +77,19 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
   - **`jbModalGebuehrEdit` (Gebührenkonfiguration):** Vollständiges Drag & Resize mit Maximierungsmodus für die Live-Vorschau und Hilfesektionen.
   - **`bankReassignModal` (Bankabgleich / Zahlungsumbuchung):** Grossflächiges Drag- & Resize-Modal mit fixiertem Tabellenkopf für Match-Scores.
 
+### 2.11 Automatische PDF-Neugenerierung (`forceRecreate`) & Cache-Busting
+* **Problem:** Werden in der Schnellerfassung (`jahresbeitrag-schnellerfassung.js`) Beträge oder Rabatte mutiert, speichert die Supabase-DB die neuen Positionen ab. Die Deno Edge Function `generate-pdf` lieferte jedoch weiterhin das alte PDF aus dem Speicherarchiv (`storage/archive/`), und Browser luden die statische URL aus dem Disk-Cache.
+* **Lösung & Warum:**
+  - Jede Mutation in der Schnellerfassung (`jbSaveSingleMemberDirect`) triggert im Hintergrund unmittelbar `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })`.
+  - Bei manuellem Klick auf *„PDF generieren“* in der Beitragsübersicht oder im Positions-Modal wird das Flag `{ forceRecreate: true }` mitgesendet.
+  - Das Öffnen von PDFs im Frontend (`jbOpenInvoicePdfSafe`) erfolgt zwingend mit einem dynamischen Cache-Busting-Query-Parameter (`?t=${Date.now()}`), wodurch Browser und Proxies stets das aktuelle Dokument anzeigen.
+
+### 2.12 DOM-Entkopplung der Modale & Backdrop-Lifecycle
+* **Problem:** Wurden Dialoge (`#jbModalPositionen`, `#jbModalZahlung`) innerhalb von `#jahresbeitrag-container` gerendert, löschte jeder asynchrone Re-Render der Tabelle (`loadJahresbeitragData` / `renderJahresbeitragView`) den DOM-Knoten des aktiven Modals. Zurück blieb ein verwaistes `.modal-backdrop`-Overlay und die Klasse `body.modal-open`, was das gesamte UI unbedienbar machte (schwarzer Bildschirm / Freeze).
+* **Lösung & Warum:**
+  - Die Modale werden über `jbEnsureOverviewModals()` direkt als Kinder von `document.body` instanziiert.
+  - Ein zentraler Bereinigungsmechanismus (`jbCleanupModals()`) stellt sicher, dass beim Schliessen, bei Fehlern oder bei Modal-Übergängen (z. B. Wechsel zu Rechnungsdetails oder Mail-Prompt via `rnTransitionFromDetails`) alle Backdrop-Fragmente rückstandslos entfernt und der Scroll-Status des Bodys wiederhergestellt wird.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
