@@ -348,32 +348,27 @@ function jbRenderRows(data) {
             <i class="fas fa-edit"></i>
           </button>
 
-          <!-- 1. PDF RECHNUNG -->
+          <!-- 1. IN RECHNUNGSMODUL ÜBERTRAGEN (NUR WENN NOCH NICHT ÜBERTRAGEN & GESAMT > 0) -->
+          ${(!r.invoiceId && Number(r.Gesamt || 0) > 0) ? `
+          <button class="btn btn-xs btn-outline-primary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+                  onclick="jbTransferSingleInvoice('${r.id}', '${r.PersonNumber}')"
+                  id="btn-transfer-${r.id}"
+                  title="In Rechnungsmodul übertragen (Rechnungsentwurf erstellen)" style="min-width: 32px;">
+            <i class="fas fa-file-export"></i>
+          </button>` : ''}
+
+          <!-- 2. PDF RECHNUNG -->
           ${r.pdf_url ? `
             <a href="${r.pdf_url}" target="_blank" class="btn btn-xs btn-outline-danger btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
                title="PDF-Rechnung öffnen" style="min-width: 32px;">
               <i class="fas fa-file-pdf"></i>
-            </a>` : `
+            </a>` : (Number(r.Gesamt || 0) > 0 ? `
             <button class="btn btn-xs btn-outline-secondary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
                     onclick="jbGenerateInvoicePdfRemote('${r.id}', '${r.PersonNumber}')"
                     id="btn-pdf-${r.id}"
                     title="PDF-Rechnung generieren" style="min-width: 32px;">
               <i class="fas fa-file-invoice"></i>
-            </button>`}
-
-          <!-- 2. E-MAIL VERSAND -->
-          ${m.PrimaryEmail ? `
-            <button class="btn btn-xs ${isSent ? 'btn-success text-white' : 'btn-outline-primary'} btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
-                    onclick="jbSendInvoiceEmailRemote('${r.id}', '${r.PersonNumber}', '${m.PrimaryEmail}')"
-                    id="btn-mail-${r.id}"
-                    title="Rechnung per E-Mail senden (${isSent ? 'bereits versendet' : (effStatus === 'entwurf' ? 'Entwurf bereit' : 'noch nicht bereitgestellt')})" style="min-width: 32px;">
-              <i class="fas ${isSent ? 'fa-envelope-open-text' : 'fa-paper-plane'}"></i>
-            </button>` : `
-            <button class="btn btn-xs btn-outline-secondary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center opacity-50"
-                    disabled
-                    title="Keine E-Mail-Adresse hinterlegt" style="min-width: 32px;">
-              <i class="fas fa-envelope"></i>
-            </button>`}
+            </button>` : '')}
 
           <!-- 3. ZAHLUNG ERFASSEN -->
           ${isOffen ? `
@@ -1068,12 +1063,82 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
   }
 
   if (existingInv) {
+    const invTotal = Number(existingInv.total_amount || 0);
+    const headTotal = Number(r.Gesamt || 0);
+    const isDraft = (!existingInv.mail_status || existingInv.mail_status === 'entwurf') && (!existingInv.total_paid || Number(existingInv.total_paid) === 0);
+    if (isDraft && Math.abs(invTotal - headTotal) > 0.009) {
+      console.log(`🔄 Aktualisiere bestehenden Rechnungsentwurf ${existingInv.id} auf neuen Betrag CHF ${headTotal.toFixed(2)}...`);
+      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+      if (supa) {
+        await supa.from('invoices').update({
+          total_amount: headTotal,
+          open_amount: headTotal,
+          pdf_url: null,
+          pdf_storage_path: null,
+          updated_at: new Date().toISOString()
+        }).eq('id', existingInv.id);
+
+        if (positions.length > 0) {
+          const sbPositions = positions.map(p => ({
+            invoice_id: existingInv.id,
+            position_nr: p.position_nr,
+            description: p.description,
+            quantity: p.quantity,
+            unit_price: p.unit_price,
+            amount: p.amount,
+            konto: p.konto || '3000'
+          }));
+          await supa.from('invoice_positions').delete().eq('invoice_id', existingInv.id);
+          await supa.from('invoice_positions').insert(sbPositions);
+        }
+      }
+      existingInv.total_amount = headTotal;
+      existingInv.open_amount = headTotal;
+      existingInv.pdf_url = null;
+      r.pdf_url = null;
+    }
     r.invoiceId = existingInv.id;
     return existingInv.id;
   }
   r.invoiceId = invoiceId;
   return r.invoiceId;
 }
+
+// Einzelnes Mitglied in Rechnungsmodul übertragen (Rechnungsentwurf anlegen)
+async function jbTransferSingleInvoice(rId, pn) {
+  const btn = document.getElementById(`btn-transfer-${rId}`);
+  let oldHtml = '';
+  if (btn) {
+    oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" style="width: 14px; height: 14px;"></span>';
+  }
+  
+  try {
+    const r = _jbData.find(x => String(x.id) === String(rId));
+    if (!r) throw new Error("Beitrags-Eintrag nicht gefunden.");
+    const m = _jbMemberMap[String(pn)] || {};
+    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
+
+    const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
+    if (!invoiceId) throw new Error("Rechnung konnte nicht erstellt werden.");
+
+    showToast(`✅ Rechnungsentwurf ${invoiceId} für ${name} erfolgreich im Rechnungsmodul erstellt!`);
+    await loadJahresbeitragData(true, false);
+    if (typeof loadRechnungenData === 'function') {
+      await loadRechnungenData(true, true);
+    }
+  } catch (err) {
+    console.error("Fehler bei Rechnungs-Übertrag:", err);
+    alert("Fehler bei Rechnungs-Übertrag: " + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = oldHtml;
+    }
+  }
+}
+window.jbTransferSingleInvoice = jbTransferSingleInvoice;
 
 // PDF Rechnung auf Knopfdruck generieren & anzeigen
 async function jbGenerateInvoicePdfRemote(rId, pn) {

@@ -907,7 +907,176 @@ function jbConfirmEntrySchuetzenhaus(chk, pn) {
   }
 }
 
-// 5. State live aktualisieren & Auto-Save ausführen
+// 5. State live synchronisieren & direkt in Supabase speichern
+async function jbSaveSingleMemberDirect(pnClean) {
+  const pn = String(pnClean || '').trim();
+  const settings = _jbLocalBulkChanges[pn] || _jbParticipationsState;
+  const m = (_jbMemberMap && _jbMemberMap[pn]) || (_jbMembers || []).find(x => String(x.PersonNumber || '').trim() === pn);
+  if (!m) return null;
+
+  const events = settings.events ? { ...settings.events } : {};
+  if (settings.schuetzenhaus !== undefined) events['GE001'] = settings.schuetzenhaus ? 1 : 0;
+  if (settings.hausmeister !== undefined) events['RA002'] = settings.hausmeister ? 1 : 0;
+  if (settings.kk_volksschiessen !== undefined) events['KK008'] = settings.kk_volksschiessen === 'keine' ? 0 : Number(settings.kk_volksschiessen);
+  if (settings.kk_verein !== undefined) events['KK007'] = settings.kk_verein ? 1 : 0;
+  if (settings.kk_verband !== undefined) events['KK006'] = settings.kk_verband ? 1 : 0;
+  if (settings.kk_grenzland !== undefined) events['KK001'] = settings.kk_grenzland !== 'keine' ? 1 : 0;
+  if (settings.ssv_dez !== undefined) {
+    const ssv = settings.ssv_dez;
+    events['KK002'] = (ssv === 'liegend' || ssv === 'liegend_2_3') ? 1 : 0;
+    events['KK003'] = (ssv === '2-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
+    events['KK004'] = (ssv === '3-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
+    events['KK005'] = ssv === 'sv' ? 1 : 0;
+  }
+  if (settings.lg_ag_dez !== undefined) events['LG001'] = settings.lg_ag_dez ? 1 : 0;
+  if (settings.lg_ag_dez_auflage !== undefined) events['LG002'] = settings.lg_ag_dez_auflage ? 1 : 0;
+  if (settings.lg_ch_dez !== undefined) events['LG003'] = settings.lg_ch_dez ? 1 : 0;
+  if (settings.lg_ch_dez_auflage !== undefined) events['LG004'] = settings.lg_ch_dez_auflage ? 1 : 0;
+  if (settings.lg_verband !== undefined) events['LG005'] = settings.lg_verband ? 1 : 0;
+  if (settings.lg_verein !== undefined) events['LG006'] = settings.lg_verein ? 1 : 0;
+  if (settings.lg_ch_kniend !== undefined) events['LG007'] = settings.lg_ch_kniend ? 1 : 0;
+
+  if (settings.extras && typeof settings.extras === 'object') {
+    Object.entries(settings.extras).forEach(([ekey, ex]) => {
+      events[ekey] = ex && ex.active ? 1 : 0;
+    });
+  } else {
+    if (settings.z1_active !== undefined) events['Z001'] = settings.z1_active ? 1 : 0;
+    if (settings.z2_active !== undefined) events['Z002'] = settings.z2_active ? 1 : 0;
+  }
+
+  const list = Object.entries(events).map(([eventkey, teilgenommen]) => ({
+    pn: pn,
+    year: _jbYear,
+    eventkey,
+    teilgenommen: Number(teilgenommen || 0),
+    quelle: 'schnellerfassung'
+  }));
+
+  const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+  if (!supa) return null;
+
+  // 1. In member_participations speichern
+  if (list.length > 0) {
+    const dbParts = list.map(item => ({
+      id: `${item.pn}-${item.year}-${item.eventkey}`,
+      person_number: item.pn,
+      year: Number(item.year),
+      event_key: item.eventkey,
+      teilgenommen: Number(item.teilgenommen || 0),
+      quelle: 'schnellerfassung',
+      erfasst_am: new Date().toISOString(),
+      erfasst_von: window.currentUser || 'frontend'
+    }));
+    await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
+  }
+
+  // Memory Participations Cache updaten
+  if (!_jbParticipationsCache[pn]) _jbParticipationsCache[pn] = [];
+  list.forEach(item => {
+    const idx = _jbParticipationsCache[pn].findIndex(p => p.eventkey === item.eventkey && Number(p.year) === Number(item.year));
+    if (idx >= 0) {
+      _jbParticipationsCache[pn][idx].teilgenommen = item.teilgenommen;
+    } else {
+      _jbParticipationsCache[pn].push({
+        PersonNumber: pn,
+        year: item.year,
+        eventkey: item.eventkey,
+        teilgenommen: item.teilgenommen
+      });
+    }
+  });
+
+  if (typeof jbSyncMemberToCache === 'function') {
+    jbSyncMemberToCache(pn, settings);
+  }
+
+  // 2. Beitrag live berechnen
+  const calc = (typeof jbCalculateLiveTotal === 'function') ? jbCalculateLiveTotal(m, settings) : { total: 0, positions: [] };
+  const headId = `CH-${_jbYear}-${pn}`;
+  
+  // Vorhandenen Header ermitteln
+  let existingHeader = (_jbData || []).find(x => String(x.PersonNumber).trim() === pn);
+  const statusToSet = existingHeader?.status === 'bezahlt' ? 'bezahlt' : 'offen';
+
+  await supa.from('contributions_header').upsert({
+    id: headId,
+    person_number: pn,
+    year: Number(_jbYear),
+    status: statusToSet,
+    gesamt: calc.total,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'id' });
+
+  // Positionen ersetzen
+  const newPos = (calc.positions || []).map((p, idx) => ({
+    id: `${headId}-${idx + 1}`,
+    header_id: headId,
+    person_number: pn,
+    year: Number(_jbYear),
+    position_nr: idx + 1,
+    beschreibung: p.name || 'Position',
+    betrag: Number(p.betrag || 0),
+    typ: p.typ || 'Debit',
+    source_field: p.key || '',
+    konto: p.konto || (typeof window.jbResolveAccountForPosition === 'function' ? window.jbResolveAccountForPosition(p.key, p.name) : '3000'),
+    last_upd: new Date().toISOString()
+  }));
+
+  await supa.from('contributions_positions').delete().eq('header_id', headId);
+  if (newPos.length > 0) {
+    await supa.from('contributions_positions').insert(newPos);
+  }
+
+  // Lokale Caches updaten
+  _jbPositionsCache[headId] = newPos;
+  if (_jbPositionsCache[existingHeader?.id]) {
+    _jbPositionsCache[existingHeader.id] = newPos;
+  }
+  if (existingHeader) {
+    existingHeader.Gesamt = calc.total;
+    existingHeader.gesamt = calc.total;
+    existingHeader.pdf_url = null; // Cache-Invalidierung für neu berechnete Rechnungen
+  }
+
+  // 3. Rechnungsentwurf im RechnungsCore synchronisieren, falls vorhanden & noch nicht versendet/bezahlt
+  const invoiceId = existingHeader?.invoiceId || existingHeader?.invoice_id;
+  if (invoiceId) {
+    const allInvs = window._invoices || window._jbAllInvoices || [];
+    const inv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
+    if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
+      await supa.from('invoices').update({
+        total_amount: calc.total,
+        open_amount: calc.total,
+        pdf_url: null,
+        pdf_storage_path: null,
+        updated_at: new Date().toISOString()
+      }).eq('id', invoiceId);
+
+      const invPositions = newPos.map((p, idx) => ({
+        invoice_id: invoiceId,
+        position_nr: idx + 1,
+        description: p.beschreibung,
+        quantity: 1,
+        unit_price: p.betrag,
+        amount: p.betrag,
+        konto: p.konto || '3000'
+      }));
+      await supa.from('invoice_positions').delete().eq('invoice_id', invoiceId);
+      if (invPositions.length > 0) {
+        await supa.from('invoice_positions').insert(invPositions);
+      }
+      inv.total_amount = calc.total;
+      inv.open_amount = calc.total;
+      inv.pdf_url = null;
+    }
+  }
+
+  jbRenderEntryList();
+  return calc;
+}
+window.jbSaveSingleMemberDirect = jbSaveSingleMemberDirect;
+
 let _jbAutoSaveTimer = null;
 
 function jbTriggerAutoSave(pnClean) {
@@ -920,102 +1089,10 @@ function jbTriggerAutoSave(pnClean) {
 
   _jbAutoSaveTimer = setTimeout(async () => {
     try {
-      const settings = _jbLocalBulkChanges[pnClean] || _jbParticipationsState;
-      const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
-      if (!m) return;
-
-      const events = settings.events ? { ...settings.events } : {};
-      if (settings.schuetzenhaus !== undefined) events['GE001'] = settings.schuetzenhaus ? 1 : 0;
-      if (settings.hausmeister !== undefined) events['RA002'] = settings.hausmeister ? 1 : 0;
-      if (settings.kk_volksschiessen !== undefined) events['KK008'] = settings.kk_volksschiessen === 'keine' ? 0 : Number(settings.kk_volksschiessen);
-      if (settings.kk_verein !== undefined) events['KK007'] = settings.kk_verein ? 1 : 0;
-      if (settings.kk_verband !== undefined) events['KK006'] = settings.kk_verband ? 1 : 0;
-      if (settings.kk_grenzland !== undefined) events['KK001'] = settings.kk_grenzland !== 'keine' ? 1 : 0;
-      if (settings.ssv_dez !== undefined) {
-        const ssv = settings.ssv_dez;
-        events['KK002'] = (ssv === 'liegend' || ssv === 'liegend_2_3') ? 1 : 0;
-        events['KK003'] = (ssv === '2-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
-        events['KK004'] = (ssv === '3-stellung' || ssv === 'liegend_2_3') ? 1 : 0;
-        events['KK005'] = ssv === 'sv' ? 1 : 0;
-      }
-      if (settings.lg_ag_dez !== undefined) events['LG001'] = settings.lg_ag_dez ? 1 : 0;
-      if (settings.lg_ag_dez_auflage !== undefined) events['LG002'] = settings.lg_ag_dez_auflage ? 1 : 0;
-      if (settings.lg_ch_dez !== undefined) events['LG003'] = settings.lg_ch_dez ? 1 : 0;
-      if (settings.lg_ch_dez_auflage !== undefined) events['LG004'] = settings.lg_ch_dez_auflage ? 1 : 0;
-      if (settings.lg_verband !== undefined) events['LG005'] = settings.lg_verband ? 1 : 0;
-      if (settings.lg_verein !== undefined) events['LG006'] = settings.lg_verein ? 1 : 0;
-      if (settings.lg_ch_kniend !== undefined) events['LG007'] = settings.lg_ch_kniend ? 1 : 0;
-
-      if (settings.extras && typeof settings.extras === 'object') {
-        Object.entries(settings.extras).forEach(([ekey, ex]) => {
-          events[ekey] = ex && ex.active ? 1 : 0;
-        });
-      } else {
-        if (settings.z1_active !== undefined) events['Z001'] = settings.z1_active ? 1 : 0;
-        if (settings.z2_active !== undefined) events['Z002'] = settings.z2_active ? 1 : 0;
-      }
-
-      const list = Object.entries(events).map(([eventkey, teilgenommen]) => ({
-        pn: pnClean,
-        year: _jbYear,
-        eventkey,
-        teilgenommen: Number(teilgenommen || 0),
-        quelle: 'schnellerfassung'
-      }));
-
-      const licenses = settings.lizenz ? [{ pn: pnClean, lizenz: settings.lizenz }] : [];
-
-      // 1. Direkt in Supabase speichern
-      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-      if (supa && list.length > 0) {
-        try {
-          const dbParts = list.map(item => ({
-            id: `${item.pn}-${item.year}-${item.eventkey}`,
-            person_number: item.pn,
-            year: Number(item.year),
-            event_key: item.eventkey,
-            teilgenommen: Number(item.teilgenommen || 0),
-            quelle: 'schnellerfassung',
-            erfasst_am: new Date().toISOString(),
-            erfasst_von: window.currentUser || 'frontend'
-          }));
-          await supa.from('member_participations').upsert(dbParts, { onConflict: 'person_number,year,event_key' });
-        } catch (errSup) {
-          console.warn("⚠️ Fehler bei Supabase Auto-Save Participations:", errSup);
-        }
-      }
-
-      const payload = {
-        action: 'saveParticipationsBulk',
-        list: list,
-        licenses: licenses,
-        user: window.currentUser || 'frontend'
-      };
-
-      
-      // Memory Caches updaten
-      if (!_jbParticipationsCache[pnClean]) _jbParticipationsCache[pnClean] = [];
-      list.forEach(item => {
-        const idx = _jbParticipationsCache[pnClean].findIndex(p => p.eventkey === item.eventkey && Number(p.year) === Number(item.year));
-        if (idx >= 0) {
-          _jbParticipationsCache[pnClean][idx].teilgenommen = item.teilgenommen;
-        } else {
-          _jbParticipationsCache[pnClean].push({
-            PersonNumber: pnClean,
-            year: item.year,
-            eventkey: item.eventkey,
-            teilgenommen: item.teilgenommen
-          });
-        }
-      });
-
-      if (typeof jbSyncMemberToCache === 'function') {
-        jbSyncMemberToCache(pnClean, settings);
-      }
-
+      const calc = await jbSaveSingleMemberDirect(pnClean);
       const now = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       if (statusEl) {
-        statusEl.innerHTML = `<span class="text-success fw-bold"><i class="fas fa-check-circle me-1"></i>Auto-Gespeichert (${now})</span>`;
+        statusEl.innerHTML = `<span class="text-success fw-bold"><i class="fas fa-check-circle me-1"></i>Gespeichert (${now})</span>`;
       }
     } catch(err) {
       console.warn("Auto-Save Fehler:", err);
@@ -1197,16 +1274,17 @@ function jbEntryResetForm(pn) {
   }
 }
 
-// 7. Zwischenspeichern & Automatisch zum nächsten Schützen springen
-function jbEntrySaveAndNext(pn) {
+// 7. Direkt in Supabase speichern & Automatisch zum nächsten Schützen springen
+async function jbEntrySaveAndNext(pn) {
   const pnClean = String(pn || '').trim();
   
-  _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
-  
-  jbUpdateBulkSaveButton();
-  jbRenderEntryList();
-  
-  showToast(`💾 Änderungen für ${pnClean} im Browser zwischengespeichert!`);
+  try {
+    const calc = await jbSaveSingleMemberDirect(pnClean);
+    showToast(`✅ Änderungen für ${pnClean} gespeichert (CHF ${(calc?.total || 0).toFixed(2)})!`);
+  } catch (err) {
+    console.error("Fehler beim Speichern:", err);
+    alert("Fehler beim Speichern: " + err.message);
+  }
 
   jbEntrySelectNext();
 }
