@@ -39,7 +39,10 @@ Nach **jeder** vorgenommenen Code- oder Schemaänderung müssen der lokale Entwi
    - Bei Edge Functions: Test-Aufruf an `https://supabase-muhen.danfamily.uk/functions/v1/<funktion>` senden und `200 OK` prüfen.
    - Bei DB-Migrationen: Schema-Integrität (Tabellen, Spalten, RLS-Policies) per `psql`-Query verifizieren.
 
-4. **GitHub Commit & Push (Single Source of Truth im Repository):**
+4. **Dokumentations-Prüfung & Nachführung (Fachdokument in `docs/`):**
+   - Wurden fachliche Invarianten, Caching-Mechanismen, Datenflüsse oder Schnittstellen angepasst (auch im Rahmen von Bugfixes!), ist vor dem Commit zwingend das betroffene Fachdokument in `docs/` (z. B. `docs/JAHRESBEITRAG.md`, `docs/RECHNUNGSWESEN.md`) um 2–3 prägnante Sätze zu ergänzen.
+
+5. **GitHub Commit & Push (Single Source of Truth im Repository):**
    ```powershell
    git add <dateien>
    git commit -m "<typ>(<scope>): <prägnante beschreibung>"

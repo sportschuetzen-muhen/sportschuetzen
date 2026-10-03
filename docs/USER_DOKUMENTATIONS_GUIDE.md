@@ -44,10 +44,10 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 
 ## 2. Pflegeaufwand: Was muss wann aktualisiert werden?
 
-* **Normale Code- & UI-Änderungen (CSS, Farben, Bezeichnungen, Bugfixes):**  
+* **Reine Kosmetik & Textanpassungen (CSS, Farben, Bezeichnungen, Tippfehler):**  
   $\rightarrow$ **0 Dokumentations-Aufwand!** Keine Dokumente anfassen.
-* **Fachliche Regel- & Schnittstellen-Änderungen (Das «Warum» ändert sich):**  
-  $\rightarrow$ Wenn Sie eine **fachliche Invariante** ändern (z. B. ein neues Berechnungsmodell für U21 oder ein neues Pflichtfeld):  
+* **Fachliche Invarianten, Caching & Schnittstellen (auch bei Bugfixes!):**  
+  $\rightarrow$ Wenn das «Warum» hinter einer Lösung dokumentationswürdig ist (z. B. ein neues Berechnungsmodell, Cache-Busting, Modul-Kopplung oder Modal-DOM-Lifecycle):  
   $\rightarrow$ Nur das **eine betroffene Fachdokument** (z. B. `docs/JAHRESBEITRAG.md`) um 2–3 Sätze ergänzen.
 * **Systemweite Grundregeln (Betrifft alle Fachmodule):**  
   $\rightarrow$ Nur in diesem Fall wird ein kurzer Spiegelstrich in [AGENTS.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/AGENTS.md) ergänzt.
@@ -59,7 +59,9 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 Nach jeder vorgenommenen Code- oder Schemaänderung gilt:
 1. **Edge Functions (`supabase/functions/`):** Direkt per `scp` auf CT 117 (`192.168.68.117`) kopieren und Container `supabase-edge-functions` neustarten.
 2. **Datenbank-Migrationen (`supabase/migrations/`):** Per SSH-Pipe direkt in den PostgreSQL-Container `supabase-db` einspielen.
-3. **GitHub Push (`migration-supabase`):** Unmittelbar committen und pushen, damit lokaler Entwicklungsstand, Server und GitHub zu 100% synchron sind.
+3. **Verifikation:** Smoke- / E2E-Test durchführen.
+4. **Dokumentations-Check (Vor dem Commit!):** Falls Invarianten, Caching oder Schnittstellen geändert wurden, betroffenes Fachdokument in `docs/` um 2–3 Sätze nachführen.
+5. **GitHub Push (`migration-supabase`):** Unmittelbar committen und pushen, damit lokaler Entwicklungsstand, Server und GitHub zu 100% synchron sind.
 
 ---
 
