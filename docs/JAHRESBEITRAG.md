@@ -318,9 +318,9 @@ Da die Beitragsabwicklung sich über mehrere Phasen erstreckt (von der internen 
 Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht – entweder über das Zeilenmenü (`rnDeleteInvoicePrompt`) oder via Sammelauswahl (`rnDeleteSelectedInvoices`):
 1. Löscht `invoice_positions` und `invoices` (sofern nicht bezahlt).
 2. Führt atomar `UPDATE contributions_header SET invoice_id = NULL WHERE invoice_id = :id` (bzw. `IN (...)`) aus.
-3. Aktualisiert unmittelbar den lokalen Frontend-RAM-Cache (`window._jbData`, `window._jbAllBeitraege`).
-4. Der Datensatz im Jahresbeitragsmodul wechselt nahtlos vom Status **`entwurf`** oder **`versendet`** zurück auf **`berechnet`**.
-5. Der Bereitstellungs-Zähler («Rechnungen bereitstellen») erfasst die freigewordenen Datensätze automatisch wieder zur Neugenerierung.
+3. Aktualisiert unmittelbar den lokalen Frontend-RAM-Cache (`window._jbData`, `window._jbAllBeitraege`, `window._jbAllInvoices`).
+4. `jbMergeInvoicesIntoData` entkoppelt gelöschte Belege automatisch, wenn sie nicht mehr im geladenen Rechnungsbestand existieren.
+5. Das System triggert im Hintergrund unmittelbar `loadJahresbeitragData(true, false)`, sodass beim Tab-Wechsel ins Jahresbeitrags-Cockpit alle Zeilen ohne F5-Reload sofort auf **`berechnet`** stehen und der Zähler *«Rechnungen bereitstellen»* aktuell ist.
 6. Es entstehen keine verwaisten Rechnungs-IDs oder Inkonsistenzen.
 
 

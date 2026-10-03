@@ -369,7 +369,7 @@ function jbMergeInvoicesIntoData(invoices) {
     }
     
     // 2. Falls keine ID oder nicht gefunden, Match über PersonNumber, Jahr und Typ
-    if (!match) {
+    if (!match && !existingInvId) {
       match = invoices.find(inv => 
         String(inv.PersonNumber || inv.recipient_id || '').trim() === String(r.PersonNumber).trim() && 
         Number(inv.year) === Number(r.year) && 
@@ -391,9 +391,16 @@ function jbMergeInvoicesIntoData(invoices) {
         r.document_ref = match.document_ref;
       }
     } else {
-      // Wenn kein Match in Rechnungen existiert, behalten wir dennoch eine bereits bekannte ID bei
-      r.invoiceId = existingInvId;
-      r.invoice_id = existingInvId;
+      // Wenn Rechnungen im Speicher geladen sind, aber kein Match (mehr) existiert -> sauber entkoppeln!
+      if (invoices.length > 0 && existingInvId) {
+        r.invoiceId = null;
+        r.invoice_id = null;
+        r.mail_status = null;
+        r.pdf_url = null;
+      } else {
+        r.invoiceId = existingInvId || null;
+        r.invoice_id = existingInvId || null;
+      }
     }
   });
 }

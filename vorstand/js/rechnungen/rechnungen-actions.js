@@ -3140,6 +3140,8 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
         if (matchJb) {
           matchJb.invoiceId = null;
           matchJb.invoice_id = null;
+          matchJb.mail_status = null;
+          matchJb.pdf_url = null;
         }
       }
       if (Array.isArray(window._jbAllBeitraege)) {
@@ -3147,7 +3149,15 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
         if (matchJb) {
           matchJb.invoiceId = null;
           matchJb.invoice_id = null;
+          matchJb.mail_status = null;
+          matchJb.pdf_url = null;
         }
+      }
+      window._jbAllInvoices = window._invoices;
+      if (isJb && typeof loadJahresbeitragData === 'function') {
+        try {
+          await loadJahresbeitragData(true, false);
+        } catch (_) {}
       }
       console.log(`✅ [Supabase] Invoice ${invoiceId} deleted from Supabase.`);
       if (isJb) {
@@ -4323,12 +4333,27 @@ window.rnDeleteSelectedInvoices = async function() {
 
   const deletableIds = deletableInvoices.map(i => String(i.id).trim());
 
-  // 3. Optimistic Update (Sofortiges Entfernen aus lokaler Tabelle)
+  // 3. Optimistic Update (Sofortiges Entfernen aus lokaler Tabelle & Synchronisation)
   window._invoices = (window._invoices || []).filter(inv => !deletableIds.includes(String(inv.id).trim()));
+  window._jbAllInvoices = window._invoices; // Synchron halten, damit Jahresbeitrag keine alten Belege cached!
+
   rnClearTableSelection();
   if (typeof window.renderRechnungen === 'function') {
     window.renderRechnungen();
   }
+
+  // Sofortiger optimistischer Reset im Speicher für Jahresbeitrag
+  const clearJbItem = (j) => {
+    const id = String(j.invoiceId || j.invoice_id || '').trim();
+    if (id && deletableIds.includes(id)) {
+      j.invoiceId = null;
+      j.invoice_id = null;
+      j.mail_status = null;
+      j.pdf_url = null;
+    }
+  };
+  if (Array.isArray(window._jbData)) window._jbData.forEach(clearJbItem);
+  if (Array.isArray(window._jbAllBeitraege)) window._jbAllBeitraege.forEach(clearJbItem);
 
   showSuccess(`⏳ Lösche ${deletableIds.length} Rechnungen (Hintergrund-Synchronisation läuft)...`);
 
@@ -4344,24 +4369,17 @@ window.rnDeleteSelectedInvoices = async function() {
       await sb.from('contributions_header').update({ invoice_id: null }).in('invoice_id', deletableIds);
       await sb.from('rental_requests').update({ invoice_id: null }).in('invoice_id', deletableIds);
 
-      // In-Memory Cache synchronisieren
-      if (Array.isArray(window._jbData)) {
-        window._jbData.forEach(j => {
-          const id = String(j.invoiceId || j.invoice_id).trim();
-          if (deletableIds.includes(id)) {
-            j.invoiceId = null;
-            j.invoice_id = null;
-          }
-        });
-      }
-      if (Array.isArray(window._jbAllBeitraege)) {
-        window._jbAllBeitraege.forEach(j => {
-          const id = String(j.invoiceId || j.invoice_id).trim();
-          if (deletableIds.includes(id)) {
-            j.invoiceId = null;
-            j.invoice_id = null;
-          }
-        });
+      // In-Memory Cache erneut sicherstellen
+      if (Array.isArray(window._jbData)) window._jbData.forEach(clearJbItem);
+      if (Array.isArray(window._jbAllBeitraege)) window._jbAllBeitraege.forEach(clearJbItem);
+
+      // Jahresbeitrag-Cockpit live im Hintergrund synchronisieren (verhindert F5-Bedarf!)
+      if (jbInvoices.length > 0 && typeof loadJahresbeitragData === 'function') {
+        try {
+          await loadJahresbeitragData(true, false);
+        } catch (jbErr) {
+          console.warn("⚠️ Fehler beim Hintergrund-Reload von Jahresbeitrag:", jbErr);
+        }
       }
 
       console.log(`✅ [Supabase] ${deletableIds.length} Rechnungen gelöscht & Quellmodule entkoppelt.`);
