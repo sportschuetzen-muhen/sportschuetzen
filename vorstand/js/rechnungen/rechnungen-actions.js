@@ -3108,6 +3108,22 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
       await sb.from('invoices').delete().eq('id', invoiceId);
       // Quellmodul Vermietung entkoppeln falls verknüpft
       await sb.from('rental_requests').update({ invoice_id: null }).eq('invoice_id', invoiceId);
+      // Quellmodul Jahresbeitrag entkoppeln falls verknüpft
+      await sb.from('contributions_header').update({ invoice_id: null }).eq('invoice_id', invoiceId);
+      if (Array.isArray(window._jbData)) {
+        const matchJb = window._jbData.find(j => String(j.invoiceId || j.invoice_id).trim() === String(invoiceId).trim());
+        if (matchJb) {
+          matchJb.invoiceId = null;
+          matchJb.invoice_id = null;
+        }
+      }
+      if (Array.isArray(window._jbAllBeitraege)) {
+        const matchJb = window._jbAllBeitraege.find(j => String(j.invoiceId || j.invoice_id).trim() === String(invoiceId).trim());
+        if (matchJb) {
+          matchJb.invoiceId = null;
+          matchJb.invoice_id = null;
+        }
+      }
       console.log(`✅ [Supabase] Invoice ${invoiceId} deleted from Supabase.`);
     } catch (sbEx) {
       console.warn("⚠️ [Supabase] Delete Invoice error:", sbEx);

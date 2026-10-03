@@ -1,13 +1,65 @@
 // vorstand/js/jahresbeitrag/jahresbeitrag-overview.js
 // ============================================================
+// STATUS-HELPER FÜR JAHRESBEITRAG (ARCHITEKTUR-STAND 2026)
+// Status-Lebenszyklus:
+// 1. 'berechnet': Beitrag kalkuliert, Betrag > 0, aber noch kein Rechnungsentwurf im RechnungsCore
+// 2. 'entwurf': Rechnung im RechnungsCore angelegt (JB-XX-XXXX), aber noch nicht an Mitglied gesendet
+// 3. 'versendet': Rechnung per E-Mail oder Druck versendet, Zahlung ausstehend
+// 4. 'teilbezahlt': Teilzahlung verbucht, Restbetrag offen
+// 5. 'bezahlt': Vollständig bezahlt
+// 6. 'befreit': Betrag ist CHF 0.00 (z.B. Schüler oder voll befreites Ehrenmitglied)
+// ============================================================
+function jbGetEffectiveStatus(r) {
+  if (!r) return 'berechnet';
+  if (r.status === 'bezahlt' || (r.payment_date && r.payment_method)) {
+    return 'bezahlt';
+  }
+  if (Number(r.Gesamt || 0) === 0) {
+    return 'befreit';
+  }
+  
+  const invId = r.invoiceId || r.invoice_id;
+  if (!invId) {
+    return 'berechnet';
+  }
+  
+  const allInvoices = window._invoices || window._jbAllInvoices || [];
+  const inv = allInvoices.find(i => String(i.id).trim() === String(invId).trim());
+  if (inv) {
+    if (inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) >= Number(inv.total_amount))) {
+      return 'bezahlt';
+    }
+    if (inv.status === 'teilbezahlt') {
+      return 'teilbezahlt';
+    }
+    if (inv.mail_status === 'versendet' || inv.mail_status === 'gesendet' || inv.send_date) {
+      return 'versendet';
+    }
+    return 'entwurf';
+  }
+  
+  if (r.mail_status === 'versendet' || r.mail_status === 'gesendet') {
+    return 'versendet';
+  }
+  return 'entwurf';
+}
+window.jbGetEffectiveStatus = jbGetEffectiveStatus;
+
+// ============================================================
 // TAB 1: OVERVIEW TAB RENDER
 // ============================================================
 function renderOverviewTab(canEdit, years) {
   const total    = _jbData.reduce((s, r) => s + Number(r.Gesamt || 0), 0);
-  const bezahlt  = _jbData.filter(r => r.status === 'bezahlt').reduce((s, r) => s + Number(r.Gesamt || 0), 0);
+  const bezahlt  = _jbData.filter(r => jbGetEffectiveStatus(r) === 'bezahlt').reduce((s, r) => s + Number(r.Gesamt || 0), 0);
   const offen    = total - bezahlt;
-  const offenCount  = _jbData.filter(r => r.status !== 'bezahlt').length;
-  const bezahltCount = _jbData.filter(r => r.status === 'bezahlt').length;
+  const offenCount     = _jbData.filter(r => jbGetEffectiveStatus(r) !== 'bezahlt' && jbGetEffectiveStatus(r) !== 'befreit').length;
+  const bezahltCount   = _jbData.filter(r => jbGetEffectiveStatus(r) === 'bezahlt').length;
+  const entwurfCount   = _jbData.filter(r => jbGetEffectiveStatus(r) === 'entwurf').length;
+  const berechnetCount = _jbData.filter(r => jbGetEffectiveStatus(r) === 'berechnet').length;
+  const uncreatedCount = _jbData.filter(r => {
+    const hasInv = r.invoiceId && String(r.invoiceId).trim().length > 0;
+    return !hasInv && Number(r.Gesamt || 0) !== 0;
+  }).length;
 
   const yearOptions = years.map(y =>
     `<option value="${y}" ${y == _jbYear ? 'selected' : ''}>${y}</option>`
@@ -21,10 +73,14 @@ function renderOverviewTab(canEdit, years) {
       </select>
       <input type="text" class="form-control form-control-sm" style="width:220px"
              id="jbSearch" placeholder="🔍 Name / PersonenNummer…" oninput="jbFilter()">
-      <select class="form-select form-select-sm" style="width:130px" id="jbStatusFilter" onchange="jbFilter()">
+      <select class="form-select form-select-sm" style="width:160px" id="jbStatusFilter" onchange="jbFilter()">
         <option value="">Alle Status</option>
-        <option value="offen">Offen</option>
+        <option value="offen">Offen (Ausstehend)</option>
+        <option value="berechnet">Nur Berechnet (ohne RE)</option>
+        <option value="entwurf">Nur Entwurf (RE erstellt)</option>
+        <option value="versendet">Nur Versendet</option>
         <option value="bezahlt">Bezahlt</option>
+        <option value="befreit">Befreit (0.-)</option>
       </select>
 
       <!-- Spalten-Ausblender (TableKit Standard) -->
@@ -32,11 +88,14 @@ function renderOverviewTab(canEdit, years) {
 
       ${canEdit ? `
       <div class="ms-auto d-inline-flex gap-2 align-items-center flex-wrap">
-        <button class="btn btn-sm btn-outline-primary" onclick="jbOpenSammelversandModal()" title="Alle Rechnungen für das aktive Jahr gesammelt per E-Mail versenden">
-          <i class="fas fa-paper-plane me-1"></i> Sammelversand E-Mail
-        </button>
-        <button class="btn btn-sm btn-outline-warning" onclick="jbBerechnen()">
+        <button class="btn btn-sm btn-outline-warning" onclick="jbBerechnen()" title="Beiträge für alle aktiven Mitglieder nach Gebührenordnung und Lizenzen berechnen">
           <i class="fas fa-calculator me-1"></i> Alle Beiträge berechnen
+        </button>
+        <button class="btn btn-sm btn-outline-primary" id="btnJbRechnungenBereitstellen" onclick="jbRechnungenBereitstellenBatch()" title="Erzeugt für alle berechneten Beiträge offizielle Rechnungsentwürfe im RechnungsCore">
+          <i class="fas fa-file-invoice me-1"></i> Rechnungen bereitstellen ${uncreatedCount > 0 ? `<span class="badge bg-primary ms-1">${uncreatedCount}</span>` : ''}
+        </button>
+        <button class="btn btn-sm btn-outline-success" onclick="jbOpenSammelversandModal()" title="Alle Rechnungen für das aktive Jahr gesammelt per E-Mail versenden">
+          <i class="fas fa-paper-plane me-1"></i> Sammelversand E-Mail
         </button>
         <button class="btn btn-sm btn-outline-secondary d-flex align-items-center" onclick="jbResetYear('calculations')" title="Löscht alle Rechnungs- und Posteneinträge des aktiven Jahres und berechnet sie basierend auf den Turnierteilnahmen neu. Erfasste Teilnahmen und manuelle Gebühren-Überschreibungen (z.B. Schützenhaus) bleiben erhalten.">
           <i class="fas fa-history me-1"></i> Rechnungen zurücksetzen
@@ -55,7 +114,7 @@ function renderOverviewTab(canEdit, years) {
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-primary">
           <div class="small text-muted">Total</div>
           <div class="fs-5 fw-bold">${fmtChf(total)}</div>
-          <div class="text-muted small">${_jbData.length} Rechnungen</div>
+          <div class="text-muted small">${_jbData.length} Beiträge</div>
         </div>
       </div>
       <div class="col-6 col-md-3">
@@ -67,9 +126,9 @@ function renderOverviewTab(canEdit, years) {
       </div>
       <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-danger">
-          <div class="small text-muted">Offen</div>
+          <div class="small text-muted">Ausstehend</div>
           <div class="fs-5 fw-bold text-danger">${fmtChf(offen)}</div>
-          <div class="text-muted small">${offenCount} ausstehend</div>
+          <div class="text-muted small">${offenCount} offen (${entwurfCount} Entwurf${berechnetCount > 0 ? `, ${berechnetCount} unübertragen` : ''})</div>
         </div>
       </div>
       <div class="col-6 col-md-3">
@@ -187,7 +246,9 @@ function jbRenderRows(data) {
   tbody.innerHTML = data.map(r => {
     const m    = _jbMemberMap[String(r.PersonNumber)] || {};
     const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (r._name || r.PersonNumber);
-    const isOffen = r.status !== 'bezahlt';
+    const effStatus = jbGetEffectiveStatus(r);
+    const isPaid = effStatus === 'bezahlt';
+    const isOffen = effStatus !== 'bezahlt' && effStatus !== 'befreit';
 
     // 1. Kategorien & Junior Badges
     let katHtml = '';
@@ -225,21 +286,36 @@ function jbRenderRows(data) {
       }
     }
 
-    // 3. Status Badges
-    const statusHtml = isOffen
-      ? `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-clock me-1"></i>Offen</span>`
-      : `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>`;
+    // 3. Status Badges nach 4-Stufen-Workflow
+    let statusHtml = '';
+    if (effStatus === 'bezahlt') {
+      statusHtml = `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>`;
+    } else if (effStatus === 'versendet') {
+      statusHtml = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-paper-plane me-1"></i>Versendet</span>`;
+    } else if (effStatus === 'entwurf') {
+      statusHtml = `<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-file-invoice me-1"></i>Entwurf</span>`;
+    } else if (effStatus === 'berechnet') {
+      statusHtml = `<span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-calculator me-1"></i>Berechnet</span>`;
+    } else if (effStatus === 'teilbezahlt') {
+      statusHtml = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-adjust me-1"></i>Teilbezahlt</span>`;
+    } else {
+      statusHtml = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1.5 fw-bold text-uppercase" style="font-size: 11px;"><i class="fas fa-check me-1"></i>Befreit (0.-)</span>`;
+    }
 
-    const rowBg = isOffen ? '' : 'table-light text-muted';
-    const rowStyle = isOffen ? '' : 'style="opacity: 0.85;"';
+    const rowBg = isPaid ? 'table-light text-muted' : (effStatus === 'befreit' ? 'table-light text-muted' : '');
+    const rowStyle = (isPaid || effStatus === 'befreit') ? 'style="opacity: 0.85;"' : '';
 
     const safeName = (name || '').replace(/'/g, "\\'");
+    const isSent = effStatus === 'versendet';
 
     return `<tr class="${rowBg}" ${rowStyle}>
       <td class="align-middle py-2 tk-col-name">
         <a href="#" class="text-decoration-none fw-semibold ${isOffen ? 'text-primary' : 'text-secondary'}"
            onclick="jbShowPositionen('${r.id}'); return false;">${name}</a>
-        <div class="text-muted small" style="font-size: 11px;">${r.PersonNumber}</div>
+        <div class="text-muted small" style="font-size: 11px;">
+          ${r.PersonNumber}
+          ${r.invoiceId ? `· <span class="font-monospace text-primary">${r.invoiceId}</span>` : ''}
+        </div>
       </td>
       <td class="align-middle tk-col-kat">${katHtml}</td>
       <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'} tk-col-gesamt" style="font-size: 14px;">${fmtChf(r.Gesamt)}</td>
@@ -272,11 +348,11 @@ function jbRenderRows(data) {
 
           <!-- 2. E-MAIL VERSAND -->
           ${m.PrimaryEmail ? `
-            <button class="btn btn-xs ${r.mail_status === 'gesendet' ? 'btn-success text-white' : 'btn-outline-primary'} btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+            <button class="btn btn-xs ${isSent ? 'btn-success text-white' : 'btn-outline-primary'} btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
                     onclick="jbSendInvoiceEmailRemote('${r.id}', '${r.PersonNumber}', '${m.PrimaryEmail}')"
                     id="btn-mail-${r.id}"
-                    title="Rechnung per E-Mail senden (${r.mail_status === 'gesendet' ? 'bereits gesendet' : 'noch nicht gesendet'})" style="min-width: 32px;">
-              <i class="fas ${r.mail_status === 'gesendet' ? 'fa-envelope-open-text' : 'fa-paper-plane'}"></i>
+                    title="Rechnung per E-Mail senden (${isSent ? 'bereits versendet' : (effStatus === 'entwurf' ? 'Entwurf bereit' : 'noch nicht bereitgestellt')})" style="min-width: 32px;">
+              <i class="fas ${isSent ? 'fa-envelope-open-text' : 'fa-paper-plane'}"></i>
             </button>` : `
             <button class="btn btn-xs btn-outline-secondary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center opacity-50"
                     disabled
@@ -296,8 +372,9 @@ function jbRenderRows(data) {
     </tr>`;
   }).join('');
 
+  const openCount = data.filter(r => jbGetEffectiveStatus(r) !== 'bezahlt' && jbGetEffectiveStatus(r) !== 'befreit').length;
   document.getElementById('jbCount').textContent =
-    `${data.length} Einträge · ${data.filter(r => r.status !== 'bezahlt').length} offen`;
+    `${data.length} Einträge · ${openCount} offen`;
 
   if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
     window.TableKit.makeResizable('#jbTable', {
@@ -324,8 +401,13 @@ function jbFilter() {
     const m    = _jbMemberMap[String(r.PersonNumber)] || {};
     const name = ((m.FirstName || '') + ' ' + (m.LastName || '') + ' ' + r.PersonNumber).toLowerCase();
     const matchSearch = !search || name.includes(search);
-    const matchStatus = !status || r.status === status ||
-      (status === 'offen' && r.status !== 'bezahlt');
+    const effStatus = jbGetEffectiveStatus(r);
+    let matchStatus = !status;
+    if (status === 'offen') {
+      matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
+    } else if (status) {
+      matchStatus = effStatus === status;
+    }
     return matchSearch && matchStatus;
   });
 
@@ -368,7 +450,8 @@ async function jbShowPositionen(headerId) {
 
 function jbRenderModalContent(header, pos, m, name) {
   const modalBody = document.getElementById('jbModalBody');
-  const isPaid = header.status === 'bezahlt';
+  const effStatus = jbGetEffectiveStatus(header);
+  const isPaid = effStatus === 'bezahlt';
   const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
   const isJunior = age > 0 && age <= 20;
 
@@ -438,9 +521,15 @@ function jbRenderModalContent(header, pos, m, name) {
         <div class="text-end">
           <div class="small text-muted fw-semibold">Rechnungsbetrag</div>
           <div class="fs-3 fw-extrabold ${isPaid ? 'text-success' : 'text-danger'}">${fmtChf(header.Gesamt)}</div>
-          <span class="badge ${isPaid ? 'bg-success' : 'bg-danger'} px-2 py-1 text-uppercase" style="font-size: 10px; letter-spacing: 0.5px;">
-            <i class="fas ${isPaid ? 'fa-check-circle' : 'fa-clock'} me-1"></i>${isPaid ? 'Bezahlt' : 'Offen'}
-          </span>
+          <div class="d-flex align-items-center justify-content-end gap-1 mt-1">
+            ${effStatus === 'bezahlt' ? '<span class="badge bg-success px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>' :
+              (effStatus === 'versendet' ? '<span class="badge bg-danger px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-paper-plane me-1"></i>Versendet</span>' :
+              (effStatus === 'entwurf' ? '<span class="badge bg-warning text-dark px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-file-invoice me-1"></i>Entwurf</span>' :
+              (effStatus === 'berechnet' ? '<span class="badge bg-info text-dark px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-calculator me-1"></i>Berechnet</span>' :
+              (effStatus === 'teilbezahlt' ? '<span class="badge bg-primary px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-adjust me-1"></i>Teilbezahlt</span>' :
+              '<span class="badge bg-secondary px-2 py-1 text-uppercase" style="font-size:10px;"><i class="fas fa-check me-1"></i>Befreit</span>'))))}
+            ${header.invoiceId ? `<span class="badge bg-light text-primary border font-monospace" style="font-size:10px;" title="Verknüpfte Rechnungsnummer"><i class="fas fa-hashtag me-0.5"></i>${header.invoiceId}</span>` : `<span class="badge bg-light text-muted border" style="font-size:10px;">Keine RE</span>`}
+          </div>
         </div>
       </div>
     </div>
@@ -852,15 +941,21 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
       const invoiceOrder = {
         source: {
           module: 'jahresbeitrag',
-          id: String(r.id)
+          id: String(r.id),
+          entityId: String(r.id)
         },
+        year: Number(r.year),
+        prefix: 'JB',
+        type: 'Jahresbeitrag',
         recipient: {
           memberId: m.id || null,
           personNumber: String(r.PersonNumber || '').trim(),
           name: name,
+          firstName: m.FirstName || m.Vorname || '',
+          lastName: m.LastName || m.Nachname || '',
           salutation: m.Salutation || m.Anrede || '',
           street: m.Street || m.Strasse || '',
-          zip: m.PostCode || m.PLZ || '5037',
+          zip: String(m.PostCode || m.PLZ || '5037'),
           city: m.City || m.Ort || 'Muhen',
           email: m.PrimaryEmail || m.Email || ''
         },
@@ -873,6 +968,7 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
           quantity: p.quantity,
           unitPrice: p.unit_price,
           total: p.amount,
+          amount: p.amount,
           konto: String(p.konto || '3000').trim(),
           accountHaben: String(p.konto || '3000').trim(),
           account: String(p.konto || '3000').trim()
@@ -885,15 +981,19 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
         }
       };
 
-      const createdInv = await window.RechnungsCore.createInvoice(invoiceOrder);
-      r.invoiceId = createdInv.id;
-
-      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-      if (supa) {
-        await supa.from('contributions_header').update({ invoice_id: createdInv.id }).eq('id', r.id);
+      const createdRes = await window.RechnungsCore.createInvoice(invoiceOrder);
+      const actualInv = (createdRes && createdRes.invoice) ? createdRes.invoice : createdRes;
+      const createdId = actualInv ? (actualInv.id || actualInv.invoice_number) : null;
+      
+      if (createdId) {
+        r.invoiceId = createdId;
+        const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+        if (supa) {
+          await supa.from('contributions_header').update({ invoice_id: createdId }).eq('id', r.id);
+        }
+        console.log(`✅ [RechnungsCore] Jahresbeitrags-Rechnung ${createdId} erstellt & verknüpft.`);
+        return createdId;
       }
-      console.log(`✅ [RechnungsCore] Jahresbeitrags-Rechnung ${createdInv.id} erstellt & verknüpft.`);
-      return createdInv.id;
     } catch (coreErr) {
       console.warn("⚠️ RechnungsCore Fehler bei Jahresbeitrag, nutze Fallback:", coreErr);
     }
@@ -1185,6 +1285,72 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
   }
 }
 
+// Batch-Bereitstellung aller Rechnungen für berechnete Jahresbeiträge im RechnungsCore
+window.jbRechnungenBereitstellenBatch = async function(silent = false) {
+  // 1. Finde alle berechneten Datensätze des aktuellen Jahres, die noch keine invoiceId haben und Gesamt != 0 sind
+  const toProcess = (_jbData || []).filter(r => {
+    const hasInvoice = r.invoiceId && String(r.invoiceId).trim().length > 0;
+    const isZero = Number(r.Gesamt || 0) === 0;
+    return !hasInvoice && !isZero;
+  });
+
+  if (toProcess.length === 0) {
+    if (!silent) {
+      alert(`Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`);
+    }
+    return 0;
+  }
+
+  if (!silent) {
+    if (!confirm(`Möchten Sie für ${toProcess.length} berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?\n\nDie Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status 'Entwurf' (noch nicht an Mitglieder versendet).`)) {
+      return 0;
+    }
+  }
+
+  if (typeof showLoadingOverlay === 'function') {
+    showLoadingOverlay(`Erzeuge Rechnungsentwürfe im RechnungsCore (0 / ${toProcess.length})…`);
+  }
+
+  let createdCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < toProcess.length; i++) {
+    const r = toProcess[i];
+    const m = _jbMemberMap[String(r.PersonNumber)] || {};
+    const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (r._name || r.PersonNumber);
+    if (typeof showLoadingOverlay === 'function') {
+      showLoadingOverlay(`Erzeuge Rechnungsentwurf (${i + 1} / ${toProcess.length}): ${name}…`);
+    }
+
+    try {
+      await ensureInvoiceCreatedRemote(r, m, name);
+      createdCount++;
+    } catch (err) {
+      console.error(`❌ Fehler bei Rechnungsanlage für ${name} (${r.PersonNumber}):`, err);
+      failCount++;
+    }
+  }
+
+  if (typeof hideLoadingOverlay === 'function') {
+    hideLoadingOverlay();
+  }
+
+  // Rechnungen und Beitragsdaten neu laden
+  if (typeof loadRechnungenData === 'function') {
+    await loadRechnungenData(true, true);
+  }
+  await loadJahresbeitragData(true, false);
+
+  if (!silent) {
+    if (typeof showToast === 'function') {
+      showToast(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!${failCount > 0 ? ` (${failCount} Fehler)` : ''}`);
+    } else {
+      alert(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`);
+    }
+  }
+  return createdCount;
+};
+
 // Sammelversand für Jahresbeiträge: Öffnet das Massenversand-Modal vorselektiert mit allen Rechnungen des aktiven Jahres
 window.jbOpenSammelversandModal = async function() {
   if (typeof rnOpenMassSendModal !== 'function') {
@@ -1195,6 +1361,26 @@ window.jbOpenSammelversandModal = async function() {
   // Stelle sicher, dass die Rechnungen geladen sind
   if (typeof loadRechnungenData === 'function') {
     await loadRechnungenData(true, true);
+  }
+
+  // Pre-Flight: Prüfe, ob es berechnete Mitglieder ohne Rechnungsentwurf gibt
+  const uncreated = (_jbData || []).filter(r => {
+    const hasInvoice = r.invoiceId && String(r.invoiceId).trim().length > 0;
+    const isZero = Number(r.Gesamt || 0) === 0;
+    return !hasInvoice && !isZero;
+  });
+
+  if (uncreated.length > 0) {
+    const doCreate = confirm(
+      `Es gibt noch ${uncreated.length} berechnete Mitglieder ohne Rechnungsentwurf im RechnungsCore.\n\n` +
+      `Sollen diese jetzt automatisch als Entwurf angelegt werden, damit sie für den Sammelversand verfügbar sind?`
+    );
+    if (doCreate) {
+      await window.jbRechnungenBereitstellenBatch(true);
+      if (typeof loadRechnungenData === 'function') {
+        await loadRechnungenData(true, true);
+      }
+    }
   }
   
   // Filter auf Jahresbeitrag setzen
@@ -1207,6 +1393,10 @@ window.jbOpenSammelversandModal = async function() {
   );
   
   const jbIds = jbInvs.map(i => i.id);
+  if (jbIds.length === 0) {
+    alert(`Keine Rechnungen für das Jahr ${_jbYear} gefunden. Bitte zuerst «Beiträge berechnen» und «Rechnungen bereitstellen».`);
+    return;
+  }
   window.rnOpenMassSendModal(jbIds.length > 0 ? jbIds : []);
 };
 
@@ -1309,8 +1499,8 @@ function jbApplyTableSorting() {
       valA = Number(a.Gesamt || 0);
       valB = Number(b.Gesamt || 0);
     } else if (_jbSortCol === 'status') {
-      valA = (a.status || '').toLowerCase();
-      valB = (b.status || '').toLowerCase();
+      valA = jbGetEffectiveStatus(a).toLowerCase();
+      valB = jbGetEffectiveStatus(b).toLowerCase();
     } else if (_jbSortCol === 'date') {
       valA = a.payment_date || '';
       valB = b.payment_date || '';

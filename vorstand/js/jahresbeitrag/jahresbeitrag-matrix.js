@@ -112,9 +112,14 @@ function renderMatrixTab(canEdit, years) {
 
         <div class="col-md-3">
           <select class="form-select form-select-sm" id="jbMatrixStatusSelect" onchange="jbFilterMatrixTable()">
-            <option value="" ${_jbMatrixStatusFilter === '' ? 'selected' : ''}>Alle Status (Offen & Bezahlt)</option>
-            <option value="offen" ${_jbMatrixStatusFilter === 'offen' ? 'selected' : ''}>Nur Offene Rechnungen</option>
-            <option value="bezahlt" ${_jbMatrixStatusFilter === 'bezahlt' ? 'selected' : ''}>Nur Bezahlte Rechnungen</option>
+            <option value="" ${_jbMatrixStatusFilter === '' ? 'selected' : ''}>Alle Status</option>
+            <option value="berechnet" ${_jbMatrixStatusFilter === 'berechnet' ? 'selected' : ''}>Berechnet (Noch keine RE)</option>
+            <option value="entwurf" ${_jbMatrixStatusFilter === 'entwurf' ? 'selected' : ''}>Entwurf (RE im RechnungsCore)</option>
+            <option value="versendet" ${_jbMatrixStatusFilter === 'versendet' ? 'selected' : ''}>Versendet (Offen)</option>
+            <option value="teilbezahlt" ${_jbMatrixStatusFilter === 'teilbezahlt' ? 'selected' : ''}>Teilbezahlt</option>
+            <option value="bezahlt" ${_jbMatrixStatusFilter === 'bezahlt' ? 'selected' : ''}>Bezahlt</option>
+            <option value="befreit" ${_jbMatrixStatusFilter === 'befreit' ? 'selected' : ''}>Befreit (0 CHF)</option>
+            <option value="offen" ${_jbMatrixStatusFilter === 'offen' ? 'selected' : ''}>Ausstehend (Offen)</option>
           </select>
         </div>
 
@@ -354,7 +359,13 @@ function jbRenderMatrixTable() {
     const fullName = `${m.FirstName || ''} ${m.LastName || ''} ${pn}`.toLowerCase();
     
     const matchSearch = !search || fullName.includes(search);
-    const matchStatus = !statusFilter || r.status === statusFilter;
+    const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+    let matchStatus = true;
+    if (statusFilter === 'offen') {
+      matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
+    } else if (statusFilter) {
+      matchStatus = effStatus === statusFilter;
+    }
 
     return matchSearch && matchStatus;
   });
@@ -379,8 +390,8 @@ function jbRenderMatrixTable() {
       const gB = Number(b.Gesamt || 0);
       return _jbMatrixSortAsc ? (gA - gB) : (gB - gA);
     } else if (_jbMatrixSortCol === 'status') {
-      const sA = String(a.status || '');
-      const sB = String(b.status || '');
+      const sA = (typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(a) : (a.status || '')).toLowerCase();
+      const sB = (typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(b) : (b.status || '')).toLowerCase();
       return _jbMatrixSortAsc ? sA.localeCompare(sB) : sB.localeCompare(sA);
     } else {
       // Sortierung nach einer spezifischen Gebühr
@@ -450,7 +461,7 @@ function jbRenderMatrixTable() {
       const m = _jbMemberMap[pn] || {};
       const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (r._name || pn);
       const isSelected = _jbMatrixSelected.has(pn);
-      const isPaid = r.status === 'bezahlt';
+      const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
 
       // Positionen dieses Mitglieds
       const positions = _jbPositionsCache[r.id] || [];
@@ -463,9 +474,20 @@ function jbRenderMatrixTable() {
       });
 
       // Status Badge
-      const statusBadge = isPaid
-        ? `<span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size: 10px;">Bezahlt</span>`
-        : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5" style="font-size: 10px;">Offen</span>`;
+      let statusBadge = '';
+      if (effStatus === 'bezahlt') {
+        statusBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size: 10px;">Bezahlt</span>`;
+      } else if (effStatus === 'teilbezahlt') {
+        statusBadge = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle px-1.5 py-0.5" style="font-size: 10px;">Teilbezahlt</span>`;
+      } else if (effStatus === 'versendet') {
+        statusBadge = `<span class="badge bg-info-subtle text-info border border-info-subtle px-1.5 py-0.5" style="font-size: 10px;">Versendet</span>`;
+      } else if (effStatus === 'entwurf') {
+        statusBadge = `<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-1.5 py-0.5" style="font-size: 10px;">Entwurf</span>`;
+      } else if (effStatus === 'befreit') {
+        statusBadge = `<span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 10px;">Befreit</span>`;
+      } else {
+        statusBadge = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-1.5 py-0.5" style="font-size: 10px;">Berechnet</span>`;
+      }
 
       // Zellen für jede Gebühr
       let cellsHtml = '';
@@ -521,7 +543,13 @@ function jbCalculateMatrixTotals(rowsData, columns) {
       const m = _jbMemberMap[pn] || {};
       const fullName = `${m.FirstName || ''} ${m.LastName || ''} ${pn}`.toLowerCase();
       const matchSearch = !search || fullName.includes(search);
-      const matchStatus = !statusFilter || r.status === statusFilter;
+      const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+      let matchStatus = true;
+      if (statusFilter === 'offen') {
+        matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
+      } else if (statusFilter) {
+        matchStatus = effStatus === statusFilter;
+      }
       return matchSearch && matchStatus;
     });
   }
@@ -541,11 +569,12 @@ function jbCalculateMatrixTotals(rowsData, columns) {
   let offenCount = 0;
 
   selectedRows.forEach(r => {
+    const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
     grandTotal += Number(r.Gesamt || 0);
-    if (r.status === 'bezahlt') {
+    if (effStatus === 'bezahlt') {
       bezahltTotal += Number(r.Gesamt || 0);
       bezahltCount++;
-    } else {
+    } else if (effStatus !== 'befreit') {
       offenTotal += Number(r.Gesamt || 0);
       offenCount++;
     }
@@ -677,7 +706,12 @@ function jbMatrixSelectAll(selectAll) {
 function jbMatrixSelectStatus(status) {
   _jbMatrixSelected.clear();
   (_jbData || []).forEach(r => {
-    if (r.status === status) {
+    const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+    if (status === 'offen' && (effStatus !== 'bezahlt' && effStatus !== 'befreit')) {
+      _jbMatrixSelected.add(String(r.PersonNumber).trim());
+    } else if (status === 'bezahlt' && effStatus === 'bezahlt') {
+      _jbMatrixSelected.add(String(r.PersonNumber).trim());
+    } else if (effStatus === status) {
       _jbMatrixSelected.add(String(r.PersonNumber).trim());
     }
   });
@@ -719,7 +753,13 @@ function jbExportMatrixExcel() {
     const m = _jbMemberMap[pn] || {};
     const fullName = `${m.FirstName || ''} ${m.LastName || ''} ${pn}`.toLowerCase();
     const matchSearch = !search || fullName.includes(search);
-    const matchStatus = !statusFilter || r.status === statusFilter;
+    const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+    let matchStatus = true;
+    if (statusFilter === 'offen') {
+      matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
+    } else if (statusFilter) {
+      matchStatus = effStatus === statusFilter;
+    }
     return matchSearch && matchStatus;
   });
 
@@ -769,7 +809,7 @@ function jbExportMatrixExcel() {
       m.LastName || r._name || '',
       m.FirstName || '',
       m._kategorie || r._kategorie || 'Aktiv',
-      r.status || 'offen',
+      (typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen')).toUpperCase(),
       r.payment_date || '',
       r.payment_method || '',
       r.document_ref || ''

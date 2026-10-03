@@ -349,35 +349,48 @@ async function loadJahresbeitragData(forceReload = false, showSpinner = true) {
 // ============================================================
 
 
-// Invoices aus Rechnungen_GAS mit den Beitrags-Header-Einträgen mergen
+// Invoices aus Rechnungen mit den Beitrags-Header-Einträgen mergen
 function jbMergeInvoicesIntoData(invoices) {
   if (!invoices || !Array.isArray(invoices)) return;
   _jbData.forEach(r => {
-    r.pdf_url = '';
-    r.mail_status = 'entwurf';
-    r.invoiceId = '';
+    const existingInvId = r.invoiceId || r.invoice_id || '';
     
-    const match = invoices.find(inv => 
-      String(inv.PersonNumber).trim() === String(r.PersonNumber).trim() && 
-      Number(inv.year) === Number(r.year) && 
-      String(inv.type).toLowerCase() === 'jahresbeitrag'
-    );
+    // 1. Zuerst exakter Match über Rechnungs-ID (sofern vorhanden)
+    let match = null;
+    if (existingInvId) {
+      match = invoices.find(inv => String(inv.id).trim() === String(existingInvId).trim());
+    }
+    
+    // 2. Falls keine ID oder nicht gefunden, Match über PersonNumber, Jahr und Typ
+    if (!match) {
+      match = invoices.find(inv => 
+        String(inv.PersonNumber || inv.recipient_id || '').trim() === String(r.PersonNumber).trim() && 
+        Number(inv.year) === Number(r.year) && 
+        String(inv.type || '').toLowerCase() === 'jahresbeitrag'
+      );
+    }
     
     if (match) {
       r.pdf_url = match.pdf_url || '';
       r.mail_status = match.mail_status || 'entwurf';
       r.invoiceId = match.id || '';
+      r.invoice_id = match.id || '';
       
-      // Falls in Rechnungen_GAS bezahlt, synchronisieren wir den Status im Frontend
+      // Falls in Rechnungen bezahlt, synchronisieren wir den Status im Frontend
       if (match.status === 'bezahlt' && r.status !== 'bezahlt') {
         r.status = 'bezahlt';
         r.payment_date = match.payment_date;
         r.payment_method = match.payment_method;
         r.document_ref = match.document_ref;
       }
+    } else {
+      // Wenn kein Match in Rechnungen existiert, behalten wir dennoch eine bereits bekannte ID bei
+      r.invoiceId = existingInvId;
+      r.invoice_id = existingInvId;
     }
   });
 }
+window.jbMergeInvoicesIntoData = jbMergeInvoicesIntoData;
 
 // ============================================================
 // SWITCH TABS
