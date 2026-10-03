@@ -164,62 +164,86 @@ function renderOverviewTab(canEdit, years) {
 
 function renderOverviewModals() {
   return `
-    <!-- Modal: Zahlung -->
-    <div class="modal fade" id="jbModalZahlung" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header bg-primary text-white">
-            <h5 class="modal-title">💳 Zahlung erfassen</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    <!-- Modal: Zahlung (Globaler Modal-Standard) -->
+    <div class="modal fade" id="jbModalZahlung" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden position-relative">
+          <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+            <h5 class="modal-title fw-bold mb-0">
+              <i class="fas fa-credit-card me-2"></i>Zahlung erfassen
+            </h5>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+                <i class="fas fa-expand"></i>
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
           </div>
-          <div class="modal-body">
+          <div class="modal-body p-4">
             <input type="hidden" id="jbZahlungId">
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Mitglied</label>
-              <div class="form-control-plaintext fw-bold" id="jbZahlungName"></div>
+            <div class="card border-0 bg-light p-3 rounded-3 mb-3">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <span class="text-muted small d-block">Mitglied</span>
+                  <div class="fw-bold fs-6 text-dark" id="jbZahlungName"></div>
+                </div>
+                <div class="text-end">
+                  <span class="text-muted small d-block">Fälliger Betrag</span>
+                  <div class="fs-4 fw-extrabold text-danger" id="jbZahlungBetrag"></div>
+                </div>
+              </div>
             </div>
             <div class="mb-3">
-              <label class="form-label fw-semibold">Betrag</label>
-              <div class="form-control-plaintext text-danger fw-bold" id="jbZahlungBetrag"></div>
+              <label class="form-label fw-semibold small text-secondary">Bezahlt am *</label>
+              <input type="date" class="form-control" id="jbZahlungDatum" required>
             </div>
             <div class="mb-3">
-              <label class="form-label fw-semibold">Bezahlt am *</label>
-              <input type="date" class="form-control" id="jbZahlungDatum">
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Zahlungsmethode</label>
+              <label class="form-label fw-semibold small text-secondary">Zahlungsmethode</label>
               <select class="form-select" id="jbZahlungMethode">
-                <option>Überweisung</option>
-                <option>Bar</option>
-                <option>TWINT</option>
-                <option>E-Banking</option>
-                <option>Dauerauftrag</option>
+                <option value="Überweisung">Überweisung (Bank)</option>
+                <option value="Bar">Barzahlung</option>
+                <option value="TWINT">TWINT</option>
+                <option value="E-Banking">E-Banking</option>
+                <option value="Dauerauftrag">Dauerauftrag</option>
               </select>
             </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Belegnummer / Referenz</label>
-              <input type="text" class="form-control" id="jbZahlungBeleg" placeholder="z.B. REF-2026-001">
+            <div class="mb-2">
+              <label class="form-label fw-semibold small text-secondary">Belegnummer / Referenz</label>
+              <input type="text" class="form-control" id="jbZahlungBeleg" placeholder="z. B. REF-2026-001 oder Bankbeleg">
             </div>
           </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-            <button class="btn btn-success" onclick="jbSaveZahlung()">
-              <i class="fas fa-check"></i> Zahlung speichern
+          <div class="modal-footer bg-light border-top px-4 py-3 rounded-bottom-4 d-flex justify-content-between">
+            <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" class="btn btn-success fw-bold px-4 shadow-sm" onclick="jbSaveZahlung()">
+              <i class="fas fa-check me-1"></i> Zahlung speichern
             </button>
+          </div>
+          <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+            <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Modal: Positionen -->
-    <div class="modal fade" id="jbModalPositionen" tabindex="-1">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header bg-dark text-white">
-            <h5 class="modal-title">📋 Rechnungsdetails</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    <!-- Modal: Positionen / Rechnungs-Inspektor (Globaler Modal-Standard) -->
+    <div class="modal fade" id="jbModalPositionen" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden position-relative">
+          <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+            <h5 class="modal-title fw-bold mb-0">
+              <i class="fas fa-file-invoice-dollar me-2 text-warning"></i>Rechnungsdetails &amp; Positionen
+            </h5>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+                <i class="fas fa-expand"></i>
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
           </div>
-          <div class="modal-body" id="jbModalBody"></div>
+          <div class="modal-body p-4" id="jbModalBody"></div>
+          <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+            <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
+          </div>
         </div>
       </div>
     </div>
@@ -410,7 +434,7 @@ function jbFilter() {
 // ============================================================
 async function jbShowPositionen(headerId) {
   const modalEl = document.getElementById('jbModalPositionen');
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   
   const modalBody = document.getElementById('jbModalBody');
   modalBody.innerHTML = `
@@ -419,6 +443,12 @@ async function jbShowPositionen(headerId) {
       <p class="mt-2 text-muted">Lade Rechnungsdetails…</p>
     </div>`;
   modal.show();
+
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal(modalEl);
+  }
 
   try {
     // 1. Hole Rechnungskopf direkt aus der lokalen Liste in Memory
@@ -679,7 +709,14 @@ function jbOpenZahlung(id, name, betrag) {
   document.getElementById('jbZahlungBetrag').textContent = fmtChf(betrag);
   document.getElementById('jbZahlungDatum').value  = new Date().toISOString().split('T')[0];
   document.getElementById('jbZahlungBeleg').value  = '';
-  new bootstrap.Modal(document.getElementById('jbModalZahlung')).show();
+  const modalEl = document.getElementById('jbModalZahlung');
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal(modalEl);
+  }
 }
 
 async function jbSaveZahlung() {

@@ -95,10 +95,15 @@ function renderGebuehrenConfigModals() {
   return `
     <div class="modal fade" id="jbModalGebuehrEdit" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
-        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden position-relative">
           <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
-            <h5 class="modal-title fw-bold" id="jbModalGebuehrTitle"><i class="fas fa-sliders-h me-2"></i>Gebühr bearbeiten</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            <h5 class="modal-title fw-bold mb-0" id="jbModalGebuehrTitle"><i class="fas fa-sliders-h me-2"></i>Gebühr bearbeiten</h5>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+                <i class="fas fa-expand"></i>
+              </button>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
           </div>
           <div class="modal-body p-4">
             <!-- ⚠️ Fehler- und Hilfe-Banner bei Validierungsproblemen -->
@@ -288,6 +293,9 @@ function renderGebuehrenConfigModals() {
               </div>
 
             </form>
+          </div>
+          <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+            <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
           </div>
         </div>
       </div>
@@ -785,10 +793,12 @@ window.jbUpdateGebuehrLivePreview = jbUpdateGebuehrLivePreview;
 function jbOpenEditGebuehrModal(key) {
   const modalEl = document.getElementById('jbModalGebuehrEdit');
   if (!modalEl) return;
-  const modal = new bootstrap.Modal(modalEl);
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
 
-  if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
-    window.TableKit.setupDraggableModal('#jbModalGebuehrEdit');
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal(modalEl);
   }
 
   const titleEl = document.getElementById('jbModalGebuehrTitle');

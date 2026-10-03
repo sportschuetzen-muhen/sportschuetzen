@@ -1150,6 +1150,7 @@
     setupCollapsible,
     setupColumnToggle,
     makeResizable,
+    setupDraggableModal: makeModalMovableAndResizable,
     ensureStyles
   };
 

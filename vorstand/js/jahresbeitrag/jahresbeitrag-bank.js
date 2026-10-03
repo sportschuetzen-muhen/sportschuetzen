@@ -354,31 +354,41 @@ function jbBankShowReassignModal(txIdx) {
   let modal = document.getElementById('bankReassignModal');
   if (!modal) {
     document.body.insertAdjacentHTML('beforeend', `
-      <div class="modal fade" id="bankReassignModal" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
-          <div class="modal-content">
-            <div class="modal-header bg-dark text-white">
-              <h5 class="modal-title"><i class="fas fa-exchange-alt me-2"></i>Zahlung umbuchen</h5>
-              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      <div class="modal fade" id="bankReassignModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+          <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden position-relative">
+            <div class="modal-header bg-dark text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+              <h5 class="modal-title fw-bold mb-0">
+                <i class="fas fa-exchange-alt me-2 text-warning"></i>Zahlung umbuchen
+              </h5>
+              <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Wiederherstellen" style="opacity: 0.85; line-height: 1;">
+                  <i class="fas fa-expand"></i>
+                </button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+              </div>
             </div>
             <div class="modal-body p-0">
-              <div id="bankReassignInfo" class="px-3 pt-3 pb-2 bg-light border-bottom"></div>
+              <div id="bankReassignInfo" class="px-4 py-3 bg-light border-bottom"></div>
               <div class="table-responsive">
                 <table class="table table-hover table-sm mb-0" style="font-size:13px;">
                   <thead class="table-secondary sticky-top">
                     <tr>
-                      <th>Mitglied</th>
+                      <th class="ps-4">Mitglied</th>
                       <th class="text-end">Beitrag</th>
                       <th>Match</th>
-                      <th></th>
+                      <th class="pe-4 text-end">Aktion</th>
                     </tr>
                   </thead>
                   <tbody id="bankReassignList"></tbody>
                 </table>
               </div>
             </div>
-            <div class="modal-footer">
-              <button class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+            <div class="modal-footer bg-light border-top px-4 py-3 rounded-bottom-4 d-flex justify-content-between">
+              <button class="btn btn-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+            </div>
+            <div class="rn-modal-resizer" title="Grösse durch Ziehen verändern" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;">
+              <i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>
             </div>
           </div>
         </div>
@@ -405,9 +415,13 @@ function jbBankShowReassignModal(txIdx) {
     </div>
     <div class="mt-2 text-muted small">Top 30 Mitglieder nach Match-Score (absteigend). Vorschlag in Fettschrift.</div>`;
 
-  document.getElementById('bankReassignList').innerHTML = listHTML;
-
   bootstrap.Modal.getOrCreateInstance(modal).show();
+
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modal);
+  } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+    window.TableKit.setupDraggableModal(modal);
+  }
 }
 
 async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {

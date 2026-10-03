@@ -69,6 +69,14 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
   - Sowohl die Supabase RPC `calculate_member_contributions` (Migration 32) als auch die clientseitige Live-Berechnung `jbCalculateLiveTotal` unterstützen diesen Modus.
   - Der SSV-Import greift nicht auf Jahresbeitragstabellen zu – der Rabatt bleibt damit **100% vor Überschreibungen geschützt**.
 
+### 2.10 Einheitlicher UIModalKit-Standard für alle Dialoge & Inspektoren
+* **Problem:** Uneinheitliche Modals ohne Drag-, Resize- und Maximier-Funktionen führten auf kleineren Bildschirmen oder beim Vergleichen von Rechnungsdetails zu schlechter Usability.
+* **Lösung:** Alle Dialoge im Modul Jahresbeitrag wurden auf den globalen `UIModalKit`-Standard (`ui-table-kit.js`) gehoben:
+  - **`jbModalPositionen` (Rechnungs-Inspektor):** Frei verschiebbar per Header-Drag, stufenlos vergrösserbar/verkleinerbar via Resizer-Grip unten rechts, Fullscreen-Maximieren via Icon oder Header-Doppelklick.
+  - **`jbModalZahlung` (Zahlungserfassung):** Zentriertes Layout mit Card-Design für Fälligkeitsbetrag, Drag & Resize Unterstützung.
+  - **`jbModalGebuehrEdit` (Gebührenkonfiguration):** Vollständiges Drag & Resize mit Maximierungsmodus für die Live-Vorschau und Hilfesektionen.
+  - **`bankReassignModal` (Bankabgleich / Zahlungsumbuchung):** Grossflächiges Drag- & Resize-Modal mit fixiertem Tabellenkopf für Match-Scores.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
