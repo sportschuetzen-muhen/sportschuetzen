@@ -132,3 +132,47 @@ Die offizielle SSV-Verbandsarbeitsmappe (z. B. `SSV Mitgliederverzeichnis_200920
 * Anhand von `license_invoicing_club_number` entscheidet die Stored Procedure, ob `LI001` (CHF 18.00 bei Stammverein Muhen) oder `LI003` (CHF 0.00 informativ bei Fremdlizenz) in Rechnung gestellt wird.
 * Beim Import werden Lizenzen und Chargen dedupliziert und synchronisiert.
 
+---
+
+## 7. Frontend-Präsentation & Kennzahlen-Harmonisierung (Karten- & Tabellen-Standard)
+
+### 7.1 Klare Unterscheidung: Lizenz-Nr. (AddressNumber) vs. Personen-Nr. (PersonNumber)
+* **Lizenz-Nr. (`AddressNumber`, 6-stellig, z. B. `304720`):** Dies ist die vom SSV vergebene Lizenznummer des Schützen (auf dem physischen Schützenpass). Sie wird in der Kartenansicht und in der Tabelle prominent mit Schnellkopier-Icon (`clipboard.writeText`) zur Verfügung gestellt.
+* **SSV Personen-Nr. (`PersonNumber`, 7-stellig, z. B. `1252792`):** Dies ist die eindeutige ID des Schützen im SSV-Zentralregister.
+* **Historischer Fehler behoben:** Zuvor war die Beschriftung im Code invertiert (die 6-stellige Lizenznummer wurde als "Mitglied-Nr." und die 7-stellige Personen-ID als "Liz" tituliert). Dies wurde modulumfassend in Karten, Tabelle, Export und Modal korrigiert.
+
+### 7.2 UI-Standard: Visuelle Disziplinen- & Funktions-Badges
+* **Kartenansicht:**
+  - **Header:** Initialen-Avatar, voller Name, Wohnort (`City`), Jahrgang (`Jg. YYYY`), Altersklasse (`U21`, `Elite`, `Senior`, `Veteran`, `Seniorveteran`).
+  - **Status:** Status-Badge (`Aktiv`, `Passiv`, `Ehrenmitglied`, `Verstorben`).
+  - **Funktionen:** Direkte farbige Badges für alle aktiven Vereinsfunktionen (`👑 Präsident`, `💼 Kassier`, `🎯 Schützenmeister 50m`, `Juniorenleiter`, etc.), dauerhaft sichtbar (nicht nur im Vorstand-Filter).
+  - **Lizenzen / Disziplinen:** Konkrete Disziplinen-Badges (`G50m (A)`, `G10m (A)`, `G10m Aufl. (A)`, `G50m (B)` etc.) anstelle leerer Platzhalter.
+  - **Footer:** Lizenz-Nr. (6-stellig, fett mit 1-Klick-Kopierer), SSV-Nr., Mail, Telefon und Detail-Absprung.
+* **Tabellenansicht (TableKit):**
+  - **Spalte `Lizenz / SSV-Nr.`:** Zweizeilig: Oben fette Lizenz-Nr. mit Kopier-Button, unten dezente SSV-Nummer.
+  - **Spalte `Name`:** Name plus Wohnort in zweiter Zeile.
+  - **Spalte `Geburtsdatum`:** Schweizer Datum plus Altersklassen-Badge (`Elite`, `Senior`, `Veteran`, etc.).
+  - **Spalte `Lizenzen`:** Konkrete Disziplinen-Badges anstelle einer reinen Ziffer.
+  - **Spalte `Funktionen`:** Konkrete Chargen-Badges (auch Doppelfunktionen) anstelle einer reinen Ziffer.
+  - **Eliminierung der leeren Spalte `Kategorie`:** Die zuvor leere Spalte wurde zu Gunsten der aussagekräftigen Lizenzen- und Funktionen-Spalten bereinigt.
+
+### 7.3 Vollständige Synchronisation von `_kategorien`
+* In `ensureMitgliederLoaded` werden `members`, `member_licenses`, `member_functions` und `member_history` parallel per `Promise.all` synchron geladen.
+* Jedes Mitglied erhält sofort berechnete Attribute: `_aktiveLizenzen`, `_aktiveFunktionen`, `_kategorien`, `_kategorie`, `_altersklasse` und `_alter`.
+* Damit greifen auch die Filter in anderen Modulen (z. B. `mail.js` für 50m-/10m-Verteiler und `jahresbeitrag-overview.js`) nahtlos auf die aktiven Schiesskategorien zu.
+
+### 7.4 SSV-Altersklassen & Jahrgangsberechnung
+Die Altersklasse wird dynamisch nach den offiziellen SSV-Vorgaben anhand des Schützen-Jahrgangs (Differenz aktuelles Kalenderjahr minus Geburtsjahr) ermittelt:
+* **U21 (Nachwuchs):** Alter $\le 20$ Jahre (`bg-info-subtle`)
+* **Elite:** Alter $21 - 45$ Jahre (`bg-light`)
+* **Senior:** Alter $46 - 59$ Jahre (`bg-secondary-subtle`)
+* **Veteran:** Alter $60 - 69$ Jahre (`bg-warning-subtle`)
+* **Seniorveteran:** Alter $\ge 70$ Jahre (`bg-dark-subtle`)
+
+Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung bei Mannschaftsaufstellungen und Gruppenmeisterschaften direkt in den Karten- und Tabellenansichten.
+
+### 7.5 Schnellkopierer & Wettkampf-Workflows
+* Die 6-stellige **Lizenz-Nr.** (`AddressNumber`) ist der primäre Schlüssel für die Erfassung von Schützen in Schiesssport-Software (z. B. SIUS, SMV, SchiessenSchweiz).
+* Durch Klick auf das Kopier-Icon ($\text{📋}$) neben der Lizenznummer wird der 6-stellige Wert sofort ohne Leerzeichen in die Zwischenablage kopiert und eine Bestätigung eingeblendet.
+
+

@@ -91,7 +91,8 @@ function mglOpenDetail(pn) {
     document.getElementById('mglDetailTitle').textContent = `${m.FirstName || ''} ${m.LastName || ''} ${isDeceased ? '†' : ''}`;
 
     const stammdatenRows = [
-      ['PersonNumber', m.PersonNumber],
+      ['Lizenz-Nr.', m.AddressNumber ? String(m.AddressNumber).padStart(6, '0') : '–'],
+      ['SSV Personen-Nr.', m.PersonNumber],
       ['Anrede', m.Salutation],
       ['Vorname', m.FirstName],
       ['Nachname', m.LastName],
@@ -168,7 +169,7 @@ function mglOpenDetail(pn) {
             <div class="flex-grow-1">
               <div class="mgl-profile-name">${m.FirstName || ''} ${m.LastName || ''}</div>
               <div class="mgl-profile-meta">
-                Mitglied seit ${mitgliedSeit ? mglFmtDate(mitgliedSeit) : '–'} • Mitgliedsnummer ${m.PersonNumber || '–'}
+                Mitglied seit ${mitgliedSeit ? mglFmtDate(mitgliedSeit) : '–'} • Lizenz-Nr. ${m.AddressNumber ? String(m.AddressNumber).padStart(6, '0') : '–'} • SSV-Nr. ${m.PersonNumber || '–'}
               </div>
               <div class="mgl-badge-row">
                 ${isDeceased ? `<span class="mgl-chip gray">† Verstorben</span>` : (badgeAktiv ? `<span class="mgl-chip green">Aktiv</span>` : `<span class="mgl-chip gray">Inaktiv</span>`)}

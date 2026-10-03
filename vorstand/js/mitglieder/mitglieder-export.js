@@ -433,8 +433,8 @@ function mglBuildPresetRow(m, preset) {
   switch (preset) {
     case 'verband':
       return {
-        'Lizenz-Nr.': personNum,
-        'Mitglied-Nr.': addrNum,
+        'Lizenz-Nr.': addrNum,
+        'SSV-Personen-Nr.': personNum,
         'Nachname': m.LastName || '',
         'Vorname': m.FirstName || '',
         'Jahrgang': birthYear,
@@ -450,7 +450,7 @@ function mglBuildPresetRow(m, preset) {
 
     case 'adressen':
       return {
-        'Mitglied-Nr.': addrNum,
+        'Lizenz-Nr.': addrNum,
         'Anrede': m.Salutation || '',
         'Nachname': m.LastName || '',
         'Vorname': m.FirstName || '',
@@ -481,8 +481,8 @@ function mglBuildPresetRow(m, preset) {
 
     case 'finanzen':
       return {
-        'Mitglied-Nr.': addrNum,
-        'Lizenz-Nr.': personNum,
+        'Lizenz-Nr.': addrNum,
+        'SSV-Personen-Nr.': personNum,
         'Nachname': m.LastName || '',
         'Vorname': m.FirstName || '',
         'Status': statusStr,
@@ -497,8 +497,8 @@ function mglBuildPresetRow(m, preset) {
     case 'komplett':
     default:
       return {
-        'Mitglied-Nr.': addrNum,
-        'Lizenz-Nr.': personNum,
+        'Lizenz-Nr.': addrNum,
+        'SSV-Personen-Nr.': personNum,
         'Anrede': m.Salutation || '',
         'Nachname': m.LastName || '',
         'Vorname': m.FirstName || '',

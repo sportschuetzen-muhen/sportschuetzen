@@ -66,9 +66,36 @@ function mapMemberFromSupabase(r) {
     _istEhren: Boolean(r.is_honorary),
     _istPassiv: Boolean(r.is_passive),
     _badgeAktiv: Boolean(r.is_active) && !r.is_passive && !r.deceased,
-    _isU21: mglIsU21({ BirthDate: r.birth_date, PersonNumber: r.person_number })
+    _isU21: mglIsU21({ BirthDate: r.birth_date, PersonNumber: r.person_number }),
+    _altersklasse: mglCalcAltersklasse(r.birth_date),
+    _alter: mglCalcAge(r.birth_date)
   };
 }
+
+// Ermittelt das Alter einer Person
+function mglCalcAge(birthDate) {
+  if (!birthDate) return null;
+  const d = new Date(birthDate);
+  if (isNaN(d.getTime())) return null;
+  const currentYear = new Date().getFullYear();
+  return currentYear - d.getFullYear();
+}
+window.mglCalcAge = mglCalcAge;
+
+// Ermittelt die Altersklasse (U21, Elite, Senior, Veteran, Seniorveteran)
+function mglCalcAltersklasse(birthDate) {
+  if (!birthDate) return '';
+  const d = new Date(birthDate);
+  if (isNaN(d.getTime())) return '';
+  const currentYear = new Date().getFullYear();
+  const age = currentYear - d.getFullYear();
+  if (age <= 20) return 'U21';
+  if (age < 46) return 'Elite';
+  if (age < 60) return 'Senior';
+  if (age < 70) return 'Veteran';
+  return 'Seniorveteran';
+}
+window.mglCalcAltersklasse = mglCalcAltersklasse;
 
 // Ermittelt ob ein Mitglied gemäss SSV-Definition der Alterskategorie U21 (Jugend/Junioren) angehört
 function mglIsU21(m) {
@@ -151,91 +178,94 @@ window.ensureMitgliederLoaded = async function(forceReload = false) {
         throw new Error('Supabase Client nicht initialisiert.');
       }
 
-      console.log("⚡ ensureMitgliederLoaded: Lade Mitglieder blitzschnell aus Supabase...");
-      const { data: supaMembers, error: supaErr } = await supa
-        .from('members')
-        .select('*')
-        .order('last_name', { ascending: true });
+      console.log("⚡ ensureMitgliederLoaded: Lade Mitglieder, Lizenzen und Funktionen blitzschnell aus Supabase...");
+      const [
+        { data: supaMembers, error: supaErr },
+        { data: lics, error: licErr },
+        { data: fns, error: fnErr },
+        { data: hists, error: histErr }
+      ] = await Promise.all([
+        supa.from('members').select('*').order('last_name', { ascending: true }),
+        supa.from('member_licenses').select('*'),
+        supa.from('member_functions').select('*'),
+        supa.from('member_history').select('*').order('datum', { ascending: false }).limit(500)
+      ]);
 
-      if (supaErr) {
-        throw supaErr;
+      if (supaErr) throw supaErr;
+      if (licErr) console.warn('member_licenses load error:', licErr);
+      if (fnErr) console.warn('member_functions load error:', fnErr);
+      if (histErr) console.warn('member_history load error:', histErr);
+
+      // Detail-Caches aufbauen
+      window._mglLizenzenCache = {};
+      if (Array.isArray(lics)) {
+        lics.forEach(l => {
+          const pn = String(l.person_number || '').trim();
+          if (pn) {
+            if (!window._mglLizenzenCache[pn]) window._mglLizenzenCache[pn] = [];
+            window._mglLizenzenCache[pn].push(mapLicenseFromSupabase(l));
+          }
+        });
+      }
+
+      window._mglFunktionenCache = {};
+      if (Array.isArray(fns)) {
+        fns.forEach(f => {
+          const pn = String(f.person_number || '').trim();
+          if (pn) {
+            if (!window._mglFunktionenCache[pn]) window._mglFunktionenCache[pn] = [];
+            window._mglFunktionenCache[pn].push(mapFunctionFromSupabase(f));
+          }
+        });
+      }
+
+      window._mglHistoryCache = {};
+      if (Array.isArray(hists)) {
+        hists.forEach(h => {
+          const pn = String(h.person_number || '').trim();
+          if (pn) {
+            if (!window._mglHistoryCache[pn]) window._mglHistoryCache[pn] = [];
+            window._mglHistoryCache[pn].push(h);
+          }
+        });
       }
 
       const list = Array.isArray(supaMembers) ? supaMembers : [];
       window._mglData = list.map(mapMemberFromSupabase);
 
-      if (list.length > 0) {
-        // Parallel Lizenzen und Funktionen im Hintergrund laden
-        (async () => {
-          try {
-            const [{ data: lics }, { data: fns }, { data: hists }] = await Promise.all([
-              supa.from('member_licenses').select('*'),
-              supa.from('member_functions').select('*'),
-              supa.from('member_history').select('*').order('datum', { ascending: false }).limit(500)
-            ]);
+      // Datenanreicherung (Lizenzen, Funktionen, Kategorien, Altersklasse)
+      window._mglData.forEach(m => {
+        const pn = String(m.PersonNumber);
+        const mLics = window._mglLizenzenCache[pn] || [];
+        const mFns = window._mglFunktionenCache[pn] || [];
 
-            if (Array.isArray(lics)) {
-              window._mglLizenzenCache = {};
-              lics.forEach(l => {
-                const pn = String(l.person_number || '').trim();
-                if (pn) {
-                  if (!window._mglLizenzenCache[pn]) window._mglLizenzenCache[pn] = [];
-                  window._mglLizenzenCache[pn].push(mapLicenseFromSupabase(l));
-                }
-              });
-            }
+        m._lizenzen = mLics;
+        m._funktionen = mFns;
 
-            if (Array.isArray(fns)) {
-              window._mglFunktionenCache = {};
-              fns.forEach(f => {
-                const pn = String(f.person_number || '').trim();
-                if (pn) {
-                  if (!window._mglFunktionenCache[pn]) window._mglFunktionenCache[pn] = [];
-                  window._mglFunktionenCache[pn].push(mapFunctionFromSupabase(f));
-                }
-              });
-            }
+        m._aktiveLizenzen = mLics.filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
+        m._aktiveFunktionen = mFns.filter(f => !f.OfficialFunctionExitDate);
 
-            if (Array.isArray(hists)) {
-              window._mglHistoryCache = {};
-              hists.forEach(h => {
-                const pn = String(h.person_number || '').trim();
-                if (pn) {
-                  if (!window._mglHistoryCache[pn]) window._mglHistoryCache[pn] = [];
-                  window._mglHistoryCache[pn].push(h);
-                }
-              });
-            }
+        m._aktiveLizenzenCount = m._aktiveLizenzen.length;
+        m._aktiveFunktionenCount = m._aktiveFunktionen.length;
 
-            // Enrichment-Counts für Badges direkt auf _mglData anheften
-            window._mglData.forEach(m => {
-              const pn = String(m.PersonNumber);
-              const mLics = window._mglLizenzenCache[pn] || [];
-              const mFns = window._mglFunktionenCache[pn] || [];
-              m._aktiveLizenzenCount = mLics.filter(l => l.IsActive && !l.ExitDate).length;
-              m._aktiveFunktionenCount = mFns.filter(f => !f.OfficialFunctionExitDate).length;
-            });
-
-            if (window.AppCache) {
-              window.AppCache.set('mitglieder', {
-                data: window._mglData,
-                lizenzen: window._mglLizenzenCache,
-                funktionen: window._mglFunktionenCache,
-                historie: window._mglHistoryCache
-              }, 120);
-            }
-          } catch (bgErr) {
-            console.warn('⚠️ Supabase Detail-Cache Hintergrundfehler:', bgErr);
-          }
-        })();
-      } else {
-        // Leere Datenbank (z.B. vor dem initialen Verbandsimport)
-        window._mglLizenzenCache = {};
-        window._mglFunktionenCache = {};
-        window._mglHistoryCache = {};
-        if (window.AppCache) {
-          window.AppCache.invalidate('mitglieder');
+        // _kategorien für andere Module & Badges befüllen
+        const kats = m._aktiveLizenzen.map(l => l.MembershipCategory).filter(Boolean);
+        if (kats.length === 0) {
+          if (m._istEhren) kats.push('Ehrenmitglied');
+          else if (m._istPassiv) kats.push('Passiv');
+          else if (m.IsActive) kats.push('Aktiv');
         }
+        m._kategorien = kats;
+        m._kategorie = kats.join(', ');
+      });
+
+      if (window.AppCache) {
+        window.AppCache.set('mitglieder', {
+          data: window._mglData,
+          lizenzen: window._mglLizenzenCache,
+          funktionen: window._mglFunktionenCache,
+          historie: window._mglHistoryCache
+        }, 120);
       }
 
       window.dispatchEvent(new CustomEvent('mitglieder-loaded', { detail: window._mglData }));

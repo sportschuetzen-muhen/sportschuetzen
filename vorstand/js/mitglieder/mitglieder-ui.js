@@ -282,6 +282,82 @@ function mglKatBadge(kat) {
   return `<span class="badge bg-secondary">${kat}</span>`;
 }
 
+function mglFormatLicenseBadge(licOrCat) {
+  const cat = typeof licOrCat === 'string' ? licOrCat : (licOrCat?.MembershipCategory || licOrCat?.membership_category || '');
+  if (!cat) return '';
+
+  const isB = /aktiv-b/i.test(cat) || licOrCat?.LicenseCategory === 'B';
+  const isAuflage = /auflage/i.test(cat);
+  const is50m = /50m/i.test(cat);
+  const is10m = /10m/i.test(cat);
+
+  let label = '';
+  let badgeClass = '';
+
+  if (is50m && isAuflage) {
+    label = `G50m Aufl.${isB ? ' (B)' : ' (A)'}`;
+    badgeClass = 'bg-primary-subtle text-primary-emphasis border border-primary-subtle';
+  } else if (is50m) {
+    label = `G50m${isB ? ' (B)' : ' (A)'}`;
+    badgeClass = isB ? 'bg-info-subtle text-info-emphasis border border-info-subtle' : 'bg-primary text-white';
+  } else if (is10m && isAuflage) {
+    label = `G10m Aufl.${isB ? ' (B)' : ' (A)'}`;
+    badgeClass = 'bg-warning-subtle text-warning-emphasis border border-warning-subtle';
+  } else if (is10m) {
+    label = `G10m${isB ? ' (B)' : ' (A)'}`;
+    badgeClass = isB ? 'bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle' : 'bg-info text-dark';
+  } else {
+    label = cat;
+    badgeClass = 'bg-light text-dark border';
+  }
+
+  return `<span class="badge ${badgeClass} font-monospace" style="font-size: 0.72rem; padding: 3px 6px;" title="${escapeHtml(cat)}">${escapeHtml(label)}</span>`;
+}
+window.mglFormatLicenseBadge = mglFormatLicenseBadge;
+
+function mglFormatFunctionBadge(fn) {
+  const name = typeof fn === 'string' ? fn : (fn?.OfficialFunctionCategory || fn?.official_function_category || '');
+  if (!name) return '';
+
+  let icon = 'fas fa-briefcase';
+  let badgeClass = 'bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle';
+
+  if (/präsident/i.test(name) && !/vize/i.test(name)) {
+    icon = 'fas fa-crown';
+    badgeClass = 'bg-warning text-dark border border-warning shadow-xs';
+  } else if (/vize/i.test(name)) {
+    icon = 'fas fa-user-tie';
+    badgeClass = 'bg-warning-subtle text-warning-emphasis border border-warning-subtle';
+  } else if (/kassier/i.test(name)) {
+    icon = 'fas fa-coins';
+    badgeClass = 'bg-success-subtle text-success-emphasis border border-success-subtle';
+  } else if (/schützenmeister/i.test(name)) {
+    icon = 'fas fa-crosshairs';
+    badgeClass = 'bg-primary-subtle text-primary-emphasis border border-primary-subtle';
+  } else if (/junior/i.test(name) || /leiter/i.test(name)) {
+    icon = 'fas fa-graduation-cap';
+    badgeClass = 'bg-info-subtle text-info-emphasis border border-info-subtle';
+  } else if (/verwalter/i.test(name) || /aktuar/i.test(name)) {
+    icon = 'fas fa-address-book';
+    badgeClass = 'bg-info-subtle text-info-emphasis border border-info-subtle';
+  }
+
+  return `<span class="badge ${badgeClass}" style="font-size: 0.72rem; padding: 3px 7px;" title="${escapeHtml(name)}"><i class="${icon} me-1"></i>${escapeHtml(name)}</span>`;
+}
+window.mglFormatFunctionBadge = mglFormatFunctionBadge;
+
+function mglAltersklasseBadge(m) {
+  const altersklasse = m._altersklasse || (typeof mglCalcAltersklasse === 'function' ? mglCalcAltersklasse(m.BirthDate) : '');
+  if (!altersklasse) return '';
+  if (altersklasse === 'U21') return '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle" style="font-size:0.68rem;" title="Nachwuchs / U21">U21</span>';
+  if (altersklasse === 'Elite') return '<span class="badge bg-light text-secondary border border-light-subtle" style="font-size:0.68rem;" title="Elite (21-45 Jahre)">Elite</span>';
+  if (altersklasse === 'Senior') return '<span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle" style="font-size:0.68rem;" title="Senior (46-59 Jahre)">Senior</span>';
+  if (altersklasse === 'Veteran') return '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size:0.68rem;" title="Veteran (60-69 Jahre)">Veteran</span>';
+  if (altersklasse === 'Seniorveteran') return '<span class="badge bg-dark-subtle text-dark-emphasis border border-dark-subtle" style="font-size:0.68rem;" title="Seniorveteran (ab 70 Jahre)">Seniorveteran</span>';
+  return '';
+}
+window.mglAltersklasseBadge = mglAltersklasseBadge;
+
 function mglRenderAnalyse(data) {
   const isTrue = val => val === true || val === 1 || val === '1' || String(val).toLowerCase() === 'ja' || String(val).toLowerCase() === 'true';
 

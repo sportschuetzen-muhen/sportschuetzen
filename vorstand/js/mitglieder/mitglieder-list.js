@@ -52,8 +52,8 @@ function mglRenderListe(data) {
       <div class="d-flex align-items-center gap-1">
         <select class="form-select form-select-sm" style="width:145px" id="mglSortField" onchange="mglSortChange()">
           <option value="LastName" ${window._mglSort.field === 'LastName' ? 'selected' : ''}>Name</option>
-          <option value="AddressNumber" ${window._mglSort.field === 'AddressNumber' ? 'selected' : ''}>Mitglied-Nr.</option>
-          <option value="PersonNumber" ${window._mglSort.field === 'PersonNumber' ? 'selected' : ''}>Lizenz-Nr.</option>
+          <option value="AddressNumber" ${window._mglSort.field === 'AddressNumber' ? 'selected' : ''}>Lizenz-Nr.</option>
+          <option value="PersonNumber" ${window._mglSort.field === 'PersonNumber' ? 'selected' : ''}>SSV Personen-Nr.</option>
           <option value="BirthDate" ${window._mglSort.field === 'BirthDate' ? 'selected' : ''}>Geburtsdatum</option>
           <option value="_mitgliedsjahre" ${window._mglSort.field === '_mitgliedsjahre' ? 'selected' : ''}>Mitgliedsjahre</option>
           <option value="_aktiveLizenzenCount" ${window._mglSort.field === '_aktiveLizenzenCount' ? 'selected' : ''}>Anzahl Lizenzen</option>
@@ -201,12 +201,11 @@ function mglRenderRows(data) {
               <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px; z-index: 10;">
                 <tr>
                   <th data-col-id="idx" data-col-name="#" class="tk-col-idx py-2 text-center" style="width: 44px; min-width: 40px; max-width: 50px;">#</th>
-                  <th data-col-id="nr" data-col-name="Nr. / Lizenz" class="mgl-clickable-sort tk-col-nr py-2" onclick="mglSetSort('AddressNumber')" style="cursor: pointer; user-select: none;">Nr. / Lizenz <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
+                  <th data-col-id="nr" data-col-name="Lizenz / SSV-Nr." class="mgl-clickable-sort tk-col-nr py-2" onclick="mglSetSort('AddressNumber')" style="cursor: pointer; user-select: none;">Lizenz / SSV-Nr. <span class="mgl-sort-ind">${mglSortIndicator('AddressNumber')}</span></th>
                   <th data-col-id="name" data-col-name="Name" class="mgl-clickable-sort tk-col-name py-2" onclick="mglSetSort('LastName')" style="cursor: pointer; user-select: none;">Name <span class="mgl-sort-ind">${mglSortIndicator('LastName')}</span></th>
                   <th data-col-id="geburt" data-col-name="Geburtsdatum" class="mgl-clickable-sort tk-col-geburt py-2" onclick="mglSetSort('BirthDate')" style="cursor: pointer; user-select: none;">Geburtsdatum <span class="mgl-sort-ind">${mglSortIndicator('BirthDate')}</span></th>
                   <th data-col-id="email" data-col-name="E-Mail" class="tk-col-email py-2">E-Mail</th>
                   <th data-col-id="telefon" data-col-name="Telefon" class="tk-col-telefon py-2">Telefon</th>
-                  <th data-col-id="kategorie" data-col-name="Kategorie" class="mgl-clickable-sort tk-col-kategorie py-2" onclick="mglSetSort('_kategorie')" style="cursor: pointer; user-select: none;">Kategorie <span class="mgl-sort-ind">${mglSortIndicator('_kategorie')}</span></th>
                   <th data-col-id="lizenzen" data-col-name="Lizenzen" class="mgl-clickable-sort tk-col-lizenzen py-2" onclick="mglSetSort('_aktiveLizenzenCount')" style="cursor: pointer; user-select: none;">Lizenzen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveLizenzenCount')}</span></th>
                   <th data-col-id="funktionen" data-col-name="Funktionen" class="mgl-clickable-sort tk-col-funktionen py-2" onclick="mglSetSort('_aktiveFunktionenCount')" style="cursor: pointer; user-select: none;">Funktionen <span class="mgl-sort-ind">${mglSortIndicator('_aktiveFunktionenCount')}</span></th>
                   <th data-col-id="status" data-col-name="Status" class="tk-col-status py-2">Status</th>
@@ -216,58 +215,66 @@ function mglRenderRows(data) {
               <tbody id="mglTableBody">
                 ${data.map((m, idx) => {
                   const statusBadge = mglStatusBadge(m);
-                  const katBadge = (m._kategorien && m._kategorien.length > 0) 
-                    ? m._kategorien.map(k => mglKatBadge(k)).join(' ') 
-                    : mglKatBadge(m._kategorie || '');
-                  const aktiveLiz = Number(m._aktiveLizenzenCount || 0);
-                  const aktiveFn = Number(m._aktiveFunktionenCount || 0);
                   const pn = escapeHtml(m.PersonNumber || '');
                   const name = escapeHtml((m.FirstName || '') + ' ' + (m.LastName || ''));
                   const email = escapeHtml(m.PrimaryEmail || '–');
                   const phone = escapeHtml(m.PrivateMobilePhone || m.BusinessMobilePhone || '–');
+                  const city = escapeHtml(m.City || '');
 
                   const addrNum = String(m.AddressNumber || '').padStart(6, '0');
                   const birthDateStr = mglFmtDate(m.BirthDate);
-                  const copyIcon = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(pn)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(pn)}'); event.stopPropagation();" title="Lizenznummer kopieren"></i>`;
+                  const altersBadge = typeof mglAltersklasseBadge === 'function' ? mglAltersklasseBadge(m) : '';
 
-                  // Vorstand Funktionen anzeigen
-                  let fnHtml = '';
-                  if (window._mglFilterType === 'vorstand') {
-                    const activeFns = (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
-                    const fnList = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
-                    if (fnList) {
-                      fnHtml = `<div class="text-primary small mt-1" style="font-size:0.75rem;"><i class="fas fa-briefcase me-1"></i>${escapeHtml(fnList)}</div>`;
-                    }
-                  }
+                  const copyIconLiz = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(addrNum)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(addrNum)}'); event.stopPropagation();" title="Lizenznummer (${escapeJs(addrNum)}) kopieren"></i>`;
+
+                  // Aktive Lizenzen
+                  const activeLics = m._aktiveLizenzen || (window._mglLizenzenCache?.[pn] || []).filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
+                  const licBadgesHtml = activeLics.length > 0 
+                    ? activeLics.map(l => typeof mglFormatLicenseBadge === 'function' ? mglFormatLicenseBadge(l) : l.MembershipCategory).join(' ') 
+                    : '<span class="text-muted small">–</span>';
+
+                  // Aktive Funktionen
+                  const activeFns = m._aktiveFunktionen || (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+                  const fnBadgesHtml = activeFns.length > 0 
+                    ? activeFns.map(f => typeof mglFormatFunctionBadge === 'function' ? mglFormatFunctionBadge(f) : f.OfficialFunctionCategory).join(' ') 
+                    : '<span class="text-muted small">–</span>';
 
                   return `<tr>
                     <td class="small text-muted text-center tk-col-idx font-monospace" style="font-size:0.8rem">${idx + 1}</td>
                     <td class="small tk-col-nr">
-                      <div class="fw-bold text-dark font-monospace" style="font-size:0.9rem">${addrNum}</div>
-                      <div class="text-muted small d-flex align-items-center mt-1" style="font-size:0.75rem">
-                        <span class="font-monospace">Liz: ${pn}</span>
-                        ${copyIcon}
+                      <div class="d-flex align-items-center">
+                        <span class="fw-bold text-dark font-monospace" style="font-size:0.88rem">${addrNum}</span>
+                        ${copyIconLiz}
+                      </div>
+                      <div class="text-muted small font-monospace mt-1" style="font-size:0.72rem">
+                        <span>SSV: ${pn}</span>
                       </div>
                     </td>
                     <td class="tk-col-name">
-                      <a href="#" class="text-decoration-none fw-semibold"
+                      <a href="#" class="text-decoration-none fw-semibold text-dark"
                          onclick="mglOpenDetail('${pn}'); return false;">
                         ${name}
                       </a>
+                      ${city ? `<div class="text-muted small" style="font-size: 0.74rem;"><i class="fas fa-location-dot me-1 text-muted opacity-50"></i>${city}</div>` : ''}
                       ${(m.Vereinsaustritt && window._mglFilterType === 'inaktiv') ? `<div class="text-danger small mt-1" style="font-size:0.75rem;"><i class="fas fa-sign-out-alt me-1"></i>Austritt: ${mglFmtDate(m.Vereinsaustritt)}</div>` : ''}
                       ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
-                      ${fnHtml}
                     </td>
-                    <td class="small text-nowrap tk-col-geburt">${birthDateStr}</td>
+                    <td class="small text-nowrap tk-col-geburt">
+                      <div>${birthDateStr}</div>
+                      ${altersBadge ? `<div class="mt-1">${altersBadge}</div>` : ''}
+                    </td>
                     <td class="small tk-col-email">${email}</td>
                     <td class="small tk-col-telefon">${phone}</td>
-                    <td class="tk-col-kategorie">${katBadge}</td>
-                    <td class="tk-col-lizenzen"><span class="badge bg-primary">${aktiveLiz}</span></td>
-                    <td class="tk-col-funktionen"><span class="badge bg-info text-dark">${aktiveFn}</span></td>
+                    <td class="tk-col-lizenzen">
+                      <div class="d-flex flex-wrap gap-1">${licBadgesHtml}</div>
+                    </td>
+                    <td class="tk-col-funktionen">
+                      <div class="d-flex flex-wrap gap-1">${fnBadgesHtml}</div>
+                    </td>
                     <td class="tk-col-status">${statusBadge}</td>
                     <td class="text-nowrap text-end tk-col-actions">
                       <button class="btn btn-outline-primary btn-sm py-0 px-2"
-                              onclick="mglOpenDetail('${pn}')">
+                              onclick="mglOpenDetail('${pn}')" title="Details öffnen">
                         <i class="fas fa-eye"></i>
                       </button>
                       ${canEdit ? `
@@ -309,26 +316,26 @@ function mglRenderRows(data) {
       <div class="row g-3">
         ${data.map(m => {
           const statusBadge = mglStatusBadge(m);
-          const katBadges = (m._kategorien && m._kategorien.length > 0) 
-            ? m._kategorien.map(k => mglKatBadge(k)).join(' ') 
-            : mglKatBadge(m._kategorie || '');
-          
           const pn = escapeHtml(m.PersonNumber || '');
           const name = escapeHtml((m.FirstName || '') + ' ' + (m.LastName || ''));
           const email = escapeHtml(m.PrimaryEmail || '');
           const phone = escapeHtml(m.PrivateMobilePhone || m.BusinessMobilePhone || '');
+          const city = escapeHtml(m.City || '');
           const initials = `${(m.FirstName || '').charAt(0)}${(m.LastName || '').charAt(0)}`.trim() || '??';
           const addrNum = String(m.AddressNumber || '').padStart(6, '0');
 
-          // Vorstand Funktionen anzeigen
-          let fnHtml = '';
-          if (window._mglFilterType === 'vorstand') {
-            const activeFns = (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
-            const fnList = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
-            if (fnList) {
-              fnHtml = `<div class="text-primary small mt-1" style="font-size:0.75rem;"><i class="fas fa-briefcase me-1"></i>${escapeHtml(fnList)}</div>`;
-            }
-          }
+          const birthYear = m.BirthDate ? new Date(m.BirthDate).getFullYear() : null;
+          const altersBadge = typeof mglAltersklasseBadge === 'function' ? mglAltersklasseBadge(m) : '';
+
+          // Aktive Funktionen
+          const activeFns = m._aktiveFunktionen || (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+          const fnBadgesHtml = activeFns.map(f => typeof mglFormatFunctionBadge === 'function' ? mglFormatFunctionBadge(f) : f.OfficialFunctionCategory).join(' ');
+
+          // Aktive Lizenzen
+          const activeLics = m._aktiveLizenzen || (window._mglLizenzenCache?.[pn] || []).filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
+          const licBadgesHtml = activeLics.length > 0 
+            ? activeLics.map(l => typeof mglFormatLicenseBadge === 'function' ? mglFormatLicenseBadge(l) : l.MembershipCategory).join(' ') 
+            : '<span class="badge bg-light text-muted border border-light-subtle small fw-normal" style="font-size: 0.7rem;">Keine Lizenz</span>';
 
           const emailBtn = email 
             ? `<a href="mailto:${email}" class="btn btn-sm btn-light border rounded-circle flex-shrink-0" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;" title="${email}" onclick="event.stopPropagation();">
@@ -340,7 +347,7 @@ function mglRenderRows(data) {
                 <i class="fas fa-phone text-muted"></i>
                </a>` 
             : '';
-          const copyIcon = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(pn)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(pn)}'); event.stopPropagation();" title="Lizenznummer kopieren"></i>`;
+          const copyIconLiz = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(addrNum)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(addrNum)}'); event.stopPropagation();" title="Lizenznummer (${escapeJs(addrNum)}) kopieren"></i>`;
 
           return `
             <div class="col-sm-6 col-md-4 col-lg-3">
@@ -353,12 +360,13 @@ function mglRenderRows(data) {
                     </div>
                     <div class="overflow-hidden flex-grow-1">
                       <div class="fw-bold text-dark text-truncate" style="font-size: 0.95rem;" title="${name}">${name}</div>
-                      <div class="text-muted small font-monospace d-flex align-items-center mt-1" style="font-size: 0.72rem;">
-                        <span>Nr: ${addrNum}</span>
+                      <div class="text-muted small d-flex flex-wrap align-items-center gap-1 mt-1" style="font-size: 0.72rem;">
+                        ${city ? `<span class="text-secondary"><i class="fas fa-location-dot me-1 text-muted opacity-50"></i>${city}</span>` : ''}
+                        ${birthYear && !isNaN(birthYear) ? `<span class="text-muted">· Jg. ${birthYear}</span>` : ''}
+                        ${altersBadge}
                       </div>
                       ${(m.Vereinsaustritt && window._mglFilterType === 'inaktiv') ? `<div class="text-danger small mt-1" style="font-size:0.75rem;"><i class="fas fa-sign-out-alt me-1"></i>Austritt: ${mglFmtDate(m.Vereinsaustritt)}</div>` : ''}
                       ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
-                      ${fnHtml}
                     </div>
                   </div>
 
@@ -366,19 +374,34 @@ function mglRenderRows(data) {
                     ${statusBadge}
                   </div>
 
-                  <div class="mb-3 d-flex flex-wrap gap-1" style="min-height: 24px;">
-                    ${katBadges}
+                  <!-- Funktionen (falls vorhanden) -->
+                  ${activeFns.length > 0 ? `
+                  <div class="d-flex flex-wrap gap-1 mb-2">
+                    ${fnBadgesHtml}
+                  </div>` : ''}
+
+                  <!-- Lizenzen / Disziplinen -->
+                  <div class="mb-3 d-flex flex-wrap gap-1 align-items-center" style="min-height: 24px;">
+                    ${licBadgesHtml}
                   </div>
 
+                  <!-- Footer: Lizenz-Nr, SSV-Nr & Aktionen -->
                   <div class="mt-auto pt-2 border-top d-flex align-items-center justify-content-between">
-                    <div class="small text-muted font-monospace" style="font-size: 0.72rem;">
-                      <span>Liz: ${pn}</span>
-                      ${copyIcon}
+                    <div class="d-flex flex-column font-monospace" style="font-size: 0.72rem; line-height: 1.35;">
+                      <div class="d-flex align-items-center">
+                        <span class="text-muted me-1" style="font-size:0.68rem;">Lizenz:</span>
+                        <span class="fw-bold text-dark">${addrNum}</span>
+                        ${copyIconLiz}
+                      </div>
+                      <div class="d-flex align-items-center text-muted" style="font-size: 0.68rem;">
+                        <span class="me-1">SSV:</span>
+                        <span>${pn}</span>
+                      </div>
                     </div>
                     <div class="d-flex gap-1">
                       ${emailBtn}
                       ${phoneBtn}
-                      <button class="btn btn-sm btn-primary rounded-circle" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;" onclick="mglOpenDetail('${pn}'); event.stopPropagation();">
+                      <button class="btn btn-sm btn-primary rounded-circle" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;" onclick="mglOpenDetail('${pn}'); event.stopPropagation();" title="Details öffnen">
                         <i class="fas fa-chevron-right" style="font-size: 0.8rem;"></i>
                       </button>
                     </div>
@@ -476,7 +499,7 @@ function mglFilter() {
 
   // Spaltensortierungsanzeigen aktualisieren (falls Tabellenansicht)
   if (window._mglViewMode === 'table') {
-    ['AddressNumber', 'LastName', 'BirthDate', '_kategorie', '_aktiveLizenzenCount', '_aktiveFunktionenCount'].forEach(field => {
+    ['AddressNumber', 'LastName', 'BirthDate', '_aktiveLizenzenCount', '_aktiveFunktionenCount'].forEach(field => {
       const el = document.querySelector(`[onclick="mglSetSort('${field}')"] .mgl-sort-ind`);
       if (el) el.textContent = mglSortIndicator(field);
     });
