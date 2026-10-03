@@ -29,6 +29,7 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 │          - Mitglieder & SSV    ──► docs/MITGLIEDER_UND_SSV.md               │
 │          - Buchhaltung & Bank  ──► docs/FINANZBUCHHALTUNG_UND_BANK.md       │
 │          - Vermietung          ──► docs/VERMIETUNG_SCHUETZENSTUBE.md        │
+│          - Mail-Verteiler      ──► docs/MAIL_VERTEILER.md                   │
 │          - Datenbank / Schema  ──► docs/SUPABASE_ARCHITECTURE.md            │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
@@ -73,4 +74,5 @@ Nach jeder vorgenommenen Code- oder Schemaänderung gilt:
 | **Mitglieder & SSV** | [`docs/MITGLIEDER_UND_SSV.md`](MITGLIEDER_UND_SSV.md) | Browser-native SheetJS Diff-Engine, Quellschutz für Ehrenmitglieder, `member_history` Audit. |
 | **Finanzbuchhaltung** | [`docs/FINANZBUCHHALTUNG_UND_BANK.md`](FINANZBUCHHALTUNG_UND_BANK.md) | Schweizer KMU-Kontenrahmen, doppelter Buchungssatz bei Rechnungen, CAMT.054 XML-Matching, `BIGSERIAL` Belegnummern. |
 | **Vermietung** | [`docs/VERMIETUNG_SCHUETZENSTUBE.md`](VERMIETUNG_SCHUETZENSTUBE.md) | Status-Maschine mit `rental_status_logs`, dynamische Klauseln 1–8, Google Calendar als reine Leseanzeige. |
+| **Mail-Verteiler** | [`docs/MAIL_VERTEILER.md`](MAIL_VERTEILER.md) | Ad-hoc Empfängerauswahl, Adresskaskade (`primary`/`additional`), BCC-Datenschutz, Abgrenzung zur Mail-Engine. |
 | **Datenbank-Schema** | [`docs/SUPABASE_ARCHITECTURE.md`](SUPABASE_ARCHITECTURE.md) | Aktive PostgreSQL Tabellen, Fremdschlüssel und Row Level Security (RLS) Policies. |

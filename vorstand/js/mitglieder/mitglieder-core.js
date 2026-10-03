@@ -65,6 +65,7 @@ function mapMemberFromSupabase(r) {
     synced_at: r.synced_at,
     _istEhren: Boolean(r.is_honorary),
     _istPassiv: Boolean(r.is_passive),
+    _istVorstand: false,
     _badgeAktiv: Boolean(r.is_active) && !r.is_passive && !r.deceased,
     _isU21: mglIsU21({ BirthDate: r.birth_date, PersonNumber: r.person_number }),
     _altersklasse: mglCalcAltersklasse(r.birth_date),
@@ -274,6 +275,7 @@ window.ensureMitgliederLoaded = async function(forceReload = false) {
 
         m._aktiveLizenzenCount = m._aktiveLizenzen.length;
         m._aktiveFunktionenCount = m._aktiveFunktionen.length;
+        m._istVorstand = Number(m._aktiveFunktionenCount || 0) > 0;
 
         // _kategorien für andere Module & Badges befüllen
         const kats = m._aktiveLizenzen.map(l => l.MembershipCategory).filter(Boolean);
