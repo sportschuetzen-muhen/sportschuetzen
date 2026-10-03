@@ -179,7 +179,8 @@ async function jbEntrySelectMember(pn) {
       lg_verband: false,
       lg_verein: false,
       lg_ch_kniend: false,
-      schuetzenhaus: defaultGe
+      schuetzenhaus: defaultGe,
+      hausmeister: (m._kategorie || '').toLowerCase().includes('hausmeister')
     };
 
     // Lizenz-Initialisierung anhand m._lizenzen
@@ -214,6 +215,9 @@ async function jbEntrySelectMember(pn) {
       }
       if (k === 'GE001') {
         _jbParticipationsState.schuetzenhaus = val > 0;
+      }
+      if (k === 'RA002') {
+        _jbParticipationsState.hausmeister = val > 0;
       }
       if (val > 0) {
         // Event Key ermitteln und in State schreiben
@@ -765,6 +769,23 @@ function jbRenderEntryForm(m) {
           </div>
         </div>
 
+        <!-- Hausmeister / Unterhalt Anlage Gutschrift (Option B) -->
+        <div class="card p-3 border-0 shadow-sm mb-3 rounded-3 bg-white border-start border-4 border-success">
+          <div class="d-flex align-items-center justify-content-between">
+            <div>
+              <h6 class="text-secondary fw-bold mb-1" style="font-size: 12px; text-transform: uppercase;">
+                <i class="fas fa-tools me-2 text-success"></i>Gutschrift Unterhalt Anlage (Hausmeister)
+              </h6>
+              <span class="small fw-semibold text-muted">Entschädigung Hausmeister / Unterhalt (RA002: CHF -300.00)</span>
+            </div>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="entry_hausmeister" ${
+                _jbParticipationsState.hausmeister ? 'checked' : ''
+              } onchange="jbUpdateState('hausmeister', this.checked, '${m.PersonNumber}')" style="cursor: pointer; transform: scale(1.15);">
+            </div>
+          </div>
+        </div>
+
         <!-- 2. Dynamische Wettkämpfe & Gebührengruppen (50m, 10m, weitere) -->
         ${jbRenderDynamicFeeGroupsHTML(m, _jbParticipationsState)}
 
@@ -928,6 +949,7 @@ function jbTriggerAutoSave(pnClean) {
 
       const events = settings.events ? { ...settings.events } : {};
       if (settings.schuetzenhaus !== undefined) events['GE001'] = settings.schuetzenhaus ? 1 : 0;
+      if (settings.hausmeister !== undefined) events['RA002'] = settings.hausmeister ? 1 : 0;
       if (settings.kk_volksschiessen !== undefined) events['KK008'] = settings.kk_volksschiessen === 'keine' ? 0 : Number(settings.kk_volksschiessen);
       if (settings.kk_verein !== undefined) events['KK007'] = settings.kk_verein ? 1 : 0;
       if (settings.kk_verband !== undefined) events['KK006'] = settings.kk_verband ? 1 : 0;
@@ -1104,6 +1126,7 @@ function jbUpdateState(key, val, pn) {
 
   // Sync to events map
   if (key === 'schuetzenhaus') _jbParticipationsState.events['GE001'] = val ? 1 : 0;
+  else if (key === 'hausmeister') _jbParticipationsState.events['RA002'] = val ? 1 : 0;
   else if (key === 'kk_volksschiessen') _jbParticipationsState.events['KK008'] = val === 'keine' ? 0 : Number(val);
   else if (key === 'kk_verband') _jbParticipationsState.events['KK006'] = val ? 1 : 0;
   else if (key === 'kk_verein') _jbParticipationsState.events['KK007'] = val ? 1 : 0;
@@ -1266,6 +1289,7 @@ async function jbSaveAllBulkLocalChanges() {
       const events = state.events ? { ...state.events } : {};
 
       if (state.schuetzenhaus !== undefined) events['GE001'] = state.schuetzenhaus ? 1 : 0;
+      if (state.hausmeister !== undefined) events['RA002'] = state.hausmeister ? 1 : 0;
       if (state.kk_volksschiessen !== undefined) events['KK008'] = state.kk_volksschiessen === 'keine' ? 0 : Number(state.kk_volksschiessen);
       if (state.kk_verein !== undefined) events['KK007'] = state.kk_verein ? 1 : 0;
       if (state.kk_verband !== undefined) events['KK006'] = state.kk_verband ? 1 : 0;

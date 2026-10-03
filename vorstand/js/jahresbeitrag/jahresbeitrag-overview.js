@@ -239,10 +239,12 @@ function jbRenderRows(data) {
     const rowBg = isOffen ? '' : 'table-light text-muted';
     const rowStyle = isOffen ? '' : 'style="opacity: 0.85;"';
 
+    const safeName = (name || '').replace(/'/g, "\\'");
+
     return `<tr class="${rowBg}" ${rowStyle}>
       <td class="align-middle py-2 tk-col-name">
         <a href="#" class="text-decoration-none fw-semibold ${isOffen ? 'text-primary' : 'text-secondary'}"
-           onclick="jbShowPositionen(${r.id}); return false;">${name}</a>
+           onclick="jbShowPositionen('${r.id}'); return false;">${name}</a>
         <div class="text-muted small" style="font-size: 11px;">${r.PersonNumber}</div>
       </td>
       <td class="align-middle tk-col-kat">${katHtml}</td>
@@ -268,7 +270,7 @@ function jbRenderRows(data) {
               <i class="fas fa-file-pdf"></i>
             </a>` : `
             <button class="btn btn-xs btn-outline-secondary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
-                    onclick="jbGenerateInvoicePdfRemote(${r.id}, '${r.PersonNumber}')"
+                    onclick="jbGenerateInvoicePdfRemote('${r.id}', '${r.PersonNumber}')"
                     id="btn-pdf-${r.id}"
                     title="PDF-Rechnung generieren" style="min-width: 32px;">
               <i class="fas fa-file-invoice"></i>
@@ -277,7 +279,7 @@ function jbRenderRows(data) {
           <!-- 2. E-MAIL VERSAND -->
           ${m.PrimaryEmail ? `
             <button class="btn btn-xs ${r.mail_status === 'gesendet' ? 'btn-success text-white' : 'btn-outline-primary'} btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
-                    onclick="jbSendInvoiceEmailRemote(${r.id}, '${r.PersonNumber}', '${m.PrimaryEmail}')"
+                    onclick="jbSendInvoiceEmailRemote('${r.id}', '${r.PersonNumber}', '${m.PrimaryEmail}')"
                     id="btn-mail-${r.id}"
                     title="Rechnung per E-Mail senden (${r.mail_status === 'gesendet' ? 'bereits gesendet' : 'noch nicht gesendet'})" style="min-width: 32px;">
               <i class="fas ${r.mail_status === 'gesendet' ? 'fa-envelope-open-text' : 'fa-paper-plane'}"></i>
@@ -291,7 +293,7 @@ function jbRenderRows(data) {
           <!-- 3. ZAHLUNG ERFASSEN -->
           ${isOffen ? `
             <button class="btn btn-xs btn-success btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
-                    onclick="jbOpenZahlung(${r.id}, '${name}', ${r.Gesamt})"
+                    onclick="jbOpenZahlung('${r.id}', '${safeName}', ${r.Gesamt})"
                     title="Zahlung erfassen" style="min-width: 32px;">
               <i class="fas fa-check"></i>
             </button>` : ''}
@@ -507,7 +509,7 @@ function jbRenderModalContent(header, pos, m, name) {
             <div class="small text-muted">Offener Betrag: ${fmtChf(header.Gesamt)}</div>
           </div>
         </div>
-        <button class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal(${header.id}, '${safeName}', ${header.Gesamt})">
+        <button class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jbOpenZahlungFromModal('${header.id}', '${safeName}', ${header.Gesamt})">
           <i class="fas fa-check me-1"></i> Zahlung jetzt verbuchen
         </button>
       </div>
@@ -525,13 +527,13 @@ function jbRenderModalContent(header, pos, m, name) {
               <i class="fas fa-file-pdf me-1"></i> PDF-Rechnung öffnen
             </a>
           ` : `
-            <button class="btn btn-sm btn-outline-secondary shadow-sm fw-semibold" onclick="jbGenerateInvoicePdfRemote(${header.id}, '${header.PersonNumber}')">
+            <button class="btn btn-sm btn-outline-secondary shadow-sm fw-semibold" onclick="jbGenerateInvoicePdfRemote('${header.id}', '${header.PersonNumber}')">
               <i class="fas fa-file-invoice me-1"></i> PDF generieren
             </button>
           `}
           ${m.PrimaryEmail ? `
             <button class="btn btn-sm ${header.mail_status === 'gesendet' ? 'btn-success text-white' : 'btn-outline-primary'} shadow-sm fw-semibold"
-                    onclick="jbSendInvoiceEmailRemote(${header.id}, '${header.PersonNumber}', '${m.PrimaryEmail}')">
+                    onclick="jbSendInvoiceEmailRemote('${header.id}', '${header.PersonNumber}', '${m.PrimaryEmail}')">
               <i class="fas ${header.mail_status === 'gesendet' ? 'fa-envelope-open-text' : 'fa-paper-plane'} me-1"></i>
               ${header.mail_status === 'gesendet' ? 'Erneut senden' : 'Per E-Mail senden'}
             </button>

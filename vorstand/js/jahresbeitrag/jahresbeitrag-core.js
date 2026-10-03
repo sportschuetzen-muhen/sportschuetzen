@@ -399,9 +399,12 @@ function renderJahresbeitragView() {
 
   // Tab Navigation Controls
   const tabControlHTML = `
-    <div class="d-flex bg-white p-1 rounded shadow-sm mb-4 border" style="max-width: 680px;">
+    <div class="d-flex bg-white p-1 rounded shadow-sm mb-4 border" style="max-width: 860px;">
       <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'overview' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('overview')">
         <i class="fas fa-list-ul me-2"></i> Beitrags-Übersicht
+      </button>
+      <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'matrix' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('matrix')">
+        <i class="fas fa-table-cells me-2"></i> Beitragsmatrix
       </button>
       <button class="btn flex-fill py-2 text-center rounded border-0 transition fw-semibold ${_jbActiveTab === 'entry' ? 'btn-primary text-white' : 'text-muted bg-transparent'}" onclick="jbSwitchTab('entry')">
         <i class="fas fa-bolt me-2"></i> Schnellerfassung
@@ -420,6 +423,8 @@ function renderJahresbeitragView() {
   
   if (_jbActiveTab === 'overview') {
     contentHTML = renderOverviewTab(canEdit, years);
+  } else if (_jbActiveTab === 'matrix') {
+    contentHTML = typeof renderMatrixTab === 'function' ? renderMatrixTab(canEdit, years) : '<div class="alert alert-info">Lade Beitragsmatrix…</div>';
   } else if (_jbActiveTab === 'entry') {
     contentHTML = renderSchnellerfassungTab();
   } else if (_jbActiveTab === 'import') {
@@ -447,6 +452,24 @@ function renderJahresbeitragView() {
             columns: {
               actions: { minWidth: 100, defaultWidth: 140 }
             }
+          });
+        }
+      }, 50);
+    }
+  } else if (_jbActiveTab === 'matrix') {
+    if (typeof jbInitMatrixTab === 'function') jbInitMatrixTab();
+    if (typeof TableKit !== 'undefined') {
+      setTimeout(() => {
+        if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbMatrixColToggleDropdown')) {
+          TableKit.setupColumnToggle('#jbMatrixTable', {
+            container: '#jbMatrixColToggleDropdown',
+            storageKey: 'portal_jb_matrix_cols'
+          });
+        }
+        if (typeof TableKit.makeResizable === 'function' && document.getElementById('jbMatrixTable')) {
+          TableKit.makeResizable('#jbMatrixTable', {
+            storageKey: 'jb_matrix_col_widths',
+            minWidth: 40
           });
         }
       }, 50);

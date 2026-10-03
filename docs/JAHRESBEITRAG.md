@@ -4,7 +4,7 @@
 > **Stand:** Oktober 2026  
 > **Komponenten:** `public.contributions_header`, `contributions_positions`, `member_participations`, `gebuehren_config`  
 > **Verknüpfung:** `contributions_header.invoice_id` $\rightarrow$ `public.invoices.id`  
-> **Frontend:** [`vorstand/js/jahresbeitrag/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/) (`jahresbeitrag-overview.js`, `jahresbeitrag-core.js`, `jahresbeitrag-gebuehren.js`, `jahresbeitrag-calc.js`, `jahresbeitrag-bank.js`, `jahresbeitrag-schnellerfassung.js`)
+> **Frontend:** [`vorstand/js/jahresbeitrag/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresbeitrag/) (`jahresbeitrag-overview.js`, `jahresbeitrag-matrix.js`, `jahresbeitrag-core.js`, `jahresbeitrag-gebuehren.js`, `jahresbeitrag-calc.js`, `jahresbeitrag-bank.js`, `jahresbeitrag-schnellerfassung.js`)
 
 ---
 
@@ -50,8 +50,24 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 * **Problem:** Werden Gegenkonten statisch codiert oder Freitextnummern ohne Validierung eingetippt, entstehen Fehlbuchungen im Journal. Zudem gingen Kontierungszuordnungen verloren, wenn Fachmodule abweichende Key-Namen (`account` statt `konto`/`accountHaben`) an `RechnungsCore` schickten.
 * **Lösung:** Alle Gebühren (`gebuehren_config`) und variablen Zusatzpositionen (Freie Beträge in Schnellerfassung) sind live an `public.accounting_accounts` angebunden. Bei Rechnungsfinalisierung übergibt `ensureInvoiceCreatedRemote` die aufgelösten Haben-Konten (`konto` & `accountHaben`) verbindlich an `RechnungsCore.createInvoice()`, sodass `invoice_positions.konto` und das Journal stets exakt kontiert sind.
 
-### 2.7 Warum einheitlicher TableKit-Standard?
-* **Konsistenz:** Sämtliche Tabellen (`jbTable`, `jbGebuehrenTable`, `jbModalPositionsTable`, `jbBankTransactionsTable`) implementieren den zentralen `TableKit`-Standard (`ui-table-kit.js`) mit hellem Sticky-Header, persistenten Spaltenbreiten (`makeResizable`), Spaltenauswahl (`setupColumnToggle`) und barrierefreiem Scrollen.
+### 2.7 Warum einheitlicher TableKit-Standard & Spaltensortierung?
+* **Konsistenz:** Sämtliche Tabellen (`jbTable`, `jbGebuehrenTable`, `jbMatrixTable`, `jbModalPositionsTable`, `jbBankTransactionsTable`) implementieren den zentralen `TableKit`-Standard (`ui-table-kit.js`) mit hellem Sticky-Header, persistenten Spaltenbreiten (`makeResizable`), Spaltenauswahl (`setupColumnToggle`), interaktiver Spaltensortierung (`data-sort-key` mit `▲`/`▼`) und barrierefreiem Scrollen.
+
+### 2.8 Beitragsmatrix & Gebühren-Übersicht (`jahresbeitrag-matrix.js`)
+* **Problem:** In der klassischen Rechnungsliste sieht man nur das Gesamttotal pro Schütze, hat aber keinen Gesamtüberblick über alle Gebühreneinnahmen (z. B. Wie viel nimmt der Verein insgesamt an Aktivbeiträgen, Lizenzen, Schützenhausgebühren oder Turnieren ein?).
+* **Lösung:** Ein eigenständiger Reiter **«Beitragsmatrix»** stellt alle Schützen als Zeilen und alle anfallenden Gebühren als Spalten gegenüber:
+  - **Pickliste ganz links:** Standardmässig sind alle Schützen ausgewählt. Wird ein Schütze abgewählt, wird er gedimmt und seine Beträge werden **live aus den Spaltensummen und dem Gesamttotal herausgerechnet**.
+  - **Summenzeile (`<tfoot>`):** Fixierte Fusszeile mit Spaltensumme für jede Gebühr und Gesamttotal.
+  - **Excel-Export:** Direkter Export der Matrix nach `.xlsx` über SheetJS (`XLSX`).
+  - **Druckansicht:** Spezialisiertes `@media print`-Stylesheet optimiert für A4-Querformat mit wiederholten Kopf-/Fusszeilen.
+
+### 2.9 Hausmeister-Rabatt (`RA002`) über die Beitragsverwaltung (Option B)
+* **Problem:** Wird die Entschädigung «Hausmeister» als Verbandsfunktion in `member_functions` erfasst, wurde sie bei jedem SSV-Import gelöscht, da «Hausmeister» keine offizielle SSV-Funktion ist.
+* **Lösung (Option B):** Der Hausmeister-Rabatt (`RA002`: CHF -300.00) wird vollständig im Fachmodul Jahresbeitrag gesteuert:
+  - In der Schnellerfassung (`jahresbeitrag-schnellerfassung.js`) existiert ein eigener Umschalter *«Gutschrift Unterhalt Anlage (Hausmeister)»*.
+  - Die Zuweisung wird pro Jahr in `public.member_participations` (`event_key = 'RA002'`) und den Rechnungspositionen persistiert.
+  - Sowohl die Supabase RPC `calculate_member_contributions` (Migration 32) als auch die clientseitige Live-Berechnung `jbCalculateLiveTotal` unterstützen diesen Modus.
+  - Der SSV-Import greift nicht auf Jahresbeitragstabellen zu – der Rabatt bleibt damit **100% vor Überschreibungen geschützt**.
 
 ---
 

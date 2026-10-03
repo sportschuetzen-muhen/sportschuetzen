@@ -255,15 +255,18 @@ function jbCalculateLiveTotal(m, settings) {
   
   // 5. Rabatte
   let isVorstand = m._istVorstand || false;
-  let isHausmeister = (m._kategorie || '').toLowerCase().includes('hausmeister');
+  let isHausmeister = (m._kategorie || '').toLowerCase().includes('hausmeister') ||
+                      Boolean(settings.hausmeister) ||
+                      Boolean(settings.events && Number(settings.events['RA002'] || 0) > 0) ||
+                      Boolean(eventsMap && Number(eventsMap['RA002'] || 0) > 0);
   
   let hasRA002 = false;
   if (isVorstand && !isEhren) {
-    positions.push({ name: 'Rabatt Vorstand', betrag: getFee('RA001', -100), typ: 'Kredit' });
+    positions.push({ name: 'Rabatt Vorstand', betrag: getFee('RA001', -100), typ: 'Kredit', key: 'RA001' });
   }
   
   if (isHausmeister) {
-    positions.push({ name: 'Gutschrift Unterhalt Anlage (Hausmeister)', betrag: getFee('RA002', -300), typ: 'Kredit' });
+    positions.push({ name: 'Gutschrift Unterhalt Anlage (Hausmeister)', betrag: getFee('RA002', -300), typ: 'Kredit', key: 'RA002' });
     hasRA002 = true;
   }
   

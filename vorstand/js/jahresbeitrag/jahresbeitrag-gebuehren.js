@@ -6,6 +6,8 @@
 let _jbGebuehrenSearch = '';
 let _jbGebuehrenKategorieFilter = '';
 let _jbGebuehrenGruppeFilter = '';
+let _jbGebSortCol = 'sort';
+let _jbGebSortAsc = true;
 
 function renderGebuehrenConfigTab() {
   return `
@@ -57,22 +59,22 @@ function renderGebuehrenConfigTab() {
         </div>
       </div>
 
-      <!-- Tabelle -->
+      <!-- Tabelle (Globales TableKit Modell mit Spaltensortierung) -->
       <div class="table-responsive border rounded-3 overflow-hidden shadow-sm">
         <table class="table table-hover table-sm align-middle mb-0" id="jbGebuehrenTable">
           <thead class="table-light small text-muted text-uppercase" style="font-size: 11px;">
             <tr>
-              <th data-col-id="key" data-col-name="Key" style="width: 75px;">Key</th>
-              <th data-col-id="kategorie" data-col-name="Kategorie" style="width: 105px;">Kategorie</th>
-              <th data-col-id="zielgruppe" data-col-name="Zielgruppe" style="width: 95px;">Zielgruppe</th>
-              <th data-col-id="bezeichnung" data-col-name="Bezeichnung Frontend">Bezeichnung Frontend</th>
-              <th data-col-id="betrag" data-col-name="Betrag" class="text-end" style="width: 90px;">Betrag</th>
-              <th data-col-id="konto" data-col-name="Haben-Konto" style="width: 105px;">Haben-Konto</th>
-              <th data-col-id="ui_gruppe" data-col-name="UI-Gruppe">UI-Gruppe (Card)</th>
-              <th data-col-id="ui_feld" data-col-name="UI-Feld">UI-Feld</th>
-              <th data-col-id="ui_typ" data-col-name="UI-Typ" style="width: 110px;">UI-Typ</th>
-              <th data-col-id="sort" data-col-name="Sortierung" class="text-center" style="width: 55px;">Sort</th>
-              <th data-col-id="aktiv" data-col-name="Aktiv" class="text-center" style="width: 60px;">Aktiv</th>
+              <th data-col-id="key" data-col-name="Key" data-sort-key="key" onclick="jbSortGebuehren('key')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 85px;">Key <span class="tk-sort-ind">${_jbGebSortCol === 'key' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="kategorie" data-col-name="Kategorie" data-sort-key="kategorie" onclick="jbSortGebuehren('kategorie')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 110px;">Kategorie <span class="tk-sort-ind">${_jbGebSortCol === 'kategorie' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="zielgruppe" data-col-name="Zielgruppe" data-sort-key="zielgruppe" onclick="jbSortGebuehren('zielgruppe')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 100px;">Zielgruppe <span class="tk-sort-ind">${_jbGebSortCol === 'zielgruppe' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="bezeichnung" data-col-name="Bezeichnung Frontend" data-sort-key="bezeichnung" onclick="jbSortGebuehren('bezeichnung')" class="tk-sortable" style="cursor: pointer; user-select: none;">Bezeichnung Frontend <span class="tk-sort-ind">${_jbGebSortCol === 'bezeichnung' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="betrag" data-col-name="Betrag" data-sort-key="betrag" onclick="jbSortGebuehren('betrag')" class="tk-sortable text-end" style="cursor: pointer; user-select: none; width: 95px;">Betrag <span class="tk-sort-ind">${_jbGebSortCol === 'betrag' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="konto" data-col-name="Haben-Konto" data-sort-key="konto" onclick="jbSortGebuehren('konto')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 110px;">Haben-Konto <span class="tk-sort-ind">${_jbGebSortCol === 'konto' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="ui_gruppe" data-col-name="UI-Gruppe" data-sort-key="ui_gruppe" onclick="jbSortGebuehren('ui_gruppe')" class="tk-sortable" style="cursor: pointer; user-select: none;">UI-Gruppe <span class="tk-sort-ind">${_jbGebSortCol === 'ui_gruppe' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="ui_feld" data-col-name="UI-Feld" data-sort-key="ui_feld" onclick="jbSortGebuehren('ui_feld')" class="tk-sortable" style="cursor: pointer; user-select: none;">UI-Feld <span class="tk-sort-ind">${_jbGebSortCol === 'ui_feld' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="ui_typ" data-col-name="UI-Typ" data-sort-key="ui_typ" onclick="jbSortGebuehren('ui_typ')" class="tk-sortable" style="cursor: pointer; user-select: none; width: 110px;">UI-Typ <span class="tk-sort-ind">${_jbGebSortCol === 'ui_typ' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="sort" data-col-name="Sortierung" data-sort-key="sort" onclick="jbSortGebuehren('sort')" class="tk-sortable text-center" style="cursor: pointer; user-select: none; width: 65px;">Sort <span class="tk-sort-ind">${_jbGebSortCol === 'sort' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
+              <th data-col-id="aktiv" data-col-name="Aktiv" data-sort-key="aktiv" onclick="jbSortGebuehren('aktiv')" class="tk-sortable text-center" style="cursor: pointer; user-select: none; width: 65px;">Aktiv <span class="tk-sort-ind">${_jbGebSortCol === 'aktiv' ? (_jbGebSortAsc ? '▲' : '▼') : '↕'}</span></th>
               <th data-col-id="actions" data-col-name="Aktion" class="text-end" style="width: 65px;">Aktion</th>
             </tr>
           </thead>
@@ -277,9 +279,84 @@ function renderGebuehrenConfigModals() {
   `;
 }
 
+// ============================================================
+// SPALTENSORTIERUNG & TABLEKIT INTEGRATION
+// ============================================================
+function jbSortGebuehren(col) {
+  if (_jbGebSortCol === col) {
+    _jbGebSortAsc = !_jbGebSortAsc;
+  } else {
+    _jbGebSortCol = col;
+    _jbGebSortAsc = true;
+  }
+  jbApplyGebuehrenSorting();
+  jbRenderGebuehrenTable();
+  jbUpdateGebuehrenHeaderVisuals();
+}
+window.jbSortGebuehren = jbSortGebuehren;
+
+function jbApplyGebuehrenSorting() {
+  const fees = window._jbGebuehren || [];
+  fees.sort((a, b) => {
+    let valA = '';
+    let valB = '';
+    if (_jbGebSortCol === 'key') {
+      valA = String(a.key || '').toUpperCase();
+      valB = String(b.key || '').toUpperCase();
+    } else if (_jbGebSortCol === 'kategorie') {
+      valA = String(a.kategorie || '').toLowerCase();
+      valB = String(b.kategorie || '').toLowerCase();
+    } else if (_jbGebSortCol === 'zielgruppe') {
+      valA = String(a.zielgruppe || '').toLowerCase();
+      valB = String(b.zielgruppe || '').toLowerCase();
+    } else if (_jbGebSortCol === 'bezeichnung') {
+      valA = String(a.bezeichnungfrontend || a.bezeichnung || '').toLowerCase();
+      valB = String(b.bezeichnungfrontend || b.bezeichnung || '').toLowerCase();
+    } else if (_jbGebSortCol === 'betrag') {
+      valA = Number(a.betrag || 0);
+      valB = Number(b.betrag || 0);
+      return _jbGebSortAsc ? (valA - valB) : (valB - valA);
+    } else if (_jbGebSortCol === 'konto') {
+      valA = String(a['Haben-Konto-Jahresbeitrag-Buchhaltung'] || a.konto || '');
+      valB = String(b['Haben-Konto-Jahresbeitrag-Buchhaltung'] || b.konto || '');
+    } else if (_jbGebSortCol === 'ui_gruppe') {
+      valA = String(a.ui_gruppe || '').toLowerCase();
+      valB = String(b.ui_gruppe || '').toLowerCase();
+    } else if (_jbGebSortCol === 'ui_feld') {
+      valA = String(a.ui_feld || '').toLowerCase();
+      valB = String(b.ui_feld || '').toLowerCase();
+    } else if (_jbGebSortCol === 'ui_typ') {
+      valA = String(a.ui_typ || '').toLowerCase();
+      valB = String(b.ui_typ || '').toLowerCase();
+    } else if (_jbGebSortCol === 'sort') {
+      valA = Number(a.ui_sort !== undefined && a.ui_sort !== null && a.ui_sort !== '' ? a.ui_sort : (a.sort_order || 99));
+      valB = Number(b.ui_sort !== undefined && b.ui_sort !== null && b.ui_sort !== '' ? b.ui_sort : (b.sort_order || 99));
+      return _jbGebSortAsc ? (valA - valB) : (valB - valA);
+    } else if (_jbGebSortCol === 'aktiv') {
+      valA = (a.aktiv !== false && a.aktiv !== '0' && a.aktiv !== 0) ? 1 : 0;
+      valB = (b.aktiv !== false && b.aktiv !== '0' && b.aktiv !== 0) ? 1 : 0;
+      return _jbGebSortAsc ? (valA - valB) : (valB - valA);
+    }
+    return _jbGebSortAsc ? valA.localeCompare(valB, 'de') : valB.localeCompare(valA, 'de');
+  });
+}
+
+function jbUpdateGebuehrenHeaderVisuals() {
+  document.querySelectorAll('#jbGebuehrenTable th[data-sort-key]').forEach(th => {
+    const key = th.dataset.sortKey;
+    const ind = th.querySelector('.tk-sort-ind');
+    if (ind) {
+      ind.textContent = (key === _jbGebSortCol) ? (_jbGebSortAsc ? '▲' : '▼') : '↕';
+      ind.style.opacity = (key === _jbGebSortCol) ? '1' : '0.4';
+    }
+  });
+}
+
 function jbInitGebuehrenConfig() {
+  jbApplyGebuehrenSorting();
   jbPopulateFilterDropdowns();
   jbRenderGebuehrenTable();
+  jbUpdateGebuehrenHeaderVisuals();
 }
 
 function jbPopulateFilterDropdowns() {
