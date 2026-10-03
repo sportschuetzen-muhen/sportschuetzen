@@ -31,6 +31,7 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 │          - Vermietung          ──► docs/VERMIETUNG_SCHUETZENSTUBE.md        │
 │          - Inventar            ──► docs/INVENTAR.md                         │
 │          - Mail-Verteiler      ──► docs/MAIL_VERTEILER.md                   │
+│          - Logins & Rechte     ──► docs/LOGINS_UND_BENUTZERVERWALTUNG.md   │
 │          - Datenbank / Schema  ──► docs/SUPABASE_ARCHITECTURE.md            │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
@@ -79,4 +80,5 @@ Nach jeder vorgenommenen Code- oder Schemaänderung gilt:
 | **Vermietung** | [`docs/VERMIETUNG_SCHUETZENSTUBE.md`](VERMIETUNG_SCHUETZENSTUBE.md) | Status-Maschine mit `rental_status_logs`, dynamische Klauseln 1–8, Google Calendar als reine Leseanzeige. |
 | **Inventar** | [`docs/INVENTAR.md`](INVENTAR.md) | Sportwaffen, Schlüssel & Bekleidung; Ausleihe mit digitaler Signatur; Kautions-/Pfandkasse; Materialverkauf via `RechnungsCore`. |
 | **Mail-Verteiler** | [`docs/MAIL_VERTEILER.md`](MAIL_VERTEILER.md) | Ad-hoc Empfängerauswahl, Adresskaskade (`primary`/`additional`), BCC-Datenschutz, Abgrenzung zur Mail-Engine. |
+| **Logins & Berechtigungen** | [`docs/LOGINS_UND_BENUTZERVERWALTUNG.md`](LOGINS_UND_BENUTZERVERWALTUNG.md) | Supabase Auth (GoTrue / bcrypt), entkoppeltes RBAC, Sitzungs-Audit (`login_sessions`), PIN-Zugang, Foreign-Key-Schutz. |
 | **Datenbank-Schema** | [`docs/SUPABASE_ARCHITECTURE.md`](SUPABASE_ARCHITECTURE.md) | Aktive PostgreSQL Tabellen, Fremdschlüssel und Row Level Security (RLS) Policies. |

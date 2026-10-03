@@ -117,6 +117,9 @@ async function fetchLoginsData() {
     LoginsState.loaded = true;
     loginsUpdateBadges();
     loginsRenderTable();
+    if (typeof initTableKitForLogins === 'function') {
+      initTableKitForLogins(LoginsState.activeTab);
+    }
   } catch (e) {
     if (wrapper) {
       wrapper.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Fehler beim Laden der Logins: ${escapeHtml(e.message)}</div>`;
@@ -207,15 +210,27 @@ async function loginsSave() {
       const username = document.getElementById('lf-username')?.value?.trim() || '';
       const anzeigename = document.getElementById('lf-anzeigename')?.value?.trim() || '';
       const email = document.getElementById('lf-mailadresse')?.value?.trim() || '';
-      const personnumber = parseInt(document.getElementById('lf-personnumber')?.value?.trim()) || null;
-      const rolleRaw = document.getElementById('lf-rolle-custom')?.value?.trim() || document.getElementById('lf-rolle')?.value || 'vorstand';
+      const isExternal = Boolean(document.getElementById('lf-is-external')?.checked);
+      
+      let personnumber = null;
+      if (!isExternal) {
+        const rawPn = parseInt(document.getElementById('lf-personnumber')?.value?.trim());
+        if (!isNaN(rawPn) && rawPn > 0) {
+          personnumber = rawPn;
+        }
+      }
+
+      const rolleRaw = document.getElementById('lf-rolle-val')?.value?.trim() 
+                    || document.getElementById('lf-rolle-custom')?.value?.trim() 
+                    || document.getElementById('lf-rolle')?.value 
+                    || 'vorstand';
       const rolleExtern = document.getElementById('lf-rolle-extern')?.value?.trim() || '';
       const passwort = document.getElementById('lf-passwort')?.value?.trim() || '';
 
-      if (!username) throw new Error("Benutzername ist Pflicht.");
-      if (!email) throw new Error("E-Mail-Adresse ist Pflicht für das Supabase-Login.");
+      if (!username) throw new Error("Benutzername ist ein Pflichtfeld.");
+      if (!email) throw new Error("E-Mail-Adresse ist ein Pflichtfeld für Supabase Auth.");
 
-      const rolesArr = rolleRaw.split(',').map(r => r.trim()).filter(Boolean);
+      const rolesArr = rolleRaw.split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
 
       // 1. Profil in public.admin_profiles & public.user_roles speichern
       const { data, error } = await supa.rpc('save_admin_profile', {
@@ -228,7 +243,7 @@ async function loginsSave() {
       });
       if (error) throw error;
 
-      // 2. Falls ein neues Passwort eingegeben wurde: Supabase Auth Registrierung / Sync
+      // 2. Falls ein neues Passwort eingegeben wurde: Supabase Auth Registrierung / Provisioning
       if (passwort) {
         if (passwort.length < 6) throw new Error("Das Passwort muss mindestens 6 Zeichen lang sein.");
         try {
@@ -274,21 +289,23 @@ async function loginsSave() {
     } else {
       const pn = parseInt(document.getElementById('af-personnumber')?.value?.trim());
       const pin = document.getElementById('af-pin')?.value?.trim() || '';
-      const fn = document.getElementById('af-firstname')?.value?.trim() || '';
-      const ln = document.getElementById('af-lastname')?.value?.trim() || '';
 
-      if (!pn) throw new Error("PersonNumber ist Pflicht.");
-      if (!pin) throw new Error("PIN ist Pflicht.");
+      if (!pn || isNaN(pn)) throw new Error("Bitte ein gültiges Vereinsmitglied aus den Stammdaten auswählen.");
+      if (!pin) throw new Error("PIN ist ein Pflichtfeld (6-stellig).");
 
       const paddedPin = pin.padStart(6, '0');
       const { error } = await supa.from('members').update({
         address_number: paddedPin,
-        first_name: fn,
-        last_name: ln,
         updated_at: new Date().toISOString()
       }).eq('person_number', pn);
 
       if (error) throw error;
+
+      // RAM Cache aktualisieren
+      if (Array.isArray(window._mglData)) {
+        const cachedMember = window._mglData.find(x => String(x.PersonNumber) === String(pn));
+        if (cachedMember) cachedMember.AddressNumber = paddedPin;
+      }
 
       const modalEl = document.getElementById('logins-modal');
       if (modalEl) {
@@ -302,14 +319,15 @@ async function loginsSave() {
         document.body.style.removeProperty('padding-right');
       }, 300);
 
-      showSuccess('App-Mitglied PIN/Daten in Supabase gespeichert!');
+      showSuccess('App-Mitglied PIN erfolgreich in Supabase gespeichert!');
       await fetchLoginsData();
     }
   } catch (e) {
     showError("Fehler beim Speichern: " + e.message);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-save me-1"></i> Speichern';
+    btn.innerHTML = '<i class="fas fa-save me-1.5"></i> Speichern';
+  }
   }
 }
 
@@ -386,13 +404,18 @@ window.loginsOnMemberSelect = function(personNumber) {
   const mailInput = document.getElementById('lf-mailadresse');
   const userInput = document.getElementById('lf-username');
   const rolleExtInput = document.getElementById('lf-rolle-extern');
+  const pnDisplay = document.getElementById('lf-pn-display');
+  const pnDisplayWrap = document.getElementById('lf-pn-display-wrap');
 
   if (!pn) {
     if (pnInput) pnInput.value = '';
+    if (pnDisplayWrap) pnDisplayWrap.classList.add('d-none');
     return;
   }
 
   if (pnInput) pnInput.value = pn;
+  if (pnDisplay) pnDisplay.textContent = pn;
+  if (pnDisplayWrap) pnDisplayWrap.classList.remove('d-none');
 
   const m = (window._mglData || []).find(x => String(x.PersonNumber || '').trim() === pn);
   if (!m) return;
