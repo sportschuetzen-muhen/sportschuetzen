@@ -328,7 +328,6 @@ async function loginsSave() {
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-save me-1.5"></i> Speichern';
   }
-  }
 }
 
 async function loginsConfirmDelete() {
