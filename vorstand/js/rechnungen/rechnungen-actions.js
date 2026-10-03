@@ -274,8 +274,24 @@ window.rnOpenInvoicePdf = async function(invoiceId, pdfUrl, name, event) {
 // MODAL FOR SENDING INVOICE WITH ATTACHED SWISS QR-BILL PDF
 // =====================================================================
 window.rnOpenSendMailModal = async function(invoiceId, name) {
-  const inv = (window._invoices || []).find(i => String(i.id) === String(invoiceId));
+  let inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim());
   if (!inv) {
+    const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : (window.supabaseClient || null);
+    if (supa) {
+      try {
+        const { data: invRow } = await supa.from('invoices').select('*').eq('id', invoiceId).maybeSingle();
+        if (invRow) {
+          inv = (typeof mapInvoiceFromSupabase === 'function') ? mapInvoiceFromSupabase(invRow) : invRow;
+          if (Array.isArray(window._invoices)) window._invoices.unshift(inv);
+        }
+      } catch (_) {}
+    }
+  }
+  if (!inv) {
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
     alert("Rechnung nicht gefunden: " + invoiceId);
     return;
   }

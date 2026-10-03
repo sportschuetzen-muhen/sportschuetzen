@@ -1030,7 +1030,8 @@ async function jbSaveSingleMemberDirect(pnClean) {
 
   // Lokale Caches updaten
   _jbPositionsCache[headId] = newPos;
-  if (_jbPositionsCache[existingHeader?.id]) {
+  _jbPositionsCache[String(pn)] = newPos;
+  if (existingHeader?.id) {
     _jbPositionsCache[existingHeader.id] = newPos;
   }
   if (existingHeader) {
@@ -1042,6 +1043,9 @@ async function jbSaveSingleMemberDirect(pnClean) {
   // 3. Rechnungsentwurf im RechnungsCore synchronisieren, falls vorhanden & noch nicht versendet/bezahlt
   const invoiceId = existingHeader?.invoiceId || existingHeader?.invoice_id;
   if (invoiceId) {
+    if (window._invoicePositionsCache) {
+      delete window._invoicePositionsCache[String(invoiceId).trim()];
+    }
     const allInvs = window._invoices || window._jbAllInvoices || [];
     const inv = allInvs.find(i => String(i.id).trim() === String(invoiceId).trim());
     if (inv && (!inv.mail_status || inv.mail_status === 'entwurf') && (!inv.total_paid || Number(inv.total_paid) === 0)) {
@@ -1069,6 +1073,19 @@ async function jbSaveSingleMemberDirect(pnClean) {
       inv.total_amount = calc.total;
       inv.open_amount = calc.total;
       inv.pdf_url = null;
+      inv.positions = invPositions;
+
+      // Automatische PDF-Neugenerierung im Hintergrund gemäss Richtlinie 6
+      if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
+        window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true }).then(res => {
+          if (res && res.pdfUrl) {
+            inv.pdf_url = res.pdfUrl;
+            if (existingHeader) existingHeader.pdf_url = res.pdfUrl;
+          }
+        }).catch(err => {
+          console.warn("⚠️ [Schnellerfassung] Hintergrund-PDF-Neugenerierung Hinweis:", err);
+        });
+      }
     }
   }
 
@@ -1417,7 +1434,7 @@ async function jbSaveAllBulkLocalChanges() {
           if (m && typeof jbCalculateLiveTotal === 'function') {
             const settings = _jbLocalBulkChanges[pn] || {};
             const calc = jbCalculateLiveTotal(m, settings);
-            const headId = `${year}-${pn}`;
+            const headId = `CH-${year}-${pn}`;
 
             await supa.from('contributions_header').upsert({
               id: headId,

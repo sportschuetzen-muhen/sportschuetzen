@@ -712,6 +712,29 @@ window.rnRenderTable = function() {
   }
 };
 
+window.rnTransitionFromDetails = function(targetFn) {
+  const modalEl = document.getElementById('rnModalInvoiceDetails');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) {
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        if (typeof targetFn === 'function') targetFn();
+      }, { once: true });
+      bsModal.hide();
+      return;
+    }
+  }
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+  if (typeof targetFn === 'function') targetFn();
+};
+
 // DETAILS MODAL
 window.rnOpenDetailsModal = async function(invoiceId) {
   let modalEl = document.getElementById('rnModalInvoiceDetails');
@@ -905,16 +928,16 @@ window.rnOpenDetailsModal = async function(invoiceId) {
                 <i class="fas fa-cog me-1.5"></i>PDF erstellen
               </button>
             `}
-            <button class="btn btn-sm btn-outline-primary write-protected" onclick="bootstrap.Modal.getInstance(document.getElementById('rnModalInvoiceDetails'))?.hide(); rnSendMailPrompt('${inv.id}', '${escapeJs(inv.name)}')">
+            <button class="btn btn-sm btn-outline-primary write-protected" onclick="rnTransitionFromDetails(() => rnSendMailPrompt('${inv.id}', '${escapeJs(inv.name)}'))">
               <i class="fas fa-envelope me-1.5"></i>E-Mail senden
             </button>
             ${inv.status !== 'bezahlt' ? `
-              <button class="btn btn-sm btn-success write-protected" onclick="bootstrap.Modal.getInstance(document.getElementById('rnModalInvoiceDetails'))?.hide(); rnOpenPaymentModal('${inv.id}', ${inv.total_amount})">
+              <button class="btn btn-sm btn-success write-protected" onclick="rnTransitionFromDetails(() => rnOpenPaymentModal('${inv.id}', ${inv.total_amount}))">
                 <i class="fas fa-coins me-1.5"></i>Zahlung erfassen
               </button>
             ` : ''}
             ${inv.type === 'Jahresbeitrag' ? `
-              <button class="btn btn-sm btn-light border text-muted" onclick="bootstrap.Modal.getInstance(document.getElementById('rnModalInvoiceDetails'))?.hide(); rnJumpToJahresbeitrag('${inv.PersonNumber}')">
+              <button class="btn btn-sm btn-light border text-muted" onclick="rnTransitionFromDetails(() => rnJumpToJahresbeitrag('${inv.PersonNumber}'))">
                 <i class="fas fa-lock text-warning me-1.5"></i>In Jahresbeitrag
               </button>
             ` : ''}

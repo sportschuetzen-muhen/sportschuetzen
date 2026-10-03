@@ -162,8 +162,42 @@ function renderOverviewTab(canEdit, years) {
   `;
 }
 
-function renderOverviewModals() {
-  return `
+function jbCleanupModals(modalId) {
+  if (modalId) {
+    const el = document.getElementById(modalId);
+    if (el) {
+      const bsModal = bootstrap.Modal.getInstance(el);
+      if (bsModal) {
+        try { bsModal.hide(); } catch (_) {}
+      }
+    }
+  }
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+}
+window.jbCleanupModals = jbCleanupModals;
+
+window.jbOpenInvoicePdfSafe = function(url, ev) {
+  if (ev) {
+    try { ev.preventDefault(); } catch (_) {}
+    try { ev.stopPropagation(); } catch (_) {}
+  }
+  if (!url) return;
+  const sep = url.includes('?') ? '&' : '?';
+  window.open(`${url}${sep}t=${Date.now()}`, '_blank');
+};
+
+function jbEnsureOverviewModals() {
+  if (!document.getElementById('jbModalPositionen') || !document.getElementById('jbModalZahlung')) {
+    let container = document.getElementById('jbModalsContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'jbModalsContainer';
+      document.body.appendChild(container);
+    }
+    container.innerHTML = `
     <!-- Modal: Zahlung (Globaler Modal-Standard) -->
     <div class="modal fade" id="jbModalZahlung" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
@@ -247,7 +281,13 @@ function renderOverviewModals() {
         </div>
       </div>
     </div>
-  `;
+    `;
+  }
+}
+
+function renderOverviewModals() {
+  jbEnsureOverviewModals();
+  return '';
 }
 
 // ============================================================
@@ -359,7 +399,7 @@ function jbRenderRows(data) {
 
           <!-- 2. PDF RECHNUNG -->
           ${r.pdf_url ? `
-            <a href="${r.pdf_url}" target="_blank" class="btn btn-xs btn-outline-danger btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
+            <a href="${r.pdf_url}" onclick="jbOpenInvoicePdfSafe('${escapeJs(r.pdf_url)}', event)" target="_blank" class="btn btn-xs btn-outline-danger btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
                title="PDF-Rechnung öffnen" style="min-width: 32px;">
               <i class="fas fa-file-pdf"></i>
             </a>` : (Number(r.Gesamt || 0) > 0 ? `
@@ -622,7 +662,7 @@ function jbRenderModalContent(header, pos, m, name) {
         </div>
         <div class="d-flex gap-2">
           ${header.pdf_url ? `
-            <a href="${header.pdf_url}" target="_blank" class="btn btn-sm btn-outline-danger shadow-sm fw-semibold">
+            <a href="${header.pdf_url}" onclick="jbOpenInvoicePdfSafe('${escapeJs(header.pdf_url)}', event)" target="_blank" class="btn btn-sm btn-outline-danger shadow-sm fw-semibold">
               <i class="fas fa-file-pdf me-1"></i> PDF-Rechnung öffnen
             </a>
           ` : `
@@ -659,30 +699,13 @@ function jbRenderModalContent(header, pos, m, name) {
 }
 
 function jbOpenZahlungFromModal(id, name, betrag) {
-  const modalEl = document.getElementById('jbModalPositionen');
-  if (modalEl) {
-    const bsModal = bootstrap.Modal.getInstance(modalEl);
-    if (bsModal) bsModal.hide();
-  }
-  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-  document.body.classList.remove('modal-open');
-  document.body.style.overflow = '';
-  document.body.style.paddingRight = '';
-
+  jbCleanupModals('jbModalPositionen');
   jbOpenZahlung(id, name, betrag);
 }
 
 window.jbSwitchToSchnellerfassung = function(pn) {
   const pnClean = String(pn || '').trim();
-  const modalEl = document.getElementById('jbModalPositionen');
-  if (modalEl) {
-    const bsModal = bootstrap.Modal.getInstance(modalEl);
-    if (bsModal) bsModal.hide();
-  }
-  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-  document.body.classList.remove('modal-open');
-  document.body.style.overflow = '';
-  document.body.style.paddingRight = '';
+  jbCleanupModals('jbModalPositionen');
 
   _jbActiveTab = 'entry';
   _jbSelectedMemberPN = pnClean;
@@ -814,13 +837,7 @@ async function jbSaveZahlung() {
       }
     }
 
-    bootstrap.Modal.getInstance(document.getElementById('jbModalZahlung')).hide();
-    
-    // Explizites Entfernen des Backdrops und Beendigung des Scroll-Locks, um Freezes zu verhindern
-    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-    document.body.classList.remove('modal-open');
-    document.body.style.overflow = '';
-    document.body.style.paddingRight = '';
+    jbCleanupModals('jbModalZahlung');
 
     // Optimistisches lokales Update des Beleg-Status
     const header = _jbData.find(x => String(x.id) === String(id));
@@ -958,8 +975,52 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     };
   });
 
-  // 1. RechnungsCore-Integration (Single Source of Truth)
-  if (!existingInv && window.RechnungsCore && typeof window.RechnungsCore.createInvoice === 'function') {
+  // 1. Wenn Rechnung bereits existiert: Entwurf synchronisieren falls nicht versendet/bezahlt
+  if (existingInv) {
+    const headTotal = Number(r.Gesamt || 0);
+    const isDraft = (!existingInv.mail_status || existingInv.mail_status === 'entwurf') && (!existingInv.total_paid || Number(existingInv.total_paid) === 0);
+    
+    if (isDraft) {
+      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
+      if (supa) {
+        await supa.from('invoices').update({
+          total_amount: headTotal,
+          open_amount: headTotal,
+          pdf_url: null,
+          pdf_storage_path: null,
+          updated_at: new Date().toISOString()
+        }).eq('id', existingInv.id);
+
+        if (positions.length > 0) {
+          const sbPositions = positions.map(p => ({
+            invoice_id: existingInv.id,
+            position_nr: p.position_nr,
+            description: p.description,
+            quantity: p.quantity,
+            unit_price: p.unit_price,
+            amount: p.amount,
+            konto: p.konto || '3000'
+          }));
+          await supa.from('invoice_positions').delete().eq('invoice_id', existingInv.id);
+          await supa.from('invoice_positions').insert(sbPositions);
+        }
+        await supa.from('contributions_header').update({ invoice_id: existingInv.id }).eq('id', r.id);
+      }
+      existingInv.total_amount = headTotal;
+      existingInv.open_amount = headTotal;
+      existingInv.pdf_url = null;
+      existingInv.positions = positions;
+      r.pdf_url = null;
+      if (window._invoicePositionsCache) {
+        delete window._invoicePositionsCache[String(existingInv.id).trim()];
+      }
+    }
+    r.invoiceId = existingInv.id;
+    return existingInv.id;
+  }
+
+  // 2. RechnungsCore-Integration für Neuanlage (Single Source of Truth)
+  if (window.RechnungsCore && typeof window.RechnungsCore.createInvoice === 'function') {
     try {
       const invoiceOrder = {
         source: {
@@ -1022,7 +1083,7 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     }
   }
 
-  // Fallback: Direkt in Supabase persistieren
+  // 3. Fallback: Direkt in Supabase neu anlegen
   const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
   if (supa) {
     try {
@@ -1039,7 +1100,7 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
         status: r.status || 'offen',
         updated_at: new Date().toISOString()
       };
-      await supa.from('invoices').upsert(sbInv, { onConflict: 'id' });
+      await supa.from('invoices').insert([sbInv]);
 
       if (positions.length > 0) {
         const sbPositions = positions.map(p => ({
@@ -1062,44 +1123,6 @@ async function ensureInvoiceCreatedRemote(r, m, name) {
     }
   }
 
-  if (existingInv) {
-    const invTotal = Number(existingInv.total_amount || 0);
-    const headTotal = Number(r.Gesamt || 0);
-    const isDraft = (!existingInv.mail_status || existingInv.mail_status === 'entwurf') && (!existingInv.total_paid || Number(existingInv.total_paid) === 0);
-    if (isDraft && Math.abs(invTotal - headTotal) > 0.009) {
-      console.log(`🔄 Aktualisiere bestehenden Rechnungsentwurf ${existingInv.id} auf neuen Betrag CHF ${headTotal.toFixed(2)}...`);
-      const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
-      if (supa) {
-        await supa.from('invoices').update({
-          total_amount: headTotal,
-          open_amount: headTotal,
-          pdf_url: null,
-          pdf_storage_path: null,
-          updated_at: new Date().toISOString()
-        }).eq('id', existingInv.id);
-
-        if (positions.length > 0) {
-          const sbPositions = positions.map(p => ({
-            invoice_id: existingInv.id,
-            position_nr: p.position_nr,
-            description: p.description,
-            quantity: p.quantity,
-            unit_price: p.unit_price,
-            amount: p.amount,
-            konto: p.konto || '3000'
-          }));
-          await supa.from('invoice_positions').delete().eq('invoice_id', existingInv.id);
-          await supa.from('invoice_positions').insert(sbPositions);
-        }
-      }
-      existingInv.total_amount = headTotal;
-      existingInv.open_amount = headTotal;
-      existingInv.pdf_url = null;
-      r.pdf_url = null;
-    }
-    r.invoiceId = existingInv.id;
-    return existingInv.id;
-  }
   r.invoiceId = invoiceId;
   return r.invoiceId;
 }
@@ -1159,11 +1182,11 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
     // 1. Sicherstellen, dass die Rechnung existiert
     const invoiceId = await ensureInvoiceCreatedRemote(r, m, name);
     
-    // 2. Primär: Zentrale RechnungsCore.renderPdf-Methode
+    // 2. Primär: Zentrale RechnungsCore.renderPdf-Methode (mit forceRecreate: true gemäss Richtlinie 6)
     let engineRes = null;
     if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
       try {
-        engineRes = await window.RechnungsCore.renderPdf(invoiceId);
+        engineRes = await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
       } catch (cErr) {
         console.warn("⚠️ RechnungsCore.renderPdf fehlgeschlagen, versuche Engine-Fallback:", cErr);
       }
@@ -1174,6 +1197,7 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
       engineRes = await window.generatePdfViaEngine({
         action: 'generate-invoice',
         invoiceId: invoiceId,
+        forceRecreate: true,
         recipient: {
           vorname: m.FirstName || '',
           nachname: m.LastName || '',
@@ -1191,6 +1215,7 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
         if (typeof window.generatePdfClientFallback === 'function') {
           engineRes = await window.generatePdfClientFallback({
             invoiceId: invoiceId,
+            forceRecreate: true,
             recipient: {
               vorname: m.FirstName || '',
               nachname: m.LastName || '',
@@ -1210,11 +1235,19 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
     if (engineRes && engineRes.success) {
       showToast("🎉 Schweizer QR-Rechnung erfolgreich generiert!");
       if (engineRes.pdfUrl && engineRes.pdfUrl.startsWith('http')) {
-        window.open(engineRes.pdfUrl, '_blank');
+        jbOpenInvoicePdfSafe(engineRes.pdfUrl);
       } else if (engineRes.pdfBase64 && typeof openPdfBase64 === 'function') {
         openPdfBase64(engineRes.pdfBase64);
       }
       await loadJahresbeitragData(true, false);
+      const modalEl = document.getElementById('jbModalPositionen');
+      if (modalEl && modalEl.classList.contains('show')) {
+        const updatedHeader = _jbData.find(x => String(x.id) === String(rId));
+        if (updatedHeader) {
+          const updatedPos = _jbPositionsCache[rId] || [];
+          jbRenderModalContent(updatedHeader, updatedPos, m, name);
+        }
+      }
       return;
     } else {
       throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
@@ -1369,7 +1402,18 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
       rnRenderTable();
     }
     await loadJahresbeitragData(true, false);
+
+    // Falls Modal noch offen ist, Inhalt live aktualisieren (damit Status & Badges stimmen)
+    const modalEl = document.getElementById('jbModalPositionen');
+    if (modalEl && modalEl.classList.contains('show')) {
+      const updatedHeader = _jbData.find(x => String(x.id) === String(rId));
+      if (updatedHeader) {
+        const updatedPos = _jbPositionsCache[rId] || [];
+        jbRenderModalContent(updatedHeader, updatedPos, m, name);
+      }
+    }
   } catch (err) {
+    jbCleanupModals();
     alert("Fehler bei E-Mail-Versand: " + err.message);
     if (btn) {
       btn.disabled = false;
