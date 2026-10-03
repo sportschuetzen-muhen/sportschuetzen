@@ -232,37 +232,21 @@ async function loginsSave() {
 
       const rolesArr = rolleRaw.split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
 
-      // 1. Profil in public.admin_profiles & public.user_roles speichern
+      // 1. Profil in public.admin_profiles & public.user_roles speichern (inklusive direktem Passwort-Provisioning)
+      if (passwort && passwort.length < 6) {
+        throw new Error("Das Passwort muss mindestens 6 Zeichen lang sein.");
+      }
+
       const { data, error } = await supa.rpc('save_admin_profile', {
         p_username: username,
         p_display_name: anzeigename || username,
         p_email: email,
         p_role_external: rolleExtern,
         p_person_number: personnumber,
-        p_roles: rolesArr
+        p_roles: rolesArr,
+        p_password: passwort || null
       });
       if (error) throw error;
-
-      // 2. Falls ein neues Passwort eingegeben wurde: Supabase Auth Registrierung / Provisioning
-      if (passwort) {
-        if (passwort.length < 6) throw new Error("Das Passwort muss mindestens 6 Zeichen lang sein.");
-        try {
-          const { data: signData, error: signErr } = await supa.auth.signUp({
-            email: email,
-            password: passwort,
-            options: {
-              data: { name: anzeigename || username }
-            }
-          });
-          if (!signErr && signData?.user?.id) {
-            await supa.from('admin_profiles').update({
-              auth_user_id: signData.user.id
-            }).eq('username', username);
-          }
-        } catch (authErr) {
-          console.warn("Hinweis zu Supabase Auth Provisioning:", authErr.message);
-        }
-      }
 
       // 3. Modal sicher schliessen und Backdrops rückstandslos entfernen
       const modalEl = document.getElementById('logins-modal');
@@ -494,8 +478,9 @@ window.loginsSendInvite = async function(email, username) {
     const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
     if (!supa) throw new Error("Supabase Client nicht verfügbar.");
 
+    const redirectUrl = window.location.origin + window.location.pathname;
     const { error } = await supa.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://sportschuetzen-muhen.ch'
+      redirectTo: redirectUrl
     });
     if (error) throw error;
 

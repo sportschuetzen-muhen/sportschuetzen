@@ -171,3 +171,22 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 * **Architektonische Lösung:**
   1. **UI-Absicherung:** Klare Trennung im Modal zwischen *"Vereinsmitglied verknüpfen"* (übernimmt die echte `person_number` als feste Referenz) und *"Externer Admin (ohne Mitgliedschaft)"* (setzt `person_number` strikt auf `null`).
   2. **DB-Absicherung (`save_admin_profile` RPC):** Die SQL-Funktion prüft, ob `p_person_number` in `public.members` existiert. Falls nicht, wird der Wert automatisch auf `NULL` gesetzt, anstatt die Transaktion mit einer Constraint-Violation abstürzen zu lassen.
+
+---
+
+## 7. Passwort-Provisioning, Redirect-Routing & Modal-UX (Migration 26)
+
+### 7.1 Direktes Passwort-Provisioning via PostgreSQL
+* **Problem mit GoTrue `signUp`:** Supabase GoTrue verweigert bei bereits existierenden Konten das Ändern des Passworts über die clientseitige `signUp()`-Methode. Ein im Admin-Modal neu gesetztes oder korrigiertes Passwort wurde daher stillschweigend von GoTrue ignoriert.
+* **Architektonische Lösung:** `public.save_admin_profile()` nimmt das optionale Passwort `p_password` direkt entgegen. PostgreSQL erzeugt bei Neu- und Bestandskonten mit `crypt(p_password, gen_salt('bf', 10))` sofort den validen bcrypt-Hash in `auth.users` und setzt `email_confirmed_at = now()`. Der Admin-Zugang ist damit unmittelbar einsatzbereit.
+
+### 7.2 Dynamische Redirect-URLs & Root-App Forwarder
+* **Problem:** Einladungs- und Aktivierungslinks führten standardmässig zur Root-URL (`https://sportschuetzen-muhen.ch` bzw. `https://sps-b55.pages.dev/`), wo kein Passwort-Recovery-Dialog existiert.
+* **Lösung:**
+  1. `loginsSendInvite()` und `signInWithOtp()` übergeben dynamisch `window.location.origin + window.location.pathname` (Vorstandsportal-URL).
+  2. Die Root-[`index.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/index.html) leitet eingehende Auth-Tokens (`#access_token=...`, `type=recovery`, `type=signup`, `type=invite`) automatisch nahtlos an `/vorstand/index.html` weiter.
+  3. `vorstand/js/auth.js` öffnet bei allen drei Tokentypen sofort das Modal `#recovery-password-modal`.
+
+### 7.3 Modal-UX bei Magic-Links
+* Nach erfolgreichem Absenden des Anmelde-Links wechselt der Schliessen-Button von *«Abbrechen»* auf einen prominenten blauen **«OK»**-Button (`btn-primary`), um Fehlinterpretationen bezüglich des Abbruchs des Versands auszuschliessen.
+

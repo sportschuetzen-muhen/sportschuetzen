@@ -2,6 +2,14 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<script>
+// Falls Auth-Tokens (Recovery, Signup, Invite, Magic-Link) an der Web-App-Wurzel ankommen,
+// sofort zur Vorstand-Verwaltung durchreichen, wo der Recovery-/Anmelde-Dialog bereitsteht:
+if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('type=recovery') || window.location.hash.includes('type=signup') || window.location.hash.includes('type=invite'))) {
+    const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+    window.location.replace(window.location.origin + basePath + 'vorstand/index.html' + window.location.hash);
+}
+</script>
 <title>Sportschützen Muhen App</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0f3a5d">

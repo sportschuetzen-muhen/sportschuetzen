@@ -258,6 +258,18 @@ function openMagicLinkModal() {
 
     const modalEl = document.getElementById('magic-link-modal');
     if (modalEl) {
+        const cancelBtn = document.getElementById('btn-magic-link-cancel');
+        if (cancelBtn) {
+            cancelBtn.textContent = 'Abbrechen';
+            cancelBtn.className = 'btn btn-light py-2 text-muted small';
+        }
+        const submitBtn = document.getElementById('btn-magic-link-submit');
+        if (submitBtn) {
+            submitBtn.classList.remove('d-none');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-magic me-1"></i> Anmelde-Link senden';
+        }
+
         if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
             const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
             modal.show();
@@ -483,6 +495,11 @@ async function submitMagicLink(e) {
             alertDiv.classList.remove('d-none');
         }
         if (btn) btn.classList.add('d-none');
+        const cancelBtn = document.getElementById('btn-magic-link-cancel');
+        if (cancelBtn) {
+            cancelBtn.textContent = 'OK';
+            cancelBtn.className = 'btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm';
+        }
     } catch (err) {
         console.error("Fehler bei submitMagicLink:", err);
         let msg = err.message || 'Fehler beim Versenden des Anmelde-Links.';
@@ -705,10 +722,10 @@ async function doLogout() {
             const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
             if (!supa || !supa.auth) return;
 
-            // 1. URL Hash prüfen (z.B. type=recovery von Supabase Reset-Mail)
+            // 1. URL Hash prüfen (z.B. type=recovery, type=signup oder type=invite von Supabase Auth)
             const hash = window.location.hash || '';
-            if (hash.includes('type=recovery')) {
-                console.log("🔑 Recovery-Token im URL-Hash erkannt!");
+            if (hash.includes('type=recovery') || hash.includes('type=signup') || hash.includes('type=invite')) {
+                console.log("🔑 Recovery/Signup/Invite-Token im URL-Hash erkannt!");
                 setTimeout(() => openRecoveryPasswordModal(), 300);
             }
 
