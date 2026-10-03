@@ -683,3 +683,105 @@ async function ensureRentalInvoice(d) {
     return null;
   }
 }
+
+/**
+ * Speichert alle Tarife und Systemeinstellungen der Vermietung atomar in Supabase
+ */
+async function saveRentalSettings() {
+  const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+  if (!supa) {
+    alert("Supabase Client nicht initialisiert.");
+    return;
+  }
+
+  const btn = document.getElementById('cfg-save-btn');
+  const origBtnText = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Speichere Einstellungen...`;
+  }
+
+  try {
+    const stdPrice = parseFloat(document.getElementById('cfg-price-standard')?.value || 300);
+    const mbrPrice = parseFloat(document.getElementById('cfg-price-member')?.value || 150);
+    const deposit = parseFloat(document.getElementById('cfg-deposit')?.value || 200);
+    const stornoFee = parseFloat(document.getElementById('cfg-storno-fee')?.value || 100);
+    const woodFee = parseFloat(document.getElementById('cfg-wood-fee')?.value || 20);
+    const cleanFee = parseFloat(document.getElementById('cfg-cleaning-fee')?.value || 35);
+    const garbageFee = parseFloat(document.getElementById('cfg-garbage-fee')?.value || 4);
+
+    const sFirst = document.getElementById('cfg-sender-firstname')?.value.trim() || '';
+    const sLast = document.getElementById('cfg-sender-lastname')?.value.trim() || '';
+    const sPhone = document.getElementById('cfg-sender-phone')?.value.trim() || '';
+    const clubEmail = document.getElementById('cfg-club-email')?.value.trim() || '';
+
+    const wName = document.getElementById('cfg-wirtschaft-name')?.value.trim() || '';
+    const wPhone = document.getElementById('cfg-wirtschaft-phone')?.value.trim() || '';
+    const wEmail = document.getElementById('cfg-wirtschaft-email')?.value.trim() || '';
+    const wSalut = document.getElementById('cfg-wirtschaft-salutation')?.value.trim() || '';
+
+    const iban = document.getElementById('cfg-iban')?.value.trim() || '';
+    const mapsUrl = document.getElementById('cfg-maps-url')?.value.trim() || '';
+    const fbUrl = document.getElementById('cfg-feedback-url')?.value.trim() || '';
+
+    // 1. Settings Upsert in public.rental_settings
+    const settingsRows = [
+      { setting_key: 'sender_first_name', setting_value: sFirst, description: 'Vorname des Vermieters / Absenders' },
+      { setting_key: 'sender_last_name', setting_value: sLast, description: 'Nachname des Vermieters / Absenders' },
+      { setting_key: 'sender_phone', setting_value: sPhone, description: 'Telefonnummer des Vermieters' },
+      { setting_key: 'club_email', setting_value: clubEmail, description: 'Hauptkontakt / CC für Vermietungen' },
+      { setting_key: 'wirtschaft_name', setting_value: wName, description: 'Name / Kontakt Schlüsselübergabe' },
+      { setting_key: 'wirtschaft_phone', setting_value: wPhone, description: 'Telefon Schlüsselübergabe' },
+      { setting_key: 'wirtschaft_email', setting_value: wEmail, description: 'E-Mail Schlüsselübergabe' },
+      { setting_key: 'wirtschaft_salutation', setting_value: wSalut, description: 'Begrüssung im Wirtschafts-Mail' },
+      { setting_key: 'iban', setting_value: iban, description: 'IBAN für Schweizer QR-Rechnung' },
+      { setting_key: 'maps_url', setting_value: mapsUrl, description: 'Google Maps Link Schützenhaus' },
+      { setting_key: 'feedback_base_url', setting_value: fbUrl, description: 'Basis-URL für Storno-Rückmeldung' },
+      { setting_key: 'deposit_amount', setting_value: String(deposit), description: 'Kaution / Depot in CHF' },
+      { setting_key: 'storno_fee', setting_value: String(stornoFee), description: 'Stornogebühr in CHF' },
+      { setting_key: 'wood_fee', setting_value: String(woodFee), description: 'Zusatz Cheminéeholz pro Kiste in CHF' },
+      { setting_key: 'cleaning_fee_per_hour', setting_value: String(cleanFee), description: 'Nachreinigung pro Stunde in CHF' },
+      { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF' }
+    ];
+
+    for (const row of settingsRows) {
+      const { error: setErr } = await supa.from('rental_settings').upsert(row, { onConflict: 'setting_key' });
+      if (setErr) throw setErr;
+    }
+
+    // 2. Pricing Updates in public.rental_pricing
+    await supa.from('rental_pricing').update({
+      base_price_chf: stdPrice,
+      deposit_chf: deposit
+    }).eq('tariff_code', 'standard_tag');
+
+    await supa.from('rental_pricing').update({
+      base_price_chf: mbrPrice,
+      deposit_chf: deposit
+    }).eq('tariff_code', 'mitglied_rabatt');
+
+    // 3. Lokalen State synchronisieren
+    if (!window._rentalSettings) window._rentalSettings = {};
+    settingsRows.forEach(r => {
+      window._rentalSettings[r.setting_key] = r.setting_value;
+    });
+
+    if (window._rentalPricing) {
+      const std = window._rentalPricing.find(p => p.tariff_code === 'standard_tag');
+      if (std) { std.base_price_chf = stdPrice; std.deposit_chf = deposit; }
+      const mbr = window._rentalPricing.find(p => p.tariff_code === 'mitglied_rabatt');
+      if (mbr) { mbr.base_price_chf = mbrPrice; mbr.deposit_chf = deposit; }
+    }
+
+    showToast("✅ Einstellungen und Tarife erfolgreich in Supabase gespeichert!");
+  } catch (err) {
+    console.error("Fehler beim Speichern der Einstellungen:", err);
+    alert("❌ Fehler beim Speichern: " + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origBtnText;
+    }
+  }
+}
+

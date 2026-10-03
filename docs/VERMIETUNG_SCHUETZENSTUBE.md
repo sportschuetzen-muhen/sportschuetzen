@@ -45,6 +45,11 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 * **Wiedervermietungs-Chance:** Storniert ein Mieter kurzfristig (Termin innerhalb der nächsten 14 Tage), wird der Datensatz in `rental_cancellation_feedbacks` mit `is_urgent = true` markiert.
 * **Nutzen:** Der Vermieter sieht den Fall sofort im Cockpit ganz oben und kann die Schützenstube aktiv an Interessenten auf der Warteliste weitervermitteln.
 
+### 2.5 Modernes Vorstands-Cockpit (TableKit Standard & Tarife-Verwaltung)
+* **3-Register-Struktur:** Das Cockpit bündelt alle Fachaspekte in drei Reitern: `Reservationen`, `Stornorückmeldungen` und `Tarife & Einstellungen`.
+* **TableKit Spalten-Steuerung:** Die Reservationstabelle ist an den globalen Vereinsstandard `TableKit.setupColumnToggle` angebunden. Spalten (Datum, Mieter Name, Vertrags-Nr., Festbeginn, Kontakt, Mietbetrag, Status, Aktionen) lassen sich beliebig ein-/ausblenden und werden persistent im `localStorage` (`tk_cols_vermietung`) gesichert.
+* **Zentralisierte Tarife:** Mietpreise (`rental_pricing`) und Konfigurationswerte (`rental_settings`) werden in einer einheitlichen Maske gepflegt und atomar synchronisiert.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)

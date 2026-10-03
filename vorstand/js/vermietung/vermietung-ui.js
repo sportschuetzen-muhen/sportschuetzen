@@ -321,8 +321,13 @@ function renderVermietungCockpit(daten) {
               </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link fw-bold btn-sm text-secondary" id="feedback-tab" data-bs-toggle="pill" data-bs-target="#tab-feedback" type="button" role="tab" aria-controls="tab-feedback" aria-selected="false" onclick="renderFeedbackCards()">
+              <button class="nav-link fw-bold btn-sm text-secondary me-2" id="feedback-tab" data-bs-toggle="pill" data-bs-target="#tab-feedback" type="button" role="tab" aria-controls="tab-feedback" aria-selected="false" onclick="renderFeedbackCards()">
                 <i class="fas fa-comment-slash me-1"></i> Stornorückmeldungen (${stornoFeedbackDaten.length})
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link fw-bold btn-sm text-secondary" id="rental-settings-tab" data-bs-toggle="pill" data-bs-target="#tab-rental-settings" type="button" role="tab" aria-controls="tab-rental-settings" aria-selected="false" onclick="renderRentalSettingsForm()">
+                <i class="fas fa-cog me-1"></i> Tarife & Einstellungen
               </button>
             </li>
           </ul>
@@ -335,11 +340,12 @@ function renderVermietungCockpit(daten) {
                   <input type="text" class="form-control form-control-sm ps-4" id="res-search-input" placeholder="Suche Name, E-Mail, Datum, Nr..." oninput="searchReservations(this.value)">
                   <i class="fas fa-search position-absolute text-muted" style="left: 10px; top: 9px; font-size: 0.8rem;"></i>
                 </div>
-                <div class="d-flex gap-2">
-                  <button class="btn btn-sm btn-primary py-1 fw-bold" onclick="openNewReservationModal()">
+                <div class="d-flex gap-2 align-items-center">
+                  <!-- Spalten-Ausblender (TableKit Standard) -->
+                  <div id="vermietungColToggleContainer" class="d-inline-block"></div>
+                  <button class="btn btn-sm btn-primary py-1 fw-bold write-protected" onclick="openNewReservationModal()">
                     <i class="fas fa-plus me-1"></i>Neue Miete
                   </button>
-                  <button class="btn btn-sm btn-outline-secondary py-1" onclick="loadVermietungData(true)">🔄 Aktualisieren</button>
                 </div>
               </div>
 
@@ -366,16 +372,18 @@ function renderVermietungCockpit(daten) {
                 </div>` : ''}
               </div>
 
-              <div style="overflow-x:auto;max-height:350px;overflow-y:auto;" class="border rounded shadow-sm bg-white">
-                <table class="table table-hover mb-0" style="font-size: 0.88rem;">
-                  <thead class="table-light" style="position:sticky;top:0;background:#f8f9fa;z-index:1;border-bottom: 2px solid #dee2e6;">
+              <div style="overflow-x:auto;max-height:420px;overflow-y:auto;" class="border rounded shadow-sm bg-white">
+                <table class="table table-hover mb-0" id="vermietung-table" style="font-size: 0.88rem;">
+                  <thead class="table-light" style="position:sticky;top:0;background:#f8f9fa;z-index:10;border-bottom: 2px solid #dee2e6;">
                     <tr>
-                      <th style="cursor:pointer" onclick="sortVermietung()">Datum <i class="fas fa-sort text-muted ms-1"></i></th>
-                      <th>Name</th>
-                      <th>Vertrags-Nr.</th>
-                      <th>Mietbetrag</th>
-                      <th>Status</th>
-                      <th></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="mietdatum" onclick="sortVermietung('datum')">Datum <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable" data-col-id="name" onclick="sortVermietung('name')">Name <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="vertragsnr" onclick="sortVermietung('vertragsnr')">Vertrags-Nr. <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="festbeginn" onclick="sortVermietung('festbeginn')">Festbeginn <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable" data-col-id="kontakt" onclick="sortVermietung('kontakt')">Kontakt <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="mietbetrag" onclick="sortVermietung('betrag')">Mietbetrag <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="tk-sortable text-nowrap" data-col-id="status" onclick="sortVermietung('status')">Status <i class="fas fa-sort text-muted ms-1 tk-sort-icon"></i></th>
+                      <th class="text-end" data-col-id="aktionen"></th>
                     </tr>
                   </thead>
                   <tbody id="vermietung-tbody">
@@ -396,6 +404,13 @@ function renderVermietungCockpit(daten) {
 
               <div id="feedback-cards-container" style="max-height: 420px; overflow-y: auto; padding-right: 5px;">
                 <!-- Dynamisch durch renderFeedbackCards gerendert -->
+              </div>
+            </div>
+
+            <!-- TAB 3: TARIFE & EINSTELLUNGEN -->
+            <div class="tab-pane fade" id="tab-rental-settings" role="tabpanel" aria-labelledby="rental-settings-tab">
+              <div id="rental-settings-container" class="p-1">
+                <!-- Dynamisch durch renderRentalSettingsForm gerendert -->
               </div>
             </div>
           </div>
@@ -421,7 +436,7 @@ function renderVermietungCockpit(daten) {
     <div class="modal fade" id="newReservationModal" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
-          <div class="modal-header border-0 bg-primary text-white" style="border-radius:8px 8px 0 0;">
+          <div class="modal-header border-0" style="background:#0f3a5d;color:white;border-radius:8px 8px 0 0;">
             <h5 class="modal-title fw-bold"><i class="fas fa-plus-circle me-2"></i>Neue Reservation erfassen</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -433,6 +448,219 @@ function renderVermietungCockpit(daten) {
         </div>
       </div>
     </div>
+  `;
+
+  // TableKit Spalten-Ausblender nach DOM-Aufbau initialisieren
+  setTimeout(() => {
+    initVermietungColToggle();
+  }, 50);
+}
+
+// Initialisiert TableKit Column Toggle für die Vermietungstabelle
+function initVermietungColToggle() {
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('vermietungColToggleContainer')) {
+    window._vmColToggle = window.TableKit.setupColumnToggle('#vermietung-table', {
+      container: '#vermietungColToggleContainer',
+      storageKey: 'tk_cols_vermietung',
+      columns: [
+        { id: 'mietdatum', name: 'Datum', defaultVisible: true },
+        { id: 'name', name: 'Mieter Name', defaultVisible: true },
+        { id: 'vertragsnr', name: 'Vertragsnummer', defaultVisible: true },
+        { id: 'festbeginn', name: 'Festbeginn', defaultVisible: false },
+        { id: 'kontakt', name: 'Kontakt (Mail/Tel)', defaultVisible: false },
+        { id: 'mietbetrag', name: 'Mietbetrag', defaultVisible: true },
+        { id: 'status', name: 'Status', defaultVisible: true },
+        { id: 'aktionen', name: 'Aktionen', defaultVisible: true }
+      ]
+    });
+  }
+}
+
+// Rendert das Einstellungs- und Tarifformular (Tab 3)
+function renderRentalSettingsForm() {
+  const container = document.getElementById('rental-settings-container');
+  if (!container) return;
+
+  const s = window._rentalSettings || {};
+  const pricing = window._rentalPricing || [];
+
+  const stdPricing = pricing.find(p => p.tariff_code === 'standard_tag') || {};
+  const mbrPricing = pricing.find(p => p.tariff_code === 'mitglied_rabatt') || {};
+
+  const stdPrice = stdPricing.base_price_chf !== undefined ? Number(stdPricing.base_price_chf) : 300;
+  const mbrPrice = mbrPricing.base_price_chf !== undefined ? Number(mbrPricing.base_price_chf) : 150;
+  const deposit = stdPricing.deposit_chf !== undefined ? Number(stdPricing.deposit_chf) : (s.deposit_amount ? Number(s.deposit_amount) : 200);
+
+  const stornoFee = s.storno_fee ? Number(s.storno_fee) : 100;
+  const woodFee = s.wood_fee ? Number(s.wood_fee) : 20;
+  const cleanFee = s.cleaning_fee_per_hour ? Number(s.cleaning_fee_per_hour) : 35;
+  const garbageFee = s.garbage_bag_fee ? Number(s.garbage_bag_fee) : 4;
+
+  const sFirst = s.sender_first_name || 'Daniel';
+  const sLast = s.sender_last_name || 'Hunziker';
+  const sPhone = s.sender_phone || '+41 79 123 45 67';
+  const clubEmail = s.club_email || 'sportschuetzen.muhen@gmail.com';
+
+  const wName = s.wirtschaft_name || 'Wirtschaftsteam';
+  const wPhone = s.wirtschaft_phone || '+41 79 987 65 43';
+  const wEmail = s.wirtschaft_email || 'wirtschaft@sportschuetzen-muhen.ch';
+  const wSalut = s.wirtschaft_salutation || 'Hallo zusammen';
+
+  const iban = s.iban || 'CH44 8080 8009 1234 5678 9';
+  const mapsUrl = s.maps_url || 'https://www.google.com/maps/search/?api=1&query=Schützenhaus+Muhen';
+  const fbUrl = s.feedback_base_url || 'https://sportschuetzen-muhen.github.io/sportschuetzen/vermietungen/storno_feedback.html';
+
+  container.innerHTML = `
+    <form id="rental-settings-form" onsubmit="event.preventDefault(); saveRentalSettings();">
+      <div class="row g-3">
+        <!-- 1. Tarife & Gebühren -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-coins me-2"></i>Mietpreise & Tarife (CHF)
+            </h6>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Standardmiete (Ganzer Tag)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control fw-bold" id="cfg-price-standard" value="${stdPrice.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Mitglieder-Tarif (Rabatt)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-price-member" value="${mbrPrice.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Kaution / Depot</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-deposit" value="${deposit.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Stornogebühr</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-storno-fee" value="${stornoFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Zusatz-Cheminéeholz (pro Kiste)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-wood-fee" value="${woodFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Nachreinigung (pro Stunde)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-cleaning-fee" value="${cleanFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Kehrichtsack (pro Stk.)</label>
+                <div class="input-group input-group-sm" style="max-width: 200px;">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-garbage-fee" value="${garbageFee.toFixed(2)}" required>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Vermieter / Absender -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-user-tie me-2"></i>Vermieter (Absender)
+            </h6>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Vorname</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-sender-firstname" value="${escapeHtml(sFirst)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Nachname</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-sender-lastname" value="${escapeHtml(sLast)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Telefon / Mobil</label>
+                <input type="tel" class="form-control form-control-sm" id="cfg-sender-phone" value="${escapeHtml(sPhone)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">E-Mail Absender / CC</label>
+                <input type="email" class="form-control form-control-sm" id="cfg-club-email" value="${escapeHtml(clubEmail)}" required>
+              </div>
+              <div class="col-12">
+                <small class="text-muted"><i class="fas fa-info-circle me-1"></i>Diese Angaben erscheinen auf dem Mietvertrag und in den Bestätigungsmails.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Wirtschaftsteam (Schlüsselübergabe) -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-key me-2"></i>Wirtschaftsteam (Schlüsselübergabe)
+            </h6>
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Kontaktperson / Bezeichnung</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-wirtschaft-name" value="${escapeHtml(wName)}" placeholder="z.B. Wirtschaftsteam / Andrea Rossi" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Telefon / WhatsApp</label>
+                <input type="tel" class="form-control form-control-sm" id="cfg-wirtschaft-phone" value="${escapeHtml(wPhone)}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">E-Mail für Benachrichtigung</label>
+                <input type="email" class="form-control form-control-sm" id="cfg-wirtschaft-email" value="${escapeHtml(wEmail)}" required>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Anrede in Mails</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-wirtschaft-salutation" value="${escapeHtml(wSalut)}" placeholder="z.B. Hallo zusammen">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Bankverbindung & Links -->
+        <div class="col-12 col-md-6">
+          <div class="card border rounded-3 p-3 shadow-xs h-100 bg-white">
+            <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+              <i class="fas fa-university me-2"></i>Bank & System-Links
+            </h6>
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">IBAN (für QR-Rechnung)</label>
+                <input type="text" class="form-control form-control-sm font-monospace" id="cfg-iban" value="${escapeHtml(iban)}" required>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Google Maps Link Schützenhaus</label>
+                <input type="url" class="form-control form-control-sm" id="cfg-maps-url" value="${escapeHtml(mapsUrl)}">
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Feedback-Formular Basis-URL</label>
+                <input type="url" class="form-control form-control-sm" id="cfg-feedback-url" value="${escapeHtml(fbUrl)}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Speichern Knopf -->
+        <div class="col-12 text-end mt-3">
+          <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm write-protected" id="cfg-save-btn">
+            <i class="fas fa-save me-1.5"></i> Einstellungen & Tarife speichern
+          </button>
+        </div>
+      </div>
+    </form>
   `;
 }
 

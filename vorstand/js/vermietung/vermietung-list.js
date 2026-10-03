@@ -1,27 +1,32 @@
 // === SUB-MODUL: VERMIETUNG - LISTE & FILTER & SORTIERUNG ===
 
-// Generiert Tabellenzeilen für Reservationen mit modernem Hover-Effekt
+let currentSortField = 'datum';
+
+// Generiert Tabellenzeilen für Reservationen mit modernem Hover-Effekt und TableKit Spalten-IDs
 function renderVermietungRows(daten) {
   if (!daten || daten.length === 0) {
-    return '<tr><td colspan="6" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 text-muted" style="opacity:0.3;"></i><br>Keine Reservationen gefunden</td></tr>';
+    return '<tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 text-muted" style="opacity:0.3;"></i><br>Keine Reservationen gefunden</td></tr>';
   }
   return daten.map(d => {
     const statusColor = getStatusColor(d.status);
     const statusLabel = getStatusLabel(d.status);
+    const rowId = d.id || d.row;
     return `
-      <tr style="cursor:pointer; vertical-align: middle;" onclick="openVermietungModal('${d.row}')">
-        <td class="fw-bold text-nowrap">${escapeHtml(d.mietdatum || '–')}</td>
-        <td>${escapeHtml((d.vorname || '') + ' ' + (d.nachname || ''))}</td>
-        <td><small class="badge bg-light text-dark border fw-semibold">${escapeHtml(d.vertragsnr || '')}</small></td>
-        <td class="fw-bold text-dark">${escapeHtml(d.mietbetrag || '–')}</td>
-        <td>
+      <tr style="cursor:pointer; vertical-align: middle;" onclick="openVermietungModal('${rowId}')">
+        <td data-col-id="mietdatum" class="fw-bold text-nowrap">${escapeHtml(d.mietdatum || '–')}</td>
+        <td data-col-id="name">${escapeHtml((d.vorname || '') + ' ' + (d.nachname || ''))}</td>
+        <td data-col-id="vertragsnr" class="text-nowrap"><small class="badge bg-light text-dark border fw-semibold">${escapeHtml(d.vertragsnr || '')}</small></td>
+        <td data-col-id="festbeginn" class="text-nowrap">${escapeHtml(d.festbeginn || '–')}</td>
+        <td data-col-id="kontakt"><small class="text-muted">${escapeHtml(d.email || d.telefon || '–')}</small></td>
+        <td data-col-id="mietbetrag" class="fw-bold text-dark text-nowrap">${escapeHtml(d.mietbetrag || '–')}</td>
+        <td data-col-id="status" class="text-nowrap">
           <span class="badge px-2 py-1 rounded-pill" style="background:${statusColor}22; color:${statusColor}; border: 1px solid ${statusColor}44; font-size:0.75rem; font-weight:600;">
             ${escapeHtml(statusLabel)}
           </span>
         </td>
-        <td class="text-end">
+        <td data-col-id="aktionen" class="text-end">
           <button class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.8rem; font-weight:bold;"
-                  onclick="event.stopPropagation();openVermietungModal('${d.row}')">›
+                  onclick="event.stopPropagation();openVermietungModal('${rowId}')">›
           </button>
         </td>
       </tr>`;
@@ -49,7 +54,7 @@ function searchReservations(query) {
   applyFiltersAndSearch();
 }
 
-// Sucht und filtert gleichzeitig
+// Sucht und filtert gleichzeitig mit Spalten-Sichtbarkeit Synchronisation
 function applyFiltersAndSearch() {
   const query = (reservationSearchQuery || '').toLowerCase().trim();
   let gefiltert = vermietungDaten;
@@ -90,6 +95,8 @@ function applyFiltersAndSearch() {
              (d.vertragsnr || '').toLowerCase().includes(query) ||
              (d.email || '').toLowerCase().includes(query) ||
              (d.mietdatum || '').toLowerCase().includes(query) ||
+             (d.festbeginn || '').toLowerCase().includes(query) ||
+             (d.telefon || '').toLowerCase().includes(query) ||
              (d.wohnort || '').toLowerCase().includes(query);
     });
   }
@@ -97,6 +104,10 @@ function applyFiltersAndSearch() {
   const tbody = document.getElementById('vermietung-tbody');
   if (tbody) {
     tbody.innerHTML = renderVermietungRows(gefiltert);
+    // TableKit Spaltensichtbarkeit nach Tabellen-Neuaufbau anwenden
+    if (window._vmColToggle && typeof window._vmColToggle.apply === 'function') {
+      window._vmColToggle.apply();
+    }
   }
 }
 
@@ -147,19 +158,62 @@ function renderFeedbackCards() {
   }).join('');
 }
 
-// Sortiert die Reservationen nach Datum auf- oder absteigend
-function sortVermietung() {
-  sortAsc = !sortAsc;
+// Sortiert die Reservationen flexibel nach beliebigen Spalten auf- oder absteigend
+function sortVermietung(field = 'datum') {
+  if (currentSortField === field) {
+    sortAsc = !sortAsc;
+  } else {
+    currentSortField = field;
+    sortAsc = true;
+  }
+
   const toDate = d => {
     if (d.start_date_iso) return new Date(d.start_date_iso);
     const p = (d.mietdatum || "").split(".");
     return p.length === 3 ? new Date(p[2], p[1]-1, p[0]) : new Date(0);
   };
 
-  const sorted = [...vermietungDaten].sort((a, b) => sortAsc
-    ? toDate(a) - toDate(b)
-    : toDate(b) - toDate(a));
+  const sorted = [...vermietungDaten].sort((a, b) => {
+    let res = 0;
+    if (field === 'datum') {
+      res = toDate(a) - toDate(b);
+    } else if (field === 'name') {
+      const na = `${a.last_name || a.nachname || ''} ${a.first_name || a.vorname || ''}`.toLowerCase();
+      const nb = `${b.last_name || b.nachname || ''} ${b.first_name || b.vorname || ''}`.toLowerCase();
+      res = na.localeCompare(nb, 'de');
+    } else if (field === 'vertragsnr') {
+      res = (a.vertragsnr || '').localeCompare(b.vertragsnr || '');
+    } else if (field === 'festbeginn') {
+      res = (a.festbeginn || '').localeCompare(b.festbeginn || '');
+    } else if (field === 'kontakt') {
+      res = (a.email || a.telefon || '').localeCompare(b.email || b.telefon || '');
+    } else if (field === 'betrag') {
+      const amtA = Number(a.betrag_raw || 0);
+      const amtB = Number(b.betrag_raw || 0);
+      res = amtA - amtB;
+    } else if (field === 'status') {
+      res = (a.status || '').localeCompare(b.status || '');
+    }
+    return sortAsc ? res : -res;
+  });
 
   vermietungDaten = sorted;
   applyFiltersAndSearch();
+
+  // Sort-Icon im Header aktualisieren
+  document.querySelectorAll('#vermietung-table th.tk-sortable').forEach(th => {
+    th.classList.remove('tk-sort-asc', 'tk-sort-desc');
+    const icon = th.querySelector('.tk-sort-icon');
+    if (icon) icon.className = 'fas fa-sort text-muted ms-1 tk-sort-icon';
+  });
+
+  const activeTh = document.querySelector(`#vermietung-table th[data-col-id="${field === 'datum' ? 'mietdatum' : (field === 'betrag' ? 'mietbetrag' : field)}"]`);
+  if (activeTh) {
+    activeTh.classList.add(sortAsc ? 'tk-sort-asc' : 'tk-sort-desc');
+    const icon = activeTh.querySelector('.tk-sort-icon');
+    if (icon) {
+      icon.className = `fas fa-sort-${sortAsc ? 'up' : 'down'} text-primary ms-1 tk-sort-icon`;
+    }
+  }
 }
+
