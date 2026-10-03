@@ -1,5 +1,5 @@
 // =====================================================================
-// MODUL: DOKUMENTEN- & VORLAGEN-POOL (PHASE 12)
+// MODUL: DOKUMENTEN- & VORLAGEN-POOL (PHASE 12 / VERMIETUNG HARMONISIERUNG)
 // Projekt: Vereinsportal Sportschützen Muhen
 // =====================================================================
 
@@ -60,6 +60,47 @@
     }
   };
 
+  // Helper für saubere Vorlagentitel
+  window.getCleanDocTemplateTitle = function(t) {
+    if (!t) return 'Vorlage';
+    const friendlyMap = {
+      'materialverkauf': 'Materialverkauf (Kleider/Munition)',
+      'depot_pfand': 'Depot & Kaution (Inventar)',
+      'depot / pfand': 'Depot & Kaution (Inventar)',
+      'jahresbeitrag': 'Jahresbeitrag',
+      'vermietung': 'Zusatzrechnung Wirtschaft/Vermietung',
+      'schulsport': 'Schulsport / Kurse',
+      'sponsoring': 'Sponsoring & Gönner',
+      'sonstige': 'Sonstige Rechnungen',
+      'mahnung_1': '1. Mahnung (Erinnerung)',
+      'mahnung_2': '2. Mahnung',
+      'mahnung_3': '3. Mahnung (Letzte Frist)',
+      'mahnung': 'Mahnung (Standard)',
+      'mietvertrag': 'Mietvertrag & Benützungsreglement Schützenstube',
+      'vm_vertrag': 'Mail: Mietvertrag & QR-Rechnung',
+      'vm_mahnung': 'Mail: Zahlungserinnerung (7 Tage Frist)',
+      'vm_bestaetigung': 'Mail: Zahlungseingang & Bestätigung',
+      'vm_schluessel': 'Mail: Schlüsselübergabe & Hinweise',
+      'vm_storno': 'Mail: Stornierungsbestätigung & Feedback',
+      'gv_normal': 'GV-Einladung (Standard)',
+      'gv_wahljahr': 'GV-Einladung (Wahljahr)',
+      'freier_brief': 'Freier Vorstandsbrief'
+    };
+    if (friendlyMap[t.code?.toLowerCase()]) return friendlyMap[t.code.toLowerCase()];
+    if (t.title) {
+      if (t.title.includes('–')) {
+        const parts = t.title.split('–');
+        return parts.slice(1).join('–').trim() || t.title;
+      }
+      if (t.title.includes('-')) {
+        const parts = t.title.split('-');
+        return parts.slice(1).join('-').trim() || t.title;
+      }
+      return t.title;
+    }
+    return t.code || 'Vorlage';
+  };
+
   // 2. HAUPT-RENDERING DER MODUL-KACHEL
   window.renderDokumentVorlagen = async function(container) {
     if (!container) container = document.getElementById('dokument-vorlagen-container');
@@ -75,16 +116,23 @@
       await window.loadDocumentTemplatesData();
     }
 
-    const categories = [
+    // ZEILE 1: ALLGEMEINE DOKUMENTEN-KATEGORIEN
+    const row1Categories = [
       { key: 'rechnung', label: 'Rechnungen', icon: 'fa-file-invoice-dollar' },
       { key: 'mahnung', label: 'Mahnwesen', icon: 'fa-bell text-warning' },
-      { key: 'vertrag', label: 'Mietvertrag Rüteli', icon: 'fa-file-contract text-primary' },
       { key: 'gv', label: 'Generalversammlung', icon: 'fa-users-between-lines text-success' },
       { key: 'brief', label: 'Mitteilungen & Briefe', icon: 'fa-envelope-open-text text-info' }
     ];
 
     const currentCat = window._selectedDocCategory || 'rechnung';
-    const templatesInCat = window._docTemplatesData.filter(t => t.category === currentCat);
+    const isVermietungMail = (currentCat === 'vermietung_mail');
+    const isMietvertragPdf = (currentCat === 'vertrag');
+
+    // Aktuelle Vorlagen filtern
+    let templatesInCat = window._docTemplatesData.filter(t => t.category === currentCat);
+    if (currentCat === 'vertrag') {
+      templatesInCat = window._docTemplatesData.filter(t => t.category === 'vertrag' || t.code === 'mietvertrag');
+    }
 
     // Falls aktuelle Vorlage nicht in Kategorie, erste wählen
     if (!templatesInCat.find(t => t.code === window._selectedDocCode)) {
@@ -94,74 +142,87 @@
     const currentTemplate = window._docTemplatesData.find(t => t.code === window._selectedDocCode) || templatesInCat[0] || {};
     const clausesForTemplate = window._docClausesData.filter(c => c.template_id === currentTemplate.id);
 
-    // HTML Kategorie-Tabs
-    const catTabsHtml = categories.map(c => `
+    // HTML Zeile 1: Allgemeine Kategorien
+    const row1TabsHtml = row1Categories.map(c => `
       <button class="btn btn-sm ${currentCat === c.key ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="docSelectCategory('${c.key}')">
         <i class="fas ${c.icon} me-1.5"></i> ${c.label}
       </button>
     `).join('');
 
-    // HTML Sub-Tabs (Vorlagen innerhalb der Kategorie)
-    const getCleanTemplateTitle = (t) => {
-      if (!t) return 'Vorlage';
-      const friendlyMap = {
-        'materialverkauf': 'Materialverkauf (Kleider/Munition)',
-        'depot_pfand': 'Depot & Kaution (Inventar)',
-        'depot / pfand': 'Depot & Kaution (Inventar)',
-        'jahresbeitrag': 'Jahresbeitrag',
-        'vermietung': 'Miete Schützenhaus',
-        'schulsport': 'Schulsport / Kurse',
-        'sponsoring': 'Sponsoring & Gönner',
-        'sonstige': 'Sonstige Rechnungen',
-        'mahnung_1': '1. Mahnung (Erinnerung)',
-        'mahnung_2': '2. Mahnung',
-        'mahnung_3': '3. Mahnung (Letzte Frist)',
-        'mahnung': 'Mahnung (Standard)',
-        'mietvertrag': 'Mietvertrag Rüteli',
-        'gv_normal': 'GV-Einladung (Standard)',
-        'gv_wahljahr': 'GV-Einladung (Wahljahr)',
-        'freier_brief': 'Freier Vorstandsbrief'
-      };
-      if (friendlyMap[t.code?.toLowerCase()]) return friendlyMap[t.code.toLowerCase()];
-      if (t.title) {
-        if (t.title.includes('–')) {
-          const parts = t.title.split('–');
-          return parts.slice(1).join('–').trim() || t.title;
-        }
-        if (t.title.includes('-')) {
-          const parts = t.title.split('-');
-          return parts.slice(1).join('-').trim() || t.title;
-        }
-        return t.title;
-      }
-      return t.code || 'Vorlage';
-    };
+    // HTML Zeile 2: Fachbereich Vermietung Schützenstube (optisch separiert)
+    const vmMailCodes = ['vm_vertrag', 'vm_mahnung', 'vm_bestaetigung', 'vm_schluessel', 'vm_storno'];
+    const row2Html = `
+      <div class="p-2.5 rounded-3 border border-primary-subtle bg-primary-subtle bg-opacity-10 mb-3 shadow-2xs">
+        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
+          <span class="badge bg-primary text-white"><i class="fas fa-house-chimney me-1.5"></i>Fachbereich Vermietung Schützenstube</span>
+          <small class="text-muted" style="font-size: 11px;">Mietvertrag & Benützungsreglement (PDF) sowie automatisierte Workflow-Mails</small>
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <!-- Mietvertrag & Reglement PDF -->
+          <button class="btn btn-sm ${isMietvertragPdf ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-primary'}" onclick="docSelectCategory('vertrag')">
+            <i class="fas fa-file-contract me-1.5"></i> Mietvertrag & Benützungsreglement (PDF)
+          </button>
+          
+          <div class="vr mx-1 d-none d-md-block text-secondary" style="height: 24px;"></div>
 
-    const subTabsHtml = templatesInCat.map(t => `
-      <button class="btn btn-xs ${window._selectedDocCode === t.code ? 'btn-dark fw-bold' : 'btn-light border text-dark'}" onclick="docSelectTemplate('${t.code}')">
-        ${escapeHtml(getCleanTemplateTitle(t))}
-      </button>
-    `).join('');
+          <!-- Die 5 Vermietungs-Mails -->
+          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_vertrag' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_vertrag')">
+            <i class="fas fa-envelope text-info me-1"></i> Mail: Mietvertrag & QR
+          </button>
+          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_mahnung' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_mahnung')">
+            <i class="fas fa-envelope text-warning me-1"></i> Mail: Zahlungserinnerung
+          </button>
+          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_bestaetigung' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_bestaetigung')">
+            <i class="fas fa-envelope text-success me-1"></i> Mail: Zahlungseingang
+          </button>
+          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_schluessel' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_schluessel')">
+            <i class="fas fa-envelope text-primary me-1"></i> Mail: Schlüsselübergabe
+          </button>
+          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_storno' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_storno')">
+            <i class="fas fa-envelope text-danger me-1"></i> Mail: Storno-Feedback
+          </button>
+        </div>
+      </div>
+    `;
 
-    // Dynamische Platzhalter je nach Dokumenten-Kategorie
-    const basePlaceholders = [
-      '{vorname}', '{nachname}', '{anrede}', '{strasse}', '{plz}', '{ort}',
-      '{absender_vorname}', '{absender_nachname}', '{absender_funktion}', '{absender_email}', '{absender_mobil}'
-    ];
-
-    let categoryPlaceholders = [];
-    if (currentCat === 'rechnung' || currentCat === 'mahnung') {
-      categoryPlaceholders = ['{rechnungsnummer}', '{rechnungsjahr}', '{gesamtbetrag}', '{faelligkeitsdatum}'];
-    } else if (currentCat === 'vertrag') {
-      categoryPlaceholders = ['{mietdatum}', '{mietbetrag}', '{buchungsnummer}'];
-    } else if (currentCat === 'gv') {
-      categoryPlaceholders = ['{gv_nummer}', '{gv_datum}', '{gv_zeit}', '{praesident_name}'];
-    } else if (currentCat === 'brief') {
-      categoryPlaceholders = ['{betreff}', '{datum}'];
+    // HTML Sub-Tabs für Zeile 1 (falls mehrere Vorlagen in Kategorie)
+    let subTabsHtml = '';
+    if (!isVermietungMail && !isMietvertragPdf && templatesInCat.length > 1) {
+      subTabsHtml = `
+        <div class="d-flex gap-1.5 mb-3 flex-wrap bg-light p-2 rounded-3 border">
+          <span class="text-muted small fw-bold me-2 align-self-center ps-1" style="font-size: 11px;">Vorlagen:</span>
+          ${templatesInCat.map(t => `
+            <button class="btn btn-xs ${window._selectedDocCode === t.code ? 'btn-dark fw-bold' : 'btn-light border text-dark'}" onclick="docSelectTemplate('${t.code}')">
+              ${escapeHtml(window.getCleanDocTemplateTitle(t))}
+            </button>
+          `).join('')}
+        </div>
+      `;
     }
 
-    const allVisiblePlaceholders = [...categoryPlaceholders, ...basePlaceholders];
-    const placeholdersHtml = allVisiblePlaceholders.map(ph => `
+    // Dynamische Platzhalter je nach Dokumenten-Kategorie
+    let categoryPlaceholders = [];
+    if (isVermietungMail) {
+      categoryPlaceholders = [
+        '{vorname}', '{nachname}', '{anrede}', '{mietdatum}', '{festbeginn}', 
+        '{vertragsnr}', '{mietbetrag}', '{wirtschaft_name}', '{wirtschaft_phone}', 
+        '{wirtschaft_email}', '{feedback_url}', '{club_email}'
+      ];
+    } else if (currentCat === 'vertrag') {
+      categoryPlaceholders = ['{mietdatum}', '{mietbetrag}', '{buchungsnummer}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
+    } else if (currentCat === 'rechnung' || currentCat === 'mahnung') {
+      categoryPlaceholders = [
+        '{rechnungsnummer}', '{rechnungsjahr}', '{gesamtbetrag}', '{faelligkeitsdatum}',
+        '{vorname}', '{nachname}', '{anrede}', '{strasse}', '{plz}', '{ort}',
+        '{absender_vorname}', '{absender_nachname}', '{absender_funktion}', '{absender_email}', '{absender_mobil}'
+      ];
+    } else if (currentCat === 'gv') {
+      categoryPlaceholders = ['{gv_nummer}', '{gv_datum}', '{gv_zeit}', '{praesident_name}', '{vorname}', '{nachname}'];
+    } else if (currentCat === 'brief') {
+      categoryPlaceholders = ['{betreff}', '{datum}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
+    }
+
+    const placeholdersHtml = categoryPlaceholders.map(ph => `
       <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('${ph}')">${ph}</button>
     `).join('');
 
@@ -176,140 +237,207 @@
             </p>
           </div>
           <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-outline-primary" onclick="docTestRenderPdf('${currentTemplate.id}')" title="Test-PDF via Edge Function erstellen">
-              <i class="fas fa-file-pdf me-1.5 text-danger"></i> PDF-Vorschau generieren
-            </button>
+            ${isVermietungMail ? `
+              <button class="btn btn-sm btn-outline-primary" onclick="docSendTestMail('${currentTemplate.code}')" title="Test-E-Mail an meine Adresse senden">
+                <i class="fas fa-paper-plane me-1.5 text-primary"></i> Test-Mail an mich
+              </button>
+            ` : `
+              <button class="btn btn-sm btn-outline-primary" onclick="docTestRenderPdf('${currentTemplate.id}')" title="Test-PDF via Edge Function erstellen">
+                <i class="fas fa-file-pdf me-1.5 text-danger"></i> PDF-Vorschau generieren
+              </button>
+            `}
           </div>
         </div>
 
-        <!-- Hauptkategorien -->
-        <div class="d-flex gap-2 mb-3 flex-wrap pb-2 border-bottom">
-          ${catTabsHtml}
+        <!-- ZEILE 1: Allgemeine Kategorien -->
+        <div class="d-flex gap-2 mb-2 flex-wrap pb-2 border-bottom">
+          ${row1TabsHtml}
         </div>
 
-        <!-- Unterauswahl (falls mehrere Vorlagen in Kategorie) -->
-        ${templatesInCat.length > 1 ? `
-          <div class="d-flex gap-1.5 mb-4 flex-wrap bg-light p-2 rounded-3 border">
-            <span class="text-muted small fw-bold me-2 align-self-center ps-1" style="font-size: 11px;">Vorlagen:</span>
-            ${subTabsHtml}
-          </div>
-        ` : ''}
+        <!-- ZEILE 2: Fachbereich Vermietung Schützenstube (farblich hervorgehoben) -->
+        ${row2Html}
 
+        <!-- Sub-Tabs für aktive Kategorie -->
+        ${subTabsHtml}
+
+        <!-- HAUPTBEREICH: 2-SPALTEN-LAYOUT -->
         <div class="row g-4">
-          <!-- Linke Spalte: Formular für Textbausteine & Metadaten -->
-          <div class="col-lg-7">
-            <form id="doc-template-form" onsubmit="docSaveTemplate(event, '${currentTemplate.id}')">
-              
-              <!-- Shortcodes Helper Bar -->
-              <div class="bg-light p-3 rounded-3 mb-4 border shadow-sm">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)</label>
-                  <small class="text-muted" style="font-size: 11px;">Wird an der Cursor-Position eingefügt</small>
-                </div>
+          
+          <!-- FALL A: VERMIETUNGS-MAILVORLAGE MIT LIVE-HTML-VORSCHAU -->
+          ${isVermietungMail ? `
+            <!-- Linke Spalte: E-Mail Editor -->
+            <div class="col-lg-6">
+              <form id="doc-template-form" onsubmit="docSaveTemplate(event, '${currentTemplate.id}')">
                 
-                <div class="d-flex gap-1 flex-wrap">
-                  ${placeholdersHtml}
+                <div class="bg-light p-3 rounded-3 mb-3 border shadow-sm">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)</label>
+                    <small class="text-muted" style="font-size: 11px;">Wird an der Cursor-Position eingefügt</small>
+                  </div>
+                  <div class="d-flex gap-1 flex-wrap">
+                    ${placeholdersHtml}
+                  </div>
                 </div>
-              </div>
 
-              <!-- Titel / Betreff -->
-              <div class="mb-3">
-                <label class="form-label fw-bold small text-muted">Dokumententitel / Betreffzeile (PDF)</label>
-                <input type="text" class="form-control fw-bold text-primary" id="doc-f-title" required value="${escapeHtml(currentTemplate.title || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
-              </div>
-
-              <!-- Einleitungstext -->
-              <div class="mb-3">
-                <label class="form-label fw-bold small text-muted">Einleitungstext / Anschreiben</label>
-                <textarea class="form-control" id="doc-f-intro" rows="4" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.intro || '')}</textarea>
-              </div>
-
-              <!-- Schlusstext -->
-              <div class="mb-3">
-                <label class="form-label fw-bold small text-muted">Schlusstext & Grussformel</label>
-                <textarea class="form-control" id="doc-f-outro" rows="3" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.outro || '')}</textarea>
-              </div>
-
-              <!-- Zahlungsziel & Hinweise -->
-              <div class="row g-3 mb-3">
-                <div class="col-sm-8">
-                  <label class="form-label fw-bold small text-muted">Fusszeilen-Hinweis / Rechtsbelehrung</label>
-                  <input type="text" class="form-control" id="doc-f-notice" value="${escapeHtml(currentTemplate.notice || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Vorlagenbezeichnung</label>
+                  <input type="text" class="form-control fw-bold" id="doc-f-title" required value="${escapeHtml(currentTemplate.title || '')}" onfocus="window._docLastFocusedField = this">
                 </div>
-                <div class="col-sm-4">
-                  <label class="form-label fw-bold small text-muted">Zahlungsfrist (Tage)</label>
-                  <input type="number" class="form-control text-end" id="doc-f-duedays" value="${currentTemplate.due_days || 30}">
-                </div>
-              </div>
 
-              <!-- E-Mail Versand-Texte -->
-              <div class="p-3 bg-light rounded-3 border mb-4">
-                <h6 class="fw-bold text-primary mb-2"><i class="fas fa-envelope me-1.5"></i>E-Mail Begleittext</h6>
-                <div class="mb-2">
-                  <label class="form-label small text-muted mb-1">E-Mail Betreff</label>
-                  <input type="text" class="form-control form-control-sm fw-semibold" id="doc-f-mail-subj" value="${escapeHtml(currentTemplate.mail_subject || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">E-Mail Betreffzeile</label>
+                  <input type="text" class="form-control fw-bold text-primary" id="doc-f-mail-subj" required value="${escapeHtml(currentTemplate.mail_subject || '')}" oninput="docUpdateLiveMailPreview()" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
                 </div>
-                <div>
-                  <label class="form-label small text-muted mb-1">E-Mail Nachrichtentext</label>
-                  <textarea class="form-control form-control-sm font-monospace" id="doc-f-mail-body" rows="4" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
-                </div>
-              </div>
 
-              <div class="d-grid">
-                <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm write-protected" id="doc-submit-btn">
-                  <i class="fas fa-save me-1.5"></i> Vorlage speichern
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- Rechte Spalte: Klausel-Editor (für Verträge, GV-Traktanden & Reglemente) -->
-          <div class="col-lg-5">
-            <div class="card border shadow-sm p-3 bg-white rounded-3">
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="fw-bold text-primary mb-0">
-                  <i class="fas fa-list-ol me-1.5"></i>Klauseln & Reglement
-                </h6>
-                <button class="btn btn-xs btn-success fw-bold write-protected" onclick="docOpenClauseModal('${currentTemplate.id}', null)">
-                  <i class="fas fa-plus me-1"></i> Klausel hinzufügen
-                </button>
-              </div>
-
-              ${clausesForTemplate.length === 0 ? `
-                <div class="text-center py-4 text-muted small bg-light rounded-3 p-3">
-                  <i class="fas fa-info-circle me-1"></i>Für dieses Dokument sind keine separaten Klauseln hinterlegt (z.B. bei Standard-Rechnungen).
+                <div class="mb-4">
+                  <label class="form-label fw-bold small text-muted">E-Mail Nachrichtentext</label>
+                  <textarea class="form-control font-monospace" id="doc-f-mail-body" rows="12" required oninput="docUpdateLiveMailPreview()" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
+                  <small class="text-muted mt-1 d-block" style="font-size: 11px;">Absätze mit doppelter Leerzeile trennen. Die Vorschau rechts aktualisiert sich automatisch beim Tippen.</small>
                 </div>
-              ` : `
-                <div class="list-group list-group-flush border rounded-3 overflow-hidden" style="max-height: 520px; overflow-y: auto;">
-                  ${clausesForTemplate.map((c, idx) => `
-                    <div class="list-group-item p-3 border-bottom">
-                      <div class="d-flex justify-content-between align-items-start mb-1">
-                        <strong class="text-dark small">${escapeHtml(c.clause_number ? c.clause_number + '. ' : '')}${escapeHtml(c.clause_title)}</strong>
-                        <div class="btn-group btn-group-xs">
-                          <button class="btn btn-outline-secondary btn-xs py-0 px-1" onclick="docMoveClause('${c.id}', -1)" title="Nach oben" ${idx === 0 ? 'disabled' : ''}>
-                            <i class="fas fa-chevron-up"></i>
-                          </button>
-                          <button class="btn btn-outline-secondary btn-xs py-0 px-1" onclick="docMoveClause('${c.id}', 1)" title="Nach unten" ${idx === clausesForTemplate.length - 1 ? 'disabled' : ''}>
-                            <i class="fas fa-chevron-down"></i>
-                          </button>
-                          <button class="btn btn-outline-warning btn-xs py-0 px-1.5" onclick="docOpenClauseModal('${currentTemplate.id}', '${c.id}')" title="Bearbeiten">
-                            <i class="fas fa-edit"></i>
-                          </button>
-                          <button class="btn btn-outline-danger btn-xs py-0 px-1.5" onclick="docDeleteClause('${c.id}')" title="Löschen">
-                            <i class="fas fa-trash-alt"></i>
-                          </button>
-                        </div>
-                      </div>
-                      <p class="text-muted mb-0 small" style="font-size: 11px; white-space: pre-line; line-height: 1.4;">${escapeHtml(c.clause_text)}</p>
-                    </div>
-                  `).join('')}
+
+                <div class="d-grid">
+                  <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm write-protected" id="doc-submit-btn">
+                    <i class="fas fa-save me-1.5"></i> E-Mail-Vorlage speichern
+                  </button>
                 </div>
-              `}
+              </form>
             </div>
-          </div>
+
+            <!-- Rechte Spalte: Live-HTML-Vorschau der E-Mail -->
+            <div class="col-lg-6">
+              <div class="card border shadow-sm p-3 bg-light rounded-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="fw-bold text-primary mb-0">
+                    <i class="fas fa-eye me-1.5"></i>Live-Vorschau (Responsive E-Mail)
+                  </h6>
+                  <span class="badge bg-secondary" style="font-size: 10px;">Test-Datensatz aktiv</span>
+                </div>
+                <div id="doc-live-mail-preview-container" class="mt-2">
+                  <!-- Wird dynamisch befüllt -->
+                </div>
+              </div>
+            </div>
+          ` : `
+            <!-- FALL B: STANDARD DOKUMENTE & MIETVERTRAG PDF MIT KLAUSELN -->
+            <!-- Linke Spalte: Textbausteine & Metadaten -->
+            <div class="col-lg-7">
+              <form id="doc-template-form" onsubmit="docSaveTemplate(event, '${currentTemplate.id}')">
+                
+                <div class="bg-light p-3 rounded-3 mb-4 border shadow-sm">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)</label>
+                    <small class="text-muted" style="font-size: 11px;">Wird an der Cursor-Position eingefügt</small>
+                  </div>
+                  <div class="d-flex gap-1 flex-wrap">
+                    ${placeholdersHtml}
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Dokumententitel / Betreffzeile (PDF)</label>
+                  <input type="text" class="form-control fw-bold text-primary" id="doc-f-title" required value="${escapeHtml(currentTemplate.title || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Einleitungstext / Anschreiben</label>
+                  <textarea class="form-control" id="doc-f-intro" rows="4" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.intro || '')}</textarea>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Schlusstext & Grussformel</label>
+                  <textarea class="form-control" id="doc-f-outro" rows="3" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.outro || '')}</textarea>
+                </div>
+
+                <div class="row g-3 mb-3">
+                  <div class="col-sm-8">
+                    <label class="form-label fw-bold small text-muted">Fusszeilen-Hinweis / Rechtsbelehrung</label>
+                    <input type="text" class="form-control" id="doc-f-notice" value="${escapeHtml(currentTemplate.notice || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                  </div>
+                  <div class="col-sm-4">
+                    <label class="form-label fw-bold small text-muted">Zahlungsfrist (Tage)</label>
+                    <input type="number" class="form-control text-end" id="doc-f-duedays" value="${currentTemplate.due_days || 30}">
+                  </div>
+                </div>
+
+                ${!isMietvertragPdf ? `
+                  <div class="p-3 bg-light rounded-3 border mb-4">
+                    <h6 class="fw-bold text-primary mb-2"><i class="fas fa-envelope me-1.5"></i>E-Mail Begleittext (bei Rechnungsversand)</h6>
+                    <div class="mb-2">
+                      <label class="form-label small text-muted mb-1">E-Mail Betreff</label>
+                      <input type="text" class="form-control form-control-sm fw-semibold" id="doc-f-mail-subj" value="${escapeHtml(currentTemplate.mail_subject || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                    </div>
+                    <div>
+                      <label class="form-label small text-muted mb-1">E-Mail Nachrichtentext</label>
+                      <textarea class="form-control form-control-sm font-monospace" id="doc-f-mail-body" rows="4" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
+                    </div>
+                  </div>
+                ` : ''}
+
+                <div class="d-grid">
+                  <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm write-protected" id="doc-submit-btn">
+                    <i class="fas fa-save me-1.5"></i> Vorlage speichern
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Rechte Spalte: Klausel-Editor (Scrollable ohne overflow-hidden Bug) -->
+            <div class="col-lg-5">
+              <div class="card border shadow-sm p-3 bg-white rounded-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <div>
+                    <h6 class="fw-bold text-primary mb-0">
+                      <i class="fas fa-list-ol me-1.5"></i>${isMietvertragPdf ? 'Benützungsordnung & Klauseln (1–8)' : 'Klauseln & Reglement'}
+                    </h6>
+                    <small class="text-muted" style="font-size: 11px;">Fliessender Mehrseiten-Vertrag</small>
+                  </div>
+                  <button class="btn btn-xs btn-success fw-bold write-protected" onclick="docOpenClauseModal('${currentTemplate.id}', null)">
+                    <i class="fas fa-plus me-1"></i> Klausel hinzufügen
+                  </button>
+                </div>
+
+                ${clausesForTemplate.length === 0 ? `
+                  <div class="text-center py-4 text-muted small bg-light rounded-3 p-3">
+                    <i class="fas fa-info-circle me-1"></i>Für dieses Dokument sind keine separaten Klauseln hinterlegt (z.B. bei Standard-Rechnungen).
+                  </div>
+                ` : `
+                  <!-- Scrollbar ohne overflow-hidden !important Bug -->
+                  <div class="list-group list-group-flush border rounded-3" style="max-height: 560px; overflow-y: auto;">
+                    ${clausesForTemplate.map((c, idx) => `
+                      <div class="list-group-item p-3 border-bottom">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                          <strong class="text-dark small">${escapeHtml(c.clause_number ? c.clause_number + '. ' : '')}${escapeHtml(c.clause_title)}</strong>
+                          <div class="btn-group btn-group-xs">
+                            <button class="btn btn-outline-secondary btn-xs py-0 px-1" onclick="docMoveClause('${c.id}', -1)" title="Nach oben" ${idx === 0 ? 'disabled' : ''}>
+                              <i class="fas fa-chevron-up"></i>
+                            </button>
+                            <button class="btn btn-outline-secondary btn-xs py-0 px-1" onclick="docMoveClause('${c.id}', 1)" title="Nach unten" ${idx === clausesForTemplate.length - 1 ? 'disabled' : ''}>
+                              <i class="fas fa-chevron-down"></i>
+                            </button>
+                            <button class="btn btn-outline-warning btn-xs py-0 px-1.5" onclick="docOpenClauseModal('${currentTemplate.id}', '${c.id}')" title="Bearbeiten">
+                              <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-outline-danger btn-xs py-0 px-1.5" onclick="docDeleteClause('${c.id}')" title="Löschen">
+                              <i class="fas fa-trash-alt"></i>
+                            </button>
+                          </div>
+                        </div>
+                        <p class="text-muted mb-0 small" style="font-size: 11px; white-space: pre-line; line-height: 1.4;">${escapeHtml(c.clause_text)}</p>
+                      </div>
+                    `).join('')}
+                  </div>
+                `}
+              </div>
+            </div>
+          `}
         </div>
       </div>
     `;
+
+    // Falls Vermietungs-Mail aktiv, sofort Live-Vorschau rendern
+    if (isVermietungMail) {
+      window.docUpdateLiveMailPreview();
+    }
   };
 
   // 3. NAVIGATION & INTERAKTIONEN
@@ -325,10 +453,92 @@
     if (container) window.renderDokumentVorlagen(container);
   };
 
+  window.docSelectVermietungMail = function(code) {
+    window._selectedDocCategory = 'vermietung_mail';
+    window._selectedDocCode = code;
+    const container = document.getElementById('dokument-vorlagen-container');
+    if (container) window.renderDokumentVorlagen(container);
+  };
+
+  // 4. LIVE-HTML-VORSCHAU FÜR E-MAILS
+  window.docUpdateLiveMailPreview = function() {
+    const previewContainer = document.getElementById('doc-live-mail-preview-container');
+    if (!previewContainer) return;
+
+    const subj = document.getElementById('doc-f-mail-subj')?.value || '';
+    const body = document.getElementById('doc-f-mail-body')?.value || '';
+    const code = window._selectedDocCode || 'vm_vertrag';
+
+    previewContainer.innerHTML = buildRentalEmailPreviewHtml(subj, body, code);
+  };
+
+  function buildRentalEmailPreviewHtml(subject, bodyText, templateCode) {
+    const sample = {
+      vorname: 'Max',
+      nachname: 'Muster',
+      anrede: 'Guten Tag',
+      mietdatum: '15. August 2026',
+      festbeginn: '14:00 Uhr',
+      vertragsnr: 'VM-26-0042',
+      mietbetrag: '300.00',
+      kaution: '200.00',
+      wirtschaft_name: 'Wirtschaftsteam (Uschi Künzli)',
+      wirtschaft_phone: '079 888 50 37',
+      wirtschaft_email: 'wirtschaft@sportschuetzen-muhen.ch',
+      feedback_url: 'https://sportschuetzen-muhen.ch/storno_feedback.html?vnr=VM-26-0042',
+      club_email: 'sportschuetzen.muhen@gmail.com'
+    };
+
+    let bannerColor = '#0f3c5c';
+    if (templateCode === 'vm_mahnung') bannerColor = '#c53030';
+    else if (templateCode === 'vm_bestaetigung') bannerColor = '#22543d';
+    else if (templateCode === 'vm_schluessel') bannerColor = '#2b6cb0';
+    else if (templateCode === 'vm_storno') bannerColor = '#742a2a';
+
+    let renderedSubject = subject || '';
+    let renderedBody = bodyText || '';
+
+    Object.entries(sample).forEach(([k, v]) => {
+      const rx = new RegExp(`\\{${k}\\}`, 'gi');
+      renderedSubject = renderedSubject.replace(rx, v);
+      renderedBody = renderedBody.replace(rx, v);
+    });
+
+    const paragraphs = renderedBody.split('\n\n').map(p => 
+      `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+    ).join('');
+
+    return `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background:#ffffff;">
+        <!-- Header Banner -->
+        <div style="background-color: ${bannerColor}; color: #ffffff; padding: 18px 20px; text-align: center;">
+          <h4 style="margin: 0 0 3px 0; font-size: 17px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">SPORTSCHÜTZEN MUHEN</h4>
+          <p style="margin: 0; font-size: 11.5px; opacity: 0.9; color: #e2e8f0;">Schiessanlage Rüteli · Vermietung Schützenstube</p>
+        </div>
+
+        <!-- Betreffzeile -->
+        <div style="background: #f8fafc; padding: 10px 18px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; color: #334155;">
+          <strong>Betreff:</strong> <span class="text-primary fw-bold">${escapeHtml(renderedSubject)}</span>
+        </div>
+
+        <!-- Body Content -->
+        <div style="padding: 20px 22px; color: #1e293b; font-size: 13.5px;">
+          ${paragraphs}
+        </div>
+
+        <!-- Club Footer -->
+        <div style="background-color: #f1f5f9; padding: 12px 18px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
+          <strong>Sportschützen Muhen</strong> (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen<br>
+          Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" style="color: #0284c7; text-decoration: none;">www.sportschuetzen-muhen.ch</a> · E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color: #0284c7; text-decoration: none;">sportschuetzen.muhen@gmail.com</a>
+        </div>
+      </div>
+    `;
+  }
+
   window.docInsertShortcode = function(code) {
     let activeEl = window._docLastFocusedField || document.activeElement;
     if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA') || !document.getElementById('doc-template-form')?.contains(activeEl)) {
-      activeEl = document.getElementById('doc-f-intro');
+      activeEl = document.getElementById('doc-f-mail-body') || document.getElementById('doc-f-intro');
     }
     if (activeEl) {
       const start = activeEl.selectionStart !== undefined ? activeEl.selectionStart : activeEl.value.length;
@@ -338,10 +548,13 @@
       activeEl.focus();
       activeEl.selectionStart = activeEl.selectionEnd = start + code.length;
       window._docLastFocusedField = activeEl;
+      if (typeof window.docUpdateLiveMailPreview === 'function') {
+        window.docUpdateLiveMailPreview();
+      }
     }
   };
 
-  // 4. SPEICHERN EINER VORLAGE
+  // 5. SPEICHERN EINER VORLAGE
   window.docSaveTemplate = async function(event, templateId) {
     event.preventDefault();
     const submitBtn = document.getElementById('doc-submit-btn');
@@ -350,21 +563,27 @@
       submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Speichere...';
     }
 
-    const title = document.getElementById('doc-f-title').value.trim();
-    const intro = document.getElementById('doc-f-intro').value.trim();
-    const outro = document.getElementById('doc-f-outro').value.trim();
-    const notice = document.getElementById('doc-f-notice').value.trim();
-    const due_days = parseInt(document.getElementById('doc-f-duedays').value) || 30;
-    const mail_subject = document.getElementById('doc-f-mail-subj').value.trim();
-    const mail_body = document.getElementById('doc-f-mail-body').value.trim();
+    const titleEl = document.getElementById('doc-f-title');
+    const introEl = document.getElementById('doc-f-intro');
+    const outroEl = document.getElementById('doc-f-outro');
+    const noticeEl = document.getElementById('doc-f-notice');
+    const dueDaysEl = document.getElementById('doc-f-duedays');
+    const mailSubjEl = document.getElementById('doc-f-mail-subj');
+    const mailBodyEl = document.getElementById('doc-f-mail-body');
+
+    const updateData = { updated_at: new Date().toISOString() };
+    if (titleEl) updateData.title = titleEl.value.trim();
+    if (introEl) updateData.intro = introEl.value.trim();
+    if (outroEl) updateData.outro = outroEl.value.trim();
+    if (noticeEl) updateData.notice = noticeEl.value.trim();
+    if (dueDaysEl) updateData.due_days = parseInt(dueDaysEl.value) || 0;
+    if (mailSubjEl) updateData.mail_subject = mailSubjEl.value.trim();
+    if (mailBodyEl) updateData.mail_body = mailBodyEl.value.trim();
 
     const sb = getDocSupabaseClient();
     if (sb) {
       try {
-        const { error } = await sb.from('document_templates').update({
-          title, intro, outro, notice, due_days, mail_subject, mail_body,
-          updated_at: new Date().toISOString()
-        }).eq('id', templateId);
+        const { error } = await sb.from('document_templates').update(updateData).eq('id', templateId);
 
         if (error) throw error;
         showSuccess("🎉 Vorlage erfolgreich gespeichert!");
@@ -383,7 +602,47 @@
     }
   };
 
-  // 5. KLAUSEL HINZUFÜGEN / BEARBEITEN
+  // 6. TEST-MAIL VERSENDEN
+  window.docSendTestMail = async function(templateCode) {
+    const userEmail = (window.currentUser && (window.currentUser.email || window.currentUser.mail)) || 'sportschuetzen.muhen@gmail.com';
+    if (!confirm(`Test-E-Mail für '${templateCode}' an ${userEmail} senden?`)) return;
+
+    if (typeof showLoadingOverlay === 'function') {
+      showLoadingOverlay(`Sende Test-Mail an ${userEmail}...`);
+    }
+
+    try {
+      const subj = document.getElementById('doc-f-mail-subj')?.value || 'Test E-Mail';
+      const body = document.getElementById('doc-f-mail-body')?.value || 'Test Inhalt';
+      const fullHtml = buildRentalEmailPreviewHtml(subj, body, templateCode);
+
+      if (typeof window.sendMailViaEngine === 'function') {
+        const res = await window.sendMailViaEngine({
+          to: userEmail,
+          subject: `[TEST] ${subj}`,
+          html: fullHtml,
+          module: 'vermietung_test',
+          referenceId: `TEST-${templateCode}`
+        });
+
+        if (res.success) {
+          showSuccess(`🎉 Test-E-Mail erfolgreich an ${userEmail} gesendet!`);
+        } else {
+          showError("Fehler beim Versand der Test-Mail: " + (res.error || 'Unbekannter Fehler'));
+        }
+      } else {
+        showError("Mail-Engine nicht verfügbar.");
+      }
+    } catch (e) {
+      showError("Fehler bei Test-Mail: " + e.message);
+    } finally {
+      if (typeof hideLoadingOverlay === 'function') {
+        hideLoadingOverlay();
+      }
+    }
+  };
+
+  // 7. KLAUSEL HINZUFÜGEN / BEARBEITEN
   window.docOpenClauseModal = function(templateId, clauseId) {
     let modalEl = document.getElementById('docClauseModal');
     if (!modalEl) {
@@ -418,7 +677,7 @@
               </div>
               <div class="mb-4">
                 <label class="form-label fw-bold small text-muted">Reglementstext</label>
-                <textarea class="form-control" id="cl-f-text" rows="5" required placeholder="Text des Paragraphen...">${escapeHtml(clause.clause_text || '')}</textarea>
+                <textarea class="form-control" id="cl-f-text" rows="6" required placeholder="Text des Paragraphen...">${escapeHtml(clause.clause_text || '')}</textarea>
               </div>
               <div class="d-grid">
                 <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm">
@@ -522,7 +781,7 @@
     }
   };
 
-  // 6. SERVERSEITIGES TEST-RENDERING VIA EDGE FUNCTION
+  // 8. SERVERSEITIGES TEST-RENDERING VIA EDGE FUNCTION
   window.docTestRenderPdf = async function(templateId) {
     if (typeof showLoadingOverlay === 'function') {
       showLoadingOverlay("Erzeuge Test-PDF via Edge Function...");
@@ -558,6 +817,7 @@
       let payload = {
         forceRecreate: true,
         saveToStorage: false,
+        templateId: t.id,
         layout: {
           title: formTitle,
           intro: formIntro,
@@ -630,6 +890,8 @@
         if (res && res.success && res.pdfUrl) {
           const urlToOpen = res.pdfUrl.includes('?') ? `${res.pdfUrl}&t=${Date.now()}` : `${res.pdfUrl}?t=${Date.now()}`;
           window.open(urlToOpen, '_blank');
+        } else if (res && res.success && res.pdfBase64 && typeof openPdfBase64 === 'function') {
+          openPdfBase64(res.pdfBase64);
         } else {
           showError("PDF-Generierung fehlgeschlagen: " + (res?.error || 'Unbekannter Fehler'));
         }

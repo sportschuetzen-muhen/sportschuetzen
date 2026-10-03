@@ -1296,7 +1296,7 @@ async function generateInvoicePdf(
   return await pdfDoc.save();
 }
 
-// Erstellt das Mietvertrags-PDF inkl. dynamischer Benützungsordnung (Klauseln Ziffern 1-8), Übergabeprotokoll und Schweizer QR-Rechnung
+// Erstellt das Mietvertrags-PDF inkl. dynamischer Benützungsordnung (mehrseitig), Übergabeprotokoll und Schweizer QR-Rechnung auf separater Schlussseite
 async function generateRentalContractPdf(
   bookingId: string,
   recipient: RecipientData,
@@ -1305,7 +1305,9 @@ async function generateRentalContractPdf(
   mietbetrag: number,
   kaution: number,
   sender: SenderData,
-  supabaseClient?: any
+  supabaseClient?: any,
+  layoutData?: any,
+  templateId?: string
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -1326,17 +1328,26 @@ async function generateRentalContractPdf(
 
   // Dynamische Klauseln aus Supabase laden
   let clauses: any[] = [];
+  let templateTitle = layoutData?.title || "Mietvertrag & Benützungsreglement Schützenstube";
+  let templateNotice = layoutData?.notice || "Zahlbar innert 14 Tagen mit beiliegendem QR-Einzahlungsschein.";
+
   if (supabaseClient) {
     try {
-      const { data: tData } = await supabaseClient
-        .from("document_templates")
-        .select("*")
-        .eq("category", "vertrag")
+      let tQuery = supabaseClient.from("document_templates").select("*");
+      if (templateId) {
+        tQuery = tQuery.eq("id", templateId);
+      } else {
+        tQuery = tQuery.or("code.eq.mietvertrag,id.eq.mietvertrag_rueteli,category.eq.vertrag");
+      }
+      const { data: tData } = await tQuery
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (tData) {
+        if (!layoutData?.title && tData.title) templateTitle = tData.title;
+        if (!layoutData?.notice && tData.notice) templateNotice = tData.notice;
+
         const { data: cData } = await supabaseClient
           .from("document_template_clauses")
           .select("*")
@@ -1352,24 +1363,18 @@ async function generateRentalContractPdf(
     }
   }
 
-  // Fallback-Klauseln (Ziffern 1–8 nach Benützungsreglement Schützenstube Rüteli)
+  // STRIKTER BETRIEBS-CHECK: Keine stillen Fallbacks bei fehlenden Klauseln!
   if (!clauses || clauses.length === 0) {
-    clauses = [
-      { clause_number: "1", clause_title: "Zweckbestimmung", clause_text: "Die Schützenstube dient geselligen Anlässen. Politische Extremveranstaltungen sind untersagt." },
-      { clause_number: "2", clause_title: "Benutzungsrecht & Cheminée", clause_text: "Beinhaltet Saal, Küche, Geschirr und WC-Anlagen. Cheminéeholz ist massvoll zu verwenden; Abzugsklappe stets öffnen." },
-      { clause_number: "3", clause_title: "Sorgfaltspflicht & Reinigung", clause_text: "Räume sind besenrein abzugeben. Geschirr gereinigt versorgen. Nachreinigung wird mit CHF 35.00/h verrechnet." },
-      { clause_number: "4", clause_title: "Dekoration & Lärmschutz", clause_text: "Keine Nägel/Klammern an Decken und Wänden. Nachtruhe ab 22:00 Uhr im Aussenbereich strikte einhalten." },
-      { clause_number: "5", clause_title: "Haftung & Schäden", clause_text: "Der Mieter haftet vollumfänglich für Personen- und Sachschäden sowie für Beschädigungen der Schiessanlage." },
-      { clause_number: "6", clause_title: "Vermietungskontakt & Notfall", clause_text: "Schlüsselübergabe und Notfallkontakt erfolgen über die zuständige Vermietungsstelle der Sportschützen Muhen." },
-      { clause_number: "7", clause_title: "Reservation & Stornogebühr", clause_text: "Bei Absage weniger als 30 Tage vor Mietbeginn wird eine Stornogebühr von CHF 100.00 fällig." },
-      { clause_number: "8", clause_title: "Gebühren & Kaution", clause_text: "Mietgebühr und Kaution sind vor Antritt zu begleichen. Rückerstattung der Kaution erfolgt nach beanstandungsloser Abnahme." }
-    ];
+    throw new Error(
+      "Konfigurationsfehler: In Supabase wurden keine Klauseln für den Mietvertrag gefunden (Tabelle 'document_template_clauses'). Bitte im Modul 'Dokumente-Vorlagen' hinterlegen."
+    );
   }
 
   // ============================================================================
-  // SEITE 1: PARTEIEN, MIETOBJEKT, GEBÜHREN & KLAUSELN 1-4
+  // SEITE 1: KOPFDATEN, PARTEIEN, MIETOBJEKT & KONDITIONEN
   // ============================================================================
   const page1 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let currentPage = page1;
 
   let textStartX = 15 * MM;
   if (logoImage) {
@@ -1390,7 +1395,7 @@ async function generateRentalContractPdf(
     font: fontBold,
     color: rgb(0.12, 0.23, 0.54),
   });
-  page1.drawText("gegründet 1919 · Schiessanlage Rüteli", {
+  page1.drawText("gegründet 1919 · Schiessanlage Rüteli, 5037 Muhen", {
     x: textStartX,
     y: 275.5 * MM,
     size: 9,
@@ -1398,10 +1403,10 @@ async function generateRentalContractPdf(
     color: rgb(0.4, 0.45, 0.55),
   });
 
-  page1.drawText(`Mietvertrag & Benützungsvereinbarung: ${bookingId}`, {
+  page1.drawText(`${sanitizeWinAnsiText(templateTitle)}: ${bookingId}`, {
     x: 20 * MM,
     y: 257 * MM,
-    size: 13,
+    size: 12.5,
     font: fontBold,
     color: rgb(0.1, 0.15, 0.3),
   });
@@ -1446,116 +1451,226 @@ async function generateRentalContractPdf(
   curY -= 5 * MM;
 
   page1.drawText("Gebühren:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page1.drawText(`Mietgebühr: CHF ${mietbetrag.toFixed(2)}   |   Kaution (Depot): CHF ${kaution.toFixed(2)}`, {
+  page1.drawText(`Mietgebühr: CHF ${mietbetrag.toFixed(2)}   |   Kaution (Depot bar): CHF ${kaution.toFixed(2)}`, {
     x: 50 * MM,
     y: curY,
     size: 9,
     font: fontBold,
   });
-  curY -= 8 * MM;
+  curY -= 7.5 * MM;
 
   // Trennlinie
   page1.drawLine({ start: { x: 20 * MM, y: curY }, end: { x: 190 * MM, y: curY }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-  curY -= 6 * MM;
-
-  page1.drawText("Benützungsordnung & Vereinbarungen (Ziffern 1 bis 4):", { x: 20 * MM, y: curY, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
   curY -= 5.5 * MM;
 
-  // Ziffern 1 bis 4
-  const firstHalf = clauses.slice(0, 4);
-  firstHalf.forEach((c, idx) => {
+  page1.drawText("Benützungsordnung & Vereinbarungen:", { x: 20 * MM, y: curY, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  curY -= 5.5 * MM;
+
+  // HILFSFUNKTION FÜR MEHRSEITIGEN VERTRAGSFLUSS
+  function addNewContractPage(): any {
+    const newPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    newPage.drawText(sanitizeWinAnsiText(`${CLUB_NAME} · Mietvertrag & Benützungsreglement ${bookingId} (Fortsetzung)`), {
+      x: 20 * MM,
+      y: 278 * MM,
+      size: 8.5,
+      font: fontRegular,
+      color: rgb(0.4, 0.45, 0.55),
+    });
+    newPage.drawLine({
+      start: { x: 20 * MM, y: 274 * MM },
+      end: { x: 190 * MM, y: 274 * MM },
+      thickness: 0.3,
+      color: rgb(0.7, 0.7, 0.7),
+    });
+    currentPage = newPage;
+    curY = 265 * MM;
+    return newPage;
+  }
+
+  // DYNAMISCHE KLAUSELN FLIESSEND RENDERN
+  clauses.forEach((c, idx) => {
     const num = c.clause_number || String(idx + 1);
-    page1.drawText(`${num}. ${sanitizeWinAnsiText(c.clause_title)}:`, { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
-    curY -= 4 * MM;
+    const titleText = `${num}. ${sanitizeWinAnsiText(c.clause_title)}:`;
     const lines = wrapText(c.clause_text || "", fontRegular, 8, 170 * MM);
+    const neededHeight = 4.5 * MM + (lines.length * 3.8 * MM) + 3 * MM;
+
+    // Falls auf aktueller Seite nicht genügend Platz, neue Seite anlegen
+    if (curY - neededHeight < 22 * MM) {
+      currentPage.drawText("Fortsetzung der Bestimmungen auf nächster Seite...", {
+        x: 20 * MM,
+        y: 14 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+      addNewContractPage();
+    }
+
+    currentPage.drawText(titleText, { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
+    curY -= 4 * MM;
     lines.forEach(l => {
-      page1.drawText(sanitizeWinAnsiText(l), { x: 24 * MM, y: curY, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      currentPage.drawText(sanitizeWinAnsiText(l), { x: 24 * MM, y: curY, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
       curY -= 3.8 * MM;
     });
-    curY -= 2 * MM;
+    curY -= 2.5 * MM;
   });
 
-  // Hinweis am Fuss von Seite 1
-  page1.drawText("Fortsetzung der Bestimmungen, Übergabeprotokoll und Einzahlungsschein auf Seite 2...", {
-    x: 20 * MM,
-    y: 16 * MM,
-    size: 7.5,
-    font: fontRegular,
-    color: rgb(0.45, 0.45, 0.45),
-  });
-
-  // ============================================================================
-  // SEITE 2: KLAUSELN 5-8, ÜBERGABEPROTOKOLL, UNTERSCHRIFTEN & QR-BILL
-  // ============================================================================
-  const page2 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-
-  page2.drawText(sanitizeWinAnsiText(`${CLUB_NAME} · Mietvertrag & Vereinbarung ${bookingId} (Seite 2)`), {
-    x: 20 * MM,
-    y: 278 * MM,
-    size: 8.5,
-    font: fontRegular,
-    color: rgb(0.4, 0.45, 0.55),
-  });
-  page2.drawLine({ start: { x: 20 * MM, y: 274 * MM }, end: { x: 190 * MM, y: 274 * MM }, thickness: 0.3, color: rgb(0.7, 0.7, 0.7) });
-
-  let curY2 = 267 * MM;
-
-  page2.drawText("Benützungsordnung & Vereinbarungen (Ziffern 5 bis 8):", { x: 20 * MM, y: curY2, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
-  curY2 -= 5.5 * MM;
-
-  const secondHalf = clauses.slice(4);
-  secondHalf.forEach((c, idx) => {
-    const num = c.clause_number || String(idx + 5);
-    page2.drawText(`${num}. ${sanitizeWinAnsiText(c.clause_title)}:`, { x: 20 * MM, y: curY2, size: 8.5, font: fontBold });
-    curY2 -= 4 * MM;
-    const lines = wrapText(c.clause_text || "", fontRegular, 8, 170 * MM);
-    lines.forEach(l => {
-      page2.drawText(sanitizeWinAnsiText(l), { x: 24 * MM, y: curY2, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
-      curY2 -= 3.8 * MM;
+  // ÜBERGABEPROTOKOLL & UNTERSCHRIFTEN
+  // Benötigter Platz: ca. 45 mm
+  if (curY - 45 * MM < 22 * MM) {
+    currentPage.drawText("Fortsetzung mit Übergabeprotokoll und Unterschriften auf nächster Seite...", {
+      x: 20 * MM,
+      y: 14 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
     });
-    curY2 -= 2 * MM;
-  });
+    addNewContractPage();
+  }
 
-  curY2 -= 2 * MM;
+  curY -= 2 * MM;
 
   // Checkliste / Übergabeprotokoll-Kästchen
-  page2.drawRectangle({
+  currentPage.drawRectangle({
     x: 20 * MM,
-    y: curY2 - 14 * MM,
+    y: curY - 14 * MM,
     width: 170 * MM,
     height: 14 * MM,
     color: rgb(0.96, 0.97, 0.99),
   });
-  page2.drawText("Übergabe- und Rücknahmeprotokoll:", { x: 23 * MM, y: curY2 - 3.5 * MM, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-  page2.drawText("[  ] Raum & Mobiliar intakt      [  ] Küche & Geschirr gereinigt      [  ] Abfall entsorgt      [  ] Schlüssel zurück", {
+  currentPage.drawText("Übergabe- und Rücknahmeprotokoll:", { x: 23 * MM, y: curY - 3.5 * MM, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+  currentPage.drawText("[  ] Raum & Mobiliar intakt      [  ] Küche & Geschirr gereinigt      [  ] Abfall entsorgt      [  ] Schlüssel zurück", {
     x: 23 * MM,
-    y: curY2 - 9 * MM,
+    y: curY - 9 * MM,
     size: 7.5,
     font: fontRegular,
     color: rgb(0.2, 0.2, 0.2),
   });
-  curY2 -= 18 * MM;
+  curY -= 18 * MM;
 
   // Unterschriften
   const dateStr = new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
-  page2.drawText(`Muhen, den ${dateStr}`, { x: 20 * MM, y: curY2, size: 8, font: fontRegular });
-  curY2 -= 4.5 * MM;
+  currentPage.drawText(`Muhen, den ${dateStr}`, { x: 20 * MM, y: curY, size: 8, font: fontRegular });
+  curY -= 4.5 * MM;
 
-  page2.drawText("Für den Verein: Sportschützen Muhen", { x: 20 * MM, y: curY2, size: 8, font: fontBold });
-  page2.drawText("Der Mieter (gelesen & akzeptiert):", { x: 110 * MM, y: curY2, size: 8, font: fontBold });
+  currentPage.drawText("Für den Verein: Sportschützen Muhen", { x: 20 * MM, y: curY, size: 8, font: fontBold });
+  currentPage.drawText("Der Mieter (gelesen & akzeptiert):", { x: 110 * MM, y: curY, size: 8, font: fontBold });
 
-  curY2 -= 9 * MM;
-  page2.drawLine({ start: { x: 20 * MM, y: curY2 }, end: { x: 80 * MM, y: curY2 }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
-  page2.drawLine({ start: { x: 110 * MM, y: curY2 }, end: { x: 180 * MM, y: curY2 }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
-
-  // QR-Bill auf Seite 2 (105mm am unteren Rand)
-  drawSwissQrBillSection(page2, fontRegular, fontBold, bookingId, mietbetrag, recipient, curYear, "Miete Schützenhaus");
+  curY -= 9 * MM;
+  currentPage.drawLine({ start: { x: 20 * MM, y: curY }, end: { x: 80 * MM, y: curY }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
+  currentPage.drawLine({ start: { x: 110 * MM, y: curY }, end: { x: 180 * MM, y: curY }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
 
   // ============================================================================
-  // SEITENNUMMERIERUNG (2-Pass)
+  // SEPARATE SCHLUSS-SEITE: ABRECHNUNG & SCHWEIZER QR-EINZAHLUNGSSCHEIN
   // ============================================================================
-  page1.drawText("Seite 1 von 2", { x: 175 * MM, y: 12 * MM, size: 7.5, font: fontRegular, color: rgb(0.45, 0.45, 0.45) });
-  page2.drawText("Seite 2 von 2", { x: 175 * MM, y: 108.5 * MM, size: 7.5, font: fontRegular, color: rgb(0.45, 0.45, 0.45) });
+  const qrPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let qrTopY = 280 * MM;
+
+  if (logoImage) {
+    const scaledLogo = logoImage.scaleToFit(28 * MM, 28 * MM);
+    qrPage.drawImage(logoImage, {
+      x: 20 * MM,
+      y: qrTopY - scaledLogo.height + 2 * MM,
+      width: scaledLogo.width,
+      height: scaledLogo.height,
+    });
+  }
+
+  qrPage.drawText(CLUB_NAME.toUpperCase(), {
+    x: 55 * MM,
+    y: qrTopY,
+    size: 13,
+    font: fontBold,
+    color: rgb(0.12, 0.23, 0.54),
+  });
+  qrPage.drawText("gegründet 1919 · Schiessanlage Rüteli, 5037 Muhen", {
+    x: 55 * MM,
+    y: qrTopY - 5 * MM,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+
+  qrTopY -= 17 * MM;
+  qrPage.drawText("Abrechnung & Schweizer QR-Einzahlungsschein", {
+    x: 20 * MM,
+    y: qrTopY,
+    size: 12,
+    font: fontBold,
+    color: rgb(0.1, 0.15, 0.3),
+  });
+
+  qrTopY -= 6 * MM;
+
+  // Übersichtliche Abrechnungsbox
+  const boxHeight = 78 * MM;
+  qrPage.drawRectangle({
+    x: 20 * MM,
+    y: qrTopY - boxHeight,
+    width: 170 * MM,
+    height: boxHeight,
+    color: rgb(0.97, 0.98, 0.99),
+    borderColor: rgb(0.82, 0.85, 0.9),
+    borderWidth: 0.5,
+  });
+
+  let boxY = qrTopY - 7 * MM;
+  qrPage.drawText("Buchungs- & Abrechnungsdetails:", { x: 25 * MM, y: boxY, size: 9, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  boxY -= 6 * MM;
+
+  qrPage.drawText("Vertrags-/Rechnungs-Nr.:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(bookingId, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Mieter / Rechnungsempfänger:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(sanitizeWinAnsiText(mieterName), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Adresse:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(sanitizeWinAnsiText(`${recipient.strasse || "–"}, ${recipient.plz || ""} ${recipient.ort || ""}`), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Mietdatum / Anlass:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Mietgebühr Schützenstube:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(`CHF ${mietbetrag.toFixed(2)}`, { x: 75 * MM, y: boxY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  boxY -= 5 * MM;
+
+  qrPage.drawText("Kaution (Depot bar vor Ort):", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText(`CHF ${kaution.toFixed(2)}`, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 6 * MM;
+
+  qrPage.drawText("Zahlungsziel:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
+  qrPage.drawText("Innert 14 Tagen nach Erhalt des Mietvertrags", { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 7 * MM;
+
+  qrPage.drawText("Wichtiger Hinweis:", { x: 25 * MM, y: boxY, size: 8, font: fontBold, color: rgb(0.2, 0.2, 0.2) });
+  qrPage.drawText("Bitte verwenden Sie für die Zahlung ausschliesslich den untenstehenden QR-Einzahlungsschein.", { x: 55 * MM, y: boxY, size: 8, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+  boxY -= 4 * MM;
+  qrPage.drawText("Mit fristgerechter Bezahlung gilt die Reservation als definitiv abgeschlossen.", { x: 55 * MM, y: boxY, size: 8, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+
+  // Schweizer QR-Zahlteil auf der letzten Seite (105mm am unteren Rand)
+  drawSwissQrBillSection(qrPage, fontRegular, fontBold, bookingId, mietbetrag, recipient, curYear, "Mietvertrag Schützenstube");
+
+  // ============================================================================
+  // SEITENNUMMERIERUNG ÜBER ALLE SEITEN (2-PASS)
+  // ============================================================================
+  const allDocPages = pdfDoc.getPages();
+  const totalPagesCount = allDocPages.length;
+  for (let i = 0; i < totalPagesCount; i++) {
+    const p = allDocPages[i];
+    const isFinalQrPage = (i === totalPagesCount - 1);
+    const pageNumY = isFinalQrPage ? 108.5 * MM : 12 * MM;
+    p.drawText(`Seite ${i + 1} von ${totalPagesCount}`, {
+      x: 175 * MM,
+      y: pageNumY,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+  }
 
   return await pdfDoc.save();
 }
@@ -3034,7 +3149,9 @@ Deno.serve(async (req: Request) => {
         mietbetrag,
         kaution,
         sender,
-        supabase
+        supabase,
+        payload.layout,
+        (payload as any).templateId
       );
 
       const safeName = (recipient.nachname || recipient.firma || recipient.name || "Mieter")

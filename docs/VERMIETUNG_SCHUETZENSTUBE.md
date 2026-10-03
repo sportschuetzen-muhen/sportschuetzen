@@ -50,6 +50,17 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 * **TableKit Spalten-Steuerung:** Die Reservationstabelle ist an den globalen Vereinsstandard `TableKit.setupColumnToggle` angebunden. Spalten (Datum, Mieter Name, Vertrags-Nr., Festbeginn, Kontakt, Mietbetrag, Status, Aktionen) lassen sich beliebig ein-/ausblenden und werden persistent im `localStorage` (`tk_cols_vermietung`) gesichert.
 * **Zentralisierte Tarife:** Mietpreise (`rental_pricing`) und Konfigurationswerte (`rental_settings`) werden in einer einheitlichen Maske gepflegt und atomar synchronisiert.
 
+### 2.6 Mehrseitiger Mietvertrag mit separater QR-Schlussseite (Phase 38)
+* **Dynamischer Seitenfluss (~3–4 Seiten):** Das offizielle Benützungsreglement mit allen Ziffern 1 bis 8, dem Übergabeprotokoll und den Unterschriftenzeilen fliesst dynamisch über mehrere Seiten, ohne dass Text abgeschnitten oder komprimiert wird.
+* **Dedizierte Schlussseite für QR-Rechnung:** Nach Abschluss des Vertragstextes wird automatisch eine separate Schlussseite für die Abrechnung und den offiziellen Schweizer QR-Zahlteil (SIX SPC 0200 1 Standard, 105 mm) generiert.
+* **Vorteil:** Keine Layout-Kollisionen oder Platzprobleme auf der Unterschriftenseite. Die Gesamtseitenzahl wird dynamisch im 2-Pass-Verfahren nummeriert (`Seite X von Y`).
+
+### 2.7 Vorlagen-Zentrale & Live-Vorschau der 5 Workflow-Mails
+* **Entkopplung der E-Mail-Texte:** Sämtliche 5 Vermietungs-Mails (`vm_vertrag`, `vm_mahnung`, `vm_bestaetigung`, `vm_schluessel`, `vm_storno`) sind vollständig in `public.document_templates` überführt und im Modul *Dokumente-Vorlagen* in einer eigenen hervorgehobenen Zeile («Fachbereich Vermietung Schützenstube») editierbar.
+* **Live-HTML-Vorschau:** E-Mail-Texte werden beim Tippen in Echtzeit im offiziellen Corporate-Design der Sportschützen Muhen (Header-Banner, Paragraphen, Footer) mit Muster-Daten gerendert.
+* **Striktes Fallback-Verbot & Betriebssicherheit (`is_system = true`):** Das System führt keine stillen Code-Fallbacks mehr aus. Fehlende Vorlagen führen zu klaren Fehlermeldungen. Ein PostgreSQL-Trigger verhindert das versehentliche Löschen von System-Vorlagen.
+* **Zusatzrechnung Wirtschaft/Vermietung:** Für nachgelagerte Aufwände (Nachreinigung, Mehrholz, Konsumationen) existiert im Rechnungsmodul die separate Vorlage `Zusatzrechnung Wirtschaft/Vermietung`.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)

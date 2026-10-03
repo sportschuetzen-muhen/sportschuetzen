@@ -413,6 +413,18 @@
             type: 'Vermietung'
         };
 
+        // Vorlage aus zentralem Vorlagen-Pool verknüpfen (Single Source of Truth)
+        const tpl = (window._docTemplatesData || []).find(t => t.category === 'vertrag' || t.code === 'mietvertrag');
+        if (tpl) {
+            payload.templateId = tpl.id;
+            payload.layout = {
+                title: tpl.title,
+                intro: tpl.intro,
+                outro: tpl.outro,
+                notice: tpl.notice
+            };
+        }
+
         try {
             let res = await window.generatePdfViaEngine(payload);
             if (!res.success) {

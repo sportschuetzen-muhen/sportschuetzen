@@ -1907,10 +1907,10 @@ window.rnOpenCreateModal = async function(btnEl) {
     }
   }
 
-  const defaultTpl = (window._invoiceTemplates || []).find(t => t.desc && t.desc.toLowerCase().includes('miete schützenhaus'));
-  const defaultKonto = defaultTpl ? (defaultTpl.habenkonto || defaultTpl.konto || '') : '3650';
+  const defaultTpl = (window._invoiceTemplates || []).find(t => t.desc && (t.desc.toLowerCase().includes('zusatzrechnung') || t.desc.toLowerCase().includes('miete schützenhaus')));
+  const defaultKonto = defaultTpl ? (defaultTpl.habenkonto || defaultTpl.konto || '') : '3400';
   if (typeof window.rncAddPositionRow === 'function') {
-    window.rncAddPositionRow("Miete Schützenhaus Muhen", 150, 1, defaultKonto);
+    window.rncAddPositionRow("Zusatzrechnung Wirtschaft/Vermietung", 150, 1, defaultKonto);
   }
 
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);

@@ -63,7 +63,7 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
 * **Lösung:** Migration 26 etabliert `public.invoice_number_seq` und die Stored Procedure `public.next_invoice_number(p_prefix, p_year)`. Nummern werden direkt in PostgreSQL atomar und lückenlos vergeben:
   - `RE-26-XXXX`: Manuelle Vorstandsrechnungen
   - `JB-26-XXXX`: Jahresbeiträge
-  - `VM-26-XXXX`: Schützenhaus-Vermietungen
+  - `VM-26-XXXX`: Schützenhaus-Vermietungen (Mietverträge & Zusatzrechnungen Wirtschaft/Vermietung)
   - `MV-26-XXXX`: Material- & Munitionsverkäufe (Inventar)
   - `DP-26-XXXX`: Schlüsseldepots & Kautionen
   - `SP-26-XXXX`: Sponsoren & Gönner
@@ -124,6 +124,11 @@ Wird eine Rechnung im Rechnungsmodul gelöscht – entweder einzeln (`rnDeleteIn
 - **Vermietung Schützenstube (`rental_requests`):** Setzt `invoice_id = NULL`. Die Buchung bleibt bestätigt und kann neu fakturiert werden.
 - **In-Memory Cache-Synchronisation:** Die lokalen Datenstrukturen (`window._jbData`, `window._jbAllBeitraege`, `window._invoices`) werden unmittelbar aktualisiert, sodass auch ohne manuellen Reload konsistente Status-Badges und Bereitstellungs-Zähler vorliegen.
 - **Schutz bezahlter Rechnungen:** Rechnungen mit `status === 'bezahlt'` oder `total_paid > 0` werden bei der Sammellöschung automatisch geschützt und übersprungen.
+
+### 3.2 Zusatzrechnung Wirtschaft/Vermietung & Mahnwesen-Abgrenzung
+* **Grundmiete (vor dem Anlass):** Die Grundmiete wird über den Mietvertrag inklusive Schweizer QR-Zahlteil auf separater Schlussseite fakturiert. Bei Zahlungsverzug greift die *Zahlungserinnerung im Vermietungsmodul*: Sie mahnt nicht kaufmännisch, sondern setzt eine 7-Tage-Frist zur *Terminsicherung*. Verstreicht die Frist ungenutzt, wird die Reservation storniert und der Termin im Belegungskalender wieder für andere Mieter freigegeben.
+* **Zusatzrechnung Wirtschaft/Vermietung (nach dem Anlass):** Fallen nach der Durchführung des Anlasses zusätzliche Kosten an (z. B. Nachreinigung CHF 35.–/h bei ungenügender Besenreinheit, zusätzliches Cheminéeholz CHF 20.–, Getränkebezüge Wirtschaft oder Sachbeschädigungen), wird hierfür über den `RechnungsCore` eine **«Zusatzrechnung Wirtschaft/Vermietung»** (Konto 3400) erstellt.
+* **Mahnwesen für Zusatzrechnungen:** Da der Anlass bereits stattgefunden hat, greift bei ausstehenden Zusatzrechnungen das reguläre, dreistufige kaufmännische Mahnwesen im zentralen Rechnungsmodul (`mahnung_1`, `mahnung_2`, `mahnung_3`).
 
 ---
 

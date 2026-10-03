@@ -179,7 +179,7 @@ function buildRentalEmailHtml(title, bannerColor, bodyHtml, settings) {
   `;
 }
 
-// Sendet Workflow-Mails über die zentrale Supabase Edge Function Mail-Engine
+// Sendet Workflow-Mails über die zentrale Supabase Edge Function Mail-Engine basierend auf Vorlagen aus document_templates
 async function sendRentalWorkflowEmail(action, d, settings) {
   if (typeof window.sendMailViaEngine !== 'function') {
     console.warn("⚠️ window.sendMailViaEngine nicht verfügbar.");
@@ -193,125 +193,97 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   const wirtschaftPhone = s.wirtschaft_phone || "079 123 45 67";
   const feedbackBaseUrl = s.feedback_base_url || "https://sportschuetzen-muhen.ch/storno_feedback.html";
 
-  let subject = "";
-  let bodyHtml = "";
-  let bannerColor = "#0f3c5c"; // Vereins-Blau
-  let toEmail = d.email;
-  let cc = clubEmail;
-  let attachments = [];
+  // 1. Zuweisung des Aktionscodes zur Template-ID
+  const actionToTplCode = {
+    'vertrag_mail': 'vm_vertrag',
+    'mahnung': 'vm_mahnung',
+    'bestaetigen': 'vm_bestaetigung',
+    'schluessel': 'vm_schluessel',
+    'stornieren': 'vm_storno'
+  };
+  const tplCode = actionToTplCode[action] || action;
 
-  if (action === 'mahnung') {
-    bannerColor = "#c53030";
-    subject = `❗ Zahlungserinnerung – Schützenstube am ${d.mietdatum}`;
-    bodyHtml = `
-      <p>Guten Tag ${escapeHtml(d.vorname)} ${escapeHtml(d.nachname)},</p>
-      <p>Bei der Prüfung unserer Zahlungseingänge konnten wir für deine Reservation am <strong>${escapeHtml(d.mietdatum)}</strong> (Vertrag <strong>${escapeHtml(d.vertragsnr)}</strong>) noch keine Überweisung feststellen.</p>
-      
-      <div style="background:#fff5f5; border:1px solid #feb2b2; border-radius:8px; padding:18px; margin:20px 0;">
-        <p style="margin:0 0 8px 0;"><strong>Offener Mietbetrag:</strong> <span style="color:#c53030; font-size:17px; font-weight:700;">${escapeHtml(d.mietbetrag)}</span></p>
-        <p style="margin:0 0 8px 0;"><strong>Zahlungsfrist:</strong> Innert 7 Tagen</p>
-        <p style="margin:0;"><strong>Zahlungsmethode:</strong> Bitte verwende den Schweizer QR-Einzahlungsschein aus dem Mietvertrag.</p>
-      </div>
-
-      <p style="font-size:14px; color:#555;">Bitte beachte, dass die Reservation erst mit Zahlungseingang definitiv gesichert ist. Sollte die Frist ungenutzt verstreichen, wird der Termin wieder freigegeben.</p>
-      <p>Bei Fragen oder bereits getätigter Überweisung melde dich bitte kurz bei uns.</p>
-      <br>
-      <p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong></p>
-    `;
-
-    if (d.contract_file_url) {
-      attachments.push({ filename: `Mietvertrag_${d.vertragsnr}.pdf`, path: d.contract_file_url });
-    }
-  } else if (action === 'bestaetigen') {
-    bannerColor = "#22543d";
-    subject = `✅ Zahlung erhalten – Schützenstube am ${d.mietdatum}`;
-    bodyHtml = `
-      <p>Guten Tag ${escapeHtml(d.vorname)} ${escapeHtml(d.nachname)},</p>
-      <p>Vielen Dank! Die Zahlung für deine Schützenstuben-Miete am <strong>${escapeHtml(d.mietdatum)}</strong> (Vertrag <strong>${escapeHtml(d.vertragsnr)}</strong>) ist bei uns eingegangen.</p>
-
-      <div style="background:#f0fff4; border:1px solid #9ae6b4; border-radius:8px; padding:18px; margin:20px 0;">
-        <h4 style="color:#22543d; margin:0 0 10px 0;">🔑 Schlüsselübergabe vereinbaren</h4>
-        <p style="margin:0 0 6px 0;">Bitte kontaktiere rechtzeitig vor deinem Anlass unsere Wirtschafts-Verantwortlichen zur Absprache der Übergabe:</p>
-        <p style="margin:0;"><strong>${escapeHtml(wirtschaftName)}</strong><br>Telefon / WhatsApp: <a href="tel:${escapeHtml(wirtschaftPhone)}" style="color:#22543d; font-weight:600;">${escapeHtml(wirtschaftPhone)}</a></p>
-      </div>
-
-      <p>Wir wünschen dir bereits jetzt ein gelungenes Fest in unserer Schützenstube!</p>
-      <br>
-      <p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong></p>
-    `;
-  } else if (action === 'schluessel') {
-    bannerColor = "#2b6cb0";
-    subject = `🔑 Schlüsselübergabe Schützenstube – ${d.mietdatum}`;
-    bodyHtml = `
-      <p>Guten Tag ${escapeHtml(d.vorname)} ${escapeHtml(d.nachname)},</p>
-      <p>In wenigen Tagen findet dein Anlass in der Schützenstube Muhen am <strong>${escapeHtml(d.mietdatum)}</strong> statt.</p>
-
-      <div style="background:#ebf8ff; border:1px solid #bee3f8; border-radius:8px; padding:18px; margin:20px 0;">
-        <h4 style="color:#2b6cb0; margin:0 0 10px 0;">Wichtige Hinweise zur Übergabe & Benutzung</h4>
-        <ul style="margin:0; padding-left:20px;">
-          <li><strong>Schlüsselkontakt:</strong> ${escapeHtml(wirtschaftName)} (<a href="tel:${escapeHtml(wirtschaftPhone)}">${escapeHtml(wirtschaftPhone)}</a>)</li>
-          <li><strong>Festbeginn:</strong> ${escapeHtml(d.festbeginn || 'Gemäss Absprache')}</li>
-          <li><strong>Rückgabe:</strong> Die Schützenstube ist besenrein abzugeben. Abfälle sind ordnungsgemäss zu entsorgen.</li>
-        </ul>
-      </div>
-
-      <p>Wir freuen uns auf deinen Besuch!</p>
-      <br>
-      <p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong></p>
-    `;
-  } else if (action === 'stornieren') {
-    bannerColor = "#742a2a";
-    subject = `Reservation storniert: Schützenstube am ${d.mietdatum}`;
-    const feedbackUrl = `${feedbackBaseUrl}?vnr=${encodeURIComponent(d.vertragsnr)}`;
-    bodyHtml = `
-      <p>Guten Tag ${escapeHtml(d.vorname)} ${escapeHtml(d.nachname)},</p>
-      <p>Die Reservation für die Schützenstube Muhen am <strong>${escapeHtml(d.mietdatum)}</strong> (Vertrag <strong>${escapeHtml(d.vertragsnr)}</strong>) wurde storniert.</p>
-
-      <p>Dein Feedback ist uns sehr wichtig, um unseren Service kontinuierlich zu verbessern:</p>
-      <div style="text-align:center; margin:25px 0;">
-        <a href="${feedbackUrl}" target="_blank" style="display:inline-block; background-color:#c53030; color:#ffffff; padding:12px 24px; border-radius:6px; text-decoration:none; font-weight:600;">
-          📝 Kurze Rückmeldung zur Stornierung geben
-        </a>
-      </div>
-
-      <p style="font-size:13px; color:#666;">Falls die Stornierung irrtümlich erfolgte oder du die Zahlung bereits getätigt hast, melde dich bitte umgehend bei uns.</p>
-      <br>
-      <p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong></p>
-    `;
-  } else if (action === 'vertrag_mail') {
-    bannerColor = "#0f3c5c";
-    subject = `Mietvertrag Schützenstube am ${d.mietdatum} – ${d.vertragsnr}`;
-    bodyHtml = `
-      <p>Guten Tag ${escapeHtml(d.vorname)} ${escapeHtml(d.nachname)},</p>
-      <p>Vielen Dank für deine Reservation der Schützenstube Muhen am <strong>${escapeHtml(d.mietdatum)}</strong>.</p>
-      <p>Anbei erhältst du den offiziellen Mietvertrag inklusive Schweizer QR-Rechnung.</p>
-
-      <div style="background:#f8f9fa; border:1px solid #e2e8f0; border-radius:8px; padding:18px; margin:20px 0;">
-        <p style="margin:0 0 6px 0;"><strong>Vertragsnummer:</strong> ${escapeHtml(d.vertragsnr)}</p>
-        <p style="margin:0 0 6px 0;"><strong>Mietdatum:</strong> ${escapeHtml(d.mietdatum)} (Festbeginn: ${escapeHtml(d.festbeginn || '14:00 Uhr')})</p>
-        <p style="margin:0;"><strong>Mietbetrag:</strong> ${escapeHtml(d.mietbetrag)}</p>
-      </div>
-
-      <p>Bitte überweise den Mietbetrag innert 14 Tagen mit dem im Vertrag enthaltenen QR-Zahlschein, um die Reservation definitiv zu bestätigen.</p>
-      <br>
-      <p>Freundliche Grüsse<br><strong>Sportschützen Muhen</strong></p>
-    `;
-
-    if (d.contract_file_url) {
-      attachments.push({ filename: `Mietvertrag_${d.vertragsnr}.pdf`, path: d.contract_file_url });
+  // 2. Vorlage aus Supabase / Cache laden
+  let tpl = (window._docTemplatesData || []).find(t => t.code === tplCode || t.id === tplCode);
+  if (!tpl) {
+    const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+    if (supa) {
+      const { data } = await supa.from('document_templates').select('*').eq('code', tplCode).maybeSingle();
+      if (data) tpl = data;
     }
   }
 
-  const fullHtml = buildRentalEmailHtml(subject, bannerColor, bodyHtml, s);
+  // 3. STRIKTER CHECK: Keine stillen Fallbacks bei unvollständigen/fehlenden Vorlagen!
+  if (!tpl || !tpl.mail_subject || !tpl.mail_body) {
+    throw new Error(
+      `Konfigurationsfehler: Die E-Mail-Vorlage '${tplCode}' ist in Supabase ('document_templates') nicht vorhanden oder unvollständig. Bitte im Modul 'Dokumente-Vorlagen' konfigurieren.`
+    );
+  }
+
+  // Banner-Farben je nach Workflow-Schritt
+  const bannerColors = {
+    'vm_vertrag': '#0f3c5c',
+    'vm_mahnung': '#c53030',
+    'vm_bestaetigung': '#22543d',
+    'vm_schluessel': '#2b6cb0',
+    'vm_storno': '#742a2a'
+  };
+  const bannerColor = bannerColors[tplCode] || '#0f3c5c';
+
+  // 4. Platzhalter-Auflösung
+  const bookingNr = d.booking_number || d.vertragsnr || d.id || '';
+  const dateStr = d.start_date ? new Date(d.start_date).toLocaleDateString('de-CH') : (d.mietdatum || '–');
+  const amountStr = d.total_amount_chf ? Number(d.total_amount_chf).toFixed(2) : (d.mietbetrag || '300.00');
+  const depositStr = d.deposit_amount_chf ? Number(d.deposit_amount_chf).toFixed(2) : (d.kaution || '200.00');
+  const feedbackUrl = `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}`;
+
+  const placeholderMap = {
+    'vorname': d.first_name || d.vorname || '',
+    'nachname': d.last_name || d.nachname || '',
+    'anrede': d.salutation || d.anrede || 'Guten Tag',
+    'mietdatum': dateStr,
+    'festbeginn': d.festbeginn || '14:00 Uhr',
+    'vertragsnr': bookingNr,
+    'buchungsnummer': bookingNr,
+    'mietbetrag': amountStr,
+    'kaution': depositStr,
+    'wirtschaft_name': wirtschaftName,
+    'wirtschaft_phone': wirtschaftPhone,
+    'wirtschaft_email': wirtschaftEmail,
+    'feedback_url': feedbackUrl,
+    'club_email': clubEmail
+  };
+
+  let renderedSubject = tpl.mail_subject;
+  let renderedBody = tpl.mail_body;
+
+  Object.entries(placeholderMap).forEach(([k, v]) => {
+    const rx = new RegExp(`\\{${k}\\}`, 'gi');
+    renderedSubject = renderedSubject.replace(rx, v);
+    renderedBody = renderedBody.replace(rx, v);
+  });
+
+  // Body in HTML-Paragraphen umwandeln
+  const bodyParagraphs = renderedBody.split('\n\n').map(p => 
+    `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+  ).join('');
+
+  // 5. Anhänge ermitteln
+  let attachments = [];
+  if ((action === 'vertrag_mail' || action === 'mahnung') && d.contract_file_url) {
+    attachments.push({ filename: `Mietvertrag_${bookingNr}.pdf`, path: d.contract_file_url });
+  }
+
+  const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyParagraphs, s);
 
   return await window.sendMailViaEngine({
-    to: toEmail,
-    cc: cc,
-    subject: subject,
+    to: d.email,
+    cc: clubEmail,
+    subject: renderedSubject,
     html: fullHtml,
     attachments: attachments,
     module: 'vermietung',
-    referenceId: d.vertragsnr
+    referenceId: bookingNr
   });
 }
 
