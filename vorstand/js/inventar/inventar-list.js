@@ -304,7 +304,7 @@ async function saveNewInventarItem(e) {
             // Revisions-Auditlog eintragen
             await supa.from('inventory_audit_log').insert([{
                 timestamp: new Date().toISOString(),
-                user_name: currentUser || 'Vorstand',
+                user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
                 action: isUpdate ? 'updateItem' : 'addNewItem',
                 details: `${target}: ID ${itemId} (${isUpdate ? 'aktualisiert' : 'neu erfasst'})`
             }]);
@@ -351,57 +351,14 @@ async function deleteInventarItem(target, id) {
 
             await supa.from('inventory_audit_log').insert([{
                 timestamp: new Date().toISOString(),
-                user_name: currentUser || 'Vorstand',
+                user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
                 action: 'deleteItem',
                 details: `${target}: ID ${id} gelöscht`
             }]);
         }
 
         await loadInventarData(true);
-        alert(isUpdate ? "✅ Änderung gespeichert (Supabase Master)!" : "✅ Neu erfasst (Supabase Master)!");
-    } catch (err) {
-        alert("Fehler: " + err.message);
-    } finally {
-        setInventarBusy(false);
-    }
-}
-
-// =========================================================
-//  DELETE
-// =========================================================
-async function deleteInventarItem(target, id) {
-    if (!canDelete()) {
-        alert("❌ Keine Berechtigung zum Löschen.");
-        return;
-    }
-
-    if (!confirm(`Eintrag ${id} wirklich löschen?`)) return;
-
-    setInventarBusy(true);
-
-    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-
-    try {
-        if (supa && target !== 'Personendaten') {
-            const { error: delErr } = await supa
-                .from('inventory_items')
-                .delete()
-                .eq('id', String(id).trim());
-
-            if (delErr) throw new Error("Supabase Löschfehler: " + delErr.message);
-
-            await supa.from('inventory_audit_log').insert([{
-                timestamp: new Date().toISOString(),
-                user_name: currentUser || 'Vorstand',
-                action: 'deleteItem',
-                details: `${target}: ID ${id} gelöscht`
-            }]);
-        }
-
-                
-
-        await loadInventarData(true);
-
+        alert(`✅ Eintrag ${id} erfolgreich gelöscht!`);
     } catch (err) {
         alert("Fehler: " + err.message);
     } finally {

@@ -15,12 +15,12 @@ let bestandSortCol   = 'Status';
 let bestandSortDir   = 'asc';
 
 function canAdd() {
-    const role = userRole || localStorage.getItem('portal_role');
+    const role = window.userRole || localStorage.getItem('portal_role') || '';
     return ['admin','materialwart','schuetzenmeister'].includes(role);
 }
 
 function canDelete() {
-    const role = userRole || localStorage.getItem('portal_role');
+    const role = window.userRole || localStorage.getItem('portal_role') || '';
     return ['admin','materialwart'].includes(role);
 }
 
@@ -191,7 +191,7 @@ async function loadInventarData(force = false) {
                 .select('*')
                 .order('id', { ascending: true });
 
-            if (!itemsErr && Array.isArray(items) && items.length > 0) {
+            if (!itemsErr && Array.isArray(items)) {
                 console.log(`✅ ${items.length} Inventar-Objekte aus Supabase geladen.`);
 
                 // Begleitende Daten parallel laden
@@ -266,8 +266,9 @@ async function loadInventarData(force = false) {
 function initInventarUI(container) {
     renderInventarUI(container);
 
+    const curUser = window.currentUser || localStorage.getItem('portal_user') || 'Vorstand';
     const label = document.getElementById('inv-verantwortlicher-label');
-    if (label) label.innerText = currentUser;
+    if (label) label.innerText = curUser;
 
     const canvasMitglied = document.getElementById('sig-mitglied');
     const canvasVorstand = document.getElementById('sig-vorstand');

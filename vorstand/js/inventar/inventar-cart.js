@@ -167,7 +167,7 @@ async function handleInventarSubmit(e) {
         Aktueller_Besitzer_ID: mitgliedId,
         mitgliedId:            mitgliedId,
         Bemerkungen:           bemerkungen,
-        Verantwortliche_ID:    currentUser,
+        Verantwortliche_ID:    (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
         verantwortlicheEmail:  emailToUse,
         sigMitglied:           sigPadMitglied ? sigPadMitglied.toDataURL() : "",
         Sig_Vorstand:          sigPadVorstand ? sigPadVorstand.toDataURL() : "",
@@ -207,7 +207,7 @@ async function handleInventarSubmit(e) {
                 condition_out: w.zustandAbgabe || null,
                 condition_in: w.zustandRueckgabe || null,
                 notes: bemerkungen || null,
-                responsible_person: currentUser || 'Vorstand',
+                responsible_person: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
                 deposit_amount: parseFloat(w.pfandBetrag) || 0,
                 deposit_received: action === 'checkout' ? (w.pfandEinnahme || '-') : '-',
                 deposit_returned: action === 'checkin' ? (w.pfandRetour || '-') : '-',
@@ -275,7 +275,7 @@ async function handleInventarSubmit(e) {
             // 4. Revisions-Auditlog
             await supa.from('inventory_audit_log').insert([{
                 timestamp: bookingTime,
-                user_name: currentUser || 'Vorstand',
+                user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
                 action: payloadAction,
                 details: `${payloadAction} (${warenkorb.length} Pos.) für Mitglied ${mitgliedId}: ${warenkorb.map(w => w.label || w.itemId).join(', ')}`
             }]);
