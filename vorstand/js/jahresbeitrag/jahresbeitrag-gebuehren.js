@@ -101,6 +101,9 @@ function renderGebuehrenConfigModals() {
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
           </div>
           <div class="modal-body p-4">
+            <!-- ⚠️ Fehler- und Hilfe-Banner bei Validierungsproblemen -->
+            <div id="jbGebuehrErrorAlert"></div>
+
             <form id="jbFormGebuehr" onsubmit="event.preventDefault(); jbSaveGebuehrFromModal();">
               
               <!-- 💡 Aufklappbarer Spickzettel & Erklärung der UI-Felder -->
@@ -111,7 +114,7 @@ function renderGebuehrenConfigModals() {
                   </span>
                   <span class="badge bg-light text-muted border small"><i class="fas fa-chevron-down"></i></span>
                 </div>
-                <div class="collapse show" id="jbGebuehrenHelpCollapse">
+                <div class="collapse" id="jbGebuehrenHelpCollapse">
                   <div class="card-body p-3 small text-muted" style="font-size: 11.5px; line-height: 1.5;">
                     <div class="row g-2">
                       <div class="col-md-6">
@@ -132,7 +135,7 @@ function renderGebuehrenConfigModals() {
                             <li><code>counter</code>: Stiche-Zähler (0, 1, 2, 3 Stiche, multipliziert Betrag × Stiche).</li>
                             <li><code>singleselect</code>: Radio-Pills (nur 1 Option aus der Gruppe wählbar).</li>
                             <li><code>multiselect</code>: Mehrfachauswahl als Pill-Buttons.</li>
-                            <li><code>amount</code>: Freier Betrag mit Schutzkonto (Zusatzpositionen).</li>
+                            <li><code>amount</code>: Freier Betrag mit Schutzkonto (Variable Zusatzkosten).</li>
                           </ul>
                         </div>
                       </div>
@@ -155,19 +158,19 @@ function renderGebuehrenConfigModals() {
               <div class="row g-3 mb-3">
                 <div class="col-md-3">
                   <label class="form-label small fw-bold text-muted">Schlüssel (Key) *</label>
-                  <input type="text" class="form-control form-control-sm font-monospace fw-bold" id="g_key" placeholder="z.B. KK009" required>
-                  <div class="form-text small" style="font-size: 10px;">Eindeutiger Code (KK..., LG..., Z...)</div>
+                  <input type="text" class="form-control form-control-sm font-monospace fw-bold" id="g_key" placeholder="z.B. KK009" required readonly style="background-color: #f8f9fa;">
+                  <div class="form-text small" id="g_key_help" style="font-size: 10px;">Eindeutiger Code (automatisch vergeben)</div>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label small fw-bold text-muted">Kategorie *</label>
-                  <select class="form-select form-select-sm" id="g_kategorie_select" onchange="jbHandleSmartSelect(this, 'g_kategorie')">
+                  <select class="form-select form-select-sm" id="g_kategorie_select" onchange="jbOnModalKategorieSelectChanged(this)">
                     <!-- Dynamisch geladen -->
                   </select>
-                  <input type="text" class="form-control form-control-sm mt-1" id="g_kategorie" placeholder="Kategorie eingeben" required style="display: none;">
+                  <input type="text" class="form-control form-control-sm mt-1" id="g_kategorie" placeholder="Kategorie eingeben" required style="display: none;" oninput="jbOnModalCustomKategorieInput(this.value)">
                 </div>
                 <div class="col-md-3">
                   <label class="form-label small fw-bold text-muted">🎯 Zielgruppe *</label>
-                  <select class="form-select form-select-sm fw-semibold" id="g_zielgruppe">
+                  <select class="form-select form-select-sm fw-semibold" id="g_zielgruppe" onchange="jbUpdateGebuehrLivePreview()">
                     <option value="Alle">👥 Alle (Aktive & Junioren)</option>
                     <option value="Aktive">🎯 Nur Aktive (Erwachsene)</option>
                     <option value="Junioren">👦 Nur Junioren (Vereinsübernahme)</option>
@@ -177,7 +180,7 @@ function renderGebuehrenConfigModals() {
                   <label class="form-label small fw-bold text-muted">Betrag (CHF) *</label>
                   <div class="input-group input-group-sm">
                     <span class="input-group-text">CHF</span>
-                    <input type="number" step="0.05" class="form-control text-end" id="g_betrag" placeholder="0.00" required>
+                    <input type="number" step="0.05" class="form-control text-end" id="g_betrag" placeholder="0.00" required oninput="jbUpdateGebuehrLivePreview()">
                   </div>
                 </div>
               </div>
@@ -186,7 +189,7 @@ function renderGebuehrenConfigModals() {
               <div class="row g-3 mb-3">
                 <div class="col-md-6">
                   <label class="form-label small fw-bold text-muted">Bezeichnung Frontend *</label>
-                  <input type="text" class="form-control form-control-sm" id="g_bezeichnungfrontend" placeholder="z.B. 50m Liegend Nachdoppel" required>
+                  <input type="text" class="form-control form-control-sm" id="g_bezeichnungfrontend" placeholder="z.B. 50m Liegend Nachdoppel" required oninput="jbOnModalBezeichnungFrontendInput(this.value)">
                 </div>
                 <div class="col-md-6">
                   <label class="form-label small fw-bold text-muted">Vollständige Bezeichnung (Rechnungsdruck)</label>
@@ -199,7 +202,7 @@ function renderGebuehrenConfigModals() {
                 <div class="col-md-5">
                   <label class="form-label small fw-bold text-muted">Haben-Konto (Ertragskonto) *</label>
                   <div class="input-group input-group-sm">
-                    <input type="text" class="form-control font-monospace fw-bold" id="g_konto" list="jb-konten-datalist" placeholder="z.B. 3000 oder 3200" onchange="jbOnGebuehrKontoChanged(this.value)" required>
+                    <input type="text" class="form-control font-monospace fw-bold" id="g_konto" list="jb-konten-datalist" placeholder="z.B. 3000 oder 3200" onchange="jbOnGebuehrKontoChanged(this.value); jbUpdateGebuehrLivePreview();" required>
                     <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Aus Kontenrahmen wählen">
                       <i class="fas fa-book"></i>
                     </button>
@@ -222,22 +225,22 @@ function renderGebuehrenConfigModals() {
                 </h6>
                 <div class="row g-3">
                   <div class="col-md-4">
-                    <label class="form-label small fw-bold text-muted">UI-Gruppe (Card-Überschrift)</label>
-                    <select class="form-select form-select-sm" id="g_ui_gruppe_select" onchange="jbHandleSmartSelect(this, 'g_ui_gruppe')">
+                    <label class="form-label small fw-bold text-muted">UI-Gruppe (Card-Überschrift) *</label>
+                    <select class="form-select form-select-sm" id="g_ui_gruppe_select" onchange="jbHandleSmartSelect(this, 'g_ui_gruppe'); jbUpdateGebuehrLivePreview();">
                       <!-- Dynamisch geladen -->
                     </select>
-                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_gruppe" placeholder="UI-Gruppe eingeben" style="display: none;">
+                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_gruppe" placeholder="UI-Gruppe eingeben" style="display: none;" oninput="jbUpdateGebuehrLivePreview()">
                   </div>
                   <div class="col-md-4">
-                    <label class="form-label small fw-bold text-muted">UI-Feld (Steuerelement-Name)</label>
-                    <select class="form-select form-select-sm" id="g_ui_feld_select" onchange="jbHandleSmartSelect(this, 'g_ui_feld')">
+                    <label class="form-label small fw-bold text-muted">UI-Feld (Steuerelement-Name) *</label>
+                    <select class="form-select form-select-sm" id="g_ui_feld_select" onchange="jbHandleSmartSelect(this, 'g_ui_feld'); jbUpdateGebuehrLivePreview();">
                       <!-- Dynamisch geladen -->
                     </select>
-                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_feld" placeholder="UI-Feld eingeben" style="display: none;">
+                    <input type="text" class="form-control form-control-sm mt-1" id="g_ui_feld" placeholder="UI-Feld eingeben" style="display: none;" oninput="jbUpdateGebuehrLivePreview()">
                   </div>
                   <div class="col-md-4">
                     <label class="form-label small fw-bold text-muted">UI-Typ *</label>
-                    <select class="form-select form-select-sm fw-semibold" id="g_ui_typ">
+                    <select class="form-select form-select-sm fw-semibold" id="g_ui_typ" onchange="jbUpdateGebuehrLivePreview()">
                       <option value="checkbox">☑️ Checkbox (Toggle Ja/Nein)</option>
                       <option value="counter">🔢 Counter (Stiche-Zähler: 0, 1, 2, 3)</option>
                       <option value="multiselect">🔲 Mehrfachauswahl (Pill-Gruppe)</option>
@@ -253,7 +256,7 @@ function renderGebuehrenConfigModals() {
                   </div>
                   <div class="col-md-4 d-flex align-items-center mt-4">
                     <div class="form-check form-switch mb-0">
-                      <input class="form-check-input" type="checkbox" id="g_aktiv" checked>
+                      <input class="form-check-input" type="checkbox" id="g_aktiv" checked onchange="jbUpdateGebuehrLivePreview()">
                       <label class="form-check-label small fw-semibold" for="g_aktiv">In Schnellerfassung aktiv</label>
                     </div>
                   </div>
@@ -261,6 +264,19 @@ function renderGebuehrenConfigModals() {
                     <label class="form-label small fw-bold text-muted">Bemerkung</label>
                     <input type="text" class="form-control form-control-sm" id="g_bem" placeholder="Optionale Notiz">
                   </div>
+                </div>
+              </div>
+
+              <!-- 👁️ Live-Vorschau in der Schnellerfassung -->
+              <div class="card border border-2 border-primary-subtle p-3 rounded-3 bg-white mb-3 shadow-sm">
+                <div class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
+                  <span class="small fw-bold text-primary text-uppercase" style="font-size: 11px;">
+                    <i class="fas fa-eye me-1"></i> Live-Vorschau: So sieht das Element in der Schnellerfassung aus
+                  </span>
+                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle small font-monospace" id="jbGebuehrPreviewTypeBadge">Typ: Checkbox</span>
+                </div>
+                <div class="p-3 bg-light rounded-2 border" id="jbGebuehrLivePreviewContainer">
+                  <!-- Dynamisch gerendert über jbUpdateGebuehrLivePreview() -->
                 </div>
               </div>
 
@@ -585,6 +601,187 @@ function jbHandleSmartSelect(selectEl, inputId) {
   }
 }
 
+let _jbGebuehrIsNewModal = false;
+
+// Hilfsfunktion: Automatische Schlüssel-Ableitung basierend auf Kategorie (verhindert Dubletten)
+function jbDeriveNextFeeKey(kategorie) {
+  const kat = String(kategorie || '').trim().toLowerCase();
+  let prefix = 'Z';
+  if (kat.includes('jahresbeitrag')) prefix = 'JB';
+  else if (kat.includes('kleinkaliber') || kat.includes('50m') || kat.includes('kk')) prefix = 'KK';
+  else if (kat.includes('luftgewehr') || kat.includes('10m') || kat.includes('lg')) prefix = 'LG';
+  else if (kat.includes('lizenz')) prefix = 'LI';
+  else if (kat.includes('rabatt') || kat.includes('gutschrift')) prefix = 'RA';
+  else if (kat.includes('gebäude') || kat.includes('infrastruktur') || kat.includes('schützenhaus')) prefix = 'GE';
+  else if (kat.includes('variabel') || kat.includes('zusatz')) prefix = 'Z';
+  else prefix = 'SO';
+
+  const existingKeys = (window._jbGebuehren || []).map(g => String(g.key || '').trim().toUpperCase());
+  let maxNum = 0;
+  existingKeys.forEach(k => {
+    if (k.startsWith(prefix)) {
+      const numPart = parseInt(k.substring(prefix.length), 10);
+      if (!isNaN(numPart) && numPart > maxNum) {
+        maxNum = numPart;
+      }
+    }
+  });
+  const nextNum = maxNum + 1;
+  const padded = String(nextNum).padStart(3, '0');
+  return `${prefix}${padded}`;
+}
+window.jbDeriveNextFeeKey = jbDeriveNextFeeKey;
+
+function jbOnModalKategorieSelectChanged(selectEl) {
+  jbHandleSmartSelect(selectEl, 'g_kategorie');
+  const katVal = document.getElementById('g_kategorie')?.value || selectEl.value;
+  if (_jbGebuehrIsNewModal) {
+    const keyInput = document.getElementById('g_key');
+    if (keyInput) {
+      keyInput.value = jbDeriveNextFeeKey(katVal);
+    }
+  }
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalKategorieSelectChanged = jbOnModalKategorieSelectChanged;
+
+function jbOnModalCustomKategorieInput(val) {
+  if (_jbGebuehrIsNewModal) {
+    const keyInput = document.getElementById('g_key');
+    if (keyInput) {
+      keyInput.value = jbDeriveNextFeeKey(val);
+    }
+  }
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalCustomKategorieInput = jbOnModalCustomKategorieInput;
+
+function jbOnModalBezeichnungFrontendInput(val) {
+  const bezInput = document.getElementById('g_bezeichnung');
+  const fldInput = document.getElementById('g_ui_feld');
+  if (bezInput && !bezInput.dataset.manualEdit) {
+    bezInput.value = val;
+  }
+  if (fldInput && fldInput.style.display !== 'none' && !fldInput.dataset.manualEdit) {
+    fldInput.value = val;
+  }
+  jbUpdateGebuehrLivePreview();
+}
+window.jbOnModalBezeichnungFrontendInput = jbOnModalBezeichnungFrontendInput;
+
+// Live-Vorschau in der Schnellerfassung
+function jbUpdateGebuehrLivePreview() {
+  const container = document.getElementById('jbGebuehrLivePreviewContainer');
+  const badge = document.getElementById('jbGebuehrPreviewTypeBadge');
+  if (!container) return;
+
+  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
+  const bezeichnung = document.getElementById('g_bezeichnungfrontend')?.value?.trim() || '';
+  const ui_feld = document.getElementById('g_ui_feld')?.value?.trim() || bezeichnung || 'Muster-Gebühr';
+  const betrag = parseFloat(document.getElementById('g_betrag')?.value) || 0;
+  const konto = document.getElementById('g_konto')?.value?.trim() || '3000';
+  const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
+
+  if (badge) {
+    const typeNames = {
+      checkbox: '☑️ Checkbox (Ja/Nein)',
+      counter: '🔢 Counter (Stiche-Zähler)',
+      singleselect: '🔘 Einzelauswahl (Pills)',
+      multiselect: '🔲 Mehrfachauswahl',
+      amount: '💵 Freier Betrag (Variable Zusatzkosten)'
+    };
+    badge.textContent = `UI-Typ: ${typeNames[ui_typ] || ui_typ}`;
+  }
+
+  let html = '';
+  if (ui_typ === 'checkbox') {
+    html = `
+      <div class="d-flex align-items-center justify-content-between bg-white p-2.5 rounded-2 border shadow-xs">
+        <div class="d-flex align-items-center gap-2">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" checked style="cursor: pointer;">
+          </div>
+          <div>
+            <span class="fw-semibold text-dark small">${escHtml(ui_feld)}</span>
+            ${zielgruppe === 'Junioren' ? '<span class="badge bg-info-subtle text-info ms-2" style="font-size:10px;">Jugendförderung</span>' : ''}
+          </div>
+        </div>
+        <span class="badge bg-light text-dark border font-monospace small">CHF ${betrag.toFixed(2)}</span>
+      </div>
+    `;
+  } else if (ui_typ === 'counter') {
+    html = `
+      <div class="bg-white p-2.5 rounded-2 border shadow-xs">
+        <div class="d-flex justify-content-between align-items-center mb-1.5">
+          <span class="fw-semibold text-dark small">${escHtml(ui_feld)}</span>
+          <span class="badge bg-light text-muted border small font-monospace">Einzelpreis: CHF ${betrag.toFixed(2)}</span>
+        </div>
+        <div class="btn-group btn-group-sm w-100" role="group">
+          <button type="button" class="btn btn-outline-secondary">Kein Stich</button>
+          <button type="button" class="btn btn-primary active fw-bold">1 Stich (CHF ${betrag.toFixed(2)})</button>
+          <button type="button" class="btn btn-outline-secondary">2 Stiche (CHF ${(betrag * 2).toFixed(2)})</button>
+          <button type="button" class="btn btn-outline-secondary">3 Stiche (CHF ${(betrag * 3).toFixed(2)})</button>
+        </div>
+      </div>
+    `;
+  } else if (ui_typ === 'singleselect') {
+    html = `
+      <div class="bg-white p-2.5 rounded-2 border shadow-xs">
+        <div class="small fw-semibold text-muted mb-1.5">${escHtml(ui_feld)}</div>
+        <div class="d-flex gap-1.5 flex-wrap">
+          <button type="button" class="btn btn-sm btn-primary active py-1 px-3 rounded-pill fw-bold">
+            ${escHtml(ui_feld)} (CHF ${betrag.toFixed(2)})
+          </button>
+          <button type="button" class="btn btn-sm btn-light border py-1 px-3 rounded-pill text-muted">
+            Andere Option
+          </button>
+        </div>
+      </div>
+    `;
+  } else if (ui_typ === 'multiselect') {
+    html = `
+      <div class="bg-white p-2.5 rounded-2 border shadow-xs">
+        <div class="small fw-semibold text-muted mb-1.5">${escHtml(ui_feld)}</div>
+        <div class="d-flex gap-1.5 flex-wrap">
+          <button type="button" class="btn btn-sm btn-primary active py-1 px-2.5 rounded-pill">
+            <i class="fas fa-check me-1"></i>${escHtml(ui_feld)} (CHF ${betrag.toFixed(2)})
+          </button>
+        </div>
+      </div>
+    `;
+  } else if (ui_typ === 'amount') {
+    html = `
+      <div class="p-2.5 bg-white rounded-2 border shadow-xs">
+        <div class="row g-2 align-items-center">
+          <div class="col-auto">
+            <input class="form-check-input" type="checkbox" checked style="cursor: pointer;">
+          </div>
+          <div class="col">
+            <input type="text" class="form-control form-control-sm bg-light" value="${escHtml(ui_feld)}" readonly>
+          </div>
+          <div class="col-3">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text px-1">CHF</span>
+              <input type="text" class="form-control form-control-sm text-end fw-bold bg-light" value="${betrag.toFixed(2)}" readonly>
+            </div>
+          </div>
+          <div class="col-auto">
+            <div class="input-group input-group-sm" style="width: 140px;">
+              <input type="text" class="form-control form-control-sm font-monospace" value="${escHtml(konto)}" readonly style="background-color: #e9ecef;">
+              <button class="btn btn-outline-secondary" type="button" disabled title="Konto gesperrt">
+                <i class="fas fa-lock"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+window.jbUpdateGebuehrLivePreview = jbUpdateGebuehrLivePreview;
+
 function jbOpenEditGebuehrModal(key) {
   const modalEl = document.getElementById('jbModalGebuehrEdit');
   if (!modalEl) return;
@@ -596,7 +793,15 @@ function jbOpenEditGebuehrModal(key) {
 
   const titleEl = document.getElementById('jbModalGebuehrTitle');
   const keyInput = document.getElementById('g_key');
+  const keyHelp = document.getElementById('g_key_help');
   const isNew = !key;
+  _jbGebuehrIsNewModal = isNew;
+
+  // Fehlermeldungen zurücksetzen
+  document.querySelectorAll('#jbFormGebuehr .is-invalid').forEach(el => el.classList.remove('is-invalid'));
+  document.querySelectorAll('#jbFormGebuehr .invalid-feedback').forEach(el => el.remove());
+  const errorContainer = document.getElementById('jbGebuehrErrorAlert');
+  if (errorContainer) errorContainer.innerHTML = '';
 
   // Dropdown für Kontenrahmen initialisieren
   const ddEl = document.getElementById('jb-gebuehr-konten-dropdown');
@@ -604,7 +809,7 @@ function jbOpenEditGebuehrModal(key) {
     const list = window._bhKontenrahmen || [];
     ddEl.innerHTML = list.map(k => `
       <li>
-        <a class="dropdown-item py-1 px-2 d-flex justify-content-between align-items-center cursor-pointer" href="#" onclick="jbOnGebuehrKontoChanged('${k.konto}'); return false;">
+        <a class="dropdown-item py-1 px-2 d-flex justify-content-between align-items-center cursor-pointer" href="#" onclick="jbOnGebuehrKontoChanged('${k.konto}'); jbUpdateGebuehrLivePreview(); return false;">
           <span>${escHtml(k.bezeichnung)}</span>
           <span class="badge bg-light text-primary font-monospace ms-2 border">${escHtml(k.konto)}</span>
         </a>
@@ -614,22 +819,32 @@ function jbOpenEditGebuehrModal(key) {
 
   if (isNew) {
     if (titleEl) titleEl.innerHTML = '➕ Neue Gebühr erfassen';
-    keyInput.readOnly = false;
-    keyInput.value = '';
-    jbPopulateModalDropdowns('Kleinkaliber', '50m Wettschiessen (KK)', '');
+    keyInput.readOnly = true;
+    keyInput.style.backgroundColor = '#f8f9fa';
+    const initialKat = 'variabel';
+    keyInput.value = jbDeriveNextFeeKey(initialKat);
+    if (keyHelp) {
+      keyHelp.innerHTML = '<span class="text-success fw-semibold"><i class="fas fa-magic me-1"></i>Automatisch vergeben: nächster freier Schlüssel (Dubletten ausgeschlossen).</span>';
+    }
+
+    jbPopulateModalDropdowns(initialKat, 'Variable Zusatzpositionen', '');
     document.getElementById('g_zielgruppe').value = 'Alle';
     document.getElementById('g_bezeichnungfrontend').value = '';
     document.getElementById('g_bezeichnung').value = '';
-    document.getElementById('g_betrag').value = '15.00';
-    jbOnGebuehrKontoChanged('3000');
-    document.getElementById('g_ui_typ').value = 'checkbox';
-    document.getElementById('g_ui_sort').value = '10';
+    document.getElementById('g_betrag').value = '50.00';
+    jbOnGebuehrKontoChanged('8500');
+    document.getElementById('g_ui_typ').value = 'amount';
+    document.getElementById('g_ui_sort').value = '30';
     document.getElementById('g_aktiv').checked = true;
     document.getElementById('g_bem').value = '';
   } else {
     if (titleEl) titleEl.innerHTML = `⚙️ Gebühr bearbeiten: <span class="font-monospace">${key}</span>`;
     keyInput.readOnly = true;
+    keyInput.style.backgroundColor = '#e9ecef';
     keyInput.value = key;
+    if (keyHelp) {
+      keyHelp.innerHTML = '<span class="text-muted"><i class="fas fa-lock me-1"></i>Bestehender Schlüssel (fest vergeben, schützt vor Dubletten).</span>';
+    }
 
     const f = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === String(key).toUpperCase()) || {};
     jbPopulateModalDropdowns(f.kategorie || '', f.ui_gruppe || '', f.ui_feld || '');
@@ -642,39 +857,151 @@ function jbOpenEditGebuehrModal(key) {
     document.getElementById('g_ui_typ').value = (f.ui_typ || 'checkbox').toLowerCase();
     document.getElementById('g_ui_sort').value = f.ui_sort !== undefined ? f.ui_sort : '10';
     document.getElementById('g_aktiv').checked = f.aktiv !== false && f.aktiv !== 'FALSE' && f.aktiv !== '0' && f.aktiv !== 0;
-    document.getElementById('g_bem').value = f.bem || '';
+    document.getElementById('g_bem').value = f.bem || f.bemerkung || '';
   }
 
+  jbUpdateGebuehrLivePreview();
   modal.show();
 }
 
 async function jbSaveGebuehrFromModal() {
   const btn = document.getElementById('btnSaveGebuehr');
+  
+  // 1. Frühere Validierungsfehler zurücksetzen
+  document.querySelectorAll('#jbFormGebuehr .is-invalid').forEach(el => el.classList.remove('is-invalid'));
+  document.querySelectorAll('#jbFormGebuehr .invalid-feedback').forEach(el => el.remove());
+  const errorContainer = document.getElementById('jbGebuehrErrorAlert');
+  if (errorContainer) errorContainer.innerHTML = '';
+
+  const errors = [];
+
+  const keyInput = document.getElementById('g_key');
+  const key = (keyInput?.value || '').trim().toUpperCase();
+
+  const katSelect = document.getElementById('g_kategorie_select');
+  const katInput = document.getElementById('g_kategorie');
+  const kategorie = (katInput?.value || katSelect?.value || '').trim();
+
+  const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
+
+  const bezFrontInput = document.getElementById('g_bezeichnungfrontend');
+  const bezeichnungfrontend = (bezFrontInput?.value || '').trim();
+
+  const bezInput = document.getElementById('g_bezeichnung');
+  const bezeichnung = (bezInput?.value || '').trim() || bezeichnungfrontend;
+
+  const betragInput = document.getElementById('g_betrag');
+  const rawBetrag = betragInput?.value;
+  const betrag = parseFloat(rawBetrag);
+
+  const kontoInput = document.getElementById('g_konto');
+  const konto = (kontoInput?.value || '').trim();
+
+  const kontobezeichnung = (document.getElementById('g_kontobezeichnung')?.value || '').trim();
+
+  const grpInput = document.getElementById('g_ui_gruppe');
+  const grpSelect = document.getElementById('g_ui_gruppe_select');
+  const ui_gruppe = (grpInput?.value || grpSelect?.value || '').trim();
+
+  const fldInput = document.getElementById('g_ui_feld');
+  const fldSelect = document.getElementById('g_ui_feld_select');
+  const ui_feld = (fldInput?.value || fldSelect?.value || bezeichnungfrontend).trim();
+
+  const ui_typ = document.getElementById('g_ui_typ')?.value || 'checkbox';
+  const ui_sort = parseInt(document.getElementById('g_ui_sort')?.value, 10) || 10;
+  const aktiv = document.getElementById('g_aktiv')?.checked !== false;
+  const bem = (document.getElementById('g_bem')?.value || '').trim();
+
+  // Helper zum Setzen von Fehlern
+  const setFieldError = (inputEl, message) => {
+    if (!inputEl) return;
+    inputEl.classList.add('is-invalid');
+    const feedback = document.createElement('div');
+    feedback.className = 'invalid-feedback';
+    feedback.style.display = 'block';
+    feedback.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i>${message}`;
+    inputEl.parentNode.appendChild(feedback);
+    errors.push(message);
+  };
+
+  // Validierung:
+  // A) Schlüssel
+  if (!key || key.length < 2) {
+    setFieldError(keyInput, 'Bitte einen gültigen Schlüssel angeben (z. B. KK009 oder Z003).');
+  }
+
+  // B) Kategorie
+  if (!kategorie) {
+    setFieldError(katInput?.style?.display !== 'none' ? katInput : katSelect, 
+      'Kategorie ist erforderlich (z. B. Kleinkaliber, Luftgewehr oder variabel).');
+  }
+
+  // C) Frontend-Bezeichnung
+  if (!bezeichnungfrontend || bezeichnungfrontend.length < 3) {
+    setFieldError(bezFrontInput, 'Bitte eine aussagekräftige Bezeichnung für das Portal angeben (mind. 3 Zeichen, z. B. "Beitrag Vereinsjacke").');
+  }
+
+  // D) Haben-Konto (Ertragskonto) - Pflichtprüfung gegen KMU-Kontenrahmen!
+  if (!konto) {
+    setFieldError(kontoInput, 'Haben-Konto ist ein Pflichtfeld. Wählen Sie ein Ertragskonto aus dem Kontenrahmen (z. B. 1300, 3410 oder 8500).');
+  } else {
+    const konten = window._bhKontenrahmen || [];
+    const foundAcc = konten.find(a => String(a.konto).trim() === konto);
+    if (!foundAcc && konten.length > 0) {
+      setFieldError(kontoInput, `Das Haben-Konto '${konto}' existiert nicht im KMU-Kontenrahmen. Bitte wählen Sie ein gültiges Konto über das Buch-Symbol, z.B. 1300 (Wettkampfbeiträge), 3410 (Mitgliederbeiträge), 3420 (Jugendförderung) oder 8500 (Zusatzerträge).`);
+    }
+  }
+
+  // E) Betrag
+  if (isNaN(betrag)) {
+    setFieldError(betragInput, 'Bitte einen gültigen Betrag in CHF eingeben (z. B. 15.00 oder 60.00).');
+  } else if (ui_typ === 'amount' && betrag <= 0) {
+    setFieldError(betragInput, 'Bei einer variablen Zusatzposition muss der Standardbetrag grösser als 0.00 CHF sein (z. B. 60.00).');
+  } else if (betrag === 0 && !['JB004', 'JB006', 'LI002', 'LI003'].includes(key)) {
+    setFieldError(betragInput, 'Der Betrag ist CHF 0.00. Sollte diese Gebühr kostenpflichtig sein, tragen Sie bitte den Tarif ein (0.00 ist nur für befreite Kategorien wie Ehrenmitglieder oder Schüler zulässig).');
+  }
+
+  // F) UI-Gruppe & UI-Feld
+  if (!ui_gruppe) {
+    setFieldError(grpInput?.style?.display !== 'none' ? grpInput : grpSelect, 
+      'UI-Gruppe ist erforderlich. Sie bestimmt die Card-Überschrift in der Schnellerfassung (z. B. "50m Wettschiessen (KK)" oder "Variable Zusatzpositionen").');
+  }
+
+  if (!ui_feld) {
+    setFieldError(fldInput?.style?.display !== 'none' ? fldInput : fldSelect, 
+      'UI-Feld ist erforderlich (bestimmt die Beschriftung des Steuerelements in der Schnellerfassung).');
+  }
+
+  // Falls Fehler vorliegen: Abbruch mit Hilfe-Banner und Fokus auf erstes fehlerhaftes Feld
+  if (errors.length > 0) {
+    if (errorContainer) {
+      errorContainer.innerHTML = `
+        <div class="alert alert-danger shadow-sm border-danger border-2 rounded-3 mb-3 p-3">
+          <div class="d-flex align-items-center mb-2">
+            <i class="fas fa-exclamation-triangle fa-lg text-danger me-2"></i>
+            <h6 class="mb-0 fw-bold text-danger">Bitte korrigieren Sie die folgenden ${errors.length} Eingaben:</h6>
+          </div>
+          <ul class="mb-0 ps-3 small" style="line-height: 1.6;">
+            ${errors.map(err => `<li>${err}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+    const firstInvalid = document.querySelector('#jbFormGebuehr .is-invalid');
+    if (firstInvalid) {
+      firstInvalid.focus();
+      firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
+
+  // Alles valide -> Speichern!
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Speichere…';
   }
 
   try {
-    const key = document.getElementById('g_key').value.trim().toUpperCase();
-    const kategorie = document.getElementById('g_kategorie').value.trim();
-    const zielgruppe = document.getElementById('g_zielgruppe')?.value || 'Alle';
-    const bezeichnungfrontend = document.getElementById('g_bezeichnungfrontend').value.trim();
-    const bezeichnung = document.getElementById('g_bezeichnung').value.trim() || bezeichnungfrontend;
-    const betrag = parseFloat(document.getElementById('g_betrag').value) || 0;
-    const konto = document.getElementById('g_konto').value.trim();
-    const kontobezeichnung = document.getElementById('g_kontobezeichnung').value.trim();
-    const ui_gruppe = document.getElementById('g_ui_gruppe').value.trim();
-    const ui_feld = document.getElementById('g_ui_feld').value.trim() || bezeichnungfrontend;
-    const ui_typ = document.getElementById('g_ui_typ').value;
-    const ui_sort = parseInt(document.getElementById('g_ui_sort').value, 10) || 10;
-    const aktiv = document.getElementById('g_aktiv').checked;
-    const bem = document.getElementById('g_bem').value.trim();
-
-    if (!key) throw new Error('Key ist erforderlich!');
-    if (!kategorie) throw new Error('Kategorie ist erforderlich!');
-    if (!bezeichnungfrontend) throw new Error('Bezeichnung ist erforderlich!');
-
     const payload = {
       action: 'saveGebuehr',
       key,
@@ -685,6 +1012,7 @@ async function jbSaveGebuehrFromModal() {
       betrag,
       konto,
       'Haben-Konto-Jahresbeitrag-Buchhaltung': konto,
+      konto_haben: konto,
       'Kontobezeichnung im KMU-Kontenrahmen': kontobezeichnung,
       kontobezeichnung,
       ui_gruppe,
@@ -693,39 +1021,41 @@ async function jbSaveGebuehrFromModal() {
       ui_sort,
       aktiv,
       bem,
+      bemerkung: bem,
       user: window.currentUser || 'frontend'
     };
 
-    // 1. Direkt in Supabase speichern
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
     if (supa) {
-      try {
-        await supa.from('gebuehren_config').upsert({
-          key: key,
-          bezeichnung: bezeichnung,
-          bezeichnung_frontend: bezeichnungfrontend,
-          betrag: Number(betrag || 0),
-          konto_haben: konto || '3000',
-          kategorie: ui_gruppe || 'Jahresbeitrag',
-          sort_order: Number(ui_sort || 10),
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' });
-        console.log(`✅ [Supabase] Gebühr ${key} gespeichert.`);
-      } catch (errSup) {
-        console.warn("⚠️ Fehler bei Supabase Gebühren-Speicherung:", errSup);
-      }
+      const { error: supaErr } = await supa.from('gebuehren_config').upsert({
+        key: key,
+        bezeichnung: bezeichnung,
+        bezeichnung_frontend: bezeichnungfrontend,
+        betrag: Number(betrag || 0),
+        konto_haben: konto,
+        kategorie: kategorie,
+        sort_order: Number(ui_sort || 10),
+        ui_gruppe: ui_gruppe,
+        ui_feld: ui_feld,
+        ui_typ: ui_typ,
+        zielgruppe: zielgruppe,
+        aktiv: aktiv,
+        bemerkung: bem,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'key' });
+
+      if (supaErr) throw supaErr;
+      console.log(`✅ [Supabase] Gebühr ${key} erfolgreich mit allen UI-Spalten gespeichert.`);
     }
 
     showToast(`🎉 Gebühr ${key} erfolgreich in Supabase gespeichert!`);
 
-    // Modal schliessen
     const modalEl = document.getElementById('jbModalGebuehrEdit');
     if (modalEl) {
       const bsModal = bootstrap.Modal.getInstance(modalEl);
       if (bsModal) bsModal.hide();
     }
 
-    // Lokalen Gebühren-Cache synchronisieren
     const existingIdx = (window._jbGebuehren || []).findIndex(x => String(x.key || '').trim().toUpperCase() === key);
     if (existingIdx >= 0) {
       window._jbGebuehren[existingIdx] = { ...window._jbGebuehren[existingIdx], ...payload };

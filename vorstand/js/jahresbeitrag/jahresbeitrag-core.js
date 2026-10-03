@@ -116,7 +116,14 @@ function mapGebuehrFromSupabase(r) {
     konto_haben: r.konto_haben,
     konto: r.konto_haben,
     kategorie: r.kategorie || 'Jahresbeitrag',
-    sort_order: r.sort_order || 10
+    sort_order: r.sort_order || 10,
+    ui_gruppe: r.ui_gruppe || '',
+    ui_feld: r.ui_feld || r.bezeichnung_frontend || r.bezeichnung,
+    ui_typ: (r.ui_typ || 'checkbox').toLowerCase(),
+    ui_sort: Number(r.sort_order || 10),
+    zielgruppe: r.zielgruppe || 'Alle',
+    aktiv: r.aktiv !== false,
+    bemerkung: r.bemerkung || ''
   };
 }
 

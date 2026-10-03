@@ -110,34 +110,25 @@ function renderOverviewTab(canEdit, years) {
 
     <!-- KPI-Karten -->
     <div class="row g-3 mb-3">
-      <div class="col-6 col-md-3">
+      <div class="col-12 col-md-4">
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-primary">
           <div class="small text-muted">Total</div>
           <div class="fs-5 fw-bold">${fmtChf(total)}</div>
           <div class="text-muted small">${_jbData.length} Beiträge</div>
         </div>
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-md-4">
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-success">
           <div class="small text-muted">Bezahlt</div>
           <div class="fs-5 fw-bold text-success">${fmtChf(bezahlt)}</div>
           <div class="text-muted small">${bezahltCount} Mitglieder</div>
         </div>
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-md-4">
         <div class="card border-0 shadow-sm p-3 border-start border-4 border-danger">
           <div class="small text-muted">Ausstehend</div>
           <div class="fs-5 fw-bold text-danger">${fmtChf(offen)}</div>
           <div class="text-muted small">${offenCount} offen (${entwurfCount} Entwurf${berechnetCount > 0 ? `, ${berechnetCount} unübertragen` : ''})</div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="card border-0 shadow-sm p-3 border-start border-4 border-warning">
-          <div class="small text-muted">Fortschritt</div>
-          <div class="fs-5 fw-bold">${total > 0 ? Math.round(bezahlt/total*100) : 0}%</div>
-          <div class="progress mt-1" style="height:6px">
-            <div class="progress-bar bg-success" style="width:${total > 0 ? bezahlt/total*100 : 0}%"></div>
-          </div>
         </div>
       </div>
     </div>

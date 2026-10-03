@@ -261,6 +261,50 @@ async function jbEntrySelectMember(pn) {
       _jbParticipationsState.ssv_dez = '3-stellung';
     }
 
+    // 4. Variable Zusatzpositionen dynamisch aus gebuehren_config & _jbPositionsCache initialisieren
+    _jbParticipationsState.extras = {};
+    const headId = `${_jbYear}-${pnClean}`;
+    const existingPositions = (_jbPositionsCache && _jbPositionsCache[headId]) ? _jbPositionsCache[headId] : [];
+
+    const varFees = (window._jbGebuehren || []).filter(f => {
+      if (f.aktiv === false || f.aktiv === 'false' || f.aktiv === 0 || f.aktiv === '0') return false;
+      const kat = String(f.kategorie || '').toLowerCase();
+      const uiTyp = String(f.ui_typ || '').toLowerCase();
+      const key = String(f.key || '').toUpperCase();
+      return uiTyp === 'amount' || kat === 'variabel' || key.startsWith('Z');
+    });
+
+    varFees.forEach(f => {
+      const key = String(f.key).toUpperCase();
+      const matchedPos = existingPositions.find(p => {
+        const sf = String(p.source_field || p.sourcefield || p.key || '').toUpperCase();
+        return sf === key;
+      });
+      const matchedPart = memberParts.find(p => String(p.eventkey || '').toUpperCase() === key);
+
+      const isActive = Boolean(matchedPos || (matchedPart && Number(matchedPart.teilgenommen || 0) > 0));
+      _jbParticipationsState.extras[key] = {
+        key: key,
+        active: isActive,
+        text: matchedPos ? (matchedPos.beschreibung || matchedPos.name) : (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key),
+        betrag: matchedPos ? Number(matchedPos.betrag || 0) : Number(f.betrag || 0),
+        konto: matchedPos ? (matchedPos.konto || f.konto_haben || f.konto || '8500') : (f.konto_haben || f.konto || '8500'),
+        unlocked: false
+      };
+
+      if (key === 'Z001') {
+        _jbParticipationsState.z1_active = isActive;
+        _jbParticipationsState.z1_text = _jbParticipationsState.extras[key].text;
+        _jbParticipationsState.z1_betrag = _jbParticipationsState.extras[key].betrag;
+        _jbParticipationsState.z1_konto = _jbParticipationsState.extras[key].konto;
+      } else if (key === 'Z002') {
+        _jbParticipationsState.z2_active = isActive;
+        _jbParticipationsState.z2_text = _jbParticipationsState.extras[key].text;
+        _jbParticipationsState.z2_betrag = _jbParticipationsState.extras[key].betrag;
+        _jbParticipationsState.z2_konto = _jbParticipationsState.extras[key].konto;
+      }
+    });
+
     jbRenderEntryForm(m);
   } catch(e) {
     workspace.innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${e.message}</div>`;
@@ -791,102 +835,8 @@ function jbRenderEntryForm(m) {
         <!-- 2. Dynamische Wettkämpfe & Gebührengruppen (50m, 10m, weitere) -->
         ${jbRenderDynamicFeeGroupsHTML(m, _jbParticipationsState)}
 
-        <!-- 3. Variable Zusatzpositionen (Freie Beträge) & Schloss 🔒 -->
-        <div class="card p-3 border-0 shadow-sm mb-3 rounded-3 bg-white border-start border-4 border-info">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="text-secondary fw-bold mb-0" style="font-size: 12px; text-transform: uppercase;">
-              <i class="fas fa-plus-circle me-2 text-info"></i>Variable Zusatzpositionen (Freie Beträge)
-            </h6>
-            <div>
-              <button type="button" class="btn btn-xs btn-outline-primary fw-bold me-1" onclick="jbToggleAllAktiveZusatz(true, '${m.PersonNumber}')" style="font-size: 10px;">
-                <i class="fas fa-bolt me-1"></i>⚡ Für Aktive (AN)
-              </button>
-              <button type="button" class="btn btn-xs btn-outline-secondary fw-bold" onclick="jbToggleAllAktiveZusatz(false, '${m.PersonNumber}')" style="font-size: 10px;">
-                Alle abwählen
-              </button>
-            </div>
-          </div>
-          
-          <!-- Zusatzposition 1 -->
-          <div class="p-2 bg-light rounded-2 border mb-2">
-            <div class="row g-2 align-items-center">
-              <div class="col-auto">
-                <input class="form-check-input" type="checkbox" id="z1_active_${m.PersonNumber}" ${
-                  _jbParticipationsState.z1_active ? 'checked' : ''
-                } onchange="jbUpdateState('z1_active', this.checked, '${m.PersonNumber}')">
-              </div>
-              <div class="col">
-                <input type="text" class="form-control form-control-sm" placeholder="Text (z.B. Beitrag Vereinsjacke)" 
-                       value="${escHtml(_jbParticipationsState.z1_text || 'Beitrag Vereinsjacke')}" 
-                       onchange="jbUpdateState('z1_text', this.value, '${m.PersonNumber}')">
-              </div>
-              <div class="col-3">
-                <div class="input-group input-group-sm">
-                  <span class="input-group-text px-1">CHF</span>
-                  <input type="number" step="0.05" class="form-control form-control-sm text-end" placeholder="60.00" 
-                         value="${_jbParticipationsState.z1_betrag !== undefined ? _jbParticipationsState.z1_betrag : 60}" 
-                         onchange="jbUpdateState('z1_betrag', parseFloat(this.value)||0, '${m.PersonNumber}')">
-                </div>
-              </div>
-              <div class="col-auto">
-                <div class="input-group input-group-sm" style="width: 155px;">
-                  <input type="text" id="z1_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
-                         list="jb-konten-datalist"
-                         placeholder="Konto..."
-                         value="${_jbParticipationsState.z1_konto || jbGetDefaultAccountForExtra('Z001', '8500')}" 
-                         ${_jbParticipationsState.z1_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
-                         onchange="jbHandleExtraKontoChange('z1_konto', this.value, '${m.PersonNumber}')"
-                         title="${jbGetAccountTitle(_jbParticipationsState.z1_konto || jbGetDefaultAccountForExtra('Z001', '8500'))}">
-                  <button class="btn btn-outline-secondary" type="button" 
-                          onclick="jbToggleKontoLock('z1_unlocked', '${m.PersonNumber}')" 
-                          title="${_jbParticipationsState.z1_unlocked ? 'Konto sperren' : 'Konto aus Kontenrahmen wählen'}">
-                    <i class="fas ${_jbParticipationsState.z1_unlocked ? 'fa-lock-open text-warning' : 'fa-lock'}"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Zusatzposition 2 -->
-          <div class="p-2 bg-light rounded-2 border">
-            <div class="row g-2 align-items-center">
-              <div class="col-auto">
-                <input class="form-check-input" type="checkbox" id="z2_active_${m.PersonNumber}" ${
-                  _jbParticipationsState.z2_active ? 'checked' : ''
-                } onchange="jbUpdateState('z2_active', this.checked, '${m.PersonNumber}')">
-              </div>
-              <div class="col">
-                <input type="text" class="form-control form-control-sm" placeholder="Text (z.B. Eidg. Schützenfest)" 
-                       value="${escHtml(_jbParticipationsState.z2_text || 'Beitrag Eidg. Schützenfest')}" 
-                       onchange="jbUpdateState('z2_text', this.value, '${m.PersonNumber}')">
-              </div>
-              <div class="col-3">
-                <div class="input-group input-group-sm">
-                  <span class="input-group-text px-1">CHF</span>
-                  <input type="number" step="0.05" class="form-control form-control-sm text-end" placeholder="150.00" 
-                         value="${_jbParticipationsState.z2_betrag !== undefined ? _jbParticipationsState.z2_betrag : 150}" 
-                         onchange="jbUpdateState('z2_betrag', parseFloat(this.value)||0, '${m.PersonNumber}')">
-                </div>
-              </div>
-              <div class="col-auto">
-                <div class="input-group input-group-sm" style="width: 155px;">
-                  <input type="text" id="z2_konto_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
-                         list="jb-konten-datalist"
-                         placeholder="Konto..."
-                         value="${_jbParticipationsState.z2_konto || jbGetDefaultAccountForExtra('Z002', '1300')}" 
-                         ${_jbParticipationsState.z2_unlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
-                         onchange="jbHandleExtraKontoChange('z2_konto', this.value, '${m.PersonNumber}')"
-                         title="${jbGetAccountTitle(_jbParticipationsState.z2_konto || jbGetDefaultAccountForExtra('Z002', '1300'))}">
-                  <button class="btn btn-outline-secondary" type="button" 
-                          onclick="jbToggleKontoLock('z2_unlocked', '${m.PersonNumber}')" 
-                          title="${_jbParticipationsState.z2_unlocked ? 'Konto sperren' : 'Konto aus Kontenrahmen wählen'}">
-                    <i class="fas ${_jbParticipationsState.z2_unlocked ? 'fa-lock-open text-warning' : 'fa-lock'}"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- 3. Variable Zusatzpositionen (Freie Beträge) - zu 100% dynamisch aus gebuehren_config -->
+        ${jbRenderVariableZusatzHTML(m, _jbParticipationsState)}
 
         <!-- 5. Speichern & Aktionen (mit großzügigem Abstand nach unten) -->
         <div class="d-flex gap-2 mt-4 pt-2 pb-5">
@@ -970,6 +920,15 @@ function jbTriggerAutoSave(pnClean) {
       if (settings.lg_verband !== undefined) events['LG005'] = settings.lg_verband ? 1 : 0;
       if (settings.lg_verein !== undefined) events['LG006'] = settings.lg_verein ? 1 : 0;
       if (settings.lg_ch_kniend !== undefined) events['LG007'] = settings.lg_ch_kniend ? 1 : 0;
+
+      if (settings.extras && typeof settings.extras === 'object') {
+        Object.entries(settings.extras).forEach(([ekey, ex]) => {
+          events[ekey] = ex && ex.active ? 1 : 0;
+        });
+      } else {
+        if (settings.z1_active !== undefined) events['Z001'] = settings.z1_active ? 1 : 0;
+        if (settings.z2_active !== undefined) events['Z002'] = settings.z2_active ? 1 : 0;
+      }
 
       const list = Object.entries(events).map(([eventkey, teilgenommen]) => ({
         pn: pnClean,
@@ -1313,6 +1272,15 @@ async function jbSaveAllBulkLocalChanges() {
       if (state.lg_verein !== undefined) events['LG006'] = state.lg_verein ? 1 : 0;
       if (state.lg_ch_kniend !== undefined) events['LG007'] = state.lg_ch_kniend ? 1 : 0;
 
+      if (state.extras && typeof state.extras === 'object') {
+        Object.entries(state.extras).forEach(([ekey, ex]) => {
+          events[ekey] = ex && ex.active ? 1 : 0;
+        });
+      } else {
+        if (state.z1_active !== undefined) events['Z001'] = state.z1_active ? 1 : 0;
+        if (state.z2_active !== undefined) events['Z002'] = state.z2_active ? 1 : 0;
+      }
+
       Object.entries(events).forEach(([eventkey, teilgenommen]) => {
         list.push({
           pn,
@@ -1501,16 +1469,207 @@ function jbSortSidebar(col) {
   jbRenderEntryList();
 }
 
-window.jbToggleKontoLock = function(key, pn) {
-  const pnClean = String(pn || '').trim();
-  const current = !!_jbParticipationsState[key];
-  const next = !current;
-  _jbParticipationsState[key] = next;
-  if (!_jbLocalBulkChanges[pnClean]) _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
-  _jbLocalBulkChanges[pnClean][key] = next;
+// ============================================================
+// DYNAMISCHE VARIABLE ZUSATZPOSITIONEN (100% AUS GEBÜHRENCONFIG)
+// ============================================================
+function jbRenderVariableZusatzHTML(m, state) {
+  const fees = (window._jbGebuehren || []).filter(f => {
+    if (f.aktiv === false || f.aktiv === 'false' || f.aktiv === 0 || f.aktiv === '0') return false;
+    const kat = String(f.kategorie || '').toLowerCase();
+    const uiTyp = String(f.ui_typ || '').toLowerCase();
+    const key = String(f.key || '').toUpperCase();
+    return uiTyp === 'amount' || kat === 'variabel' || key.startsWith('Z');
+  }).sort((a, b) => Number(a.sort_order || a.ui_sort || 10) - Number(b.sort_order || b.ui_sort || 10));
 
-  const prefix = key.startsWith('z1') ? 'z1' : 'z2';
-  const inputEl = document.getElementById(`${prefix}_konto_${pnClean}`);
+  if (fees.length === 0) return '';
+
+  const extrasState = state.extras || {};
+
+  return `
+    <div class="card p-3 border-0 shadow-sm mb-3 rounded-3 bg-white border-start border-4 border-info">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="text-secondary fw-bold mb-0" style="font-size: 12px; text-transform: uppercase;">
+          <i class="fas fa-plus-circle me-2 text-info"></i>Variable Zusatzpositionen (Freie Beträge)
+        </h6>
+        <div>
+          <button type="button" class="btn btn-xs btn-outline-primary fw-bold me-1" onclick="jbToggleAllAktiveZusatz(true, '${m.PersonNumber}')" style="font-size: 10px;">
+            <i class="fas fa-bolt me-1"></i>⚡ Für Aktive (AN)
+          </button>
+          <button type="button" class="btn btn-xs btn-outline-secondary fw-bold" onclick="jbToggleAllAktiveZusatz(false, '${m.PersonNumber}')" style="font-size: 10px;">
+            Alle abwählen
+          </button>
+        </div>
+      </div>
+      
+      ${fees.map(f => {
+        const key = f.key;
+        let isActive = false;
+        let textVal = f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key;
+        let betragVal = Number(f.betrag || 0);
+        let kontoVal = f.konto_haben || f.konto || '8500';
+        let isUnlocked = false;
+
+        if (extrasState[key]) {
+          isActive = !!extrasState[key].active;
+          if (extrasState[key].text) textVal = extrasState[key].text;
+          if (extrasState[key].betrag !== undefined) betragVal = Number(extrasState[key].betrag);
+          if (extrasState[key].konto) kontoVal = extrasState[key].konto;
+          if (extrasState[key].unlocked) isUnlocked = true;
+        } else if (key === 'Z001' && (state.z1_active !== undefined || state.z1_text || state.z1_betrag !== undefined)) {
+          isActive = !!state.z1_active;
+          if (state.z1_text) textVal = state.z1_text;
+          if (state.z1_betrag !== undefined) betragVal = Number(state.z1_betrag);
+          if (state.z1_konto) kontoVal = state.z1_konto;
+          if (state.z1_unlocked) isUnlocked = true;
+        } else if (key === 'Z002' && (state.z2_active !== undefined || state.z2_text || state.z2_betrag !== undefined)) {
+          isActive = !!state.z2_active;
+          if (state.z2_text) textVal = state.z2_text;
+          if (state.z2_betrag !== undefined) betragVal = Number(state.z2_betrag);
+          if (state.z2_konto) kontoVal = state.z2_konto;
+          if (state.z2_unlocked) isUnlocked = true;
+        }
+
+        return `
+          <div class="p-2 bg-light rounded-2 border mb-2" id="extra_row_${key}_${m.PersonNumber}">
+            <div class="row g-2 align-items-center">
+              <div class="col-auto">
+                <input class="form-check-input" type="checkbox" id="extra_active_${key}_${m.PersonNumber}" 
+                       ${isActive ? 'checked' : ''} 
+                       onchange="jbUpdateExtraState('${key}', 'active', this.checked, '${m.PersonNumber}')">
+              </div>
+              <div class="col">
+                <input type="text" class="form-control form-control-sm" id="extra_text_${key}_${m.PersonNumber}"
+                       placeholder="Bezeichnung (z. B. ${escHtml(f.bezeichnungfrontend || f.bezeichnung)})" 
+                       value="${escHtml(textVal)}" 
+                       oninput="jbUpdateExtraState('${key}', 'text', this.value, '${m.PersonNumber}')">
+              </div>
+              <div class="col-3">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text px-1">CHF</span>
+                  <input type="number" step="0.05" class="form-control form-control-sm text-end" id="extra_betrag_${key}_${m.PersonNumber}"
+                         placeholder="${betragVal.toFixed(2)}" 
+                         value="${betragVal}" 
+                         oninput="jbUpdateExtraState('${key}', 'betrag', parseFloat(this.value)||0, '${m.PersonNumber}')">
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="input-group input-group-sm" style="width: 155px;">
+                  <input type="text" id="extra_konto_${key}_${m.PersonNumber}" class="form-control form-control-sm font-monospace" 
+                         list="jb-konten-datalist"
+                         placeholder="Konto..."
+                         value="${escHtml(kontoVal)}" 
+                         ${isUnlocked ? '' : 'readonly style="background-color: #e9ecef;"'}
+                         onchange="jbUpdateExtraState('${key}', 'konto', this.value, '${m.PersonNumber}')"
+                         title="${jbGetAccountTitle(kontoVal)}">
+                  <button class="btn btn-outline-secondary" type="button" 
+                          onclick="jbToggleExtraKontoLock('${key}', '${m.PersonNumber}')" 
+                          title="${isUnlocked ? 'Konto sperren' : 'Konto aus Kontenrahmen wählen'}">
+                    <i class="fas ${isUnlocked ? 'fa-lock-open text-warning' : 'fa-lock'}"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+window.jbRenderVariableZusatzHTML = jbRenderVariableZusatzHTML;
+
+window.jbUpdateExtraState = function(key, field, val, pn) {
+  const pnClean = String(pn || '').trim();
+  key = String(key || '').trim().toUpperCase();
+
+  if (!_jbParticipationsState.extras) _jbParticipationsState.extras = {};
+  if (!_jbParticipationsState.extras[key]) {
+    const f = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === key);
+    _jbParticipationsState.extras[key] = {
+      key: key,
+      active: false,
+      text: f ? (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key) : key,
+      betrag: f ? Number(f.betrag || 0) : 0,
+      konto: f ? (f.konto_haben || f.konto || '8500') : '8500',
+      unlocked: false
+    };
+  }
+
+  _jbParticipationsState.extras[key][field] = val;
+
+  // Abwärtskompatible Brücke für historische z1 und z2
+  if (key === 'Z001') {
+    if (field === 'active') _jbParticipationsState.z1_active = val;
+    if (field === 'text') _jbParticipationsState.z1_text = val;
+    if (field === 'betrag') _jbParticipationsState.z1_betrag = val;
+    if (field === 'konto') _jbParticipationsState.z1_konto = val;
+    if (field === 'unlocked') _jbParticipationsState.z1_unlocked = val;
+  } else if (key === 'Z002') {
+    if (field === 'active') _jbParticipationsState.z2_active = val;
+    if (field === 'text') _jbParticipationsState.z2_text = val;
+    if (field === 'betrag') _jbParticipationsState.z2_betrag = val;
+    if (field === 'konto') _jbParticipationsState.z2_konto = val;
+    if (field === 'unlocked') _jbParticipationsState.z2_unlocked = val;
+  }
+
+  if (!_jbLocalBulkChanges[pnClean]) {
+    _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+  }
+  if (!_jbLocalBulkChanges[pnClean].extras) {
+    _jbLocalBulkChanges[pnClean].extras = {};
+  }
+  _jbLocalBulkChanges[pnClean].extras[key] = { ..._jbParticipationsState.extras[key] };
+  if (key === 'Z001') {
+    _jbLocalBulkChanges[pnClean].z1_active = _jbParticipationsState.z1_active;
+    _jbLocalBulkChanges[pnClean].z1_text = _jbParticipationsState.z1_text;
+    _jbLocalBulkChanges[pnClean].z1_betrag = _jbParticipationsState.z1_betrag;
+    _jbLocalBulkChanges[pnClean].z1_konto = _jbParticipationsState.z1_konto;
+  } else if (key === 'Z002') {
+    _jbLocalBulkChanges[pnClean].z2_active = _jbParticipationsState.z2_active;
+    _jbLocalBulkChanges[pnClean].z2_text = _jbParticipationsState.z2_text;
+    _jbLocalBulkChanges[pnClean].z2_betrag = _jbParticipationsState.z2_betrag;
+    _jbLocalBulkChanges[pnClean].z2_konto = _jbParticipationsState.z2_konto;
+  }
+
+  if (typeof jbSyncMemberToCache === 'function') {
+    jbSyncMemberToCache(pnClean, _jbParticipationsState);
+  }
+
+  jbRenderEntryList();
+
+  const m = _jbMembers.find(x => String(x.PersonNumber || '').trim() === pnClean);
+  if (m) {
+    jbUpdateLiveSummary(m);
+  }
+
+  jbTriggerAutoSave(pnClean);
+};
+
+window.jbToggleExtraKontoLock = function(key, pn) {
+  const pnClean = String(pn || '').trim();
+  key = String(key || '').trim().toUpperCase();
+
+  if (!_jbParticipationsState.extras) _jbParticipationsState.extras = {};
+  if (!_jbParticipationsState.extras[key]) {
+    const f = (window._jbGebuehren || []).find(x => String(x.key || '').trim().toUpperCase() === key);
+    _jbParticipationsState.extras[key] = {
+      key: key,
+      active: false,
+      text: f ? (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key) : key,
+      betrag: f ? Number(f.betrag || 0) : 0,
+      konto: f ? (f.konto_haben || f.konto || '8500') : '8500',
+      unlocked: false
+    };
+  }
+
+  const current = !!_jbParticipationsState.extras[key].unlocked;
+  const next = !current;
+  _jbParticipationsState.extras[key].unlocked = next;
+
+  if (!_jbLocalBulkChanges[pnClean]) _jbLocalBulkChanges[pnClean] = { ..._jbParticipationsState };
+  if (!_jbLocalBulkChanges[pnClean].extras) _jbLocalBulkChanges[pnClean].extras = {};
+  _jbLocalBulkChanges[pnClean].extras[key] = { ..._jbParticipationsState.extras[key] };
+
+  const inputEl = document.getElementById(`extra_konto_${key}_${pnClean}`);
   if (inputEl) {
     if (next) {
       inputEl.removeAttribute('readonly');
@@ -1521,19 +1680,37 @@ window.jbToggleKontoLock = function(key, pn) {
       inputEl.style.backgroundColor = '#e9ecef';
     }
   }
-  const btn = event && event.currentTarget ? event.currentTarget : null;
-  if (btn) {
-    btn.title = next ? 'Konto sperren' : 'Konto bearbeiten';
-    const icon = btn.querySelector('i');
+
+  if (window.event && window.event.currentTarget) {
+    window.event.currentTarget.title = next ? 'Konto sperren' : 'Konto bearbeiten';
+    const icon = window.event.currentTarget.querySelector('i');
     if (icon) {
       icon.className = `fas ${next ? 'fa-lock-open text-warning' : 'fa-lock'}`;
     }
   }
 };
 
+window.jbToggleKontoLock = function(key, pn) {
+  const cleanKey = key.startsWith('z1') ? 'Z001' : (key.startsWith('z2') ? 'Z002' : key);
+  window.jbToggleExtraKontoLock(cleanKey, pn);
+};
+
 window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {
-  const textMsg = activateState ? 'für ALLE aktiven Schützen aktivieren' : 'für ALLE Schützen abwählen';
-  const ok = confirm(`Möchten Sie die Zusatzposition 1 (Beitrag Vereinsjacke) ${textMsg}?`);
+  // Nimmt die erste aktive Zusatzposition aus gebuehren_config (z.B. Z001)
+  const zFee = (window._jbGebuehren || []).find(f => {
+    const uiTyp = String(f.ui_typ || '').toLowerCase();
+    const kat = String(f.kategorie || '').toLowerCase();
+    const k = String(f.key || '').toUpperCase();
+    return f.aktiv !== false && (uiTyp === 'amount' || kat === 'variabel' || k.startsWith('Z'));
+  });
+
+  const feeKey = zFee ? zFee.key : 'Z001';
+  const feeName = zFee ? (zFee.ui_feld || zFee.bezeichnungfrontend || zFee.bezeichnung) : 'Beitrag Vereinsjacke';
+  const feeBetrag = zFee ? Number(zFee.betrag || 0) : 60;
+  const feeKonto = zFee ? (zFee.konto_haben || zFee.konto || '8500') : '8500';
+
+  const textMsg = activateState ? `für ALLE aktiven Schützen aktivieren` : `für ALLE Schützen abwählen`;
+  const ok = confirm(`Möchten Sie die Zusatzposition ${feeKey} (${feeName}) ${textMsg}?`);
   if (!ok) return;
 
   _jbMembers.forEach(m => {
@@ -1548,16 +1725,42 @@ window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {
       if (!_jbLocalBulkChanges[pnClean]) {
         _jbLocalBulkChanges[pnClean] = {};
       }
-      _jbLocalBulkChanges[pnClean].z1_active = activateState;
-      if (activateState) {
-        if (!_jbLocalBulkChanges[pnClean].z1_text) _jbLocalBulkChanges[pnClean].z1_text = _jbParticipationsState.z1_text || 'Beitrag Vereinsjacke';
-        if (_jbLocalBulkChanges[pnClean].z1_betrag === undefined) _jbLocalBulkChanges[pnClean].z1_betrag = _jbParticipationsState.z1_betrag !== undefined ? _jbParticipationsState.z1_betrag : 60;
-        if (!_jbLocalBulkChanges[pnClean].z1_konto) _jbLocalBulkChanges[pnClean].z1_konto = _jbParticipationsState.z1_konto || jbGetDefaultAccountForExtra('Z001', '8500');
+      if (!_jbLocalBulkChanges[pnClean].extras) {
+        _jbLocalBulkChanges[pnClean].extras = {};
+      }
+      _jbLocalBulkChanges[pnClean].extras[feeKey] = {
+        key: feeKey,
+        active: activateState,
+        text: feeName,
+        betrag: feeBetrag,
+        konto: feeKonto,
+        unlocked: false
+      };
+      if (feeKey === 'Z001') {
+        _jbLocalBulkChanges[pnClean].z1_active = activateState;
+        _jbLocalBulkChanges[pnClean].z1_text = feeName;
+        _jbLocalBulkChanges[pnClean].z1_betrag = feeBetrag;
+        _jbLocalBulkChanges[pnClean].z1_konto = feeKonto;
       }
     }
   });
 
-  _jbParticipationsState.z1_active = activateState;
-  jbUpdateState('z1_active', activateState, currentPn);
-  showToast(`⚡ Zusatzposition 1 ${activateState ? 'für alle aktiven Schützen aktiviert' : 'abgewählt'}.`, 'success');
+  if (!_jbParticipationsState.extras) _jbParticipationsState.extras = {};
+  _jbParticipationsState.extras[feeKey] = {
+    key: feeKey,
+    active: activateState,
+    text: feeName,
+    betrag: feeBetrag,
+    konto: feeKonto,
+    unlocked: false
+  };
+  if (feeKey === 'Z001') {
+    _jbParticipationsState.z1_active = activateState;
+    _jbParticipationsState.z1_text = feeName;
+    _jbParticipationsState.z1_betrag = feeBetrag;
+    _jbParticipationsState.z1_konto = feeKonto;
+  }
+
+  jbUpdateExtraState(feeKey, 'active', activateState, currentPn);
+  showToast(`⚡ ${feeName} ${activateState ? 'für alle aktiven Schützen aktiviert' : 'abgewählt'}.`, 'success');
 };

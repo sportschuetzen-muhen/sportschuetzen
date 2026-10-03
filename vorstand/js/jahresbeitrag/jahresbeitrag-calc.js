@@ -232,44 +232,77 @@ function jbCalculateLiveTotal(m, settings) {
     }
   });
 
-  // 4. Variable Zusatzpositionen (Freie Beträge)
-  const extrasList = settings.extras || [];
-  if (extrasList.length > 0) {
-    extrasList.forEach(ex => {
-      if (ex.active && ex.text && Number(ex.betrag) !== 0) {
+  // 4. Variable Zusatzpositionen (Freie Beträge) - zu 100% dynamisch aus gebuehren_config
+  const varFees = (window._jbGebuehren || []).filter(f => {
+    const kat = String(f.kategorie || '').toLowerCase();
+    const uiTyp = String(f.ui_typ || '').toLowerCase();
+    const key = String(f.key || '').toUpperCase();
+    return uiTyp === 'amount' || kat === 'variabel' || key.startsWith('Z');
+  });
+
+  varFees.forEach(f => {
+    const key = String(f.key || '').toUpperCase();
+    let isActive = false;
+    let customText = '';
+    let customBetrag = null;
+    let customKonto = '';
+    let isLocked = true;
+
+    // A) Falls settings.extras als Objekt oder Array vorliegt
+    if (settings.extras && typeof settings.extras === 'object' && !Array.isArray(settings.extras) && settings.extras[key]) {
+      isActive = !!settings.extras[key].active;
+      customText = settings.extras[key].text;
+      customBetrag = settings.extras[key].betrag;
+      customKonto = settings.extras[key].konto;
+      isLocked = settings.extras[key].unlocked === false || !settings.extras[key].unlocked;
+    } else if (Array.isArray(settings.extras)) {
+      const match = settings.extras.find(ex => String(ex.key || '').toUpperCase() === key);
+      if (match) {
+        isActive = !!match.active;
+        customText = match.text;
+        customBetrag = match.betrag;
+        customKonto = match.konto;
+        isLocked = match.locked !== false;
+      }
+    } else if (key === 'Z001' && settings.z1_active !== undefined) {
+      // Abwärtskompatible Brücke für historische z1-Felder
+      isActive = !!settings.z1_active;
+      customText = settings.z1_text;
+      customBetrag = settings.z1_betrag;
+      customKonto = settings.z1_konto;
+      isLocked = settings.z1_unlocked === false;
+    } else if (key === 'Z002' && settings.z2_active !== undefined) {
+      // Abwärtskompatible Brücke für historische z2-Felder
+      isActive = !!settings.z2_active;
+      customText = settings.z2_text;
+      customBetrag = settings.z2_betrag;
+      customKonto = settings.z2_konto;
+      isLocked = settings.z2_unlocked === false;
+    }
+
+    if (isActive) {
+      const posName = (customText && String(customText).trim() !== '') 
+        ? String(customText).trim() 
+        : (f.ui_feld || f.bezeichnungfrontend || f.bezeichnung || key);
+      const posBetrag = (customBetrag !== null && customBetrag !== undefined && !isNaN(Number(customBetrag))) 
+        ? Number(customBetrag) 
+        : Number(f.betrag || 0);
+      const posKonto = (customKonto && String(customKonto).trim() !== '')
+        ? String(customKonto).trim()
+        : (f.konto_haben || f.konto || '8500');
+
+      if (posBetrag !== 0) {
         positions.push({
-          name: ex.text,
-          betrag: Number(ex.betrag || 0),
-          konto: ex.konto || getFeeAccount(ex.key || 'Z001', '8500'),
-          locked: ex.locked !== false,
-          typ: 'Debit',
-          key: ex.key || 'ZUSATZ'
+          name: posName,
+          betrag: posBetrag,
+          konto: posKonto,
+          locked: isLocked,
+          typ: posBetrag >= 0 ? 'Debit' : 'Kredit',
+          key: key
         });
       }
-    });
-  } else {
-    // Abwärtskompatibilität für z1 und z2
-    if (settings.z1_active && settings.z1_text && Number(settings.z1_betrag) !== 0) {
-      positions.push({
-        name: settings.z1_text,
-        betrag: Number(settings.z1_betrag || 0),
-        konto: settings.z1_konto || getFeeAccount('Z001', '8500'),
-        locked: settings.z1_locked !== false,
-        typ: 'Debit',
-        key: 'Z001'
-      });
     }
-    if (settings.z2_active && settings.z2_text && Number(settings.z2_betrag) !== 0) {
-      positions.push({
-        name: settings.z2_text,
-        betrag: Number(settings.z2_betrag || 0),
-        konto: settings.z2_konto || getFeeAccount('Z002', '1300'),
-        locked: settings.z2_locked !== false,
-        typ: 'Debit',
-        key: 'Z002'
-      });
-    }
-  }
+  });
   
   // 5. Rabatte
   let isVorstand = m._istVorstand || false;
