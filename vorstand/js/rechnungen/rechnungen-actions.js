@@ -3097,9 +3097,18 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
   }
 
   const isSent = inv && (inv.mail_status === 'versendet' || inv.send_date);
-  const warnText = isSent
-    ? `⚠️ ACHTUNG: Die Rechnung ${invoiceId} wurde bereits an den Empfänger versandt!\n\nWenn du sie löschst, beachte bitte, dass der Empfänger das Dokument bereits vorliegen hat.\n\nMöchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?`
-    : `⚠️ Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?\n\nDadurch werden die Rechnungsdaten und alle Positionen in der Tabelle gelöscht.`;
+  const isJb = inv && inv.type === 'Jahresbeitrag';
+  let warnText = '';
+  if (isSent) {
+    warnText = `⚠️ ACHTUNG: Die Rechnung ${invoiceId} wurde bereits an den Empfänger versandt!\n\n` +
+      `Wenn du sie löschst, beachte bitte, dass der Empfänger das Dokument bereits vorliegen hat.\n` +
+      (isJb ? `Der Jahresbeitrag wird im Modul Jahresbeitrag automatisch auf den Status 'berechnet' zurückgesetzt und kann dort neu erzeugt werden.\n\n` : `\n`) +
+      `Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?`;
+  } else {
+    warnText = `⚠️ Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?\n\n` +
+      (isJb ? `Der Jahresbeitrag wird im Modul Jahresbeitrag automatisch auf den Status 'berechnet' zurückgesetzt und kann dort neu erzeugt werden.\n\n` : `Dadurch werden die Rechnungsdaten und alle Positionen in der Tabelle gelöscht.\n\n`) +
+      `Fortfahren?`;
+  }
 
   if (!confirm(warnText)) {
     return;
@@ -3114,7 +3123,7 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
     window.renderRechnungen(); // Render table instantly!
   }
 
-  showSuccess(`🎉 Rechnung ${invoiceId} wurde gelöscht (Hintergrund-Synchronisation läuft)...`);
+  showSuccess(`🎉 Rechnung ${invoiceId} wird gelöscht (Hintergrund-Synchronisation läuft)...`);
 
   // Supabase PostgreSQL Master Delete
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
@@ -3141,15 +3150,18 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
         }
       }
       console.log(`✅ [Supabase] Invoice ${invoiceId} deleted from Supabase.`);
+      if (isJb) {
+        showSuccess(`🎉 Rechnung ${invoiceId} gelöscht. Beitrag im Modul Jahresbeitrag auf 'berechnet' zurückgesetzt.`);
+      }
     } catch (sbEx) {
       console.warn("⚠️ [Supabase] Delete Invoice error:", sbEx);
+      showError(`Fehler beim Löschen der Rechnung ${invoiceId}: ${sbEx.message}`);
     }
   }
 
-  
   // Schneller UI-Refresh direkt aus Supabase
   setTimeout(async () => {
-    await loadRechnungenData(true);
+    if (typeof loadRechnungenData === 'function') await loadRechnungenData(true);
   }, 200);
 };
 
@@ -4263,6 +4275,108 @@ window.rnStartMassSendFromSelection = function() {
     return;
   }
   rnOpenMassSendModal(ids);
+};
+
+// SAMMELLÖSCHUNG AUS TABELLENAUSWAHL
+window.rnDeleteSelectedInvoices = async function() {
+  const selectedIds = rnGetSelectedInvoiceIds();
+  if (selectedIds.length === 0) {
+    alert("Bitte wähle mindestens eine Rechnung in der Tabelle aus.");
+    return;
+  }
+
+  const allInvoices = window._invoices || [];
+  const selectedInvoices = selectedIds
+    .map(id => allInvoices.find(i => String(i.id).trim() === String(id).trim()))
+    .filter(Boolean);
+
+  // 1. Trennung: Bezahlt vs. Löschbar
+  const paidInvoices = selectedInvoices.filter(inv => inv.status === 'bezahlt' || (inv.total_paid && Number(inv.total_paid) > 0));
+  const deletableInvoices = selectedInvoices.filter(inv => inv.status !== 'bezahlt' && (!inv.total_paid || Number(inv.total_paid) === 0));
+
+  if (deletableInvoices.length === 0) {
+    alert(`🔒 Keine der ausgewählten Rechnungen kann gelöscht werden.\n\nAlle ${paidInvoices.length} ausgewählten Rechnungen sind bereits bezahlt und aus buchhalterischen Gründen geschützt.`);
+    return;
+  }
+
+  // 2. Analyse der löschbaren Rechnungen
+  const draftInvoices = deletableInvoices.filter(inv => (!inv.mail_status || inv.mail_status === 'entwurf') && !inv.send_date);
+  const sentInvoices = deletableInvoices.filter(inv => inv.mail_status === 'versendet' || inv.send_date);
+  const jbInvoices = deletableInvoices.filter(inv => inv.type === 'Jahresbeitrag');
+
+  let warnMsg = `⚠️ Möchtest du die ausgewählten ${deletableInvoices.length} Rechnungen wirklich unwiderruflich löschen?\n\n`;
+  warnMsg += `• Entwürfe: ${draftInvoices.length}\n`;
+  if (sentInvoices.length > 0) {
+    warnMsg += `• Bereits versandt: ${sentInvoices.length} ⚠️ (Empfänger haben den Beleg bereits erhalten!)\n`;
+  }
+  if (jbInvoices.length > 0) {
+    warnMsg += `• Jahresbeiträge: ${jbInvoices.length} (Fallen im Fachmodul Jahresbeitrag automatisch auf den Status 'berechnet' zurück)\n`;
+  }
+  if (paidInvoices.length > 0) {
+    warnMsg += `\n🔒 Hinweis: ${paidInvoices.length} bezahlte Rechnungen werden übersprungen und verbleiben unverändert im System.\n`;
+  }
+  warnMsg += `\nFortfahren?`;
+
+  if (!confirm(warnMsg)) {
+    return;
+  }
+
+  const deletableIds = deletableInvoices.map(i => String(i.id).trim());
+
+  // 3. Optimistic Update (Sofortiges Entfernen aus lokaler Tabelle)
+  window._invoices = (window._invoices || []).filter(inv => !deletableIds.includes(String(inv.id).trim()));
+  rnClearTableSelection();
+  if (typeof window.renderRechnungen === 'function') {
+    window.renderRechnungen();
+  }
+
+  showSuccess(`⏳ Lösche ${deletableIds.length} Rechnungen (Hintergrund-Synchronisation läuft)...`);
+
+  // 4. Supabase PostgreSQL Batch Delete
+  const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
+  if (sb) {
+    try {
+      // Positionen löschen
+      await sb.from('invoice_positions').delete().in('invoice_id', deletableIds);
+      // Rechnungen löschen
+      await sb.from('invoices').delete().in('id', deletableIds);
+      // Quellmodule entkoppeln
+      await sb.from('contributions_header').update({ invoice_id: null }).in('invoice_id', deletableIds);
+      await sb.from('rental_requests').update({ invoice_id: null }).in('invoice_id', deletableIds);
+
+      // In-Memory Cache synchronisieren
+      if (Array.isArray(window._jbData)) {
+        window._jbData.forEach(j => {
+          const id = String(j.invoiceId || j.invoice_id).trim();
+          if (deletableIds.includes(id)) {
+            j.invoiceId = null;
+            j.invoice_id = null;
+          }
+        });
+      }
+      if (Array.isArray(window._jbAllBeitraege)) {
+        window._jbAllBeitraege.forEach(j => {
+          const id = String(j.invoiceId || j.invoice_id).trim();
+          if (deletableIds.includes(id)) {
+            j.invoiceId = null;
+            j.invoice_id = null;
+          }
+        });
+      }
+
+      console.log(`✅ [Supabase] ${deletableIds.length} Rechnungen gelöscht & Quellmodule entkoppelt.`);
+      const jbCountMsg = jbInvoices.length > 0 ? ` (${jbInvoices.length} Jahresbeiträge auf 'berechnet' zurückgesetzt)` : '';
+      showSuccess(`🎉 ${deletableIds.length} Rechnungen erfolgreich gelöscht${jbCountMsg}.`);
+    } catch (sbEx) {
+      console.warn("⚠️ [Supabase] Fehler beim Sammellöschen von Rechnungen:", sbEx);
+      showError(`Fehler beim Löschen: ${sbEx.message}`);
+    }
+  }
+
+  // Schneller UI-Refresh direkt aus Supabase
+  setTimeout(async () => {
+    if (typeof loadRechnungenData === 'function') await loadRechnungenData(true);
+  }, 200);
 };
 
 // State für Massenversand-Filterung im Modal

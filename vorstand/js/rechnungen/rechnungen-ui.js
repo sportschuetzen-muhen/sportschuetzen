@@ -348,6 +348,9 @@ window.renderTabArchiv = function(content) {
           <button class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="rnStartMassSendFromSelection()">
             <i class="fas fa-paper-plane me-1"></i> Massenversand für Auswahl starten
           </button>
+          <button class="btn btn-sm btn-outline-danger fw-bold shadow-sm write-protected" onclick="rnDeleteSelectedInvoices()">
+            <i class="fas fa-trash-alt me-1"></i> Ausgewählte löschen
+          </button>
           <button class="btn btn-sm btn-outline-secondary" onclick="rnClearTableSelection()">
             Auswahl aufheben
           </button>
@@ -658,6 +661,14 @@ window.rnRenderTable = function() {
                       <i class="fas fa-lock text-warning me-2 fa-fw"></i>In Jahresbeitrag öffnen
                     </a>
                   </li>
+                  ${!isPaid ? `
+                    <li><hr class="dropdown-divider my-1"></li>
+                    <li>
+                      <a class="dropdown-item py-2 text-danger write-protected" href="#" onclick="rnDeleteInvoicePrompt('${item.id}'); return false;">
+                        <i class="fas fa-trash-alt me-2 fa-fw"></i>Rechnung löschen
+                      </a>
+                    </li>
+                  ` : ''}
                 ` : `
                   ${!isPaid ? `
                     ${(!item.mail_status || item.mail_status === 'entwurf' || !item.send_date) ? `
@@ -939,6 +950,11 @@ window.rnOpenDetailsModal = async function(invoiceId) {
             ${inv.type === 'Jahresbeitrag' ? `
               <button class="btn btn-sm btn-light border text-muted" onclick="rnTransitionFromDetails(() => rnJumpToJahresbeitrag('${inv.PersonNumber}'))">
                 <i class="fas fa-lock text-warning me-1.5"></i>In Jahresbeitrag
+              </button>
+            ` : ''}
+            ${inv.status !== 'bezahlt' && (!inv.total_paid || Number(inv.total_paid) === 0) ? `
+              <button class="btn btn-sm btn-outline-danger write-protected" onclick="rnTransitionFromDetails(() => rnDeleteInvoicePrompt('${inv.id}'))" title="Rechnung löschen">
+                <i class="fas fa-trash-alt me-1.5"></i>Löschen
               </button>
             ` : ''}
           </div>

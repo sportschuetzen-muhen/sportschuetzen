@@ -313,14 +313,15 @@ Da die Beitragsabwicklung sich über mehrere Phasen erstreckt (von der internen 
 
 ---
 
-### 8.6 Entkoppelung bei Löschung im Rechnungsmodul
+### 8.6 Entkoppelung bei Löschung im Rechnungsmodul (Einzel- & Sammellöschung)
 
-Wird ein Rechnungsentwurf (`JB-26-XXXX`) im Rechnungsmodul gelöscht (`rnDeleteInvoicePrompt` in `rechnungen-actions.js`):
-1. Löscht `invoice_positions` und `invoices`.
-2. Führt atomar `UPDATE contributions_header SET invoice_id = NULL WHERE invoice_id = :id` aus.
-3. Aktualisiert den lokalen Frontend-RAM-Cache (`window._jbData`, `window._jbAllBeitraege`).
-4. Der Datensatz im Jahresbeitragsmodul wechselt nahtlos vom Status **`entwurf`** zurück auf **`berechnet`**.
-5. Es entstehen keine verwaisten Rechnungs-IDs oder Inkonsistenzen.
+Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht – entweder über das Zeilenmenü (`rnDeleteInvoicePrompt`) oder via Sammelauswahl (`rnDeleteSelectedInvoices`):
+1. Löscht `invoice_positions` und `invoices` (sofern nicht bezahlt).
+2. Führt atomar `UPDATE contributions_header SET invoice_id = NULL WHERE invoice_id = :id` (bzw. `IN (...)`) aus.
+3. Aktualisiert unmittelbar den lokalen Frontend-RAM-Cache (`window._jbData`, `window._jbAllBeitraege`).
+4. Der Datensatz im Jahresbeitragsmodul wechselt nahtlos vom Status **`entwurf`** oder **`versendet`** zurück auf **`berechnet`**.
+5. Der Bereitstellungs-Zähler («Rechnungen bereitstellen») erfasst die freigewordenen Datensätze automatisch wieder zur Neugenerierung.
+6. Es entstehen keine verwaisten Rechnungs-IDs oder Inkonsistenzen.
 
 
 

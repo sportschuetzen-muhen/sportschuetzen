@@ -118,12 +118,12 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
 | **Mahnung generieren** | ❌ Nicht fällig | ✅ Wenn überfällig | ✅ Für Restsaldo | ❌ **Gesperrt** | ❌ **Gesperrt** |
 | **PDF herunterladen / ansehen** | ✅ Vorschau | ✅ Originalbeleg | ✅ Originalbeleg | ✅ Quittungsbeleg | ✅ Stornobeleg |
 
-### 3.1 Entkoppelung von Quellmodulen beim Löschen von Rechnungsentwürfen
-Wird ein Rechnungsentwurf im Rechnungsmodul gelöscht (`rnDeleteInvoicePrompt`), entkoppelt das System die verknüpften Fachmodule atomar:
-- **Jahresbeitrag (`contributions_header`):** Setzt `invoice_id = NULL`. Der Status im Jahresbeitragsmodul fällt von `entwurf` sauber auf `berechnet` zurück.
+### 3.1 Entkoppelung von Quellmodulen beim Löschen (Einzel- & Sammellöschung)
+Wird eine Rechnung im Rechnungsmodul gelöscht – entweder einzeln (`rnDeleteInvoicePrompt`) oder via Multi-Select Tabellenauswahl (`rnDeleteSelectedInvoices`) –, entkoppelt das System die verknüpften Fachmodule atomar:
+- **Jahresbeitrag (`contributions_header`):** Setzt `invoice_id = NULL`. Der Status im Jahresbeitragsmodul fällt von `entwurf` bzw. `versendet` sauber auf `berechnet` zurück. Betroffene Mitglieder können im Jahresbeitrags-Cockpit sofort wieder über «Rechnungen bereitstellen» oder Einzelklick neu fakturiert werden.
 - **Vermietung Schützenstube (`rental_requests`):** Setzt `invoice_id = NULL`. Die Buchung bleibt bestätigt und kann neu fakturiert werden.
-
-Dies verhindert verwaiste Fremdschlüssel und gewährleistet, dass Fachmodule und Rechnungsmodul stets konsistent synchronisiert bleiben.
+- **In-Memory Cache-Synchronisation:** Die lokalen Datenstrukturen (`window._jbData`, `window._jbAllBeitraege`, `window._invoices`) werden unmittelbar aktualisiert, sodass auch ohne manuellen Reload konsistente Status-Badges und Bereitstellungs-Zähler vorliegen.
+- **Schutz bezahlter Rechnungen:** Rechnungen mit `status === 'bezahlt'` oder `total_paid > 0` werden bei der Sammellöschung automatisch geschützt und übersprungen.
 
 ---
 
