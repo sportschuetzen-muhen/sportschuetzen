@@ -167,4 +167,74 @@ Statt einer fehleranfälligen N-fachen HTTP-Schleife im Browser wird die persist
 - **Konsistenz:** Single Source of Truth direkt in PostgreSQL; keine Datenverfälschung bei Verbindungsabbrüchen.
 - **Frontend-Synchronität:** Die clientseitige `jbCalculateLiveTotal`-Funktion dient ausschliesslich der Live-Vorschau in der Schnellerfassung und teilt exakt dieselbe Spezifikation.
 
+---
+
+## 8. Ablauf & Rechnungs-Lifecycle: Von der Beitragsberechnung zur Rechnungsstellung
+
+### 8.1 Der 4-Stufen-Workflow der Beitragsabwicklung
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ STUFE 1: BEITRAGSBEMESSUNG (Fachmodul Jahresbeitrag)                                   │
+│          Klick auf "Alle Beiträge berechnen" (jbBerechnen)                             │
+│          ──► RPC calculate_member_contributions schreibt:                              │
+│              - contributions_header (gesamt, status = 'offen', invoice_id = NULL)       │
+│              - contributions_positions (Grundbeitrag, Lizenzen, Rabatte, Turniere)     │
+│          ──► KEINE Rechnungen in public.invoices erzeugt! Nummernkreis unberührt.      │
+└──────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ STUFE 2: KONTROLLE & ABSTIMMUNG (Kassier / Vorstand)                                   │
+│          - Kontrolle in der Beitragsmatrix (jahresbeitrag-matrix.js)                    │
+│          - Prüfung: Ehrenmitglieder (RA003), Hausmeister (RA002), U21, Lizenzen        │
+│          - Bei Bedarf: Manuelle Anpassungen via Schnellerfassung                        │
+│          - Vorteil: Wiederholtes Berechnen möglich, OHNE Nummernkreise zu verbrennen.  │
+└──────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ STUFE 3: RECHNUNGS-BEREITSTELLUNG (Kopplung an RechnungsCore)                          │
+│          Auslösung: Sammelversand-Start oder Klick auf "Rechnungen generieren"         │
+│          ──► Für alle berechneten Mitglieder ohne invoice_id wird                      │
+│              RechnungsCore.createInvoice(invoiceOrder) aufgerufen                      │
+│          ──► Nummernkreis JB-26-XXXX atomar vergeben                                   │
+│          ──► public.invoices (Status 'entwurf' / 'offen') und invoice_positions erzeugt │
+│          ──► contributions_header.invoice_id verknüpft                                 │
+└──────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ STUFE 4: VERSAND & ZAHLUNGSABGLEICH (Zentrale Engines & FiBu)                           │
+│          1. Sammelversand via Mail-Engine (PDF-Anhang, mail_status = 'versendet')       │
+│          2. Rechnungs-Cockpit zeigt alle Jahresbeiträge mit Salden                     │
+│          3. Bankabgleich: CAMT.054 matcht 27-stellige QRR lückenlos                    │
+│          4. RechnungsCore.recordPayment verbucht im Hauptbuch (accounting_journal)      │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Analyse: Entspricht der bisherige Ablauf der Systemarchitektur?
+
+* **Der bisherige Ist-Zustand (Bruch in der Architektur):**
+  - Nach `jbBerechnen()` existierten die Daten ausschliesslich in `contributions_header` und `contributions_positions`.
+  - Rechnungen in `public.invoices` wurden bisher erst **„lazy / on-demand“** angelegt, wenn der Kassier für ein Mitglied einzeln auf das PDF-Icon (`jbGenerateInvoicePdfRemote`) oder Mail-Icon (`jbSendInvoiceEmailRemote`) klickte.
+* **Architektur-Probleme des bisherigen Ist-Zustands:**
+  1. **Sammelversand schlägt fehl:** Klickte der Kassier nach der Berechnung auf *„Sammelversand“* (`jbOpenSammelversandModal`), suchte das Modal in `window._invoices` nach Rechnungen des Typs `Jahresbeitrag`. Da diese noch nicht existierten, war die Liste **leer (0 Rechnungen)**.
+  2. **Rechnungs-Cockpit unvollständig:** Das Rechnungsmodul (`public.invoices`) wusste nichts von den offenen Beitragsforderungen der 80+ Mitglieder.
+  3. **Kein Bankabgleich:** CAMT.054 XML-Gutschriften konnten nicht automatisch gematcht werden, da die 27-stelligen QR-Referenzen in `public.invoices` noch gar nicht existierten.
+
+### 8.3 Variantenvergleich & Empfohlene Soll-Architektur
+
+| Kriterium | Variante A: Sofort-Erzeugung in `jbBerechnen()` | Variante B: 2-Stufen-Workflow (Berechnen ➔ Bereitstellen) ⭐ | Variante C: Bisheriges Lazy-Loading (Einzelklick) |
+| :--- | :--- | :--- | :--- |
+| **Ablauf** | `calculate_member_contributions` legt sofort für alle 80+ Mitglieder Rechnungen im `RechnungsCore` an. | Stufe 1 berechnet und prüft. Stufe 2 erzeugt alle Rechnungen im Batch vor dem Versand (oder automatisiert beim Klick auf Sammelversand). | Rechnungen werden erst beim Klick auf das PDF/Mail-Symbol des einzelnen Mitglieds angelegt. |
+| **Nummernkreis-Sicherheit** | ❌ Schlecht: Ändert der Kassier nach der Berechnung noch Tarife, sind bereits 80 Nummern (`JB-26-XXXX`) vergeben und müssen storniert/gelöscht werden. | ✅ **Perfekt:** Berechnung kann beliebig oft wiederholt werden. Nummern werden erst bei definitiver Rechnungslegung vergeben. | ⚠️ Chaotisch: Nur wenige Mitglieder haben Rechnungsnummern, der Rest nicht. |
+| **Sammelversand** | ✅ Funktioniert sofort | ✅ **Funktioniert zuverlässig** (generiert fehlende Rechnungen vor Modal-Öffnung) | ❌ **Kaputt** (öffnet mit 0 Rechnungen) |
+| **Rechnungs-Cockpit & FiBu** | ✅ Sofort sichtbar | ✅ **Vollständig synchron** nach Rechnungsbereitstellung | ❌ Unvollständig (Debitorenspiegel fehlt) |
+| **Bankabgleich (CAMT.054)** | ✅ Vollständig matchbar | ✅ **Vollständig matchbar** | ❌ Nicht matchbar für nicht-geklickte Belege |
+
+> **Fazit & Architektur-Standard:**  
+> **Variante B ist der verbindliche Standard.** Die fachliche Beitragsbemessung (Stufe 1) bleibt sauber von der buchhalterischen Forderungsentstehung (Stufe 2) entkoppelt. Vor dem Sammelversand oder auf Knopfdruck stellt das System sicher, dass für alle aktiven Beitragspositionen eine offizielle Rechnung im `RechnungsCore` existiert (`ensureAllInvoicesCreatedRemote`).
+
+
 

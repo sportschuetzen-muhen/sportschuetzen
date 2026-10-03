@@ -1,7 +1,12 @@
 # System-Harmonisierung, UI/UX & Zentralisiertes Rechnungswesen
 
-**Stand:** 2026-09-27  
-**Status:** Konzept & Architektur-Leitfaden  
+> **Hinweis zur Dokumenten-Struktur:**  
+> Das aktive, führende Fachdokument für das Rechnungswesen und den `RechnungsCore` ist ausgelagert in:  
+> 👉 [`docs/RECHNUNGSWESEN.md`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/RECHNUNGSWESEN.md)  
+> Das vorliegende Dokument dient als übergeordneter Architektur-Leitfaden für UI/UX-Harmonisierung und dokumentiert den historischen Migrations- und Einführungsfahrplan (Phasen 1–12).
+
+**Stand:** 2026-09-27 (Archiv/Referenz)  
+**Status:** Konzept & Migrations-Historie  
 
 ---
 

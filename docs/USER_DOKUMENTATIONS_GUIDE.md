@@ -23,7 +23,7 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 │ STUFE 2: GEZIELT ON-DEMAND (KI liest NUR das betroffene Fachdokument)       │
 │          Je nach Thema wird exakt EIN Dokument geöffnet:                    │
 │          - Jahresbeitrag       ──► docs/JAHRESBEITRAG.md                    │
-│          - Rechnungen & Fibu   ──► docs/SYSTEM_HARMONISIERUNG_UND_...md     │
+│          - Rechnungswesen      ──► docs/RECHNUNGSWESEN.md                   │
 │          - PDF- & Mail-Layout  ──► docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md    │
 │          - Jahresmeisterschaft ──► docs/JAHRESMEISTERSCHAFT.md              │
 │          - Mitglieder & SSV    ──► docs/MITGLIEDER_UND_SSV.md               │
@@ -68,7 +68,7 @@ Nach jeder vorgenommenen Code- oder Schemaänderung gilt:
 | Modul | Zuständiges Dokument | Beantwortete Kernfragen («Das Warum») |
 | :--- | :--- | :--- |
 | **Jahresbeitrag** | [`docs/JAHRESBEITRAG.md`](JAHRESBEITRAG.md) | Dynamische Gebührenordnung, Kopplung an `RechnungsCore`, Bearbeitungssperre im Rechnungsmodul, Bankabgleich. |
-| **Rechnungswesen** | [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md) | `RechnungsCore`, Lebenszyklus-Sperren (Entwurf vs. Versandt vs. Bezahlt), DIN 5008 Adress-Kontrakt, Cache-Busting. |
+| **Rechnungswesen** | [`docs/RECHNUNGSWESEN.md`](RECHNUNGSWESEN.md) | `RechnungsCore`, Lebenszyklus-Sperren (Entwurf vs. Versandt vs. Bezahlt), DIN 5008 Adress-Kontrakt, Cache-Busting. |
 | **PDF- & Mail-Engine** | [`docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md`](DOCUMENT_AND_MAIL_ENGINE_SPEC.md) | SIX Swiss QR Norm, DIN 5008 Geometrie, WinAnsi Zeichensatz-Schutz, SMTP Mail-Versand. |
 | **Jahresmeisterschaft**| [`docs/JAHRESMEISTERSCHAFT.md`](JAHRESMEISTERSCHAFT.md) | 2D-Grid im JSONB `raw_grid`, virtuelle U21-Berechnung, Streichresultate, Gemini Vision OCR. |
 | **Mitglieder & SSV** | [`docs/MITGLIEDER_UND_SSV.md`](MITGLIEDER_UND_SSV.md) | Browser-native SheetJS Diff-Engine, Quellschutz für Ehrenmitglieder, `member_history` Audit. |

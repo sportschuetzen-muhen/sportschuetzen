@@ -160,7 +160,7 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 
 ### 6.2 Modulspezifische Fachkonzepte (Das «Warum» & Business-Invarianten)
 * **Jahresbeitrag & Beitragsverwaltung:** [`docs/JAHRESBEITRAG.md`](JAHRESBEITRAG.md) – Dynamische Gebührenordnung, Rechnungs-Kopplung via `RechnungsCore`, Bearbeitungssperre im Rechnungsmodul, CAMT.054 Batch-Abgleich.
-* **Rechnungswesen, Vorlagen & FiBu-Kopplung:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md) – `RechnungsCore`, Zahlungsverbuchung, Adress-Kontrakt, Unveränderlichkeitsgrenzen.
+* **Rechnungswesen & RechnungsCore:** [`docs/RECHNUNGSWESEN.md`](RECHNUNGSWESEN.md) – `RechnungsCore`, Zahlungsverbuchung, Adress-Kontrakt, Unveränderlichkeitsgrenzen, `InvoiceOrder`-Payload.
 * **Dokumenten- & Mail-Engine:** [`docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md`](DOCUMENT_AND_MAIL_ENGINE_SPEC.md) – DIN 5008 Geometrie, SIX Swiss QR SPC 0200 1 Norm, WinAnsi-Schutz, SMTP-Dispatch.
 * **KK-Jahresmeisterschaft:** [`docs/JAHRESMEISTERSCHAFT.md`](JAHRESMEISTERSCHAFT.md) – 2D-Matrix Snapshot (`raw_grid`), Streichresultate, U21-Wertung, Gemini Vision OCR.
 * **Mitglieder & SSV-Verbandsimport:** [`docs/MITGLIEDER_UND_SSV.md`](MITGLIEDER_UND_SSV.md) – Browser-native SSV-Diff-Engine, Quellschutz für Ehrenmitglieder, `member_history` Audit.

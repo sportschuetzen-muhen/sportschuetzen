@@ -869,12 +869,14 @@ CREATE POLICY "Insert status logs on change" ON public.rental_status_logs
 Für das tiefe Fachverständnis («das Warum»), Daten-Payloads und spezifische Business-Invarianten existieren dedizierte, schlanke Fachdokumente:
 
 * **Gesamtsystem-Architektur:** [docs/SYSTEM_ARCHITECTURE_MASTER.md](SYSTEM_ARCHITECTURE_MASTER.md)
-* **Rechnungswesen, Vorlagen & FiBu-Kopplung:** [docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md)
+* **Rechnungswesen & RechnungsCore:** [docs/RECHNUNGSWESEN.md](RECHNUNGSWESEN.md)
+* **Jahresbeitrag & Beitragsverwaltung:** [docs/JAHRESBEITRAG.md](JAHRESBEITRAG.md)
 * **PDF- & Mail-Engine Spezifikation (DIN 5008 & SIX Swiss QR):** [docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md](DOCUMENT_AND_MAIL_ENGINE_SPEC.md)
 * **KK-Jahresmeisterschaft (2D-Grid & Berechnungen):** [docs/JAHRESMEISTERSCHAFT.md](JAHRESMEISTERSCHAFT.md)
 * **Mitglieder & SSV-Import (Diff-Engine & Audit):** [docs/MITGLIEDER_UND_SSV.md](MITGLIEDER_UND_SSV.md)
 * **Finanzbuchhaltung & Bankabgleich (CAMT & Buchungssätze):** [docs/FINANZBUCHHALTUNG_UND_BANK.md](FINANZBUCHHALTUNG_UND_BANK.md)
 * **Vermietung Schützenhaus (Workflow & Status):** [docs/VERMIETUNG_SCHUETZENSTUBE.md](VERMIETUNG_SCHUETZENSTUBE.md)
+* **Mail-Verteiler Modul:** [docs/MAIL_VERTEILER.md](MAIL_VERTEILER.md)
 
 ### Historische Archive
 * **Migrations-Tagebuch (Phasen 0 bis 23):** [docs/Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md](Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md)
