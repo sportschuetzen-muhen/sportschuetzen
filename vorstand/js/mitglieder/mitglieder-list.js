@@ -228,13 +228,13 @@ function mglRenderRows(data) {
                   const copyIconLiz = `<i class="fa-regular fa-copy text-muted ms-1 cursor-pointer opacity-50 hover-opacity-100" onclick="navigator.clipboard.writeText('${escapeJs(addrNum)}'); showSuccess('Lizenznummer kopiert: ${escapeJs(addrNum)}'); event.stopPropagation();" title="Lizenznummer (${escapeJs(addrNum)}) kopieren"></i>`;
 
                   // Aktive Lizenzen
-                  const activeLics = m._aktiveLizenzen || (window._mglLizenzenCache?.[pn] || []).filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
+                  const activeLics = m._aktiveLizenzen || (window._mglLizenzenCache?.[pn] || []).filter(l => typeof mglIsLicenseActive === 'function' ? mglIsLicenseActive(l) : ((l.IsActive == 1 || l.IsActive === true) && !l.ExitDate));
                   const licBadgesHtml = activeLics.length > 0 
                     ? activeLics.map(l => typeof mglFormatLicenseBadge === 'function' ? mglFormatLicenseBadge(l) : l.MembershipCategory).join(' ') 
                     : '<span class="text-muted small">–</span>';
 
                   // Aktive Funktionen
-                  const activeFns = m._aktiveFunktionen || (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+                  const activeFns = m._aktiveFunktionen || (window._mglFunktionenCache?.[pn] || []).filter(f => typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : !f.OfficialFunctionExitDate);
                   const fnBadgesHtml = activeFns.length > 0 
                     ? activeFns.map(f => typeof mglFormatFunctionBadge === 'function' ? mglFormatFunctionBadge(f) : f.OfficialFunctionCategory).join(' ') 
                     : '<span class="text-muted small">–</span>';
@@ -328,11 +328,11 @@ function mglRenderRows(data) {
           const altersBadge = typeof mglAltersklasseBadge === 'function' ? mglAltersklasseBadge(m) : '';
 
           // Aktive Funktionen
-          const activeFns = m._aktiveFunktionen || (window._mglFunktionenCache?.[pn] || []).filter(f => !f.OfficialFunctionExitDate);
+          const activeFns = m._aktiveFunktionen || (window._mglFunktionenCache?.[pn] || []).filter(f => typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : !f.OfficialFunctionExitDate);
           const fnBadgesHtml = activeFns.map(f => typeof mglFormatFunctionBadge === 'function' ? mglFormatFunctionBadge(f) : f.OfficialFunctionCategory).join(' ');
 
           // Aktive Lizenzen
-          const activeLics = m._aktiveLizenzen || (window._mglLizenzenCache?.[pn] || []).filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
+          const activeLics = m._aktiveLizenzen || (window._mglLizenzenCache?.[pn] || []).filter(l => typeof mglIsLicenseActive === 'function' ? mglIsLicenseActive(l) : ((l.IsActive == 1 || l.IsActive === true) && !l.ExitDate));
           const licBadgesHtml = activeLics.length > 0 
             ? activeLics.map(l => typeof mglFormatLicenseBadge === 'function' ? mglFormatLicenseBadge(l) : l.MembershipCategory).join(' ') 
             : '<span class="badge bg-light text-muted border border-light-subtle small fw-normal" style="font-size: 0.7rem;">Keine Lizenz</span>';

@@ -27,7 +27,7 @@ function mglGetStatusText(m) {
 function mglFormatLizenzenText(personNumber) {
   const pnKey = String(personNumber || '').trim();
   const list = window._mglLizenzenCache?.[pnKey] || [];
-  const active = list.filter(l => (l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !l.ExitDate);
+  const active = list.filter(l => typeof mglIsLicenseActive === 'function' ? mglIsLicenseActive(l) : ((l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !l.ExitDate));
   if (!active.length) return '';
   return active.map(l => {
     let cat = l.MembershipCategory || l.LicenseType || '';
@@ -44,7 +44,7 @@ function mglFormatLizenzenText(personNumber) {
 function mglFormatFunktionenText(personNumber) {
   const pnKey = String(personNumber || '').trim();
   const list = window._mglFunktionenCache?.[pnKey] || [];
-  const active = list.filter(f => (f.IsActive == 1 || f.IsActive === true || f.IsActive === '1') && !f.ExitDate && !f.OfficialFunctionExitDate);
+  const active = list.filter(f => typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : (!f.OfficialFunctionExitDate && !f.ExitDate));
   if (!active.length) return '';
   return active.map(f => f.OfficialFunctionCategory || f.FunctionType || f.FunctionName || f.OfficialFunctionRemark || '').filter(Boolean).join(', ');
 }

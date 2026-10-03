@@ -746,7 +746,7 @@ function jbFindBoardMemberByFunction(funcCategory) {
     const mFunctions = window._mglFunktionenCache[String(m.PersonNumber)] || [];
     return mFunctions.some(f => 
       String(f.OfficialFunctionCategory).trim().toLowerCase() === String(funcCategory).trim().toLowerCase() && 
-      !String(f.OfficialFunctionExitDate || '').trim()
+      (typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : !String(f.OfficialFunctionExitDate || '').trim())
     );
   });
   

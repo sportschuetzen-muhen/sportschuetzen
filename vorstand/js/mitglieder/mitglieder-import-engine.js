@@ -248,16 +248,27 @@
     ).sort((a, b) => String(a.EntryDate).localeCompare(String(b.EntryDate)));
   }
 
+  function extractAllFunctions(rows) {
+    return dedupeBy(
+      rows
+        .filter(z => z.OfficialFunctionCategory)
+        .map(z => ({
+          OfficialFunctionCategory: String(z.OfficialFunctionCategory).trim(),
+          OfficialFunctionRemark: z.OfficialFunctionRemark || '',
+          OfficialFunctionEntryDate: normalizeDateValue(z.OfficialFunctionEntryDate),
+          OfficialFunctionExitDate: normalizeDateValue(z.OfficialFunctionExitDate),
+          UseOnBoardAndFunctionaryReport: isTruthy(z.UseOnBoardAndFunctionaryReport)
+        })),
+      x => [x.OfficialFunctionCategory, x.OfficialFunctionEntryDate, x.OfficialFunctionExitDate].join('|')
+    ).sort((a, b) => String(a.OfficialFunctionEntryDate).localeCompare(String(b.OfficialFunctionEntryDate)));
+  }
+
   function extractActiveFunctions(rows) {
-    return rows
-      .filter(z => z.OfficialFunctionCategory && !z.OfficialFunctionExitDate)
-      .map(z => ({
-        OfficialFunctionCategory: String(z.OfficialFunctionCategory).trim(),
-        OfficialFunctionRemark: z.OfficialFunctionRemark || '',
-        OfficialFunctionEntryDate: normalizeDateValue(z.OfficialFunctionEntryDate),
-        OfficialFunctionExitDate: normalizeDateValue(z.OfficialFunctionExitDate),
-        UseOnBoardAndFunctionaryReport: isTruthy(z.UseOnBoardAndFunctionaryReport)
-      }));
+    return extractAllFunctions(rows).filter(f => {
+      if (!f.OfficialFunctionExitDate) return true;
+      const t = new Date(f.OfficialFunctionExitDate).getTime();
+      return !isNaN(t) && t > Date.now();
+    });
   }
 
   function extractTraining(rows) {
@@ -737,8 +748,8 @@
         });
       }
 
-      // 3. Funktionen
-      const ssvFunctions = extractActiveFunctions(ssvRows);
+      // 3. Funktionen (alle Funktionen inklusive Austrittsdatum synchronisieren)
+      const ssvFunctions = extractAllFunctions(ssvRows);
       for (const fn of ssvFunctions) {
         functionsToSync.push({
           person_number: parseInt(pn, 10),

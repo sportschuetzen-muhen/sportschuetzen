@@ -175,4 +175,14 @@ Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung
 * Die 6-stellige **Lizenz-Nr.** (`AddressNumber`) ist der primäre Schlüssel für die Erfassung von Schützen in Schiesssport-Software (z. B. SIUS, SMV, SchiessenSchweiz).
 * Durch Klick auf das Kopier-Icon ($\text{📋}$) neben der Lizenznummer wird der 6-stellige Wert sofort ohne Leerzeichen in die Zwischenablage kopiert und eine Bestätigung eingeblendet.
 
+### 7.6 Vereinsfunktionen: Lebenszyklus, Austrittsdaten & Stichtagsprüfung
+* **Austrittsdatum in `member_functions` (`official_function_exit_date`):** Im SSV-Verbandsexport ist das Austrittsdatum (`OfficialFunctionExitDate`) bei Amtsabgaben (z. B. Stabswechsel im Präsidium oder Schützenmeisteramt) verbindlich hinterlegt.
+* **Synchronisation durch SSV-Import (`extractAllFunctions`):** Die Import-Engine überträgt sowohl aktive als auch beendete Funktionen in die Supabase-Tabelle `public.member_functions`, damit Austrittsdaten bei Mutationen unmittelbar in die Datenbank geschrieben werden (`ON CONFLICT ... DO UPDATE SET official_function_exit_date = EXCLUDED.official_function_exit_date`).
+* **Zentrale Stichtagsprüfung (`mglIsFunctionActive`):** Eine Funktion gilt nur dann als aktiv, wenn entweder kein Austrittsdatum vorliegt (`exit_date IS NULL`) oder das Austrittsdatum in der Zukunft liegt (`exit_date > heute`). Ist das Austrittsdatum erreicht oder überschritten, wird die Charge nicht mehr als aktives Badge auf Karten/Tabelle geführt, sondern im Detail-Modal unter Stammdaten als grau hinterlegtes historisches Amt (`ehemalig`) ausgewiesen.
+* **Historischer Bereinigungsfall (März 2026):**
+  * Daniel Berchtold (Präsident bis 12.03.2026 $\rightarrow$ beendet)
+  * Simon Hediger (Schützenmeister bis 12.03.2026 $\rightarrow$ beendet; seit 12.03.2026 neu Präsident $\rightarrow$ aktiv)
+  * Stefanie Berchtold (Juniorenleiterin bis 12.03.2026 $\rightarrow$ beendet)
+
+
 

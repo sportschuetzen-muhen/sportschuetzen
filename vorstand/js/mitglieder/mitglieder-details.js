@@ -117,7 +117,7 @@ function mglOpenDetail(pn) {
       </div>`).join('');
 
     const lizRows = liz.map(l => {
-      const aktiv = (l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !String(l.ExitDate || '').trim();
+      const aktiv = typeof mglIsLicenseActive === 'function' ? mglIsLicenseActive(l) : ((l.IsActive == 1 || l.IsActive === true || l.IsActive === '1') && !String(l.ExitDate || '').trim());
       const istMuhen = l.istMuhen || String(l.LicenseInvoicingClubNumber || '').trim() === '1.02.0.01.087';
       return `<tr>
         <td class="tk-col-kat">${escapeHtml(l.MembershipCategory || '–')}</td>
@@ -130,7 +130,7 @@ function mglOpenDetail(pn) {
     }).join('') || '<tr><td colspan="6" class="text-muted text-center">Keine Lizenzen</td></tr>';
 
     const fnRows = fn.map(f => {
-      const aktiv = !String(f.OfficialFunctionExitDate || '').trim();
+      const aktiv = typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : !String(f.OfficialFunctionExitDate || '').trim();
       const rabattKat = f.rabatt_kategorie || f.rabattkategorie;
       return `<tr>
         <td class="tk-col-fn">${escapeHtml(f.OfficialFunctionCategory || '–')}</td>

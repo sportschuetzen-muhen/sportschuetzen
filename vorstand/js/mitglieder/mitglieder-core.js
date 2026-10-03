@@ -146,6 +146,33 @@ function mapFunctionFromSupabase(r) {
   };
 }
 
+function mglIsFunctionActive(f) {
+  if (!f) return false;
+  const exitDate = f.OfficialFunctionExitDate || f.official_function_exit_date;
+  if (!exitDate || !String(exitDate).trim()) return true;
+  const exitTime = new Date(exitDate).getTime();
+  if (isNaN(exitTime)) return false;
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return exitTime > today.getTime();
+}
+window.mglIsFunctionActive = mglIsFunctionActive;
+
+function mglIsLicenseActive(l) {
+  if (!l) return false;
+  if (l.IsActive !== undefined && l.IsActive !== null) {
+    if (l.IsActive != 1 && l.IsActive !== true && l.IsActive !== '1') return false;
+  }
+  const exitDate = l.ExitDate || l.exit_date;
+  if (!exitDate || !String(exitDate).trim()) return true;
+  const exitTime = new Date(exitDate).getTime();
+  if (isNaN(exitTime)) return false;
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return exitTime > today.getTime();
+}
+window.mglIsLicenseActive = mglIsLicenseActive;
+
 // Zentraler, deduplizierter Loader für Mitgliederdaten (Supabase Single Source of Truth)
 window.ensureMitgliederLoaded = async function(forceReload = false) {
   // 1. Bereits im RAM vorhanden?
@@ -242,8 +269,8 @@ window.ensureMitgliederLoaded = async function(forceReload = false) {
         m._lizenzen = mLics;
         m._funktionen = mFns;
 
-        m._aktiveLizenzen = mLics.filter(l => (l.IsActive == 1 || l.IsActive === true) && !l.ExitDate);
-        m._aktiveFunktionen = mFns.filter(f => !f.OfficialFunctionExitDate);
+        m._aktiveLizenzen = mLics.filter(mglIsLicenseActive);
+        m._aktiveFunktionen = mFns.filter(mglIsFunctionActive);
 
         m._aktiveLizenzenCount = m._aktiveLizenzen.length;
         m._aktiveFunktionenCount = m._aktiveFunktionen.length;

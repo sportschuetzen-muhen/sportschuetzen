@@ -1145,7 +1145,7 @@ window.rnIsVorstandMember = function(m) {
   const pn = String(m.PersonNumber || m.person_number || '').trim();
   // 1. Aus Funktionen-Cache
   if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
-    const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
+    const activeFns = window._mglFunktionenCache[pn].filter(f => typeof mglIsFunctionActive === 'function' ? mglIsFunctionActive(f) : !f.OfficialFunctionExitDate);
     const hasBoardFn = activeFns.some(f => {
       const cat = String(f.OfficialFunctionCategory || '').toLowerCase();
       return !cat.includes('hauswart') && !cat.includes('hausmeister');
