@@ -190,3 +190,21 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 ### 7.3 Modal-UX bei Magic-Links
 * Nach erfolgreichem Absenden des Anmelde-Links wechselt der Schliessen-Button von *«Abbrechen»* auf einen prominenten blauen **«OK»**-Button (`btn-primary`), um Fehlinterpretationen bezüglich des Abbruchs des Versands auszuschliessen.
 
+---
+
+## 8. Härtung: pgcrypto Search-Path & Rollen-Button Hover UX (Migration 27)
+
+### 8.1 Behebung von `gen_salt(unknown, integer) does not exist`
+* **Problem:** In PostgreSQL liegt die Erweiterung `pgcrypto` standardmässig im Schema `extensions`. War die RPC-Funktion `public.save_admin_profile` mit `SET search_path = public, auth, pg_temp` deklariert, schlug der Aufruf von `gen_salt()` und `crypt()` mit der Meldung `function gen_salt(unknown, integer) does not exist` fehl, sobald ein Passwort übergeben wurde.
+* **Lösung (Migration 27):** 
+  1. `SET search_path = public, auth, extensions, pg_temp;`
+  2. Funktionsaufrufe schema-qualifiziert absichern: `extensions.crypt(trim(p_password), extensions.gen_salt('bf', 10))`.
+
+### 8.2 Rollen-Button Hover UX im Admin-Modal
+* **Problem:** Inaktive Rollen-Chips besassen die Klasse `.bg-white`. Da Bootstrap 5 für `.bg-white` die Deklaration `background-color: #fff !important` setzt und beim Hovern auf `.btn-outline-*` die Textfarbe auf Weiss wechselt (`color: #fff`), wurde der Buttontext weiss auf weissem Grund und verschwand optisch.
+* **Lösung:** Entfernen von `bg-white` zugunsten nativer Bootstrap-Outline-Hover-Effekte und dynamischer Kontrastanpassung (`text-dark` bei `warning`/`info`, `text-white` bei dunklen Rollenfarben).
+
+### 8.3 Deaktivierung von Browser-Passwort-Autofill im Admin-Modal
+* Das Passwortfeld `#lf-passwort` wurde mit `autocomplete="new-password"` versehen und wird beim Öffnen eines bestehenden Profils explizit auf `''` zurückgesetzt, damit Browser-Passwortmanager nicht versehentlich das Admin-Passwort des aktuell eingeloggten Benutzers eintragen.
+
+

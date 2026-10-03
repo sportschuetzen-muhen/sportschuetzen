@@ -165,6 +165,8 @@ function loginsOpenEdit(record) {
 
   if (tab === 'login_daten') {
     refreshMemberSelectIfEmpty(record.personnumber || record.PersonNumber);
+    const pwInput = document.getElementById('lf-passwort');
+    if (pwInput) pwInput.value = '';
   }
 
   window._loginsEditMode = 'edit';

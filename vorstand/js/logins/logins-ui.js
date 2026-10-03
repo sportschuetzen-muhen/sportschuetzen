@@ -576,8 +576,9 @@ function renderRoleChips(currentRolesStr) {
 
   return ROLES.map(r => {
     const isAct = activeRoles.includes(r.key);
+    const textColor = (r.color === 'warning' || r.color === 'info') ? 'text-dark' : 'text-white';
     return `
-      <button type="button" class="btn btn-sm rounded-pill px-3 py-1 ${isAct ? `btn-${r.color} text-white` : `btn-outline-${r.color} bg-white`} shadow-xs fw-medium"
+      <button type="button" class="btn btn-sm rounded-pill px-3 py-1 ${isAct ? `btn-${r.color} ${textColor}` : `btn-outline-${r.color}`} shadow-xs fw-medium"
               onclick="loginsToggleRoleChip('${r.key}')" id="role-chip-${r.key}">
         <i class="fas ${isAct ? 'fa-check' : 'fa-plus'} me-1" style="font-size: 0.75rem;"></i>${r.label}
       </button>
@@ -738,7 +739,7 @@ function loginDatenForm(r) {
             <div class="col-md-7">
               <div class="input-group">
                 <span class="input-group-text bg-light text-muted"><i class="fas fa-lock"></i></span>
-                <input type="password" class="form-control" id="lf-passwort" placeholder="${r ? 'Leer lassen = unverändert' : 'Mindestens 6 Zeichen eingeben'}">
+                <input type="password" class="form-control" id="lf-passwort" autocomplete="new-password" value="" placeholder="${r ? 'Leer lassen = unverändert' : 'Mindestens 6 Zeichen eingeben'}">
                 <button class="btn btn-outline-secondary" type="button" onclick="loginsTogglePw('lf-passwort')">
                   <i class="fas fa-eye"></i>
                 </button>
