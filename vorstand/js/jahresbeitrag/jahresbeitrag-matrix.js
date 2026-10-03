@@ -318,21 +318,12 @@ function jbGetMatrixColumns() {
 
   return colKeys.map(k => {
     const f = catalogMap[k] || {};
-    let label = f.bezeichnungfrontend || f.bezeichnung || k;
+    const label = f.ui_feld || f.bezeichnung_frontend || f.bezeichnungfrontend || f.bezeichnung || k;
     
-    // Kurzbezeichnungen für kompaktes Tabellenlayout
-    if (k === 'GE001') label = 'Schützenhaus';
-    else if (k === 'RA001') label = 'Rabatt Vorstand';
-    else if (k === 'RA002') label = 'Hausmeister';
-    else if (k === 'RA003') label = 'Ehrenmitgliedschaft';
-    else if (k === 'LI001') label = 'Lizenz Verein';
-    else if (k === 'LI002') label = 'Lizenz Junior';
-    else if (k === 'LI003') label = 'Lizenz Fremd';
-
     return {
       key: k,
       label: label,
-      bezeichnung: f.bezeichnung || label,
+      bezeichnung: f.bezeichnung || f.bezeichnung_frontend || f.bezeichnungfrontend || label,
       kategorie: f.kategorie || 'Gebühr',
       konto: f.konto_haben || f.konto || ''
     };

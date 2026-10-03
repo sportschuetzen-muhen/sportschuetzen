@@ -10,45 +10,54 @@ function jbCalculateLiveTotal(m, settings) {
   const age = m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
   const isJunior = age > 0 && age <= 20;
   
-  const feesMap = {};
-  (window._jbGebuehren || []).forEach(f => {
-    feesMap[f.key] = Number(f.betrag || 0);
-  });
-  
-  const getFee = (key, fallback) => {
-    return feesMap[key] !== undefined ? feesMap[key] : fallback;
+  const configErrors = [];
+
+  const getFeeObj = (key) => {
+    const keyClean = String(key || '').trim().toUpperCase();
+    return (window._jbGebuehren || []).find(g => {
+      const k = String(g.key || '').trim().toUpperCase();
+      return k === keyClean || k === keyClean.replace(/^Z0*/, 'Z');
+    });
   };
 
-  const getFeeAccount = (key, fallback) => {
-    const matched = (window._jbGebuehren || []).find(g => {
-      const k = String(g.key || '').trim().toUpperCase();
-      return k === key || k === key.replace(/^Z0*/, 'Z');
-    });
+  const getFee = (key) => {
+    const obj = getFeeObj(key);
+    if (!obj || obj.betrag === undefined || obj.betrag === null || isNaN(Number(obj.betrag))) {
+      configErrors.push({ key: String(key || '').toUpperCase(), error: `Tarif '${key}' fehlt oder hat keinen Betrag in gebuehren_config.` });
+      return null;
+    }
+    return Number(obj.betrag);
+  };
+
+  const getFeeAccount = (key) => {
+    const matched = getFeeObj(key);
     if (matched) {
       const k = String(matched['Haben-Konto-Jahresbeitrag-Buchhaltung'] || matched['Vorgeschlagenes Haben-Konto'] || matched.konto_haben || matched.konto || '').trim();
       if (k) return k;
     }
-    return fallback;
+    configErrors.push({ key: String(key || '').toUpperCase(), error: `Für Tarif '${key}' ist kein Haben-Konto in gebuehren_config hinterlegt.` });
+    return null;
+  };
+
+  const getFeeName = (key, defaultFallback) => {
+    const obj = getFeeObj(key);
+    if (obj) {
+      const name = obj.bezeichnung_frontend || obj.bezeichnungfrontend || obj.bezeichnung || obj.ui_feld;
+      if (name && String(name).trim() !== '') return String(name).trim();
+    }
+    return defaultFallback || key;
   };
 
   const positions = [];
   
   // 1. Jahresbeitrag
-  let jbBetrag = 0;
-  let jbDesc = '';
   let jbKey = '';
 
   if (isPassiv) {
-    jbBetrag = getFee('JB005', 20);
-    jbDesc = 'Jahresbeitrag Passivmitglied';
     jbKey = 'JB005';
   } else if (isIntern && isJunior) {
-    jbBetrag = getFee('JB006', 0);
-    jbDesc = 'Schüler intern (ohne Lizenz)';
     jbKey = 'JB006';
   } else if (isJunior) {
-    jbBetrag = getFee('JB007', 20);
-    jbDesc = 'Jahresbeitrag Junior';
     jbKey = 'JB007';
   } else {
     // Aktiv
@@ -68,46 +77,56 @@ function jbCalculateLiveTotal(m, settings) {
 
     if (haupt.includes('G50m')) {
       if (haupt.includes('Aktiv-A')) {
-        jbBetrag = getFee('JB001', 100);
-        jbDesc = 'Jahresbeitrag Aktiv A G50m';
         jbKey = 'JB001';
       } else {
-        jbBetrag = getFee('JB002', 70);
-        jbDesc = 'Jahresbeitrag Aktiv B G50m';
         jbKey = 'JB002';
       }
     } else if (haupt.includes('G10m')) {
-      jbBetrag = getFee('JB003', 10);
-      jbDesc = 'Jahresbeitrag Aktiv nur 10m';
       jbKey = 'JB003';
     } else {
-      jbBetrag = getFee('JB005', 20);
-      jbDesc = 'Jahresbeitrag Passivmitglied (keine eigene Lizenz)';
       jbKey = 'JB005';
     }
   }
-  
-  positions.push({ name: jbDesc, betrag: jbBetrag, typ: 'Debit', key: jbKey, konto: getFeeAccount(jbKey, '3410') });
 
-  // Ehrenmitgliedschaft als Rabattzeile in Höhe des Grundbeitrags
+  const rawJbBetrag = getFee(jbKey);
+  const jbBetrag = rawJbBetrag !== null ? rawJbBetrag : 0;
+  const jbDesc = getFeeName(jbKey, jbKey);
+  const jbKonto = getFeeAccount(jbKey);
+  
+  positions.push({ name: jbDesc, betrag: jbBetrag, typ: 'Debit', key: jbKey, konto: jbKonto });
+
+  // Ehrenmitgliedschaft als Rabattzeile in Höhe des Grundbeitrags mit Cap auf RA003
   if (isEhren && jbBetrag > 0) {
-    positions.push({
-      name: 'Ehrenmitgliedschaft',
-      betrag: -jbBetrag,
-      typ: 'Credit',
-      key: 'RA003',
-      konto: getFeeAccount('RA003', '3410')
-    });
+    const rawMaxDiscount = getFee('RA003');
+    const raKonto = getFeeAccount('RA003');
+    const raName = getFeeName('RA003', 'Ehrenmitgliedschaft');
+
+    if (rawMaxDiscount !== null) {
+      const maxDiscount = Math.abs(rawMaxDiscount);
+      const effectiveDiscount = Math.min(jbBetrag, maxDiscount);
+      if (effectiveDiscount > 0) {
+        positions.push({
+          name: raName,
+          betrag: -effectiveDiscount,
+          typ: 'Kredit',
+          key: 'RA003',
+          konto: raKonto
+        });
+      }
+    }
   }
   
   // 2. Lizenzen
   const licType = settings.lizenz || 'keine';
   if (licType === 'verein') {
-    positions.push({ name: 'Lizenz eigener Verein (Normal)', betrag: getFee('LI001', 18), typ: 'Debit' });
+    const licFee = getFee('LI001');
+    positions.push({ name: getFeeName('LI001', 'Lizenz eigener Verein (Normal)'), betrag: licFee !== null ? licFee : 0, typ: 'Debit', key: 'LI001', konto: getFeeAccount('LI001') });
   } else if (licType === 'junior') {
-    positions.push({ name: 'Lizenz eigener Verein (Junior)', betrag: getFee('LI002', 0), typ: 'Debit' });
+    const licFee = getFee('LI002');
+    positions.push({ name: getFeeName('LI002', 'Lizenz eigener Verein (Junior)'), betrag: licFee !== null ? licFee : 0, typ: 'Debit', key: 'LI002', konto: getFeeAccount('LI002') });
   } else if (licType === 'fremd') {
-    positions.push({ name: 'Lizenz anderer Verein', betrag: getFee('LI003', 0), typ: 'Debit' });
+    const licFee = getFee('LI003');
+    positions.push({ name: getFeeName('LI003', 'Lizenz anderer Verein'), betrag: licFee !== null ? licFee : 0, typ: 'Debit', key: 'LI003', konto: getFeeAccount('LI003') });
   }
   
   // 3. Dynamische Events, Wettkämpfe & Turniere
@@ -164,19 +183,20 @@ function jbCalculateLiveTotal(m, settings) {
     if (keyClean === 'RA001' || keyClean === 'RA002' || keyClean === 'RA003') return;
 
     const feeObj = (window._jbGebuehren || []).find(f => String(f.key || '').trim().toUpperCase() === keyClean);
-    const unitPrice = feeObj ? Number(feeObj.betrag || 0) : getFee(keyClean, 0);
+    const rawUnitPrice = feeObj ? Number(feeObj.betrag || 0) : getFee(keyClean);
+    const unitPrice = rawUnitPrice !== null ? rawUnitPrice : 0;
     
     // Counter-Typen wie Volksschiessen multiplizieren mit der Anzahl Stiche
     const isCounter = (feeObj && feeObj.ui_typ === 'counter') || keyClean === 'KK008';
     const count = isCounter ? numVal : 1;
     const totalFee = count * unitPrice;
 
-    let desc = feeObj ? (feeObj.bezeichnungfrontend || feeObj.bezeichnung || keyClean) : keyClean;
+    let desc = feeObj ? (feeObj.bezeichnungfrontend || feeObj.bezeichnung || keyClean) : getFeeName(keyClean, keyClean);
     if (isCounter && count > 0) {
       desc += ` (${count} Stich${count > 1 ? 'e' : ''})`;
     }
 
-    const itemKonto = getFeeAccount(keyClean, '');
+    const itemKonto = getFeeAccount(keyClean);
     const itemKontoBez = feeObj ? (feeObj['Kontobezeichnung im KMU-Kontenrahmen'] || feeObj.kontobezeichnung || '') : '';
 
     positions.push({
@@ -193,7 +213,7 @@ function jbCalculateLiveTotal(m, settings) {
 
     if (isKostenuebernahme && totalFee > 0) {
       // Gegenkonto variabel aus der Gebührenconfig des Eintrags oder Master-Eintrags holen
-      const targetKonto = itemKonto || getFeeAccount('KOSTENUEBERNAHME_JUGEND', '3420');
+      const targetKonto = itemKonto || getFeeAccount('KOSTENUEBERNAHME_JUGEND');
       const targetKontoBez = itemKontoBez || 'Nachwuchsförderung';
       
       if (!youthSubsidies[targetKonto]) {
@@ -289,7 +309,7 @@ function jbCalculateLiveTotal(m, settings) {
         : Number(f.betrag || 0);
       const posKonto = (customKonto && String(customKonto).trim() !== '')
         ? String(customKonto).trim()
-        : (f.konto_haben || f.konto || '8500');
+        : (f.konto_haben || f.konto || getFeeAccount(key));
 
       if (posBetrag !== 0) {
         positions.push({
@@ -313,25 +333,30 @@ function jbCalculateLiveTotal(m, settings) {
   
   let hasRA002 = false;
   if (isVorstand && !isEhren) {
-    positions.push({
-      name: 'Rabatt Vorstand',
-      betrag: getFee('RA001', -100),
-      typ: 'Kredit',
-      key: 'RA001',
-      konto: getFeeAccount('RA001', '3410')
-    });
+    const rawVal = getFee('RA001');
+    if (rawVal !== null) {
+      positions.push({
+        name: getFeeName('RA001', 'Rabatt Vorstand'),
+        betrag: -Math.abs(rawVal),
+        typ: 'Kredit',
+        key: 'RA001',
+        konto: getFeeAccount('RA001')
+      });
+    }
   }
   
   if (isHausmeister) {
-    const hmKonto = getFeeAccount('RA002', '6002');
-    positions.push({
-      name: 'Gutschrift Unterhalt Anlage (Hausmeister)',
-      betrag: getFee('RA002', -300),
-      typ: 'Kredit',
-      key: 'RA002',
-      konto: hmKonto
-    });
-    hasRA002 = true;
+    const rawVal = getFee('RA002');
+    if (rawVal !== null) {
+      positions.push({
+        name: getFeeName('RA002', 'Gutschrift Unterhalt Anlage (Hausmeister)'),
+        betrag: -Math.abs(rawVal),
+        typ: 'Kredit',
+        key: 'RA002',
+        konto: getFeeAccount('RA002')
+      });
+      hasRA002 = true;
+    }
   }
   
   // Summing up
@@ -343,7 +368,7 @@ function jbCalculateLiveTotal(m, settings) {
     total = Math.max(0, total);
   }
   
-  return { positions, total };
+  return { positions, total, configErrors };
 }
 
 // ============================================================

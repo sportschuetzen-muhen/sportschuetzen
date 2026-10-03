@@ -739,14 +739,37 @@ function jbRenderEntryForm(m) {
   const calc = jbCalculateLiveTotal(m, _jbParticipationsState);
   const isJunior = m.BirthDate ? ((new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) <= 20) : false;
 
-  const positionsHTML = calc.positions.map(p => `
+  const positionsHTML = calc.positions.map(p => {
+    const isCredit = p.typ === 'Kredit' || p.typ === 'Credit' || p.betrag < 0;
+    return `
     <div class="d-flex justify-content-between align-items-center py-1 border-bottom" style="font-size: 12px;">
       <span class="text-muted">${p.name}</span>
-      <span class="fw-bold ${p.typ === 'Kredit' ? 'text-success' : 'text-dark'}">
-        ${p.typ === 'Kredit' ? '-' : ''}CHF ${Math.abs(p.betrag).toFixed(2)}
+      <span class="fw-bold ${isCredit ? 'text-success' : 'text-dark'}">
+        ${isCredit ? '-' : ''}CHF ${Math.abs(p.betrag).toFixed(2)}
       </span>
     </div>
-  `).join('');
+  `;
+  }).join('');
+
+  const errorsHTML = (calc.configErrors && calc.configErrors.length > 0) ? `
+    <div class="alert alert-danger p-2 mb-2 rounded-3 border-0 shadow-sm" style="font-size: 11px;">
+      <div class="fw-bold mb-1"><i class="fas fa-exclamation-triangle me-1"></i>Konfigurationsfehler:</div>
+      <ul class="mb-1 ps-3">
+        ${calc.configErrors.map(e => `<li>${e.error}</li>`).join('')}
+      </ul>
+      <div class="small fw-semibold text-danger">⚠️ Bitte im Reiter <strong>"Gebühren"</strong> korrigieren.</div>
+    </div>
+  ` : '';
+
+  const geFee = (window._jbGebuehren || []).find(g => String(g.key || '').trim().toUpperCase() === 'GE001');
+  const geTitle = geFee ? (geFee.bezeichnung_frontend || geFee.bezeichnung || 'Schützenhaus-Beitrag') : 'Schützenhaus-Beitrag';
+  const geAmt = geFee && geFee.betrag !== undefined && geFee.betrag !== null ? Math.abs(Number(geFee.betrag)).toFixed(2) : null;
+  const geLabel = geAmt !== null ? `${geTitle} (CHF ${geAmt})` : `<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>${geTitle} (Tarif fehlt in Konfiguration!)</span>`;
+
+  const hmFee = (window._jbGebuehren || []).find(g => String(g.key || '').trim().toUpperCase() === 'RA002');
+  const hmTitle = hmFee ? (hmFee.bezeichnung_frontend || hmFee.bezeichnung || 'Gutschrift Unterhalt Anlage (Hausmeister)') : 'Gutschrift Unterhalt Anlage (Hausmeister)';
+  const hmAmt = hmFee && hmFee.betrag !== undefined && hmFee.betrag !== null ? Math.abs(Number(hmFee.betrag)).toFixed(2) : null;
+  const hmSubTitle = hmAmt !== null ? `Entschädigung Hausmeister / Unterhalt (RA002: -CHF ${hmAmt})` : `<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Tarif RA002 fehlt in Konfiguration!</span>`;
 
   workspace.innerHTML = `
     <div class="row g-4 h-100 flex-fill">
@@ -758,6 +781,8 @@ function jbRenderEntryForm(m) {
             <h5 class="mb-0 text-primary fw-bold">${m.FirstName} ${m.LastName}</h5>
             <small class="text-muted">${m.PersonNumber} · ${isJunior ? '👦 Junior' : '👤 Erwachsen'}</small>
           </div>
+
+          ${errorsHTML}
 
           <div class="flex-fill overflow-y-auto mb-3 pe-1" id="jbLivePositionsList" style="max-height: calc(100vh - 430px);">
             <div class="fw-bold text-muted small mb-2 text-uppercase" style="font-size: 10px; letter-spacing: 1px;">Postenübersicht</div>
@@ -806,7 +831,7 @@ function jbRenderEntryForm(m) {
         <div class="card p-3 border-0 shadow-sm mb-3 rounded-3">
           <h6 class="text-secondary fw-bold mb-2" style="font-size: 12px; text-transform: uppercase;"><i class="fas fa-home me-2 text-success"></i>Infrastrukturbeitrag Schützenhaus</h6>
           <div class="d-flex align-items-center justify-content-between bg-light p-2 rounded-2 border">
-            <span class="small fw-semibold text-muted">Schützenhaus-Beitrag (CHF 50.00)</span>
+            <span class="small fw-semibold text-muted">${geLabel}</span>
             <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="entry_schuetzenhaus" ${
                 _jbParticipationsState.schuetzenhaus ? 'checked' : ''
@@ -820,9 +845,9 @@ function jbRenderEntryForm(m) {
           <div class="d-flex align-items-center justify-content-between">
             <div>
               <h6 class="text-secondary fw-bold mb-1" style="font-size: 12px; text-transform: uppercase;">
-                <i class="fas fa-tools me-2 text-success"></i>Gutschrift Unterhalt Anlage (Hausmeister)
+                <i class="fas fa-tools me-2 text-success"></i>${hmTitle}
               </h6>
-              <span class="small fw-semibold text-muted">Entschädigung Hausmeister / Unterhalt (RA002: CHF -300.00)</span>
+              <span class="small fw-semibold text-muted">${hmSubTitle}</span>
             </div>
             <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="entry_hausmeister" ${

@@ -116,10 +116,12 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
      - **Keine eigene Muhen-Lizenz (z. B. nur Fremdlizenz G300):**
        - $\rightarrow$ **`JB005` (CHF 20.00, Passivbeitrag)**.
 
-### 5.2 Ehrenmitglieder & Ausweisung mit Rabatt (RA003)
-- **Regel:** Ehrenmitglieder sind vom Grundbeitrag befreit. Sie erhalten ihren regulären Grundbeitrag (Aktiv A CHF 100.-, Aktiv B CHF 70.- bzw. Passiv CHF 20.-) ausgewiesen.
-- **Gegenzeile:** Direkt darunter wird als Gegenposition **`Ehrenmitgliedschaft`** (`RA003`) mit negativem Betrag in exakt derselben Höhe eingefügt (`CHF -100.00` bzw. `CHF -20.00`, Konto `3410`).
-- **Schutz vor Minusbetrag:** Da der Abzug exakt auf die Höhe des Grundbeitrags begrenzt ist, entsteht auch bei Passiv-Ehrenmitgliedern niemals ein negativer Saldo.
+### 5.2 Ehrenmitglieder & Ausweisung mit Rabatt-Cap (RA003)
+- **Regel:** Ehrenmitglieder erhalten ihren regulären Grundbeitrag (z. B. Aktiv A CHF 100.–, Aktiv B CHF 70.– bzw. Passiv CHF 20.–) ausgewiesen.
+- **Gegenzeile mit Cap:** Direkt darunter wird als Gegenposition **`Ehrenmitgliedschaft`** (`RA003`) mit negativem Betrag eingefügt.
+  - **Formel:** `effektiver_rabatt = -Math.min(Grundbeitrag, ABS(Tarif RA003))` (in PostgreSQL: `-LEAST(v_base_fee_amt, ABS(v_geb.betrag))`).
+  - **Beispiel:** Beträgt der Grundbeitrag CHF 150.– und der Rabatt CHF 100.–, zahlt das Ehrenmitglied die Differenz (CHF 50.–). Beträgt der Grundbeitrag CHF 70.– oder CHF 20.–, wird der Rabatt auf CHF -70.– bzw. CHF -20.– gespiegelt.
+  - **Schutz vor Minusbetrag:** Da der Abzug exakt auf die Höhe des Grundbeitrags gedeckelt ist, entsteht auch bei Passiv-Ehrenmitgliedern niemals ein negativer Saldo.
 - **Gebühren-Invariante:** Lizenzen (SSV `LI001`) und Schützenhaus (`GE001`) sowie allfällige Wettkämpfe werden **weiterhin regulär verrechnet** (keine Befreiung durch Ehrenmitgliedschaft).
 
 ### 5.3 SSV-Lizenzen (LI001–LI003)
@@ -131,7 +133,7 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
   - Für jede Fremdlizenz: `LI003` (CHF 0.00, informative Position mit Vereinsname).
 
 ### 5.4 Gebäudebeitrag / Schützenhaus (GE001)
-- Ansatz: `GE001` (CHF 50.00, Ertragskonto `3413`).
+- **Ansatz:** Vollständig dynamisch aus `public.gebuehren_config` (`GE001`, Ertragskonto `3413`).
 - **Standard:** Pflichtig für alle Nicht-Junioren, Nicht-Passiven mit aktiver **G50m-Lizenz** in Muhen (unabhängig davon, ob die SSV-Lizenz über Muhen oder einen Fremdverein wie Oberentfelden abgerechnet wird).
 - **Manueller Override:** Falls in `member_participations` für `event_key = 'GE001'` ein Eintrag existiert, gilt dessen Wert (`teilgenommen = 1` bzw. `0`).
 
@@ -140,15 +142,20 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
 - **Einzelfeld:** Betrag = 1 $\times$ Tarifansatz aus `gebuehren_config`.
 - **Counter-Feld (z. B. KK008 Volksschiessen):** Betrag = `teilgenommen` $\times$ Tarifansatz.
 
-### 5.6 Rabatte & Gutschriften (RA001, RA002, RA003)
-- **Vorstand (`RA001`):** CHF -100.00 (Kredit). Bleibt auf den Grundbeitrag beschränkt und greift nicht auf Schützenhaus oder Lizenzen über. Entfällt für Ehrenmitglieder, da diese bereits durch `RA003` vollständig vom Grundbeitrag entlastet sind.
-- **Hausmeister / Unterhalt (`RA002`):** CHF -300.00 (Kredit). Reine Gutschrift (keine Belastung wie bei Junioren). Das Gegenkonto wird dynamisch aus `public.gebuehren_config` gelesen (Standard: `6002`, keine feste Verdrahtung).
-- **Ehrenmitgliedschaft (`RA003`):** Negativer Ausgleich in Höhe des Grundbeitrags (Konto `3410`).
+### 5.6 Rabatte & Gutschriften (RA001, RA002, RA003) & Vorzeichentoleranz
+- **Vorzeichentoleranz:** In `public.gebuehren_config` erfasste Beträge für Rabatte werden vom System immer als Abzug behandelt (`-ABS(betrag)`). Ein versehentliches Erfassen von `100.00` anstelle von `-100.00` führt nicht zu Fehlern.
+- **Vorstand (`RA001`):** Bleibt auf den Grundbeitrag beschränkt und greift nicht auf Schützenhaus oder Lizenzen über. Entfällt für Ehrenmitglieder, da diese bereits durch `RA003` vom Grundbeitrag entlastet sind.
+- **Hausmeister / Unterhalt (`RA002`):** Reine Gutschrift (keine Belastung wie bei Junioren). Betrag und Gegenkonto werden zu 100% dynamisch aus `public.gebuehren_config` gelesen (keine feste Verdrahtung).
+- **Ehrenmitgliedschaft (`RA003`):** Dynamischer Rabatt bis zur Höhe des Grundbeitrags (Konto aus `gebuehren_config`, Standard `3410`).
 
-### 5.7 Jugendförderung (Kostenübernahme Verein)
+### 5.7 Keine stillen Fallbacks & Fehlerbehandlung
+- Das System verwendet keine hardcodierten Betrags- oder Konten-Fallbacks mehr.
+- Fehlt ein Pflicht-Tarif oder ein Haben-Konto in `gebuehren_config`, wird im Frontend ein auffälliges Warn-Banner mit konkreter Handlungsanweisung angezeigt und die Rechnungsgenerierung blockiert.
+
+### 5.8 Jugendförderung (Kostenübernahme Verein)
 - Bei Junioren werden alle Wettkampfpositionen der Kategorie `Kostenübernahme_Jugend` saldiert und als Gegenposition `KOSTENUEBERNAHME_JUGEND` gutgeschrieben.
 
-### 5.8 Floor-Regel
+### 5.9 Floor-Regel
 - Rechnungsbetrag wird auf mindestens CHF 0.00 begrenzt, ausser bei Hausmeister-Gutschriften (`RA002`), wo negative Auszahlungsbeträge für Unterhaltsentschädigungen zulässig sind.
 
 ---
