@@ -135,8 +135,8 @@ Aufbau einer zentralen, robusten Dokumenten- und Kommunikations-Engine für den 
   - Der Textkörper (`contentHtml`) enthält die vollständige Grussformel und Absendersignatur. Keine nachgelagerten doppelten Infoboxen oder redundanten `senderInfo`-Blöcke.
   - **Globaler E-Mail-Footer:** Dezent zentriert am E-Mail-Ende:  
     `Sportschützen Muhen (gegründet 1919) • Schiessanlage Rüteli • 5037 Muhen`  
-    `Instagram: https://www.instagram.com/sportschuetzen.muhen/ • Facebook: https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE`  
-    `Dieses Schreiben wurde über das Vereinsportal generiert.`
+    `Web: www.sportschuetzen-muhen.ch • E-Mail: sportschuetzen.muhen@gmail.com`  
+    `Instagram: https://www.instagram.com/sportschuetzen.muhen/ • Facebook: https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE`
 
 ### Typ 2: Freier Vorstandsbrief (Formal)
 *Differenziertes Layout für offizielle Mitteilungen ohne Rechnungscharakter:*

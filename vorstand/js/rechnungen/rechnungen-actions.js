@@ -339,39 +339,18 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
     || (typeof rnGetDefaultLayouts === 'function' ? (rnGetDefaultLayouts()[inv.type] || rnGetDefaultLayouts()['Sonstige']) : {})
     || {};
 
-  const replaceMailVars = (str) => {
-    let res = String(str || '')
-      .replace(/{vorname}/g, recipient.vorname || '')
-      .replace(/{nachname}/g, recipient.nachname || '')
-      .replace(/{anrede}/g, recipient.anrede || '')
-      .replace(/{firma}/g, recipient.firma || '')
-      .replace(/{abteilung}/g, recipient.abteilung || '')
-      .replace(/{rechnungsnummer}/g, inv.id)
-      .replace(/{rechnungsjahr}/g, String(inv.year || ''))
-      .replace(/{gesamtbetrag}/g, Number(inv.total_amount || 0).toFixed(2))
-      .replace(/{rechnungsdatum}/g, inv.created_at ? String(inv.created_at).split(' ')[0] : '')
-      .replace(/{iban}/g, typeof VEREIN_IBAN !== 'undefined' ? VEREIN_IBAN : '')
-      .replace(/{absender_name}/g, senderName)
-      .replace(/{absender_email}/g, senderEmail)
-      .replace(/{absender_vorname}/g, (sender && sender.vorname) || '')
-      .replace(/{absender_nachname}/g, (sender && sender.nachname) || '')
-      .replace(/{absender_verein}/g, (sender && sender.verein) || 'Sportschützen Muhen')
-      .replace(/{absender_funktion}/g, (sender && sender.funktion) || 'Vorstand');
-    return res.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+,/g, ',');
-  };
-
-  // Vorlage-Betreff und Vorlage-Body 1:1 aus der Vorlage übernehmen und Variablen einsetzen
+  // Vorlage-Betreff und Vorlage-Body 1:1 aus der Vorlage übernehmen und Variablen universell einsetzen
   const cleanSubjNum = String(inv.id || '').replace(/^RE[-_]?/i, '') || String(inv.id || '');
-  let defaultSubject = layout.mail_subject
-    ? replaceMailVars(layout.mail_subject)
-        .replace(new RegExp('Rechnung\\s+' + String(inv.id || '').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), 'Rechnung ' + cleanSubjNum)
-        .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
-        .replace(/\bRE-(\d)/gi, '$1')
-    : `Rechnung ${cleanSubjNum} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
+  const rawSubject = layout.mail_subject || `Rechnung ${cleanSubjNum} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
+  const rawBody = layout.mail_body || 'Guten Tag {vorname} {nachname},\n\nanbei erhalten Sie die Rechnung {rechnungsnummer} über CHF {gesamtbetrag}.\n\nDen QR-Zahlteil finden Sie im PDF-Anhang.\n\nFreundliche Grüsse\nSportschützen Muhen';
 
-  let defaultBody = layout.mail_body
-    ? replaceMailVars(layout.mail_body)
-    : replaceMailVars('Guten Tag {vorname} {nachname},\n\nanbei erhalten Sie die Rechnung {rechnungsnummer} über CHF {gesamtbetrag}.\n\nDen QR-Zahlteil finden Sie im PDF-Anhang.\n\nFreundliche Grüsse\nSportschützen Muhen');
+  const replacer = typeof window.rnReplaceMailPlaceholders === 'function' ? window.rnReplaceMailPlaceholders : (s => s);
+  let defaultSubject = replacer(rawSubject, { invoice: inv, recipient, sender })
+    .replace(new RegExp('Rechnung\\s+' + String(inv.id || '').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), 'Rechnung ' + cleanSubjNum)
+    .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+    .replace(/\bRE-(\d)/gi, '$1');
+
+  let defaultBody = replacer(rawBody, { invoice: inv, recipient, sender });
 
   window._rnmDefaultSubject = defaultSubject;
   window._rnmDefaultBody = defaultBody;
@@ -685,13 +664,19 @@ window.rnExecuteSendMail = async function(invoiceId) {
   }
 
   const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
-  const cleanTargetSubject = (targetSubject || baseLayout.mail_subject || '')
+  const replacer = typeof window.rnReplaceMailPlaceholders === 'function' ? window.rnReplaceMailPlaceholders : (s => s);
+  const rawSubject = targetSubject || baseLayout.mail_subject || `Rechnung ${invoiceId} | Sportschützen Muhen`;
+  const rawBody = targetBody || baseLayout.mail_body || `Guten Tag ${recipient.vorname || ''} ${recipient.nachname || ''},\n\nanbei senden wir die Rechnung ${invoiceId}.\n\nFreundliche Grüsse\nSportschützen Muhen`;
+
+  const cleanTargetSubject = replacer(rawSubject, { invoice: inv, recipient, sender })
     .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
     .replace(/\bRE-(\d)/gi, '$1');
+  const cleanTargetBody = replacer(rawBody, { invoice: inv, recipient, sender });
+
   const customLayout = Object.assign({}, baseLayout, {
     mail_subject: cleanTargetSubject,
-    mail_body: targetBody || baseLayout.mail_body,
-    mail_intro: targetBody || baseLayout.mail_intro // Kompatibilität
+    mail_body: cleanTargetBody,
+    mail_intro: cleanTargetBody
   });
 
   if (submitBtn) {
@@ -4873,10 +4858,18 @@ window.rnExecuteMassSend = async function() {
         }
       }
 
-      const bodyText = (layout && layout.mail_body) || `Guten Tag ${itm.recipient.vorname || ''} ${itm.recipient.nachname || ''},\n\nanbei senden wir dir die Rechnung ${inv.id} über CHF ${Number(inv.total_amount || 0).toFixed(2)} mit beiliegender QR-Rechnung.\n\nFreundliche Grüsse\nSportschützen Muhen`;
+      const replacer = typeof window.rnReplaceMailPlaceholders === 'function' ? window.rnReplaceMailPlaceholders : (s => s);
+      const rawBody = (layout && layout.mail_body) || `Guten Tag ${itm.recipient.vorname || ''} ${itm.recipient.nachname || ''},\n\nanbei senden wir dir die Rechnung ${inv.id} über CHF ${Number(inv.total_amount || 0).toFixed(2)} mit beiliegender QR-Rechnung.\n\nFreundliche Grüsse\nSportschützen Muhen`;
+      const rawSubject = (layout && layout.mail_subject) || `Rechnung ${inv.id} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
+
+      const bodyText = replacer(rawBody, { invoice: inv, recipient: itm.recipient, sender });
+      const subjectText = replacer(rawSubject, { invoice: inv, recipient: itm.recipient, sender })
+        .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+        .replace(/\bRE-(\d)/gi, '$1');
+
       const emailHtml = (typeof window.renderClubEmailHtml === 'function')
         ? window.renderClubEmailHtml({
-            title: (layout && layout.mail_subject) || `Rechnung ${inv.id}`,
+            title: subjectText,
             subtitle: inv.type || 'Rechnung',
             contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`
           })
@@ -4886,12 +4879,13 @@ window.rnExecuteMassSend = async function() {
         throw new Error("Mail-Engine nicht verfügbar");
       }
 
+      const senderDisplayName = sender ? [sender.vorname, sender.nachname].filter(Boolean).join(' ') : 'Sportschützen Muhen';
       const mailResult = await window.sendMailViaEngine({
         to: itm.recipient.email,
-        subject: (layout && layout.mail_subject) || `Rechnung ${inv.id} | Sportschützen Muhen`,
+        subject: subjectText,
         html: emailHtml,
         text: bodyText,
-        senderName: sender?.name || 'Sportschützen Muhen',
+        senderName: senderDisplayName || 'Sportschützen Muhen',
         senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
         attachments: attachments,
         moduleRef: 'rechnung',

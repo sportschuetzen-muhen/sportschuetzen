@@ -671,6 +671,91 @@ window.rnGetContactDisplayName = function(c) {
 };
 
 /**
+ * Universelle Ersetzung von Platzhaltern in E-Mail-Betreff und Textvorlagen.
+ * Unterstützt sowohl {key} als auch {{key}}, case-insensitive.
+ * @param {string} templateStr
+ * @param {Object} options
+ * @param {Object} [options.invoice]
+ * @param {Object} [options.recipient]
+ * @param {Object} [options.sender]
+ * @param {Object} [options.extraVars]
+ * @returns {string}
+ */
+window.rnReplaceMailPlaceholders = function(templateStr, options = {}) {
+  let str = String(templateStr || '');
+  if (!str) return '';
+
+  const inv = options.invoice || options.inv || {};
+  const rec = options.recipient || options.rec || {};
+  const snd = options.sender || options.snd || {};
+  const extra = options.extraVars || {};
+
+  // Empfänger-Felder
+  const vorname = rec.vorname || (rec.name ? rec.name.split(' ')[0] : (inv.name ? inv.name.split(' ')[0] : ''));
+  const nachname = rec.nachname || (rec.name ? rec.name.split(' ').slice(1).join(' ') : (inv.name ? inv.name.split(' ').slice(1).join(' ') : ''));
+  const empfaengerName = (rec.name || `${vorname} ${nachname}`).trim() || inv.name || 'Mitglied';
+  const anrede = rec.anrede || (vorname ? `Guten Tag ${vorname}` : 'Guten Tag');
+  const firma = rec.firma || '';
+  const abteilung = rec.abteilung || '';
+
+  // Rechnungs-Felder
+  const rawId = String(inv.id || '').trim();
+  const rechnungsjahr = String(inv.year || (inv.created_at ? new Date(inv.created_at).getFullYear() : new Date().getFullYear()));
+  const totalAmount = Number(inv.total_amount || inv.betrag || inv.Gesamt || 0);
+  const gesamtbetrag = totalAmount.toFixed(2);
+  const rechnungsdatum = inv.created_at ? String(inv.created_at).split(' ')[0] : (typeof formatSwissDate === 'function' ? formatSwissDate(new Date()) : new Date().toLocaleDateString('de-CH'));
+  const faelligkeitsdatum = inv.due_date || '30 Tage';
+  const iban = typeof VEREIN_IBAN !== 'undefined' ? VEREIN_IBAN : 'CH83 0076 7000 0503 7000 0';
+
+  // Absender-Felder
+  const absenderVorname = snd.vorname || '';
+  const absenderNachname = snd.nachname || '';
+  const absenderName = (snd.name || `${absenderVorname} ${absenderNachname}`).trim() || snd.verein || 'Sportschützen Muhen';
+  const absenderEmail = snd.email || 'sportschuetzen.muhen@gmail.com';
+  const absenderVerein = snd.verein || 'Sportschützen Muhen';
+  const absenderFunktion = snd.funktion || 'Vorstand';
+  const absenderMobil = snd.mobil || '';
+
+  const replacements = {
+    vorname: vorname,
+    nachname: nachname,
+    name: empfaengerName,
+    anrede: anrede,
+    firma: firma,
+    abteilung: abteilung,
+    rechnungsnummer: rawId,
+    rechnungs_nummer: rawId,
+    invoice_id: rawId,
+    rechnungsjahr: rechnungsjahr,
+    jahr: rechnungsjahr,
+    gesamtbetrag: gesamtbetrag,
+    betrag: gesamtbetrag,
+    total_amount: gesamtbetrag,
+    rechnungsdatum: rechnungsdatum,
+    datum: rechnungsdatum,
+    faelligkeitsdatum: faelligkeitsdatum,
+    faelligkeit: faelligkeitsdatum,
+    zahlungsziel: faelligkeitsdatum,
+    iban: iban,
+    absender_vorname: absenderVorname,
+    absender_nachname: absenderNachname,
+    absender_name: absenderName,
+    absender_email: absenderEmail,
+    absender_verein: absenderVerein,
+    absender_funktion: absenderFunktion,
+    absender_mobil: absenderMobil,
+    ...extra
+  };
+
+  for (const [key, val] of Object.entries(replacements)) {
+    const regex = new RegExp(`\\{{1,2}\\s*${key}\\s*\\}{1,2}`, 'gi');
+    str = str.replace(regex, String(val ?? ''));
+  }
+
+  return str.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+,/g, ',');
+};
+
+/**
  * Ermittelt die Absenderdaten für Rechnungen & Mails basierend auf dem aktuell eingeloggten Benutzer.
  * 1. Anhand Anzeigename wird der Abgleich mit der Mitglieder-DB gemacht (auch E-Mail von dort).
  * 2. Als Rolle / Funktion wird 'Rolle_extern' aus login_daten hinterlegt.
