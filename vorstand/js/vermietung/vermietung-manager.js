@@ -206,6 +206,7 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   // 1. Zuweisung des Aktionscodes zur Template-ID
   const actionToTplCode = {
     'vertrag_mail': 'vm_vertrag',
+    'anfrage': 'vm_anfrage',
     'mahnung': 'vm_mahnung',
     'bestaetigen': 'vm_bestaetigung',
     'schluessel': 'vm_schluessel',
@@ -235,6 +236,7 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   // Banner-Farben je nach Workflow-Schritt
   const bannerColors = {
     'vm_vertrag': '#0f3c5c',
+    'vm_anfrage': '#d97706',
     'vm_mahnung': '#c53030',
     'vm_bestaetigung': '#22543d',
     'vm_schluessel': '#2b6cb0',
@@ -460,6 +462,32 @@ async function vermietungAktion(action, idOrRow) {
     const mailRes = await sendRentalWorkflowEmail(action, d, window._rentalSettings);
     if (!mailRes.success) {
       console.warn("Mailversand-Hinweis:", mailRes.error);
+    }
+
+    // 2.1 Bei Zahlungseingang (bestaetigen): Vollautomatisch das Wirtschaftsteam informieren!
+    if (action === 'bestaetigen') {
+      try {
+        console.log(`📢 [Vermietung] Sende automatische Info-Mail an Wirtschaftsteam für ${d.vertragsnr}...`);
+        await sendRentalWorkflowEmail('info_wirtschaft', d, window._rentalSettings);
+      } catch (wirtErr) {
+        console.warn("⚠️ [Vermietung] Wirtschaft-Mail Fehler:", wirtErr);
+      }
+    }
+
+    // 2.2 Bei Stornierung: Google Kalender Termine freigeben
+    if (action === 'stornieren') {
+      try {
+        fetch('https://script.google.com/macros/s/AKfycbxnClehly9t5TLZqguQOul1lF3nayfNEqAdx3A9EE5YxuQ2bziqVV-2rJ2ktR3Vshn9/exec', {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'storno_calendar',
+            mietdatum: d.mietdatum || d.start_date,
+            vertragsnummer: d.vertragsnr
+          })
+        }).catch(e => console.warn("Kalender-Storno Fehler:", e));
+      } catch (_) {}
     }
 
     // Modal schliessen und Daten neu laden

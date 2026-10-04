@@ -2543,127 +2543,356 @@
           showCustomToast(
             "success",
             "Terminanfrage übermittelt",
-            `Vielen Dank! Deine Terminanfrage ${vnr ? '(' + vnr + ') ' : ''}für den ${payload.mietdatum} wurde erfolgreich eingereicht. Wir prüfen die zeitliche Machbarkeit und melden uns in Kürze bei dir.`
+            `Vielen Dank! Deine Terminanfrage ${vnr ? '(' + vnr + ') ' : ''}für den ${payload.mietdatum} wurde erfolgreich eingereicht. Eine Bestätigung wurde an deine E-Mail gesendet.`
           );
+
+          // E-Mail-Benachrichtigungen für Vorab-Anfrage (Vorlage vm_anfrage)
+          try {
+            let tplSubject = `Bestätigung deiner Terminanfrage für die Schützenstube Muhen (${payload.mietdatum})`;
+            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine unverbindliche Terminanfrage für die Schützenstube Muhen am {mietdatum} (geplanter Festbeginn: {festbeginn}).\n\nDa an oder um diesen Termin bereits andere Vereinsaktivitäten oder Reinigungspuffer anstehen, prüfen wir derzeit die zeitliche Machbarkeit mit unserem Team.\n\nWir melden uns in Kürze direkt bei dir.\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
+
+            try {
+              const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.vm_anfrage&select=mail_subject,mail_body`, {
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+              });
+              if (tplRes.ok) {
+                const tplData = await tplRes.json();
+                if (tplData && tplData[0]) {
+                  if (tplData[0].mail_subject) tplSubject = tplData[0].mail_subject;
+                  if (tplData[0].mail_body) tplBody = tplData[0].mail_body;
+                }
+              }
+            } catch (_) {}
+
+            let setMap = {};
+            try {
+              const setRes = await fetch(`${SUPABASE_REST_URL}/rental_settings?select=setting_key,setting_value`, {
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+              });
+              if (setRes.ok) {
+                const setRows = await setRes.json();
+                (setRows || []).forEach(r => { setMap[r.setting_key] = r.setting_value; });
+              }
+            } catch (_) {}
+
+            const vermieterFirst = setMap.sender_first_name || '';
+            const vermieterLast = setMap.sender_last_name || '';
+            const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
+            const vermieterPhone = setMap.sender_phone || '';
+            const vermieterEmail = setMap.club_email || 'sportschuetzen.muhen@gmail.com';
+
+            const map = {
+              'vertragsnr': vnr,
+              'buchungsnummer': vnr,
+              'mietdatum': payload.mietdatum,
+              'festbeginn': payload.festbeginn,
+              'mieter_anrede': payload.anrede || '',
+              'mieter_vorname': payload.vorname || '',
+              'mieter_nachname': payload.nachname || '',
+              'mieter_email': payload.email || '',
+              'mieter_telefon': payload.telefon || '',
+              'anrede': payload.anrede || '',
+              'vorname': payload.vorname || '',
+              'nachname': payload.nachname || '',
+              'bemerkung': payload.inquiry_note || '–',
+              'vermieter_name': vermieterName,
+              'vermieter_vorname': vermieterFirst,
+              'vermieter_nachname': vermieterLast,
+              'vermieter_telefon': vermieterPhone,
+              'vermieter_email': vermieterEmail
+            };
+
+            let finalSubject = tplSubject;
+            let finalBody = tplBody;
+            Object.entries(map).forEach(([k, v]) => {
+              const rx = new RegExp(`\\{${k}\\}`, 'gi');
+              finalSubject = finalSubject.replace(rx, v);
+              finalBody = finalBody.replace(rx, v);
+            });
+
+            const paragraphs = finalBody.split('\n\n').map(p => 
+              `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
+            ).join('');
+
+            const finalHtml = `
+              <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
+                <div style="background-color:#d97706; color:#ffffff; padding:18px 25px; text-align:left;">
+                  <span style="font-size:18px; font-weight:600; color:#ffffff;">${finalSubject}</span>
+                  <div style="font-size:12px; color:rgba(255,255,255,0.9); margin-top:2px;">Sportschützen Muhen – Schützenstube</div>
+                </div>
+                <div style="padding:25px; color:#333333; line-height:1.6; font-size:14.5px;">
+                  ${paragraphs}
+                </div>
+                <div style="background:#f8f9fa; padding:12px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center;">
+                  Sportschützen Muhen &bull; Schiessanlage Rüteli &bull; 5037 Muhen &bull; Telefon: ${vermieterPhone}
+                </div>
+              </div>
+            `;
+
+            // 1. Empfangsbestätigung an Interessenten senden
+            fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                to: payload.email,
+                subject: finalSubject,
+                html: finalHtml,
+                moduleRef: 'vermietung',
+                recordId: vnr
+              })
+            }).catch(e => console.warn("Kundenbestätigung Fehler:", e));
+
+            // 2. Interne Benachrichtigung an Verein/Vermieter zur Prüfung
+            fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                to: vermieterEmail,
+                subject: `📅 Neue Vorab-Terminanfrage: ${vnr} (${payload.mietdatum})`,
+                html: `
+                  <div style="font-family:sans-serif; max-width:600px; padding:20px; border:1px solid #f59e0b; border-radius:8px;">
+                    <h3 style="color:#d97706; margin-top:0;">Neue Vorab-Terminanfrage (Prüfung erforderlich)</h3>
+                    <p>Über die Website wurde eine Terminanfrage eingereicht:</p>
+                    <table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse; width:100%;">
+                      <tr><td><strong>Buchungsnr:</strong></td><td><strong>${vnr}</strong></td></tr>
+                      <tr><td><strong>Mietdatum:</strong></td><td>${payload.mietdatum} (Beginn: ${payload.festbeginn})</td></tr>
+                      <tr><td><strong>Mieter:</strong></td><td>${payload.anrede} ${payload.vorname} ${payload.nachname}</td></tr>
+                      <tr><td><strong>Kontakt:</strong></td><td>${payload.email} / ${payload.telefon}</td></tr>
+                      <tr><td><strong>Adresse:</strong></td><td>${payload.strasse}, ${payload.plz} ${payload.wohnort}</td></tr>
+                      <tr><td><strong>Bemerkung:</strong></td><td>${payload.inquiry_note || '–'}</td></tr>
+                    </table>
+                    <p style="margin-top:15px;"><a href="https://sportschuetzen-muhen.ch/vorstand/#vermietung" style="color:#0f3c5c; font-weight:bold;">Im Vorstands-Cockpit öffnen &rarr;</a></p>
+                  </div>
+                `,
+                moduleRef: 'vermietung',
+                recordId: vnr
+              })
+            }).catch(e => console.warn("Vereins-Benachrichtigung Fehler:", e));
+
+          } catch (inqErr) {
+            console.warn("Mail-Fehler bei Anfrage:", inqErr);
+          }
+
         } else {
+          // =========================================================================
+          // REGULÄRE VERBINDLICHE BUCHUNG (VOLLAUTOMATION)
+          // =========================================================================
           showCustomToast(
             "success",
-            "Reservierung übermittelt",
-            `Deine Reservierung (${vnr}) wurde erfolgreich eingereicht! Wir haben die Buchung verbucht und senden dir in Kürze den Mietvertrag.`
+            "Reservierung erfolgreich",
+            `Deine Reservierung (${vnr}) wurde erfolgreich verbucht! Der Mietvertrag mit QR-Einzahlungsschein wurde soeben per E-Mail an dich gesendet.`
           );
-        }
 
-        // Automatische Benachrichtigungs-Mail an Wirtschaftsverantwortliche via Vorlage & System-Mails
-        try {
-          // 1. Vorlage und Einstellungen dynamisch aus Supabase laden (Single Source of Truth)
-          let tplSubject = `🏠 Neue Schützenhaus-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'}: ${vnr} (${payload.mietdatum})`;
-          let tplBody = `Hallo {wirtschaft_name},\n\nEs ist eine neue Schützenhaus-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'} eingegangen:\n\nBuchungsnr: {vertragsnr}\nMietdatum: {mietdatum} (Beginn: {festbeginn})\nMieter: {mieter_anrede} {mieter_vorname} {mieter_nachname}\nKontakt: {mieter_email} / {mieter_telefon}\nAdresse: {mieter_adresse}\nNotiz: {bemerkung}\n\nIm Vorstands-Cockpit öffnen:\n{cockpit_url}\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen`;
-
+          // 1. Google Kalender blockieren (Ganztag Vermietet an XX + Ganztag Gesperrt für Reinigung am Folgetag)
           try {
-            const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.vm_info_wirtschaft&select=mail_subject,mail_body`, {
-              headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+            fetch('https://script.google.com/macros/s/AKfycbxnClehly9t5TLZqguQOul1lF3nayfNEqAdx3A9EE5YxuQ2bziqVV-2rJ2ktR3Vshn9/exec', {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                mietdatum: payload.mietdatum,
+                vorname: payload.vorname,
+                nachname: payload.nachname,
+                email: payload.email,
+                telefon: payload.telefon,
+                strasse: payload.strasse,
+                plz: payload.plz,
+                wohnort: payload.wohnort,
+                festbeginn: payload.festbeginn
+              })
+            }).catch(e => console.warn("Google Kalender Blockierung Hinweis:", e));
+          } catch (calErr) {
+            console.warn("Google Kalender Sync Fehler:", calErr);
+          }
+
+          // 2. Mietvertrag PDF generieren via Edge Function generate-pdf
+          let pdfStoragePath = null;
+          let pdfUrl = null;
+          try {
+            const pdfResp = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/generate-pdf', {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                action: 'generate-contract',
+                bookingId: vnr,
+                recipient: {
+                  vorname: payload.vorname,
+                  nachname: payload.nachname,
+                  name: `${payload.vorname} ${payload.nachname}`.trim(),
+                  strasse: payload.strasse,
+                  plz: payload.plz,
+                  ort: payload.wohnort,
+                  email: payload.email,
+                  telefon: payload.telefon
+                },
+                mietdatum: payload.mietdatum,
+                festbeginn: payload.festbeginn,
+                mietbetrag: 300,
+                kaution: 200,
+                type: 'Vermietung'
+              })
             });
-            if (tplRes.ok) {
-              const tplData = await tplRes.json();
-              if (tplData && tplData[0]) {
-                if (tplData[0].mail_subject) tplSubject = tplData[0].mail_subject;
-                if (tplData[0].mail_body) tplBody = tplData[0].mail_body;
+
+            if (pdfResp.ok) {
+              const pdfData = await pdfResp.json();
+              if (pdfData.success) {
+                pdfUrl = pdfData.pdfUrl;
+                pdfStoragePath = pdfData.storagePath;
+
+                // contract_file_url in Supabase aktualisieren
+                if (newRecord?.id && pdfUrl) {
+                  fetch(`${SUPABASE_REST_URL}/rental_requests?id=eq.${newRecord.id}`, {
+                    method: 'PATCH',
+                    headers: {
+                      'apikey': SUPABASE_ANON_KEY,
+                      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ contract_file_url: pdfUrl })
+                  }).catch(() => {});
+                }
               }
             }
-          } catch (_) {}
+          } catch (pdfErr) {
+            console.error("PDF-Generierung Fehler:", pdfErr);
+          }
 
-          let setMap = {};
+          // 3. Mietvertrags-Mail (vm_vertrag) an den Mieter senden
           try {
-            const setRes = await fetch(`${SUPABASE_REST_URL}/rental_settings?select=setting_key,setting_value`, {
-              headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+            let tplSubject = `Mietvertrag Schützenstube am ${payload.mietdatum} – ${vnr}`;
+            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine Reservation der Schützenstube Muhen am {mietdatum}.\nAnbei erhältst du den offiziellen Mietvertrag inklusive Schweizer QR-Rechnung.\n\nVertragsnummer: {vertragsnr}\nMietdatum: {mietdatum} (Festbeginn: {festbeginn})\nMietbetrag: CHF 300.00\n\nBitte überweise den Mietbetrag innert 14 Tagen mit dem im Vertrag enthaltenen QR-Zahlschein, um die Reservation definitiv zu bestätigen.\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
+
+            try {
+              const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.vm_vertrag&select=mail_subject,mail_body`, {
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+              });
+              if (tplRes.ok) {
+                const tplData = await tplRes.json();
+                if (tplData && tplData[0]) {
+                  if (tplData[0].mail_subject) tplSubject = tplData[0].mail_subject;
+                  if (tplData[0].mail_body) tplBody = tplData[0].mail_body;
+                }
+              }
+            } catch (_) {}
+
+            let setMap = {};
+            try {
+              const setRes = await fetch(`${SUPABASE_REST_URL}/rental_settings?select=setting_key,setting_value`, {
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+              });
+              if (setRes.ok) {
+                const setRows = await setRes.json();
+                (setRows || []).forEach(r => { setMap[r.setting_key] = r.setting_value; });
+              }
+            } catch (_) {}
+
+            const vermieterFirst = setMap.sender_first_name || '';
+            const vermieterLast = setMap.sender_last_name || '';
+            const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
+            const vermieterPhone = setMap.sender_phone || '';
+            const vermieterEmail = setMap.club_email || 'sportschuetzen.muhen@gmail.com';
+
+            const map = {
+              'vertragsnr': vnr,
+              'buchungsnummer': vnr,
+              'mietdatum': payload.mietdatum,
+              'festbeginn': payload.festbeginn,
+              'mieter_anrede': payload.anrede || '',
+              'mieter_vorname': payload.vorname || '',
+              'mieter_nachname': payload.nachname || '',
+              'mieter_email': payload.email || '',
+              'mieter_telefon': payload.telefon || '',
+              'mieter_strasse': payload.strasse || '',
+              'mieter_plz': payload.plz || '',
+              'mieter_ort': payload.wohnort || '',
+              'mieter_adresse': `${payload.strasse}, ${payload.plz} ${payload.wohnort}`,
+              'anrede': payload.anrede || '',
+              'vorname': payload.vorname || '',
+              'nachname': payload.nachname || '',
+              'mietbetrag': '300.00',
+              'kaution': '200.00',
+              'vermieter_name': vermieterName,
+              'vermieter_vorname': vermieterFirst,
+              'vermieter_nachname': vermieterLast,
+              'vermieter_telefon': vermieterPhone,
+              'vermieter_email': vermieterEmail
+            };
+
+            let finalSubject = tplSubject;
+            let finalBody = tplBody;
+            Object.entries(map).forEach(([k, v]) => {
+              const rx = new RegExp(`\\{${k}\\}`, 'gi');
+              finalSubject = finalSubject.replace(rx, v);
+              finalBody = finalBody.replace(rx, v);
             });
-            if (setRes.ok) {
-              const setRows = await setRes.json();
-              (setRows || []).forEach(r => { setMap[r.setting_key] = r.setting_value; });
+
+            const paragraphs = finalBody.split('\n\n').map(p => 
+              `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
+            ).join('');
+
+            const finalHtml = `
+              <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
+                <div style="background-color:#0f3c5c; color:#ffffff; padding:18px 25px; text-align:left;">
+                  <span style="font-size:18px; font-weight:600; color:#ffffff;">${finalSubject}</span>
+                  <div style="font-size:12px; color:rgba(255,255,255,0.9); margin-top:2px;">Sportschützen Muhen – Schützenstube</div>
+                </div>
+                <div style="padding:25px; color:#333333; line-height:1.6; font-size:14.5px;">
+                  ${paragraphs}
+                </div>
+                <div style="background:#f8f9fa; padding:12px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center;">
+                  Sportschützen Muhen &bull; Schiessanlage Rüteli &bull; 5037 Muhen &bull; E-Mail: ${vermieterEmail}
+                </div>
+              </div>
+            `;
+
+            const mailAttachments = [];
+            if (pdfStoragePath) {
+              mailAttachments.push({
+                filename: `Mietvertrag_${vnr}.pdf`,
+                storagePath: pdfStoragePath,
+                storageBucket: 'operatives-storage'
+              });
+            } else if (pdfUrl) {
+              mailAttachments.push({
+                filename: `Mietvertrag_${vnr}.pdf`,
+                path: pdfUrl
+              });
             }
-          } catch (_) {}
 
-          const vermieterFirst = setMap.sender_first_name || '';
-          const vermieterLast = setMap.sender_last_name || '';
-          const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
-          const vermieterPhone = setMap.sender_phone || '';
-          const vermieterEmail = setMap.club_email || 'sportschuetzen.muhen@gmail.com';
-          const wirtschaftName = setMap.wirtschaft_name || 'Wirtschaftsteam';
-          const mieterAdresse = `${payload.strasse}, ${payload.plz} ${payload.wohnort}`;
-          const cockpitUrl = 'https://sportschuetzen-muhen.ch/vorstand/#vermietung';
+            // Vollautomatischer Mailversand an den Mieter (mit CC an Verein)
+            fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                to: payload.email,
+                cc: vermieterEmail,
+                subject: finalSubject,
+                html: finalHtml,
+                attachments: mailAttachments,
+                moduleRef: 'vermietung',
+                recordId: vnr
+              })
+            }).catch(e => console.warn("Mietvertrag E-Mail Fehler:", e));
 
-          const map = {
-            'vertragsnr': vnr,
-            'buchungsnummer': vnr,
-            'mietdatum': payload.mietdatum,
-            'festbeginn': payload.festbeginn,
-            'mieter_anrede': payload.anrede || '',
-            'mieter_vorname': payload.vorname || '',
-            'mieter_nachname': payload.nachname || '',
-            'mieter_email': payload.email || '',
-            'mieter_telefon': payload.telefon || '',
-            'mieter_strasse': payload.strasse || '',
-            'mieter_plz': payload.plz || '',
-            'mieter_ort': payload.wohnort || '',
-            'mieter_adresse': mieterAdresse,
-            'anrede': payload.anrede || '',
-            'vorname': payload.vorname || '',
-            'nachname': payload.nachname || '',
-            'bemerkung': payload.inquiry_note || '–',
-            'cockpit_url': cockpitUrl,
-            'vermieter_name': vermieterName,
-            'vermieter_vorname': vermieterFirst,
-            'vermieter_nachname': vermieterLast,
-            'vermieter_telefon': vermieterPhone,
-            'vermieter_email': vermieterEmail,
-            'wirtschaft_name': wirtschaftName
-          };
-
-          let finalSubject = tplSubject;
-          let finalBody = tplBody;
-          Object.entries(map).forEach(([k, v]) => {
-            const rx = new RegExp(`\\{${k}\\}`, 'gi');
-            finalSubject = finalSubject.replace(rx, v);
-            finalBody = finalBody.replace(rx, v);
-          });
-
-          const paragraphs = finalBody.split('\n\n').map(p => 
-            `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
-          ).join('');
-
-          const finalHtml = `
-            <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
-              <div style="background-color:#d97706; color:#ffffff; padding:18px 25px; text-align:left;">
-                <span style="font-size:18px; font-weight:600; color:#ffffff;">${finalSubject}</span>
-                <div style="font-size:12px; color:rgba(255,255,255,0.9); margin-top:2px;">Sportschützen Muhen – Schützenstube</div>
-              </div>
-              <div style="padding:25px; color:#333333; line-height:1.6; font-size:14.5px;">
-                ${paragraphs}
-              </div>
-              <div style="background:#f8f9fa; padding:12px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center;">
-                Sportschützen Muhen &bull; Schiessanlage Rüteli &bull; 5037 Muhen &bull; <a href="${cockpitUrl}" style="color:#d97706; font-weight:600; text-decoration:none;">Vorstands-Cockpit öffnen &rarr;</a>
-              </div>
-            </div>
-          `;
-
-          // 2. Versand über Supabase Mail-Engine mit dynamischem System-Mail-Verteiler
-          fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
-            method: 'POST',
-            headers: {
-              'apikey': SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              systemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
-              subject: finalSubject,
-              html: finalHtml,
-              moduleRef: 'vermietung',
-              recordId: vnr
-            })
-          }).catch(e => console.warn("Vorstands-Benachrichtigung Hinweis:", e));
-        } catch (mailErr) {
-          console.warn("Mail-Trigger Fehler:", mailErr);
+          } catch (mailErr) {
+            console.error("Mietvertrag-Mail Versandfehler:", mailErr);
+          }
         }
 
         document.getElementById('res-form').reset();

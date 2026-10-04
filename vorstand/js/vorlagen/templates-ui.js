@@ -83,6 +83,7 @@
       'vm_schluessel': 'Mail: Schlüsselübergabe & Hinweise',
       'vm_storno': 'Mail: Stornierungsbestätigung (Allgemein)',
       'vm_storno_verzug': 'Mail: Stornierung Zahlungsverzug',
+      'vm_anfrage': 'Mail: Bestätigung Vorab-Terminanfrage',
       'vm_info_wirtschaft': 'Mail: Info Wirtschaft (Intern)',
       'gv_normal': 'GV-Einladung (Standard)',
       'gv_wahljahr': 'GV-Einladung (Wahljahr)',
