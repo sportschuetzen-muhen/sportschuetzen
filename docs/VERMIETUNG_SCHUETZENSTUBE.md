@@ -12,8 +12,8 @@
 Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der vereinsinternen Schützenstube «Rüteli» an Privatpersonen, Vereine und Firmen – von der Online-Buchungsanfrage über die Vertragserstellung und Rechnungsstellung bis hin zur Schlüsselrückgabe.
 
 * **Führendes System:** Supabase PostgreSQL (`public.rental_requests`).
-* **Kalender & Belegung:** Google Calendar wird ausschliesslich als schreibgeschützter iCal-Feed zur Belegungsanzeige auf der Website genutzt.
-* **Entkopplung:** Sämtliche früheren Google Docs Template-Ersetzungen, Google Drive Ablagen und GAS-Trigger wurden vollständig durch Supabase Edge Functions (`generate-pdf`, `send-email`) und Storage abgelöst.
+* **Kalender & Belegung:** Google Calendar wird zur Belegungsanzeige auf der Website genutzt. Die direkte Blockierung von Mietterminen (`Vermietet an XX`) und Reinigungspuffern (`Gesperrt für Reinigung`) sowie deren Freigabe bei Stornierung erfolgt über das verifizierte Google Cloud Service Account Dienstkonto (`vermietung-bot@kalender-api-zugriff.iam.gserviceaccount.com`) mit vollen Lese-, Schreib- und Löschrechten auf den Vereinskalender `sportschuetzen.muhen@gmail.com`.
+* **Entkopplung:** Sämtliche früheren Google Docs Template-Ersetzungen, Google Drive Ablagen und manuellen GAS-Trigger wurden vollständig durch Supabase Edge Functions (`generate-pdf`, `send-email`), Supabase Storage und native API-Aufrufe abgelöst.
 
 ---
 
@@ -22,18 +22,18 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 ### 2.1 Warum Supabase als alleiniger Daten- & Finanz-Master?
 * **Problem im Altsystem:** Mietanträge wurden in Google Sheets gespeichert, Verträge per Google Docs generiert und Termine im Google Kalender eingetragen. Lief ein Script auf einen Fehler, existierte ein Kalendereintrag ohne Mietvertrag oder ein Vertrag ohne Buchungszeile.
 * **Lösung & Warum:** Supabase ist die unangefochtene Single Source of Truth für alle Kunden-, Datums-, Preis- und Vertragsdaten.
-* **Google Calendar Rolle:** Dient nur noch als Anzeige-Proxy für den Belegungskalender auf der Website (`FreeBusy`-Status), besitzt aber keinerlei Hoheit über Kundendaten oder Zahlungen.
+* **Google Calendar Rolle:** Dient als Anzeige-Proxy für den Belegungskalender auf der Website (`FreeBusy`-Status) und wird automatisiert synchronisiert, besitzt aber keinerlei Hoheit über Kundendaten oder Zahlungen.
 
 ### 2.2 Warum ein lückenloser Status-Workflow mit Audit-Log?
 * **Die Status-Maschine:**
-  1. `inquiry`: Kunde reicht Anfrage über das Webformular ein.
+  1. `inquiry`: Kunde reicht unverbindliche Anfrage über das Webformular ein.
   2. `approved`: Vermieter prüft und gibt die Buchung frei.
   3. `contract_sent`: Mietvertrag mit integrierter Schweizer QR-Rechnung wird automatisch generiert und per SMTP versandt.
   4. `reminded`: Automatische Zahlungserinnerung bei Fälligkeit.
   5. `paid`: Miete und Kaution sind eingegangen (Abgleich via FiBu oder Bank).
   6. `keys_issued`: Übergabe der Schlüssel & Übergabeprotokoll.
   7. `completed`: Abnahme erfolgt, Kaution rückerstattet, Beleg revisionssicher archiviert.
-  8. `cancelled`: Stornierung (mit Dokumentation des Stornogrunds).
+  8. `cancelled`: Stornierung (mit Dokumentation des Stornogrunds und Kalender-Freigabe).
 * **Audit-Trail (`rental_status_logs`):** Jeder Statuswechsel wird mit Zeitstempel, vorigem Status, neuem Status und ausführendem Benutzer historisiert.
 
 ### 2.3 Warum Anbindung an `RechnungsCore` und Vorlagen-Pool?
@@ -67,7 +67,7 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 
 ### 2.8 Vollautomation bei Online-Reservation & Google-Kalender-Blockierung
 * **Vollautomatischer Buchungsfluss:** Bei Absenden einer verbindlichen Reservation auf der Website wird unmittelbar das mehrseitige Mietvertrags-PDF inklusive Schweizer QR-Zahlteil via Edge Function `generate-pdf` generiert und in `rental_requests.contract_file_url` verlinkt. Der Mieter erhält das Dokument sofort per E-Mail (`vm_vertrag`) mit 14 Tagen Zahlungsfrist.
-* **Google-Kalender-Blockierung:** Zeitgleich wird der Miettag im offiziellen Google Kalender ganztägig als `Vermietet an XX` (Initialen) und der Folgetag als `Gesperrt für Reinigung` geblockt.
+* **Google-Kalender-Blockierung & API-Integration:** Zeitgleich wird der Miettag im offiziellen Google Kalender ganztägig als `Vermietet an XX` (Initialen) und der Folgetag als `Gesperrt für Reinigung` geblockt. Dies erfolgt über das autorisierte Google Cloud Service Account Dienstkonto (`vermietung-bot@kalender-api-zugriff.iam.gserviceaccount.com`), das über volle Lese-, Schreib- und Löschrechte auf `sportschuetzen.muhen@gmail.com` verfügt.
 * **Überwachungs-Cockpit des Vorstands:** Das Cockpit dient der reinen Überwachung der Fristen. Bei Zahlungseingang wird mit *«Zahlung bestätigen»* der Status auf `paid` gesetzt, die Zahlung im `RechnungsCore` verbucht, dem Mieter die Bestätigung (`vm_bestaetigung`) zugestellt und das Wirtschaftsteam (`vm_info_wirtschaft`) benachrichtigt. Bei Stornierung werden die Kalender-Blockierungen wieder freigegeben.
 
 ---

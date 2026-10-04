@@ -5,6 +5,10 @@
 *.pem
 *.key
 *.cert
+Goolge Kalender API Zugriff/
+*Kalender*API*
+service-account*.json
+kalender-api-*.json
 
 # Antigravity & IDEs
 .antigravity/
