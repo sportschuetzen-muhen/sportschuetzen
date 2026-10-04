@@ -11,6 +11,32 @@ function renderVermietungRows(daten) {
     const statusColor = getStatusColor(d.status);
     const statusLabel = getStatusLabel(d.status);
     const rowId = d.id || d.row;
+
+    const sRaiff = String(d.status_raiffeisen || (d.raw && d.raw.status_raiffeisen) || '').toLowerCase();
+    const isFibu = sRaiff === 'fibu_gebucht';
+    const isBankNotified = sRaiff === 'bank_notified' || sRaiff === 'info_mail' || (d.is_paid && !isFibu);
+
+    let paymentBadge = '';
+    if (isFibu) {
+      paymentBadge = `
+        <div class="mt-1">
+          <span class="badge rounded-pill text-white px-2 py-1" 
+                style="background-color: #166534; font-size: 0.69rem; font-weight: 600; letter-spacing: 0.2px;" 
+                title="Zahlung in FIBU via CAMT verbucht (${escapeHtml(d.datum_raiffeisen || '')})">
+            <i class="fas fa-check-double me-1"></i>FIBU gebucht
+          </span>
+        </div>`;
+    } else if (isBankNotified) {
+      paymentBadge = `
+        <div class="mt-1">
+          <span class="badge rounded-pill px-2 py-1" 
+                style="background-color: #dcfce7; color: #15803d; border: 1px solid #86efac; font-size: 0.69rem; font-weight: 600; letter-spacing: 0.2px;" 
+                title="Info-Mail Bank erhalten (${escapeHtml(d.datum_raiffeisen || '')})">
+            <i class="fas fa-envelope-open-text me-1"></i>Info-Mail Bank
+          </span>
+        </div>`;
+    }
+
     return `
       <tr style="cursor:pointer; vertical-align: middle;" onclick="openVermietungModal('${rowId}')">
         <td data-col-id="mietdatum" class="fw-bold text-nowrap">${escapeHtml(d.mietdatum || '–')}</td>
@@ -23,6 +49,7 @@ function renderVermietungRows(daten) {
           <span class="badge px-2 py-1 rounded-pill" style="background:${statusColor}22; color:${statusColor}; border: 1px solid ${statusColor}44; font-size:0.75rem; font-weight:600;">
             ${escapeHtml(statusLabel)}
           </span>
+          ${paymentBadge}
         </td>
         <td data-col-id="aktionen" class="text-end">
           <button class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.8rem; font-weight:bold;"

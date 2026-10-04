@@ -1740,7 +1740,23 @@ function bhBankMatchAll(transactions) {
             }
           }
           const hasFullIdMatch = invIdClean && (cleanRmtNoSpace.includes(invIdClean) || cleanRefNoSpace.includes(invIdClean));
-          const hasInvoiceNumber = hasCodeMatch || hasFullIdMatch;
+
+          // Auch Quell-Referenz (z.B. Vermietungs-Buchungsnr "V-2026-0105" oder Endziffern) abgleichen
+          const invSourceIdRaw = String(inv.source_id || inv.booking_number || '').trim();
+          const invSourceIdClean = invSourceIdRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const sourceParts = invSourceIdRaw.split('-');
+          const sourceSuffix = sourceParts.length > 1 ? sourceParts[sourceParts.length - 1].trim().toLowerCase() : '';
+          let hasSourceMatch = false;
+          if (invSourceIdClean && (cleanRmtNoSpace.includes(invSourceIdClean) || cleanRefNoSpace.includes(invSourceIdClean))) {
+            hasSourceMatch = true;
+          } else if (sourceSuffix && sourceSuffix.length >= 3 && !/^20\d{2}$/.test(sourceSuffix)) {
+            const srcRegex = new RegExp(`(?:^|[^a-z0-9])${sourceSuffix}(?:[^a-z0-9]|$)`, 'i');
+            if (srcRegex.test(cleanUstrd) || srcRegex.test(cleanRemittance) || cleanRefNoSpace.includes(sourceSuffix)) {
+              hasSourceMatch = true;
+            }
+          }
+
+          const hasInvoiceNumber = hasCodeMatch || hasFullIdMatch || hasSourceMatch;
 
           // 2. Abgleich Nachname & PLZ (Vorname bewusst weglassen)
           const rec = getInvoiceRecipient(inv);
@@ -2730,6 +2746,51 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
           cachedInv.payment_method = 'Überweisung';
           cachedInv.document_ref = belegNr;
         }
+
+        // 2.1 Falls Vermietung: auch in rental_requests auf Stufe 2 (fibu_gebucht via CAMT) verbuchen
+        const isVermietungInv = Boolean(
+          matchedInvoice.source_module === 'vermietung' ||
+          String(matchedInvoice.id || '').startsWith('VM-') ||
+          String(matchedInvoice.booking_number || '').startsWith('V-') ||
+          String(matchedInvoice.source_id || '').startsWith('V-')
+        );
+        if (isVermietungInv && sb) {
+          try {
+            const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
+            let rQuery = sb.from('rental_requests').update({
+              status: 'paid',
+              is_paid: true,
+              status_raiffeisen: 'fibu_gebucht',
+              datum_raiffeisen: bookingDate,
+              kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
+              updated_at: new Date().toISOString()
+            });
+
+            if (vnr && matchedInvoice.id) {
+              rQuery = rQuery.or(`booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`);
+            } else if (vnr) {
+              rQuery = rQuery.eq('booking_number', vnr);
+            } else {
+              rQuery = rQuery.eq('invoice_id', matchedInvoice.id);
+            }
+
+            const { data: updatedRentals } = await rQuery.select();
+            if (updatedRentals && updatedRentals.length > 0) {
+              for (const ur of updatedRentals) {
+                await sb.from('rental_status_logs').insert([{
+                  rental_request_id: ur.id,
+                  previous_status: ur.status,
+                  new_status: 'paid',
+                  comment: `Zahlung in FIBU via CAMT verbucht (${belegNr})`,
+                  changed_by: 'FIBU CAMT-Import'
+                }]);
+              }
+              console.log(`✅ [FIBU CAMT] rental_requests erfolgreich auf Stufe 2 (fibu_gebucht) aktualisiert.`);
+            }
+          } catch (rentErr) {
+            console.warn('⚠️ Hinweis: rental_requests Aktualisierung bei CAMT-Buchung fehlgeschlagen:', rentErr);
+          }
+        }
       } catch (invErr) {
         console.warn('⚠️ Hinweis: Journal gebucht, Rechnungsstatus konnte nicht aktualisiert werden:', invErr);
       }
@@ -3019,6 +3080,29 @@ window.bhBankBookAll = async function() {
           }).eq('id', matchedBeitrag.id));
         }
       }
+
+      // c) Vermietungs-Zahlung: auch in rental_requests auf Stufe 2 (fibu_gebucht via CAMT) setzen
+      if (matchedInvoice && (matchedInvoice.source_module === 'vermietung' || String(matchedInvoice.id || '').startsWith('VM-') || String(matchedInvoice.booking_number || '').startsWith('V-') || String(matchedInvoice.source_id || '').startsWith('V-'))) {
+        if (sb) {
+          const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
+          let rq = sb.from('rental_requests').update({
+            status: 'paid',
+            is_paid: true,
+            status_raiffeisen: 'fibu_gebucht',
+            datum_raiffeisen: bookingDate,
+            kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
+            updated_at: new Date().toISOString()
+          });
+          if (vnr && matchedInvoice.id) {
+            rq = rq.or(`booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`);
+          } else if (vnr) {
+            rq = rq.eq('booking_number', vnr);
+          } else {
+            rq = rq.eq('invoice_id', matchedInvoice.id);
+          }
+          secondaryTasks.push(rq);
+        }
+      }
     });
 
     if (secondaryTasks.length > 0) {
@@ -3273,6 +3357,29 @@ window.bhBankBookSelected = async function() {
             document_ref: belegNr,
             updated_at: new Date().toISOString()
           }).eq('id', matchedBeitrag.id));
+        }
+      }
+
+      // c) Vermietungs-Zahlung: auch in rental_requests auf Stufe 2 (fibu_gebucht via CAMT) setzen
+      if (matchedInvoice && (matchedInvoice.source_module === 'vermietung' || String(matchedInvoice.id || '').startsWith('VM-') || String(matchedInvoice.booking_number || '').startsWith('V-') || String(matchedInvoice.source_id || '').startsWith('V-'))) {
+        if (sb) {
+          const vnr = matchedInvoice.booking_number || matchedInvoice.source_id;
+          let rq = sb.from('rental_requests').update({
+            status: 'paid',
+            is_paid: true,
+            status_raiffeisen: 'fibu_gebucht',
+            datum_raiffeisen: bookingDate,
+            kommentar_raiffeisen: `FIBU gebucht via CAMT (${belegNr})`,
+            updated_at: new Date().toISOString()
+          });
+          if (vnr && matchedInvoice.id) {
+            rq = rq.or(`booking_number.eq.${vnr},invoice_id.eq.${matchedInvoice.id}`);
+          } else if (vnr) {
+            rq = rq.eq('booking_number', vnr);
+          } else {
+            rq = rq.eq('invoice_id', matchedInvoice.id);
+          }
+          secondaryTasks.push(rq);
         }
       }
     });

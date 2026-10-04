@@ -93,7 +93,23 @@ function openVermietungModal(rowOrId) {
         <table class="table table-sm table-borderless" style="font-size: 0.82rem;">
           <tr><td class="text-muted" style="width: 140px;">Mietvertrag versandt</td><td>${escapeHtml(d.datum_vertrag || '–')}</td></tr>
           <tr><td class="text-muted">Mahnung versandt</td><td>${escapeHtml(d.datum_mahnung || '–')}</td></tr>
-          <tr><td class="text-muted">Zahlungseingang</td><td>${escapeHtml(d.datum_raiffeisen || (d.is_paid ? 'Ja' : '–'))}</td></tr>
+          <tr>
+            <td class="text-muted">Zahlungsstatus</td>
+            <td>
+              ${(() => {
+                const sRaiff = String(d.status_raiffeisen || (d.raw && d.raw.status_raiffeisen) || '').toLowerCase();
+                const isFibu = sRaiff === 'fibu_gebucht';
+                const isBankNotified = sRaiff === 'bank_notified' || sRaiff === 'info_mail' || (d.is_paid && !isFibu);
+                if (isFibu) {
+                  return `<span class="badge text-white px-2 py-1" style="background-color:#166534; font-size:0.78rem; font-weight:600;"><i class="fas fa-check-double me-1"></i>FIBU gebucht (CAMT) ${escapeHtml(d.datum_raiffeisen ? 'am ' + d.datum_raiffeisen : '')}</span>`;
+                } else if (isBankNotified) {
+                  return `<span class="badge px-2 py-1" style="background-color:#dcfce7; color:#15803d; border:1px solid #86efac; font-size:0.78rem; font-weight:600;"><i class="fas fa-envelope-open-text me-1"></i>Info-Mail Bank erhalten ${escapeHtml(d.datum_raiffeisen ? 'am ' + d.datum_raiffeisen : '')}</span>`;
+                }
+                return '<span class="text-muted">–</span>';
+              })()}
+            </td>
+          </tr>
+          ${d.invoice_id ? `<tr><td class="text-muted">FIBU-Rechnung</td><td><span class="badge bg-light text-primary border"><i class="fas fa-file-invoice me-1"></i>${escapeHtml(d.invoice_id)}</span></td></tr>` : ''}
           <tr><td class="text-muted">Schlüsselübergabe</td><td>${escapeHtml(d.datum_schluessel || '–')}</td></tr>
           <tr><td class="text-muted">Storniert am</td><td>${escapeHtml(d.datum_storno || '–')}</td></tr>
         </table>
@@ -112,24 +128,36 @@ function openVermietungModal(rowOrId) {
       </div>
     </div>`;
 
-  // Aktionsknöpfe mit Schutz vor Doppelversand
+  // Aktionsknöpfe mit Schutz vor Doppelversand & zwei-stufigem Zahlungsvermerk
+  const sRaiffCur = String(d.status_raiffeisen || (d.raw && d.raw.status_raiffeisen) || '').toLowerCase();
+  const isFibuCur = sRaiffCur === 'fibu_gebucht';
+  const isBankNotifiedCur = sRaiffCur === 'bank_notified' || sRaiffCur === 'info_mail' || (d.is_paid && !isFibuCur);
+
   const modalFooter = document.getElementById('vermietung-modal-footer');
   modalFooter.innerHTML = `
     <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Schliessen</button>
     
-    ${!istStorniert && !istBezahlt ? `
+    ${!istStorniert && !isBankNotifiedCur && !isFibuCur ? `
       <button class="btn btn-sm btn-warning fw-semibold"
               onclick="vermietungAktion('mahnung', '${d.id || d.row}')">
         <i class="fas fa-exclamation-triangle me-1"></i>❗ Mahnung
       </button>` : ''}
     
-    ${!istStorniert && !istBezahlt ? `
-      <button class="btn btn-sm btn-success fw-semibold"
-              onclick="vermietungAktion('bestaetigen', '${d.id || d.row}')">
-        <i class="fas fa-check-circle me-1"></i>Zahlung bestätigen
-      </button>` : ''}
+    ${!istStorniert && !isFibuCur ? `
+      ${!isBankNotifiedCur ? `
+        <button class="btn btn-sm fw-semibold" style="background-color:#dcfce7; color:#15803d; border:1px solid #86efac;"
+                onclick="vermietungAktion('bestaetigen', '${d.id || d.row}')"
+                title="Stufe 1: Bestätigt Eingang der Bank-Benachrichtigung (Info-Mail Bank)">
+          <i class="fas fa-envelope-open-text me-1"></i>Info-Mail Bank vermerken
+        </button>` : `
+        <button class="btn btn-sm text-white fw-semibold" style="background-color:#166534;"
+                onclick="vermietungAktion('fibu_manuell', '${d.id || d.row}')"
+                title="Stufe 2: Als in FIBU gebucht markieren">
+          <i class="fas fa-check-double me-1"></i>In FIBU gebucht vermerken
+        </button>`}
+    ` : ''}
 
-    ${!istStorniert && istBezahlt && d.status !== 'keys_issued' && d.status !== '04' ? `
+    ${!istStorniert && (istBezahlt || isBankNotifiedCur || isFibuCur) && d.status !== 'keys_issued' && d.status !== '04' ? `
       <button class="btn btn-sm btn-info text-white fw-semibold"
               onclick="vermietungAktion('schluessel', '${d.id || d.row}')">
         <i class="fas fa-key me-1"></i>Schlüsselübergabe senden
@@ -249,8 +277,14 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   // 4. Platzhalter-Auflösung
   const bookingNr = d.booking_number || d.vertragsnr || d.id || '';
   const dateStr = d.start_date ? new Date(d.start_date).toLocaleDateString('de-CH') : (d.mietdatum || '–');
-  const amountStr = d.total_amount_chf ? Number(d.total_amount_chf).toFixed(2) : (d.mietbetrag || '300.00');
-  const depositStr = d.deposit_amount_chf ? Number(d.deposit_amount_chf).toFixed(2) : (d.kaution || '200.00');
+  const rawAmt = (d.total_amount_chf !== undefined && d.total_amount_chf !== null)
+    ? d.total_amount_chf
+    : (d.betrag_raw || (d.mietbetrag ? String(d.mietbetrag).replace(/[^\d.]/g, '') : 300));
+  const amountStr = Number(rawAmt || 300).toFixed(2);
+  const rawDep = (d.deposit_amount_chf !== undefined && d.deposit_amount_chf !== null)
+    ? d.deposit_amount_chf
+    : (d.kaution ? String(d.kaution).replace(/[^\d.]/g, '') : 200);
+  const depositStr = Number(rawDep || 200).toFixed(2);
   const feedbackUrl = `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}`;
 
   const mieterFirst = d.first_name || d.vorname || '';
@@ -317,10 +351,22 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
   ).join('');
 
-  // 5. Anhänge ermitteln
+  // 5. Anhänge ermitteln (mit voller Storage-Path und URL Unterstützung)
   let attachments = [];
-  if ((action === 'vertrag_mail' || action === 'mahnung') && d.contract_file_url) {
-    attachments.push({ filename: `Mietvertrag_${bookingNr}.pdf`, path: d.contract_file_url });
+  if (action === 'vertrag_mail' || action === 'mahnung') {
+    const bookingNrClean = bookingNr || 'Vertrag';
+    if (d.contract_storage_path) {
+      attachments.push({
+        filename: `Mietvertrag_${bookingNrClean}.pdf`,
+        storagePath: d.contract_storage_path,
+        storageBucket: 'operatives-storage'
+      });
+    } else if (d.contract_file_url) {
+      attachments.push({
+        filename: `Mietvertrag_${bookingNrClean}.pdf`,
+        path: d.contract_file_url
+      });
+    }
   }
 
   const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyParagraphs, s);
@@ -328,7 +374,6 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   if (tplCode === 'vm_info_wirtschaft') {
     return await window.sendMailViaEngine({
       systemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
-      cc: clubEmail,
       subject: renderedSubject,
       html: fullHtml,
       attachments: attachments,
@@ -339,7 +384,7 @@ async function sendRentalWorkflowEmail(action, d, settings) {
 
   return await window.sendMailViaEngine({
     to: d.email,
-    cc: clubEmail,
+    ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
     subject: renderedSubject,
     html: fullHtml,
     attachments: attachments,
@@ -367,7 +412,9 @@ async function vermietungAktion(action, idOrRow) {
     }
     if (!confirm(warnung)) return;
   } else if (action === 'bestaetigen') {
-    if (!confirm(`Zahlungseingang für Vertrag ${d.vertragsnr} bestätigen?`)) return;
+    if (!confirm(`Zahlungseingang (Info-Mail Bank) für Vertrag ${d.vertragsnr} vermerken?\n\nDies setzt Zahlungsstufe 1 (Info-Mail Bank) und informiert den Mieter sowie das Wirtschaftsteam.`)) return;
+  } else if (action === 'fibu_manuell') {
+    if (!confirm(`Zahlung für Vertrag ${d.vertragsnr} als in FIBU gebucht markieren?\n\nDies setzt Zahlungsstufe 2 (FIBU gebucht).`)) return;
   } else if (action === 'stornieren') {
     const isVerzug = Boolean(d.datum_mahnung && d.datum_mahnung !== '–');
     const msg = isVerzug 
@@ -399,9 +446,20 @@ async function vermietungAktion(action, idOrRow) {
       updatePayload.datum_mahnung = todayIso;
       statusLogNewStatus = 'reminded';
     } else if (action === 'bestaetigen') {
+      // Stufe 1: Info-Mail Bank
       updatePayload.status = 'paid';
       updatePayload.is_paid = true;
+      updatePayload.status_raiffeisen = 'bank_notified';
       updatePayload.datum_raiffeisen = todayIso;
+      updatePayload.kommentar_raiffeisen = 'Info-Mail Bank eingegangen';
+      statusLogNewStatus = 'paid';
+    } else if (action === 'fibu_manuell') {
+      // Stufe 2: In FIBU gebucht
+      updatePayload.status = 'paid';
+      updatePayload.is_paid = true;
+      updatePayload.status_raiffeisen = 'fibu_gebucht';
+      updatePayload.datum_raiffeisen = todayIso;
+      updatePayload.kommentar_raiffeisen = 'In FIBU verbucht (manuell)';
       statusLogNewStatus = 'paid';
     } else if (action === 'schluessel') {
       updatePayload.status = 'keys_issued';
@@ -432,14 +490,14 @@ async function vermietungAktion(action, idOrRow) {
     }
 
     // 1.1 RechnungsCore-Synchronisation (Single Source of Truth)
-    if (action === 'bestaetigen' && window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
+    if ((action === 'bestaetigen' || action === 'fibu_manuell') && window.RechnungsCore && typeof window.RechnungsCore.recordPayment === 'function') {
       try {
         const inv = await ensureRentalInvoice(d);
         if (inv && (inv.status === 'offen' || inv.status === 'teilbezahlt' || inv.status === 'entwurf')) {
           await window.RechnungsCore.recordPayment(inv.id, {
             amount: inv.open_amount || inv.total_amount,
             method: 'Bank',
-            notes: `Zahlungseingang Mietvertrag ${d.vertragsnr}`
+            notes: `Zahlungseingang Mietvertrag ${d.vertragsnr} (${action === 'fibu_manuell' ? 'FIBU' : 'Info-Mail Bank'})`
           });
           console.log(`✅ [Vermietung] RechnungsCore-Zahlung verbucht: ${inv.id}`);
         }
@@ -458,10 +516,27 @@ async function vermietungAktion(action, idOrRow) {
       }
     }
 
-    // 2. E-Mail-Versand über Supabase Mail-Engine
-    const mailRes = await sendRentalWorkflowEmail(action, d, window._rentalSettings);
-    if (!mailRes.success) {
-      console.warn("Mailversand-Hinweis:", mailRes.error);
+    // 1.2 Falls Vertrag per E-Mail gesendet werden soll, aber PDF noch nicht vorhanden ist: On-the-fly generieren!
+    if (action === 'vertrag_mail' && (!d.contract_file_url && !d.contract_storage_path)) {
+      if (typeof window.vmGenerateRentalContractPdf === 'function') {
+        try {
+          const genRes = await window.vmGenerateRentalContractPdf(d.vertragsnr || d.id, { silent: true });
+          if (genRes) {
+            d.contract_file_url = genRes.pdfUrl || d.contract_file_url;
+            d.contract_storage_path = genRes.storagePath || d.contract_storage_path;
+          }
+        } catch (pdfErr) {
+          console.warn("⚠️ Vertrag PDF konnte vor Mailversand nicht generiert werden:", pdfErr);
+        }
+      }
+    }
+
+    // 2. E-Mail-Versand über Supabase Mail-Engine (nur wenn nicht fibu_manuell)
+    if (action !== 'fibu_manuell') {
+      const mailRes = await sendRentalWorkflowEmail(action, d, window._rentalSettings);
+      if (!mailRes.success) {
+        console.warn("Mailversand-Hinweis:", mailRes.error);
+      }
     }
 
     // 2.1 Bei Zahlungseingang (bestaetigen): Vollautomatisch das Wirtschaftsteam informieren!

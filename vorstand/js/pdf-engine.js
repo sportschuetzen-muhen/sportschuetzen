@@ -373,8 +373,9 @@
     /**
      * Zentrale PDF-Generierung für Vermietungs-Mietverträge (vorstand/js/vermietung/vermietung-manager.js)
      */
-    window.vmGenerateRentalContractPdf = async function (bookingId) {
-        if (typeof showLoadingOverlay === 'function') {
+    window.vmGenerateRentalContractPdf = async function (bookingId, options = {}) {
+        const isSilent = Boolean(options.silent);
+        if (!isSilent && typeof showLoadingOverlay === 'function') {
             showLoadingOverlay(`Generiere Mietvertrag PDF für ${bookingId}...`);
         }
 
@@ -434,16 +435,26 @@
             if (res.success) {
                 if (res.pdfUrl && supa && booking?.id) {
                     await supa.from('rental_requests').update({
-                        contract_file_url: res.pdfUrl
+                        contract_file_url: res.pdfUrl,
+                        contract_storage_path: res.storagePath || null
                     }).eq('id', booking.id);
+
+                    // Proforma-Rechnung für Rechnungsmodul & CAMT Bankabgleich sicherstellen
+                    try {
+                        await supa.rpc('ensure_rental_proforma_invoice', {
+                            p_booking_number: booking.booking_number
+                        });
+                    } catch (_) {}
                 }
-                if (typeof showSuccess === 'function') {
-                    showSuccess("🎉 Mietvertrag PDF erfolgreich generiert!");
-                }
-                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
-                    window.open(res.pdfUrl, '_blank');
-                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
-                    openPdfBase64(res.pdfBase64);
+                if (!isSilent) {
+                    if (typeof showSuccess === 'function') {
+                        showSuccess("🎉 Mietvertrag PDF erfolgreich generiert!");
+                    }
+                    if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                        window.open(res.pdfUrl, '_blank');
+                    } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                        openPdfBase64(res.pdfBase64);
+                    }
                 }
                 return res;
             } else {
@@ -451,9 +462,12 @@
             }
         } catch (err) {
             console.error("Mietvertrag PDF Fehler:", err);
-            alert("❌ Fehler beim Generieren des Mietvertrags: " + err.message);
+            if (!isSilent) {
+                alert("❌ Fehler beim Generieren des Mietvertrags: " + err.message);
+            }
+            throw err;
         } finally {
-            if (typeof hideLoadingOverlay === 'function') {
+            if (!isSilent && typeof hideLoadingOverlay === 'function') {
                 hideLoadingOverlay();
             }
         }

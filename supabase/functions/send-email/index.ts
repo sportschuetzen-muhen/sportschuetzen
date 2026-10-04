@@ -20,6 +20,7 @@ interface Attachment {
   contentType?: string;
   storagePath?: string; // z.B. 'invoices/2026/RE-001.pdf'
   storageBucket?: string; // Standard: 'operatives-storage'
+  path?: string; // URL oder StoragePath
 }
 
 interface SendEmailPayload {
@@ -33,8 +34,11 @@ interface SendEmailPayload {
   senderEmail?: string;
   attachments?: Attachment[];
   moduleRef?: string;
+  module?: string;
   recordId?: string;
+  referenceId?: string;
   systemMailKey?: string; // Optional: Löst Empfänger aus public.system_mail_configs auf
+  ccSystemMailKey?: string; // Optional: Löst CC-Empfänger aus public.system_mail_configs auf
   simulate?: boolean;
 }
 
@@ -179,23 +183,44 @@ Deno.serve(async (req) => {
     });
   }
 
-  const ccList: string[] = Array.isArray(payload.cc)
-    ? payload.cc
+  const rawCcList: string[] = Array.isArray(payload.cc)
+    ? [...payload.cc]
     : (payload.cc ? payload.cc.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : []);
-  const bccList: string[] = Array.isArray(payload.bcc)
-    ? payload.bcc
-    : (payload.bcc ? payload.bcc.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : []);
+
+  // Optional: CC-System-Mail-Key auflösen (z.B. Info_Mail_an_Wirtschaftsverantwortliche)
+  if (payload.ccSystemMailKey) {
+    try {
+      const { data: sysCcMails } = await supabase.rpc("get_system_mail_array", {
+        p_schluessel: payload.ccSystemMailKey,
+      });
+      if (sysCcMails && Array.isArray(sysCcMails)) {
+        rawCcList.push(...sysCcMails);
+      }
+    } catch (ccErr) {
+      console.warn(`⚠️ Konnte ccSystemMailKey '${payload.ccSystemMailKey}' nicht auflösen:`, ccErr);
+    }
+  }
 
   const senderEmail = payload.senderEmail || smtpUser;
   const senderName = payload.senderName || "Sportschützen Muhen";
   const fromHeader = `"${senderName}" <${senderEmail}>`;
+
+  // CC bereinigen: Duplikate entfernen, niemals Absender in CC setzen, und Adressen ausschliessen, die bereits in 'recipients' stehen
+  const recipientSet = new Set(recipients.map(r => r.toLowerCase()));
+  const ccList: string[] = Array.from(new Set(rawCcList))
+    .map((s) => s.trim())
+    .filter((s) => s && s.toLowerCase() !== senderEmail.toLowerCase() && s.toLowerCase() !== smtpUser.toLowerCase() && !recipientSet.has(s.toLowerCase()));
+
+  const bccList: string[] = Array.isArray(payload.bcc)
+    ? payload.bcc
+    : (payload.bcc ? payload.bcc.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : []);
 
   const subject = payload.subject || "Mitteilung Sportschützen Muhen";
   const bodyText = payload.text || (payload.html ? payload.html.replace(/<[^>]*>/g, " ") : "");
   const bodyHtml = payload.html || `<div style="font-family: sans-serif; font-size: 14px;">${bodyText.replace(/\n/g, "<br>")}</div>`;
   const snippet = bodyText.substring(0, 450);
 
-  // 2. Anhänge laden / vorbereiten
+  // 2. Anhänge laden / vorbereiten (Base64, storagePath oder Download via path URL)
   const preparedAttachments: { filename: string; contentType: string; base64: string }[] = [];
   if (payload.attachments && payload.attachments.length > 0) {
     for (const att of payload.attachments) {
@@ -205,32 +230,68 @@ Deno.serve(async (req) => {
           contentType: att.contentType || "application/octet-stream",
           base64: att.contentBase64,
         });
-      } else if (att.storagePath) {
-        // Lade direkt aus Supabase Storage
-        const bucket = att.storageBucket || "operatives-storage";
-        const { data: fileData, error: dlErr } = await supabase.storage.from(bucket).download(att.storagePath);
-        if (dlErr || !fileData) {
-          console.warn(`⚠️ Anhang ${att.storagePath} konnte nicht aus Storage geladen werden:`, dlErr);
-        } else {
-          const arrayBuffer = await fileData.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = "";
-          for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
+      } else {
+        // storagePath oder path ermitteln
+        let storagePath = att.storagePath;
+        let bucket = att.storageBucket || "operatives-storage";
+        const anyPath = att.path || "";
+
+        if (!storagePath && anyPath) {
+          if (anyPath.includes("/storage/v1/object/")) {
+            const m = anyPath.match(/\/storage\/v1\/object\/(?:public|authenticated)\/([^/?#]+)\/([^?#]+)/);
+            if (m) {
+              bucket = m[1];
+              storagePath = decodeURIComponent(m[2]);
+            }
+          } else if (anyPath.startsWith("http://") || anyPath.startsWith("https://")) {
+            try {
+              const res = await fetch(anyPath);
+              if (res.ok) {
+                const arr = new Uint8Array(await res.arrayBuffer());
+                let bin = "";
+                for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+                preparedAttachments.push({
+                  filename: att.filename || "Anhang.pdf",
+                  contentType: att.contentType || res.headers.get("content-type") || "application/pdf",
+                  base64: btoa(bin),
+                });
+                console.log(`📎 Anhang ${att.filename} (${arr.length} Bytes) via HTTP geladen.`);
+                continue;
+              }
+            } catch (dlErr) {
+              console.warn(`⚠️ HTTP Download für Anhang ${anyPath} fehlgeschlagen:`, dlErr);
+            }
+          } else {
+            storagePath = anyPath.replace(/^\/?operatives-storage\//, "");
           }
-          preparedAttachments.push({
-            filename: att.filename,
-            contentType: att.contentType || "application/pdf",
-            base64: btoa(binary),
-          });
+        }
+
+        if (storagePath) {
+          const { data: fileData, error: dlErr } = await supabase.storage.from(bucket).download(storagePath);
+          if (dlErr || !fileData) {
+            console.warn(`⚠️ Anhang ${storagePath} konnte nicht aus Storage '${bucket}' geladen werden:`, dlErr);
+          } else {
+            const arrayBuffer = await fileData.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = "";
+            for (let i = 0; i < bytes.length; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            preparedAttachments.push({
+              filename: att.filename || "Mietvertrag.pdf",
+              contentType: att.contentType || "application/pdf",
+              base64: btoa(binary),
+            });
+            console.log(`📎 Anhang ${att.filename} (${bytes.length} Bytes) aus Storage geladen.`);
+          }
         }
       }
     }
   }
 
   const isSimulation = payload.simulate || forceSimulate || !smtpPass;
-  const moduleRef = payload.moduleRef || "allgemein";
-  const recordId = payload.recordId || null;
+  const moduleRef = payload.moduleRef || payload.module || "allgemein";
+  const recordId = payload.recordId || payload.referenceId || null;
   const primaryRecipient = recipients[0];
   const allTargetAddresses = Array.from(new Set([...recipients, ...ccList, ...bccList]));
 

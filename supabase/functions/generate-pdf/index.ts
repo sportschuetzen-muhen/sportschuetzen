@@ -3431,6 +3431,15 @@ Deno.serve(async (req: Request) => {
         p_paperless_status: paperlessStatus,
         p_paperless_id: paperlessDocId || null,
       });
+
+      // Proforma-Rechnung für Rechnungsmodul & CAMT Bankabgleich sicherstellen
+      try {
+        await supabase.rpc("ensure_rental_proforma_invoice", {
+          p_booking_number: recordId,
+        });
+      } catch (invRpcErr) {
+        console.warn("⚠️ ensure_rental_proforma_invoice RPC Warnung:", invRpcErr);
+      }
     } else if (action === "compile-gv-dossier" || action === "compileGVDossier") {
       try {
         if (payload.campaignId) {

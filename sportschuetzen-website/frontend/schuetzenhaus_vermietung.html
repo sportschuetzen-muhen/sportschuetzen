@@ -2871,24 +2871,34 @@
               });
             }
 
-            // Vollautomatischer Mailversand an den Mieter (mit CC an Verein)
-            fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
-              method: 'POST',
-              headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                to: payload.email,
-                cc: vermieterEmail,
-                subject: finalSubject,
-                html: finalHtml,
-                attachments: mailAttachments,
-                moduleRef: 'vermietung',
-                recordId: vnr
-              })
-            }).catch(e => console.warn("Mietvertrag E-Mail Fehler:", e));
+            // Vollautomatischer Mailversand an den Mieter (mit CC an Wirtschaftsverantwortliche aus System-Mail-Verteiler)
+            try {
+              const mailResp = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
+                method: 'POST',
+                headers: {
+                  'apikey': SUPABASE_ANON_KEY,
+                  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  to: payload.email,
+                  ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
+                  subject: finalSubject,
+                  html: finalHtml,
+                  attachments: mailAttachments,
+                  moduleRef: 'vermietung',
+                  recordId: vnr
+                })
+              });
+              const mailResult = await mailResp.json();
+              if (mailResult && mailResult.success) {
+                console.log("✅ Mietvertrag E-Mail erfolgreich versendet:", mailResult);
+              } else {
+                console.warn("⚠️ Mietvertrag E-Mail Warnung:", mailResult);
+              }
+            } catch (sendErr) {
+              console.warn("Mietvertrag E-Mail Fehler:", sendErr);
+            }
 
           } catch (mailErr) {
             console.error("Mietvertrag-Mail Versandfehler:", mailErr);

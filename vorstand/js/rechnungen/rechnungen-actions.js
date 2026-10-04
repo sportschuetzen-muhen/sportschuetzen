@@ -3185,6 +3185,12 @@ window.rnOpenMahnungModal = async function(invoiceId, name) {
     return;
   }
 
+  // Mahnungen für Vermietungen laufen ausschliesslich über das Vermietungsmodul
+  if (inv.source_module === 'vermietung' || String(inv.id || '').startsWith('VM-')) {
+    alert("ℹ️ Mahnungen für Vermietungen (Schützenstube) werden direkt im Modul «Vermietung» über den Vermietungs-Workflow gesteuert und nicht im Rechnungsmodul gemahnt.");
+    return;
+  }
+
   // Externe Kontakte laden, falls noch nicht im Speicher
   if ((!window._externalContacts || window._externalContacts.length === 0) && typeof loadInvoiceContactsData === 'function') {
     try { await loadInvoiceContactsData(); } catch (_) {}
@@ -3878,6 +3884,7 @@ window.rnGetDueDunningInvoices = function() {
   invoices.forEach(inv => {
     const st = String(inv.status || '').toLowerCase();
     if (st === 'bezahlt' || st === 'storniert') return;
+    if (inv.source_module === 'vermietung' || String(inv.id || '').startsWith('VM-')) return; // Vermietung wird separat im Modul Vermietung gemahnt
 
     const curStufe = Number(inv.mahnstufe || 0) || (st === 'gemahnt' ? 1 : 0);
     const m = (window._mglData || []).find(x => String(x.PersonNumber) === String(inv.PersonNumber)) || {};

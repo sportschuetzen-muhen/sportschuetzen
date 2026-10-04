@@ -70,6 +70,15 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 * **Google-Kalender-Blockierung & API-Integration:** Zeitgleich wird der Miettag im offiziellen Google Kalender ganztägig als `Vermietet an XX` (Initialen) und der Folgetag als `Gesperrt für Reinigung` geblockt. Dies erfolgt über das autorisierte Google Cloud Service Account Dienstkonto (`vermietung-bot@kalender-api-zugriff.iam.gserviceaccount.com`), das über volle Lese-, Schreib- und Löschrechte auf `sportschuetzen.muhen@gmail.com` verfügt.
 * **Überwachungs-Cockpit des Vorstands:** Das Cockpit dient der reinen Überwachung der Fristen. Bei Zahlungseingang wird mit *«Zahlung bestätigen»* der Status auf `paid` gesetzt, die Zahlung im `RechnungsCore` verbucht, dem Mieter die Bestätigung (`vm_bestaetigung`) zugestellt und das Wirtschaftsteam (`vm_info_wirtschaft`) benachrichtigt. Bei Stornierung werden die Kalender-Blockierungen wieder freigegeben.
 
+### 2.9 Proforma-Rechnung, CAMT-Bankabgleich & Zwei-stufiger Zahlungsvermerk (Phase 41)
+* **Automatische Proforma-Rechnung:** Bei der Erstellung des Mietvertrags wird über die RPC-Funktion `ensure_rental_proforma_invoice` sofort ein korrespondierender Proforma-Rechnungsdatensatz (`invoices`, Präfix `VM-YY-NNNN`) mit Ertragskonto 3400 (Ertrag Vermietung Schützenhaus) angelegt und atomar in `rental_requests.invoice_id` hinterlegt.
+* **CAMT-Bankabgleich (Buchhaltung):** Beim Einlesen von Bankauszügen (CAMT.053 / CAMT.054) im Buchhaltungsmodul matcht das System den Zahlungseingang anhand der Buchungsnummer (z. B. `V-2026-0105`) oder der Rechnungsnummer und bucht den Zahlungssatz automatisch ins Journal (Soll 1020 Bank, Haben 3400 Miete).
+* **Zwei-stufiger Zahlungsvermerk:**
+  * **Stufe 1 («Info-Mail Bank»):** Wird im Vermietungs-Cockpit über *«Info-Mail Bank vermerken»* oder bei Eingang der Bank-Benachrichtigung gesetzt (`status_raiffeisen = 'bank_notified'`). Visuelle Kennzeichnung im Cockpit und in der Tabelle: **hellgrün** (`#dcfce7`, Text `#15803d`, Rand `#86efac`).
+  * **Stufe 2 («FIBU gebucht»):** Wird vollautomatisch durch den CAMT-Bankabgleich bei der Buchung im FIBU-Journal gesetzt (`status_raiffeisen = 'fibu_gebucht'`, `datum_raiffeisen = bookingDate`). Visuelle Kennzeichnung: **dunkelgrün** (`#166534`, Text weiss).
+* **Mahnwesen-Abgrenzung:** Vermietungsrechnungen sind im kaufmännischen Mahnwesen des Rechnungsmoduls strikt gesperrt. Das Mahnwesen für Mietverträge erfolgt ausschliesslich über das Vermietungsmodul zur Terminsicherung.
+* **Empfänger- und CC-Verteiler:** Mietvertrags-Mails werden an den Mieter adressiert; eine CC-Kopie geht gezielt an den System-Mail-Verteiler (`public.system_mail_configs`, Schlüssel `Info_Mail_an_Wirtschaftsverantwortliche`). Die Absenderadresse des Vereins wird nicht in CC genommen.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
