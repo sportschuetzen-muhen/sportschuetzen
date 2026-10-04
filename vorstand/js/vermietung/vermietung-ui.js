@@ -504,7 +504,6 @@ function renderRentalSettingsForm() {
   const wName = s.wirtschaft_name || 'Wirtschaftsteam';
   const wPhone = s.wirtschaft_phone || '+41 79 987 65 43';
   const wEmail = s.wirtschaft_email || 'wirtschaft@sportschuetzen-muhen.ch';
-  const wSalut = s.wirtschaft_salutation || 'Hallo zusammen';
 
   const iban = s.iban || 'CH44 8080 8009 1234 5678 9';
   const mapsUrl = s.maps_url || 'https://www.google.com/maps/search/?api=1&query=Schützenhaus+Muhen';
@@ -621,10 +620,6 @@ function renderRentalSettingsForm() {
               <div class="col-6">
                 <label class="form-label small fw-bold text-muted">E-Mail für Benachrichtigung</label>
                 <input type="email" class="form-control form-control-sm" id="cfg-wirtschaft-email" value="${escapeHtml(wEmail)}" required>
-              </div>
-              <div class="col-12">
-                <label class="form-label small fw-bold text-muted">Anrede in Mails</label>
-                <input type="text" class="form-control form-control-sm" id="cfg-wirtschaft-salutation" value="${escapeHtml(wSalut)}" placeholder="z.B. Hallo zusammen">
               </div>
             </div>
           </div>

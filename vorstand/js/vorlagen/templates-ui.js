@@ -81,7 +81,9 @@
       'vm_mahnung': 'Mail: Zahlungserinnerung (7 Tage Frist)',
       'vm_bestaetigung': 'Mail: Zahlungseingang & Bestätigung',
       'vm_schluessel': 'Mail: Schlüsselübergabe & Hinweise',
-      'vm_storno': 'Mail: Stornierungsbestätigung & Feedback',
+      'vm_storno': 'Mail: Stornierungsbestätigung (Allgemein)',
+      'vm_storno_verzug': 'Mail: Stornierung Zahlungsverzug',
+      'vm_info_wirtschaft': 'Mail: Info Wirtschaft (Intern)',
       'gv_normal': 'GV-Einladung (Standard)',
       'gv_wahljahr': 'GV-Einladung (Wahljahr)',
       'freier_brief': 'Freier Vorstandsbrief'
@@ -150,22 +152,22 @@
     `).join('');
 
     // HTML Zeile 2: Fachbereich Vermietung Schützenstube (optisch separiert)
-    const vmMailCodes = ['vm_vertrag', 'vm_mahnung', 'vm_bestaetigung', 'vm_schluessel', 'vm_storno'];
+    const vmMailCodes = ['vm_vertrag', 'vm_mahnung', 'vm_bestaetigung', 'vm_schluessel', 'vm_storno', 'vm_storno_verzug', 'vm_info_wirtschaft'];
     const row2Html = `
       <div class="p-2.5 rounded-3 border border-primary-subtle bg-primary-subtle bg-opacity-10 mb-3 shadow-2xs">
         <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
           <span class="badge bg-primary text-white"><i class="fas fa-house-chimney me-1.5"></i>Fachbereich Vermietung Schützenstube</span>
           <small class="text-muted" style="font-size: 11px;">Mietvertrag & Benützungsreglement (PDF) sowie automatisierte Workflow-Mails</small>
         </div>
-        <div class="d-flex gap-2 flex-wrap align-items-center">
+        <div class="d-flex gap-1.5 flex-wrap align-items-center">
           <!-- Mietvertrag & Reglement PDF -->
           <button class="btn btn-sm ${isMietvertragPdf ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-primary'}" onclick="docSelectCategory('vertrag')">
-            <i class="fas fa-file-contract me-1.5"></i> Mietvertrag & Benützungsreglement (PDF)
+            <i class="fas fa-file-contract me-1.5"></i> Mietvertrag & Reglement (PDF)
           </button>
           
           <div class="vr mx-1 d-none d-md-block text-secondary" style="height: 24px;"></div>
 
-          <!-- Die 5 Vermietungs-Mails -->
+          <!-- Die 7 Vermietungs-Mails -->
           <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_vertrag' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_vertrag')">
             <i class="fas fa-envelope text-info me-1"></i> Mail: Mietvertrag & QR
           </button>
@@ -179,7 +181,13 @@
             <i class="fas fa-envelope text-primary me-1"></i> Mail: Schlüsselübergabe
           </button>
           <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_storno' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_storno')">
-            <i class="fas fa-envelope text-danger me-1"></i> Mail: Storno-Feedback
+            <i class="fas fa-envelope text-danger me-1"></i> Mail: Storno allgemein
+          </button>
+          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_storno_verzug' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_storno_verzug')">
+            <i class="fas fa-ban text-danger me-1"></i> Mail: Storno Verzug
+          </button>
+          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_info_wirtschaft' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_info_wirtschaft')">
+            <i class="fas fa-bullhorn text-warning me-1"></i> Mail: Info Wirtschaft (Intern)
           </button>
         </div>
       </div>
@@ -204,9 +212,11 @@
     let categoryPlaceholders = [];
     if (isVermietungMail) {
       categoryPlaceholders = [
-        '{vorname}', '{nachname}', '{anrede}', '{mietdatum}', '{festbeginn}', 
-        '{vertragsnr}', '{mietbetrag}', '{wirtschaft_name}', '{wirtschaft_phone}', 
-        '{wirtschaft_email}', '{feedback_url}', '{club_email}'
+        '{mieter_anrede}', '{mieter_vorname}', '{mieter_nachname}', '{mieter_email}', '{mieter_telefon}', 
+        '{mieter_strasse}', '{mieter_plz}', '{mieter_ort}', '{mieter_adresse}',
+        '{vermieter_name}', '{vermieter_vorname}', '{vermieter_nachname}', '{vermieter_telefon}', '{vermieter_email}',
+        '{wirtschaft_name}', '{wirtschaft_phone}', '{wirtschaft_email}',
+        '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{kaution}', '{bemerkung}', '{cockpit_url}', '{feedback_url}'
       ];
     } else if (currentCat === 'vertrag') {
       categoryPlaceholders = ['{mietdatum}', '{mietbetrag}', '{buchungsnummer}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
@@ -474,18 +484,35 @@
 
   function buildRentalEmailPreviewHtml(subject, bodyText, templateCode) {
     const sample = {
-      vorname: 'Max',
-      nachname: 'Muster',
-      anrede: 'Guten Tag',
+      mieter_anrede: 'Frau',
+      mieter_vorname: 'Daniela',
+      mieter_nachname: 'Hunziker',
+      mieter_email: 'daniela.hunziker@beispiel.ch',
+      mieter_telefon: '079 123 45 67',
+      mieter_strasse: 'Rebweg 12',
+      mieter_plz: '8181',
+      mieter_ort: 'Höri',
+      mieter_adresse: 'Rebweg 12, 8181 Höri',
+      vorname: 'Daniela',
+      nachname: 'Hunziker',
+      anrede: 'Frau',
+      vermieter_vorname: 'Daniel',
+      vermieter_nachname: 'Hunziker',
+      vermieter_name: 'Daniel Hunziker',
+      vermieter_telefon: '+41 79 123 45 67',
+      vermieter_email: 'sportschuetzen.muhen@gmail.com',
       mietdatum: '15. August 2026',
-      festbeginn: '14:00 Uhr',
-      vertragsnr: 'VM-26-0042',
+      festbeginn: '13:00 Uhr',
+      vertragsnr: 'V-2026-0102',
+      buchungsnummer: 'V-2026-0102',
       mietbetrag: '300.00',
       kaution: '200.00',
+      bemerkung: 'Geburtstagsfest mit ca. 30 Gästen',
       wirtschaft_name: 'Wirtschaftsteam (Uschi Künzli)',
       wirtschaft_phone: '079 888 50 37',
       wirtschaft_email: 'wirtschaft@sportschuetzen-muhen.ch',
-      feedback_url: 'https://sportschuetzen-muhen.ch/storno_feedback.html?vnr=VM-26-0042',
+      feedback_url: 'https://sportschuetzen-muhen.ch/storno_feedback.html?vnr=V-2026-0102',
+      cockpit_url: 'https://sportschuetzen-muhen.ch/vorstand/#vermietung',
       club_email: 'sportschuetzen.muhen@gmail.com'
     };
 
@@ -494,6 +521,8 @@
     else if (templateCode === 'vm_bestaetigung') bannerColor = '#22543d';
     else if (templateCode === 'vm_schluessel') bannerColor = '#2b6cb0';
     else if (templateCode === 'vm_storno') bannerColor = '#742a2a';
+    else if (templateCode === 'vm_storno_verzug') bannerColor = '#7f1d1d';
+    else if (templateCode === 'vm_info_wirtschaft') bannerColor = '#d97706';
 
     let renderedSubject = subject || '';
     let renderedBody = bodyText || '';

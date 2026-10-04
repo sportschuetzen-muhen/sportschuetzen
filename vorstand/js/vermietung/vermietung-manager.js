@@ -75,6 +75,9 @@ function openVermietungModal(rowOrId) {
             <button class="btn btn-xs btn-outline-info" style="font-size:0.75rem; font-weight:600;" onclick="vermietungAktion('vertrag_mail', '${d.id || d.row}')">
               <i class="far fa-paper-plane me-1"></i>Vertrag per Mail
             </button>` : ''}
+          <button class="btn btn-xs btn-outline-warning" style="font-size:0.75rem; font-weight:600;" onclick="vermietungAktion('info_wirtschaft', '${d.id || d.row}')" title="Info-Mail an Wirtschaftsverantwortliche senden">
+            <i class="fas fa-bullhorn me-1"></i>Info Wirtschaftsteam
+          </button>
         </div>
       </div>
 
@@ -193,13 +196,22 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   const wirtschaftPhone = s.wirtschaft_phone || "079 123 45 67";
   const feedbackBaseUrl = s.feedback_base_url || "https://sportschuetzen-muhen.ch/storno_feedback.html";
 
+  // Vermieter-Kontaktdaten aus Tarife & Einstellungen
+  const vermieterFirst = s.sender_first_name || '';
+  const vermieterLast = s.sender_last_name || '';
+  const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
+  const vermieterPhone = s.sender_phone || '';
+  const vermieterEmail = s.club_email || 'sportschuetzen.muhen@gmail.com';
+
   // 1. Zuweisung des Aktionscodes zur Template-ID
   const actionToTplCode = {
     'vertrag_mail': 'vm_vertrag',
     'mahnung': 'vm_mahnung',
     'bestaetigen': 'vm_bestaetigung',
     'schluessel': 'vm_schluessel',
-    'stornieren': 'vm_storno'
+    'stornieren': (d.datum_mahnung && d.datum_mahnung !== '–') ? 'vm_storno_verzug' : 'vm_storno',
+    'storno_verzug': 'vm_storno_verzug',
+    'info_wirtschaft': 'vm_info_wirtschaft'
   };
   const tplCode = actionToTplCode[action] || action;
 
@@ -226,7 +238,9 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     'vm_mahnung': '#c53030',
     'vm_bestaetigung': '#22543d',
     'vm_schluessel': '#2b6cb0',
-    'vm_storno': '#742a2a'
+    'vm_storno': '#742a2a',
+    'vm_storno_verzug': '#7f1d1d',
+    'vm_info_wirtschaft': '#d97706'
   };
   const bannerColor = bannerColors[tplCode] || '#0f3c5c';
 
@@ -237,19 +251,52 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   const depositStr = d.deposit_amount_chf ? Number(d.deposit_amount_chf).toFixed(2) : (d.kaution || '200.00');
   const feedbackUrl = `${feedbackBaseUrl}?vnr=${encodeURIComponent(bookingNr)}`;
 
+  const mieterFirst = d.first_name || d.vorname || '';
+  const mieterLast = d.last_name || d.nachname || '';
+  const mieterAnrede = d.salutation || d.anrede || 'Guten Tag';
+  const mieterEmail = d.email || '';
+  const mieterPhone = d.phone || d.telefon || '';
+  const mieterStrasse = d.street || d.strasse || '';
+  const mieterPlz = d.post_code || d.plz || '';
+  const mieterOrt = d.city || d.wohnort || d.ort || '';
+  const mieterAdresse = mieterStrasse ? `${mieterStrasse}, ${mieterPlz} ${mieterOrt}`.trim() : `${mieterPlz} ${mieterOrt}`.trim();
+  const bemerkung = d.kommentar || d.inquiry_note || d.notes || '–';
+  const cockpitUrl = 'https://sportschuetzen-muhen.ch/vorstand/#vermietung';
+
   const placeholderMap = {
-    'vorname': d.first_name || d.vorname || '',
-    'nachname': d.last_name || d.nachname || '',
-    'anrede': d.salutation || d.anrede || 'Guten Tag',
+    // Mieter (klar benannt)
+    'mieter_vorname': mieterFirst,
+    'mieter_nachname': mieterLast,
+    'mieter_anrede': mieterAnrede,
+    'mieter_email': mieterEmail,
+    'mieter_telefon': mieterPhone,
+    'mieter_strasse': mieterStrasse,
+    'mieter_plz': mieterPlz,
+    'mieter_ort': mieterOrt,
+    'mieter_adresse': mieterAdresse,
+    // Abwärtskompatible Aliase
+    'vorname': mieterFirst,
+    'nachname': mieterLast,
+    'anrede': mieterAnrede,
+    // Vermieter (aus Tarife & Einstellungen)
+    'vermieter_vorname': vermieterFirst,
+    'vermieter_nachname': vermieterLast,
+    'vermieter_name': vermieterName,
+    'vermieter_telefon': vermieterPhone,
+    'vermieter_email': vermieterEmail,
+    // Wirtschaftsteam
+    'wirtschaft_name': wirtschaftName,
+    'wirtschaft_phone': wirtschaftPhone,
+    'wirtschaft_email': wirtschaftEmail,
+    // Reservation / Buchung
     'mietdatum': dateStr,
     'festbeginn': d.festbeginn || '14:00 Uhr',
     'vertragsnr': bookingNr,
     'buchungsnummer': bookingNr,
     'mietbetrag': amountStr,
     'kaution': depositStr,
-    'wirtschaft_name': wirtschaftName,
-    'wirtschaft_phone': wirtschaftPhone,
-    'wirtschaft_email': wirtschaftEmail,
+    'bemerkung': bemerkung,
+    'cockpit_url': cockpitUrl,
     'feedback_url': feedbackUrl,
     'club_email': clubEmail
   };
@@ -275,6 +322,18 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   }
 
   const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyParagraphs, s);
+
+  if (tplCode === 'vm_info_wirtschaft') {
+    return await window.sendMailViaEngine({
+      systemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
+      cc: clubEmail,
+      subject: renderedSubject,
+      html: fullHtml,
+      attachments: attachments,
+      module: 'vermietung',
+      referenceId: bookingNr
+    });
+  }
 
   return await window.sendMailViaEngine({
     to: d.email,
@@ -308,7 +367,13 @@ async function vermietungAktion(action, idOrRow) {
   } else if (action === 'bestaetigen') {
     if (!confirm(`Zahlungseingang für Vertrag ${d.vertragsnr} bestätigen?`)) return;
   } else if (action === 'stornieren') {
-    if (!confirm(`⚠️ Reservation ${d.vertragsnr} wirklich stornieren?\n\nDadurch wird die Reservation freigegeben und dem Mieter ein Stornomail mit Feedbacklink gesendet.`)) return;
+    const isVerzug = Boolean(d.datum_mahnung && d.datum_mahnung !== '–');
+    const msg = isVerzug 
+      ? `⚠️ Reservation ${d.vertragsnr} wirklich stornieren?\n\nDa eine Mahnung versandt wurde, wird die Vorlage 'Stornierung wegen Zahlungsverzug' an ${d.email} gesendet.`
+      : `⚠️ Reservation ${d.vertragsnr} wirklich stornieren?\n\nDadurch wird die Reservation freigegeben und dem Mieter ein Stornomail mit Feedbacklink gesendet.`;
+    if (!confirm(msg)) return;
+  } else if (action === 'info_wirtschaft') {
+    if (!confirm(`Info-Mail über Vertrag ${d.vertragsnr} an die Wirtschaftsverantwortlichen senden?`)) return;
   } else if (action === 'vertrag_mail') {
     if (!confirm(`Mietvertrag per E-Mail an ${d.email} senden?`)) return;
   }
@@ -690,7 +755,6 @@ async function saveRentalSettings() {
     const wName = document.getElementById('cfg-wirtschaft-name')?.value.trim() || '';
     const wPhone = document.getElementById('cfg-wirtschaft-phone')?.value.trim() || '';
     const wEmail = document.getElementById('cfg-wirtschaft-email')?.value.trim() || '';
-    const wSalut = document.getElementById('cfg-wirtschaft-salutation')?.value.trim() || '';
 
     const iban = document.getElementById('cfg-iban')?.value.trim() || '';
     const mapsUrl = document.getElementById('cfg-maps-url')?.value.trim() || '';
@@ -705,7 +769,6 @@ async function saveRentalSettings() {
       { setting_key: 'wirtschaft_name', setting_value: wName, description: 'Name / Kontakt Schlüsselübergabe' },
       { setting_key: 'wirtschaft_phone', setting_value: wPhone, description: 'Telefon Schlüsselübergabe' },
       { setting_key: 'wirtschaft_email', setting_value: wEmail, description: 'E-Mail Schlüsselübergabe' },
-      { setting_key: 'wirtschaft_salutation', setting_value: wSalut, description: 'Begrüssung im Wirtschafts-Mail' },
       { setting_key: 'iban', setting_value: iban, description: 'IBAN für Schweizer QR-Rechnung' },
       { setting_key: 'maps_url', setting_value: mapsUrl, description: 'Google Maps Link Schützenhaus' },
       { setting_key: 'feedback_base_url', setting_value: fbUrl, description: 'Basis-URL für Storno-Rückmeldung' },

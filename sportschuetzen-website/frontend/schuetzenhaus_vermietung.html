@@ -2553,8 +2553,100 @@
           );
         }
 
-        // Automatische Benachrichtigungs-Mail an den Vorstand auslösen
+        // Automatische Benachrichtigungs-Mail an Wirtschaftsverantwortliche via Vorlage & System-Mails
         try {
+          // 1. Vorlage und Einstellungen dynamisch aus Supabase laden (Single Source of Truth)
+          let tplSubject = `🏠 Neue Schützenhaus-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'}: ${vnr} (${payload.mietdatum})`;
+          let tplBody = `Hallo {wirtschaft_name},\n\nEs ist eine neue Schützenhaus-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'} eingegangen:\n\nBuchungsnr: {vertragsnr}\nMietdatum: {mietdatum} (Beginn: {festbeginn})\nMieter: {mieter_anrede} {mieter_vorname} {mieter_nachname}\nKontakt: {mieter_email} / {mieter_telefon}\nAdresse: {mieter_adresse}\nNotiz: {bemerkung}\n\nIm Vorstands-Cockpit öffnen:\n{cockpit_url}\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen`;
+
+          try {
+            const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.vm_info_wirtschaft&select=mail_subject,mail_body`, {
+              headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+            });
+            if (tplRes.ok) {
+              const tplData = await tplRes.json();
+              if (tplData && tplData[0]) {
+                if (tplData[0].mail_subject) tplSubject = tplData[0].mail_subject;
+                if (tplData[0].mail_body) tplBody = tplData[0].mail_body;
+              }
+            }
+          } catch (_) {}
+
+          let setMap = {};
+          try {
+            const setRes = await fetch(`${SUPABASE_REST_URL}/rental_settings?select=setting_key,setting_value`, {
+              headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+            });
+            if (setRes.ok) {
+              const setRows = await setRes.json();
+              (setRows || []).forEach(r => { setMap[r.setting_key] = r.setting_value; });
+            }
+          } catch (_) {}
+
+          const vermieterFirst = setMap.sender_first_name || '';
+          const vermieterLast = setMap.sender_last_name || '';
+          const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
+          const vermieterPhone = setMap.sender_phone || '';
+          const vermieterEmail = setMap.club_email || 'sportschuetzen.muhen@gmail.com';
+          const wirtschaftName = setMap.wirtschaft_name || 'Wirtschaftsteam';
+          const mieterAdresse = `${payload.strasse}, ${payload.plz} ${payload.wohnort}`;
+          const cockpitUrl = 'https://sportschuetzen-muhen.ch/vorstand/#vermietung';
+
+          const map = {
+            'vertragsnr': vnr,
+            'buchungsnummer': vnr,
+            'mietdatum': payload.mietdatum,
+            'festbeginn': payload.festbeginn,
+            'mieter_anrede': payload.anrede || '',
+            'mieter_vorname': payload.vorname || '',
+            'mieter_nachname': payload.nachname || '',
+            'mieter_email': payload.email || '',
+            'mieter_telefon': payload.telefon || '',
+            'mieter_strasse': payload.strasse || '',
+            'mieter_plz': payload.plz || '',
+            'mieter_ort': payload.wohnort || '',
+            'mieter_adresse': mieterAdresse,
+            'anrede': payload.anrede || '',
+            'vorname': payload.vorname || '',
+            'nachname': payload.nachname || '',
+            'bemerkung': payload.inquiry_note || '–',
+            'cockpit_url': cockpitUrl,
+            'vermieter_name': vermieterName,
+            'vermieter_vorname': vermieterFirst,
+            'vermieter_nachname': vermieterLast,
+            'vermieter_telefon': vermieterPhone,
+            'vermieter_email': vermieterEmail,
+            'wirtschaft_name': wirtschaftName
+          };
+
+          let finalSubject = tplSubject;
+          let finalBody = tplBody;
+          Object.entries(map).forEach(([k, v]) => {
+            const rx = new RegExp(`\\{${k}\\}`, 'gi');
+            finalSubject = finalSubject.replace(rx, v);
+            finalBody = finalBody.replace(rx, v);
+          });
+
+          const paragraphs = finalBody.split('\n\n').map(p => 
+            `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
+          ).join('');
+
+          const finalHtml = `
+            <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
+              <div style="background-color:#d97706; color:#ffffff; padding:18px 25px; text-align:left;">
+                <span style="font-size:18px; font-weight:600; color:#ffffff;">${finalSubject}</span>
+                <div style="font-size:12px; color:rgba(255,255,255,0.9); margin-top:2px;">Sportschützen Muhen – Schützenstube</div>
+              </div>
+              <div style="padding:25px; color:#333333; line-height:1.6; font-size:14.5px;">
+                ${paragraphs}
+              </div>
+              <div style="background:#f8f9fa; padding:12px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center;">
+                Sportschützen Muhen &bull; Schiessanlage Rüteli &bull; 5037 Muhen &bull; <a href="${cockpitUrl}" style="color:#d97706; font-weight:600; text-decoration:none;">Vorstands-Cockpit öffnen &rarr;</a>
+              </div>
+            </div>
+          `;
+
+          // 2. Versand über Supabase Mail-Engine mit dynamischem System-Mail-Verteiler
           fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
             method: 'POST',
             headers: {
@@ -2563,24 +2655,11 @@
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              to: 'sportschuetzen.muhen@gmail.com',
-              subject: `🏠 Neue Schützenhaus-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'}: ${vnr} (${payload.mietdatum})`,
-              html: `
-                <div style="font-family:sans-serif; max-width:600px; padding:20px; border:1px solid #ddd; border-radius:8px;">
-                  <h3 style="color:#0f3c5c;">Neue Online-${isCurrentlyInquiry ? 'Terminanfrage' : 'Reservation'} Schützenstube</h3>
-                  <table cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse; width:100%;">
-                    <tr><td><strong>Buchungsnr:</strong></td><td><strong>${vnr}</strong></td></tr>
-                    <tr><td><strong>Mietdatum:</strong></td><td>${payload.mietdatum} (Beginn: ${payload.festbeginn})</td></tr>
-                    <tr><td><strong>Mieter:</strong></td><td>${payload.anrede} ${payload.vorname} ${payload.nachname}</td></tr>
-                    <tr><td><strong>Kontakt:</strong></td><td>${payload.email} / ${payload.telefon}</td></tr>
-                    <tr><td><strong>Adresse:</strong></td><td>${payload.strasse}, ${payload.plz} ${payload.wohnort}</td></tr>
-                    ${isCurrentlyInquiry ? `<tr><td><strong>Notiz:</strong></td><td>${payload.inquiry_note || '–'}</td></tr>` : ''}
-                  </table>
-                  <p style="margin-top:15px;"><a href="https://sportschuetzen-muhen.ch/vorstand/#vermietung" style="color:#0f3c5c; font-weight:bold;">Im Vorstands-Cockpit öffnen &rarr;</a></p>
-                </div>
-              `,
-              module: 'vermietung',
-              referenceId: vnr
+              systemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
+              subject: finalSubject,
+              html: finalHtml,
+              moduleRef: 'vermietung',
+              recordId: vnr
             })
           }).catch(e => console.warn("Vorstands-Benachrichtigung Hinweis:", e));
         } catch (mailErr) {

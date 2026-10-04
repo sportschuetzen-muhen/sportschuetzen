@@ -34,8 +34,8 @@
      * @returns {Promise<{success: boolean, logId?: string, message?: string, error?: string}>}
      */
     window.sendMailViaEngine = async function (options) {
-        if (!options || !options.to || !options.subject) {
-            return { success: false, error: 'Empfänger (to) und Betreff (subject) sind erforderlich.' };
+        if (!options || (!options.to && !options.systemMailKey) || !options.subject) {
+            return { success: false, error: 'Empfänger (to oder systemMailKey) und Betreff (subject) sind erforderlich.' };
         }
 
         const supa = (typeof window.getSupabaseClient === 'function')
