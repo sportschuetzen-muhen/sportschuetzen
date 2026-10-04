@@ -474,17 +474,22 @@ async function vermietungAktion(action, idOrRow) {
       }
     }
 
-    // 2.2 Bei Stornierung: Google Kalender Termine freigeben
+    // 2.2 Bei Stornierung: Google Kalender Termine via Edge Function sync-calendar freigeben (Google Calendar API)
     if (action === 'stornieren') {
       try {
-        fetch('https://script.google.com/macros/s/AKfycbxnClehly9t5TLZqguQOul1lF3nayfNEqAdx3A9EE5YxuQ2bziqVV-2rJ2ktR3Vshn9/exec', {
+        const supaUrl = window.SUPABASE_URL || 'https://supabase-muhen.danfamily.uk';
+        const anonKey = window.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+        fetch(`${supaUrl}/functions/v1/sync-calendar`, {
           method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'apikey': anonKey,
+            'Authorization': `Bearer ${anonKey}`,
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify({
-            action: 'storno_calendar',
-            mietdatum: d.mietdatum || d.start_date,
-            vertragsnummer: d.vertragsnr
+            action: 'release',
+            date: d.start_date || d.mietdatum,
+            bookingId: d.vertragsnr
           })
         }).catch(e => console.warn("Kalender-Storno Fehler:", e));
       } catch (_) {}

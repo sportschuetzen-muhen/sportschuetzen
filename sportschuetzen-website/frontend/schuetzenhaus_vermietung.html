@@ -2691,22 +2691,22 @@
             `Deine Reservierung (${vnr}) wurde erfolgreich verbucht! Der Mietvertrag mit QR-Einzahlungsschein wurde soeben per E-Mail an dich gesendet.`
           );
 
-          // 1. Google Kalender blockieren (Ganztag Vermietet an XX + Ganztag Gesperrt für Reinigung am Folgetag)
+          // 1. Google Kalender blockieren via Supabase Edge Function sync-calendar (Google Calendar REST API)
           try {
-            fetch('https://script.google.com/macros/s/AKfycbxnClehly9t5TLZqguQOul1lF3nayfNEqAdx3A9EE5YxuQ2bziqVV-2rJ2ktR3Vshn9/exec', {
+            fetch('https://supabase-muhen.danfamily.uk/functions/v1/sync-calendar', {
               method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+              },
               body: JSON.stringify({
-                mietdatum: payload.mietdatum,
+                action: 'block',
+                date: isoDate,
+                initials: `${(payload.vorname || '').charAt(0)}${(payload.nachname || '').charAt(0)}`.toUpperCase(),
+                bookingId: vnr,
                 vorname: payload.vorname,
-                nachname: payload.nachname,
-                email: payload.email,
-                telefon: payload.telefon,
-                strasse: payload.strasse,
-                plz: payload.plz,
-                wohnort: payload.wohnort,
-                festbeginn: payload.festbeginn
+                nachname: payload.nachname
               })
             }).catch(e => console.warn("Google Kalender Blockierung Hinweis:", e));
           } catch (calErr) {
