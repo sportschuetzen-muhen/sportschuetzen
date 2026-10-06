@@ -1331,6 +1331,7 @@ async function generateRentalContractPdf(
   let templateNotice = layoutData?.notice || "Zahlbar innert 14 Tagen mit beiliegendem QR-Einzahlungsschein.";
   let templateIntro = layoutData?.intro || "Benützungsordnung & Vereinbarungen:";
   let dueDays = Number(layoutData?.due_days) || 14;
+  let templateData: any = null;
 
   if (supabaseClient) {
     try {
@@ -1346,6 +1347,7 @@ async function generateRentalContractPdf(
         .maybeSingle();
 
       if (tData) {
+        templateData = tData;
         if (!layoutData?.title && tData.title) templateTitle = tData.title;
         if (!layoutData?.notice && tData.notice) templateNotice = tData.notice;
         if (!layoutData?.intro && tData.intro) templateIntro = tData.intro;
@@ -1385,8 +1387,8 @@ async function generateRentalContractPdf(
     (rsData || []).forEach((r: any) => { rs[r.setting_key] = r.setting_value ?? ""; });
   }
 
-  // Falls Zahlungsfrist in rental_settings definiert ist, hat diese Vorrang
-  if (rs.payment_due_days && !layoutData?.due_days) {
+  // Zahlungsfrist (Tage): Primär aus rental_settings (Vermietungs-Cockpit), Fallback layoutData / document_templates
+  if (rs.payment_due_days) {
     const parsedDays = parseInt(rs.payment_due_days, 10);
     if (!isNaN(parsedDays) && parsedDays > 0) {
       dueDays = parsedDays;
@@ -1403,7 +1405,9 @@ async function generateRentalContractPdf(
     || "Vermietung";
   const vermieterTelefon = (rs.sender_phone || sender.mobil || "").trim() || "–";
   const vermieterEmail = (rs.club_email || sender.email || CLUB_EMAIL).trim();
-  const mietobjekt = (rs.rental_object || "").trim() || "Schützenstube Muhen";
+
+  // Mietobjekt: Primär aus Dokumentenvorlage (Modul Dokumente: layoutData.rental_object oder templateDescription/description)
+  const mietobjekt = (layoutData?.rental_object || (templateData as any)?.rental_object || (templateData as any)?.description || rs.rental_object || "").trim() || "Schützenstube Muhen";
 
   const contractPlaceholders: Record<string, string> = {
     vermieter_name: vermieterName,

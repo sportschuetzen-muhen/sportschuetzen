@@ -415,6 +415,7 @@
 
         // Vorlage aus zentralem Vorlagen-Pool verknüpfen (Single Source of Truth)
         const tpl = (window._docTemplatesData || []).find(t => t.category === 'vertrag' || t.code === 'mietvertrag');
+        const dueDaysFromSettings = window._rentalSettings?.payment_due_days ? parseInt(window._rentalSettings.payment_due_days, 10) : 14;
         if (tpl) {
             payload.templateId = tpl.id;
             payload.layout = {
@@ -422,7 +423,8 @@
                 intro: tpl.intro,
                 outro: tpl.outro,
                 notice: tpl.notice,
-                due_days: tpl.due_days || 14
+                due_days: dueDaysFromSettings || tpl.due_days || 14,
+                rental_object: tpl.rental_object || tpl.description || window._rentalSettings?.rental_object || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen'
             };
         }
 

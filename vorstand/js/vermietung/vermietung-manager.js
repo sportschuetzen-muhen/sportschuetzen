@@ -862,7 +862,6 @@ async function saveRentalSettings() {
     const cleanFee = parseFloat(document.getElementById('cfg-cleaning-fee')?.value || 35);
     const garbageFee = parseFloat(document.getElementById('cfg-garbage-fee')?.value || 4);
     const paymentDueDays = parseInt(document.getElementById('cfg-payment-due-days')?.value, 10) || 14;
-    const rentalObject = document.getElementById('cfg-rental-object')?.value.trim() || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen';
 
     const sFirst = document.getElementById('cfg-sender-firstname')?.value.trim() || '';
     const sLast = document.getElementById('cfg-sender-lastname')?.value.trim() || '';
@@ -896,8 +895,7 @@ async function saveRentalSettings() {
       { setting_key: 'wood_fee', setting_value: String(woodFee), description: 'Zusatz Cheminéeholz pro Kiste in CHF' },
       { setting_key: 'cleaning_fee_per_hour', setting_value: String(cleanFee), description: 'Nachreinigung pro Stunde in CHF' },
       { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF' },
-      { setting_key: 'payment_due_days', setting_value: String(paymentDueDays), description: 'Zahlungsfrist in Tagen für Mietvertrag und QR-Rechnung' },
-      { setting_key: 'rental_object', setting_value: rentalObject, description: 'Bezeichnung Mietobjekt (Mietvertrag-Kopf)' }
+      { setting_key: 'payment_due_days', setting_value: String(paymentDueDays), description: 'Zahlungsfrist in Tagen für Mietvertrag und QR-Rechnung' }
     ];
 
     for (const row of settingsRows) {

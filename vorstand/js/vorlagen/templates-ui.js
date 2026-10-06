@@ -460,10 +460,10 @@
                   </div>
                 ` : `
                   <div class="row g-3 mb-4">
-                    <div class="col-sm-6">
-                      <label class="form-label fw-bold small text-muted"><i class="fas fa-calendar-day me-1 text-primary"></i>Zahlungsfrist (Tage)</label>
-                      <input type="number" class="form-control text-end fw-bold" id="doc-f-duedays" value="${currentTemplate.due_days || 14}">
-                      <small class="text-muted" style="font-size: 11px;">Steuert das Zahlungsziel im PDF und den Platzhalter <code>{zahlungsfrist_tage}</code> in den Klauseln.</small>
+                    <div class="col-12">
+                      <label class="form-label fw-bold small text-muted"><i class="fas fa-home me-1 text-primary"></i>Mietobjekt (Bezeichnung Vertrag)</label>
+                      <input type="text" class="form-control fw-bold" id="doc-f-rental-object" value="${escapeHtml(currentTemplate.rental_object || currentTemplate.description || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                      <small class="text-muted" style="font-size: 11px;">Erscheint auf Seite 1 des Mietvertrags unter Mietobjekt. Variablen wie Zahlungsfrist und Gebühren werden zentral im Vermietungs-Cockpit gesteuert.</small>
                     </div>
                   </div>
                 `}
@@ -830,6 +830,7 @@
     const outroEl = document.getElementById('doc-f-outro');
     const noticeEl = document.getElementById('doc-f-notice');
     const dueDaysEl = document.getElementById('doc-f-duedays');
+    const rentalObjEl = document.getElementById('doc-f-rental-object');
     const mailSubjEl = document.getElementById('doc-f-mail-subj');
     const mailBodyEl = document.getElementById('doc-f-mail-body');
 
@@ -839,6 +840,7 @@
     if (outroEl) updateData.outro = outroEl.value.trim();
     if (noticeEl) updateData.notice = noticeEl.value.trim();
     if (dueDaysEl) updateData.due_days = parseInt(dueDaysEl.value) || 0;
+    if (rentalObjEl) updateData.description = rentalObjEl.value.trim();
     if (mailSubjEl) updateData.mail_subject = mailSubjEl.value.trim();
     if (mailBodyEl) {
       updateData.mail_body = (mailBodyEl._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl.value).trim();
@@ -848,6 +850,23 @@
     if (sb) {
       try {
         const { error } = await sb.from('document_templates').update(updateData).eq('id', templateId);
+        if (error) throw error;
+
+        // Falls Mietobjekt gespeichert wurde, auch synchron in rental_settings ablegen
+        if (rentalObjEl) {
+          try {
+            await sb.from('rental_settings').upsert({
+              setting_key: 'rental_object',
+              setting_value: rentalObjEl.value.trim(),
+              description: 'Bezeichnung Mietobjekt (Mietvertrag-Kopf)'
+            }, { onConflict: 'setting_key' });
+            if (window._rentalSettings) {
+              window._rentalSettings.rental_object = rentalObjEl.value.trim();
+            }
+          } catch (rErr) {
+            console.warn("Hinweis: Synchronisation rental_settings.rental_object:", rErr);
+          }
+        }
 
         if (error) throw error;
         showSuccess("🎉 Vorlage erfolgreich gespeichert!");
@@ -1094,7 +1113,8 @@
       const formIntro = document.getElementById('doc-f-intro')?.value.trim() || t.intro;
       const formOutro = document.getElementById('doc-f-outro')?.value.trim() || t.outro;
       const formNotice = document.getElementById('doc-f-notice')?.value.trim() || t.notice;
-      const formDuedays = parseInt(document.getElementById('doc-f-duedays')?.value, 10) || t.due_days || 14;
+      const formDuedays = parseInt(document.getElementById('doc-f-duedays')?.value, 10) || t.due_days || (window._rentalSettings?.payment_due_days ? parseInt(window._rentalSettings.payment_due_days, 10) : 14);
+      const formRentalObj = document.getElementById('doc-f-rental-object')?.value.trim() || t.description || window._rentalSettings?.rental_object || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen';
 
       const testRecipient = {
         anrede: 'Herr',
@@ -1123,7 +1143,8 @@
           intro: formIntro,
           outro: formOutro,
           notice: formNotice,
-          due_days: formDuedays
+          due_days: formDuedays,
+          rental_object: formRentalObj
         }
       };
 
