@@ -960,23 +960,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Globaler Banner-Inserter für News KI
+    window.insertNewsBanner = function(type) {
+        const editor = document.getElementById('news-draft-editor');
+        if (!editor) return;
+        const presets = window.ClubWysiwyg ? window.ClubWysiwyg.getPresets() : [];
+        const preset = presets.find(b => b.type === type) || {
+            bg: '#eff6ff',
+            border: '#3b82f6',
+            textColor: '#1e3a8a',
+            defaultText: '<strong>Information:</strong> Wichtige Vereinsmitteilung.'
+        };
+
+        const bannerHtml = `
+            <div class="club-banner-callout" style="background-color: ${preset.bg}; border-left: 4px solid ${preset.border}; border-radius: 6px; padding: 14px 18px; margin: 18px 0; font-size: 13.5px; line-height: 1.55; color: ${preset.textColor};">
+                ${preset.defaultText}
+            </div><p><br></p>
+        `;
+        document.execCommand('insertHTML', false, bannerHtml);
+        editor.focus();
+    };
+
+    // Globaler CTA-Button-Inserter für News KI
+    window.insertNewsCta = function() {
+        const editor = document.getElementById('news-draft-editor');
+        if (!editor) return;
+        const btnText = prompt('Beschriftung des Buttons (z. B. «Rangliste ansehen»):', 'Mehr erfahren / Ansehen');
+        if (!btnText) return;
+        const btnUrl = prompt('Ziel-URL (z. B. https://sportschuetzen-muhen.ch):', 'https://');
+        if (!btnUrl || btnUrl === 'https://') return;
+
+        let targetUrl = btnUrl.trim();
+        if (!/^https?:\/\//i.test(targetUrl) && !/^\//.test(targetUrl)) {
+            targetUrl = 'https://' + targetUrl;
+        }
+
+        const buttonHtml = `
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${escapeHtml(targetUrl)}" target="_blank" rel="noopener noreferrer" 
+                   style="display: inline-block; background-color: #1a3a5a; color: #ffffff; padding: 12px 24px; font-size: 14px; font-weight: bold; text-decoration: none; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); letter-spacing: 0.3px;">
+                    ${escapeHtml(btnText.trim())} &rarr;
+                </a>
+            </div><p><br></p>
+        `;
+        document.execCommand('insertHTML', false, buttonHtml);
+        editor.focus();
+    };
+
     // Hilfsfunktion: Bereinigt HTML vor dem Upload (normalisiert Divs zu Paragraph-Tags und regelt Zeilenumbrüche)
     function cleanHtmlContent(html) {
         if (!html) return "";
+        if (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function') {
+            return window.ClubWysiwyg.cleanHtml(html);
+        }
         let clean = html.trim();
-        
-        // Divs (von Chrome/Edge) zu Paragraphen
-        clean = clean.replace(/<div[^>]*>/gi, '<p>').replace(/<\/div>/gi, '</p>');
-        
-        // Mehrfache brs (von Firefox) zu Paragraphen-Grenzen konvertieren
+        clean = clean.replace(/<div(?!\s*class=["'][^"']*club-banner[^"']*["'])[^>]*>/gi, '<p>').replace(/<\/div>/gi, '</p>');
         clean = clean.replace(/(<br\s*\/?>\s*){2,}/gi, '</p><p>');
-        
-        // Einzelne Brs am Ende von Paragraphen entfernen
         clean = clean.replace(/<br\s*\/?>\s*<\/p>/gi, '</p>');
-        
-        // Leere Absätze löschen (z.B. <p></p>, <p><br></p>, <p>&nbsp;</p>)
         clean = clean.replace(/<p>\s*(<br\s*\/?>|&nbsp;)?\s*<\/p>/gi, '');
-        
         return clean;
     }
 

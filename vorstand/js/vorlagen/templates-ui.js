@@ -119,22 +119,71 @@
       await window.loadDocumentTemplatesData();
     }
 
-    // ZEILE 1: ALLGEMEINE DOKUMENTEN-KATEGORIEN
-    const row1Categories = [
-      { key: 'rechnung', label: 'Rechnungen', icon: 'fa-file-invoice-dollar' },
-      { key: 'mahnung', label: 'Mahnwesen', icon: 'fa-bell text-warning' },
-      { key: 'gv', label: 'Generalversammlung', icon: 'fa-users-between-lines text-success' },
-      { key: 'brief', label: 'Mitteilungen & Briefe', icon: 'fa-envelope-open-text text-info' }
+    // 4 HAUPT-REITER DER DOKUMENTEN- & KAMPAGNEN-ZENTRALE
+    const mainCategories = [
+      { key: 'gv', label: 'Generalversammlung', icon: 'fa-users-between-lines text-success', badge: 'Schaltzentrale' },
+      { key: 'rechnung', label: 'Rechnungen & Mahnwesen', icon: 'fa-file-invoice-dollar text-primary' },
+      { key: 'vermietung', label: 'Vermietung Schützenstube', icon: 'fa-house-chimney text-warning' },
+      { key: 'brief', label: 'Vorstandsbriefe & Rundschreiben', icon: 'fa-envelope-open-text text-info' }
     ];
 
-    const currentCat = window._selectedDocCategory || 'rechnung';
-    const isVermietungMail = (currentCat === 'vermietung_mail');
-    const isMietvertragPdf = (currentCat === 'vertrag');
+    const currentCat = window._selectedDocCategory || 'gv';
 
-    // Aktuelle Vorlagen filtern
-    let templatesInCat = window._docTemplatesData.filter(t => t.category === currentCat);
-    if (currentCat === 'vertrag') {
-      templatesInCat = window._docTemplatesData.filter(t => t.category === 'vertrag' || t.code === 'mietvertrag');
+    // HTML für die 4 Haupt-Reiter
+    const mainTabsHtml = mainCategories.map(c => `
+      <button class="btn ${currentCat === c.key ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'} d-flex align-items-center gap-2 py-2 px-3 rounded-3" onclick="docSelectCategory('${c.key}')">
+        <i class="fas ${c.icon}"></i>
+        <span>${c.label}</span>
+        ${c.badge ? `<span class="badge ${currentCat === c.key ? 'bg-white text-primary' : 'bg-success text-white'} ms-1" style="font-size:10px;">${c.badge}</span>` : ''}
+      </button>
+    `).join('');
+
+    // =========================================================================
+    // FALL 1: GENERALVERSAMMLUNG (VOLLSTÄNDIGE EINGEBETTETE GV-SCHALTZENTRALE)
+    // =========================================================================
+    if (currentCat === 'gv') {
+      container.innerHTML = `
+        <div class="card border border-light shadow-sm p-4 rounded-4 mb-4">
+          <!-- Header & Toolbar -->
+          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+              <h4 class="fw-bold text-primary mb-1"><i class="fas fa-folder-open me-2"></i>Dokumente & Kampagnen-Zentrale</h4>
+              <p class="text-muted small mb-0">
+                Zentraler Workspace für Generalversammlung, Rechnungs-Vorlagen, Vermietung Schützenstube und Vereins-Mitteilungen.
+              </p>
+            </div>
+          </div>
+
+          <!-- DIE 4 HAUPT-REITER -->
+          <div class="d-flex gap-2 mb-3 flex-wrap pb-2 border-bottom">
+            ${mainTabsHtml}
+          </div>
+
+          <!-- Eingebettete GV-Schaltzentrale -->
+          <div id="gv-dossier-workspace-inner" class="mt-2"></div>
+        </div>
+      `;
+
+      if (typeof window.renderGVDossierView === 'function') {
+        window.renderGVDossierView('#gv-dossier-workspace-inner');
+      }
+      return;
+    }
+
+    // =========================================================================
+    // FÄLLE 2, 3, 4: RECHNUNGEN, VERMIETUNG ODER VORSTANDSBRIEFE
+    // =========================================================================
+
+    // Templates nach Fachbereich filtern
+    let templatesInCat = [];
+    if (currentCat === 'rechnung') {
+      templatesInCat = window._docTemplatesData.filter(t => t.category === 'rechnung' || t.category === 'mahnung');
+    } else if (currentCat === 'vermietung') {
+      templatesInCat = window._docTemplatesData.filter(t => t.category === 'vermietung_mail' || t.category === 'vertrag' || t.code === 'mietvertrag');
+    } else if (currentCat === 'brief') {
+      templatesInCat = window._docTemplatesData.filter(t => t.category === 'brief');
+    } else {
+      templatesInCat = window._docTemplatesData.filter(t => t.category === currentCat);
     }
 
     // Falls aktuelle Vorlage nicht in Kategorie, erste wählen
@@ -145,69 +194,28 @@
     const currentTemplate = window._docTemplatesData.find(t => t.code === window._selectedDocCode) || templatesInCat[0] || {};
     const clausesForTemplate = window._docClausesData.filter(c => c.template_id === currentTemplate.id);
 
-    // HTML Zeile 1: Allgemeine Kategorien
-    const row1TabsHtml = row1Categories.map(c => `
-      <button class="btn btn-sm ${currentCat === c.key ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="docSelectCategory('${c.key}')">
-        <i class="fas ${c.icon} me-1.5"></i> ${c.label}
-      </button>
-    `).join('');
+    const isVermietungMail = (currentTemplate.category === 'vermietung_mail' || currentTemplate.code?.startsWith('vm_'));
+    const isMietvertragPdf = (currentTemplate.code === 'mietvertrag' || currentTemplate.category === 'vertrag');
 
-    // HTML Zeile 2: Fachbereich Vermietung Schützenstube (optisch separiert)
-    const vmMailCodes = ['vm_vertrag', 'vm_mahnung', 'vm_bestaetigung', 'vm_schluessel', 'vm_storno', 'vm_storno_verzug', 'vm_info_wirtschaft'];
-    const row2Html = `
-      <div class="p-2.5 rounded-3 border border-primary-subtle bg-primary-subtle bg-opacity-10 mb-3 shadow-2xs">
-        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
-          <span class="badge bg-primary text-white"><i class="fas fa-house-chimney me-1.5"></i>Fachbereich Vermietung Schützenstube</span>
-          <small class="text-muted" style="font-size: 11px;">Mietvertrag & Benützungsreglement (PDF) sowie automatisierte Workflow-Mails</small>
-        </div>
-        <div class="d-flex gap-1.5 flex-wrap align-items-center">
-          <!-- Mietvertrag & Reglement PDF -->
-          <button class="btn btn-sm ${isMietvertragPdf ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-primary'}" onclick="docSelectCategory('vertrag')">
-            <i class="fas fa-file-contract me-1.5"></i> Mietvertrag & Reglement (PDF)
-          </button>
-          
-          <div class="vr mx-1 d-none d-md-block text-secondary" style="height: 24px;"></div>
-
-          <!-- Die 7 Vermietungs-Mails -->
-          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_vertrag' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_vertrag')">
-            <i class="fas fa-envelope text-info me-1"></i> Mail: Mietvertrag & QR
-          </button>
-          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_mahnung' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_mahnung')">
-            <i class="fas fa-envelope text-warning me-1"></i> Mail: Zahlungserinnerung
-          </button>
-          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_bestaetigung' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_bestaetigung')">
-            <i class="fas fa-envelope text-success me-1"></i> Mail: Zahlungseingang
-          </button>
-          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_schluessel' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_schluessel')">
-            <i class="fas fa-envelope text-primary me-1"></i> Mail: Schlüsselübergabe
-          </button>
-          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_storno' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_storno')">
-            <i class="fas fa-envelope text-danger me-1"></i> Mail: Storno allgemein
-          </button>
-          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_storno_verzug' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_storno_verzug')">
-            <i class="fas fa-ban text-danger me-1"></i> Mail: Storno Verzug
-          </button>
-          <button class="btn btn-xs ${isVermietungMail && currentTemplate.code === 'vm_info_wirtschaft' ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'}" onclick="docSelectVermietungMail('vm_info_wirtschaft')">
-            <i class="fas fa-bullhorn text-warning me-1"></i> Mail: Info Wirtschaft (Intern)
-          </button>
-        </div>
+    // Sub-Tabs / Pills für aktive Kategorie
+    const subTabsHtml = `
+      <div class="d-flex gap-1.5 mb-3 flex-wrap bg-light p-2 rounded-3 border align-items-center">
+        <span class="text-muted small fw-bold me-2 align-self-center ps-1" style="font-size: 11px;">
+          <i class="fas fa-list me-1"></i>Vorlagen:
+        </span>
+        ${templatesInCat.map(t => {
+          const isActive = (window._selectedDocCode === t.code);
+          const isPdf = (t.category === 'vertrag' || t.code === 'mietvertrag' || t.code === 'freier_brief');
+          const icon = isPdf ? 'fa-file-pdf text-danger' : (t.category === 'vermietung_mail' ? 'fa-envelope text-info' : 'fa-file-lines text-primary');
+          return `
+            <button class="btn btn-xs ${isActive ? 'btn-dark fw-bold shadow-sm' : 'btn-light border text-dark'} d-flex align-items-center gap-1.5 py-1 px-2.5" onclick="docSelectTemplate('${t.code}')">
+              <i class="fas ${icon}" style="font-size:11px;"></i>
+              <span>${escapeHtml(window.getCleanDocTemplateTitle(t))}</span>
+            </button>
+          `;
+        }).join('')}
       </div>
     `;
-
-    // HTML Sub-Tabs für Zeile 1 (falls mehrere Vorlagen in Kategorie)
-    let subTabsHtml = '';
-    if (!isVermietungMail && !isMietvertragPdf && templatesInCat.length > 1) {
-      subTabsHtml = `
-        <div class="d-flex gap-1.5 mb-3 flex-wrap bg-light p-2 rounded-3 border">
-          <span class="text-muted small fw-bold me-2 align-self-center ps-1" style="font-size: 11px;">Vorlagen:</span>
-          ${templatesInCat.map(t => `
-            <button class="btn btn-xs ${window._selectedDocCode === t.code ? 'btn-dark fw-bold' : 'btn-light border text-dark'}" onclick="docSelectTemplate('${t.code}')">
-              ${escapeHtml(window.getCleanDocTemplateTitle(t))}
-            </button>
-          `).join('')}
-        </div>
-      `;
-    }
 
     // Dynamische Platzhalter je nach Dokumenten-Kategorie
     let categoryPlaceholders = [];
@@ -219,16 +227,14 @@
         '{wirtschaft_name}', '{wirtschaft_phone}', '{wirtschaft_email}',
         '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{kaution}', '{bemerkung}', '{cockpit_url}', '{feedback_url}'
       ];
-    } else if (currentCat === 'vertrag') {
+    } else if (isMietvertragPdf) {
       categoryPlaceholders = ['{mietdatum}', '{mietbetrag}', '{buchungsnummer}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
-    } else if (currentCat === 'rechnung' || currentCat === 'mahnung') {
+    } else if (currentCat === 'rechnung') {
       categoryPlaceholders = [
         '{rechnungsnummer}', '{rechnungsjahr}', '{gesamtbetrag}', '{faelligkeitsdatum}',
         '{vorname}', '{nachname}', '{anrede}', '{strasse}', '{plz}', '{ort}',
         '{absender_vorname}', '{absender_nachname}', '{absender_funktion}', '{absender_email}', '{absender_mobil}'
       ];
-    } else if (currentCat === 'gv') {
-      categoryPlaceholders = ['{gv_nummer}', '{gv_datum}', '{gv_zeit}', '{praesident_name}', '{vorname}', '{nachname}'];
     } else if (currentCat === 'brief') {
       categoryPlaceholders = ['{betreff}', '{datum}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
     }
@@ -242,7 +248,7 @@
         <!-- Header & Toolbar -->
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
           <div>
-            <h4 class="fw-bold text-primary mb-1"><i class="fas fa-file-lines me-2"></i>Dokumenten- & Vorlagen-Zentrale</h4>
+            <h4 class="fw-bold text-primary mb-1"><i class="fas fa-folder-open me-2"></i>Dokumente & Kampagnen-Zentrale</h4>
             <p class="text-muted small mb-0">
               Zentrale Verwaltung aller Vorlagentexte, Klauseln, Benützungsreglemente und E-Mail-Begleittexte (Single Source of Truth).
             </p>
@@ -260,13 +266,10 @@
           </div>
         </div>
 
-        <!-- ZEILE 1: Allgemeine Kategorien -->
+        <!-- DIE 4 HAUPT-REITER -->
         <div class="d-flex gap-2 mb-2 flex-wrap pb-2 border-bottom">
-          ${row1TabsHtml}
+          ${mainTabsHtml}
         </div>
-
-        <!-- ZEILE 2: Fachbereich Vermietung Schützenstube (farblich hervorgehoben) -->
-        ${row2Html}
 
         <!-- Sub-Tabs für aktive Kategorie -->
         ${subTabsHtml}
@@ -276,7 +279,7 @@
           
           <!-- FALL A: VERMIETUNGS-MAILVORLAGE MIT LIVE-HTML-VORSCHAU -->
           ${isVermietungMail ? `
-            <!-- Linke Spalte: E-Mail Editor -->
+            <!-- Linke Spalte: E-Mail Editor mit ClubWysiwyg -->
             <div class="col-lg-6">
               <form id="doc-template-form" onsubmit="docSaveTemplate(event, '${currentTemplate.id}')">
                 
@@ -301,9 +304,9 @@
                 </div>
 
                 <div class="mb-4">
-                  <label class="form-label fw-bold small text-muted">E-Mail Nachrichtentext</label>
-                  <textarea class="form-control font-monospace" id="doc-f-mail-body" rows="12" required oninput="docUpdateLiveMailPreview()" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
-                  <small class="text-muted mt-1 d-block" style="font-size: 11px;">Absätze mit doppelter Leerzeile trennen. Die Vorschau rechts aktualisiert sich automatisch beim Tippen.</small>
+                  <label class="form-label fw-bold small text-muted">E-Mail Nachrichtentext (WYSIWYG-Editor)</label>
+                  <textarea class="form-control" id="doc-f-mail-body" rows="12" required oninput="docUpdateLiveMailPreview()">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
+                  <small class="text-muted mt-1 d-block" style="font-size: 11px;">Formatieren Sie Fett, Kursiv, Listen, Banner und Aktions-Buttons über die Toolbar oben.</small>
                 </div>
 
                 <div class="d-grid">
@@ -372,14 +375,14 @@
 
                 ${!isMietvertragPdf ? `
                   <div class="p-3 bg-light rounded-3 border mb-4">
-                    <h6 class="fw-bold text-primary mb-2"><i class="fas fa-envelope me-1.5"></i>E-Mail Begleittext (bei Rechnungsversand)</h6>
+                    <h6 class="fw-bold text-primary mb-2"><i class="fas fa-envelope me-1.5"></i>E-Mail Begleittext (bei Rechnungs- & Briefversand)</h6>
                     <div class="mb-2">
                       <label class="form-label small text-muted mb-1">E-Mail Betreff</label>
                       <input type="text" class="form-control form-control-sm fw-semibold" id="doc-f-mail-subj" value="${escapeHtml(currentTemplate.mail_subject || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
                     </div>
                     <div>
                       <label class="form-label small text-muted mb-1">E-Mail Nachrichtentext</label>
-                      <textarea class="form-control form-control-sm font-monospace" id="doc-f-mail-body" rows="4" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
+                      <textarea class="form-control form-control-sm" id="doc-f-mail-body" rows="6" oninput="docUpdateLiveMailPreview()">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
                     </div>
                   </div>
                 ` : ''}
@@ -445,6 +448,25 @@
       </div>
     `;
 
+    // Globalen ClubWysiwyg-Editor anbinden
+    if (window.ClubWysiwyg) {
+      const mailBodyEl = document.getElementById('doc-f-mail-body');
+      if (mailBodyEl) {
+        window.ClubWysiwyg.init(mailBodyEl, {
+          mode: 'email',
+          minHeight: isVermietungMail ? '260px' : '180px',
+          placeholders: categoryPlaceholders.map(p => ({ tag: p, label: p })),
+          enableBanners: true,
+          enableButtons: true,
+          onChange: () => {
+            if (typeof window.docUpdateLiveMailPreview === 'function') {
+              window.docUpdateLiveMailPreview();
+            }
+          }
+        });
+      }
+    }
+
     // Falls Vermietungs-Mail aktiv, sofort Live-Vorschau rendern
     if (isVermietungMail) {
       window.docUpdateLiveMailPreview();
@@ -454,6 +476,15 @@
   // 3. NAVIGATION & INTERAKTIONEN
   window.docSelectCategory = function(cat) {
     window._selectedDocCategory = cat;
+    if (cat === 'gv') {
+      window._selectedDocCode = 'gv_normal';
+    } else if (cat === 'rechnung') {
+      window._selectedDocCode = 'jahresbeitrag';
+    } else if (cat === 'vermietung') {
+      window._selectedDocCode = 'mietvertrag';
+    } else if (cat === 'brief') {
+      window._selectedDocCode = 'freier_brief';
+    }
     const container = document.getElementById('dokument-vorlagen-container');
     if (container) window.renderDokumentVorlagen(container);
   };
@@ -465,7 +496,7 @@
   };
 
   window.docSelectVermietungMail = function(code) {
-    window._selectedDocCategory = 'vermietung_mail';
+    window._selectedDocCategory = 'vermietung';
     window._selectedDocCode = code;
     const container = document.getElementById('dokument-vorlagen-container');
     if (container) window.renderDokumentVorlagen(container);
@@ -477,7 +508,8 @@
     if (!previewContainer) return;
 
     const subj = document.getElementById('doc-f-mail-subj')?.value || '';
-    const body = document.getElementById('doc-f-mail-body')?.value || '';
+    const mailBodyEl = document.getElementById('doc-f-mail-body');
+    const body = (mailBodyEl?._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl?.value) || '';
     const code = window._selectedDocCode || 'vm_vertrag';
 
     previewContainer.innerHTML = buildRentalEmailPreviewHtml(subj, body, code);
@@ -534,9 +566,14 @@
       renderedBody = renderedBody.replace(rx, v);
     });
 
-    const paragraphs = renderedBody.split('\n\n').map(p => 
-      `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
-    ).join('');
+    let finalBodyHtml = '';
+    if (/<[a-z][\s\S]*>/i.test(renderedBody)) {
+      finalBodyHtml = renderedBody;
+    } else {
+      finalBodyHtml = renderedBody.split(/\n\s*\n/).map(p => 
+        `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+      ).join('');
+    }
 
     return `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background:#ffffff;">
@@ -552,8 +589,8 @@
         </div>
 
         <!-- Body Content -->
-        <div style="padding: 20px 22px; color: #1e293b; font-size: 13.5px;">
-          ${paragraphs}
+        <div style="padding: 20px 22px; color: #1e293b; font-size: 13.5px; line-height: 1.6;">
+          ${finalBodyHtml}
         </div>
 
         <!-- Club Footer -->
@@ -566,6 +603,11 @@
   }
 
   window.docInsertShortcode = function(code) {
+    const wysiwygInst = document.getElementById('doc-f-mail-body')?._clubWysiwygInstance;
+    if (wysiwygInst) {
+      wysiwygInst.insertVariable(code);
+      return;
+    }
     let activeEl = window._docLastFocusedField || document.activeElement;
     if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA') || !document.getElementById('doc-template-form')?.contains(activeEl)) {
       activeEl = document.getElementById('doc-f-mail-body') || document.getElementById('doc-f-intro');
@@ -608,7 +650,9 @@
     if (noticeEl) updateData.notice = noticeEl.value.trim();
     if (dueDaysEl) updateData.due_days = parseInt(dueDaysEl.value) || 0;
     if (mailSubjEl) updateData.mail_subject = mailSubjEl.value.trim();
-    if (mailBodyEl) updateData.mail_body = mailBodyEl.value.trim();
+    if (mailBodyEl) {
+      updateData.mail_body = (mailBodyEl._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl.value).trim();
+    }
 
     const sb = getDocSupabaseClient();
     if (sb) {

@@ -47,8 +47,10 @@
     /**
      * Haupt-Einstiegspunkt für das Rendern der GV-Schaltzentrale
      */
-    window.renderGVDossierView = async function () {
-        const container = document.getElementById('gv-dossier-container');
+    window.renderGVDossierView = async function (targetContainer) {
+        const container = (typeof targetContainer === 'string' ? document.querySelector(targetContainer) : targetContainer)
+            || document.getElementById('gv-dossier-workspace-inner')
+            || document.getElementById('gv-dossier-container');
         if (!container) return;
 
         container.innerHTML = `
@@ -59,7 +61,7 @@
         `;
 
         await loadGVDossierData();
-        renderGVDossierWorkspace();
+        renderGVDossierWorkspace(container);
     };
 
     /**
@@ -181,8 +183,10 @@
     /**
      * Baut den 2-Spalten-Arbeitsbereich im DOM auf
      */
-    function renderGVDossierWorkspace() {
-        const container = document.getElementById('gv-dossier-container');
+    function renderGVDossierWorkspace(targetContainer) {
+        const container = (typeof targetContainer === 'string' ? document.querySelector(targetContainer) : targetContainer)
+            || document.getElementById('gv-dossier-workspace-inner')
+            || document.getElementById('gv-dossier-container');
         if (!container) return;
 
         const state = window._gvDossierState;
@@ -484,6 +488,23 @@
                 </button>
             `;
 
+            if (window.ClubWysiwyg) {
+                window.ClubWysiwyg.init('#gv-camp-body', {
+                    mode: 'email',
+                    minHeight: '220px',
+                    enableBanners: true,
+                    enableButtons: true,
+                    placeholders: [
+                        { tag: 'mitglied.anrede', label: 'Anrede (Lieber Hans / Sehr geehrter Herr)' },
+                        { tag: 'mitglied.vorname', label: 'Vorname' },
+                        { tag: 'mitglied.nachname', label: 'Nachname' },
+                        { tag: 'event.datum_formatiert', label: 'Datum der GV' },
+                        { tag: 'dossier.download_url', label: 'Download-Link Master-Dossier' }
+                    ],
+                    onChange: () => gvDossierLiveUpdateMailText()
+                });
+            }
+
         } else if (state.activeLeftTab === 'traktanden') {
             panel.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -550,12 +571,19 @@
                 .replace(/{{mitglied\.vorname}}/gi, curMember.first_name || 'Vorname')
                 .replace(/{{mitglied\.nachname}}/gi, curMember.last_name || 'Nachname');
 
-            let body = (document.getElementById('gv-camp-body')?.value || state.campaign?.email_body || '')
-                .replace(/{{mitglied\.vorname}}/gi, curMember.first_name || 'Hans')
-                .replace(/{{mitglied\.nachname}}/gi, curMember.last_name || 'Muster')
-                .replace(/{{mitglied\.anrede}}/gi, `Lieber ${curMember.first_name || 'Hans'}`)
+            let rawBody = (document.getElementById('gv-camp-body')?.value || state.campaign?.email_body || '')
+                .replace(/{{mitglied\.vorname}}/gi, escapeHtml(curMember.first_name || 'Hans'))
+                .replace(/{{mitglied\.nachname}}/gi, escapeHtml(curMember.last_name || 'Muster'))
+                .replace(/{{mitglied\.anrede}}/gi, `Lieber ${escapeHtml(curMember.first_name || 'Hans')}`)
                 .replace(/{{event\.datum_formatiert}}/gi, `${state.gvInstance?.datum || 'im März'} ${state.year}`)
-                .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank" class="fw-bold">👉 GV-Dossier ${state.year} herunterladen (PDF)</a>`);
+                .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank" class="fw-bold text-primary">👉 GV-Dossier ${state.year} herunterladen (PDF)</a>`);
+
+            let renderedBodyHtml = '';
+            if (/<[a-z][\s\S]*>/i.test(rawBody)) {
+                renderedBodyHtml = rawBody;
+            } else {
+                renderedBodyHtml = rawBody.split(/\n\s*\n/).map(p => `<p style="margin:0 0 12px 0;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
+            }
 
             panel.innerHTML = `
                 <div class="p-4 overflow-auto" style="max-height: 580px;">
@@ -573,7 +601,7 @@
                             <span class="text-muted">·</span>
                             <span class="small text-muted">Offizielle Einladung</span>
                         </div>
-                        <div style="white-space: pre-wrap;">${body}</div>
+                        <div>${renderedBodyHtml}</div>
                         <div class="mt-4 pt-3 border-top small text-muted">
                             Sportschützen Muhen · Schiessanlage Rüteli · 5037 Muhen · <a href="https://www.sportschuetzen-muhen.ch" target="_blank">www.sportschuetzen-muhen.ch</a>
                         </div>
@@ -582,6 +610,21 @@
             `;
         }
     }
+
+    // Variable an Cursor-Position einfügen
+    window.gvDossierInsertVariable = function (variableTag) {
+        const bodyEl = document.getElementById('gv-camp-body');
+        if (bodyEl && bodyEl._clubWysiwygInstance) {
+            bodyEl._clubWysiwygInstance.insertVariable(variableTag);
+        } else if (bodyEl) {
+            const start = bodyEl.selectionStart || 0;
+            const end = bodyEl.selectionEnd || 0;
+            bodyEl.value = bodyEl.value.substring(0, start) + variableTag + bodyEl.value.substring(end);
+            bodyEl.selectionStart = bodyEl.selectionEnd = start + variableTag.length;
+            bodyEl.focus();
+            gvDossierLiveUpdateMailText();
+        }
+    };
 
     // =========================================================================
     // AKTIONEN & EVENT-HANDLER

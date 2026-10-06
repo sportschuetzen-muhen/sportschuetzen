@@ -388,14 +388,28 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
    - Überschreitet der Fliesstext die Höhe von Seite 1, sodass ein „Waisen-Absatz“ mit wenigen Zeilen auf Seite 2 entsteht, warnt das Vorstands-UI aktiv:  
      *⚠️ „Achtung: Der Brieftext erzeugt eine 2. Seite mit nur wenigen Zeilen. Text bitte kürzen oder Schriftgrösse anpassen.“*
 
+### 8.3 Harmonisierte 4-Reiter-Dokumentenzentrale & Globaler Vereins-WYSIWYG (Oktober 2026)
+- **4 Haupt-Reiter:**
+  1. `[ 🏛️ Generalversammlung ]`: Vollständig integrierte GV-Schaltzentrale (Traktanden, Beilagen-Assembler, Kampagne & Massenversand).
+  2. `[ 🧾 Rechnungen & Mahnwesen ]`: Vorlagen für Jahresbeitrag, Schulsport, Material, Sponsoring und Mahnungen 1–3 mit QR-Bill Vorschau.
+  3. `[ 🏠 Vermietung Schützenstube ]`: Mietvertrag & Benützungsordnung PDF (Klausel-Editor 1–8) sowie alle 8 Transaktions-Mails mit Live-HTML-Vorschau.
+  4. `[ ✉️ Vorstandsbriefe & Rundschreiben ]`: Freier Vorstandsbrief (DIN 5008) und Vereins-Rundmails.
+- **Globaler Vereins-WYSIWYG (`vorstand/js/club-wysiwyg.js`):**
+  - Universelle Rich-Text-Komponente für News KI, E-Mail-Vorlagen, GV-Aussendungen und Rundmails.
+  - Vordefinierte responsive Callout-Banner: Info (Blau), Frist (Grün), Hinweis (Gelb), Dringend (Rot).
+  - Mobile-optimierte Call-to-Action (CTA) Aktions-Buttons für Downloads und Weblinks.
+  - Sichere Einfügung von dynamischen Platzhaltern (`{{...}}`) an der aktuellen Cursor-Position.
+  - Automatische Bereinigung störender Formatierungen beim Einfügen aus Word, Outlook oder Google Docs (`cleanHtmlContent`).
+
 ---
 
-## 11. Implementierungs- und Integrationsstatus (Stand: September 2026)
+## 11. Implementierungs- und Integrationsstatus (Stand: Oktober 2026)
 
 | Dokumenttyp / Komponente | Backend (`generate-pdf`) | Frontend UI / Workspace | Status |
 | :--- | :--- | :--- | :--- |
 | **Typ 1: Rechnung & QR-Rechnung** | ✅ `generate-invoice` (`operatives-storage/invoices/`) | ✅ Rechnungs-Dashboard (`rechnungen/`) | **Produktiv** |
 | **Typ 2: Freier Vorstandsbrief** | ✅ `generate-letter` (DIN 5008, WORM-Archiv, Paperless) | ✅ Vorlagen-Pool & Live-PDF-Test (`templates-ui.js`) | **Vollständig implementiert** |
-| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` (`campaign_attachments`, Stempel) | ✅ 2-Spalten-Workspace (`gv-dossier.js`, Index, Router) | **Vollständig implementiert** |
+| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` (`campaign_attachments`, Stempel) | ✅ Integrierte GV-Schaltzentrale in Dokumente-Modul | **Vollständig integriert** |
 | **Typ 4: Endschiessen / Festführer** | ✅ `generate-endschiessen` (Schiesstage, Ablösung, Gaben) | ✅ Vorlagen-Pool & Remote-Generator (`pdf-engine.js`) | **Vollständig implementiert** |
+| **Globaler Vereins-WYSIWYG** | N/A (Frontend Standard) | ✅ News KI, Vorlagen-Pool, GV-Schaltzentrale (`club-wysiwyg.js`) | **Vollständig implementiert** |
 
