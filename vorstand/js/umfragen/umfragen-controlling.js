@@ -283,12 +283,16 @@ function renderGVListEmbedded() {
         <h6 class="border-bottom pb-1 text-primary">Termine & Fristen</h6>
         ${htmlTermine}
     </div>
-    <div class="mb-4">
-        <h6 class="border-bottom pb-1 text-primary">Dokumente & Anhänge</h6>
-        <div class="alert alert-info py-2 px-3 mb-3 small border-0 text-dark" style="background:#eef6ff; border-left: 4px solid #0d6efd !important;">
-          <i class="fas fa-paperclip text-primary me-1"></i> <strong>E-Mail-Anhänge:</strong> Alle hier hochgeladenen Dokumente (Einladung, Zusatz-Anhänge, Protokoll, Jahresbericht) werden beim Versenden der GV-Einladung automatisch als E-Mail-Anhänge an die Mitglieder verschickt.
+    <div class="mb-3">
+        <div class="alert alert-light border py-2.5 px-3 small rounded-3 d-flex align-items-center justify-content-between">
+          <div>
+            <i class="fas fa-file-pdf text-primary me-1.5"></i>
+            <strong>GV-Dokumente &amp; Berichte:</strong> Werden zentral im Modul <strong>Generalversammlung</strong> als Beilagen hochgeladen &amp; assembliert.
+          </div>
+          <button class="btn btn-outline-primary btn-sm py-1 px-2.5" onclick="navTo('gv-dossier')">
+            <i class="fas fa-arrow-right me-1"></i> Zum GV-Cockpit
+          </button>
         </div>
-        ${htmlDocs}
     </div>
     <div class="mb-2">
         <h6 class="border-bottom pb-1 text-primary">Mail-Verteiler</h6>

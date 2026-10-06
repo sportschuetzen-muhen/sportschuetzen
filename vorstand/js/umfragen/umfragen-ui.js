@@ -236,29 +236,21 @@ function renderUmfragenUI(container) {
         <!-- TAB 4: ERWEITERTES CONTROLLING (GV & PRAESENZ) -->
         <div class="tab-pane fade" id="tab-umfragen-controlling">
             <div class="row g-3">
-                <div class="col-md-12 write-protected">
-                    <div class="card p-3 mb-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                            <div class="d-flex align-items-center gap-2">
-                                <h5 class="card-title mb-0">&#128640; Tools & GV-Steuerung</h5>
+                <div class="col-md-12">
+                    <div class="card border-0 rounded-4 p-3 mb-3 bg-primary-subtle border-primary-subtle shadow-sm">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="rounded-3 bg-primary text-white d-flex align-items-center justify-content-center" style="width: 42px; height: 42px; font-size: 1.2rem;">
+                                    <i class="fas fa-landmark"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 fw-bold text-primary">Generalversammlung Schaltzentrale</h6>
+                                    <p class="small text-muted mb-0">Die zentrale Steuerung der GV, Traktanden mit Untertraktanden, Beilagen-Uploads und der E-Mail-Versand werden im Modul <strong>Generalversammlung</strong> verwaltet.</p>
+                                </div>
                             </div>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-success btn-sm write-protected fw-bold" onclick="saveGVData()">
-                                    &#128190; GV-Stammdaten speichern
-                                </button>
-                            </div>
-                        </div>
-                        <div class="d-flex gap-2 flex-wrap align-items-center">
-                            <div class="form-check form-switch d-flex align-items-center me-2 pe-2 border-end" style="margin-bottom: 0; min-height: auto;">
-                                <input class="form-check-input me-2" type="checkbox" id="gv-wahljahr-switch-embedded" style="cursor: pointer;">
-                                <label class="form-check-label small fw-bold text-muted" for="gv-wahljahr-switch-embedded" style="cursor: pointer; user-select: none;">Wahljahr</label>
-                            </div>
-                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('genPDF')">&#128196; Einladungs-PDF</button>
-                            <button class="btn btn-primary btn-sm fw-bold shadow-sm" onclick="openGVMailWizard()">📧 GV Mails senden</button>
-                            <button class="btn btn-outline-dark btn-sm fw-bold" onclick="navTo('gv-dossier')" title="Zur neuen GV-Schaltzentrale wechseln">🏛️ Zur GV-Schaltzentrale</button>
-                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendReminders')">&#128276; Mahnungen senden</button>
-                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendSummary')">&#128202; Uebersicht senden</button>
-                            <button class="btn btn-outline-primary btn-sm" onclick="runGVTool('sendPraesenz')">&#128221; Praesenzliste senden</button>
+                            <button class="btn btn-primary btn-sm fw-bold px-3 py-2 rounded-3 shadow-sm" onclick="navTo('gv-dossier')">
+                                <i class="fas fa-external-link-alt me-1.5"></i> Zum GV-Cockpit wechseln
+                            </button>
                         </div>
                     </div>
                 </div>

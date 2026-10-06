@@ -410,7 +410,18 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
 | :--- | :--- | :--- | :--- |
 | **Typ 1: Rechnung & QR-Rechnung** | ✅ `generate-invoice` (`operatives-storage/invoices/`) | ✅ Rechnungs-Dashboard (`rechnungen/`) | **Produktiv** |
 | **Typ 2: Freier Vorstandsbrief** | ✅ `generate-letter` (DIN 5008, WORM-Archiv, Paperless) | ✅ Vorlagen-Pool & Live-PDF-Test (`templates-ui.js`) | **Vollständig implementiert** |
-| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` (`campaign_attachments`, Stempel) | ✅ Integrierte GV-Schaltzentrale in Dokumente-Modul | **Vollständig integriert** |
+| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` & hierarchische Traktanden (`parent_id`) | ✅ GV-Cockpit (`gv-dossier.js`, Traktanden, Stammdaten, Dossier) | **Vollständig integriert** |
 | **Typ 4: Endschiessen / Festführer** | ✅ `generate-endschiessen` (Schiesstage, Ablösung, Gaben) | ✅ Vorlagen-Pool & Remote-Generator (`pdf-engine.js`) | **Vollständig implementiert** |
 | **Globaler Vereins-WYSIWYG** | N/A (Frontend Standard) | ✅ News KI, Vorlagen-Pool, GV-Schaltzentrale (`club-wysiwyg.js`) | **Vollständig implementiert** |
+
+### 11.1 Generalversammlung: Traktanden-Hierarchie & Entflechtung (Oktober 2026)
+- **Hierarchische Traktanden (`public.gv_traktanden`):**
+  - Haupttraktanden (`parent_id IS NULL`) und Untertraktanden (`parent_id REFERENCES gv_traktanden(id)`).
+  - Traktanden-Manager im GV-Cockpit unterstützt Neuanlage, Unterpunkt-Zuordnung, Sortierung nach oben/unten (▲/▼), Bearbeiten und Löschen.
+  - Die PDF-Engine (`generateGVInvitationPdf`) rendert Untertraktanden sauber eingerückt unter dem Haupttraktandum.
+- **Entkopplung vom Vorlagen-Pool:**
+  - Traktanden werden nicht mehr im statischen Vorlagen-Pool verwaltet, sondern exklusiv jahresspezifisch in `public.gv_traktanden`.
+- **Bereinigung der Anhänge & Entflechtung aus „Anlässe & Umfragen“:**
+  - Tab 4 („Tools & GV-Steuerung“) und die 4 historischen Einzelfelder (`doc_*_url`) in „Anlässe & Umfragen“ wurden entkoppelt.
+  - Alle Berichte und Dokumente werden als Single Source of Truth über `public.campaign_attachments` im Modul Generalversammlung geführt und vom Master-Assembler gestempelt.
 

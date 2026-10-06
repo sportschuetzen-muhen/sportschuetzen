@@ -1853,15 +1853,48 @@ async function generateGVInvitationPdf(
         if (tData.intro) templateIntro = replacePlaceholders(tData.intro);
         if (tData.notice) templateNotice = replacePlaceholders(tData.notice);
 
-        // Traktanden/Klauseln laden
-        const { data: cData } = await supabaseClient
-          .from("document_template_clauses")
+        // Traktanden laden: Primär aus public.gv_traktanden für das spezifische GV-Jahr
+        const gvInstanceId = gvData.gvId || `gv_${year}`;
+        const { data: trData } = await supabaseClient
+          .from("gv_traktanden")
           .select("*")
-          .eq("template_id", tData.id)
+          .eq("gv_id", gvInstanceId)
           .order("sort_order", { ascending: true });
 
-        if (cData && cData.length > 0) {
-          clauses = cData;
+        if (trData && trData.length > 0) {
+          const mainItems = trData.filter((t: any) => !t.parent_id);
+          const hierarchicalList: any[] = [];
+          mainItems.forEach((main: any, mIdx: number) => {
+            hierarchicalList.push({
+              id: main.id,
+              clause_number: main.nummer || String(mIdx + 1),
+              clause_title: main.titel,
+              clause_text: main.beschreibung || "",
+              is_sub: false
+            });
+            const subs = trData.filter((t: any) => t.parent_id === main.id);
+            subs.forEach((sub: any) => {
+              hierarchicalList.push({
+                id: sub.id,
+                clause_number: sub.nummer || "",
+                clause_title: sub.titel,
+                clause_text: sub.beschreibung || "",
+                is_sub: true
+              });
+            });
+          });
+          clauses = hierarchicalList;
+        } else {
+          // Fallback: Aus Vorlagen-Pool falls noch keine jahresspezifischen Traktanden existieren
+          const { data: cData } = await supabaseClient
+            .from("document_template_clauses")
+            .select("*")
+            .eq("template_id", tData.id)
+            .order("sort_order", { ascending: true });
+
+          if (cData && cData.length > 0) {
+            clauses = cData;
+          }
         }
       }
 
@@ -1998,22 +2031,49 @@ async function generateGVInvitationPdf(
   curY -= 5 * MM;
 
   clauses.forEach((c, idx) => {
+    const isSub = Boolean(c.is_sub);
     const num = c.clause_number || String(idx + 1);
-    page1.drawText(`${num}.`, { x: 22 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
-    page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: 30 * MM, y: curY, size: 8.5, font: fontBold });
 
-    if (c.clause_text && c.clause_text.trim()) {
-      curY -= 3.5 * MM;
-      page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
-        x: 30 * MM,
-        y: curY,
-        size: 7.5,
-        font: fontRegular,
-        color: rgb(0.4, 0.4, 0.4),
-      });
-      curY -= 4.5 * MM;
+    if (isSub) {
+      // Untertraktandum: eingerückt
+      const subX = 26 * MM;
+      const subTitleX = 33 * MM;
+      if (num) {
+        page1.drawText(`${num}`, { x: subX, y: curY, size: 7.8, font: fontRegular, color: rgb(0.25, 0.35, 0.6) });
+      }
+      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: subTitleX, y: curY, size: 7.8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+
+      if (c.clause_text && c.clause_text.trim()) {
+        curY -= 3.2 * MM;
+        page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
+          x: subTitleX,
+          y: curY,
+          size: 7.0,
+          font: fontRegular,
+          color: rgb(0.45, 0.45, 0.45),
+        });
+        curY -= 3.8 * MM;
+      } else {
+        curY -= 3.5 * MM;
+      }
     } else {
-      curY -= 4.2 * MM;
+      // Haupttraktandum: fett
+      page1.drawText(`${num}.`, { x: 22 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: 30 * MM, y: curY, size: 8.5, font: fontBold });
+
+      if (c.clause_text && c.clause_text.trim()) {
+        curY -= 3.5 * MM;
+        page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
+          x: 30 * MM,
+          y: curY,
+          size: 7.5,
+          font: fontRegular,
+          color: rgb(0.4, 0.4, 0.4),
+        });
+        curY -= 4.5 * MM;
+      } else {
+        curY -= 4.2 * MM;
+      }
     }
   });
 
