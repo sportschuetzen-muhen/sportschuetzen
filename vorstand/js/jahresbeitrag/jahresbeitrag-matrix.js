@@ -409,14 +409,14 @@ function jbRenderMatrixTable() {
     <th class="tk-col-sticky-name" style="min-width: 170px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('name')">
       Schütze <span class="tk-sort-ind">${_jbMatrixSortCol === 'name' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
     </th>
-    <th class="text-center" style="width: 80px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('status')">
+    <th class="text-center tk-col-status" data-col-id="status" data-col-name="Status" style="width: 80px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('status')">
       Status <span class="tk-sort-ind">${_jbMatrixSortCol === 'status' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
     </th>
   `;
 
   columns.forEach(col => {
     thHtml += `
-      <th class="text-end" style="min-width: 45px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('${col.key}')" title="${escHtml(col.bezeichnung)} (${col.key})">
+      <th class="text-end tk-col-${col.key}" data-col-id="${col.key}" data-col-name="${escHtml(col.label)} (${col.key})" style="min-width: 45px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('${col.key}')" title="${escHtml(col.bezeichnung)} (${col.key})">
         <div style="font-size: 10px; font-weight: 700; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${escHtml(col.label)}</div>
         <div class="text-muted" style="font-size: 9px; font-weight: normal; font-family: monospace;">${col.key}</div>
       </th>
@@ -424,7 +424,7 @@ function jbRenderMatrixTable() {
   });
 
   thHtml += `
-    <th class="text-end pe-3 bg-light" style="min-width: 95px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('gesamt')">
+    <th class="text-end pe-3 bg-light tk-col-gesamt" data-col-id="gesamt" data-col-name="Total CHF" style="min-width: 95px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('gesamt')">
       Total CHF <span class="tk-sort-ind">${_jbMatrixSortCol === 'gesamt' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
     </th>
   `;
@@ -488,9 +488,9 @@ function jbRenderMatrixTable() {
           const isCredit = val < 0;
           const displayVal = isCredit ? `-${fmtChf(Math.abs(val)).replace('CHF', '').trim()}` : fmtChf(val).replace('CHF', '').trim();
           const colorClass = isCredit ? 'text-success fw-bold' : 'text-dark font-monospace';
-          cellsHtml += `<td class="text-end ${colorClass}" style="font-size: 12px;">${displayVal}</td>`;
+          cellsHtml += `<td class="text-end tk-col-${col.key} ${colorClass}" data-col-id="${col.key}" style="font-size: 12px;">${displayVal}</td>`;
         } else {
-          cellsHtml += `<td class="text-end text-muted opacity-25" style="font-size: 11px;">–</td>`;
+          cellsHtml += `<td class="text-end text-muted opacity-25 tk-col-${col.key}" data-col-id="${col.key}" style="font-size: 11px;">–</td>`;
         }
       });
 
@@ -508,9 +508,9 @@ function jbRenderMatrixTable() {
                onclick="jbShowPositionen('${r.id}'); return false;">${escHtml(name)}</a>
             <div class="text-muted small" style="font-size: 10px;">${pn}</div>
           </td>
-          <td class="text-center">${statusBadge}</td>
+          <td class="text-center tk-col-status" data-col-id="status">${statusBadge}</td>
           ${cellsHtml}
-          <td class="text-end pe-3 fw-bold bg-light font-monospace" style="font-size: 13px; color: #0f3a5d;">
+          <td class="text-end pe-3 fw-bold bg-light font-monospace tk-col-gesamt" data-col-id="gesamt" style="font-size: 13px; color: #0f3a5d;">
             ${fmtChf(r.Gesamt)}
           </td>
         </tr>
@@ -520,6 +520,20 @@ function jbRenderMatrixTable() {
 
   // 5. Footer & KPIs berechnen
   jbCalculateMatrixTotals(rowsData, columns);
+
+  // 6. Spaltenauswahl & Resizing initialisieren
+  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbMatrixColToggleDropdown')) {
+    window._jbMatrixColToggle = window.TableKit.setupColumnToggle('#jbMatrixTable', {
+      container: '#jbMatrixColToggleDropdown',
+      storageKey: 'portal_jb_matrix_cols'
+    });
+  }
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#jbMatrixTable', {
+      storageKey: 'jb_matrix_col_widths',
+      minWidth: 40
+    });
+  }
 }
 
 // ============================================================
@@ -590,7 +604,7 @@ function jbCalculateMatrixTotals(rowsData, columns) {
         <div class="fw-bold text-dark">SUMME (${selectedRows.length} Schützen)</div>
         <div class="text-muted small" style="font-size: 10px;">von ${rowsData.length} gefiltert</div>
       </td>
-      <td class="text-center">–</td>
+      <td class="text-center tk-col-status" data-col-id="status">–</td>
     `;
 
     columns.forEach(col => {
@@ -599,16 +613,21 @@ function jbCalculateMatrixTotals(rowsData, columns) {
         ? fmtChf(sumVal).replace('CHF', '').trim() 
         : '–';
       const colorStyle = sumVal < 0 ? 'text-success' : 'text-dark';
-      ftHtml += `<td class="text-end font-monospace ${colorStyle}" style="font-size: 12px; font-weight: 700;">${displayVal}</td>`;
+      ftHtml += `<td class="text-end font-monospace tk-col-${col.key} ${colorStyle}" data-col-id="${col.key}" style="font-size: 12px; font-weight: 700;">${displayVal}</td>`;
     });
 
     ftHtml += `
-      <td class="text-end pe-3 text-primary fw-extrabold font-monospace" style="font-size: 14px;">
+      <td class="text-end pe-3 text-primary fw-extrabold font-monospace tk-col-gesamt" data-col-id="gesamt" style="font-size: 14px;">
         ${fmtChf(grandTotal)}
       </td>
     `;
 
     tfootRow.innerHTML = ftHtml;
+  }
+
+  // Sichtbarkeit der Spalten auf neu gerenderten Footer anwenden
+  if (window._jbMatrixColToggle && typeof window._jbMatrixColToggle.apply === 'function') {
+    window._jbMatrixColToggle.apply();
   }
 
   // 2. KPI Karten aktualisieren
@@ -759,27 +778,37 @@ function jbExportMatrixExcel() {
     return;
   }
 
+  // Ermittle ausgeblendete Spalten gemäss aktuellem TableKit Status
+  const hiddenColIds = new Set();
+  const hiddenThs = document.querySelectorAll('#jbMatrixHeaderRow th.tk-col-hidden[data-col-id]');
+  hiddenThs.forEach(th => {
+    if (th.dataset.colId) hiddenColIds.add(th.dataset.colId);
+  });
+
+  const exportColumns = columns.filter(col => !hiddenColIds.has(col.key));
+  const isStatusVisible = !hiddenColIds.has('status');
+  const isGesamtVisible = !hiddenColIds.has('gesamt');
+
   // 1. Kopfzeilen aufbauen
   const headerRow1 = [
     'Ausgewählt',
     'Personennummer',
     'Name',
     'Vorname',
-    'Kategorie',
-    'Status',
-    'Bezahlt am',
-    'Zahlungsmethode',
-    'Beleg / Ref'
+    'Kategorie'
   ];
-  columns.forEach(col => {
+  if (isStatusVisible) headerRow1.push('Status');
+  headerRow1.push('Bezahlt am', 'Zahlungsmethode', 'Beleg / Ref');
+
+  exportColumns.forEach(col => {
     headerRow1.push(`${col.label} (${col.key})`);
   });
-  headerRow1.push('Total CHF');
+  if (isGesamtVisible) headerRow1.push('Total CHF');
 
   // 2. Datenzeilen aufbauen
   const dataRows = [];
   const colTotals = {};
-  columns.forEach(c => { colTotals[c.key] = 0; });
+  exportColumns.forEach(c => { colTotals[c.key] = 0; });
   let grandTotal = 0;
 
   rowsData.forEach(r => {
@@ -799,14 +828,18 @@ function jbExportMatrixExcel() {
       pn,
       m.LastName || r._name || '',
       m.FirstName || '',
-      m._kategorie || r._kategorie || 'Aktiv',
-      (typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen')).toUpperCase(),
+      m._kategorie || r._kategorie || 'Aktiv'
+    ];
+    if (isStatusVisible) {
+      row.push((typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen')).toUpperCase());
+    }
+    row.push(
       r.payment_date || '',
       r.payment_method || '',
       r.document_ref || ''
-    ];
+    );
 
-    columns.forEach(col => {
+    exportColumns.forEach(col => {
       const val = feeMap[col.key] || 0;
       row.push(val);
       if (isSelected) {
@@ -814,10 +847,12 @@ function jbExportMatrixExcel() {
       }
     });
 
-    const rowTotal = Number(r.Gesamt || 0);
-    row.push(rowTotal);
-    if (isSelected) {
-      grandTotal += rowTotal;
+    if (isGesamtVisible) {
+      const rowTotal = Number(r.Gesamt || 0);
+      row.push(rowTotal);
+      if (isSelected) {
+        grandTotal += rowTotal;
+      }
     }
 
     dataRows.push(row);
@@ -827,12 +862,15 @@ function jbExportMatrixExcel() {
   const sumRow = [
     'SUMME',
     `${_jbMatrixSelected.size} Schützen ausgewählt`,
-    '', '', '', '', '', '', ''
+    '', '', ''
   ];
-  columns.forEach(col => {
+  if (isStatusVisible) sumRow.push('');
+  sumRow.push('', '', '');
+
+  exportColumns.forEach(col => {
     sumRow.push(colTotals[col.key] || 0);
   });
-  sumRow.push(grandTotal);
+  if (isGesamtVisible) sumRow.push(grandTotal);
 
   // 4. Excel Workbook erzeugen
   const wsData = [

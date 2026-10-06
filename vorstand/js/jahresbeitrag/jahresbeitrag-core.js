@@ -488,7 +488,7 @@ function renderJahresbeitragView() {
     if (typeof TableKit !== 'undefined') {
       setTimeout(() => {
         if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbMatrixColToggleDropdown')) {
-          TableKit.setupColumnToggle('#jbMatrixTable', {
+          window._jbMatrixColToggle = TableKit.setupColumnToggle('#jbMatrixTable', {
             container: '#jbMatrixColToggleDropdown',
             storageKey: 'portal_jb_matrix_cols'
           });

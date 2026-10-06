@@ -651,17 +651,21 @@
     if (container) {
       container.innerHTML = `
         <div class="dropdown">
-          <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-1 shadow-xs" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Spalten ein- oder ausblenden">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-1 shadow-xs" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Spalten ein- oder ausblenden">
             <i class="fas fa-columns text-primary"></i>
             <span>Spalten</span>
             <span class="badge bg-secondary ms-1 tk-col-count" style="font-size: 0.72rem;">${cols.length}/${cols.length}</span>
           </button>
-          <div class="dropdown-menu dropdown-menu-end shadow p-2" style="min-width: 220px; font-size: 0.85rem; z-index: 1060;">
+          <div class="dropdown-menu dropdown-menu-end shadow p-2" style="min-width: 240px; font-size: 0.85rem; z-index: 1060;">
             <div class="d-flex justify-content-between align-items-center mb-2 px-1 border-bottom pb-1">
-              <span class="fw-bold small text-muted text-uppercase" style="font-size: 0.72rem;">Spalten auswählen</span>
-              <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-primary small tk-col-show-all" style="font-size: 0.75rem;">Alle an</button>
+              <span class="fw-bold small text-muted text-uppercase" style="font-size: 0.72rem;">Spalten</span>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-primary small tk-col-show-all" style="font-size: 0.75rem;">Alle an</button>
+                <span class="text-muted small">|</span>
+                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-secondary small tk-col-hide-all" style="font-size: 0.75rem;">Alle aus</button>
+              </div>
             </div>
-            <div class="tk-col-dropdown-list d-flex flex-column gap-1">
+            <div class="tk-col-dropdown-list d-flex flex-column gap-1" style="max-height: 380px; overflow-y: auto;">
               ${cols.map(c => `
                 <label class="dropdown-item d-flex align-items-center justify-content-between py-1 px-2 rounded cursor-pointer mb-0">
                   <span>${c.name}</span>
@@ -686,6 +690,15 @@
         showAllBtn.addEventListener('click', (e) => {
           e.preventDefault();
           cols.forEach(c => { colState[c.id] = true; });
+          applyColumnVisibility();
+        });
+      }
+
+      const hideAllBtn = container.querySelector('.tk-col-hide-all');
+      if (hideAllBtn) {
+        hideAllBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          cols.forEach(c => { colState[c.id] = false; });
           applyColumnVisibility();
         });
       }

@@ -57,9 +57,10 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 * **Problem:** In der klassischen Rechnungsliste sieht man nur das Gesamttotal pro Schütze, hat aber keinen Gesamtüberblick über alle Gebühreneinnahmen (z. B. Wie viel nimmt der Verein insgesamt an Aktivbeiträgen, Lizenzen, Schützenhausgebühren oder Turnieren ein?).
 * **Lösung:** Ein eigenständiger Reiter **«Beitragsmatrix»** stellt alle Schützen als Zeilen und alle anfallenden Gebühren als Spalten gegenüber:
   - **Pickliste ganz links:** Standardmässig sind alle Schützen ausgewählt. Wird ein Schütze abgewählt, wird er gedimmt und seine Beträge werden **live aus den Spaltensummen und dem Gesamttotal herausgerechnet**.
-  - **Summenzeile (`<tfoot>`):** Fixierte Fusszeile mit Spaltensumme für jede Gebühr und Gesamttotal.
-  - **Excel-Export:** Direkter Export der Matrix nach `.xlsx` über SheetJS (`XLSX`).
-  - **Druckansicht:** Spezialisiertes `@media print`-Stylesheet optimiert für A4-Querformat mit wiederholten Kopf-/Fusszeilen.
+  - **Spaltenauswahl (`TableKit.setupColumnToggle`):** Sämtliche Gebührenspalten, Status und Gesamttotal können über das Dropdown-Menü *«Spalten»* frei ein- und ausgeblendet werden. Der Zustand wird im `localStorage` (`portal_jb_matrix_cols`) persistiert.
+  - **Summenzeile (`<tfoot>`):** Fixierte Fusszeile mit Spaltensumme für jede Gebühr und Gesamttotal; passt sich live an sichtbare Spalten und ausgewählte Schützen an.
+  - **Excel-Export:** Direkter Export der Matrix nach `.xlsx` über SheetJS (`XLSX`) unter Berücksichtigung der aktiv eingeblendeten Spalten.
+  - **Druckansicht:** Spezialisiertes `@media print`-Stylesheet optimiert für A4-Querformat mit wiederholten Kopf-/Fusszeilen, bei dem ausgeblendete Spalten automatisch unterdrückt werden.
 
 ### 2.9 Hausmeister-Rabatt (`RA002`) über die Beitragsverwaltung (Option B)
 * **Problem:** Wird die Entschädigung «Hausmeister» als Verbandsfunktion in `member_functions` erfasst, wurde sie bei jedem SSV-Import gelöscht, da «Hausmeister» keine offizielle SSV-Funktion ist.
@@ -143,7 +144,8 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
     - Junior ($\le$ 20 Jahre): `LI002` (CHF 0.00).
     - Erwachsene: `LI001` (CHF 18.00).
 - **Fremdlizenz (Anderer Verein rechnet SSV ab):**
-  - Für jede Fremdlizenz: `LI003` (CHF 0.00, informative Position mit Vereinsname).
+  - Genau einmal pro Schütze abgerechnet: `LI003` (CHF 0.00, informative Position mit Vereinsname).
+  - **Deduplizierung (Migration 41):** Hat ein Mitglied bei einem Fremdverein mehrere aktive Lizenzen (z. B. G50m und G10m), wird `LI003` in `calculate_member_contributions` strikt dedupliziert und nur exakt einmal in `contributions_positions` und auf der Rechnung ausgewiesen (analog zur Schnellerfassung).
 
 ### 5.4 Gebäudebeitrag / Schützenhaus (GE001)
 - **Ansatz:** Vollständig dynamisch aus `public.gebuehren_config` (`GE001`, Ertragskonto `3413`).
