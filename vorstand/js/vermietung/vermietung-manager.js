@@ -330,7 +330,13 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     'vertragsnr': bookingNr,
     'buchungsnummer': bookingNr,
     'mietbetrag': amountStr,
-    'kaution': depositStr,
+    'kaution': '0.00',
+    'gebuehr_glas': settings?.glass_fee || '2.00',
+    'gebuehr_teller': settings?.plate_fee || '5.00',
+    'gebuehr_holz': settings?.wood_fee || '20.00',
+    'gebuehr_abfallsack': settings?.garbage_bag_fee || '4.00',
+    'gebuehr_reinigung': settings?.cleaning_fee_per_hour || '35.00',
+    'gebuehr_storno': settings?.storno_fee || '100.00',
     'bemerkung': bemerkung,
     'cockpit_url': cockpitUrl,
     'feedback_url': feedbackUrl,
@@ -849,11 +855,13 @@ async function saveRentalSettings() {
   try {
     const stdPrice = parseFloat(document.getElementById('cfg-price-standard')?.value || 300);
     const mbrPrice = parseFloat(document.getElementById('cfg-price-member')?.value || 150);
-    const deposit = parseFloat(document.getElementById('cfg-deposit')?.value || 200);
+    const glassFee = parseFloat(document.getElementById('cfg-glass-fee')?.value || 2);
+    const plateFee = parseFloat(document.getElementById('cfg-plate-fee')?.value || 5);
     const stornoFee = parseFloat(document.getElementById('cfg-storno-fee')?.value || 100);
     const woodFee = parseFloat(document.getElementById('cfg-wood-fee')?.value || 20);
     const cleanFee = parseFloat(document.getElementById('cfg-cleaning-fee')?.value || 35);
     const garbageFee = parseFloat(document.getElementById('cfg-garbage-fee')?.value || 4);
+    const rentalObject = document.getElementById('cfg-rental-object')?.value.trim() || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen';
 
     const sFirst = document.getElementById('cfg-sender-firstname')?.value.trim() || '';
     const sLast = document.getElementById('cfg-sender-lastname')?.value.trim() || '';
@@ -880,11 +888,14 @@ async function saveRentalSettings() {
       { setting_key: 'iban', setting_value: iban, description: 'IBAN für Schweizer QR-Rechnung' },
       { setting_key: 'maps_url', setting_value: mapsUrl, description: 'Google Maps Link Schützenhaus' },
       { setting_key: 'feedback_base_url', setting_value: fbUrl, description: 'Basis-URL für Storno-Rückmeldung' },
-      { setting_key: 'deposit_amount', setting_value: String(deposit), description: 'Kaution / Depot in CHF' },
+      { setting_key: 'deposit_amount', setting_value: '0', description: 'Kaution entfällt (nicht mehr verwendet)' },
+      { setting_key: 'glass_fee', setting_value: String(glassFee), description: 'Glasbruch pro Glas in CHF' },
+      { setting_key: 'plate_fee', setting_value: String(plateFee), description: 'Glasbruch / Bruch pro Teller in CHF' },
       { setting_key: 'storno_fee', setting_value: String(stornoFee), description: 'Stornogebühr in CHF' },
       { setting_key: 'wood_fee', setting_value: String(woodFee), description: 'Zusatz Cheminéeholz pro Kiste in CHF' },
       { setting_key: 'cleaning_fee_per_hour', setting_value: String(cleanFee), description: 'Nachreinigung pro Stunde in CHF' },
-      { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF' }
+      { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF' },
+      { setting_key: 'rental_object', setting_value: rentalObject, description: 'Bezeichnung Mietobjekt (Mietvertrag-Kopf)' }
     ];
 
     for (const row of settingsRows) {
@@ -892,15 +903,15 @@ async function saveRentalSettings() {
       if (setErr) throw setErr;
     }
 
-    // 2. Pricing Updates in public.rental_pricing
+    // 2. Pricing Updates in public.rental_pricing (Kaution immer 0.00)
     await supa.from('rental_pricing').update({
       base_price_chf: stdPrice,
-      deposit_chf: deposit
+      deposit_chf: 0
     }).eq('tariff_code', 'standard_tag');
 
     await supa.from('rental_pricing').update({
       base_price_chf: mbrPrice,
-      deposit_chf: deposit
+      deposit_chf: 0
     }).eq('tariff_code', 'mitglied_rabatt');
 
     // 3. Lokalen State synchronisieren
@@ -911,9 +922,9 @@ async function saveRentalSettings() {
 
     if (window._rentalPricing) {
       const std = window._rentalPricing.find(p => p.tariff_code === 'standard_tag');
-      if (std) { std.base_price_chf = stdPrice; std.deposit_chf = deposit; }
+      if (std) { std.base_price_chf = stdPrice; std.deposit_chf = 0; }
       const mbr = window._rentalPricing.find(p => p.tariff_code === 'mitglied_rabatt');
-      if (mbr) { mbr.base_price_chf = mbrPrice; mbr.deposit_chf = deposit; }
+      if (mbr) { mbr.base_price_chf = mbrPrice; mbr.deposit_chf = 0; }
     }
 
     showToast("✅ Einstellungen und Tarife erfolgreich in Supabase gespeichert!");

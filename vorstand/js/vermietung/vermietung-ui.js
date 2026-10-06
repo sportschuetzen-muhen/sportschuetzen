@@ -495,6 +495,9 @@ function renderRentalSettingsForm() {
   const woodFee = s.wood_fee ? Number(s.wood_fee) : 20;
   const cleanFee = s.cleaning_fee_per_hour ? Number(s.cleaning_fee_per_hour) : 35;
   const garbageFee = s.garbage_bag_fee ? Number(s.garbage_bag_fee) : 4;
+  const glassFee = s.glass_fee ? Number(s.glass_fee) : 2;
+  const plateFee = s.plate_fee ? Number(s.plate_fee) : 5;
+  const rentalObject = s.rental_object || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen';
 
   const sFirst = s.sender_first_name || 'Daniel';
   const sLast = s.sender_last_name || 'Hunziker';
@@ -534,10 +537,17 @@ function renderRentalSettingsForm() {
                 </div>
               </div>
               <div class="col-6">
-                <label class="form-label small fw-bold text-muted">Kaution / Depot</label>
+                <label class="form-label small fw-bold text-muted">Glasbruch (pro Glas)</label>
                 <div class="input-group input-group-sm">
                   <span class="input-group-text">CHF</span>
-                  <input type="number" step="0.50" class="form-control" id="cfg-deposit" value="${deposit.toFixed(2)}" required>
+                  <input type="number" step="0.50" class="form-control" id="cfg-glass-fee" value="${glassFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted">Teller (pro Stk.)</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">CHF</span>
+                  <input type="number" step="0.50" class="form-control" id="cfg-plate-fee" value="${plateFee.toFixed(2)}" required>
                 </div>
               </div>
               <div class="col-6">
@@ -548,7 +558,7 @@ function renderRentalSettingsForm() {
                 </div>
               </div>
               <div class="col-6">
-                <label class="form-label small fw-bold text-muted">Zusatz-Cheminéeholz (pro Kiste)</label>
+                <label class="form-label small fw-bold text-muted">Zusatz-Cheminéeholz (Kiste)</label>
                 <div class="input-group input-group-sm">
                   <span class="input-group-text">CHF</span>
                   <input type="number" step="0.50" class="form-control" id="cfg-wood-fee" value="${woodFee.toFixed(2)}" required>
@@ -561,12 +571,16 @@ function renderRentalSettingsForm() {
                   <input type="number" step="0.50" class="form-control" id="cfg-cleaning-fee" value="${cleanFee.toFixed(2)}" required>
                 </div>
               </div>
-              <div class="col-12">
+              <div class="col-6">
                 <label class="form-label small fw-bold text-muted">Kehrichtsack (pro Stk.)</label>
-                <div class="input-group input-group-sm" style="max-width: 200px;">
+                <div class="input-group input-group-sm">
                   <span class="input-group-text">CHF</span>
                   <input type="number" step="0.50" class="form-control" id="cfg-garbage-fee" value="${garbageFee.toFixed(2)}" required>
                 </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold text-muted">Mietobjekt (Bezeichnung Vertrag)</label>
+                <input type="text" class="form-control form-control-sm" id="cfg-rental-object" value="${escapeHtml(rentalObject)}" required>
               </div>
             </div>
           </div>

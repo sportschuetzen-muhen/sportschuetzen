@@ -1303,7 +1303,6 @@ async function generateRentalContractPdf(
   mietdatum: string,
   festbeginn: string,
   mietbetrag: number,
-  kaution: number,
   sender: SenderData,
   supabaseClient?: any,
   layoutData?: any,
@@ -1370,6 +1369,66 @@ async function generateRentalContractPdf(
     );
   }
 
+  // Vermietungs-Einstellungen (Single Source of Truth: public.rental_settings)
+  const rs: Record<string, string> = {};
+  if (supabaseClient) {
+    const { data: rsData, error: rsErr } = await supabaseClient
+      .from("rental_settings")
+      .select("setting_key, setting_value");
+    if (rsErr) {
+      throw new Error(`Vermietungs-Einstellungen (rental_settings) konnten nicht geladen werden: ${rsErr.message}`);
+    }
+    (rsData || []).forEach((r: any) => { rs[r.setting_key] = r.setting_value ?? ""; });
+  }
+
+  const fmtFee = (v: string | undefined): string => {
+    const n = Number(String(v ?? "").replace(",", "."));
+    return Number.isFinite(n) && String(v ?? "").trim() !== "" ? formatSwissChf(n) : "–";
+  };
+
+  const vermieterName = [rs.sender_first_name, rs.sender_last_name].filter(Boolean).join(" ").trim()
+    || [sender.vorname, sender.nachname].filter(Boolean).join(" ").trim()
+    || "Vermietung";
+  const vermieterTelefon = (rs.sender_phone || sender.mobil || "").trim() || "–";
+  const vermieterEmail = (rs.club_email || sender.email || CLUB_EMAIL).trim();
+  const mietobjekt = (rs.rental_object || "").trim() || "Schützenstube Muhen";
+
+  const contractPlaceholders: Record<string, string> = {
+    vermieter_name: vermieterName,
+    vermieter_vorname: rs.sender_first_name || "",
+    vermieter_nachname: rs.sender_last_name || "",
+    vermieter_telefon: vermieterTelefon,
+    vermieter_email: vermieterEmail,
+    gebuehr_holz: fmtFee(rs.wood_fee),
+    gebuehr_abfallsack: fmtFee(rs.garbage_bag_fee),
+    gebuehr_reinigung: fmtFee(rs.cleaning_fee_per_hour),
+    gebuehr_storno: fmtFee(rs.storno_fee),
+    gebuehr_glas: fmtFee(rs.glass_fee),
+    gebuehr_teller: fmtFee(rs.plate_fee),
+    mietbetrag: formatSwissChf(mietbetrag),
+    mietdatum: mietdatum,
+    festbeginn: festbeginn || "",
+    buchungsnummer: bookingId,
+    vertragsnr: bookingId,
+    vorname: recipient.vorname || "",
+    nachname: recipient.nachname || "",
+    strasse: recipient.strasse || "",
+    plz: recipient.plz || "",
+    ort: recipient.ort || "",
+  };
+  const applyContractPlaceholders = (txt: string): string =>
+    String(txt || "").replace(/\{([a-z_]+)\}/gi, (m, key) => {
+      const k = String(key).toLowerCase();
+      return Object.prototype.hasOwnProperty.call(contractPlaceholders, k) ? contractPlaceholders[k] : m;
+    });
+
+  // Aufzählungszeichen: echtes Bullet (WinAnsi 0x95), sonst Bindestrich
+  let bulletChar = "-";
+  try {
+    fontRegular.encodeText("\u2022");
+    bulletChar = "\u2022";
+  } catch (_) { /* Fallback '-' */ }
+
   // ============================================================================
   // SEITE 1: KOPFDATEN, PARTEIEN, MIETOBJEKT & KONDITIONEN
   // ============================================================================
@@ -1415,24 +1474,32 @@ async function generateRentalContractPdf(
 
   // Parteien
   page1.drawText("Vermieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page1.drawText(`${CLUB_NAME}, 5037 Muhen (Vertretung: ${sender.vorname || "Vermietung"} ${sender.nachname || ""})`, {
-    x: 50 * MM,
-    y: curY,
-    size: 9,
-    font: fontRegular,
-  });
-  curY -= 5 * MM;
-
-  const mieterName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ") || recipient.name || "–";
-  page1.drawText("Mieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page1.drawText(`${mieterName}, ${recipient.strasse || ""}, ${recipient.plz || ""} ${recipient.ort || ""}`, {
+  page1.drawText(sanitizeWinAnsiText(`${CLUB_NAME}, ${vermieterName}`), {
     x: 50 * MM,
     y: curY,
     size: 9,
     font: fontRegular,
   });
   curY -= 4 * MM;
-  page1.drawText(`Kontakt: ${recipient.email || "–"} | Tel: ${recipient.telefon || "–"}`, {
+  page1.drawText(sanitizeWinAnsiText(`Kontakt: ${vermieterEmail} | Tel: ${vermieterTelefon}`), {
+    x: 50 * MM,
+    y: curY,
+    size: 8.5,
+    font: fontRegular,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  curY -= 6 * MM;
+
+  const mieterName = [recipient.vorname, recipient.nachname].filter(Boolean).join(" ") || recipient.name || "–";
+  page1.drawText("Mieter:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
+  page1.drawText(sanitizeWinAnsiText(`${mieterName}, ${recipient.strasse || ""}, ${recipient.plz || ""} ${recipient.ort || ""}`), {
+    x: 50 * MM,
+    y: curY,
+    size: 9,
+    font: fontRegular,
+  });
+  curY -= 4 * MM;
+  page1.drawText(sanitizeWinAnsiText(`Kontakt: ${recipient.email || "–"} | Tel: ${recipient.telefon || "–"}`), {
     x: 50 * MM,
     y: curY,
     size: 8.5,
@@ -1443,15 +1510,15 @@ async function generateRentalContractPdf(
 
   // Mietobjekt & Konditionen
   page1.drawText("Mietdatum:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page1.drawText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`, { x: 50 * MM, y: curY, size: 9, font: fontRegular });
+  page1.drawText(sanitizeWinAnsiText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`), { x: 50 * MM, y: curY, size: 9, font: fontRegular });
   curY -= 5 * MM;
 
   page1.drawText("Mietobjekt:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page1.drawText("Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen", { x: 50 * MM, y: curY, size: 9, font: fontRegular });
+  page1.drawText(sanitizeWinAnsiText(mietobjekt), { x: 50 * MM, y: curY, size: 9, font: fontRegular });
   curY -= 5 * MM;
 
   page1.drawText("Gebühren:", { x: 20 * MM, y: curY, size: 9, font: fontBold });
-  page1.drawText(`Mietgebühr: CHF ${mietbetrag.toFixed(2)}   |   Kaution (Depot bar): CHF ${kaution.toFixed(2)}`, {
+  page1.drawText(`Mietgebühr: CHF ${formatSwissChf(mietbetrag)}`, {
     x: 50 * MM,
     y: curY,
     size: 9,
@@ -1487,126 +1554,109 @@ async function generateRentalContractPdf(
     return newPage;
   }
 
-  // DYNAMISCHE KLAUSELN FLIESSEND RENDERN
-  clauses.forEach((c, idx) => {
-    const num = c.clause_number || String(idx + 1);
-    const titleText = `${num}. ${sanitizeWinAnsiText(c.clause_title)}:`;
-    const lines = wrapText(c.clause_text || "", fontRegular, 8, 170 * MM);
-    const neededHeight = 4.5 * MM + (lines.length * 3.8 * MM) + 3 * MM;
+  // DYNAMISCHE KLAUSELN FLIESSEND RENDERN (zeilenweise, Bullets untereinander mit hängendem Einzug)
+  const CL_FONT = 8;
+  const CL_LINE = 3.8 * MM;
+  const CL_TEXT_X = 27 * MM;
+  const CL_MARKER_X = 23.5 * MM;
+  const CL_WIDTH = 190 * MM - CL_TEXT_X;
 
-    // Falls auf aktueller Seite nicht genügend Platz, neue Seite anlegen
-    if (curY - neededHeight < 22 * MM) {
-      currentPage.drawText("Fortsetzung der Bestimmungen auf nächster Seite...", {
-        x: 20 * MM,
-        y: 14 * MM,
-        size: 7.5,
-        font: fontRegular,
-        color: rgb(0.45, 0.45, 0.45),
+  type ClauseRow = { marker: string; text: string };
+  const buildClauseRows = (raw: string): ClauseRow[] => {
+    const rows: ClauseRow[] = [];
+    applyContractPlaceholders(raw)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+      .forEach((line) => {
+        const bm = line.match(/^(?:[\u2022\u00B7*]|-(?=\s))\s*(.*)$/);
+        const nm = !bm ? line.match(/^(\d+\.)\s+(.*)$/) : null;
+        const marker = bm ? bulletChar : (nm ? nm[1] : "");
+        const body = bm ? bm[1] : (nm ? nm[2] : line);
+        wrapText(body, fontRegular, CL_FONT, CL_WIDTH).forEach((wl, i) => {
+          rows.push({ marker: i === 0 ? marker : "", text: wl });
+        });
       });
-      addNewContractPage();
-    }
+    return rows;
+  };
 
-    currentPage.drawText(titleText, { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
-    curY -= 4 * MM;
-    lines.forEach(l => {
-      currentPage.drawText(sanitizeWinAnsiText(l), { x: 24 * MM, y: curY, size: 8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
-      curY -= 3.8 * MM;
-    });
-    curY -= 2.5 * MM;
-  });
-
-  // ÜBERGABEPROTOKOLL & UNTERSCHRIFTEN
-  // Benötigter Platz: ca. 45 mm
-  if (curY - 45 * MM < 22 * MM) {
-    currentPage.drawText("Fortsetzung mit Übergabeprotokoll und Unterschriften auf nächster Seite...", {
+  const drawContinuationHint = () => {
+    currentPage.drawText("Fortsetzung der Bestimmungen auf nächster Seite...", {
       x: 20 * MM,
       y: 14 * MM,
       size: 7.5,
       font: fontRegular,
       color: rgb(0.45, 0.45, 0.45),
     });
-    addNewContractPage();
-  }
+  };
 
-  curY -= 2 * MM;
+  clauses.forEach((c, idx) => {
+    const num = c.clause_number || String(idx + 1);
+    const titleText = `${/^\d+$/.test(String(num)) ? num + ". " : num + ": "}${sanitizeWinAnsiText(c.clause_title)}:`;
+    const rows = buildClauseRows(c.clause_text || "");
+    const neededHeight = 4 * MM + rows.length * CL_LINE + 2.5 * MM;
 
-  // Checkliste / Übergabeprotokoll-Kästchen
-  currentPage.drawRectangle({
-    x: 20 * MM,
-    y: curY - 14 * MM,
-    width: 170 * MM,
-    height: 14 * MM,
-    color: rgb(0.96, 0.97, 0.99),
+    // Ganze Klausel auf neue Seite, falls sie dort vollständig Platz hat
+    if (curY - neededHeight < 22 * MM) {
+      drawContinuationHint();
+      addNewContractPage();
+    }
+
+    currentPage.drawText(titleText, { x: 20 * MM, y: curY, size: 8.5, font: fontBold });
+    curY -= 4 * MM;
+    rows.forEach((r) => {
+      if (curY < 20 * MM) {
+        drawContinuationHint();
+        addNewContractPage();
+      }
+      if (r.marker) {
+        currentPage.drawText(r.marker, { x: CL_MARKER_X, y: curY, size: CL_FONT, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      }
+      currentPage.drawText(r.text, { x: CL_TEXT_X, y: curY, size: CL_FONT, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      curY -= CL_LINE;
+    });
+    curY -= 2.5 * MM;
   });
-  currentPage.drawText("Übergabe- und Rücknahmeprotokoll:", { x: 23 * MM, y: curY - 3.5 * MM, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-  currentPage.drawText("[  ] Raum & Mobiliar intakt      [  ] Küche & Geschirr gereinigt      [  ] Abfall entsorgt      [  ] Schlüssel zurück", {
-    x: 23 * MM,
-    y: curY - 9 * MM,
-    size: 7.5,
-    font: fontRegular,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-  curY -= 18 * MM;
-
-  // Unterschriften
-  const dateStr = new Date().toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
-  currentPage.drawText(`Muhen, den ${dateStr}`, { x: 20 * MM, y: curY, size: 8, font: fontRegular });
-  curY -= 4.5 * MM;
-
-  currentPage.drawText("Für den Verein: Sportschützen Muhen", { x: 20 * MM, y: curY, size: 8, font: fontBold });
-  currentPage.drawText("Der Mieter (gelesen & akzeptiert):", { x: 110 * MM, y: curY, size: 8, font: fontBold });
-
-  curY -= 9 * MM;
-  currentPage.drawLine({ start: { x: 20 * MM, y: curY }, end: { x: 80 * MM, y: curY }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
-  currentPage.drawLine({ start: { x: 110 * MM, y: curY }, end: { x: 180 * MM, y: curY }, thickness: 0.5, color: rgb(0.5, 0.5, 0.5) });
 
   // ============================================================================
-  // SEPARATE SCHLUSS-SEITE: ABRECHNUNG & SCHWEIZER QR-EINZAHLUNGSSCHEIN
+  // SEPARATE SCHLUSS-SEITE: ZAHLUNGSDETAILS & SCHWEIZER QR-EINZAHLUNGSSCHEIN
+  // Vereinskopf identisch zu Seite 1 positioniert
   // ============================================================================
   const qrPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-  let qrTopY = 280 * MM;
 
+  let qrTextStartX = 15 * MM;
   if (logoImage) {
-    const scaledLogo = logoImage.scaleToFit(28 * MM, 28 * MM);
+    const scaledLogo = logoImage.scaleToFit(32 * MM, 32 * MM);
     qrPage.drawImage(logoImage, {
-      x: 20 * MM,
-      y: qrTopY - scaledLogo.height + 2 * MM,
+      x: 15 * MM,
+      y: 291 * MM - scaledLogo.height,
       width: scaledLogo.width,
       height: scaledLogo.height,
     });
+    qrTextStartX = 15 * MM + scaledLogo.width + 3.5 * MM;
   }
 
   qrPage.drawText(CLUB_NAME.toUpperCase(), {
-    x: 55 * MM,
-    y: qrTopY,
-    size: 13,
+    x: qrTextStartX,
+    y: 281.5 * MM,
+    size: 14,
     font: fontBold,
     color: rgb(0.12, 0.23, 0.54),
   });
   qrPage.drawText("gegründet 1919 · Schiessanlage Rüteli, 5037 Muhen", {
-    x: 55 * MM,
-    y: qrTopY - 5 * MM,
-    size: 8.5,
+    x: qrTextStartX,
+    y: 275.5 * MM,
+    size: 9,
     font: fontRegular,
     color: rgb(0.4, 0.45, 0.55),
   });
 
-  qrTopY -= 17 * MM;
-  qrPage.drawText("Abrechnung & Schweizer QR-Einzahlungsschein", {
-    x: 20 * MM,
-    y: qrTopY,
-    size: 12,
-    font: fontBold,
-    color: rgb(0.1, 0.15, 0.3),
-  });
-
-  qrTopY -= 6 * MM;
-
-  // Übersichtliche Abrechnungsbox
-  const boxHeight = 78 * MM;
+  // Zahlungsdetail-Box (weiter unten, zwischen Vereinskopf und QR-Zahlteil)
+  const boxTopY = 212 * MM;
+  const boxHeight = 62 * MM;
   qrPage.drawRectangle({
     x: 20 * MM,
-    y: qrTopY - boxHeight,
+    y: boxTopY - boxHeight,
     width: 170 * MM,
     height: boxHeight,
     color: rgb(0.97, 0.98, 0.99),
@@ -1614,12 +1664,12 @@ async function generateRentalContractPdf(
     borderWidth: 0.5,
   });
 
-  let boxY = qrTopY - 7 * MM;
-  qrPage.drawText("Buchungs- & Abrechnungsdetails:", { x: 25 * MM, y: boxY, size: 9, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
-  boxY -= 6 * MM;
+  let boxY = boxTopY - 8 * MM;
+  qrPage.drawText("Buchungs- & Zahlungsdetails:", { x: 25 * MM, y: boxY, size: 9, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+  boxY -= 7 * MM;
 
   qrPage.drawText("Vertrags-/Rechnungs-Nr.:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
-  qrPage.drawText(bookingId, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  qrPage.drawText(sanitizeWinAnsiText(bookingId), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
   boxY -= 5 * MM;
 
   qrPage.drawText("Mieter / Rechnungsempfänger:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
@@ -1631,15 +1681,11 @@ async function generateRentalContractPdf(
   boxY -= 5 * MM;
 
   qrPage.drawText("Mietdatum / Anlass:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
-  qrPage.drawText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  qrPage.drawText(sanitizeWinAnsiText(`${mietdatum} (Festbeginn: ${festbeginn || "Nach Vereinbarung"})`), { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
   boxY -= 5 * MM;
 
   qrPage.drawText("Mietgebühr Schützenstube:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
-  qrPage.drawText(`CHF ${mietbetrag.toFixed(2)}`, { x: 75 * MM, y: boxY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
-  boxY -= 5 * MM;
-
-  qrPage.drawText("Kaution (Depot bar vor Ort):", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
-  qrPage.drawText(`CHF ${kaution.toFixed(2)}`, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  qrPage.drawText(`CHF ${formatSwissChf(mietbetrag)}`, { x: 75 * MM, y: boxY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
   boxY -= 6 * MM;
 
   qrPage.drawText("Zahlungsziel:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
@@ -3139,15 +3185,12 @@ Deno.serve(async (req: Request) => {
       const mietdatum = payload.mietdatum || new Date().toLocaleDateString("de-CH");
       const festbeginn = payload.festbeginn || "14:00 Uhr";
       const mietbetrag = Number(payload.mietbetrag || payload.totalAmount || 300);
-      const kaution = Number(payload.kaution || 200);
-
       pdfBytes = await generateRentalContractPdf(
         bookId,
         recipient,
         mietdatum,
         festbeginn,
         mietbetrag,
-        kaution,
         sender,
         supabase,
         payload.layout,

@@ -225,10 +225,16 @@
         '{mieter_strasse}', '{mieter_plz}', '{mieter_ort}', '{mieter_adresse}',
         '{vermieter_name}', '{vermieter_vorname}', '{vermieter_nachname}', '{vermieter_telefon}', '{vermieter_email}',
         '{wirtschaft_name}', '{wirtschaft_phone}', '{wirtschaft_email}',
-        '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{kaution}', '{bemerkung}', '{cockpit_url}', '{feedback_url}'
+        '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{bemerkung}', '{cockpit_url}', '{feedback_url}'
       ];
     } else if (isMietvertragPdf) {
-      categoryPlaceholders = ['{mietdatum}', '{mietbetrag}', '{buchungsnummer}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
+      categoryPlaceholders = [
+        '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{buchungsnummer}', '{vertragsnr}',
+        '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}',
+        '{vermieter_name}', '{vermieter_telefon}', '{vermieter_email}',
+        '{gebuehr_holz}', '{gebuehr_abfallsack}', '{gebuehr_reinigung}', '{gebuehr_storno}',
+        '{gebuehr_glas}', '{gebuehr_teller}'
+      ];
     } else if (currentCat === 'rechnung') {
       categoryPlaceholders = [
         '{rechnungsnummer}', '{rechnungsjahr}', '{gesamtbetrag}', '{faelligkeitsdatum}',
@@ -331,8 +337,84 @@
                 </div>
               </div>
             </div>
+          ` : (currentCat === 'rechnung' ? `
+            <!-- FALL B: RECHNUNGEN & MAHNWESEN (KEINE KLAUSELN, STATTDESSEN LIVE-MAIL-VORSCHAU) -->
+            <!-- Linke Spalte: Textbausteine & E-Mail-Begleittext -->
+            <div class="col-lg-6">
+              <form id="doc-template-form" onsubmit="docSaveTemplate(event, '${currentTemplate.id}')">
+                
+                <div class="bg-light p-3 rounded-3 mb-3 border shadow-sm">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label fw-bold small text-primary mb-0"><i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)</label>
+                    <small class="text-muted" style="font-size: 11px;">Wird an der Cursor-Position eingefügt</small>
+                  </div>
+                  <div class="d-flex gap-1 flex-wrap">
+                    ${placeholdersHtml}
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Dokumententitel / Betreffzeile (PDF)</label>
+                  <input type="text" class="form-control fw-bold text-primary" id="doc-f-title" required value="${escapeHtml(currentTemplate.title || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Einleitungstext / Anschreiben (PDF)</label>
+                  <textarea class="form-control" id="doc-f-intro" rows="3" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.intro || '')}</textarea>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold small text-muted">Schlusstext & Grussformel (PDF)</label>
+                  <textarea class="form-control" id="doc-f-outro" rows="2" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.outro || '')}</textarea>
+                </div>
+
+                <div class="row g-3 mb-3">
+                  <div class="col-sm-8">
+                    <label class="form-label fw-bold small text-muted">Fusszeilen-Hinweis (PDF)</label>
+                    <input type="text" class="form-control" id="doc-f-notice" value="${escapeHtml(currentTemplate.notice || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                  </div>
+                  <div class="col-sm-4">
+                    <label class="form-label fw-bold small text-muted">Zahlungsfrist (Tage)</label>
+                    <input type="number" class="form-control text-end" id="doc-f-duedays" value="${currentTemplate.due_days || 30}">
+                  </div>
+                </div>
+
+                <div class="p-3 bg-light rounded-3 border mb-3">
+                  <h6 class="fw-bold text-primary mb-2"><i class="fas fa-envelope me-1.5"></i>E-Mail Begleittext (bei Rechnungs- & Mahnversand)</h6>
+                  <div class="mb-2">
+                    <label class="form-label small text-muted mb-1">E-Mail Betreff</label>
+                    <input type="text" class="form-control form-control-sm fw-semibold" id="doc-f-mail-subj" value="${escapeHtml(currentTemplate.mail_subject || '')}" oninput="docUpdateLiveMailPreview()" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                  </div>
+                  <div>
+                    <label class="form-label small text-muted mb-1">E-Mail Nachrichtentext (WYSIWYG-Editor)</label>
+                    <textarea class="form-control form-control-sm" id="doc-f-mail-body" rows="6" oninput="docUpdateLiveMailPreview()">${escapeHtml(currentTemplate.mail_body || '')}</textarea>
+                  </div>
+                </div>
+
+                <div class="d-grid">
+                  <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm write-protected" id="doc-submit-btn">
+                    <i class="fas fa-save me-1.5"></i> Vorlage speichern
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Rechte Spalte: Live-HTML-Vorschau der Rechnungs-E-Mail -->
+            <div class="col-lg-6">
+              <div class="card border shadow-sm p-3 bg-light rounded-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="fw-bold text-primary mb-0">
+                    <i class="fas fa-eye me-1.5"></i>Live-Vorschau (E-Mail Begleittext)
+                  </h6>
+                  <span class="badge bg-primary" style="font-size: 10px;">Rechnungsmuster aktiv</span>
+                </div>
+                <div id="doc-live-mail-preview-container" class="mt-2">
+                  <!-- Wird dynamisch befüllt -->
+                </div>
+              </div>
+            </div>
           ` : `
-            <!-- FALL B: STANDARD DOKUMENTE & MIETVERTRAG PDF MIT KLAUSELN -->
+            <!-- FALL C: VERTRAG (MIETVERTRAG) & VORSTANDSBRIEF MIT KLAUSELN / REGLEMENT -->
             <!-- Linke Spalte: Textbausteine & Metadaten -->
             <div class="col-lg-7">
               <form id="doc-template-form" onsubmit="docSaveTemplate(event, '${currentTemplate.id}')">
@@ -412,7 +494,7 @@
 
                 ${clausesForTemplate.length === 0 ? `
                   <div class="text-center py-4 text-muted small bg-light rounded-3 p-3">
-                    <i class="fas fa-info-circle me-1"></i>Für dieses Dokument sind keine separaten Klauseln hinterlegt (z.B. bei Standard-Rechnungen).
+                    <i class="fas fa-info-circle me-1"></i>Für dieses Dokument sind keine separaten Klauseln hinterlegt.
                   </div>
                 ` : `
                   <!-- Scrollbar ohne overflow-hidden !important Bug -->
@@ -443,7 +525,7 @@
                 `}
               </div>
             </div>
-          `}
+          `)}
         </div>
       </div>
     `;
@@ -454,7 +536,7 @@
       if (mailBodyEl) {
         window.ClubWysiwyg.init(mailBodyEl, {
           mode: 'email',
-          minHeight: isVermietungMail ? '260px' : '180px',
+          minHeight: (isVermietungMail || currentCat === 'rechnung') ? '240px' : '180px',
           placeholders: categoryPlaceholders.map(p => ({ tag: p, label: p })),
           enableBanners: true,
           enableButtons: true,
@@ -467,8 +549,8 @@
       }
     }
 
-    // Falls Vermietungs-Mail aktiv, sofort Live-Vorschau rendern
-    if (isVermietungMail) {
+    // Falls Vermietungs-Mail oder Rechnungs-Kategorie aktiv, sofort Live-Vorschau rendern
+    if (isVermietungMail || currentCat === 'rechnung') {
       window.docUpdateLiveMailPreview();
     }
   };
@@ -510,10 +592,85 @@
     const subj = document.getElementById('doc-f-mail-subj')?.value || '';
     const mailBodyEl = document.getElementById('doc-f-mail-body');
     const body = (mailBodyEl?._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl?.value) || '';
-    const code = window._selectedDocCode || 'vm_vertrag';
+    const code = window._selectedDocCode || '';
 
-    previewContainer.innerHTML = buildRentalEmailPreviewHtml(subj, body, code);
+    if (window._selectedDocCategory === 'rechnung') {
+      previewContainer.innerHTML = buildInvoiceEmailPreviewHtml(subj, body, code);
+    } else {
+      previewContainer.innerHTML = buildRentalEmailPreviewHtml(subj, body, code || 'vm_vertrag');
+    }
   };
+
+  function buildInvoiceEmailPreviewHtml(subject, bodyText, templateCode) {
+    const sample = {
+      rechnungsnummer: 'RE-2026-0042',
+      rechnungsjahr: new Date().getFullYear().toString(),
+      gesamtbetrag: '150.00',
+      faelligkeitsdatum: '30.04.2026',
+      vorname: 'Max',
+      nachname: 'Muster',
+      anrede: 'Lieber Max',
+      strasse: 'Hauptstrasse 42',
+      plz: '5037',
+      ort: 'Muhen',
+      absender_vorname: 'Daniel',
+      absender_nachname: 'Hunziker',
+      absender_funktion: 'Kassier',
+      absender_email: 'sportschuetzen.muhen@gmail.com',
+      absender_mobil: '079 123 45 67'
+    };
+
+    let bannerColor = '#1a3a5a';
+    if (String(templateCode || '').startsWith('mahnung_3')) bannerColor = '#7f1d1d';
+    else if (String(templateCode || '').startsWith('mahnung_2')) bannerColor = '#c53030';
+    else if (String(templateCode || '').startsWith('mahnung')) bannerColor = '#d97706';
+
+    let renderedSubject = subject || '';
+    let renderedBody = bodyText || '';
+
+    Object.entries(sample).forEach(([k, v]) => {
+      const rx = new RegExp(`\\{${k}\\}`, 'gi');
+      renderedSubject = renderedSubject.replace(rx, v);
+      renderedBody = renderedBody.replace(rx, v);
+    });
+
+    let finalBodyHtml = '';
+    if (/<[a-z][\s\S]*>/i.test(renderedBody)) {
+      finalBodyHtml = renderedBody;
+    } else {
+      finalBodyHtml = renderedBody.split(/\n\s*\n/).map(p => 
+        `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+      ).join('');
+    }
+
+    const tplTitle = (window._docTemplatesData || []).find(t => t.code === templateCode)?.title || 'Rechnung';
+
+    return `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background:#ffffff;">
+        <!-- Header Banner -->
+        <div style="background-color: ${bannerColor}; color: #ffffff; padding: 18px 20px; text-align: center;">
+          <h4 style="margin: 0 0 3px 0; font-size: 17px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">SPORTSCHÜTZEN MUHEN</h4>
+          <p style="margin: 0; font-size: 11.5px; opacity: 0.9; color: #e2e8f0;">${escapeHtml(tplTitle)} · Rechnungs- & Mahnwesen</p>
+        </div>
+
+        <!-- Betreffzeile -->
+        <div style="background: #f8fafc; padding: 10px 18px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; color: #334155;">
+          <strong>Betreff:</strong> <span class="text-primary fw-bold">${escapeHtml(renderedSubject)}</span>
+        </div>
+
+        <!-- Body Content -->
+        <div style="padding: 20px 22px; color: #1e293b; font-size: 13.5px; line-height: 1.6;">
+          ${finalBodyHtml}
+        </div>
+
+        <!-- Club Footer -->
+        <div style="background-color: #f1f5f9; padding: 12px 18px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
+          <strong>Sportschützen Muhen</strong> (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen<br>
+          Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" style="color: #0284c7; text-decoration: none;">www.sportschuetzen-muhen.ch</a> · E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color: #0284c7; text-decoration: none;">sportschuetzen.muhen@gmail.com</a>
+        </div>
+      </div>
+    `;
+  }
 
   function buildRentalEmailPreviewHtml(subject, bodyText, templateCode) {
     const sample = {
@@ -539,7 +696,6 @@
       vertragsnr: 'V-2026-0102',
       buchungsnummer: 'V-2026-0102',
       mietbetrag: '300.00',
-      kaution: '200.00',
       bemerkung: 'Geburtstagsfest mit ca. 30 Gästen',
       wirtschaft_name: 'Wirtschaftsteam (Uschi Künzli)',
       wirtschaft_phone: '079 888 50 37',
@@ -908,8 +1064,7 @@
           recipient: testRecipient,
           mietdatum: '15.08.2026',
           festbeginn: '14:00 Uhr',
-          mietbetrag: 300,
-          kaution: 200
+          mietbetrag: 300
         };
       } else if (t.category === 'gv') {
         payload = {

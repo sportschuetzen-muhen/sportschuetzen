@@ -410,7 +410,6 @@
             mietdatum: booking?.start_date ? new Date(booking.start_date).toLocaleDateString('de-CH') : new Date().toLocaleDateString('de-CH'),
             festbeginn: booking?.festbeginn || '14:00 Uhr',
             mietbetrag: booking?.total_amount_chf || 300,
-            kaution: booking?.deposit_amount_chf || 200,
             type: 'Vermietung'
         };
 
