@@ -396,10 +396,11 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
   4. `[ ✉️ Vorstandsbriefe & Rundschreiben ]`: Freier Vorstandsbrief (DIN 5008) und Vereins-Rundmails.
 - **Globaler Vereins-WYSIWYG (`vorstand/js/club-wysiwyg.js`):**
   - Universelle Rich-Text-Komponente für News KI, E-Mail-Vorlagen, GV-Aussendungen und Rundmails.
-  - Vordefinierte responsive Callout-Banner: Info (Blau), Frist (Grün), Hinweis (Gelb), Dringend (Rot).
-  - Mobile-optimierte Call-to-Action (CTA) Aktions-Buttons für Downloads und Weblinks.
+  - Toolbar-Aktionen: Undo (`fa-undo`), Redo (`fa-redo`), Formatierung aufheben (`fa-eraser`), dynamisches H3-Toggle (Absatz <-> Titel) sowie visuelle Aktiv-Zustände.
+  - Vordefinierte responsive Callout-Banner (Info, Frist, Hinweis, Dringend) mit Übernahme markierten Textes ohne starre Dummy-Texte.
+  - Geschützte Call-to-Action (CTA) Aktions-Buttons (`club-cta-container`) mit integriertem Folgeabsatz gegen Cursor-Fallen.
   - Sichere Einfügung von dynamischen Platzhaltern (`{{...}}`) an der aktuellen Cursor-Position.
-  - Automatische Bereinigung störender Formatierungen beim Einfügen aus Word, Outlook oder Google Docs (`cleanHtmlContent`).
+  - DOM-basierte Bereinigung störender Formatierungen beim Einfügen aus Word, Outlook oder Google Docs (`cleanHtmlContent`) unter Erhalt geschützter Banner und Buttons.
 
 ---
 

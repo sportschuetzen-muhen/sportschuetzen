@@ -12,10 +12,13 @@
  *
  * Features:
  * - Typografie-Richtlinie: Fett, Kursiv, Listen, Links, H2/H3 (kein Unterstreichen im Fließtext)
+ * - Undo / Redo / Formatierung entfernen (Reset)
+ * - Intelligentes H3-Toggle (Absatz <-> Überschrift)
  * - Callout- / Alert-Banner: Info (Blau), Frist (Grün), Hinweis (Gelb), Dringend (Rot)
- * - Call-to-Action (CTA) Buttons (Mobile-optimierte HTML-Buttons für Mails)
+ *   (Übernahme selektierten Textes, keine festen Dummy-Sätze)
+ * - Call-to-Action (CTA) Buttons (Mobile-optimierte HTML-Buttons mit geschütztem Container)
  * - Platzhalter-Pills / Dropdown: Klickbare {{...}}-Variablen an Cursor-Position
- * - Word-/Outlook-Paste-Filter & HTML-Bereinigung
+ * - Word-/Outlook-Paste-Filter & DOM-basierte HTML-Bereinigung
  * ==============================================================================
  */
 
@@ -26,38 +29,38 @@
         {
             type: 'info',
             label: 'Info-Banner (Blau)',
+            title: 'Information',
             icon: 'fa-info-circle',
             bg: '#eff6ff',
             border: '#3b82f6',
-            textColor: '#1e3a8a',
-            defaultText: '<strong>Information:</strong> Bitte bringen Sie Ihr persönliches Schiessbüchlein und den Gehörschutz mit.'
+            textColor: '#1e3a8a'
         },
         {
             type: 'success',
             label: 'Frist- / Termin-Banner (Grün)',
+            title: 'Frist / Anmeldeschluss',
             icon: 'fa-calendar-check',
             bg: '#f0fdf4',
             border: '#22c55e',
-            textColor: '#14532d',
-            defaultText: '<strong>Frist / Anmeldeschluss:</strong> Bitte um Rückmeldung bis spätestens 15. Oktober 2026.'
+            textColor: '#14532d'
         },
         {
             type: 'warning',
             label: 'Wichtiger Hinweis (Gelb)',
+            title: 'Wichtiger Hinweis',
             icon: 'fa-exclamation-triangle',
             bg: '#fffbeb',
             border: '#f59e0b',
-            textColor: '#78350f',
-            defaultText: '<strong>Wichtiger Hinweis:</strong> Standblattausgabe schliesst 30 Minuten vor Schiessende.'
+            textColor: '#78350f'
         },
         {
             type: 'danger',
             label: 'Dringend / Mahnung (Rot)',
+            title: 'Dringend',
             icon: 'fa-bell',
             bg: '#fef2f2',
             border: '#ef4444',
-            textColor: '#7f1d1d',
-            defaultText: '<strong>Dringend:</strong> Letzte Frist vor Mahnstopp bzw. Anlass-Verschiebung.'
+            textColor: '#7f1d1d'
         }
     ];
 
@@ -75,6 +78,7 @@
                 placeholder: 'Text hier eingeben...',
                 placeholders: [],
                 onChange: null,
+                enableHistory: true,
                 enableBanners: true,
                 enableButtons: true,
                 enableHeadings: true,
@@ -146,6 +150,24 @@
         buildToolbar() {
             let html = '';
 
+            // Gruppe 0: Verlauf (Undo / Redo / Formatierung entfernen)
+            if (this.options.enableHistory !== false) {
+                html += `
+                    <div class="btn-group btn-group-sm me-1">
+                        <button type="button" class="btn btn-outline-secondary px-2" data-cmd="undo" title="Rückgängig (Strg+Z)">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary px-2" data-cmd="redo" title="Wiederherstellen (Strg+Y)">
+                            <i class="fas fa-redo"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary px-2" data-cmd="removeFormat" title="Formatierung entfernen / Reset">
+                            <i class="fas fa-eraser"></i>
+                        </button>
+                    </div>
+                    <div class="vr mx-1 text-muted" style="height: 20px;"></div>
+                `;
+            }
+
             // Gruppe 1: Schriftstil (Fett, Kursiv)
             html += `
                 <div class="btn-group btn-group-sm me-1">
@@ -162,10 +184,10 @@
             if (this.options.enableHeadings) {
                 html += `
                     <div class="btn-group btn-group-sm me-1">
-                        <button type="button" class="btn btn-outline-secondary px-2" data-cmd="formatBlock" data-val="h3" title="Überschrift (H3)">
+                        <button type="button" class="btn btn-outline-secondary px-2" data-action="heading-toggle" title="Überschrift (H3 umschalten / zurücknehmen)">
                             <i class="fas fa-heading"></i>
                         </button>
-                        <button type="button" class="btn btn-outline-secondary px-2" data-cmd="formatBlock" data-val="p" title="Standard-Absatz">
+                        <button type="button" class="btn btn-outline-secondary px-2" data-cmd="formatBlock" data-val="p" title="Standard-Absatz (P)">
                             <i class="fas fa-paragraph"></i>
                         </button>
                     </div>
@@ -204,7 +226,7 @@
             }
 
             // Trennlinie in Toolbar
-            html += `<div class="vr mx-1 text-muted" style="height: 22px;"></div>`;
+            html += `<div class="vr mx-1 text-muted" style="height: 20px;"></div>`;
 
             // Gruppe 5: Banner / Callout-Boxen
             if (this.options.enableBanners) {
@@ -264,6 +286,14 @@
         }
 
         registerEvents() {
+            // Mousedown auf Toolbar-Buttons verhindert Verlust des Cursors / der Text-Selektion
+            this.toolbar.addEventListener('mousedown', (e) => {
+                const btn = e.target.closest('button, a');
+                if (btn && !btn.classList.contains('dropdown-toggle') && !btn.closest('.dropdown-menu')) {
+                    e.preventDefault();
+                }
+            });
+
             // Toolbar Button Clicks
             this.toolbar.addEventListener('click', (e) => {
                 const btn = e.target.closest('button, a');
@@ -281,12 +311,16 @@
                     document.execCommand(cmd, false, val || null);
                     this.editor.focus();
                     this.triggerChange();
+                    this.updateToolbarState();
+                } else if (act === 'heading-toggle') {
+                    e.preventDefault();
+                    this.toggleHeading();
                 } else if (act === 'link') {
                     e.preventDefault();
                     this.promptLink();
                 } else if (act === 'divider') {
                     e.preventDefault();
-                    this.insertHtml('<hr style="border:none; border-top:1px solid #cbd5e1; margin: 20px 0;">');
+                    this.insertHtml('<hr style="border:none; border-top:1px solid #cbd5e1; margin: 20px 0;"><p><br></p>');
                 } else if (act === 'cta-button') {
                     e.preventDefault();
                     this.promptCtaButton();
@@ -299,14 +333,26 @@
                 }
             });
 
-            // Caret / Selection merken
+            // Caret / Selection merken und Toolbar-Zustände synchronisieren
             ['keyup', 'mouseup', 'focus'].forEach(evName => {
-                this.editor.addEventListener(evName, () => this.saveSelection());
+                this.editor.addEventListener(evName, () => {
+                    this.saveSelection();
+                    this.updateToolbarState();
+                });
             });
 
             // Input / Change
             this.editor.addEventListener('input', () => {
                 this.triggerChange();
+                this.updateToolbarState();
+            });
+
+            // Globales selectionchange für präzise Toolbar-Zustände
+            document.addEventListener('selectionchange', () => {
+                if (document.activeElement === this.editor || this.editor.contains(document.activeElement)) {
+                    this.saveSelection();
+                    this.updateToolbarState();
+                }
             });
 
             // Paste Event: Automatisches Bereinigen von Word/Outlook-Styles
@@ -333,6 +379,66 @@
                 sel.removeAllRanges();
                 sel.addRange(this.savedRange);
             }
+        }
+
+        getCurrentBlockNode() {
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount) return null;
+            let node = sel.anchorNode;
+            while (node && node !== this.editor) {
+                if (node.nodeType === 1 && /^(P|H1|H2|H3|H4|H5|H6|DIV|LI|BLOCKQUOTE)$/i.test(node.tagName)) {
+                    return node;
+                }
+                node = node.parentNode;
+            }
+            return null;
+        }
+
+        toggleHeading() {
+            this.restoreSelection();
+            const block = this.getCurrentBlockNode();
+            const isHeading = block && /^H[1-6]$/i.test(block.tagName);
+
+            if (isHeading) {
+                // Von Überschrift zurück zu Standard-Absatz
+                document.execCommand('formatBlock', false, 'p');
+            } else {
+                // Zu H3 machen
+                document.execCommand('formatBlock', false, 'h3');
+            }
+
+            this.editor.focus();
+            this.triggerChange();
+            this.updateToolbarState();
+        }
+
+        updateToolbarState() {
+            if (!this.toolbar) return;
+
+            const toggleBtn = (selector, isActive) => {
+                const btn = this.toolbar.querySelector(selector);
+                if (!btn) return;
+                if (isActive) {
+                    btn.classList.add('active', 'btn-primary', 'text-white');
+                    btn.classList.remove('btn-outline-secondary');
+                } else {
+                    btn.classList.remove('active', 'btn-primary', 'text-white');
+                    btn.classList.add('btn-outline-secondary');
+                }
+            };
+
+            // Fett & Kursiv
+            try {
+                toggleBtn('[data-cmd="bold"]', document.queryCommandState('bold'));
+                toggleBtn('[data-cmd="italic"]', document.queryCommandState('italic'));
+                toggleBtn('[data-cmd="insertUnorderedList"]', document.queryCommandState('insertUnorderedList'));
+                toggleBtn('[data-cmd="insertOrderedList"]', document.queryCommandState('insertOrderedList'));
+            } catch (_) {}
+
+            // H3 Überschrift
+            const blockNode = this.getCurrentBlockNode();
+            const isHeading = Boolean(blockNode && /^H[1-6]$/i.test(blockNode.tagName));
+            toggleBtn('[data-action="heading-toggle"]', isHeading);
         }
 
         insertHtml(html) {
@@ -365,9 +471,11 @@
                 this.editor.innerHTML += html;
             }
             this.triggerChange();
+            this.updateToolbarState();
         }
 
         promptLink() {
+            this.saveSelection();
             const currentSel = window.getSelection() ? window.getSelection().toString() : '';
             const url = prompt('URL für den Link eingeben (z. B. https://sportschuetzen-muhen.ch):', 'https://');
             if (url && url !== 'https://') {
@@ -381,29 +489,50 @@
         }
 
         promptCtaButton() {
-            const btnText = prompt('Beschriftung des Buttons (z. B. «GV-Dossier herunterladen»):', 'Jetzt ansehen / herunterladen');
+            this.saveSelection();
+            const selText = window.getSelection() ? window.getSelection().toString().trim() : '';
+
+            const btnText = prompt('Beschriftung des Buttons (z. B. «GV-Dossier ansehen» oder «PDF öffnen»):', selText || 'Jetzt ansehen / öffnen');
             if (!btnText) return;
 
-            const btnUrl = prompt('Ziel-URL oder Platzhalter (z. B. {{dossier.download_url}}):', '{{dossier.download_url}}');
+            const btnUrl = prompt('Ziel-URL oder Platzhalter (z. B. {{dossier.download_url}} oder https://...):', '{{dossier.download_url}}');
             if (!btnUrl) return;
 
+            let targetUrl = btnUrl.trim();
+            if (!/^https?:\/\//i.test(targetUrl) && !/^{{.*}}$/.test(targetUrl) && !/^\//.test(targetUrl)) {
+                targetUrl = 'https://' + targetUrl;
+            }
+
             const buttonHtml = `
-                <div style="text-align: center; margin: 24px 0;">
-                    <a href="${escapeHtml(btnUrl.trim())}" target="_blank" rel="noopener noreferrer" 
+                <div class="club-cta-container" style="text-align: center; margin: 24px 0; clear: both;">
+                    <a href="${escapeHtml(targetUrl)}" target="_blank" rel="noopener noreferrer" 
                        style="display: inline-block; background-color: #1a3a5a; color: #ffffff; padding: 12px 24px; font-size: 14px; font-weight: bold; text-decoration: none; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); letter-spacing: 0.3px;">
                         ${escapeHtml(btnText.trim())} &rarr;
                     </a>
-                </div>
+                </div><p><br></p>
             `;
             this.insertHtml(buttonHtml);
         }
 
         insertBanner(type) {
             const preset = BANNER_PRESETS.find(b => b.type === type) || BANNER_PRESETS[0];
+            this.saveSelection();
+
+            // Prüfen, ob der Benutzer bereits Text markiert hat
+            let selectedText = '';
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+                selectedText = sel.toString().trim();
+            }
+
+            const bodyContent = selectedText 
+                ? escapeHtml(selectedText)
+                : 'Text hier eingeben...';
+
             const bannerHtml = `
-                <div class="club-banner-callout" style="background-color: ${preset.bg}; border-left: 4px solid ${preset.border}; border-radius: 6px; padding: 14px 18px; margin: 18px 0; font-size: 13.5px; line-height: 1.55; color: ${preset.textColor};">
-                    ${preset.defaultText}
-                </div>
+                <div class="club-banner-callout" style="background-color: ${preset.bg}; border-left: 4px solid ${preset.border}; border-radius: 6px; padding: 12px 16px; margin: 16px 0; font-size: 13.5px; line-height: 1.55; color: ${preset.textColor};">
+                    <strong>${preset.title}:</strong> ${bodyContent}
+                </div><p><br></p>
             `;
             this.insertHtml(bannerHtml);
         }
@@ -431,6 +560,7 @@
         setHtml(html) {
             this.editor.innerHTML = html || '<p><br></p>';
             this.triggerChange();
+            this.updateToolbarState();
         }
 
         insertVariable(variableTag) {
@@ -452,8 +582,9 @@
     /**
      * Zentraler HTML-Sanitizer:
      * - Bereinigt Microsoft Word- & Outlook-Tags (mso-*, <o:p>)
-     * - Normalisiert Chrome <div> zu sauberen <p>-Tags
-     * - Entfernt überflüssige leere Tags
+     * - Normalisiert Chrome <div> zu sauberen <p>-Tags via DOMParser
+     * - Schützt Vereins-Banner (.club-banner-callout) und Buttons (.club-cta-container)
+     * - Verhindert zerstörte oder unvollständige HTML-Tags
      */
     function cleanHtmlContent(html) {
         if (!html) return '';
@@ -465,21 +596,38 @@
         clean = clean.replace(/class="Mso[a-zA-Z0-9]+"/gi, '');
         clean = clean.replace(/style="[^"]*mso-[^"]*"/gi, '');
 
-        // Chrome/Edge Divs zu Absätzen wandeln
-        clean = clean.replace(/<div(?!\s*class=["'][^"']*club-banner[^"']*["'])[^>]*>/gi, '<p>')
-                     .replace(/<\/div>/gi, '</p>');
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(`<body>${clean}</body>`, 'text/html');
+            const body = doc.body;
 
-        // Mehrfache <br> in Absätze überführen
-        clean = clean.replace(/(<br\s*\/?>\s*){2,}/gi, '</p><p>');
+            // Alle nicht-geschützten <div> zu <p> transformieren
+            const divs = Array.from(body.querySelectorAll('div'));
+            divs.forEach(div => {
+                if (div.classList.contains('club-banner-callout') || div.classList.contains('club-cta-container')) {
+                    return; // Geschützte Vereins-Elemente unangetastet lassen
+                }
+                const p = doc.createElement('p');
+                p.innerHTML = div.innerHTML;
+                if (div.style.textAlign) p.style.textAlign = div.style.textAlign;
+                div.parentNode.replaceChild(p, div);
+            });
 
-        // Unnötige <br> am Paragraphen-Ende säubern
-        clean = clean.replace(/<br\s*\/?>\s*<\/p>/gi, '</p>');
+            // Leere Spans säubern
+            const spans = Array.from(body.querySelectorAll('span'));
+            spans.forEach(span => {
+                if (!span.textContent.trim() && !span.querySelector('*')) {
+                    span.remove();
+                }
+            });
 
-        // Leere Absätze entfernen
-        clean = clean.replace(/<p>\s*(<br\s*\/?>|&nbsp;)?\s*<\/p>/gi, '');
+            clean = body.innerHTML;
+        } catch (e) {
+            console.warn('[ClubWysiwyg] Fehler bei DOM-Bereinigung:', e);
+        }
 
-        // Leere Spans säubern
-        clean = clean.replace(/<span[^>]*>\s*<\/span>/gi, '');
+        // Mehrfache aufeinanderfolgende <br> normalisieren
+        clean = clean.replace(/(<br\s*\/?>\s*){3,}/gi, '<br><br>');
 
         return clean;
     }
@@ -503,5 +651,5 @@
         getPresets: () => BANNER_PRESETS
     };
 
-    console.log('✅ [ClubWysiwyg] Globaler Vereins-WYSIWYG initialisiert.');
+    console.log('✅ [ClubWysiwyg] Globaler Vereins-WYSIWYG initialisiert (inkl. Undo/Redo/Format-Reset & geschütztem CTA).');
 })();

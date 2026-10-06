@@ -969,12 +969,13 @@ document.addEventListener('DOMContentLoaded', () => {
             bg: '#eff6ff',
             border: '#3b82f6',
             textColor: '#1e3a8a',
-            defaultText: '<strong>Information:</strong> Wichtige Vereinsmitteilung.'
+            title: 'Information'
         };
 
+        const bannerTitle = preset.title || 'Information';
         const bannerHtml = `
-            <div class="club-banner-callout" style="background-color: ${preset.bg}; border-left: 4px solid ${preset.border}; border-radius: 6px; padding: 14px 18px; margin: 18px 0; font-size: 13.5px; line-height: 1.55; color: ${preset.textColor};">
-                ${preset.defaultText}
+            <div class="club-banner-callout" style="background-color: ${preset.bg}; border-left: 4px solid ${preset.border}; border-radius: 6px; padding: 12px 16px; margin: 16px 0; font-size: 13.5px; line-height: 1.55; color: ${preset.textColor};">
+                <strong>${bannerTitle}:</strong> Text hier eingeben...
             </div><p><br></p>
         `;
         document.execCommand('insertHTML', false, bannerHtml);
@@ -996,7 +997,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const buttonHtml = `
-            <div style="text-align: center; margin: 24px 0;">
+            <div class="club-cta-container" style="text-align: center; margin: 24px 0; clear: both;">
                 <a href="${escapeHtml(targetUrl)}" target="_blank" rel="noopener noreferrer" 
                    style="display: inline-block; background-color: #1a3a5a; color: #ffffff; padding: 12px 24px; font-size: 14px; font-weight: bold; text-decoration: none; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); letter-spacing: 0.3px;">
                     ${escapeHtml(btnText.trim())} &rarr;
@@ -1014,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return window.ClubWysiwyg.cleanHtml(html);
         }
         let clean = html.trim();
-        clean = clean.replace(/<div(?!\s*class=["'][^"']*club-banner[^"']*["'])[^>]*>/gi, '<p>').replace(/<\/div>/gi, '</p>');
+        clean = clean.replace(/<div(?!\s*class=["'][^"']*(club-banner|club-cta-container)[^"']*["'])[^>]*>/gi, '<p>').replace(/<\/div>/gi, '</p>');
         clean = clean.replace(/(<br\s*\/?>\s*){2,}/gi, '</p><p>');
         clean = clean.replace(/<br\s*\/?>\s*<\/p>/gi, '</p>');
         clean = clean.replace(/<p>\s*(<br\s*\/?>|&nbsp;)?\s*<\/p>/gi, '');
