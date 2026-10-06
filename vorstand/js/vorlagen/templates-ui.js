@@ -772,6 +772,27 @@
   }
 
   window.docInsertShortcode = function(code) {
+    const modalEl = document.getElementById('docClauseModal');
+    const isModalOpen = modalEl && modalEl.classList.contains('show');
+
+    // Wenn Klausel-Modal geöffnet ist, bevorzugt dort einfügen
+    if (isModalOpen) {
+      let clauseEl = window._docLastFocusedClauseField || document.activeElement;
+      if (!clauseEl || !modalEl.contains(clauseEl) || (clauseEl.tagName !== 'INPUT' && clauseEl.tagName !== 'TEXTAREA')) {
+        clauseEl = document.getElementById('cl-f-text') || document.getElementById('cl-f-title');
+      }
+      if (clauseEl) {
+        const start = clauseEl.selectionStart !== undefined ? clauseEl.selectionStart : clauseEl.value.length;
+        const end = clauseEl.selectionEnd !== undefined ? clauseEl.selectionEnd : clauseEl.value.length;
+        const val = clauseEl.value || '';
+        clauseEl.value = val.substring(0, start) + code + val.substring(end);
+        clauseEl.focus();
+        clauseEl.selectionStart = clauseEl.selectionEnd = start + code.length;
+        window._docLastFocusedClauseField = clauseEl;
+        return;
+      }
+    }
+
     const wysiwygInst = document.getElementById('doc-f-mail-body')?._clubWysiwygInstance;
     if (wysiwygInst) {
       wysiwygInst.insertVariable(code);
@@ -899,6 +920,21 @@
     const isNew = !clauseId;
     const clause = isNew ? { clause_number: '', clause_title: '', clause_text: '' } : (window._docClausesData.find(c => c.id === clauseId) || {});
 
+    const template = window._docTemplatesData?.find(t => t.id === templateId) || {};
+    const isMietvertrag = (template.code === 'mietvertrag' || template.category === 'vertrag');
+    const clausePlaceholders = isMietvertrag ? [
+      '{vermieter_name}', '{vermieter_telefon}', '{vermieter_email}',
+      '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{buchungsnummer}', '{vertragsnr}',
+      '{gebuehr_holz}', '{gebuehr_abfallsack}', '{gebuehr_reinigung}', '{gebuehr_storno}',
+      '{gebuehr_glas}', '{gebuehr_teller}', '{zahlungsfrist_tage}'
+    ] : [
+      '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'
+    ];
+
+    const placeholdersButtonsHtml = clausePlaceholders.map(ph => `
+      <button type="button" class="btn btn-xs btn-white border shadow-xs" onmousedown="event.preventDefault()" onclick="docInsertShortcode('${ph}')">${ph}</button>
+    `).join('');
+
     modalEl.innerHTML = `
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 rounded-4 shadow">
@@ -911,16 +947,30 @@
               <div class="row g-2 mb-3">
                 <div class="col-4">
                   <label class="form-label fw-bold small text-muted">Nummer (Ziffer)</label>
-                  <input type="text" class="form-control" id="cl-f-num" value="${escapeHtml(clause.clause_number || '')}" placeholder="z.B. 1">
+                  <input type="text" class="form-control" id="cl-f-num" value="${escapeHtml(clause.clause_number || '')}" placeholder="z.B. 1" onfocus="window._docLastFocusedClauseField = this">
                 </div>
                 <div class="col-8">
                   <label class="form-label fw-bold small text-muted">Titel der Klausel</label>
-                  <input type="text" class="form-control fw-bold" id="cl-f-title" required value="${escapeHtml(clause.clause_title || '')}" placeholder="z.B. Zweckbestimmung">
+                  <input type="text" class="form-control fw-bold" id="cl-f-title" required value="${escapeHtml(clause.clause_title || '')}" placeholder="z.B. Zweckbestimmung" onfocus="window._docLastFocusedClauseField = this">
                 </div>
               </div>
+
+              <!-- Platzhalter-Leiste im Modal -->
+              <div class="bg-light p-2.5 rounded-3 mb-3 border">
+                <div class="d-flex justify-content-between align-items-center mb-1.5">
+                  <label class="form-label fw-bold small text-primary mb-0" style="font-size:11px;">
+                    <i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klick zum Einfügen)
+                  </label>
+                  <small class="text-muted" style="font-size:10px;">An Cursor-Position</small>
+                </div>
+                <div class="d-flex gap-1 flex-wrap">
+                  ${placeholdersButtonsHtml}
+                </div>
+              </div>
+
               <div class="mb-4">
                 <label class="form-label fw-bold small text-muted">Reglementstext</label>
-                <textarea class="form-control" id="cl-f-text" rows="6" required placeholder="Text des Paragraphen...">${escapeHtml(clause.clause_text || '')}</textarea>
+                <textarea class="form-control" id="cl-f-text" rows="6" required placeholder="Text des Paragraphen..." onfocus="window._docLastFocusedClauseField = this" onclick="window._docLastFocusedClauseField = this">${escapeHtml(clause.clause_text || '')}</textarea>
               </div>
               <div class="d-grid">
                 <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm">
@@ -935,6 +985,12 @@
 
     const bsModal = new bootstrap.Modal(modalEl);
     bsModal.show();
+    setTimeout(() => {
+      const textEl = document.getElementById('cl-f-text');
+      if (textEl) {
+        window._docLastFocusedClauseField = textEl;
+      }
+    }, 200);
   };
 
   window.docSaveClause = async function(event, templateId, clauseId) {

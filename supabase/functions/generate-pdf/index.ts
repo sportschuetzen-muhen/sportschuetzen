@@ -1385,6 +1385,14 @@ async function generateRentalContractPdf(
     (rsData || []).forEach((r: any) => { rs[r.setting_key] = r.setting_value ?? ""; });
   }
 
+  // Falls Zahlungsfrist in rental_settings definiert ist, hat diese Vorrang
+  if (rs.payment_due_days && !layoutData?.due_days) {
+    const parsedDays = parseInt(rs.payment_due_days, 10);
+    if (!isNaN(parsedDays) && parsedDays > 0) {
+      dueDays = parsedDays;
+    }
+  }
+
   const fmtFee = (v: string | undefined): string => {
     const n = Number(String(v ?? "").replace(",", "."));
     return Number.isFinite(n) && String(v ?? "").trim() !== "" ? formatSwissChf(n) : "–";

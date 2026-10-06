@@ -819,7 +819,7 @@ async function ensureRentalInvoice(d) {
         }
       ],
       options: {
-        dueDateDays: 14,
+        dueDateDays: parseInt(window._rentalSettings?.payment_due_days, 10) || 14,
         type: 'Vermietung',
         notes: `Mietvertrag ${bookingNr}`,
         bookingNumber: bookingNr
@@ -861,6 +861,7 @@ async function saveRentalSettings() {
     const woodFee = parseFloat(document.getElementById('cfg-wood-fee')?.value || 20);
     const cleanFee = parseFloat(document.getElementById('cfg-cleaning-fee')?.value || 35);
     const garbageFee = parseFloat(document.getElementById('cfg-garbage-fee')?.value || 4);
+    const paymentDueDays = parseInt(document.getElementById('cfg-payment-due-days')?.value, 10) || 14;
     const rentalObject = document.getElementById('cfg-rental-object')?.value.trim() || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen';
 
     const sFirst = document.getElementById('cfg-sender-firstname')?.value.trim() || '';
@@ -895,12 +896,26 @@ async function saveRentalSettings() {
       { setting_key: 'wood_fee', setting_value: String(woodFee), description: 'Zusatz Cheminéeholz pro Kiste in CHF' },
       { setting_key: 'cleaning_fee_per_hour', setting_value: String(cleanFee), description: 'Nachreinigung pro Stunde in CHF' },
       { setting_key: 'garbage_bag_fee', setting_value: String(garbageFee), description: 'Kehrichtsack pro Stk in CHF' },
+      { setting_key: 'payment_due_days', setting_value: String(paymentDueDays), description: 'Zahlungsfrist in Tagen für Mietvertrag und QR-Rechnung' },
       { setting_key: 'rental_object', setting_value: rentalObject, description: 'Bezeichnung Mietobjekt (Mietvertrag-Kopf)' }
     ];
 
     for (const row of settingsRows) {
       const { error: setErr } = await supa.from('rental_settings').upsert(row, { onConflict: 'setting_key' });
       if (setErr) throw setErr;
+    }
+
+    // 1b. Synchronisiere Zahlungsfrist auch in document_templates für Mietvertrag
+    try {
+      await supa.from('document_templates')
+        .update({ due_days: paymentDueDays, updated_at: new Date().toISOString() })
+        .or('code.eq.mietvertrag,id.eq.mietvertrag_rueteli');
+      if (window._docTemplatesData) {
+        const t = window._docTemplatesData.find(x => x.code === 'mietvertrag' || x.id === 'mietvertrag_rueteli');
+        if (t) t.due_days = paymentDueDays;
+      }
+    } catch (syncErr) {
+      console.warn("Hinweis: Synchronisation document_templates.due_days:", syncErr);
     }
 
     // 2. Pricing Updates in public.rental_pricing (Kaution immer 0.00)

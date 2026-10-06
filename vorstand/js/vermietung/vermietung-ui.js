@@ -497,6 +497,7 @@ function renderRentalSettingsForm() {
   const garbageFee = s.garbage_bag_fee ? Number(s.garbage_bag_fee) : 4;
   const glassFee = s.glass_fee ? Number(s.glass_fee) : 2;
   const plateFee = s.plate_fee ? Number(s.plate_fee) : 5;
+  const paymentDueDays = s.payment_due_days ? parseInt(s.payment_due_days, 10) : 14;
   const rentalObject = s.rental_object || 'Schützenstube Muhen inkl. Mobiliar, Küche, Geschirr und WC-Anlagen';
 
   const sFirst = s.sender_first_name || 'Daniel';
@@ -576,6 +577,13 @@ function renderRentalSettingsForm() {
                 <div class="input-group input-group-sm">
                   <span class="input-group-text">CHF</span>
                   <input type="number" step="0.50" class="form-control" id="cfg-garbage-fee" value="${garbageFee.toFixed(2)}" required>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold text-muted"><i class="fas fa-calendar-day me-1 text-primary"></i>Zahlungsfrist (Tage)</label>
+                <div class="input-group input-group-sm">
+                  <input type="number" step="1" min="1" max="90" class="form-control fw-bold text-end" id="cfg-payment-due-days" value="${paymentDueDays}" required>
+                  <span class="input-group-text">Tage</span>
                 </div>
               </div>
               <div class="col-12">
