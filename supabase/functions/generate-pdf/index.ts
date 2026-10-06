@@ -1325,10 +1325,12 @@ async function generateRentalContractPdf(
     } catch (_) {}
   }
 
-  // Dynamische Klauseln aus Supabase laden
+  // Dynamische Klauseln & Vorlagen-Felder aus Supabase laden
   let clauses: any[] = [];
   let templateTitle = layoutData?.title || "Mietvertrag & Benützungsreglement Schützenstube";
   let templateNotice = layoutData?.notice || "Zahlbar innert 14 Tagen mit beiliegendem QR-Einzahlungsschein.";
+  let templateIntro = layoutData?.intro || "Benützungsordnung & Vereinbarungen:";
+  let dueDays = Number(layoutData?.due_days) || 14;
 
   if (supabaseClient) {
     try {
@@ -1346,6 +1348,8 @@ async function generateRentalContractPdf(
       if (tData) {
         if (!layoutData?.title && tData.title) templateTitle = tData.title;
         if (!layoutData?.notice && tData.notice) templateNotice = tData.notice;
+        if (!layoutData?.intro && tData.intro) templateIntro = tData.intro;
+        if (!layoutData?.due_days && tData.due_days) dueDays = Number(tData.due_days) || 14;
 
         const { data: cData } = await supabaseClient
           .from("document_template_clauses")
@@ -1415,6 +1419,8 @@ async function generateRentalContractPdf(
     strasse: recipient.strasse || "",
     plz: recipient.plz || "",
     ort: recipient.ort || "",
+    zahlungsfrist_tage: String(dueDays),
+    zahlungsfrist: String(dueDays),
   };
   const applyContractPlaceholders = (txt: string): string =>
     String(txt || "").replace(/\{([a-z_]+)\}/gi, (m, key) => {
@@ -1530,8 +1536,26 @@ async function generateRentalContractPdf(
   page1.drawLine({ start: { x: 20 * MM, y: curY }, end: { x: 190 * MM, y: curY }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
   curY -= 5.5 * MM;
 
-  page1.drawText("Benützungsordnung & Vereinbarungen:", { x: 20 * MM, y: curY, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
-  curY -= 5.5 * MM;
+  // Dynamischer Einleitungstext / Abschnittstitel aus Vorlage (über Ziffer 1)
+  const resolvedIntro = applyContractPlaceholders(templateIntro || "Benützungsordnung & Vereinbarungen:");
+  const introLines = resolvedIntro.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (introLines.length > 0) {
+    introLines.forEach((line, idx) => {
+      const isHeaderLine = (idx === 0);
+      page1.drawText(sanitizeWinAnsiText(line), {
+        x: 20 * MM,
+        y: curY,
+        size: isHeaderLine ? 9.5 : 8.5,
+        font: isHeaderLine ? fontBold : fontRegular,
+        color: isHeaderLine ? rgb(0.12, 0.23, 0.54) : rgb(0.25, 0.25, 0.25)
+      });
+      curY -= 4.5 * MM;
+    });
+    curY -= 1 * MM;
+  } else {
+    page1.drawText("Benützungsordnung & Vereinbarungen:", { x: 20 * MM, y: curY, size: 9.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+    curY -= 5.5 * MM;
+  }
 
   // HILFSFUNKTION FÜR MEHRSEITIGEN VERTRAGSFLUSS
   function addNewContractPage(): any {
@@ -1689,13 +1713,50 @@ async function generateRentalContractPdf(
   boxY -= 6 * MM;
 
   qrPage.drawText("Zahlungsziel:", { x: 25 * MM, y: boxY, size: 8.5, font: fontBold });
-  qrPage.drawText("Innert 14 Tagen nach Erhalt des Mietvertrags", { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
-  boxY -= 7 * MM;
+  qrPage.drawText(`Innert ${dueDays} Tagen nach Erhalt des Mietvertrags`, { x: 75 * MM, y: boxY, size: 8.5, font: fontRegular });
+  boxY -= 6.5 * MM;
 
-  qrPage.drawText("Wichtiger Hinweis:", { x: 25 * MM, y: boxY, size: 8, font: fontBold, color: rgb(0.2, 0.2, 0.2) });
-  qrPage.drawText("Bitte verwenden Sie für die Zahlung ausschliesslich den untenstehenden QR-Einzahlungsschein.", { x: 55 * MM, y: boxY, size: 8, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
-  boxY -= 4 * MM;
-  qrPage.drawText("Mit fristgerechter Bezahlung gilt die Reservation als definitiv abgeschlossen.", { x: 55 * MM, y: boxY, size: 8, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+  // Prominente Hinweiskarte innerhalb der Box (Akzentuiert mit Hintergrund und Rahmen)
+  const noticeCardY = boxY - 14 * MM;
+  qrPage.drawRectangle({
+    x: 23 * MM,
+    y: noticeCardY,
+    width: 164 * MM,
+    height: 15 * MM,
+    color: rgb(0.93, 0.96, 1.0), // Frisches Hellblau für hohe Aufmerksamkeit
+    borderColor: rgb(0.12, 0.35, 0.65), // Prägnanter Kontrastrand
+    borderWidth: 0.8,
+  });
+
+  qrPage.drawText("WICHTIGER HINWEIS:", {
+    x: 26 * MM,
+    y: noticeCardY + 9.5 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0.1, 0.25, 0.55),
+  });
+  qrPage.drawText("Bitte verwenden Sie fuer die Zahlung ausschliesslich den untenstehenden QR-Einzahlungsschein.", {
+    x: 58 * MM,
+    y: noticeCardY + 9.5 * MM,
+    size: 7.8,
+    font: fontRegular,
+    color: rgb(0.1, 0.2, 0.3),
+  });
+
+  qrPage.drawText("RESERVATIONSABSCHLUSS:", {
+    x: 26 * MM,
+    y: noticeCardY + 4 * MM,
+    size: 8,
+    font: fontBold,
+    color: rgb(0.1, 0.25, 0.55),
+  });
+  qrPage.drawText("Mit fristgerechter Bezahlung gilt die Reservation als definitiv abgeschlossen.", {
+    x: 70 * MM,
+    y: noticeCardY + 4 * MM,
+    size: 7.8,
+    font: fontBold,
+    color: rgb(0.08, 0.18, 0.35),
+  });
 
   // Schweizer QR-Zahlteil auf der letzten Seite (105mm am unteren Rand)
   drawSwissQrBillSection(qrPage, fontRegular, fontBold, bookingId, mietbetrag, recipient, curYear, "Mietvertrag Schützenstube");

@@ -233,7 +233,7 @@
         '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}',
         '{vermieter_name}', '{vermieter_telefon}', '{vermieter_email}',
         '{gebuehr_holz}', '{gebuehr_abfallsack}', '{gebuehr_reinigung}', '{gebuehr_storno}',
-        '{gebuehr_glas}', '{gebuehr_teller}'
+        '{gebuehr_glas}', '{gebuehr_teller}', '{zahlungsfrist_tage}'
       ];
     } else if (currentCat === 'rechnung') {
       categoryPlaceholders = [
@@ -435,25 +435,38 @@
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label fw-bold small text-muted">Einleitungstext / Anschreiben</label>
-                  <textarea class="form-control" id="doc-f-intro" rows="4" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.intro || '')}</textarea>
+                  <label class="form-label fw-bold small text-muted">
+                    ${isMietvertragPdf ? '<i class="fas fa-heading me-1 text-primary"></i>Abschnittstitel / Einleitung Benützungsreglement (über Ziffer 1)' : 'Einleitungstext / Anschreiben'}
+                  </label>
+                  <textarea class="form-control" id="doc-f-intro" rows="${isMietvertragPdf ? '3' : '4'}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.intro || '')}</textarea>
+                  ${isMietvertragPdf ? '<small class="text-muted" style="font-size: 11px;">Erscheint als prägnanter Titel/Einleitung direkt unterhalb der Trennlinie und vor Ziffer 1 der Klauseln.</small>' : ''}
                 </div>
 
-                <div class="mb-3">
-                  <label class="form-label fw-bold small text-muted">Schlusstext & Grussformel</label>
-                  <textarea class="form-control" id="doc-f-outro" rows="3" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.outro || '')}</textarea>
-                </div>
+                ${!isMietvertragPdf ? `
+                  <div class="mb-3">
+                    <label class="form-label fw-bold small text-muted">Schlusstext & Grussformel</label>
+                    <textarea class="form-control" id="doc-f-outro" rows="3" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">${escapeHtml(currentTemplate.outro || '')}</textarea>
+                  </div>
 
-                <div class="row g-3 mb-3">
-                  <div class="col-sm-8">
-                    <label class="form-label fw-bold small text-muted">Fusszeilen-Hinweis / Rechtsbelehrung</label>
-                    <input type="text" class="form-control" id="doc-f-notice" value="${escapeHtml(currentTemplate.notice || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                  <div class="row g-3 mb-3">
+                    <div class="col-sm-8">
+                      <label class="form-label fw-bold small text-muted">Fusszeilen-Hinweis / Rechtsbelehrung</label>
+                      <input type="text" class="form-control" id="doc-f-notice" value="${escapeHtml(currentTemplate.notice || '')}" onfocus="window._docLastFocusedField = this" onclick="window._docLastFocusedField = this">
+                    </div>
+                    <div class="col-sm-4">
+                      <label class="form-label fw-bold small text-muted">Zahlungsfrist (Tage)</label>
+                      <input type="number" class="form-control text-end" id="doc-f-duedays" value="${currentTemplate.due_days || 30}">
+                    </div>
                   </div>
-                  <div class="col-sm-4">
-                    <label class="form-label fw-bold small text-muted">Zahlungsfrist (Tage)</label>
-                    <input type="number" class="form-control text-end" id="doc-f-duedays" value="${currentTemplate.due_days || 30}">
+                ` : `
+                  <div class="row g-3 mb-4">
+                    <div class="col-sm-6">
+                      <label class="form-label fw-bold small text-muted"><i class="fas fa-calendar-day me-1 text-primary"></i>Zahlungsfrist (Tage)</label>
+                      <input type="number" class="form-control text-end fw-bold" id="doc-f-duedays" value="${currentTemplate.due_days || 14}">
+                      <small class="text-muted" style="font-size: 11px;">Steuert das Zahlungsziel im PDF und den Platzhalter <code>{zahlungsfrist_tage}</code> in den Klauseln.</small>
+                    </div>
                   </div>
-                </div>
+                `}
 
                 ${!isMietvertragPdf ? `
                   <div class="p-3 bg-light rounded-3 border mb-4">
@@ -1025,6 +1038,7 @@
       const formIntro = document.getElementById('doc-f-intro')?.value.trim() || t.intro;
       const formOutro = document.getElementById('doc-f-outro')?.value.trim() || t.outro;
       const formNotice = document.getElementById('doc-f-notice')?.value.trim() || t.notice;
+      const formDuedays = parseInt(document.getElementById('doc-f-duedays')?.value, 10) || t.due_days || 14;
 
       const testRecipient = {
         anrede: 'Herr',
@@ -1052,7 +1066,8 @@
           title: formTitle,
           intro: formIntro,
           outro: formOutro,
-          notice: formNotice
+          notice: formNotice,
+          due_days: formDuedays
         }
       };
 

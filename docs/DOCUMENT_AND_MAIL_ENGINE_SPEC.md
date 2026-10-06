@@ -39,12 +39,12 @@ Aufbau einer zentralen, robusten Dokumenten- und Kommunikations-Engine für den 
 
 ### 1.3 Bestandsaufnahme: Was bereits existiert (Ist-Zustand)
 1. **Bestehende PDF-Engine (`supabase/functions/generate-pdf/index.ts`):**
-   - Beherrscht vollvektoriell `generate-invoice` (QR-Bill nach SIX-Norm, Perforation, Schweizerkreuz-Vektor), `generate-contract` (Mietvertrag Rüteli), `generate-gv-invitation` (Einladung + Jahresprogramm-Tabelle aus Terminen), `compile-gv-dossier` (Assembler mit Corporate Stempel) sowie `generate-letter` (Freier Vorstandsbrief DIN 5008 Fenster rechts mit 2-spaltigem Unterschriftenblock).
+   - Beherrscht vollvektoriell `generate-invoice` (QR-Bill nach SIX-Norm, Perforation, Schweizerkreuz-Vektor), `generate-contract` (Mietvertrag Rüteli mit dynamischem Einleitungstitel, variabler Zahlungsfrist `{zahlungsfrist_tage}` und prominenter Bestätigungsbox auf der QR-Schlussseite), `generate-gv-invitation` (Einladung + Jahresprogramm-Tabelle aus Terminen), `compile-gv-dossier` (Assembler mit Corporate Stempel) sowie `generate-letter` (Freier Vorstandsbrief DIN 5008 Fenster rechts mit 2-spaltigem Unterschriftenblock).
    - Besitzt WORM-Archivierung und Paperless-NGX-Synchronisation.
 2. **Bestehende Client-Wrapper (`vorstand/js/pdf-engine.js`):**
    - Stellt `window.generatePdfViaEngine(options)`, `window.createSwissQrBillPayload(invoice, recipient)`, `window.rnGeneratePDFOnly()`, `window.jbGenerateInvoicePdfRemote()`, `window.vmGenerateRentalContractPdf()`, `window.gvGenerateInvitationPdf()`, `window.gvCompileDossierPdf()` und `window.generateLetterPdfRemote()` bereit.
 3. **Bestehende Vorlagen-Verwaltung (`supabase/migrations/27_document_templates_and_clauses.sql`):**
-   - Tabellen `public.document_templates` und `public.document_template_clauses` sind bereits migriert und über `vorstand/js/vorlagen/templates-ui.js` im Vorstands-Cockpit editierbar.
+   - Tabellen `public.document_templates` und `public.document_template_clauses` sind bereits migriert und über `vorstand/js/vorlagen/templates-ui.js` im Vorstands-Cockpit editierbar. Bei Mietverträgen werden überflüssige Textfelder (Schlusstext/Rechtsbelehrung) ausgeblendet und durch den dynamischen Abschnittstitel/Einleitungstext (`intro`) sowie die Zahlungsfrist (`due_days`) gesteuert.
 4. **Bestehende GV-Stammdaten (`supabase/migrations/18_generalversammlung_module.sql`):**
    - `public.gv_instances` verwaltet bereits Traktanden, Wahljahr-Flags sowie URLs für `doc_einladung_url`, `doc_protokoll_url`, `doc_jahresbericht_url`, `doc_anhaenge_url`.
 

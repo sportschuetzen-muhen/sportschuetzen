@@ -421,7 +421,8 @@
                 title: tpl.title,
                 intro: tpl.intro,
                 outro: tpl.outro,
-                notice: tpl.notice
+                notice: tpl.notice,
+                due_days: tpl.due_days || 14
             };
         }
 
