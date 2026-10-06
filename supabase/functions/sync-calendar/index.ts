@@ -147,7 +147,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST") {
       try {
         payload = await req.json();
-      } catch (_) {
+      } catch (e: any) {
+        console.warn("⚠️ [sync-calendar] JSON Parse Fehler:", e);
         payload = {};
       }
     } else {
@@ -158,6 +159,7 @@ Deno.serve(async (req: Request) => {
         bookingId: url.searchParams.get("bookingId")
       };
     }
+    console.log(`[sync-calendar] Method=${req.method}, Action=${payload.action}, BookingId=${payload.bookingId}, Date=${payload.date}`);
 
     const action = payload.action || "block";
     const saKey = await getServiceAccountKey();
@@ -191,7 +193,7 @@ Deno.serve(async (req: Request) => {
       const bookingId = payload.bookingId || payload.vertragsnr || payload.vertragsnummer || "";
 
       // Event 1: Miettag (Ganztag)
-      const event1Payload = {
+      const event1Payload: any = {
         summary: `Vermietet an ${initials}`,
         description: `Mietvertrag Schützenstube ${bookingId}`.trim(),
         start: { date: day1Iso },
@@ -199,12 +201,23 @@ Deno.serve(async (req: Request) => {
       };
 
       // Event 2: Reinigungstag (Folgetag, Ganztag)
-      const event2Payload = {
+      const event2Payload: any = {
         summary: `Gesperrt für Reinigung`,
         description: `Reinigungspuffer nach Miete ${bookingId}`.trim(),
         start: { date: day2Iso },
         end: { date: day3Iso }
       };
+
+      if (bookingId) {
+        event1Payload.extendedProperties = {
+          private: { bookingId: bookingId, module: "vermietung", eventType: "rental" },
+          shared: { bookingId: bookingId, module: "vermietung", eventType: "rental" }
+        };
+        event2Payload.extendedProperties = {
+          private: { bookingId: bookingId, module: "vermietung", eventType: "cleaning" },
+          shared: { bookingId: bookingId, module: "vermietung", eventType: "cleaning" }
+        };
+      }
 
       const [res1, res2] = await Promise.all([
         fetch(`${calApiBase}/events`, {
@@ -247,43 +260,120 @@ Deno.serve(async (req: Request) => {
     }
 
     // =========================================================================
-    // AKTION: FREIGEBEN / STORNO (Events wieder löschen)
+    // AKTION: FREIGEBEN / STORNO (Events zielgenau via bookingId löschen)
     // =========================================================================
     if (action === "release" || action === "unblock" || action === "storno_calendar") {
-      const rawDate = payload.date || payload.mietdatum || payload.startDate;
-      if (!rawDate) throw new Error("Parameter 'date' / 'mietdatum' fehlt für Storno.");
+      const rawDate = payload.date || payload.mietdatum || payload.startDate || payload.start_date;
+      const bookingId = (payload.bookingId || payload.vertragsnr || payload.vertragsnummer || payload.booking_number || "").trim();
 
-      const rentDate = parseDateInput(rawDate);
-      const dayAfterNext = new Date(rentDate);
-      dayAfterNext.setDate(dayAfterNext.getDate() + 2);
+      if (!rawDate && !bookingId) {
+        throw new Error("Parameter 'date' / 'mietdatum' oder 'bookingId' fehlt für Storno.");
+      }
 
-      const day1Iso = formatDateIso(rentDate);
-      const day3Iso = formatDateIso(dayAfterNext);
+      let day1Iso = "";
+      let day2Iso = "";
+      if (rawDate) {
+        const rentDate = parseDateInput(rawDate);
+        const nextDay = new Date(rentDate);
+        nextDay.setDate(nextDay.getDate() + 1);
 
-      // Events im Zeitfenster suchen
-      const searchUrl = `${calApiBase}/events?timeMin=${day1Iso}T00:00:00Z&timeMax=${day3Iso}T23:59:59Z&singleEvents=true`;
-      const searchResp = await fetch(searchUrl, {
-        headers: { "Authorization": `Bearer ${accessToken}` }
-      });
-      const searchData = await searchResp.json();
+        day1Iso = formatDateIso(rentDate);
+        day2Iso = formatDateIso(nextDay);
+      }
+
+      // Sammle zu löschende Event-IDs (Map verhindert doppelte Löschversuche)
+      const eventsToDelete = new Map<string, any>();
+
+      // 1. Suche via bookingId (Volltextsuche q in Google Calendar API)
+      if (bookingId) {
+        try {
+          const qUrl = `${calApiBase}/events?q=${encodeURIComponent(bookingId)}&singleEvents=true`;
+          const qResp = await fetch(qUrl, {
+            headers: { "Authorization": `Bearer ${accessToken}` }
+          });
+          if (qResp.ok) {
+            const qData = await qResp.json();
+            if (Array.isArray(qData.items)) {
+              for (const item of qData.items) {
+                const desc = item.description || "";
+                const summ = item.summary || "";
+                const privBid = item.extendedProperties?.private?.bookingId;
+                const sharedBid = item.extendedProperties?.shared?.bookingId;
+                if (
+                  desc.includes(bookingId) ||
+                  summ.includes(bookingId) ||
+                  privBid === bookingId ||
+                  sharedBid === bookingId
+                ) {
+                  eventsToDelete.set(item.id, item);
+                }
+              }
+            }
+          }
+        } catch (qErr) {
+          console.warn("Warnung bei q-Suche Google Calendar:", qErr);
+        }
+      }
+
+      // 2. Datumssuche (nur im exakten 2-Tages-Fenster: Tag 1 00:00:00Z bis Tag 2 23:59:59Z)
+      if (rawDate && day1Iso && day2Iso) {
+        try {
+          const searchUrl = `${calApiBase}/events?timeMin=${day1Iso}T00:00:00Z&timeMax=${day2Iso}T23:59:59Z&singleEvents=true`;
+          const searchResp = await fetch(searchUrl, {
+            headers: { "Authorization": `Bearer ${accessToken}` }
+          });
+          if (searchResp.ok) {
+            const searchData = await searchResp.json();
+            if (Array.isArray(searchData.items)) {
+              for (const item of searchData.items) {
+                const desc = item.description || "";
+                const summ = item.summary || "";
+                const privBid = item.extendedProperties?.private?.bookingId;
+                const sharedBid = item.extendedProperties?.shared?.bookingId;
+
+                if (bookingId) {
+                  // Wenn bookingId angegeben ist: NUR löschen, wenn bookingId übereinstimmt!
+                  if (
+                    desc.includes(bookingId) ||
+                    summ.includes(bookingId) ||
+                    privBid === bookingId ||
+                    sharedBid === bookingId
+                  ) {
+                    eventsToDelete.set(item.id, item);
+                  }
+                } else {
+                  // Strenger Fallback NUR wenn KEINE bookingId vorhanden ist (Altdaten):
+                  // Löscht ausschliesslich das exakte Bot-Mietevent am Tag 1 und Reinigungsevent am Tag 2
+                  const isRentDay = item.start?.date === day1Iso && summ.startsWith("Vermietet an ");
+                  const isCleanDay = item.start?.date === day2Iso && summ === "Gesperrt für Reinigung" && desc.includes("Reinigungspuffer");
+                  if (isRentDay || isCleanDay) {
+                    eventsToDelete.set(item.id, item);
+                  }
+                }
+              }
+            }
+          }
+        } catch (dateErr) {
+          console.warn("Warnung bei Datumssuche Google Calendar:", dateErr);
+        }
+      }
 
       let deletedCount = 0;
-      if (searchResp.ok && Array.isArray(searchData.items)) {
-        for (const item of searchData.items) {
-          const summary = item.summary || "";
-          if (summary.includes("Vermietet") || summary.includes("Gesperrt") || summary.includes("Reinigung")) {
-            await fetch(`${calApiBase}/events/${item.id}`, {
-              method: "DELETE",
-              headers: { "Authorization": `Bearer ${accessToken}` }
-            });
-            deletedCount++;
-          }
+      for (const [id] of eventsToDelete.entries()) {
+        const delResp = await fetch(`${calApiBase}/events/${id}`, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${accessToken}` }
+        });
+        if (delResp.ok || delResp.status === 404) {
+          deletedCount++;
         }
       }
 
       return new Response(JSON.stringify({
         success: true,
         action: "release",
+        bookingId: bookingId,
+        date: day1Iso,
         deletedCount: deletedCount
       }), {
         status: 200,

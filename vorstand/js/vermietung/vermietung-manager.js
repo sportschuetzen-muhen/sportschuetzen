@@ -569,8 +569,8 @@ async function vermietungAktion(action, idOrRow) {
           },
           body: JSON.stringify({
             action: 'release',
-            date: d.start_date || d.mietdatum,
-            bookingId: d.vertragsnr
+            date: d.start_date_iso || d.start_date || d.mietdatum,
+            bookingId: d.vertragsnr || d.booking_number || d.id
           })
         }).catch(e => console.warn("Kalender-Storno Fehler:", e));
       } catch (_) {}
