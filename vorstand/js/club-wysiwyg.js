@@ -329,7 +329,7 @@
                     this.insertBanner(bannerType);
                 } else if (ph) {
                     e.preventDefault();
-                    this.insertHtml(`<span style="background-color:#e0f2fe; color:#0369a1; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight:600; font-size:12px;">${escapeHtml(ph)}</span>&nbsp;`);
+                    this.insertVariable(ph);
                 }
             });
 
@@ -564,8 +564,12 @@
         }
 
         insertVariable(variableTag) {
-            const cleanTag = variableTag.startsWith('{{') ? variableTag : `{{${variableTag}}}`;
-            this.insertHtml(`<span style="background-color:#e0f2fe; color:#0369a1; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight:600; font-size:12px;">${escapeHtml(cleanTag)}</span>&nbsp;`);
+            let cleanTag = String(variableTag || '').trim();
+            if (!cleanTag.startsWith('{')) {
+                cleanTag = `{{${cleanTag}}}`;
+            }
+            // Saubere Einfügung als reiner Platzhaltertext ohne persistente Badge-Hintergründe
+            this.insertHtml(escapeHtml(cleanTag) + '&nbsp;');
         }
 
         destroy() {
@@ -601,7 +605,44 @@
             const doc = parser.parseFromString(`<body>${clean}</body>`, 'text/html');
             const body = doc.body;
 
-            // Alle nicht-geschützten <div> zu <p> transformieren
+            // 1. Browser-Erweiterungen (Noir, Dark Reader) & Dirty Attributes säubern
+            const allElements = Array.from(body.querySelectorAll('*'));
+            allElements.forEach(el => {
+                // Alle data-noir-*, data-darkreader-* Attribute entfernen
+                Array.from(el.attributes).forEach(attr => {
+                    if (attr.name.startsWith('data-noir') || 
+                        attr.name.startsWith('data-darkreader') || 
+                        attr.name.startsWith('data-color-mode')) {
+                        el.removeAttribute(attr.name);
+                    }
+                });
+
+                // Style-Attribut bereinigen
+                const styleAttr = el.getAttribute('style');
+                if (styleAttr) {
+                    let cleanedStyle = styleAttr
+                        .replace(/--noir-[^;]+;?/gi, '')
+                        .replace(/--darkreader-[^;]+;?/gi, '')
+                        .replace(/-webkit-tap-highlight-color:[^;]+;?/gi, '')
+                        .replace(/-webkit-text-size-adjust:[^;]+;?/gi, '')
+                        .replace(/-webkit-text-stroke-width:[^;]+;?/gi, '')
+                        .replace(/text-align:\s*var\(--bs-body-text-align\);?/gi, '')
+                        .replace(/orphans:[^;]+;?/gi, '')
+                        .replace(/widows:[^;]+;?/gi, '')
+                        .replace(/word-spacing:[^;]+;?/gi, '')
+                        .replace(/letter-spacing:[^;]+;?/gi, '')
+                        .replace(/text-indent:[^;]+;?/gi, '')
+                        .trim();
+
+                    if (!cleanedStyle || cleanedStyle === ';') {
+                        el.removeAttribute('style');
+                    } else {
+                        el.setAttribute('style', cleanedStyle);
+                    }
+                }
+            });
+
+            // 2. Alle nicht-geschützten <div> zu <p> transformieren
             const divs = Array.from(body.querySelectorAll('div'));
             divs.forEach(div => {
                 if (div.classList.contains('club-banner-callout') || div.classList.contains('club-cta-container')) {
@@ -613,11 +654,37 @@
                 div.parentNode.replaceChild(p, div);
             });
 
-            // Leere Spans säubern
+            // 3. Überflüssige / dirty <span> Elemente entpacken oder entfernen
             const spans = Array.from(body.querySelectorAll('span'));
             spans.forEach(span => {
+                // Leere Spans säubern
                 if (!span.textContent.trim() && !span.querySelector('*')) {
                     span.remove();
+                    return;
+                }
+
+                // Falls der Span ein alter Variablen-Badge war (#e0f2fe), zu reinem Text entpacken
+                const style = span.getAttribute('style') || '';
+                const isVarBadge = style.includes('#e0f2fe') || style.includes('#0369a1');
+
+                // Falls Span keine explizite semantische Klasse besitzt (wie .badge) und nur generische Stile hat:
+                const hasSemanticClass = span.classList.length > 0;
+                const hasCustomColor = /color:\s*(?!#1e293b|#333|#000|rgb\(30,\s*41,\s*59\))[^;]+/i.test(style);
+
+                if (isVarBadge || (!hasSemanticClass && !hasCustomColor)) {
+                    const parent = span.parentNode;
+                    while (span.firstChild) {
+                        parent.insertBefore(span.firstChild, span);
+                    }
+                    span.remove();
+                }
+            });
+
+            // 4. Leere Paragraphen (<p>   </p>) ohne Text oder Media säubern
+            const paragraphs = Array.from(body.querySelectorAll('p'));
+            paragraphs.forEach(p => {
+                if (!p.textContent.trim() && !p.querySelector('img, br, iframe, a, hr')) {
+                    p.remove();
                 }
             });
 

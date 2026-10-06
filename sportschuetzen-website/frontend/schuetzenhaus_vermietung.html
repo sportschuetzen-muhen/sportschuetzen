@@ -2605,14 +2605,16 @@
             let finalSubject = tplSubject;
             let finalBody = tplBody;
             Object.entries(map).forEach(([k, v]) => {
-              const rx = new RegExp(`\\{${k}\\}`, 'gi');
+              const rx = new RegExp(`\\{{1,2}${k}\\}{1,2}`, 'gi');
               finalSubject = finalSubject.replace(rx, v);
               finalBody = finalBody.replace(rx, v);
             });
 
-            const paragraphs = finalBody.split('\n\n').map(p => 
-              `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
-            ).join('');
+            const paragraphs = /<[a-z][\s\S]*>/i.test(finalBody)
+              ? finalBody
+              : finalBody.split(/\n\s*\n/).map(p => 
+                  `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
+                ).join('');
 
             const finalHtml = `
               <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
@@ -2833,14 +2835,16 @@
             let finalSubject = tplSubject;
             let finalBody = tplBody;
             Object.entries(map).forEach(([k, v]) => {
-              const rx = new RegExp(`\\{${k}\\}`, 'gi');
+              const rx = new RegExp(`\\{{1,2}${k}\\}{1,2}`, 'gi');
               finalSubject = finalSubject.replace(rx, v);
               finalBody = finalBody.replace(rx, v);
             });
 
-            const paragraphs = finalBody.split('\n\n').map(p => 
-              `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
-            ).join('');
+            const paragraphs = /<[a-z][\s\S]*>/i.test(finalBody)
+              ? finalBody
+              : finalBody.split(/\n\s*\n/).map(p => 
+                  `<p style="margin:0 0 12px 0; line-height: 1.55;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`
+                ).join('');
 
             const finalHtml = `
               <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">

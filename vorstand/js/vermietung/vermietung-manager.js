@@ -347,15 +347,20 @@ async function sendRentalWorkflowEmail(action, d, settings) {
   let renderedBody = tpl.mail_body;
 
   Object.entries(placeholderMap).forEach(([k, v]) => {
-    const rx = new RegExp(`\\{${k}\\}`, 'gi');
+    const rx = new RegExp(`\\{{1,2}${k}\\}{1,2}`, 'gi');
     renderedSubject = renderedSubject.replace(rx, v);
     renderedBody = renderedBody.replace(rx, v);
   });
 
-  // Body in HTML-Paragraphen umwandeln
-  const bodyParagraphs = renderedBody.split('\n\n').map(p => 
-    `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
-  ).join('');
+  // Body in HTML-Inhalt umwandeln: Falls bereits HTML vorhanden (aus ClubWysiwyg), direkt verwenden; sonst Absätze bilden
+  let bodyContentHtml = '';
+  if (/<[a-z][\s\S]*>/i.test(renderedBody)) {
+    bodyContentHtml = renderedBody;
+  } else {
+    bodyContentHtml = renderedBody.split(/\n\s*\n/).map(p => 
+      `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+    ).join('');
+  }
 
   // 5. Anhänge ermitteln (mit voller Storage-Path und URL Unterstützung)
   let attachments = [];
@@ -375,7 +380,7 @@ async function sendRentalWorkflowEmail(action, d, settings) {
     }
   }
 
-  const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyParagraphs, s);
+  const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyContentHtml, s);
 
   if (tplCode === 'vm_info_wirtschaft') {
     return await window.sendMailViaEngine({

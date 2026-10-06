@@ -399,8 +399,9 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
   - Toolbar-Aktionen: Undo (`fa-undo`), Redo (`fa-redo`), Formatierung aufheben (`fa-eraser`), dynamisches H3-Toggle (Absatz <-> Titel) sowie visuelle Aktiv-Zustände.
   - Vordefinierte responsive Callout-Banner (Info, Frist, Hinweis, Dringend) mit Übernahme markierten Textes ohne starre Dummy-Texte.
   - Geschützte Call-to-Action (CTA) Aktions-Buttons (`club-cta-container`) mit integriertem Folgeabsatz gegen Cursor-Fallen.
-  - Sichere Einfügung von dynamischen Platzhaltern (`{{...}}`) an der aktuellen Cursor-Position.
-  - DOM-basierte Bereinigung störender Formatierungen beim Einfügen aus Word, Outlook oder Google Docs (`cleanHtmlContent`) unter Erhalt geschützter Banner und Buttons.
+  - Sichere Einfügung von dynamischen Platzhaltern (`{{...}}` und `{...}`) an der aktuellen Cursor-Position ohne persistente Badge-Artefakte.
+  - DOM-basierte Bereinigung störender Formatierungen (`cleanHtmlContent`): Säubert Word/Outlook-Tags, Browser-Erweiterungen (Noir, Dark Reader) sowie Inline-CSS-Verschmutzungen unter Erhalt geschützter Banner und Buttons.
+  - Auslieferung: Modulübergreifend wird pre-gerendertes HTML direkt an die Mail-Engine übergeben, um doppelte Maskierungen (`escapeHtml`) in E-Mail-Clients zu verhindern.
 
 ---
 

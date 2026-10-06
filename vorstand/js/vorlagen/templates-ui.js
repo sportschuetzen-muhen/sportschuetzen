@@ -793,12 +793,28 @@
       }
     }
 
+    // Prüfen, ob ein Textfeld (z.B. Betreffzeile oder Titel) aktuell fokussiert ist
+    let activeEl = window._docLastFocusedField || document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && activeEl.id !== 'doc-f-mail-body' && document.getElementById('doc-template-form')?.contains(activeEl)) {
+      const start = activeEl.selectionStart !== undefined ? activeEl.selectionStart : activeEl.value.length;
+      const end = activeEl.selectionEnd !== undefined ? activeEl.selectionEnd : activeEl.value.length;
+      const val = activeEl.value || '';
+      activeEl.value = val.substring(0, start) + code + val.substring(end);
+      activeEl.focus();
+      activeEl.selectionStart = activeEl.selectionEnd = start + code.length;
+      window._docLastFocusedField = activeEl;
+      if (typeof window.docUpdateLiveMailPreview === 'function') {
+        window.docUpdateLiveMailPreview();
+      }
+      return;
+    }
+
     const wysiwygInst = document.getElementById('doc-f-mail-body')?._clubWysiwygInstance;
     if (wysiwygInst) {
       wysiwygInst.insertVariable(code);
       return;
     }
-    let activeEl = window._docLastFocusedField || document.activeElement;
+
     if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA') || !document.getElementById('doc-template-form')?.contains(activeEl)) {
       activeEl = document.getElementById('doc-f-mail-body') || document.getElementById('doc-f-intro');
     }
@@ -896,7 +912,8 @@
 
     try {
       const subj = document.getElementById('doc-f-mail-subj')?.value || 'Test E-Mail';
-      const body = document.getElementById('doc-f-mail-body')?.value || 'Test Inhalt';
+      const mailBodyEl = document.getElementById('doc-f-mail-body');
+      const body = (mailBodyEl?._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl?.value) || 'Test Inhalt';
       const fullHtml = buildRentalEmailPreviewHtml(subj, body, templateCode);
 
       if (typeof window.sendMailViaEngine === 'function') {
