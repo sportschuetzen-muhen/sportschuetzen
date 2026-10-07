@@ -957,8 +957,67 @@ function applyRundenPrefix(termine) {
 }
 
 
-// --- LOGIN LOGIK ---
+// ==============================================================================
+//  LOGIN & SSO AUTHENTIFIZIERUNG (Supabase Single Source of Truth)
+// ==============================================================================
 let allUsers = [];
+let supaClientApp = null;
+window._ssoPendingEmail = null;
+window._ssoResolvedData = null;
+
+const SUPABASE_APP_URL = "https://supabase-muhen.danfamily.uk";
+
+function getAppSupabase() {
+    if (!supaClientApp && typeof window.supabase !== 'undefined' && typeof window.supabase.createClient === 'function') {
+        try {
+            supaClientApp = window.supabase.createClient(SUPABASE_APP_URL, SUPABASE_ANON_KEY, {
+                auth: {
+                    persistSession: true,
+                    autoRefreshToken: true
+                }
+            });
+        } catch (err) {
+            console.error("Fehler beim Erstellen des App-Supabase-Clients:", err);
+        }
+    }
+    return supaClientApp;
+}
+
+// Umschalten zwischen E-Mail/SSO-Modus und PIN-Modus
+window.togglePinMode = function(e) {
+    if (e) e.preventDefault();
+    const pinGroup = document.getElementById('sso-pin-group');
+    const loginBtn = document.getElementById('login-btn');
+    const ssoSendBtn = document.getElementById('sso-send-btn');
+    const toggleBtn = document.getElementById('toggle-pin-btn');
+    const errorDiv = document.getElementById('login-error');
+    if (errorDiv) errorDiv.style.display = 'none';
+
+    if (pinGroup && pinGroup.style.display === 'none') {
+        pinGroup.style.display = 'block';
+        if (loginBtn) loginBtn.style.display = 'block';
+        if (ssoSendBtn) ssoSendBtn.style.display = 'none';
+        if (toggleBtn) toggleBtn.textContent = '✉️ Mit E-Mail / SSO anmelden';
+    } else if (pinGroup) {
+        pinGroup.style.display = 'none';
+        if (loginBtn) loginBtn.style.display = 'none';
+        if (ssoSendBtn) ssoSendBtn.style.display = 'block';
+        if (toggleBtn) toggleBtn.textContent = '🔑 Mit PIN anmelden';
+    }
+};
+
+window.resetSsoForm = function() {
+    const step1 = document.getElementById('sso-step-input');
+    const step2 = document.getElementById('sso-step-verify');
+    const verifyErr = document.getElementById('sso-verify-error');
+    const otpInput = document.getElementById('sso-otp-code');
+    if (step1) step1.style.display = 'block';
+    if (step2) step2.style.display = 'none';
+    if (verifyErr) verifyErr.style.display = 'none';
+    if (otpInput) otpInput.value = '';
+    window._ssoPendingEmail = null;
+    window._ssoResolvedData = null;
+};
 
 // --- HASHING FUNKTION (SHA-256) ---
 async function sha256(message) {
@@ -977,9 +1036,9 @@ async function initLogin() {
     const urlParams = new URLSearchParams(window.location.search);
     const redirectTarget = urlParams.get('redirect') || urlParams.get('returnUrl');
 
+    // 1. Prüfen, ob bereits lokal angemeldet
     if (userStr) {
         let user = JSON.parse(userStr);
-        // Migration: Falls Lizenz noch nicht sechstellig ist
         if (user.lizenz && user.lizenz.length < 6 && !isNaN(user.lizenz)) {
             user.lizenz = user.lizenz.padStart(6, '0');
             localStorage.setItem('sportschuetzen_user', JSON.stringify(user));
@@ -1004,94 +1063,342 @@ async function initLogin() {
         }
 
         showApp(user);
-    } else {
-        if (wrapper) wrapper.style.display = 'none';
-        if (loginOverlay) loginOverlay.style.display = 'flex';
+        return;
+    }
+
+    // 2. Prüfen, ob eine Supabase Auth Session (z.B. durch Magic-Link) vorliegt
+    const supa = getAppSupabase();
+    if (supa && supa.auth) {
+        try {
+            const { data: sessionData, error: sessErr } = await supa.auth.getSession();
+            if (!sessErr && sessionData && sessionData.session && sessionData.session.user) {
+                console.log("✅ Aktive Supabase SSO-Session erkannt:", sessionData.session.user.email);
+                
+                let authedUser = null;
+                try {
+                    const { data: syncRes } = await supa.rpc('sync_member_auth_session');
+                    if (syncRes && syncRes.success) {
+                        authedUser = {
+                            id: String(syncRes.person_number || syncRes.address_number || sessionData.session.user.id),
+                            lizenz: String(syncRes.person_number || syncRes.address_number || '').padStart(6, '0'),
+                            vorname: syncRes.firstname || syncRes.display_name,
+                            nachname: syncRes.lastname || '',
+                            name: syncRes.display_name,
+                            email: syncRes.email,
+                            role: syncRes.primary_role || 'member',
+                            is_board: Boolean(syncRes.is_board)
+                        };
+                    }
+                } catch (sErr) {
+                    console.warn("Konnte member_auth_session nicht synchronisieren:", sErr);
+                }
+
+                if (!authedUser) {
+                    const emailUser = sessionData.session.user.email;
+                    const uName = emailUser.split('@')[0];
+                    authedUser = {
+                        id: sessionData.session.user.id,
+                        lizenz: '',
+                        vorname: uName,
+                        nachname: '',
+                        name: uName,
+                        email: emailUser,
+                        role: 'member'
+                    };
+                }
+
+                localStorage.setItem('sportschuetzen_user', JSON.stringify(authedUser));
+                localStorage.setItem('sm_member_session', JSON.stringify(authedUser));
+                syncOneSignal(authedUser);
+
+                // URL Hash sauber bereinigen
+                if (window.location.hash) {
+                    window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+                }
+
+                if (redirectTarget) {
+                    const sessionPayload = { ...authedUser, ts: Date.now() };
+                    const token = btoa(encodeURIComponent(JSON.stringify(sessionPayload)));
+                    const sep = redirectTarget.includes('?') ? '&' : '?';
+                    window.location.href = redirectTarget + sep + 'auth_session=' + encodeURIComponent(token);
+                    return;
+                }
+
+                showApp(authedUser);
+                return;
+            }
+        } catch (authEx) {
+            console.warn("Supabase Auth Auto-Restore Hinweis:", authEx);
+        }
+    }
+
+    // 3. Wenn nicht eingeloggt: Login-Maske anzeigen
+    if (wrapper) wrapper.style.display = 'none';
+    if (loginOverlay) loginOverlay.style.display = 'flex';
+
+    // Dropdown-Hilfsfunktion
+    const populateDropdown = (users) => {
+        const select = document.getElementById('login-user-select');
+        if (!select || !Array.isArray(users) || users.length === 0) return;
+        const curVal = select.value;
+        select.innerHTML = '<option value="">Bitte Namen wählen...</option>';
+        users.forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.name || `${u.firstname || ''} ${u.lastname || ''}`.trim() || u.id;
+            const vName = u.firstname || '';
+            const nName = u.lastname || '';
+            opt.textContent = (u.type === 'admin' ? `⭐ ${vName}` : `${nName} ${vName}`).trim();
+            select.appendChild(opt);
+        });
+        if (curVal) select.value = curVal;
+    };
+
+    // Sofort aus lokalem Cache laden (< 5 ms)
+    try {
+        const cachedMembers = JSON.parse(localStorage.getItem('sportschuetzen_members_cache') || '[]');
+        if (Array.isArray(cachedMembers) && cachedMembers.length > 0) {
+            allUsers = cachedMembers;
+            populateDropdown(allUsers);
+        }
+    } catch(e) {}
+
+    try {
+        const members = await loadMembersFromSupabase();
+        if (Array.isArray(members) && members.length > 0) {
+            allUsers = members;
+            try { localStorage.setItem('sportschuetzen_members_cache', JSON.stringify(allUsers)); } catch(_) {}
+            populateDropdown(allUsers);
+        }
         
-        // PID aus URL Parameter prüfen (Deep Link Support)
-        const params = new URLSearchParams(window.location.search);
-        const pidParam = params.get("pid");
-        if (pidParam) {
-            console.log("PID aus URL erkannt:", pidParam);
-            // Wir loggen hier noch nicht ein, da der User erst den Namen wählen muss
-            // Aber wir könnten das Feld später vorbefüllen falls nötig.
-        }
+        if (!Array.isArray(allUsers)) allUsers = [];
+        
+        allUsers.sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'admin' ? -1 : 1;
+            const nA = a.lastname || a.firstname || '';
+            const nB = b.lastname || b.firstname || '';
+            return nA.localeCompare(nB);
+        });
 
-        // Dropdown-Hilfsfunktion
-        const populateDropdown = (users) => {
-            const select = document.getElementById('login-user-select');
-            if (!select || !Array.isArray(users) || users.length === 0) return;
-            const curVal = select.value;
-            select.innerHTML = '<option value="">Bitte wählen...</option>';
-            users.forEach(u => {
-                const opt = document.createElement('option');
-                opt.value = u.id;
-                const vName = u.firstname || '';
-                const nName = u.lastname || '';
-                opt.textContent = (u.type === 'admin' ? `⭐ ${vName}` : `${nName} ${vName}`).trim();
-                select.appendChild(opt);
-            });
-            if (curVal) select.value = curVal;
-        };
-
-        // Sofort aus lokalem Cache laden (< 5 ms)
-        try {
-            const cachedMembers = JSON.parse(localStorage.getItem('sportschuetzen_members_cache') || '[]');
-            if (Array.isArray(cachedMembers) && cachedMembers.length > 0) {
-                allUsers = cachedMembers;
-                populateDropdown(allUsers);
-            }
-        } catch(e) {}
-
-        try {
-            const members = await loadMembersFromSupabase();
-            if (Array.isArray(members) && members.length > 0) {
-                allUsers = members;
-                try { localStorage.setItem('sportschuetzen_members_cache', JSON.stringify(allUsers)); } catch(_) {}
-                populateDropdown(allUsers);
-            }
-            
-            if (!Array.isArray(allUsers)) allUsers = [];
-            
-            // Sortieren: Admins zuerst, dann Mitglieder nach Nachname
-            allUsers.sort((a, b) => {
-                if (a.type !== b.type) return a.type === 'admin' ? -1 : 1;
-                const nA = a.lastname || a.firstname || '';
-                const nB = b.lastname || b.firstname || '';
-                return nA.localeCompare(nB);
-            });
-
-            const select = document.getElementById('login-user-select');
-            if (select) {
-                select.innerHTML = '<option value="">Bitte wählen...</option>';
-                allUsers.forEach(u => {
-                    const opt = document.createElement('option');
-                    opt.value = u.id;
-                    const vName = u.firstname || '';
-                    const nName = u.lastname || '';
-                    opt.textContent = (u.type === 'admin' ? `⭐ ${vName}` : `${nName} ${vName}`).trim();
-                    select.appendChild(opt);
-                });
-            }
-        } catch (e) {
-            console.error("Fehler beim Laden der Teilnehmer", e);
-        }
+        populateDropdown(allUsers);
+    } catch (e) {
+        console.error("Fehler beim Laden der Teilnehmer", e);
     }
 }
 
+// --- SSO SCHRITT 1: Anmelde-Link & OTP Code anfordern ---
+document.getElementById('sso-send-btn')?.addEventListener('click', async () => {
+    const userSelect = document.getElementById('login-user-select');
+    const directInput = document.getElementById('login-direct-identifier');
+    const errorDiv = document.getElementById('login-error');
+    const sendBtn = document.getElementById('sso-send-btn');
+    
+    const selectedVal = (userSelect?.value || '').trim();
+    const typedVal = (directInput?.value || '').trim();
+    const identifier = typedVal || selectedVal;
+
+    if (!identifier) {
+        if (errorDiv) {
+            errorDiv.textContent = "Bitte deinen Namen aus der Liste wählen oder deine E-Mail/Lizenznummer eingeben.";
+            errorDiv.style.display = 'block';
+        }
+        return;
+    }
+
+    if (errorDiv) errorDiv.style.display = 'none';
+    if (sendBtn) {
+        sendBtn.disabled = true;
+        sendBtn.textContent = "Prüfe & sende...";
+    }
+
+    try {
+        const supa = getAppSupabase();
+        if (!supa || !supa.auth) {
+            throw new Error("Supabase-Verbindung steht momentan nicht zur Verfügung.");
+        }
+
+        // Identifikator via RPC auflösen
+        const idRes = await fetch(`${SUPABASE_REST_URL}/rpc/resolve_login_identifier`, {
+            method: 'POST',
+            headers: { ...getSupabaseHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p_identifier: identifier })
+        });
+
+        if (!idRes.ok) {
+            throw new Error("Verbindungsfehler bei der Benutzerprüfung.");
+        }
+
+        const idData = await idRes.json();
+        if (!idData || !idData.success || !idData.email) {
+            throw new Error((idData && idData.error) ? idData.error : "Keine hinterlegte E-Mail-Adresse für diese Eingabe gefunden.");
+        }
+
+        const targetEmail = idData.email;
+        window._ssoPendingEmail = targetEmail;
+        window._ssoResolvedData = idData;
+
+        // Exakte Rücksprung-URL (bleibt auf der aktuellen Seite)
+        const returnUrl = window.location.href.split('#')[0];
+        const { error: otpErr } = await supa.auth.signInWithOtp({
+            email: targetEmail,
+            options: {
+                emailRedirectTo: returnUrl,
+                shouldCreateUser: true
+            }
+        });
+
+        if (otpErr) throw otpErr;
+
+        // Schritt 2 anzeigen
+        document.getElementById('sso-step-input').style.display = 'none';
+        document.getElementById('sso-step-verify').style.display = 'block';
+        document.getElementById('sso-sent-email').textContent = targetEmail;
+        document.getElementById('sso-otp-code').focus();
+
+    } catch (err) {
+        console.error("SSO Sende-Fehler:", err);
+        if (errorDiv) {
+            errorDiv.textContent = err.message || "Fehler beim Versenden des Anmelde-Links.";
+            errorDiv.style.display = 'block';
+        }
+    } finally {
+        if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.textContent = "✉️ Anmelde-Link & Code senden";
+        }
+    }
+});
+
+// --- SSO SCHRITT 2: 6-Stelligen Code verifizieren ---
+document.getElementById('sso-verify-btn')?.addEventListener('click', async () => {
+    const codeInput = document.getElementById('sso-otp-code');
+    const errorDiv = document.getElementById('sso-verify-error');
+    const verifyBtn = document.getElementById('sso-verify-btn');
+    const code = (codeInput?.value || '').trim();
+
+    if (!code || code.length < 6) {
+        if (errorDiv) {
+            errorDiv.textContent = "Bitte den 6-stelligen Bestätigungscode aus der E-Mail eingeben.";
+            errorDiv.style.display = 'block';
+        }
+        return;
+    }
+
+    if (errorDiv) errorDiv.style.display = 'none';
+    if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = "Prüfe Code...";
+    }
+
+    try {
+        const supa = getAppSupabase();
+        if (!supa || !supa.auth) throw new Error("Supabase Auth nicht verfügbar.");
+
+        const { data: authData, error: authErr } = await supa.auth.verifyOtp({
+            email: window._ssoPendingEmail,
+            token: code,
+            type: 'email'
+        });
+
+        if (authErr) throw authErr;
+
+        // Session mit DB synchronisieren
+        let authedUser = null;
+        try {
+            const { data: syncRes } = await supa.rpc('sync_member_auth_session');
+            if (syncRes && syncRes.success) {
+                authedUser = {
+                    id: String(syncRes.person_number || syncRes.address_number || authData.user.id),
+                    lizenz: String(syncRes.person_number || syncRes.address_number || '').padStart(6, '0'),
+                    vorname: syncRes.firstname || syncRes.display_name,
+                    nachname: syncRes.lastname || '',
+                    name: syncRes.display_name,
+                    email: syncRes.email,
+                    role: syncRes.primary_role || 'member',
+                    is_board: Boolean(syncRes.is_board)
+                };
+            }
+        } catch (_) {}
+
+        if (!authedUser) {
+            const rData = window._ssoResolvedData || {};
+            const nameParts = (rData.name || 'Mitglied').split(' ');
+            authedUser = {
+                id: String(rData.person_number || authData.user.id).padStart(6, '0'),
+                lizenz: String(rData.person_number || '').padStart(6, '0'),
+                vorname: nameParts[0] || 'Mitglied',
+                nachname: nameParts.slice(1).join(' ') || '',
+                name: rData.name || 'Mitglied',
+                email: window._ssoPendingEmail,
+                role: rData.type || 'member'
+            };
+        }
+
+        localStorage.setItem('sportschuetzen_user', JSON.stringify(authedUser));
+        localStorage.setItem('sm_member_session', JSON.stringify(authedUser));
+        syncOneSignal(authedUser);
+
+        // Session Audit in login_sessions
+        try {
+            fetch(`${SUPABASE_REST_URL}/login_sessions`, {
+                method: 'POST',
+                headers: { ...getSupabaseHeaders(), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+                body: JSON.stringify({
+                    session_id: 'sso_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+                    username: authedUser.name,
+                    role: authedUser.role,
+                    user_agent: navigator.userAgent || 'PWA SSO'
+                })
+            }).catch(() => {});
+        } catch (_) {}
+
+        // Falls von Website aufgerufen: Weiterleitung zurück zur Homepage
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectTarget = urlParams.get('redirect') || urlParams.get('returnUrl');
+        if (redirectTarget) {
+            const sessionPayload = { ...authedUser, ts: Date.now() };
+            const token = btoa(encodeURIComponent(JSON.stringify(sessionPayload)));
+            const sep = redirectTarget.includes('?') ? '&' : '?';
+            window.location.href = redirectTarget + sep + 'auth_session=' + encodeURIComponent(token);
+            return;
+        }
+
+        document.getElementById('login-overlay').style.display = 'none';
+        showApp(authedUser);
+
+    } catch (err) {
+        console.error("SSO Verifikationsfehler:", err);
+        if (errorDiv) {
+            errorDiv.textContent = (err.message && err.message.includes('Token has expired'))
+                ? "Der Code ist abgelaufen. Bitte fordere einen neuen an."
+                : "Ungültiger Bestätigungscode. Bitte überprüfe den 6-stelligen Code aus der E-Mail.";
+            errorDiv.style.display = 'block';
+        }
+    } finally {
+        if (verifyBtn) {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = "✅ Jetzt anmelden";
+        }
+    }
+});
+
+// --- PIN-LOGIN (Bewährter Fallback) ---
 document.getElementById('login-btn')?.addEventListener('click', async () => {
-    const userId = document.getElementById('login-user-select').value;
-    const pwdInput = document.getElementById('login-password').value;
+    const userSelect = document.getElementById('login-user-select');
+    const directInput = document.getElementById('login-direct-identifier');
+    const pwdInput = document.getElementById('login-password')?.value || '';
     const errorDiv = document.getElementById('login-error');
     
+    const userId = (directInput?.value || userSelect?.value || '').trim();
+
     if (!userId || !pwdInput) {
-        errorDiv.textContent = "Bitte Namen wählen und Passwort eingeben.";
-        errorDiv.style.display = 'block';
+        if (errorDiv) {
+            errorDiv.textContent = "Bitte Namen wählen und PIN eingeben.";
+            errorDiv.style.display = 'block';
+        }
         return;
     }
 
     document.getElementById('login-btn').textContent = "Prüfe...";
-    const inputHash = await sha256(pwdInput.trim());
 
     try {
         const cleanPin = pwdInput.trim();
@@ -1118,6 +1425,7 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
                         vorname: m.first_name || '',
                         nachname: m.last_name || '',
                         name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
+                        email: m.primary_email || '',
                         role: 'member'
                     };
                 }
@@ -1149,6 +1457,7 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
                                 vorname: nameParts[0] || fullName,
                                 nachname: nameParts.slice(1).join(' ') || '',
                                 name: fullName,
+                                email: idData.email,
                                 role: idData.type || 'vorstand'
                             };
                         }
@@ -1161,8 +1470,9 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
 
         if (authenticatedUser) {
             localStorage.setItem('sportschuetzen_user', JSON.stringify(authenticatedUser));
+            localStorage.setItem('sm_member_session', JSON.stringify(authenticatedUser));
             syncOneSignal(authenticatedUser);
-            errorDiv.style.display = 'none';
+            if (errorDiv) errorDiv.style.display = 'none';
 
             // Protokolliere Sitzung in public.login_sessions
             try {
@@ -1200,15 +1510,20 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
             document.getElementById('login-overlay').style.display = 'none';
             showApp(authenticatedUser);
         } else {
-            errorDiv.textContent = "Login fehlgeschlagen. Bitte PIN oder Passwort überprüfen.";
-            errorDiv.style.display = 'block';
+            if (errorDiv) {
+                errorDiv.textContent = "Login fehlgeschlagen. Bitte PIN oder Passwort überprüfen.";
+                errorDiv.style.display = 'block';
+            }
         }
     } catch (e) {
         console.error("Login Fehler:", e);
-        errorDiv.textContent = (e.message && e.message !== "Failed to fetch") ? e.message : "Verbindungsfehler zur Datenbank. Bitte versuche es erneut.";
-        errorDiv.style.display = 'block';
+        if (errorDiv) {
+            errorDiv.textContent = (e.message && e.message !== "Failed to fetch") ? e.message : "Verbindungsfehler zur Datenbank. Bitte versuche es erneut.";
+            errorDiv.style.display = 'block';
+        }
     } finally {
-        document.getElementById('login-btn').textContent = "Einloggen";
+        const btn = document.getElementById('login-btn');
+        if (btn) btn.textContent = "Einloggen mit PIN";
     }
 });
 
@@ -1253,18 +1568,22 @@ function showApp(user) {
     }
 }
 
-window.logout = function() {
+window.logout = async function() {
     console.log("Logout Button geklickt");
     const confirmLogout = confirm("Möchtest du dich wirklich abmelden?");
     if (confirmLogout) {
         console.log("Logout bestätigt");
+        const supa = getAppSupabase();
+        if (supa && supa.auth) {
+            try { await supa.auth.signOut(); } catch (_) {}
+        }
         syncOneSignal(null); // OneSignal abmelden
         localStorage.removeItem('sportschuetzen_user');
-        // Veralteten Key ebenfalls löschen zur Sicherheit
+        localStorage.removeItem('sm_member_session');
         localStorage.removeItem('sportschuetzen_pid');
         location.reload();
     }
-}
+};
 
 /**
  * Synchronisiert den aktuellen Benutzer mit OneSignal

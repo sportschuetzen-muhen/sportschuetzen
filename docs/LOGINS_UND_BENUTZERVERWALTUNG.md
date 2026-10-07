@@ -207,4 +207,18 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 ### 8.3 Deaktivierung von Browser-Passwort-Autofill im Admin-Modal
 * Das Passwortfeld `#lf-passwort` wurde mit `autocomplete="new-password"` versehen und wird beim Öffnen eines bestehenden Profils explizit auf `''` zurückgesetzt, damit Browser-Passwortmanager nicht versehentlich das Admin-Passwort des aktuell eingeloggten Benutzers eintragen.
 
+---
+
+## 9. Universelles Mitglieder-SSO & Vorstand-Gatekeeper (Migration 46)
+
+### 9.1 Passwortloses Universal-SSO (Magic Link & 6-stelliger OTP-Code)
+* **Ablauf:** Vereinsmitglieder können sich in der Web-App und auf der Website passwortlos via E-Mail anmelden. Die RPC `resolve_login_identifier` löst Name, SSV-Nummer oder E-Mail serverseitig auf. Supabase versendet eine E-Mail mit 1-Klick-Link und 6-stelligem Zahlencode.
+* **Inline-Code-Verifikation:** Der 6-stellige Code kann direkt im Modal via `supabase.auth.verifyOtp()` eingegeben werden, ohne dass das mobile Gerät die aktuelle Seite verlassen muss.
+* **Session-Dauer & Persistenz:** Die Sitzung wird für 60 Tage im Browser persistiert und synchronisiert automatisch zwischen Web-App (`sportschuetzen_user`) und Website (`sm_member_session`).
+
+### 9.2 Strikter Vorstand-Gatekeeper (`vorstand/js/auth.js`)
+* **Schutz vor unbefugtem Zugang:** Meldet sich ein reguläres Vereinsmitglied mit der Rolle `member` (ohne Eintrag in `admin_profiles` oder ohne Vorstandsränge) an oder ruft `/vorstand/` auf, verweigert der Gatekeeper in `applyAuthenticatedUser()` den Zutritt sofort, löscht lokale Vorstands-Tokens und leitet zur Mitglieder-App weiter.
+* **Server-Schutz:** Sämtliche Vorstands-Tabellen (`invoices`, `accounting_journal`, `rental_requests` etc.) bleiben durch PostgreSQL Row-Level-Security (RLS) serverseitig für reine `member`-Rollen blockiert.
+
+
 

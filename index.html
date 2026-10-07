@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <script>
-// Falls Auth-Tokens (Recovery, Signup, Invite, Magic-Link) an der Web-App-Wurzel ankommen,
-// sofort zur Vorstand-Verwaltung durchreichen, wo der Recovery-/Anmelde-Dialog bereitsteht:
-if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('type=recovery') || window.location.hash.includes('type=signup') || window.location.hash.includes('type=invite'))) {
+// Nur administrative Recovery-, Signup- oder Invite-Tokens zum Vorstandsportal leiten:
+if (window.location.hash && (window.location.hash.includes('type=recovery') || window.location.hash.includes('type=signup') || window.location.hash.includes('type=invite'))) {
     const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
     window.location.replace(window.location.origin + basePath + 'vorstand/index.html' + window.location.hash);
 }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <title>Sportschützen Muhen App</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0f3a5d">
@@ -140,21 +140,53 @@ OneSignalDeferred.push(async function (OneSignal) {
     <div class="login-box">
         <img src="icons/logo.png" alt="Logo" class="login-logo">
         <h2>Anmeldung</h2>
-        <p>Bitte wähle deinen Namen aus und gib zur Bestätigung deine Lizenznummer oder deinen PIN ein.</p>
-        <div class="form-group">
-            <label for="login-user-select">Name</label>
-            <select id="login-user-select">
-                <option value="">Lade Teilnehmer...</option>
-            </select>
+        <p id="login-subtitle">Wähle deinen Namen oder gib deine E-Mail / Lizenznummer ein.</p>
+        
+        <!-- SSO SCHRITT 1: Benutzer / E-Mail Eingabe -->
+        <div id="sso-step-input">
+            <div class="form-group">
+                <label for="login-user-select">Name oder E-Mail</label>
+                <select id="login-user-select" style="margin-bottom:8px;">
+                    <option value="">Lade Teilnehmer...</option>
+                </select>
+                <input type="text" id="login-direct-identifier" placeholder="Oder E-Mail / SSV-Nummer eingeben..." autocomplete="email" style="font-size:0.9rem; width:100%; box-sizing:border-box; padding:10px; border:1px solid #cbd5e1; border-radius:8px;">
+            </div>
+
+            <!-- PIN Eingabe (optionaler Schnellzugang) -->
+            <div id="sso-pin-group" class="form-group" style="display:none; margin-top:12px;">
+                <label for="login-password">Lizenz-Nummer / PIN</label>
+                <input type="number" id="login-password" placeholder="123456" autocomplete="off" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #cbd5e1; border-radius:8px;">
+            </div>
+
+            <div id="login-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:12px; font-weight:600;"></div>
+            <div id="login-info" style="color:#2b6cb0; background:#ebf8ff; border-left:4px solid #3182ce; padding:8px 12px; font-size:0.85rem; display:none; margin-bottom:12px; border-radius:4px; text-align:left;"></div>
+
+            <button id="sso-send-btn" class="btn-main" style="margin-bottom:8px; width:100%;">✉️ Anmelde-Link & Code senden</button>
+            <button id="login-btn" class="btn-main" style="background:#4a5568; display:none; width:100%;">Einloggen mit PIN</button>
+
+            <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items:center; font-size: 0.82rem;">
+                <button type="button" id="toggle-pin-btn" class="btn-help-link" style="padding:0; text-decoration:underline; font-size:0.82rem;" onclick="togglePinMode(event)">🔑 Mit PIN anmelden</button>
+                <button type="button" class="btn-help-link" style="padding:0; font-size:0.82rem;" onclick="openLoginHelp()">❓ Hilfe / PIN?</button>
+            </div>
         </div>
-        <div class="form-group">
-            <label for="login-password">Lizenz-Nummer / PIN</label>
-            <input type="number" id="login-password" placeholder="123456" autocomplete="off">
-        </div>
-        <div id="login-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:15px; font-weight:600;">Lizenznummer / PIN inkorrekt.</div>
-        <button id="login-btn" class="btn-main">Einloggen</button>
-        <div style="margin-top: 15px; text-align: center;">
-            <button id="login-help-toggle" class="btn-help-link" type="button" onclick="openLoginHelp()">❓ Lizenznummer / PIN vergessen?</button>
+
+        <!-- SSO SCHRITT 2: 6-Stelliger Code / Link Bestätigung -->
+        <div id="sso-step-verify" style="display:none;">
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:12px; margin-bottom:15px; font-size:0.88rem; color:#166534; text-align:left;">
+                <div style="font-weight:700; margin-bottom:4px;">📬 E-Mail wurde gesendet!</div>
+                <div>Wir haben einen <b>Anmelde-Link</b> und einen <b>6-stelligen Code</b> an <span id="sso-sent-email" style="font-weight:600;"></span> gesendet.</div>
+                <div style="margin-top:6px; font-size:0.8rem; color:#15803d;">💡 Klicke auf den Link im E-Mail oder gib den Code unten ein.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="sso-otp-code">6-stelliger Bestätigungscode</label>
+                <input type="text" id="sso-otp-code" placeholder="123456" maxlength="8" autocomplete="one-time-code" style="font-size:1.4rem; letter-spacing:4px; text-align:center; font-weight:700; padding:10px; width:100%; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:8px;">
+            </div>
+
+            <div id="sso-verify-error" style="color:#e53e3e; font-size:0.85rem; display:none; margin-bottom:12px; font-weight:600;"></div>
+
+            <button id="sso-verify-btn" class="btn-main" style="width:100%;">✅ Jetzt anmelden</button>
+            <button id="sso-back-btn" class="btn-help-link" type="button" style="margin-top:12px; width:100%; text-align:center;" onclick="resetSsoForm()">← Zurück / Andere E-Mail</button>
         </div>
     </div>
 </div>

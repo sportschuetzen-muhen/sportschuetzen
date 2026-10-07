@@ -71,7 +71,7 @@
          */
         _loadSession() {
             try {
-                const raw = localStorage.getItem(STORAGE_KEY);
+                const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('sportschuetzen_user');
                 if (!raw) {
                     this._session = null;
                     return;
@@ -80,10 +80,11 @@
                 const data = JSON.parse(raw);
                 const now = Date.now();
 
-                // Ablauf nach z. B. 30 Tagen prüfen
-                if (data.savedAt && (now - data.savedAt > MAX_SESSION_AGE_DAYS * 24 * 60 * 60 * 1000)) {
+                // Ablauf nach z. B. 60 Tagen prüfen (vorher 30)
+                if (data.savedAt && (now - data.savedAt > 60 * 24 * 60 * 60 * 1000)) {
                     console.info('Session ist abgelaufen.');
                     localStorage.removeItem(STORAGE_KEY);
+                    localStorage.removeItem('sportschuetzen_user');
                     this._session = null;
                     return;
                 }
@@ -169,6 +170,7 @@
          */
         logout() {
             localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem('sportschuetzen_user');
             this._session = null;
             this._notify();
             console.log('Mitglied abgemeldet.');

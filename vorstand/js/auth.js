@@ -196,8 +196,50 @@ async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resol
         supa.from('admin_profiles').update({ auth_user_id: authUser.id }).eq('id', prof.id).then();
     }
 
+    // =========================================================
+    //  STRIKTER VORSTAND-GATEKEEPER (SSO-Absicherung)
+    // =========================================================
+    const BOARD_ROLES = ['admin', 'vorstand', 'kassier', 'aktuar', 'schuetzenmeister', 'vermieter', 'materialwart'];
+    const userRoleList = (roles || []).map(r => String(r).trim().toLowerCase());
+    const hasBoardRole = userRoleList.some(r => BOARD_ROLES.includes(r));
+    const hasActiveAdminProfile = Boolean(prof && prof.id && prof.is_active !== false);
+
+    if (!hasBoardRole && !hasActiveAdminProfile) {
+        console.warn("⛔ ZUGRIFF VERWEIGERT: Benutzer ist reguläres Vereinsmitglied ohne Vorstandsfunktion.", { email: targetEmail, roles });
+        
+        // Vorstands-Storage bereinigen
+        localStorage.removeItem('portal_user');
+        localStorage.removeItem('portal_role');
+        localStorage.removeItem('portal_roles');
+        localStorage.removeItem('portal_login_id');
+        localStorage.removeItem('portal_personnumber');
+        localStorage.removeItem('portal_mailadresse');
+        localStorage.removeItem('portal_mailanzeige');
+        localStorage.removeItem('portal_rolle_extern');
+        sessionStorage.removeItem('portal_session_id');
+
+        const errDiv = document.getElementById('login-error');
+        const alertMsg = "Zugriff verweigert: Dieses Konto besitzt keine Berechtigung für das Vorstandsportal. Bitte melde dich in der Schützen-App an.";
+        if (errDiv) {
+            errDiv.textContent = alertMsg;
+            errDiv.classList.remove('d-none');
+            errDiv.style.display = 'block';
+        }
+        if (typeof showError === 'function') showError(alertMsg);
+
+        // Nach 2 Sekunden Weiterleitung zur Mitglieder-App
+        setTimeout(() => {
+            const basePath = window.location.pathname.includes('/vorstand/')
+                ? window.location.pathname.replace(/\/vorstand\/?.*$/, '/')
+                : '/';
+            window.location.href = window.location.origin + basePath;
+        }, 2200);
+        return;
+    }
+
     window.currentUser = (prof && prof.display_name) || (resolvedData && resolvedData.name) || authUser.email.split('@')[0];
-    window.currentRoles = roles.length > 0 ? roles.map(r => String(r).trim().toLowerCase()) : ['vorstand'];
+    window.currentRoles = userRoleList.length > 0 ? userRoleList.filter(r => BOARD_ROLES.includes(r)) : ['vorstand'];
+    if (window.currentRoles.length === 0) window.currentRoles = ['vorstand'];
     window.userRole = window.currentRoles[0] || 'vorstand';
     window.currentRole = window.userRole;
 
@@ -437,10 +479,17 @@ async function submitMagicLink(e) {
         // 1. Zuerst via RPC auflösen (Username / SSV-Nummer / Mail)
         try {
             const { data: res } = await supa.rpc('resolve_login_identifier', { p_identifier: inputVal });
-            if (res && res.success && res.type === 'admin' && res.email) {
-                targetEmail = res.email;
+            if (res && res.success) {
+                if (res.type === 'admin' && res.email) {
+                    targetEmail = res.email;
+                } else if (res.type === 'member') {
+                    throw new Error(`«${res.name || inputVal}» ist als Vereinsmitglied registriert. Das Vorstandsportal ist ausschliesslich dem Vorstand vorbehalten. Bitte nutze die Schützen-App.`);
+                }
             }
         } catch (rpcEx) {
+            if (rpcEx.message && rpcEx.message.includes('Vereinsmitglied')) {
+                throw rpcEx;
+            }
             console.warn("Identifier resolution failed:", rpcEx);
         }
 
@@ -652,6 +701,13 @@ async function doLogin() {
                 userInput.focus();
                 userInput.select();
             }
+            return;
+        }
+
+        if (resolvedData && resolvedData.type === 'member') {
+            const memberMsg = `«${resolvedData.name || u}» ist als Vereinsmitglied registriert. Das Vorstandsportal ist ausschliesslich dem Vorstand vorbehalten. Bitte nutze die Schützen-App.`;
+            setLoginError(memberMsg);
+            showError("Keine Berechtigung für das Vorstandsportal.");
             return;
         }
 
