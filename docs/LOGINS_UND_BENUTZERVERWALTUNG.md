@@ -229,5 +229,16 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 * **Logins-Modul im Portal:** Die Einbindung von `vorstand/js/logins/logins-events.js` in `vorstand/index.html` stellt sicher, dass `loadLoginsData()` und sämtliche Modal- und Tab-Handler für Vorstandsmitglieder mit Rolle `admin` fehlerfrei geladen und gerendert werden.
 * **Stammdaten in Web-App (`app.js`):** `loadMembersFromSupabase()` fragt gezielt die tatsächlichen Spalten von `public.members` (`person_number, address_number, first_name, last_name, is_active`) mit Filter `is_active=eq.true` ab, sodass das Login-Dropdown sofort mit allen aktiven Vereinsmitgliedern befüllt wird.
 
+### 9.5 Test-Personas & Berechtigungs-Härtung (Migration 47)
+* **Vier Test-Personen für End-to-End Testing:**
+  1. `1073722` (Daniel Hunziker, `dan.hunziker@hotmail.ch`): Reines Vereinsmitglied (`member`), PIN `125638`. Wird im Vorstandsportal vom Gatekeeper abgewiesen.
+  2. `9999999` (Dan Admin, `dan.hunziker@me.com`): Administrator (`admin`, `vorstand`), PIN `999999`. Voller Zugriff auf alle Module inklusive «Logins».
+  3. `8888888` (Dan Vorstand, `dan.hunziker@bluewin.ch`): Reguläres Vorstandsmitglied (`vorstand`), PIN `888888`. Zugriff auf Vorstandsbereiche, jedoch kein «Logins»-Menü und keine Buchhaltung.
+  4. `7777777` (Dan Kassier, `dan.hunziker@outlook.com`): Kassier (`kassier`, `vorstand`), PIN `777777`. Vollzugriff auf Finanzen, Rechnungen, Buchhaltung und Jahresbeitrag.
+* **Einheitliches Test-Passwort:** Für alle Test-Accounts ist das Initialpasswort `Muhen2026!` in `auth.users` hinterlegt; alternativ funktioniert passwortloser Magic-Link / OTP-Code.
+* **Rollen-Merge & Admin-Priorisierung (`vorstand/js/auth.js`):** `applyAuthenticatedUser()` führt Rollen aus `user_roles`, JWT und `admin_profiles.role_external` zusammen. Besitzt ein Benutzer die Rolle `admin`, wird diese zwingend an Position 1 gesetzt, sodass administrative Schutzprüfungen (`data-roles="admin"`) stets positiv ausfallen.
+* **Erweiterte Identifikator-Auflösung (`resolve_login_identifier`):** Prüft in `admin_profiles` neben `username` und `email` auch `display_name` und `person_number`, sodass auch Eingaben von Namen («Dan Admin») sofort korrekt als Admin aufgelöst werden.
+
+
 
 

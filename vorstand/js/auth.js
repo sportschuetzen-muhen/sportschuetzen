@@ -200,7 +200,22 @@ async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resol
     //  STRIKTER VORSTAND-GATEKEEPER (SSO-Absicherung)
     // =========================================================
     const BOARD_ROLES = ['admin', 'vorstand', 'kassier', 'aktuar', 'schuetzenmeister', 'vermieter', 'materialwart'];
-    const userRoleList = (roles || []).map(r => String(r).trim().toLowerCase());
+    
+    // Rollen zusammenführen aus JWT, user_roles UND admin_profiles.role_external
+    const combinedRoles = [...roles];
+    if (prof && prof.role_external) {
+        const extList = prof.role_external.split(',').map(r => r.trim().toLowerCase());
+        extList.forEach(r => {
+            if (!combinedRoles.map(x => String(x).toLowerCase()).includes(r)) {
+                combinedRoles.push(r);
+            }
+        });
+    }
+    if (prof && prof.username === 'admin' && !combinedRoles.map(x => String(x).toLowerCase()).includes('admin')) {
+        combinedRoles.push('admin');
+    }
+
+    const userRoleList = combinedRoles.map(r => String(r).trim().toLowerCase());
     const hasBoardRole = userRoleList.some(r => BOARD_ROLES.includes(r));
     const hasActiveAdminProfile = Boolean(prof && prof.id && prof.is_active !== false);
 
@@ -238,8 +253,21 @@ async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resol
     }
 
     window.currentUser = (prof && prof.display_name) || (resolvedData && resolvedData.name) || authUser.email.split('@')[0];
-    window.currentRoles = userRoleList.length > 0 ? userRoleList.filter(r => BOARD_ROLES.includes(r)) : ['vorstand'];
-    if (window.currentRoles.length === 0) window.currentRoles = ['vorstand'];
+    
+    // Gültige Vorstandsrollen filtern
+    let validBoardRoles = userRoleList.filter(r => BOARD_ROLES.includes(r));
+    if (validBoardRoles.length === 0) validBoardRoles = ['vorstand'];
+
+    // Priorisierung: 'admin' immer an erster Stelle, gefolgt von Fachrollen ('kassier', 'aktuar', etc.), zuletzt 'vorstand'
+    validBoardRoles.sort((a, b) => {
+        if (a === 'admin') return -1;
+        if (b === 'admin') return 1;
+        if (a === 'vorstand') return 1;
+        if (b === 'vorstand') return -1;
+        return a.localeCompare(b);
+    });
+
+    window.currentRoles = validBoardRoles;
     window.userRole = window.currentRoles[0] || 'vorstand';
     window.currentRole = window.userRole;
 
