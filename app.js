@@ -372,10 +372,17 @@ function nav(id, title, btn) {
         }
     }
 
-    // --- NEU: User Badge nur auf Home ---
+    // --- NEU: User Badge & Vorstands-Badge nur auf Home ---
     const badge = document.getElementById('user-badge');
+    const vorstandBadge = document.getElementById('vorstand-badge-link');
     if (badge && localStorage.getItem('sportschuetzen_user')) {
         badge.style.display = (id === 'page-home') ? 'flex' : 'none';
+        if (vorstandBadge) {
+            try {
+                const u = JSON.parse(localStorage.getItem('sportschuetzen_user') || '{}');
+                vorstandBadge.style.display = (id === 'page-home' && u.is_board) ? 'block' : 'none';
+            } catch (_) {}
+        }
     }
 
     // --- NEU: URL AKTUALISIEREN FÜR PULL-TO-REFRESH ---
@@ -1060,6 +1067,13 @@ async function initLogin() {
         }
         syncOneSignal(user);
 
+        // Falls Vorstandsportal angefordert wurde und Benutzer Vorstandsmitglied ist:
+        if (user && user.is_board && (window.location.search.includes('portal=vorstand') || urlParams.get('portal') === 'vorstand')) {
+            const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+            window.location.replace(window.location.origin + basePath + 'vorstand/index.html' + window.location.search + window.location.hash);
+            return;
+        }
+
         // Falls von der Website aufgerufen und bereits angemeldet:
         if (redirectTarget) {
             const sessionPayload = {
@@ -1129,6 +1143,13 @@ async function initLogin() {
                 // URL Hash sauber bereinigen
                 if (window.location.hash) {
                     window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+                }
+
+                // Falls Vorstandsportal angefordert wurde und Benutzer Vorstandsmitglied ist:
+                if (authedUser && authedUser.is_board && (window.location.search.includes('portal=vorstand') || urlParams.get('portal') === 'vorstand')) {
+                    const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+                    window.location.replace(window.location.origin + basePath + 'vorstand/index.html' + window.location.search + window.location.hash);
+                    return;
                 }
 
                 if (redirectTarget) {
@@ -1559,12 +1580,16 @@ function showApp(user) {
     
     const badge = document.getElementById('user-badge');
     const nameSpan = document.getElementById('display-firstname');
+    const vorstandBadge = document.getElementById('vorstand-badge-link');
     if (badge && nameSpan && user) {
         nameSpan.textContent = user.vorname;
         
         const homePage = document.getElementById('page-home');
         const isHome = homePage && homePage.classList.contains('active-page');
         badge.style.display = isHome ? 'flex' : 'none';
+        if (vorstandBadge) {
+            vorstandBadge.style.display = (isHome && user.is_board) ? 'block' : 'none';
+        }
     }
     
     loadTermine();

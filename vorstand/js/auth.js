@@ -422,7 +422,10 @@ async function submitForgotPassword(e) {
             throw new Error(`Keine hinterlegte Vorstands-E-Mail-Adresse für «${inputVal}» gefunden. Bitte die für das Vorstandsportal registrierte Adresse eingeben.`);
         }
 
-        const redirectUrl = window.location.origin + window.location.pathname;
+        const basePath = window.location.pathname.includes('/vorstand')
+            ? window.location.pathname.replace(/\/vorstand\/?.*$/, '/vorstand/index.html')
+            : '/vorstand/index.html';
+        const redirectUrl = window.location.origin + basePath + '?portal=vorstand';
         const { error: resetErr } = await supa.auth.resetPasswordForEmail(targetEmail, {
             redirectTo: redirectUrl
         });
@@ -536,7 +539,10 @@ async function submitMagicLink(e) {
             throw new Error(`Keine hinterlegte Vorstands-E-Mail-Adresse für «${inputVal}» gefunden. Bitte die für das Vorstandsportal registrierte Adresse eingeben.`);
         }
 
-        const redirectUrl = window.location.origin + window.location.pathname;
+        const basePath = window.location.pathname.includes('/vorstand')
+            ? window.location.pathname.replace(/\/vorstand\/?.*$/, '/vorstand/index.html')
+            : '/vorstand/index.html';
+        const redirectUrl = window.location.origin + basePath + '?portal=vorstand';
         const { error: otpErr } = await supa.auth.signInWithOtp({
             email: targetEmail,
             options: {

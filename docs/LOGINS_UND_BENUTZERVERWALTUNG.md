@@ -239,6 +239,7 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 * **Rollen-Merge & Admin-Priorisierung (`vorstand/js/auth.js`):** `applyAuthenticatedUser()` führt Rollen aus `user_roles`, JWT und `admin_profiles.role_external` zusammen. Besitzt ein Benutzer die Rolle `admin`, wird diese zwingend an Position 1 gesetzt, sodass administrative Schutzprüfungen (`data-roles="admin"`) stets positiv ausfallen.
 * **Erweiterte Identifikator-Auflösung (`resolve_login_identifier`):** Prüft in `admin_profiles` neben `username` und `email` auch `display_name` und `person_number`, sodass auch Eingaben von Namen («Dan Admin») sofort korrekt als Admin aufgelöst werden.
 
-
-
-
+### 9.6 Vorstands-Routing bei E-Mail-Bestätigung (Magic Link & Passwort-Reset)
+* **Zielgerichteter Redirect-Kontrakt:** Bei Anforderung eines Magic Links (`signInWithOtp`) oder Passwort-Resets (`resetPasswordForEmail`) aus dem Vorstandsportal wird `redirectTo` explizit auf `.../vorstand/index.html?portal=vorstand` gesetzt, um unkontrollierte Redirects auf das Web-App-Stammverzeichnis zu verhindern.
+* **Gatekeeper in `index.html` & `app.js`:** Trifft ein Vorstands-Token oder der Parameter `portal=vorstand` im Stammverzeichnis ein, leiten der `<head>`-Gatekeeper sowie `initLogin()` in `app.js` die Sitzung unter Beibehaltung von Search- und Hash-Parametern unmittelbar an `vorstand/index.html` weiter. Zudem erhalten eingeloggte Vorstandsmitglieder in der Web-App einen Schnellzugriffs-Button «👑 Vorstand».
+* **E-Mail-Branding:** Der Subtitle der GoTrue HTML-Templates (`magic-link.html`, `recovery.html`) lautet einheitlich «Vereins- & Vorstandsportal».

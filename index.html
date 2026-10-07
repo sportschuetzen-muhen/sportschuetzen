@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <script>
-// Nur administrative Recovery-, Signup- oder Invite-Tokens zum Vorstandsportal leiten:
-if (window.location.hash && (window.location.hash.includes('type=recovery') || window.location.hash.includes('type=signup') || window.location.hash.includes('type=invite'))) {
+// Vorstandsportal-Weiterleitung (Recovery, Signup, Invite oder expliziter Portal-Parameter):
+if (window.location.search.includes('portal=vorstand') || 
+    (window.location.hash && (window.location.hash.includes('type=recovery') || window.location.hash.includes('type=signup') || window.location.hash.includes('type=invite')))) {
     const basePath = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-    window.location.replace(window.location.origin + basePath + 'vorstand/index.html' + window.location.hash);
+    window.location.replace(window.location.origin + basePath + 'vorstand/index.html' + window.location.search + window.location.hash);
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -217,6 +218,7 @@ OneSignalDeferred.push(async function (OneSignal) {
 <div id="app-wrapper" style="display:none;">
 <div id="pull-spinner"><div class="spinner-icon"></div></div>
 <header>
+    <a id="vorstand-badge-link" href="vorstand/index.html" title="Zum Vorstandsportal" style="display:none; position:absolute; left:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.75rem; font-weight:600; background:rgba(255,255,255,0.22); color:#ffffff; text-decoration:none; padding:4px 10px; border-radius:12px; z-index:1100; backdrop-filter:blur(4px);">👑 Vorstand</a>
     <h1 id="main-title">Termine</h1>
     <div id="user-badge" style="display:none; position:absolute; right:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.78rem; font-weight:600; background:rgba(255,255,255,0.18); padding:3px 8px; border-radius:12px; align-items: center; gap: 5px; z-index: 1100;">
         <span style="white-space:nowrap;">👤 <span id="display-firstname"></span></span>
