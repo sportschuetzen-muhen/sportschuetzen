@@ -13,29 +13,30 @@
  */
 (function () {
   // Ansicht (navTo-ID) -> erforderliche Berechtigung (mindestens eine davon).
-  // Ansichten ohne Eintrag (z. B. dashboard, logins) behalten den bisherigen data-roles-Filter.
+  // Jedes Modul akzeptiert entweder .view oder .manage (wer manage hat, darf immer auch einsehen).
+  // Logins bleibt als Systemmodul ausserhalb und wird strikt von der System-Rolle 'admin' geschützt.
   const VIEW_ACCESS = {
     'inventar':               ['inventar.view', 'inventar.manage'],
-    'termine':                ['termine.manage'],
-    'system-mails':           ['system-mails.manage'],
-    'anlaesse':               ['anlaesse.view_internal', 'anlaesse.manage'],
-    'umfragen':               ['umfragen.manage'],
-    'manager':                ['schiessen.manage'],
-    'resultate':              ['schiessen.manage'],
-    'jahresmeisterschaft':    ['schiessen.manage'],
-    'jahresmeisterschaft-kk': ['schiessen.manage'],
-    'vermietung':             ['vermietung.view'],
-    'mail':                   ['mail.send'],
-    'jahresbeitrag':          ['finanzen.jahresbeitrag'],
-    'rechnungen':             ['finanzen.rechnungen'],
-    'dokument-vorlagen':      ['dokumente.manage'],
-    'buchhaltung':            ['finanzen.buchhaltung'],
-    'mitglieder':             ['members.view'],
-    'gv-dossier':             ['gv.manage'],
-    'archiv':                 ['archiv.view'],
-    'meeting-recorder':       ['meeting.record'],
-    'news':                   ['news.manage'],
-    'galerie':                ['galerie.manage']
+    'termine':                ['termine.view', 'termine.manage'],
+    'system-mails':           ['system-mails.view', 'system-mails.manage'],
+    'anlaesse':               ['anlaesse.view', 'anlaesse.manage'],
+    'umfragen':               ['umfragen.view', 'umfragen.manage'],
+    'manager':                ['manager.view', 'manager.manage'],
+    'resultate':              ['resultate.view', 'resultate.manage'],
+    'vermietung':             ['vermietung.view', 'vermietung.manage'],
+    'jahresmeisterschaft':    ['jahresmeisterschaft.view', 'jahresmeisterschaft.manage'],
+    'jahresmeisterschaft-kk': ['jahresmeisterschaft.view', 'jahresmeisterschaft.manage'],
+    'mail':                   ['mail.view', 'mail.manage'],
+    'jahresbeitrag':          ['jahresbeitrag.view', 'jahresbeitrag.manage'],
+    'rechnungen':             ['rechnungen.view', 'rechnungen.manage'],
+    'dokument-vorlagen':      ['dokumente.view', 'dokumente.manage'],
+    'buchhaltung':            ['buchhaltung.view', 'buchhaltung.manage'],
+    'mitglieder':             ['members.view', 'members.manage'],
+    'gv-dossier':             ['gv.view', 'gv.manage'],
+    'archiv':                 ['archiv.view', 'archiv.manage'],
+    'meeting-recorder':       ['meeting.view', 'meeting.manage'],
+    'news':                   ['news.view', 'news.manage'],
+    'galerie':                ['galerie.view', 'galerie.manage']
   };
 
   let permSet = null;      // Set<string> | null (null = nicht geladen)

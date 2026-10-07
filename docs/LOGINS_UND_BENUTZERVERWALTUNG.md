@@ -246,31 +246,54 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 
 ---
 
-## 10. RBAC-Durchsetzung (Pilot: Navigation/Kacheln & Rechnungswesen, Migration 48)
+## 10. RBAC-Durchsetzung (Pilot & Evolution)
 
-> **Status:** Pilot-Umfang. Die Berechtigungsmatrix (`public.role_permissions`) steuert nun verbindlich die Navigation/Kacheln und den Zugriff auf das Rechnungswesen. Übrige Module folgen schrittweise (siehe 10.5).
+Die Durchsetzung der Berechtigungsmatrix (`public.role_permissions`) startete mit der Pilot-Phase (Migration 48) für Navigation/Kacheln und Rechnungswesen und wurde mit Migration 49 auf das vollständige, einheitliche Modell erweitert.
 
-### 10.1 Ausgangslage (Befund)
-* Die Schalter in Tab 4 schrieben bereits korrekt nach `public.role_permissions`, wurden aber **nirgends ausgewertet**: Kacheln/Menü filterten über statische `data-roles`-Attribute in `vorstand/index.html`, `hasWriteAccess()` nutzte eine fest codierte Rollenliste, und die Rechnungstabellen besassen RLS-Policies mit `USING (true)` (für `authenticated` **und** `anon`).
-* Folge: Eine Rolle ohne jede Berechtigung (z. B. «Vorstand») sah alle Kacheln und konnte Rechnungen erstellen.
+---
 
-### 10.2 Soll-Architektur
-1. **Eine Quelle der Wahrheit für die Frontend-Rechte:** RPC `public.my_permissions()` liefert die effektiven Berechtigungen des angemeldeten Benutzers direkt aus `user_roles` ⨝ `role_permissions` (Admin = `['*']`). Kein JWT-Cache – Änderungen in der Matrix wirken beim nächsten Laden/Login sofort (JWT-Claims können bis zu 1 h veraltet sein).
-2. **Frontend (`vorstand/js/permissions.js`, `window.Perms`):** `Perms.has(key)` / `Perms.hasAny([...])`. Die Zuordnung *Ansicht → erforderliche Berechtigung* (`Perms.VIEW_ACCESS`) ist zentral; Kacheln, Sidebar und `navTo()` (Direktaufruf-Schutz) nutzen dieselbe Zuordnung. Elemente ohne Zuordnung behalten den bisherigen `data-roles`-Filter. **Fail-closed:** Schlägt das Laden der Berechtigungen fehl, bleiben geschützte Elemente verborgen und es erscheint eine Fehlermeldung (kein stiller Fallback auf Rollennamen).
-3. **Datenbank (RLS):** `public.rbac_allows(text[])` prüft live gegen `user_roles`/`role_permissions` (Admin-Wildcard). Die Tabellen `invoices`, `invoice_positions`, `invoice_payments`, `invoice_templates`, `invoice_layouts`, `external_contacts` sind nur noch für Berechtigte lesbar/schreibbar; alle `*_dev_anon`-Policies entfallen, `invoice_layouts` erhält erstmals RLS.
-   * **Lesen:** `finanzen.rechnungen`, `finanzen.jahresbeitrag`, `finanzen.buchhaltung`, `vermietung.view|edit|approve|contract`, `inventar.view|manage`.
-   * **Schreiben:** `finanzen.rechnungen`, `finanzen.jahresbeitrag`, `finanzen.buchhaltung`, `vermietung.edit|approve|contract`, `inventar.manage` (Fachmodule lösen Rechnungen über den `RechnungsCore` aus und benötigen daher Schreibrecht auf die Rechnungstabellen).
-4. **Neue Berechtigungsschlüssel** für bisher nicht abbildbare Kacheln: `termine.manage`, `umfragen.manage`, `dokumente.manage`, `archiv.view`, `meeting.record`, `news.manage`, `galerie.manage`. Startwerte für diese neuen Schlüssel entsprechen dem bisherigen Verhalten (`data-roles`) für alle Rollen **ausser «Vorstand»** (Vorstand hat laut Matrix keine Rechte und erhält daher auch hier keine Vorgabe). Bestehende Schlüssel werden nicht verändert.
+## 11. Einheitliches «View & Manage»-Berechtigungsmodell (Migration 49)
 
-### 10.3 Verhalten nach Umstellung
-* Rolle ohne Schalter → nur «Übersicht» sichtbar, Direktaufruf anderer Ansichten wird abgewiesen, Schreibzugriffe auf Rechnungstabellen scheitern serverseitig mit RLS-Fehler (UI zeigt die Fehlermeldung).
-* Admin sieht und darf weiterhin alles (Wildcard).
-* **Wichtig:** Die Matrix gilt strikt. Rollen, deren Matrix-Schalter weniger umfassen als die bisherige feste Rollenliste (z. B. Schützenmeister ohne `schiessen.manage`), verlieren die entsprechende Kachel, bis der Schalter aktiviert wird.
+### 11.1 Symmetrisches 2-Stufen-Prinzip
+Jedes der 20 Fachmodule im Vereinsportal verfügt in der Berechtigungsmatrix über exakt zwei Schalter:
+1. **`<modul>.view` (👁️ Einsehen):** Schaltet Dashboard-Kachel und Sidebar-Navigation frei (Read-Only). Daten werden geladen und angezeigt. Mutationsbuttons sind ausgeblendet oder deaktiviert (`.write-protected`).
+2. **`<modul>.manage` (✏️ Verwalten):** Schaltet Schreib- und Aktionsfunktionen frei (Speichern, Löschen, Mutieren, Exportieren, Rechnungsstellung etc.) und autorisiert Schreibvorgänge in der PostgreSQL-Datenbank.
+*(Wer `manage` besitzt, hat automatisch auch Einsicht in die Kachel und die Tabellen).*
 
-### 10.4 Rollenquelle
-RLS und `my_permissions()` verwenden ausschliesslich `public.user_roles`. Rollen, die nur in `admin_profiles.role_external` stehen, haben serverseitig keine Rechte und müssen im Logins-Modul (Tab 1) als Rolle zugewiesen sein.
+**Ausnahme `Logins`:** Bleibt als Schutz vor Rechte-Eskalation strikt der System-Rolle `admin` vorbehalten.
 
-### 10.5 Offene Punkte (nächste Phasen)
-* Weitere RLS-Policies mit `OR auth.has_role('vorstand')` (Mitglieder, Inventar, Termine, Anlässe, Jahresbeitrag) sowie `accounting_journal`, `document_templates`, `mail_logs` (offene Policies) auf `rbac_allows()` umstellen.
-* `SECURITY DEFINER`-RPCs `record_invoice_payment` und `next_invoice_number` umgehen RLS; der `anon`-Zugriff darauf wird entzogen, eine zusätzliche Berechtigungsprüfung im Funktionskörper folgt.
-* `hasWriteAccess()` für die übrigen Module von fester Rollenliste auf `Perms` umstellen.
+### 11.2 Die 20 Module & Berechtigungsschlüssel
+1. `inventar`: `inventar.view` / `inventar.manage`
+2. `termine`: `termine.view` / `termine.manage`
+3. `system-mails`: `system-mails.view` / `system-mails.manage`
+4. `anlaesse`: `anlaesse.view` / `anlaesse.manage`
+5. `umfragen`: `umfragen.view` / `umfragen.manage`
+6. `manager`: `manager.view` / `manager.manage`
+7. `resultate`: `resultate.view` / `resultate.manage`
+8. `vermietung`: `vermietung.view` / `vermietung.manage`
+9. `jahresmeisterschaft`: `jahresmeisterschaft.view` / `jahresmeisterschaft.manage`
+10. `mail`: `mail.view` / `mail.manage`
+11. `jahresbeitrag`: `jahresbeitrag.view` / `jahresbeitrag.manage`
+12. `rechnungen`: `rechnungen.view` / `rechnungen.manage`
+13. `dokumente`: `dokumente.view` / `dokumente.manage`
+14. `buchhaltung`: `buchhaltung.view` / `buchhaltung.manage`
+15. `members`: `members.view` / `members.manage`
+16. `gv`: `gv.view` / `gv.manage`
+17. `archiv`: `archiv.view` / `archiv.manage`
+18. `meeting`: `meeting.view` / `meeting.manage`
+19. `news`: `news.view` / `news.manage`
+20. `galerie`: `galerie.view` / `galerie.manage`
+
+### 11.3 Datenbank-Absicherung (RLS)
+* **SELECT Policy:** `(SELECT public.rbac_allows(ARRAY['<modul>.view', '<modul>.manage']))`
+* **WRITE Policy (ALL):** `(SELECT public.rbac_allows(ARRAY['<modul>.manage']))`
+* **Öffentliche Anon-Zugriffe:** Bleiben unberührt für Website-Funktionen (öffentlicher Kalender auf `termine`, Buchungsanfragen auf `rental_requests`, öffentliche Umfragen auf `poll_events` / `poll_responses`).
+* **Rechnungswesen-RLS:** Auslösende Fachmodule (`vermietung.manage`, `inventar.manage`, `jahresbeitrag.manage`, `buchhaltung.manage`, `rechnungen.manage`) besitzen verifizierte Schreibberechtigung auf `invoices`, `invoice_positions`, `invoice_payments`, `external_contacts`.
+
+### 11.4 Frontend-Absicherung
+* `window.Perms.VIEW_ACCESS` steuert Kacheln und Sidebar-Links über `['<modul>.view', '<modul>.manage']`.
+* `hasWriteAccess(modul)` prüft dynamisch `Perms.has('<modul>.manage')`.
+* Manuelle Rollenabfragen (`['admin', 'kassier', ...].includes(r)`) in allen Modulen (`mitglieder`, `jahresbeitrag`, `buchhaltung` etc.) wurden vollständig auf `hasWriteAccess(...)` harmonisiert.
+
+### 11.5 Standard-Regel für zukünftige Module
+Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatisch ohne gesonderte Aufforderung** mit den beiden Schlüsseln `<modul>.view` und `<modul>.manage` in `RBAC_MODULES` (`logins-core.js`), `VIEW_ACCESS` (`permissions.js`), `MODULE_MANAGE_PERMS` (`main.js`) und den entsprechenden RLS-Policies in PostgreSQL integriert.

@@ -422,7 +422,7 @@ function renderJahresbeitragView() {
   const currentYear = new Date().getFullYear();
   for (let y = currentYear; y >= currentYear - 4; y--) years.push(y);
 
-  const canEdit = (window.currentRoles || []).some(r => ['admin','kassier','schuetzenmeister'].includes(r));
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('jahresbeitrag') : (window.currentRoles || []).some(r => ['admin','kassier','schuetzenmeister'].includes(r));
 
   // Tab Navigation Controls
   const tabControlHTML = `

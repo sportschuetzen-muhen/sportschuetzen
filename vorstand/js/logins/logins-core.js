@@ -20,82 +20,168 @@ const RBAC_ROLES = [
   { key: 'aktuar', label: 'Aktuar', badge: 'bg-info text-dark' },
   { key: 'schuetzenmeister', label: 'Schützenmeister', badge: 'bg-warning text-dark' },
   { key: 'vermieter', label: 'Vermieter', badge: 'bg-secondary' },
-  { key: 'materialwart', label: 'Materialwart', badge: 'bg-dark' },
-  { key: 'member', label: 'Mitglied', badge: 'bg-light text-dark border' }
+  { key: 'materialwart', label: 'Materialwart', badge: 'bg-dark' }
 ];
 
 const RBAC_MODULES = [
   {
-    module: 'Vermietung',
-    icon: 'fa-building',
+    module: 'Inventar',
+    icon: 'fa-boxes-stacked',
     permissions: [
-      { key: 'vermietung.view', label: 'Buchungen & Kalender einsehen', desc: 'Zugriff auf Belegungsübersicht & Buchungsliste' },
-      { key: 'vermietung.create', label: 'Buchung manuell anlegen', desc: 'Neue Vermietungen im Portal erfassen' },
-      { key: 'vermietung.edit', label: 'Buchungsdetails & Preise bearbeiten', desc: 'Mietdaten, Tarife und Kaution anpassen' },
-      { key: 'vermietung.approve', label: 'Buchung freigeben / bestätigen', desc: 'Definitive Buchungszusage erteilen & Kalender aktualisieren' },
-      { key: 'vermietung.cancel', label: 'Buchung stornieren / ablehnen', desc: 'Mietgesuche ablehnen oder Reservierung stornieren' },
-      { key: 'vermietung.contract', label: 'Mietvertrag erzeugen (PDF)', desc: 'Mietvertrag mit QR-Rechnung & PDF generieren' }
+      { key: 'inventar.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Inventar- und Materialdaten einsehen' },
+      { key: 'inventar.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Inventar mutieren, Ausleihe/Rücknahme, Bestände verwalten' }
     ]
   },
   {
-    module: 'Anlässe & Termine',
+    module: 'Jahresprogramm',
     icon: 'fa-calendar-alt',
     permissions: [
-      { key: 'anlaesse.view_public', label: 'Öffentliche Termine einsehen', desc: 'Termine für Vereinswebsite & Portal' },
-      { key: 'anlaesse.view_internal', label: 'Interne Anlässe einsehen', desc: 'Interne Vereinsanlässe & Helferlisten einsehen' },
-      { key: 'anlaesse.manage', label: 'Anlässe erfassen & verwalten', desc: 'Anlässe erstellen, bearbeiten oder absagen' },
-      { key: 'anlaesse.rsvp_self', label: 'Eigene An-/Abmeldung erfassen', desc: 'Eigene Teilnahme & Menüwahl melden' },
-      { key: 'anlaesse.rsvp_all', label: 'Teilnehmer- & Helferliste verwalten', desc: 'Helfer einteilen und Meldungen bearbeiten' },
-      { key: 'termine.manage', label: 'Jahresprogramm & Termine verwalten', desc: 'Kachel «Jahresprogramm»: Termine, Anlässe & Orte pflegen' },
-      { key: 'umfragen.manage', label: 'Anlässe, Umfragen & RSVP verwalten', desc: 'Kachel «Anlässe & Umfragen»: Umfragen, Rückmeldungen & Mails' }
+      { key: 'termine.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Jahresprogramm & Termine einsehen' },
+      { key: 'termine.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Termine erstellen, mutieren, verschieben & löschen' }
+    ]
+  },
+  {
+    module: 'System-Mails',
+    icon: 'fa-envelope-open-text',
+    permissions: [
+      { key: 'system-mails.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Mail-Vorlagen & Logs einsehen' },
+      { key: 'system-mails.manage', label: '✏️ Verwalten (Schreiben)', desc: 'System-Mail-Vorlagen, SMTP & Konfigurationen verwalten' }
+    ]
+  },
+  {
+    module: 'Anlässe & Controlling',
+    icon: 'fa-calendar-check',
+    permissions: [
+      { key: 'anlaesse.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Anlässe & Margen einsehen' },
+      { key: 'anlaesse.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Anlässe planen, Helfer, Bestellungen & Controlling verwalten' }
+    ]
+  },
+  {
+    module: 'Anlässe & Umfragen',
+    icon: 'fa-poll',
+    permissions: [
+      { key: 'umfragen.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Umfragen & Rückmeldungen einsehen' },
+      { key: 'umfragen.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Umfragen anlegen, auswerten, RSVP & Erinnerungsmails steuern' }
+    ]
+  },
+  {
+    module: 'Team Manager',
+    icon: 'fa-shield-halved',
+    permissions: [
+      { key: 'manager.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Gruppen & Teams einsehen' },
+      { key: 'manager.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Teams zusammenstellen, Schützen zuteilen & Setups speichern' }
+    ]
+  },
+  {
+    module: 'Resultate',
+    icon: 'fa-trophy',
+    permissions: [
+      { key: 'resultate.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Ranglisten & Resultate einsehen' },
+      { key: 'resultate.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Resultate erfassen, OCR-Uploads auswerten & publizieren' }
+    ]
+  },
+  {
+    module: 'Vermietung',
+    icon: 'fa-house',
+    permissions: [
+      { key: 'vermietung.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Mietgesuche & Belegung einsehen' },
+      { key: 'vermietung.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Buchungen freigeben, Verträge/Rechnungen auslösen, stornieren' }
+    ]
+  },
+  {
+    module: 'Jahresmeisterschaft KK',
+    icon: 'fa-medal',
+    permissions: [
+      { key: 'jahresmeisterschaft.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Meisterschaftsstand einsehen' },
+      { key: 'jahresmeisterschaft.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Saisons konfigurieren, Ränge berechnen & abschliessen' }
+    ]
+  },
+  {
+    module: 'Mail (Verteiler & Rundmails)',
+    icon: 'fa-paper-plane',
+    permissions: [
+      { key: 'mail.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Verteiler & Verlauf einsehen' },
+      { key: 'mail.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Rundmails verfassen, Kampagnen versenden & Verteiler verwalten' }
+    ]
+  },
+  {
+    module: 'Jahresbeitrag',
+    icon: 'fa-coins',
+    permissions: [
+      { key: 'jahresbeitrag.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Beitragsberechnungen einsehen' },
+      { key: 'jahresbeitrag.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Tarife berechnen, Beitragsrechnungen generieren, verbuchen' }
+    ]
+  },
+  {
+    module: 'Rechnungen',
+    icon: 'fa-file-invoice-dollar',
+    permissions: [
+      { key: 'rechnungen.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Debitoren & Rechnungsliste einsehen' },
+      { key: 'rechnungen.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Rechnungen erstellen, versenden, mahnen & Zahlungen erfassen' }
+    ]
+  },
+  {
+    module: 'Dokumente & Vorlagen',
+    icon: 'fa-file-lines',
+    permissions: [
+      { key: 'dokumente.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Vorlagen-Pool & Klauseln einsehen' },
+      { key: 'dokumente.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Vorlagen bearbeiten, neue Klauseln anlegen & Vorlagen publizieren' }
+    ]
+  },
+  {
+    module: 'Buchhaltung',
+    icon: 'fa-chart-pie',
+    permissions: [
+      { key: 'buchhaltung.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Journal & Bilanz/ER einsehen' },
+      { key: 'buchhaltung.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Buchungen vornehmen, CAMT importieren, Kontenrahmen mutieren' }
     ]
   },
   {
     module: 'Mitglieder',
     icon: 'fa-users',
     permissions: [
-      { key: 'members.view', label: 'Mitgliederliste & Kontaktdaten einsehen', desc: 'Mitgliederstamm, Adressen & SSV-Lizenzstatus' },
-      { key: 'members.edit', label: 'Mitgliederstammdaten mutieren', desc: 'Adressen, Funktionen und Status ändern/hinzufügen' },
-      { key: 'members.export', label: 'Mitgliederdaten exportieren', desc: 'Excel-/CSV-Export der Vereinsmitglieder' }
+      { key: 'members.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Mitgliederstamm & Lizenzen einsehen' },
+      { key: 'members.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Mitglieder anlegen/mutieren, SSV-Import ausführen, austreten' }
     ]
   },
   {
-    module: 'Finanzen & Rechnungen',
-    icon: 'fa-file-invoice-dollar',
+    module: 'Generalversammlung (GV)',
+    icon: 'fa-landmark',
     permissions: [
-      { key: 'finanzen.rechnungen', label: 'Fakturierung & Rechnungen verwalten', desc: 'Rechnungen erstellen, versenden & Mahnungen auslösen' },
-      { key: 'finanzen.jahresbeitrag', label: 'Jahresbeitrag & Tarife verwalten', desc: 'Mitgliederbeiträge berechnen und in Rechnung stellen' },
-      { key: 'finanzen.buchhaltung', label: 'Doppelte Buchhaltung & Kontenrahmen', desc: 'Kassabuch, Bilanz/ER und Buchungsjournal' }
+      { key: 'gv.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, GV-Dossier & Traktanden einsehen' },
+      { key: 'gv.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Traktanden verwalten, Präsenz erfassen, Beschlüsse protokollieren' }
     ]
   },
   {
-    module: 'Schiessbetrieb & Inventar',
-    icon: 'fa-bullseye',
-    permissions: [
-      { key: 'inventar.view', label: 'Vereinsinventar einsehen', desc: 'Materialbestand, Munition und Leihwaffen einsehen' },
-      { key: 'inventar.manage', label: 'Inventar & Ausleihe verwalten', desc: 'Waffenausleihe, Chargen & Bestandsmutationen' },
-      { key: 'schiessen.manage', label: 'Schiessbetrieb, Teams & JM leiten', desc: 'Gruppenmeisterschaft, Schiessresultate und Jahresmeisterschaft' }
-    ]
-  },
-  {
-    module: 'Administration & Governance',
-    icon: 'fa-user-shield',
-    permissions: [
-      { key: 'gv.manage', label: 'Generalversammlung & Stimmrecht', desc: 'Traktanden, Vor-Ort-Präsenz & Stimmrecht verwalten' },
-      { key: 'mail.send', label: 'Vereins-Mails & Newsletter versenden', desc: 'Zentrale Mail-Engine für Rundmails und Benachrichtigungen' },
-      { key: 'system-mails.manage', label: 'System-Mail-Vorlagen konfigurieren', desc: 'SMTP-Zugangsdaten & HTML-Mail-Templates bearbeiten' },
-      { key: 'logins.manage', label: 'Logins & Berechtigungsmatrix verwalten', desc: 'Admin-Profile, Rollen, Berechtigungen und Sitzungs-Audit' }
-    ]
-  },
-  {
-    module: 'Dokumente, Archiv & KI',
+    module: 'Vereins-Archiv & KI',
     icon: 'fa-folder-open',
     permissions: [
-      { key: 'dokumente.manage', label: 'Dokumenten-Vorlagen & Kampagnen', desc: 'Zentraler Vorlagen-Pool, Klauseln und Kampagnen' },
-      { key: 'archiv.view', label: 'Vereins-Archiv & KI-Suche', desc: 'Google-Drive-Archiv und KI-Suche nutzen' },
-      { key: 'meeting.record', label: 'Meeting-Recorder & Protokolle', desc: 'Sprachaufnahme und Protokoll-Erstellung' },
-      { key: 'news.manage', label: 'News-Berichte (KI) erstellen', desc: 'KI-Berichte für die Vereinshomepage erstellen' },
-      { key: 'galerie.manage', label: 'Galerie, Gesichtserkennung & EXIF-Tagging', desc: 'Galerie-Manager nutzen' }
+      { key: 'archiv.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Dokumente suchen & einsehen' },
+      { key: 'archiv.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Dokumente hochladen, archivieren & KI-Metadaten verwalten' }
+    ]
+  },
+  {
+    module: 'Meeting-Recorder',
+    icon: 'fa-microphone',
+    permissions: [
+      { key: 'meeting.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Protokolle & Aufnahmen einsehen' },
+      { key: 'meeting.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Neue Meetings aufnehmen, transkribieren & Protokoll erzeugen' }
+    ]
+  },
+  {
+    module: 'News KI',
+    icon: 'fa-newspaper',
+    permissions: [
+      { key: 'news.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, News-Entwürfe einsehen' },
+      { key: 'news.manage', label: '✏️ Verwalten (Schreiben)', desc: 'News mit KI generieren, freigeben & auf Website publizieren' }
+    ]
+  },
+  {
+    module: 'Galerie Manager',
+    icon: 'fa-images',
+    permissions: [
+      { key: 'galerie.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Alben & Fotos betrachten' },
+      { key: 'galerie.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Fotos hochladen, Alben verwalten, Gesichter & EXIF-Tags bearbeiten' }
     ]
   }
 ];

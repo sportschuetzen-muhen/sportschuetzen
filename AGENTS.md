@@ -63,3 +63,15 @@ Nach **jeder** vorgenommenen Code- oder Schemaänderung müssen der lokale Entwi
   - Jede Mutation an einer Rechnung (Erstellen, Bearbeiten, Zahlung, Storno) muss im Hintergrund automatisch die Neugenerierung anstossen: `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })`.
   - Jede PDF-Anzeige oder Verlinkung im Frontend muss zwingend mit Cache-Busting aufgerufen werden (`?t=${Date.now()}`), um veraltete Browser- und CDN-Caches zu umgehen.
 
+## 7. Einheitliches Berechtigungsmodell («View & Manage» Kontrakt)
+- **Symmetrisches 2-Stufen-Modell:** Jedes Fachmodul besitzt exakt zwei Berechtigungsschlüssel:
+  - `<modul>.view` (👁️ Einsehen): Freischaltung Kachel & Navigation (Read-Only).
+  - `<modul>.manage` (✏️ Verwalten): Freischaltung aller Mutations- und Schreibaktionen (autorisiert DB-Schreibzugriff). Wer `manage` besitzt, hat automatisch auch Einsicht (`view`).
+  - Ausnahme: Das Modul `logins` bleibt strikt der System-Rolle `admin` vorbehalten.
+- **Verbindliche Pflicht bei neuen Modulen:** Wird durch die KI oder Entwickler ein neues Fachmodul hinzugefügt, muss dieses **stillschweigend und automatisch ohne Aufforderung durch den Benutzer** in das Schema integriert werden:
+  1. Schlüssel `<neues_modul>.view` und `<neues_modul>.manage` in `public.role_permissions` und initialem Seed anlegen.
+  2. Modul in `RBAC_MODULES` (`vorstand/js/logins/logins-core.js`) und `Perms.VIEW_ACCESS` (`vorstand/js/permissions.js`) registrieren.
+  3. Manage-Zuordnung in `MODULE_MANAGE_PERMS` (`vorstand/js/main.js`) hinterlegen.
+  4. RLS-Policies der Tabellen auf `SELECT -> <modul>.view|<modul>.manage` und `WRITE -> <modul>.manage` setzen.
+
+

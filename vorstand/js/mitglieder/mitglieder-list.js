@@ -8,7 +8,7 @@ window._mglFilterType = window._mglFilterType || 'alle';
 window._mglSubFilterLiz = window._mglSubFilterLiz || 'alle';
 
 function mglRenderListe(data) {
-  const canEdit = (window.currentRoles || []).some(r => ['admin', 'vorstand', 'schuetzenmeister'].includes(r));
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('members') : (window.currentRoles || []).some(r => ['admin', 'vorstand', 'schuetzenmeister'].includes(r));
 
   // Aufbau der progressiv eingeblendeten Unter-Chips für Lizenzen
   const subFiltersHtml = window._mglFilterType === 'mit-lizenz' 
@@ -157,7 +157,7 @@ function mglRenderRows(data) {
   const container = document.getElementById('mglListContainer');
   if (!container) return;
 
-  const canEdit = (window.currentRoles || []).some(r => ['admin','vorstand','schuetzenmeister'].includes(r));
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('members') : (window.currentRoles || []).some(r => ['admin','vorstand','schuetzenmeister'].includes(r));
 
   if (!data.length) {
     const isDbEmpty = !window._mglData || window._mglData.length === 0;

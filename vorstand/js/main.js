@@ -916,38 +916,51 @@ function userHasRole(requiredRole) {
     return roles.map(r => String(r).toLowerCase()).includes(requiredRole.toLowerCase());
 }
 
-// Matrix-Prüfung für Schreibrechte
+// Kanonische Zuordnung von Modul- oder View-IDs auf ihren Manage-Berechtigungsschlüssel
+const MODULE_MANAGE_PERMS = {
+    'inventar':               'inventar.manage',
+    'termine':                'termine.manage',
+    'system-mails':           'system-mails.manage',
+    'anlaesse':               'anlaesse.manage',
+    'umfragen':               'umfragen.manage',
+    'manager':                'manager.manage',
+    'resultate':              'resultate.manage',
+    'vermietung':             'vermietung.manage',
+    'jahresmeisterschaft':    'jahresmeisterschaft.manage',
+    'jahresmeisterschaft-kk': 'jahresmeisterschaft.manage',
+    'mail':                   'mail.manage',
+    'jahresbeitrag':          'jahresbeitrag.manage',
+    'rechnungen':             'rechnungen.manage',
+    'dokument-vorlagen':      'dokumente.manage',
+    'dokumente':              'dokumente.manage',
+    'buchhaltung':            'buchhaltung.manage',
+    'mitglieder':             'members.manage',
+    'members':                'members.manage',
+    'gv':                     'gv.manage',
+    'gv-dossier':             'gv.manage',
+    'archiv':                 'archiv.manage',
+    'meeting-recorder':       'meeting.manage',
+    'meeting':                'meeting.manage',
+    'news':                   'news.manage',
+    'galerie':                'galerie.manage'
+};
+
+// Matrix-Prüfung für Schreibrechte (einheitliches View & Manage Modell)
 function hasWriteAccess(module) {
-    // Rechnungswesen: verbindlich über die Berechtigungsmatrix (Admin = Wildcard)
-    if (module === 'rechnungen' && window.Perms) return window.Perms.has('finanzen.rechnungen');
+    // Logins bleibt strikt der System-Rolle admin vorbehalten (Schutz vor Rechte-Eskalation)
+    if (module === 'logins') {
+        return userHasRole('admin');
+    }
 
-    if (userHasRole('admin')) return true; // Admin darf (fast) alles schreiben
+    // Wenn Perms geladen ist: Dynamische Prüfung über die Berechtigungsmatrix
+    if (window.Perms) {
+        if (window.Perms.has('*') || userHasRole('admin')) return true;
+        const targetPerm = MODULE_MANAGE_PERMS[module] || (module && module.endsWith('.manage') ? module : (module + '.manage'));
+        return window.Perms.has(targetPerm);
+    }
 
-    const writeRoles = {
-        'inventar':            ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
-        'termine':             ['schuetzenmeister', 'admin', 'aktuar', 'vorstand'],
-        'gv':                  ['admin', 'aktuar', 'vorstand'],
-        'system-mails':        ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
-        'umfragen':            ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
-        'manager':             ['schuetzenmeister', 'admin', 'vorstand'],
-        'resultate':           ['schuetzenmeister', 'admin', 'vorstand'],
-        'vermietung':          ['vermieter', 'admin', 'kassier', 'vorstand'],
-        'jahresmeisterschaft': ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
-        'jahresmeisterschaft-kk': ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
-        'mail':                ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
-        'jahresbeitrag':       ['admin', 'kassier', 'vorstand'],
-        'rechnungen':          ['admin', 'kassier', 'vorstand'],
-        'dokument-vorlagen':   ['admin', 'kassier', 'vorstand', 'vermieter', 'aktuar'],
-        'gv-dossier':          ['admin', 'aktuar', 'vorstand'],
-        'mitglieder':          ['admin', 'schuetzenmeister', 'aktuar', 'vorstand'],
-        'meeting-recorder':    ['schuetzenmeister', 'kassier', 'admin', 'aktuar', 'vorstand'],
-        'anlaesse':            ['admin', 'vorstand', 'schuetzenmeister', 'aktuar', 'kassier', 'vermieter'],
-        'logins':              ['admin']
-    };
-
-    const allowedRoles = writeRoles[module] || [];
-    const roles = (window.currentRoles && window.currentRoles.length > 0) ? window.currentRoles : (currentRoles || []);
-    return roles.some(r => allowedRoles.includes(String(r).toLowerCase()));
+    // Fallback falls Perms noch nicht geladen ist
+    return userHasRole('admin');
 }
 
 function navTo(viewId, el) {

@@ -159,7 +159,7 @@ function mglOpenDetail(pn) {
       `).join('')
       : '<div class="mgl-empty">Keine Timeline-Einträge</div>';
 
-    const canEditVerein = (window.currentRoles || []).some(r => ['admin','kassier','vorstand','schuetzenmeister'].includes(r));
+    const canEditVerein = typeof hasWriteAccess === 'function' ? hasWriteAccess('members') : (window.currentRoles || []).some(r => ['admin','kassier','vorstand','schuetzenmeister'].includes(r));
 
     body.innerHTML = `
       <div class="p-3 p-md-4 bg-light">
