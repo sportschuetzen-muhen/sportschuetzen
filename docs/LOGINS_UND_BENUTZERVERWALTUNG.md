@@ -243,3 +243,34 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 * **Zielgerichteter Redirect-Kontrakt:** Bei Anforderung eines Magic Links (`signInWithOtp`) oder Passwort-Resets (`resetPasswordForEmail`) aus dem Vorstandsportal wird `redirectTo` explizit auf `.../vorstand/index.html?portal=vorstand` gesetzt, um unkontrollierte Redirects auf das Web-App-Stammverzeichnis zu verhindern.
 * **Gatekeeper in `index.html` & `app.js`:** Trifft ein Vorstands-Token oder der Parameter `portal=vorstand` im Stammverzeichnis ein, leiten der `<head>`-Gatekeeper sowie `initLogin()` in `app.js` die Sitzung unter Beibehaltung von Search- und Hash-Parametern unmittelbar an `vorstand/index.html` weiter. Zudem erhalten eingeloggte Vorstandsmitglieder in der Web-App einen Schnellzugriffs-Button «👑 Vorstand».
 * **E-Mail-Branding:** Der Subtitle der GoTrue HTML-Templates (`magic-link.html`, `recovery.html`) lautet einheitlich «Vereins- & Vorstandsportal».
+
+---
+
+## 10. RBAC-Durchsetzung (Pilot: Navigation/Kacheln & Rechnungswesen, Migration 48)
+
+> **Status:** Pilot-Umfang. Die Berechtigungsmatrix (`public.role_permissions`) steuert nun verbindlich die Navigation/Kacheln und den Zugriff auf das Rechnungswesen. Übrige Module folgen schrittweise (siehe 10.5).
+
+### 10.1 Ausgangslage (Befund)
+* Die Schalter in Tab 4 schrieben bereits korrekt nach `public.role_permissions`, wurden aber **nirgends ausgewertet**: Kacheln/Menü filterten über statische `data-roles`-Attribute in `vorstand/index.html`, `hasWriteAccess()` nutzte eine fest codierte Rollenliste, und die Rechnungstabellen besassen RLS-Policies mit `USING (true)` (für `authenticated` **und** `anon`).
+* Folge: Eine Rolle ohne jede Berechtigung (z. B. «Vorstand») sah alle Kacheln und konnte Rechnungen erstellen.
+
+### 10.2 Soll-Architektur
+1. **Eine Quelle der Wahrheit für die Frontend-Rechte:** RPC `public.my_permissions()` liefert die effektiven Berechtigungen des angemeldeten Benutzers direkt aus `user_roles` ⨝ `role_permissions` (Admin = `['*']`). Kein JWT-Cache – Änderungen in der Matrix wirken beim nächsten Laden/Login sofort (JWT-Claims können bis zu 1 h veraltet sein).
+2. **Frontend (`vorstand/js/permissions.js`, `window.Perms`):** `Perms.has(key)` / `Perms.hasAny([...])`. Die Zuordnung *Ansicht → erforderliche Berechtigung* (`Perms.VIEW_ACCESS`) ist zentral; Kacheln, Sidebar und `navTo()` (Direktaufruf-Schutz) nutzen dieselbe Zuordnung. Elemente ohne Zuordnung behalten den bisherigen `data-roles`-Filter. **Fail-closed:** Schlägt das Laden der Berechtigungen fehl, bleiben geschützte Elemente verborgen und es erscheint eine Fehlermeldung (kein stiller Fallback auf Rollennamen).
+3. **Datenbank (RLS):** `public.rbac_allows(text[])` prüft live gegen `user_roles`/`role_permissions` (Admin-Wildcard). Die Tabellen `invoices`, `invoice_positions`, `invoice_payments`, `invoice_templates`, `invoice_layouts`, `external_contacts` sind nur noch für Berechtigte lesbar/schreibbar; alle `*_dev_anon`-Policies entfallen, `invoice_layouts` erhält erstmals RLS.
+   * **Lesen:** `finanzen.rechnungen`, `finanzen.jahresbeitrag`, `finanzen.buchhaltung`, `vermietung.view|edit|approve|contract`, `inventar.view|manage`.
+   * **Schreiben:** `finanzen.rechnungen`, `finanzen.jahresbeitrag`, `finanzen.buchhaltung`, `vermietung.edit|approve|contract`, `inventar.manage` (Fachmodule lösen Rechnungen über den `RechnungsCore` aus und benötigen daher Schreibrecht auf die Rechnungstabellen).
+4. **Neue Berechtigungsschlüssel** für bisher nicht abbildbare Kacheln: `termine.manage`, `umfragen.manage`, `dokumente.manage`, `archiv.view`, `meeting.record`, `news.manage`, `galerie.manage`. Startwerte für diese neuen Schlüssel entsprechen dem bisherigen Verhalten (`data-roles`) für alle Rollen **ausser «Vorstand»** (Vorstand hat laut Matrix keine Rechte und erhält daher auch hier keine Vorgabe). Bestehende Schlüssel werden nicht verändert.
+
+### 10.3 Verhalten nach Umstellung
+* Rolle ohne Schalter → nur «Übersicht» sichtbar, Direktaufruf anderer Ansichten wird abgewiesen, Schreibzugriffe auf Rechnungstabellen scheitern serverseitig mit RLS-Fehler (UI zeigt die Fehlermeldung).
+* Admin sieht und darf weiterhin alles (Wildcard).
+* **Wichtig:** Die Matrix gilt strikt. Rollen, deren Matrix-Schalter weniger umfassen als die bisherige feste Rollenliste (z. B. Schützenmeister ohne `schiessen.manage`), verlieren die entsprechende Kachel, bis der Schalter aktiviert wird.
+
+### 10.4 Rollenquelle
+RLS und `my_permissions()` verwenden ausschliesslich `public.user_roles`. Rollen, die nur in `admin_profiles.role_external` stehen, haben serverseitig keine Rechte und müssen im Logins-Modul (Tab 1) als Rolle zugewiesen sein.
+
+### 10.5 Offene Punkte (nächste Phasen)
+* Weitere RLS-Policies mit `OR auth.has_role('vorstand')` (Mitglieder, Inventar, Termine, Anlässe, Jahresbeitrag) sowie `accounting_journal`, `document_templates`, `mail_logs` (offene Policies) auf `rbac_allows()` umstellen.
+* `SECURITY DEFINER`-RPCs `record_invoice_payment` und `next_invoice_number` umgehen RLS; der `anon`-Zugriff darauf wird entzogen, eine zusätzliche Berechtigungsprüfung im Funktionskörper folgt.
+* `hasWriteAccess()` für die übrigen Module von fester Rollenliste auf `Perms` umstellen.

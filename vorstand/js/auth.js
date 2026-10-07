@@ -802,6 +802,7 @@ async function doLogout() {
     sessionStorage.removeItem('portal_session_id');
     csrfToken = null;
     currentRoles = [];
+    if (window.Perms) window.Perms.reset();
     location.reload();
 }
 

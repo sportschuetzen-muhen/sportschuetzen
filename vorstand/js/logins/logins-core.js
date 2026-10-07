@@ -45,7 +45,9 @@ const RBAC_MODULES = [
       { key: 'anlaesse.view_internal', label: 'Interne Anlässe einsehen', desc: 'Interne Vereinsanlässe & Helferlisten einsehen' },
       { key: 'anlaesse.manage', label: 'Anlässe erfassen & verwalten', desc: 'Anlässe erstellen, bearbeiten oder absagen' },
       { key: 'anlaesse.rsvp_self', label: 'Eigene An-/Abmeldung erfassen', desc: 'Eigene Teilnahme & Menüwahl melden' },
-      { key: 'anlaesse.rsvp_all', label: 'Teilnehmer- & Helferliste verwalten', desc: 'Helfer einteilen und Meldungen bearbeiten' }
+      { key: 'anlaesse.rsvp_all', label: 'Teilnehmer- & Helferliste verwalten', desc: 'Helfer einteilen und Meldungen bearbeiten' },
+      { key: 'termine.manage', label: 'Jahresprogramm & Termine verwalten', desc: 'Kachel «Jahresprogramm»: Termine, Anlässe & Orte pflegen' },
+      { key: 'umfragen.manage', label: 'Anlässe, Umfragen & RSVP verwalten', desc: 'Kachel «Anlässe & Umfragen»: Umfragen, Rückmeldungen & Mails' }
     ]
   },
   {
@@ -83,6 +85,17 @@ const RBAC_MODULES = [
       { key: 'mail.send', label: 'Vereins-Mails & Newsletter versenden', desc: 'Zentrale Mail-Engine für Rundmails und Benachrichtigungen' },
       { key: 'system-mails.manage', label: 'System-Mail-Vorlagen konfigurieren', desc: 'SMTP-Zugangsdaten & HTML-Mail-Templates bearbeiten' },
       { key: 'logins.manage', label: 'Logins & Berechtigungsmatrix verwalten', desc: 'Admin-Profile, Rollen, Berechtigungen und Sitzungs-Audit' }
+    ]
+  },
+  {
+    module: 'Dokumente, Archiv & KI',
+    icon: 'fa-folder-open',
+    permissions: [
+      { key: 'dokumente.manage', label: 'Dokumenten-Vorlagen & Kampagnen', desc: 'Zentraler Vorlagen-Pool, Klauseln und Kampagnen' },
+      { key: 'archiv.view', label: 'Vereins-Archiv & KI-Suche', desc: 'Google-Drive-Archiv und KI-Suche nutzen' },
+      { key: 'meeting.record', label: 'Meeting-Recorder & Protokolle', desc: 'Sprachaufnahme und Protokoll-Erstellung' },
+      { key: 'news.manage', label: 'News-Berichte (KI) erstellen', desc: 'KI-Berichte für die Vereinshomepage erstellen' },
+      { key: 'galerie.manage', label: 'Galerie, Gesichtserkennung & EXIF-Tagging', desc: 'Galerie-Manager nutzen' }
     ]
   }
 ];

@@ -259,11 +259,13 @@ const newInvoice = await window.RechnungsCore.createInvoice(invoiceOrder);
 
 ---
 
-## 6. Berechtigungen & RLS
+## 6. Berechtigungen & RLS (Migration 48)
 
-* **Einsehen (`finanzen.view`):** `kassier`, `admin`, `vorstand`, `revisor`.
-* **Rechnungen erstellen & mutieren (`finanzen.rechnungen`):** `kassier`, `admin`, `vorstand`.
-* **Zahlungen verbuchen (`finanzen.buchhaltung`):** Strikt beschränkt auf `kassier` und `admin`.
+* **Entkoppelte Durchsetzung (RBAC Single Source of Truth):** Zugriff auf das Rechnungswesen richtet sich nicht mehr nach statischen Rollennamen, sondern nach den granularen Schaltern in `public.role_permissions`.
+* **Lesen (`public.rbac_invoicing_read()`):** Erfordert `finanzen.rechnungen`, `finanzen.jahresbeitrag`, `finanzen.buchhaltung` oder Fachmodul-Rechte (`vermietung.view|edit|approve|contract`, `inventar.view|manage`).
+* **Schreiben (`public.rbac_invoicing_write()`):** Erfordert `finanzen.rechnungen`, `finanzen.jahresbeitrag`, `finanzen.buchhaltung` oder schreibende Fachmodul-Rechte (`vermietung.edit|approve|contract`, `inventar.manage`).
+* **Admin-Wildcard:** Die Rolle `admin` besitzt systemweit uneingeschränkten Vollzugriff (`*`).
+* **Sicherheits-Härtung:** Alle offenen `USING (true)`- und Dev-Anon-Policies auf den Rechnungstabellen (`invoices`, `invoice_positions`, `invoice_payments`, `invoice_templates`, `external_contacts`) wurden vollständig entfernt; Anon-Zugriff auf die Stored Procedures `next_invoice_number` und `record_invoice_payment` wurde entzogen. Rollen ohne aktive Schalter (z. B. «Vorstand» ohne Rechte) werden serverseitig mit RLS-Fehlern abgewiesen und sehen im Frontend weder Nav-Link noch Dashboard-Kachel.
 
 ---
 

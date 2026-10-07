@@ -594,8 +594,15 @@ function showApp() {
     document.body.style.removeProperty('overflow');
     document.body.style.removeProperty('padding-right');
 
-    // Kacheln & Nav-Links nach data-roles filtern
+    // Kacheln & Nav-Links filtern:
+    //  - Ansichten mit Eintrag in Perms.VIEW_ACCESS werden von der Berechtigungsmatrix (role_permissions) gesteuert
+    //    (fail-closed: bis zum Laden der Berechtigungen verborgen),
+    //  - alle übrigen weiterhin nach data-roles.
     document.querySelectorAll('.role-protected').forEach(el => {
+        if (window.Perms && window.Perms.isMatrixControlled(el)) {
+            el.classList.add('d-none');
+            return;
+        }
         const allowed = (el.dataset.roles || '')
             .split(',')
             .map(r => r.trim().toLowerCase())
@@ -612,6 +619,11 @@ function showApp() {
             el.classList.add('d-none');
         }
     });
+
+    // Berechtigungsmatrix live laden und gesteuerte Elemente einblenden
+    if (window.Perms) {
+        window.Perms.refresh().then(() => window.Perms.applyToDom());
+    }
 
     // 1. Letzten Login ausgeben
     const lastLogin = localStorage.getItem('portal_last_login');
@@ -906,6 +918,9 @@ function userHasRole(requiredRole) {
 
 // Matrix-Prüfung für Schreibrechte
 function hasWriteAccess(module) {
+    // Rechnungswesen: verbindlich über die Berechtigungsmatrix (Admin = Wildcard)
+    if (module === 'rechnungen' && window.Perms) return window.Perms.has('finanzen.rechnungen');
+
     if (userHasRole('admin')) return true; // Admin darf (fast) alles schreiben
 
     const writeRoles = {
@@ -936,6 +951,15 @@ function hasWriteAccess(module) {
 }
 
 function navTo(viewId, el) {
+    // Berechtigungsmatrix: Zugriff auf Ansicht prüfen (schützt auch vor Direktaufrufen)
+    if (window.Perms && !window.Perms.canAccessView(viewId)) {
+        const loaded = window.Perms.isLoaded();
+        showError(loaded
+            ? '⛔ Für diesen Bereich fehlt die Berechtigung.'
+            : '⏳ Berechtigungen werden noch geladen – bitte kurz warten und erneut versuchen.');
+        return;
+    }
+
     if (window.hasUnsavedChanges) {
         if (!confirm("⚠️ Modul wechseln?\n\nDu hast ungespeicherte Änderungen. Wenn du fortfährst, gehen diese verloren.")) {
             return;

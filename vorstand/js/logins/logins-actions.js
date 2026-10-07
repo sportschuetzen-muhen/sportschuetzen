@@ -170,6 +170,10 @@ async function toggleRolePermission(role, permission, isChecked, description) {
     if (typeof showSuccess === 'function') {
       showSuccess(`Berechtigung «${permission}» für Rolle «${role}» ${isChecked ? 'erteilt' : 'entzogen'}.`);
     }
+
+    if (window.Perms) {
+      window.Perms.refresh().then(() => window.Perms.applyToDom());
+    }
   } catch (err) {
     console.error("Fehler bei toggleRolePermission:", err);
     // Rollback im State
