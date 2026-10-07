@@ -220,5 +220,14 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 * **Schutz vor unbefugtem Zugang:** Meldet sich ein reguläres Vereinsmitglied mit der Rolle `member` (ohne Eintrag in `admin_profiles` oder ohne Vorstandsränge) an oder ruft `/vorstand/` auf, verweigert der Gatekeeper in `applyAuthenticatedUser()` den Zutritt sofort, löscht lokale Vorstands-Tokens und leitet zur Mitglieder-App weiter.
 * **Server-Schutz:** Sämtliche Vorstands-Tabellen (`invoices`, `accounting_journal`, `rental_requests` etc.) bleiben durch PostgreSQL Row-Level-Security (RLS) serverseitig für reine `member`-Rollen blockiert.
 
+### 9.3 Deutsche E-Mail-Templates (HTML) & GoTrue Mailer-Konfiguration (CT 117)
+* **Vereins-Branding & Sprachstandard:** Alle durch Supabase Auth (GoTrue) ausgelösten System-E-Mails (Magic Link / OTP-Token, E-Mail-Bestätigung, Passwort-Reset, Benutzereinladung) nutzen deutsche HTML-Vorlagen mit offiziellem Vereins-Header und -Footer.
+* **Storage-Integration:** Die Vorlagen (`magic-link.html`, `confirmation.html`, `recovery.html`, `invite.html`) sind im öffentlichen Storage-Bucket `email-templates` hinterlegt und werden intern direkt über `http://storage:5000/object/public/email-templates/` vom Auth-Container geladen.
+* **Konfiguration:** Absendername `SMTP_SENDER_NAME="Sportschützen Muhen"`, deutsche Betreffzeilen (`GOTRUE_MAILER_SUBJECTS_*`) und Host-Whitelist (`GOTRUE_MAILER_EXTERNAL_HOSTS`) sind in `.env` und `docker-compose.yml` verbindlich deklariert.
+
+### 9.4 Resilienz des Logins-Moduls & Stammdaten-Laden der Web-App
+* **Logins-Modul im Portal:** Die Einbindung von `vorstand/js/logins/logins-events.js` in `vorstand/index.html` stellt sicher, dass `loadLoginsData()` und sämtliche Modal- und Tab-Handler für Vorstandsmitglieder mit Rolle `admin` fehlerfrei geladen und gerendert werden.
+* **Stammdaten in Web-App (`app.js`):** `loadMembersFromSupabase()` fragt gezielt die tatsächlichen Spalten von `public.members` (`person_number, address_number, first_name, last_name, is_active`) mit Filter `is_active=eq.true` ab, sodass das Login-Dropdown sofort mit allen aktiven Vereinsmitgliedern befüllt wird.
+
 
 

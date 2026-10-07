@@ -264,20 +264,35 @@ async function fetchParticipantsFromSupabase(eventId) {
 async function loadMembersFromSupabase() {
     const headers = getSupabaseHeaders();
     try {
-        const res = await fetch(`${SUPABASE_REST_URL}/members?select=id,personnumber,addressnumber,firstname,lastname,status&status=neq.austritt&order=lastname.asc`, { headers });
-        if (!res.ok) return [];
+        const res = await fetch(`${SUPABASE_REST_URL}/members?select=person_number,address_number,first_name,last_name,is_active&is_active=eq.true&order=last_name.asc`, { headers });
+        if (!res.ok) {
+            console.error("Fehler beim Abruf von public.members:", res.status, res.statusText);
+            return [];
+        }
         const data = await res.json();
         if (!Array.isArray(data)) return [];
-        return data.map(m => ({
-            id: String(m.addressnumber || m.personnumber || m.id).padStart(6, '0'),
-            personnumber: String(m.personnumber || ''),
-            addressnumber: String(m.addressnumber || '').padStart(6, '0'),
-            lizenz: String(m.addressnumber || m.personnumber || m.id).padStart(6, '0'),
-            firstname: m.firstname || '',
-            lastname: m.lastname || '',
-            type: 'member'
-        }));
+        return data.map(m => {
+            const rawNum = m.address_number || m.person_number || '';
+            const padId = rawNum ? String(rawNum).padStart(6, '0') : '';
+            const fName = m.first_name || '';
+            const lName = m.last_name || '';
+            return {
+                id: padId,
+                person_number: m.person_number,
+                personnumber: String(m.person_number || ''),
+                address_number: m.address_number,
+                addressnumber: padId,
+                lizenz: padId,
+                first_name: fName,
+                firstname: fName,
+                last_name: lName,
+                lastname: lName,
+                name: `${fName} ${lName}`.trim(),
+                type: 'member'
+            };
+        });
     } catch (e) {
+        console.error("Exception in loadMembersFromSupabase:", e);
         return [];
     }
 }
