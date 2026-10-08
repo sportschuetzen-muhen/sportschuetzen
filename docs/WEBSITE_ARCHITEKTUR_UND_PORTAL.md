@@ -1,0 +1,147 @@
+# Fachdokumentation: Vereins-Website, Medien & Geschützter Mitgliederbereich
+
+> **Status:** PRODUKTIV (Supabase Single Source of Truth)  
+> **Stand:** Oktober 2026 (Migration 50)  
+> **Komponenten:** `sportschuetzen-website/frontend/` (`index.html`, `verein.html`, `schuetzenhaus_vermietung.html`, `resultate.html`), `js/` (`components.js`, `auth-session.js`, `galerie.js`, `main.js`), Cloudflare Worker `sportschuetzen-website-worker.js`, Immich-Sync  
+> **Backend & Single Source of Truth:** Supabase PostgreSQL (`public.members`, `public.documents`, `auth.users`), Supabase Storage (`operatives-storage`, `club-documents`), Immich Media Server (`immich-muhen.danfamily.uk`)  
+> **Relevanz für KI:** Verbindliche Referenz für die Frontend-Architektur der Website, die nahtlose Universal-SSO-Anbindung, die Medientrennung (öffentlich vs. geschützt), das dynamische PDF-Dokumentenarchiv und die Responsive-Standards für Mobilgeräte und iPads.
+
+---
+
+## 1. Übersicht & Systemgrenzen der Drei Frontends
+
+Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte, aber eng verzahnte Frontends:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                               DAS WEBSYSTEM DER SPORTSCHÜTZEN MUHEN                              │
+├───────────────────────────────┬────────────────────────────────┬────────────────────────────────┤
+│ 1. Öffentliche Vereins-Website│ 2. Mitglieder-App (PWA)        │ 3. Vorstands- & Adminportal    │
+│    (/sportschuetzen-website/) │    (Root: /index.html)         │    (/vorstand/index.html)      │
+├───────────────────────────────┼────────────────────────────────┼────────────────────────────────┤
+│ • Zielgruppe: Öffentlichkeit, │ • Zielgruppe: Vereinsmitglieder│ • Zielgruppe: Vorstand & Admins│
+│   Sponsoren, Mieter, Schützen │ • Schiessbetrieb, Standblatt-  │ • Rechnungen, Buchhaltung, GV, │
+│ • Schützenhaus-Vermietung     │   Upload, RSVPs, Termine       │   Mitgliederverwaltung, RBAC   │
+│ • Öffentliche Galerie & News  │ • Offline-fähig (ServiceWorker)│ • 20 Fachmodule mit RBAC-Matrix│
+│ • 🔐 Geschützter Mitglieder-  │ • Authentifizierung: Universal-│ • Authentifizierung: Supabase  │
+│   bereich (Alben, Archiv-PDF) │   SSO (Magic Link/PIN/OTP)     │   Auth (GoTrue) + 2FA / Audit  │
+└───────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                      ZENTRALE BACKEND-SERVICES (Single Source of Truth)                         │
+├───────────────────────────────┬────────────────────────────────┬────────────────────────────────┤
+│ • Supabase PostgreSQL (DB)    │ • Supabase Storage             │ • Immich Foto-Server           │
+│   Members, Documents, RLS     │   PDFs, Vorlagen, Belege       │   Hochauflösende Vereinsfotos  │
+└───────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
+```
+
+---
+
+## 2. Umgesetzte Architektur-Komponenten (Oktober 2026)
+
+### 2.1 Harmonisierte Navigation & Status-Bereinigung (`components.js` & `style.css`)
+* **Problem gelöst:** Die verwirrende Doppelung aus `🔐 Mitglieder` (starrer Link) und `🔐 Login` (Button) wurde vollständig beseitigt.
+* **Status 1: Nicht angemeldet (Gast / Öffentlich):**
+  * Kein redundanter `🔐 Mitglieder`-Link im Hauptmenü.
+  * Am rechten Rand der Navigation sitzt ausschliesslich der klare Button **`🔐 Login`** (`.nav-login-btn`).
+  * Klick darauf führt direkt zum zentralen Universal-SSO mit automatischem Rücksprung zu `verein.html#mitglieder`.
+* **Status 2: Angemeldet (Vereinsmitglied):**
+  * In der Menüleiste erscheint der geschützte Punkt **`🔐 Intern`** (`#nav-intern-link`).
+  * Das Profil-Element (`.nav-user-chip`) zeigt den Vornamen und die Rolle (`👤 Daniel [Mitglied] ▾`).
+  * Ein Klick öffnet ein barrierefreies Dropdown-Menü:
+    1. 📂 **Mitgliederbereich** (`verein.html#mitglieder`)
+    2. 🎯 **Schützen-App (PWA)**
+    3. 👑 **Vorstandsportal** *(nur für Benutzer mit Rolle `vorstand` oder `admin`)*
+    4. 🚪 **Abmelden**
+* **iPad- & Mobile-Optimierung:**
+  * Das Desktop-Grid (`.desktop-nav`) schrumpft zwischen `1024px` und `1250px` dynamisch auf `gap: 0.85rem` und `font-size: 0.92rem`. Dadurch passt die Menüleiste auf allen iPad-Modellen im Querformat ohne störenden Zeilenumbruch.
+
+---
+
+### 2.2 Entkoppeltes Universal-SSO & Supabase GoTrue Auth (`auth-session.js`)
+* **Native Supabase-Anbindung:** Auf allen HTML-Seiten (`index.html`, `verein.html`, `schuetzenhaus_vermietung.html`, `resultate.html`) ist `@supabase/supabase-js@2` eingebunden.
+* **Intelligente Sitzungs-Erkennung:**
+  1. `_initSupabase()`: Bindet an `https://supabase-muhen.danfamily.uk` und registriert `supabase.auth.onAuthStateChange()`.
+  2. `_checkSupabaseSession()`: Erkennt bestehende GoTrue-Sitzungen (Magic Link, OTP-Code oder Vorstand-Login) automatisch.
+  3. `_syncFromSupabaseUser()`: Ruft die RPC `sync_member_auth_session` auf und synchronisiert Profil, Rollen (`member`, `vorstand`, `admin`) und Vorstandsstatus (`is_board`).
+  4. Tab-übergreifende Synchronisation via `storage`-Event über die Keys `sm_member_session` und `sportschuetzen_user`.
+  5. 60-Tage Sitzungsvalidität gemäss Vorgabe aus [LOGINS_UND_BENUTZERVERWALTUNG.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/LOGINS_UND_BENUTZERVERWALTUNG.md).
+* **Dynamisches Host-Routing (`getLoginUrl`):**
+  * `localhost` / `127.0.0.1`: Löst relative Pfade (`../../index.html`) auf – sofortige Testbarkeit ohne Internet-Fallback.
+  * `*.pages.dev`: Verweist dynamisch auf `origin + '/index.html'`.
+  * `sportschuetzen-muhen.ch`: Verweist auf `https://sportschuetzen-muhen.ch/app/`.
+  * `github.io`: Verweist auf `https://sportschuetzen-muhen.github.io/sportschuetzen/`.
+
+---
+
+### 2.3 Medientrennung: Öffentliche vs. Geschützte Fotos (`galerie.js` & `galerie.json`)
+* **Klassifizierung mit `visibility`:**
+  * Jedes Foto in `data/galerie.json` besitzt das Attribut `"visibility": "public"` oder `"visibility": "members"`.
+  * `public` (69 Medien): Historischer Bau des Schützenhauses Rüteli 1996/1997, Empfang Eidgenössisches Schützenfest, Schützenhaus & Schützenstube.
+  * `members` (22 Medien): Jugendtag AGSV, interne Vereinsfeiern, Absenden, Aufnahmen mit Namens- und Gesichtserkennung.
+* **Galerie-Steuerung in `galerie.js`:**
+  * `getVisibleGalleryData()`: Prüft `window.AuthSession.isLoggedIn()`. Nicht angemeldete Besucher erhalten ausschliesslich `visibility === 'public'`.
+  * Album-Filter (`generateAlbumFilters`): Für Gäste wird die Gesamtzahl auf öffentliche Alben beschränkt und ein dezenter Hinweis eingeblendet:  
+    *«🔒 22 weitere Vereinsfotos & Alben im geschützten Mitgliederbereich verfügbar.»*
+  * Tag-Cloud (`generateTagCloud`): Zeigt Personennamen und interne Schlagworte erst nach Anmeldung.
+  * Echtzeit-Freischaltung: Ein Login über `window.AuthSession.onChange()` schaltet die geschützten Alben sofort frei, ohne dass die Seite neu geladen werden muss.
+* **Touch-Swipe Lightbox:**
+  * In `DOMContentLoaded` wurden Wischgesten (`touchstart`, `touchend`) integriert.
+  * Horizontale Wischbewegungen (> 50px) blättern auf iPads und Mobilgeräten flüssig zum nächsten bzw. vorherigen Bild.
+
+---
+
+### 2.4 Zentrales Dokumenten- & PDF-Archiv (Migration 50)
+* **Single Source of Truth:** Tabelle `public.documents` in PostgreSQL und Storage-Buckets `operatives-storage` / `club-documents`.
+* **Datenmodell (`public.documents`):**
+
+```sql
+CREATE TABLE public.documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(50) NOT NULL, -- 'statuten', 'reglement', 'anleitung', 'gv', 'protokoll', 'finanzen'
+    visibility VARCHAR(20) NOT NULL DEFAULT 'members', -- 'public', 'members', 'vorstand'
+    file_url TEXT NOT NULL,
+    file_size_kb INTEGER DEFAULT 0,
+    file_type VARCHAR(20) DEFAULT 'pdf',
+    year INTEGER,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+* **Row-Level Security (RLS):**
+  * `public`: Für jedermann sichtbar (z.B. Schützenhausordnung, Merkblatt Mieter).
+  * `members`: Für angemeldete Vereinsmitglieder sichtbar (Statuten, Schiessordnung, Munitionsbestellung, Spesenreglement, Standblatt-Leitfaden).
+  * `vorstand`: Vertraulich; nur über RBAC-Rechte `dokumente.view` / `dokumente.manage` oder Vorstandsrolle abrufbar (Vorstandsprotokolle, Buchhaltungsberichte).
+* **Frontend-Integration (`verein.html`):**
+  * Live-Abfrage via Supabase REST API (`/rest/v1/documents`).
+  * Live-Suche (`#doc-search-input`) nach Titel und Beschreibung.
+  * Schnellfilter nach Kategorien: *Alle*, *Statuten*, *Reglemente*, *Leitfäden*, *Finanzen*.
+  * Responsive Karten mit Typ-Badge (`PDF` / `HTML`), Dateigrösse (`245 KB`), Stand (`Stand: 2026`) und sicherem Download-Button (`target="_blank" rel="noopener"`).
+  * Vollständige Entfernung alter Google-Apps-Script-Texte zugunsten der nahtlosen Vorstandsportal-Verlinkung (`vorstand/index.html`).
+
+---
+
+## 3. Responsive Kompatibilität & Geräte-Standards
+
+| Gerät / Browser | Getroffene Massnahme | Ergebnis |
+| :--- | :--- | :--- |
+| **iPad Landscape (1024px–1180px)** | Dynamische Reduktion des Abstands `.desktop-nav` von `2rem` auf `0.85rem`–`1.25rem`. | Kein Header-Umbruch; Logo und Navigation bleiben einzeilig. |
+| **Smartphones & iPad Portrait (<=1024px)** | Hamburger-Menü (`.mobile-toggle`) mit `100dvh` und `env(safe-area-inset-top)` / `bottom`. | Keine Überdeckung durch Notch oder Safari-Leisten; 44×44px Touch-Targets. |
+| **Touch-Bedienung in der Lightbox** | Wischgesten-Listener (`touchstart` / `touchend`) mit Schwelle von 50px. | Intuitives horizontales Wischen auf Touchscreens für Bildwechsel. |
+| **PDF-Betrachtung auf iOS Safari** | Öffnen aller Dokumente im neuen Tab (`target="_blank"`). | Nativer iOS PDF-Reader statt fehlerhafter iFrame-Skalierung. |
+
+---
+
+## 4. Richtlinien für zukünftige Website-Erweiterungen
+
+1. **Neue Dokumente erfassen:**  
+   Immer über `public.documents` via Supabase Studio, RPC oder Vorstandsportal einfügen. Niemals statische HTML-Textzeilen ohne Link hinterlegen.
+2. **Neue Fotos & Alben (Immich-Sync):**  
+   Im Immich-Manager dem Album den Status-Tag zuweisen. Das Sync-Skript `sync-immich-album.js` übernimmt `visibility: 'public'` für historische Aufnahmen und Hausbilder, ansonsten automatisch `visibility: 'members'`.
+3. **Keine Google-Sheets-Fallbacks:**  
+   Die Website fragt Daten direkt via Supabase REST (`/rest/v1/...`) oder den Cloudflare Worker ab.

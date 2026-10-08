@@ -220,44 +220,31 @@
 
                 <!-- Tab 2: Dokumente -->
                 <div id="tab-content-dokumente" class="mb-tab-pane" style="display: none;">
-                    <div class="grid-2">
-                        <div class="glass-card">
-                            <h3 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
-                                <span>📜</span> Statuten & Reglemente
-                            </h3>
-                            <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem;">
-                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
-                                    <span>📄 Vereinsstatuten Sportschützen Muhen</span>
-                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
-                                </li>
-                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
-                                    <span>🎯 Schiessordnung & Sicherheitsreglement</span>
-                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
-                                </li>
-                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0;">
-                                    <span>🏠 Schützenhausordnung & Benützung</span>
-                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
-                                </li>
-                            </ul>
+                    <div class="glass-card mb-4" style="background: rgba(15, 60, 92, 0.03);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <h3 style="margin-bottom: 0.25rem;">📄 Vereinsdokumente & Reglemente</h3>
+                                <p style="color: var(--text-muted); font-size: 0.95rem;">Offizielle Statuten, Schiessordnungen, Leitfäden und Reglemente der Sportschützen Muhen.</p>
+                            </div>
+                            <div style="position: relative; min-width: 260px;">
+                                <input type="text" id="doc-search-input" placeholder="🔍 Dokument suchen..." style="width: 100%; padding: 0.6rem 1rem; border-radius: 20px; border: 1px solid var(--glass-border); font-size: 0.88rem; outline: none; background: #ffffff;">
+                            </div>
                         </div>
-                        <div class="glass-card">
-                            <h3 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
-                                <span>📋</span> Leitfäden & Merkblätter
-                            </h3>
-                            <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.75rem;">
-                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
-                                    <span>📤 Standblatt-Upload Leitfaden</span>
-                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">Anleitung</span>
-                                </li>
-                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
-                                    <span>🎯 Munitionsbestellung & Konditionen</span>
-                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
-                                </li>
-                                <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0;">
-                                    <span>🤝 Spesen- und Entschädigungsreglement</span>
-                                    <span class="badge" style="font-size: 0.75rem; background: rgba(15, 60, 92, 0.1); color: var(--primary-color);">PDF</span>
-                                </li>
-                            </ul>
+
+                        <!-- Dokumenten-Kategoriefilter -->
+                        <div class="gallery-filters" id="doc-category-filters" style="margin-top: 1.25rem; margin-bottom: 0; justify-content: flex-start; overflow-x: auto; padding-bottom: 0.25rem;">
+                            <button class="gallery-filter-btn active" data-cat="all">Alle Dokumente</button>
+                            <button class="gallery-filter-btn" data-cat="statuten">📜 Statuten</button>
+                            <button class="gallery-filter-btn" data-cat="reglement">🎯 Reglemente & Schiessordnung</button>
+                            <button class="gallery-filter-btn" data-cat="anleitung">📋 Leitfäden & Merkblätter</button>
+                            <button class="gallery-filter-btn" data-cat="finanzen">💰 Finanzen & Spesen</button>
+                        </div>
+                    </div>
+
+                    <!-- Grid für dynamische Dokumentenkarten -->
+                    <div class="grid-2" id="club-documents-grid">
+                        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2rem;">
+                            <p style="color: var(--text-muted); margin: 0;">Lade Dokumente aus Supabase...</p>
                         </div>
                     </div>
                 </div>
@@ -305,12 +292,12 @@
                                 <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
                                     <span>📝</span> Sitzungsprotokolle
                                 </h4>
-                                <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                                <ul id="board-protocol-list" style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;">
                                     <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--glass-border);">
-                                        <a href="docs/2018-06-25%20Protokoll%20Vorstandssitzung%20Sportsch%C3%BCtzen%20Muhen.pdf" target="_blank" style="color: var(--primary-color); font-weight: 600; text-decoration: none;">
+                                        <a href="docs/2018-06-25%20Protokoll%20Vorstandssitzung%20Sportsch%C3%BCtzen%20Muhen.pdf" target="_blank" rel="noopener" style="color: var(--primary-color); font-weight: 600; text-decoration: none;">
                                             📄 Protokoll Vorstandssitzung
                                         </a>
-                                        <span style="font-size: 0.8rem; color: var(--text-muted);">PDF</span>
+                                        <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: var(--accent-color); font-size: 0.75rem;">PDF</span>
                                     </li>
                                 </ul>
                             </div>
@@ -319,10 +306,10 @@
                                     <span>📊</span> Finanzen & Administration
                                 </h4>
                                 <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1rem;">
-                                    Buchhaltung, Beitragscontrolling und GV-Verwaltung werden sicher über die Google-Apps-Script-Vorstandstools verwaltet.
+                                    Buchhaltung, Beitragscontrolling, Rechnungen und GV-Dossiers werden sicher über das zentrale Supabase-Vorstandsportal verwaltet.
                                 </p>
-                                <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" class="btn btn-outline" style="font-size: 0.85rem; width: 100%; text-align: center;">
-                                    Verknüpfte Module ansehen
+                                <a href="vorstand/index.html" class="btn btn-primary" style="font-size: 0.85rem; width: 100%; text-align: center; text-decoration: none;">
+                                    👑 Zum Vorstandsportal wechseln
                                 </a>
                             </div>
                         </div>
@@ -557,10 +544,11 @@
             });
         });
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/auth-session.js"></script>
     <script src="js/components.js"></script>
     <script src="js/main.js"></script>
-    <script src="js/galerie.js?v=4"></script>
+    <script src="js/galerie.js?v=5"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -630,6 +618,138 @@
                     }
                 });
             }
+
+            // --- Dynamisches Dokumentenarchiv aus Supabase ---
+            let clubDocuments = [];
+            let activeDocCategory = 'all';
+
+            async function loadClubDocuments() {
+                const grid = document.getElementById('club-documents-grid');
+                if (!grid) return;
+
+                try {
+                    const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+                    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+                    const res = await fetch(`${SUPABASE_REST_URL}/documents?select=*&order=sort_order.asc,year.desc`, {
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                        }
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data) && data.length > 0) {
+                            clubDocuments = data;
+                            renderDocumentsGrid();
+                            renderBoardDocuments();
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Dokumente konnten nicht geladen werden:', e);
+                }
+            }
+
+            function renderDocumentsGrid() {
+                const grid = document.getElementById('club-documents-grid');
+                if (!grid) return;
+
+                const searchInput = document.getElementById('doc-search-input');
+                const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+                let filtered = clubDocuments.filter(doc => {
+                    if (doc.visibility === 'vorstand') return false;
+                    if (activeDocCategory !== 'all' && doc.category !== activeDocCategory) return false;
+                    if (query) {
+                        const matchTitle = (doc.title || '').toLowerCase().includes(query);
+                        const matchDesc = (doc.description || '').toLowerCase().includes(query);
+                        if (!matchTitle && !matchDesc) return false;
+                    }
+                    return true;
+                });
+
+                if (filtered.length === 0) {
+                    grid.innerHTML = `
+                        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2rem;">
+                            <p style="color: var(--text-muted); margin: 0;">Keine Dokumente für diese Auswahl gefunden.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                grid.innerHTML = filtered.map(doc => {
+                    const icon = doc.file_type === 'html' ? '🌐' : '📄';
+                    const sizeBadge = doc.file_size_kb ? `${doc.file_size_kb} KB` : '';
+                    const yearBadge = doc.year ? `Stand: ${doc.year}` : '';
+
+                    return `
+                        <div class="glass-card" style="display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem; transition: var(--transition);">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 0.5rem;">
+                                    <span style="font-size: 1.8rem; line-height: 1;">${icon}</span>
+                                    <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end;">
+                                        ${yearBadge ? `<span class="badge" style="font-size: 0.72rem; background: rgba(15, 60, 92, 0.08); color: var(--primary-color);">${yearBadge}</span>` : ''}
+                                        <span class="badge" style="font-size: 0.72rem; background: var(--primary-color); color: white; text-transform: uppercase;">${doc.file_type || 'PDF'}</span>
+                                    </div>
+                                </div>
+                                <h4 style="margin: 0 0 0.5rem; color: var(--primary-color); font-size: 1.05rem; line-height: 1.35;">
+                                    ${doc.title}
+                                </h4>
+                                <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
+                                    ${doc.description || ''}
+                                </p>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 0.75rem;">
+                                <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">${sizeBadge}</span>
+                                <a href="${doc.file_url}" target="_blank" rel="noopener" class="btn btn-outline" style="padding: 0.45rem 1rem; font-size: 0.85rem; border-radius: 20px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem;">
+                                    <span>📥</span> <span>Öffnen</span>
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function renderBoardDocuments() {
+                const list = document.getElementById('board-protocol-list');
+                if (!list) return;
+
+                const boardDocs = clubDocuments.filter(d => d.visibility === 'vorstand' || d.category === 'protokoll');
+                if (boardDocs.length === 0) return;
+
+                list.innerHTML = boardDocs.map(d => `
+                    <li style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border);">
+                        <a href="${d.file_url}" target="_blank" rel="noopener" style="color: var(--primary-color); font-weight: 600; text-decoration: none; font-size: 0.9rem;">
+                            📄 ${d.title} ${d.year ? `(${d.year})` : ''}
+                        </a>
+                        <span class="badge" style="background: rgba(220, 38, 38, 0.1); color: var(--accent-color); font-size: 0.75rem;">${(d.file_type || 'PDF').toUpperCase()}</span>
+                    </li>
+                `).join('');
+            }
+
+            // Dokumenten-Kategoriefilter Listeners
+            const docFilterBtns = document.querySelectorAll('#doc-category-filters .gallery-filter-btn');
+            docFilterBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    docFilterBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    activeDocCategory = btn.getAttribute('data-cat');
+                    renderDocumentsGrid();
+                });
+            });
+
+            // Dokumenten-Suche Listener
+            const docSearch = document.getElementById('doc-search-input');
+            if (docSearch) {
+                docSearch.addEventListener('input', () => {
+                    renderDocumentsGrid();
+                });
+            }
+
+            // Dokumente direkt initial laden
+            loadClubDocuments();
         });
     </script>
 

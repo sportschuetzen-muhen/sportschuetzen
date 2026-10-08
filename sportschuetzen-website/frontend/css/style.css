@@ -172,7 +172,17 @@ h2 {
 
 .desktop-nav {
     display: flex;
-    gap: 2rem;
+    align-items: center;
+    gap: 1.25rem;
+}
+
+@media (max-width: 1250px) {
+    .desktop-nav {
+        gap: 0.85rem;
+    }
+    .desktop-nav a {
+        font-size: 0.92rem;
+    }
 }
 
 .desktop-nav a {
@@ -184,6 +194,21 @@ h2 {
 .desktop-nav a:hover,
 .desktop-nav a.active {
     color: var(--primary-color);
+}
+
+.nav-login-btn:hover {
+    background: var(--primary-color) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(15, 60, 92, 0.15);
+}
+
+.dropdown-link:hover {
+    background: rgba(15, 60, 92, 0.05);
+}
+
+#nav-logout-dropdown-btn:hover {
+    background: rgba(220, 38, 38, 0.08);
 }
 
 .nav-cta-btn {

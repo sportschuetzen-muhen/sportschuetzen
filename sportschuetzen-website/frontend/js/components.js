@@ -49,9 +49,9 @@ class SiteHeader extends HTMLElement {
                         <a href="index.html#termine" class="${active === 'termine' ? 'active' : ''}">Termine</a>
                         <a href="index.html#reports" class="${active === 'reports' ? 'active' : ''}">Berichte</a>
                         <a href="resultate.html" class="${active === 'resultate' ? 'active' : ''}">Resultate</a>
-                        <a href="verein.html#mitglieder" class="${active === 'mitglieder' ? 'active' : ''}" style="color: var(--accent-color); font-weight: 700;">🔐 Mitglieder</a>
+                        <a href="verein.html#mitglieder" id="nav-intern-link" class="${active === 'mitglieder' ? 'active' : ''}" style="display: none; color: var(--accent-color); font-weight: 700;">🔐 Intern</a>
                         <a href="schuetzenhaus_vermietung.html" class="nav-cta-btn ${active === 'vermietung' ? 'active' : ''}">🏠 Vermietung</a>
-                        <div id="nav-member-badge" class="nav-member-badge" style="display: inline-flex; align-items: center; margin-left: 0.5rem;"></div>
+                        <div id="nav-member-badge" class="nav-member-badge" style="display: inline-flex; align-items: center; margin-left: 0.25rem;"></div>
                     </nav>
                 </div>
             </header>
@@ -120,23 +120,70 @@ class SiteHeader extends HTMLElement {
 
     initMemberBadge() {
         const badge = this.querySelector('#nav-member-badge');
+        const internLink = this.querySelector('#nav-intern-link');
         if (!badge) return;
 
         const updateUI = () => {
             if (!window.AuthSession) return;
             const user = window.AuthSession.getUser();
             if (user) {
+                if (internLink) internLink.style.display = 'inline-block';
                 const displayName = user.vorname || (user.name ? user.name.split(' ')[0] : 'Mitglied');
                 const isVorstand = window.AuthSession.isVorstand();
                 const roleText = isVorstand ? 'Vorstand' : 'Mitglied';
                 badge.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 0.4rem; background: rgba(15, 60, 92, 0.08); padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600;">
-                        <span>👤 ${displayName}</span>
-                        <span style="background: ${isVorstand ? 'var(--accent-color)' : 'var(--primary-color)'}; color: white; font-size: 0.65rem; padding: 2px 6px; border-radius: 6px; text-transform: uppercase;">${roleText}</span>
-                        <button id="nav-logout-btn" title="Abmelden" style="background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.85rem; padding: 0 2px; margin-left: 2px;">✕</button>
+                    <div class="nav-user-menu" id="nav-user-menu" style="position: relative;">
+                        <button class="nav-user-chip" id="nav-user-chip-btn" type="button" aria-expanded="false" aria-haspopup="true" style="display: flex; align-items: center; gap: 0.4rem; background: rgba(15, 60, 92, 0.08); border: 1px solid rgba(15, 60, 92, 0.15); padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--text-color); font-family: inherit;">
+                            <span>👤 ${displayName}</span>
+                            <span style="background: ${isVorstand ? 'var(--accent-color)' : 'var(--primary-color)'}; color: white; font-size: 0.65rem; padding: 2px 6px; border-radius: 6px; text-transform: uppercase;">${roleText}</span>
+                            <span style="font-size: 0.7rem; opacity: 0.6;">▾</span>
+                        </button>
+                        <div class="nav-user-dropdown" id="nav-user-dropdown-menu" style="display: none; position: absolute; right: 0; top: calc(100% + 8px); background: #ffffff; min-width: 220px; border-radius: 12px; box-shadow: 0 10px 25px rgba(15, 60, 92, 0.15); border: 1px solid rgba(15, 60, 92, 0.1); padding: 0.5rem 0; z-index: 1000; text-align: left;">
+                            <div style="padding: 0.5rem 1rem; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.78rem; color: var(--text-muted);">
+                                Angemeldet als <b style="color: var(--primary-color); display: block;">${user.name || displayName}</b>
+                            </div>
+                            <a href="verein.html#mitglieder" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
+                                <span>📂</span> <span>Mitgliederbereich</span>
+                            </a>
+                            <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" rel="noopener" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
+                                <span>🎯</span> <span>Schützen-App (PWA)</span>
+                            </a>
+                            ${isVorstand ? `
+                            <a href="vorstand/index.html" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--accent-color); text-decoration: none; font-size: 0.88rem; font-weight: 700; background: rgba(220, 38, 38, 0.04);">
+                                <span>👑</span> <span>Vorstandsportal</span>
+                            </a>` : ''}
+                            <div style="height: 1px; background: rgba(0,0,0,0.06); margin: 0.4rem 0;"></div>
+                            <button type="button" id="nav-logout-dropdown-btn" style="width: 100%; border: none; background: none; display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: #dc2626; font-size: 0.88rem; font-weight: 600; cursor: pointer; text-align: left; font-family: inherit;">
+                                <span>🚪</span> <span>Abmelden</span>
+                            </button>
+                        </div>
                     </div>
                 `;
-                const logoutBtn = badge.querySelector('#nav-logout-btn');
+
+                const chipBtn = badge.querySelector('#nav-user-chip-btn');
+                const dropdownMenu = badge.querySelector('#nav-user-dropdown-menu');
+                const logoutBtn = badge.querySelector('#nav-logout-dropdown-btn');
+
+                if (chipBtn && dropdownMenu) {
+                    chipBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const isHidden = dropdownMenu.style.display === 'none';
+                        dropdownMenu.style.display = isHidden ? 'block' : 'none';
+                        chipBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+                    });
+
+                    // Outside click
+                    const onOutsideClick = (e) => {
+                        if (!badge.contains(e.target)) {
+                            dropdownMenu.style.display = 'none';
+                            chipBtn.setAttribute('aria-expanded', 'false');
+                        }
+                    };
+                    document.removeEventListener('click', badge._outsideHandler);
+                    badge._outsideHandler = onOutsideClick;
+                    document.addEventListener('click', onOutsideClick);
+                }
+
                 if (logoutBtn) {
                     logoutBtn.addEventListener('click', (e) => {
                         e.preventDefault();
@@ -146,8 +193,9 @@ class SiteHeader extends HTMLElement {
                     });
                 }
             } else {
+                if (internLink) internLink.style.display = 'none';
                 badge.innerHTML = `
-                    <button id="nav-login-btn" class="btn btn-outline" style="padding: 0.3rem 0.75rem; font-size: 0.82rem; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <button id="nav-login-btn" class="nav-login-btn" type="button" style="padding: 0.35rem 0.85rem; font-size: 0.82rem; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--primary-color); color: var(--primary-color); background: transparent; cursor: pointer; font-family: inherit; transition: var(--transition);">
                         <span>🔐</span> <span>Login</span>
                     </button>
                 `;

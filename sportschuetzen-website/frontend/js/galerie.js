@@ -117,19 +117,32 @@ async function initGallery() {
     renderMitgliederAlbums();
 }
 
+// Liefert sichtbare Bilder basierend auf dem Anmeldestatus
+function getVisibleGalleryData() {
+    const isUserLoggedIn = window.AuthSession ? window.AuthSession.isLoggedIn() : false;
+    if (isUserLoggedIn) {
+        return galleryData; // Angemeldete Mitglieder sehen alle Medien
+    }
+    // Nicht angemeldete Besucher sehen nur explizit als öffentlich deklarierte Medien
+    return galleryData.filter(item => item.visibility === 'public');
+}
+
 // Erstellt dynamische Filter-Buttons für die vorhandenen Alben
 function generateAlbumFilters() {
     const container = document.getElementById("gallery-album-filters");
     if (!container) return;
 
+    const visibleItems = getVisibleGalleryData();
+    const isUserLoggedIn = window.AuthSession ? window.AuthSession.isLoggedIn() : false;
+
     const albumCounts = {};
-    galleryData.forEach(item => {
+    visibleItems.forEach(item => {
         const a = item.album || "Vereinsarchiv";
         albumCounts[a] = (albumCounts[a] || 0) + 1;
     });
 
     const albumNames = Object.keys(albumCounts);
-    if (albumNames.length <= 1) {
+    if (albumNames.length <= 1 && isUserLoggedIn) {
         container.style.display = "none";
         return;
     }
@@ -141,7 +154,7 @@ function generateAlbumFilters() {
 
     let html = `
         <button class="gallery-filter-btn ${activeAlbum === 'all' ? 'active' : ''}" data-album="all" onclick="window.filterByAlbum('all')">
-            📁 Alle Alben (${galleryData.length})
+            📁 Alle Alben (${visibleItems.length})
         </button>
     `;
 
@@ -154,6 +167,16 @@ function generateAlbumFilters() {
             </button>
         `;
     });
+
+    // Hinweis für Gäste über geschützte interne Medien
+    const hiddenCount = galleryData.length - visibleItems.length;
+    if (!isUserLoggedIn && hiddenCount > 0) {
+        html += `
+            <div style="width: 100%; text-align: center; margin-top: 0.35rem; font-size: 0.82rem; color: var(--text-muted);">
+                🔒 <b>${hiddenCount} weitere Vereinsfotos & Alben</b> im <a href="verein.html#mitglieder" onclick="window.AuthSession?.login('verein.html#mitglieder')" style="color: var(--accent-color); font-weight: 700; text-decoration: underline;">geschützten Mitgliederbereich</a> verfügbar.
+            </div>
+        `;
+    }
 
     container.innerHTML = html;
 }
@@ -207,6 +230,16 @@ function setupGalleryListeners() {
             renderGallery("all");
         });
     }
+
+    // Auth-Change Listener: Wenn Mitglied sich an- oder abmeldet, Galerie-Filter & Ansicht aktualisieren
+    if (window.AuthSession && typeof window.AuthSession.onChange === 'function') {
+        window.AuthSession.onChange(() => {
+            generateAlbumFilters();
+            generateTagCloud();
+            renderGallery(activeCategory);
+            renderMitgliederAlbums();
+        });
+    }
 }
 
 // Generate the tag cloud from top detected persons & tags
@@ -217,7 +250,7 @@ function generateTagCloud() {
     const tagCounts = {};
     const personCounts = {};
 
-    galleryData.forEach(item => {
+    getVisibleGalleryData().forEach(item => {
         if (item.tags) {
             item.tags.forEach(tag => {
                 tagCounts[tag] = (tagCounts[tag] || 0) + 1;
@@ -297,7 +330,7 @@ function renderGallery(filter, append = false) {
         itemsToShow = 12; // Reset pagination counter
     }
 
-    let filtered = galleryData;
+    let filtered = getVisibleGalleryData();
 
     // Album Filter
     if (activeAlbum !== "all") {
@@ -609,7 +642,7 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-// Close lightbox on clicking outside content
+// Close lightbox on clicking outside content & Touch-Swipe Gesten für Mobile & iPad
 document.addEventListener("DOMContentLoaded", () => {
     const lightbox = document.getElementById("galerie-lightbox");
     if (lightbox) {
@@ -618,6 +651,31 @@ document.addEventListener("DOMContentLoaded", () => {
                 window.closeLightbox();
             }
         });
+
+        // Touch-Swipe Support (iPad & Mobile)
+        let touchStartX = 0;
+        let touchStartY = 0;
+        lightbox.addEventListener("touchstart", (e) => {
+            if (e.touches && e.touches.length === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+
+        lightbox.addEventListener("touchend", (e) => {
+            if (e.changedTouches && e.changedTouches.length === 1) {
+                const diffX = e.changedTouches[0].clientX - touchStartX;
+                const diffY = e.changedTouches[0].clientY - touchStartY;
+                // Horizontaler Wisch über mind. 50px mit Dominanz über Vertikalbewegung
+                if (Math.abs(diffX) > 50 && Math.abs(diffX) > Math.abs(diffY)) {
+                    if (diffX < 0) {
+                        window.nextLightbox(); // Wisch nach links -> Nächstes Bild
+                    } else {
+                        window.prevLightbox(); // Wisch nach rechts -> Vorheriges Bild
+                    }
+                }
+            }
+        }, { passive: true });
     }
 });
 

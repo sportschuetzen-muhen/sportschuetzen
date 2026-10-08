@@ -12,29 +12,108 @@
     'use strict';
 
     const STORAGE_KEY = 'sm_member_session';
-    const MAX_SESSION_AGE_DAYS = 30;
+    const MAX_SESSION_AGE_DAYS = 60;
+    const SUPABASE_URL = 'https://supabase-muhen.danfamily.uk';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
 
     class AuthSessionManager {
         constructor() {
             this._listeners = [];
             this._session = null;
+            this._supabase = null;
             this.init();
         }
 
-        init() {
-            // 1. URL-Parameter prüfen (Rücksprung von der Web-App)
+        async init() {
+            // 0. Supabase Client initialisieren
+            this._initSupabase();
+
+            // 1. URL-Parameter prüfen (Rücksprung von der Web-App mit auth_session)
             this._checkUrlForAuthTicket();
 
             // 2. Lokale Session laden
             this._loadSession();
 
-            // 3. Tab-übergreifendes Synchronisieren
+            // 3. Native Supabase Session verifizieren (falls GoTrue aktiv ist)
+            await this._checkSupabaseSession();
+
+            // 4. Tab-übergreifendes Synchronisieren
             window.addEventListener('storage', (e) => {
-                if (e.key === STORAGE_KEY) {
+                if (e.key === STORAGE_KEY || e.key === 'sportschuetzen_user') {
                     this._loadSession();
                     this._notify();
                 }
             });
+        }
+
+        _initSupabase() {
+            try {
+                if (window.supabase && typeof window.supabase.createClient === 'function') {
+                    this._supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    this._supabase.auth.onAuthStateChange(async (event, session) => {
+                        if (event === 'SIGNED_IN' && session) {
+                            await this._syncFromSupabaseUser(session.user);
+                        } else if (event === 'SIGNED_OUT') {
+                            this.logout(false);
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('Supabase Client konnte nicht initialisiert werden:', err);
+            }
+        }
+
+        async _checkSupabaseSession() {
+            if (!this._supabase) return;
+            try {
+                const { data, error } = await this._supabase.auth.getSession();
+                if (!error && data?.session?.user) {
+                    if (!this.isLoggedIn()) {
+                        await this._syncFromSupabaseUser(data.session.user);
+                    }
+                }
+            } catch (e) {
+                console.warn('Fehler bei Supabase Session-Prüfung:', e);
+            }
+        }
+
+        async _syncFromSupabaseUser(user) {
+            try {
+                let authedUser = null;
+                const { data: syncRes } = await this._supabase.rpc('sync_member_auth_session');
+                if (syncRes && syncRes.success) {
+                    authedUser = {
+                        id: String(syncRes.person_number || syncRes.address_number || user.id),
+                        lizenz: String(syncRes.person_number || syncRes.address_number || '').padStart(6, '0'),
+                        vorname: syncRes.firstname || syncRes.display_name,
+                        nachname: syncRes.lastname || '',
+                        name: syncRes.display_name,
+                        email: syncRes.email || user.email,
+                        role: syncRes.primary_role || 'member',
+                        roles: syncRes.roles || ['member'],
+                        is_board: Boolean(syncRes.is_board),
+                        savedAt: Date.now()
+                    };
+                } else {
+                    const emailName = (user.email || '').split('@')[0];
+                    authedUser = {
+                        id: user.id,
+                        name: emailName,
+                        vorname: emailName,
+                        email: user.email,
+                        role: 'member',
+                        roles: ['member'],
+                        savedAt: Date.now()
+                    };
+                }
+
+                this._session = authedUser;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(authedUser));
+                localStorage.setItem('sportschuetzen_user', JSON.stringify(authedUser));
+                this._notify();
+            } catch (err) {
+                console.error('Konnte Mitgliedsdaten nicht über Supabase synchronisieren:', err);
+            }
         }
 
         /**
@@ -53,6 +132,7 @@
                 if (sessionData && (sessionData.id || sessionData.name)) {
                     sessionData.savedAt = Date.now();
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
+                    localStorage.setItem('sportschuetzen_user', JSON.stringify(sessionData));
                     console.log('✅ SSO-Session erfolgreich aus Web-App übernommen:', sessionData.name);
                 }
 
@@ -80,8 +160,8 @@
                 const data = JSON.parse(raw);
                 const now = Date.now();
 
-                // Ablauf nach z. B. 60 Tagen prüfen (vorher 30)
-                if (data.savedAt && (now - data.savedAt > 60 * 24 * 60 * 60 * 1000)) {
+                // Ablauf nach 60 Tagen prüfen
+                if (data.savedAt && (now - data.savedAt > MAX_SESSION_AGE_DAYS * 24 * 60 * 60 * 1000)) {
                     console.info('Session ist abgelaufen.');
                     localStorage.removeItem(STORAGE_KEY);
                     localStorage.removeItem('sportschuetzen_user');
@@ -128,7 +208,7 @@
          * Ist der Nutzer Vorstandsmitglied oder Admin?
          */
         isVorstand() {
-            return this.hasRole('vorstand') || this.hasRole('admin');
+            return this.hasRole('vorstand') || this.hasRole('admin') || Boolean(this._session?.is_board);
         }
 
         /**
@@ -142,14 +222,15 @@
             const hostname = window.location.hostname;
             let webAppBase = '';
 
-            if (hostname.includes('github.io')) {
-                // Auf GitHub Pages
-                webAppBase = 'https://sportschuetzen-muhen.github.io/sportschuetzen/';
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                webAppBase = window.location.pathname.includes('/sportschuetzen-website/') 
+                    ? '../../index.html' 
+                    : '/index.html';
+            } else if (hostname.includes('pages.dev')) {
+                webAppBase = window.location.origin + '/index.html';
             } else if (hostname.includes('sportschuetzen-muhen.ch')) {
-                // Künftige Vereinsdomain
                 webAppBase = 'https://sportschuetzen-muhen.ch/app/';
             } else {
-                // Lokale Entwicklung oder Test-Server
                 webAppBase = 'https://sportschuetzen-muhen.github.io/sportschuetzen/';
             }
 
@@ -168,7 +249,12 @@
         /**
          * Meldet das Mitglied auf der Homepage ab.
          */
-        logout() {
+        logout(signOutSupabase = true) {
+            if (signOutSupabase && this._supabase) {
+                try {
+                    this._supabase.auth.signOut().catch(() => {});
+                } catch (_) {}
+            }
             localStorage.removeItem(STORAGE_KEY);
             localStorage.removeItem('sportschuetzen_user');
             this._session = null;
