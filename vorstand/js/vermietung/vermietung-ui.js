@@ -179,6 +179,8 @@ function renderVermietungCockpit(daten) {
     anfragen:  daten.filter(isInquiry).length
   };
 
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('vermietung') : true;
+
   // Nächste Vermietung bestimmen
   const heute = new Date();
   heute.setHours(0,0,0,0);
@@ -268,6 +270,7 @@ function renderVermietungCockpit(daten) {
         </div>
       </div>
 
+      ${canWrite ? `
       <!-- NEU: NEUE RESERVATION ERFASSEN (Ersetzt Clubdesk) -->
       <div class="col-6 col-md-2">
         <div class="card vermietung-stat-card border-0 shadow-sm text-center p-3 h-100"
@@ -276,7 +279,7 @@ function renderVermietungCockpit(daten) {
           <div style="font-size:1.6rem;color:#0d6efd;"><i class="fas fa-plus-circle"></i></div>
           <div class="small text-primary fw-bold mt-1">Neue Miete erfassen</div>
         </div>
-      </div>
+      </div>` : ''}
     </div>
 
     <!-- NÄCHSTE VERMIETUNG -->
@@ -343,9 +346,10 @@ function renderVermietungCockpit(daten) {
                 <div class="d-flex gap-2 align-items-center">
                   <!-- Spalten-Ausblender (TableKit Standard) -->
                   <div id="vermietungColToggleContainer" class="d-inline-block"></div>
+                  ${canWrite ? `
                   <button class="btn btn-sm btn-primary py-1 fw-bold write-protected" onclick="openNewReservationModal()">
                     <i class="fas fa-plus me-1"></i>Neue Miete
-                  </button>
+                  </button>` : ''}
                 </div>
               </div>
 
@@ -480,6 +484,7 @@ function initVermietungColToggle() {
 function renderRentalSettingsForm() {
   const container = document.getElementById('rental-settings-container');
   if (!container) return;
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('vermietung') : true;
 
   const s = window._rentalSettings || {};
   const pricing = window._rentalPricing || [];
@@ -666,14 +671,22 @@ function renderRentalSettingsForm() {
         </div>
 
         <!-- Speichern Knopf -->
+        ${canWrite ? `
         <div class="col-12 text-end mt-3">
           <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm write-protected" id="cfg-save-btn">
             <i class="fas fa-save me-1.5"></i> Einstellungen & Tarife speichern
           </button>
-        </div>
+        </div>` : ''}
       </div>
     </form>
   `;
+
+  if (!canWrite) {
+    container.querySelectorAll('input, select, textarea').forEach(el => {
+      el.setAttribute('disabled', 'true');
+      el.setAttribute('readonly', 'true');
+    });
+  }
 }
 
 // Generiert die HTML-Visualisierung der Reservierungs-Zeitleiste (Timeline)

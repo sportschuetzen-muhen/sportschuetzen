@@ -294,7 +294,7 @@ function renderOverviewModals() {
 // TAB 1 UTILS (CLASSIC CALCULATOR & PAYMENT HANDLERS)
 // ============================================================
 function jbRenderRows(data) {
-  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('jahresbeitrag') : (window.currentRoles || []).some(r => ['admin','kassier','schuetzenmeister'].includes(r));
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('jahresbeitrag') : (typeof userHasRole === 'function' ? userHasRole('admin') : false);
   const tbody = document.getElementById('jbTableBody');
   if (!tbody) return;
 

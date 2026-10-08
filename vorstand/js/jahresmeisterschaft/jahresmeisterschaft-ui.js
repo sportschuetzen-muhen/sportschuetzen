@@ -6,15 +6,24 @@ function renderJahresmeisterschaft(grid) {
         return;
     }
 
-    let canWrite = hasWriteAccess('jahresmeisterschaft');
+    let canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('jahresmeisterschaft') : true;
     if (jmCurrentJahr !== "current") {
         canWrite = false;
     }
 
-    // Speichern-Button steuern
+    // Speichern-Button und Aktions-Buttons im Header steuern
     const saveBtn = document.querySelector('button[onclick="saveJahresmeisterschaftData()"]');
     if (saveBtn) {
-        saveBtn.disabled = (jmCurrentJahr !== "current");
+        saveBtn.disabled = !canWrite;
+        saveBtn.classList.toggle('d-none', !canWrite);
+    }
+    const importBtn = document.querySelector('button[onclick="migrateJMFromGoogleSheets()"]');
+    if (importBtn) {
+        importBtn.classList.toggle('d-none', !canWrite);
+    }
+    const actionsDropdown = document.getElementById('jm-actions-menu')?.closest('.dropdown');
+    if (actionsDropdown) {
+        actionsDropdown.classList.toggle('d-none', !canWrite);
     }
 
     // Live-Badge aktualisieren
@@ -24,7 +33,7 @@ function renderJahresmeisterschaft(grid) {
 
     // Aktionen-Menü dynamisch füllen
     const actionsMenu = document.getElementById('jm-actions-menu');
-    if (actionsMenu) {
+    if (actionsMenu && canWrite) {
         if (jmCurrentJahr === "current") {
             actionsMenu.innerHTML = `
                 <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereKantonalstichDaten', 'Kantonalstich importieren')">Import: Kantonalstich</a></li>

@@ -846,7 +846,7 @@ function bhBankRenderResults(filter) {
     return asc ? res : -res;
   });
 
-  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : (window.currentRoles || []).some(r => ['admin','kassier','schuetzenmeister'].includes(r));
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : (typeof userHasRole === 'function' ? userHasRole('admin') : false);
   const kontenrahmen = window._bhKontenrahmen || [];
 
   function makeKontoSelectHTML(id, selectedVal, type, isLocked = false) {

@@ -217,12 +217,14 @@ window.AnlaesseModule = (function () {
                         <button class="btn btn-outline-secondary btn-sm px-3 shadow-sm rounded-pill" onclick="AnlaesseModule.reload()" title="Daten aus Supabase neu laden">
                             <i class="fas fa-arrows-rotate me-1 ${state.isLoading ? 'fa-spin' : ''}"></i>Aktualisieren
                         </button>
+                        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                         <button class="btn btn-outline-primary btn-sm px-3 shadow-sm rounded-pill" onclick="AnlaesseModule.openDuplicateModal()">
                             <i class="fas fa-copy me-1"></i>Aus Vorlage erzeugen
                         </button>
                         <button class="btn btn-primary btn-sm px-3 shadow-sm rounded-pill fw-bold" onclick="AnlaesseModule.openCreateModal()" style="background: linear-gradient(135deg, #0f3a5d, #1e4b7a); border: none;">
                             <i class="fas fa-plus me-1"></i>Neuer Anlass
                         </button>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -512,6 +514,7 @@ window.AnlaesseModule = (function () {
                                     <button class="btn btn-sm ${ev.id === state.activeEventId ? 'btn-primary' : 'btn-outline-primary'} rounded-pill px-3 fw-semibold" onclick="AnlaesseModule.setActiveEvent('${ev.id}', 'items')">
                                         <i class="fas fa-arrow-right me-1"></i>Öffnen
                                     </button>
+                                    ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                                     <div class="d-flex gap-1">
                                         ${ev.is_template ? `
                                             <button class="btn btn-sm btn-outline-success rounded-pill px-2.5" onclick="AnlaesseModule.openDuplicateModal('${ev.id}')" title="Aus dieser Vorlage einen Anlass erstellen">
@@ -526,6 +529,7 @@ window.AnlaesseModule = (function () {
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </div>
+                                    ` : ''}
                                 </div>
                             </div>
                         </div>
@@ -586,9 +590,11 @@ window.AnlaesseModule = (function () {
                                     <i class="fas fa-sync-alt ${state.isRecalculating ? 'fa-spin' : ''}"></i>
                                 </button>
                             </div>
+                            ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                             <button class="btn btn-success btn-sm rounded-pill px-3 fw-bold shadow-sm" onclick="AnlaesseModule.openAddItemModal()">
                                 <i class="fas fa-plus me-1"></i>Artikel hinzufügen
                             </button>
+                            ` : ''}
                         </div>
                     </div>
 
@@ -677,18 +683,19 @@ window.AnlaesseModule = (function () {
                                             ${parseFloat(item.recommended_qty).toFixed(1)}
                                         </td>
                                         <td class="text-end font-monospace fw-bold">
-                                            <input type="number" class="form-control form-control-sm text-end d-inline-block font-monospace fw-bold" style="width: 85px;" value="${item.order_qty}" onchange="AnlaesseModule.updateItemQuantity('${item.id}', 'order_qty', this.value)">
+                                            <input type="number" class="form-control form-control-sm text-end d-inline-block font-monospace fw-bold" style="width: 85px;" value="${item.order_qty}" ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? '' : 'disabled readonly'} onchange="AnlaesseModule.updateItemQuantity('${item.id}', 'order_qty', this.value)">
                                         </td>
                                         <td class="text-end font-monospace">
-                                            <input type="number" class="form-control form-control-sm text-end d-inline-block font-monospace" style="width: 80px;" value="${item.actual_qty}" onchange="AnlaesseModule.updateItemQuantity('${item.id}', 'actual_qty', this.value)">
+                                            <input type="number" class="form-control form-control-sm text-end d-inline-block font-monospace" style="width: 80px;" value="${item.actual_qty}" ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? '' : 'disabled readonly'} onchange="AnlaesseModule.updateItemQuantity('${item.id}', 'actual_qty', this.value)">
                                         </td>
                                         <td class="text-end font-monospace">
-                                            <input type="number" class="form-control form-control-sm text-end d-inline-block font-monospace" style="width: 80px;" value="${item.sold_qty}" onchange="AnlaesseModule.updateItemQuantity('${item.id}', 'sold_qty', this.value)">
+                                            <input type="number" class="form-control form-control-sm text-end d-inline-block font-monospace" style="width: 80px;" value="${item.sold_qty}" ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? '' : 'disabled readonly'} onchange="AnlaesseModule.updateItemQuantity('${item.id}', 'sold_qty', this.value)">
                                         </td>
                                         <td class="text-end font-monospace fw-semibold ${parseFloat(item.remaining_qty) > 0 ? 'text-warning' : 'text-muted'}">
                                             ${(parseFloat(item.actual_qty || item.order_qty) - parseFloat(item.sold_qty)).toFixed(1)}
                                         </td>
                                         <td class="text-center">
+                                            ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                                             <div class="btn-group btn-group-sm">
                                                 <button class="btn btn-outline-secondary btn-sm" onclick="AnlaesseModule.openEditItemModal('${item.id}')" title="Artikel bearbeiten">
                                                     <i class="fas fa-pencil"></i>
@@ -697,6 +704,7 @@ window.AnlaesseModule = (function () {
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </div>
+                                            ` : '<span class="text-muted">–</span>'}
                                         </td>
                                     </tr>
                                 `;
@@ -728,9 +736,11 @@ window.AnlaesseModule = (function () {
                             <div class="small text-muted">Bestellvolumen gesamt:</div>
                             <div class="fw-bold text-success fs-5">${formatCHF(totalOrderSum)}</div>
                         </div>
+                        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                         <button class="btn btn-primary btn-sm rounded-pill px-3 fw-bold shadow-sm" onclick="AnlaesseModule.openAddOrderModal()">
                             <i class="fas fa-plus me-1"></i>Bestellung erfassen
                         </button>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -775,7 +785,7 @@ window.AnlaesseModule = (function () {
                                         ${o.delivery_time ? `<div class="text-muted">${formatTime(o.delivery_time)} Uhr</div>` : ''}
                                     </td>
                                     <td class="text-center">
-                                        <select class="form-select form-select-sm fw-semibold" style="width: auto; margin: 0 auto;" onchange="AnlaesseModule.updateOrderStatus('${o.id}', this.value)">
+                                        <select class="form-select form-select-sm fw-semibold" style="width: auto; margin: 0 auto;" ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? '' : 'disabled'} onchange="AnlaesseModule.updateOrderStatus('${o.id}', this.value)">
                                             <option value="draft" ${o.status === 'draft' ? 'selected' : ''}>📝 Entwurf</option>
                                             <option value="ordered" ${o.status === 'ordered' ? 'selected' : ''}>📤 Bestellt</option>
                                             <option value="confirmed" ${o.status === 'confirmed' ? 'selected' : ''}>✅ Bestätigt</option>
@@ -784,9 +794,11 @@ window.AnlaesseModule = (function () {
                                         </select>
                                     </td>
                                     <td class="text-center">
+                                        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                                         <button class="btn btn-outline-danger btn-sm rounded-pill px-2.5" onclick="AnlaesseModule.deleteOrder('${o.id}')" title="Löschen">
                                             <i class="fas fa-trash"></i>
                                         </button>
+                                        ` : '<span class="text-muted">–</span>'}
                                     </td>
                                 </tr>
                             `).join('')}
@@ -935,9 +947,11 @@ window.AnlaesseModule = (function () {
                                 ${totalHelpersAssigned} von ${totalHelpersNeeded} Plätzen besetzt
                             </div>
                         </div>
+                        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                         <button class="btn btn-primary btn-sm rounded-pill px-3 fw-bold shadow-sm" onclick="AnlaesseModule.openAddShiftModal()">
                             <i class="fas fa-plus me-1"></i>Schicht hinzufügen
                         </button>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -977,9 +991,11 @@ window.AnlaesseModule = (function () {
                                     <div class="border-top pt-2.5 mb-3">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <span class="small fw-bold text-muted text-uppercase">Eingeteilte Helfer:</span>
+                                            ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                                             <button class="btn btn-sm btn-outline-primary rounded-pill py-0 px-2" style="font-size: 0.75rem;" onclick="AnlaesseModule.openAssignHelperModal('${shift.id}')">
                                                 <i class="fas fa-user-plus me-1"></i>Helfer zuweisen
                                             </button>
+                                            ` : ''}
                                         </div>
 
                                         <div class="d-flex flex-column gap-1.5">
@@ -992,23 +1008,31 @@ window.AnlaesseModule = (function () {
                                                         <div class="text-muted" style="font-size: 0.72rem;">${escapeHtml(a.helper_phone || a.helper_email || '')}</div>
                                                     </div>
                                                     <div class="d-flex align-items-center gap-1">
+                                                        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                                                         <button class="btn btn-sm ${a.confirmed_by_helper ? 'btn-success' : 'btn-outline-secondary'} py-0 px-2 rounded-pill" style="font-size: 0.72rem;" onclick="AnlaesseModule.toggleHelperConfirmation('${a.id}', ${!a.confirmed_by_helper})" title="Bestätigungsstatus umschalten">
                                                             <i class="fas ${a.confirmed_by_helper ? 'fa-check-circle' : 'fa-clock'} me-1"></i>${a.confirmed_by_helper ? 'Bestätigt' : 'Offen'}
                                                         </button>
                                                         <button class="btn btn-sm btn-link text-danger p-0 ms-1" onclick="AnlaesseModule.removeHelperAssignment('${a.id}')" title="Helfer entfernen">
                                                             <i class="fas fa-trash"></i>
                                                         </button>
+                                                        ` : `
+                                                        <span class="badge ${a.confirmed_by_helper ? 'bg-success' : 'bg-secondary'} small">
+                                                            ${a.confirmed_by_helper ? 'Bestätigt' : 'Offen'}
+                                                        </span>
+                                                        `}
                                                     </div>
                                                 </div>
                                             `).join('')}
                                         </div>
                                     </div>
 
+                                    ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
                                     <div class="d-flex justify-content-end mt-auto pt-2 border-top">
                                         <button class="btn btn-sm btn-outline-danger rounded-pill px-2.5 py-0.5" style="font-size: 0.75rem;" onclick="AnlaesseModule.deleteShift('${shift.id}')">
                                             <i class="fas fa-trash me-1"></i>Schicht löschen
                                         </button>
                                     </div>
+                                    ` : ''}
                                 </div>
                             </div>
                         `;
@@ -1317,6 +1341,10 @@ window.AnlaesseModule = (function () {
     // MODALS: ANLASS ERSTELLEN & AUS VORLAGE DUPLIZIEREN
     // ─────────────────────────────────────────────────────────────
     function openCreateModal() {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Erfassen von Anlässen.");
+            return;
+        }
         const modalContainer = document.getElementById('anlaesse-modal-container');
         if (!modalContainer) return;
 
@@ -1435,6 +1463,10 @@ window.AnlaesseModule = (function () {
 
     // Duplizieren aus Vorlage (RPC)
     function openDuplicateModal(preselectTemplateId = null) {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Erfassen von Anlässen.");
+            return;
+        }
         const templates = state.events.filter(e => e.is_template);
         if (templates.length === 0) {
             showToast('Keine Vorlagen vorhanden. Markiere einen Anlass als Vorlage, um ihn zu duplizieren.', 'info');
@@ -1542,6 +1574,10 @@ window.AnlaesseModule = (function () {
 
     // Event löschen
     async function deleteEvent(eventId) {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Löschen von Anlässen.");
+            return;
+        }
         const ev = state.events.find(e => e.id === eventId);
         if (!ev) return;
         if (!confirm(`Möchtest du den Anlass „${ev.name}“ wirklich unwiderruflich löschen? Alle zugehörigen Artikel, Checklisten und Schichten werden gelöscht.`)) {
@@ -1569,6 +1605,10 @@ window.AnlaesseModule = (function () {
     // MODALS: ARTIKEL HINZUFÜGEN / BEARBEITEN
     // ─────────────────────────────────────────────────────────────
     function openAddItemModal(editItemId = null) {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Bearbeiten von Artikeln.");
+            return;
+        }
         if (!state.activeEventId) {
             showToast('Bitte zuerst einen Anlass auswählen.', 'warning');
             return;
@@ -1703,6 +1743,10 @@ window.AnlaesseModule = (function () {
     }
 
     async function deleteItem(itemId) {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Löschen von Artikeln.");
+            return;
+        }
         if (!confirm('Artikel wirklich aus der Mengenplanung entfernen?')) return;
         const supa = getClient();
         if (!supa) return;
@@ -1722,6 +1766,10 @@ window.AnlaesseModule = (function () {
     // MODALS: BESTELLUNG / CHECKLISTE / SCHICHT / HELFER
     // ─────────────────────────────────────────────────────────────
     function openAddOrderModal() {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Erfassen von Bestellungen.");
+            return;
+        }
         if (!state.activeEventId) return;
         const modalContainer = document.getElementById('anlaesse-modal-container');
         if (!modalContainer) return;
@@ -1818,6 +1866,10 @@ window.AnlaesseModule = (function () {
     }
 
     async function deleteOrder(orderId) {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Löschen von Bestellungen.");
+            return;
+        }
         if (!confirm('Bestellung wirklich löschen?')) return;
         const supa = getClient();
         if (!supa) return;
@@ -1941,6 +1993,10 @@ window.AnlaesseModule = (function () {
     }
 
     function openAddShiftModal() {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Erfassen von Schichten.");
+            return;
+        }
         if (!state.activeEventId) return;
         const modalContainer = document.getElementById('anlaesse-modal-container');
         if (!modalContainer) return;
@@ -2035,6 +2091,10 @@ window.AnlaesseModule = (function () {
     }
 
     async function deleteShift(shiftId) {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Löschen von Schichten.");
+            return;
+        }
         if (!confirm('Schicht und alle zugeordneten Helfer wirklich entfernen?')) return;
         const supa = getClient();
         if (!supa) return;
@@ -2051,6 +2111,10 @@ window.AnlaesseModule = (function () {
     }
 
     function openAssignHelperModal(shiftId) {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
+            alert("Keine Berechtigung zum Zuweisen von Helfern.");
+            return;
+        }
         const shift = state.shifts.find(s => s.id === shiftId);
         if (!shift) return;
 

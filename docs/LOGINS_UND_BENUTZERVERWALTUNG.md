@@ -297,3 +297,11 @@ Jedes der 20 Fachmodule im Vereinsportal verfügt in der Berechtigungsmatrix üb
 
 ### 11.5 Standard-Regel für zukünftige Module
 Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatisch ohne gesonderte Aufforderung** mit den beiden Schlüsseln `<modul>.view` und `<modul>.manage` in `RBAC_MODULES` (`logins-core.js`), `VIEW_ACCESS` (`permissions.js`), `MODULE_MANAGE_PERMS` (`main.js`) und den entsprechenden RLS-Policies in PostgreSQL integriert.
+
+### 11.6 Harmonisierung des Speicherns & Frontend-Schreibschutz
+* **Harmonisiertes Speichern:** Veraltete statische Google Sheets Speichern-Buttons oben rechts im View-Header (index.html) wurden entfernt. Speichern erfolgt fachbereichsbezogen:
+  - **Transaktionale Module** (rechnungen, mitglieder, vermietung, buchhaltung): Speichern direkt im Erfassungs-/Mutations-Modal mit Validierung.
+  - **Tabellarische Gitter/Contests** (termine, resultate, manager, jahresmeisterschaft): Modul-interner Speichern-Button in der Tabellen-Toolbar mit Dirty-Tracking.
+* **Dualer Frontend-Schreibschutz:**
+  1. applyModuleWriteProtection(targetView, canWrite) blendet automatisch alle .write-protected Aktionsbuttons aus bzw. sperrt Formularfelder - sowohl beim View-Wechsel (navTo) als auch nach Abschluss asynchroner Laderoutinen (loadPromise).
+  2. Modul-interne Renderer (z.B. resultate-ui.js, manager-ui.js, buchhaltung-ui.js, anlaesse.js, mitglieder-list.js) evaluieren hasWriteAccess(modul) und unterbinden Mutations-Buttons, Drag-and-Drop-Zuweisungen und Inline-Edits bereits auf Komponentenebene.

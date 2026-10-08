@@ -4,6 +4,11 @@
 // =========================================================
 
 async function saveResultateData() {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('resultate')) {
+    alert("Keine Schreibberechtigung für das Modul Resultate.");
+    return;
+  }
+
   // 1. Validierung Punkte (nur 0-100 oder leer)
   for (const r of resultateState.rows) {
     if (!r.id) return alert("Es gibt eine Zeile ohne ID / Personennummer.");

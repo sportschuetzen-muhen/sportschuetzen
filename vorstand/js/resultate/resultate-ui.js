@@ -88,6 +88,8 @@ function ensureResultateShell() {
 
   injectStylesOnce();
 
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('resultate') : true;
+
   host.innerHTML = `
     <div id="resultate-app">
       <div class="d-flex justify-content-between align-items-center mb-3 sticky-top bg-white p-2 shadow-sm rounded" style="z-index: 600;">
@@ -98,11 +100,13 @@ function ensureResultateShell() {
           <div class="small text-muted mt-1">Teams (R2/R3) werden von der vorherigen Runde übernommen, solange nicht manuell geändert. (Max. 4 Schützen/Team)</div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-          <button class="btn btn-outline-warning btn-sm fw-semibold" onclick="openResultateOcrModal()" title="Resultate aus Foto mit KI einlesen">📸 Foto einlesen</button>
-          <button class="btn btn-outline-primary btn-sm" onclick="pushOneSignalGrenzland()">📣 Push</button>
-          <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup übernehmen (nur fehlende)">📥 Von Setup laden</button>
+          ${canWrite ? `
+            <button class="btn btn-outline-warning btn-sm fw-semibold" onclick="openResultateOcrModal()" title="Resultate aus Foto mit KI einlesen">📸 Foto einlesen</button>
+            <button class="btn btn-outline-primary btn-sm" onclick="pushOneSignalGrenzland()">📣 Push</button>
+            <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup übernehmen (nur fehlende)">📥 Von Setup laden</button>
+          ` : ''}
           <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData(true)">🔄 Laden</button>
-          <button id="btn-save-resultate" class="btn btn-success btn-sm fw-bold" onclick="saveResultateData()">💾 Speichern</button>
+          ${canWrite ? `<button id="btn-save-resultate" class="btn btn-success btn-sm fw-bold" onclick="saveResultateData()">💾 Speichern</button>` : ''}
         </div>
       </div>
 
@@ -112,6 +116,7 @@ function ensureResultateShell() {
         <div class="card-body">
           <div id="resultate-wrap"></div>
 
+          ${canWrite ? `
           <div class="mt-3 p-2 border rounded bg-light">
             <div class="fw-bold mb-2">Schütze hinzufügen (nur aus Mitglieder)</div>
             <div class="d-flex gap-2 flex-wrap align-items-center">
@@ -133,6 +138,7 @@ function ensureResultateShell() {
               <div id="avail-count" class="small text-muted"></div>
             </div>
           </div>
+          ` : ''}
 
         </div>
       </div>
@@ -371,6 +377,7 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
 }
 
 function renderShooterLine(rowIndex, roundKey, teamsPlusPool) {
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('resultate') : true;
   const r = resultateState.rows[rowIndex];
   const teamField = `${roundKey}_team`;
   const p1Field = `${roundKey}_p1`;
@@ -391,6 +398,7 @@ function renderShooterLine(rowIndex, roundKey, teamsPlusPool) {
       <select class="form-select form-select-sm"
               data-row="${rowIndex}"
               data-round="${roundKey}"
+              ${canWrite ? '' : 'disabled'}
               onchange="onTeamChangeEvent(event)">
         ${opts}
       </select>
@@ -400,6 +408,7 @@ function renderShooterLine(rowIndex, roundKey, teamsPlusPool) {
              data-round="${roundKey}"
              inputmode="numeric"
              placeholder="0-100"
+             ${canWrite ? '' : 'disabled readonly'}
              value="${escapeHtml(r[p1Field] ?? "")}"
              oninput="onPointsInputEvent(event)">
     </div>

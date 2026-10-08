@@ -723,6 +723,8 @@ function ensureManagerShell() {
     if (!host) return;
     if (document.getElementById('manager-app')) return;
 
+    const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('manager') : true;
+
     host.innerHTML = `
       <div class="container-fluid py-3" id="manager-app">
 
@@ -736,9 +738,11 @@ function ensureManagerShell() {
                     <option value="mannschaft">👥 Mannschaft</option>
                     <option value="gruppe">🎯 Gruppe (SGM)</option>
                 </select>
+                ${canWrite ? `
                 <button class="btn btn-outline-secondary btn-sm" onclick="addTeamToState()" title="Neues Team">
                     <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Team</span>
                 </button>
+                ` : ''}
             </div>
             <div class="d-none d-md-flex gap-2">
                 <button class="btn btn-outline-dark btn-sm" onclick="exportPDF()" title="PDF Export">
@@ -747,9 +751,11 @@ function ensureManagerShell() {
                 <button class="btn btn-outline-primary btn-sm" onclick="exportAllPDF()" title="Alle 3 Module">
                     <i class="fas fa-layer-group"></i> Alle
                 </button>
+                ${canWrite ? `
                 <button id="btn-save-manager-desktop" class="btn btn-success btn-sm fw-bold" onclick="saveContest()">
                     <i class="fas fa-save"></i> Speichern
                 </button>
+                ` : ''}
             </div>
         </div>
 
@@ -764,9 +770,11 @@ function ensureManagerShell() {
                 <i class="fas fa-plus"></i>
             </button>
             <div class="fab-menu">
+                ${canWrite ? `
                 <button class="fab-item bg-success" data-label="Speichern" onclick="saveContest(); document.getElementById('fab-container').classList.remove('open')">
                     <i class="fas fa-save"></i>
                 </button>
+                ` : ''}
                 <button class="fab-item bg-warning text-dark" data-label="Alle PDFs" onclick="exportAllPDF(); document.getElementById('fab-container').classList.remove('open')">
                     <i class="fas fa-layer-group"></i>
                 </button>
@@ -791,6 +799,11 @@ function ensureManagerShell() {
 //  DATABASE SYNC: SAVE
 // =========================================================
 async function saveContest() {
+    if (typeof hasWriteAccess === 'function' && !hasWriteAccess('manager')) {
+        alert("Keine Schreibberechtigung für das Modul Team-Manager.");
+        return;
+    }
+
     const config = CONTEST_CONFIG[appState.activeModule];
     const btn = document.getElementById('btn-save-manager-desktop');
     const fabSaveBtn = document.querySelector('#fab-container .fab-item.bg-success');

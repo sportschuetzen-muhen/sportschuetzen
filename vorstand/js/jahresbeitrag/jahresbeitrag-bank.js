@@ -141,7 +141,7 @@ function jbBankRenderResults(filter) {
   if (activeFilter === 'other')     filtered = rows.filter(r => !r.isJahresbeitrag);
   if (activeFilter === 'unmatched') filtered = rows.filter(r => r.isJahresbeitrag && r.matchScore === 0);
 
-  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('jahresbeitrag') : (window.currentRoles || []).some(r => ['admin','kassier','schuetzenmeister'].includes(r));
+  const canEdit = typeof hasWriteAccess === 'function' ? hasWriteAccess('jahresbeitrag') : (typeof userHasRole === 'function' ? userHasRole('admin') : false);
 
   const realIdx = filtered.map(r => rows.indexOf(r));
 

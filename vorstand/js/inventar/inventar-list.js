@@ -106,8 +106,8 @@ function renderInventoryTable() {
 
         return `<tr>${cells}<td>
             <div class="btn-group">
-                <button class="btn btn-sm btn-outline-primary"
-                        onclick="editInventarItem('${target}','${row.ID}')">✏️</button>
+                ${canAdd() ? `<button class="btn btn-sm btn-outline-primary"
+                        onclick="editInventarItem('${target}','${row.ID}')">✏️</button>` : ''}
                 ${canDelete() ? `<button class="btn btn-sm btn-outline-danger"
                         onclick="deleteInventarItem('${target}','${row.ID}')">🗑️</button>` : ''}
             </div>

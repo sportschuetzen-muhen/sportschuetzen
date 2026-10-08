@@ -159,6 +159,7 @@ function renderContestUI() {
 }
 
 function renderTeamCard(team, config) {
+    const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('manager') : true;
     const zonesHtml = config.zones.map((zone) => {
         const shooters = team.shooters.filter(s =>
             config.zones.length === 1 ? true : s.zone === zone.key
@@ -217,6 +218,7 @@ function renderTeamCard(team, config) {
                     </span>
                 </div>
                 <div class="card-body p-2">${zonesHtml}</div>
+                ${canWrite ? `
                 <div class="text-end p-2 pt-0">
                     <small class="text-danger text-decoration-underline"
                            onclick="removeTeamFromState('${escapeJs(team.name)}')"
@@ -224,18 +226,20 @@ function renderTeamCard(team, config) {
                         Team entfernen
                     </small>
                 </div>
+                ` : ''}
             </div>
         </div>`;
 }
 
 function renderPlayerItem(player) {
+    const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('manager') : true;
     return `
-      <div class="card mb-1 draggable-player border-0 shadow-sm"
-           draggable="true"
+      <div class="card mb-1 ${canWrite ? 'draggable-player' : ''} border-0 shadow-sm"
+           draggable="${canWrite ? 'true' : 'false'}"
            data-id="${escapeHtml(String(player.id))}"
            style="border-left: 3px solid var(--primary) !important; overflow:hidden;">
-        <div class="drag-handle">⠿</div>
-        <div class="card-body p-1 px-2 pointer-events-none" style="padding-left:26px !important;">
+        ${canWrite ? '<div class="drag-handle">⠿</div>' : ''}
+        <div class="card-body p-1 px-2 pointer-events-none" style="padding-left:${canWrite ? '26px' : '10px'} !important;">
           <div class="player-row pointer-events-none">
             <span class="player-name small fw-bold pointer-events-none"
                   style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;">

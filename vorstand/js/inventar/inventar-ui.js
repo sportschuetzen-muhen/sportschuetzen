@@ -22,17 +22,18 @@ function renderInventarUI(container) {
         </style>
 
         <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
+            ${canAdd() ? `
             <button class="btn btn-primary nav-btn" id="inv-btn-ausgabe"
                     onclick="localStorage.setItem('inventar-activeTab','ausgabe'); showInventarSection('ausgabe')">
                 📤 Buchung
+            </button>` : ''}
+            <button class="btn ${!canAdd() ? 'btn-primary' : 'btn-outline-secondary'} nav-btn" id="inv-btn-liste"
+                    onclick="localStorage.setItem('inventar-activeTab','liste'); showInventarSection('liste')">
+                ✏️ Bestand
             </button>
             <button class="btn btn-outline-secondary nav-btn" id="inv-btn-journal"
                     onclick="localStorage.setItem('inventar-activeTab','journal'); showInventarSection('journal')">
                 📖 Journal
-            </button>
-            <button class="btn btn-outline-secondary nav-btn" id="inv-btn-liste"
-                    onclick="localStorage.setItem('inventar-activeTab','liste'); showInventarSection('liste')">
-                ✏️ Bestand
             </button>
             <button class="btn btn-outline-secondary nav-btn" id="inv-btn-finanzen"
                     onclick="localStorage.setItem('inventar-activeTab','finanzen'); showInventarSection('finanzen')">

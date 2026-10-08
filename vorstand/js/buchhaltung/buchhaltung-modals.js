@@ -4,6 +4,10 @@
 
 // KONTENRAHMEN-EDITOR: MODAL ERSTELLEN ODER BEARBEITEN
 window.bhOpenKontoModal = function(kontoCode, rowIndex = null) {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) {
+    alert("Keine Berechtigung zum Bearbeiten von Konten.");
+    return;
+  }
   let modalEl = document.getElementById('bhModalKonto');
   if (!modalEl) {
     modalEl = document.createElement('div');
@@ -539,6 +543,10 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
 
 // POPUP-MODAL: MANUELLE BUCHUNG ERFASSEN ODER BEARBEITEN
 window.bhOpenEntryModal = function(entryId) {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) {
+    alert("Keine Berechtigung zum Bearbeiten von Buchungen.");
+    return;
+  }
   let modalEl = document.getElementById('bhModalNewEntry');
   
   if (!modalEl) {
@@ -2763,6 +2771,10 @@ window.bhOpenKontoauszugModal = function(kontoCode) {
 
 // POPUP-MODAL: MASSEN-BUDGETIERUNG & BUDGET-MATRIX EDITOR
 window.bhOpenBudgetMatrixModal = function() {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) {
+    alert("Keine Berechtigung zum Bearbeiten des Budgets.");
+    return;
+  }
   let modalEl = document.getElementById('bhModalBudgetMatrix');
   if (!modalEl) {
     modalEl = document.createElement('div');

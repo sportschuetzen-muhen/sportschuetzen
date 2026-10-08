@@ -93,6 +93,8 @@ async function loadSystemMailsData(force = false) {
 //  RENDER
 // =========================================================
 function renderSystemMailsUI(container) {
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('system-mails') : true;
+
   // Module gruppieren
   const groups = {};
   for (const cfg of sysMailState.configs) {
@@ -115,9 +117,10 @@ function renderSystemMailsUI(container) {
   let html = `
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0">📬 System-Mail-Verteiler</h5>
+      ${canWrite ? `
       <button class="btn btn-sm btn-success write-protected" onclick="saveSystemMailsData()">
         💾 Speichern
-      </button>
+      </button>` : ''}
     </div>
     <p class="text-muted small mb-3">
       Verwalte die Empfänger-Listen für automatische System-Benachrichtigungen.
@@ -147,11 +150,12 @@ function renderSystemMailsUI(container) {
               ? mails.map(m => `
                   <span style="background:#e9f2ff;color:#0d6efd;padding:2px 8px;border-radius:10px;font-size:.82rem;">
                     ${escapeHtml(m)}
-                    <span style="color:#dc3545;cursor:pointer;" class="write-protected"
-                          onclick="sysMailRemove(${idx},'${escapeJs(m)}')">×</span>
+                    ${canWrite ? `<span style="color:#dc3545;cursor:pointer;" class="write-protected"
+                          onclick="sysMailRemove(${idx},'${escapeJs(m)}')">×</span>` : ''}
                   </span>`).join('')
               : '<span class="text-muted small">Keine Empfänger</span>'}
           </div>
+          ${canWrite ? `
           <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
             <select class="form-select form-select-sm write-protected"
                     style="max-width:320px;"
@@ -171,7 +175,7 @@ function renderSystemMailsUI(container) {
                 + Hinzufügen
               </button>
             </div>
-          </div>
+          </div>` : ''}
         </div>
       `;
     }

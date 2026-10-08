@@ -25,6 +25,10 @@ function initDragAndDrop() {
 
     // --- DESKTOP ---
     document.addEventListener('dragstart', (e) => {
+        if (typeof hasWriteAccess === 'function' && !hasWriteAccess('manager')) {
+            e.preventDefault();
+            return;
+        }
         if (window.isTouching) {
             e.preventDefault();
             return;
@@ -287,6 +291,10 @@ function removeFromMail(id) {
 }
 
 function addTeamToState(silent = false) {
+    if (typeof hasWriteAccess === 'function' && !hasWriteAccess('manager')) {
+        alert("Keine Berechtigung zum Bearbeiten von Teams.");
+        return;
+    }
     window.markUnsaved();
     const config = CONTEST_CONFIG[appState.activeModule];
     let nextNum = 1;
@@ -300,6 +308,10 @@ function addTeamToState(silent = false) {
 }
 
 function removeTeamFromState(teamName) {
+    if (typeof hasWriteAccess === 'function' && !hasWriteAccess('manager')) {
+        alert("Keine Berechtigung zum Löschen von Teams.");
+        return;
+    }
     if (!confirm(`Team "${teamName}" wirklich löschen?`)) return;
     window.markUnsaved();
     const idx = appState.teams.findIndex(t => t.name === teamName);

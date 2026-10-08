@@ -15,13 +15,11 @@ let bestandSortCol   = 'Status';
 let bestandSortDir   = 'asc';
 
 function canAdd() {
-    const role = window.userRole || localStorage.getItem('portal_role') || '';
-    return ['admin','materialwart','schuetzenmeister'].includes(role);
+    return typeof hasWriteAccess === 'function' ? hasWriteAccess('inventar') : true;
 }
 
 function canDelete() {
-    const role = window.userRole || localStorage.getItem('portal_role') || '';
-    return ['admin','materialwart'].includes(role);
+    return typeof hasWriteAccess === 'function' ? hasWriteAccess('inventar') : true;
 }
 
 // =========================================================
@@ -280,7 +278,10 @@ function initInventarUI(container) {
 
     // Aktiv-Tab wiederherstellen
     const requestedTab = window._inventarRequestedTab || null;
-    const lastTab = requestedTab || localStorage.getItem('inventar-activeTab') || 'ausgabe';
+    let lastTab = requestedTab || localStorage.getItem('inventar-activeTab') || (canAdd() ? 'ausgabe' : 'liste');
+    if (!canAdd() && (lastTab === 'ausgabe' || lastTab === 'admin')) {
+        lastTab = 'liste';
+    }
     window._inventarRequestedTab = null;
     showInventarSection(lastTab);
 }

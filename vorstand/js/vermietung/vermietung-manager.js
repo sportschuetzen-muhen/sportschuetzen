@@ -133,17 +133,18 @@ function openVermietungModal(rowOrId) {
   const isFibuCur = sRaiffCur === 'fibu_gebucht';
   const isBankNotifiedCur = sRaiffCur === 'bank_notified' || sRaiffCur === 'info_mail' || (d.is_paid && !isFibuCur);
 
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('vermietung') : true;
   const modalFooter = document.getElementById('vermietung-modal-footer');
   modalFooter.innerHTML = `
     <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Schliessen</button>
     
-    ${!istStorniert && !isBankNotifiedCur && !isFibuCur ? `
+    ${canWrite && !istStorniert && !isBankNotifiedCur && !isFibuCur ? `
       <button class="btn btn-sm btn-warning fw-semibold"
               onclick="vermietungAktion('mahnung', '${d.id || d.row}')">
         <i class="fas fa-exclamation-triangle me-1"></i>❗ Mahnung
       </button>` : ''}
     
-    ${!istStorniert && !isFibuCur ? `
+    ${canWrite && !istStorniert && !isFibuCur ? `
       ${!isBankNotifiedCur ? `
         <button class="btn btn-sm fw-semibold" style="background-color:#dcfce7; color:#15803d; border:1px solid #86efac;"
                 onclick="vermietungAktion('bestaetigen', '${d.id || d.row}')"
@@ -157,13 +158,13 @@ function openVermietungModal(rowOrId) {
         </button>`}
     ` : ''}
 
-    ${!istStorniert && (istBezahlt || isBankNotifiedCur || isFibuCur) && d.status !== 'keys_issued' && d.status !== '04' ? `
+    ${canWrite && !istStorniert && (istBezahlt || isBankNotifiedCur || isFibuCur) && d.status !== 'keys_issued' && d.status !== '04' ? `
       <button class="btn btn-sm btn-info text-white fw-semibold"
               onclick="vermietungAktion('schluessel', '${d.id || d.row}')">
         <i class="fas fa-key me-1"></i>Schlüsselübergabe senden
       </button>` : ''}
             
-    ${!istStorniert ? `
+    ${canWrite && !istStorniert ? `
       <button class="btn btn-sm btn-danger fw-semibold"
               onclick="vermietungAktion('stornieren', '${d.id || d.row}')">
         <i class="fas fa-trash-alt me-1"></i>Stornieren

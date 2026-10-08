@@ -7,6 +7,11 @@
 async function mglSaveMember(event, pn) {
   if (event) event.preventDefault();
 
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('members')) {
+    alert("Keine Berechtigung zum Bearbeiten von Mitgliedern.");
+    return;
+  }
+
   const btn = document.getElementById('mglEditSubmitBtn') || document.querySelector('#mglTabEdit .btn-primary');
   if (btn) {
     btn.disabled = true;
@@ -227,6 +232,11 @@ function mglNeuesMitglied() {
  * Personennummer an.
  */
 async function mglSaveNeu() {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('members')) {
+    alert("Keine Berechtigung zum Erfassen von Mitgliedern.");
+    return;
+  }
+
   const vorname = (document.getElementById('nmVorname')?.value || '').trim();
   const nachname = (document.getElementById('nmNachname')?.value || '').trim();
   const geburt = document.getElementById('nmGeburt')?.value || '';

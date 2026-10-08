@@ -2,6 +2,7 @@
 
 function renderUmfragenUI(container) {
   if (!container) return;
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('umfragen') : true;
   
   // Haupt-Layout mit Tabs
   container.innerHTML = `
@@ -18,8 +19,10 @@ function renderUmfragenUI(container) {
         <!-- TAB 1: EVENTS VERWALTEN -->
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <div class="d-flex gap-2">
+                    ${canWrite ? `
                     <button class="btn btn-sm btn-success write-protected" onclick="addUmfrageEvent()">+ Neuer Event</button>
                     <button class="btn btn-sm btn-primary write-protected" onclick="saveUmfragenData()"><i class="fas fa-save me-1"></i> Speichern</button>
+                    ` : ''}
                 </div>
             </div>
             <!-- Mobile Ansicht: Touch-optimierte Karten -->

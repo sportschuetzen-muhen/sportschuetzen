@@ -75,6 +75,7 @@ function showTermineOverlay(show, text) {
 
 function renderTermineUI(container) {
   if (!container || !adminState) return;
+  const canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('termine') : true;
 
   container.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -99,10 +100,13 @@ function renderTermineUI(container) {
           <div class="card-body p-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div class="d-flex align-items-center flex-wrap gap-2">
-                <button class="btn btn-sm btn-success write-protected" onclick="addTerminRow()">
+                <button class="btn btn-sm btn-success write-protected ${!canWrite ? 'd-none' : ''}" onclick="addTerminRow()">
                   <i class="fas fa-plus me-1"></i> Neuer Termin
                 </button>
-                <div class="vr mx-1 d-none d-md-block"></div>
+                <button id="btn-save-termine" class="btn btn-sm btn-primary write-protected ${!canWrite ? 'd-none' : ''}" onclick="saveTermineData()">
+                  <i class="fas fa-save me-1"></i> Speichern
+                </button>
+                <div class="vr mx-1 d-none d-md-block ${!canWrite ? 'd-none' : ''}"></div>
                 <!-- TableKit Filter-Pills -->
                 <div class="tk-filter-pills" id="termine-status-pills">
                   <button type="button" class="tk-pill-btn active" data-filter="all">Alle</button>

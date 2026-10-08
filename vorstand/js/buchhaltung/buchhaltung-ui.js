@@ -62,9 +62,11 @@ window.renderBuchhaltung = function() {
           <option value="2025" ${window._bhYear === 2025 ? 'selected' : ''}>Jahr: 2025</option>
           <option value="2024" ${window._bhYear === 2024 ? 'selected' : ''}>Jahr: 2024</option>
         </select>
+        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true) ? `
         <button class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="bhOpenEntryModal(null)">
           <i class="fas fa-plus me-1"></i> Buchung erfassen
         </button>
+        ` : ''}
       </div>
     </div>
     
@@ -481,6 +483,7 @@ window.bhToggleJournalIncompleteFilter = function() {
 };
 
 window.renderTabJournal = function(container) {
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true;
   const tableResp = container.querySelector('.table-responsive');
   const tableScrollTop = tableResp ? tableResp.scrollTop : 0;
   const windowScrollTop = window.scrollY || document.documentElement.scrollTop;
@@ -603,12 +606,14 @@ window.renderTabJournal = function(container) {
         <button class="bh-edit-btn text-primary" onclick="bhPrintJournalBeleg(${item.id})" title="Kassenbeleg drucken / als PDF ablegen">
           <i class="fas fa-print"></i>
         </button>
+        ${canWrite ? `
         <button class="bh-edit-btn ms-1" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten (z. B. Gegenkonto nachführen)">
           <i class="fas fa-edit"></i>
         </button>
         <button class="bh-edit-btn text-danger ms-1" onclick="bhDeleteJournalEntry(${item.id})" title="Buchung löschen">
           <i class="fas fa-trash-alt"></i>
         </button>
+        ` : ''}
       </td>
     </tr>
   `;
@@ -659,9 +664,11 @@ window.renderTabJournal = function(container) {
           <button type="button" class="btn btn-sm btn-outline-secondary bg-white" onclick="bhClearJournalSelection()">
             <i class="fas fa-times me-1"></i>Auswahl aufheben
           </button>
+          ${canWrite ? `
           <button type="button" class="btn btn-sm btn-danger shadow-sm fw-semibold" onclick="bhConfirmDeleteSelectedJournalEntries()">
             <i class="fas fa-trash-alt me-1"></i>Ausgewählte löschen (<span id="bh-journal-btn-count">${selectedCount}</span>)
           </button>
+          ` : ''}
         </div>
       </div>
       
@@ -1167,6 +1174,7 @@ window.bhFilterJournal = function(query) {
 // Zeilen-Klick Handler für Kontenrahmen
 window.bhHandleAccountRowClick = function(event, konto, rowIndex) {
   if (event.target.closest('a, button, input, select')) return;
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) return;
   if (typeof window.bhOpenKontoModal === 'function') {
     window.bhOpenKontoModal(konto, rowIndex);
   }
@@ -1174,6 +1182,7 @@ window.bhHandleAccountRowClick = function(event, konto, rowIndex) {
 
 // RENDERING: TAB 3 – KONTENRAHMEN & BUDGET
 window.renderTabKontenrahmen = function(container) {
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true;
   let sortedKonten = [...window._bhKontenrahmen];
   const col = window._bhKontenSortCol;
   const asc = window._bhKontenSortAsc;
@@ -1217,7 +1226,7 @@ window.renderTabKontenrahmen = function(container) {
     if (cat.main === 'Abschluss') { classLabel = 'Abschluss'; classColor = 'bg-dark'; }
     
     return `
-      <tr class="bh-account-row" onclick="bhHandleAccountRowClick(event, '${acc.konto}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${acc.konto}">
+      <tr class="bh-account-row" ${canWrite ? `onclick="bhHandleAccountRowClick(event, '${acc.konto}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${acc.konto}"` : ''}>
         <td class="tk-col-konto"><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
         <td class="fw-bold text-dark tk-col-bezeichnung">${acc.bezeichnung}</td>
         <td class="tk-col-klasse"><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
@@ -1228,12 +1237,14 @@ window.renderTabKontenrahmen = function(container) {
         <td class="text-end fw-bold text-primary tk-col-endsaldo">${fmtChf(acc._endsaldo)}</td>
         <td class="text-end fw-semibold text-secondary tk-col-budget">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
         <td class="text-end tk-col-aktionen" style="white-space: nowrap;">
+          ${canWrite ? `
           <button class="bh-edit-btn" onclick="event.stopPropagation(); bhOpenKontoModal('${acc.konto}', ${acc._rowIndex || 'null'})" title="Konto bearbeiten">
             <i class="fas fa-edit"></i>
           </button>
           <button class="bh-edit-btn text-danger ms-1" onclick="event.stopPropagation(); bhDeleteKonto('${acc.konto}')" title="Konto löschen">
             <i class="fas fa-trash-alt"></i>
           </button>
+          ` : ''}
         </td>
       </tr>
     `;
@@ -1244,12 +1255,14 @@ window.renderTabKontenrahmen = function(container) {
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap:10px;">
         <h4 class="fw-bold text-primary mb-0"><i class="fas fa-university me-2"></i>KMU-Kontenrahmen & Budget (${window._bhYear})</h4>
         <div class="d-flex align-items-center flex-wrap" style="gap: 10px;">
+          ${canWrite ? `
           <button class="btn btn-sm btn-outline-success fw-bold shadow-sm me-1" onclick="bhOpenBudgetMatrixModal()">
             <i class="fas fa-calculator me-1"></i> Budget-Matrix Editor
           </button>
           <button class="btn btn-sm btn-outline-primary fw-bold shadow-sm" onclick="bhOpenKontoModal(null)">
             <i class="fas fa-plus-circle me-1"></i> Konto hinzufügen
           </button>
+          ` : ''}
           <div id="bh-konten-column-toggle" class="d-inline-block"></div>
           <span class="badge bg-primary px-3 py-2 rounded-2">${window._bhKontenrahmen.length} Konten</span>
         </div>

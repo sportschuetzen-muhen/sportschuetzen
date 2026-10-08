@@ -963,6 +963,29 @@ function hasWriteAccess(module) {
     return userHasRole('admin');
 }
 
+// Universeller UI-Schutz für View vs. Manage Kontrakt
+function applyModuleWriteProtection(targetView, canWrite) {
+    if (!targetView) return;
+    const protectedElements = targetView.querySelectorAll('.write-protected');
+    protectedElements.forEach(el => {
+        if (canWrite) {
+            el.classList.remove('d-none');
+            el.removeAttribute('disabled');
+            if (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') {
+                el.removeAttribute('readonly');
+            }
+        } else {
+            if (el.tagName === 'BUTTON' || el.classList.contains('btn') || el.tagName === 'A') {
+                el.classList.add('d-none');
+            } else {
+                el.setAttribute('disabled', 'true');
+                el.setAttribute('readonly', 'true');
+            }
+        }
+    });
+}
+window.applyModuleWriteProtection = applyModuleWriteProtection;
+
 function navTo(viewId, el) {
     // Berechtigungsmatrix: Zugriff auf Ansicht prüfen (schützt auch vor Direktaufrufen)
     if (window.Perms && !window.Perms.canAccessView(viewId)) {
@@ -1005,30 +1028,9 @@ function navTo(viewId, el) {
     if (targetView) {
         targetView.classList.add('active');
         
-        // NEU: Globale Schreibrecht-Prüfung für das geladene Modul anwenden
+        // Globale Schreibrecht-Prüfung für das geladene Modul anwenden (Initial)
         const canWrite = hasWriteAccess(viewId);
-        const protectedElements = targetView.querySelectorAll('.write-protected');
-        protectedElements.forEach(el => {
-            if (canWrite) {
-                el.classList.remove('d-none');
-                el.removeAttribute('disabled');
-                // Falls es inputs sind, readonly entfernen
-                if(el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') {
-                    el.removeAttribute('readonly'); 
-                    // select können z.T. disabled bleiben
-                    if(el.dataset.wasDisabled) {
-                        // custom logik falls nötig, aber in der Regel:
-                    }
-                }
-            } else {
-                if(el.tagName === 'BUTTON' || el.classList.contains('btn')) {
-                    el.classList.add('d-none'); // Buttons gleich unsichtbar machen
-                } else {
-                    el.setAttribute('disabled', 'true');
-                    el.setAttribute('readonly', 'true');
-                }
-            }
-        });
+        applyModuleWriteProtection(targetView, canWrite);
         
     } else {
         console.error("View nicht gefunden: view-" + viewId);
@@ -1075,11 +1077,18 @@ function navTo(viewId, el) {
     // Nach erfolgreichem Laden das Hintergrund-Laden der verbleibenden Module anstossen
     if (viewId !== 'dashboard') {
         Promise.resolve(loadPromise).then(() => {
+            // Schreibschutz nach asynchronem DOM-Rendern erneut durchsetzen
+            if (targetView) {
+                applyModuleWriteProtection(targetView, hasWriteAccess(viewId));
+            }
             if (window.bgModuleLoader) {
                 window.bgModuleLoader.onUserModuleLoaded(viewId);
             }
         }).catch(err => {
             console.warn(`Fehler beim Laden von ${viewId}:`, err);
+            if (targetView) {
+                applyModuleWriteProtection(targetView, hasWriteAccess(viewId));
+            }
             if (window.bgModuleLoader) {
                 window.bgModuleLoader.isUserActiveLoading = false;
                 window.bgModuleLoader.scheduleNext(5000);
