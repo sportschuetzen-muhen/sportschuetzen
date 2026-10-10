@@ -752,7 +752,12 @@ window.rnReplaceMailPlaceholders = function(templateStr, options = {}) {
     str = str.replace(regex, String(val ?? ''));
   }
 
-  return str.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+,/g, ',');
+  // Bereinigung von leeren Zeilenresten & hängenden Zeilenumbrüchen (z.B. wenn Absender-Name leer war)
+  return str
+    .replace(/(?:<p>|\n)\s*<br\s*\/?>\s*/gi, (m) => m.startsWith('<p>') ? '<p>' : '\n')
+    .replace(/<p>\s*<\/p>/gi, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+,/g, ',');
 };
 
 /**

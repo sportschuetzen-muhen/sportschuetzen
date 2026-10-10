@@ -357,6 +357,18 @@ window.renderTabLayouts = function(content) {
   `;
 
   rnUpdateLayoutPreview();
+
+  if (window.ClubWysiwyg) {
+    const mbEl = document.getElementById('rnl-mail-body');
+    if (mbEl) {
+      window.ClubWysiwyg.init(mbEl, {
+        mode: 'email',
+        minHeight: '180px',
+        placeholder: 'E-Mail Begleittext verfassen...',
+        onChange: () => rnUpdateLayoutPreview()
+      });
+    }
+  }
 };
 
 window.rnSelectLayoutType = function(type) {
@@ -370,8 +382,8 @@ window.rnUpdateLayoutPreview = function() {
   const intro = document.getElementById('rnl-intro') ? document.getElementById('rnl-intro').value : '';
   const outro = document.getElementById('rnl-outro') ? document.getElementById('rnl-outro').value : '';
   const notice = document.getElementById('rnl-notice') ? document.getElementById('rnl-notice').value : '';
-  const mailSubj = document.getElementById('rnl-mail-subject') ? document.getElementById('rnl-mail-subject').value : '';
-  const mailBody = document.getElementById('rnl-mail-body') ? document.getElementById('rnl-mail-body').value : '';
+  const mbEl = document.getElementById('rnl-mail-body');
+  const mailBody = (mbEl?._clubWysiwygInstance ? mbEl._clubWysiwygInstance.getCleanHtml() : mbEl?.value) || '';
 
   const replaceVars = (text) => {
     return String(text || '')
@@ -387,6 +399,7 @@ window.rnUpdateLayoutPreview = function() {
       .replace(/{iban}/g, 'CH06 8080 8003 6331 3189 2')
       .replace(/{absender_vorname}/g, 'Daniel')
       .replace(/{absender_nachname}/g, 'Hunziker')
+      .replace(/{absender_name}/g, 'Daniel Hunziker')
       .replace(/{absender_funktion}/g, 'Vizepräsident')
       .replace(/{absender_verein}/g, 'Sportschützen Muhen')
       .replace(/{absender_email}/g, 'sportschuetzen.muhen@gmail.com');
@@ -408,7 +421,18 @@ window.rnUpdateLayoutPreview = function() {
     s = s.replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ').replace(/\bRE-(\d)/gi, '$1');
     prevMailSubj.textContent = s;
   }
-  if (prevMailBody) prevMailBody.textContent = replaceVars(mailBody);
+  if (prevMailBody) {
+    const renderedBody = replaceVars(mailBody);
+    if (/<[a-z][\s\S]*>/i.test(renderedBody)) {
+      prevMailBody.innerHTML = (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function')
+        ? window.ClubWysiwyg.cleanHtml(renderedBody)
+        : renderedBody;
+    } else {
+      prevMailBody.innerHTML = renderedBody.split(/\n\s*\n/).map(p => 
+        `<p style="margin:0 0 6px 0;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+      ).join('');
+    }
+  }
 };
 
 window.rnInsertShortcode = function(code) {
@@ -450,7 +474,8 @@ window.rnSaveLayout = async function(event, type) {
   const outro = document.getElementById('rnl-outro').value.trim();
   const notice = document.getElementById('rnl-notice').value.trim();
   const mail_subject = document.getElementById('rnl-mail-subject').value.trim();
-  const mail_body = document.getElementById('rnl-mail-body').value.trim();
+  const mbEl = document.getElementById('rnl-mail-body');
+  const mail_body = (mbEl?._clubWysiwygInstance ? mbEl._clubWysiwygInstance.getCleanHtml() : mbEl?.value)?.trim() || '';
   const submitBtn = document.getElementById('rnl-submit-btn') || event.target?.querySelector('button[type="submit"]');
 
   const layoutData = {

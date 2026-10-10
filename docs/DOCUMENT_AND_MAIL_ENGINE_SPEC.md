@@ -402,7 +402,7 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
   - Geschützte Call-to-Action (CTA) Aktions-Buttons (`club-cta-container`) mit integriertem Folgeabsatz gegen Cursor-Fallen.
   - Sichere Einfügung von dynamischen Platzhaltern (`{{...}}` und `{...}`) an der aktuellen Cursor-Position ohne persistente Badge-Artefakte.
   - DOM-basierte Bereinigung störender Formatierungen (`cleanHtmlContent`): Säubert Word/Outlook-Tags, Browser-Erweiterungen (Noir, Dark Reader) sowie Inline-CSS-Verschmutzungen unter Erhalt geschützter Banner und Buttons.
-  - Auslieferung: Modulübergreifend wird pre-gerendertes HTML direkt an die Mail-Engine übergeben, um doppelte Maskierungen (`escapeHtml`) in E-Mail-Clients zu verhindern.
+  - Auslieferung & Rechnungsmodul-Harmonisierung: Modulübergreifend (Dokumente-Vorlagen, Vermietung, Rechnungs-Einzelversand, Mahnwesen und Massenversand) wird pre-gerendertes HTML direkt an die Mail-Engine übergeben, um doppelte Maskierungen (`escapeHtml`) in E-Mail-Clients zu verhindern. Die Eingabefelder im Rechnungs-Cockpit nutzen nativ `ClubWysiwyg`, sodass keine Roh-Tags (`<p>`) sichtbar sind und für reine Text-Mailclients ein strukturierter Plaintext-Fallback generiert wird.
 
 ---
 

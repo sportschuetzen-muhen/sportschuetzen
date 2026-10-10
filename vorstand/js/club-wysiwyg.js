@@ -558,9 +558,17 @@
         }
 
         setHtml(html) {
-            this.editor.innerHTML = html || '<p><br></p>';
+            let clean = html || '';
+            if (clean && !/<[a-z][\s\S]*>/i.test(clean)) {
+                clean = clean.split(/\n\s*\n/).map(p => `<p>${escapeHtml(p.trim()).replace(/\n/g, '<br>')}</p>`).join('');
+            }
+            this.editor.innerHTML = clean || '<p><br></p>';
             this.triggerChange();
             this.updateToolbarState();
+        }
+
+        setContent(content) {
+            this.setHtml(content);
         }
 
         insertVariable(variableTag) {
@@ -709,14 +717,38 @@
             .replace(/'/g, '&#39;');
     }
 
+    function htmlToPlainText(html) {
+        if (!html) return '';
+        if (!/<[a-z][\s\S]*>/i.test(html)) return String(html).trim();
+        return String(html)
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p>/gi, '\n\n')
+            .replace(/<\/div>/gi, '\n')
+            .replace(/<\/li>/gi, '\n')
+            .replace(/<li[^>]*>/gi, '• ')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
     // --- GLOBALE EXPORTE ---
     window.ClubWysiwyg = {
         init: function (targetEl, options) {
             return new ClubWysiwygEditor(targetEl, options);
         },
         cleanHtml: cleanHtmlContent,
+        htmlToPlainText: htmlToPlainText,
         getPresets: () => BANNER_PRESETS
     };
+    window.clubHtmlToPlainText = htmlToPlainText;
 
     console.log('✅ [ClubWysiwyg] Globaler Vereins-WYSIWYG initialisiert (inkl. Undo/Redo/Format-Reset & geschütztem CTA).');
 })();

@@ -552,6 +552,22 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
   const initialSenderPN = (sender && (sender.personNumber || sender.person_number || sender.PersonNumber)) || null;
   rnPopulateSenderSelect('rnm-sender-select', initialSenderPN, true);
   rnOnMailSenderChanged(inv.id);
+
+  if (window.ClubWysiwyg) {
+    const mbEl = document.getElementById('rnm-mail-body');
+    if (mbEl) {
+      window.ClubWysiwyg.init(mbEl, {
+        mode: 'email',
+        minHeight: '220px',
+        placeholder: 'E-Mail Nachrichtentext bearbeiten...',
+        onChange: () => {
+          if (document.getElementById('rnm-pane-prev') && !document.getElementById('rnm-pane-prev').classList.contains('d-none')) {
+            window.rnmSwitchTab('prev');
+          }
+        }
+      });
+    }
+  }
 };
 
 // Hilfsfunktionen für Mail-Modal Tabs und Vorlagen-Reset
@@ -560,7 +576,8 @@ window.rnmSwitchTab = function(mode) {
   const prevTab = document.getElementById('rnm-tab-prev');
   const editPane = document.getElementById('rnm-pane-edit');
   const prevPane = document.getElementById('rnm-pane-prev');
-  const bodyText = document.getElementById('rnm-mail-body')?.value || '';
+  const mailBodyEl = document.getElementById('rnm-mail-body');
+  const bodyText = (mailBodyEl?._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl?.value) || '';
 
   if (mode === 'prev') {
     if (editTab) {
@@ -576,13 +593,19 @@ window.rnmSwitchTab = function(mode) {
 
     const prevContent = document.getElementById('rnm-preview-body-content');
     if (prevContent) {
-      const clean = String(bodyText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-      const paras = clean.split(/\n\s*\n/);
-      const parasHtml = paras.map(p => {
-        const withBr = p.split('\n').map(line => escapeHtml(line.trim())).join('<br>');
-        return `<p style="margin:0 0 12px 0;line-height:1.6;font-size:13px;color:#333;">${withBr}</p>`;
-      }).join('');
-      prevContent.innerHTML = parasHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
+      if (/<[a-z][\s\S]*>/i.test(bodyText)) {
+        prevContent.innerHTML = (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function')
+          ? window.ClubWysiwyg.cleanHtml(bodyText)
+          : bodyText;
+      } else {
+        const clean = String(bodyText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        const paras = clean.split(/\n\s*\n/);
+        const parasHtml = paras.map(p => {
+          const withBr = p.split('\n').map(line => escapeHtml(line.trim())).join('<br>');
+          return `<p style="margin:0 0 12px 0;line-height:1.6;font-size:13px;color:#333;">${withBr}</p>`;
+        }).join('');
+        prevContent.innerHTML = parasHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
+      }
     }
     const subjPrev = document.getElementById('rnm-preview-subject');
     const subjVal = document.getElementById('rnm-subject')?.value || '';
@@ -598,7 +621,11 @@ window.rnmSwitchTab = function(mode) {
     }
     if (prevPane) prevPane.classList.add('d-none');
     if (editPane) editPane.classList.remove('d-none');
-    document.getElementById('rnm-mail-body')?.focus();
+    if (mailBodyEl?._clubWysiwygInstance) {
+      mailBodyEl._clubWysiwygInstance.editor?.focus();
+    } else if (mailBodyEl) {
+      mailBodyEl.focus();
+    }
   }
 };
 
@@ -607,7 +634,12 @@ window.rnmResetTemplate = function() {
     const subjectEl = document.getElementById('rnm-subject');
     const bodyEl = document.getElementById('rnm-mail-body');
     if (subjectEl) subjectEl.value = window._rnmDefaultSubject || '';
-    if (bodyEl) bodyEl.value = window._rnmDefaultBody || '';
+    if (bodyEl) {
+      bodyEl.value = window._rnmDefaultBody || '';
+      if (bodyEl._clubWysiwygInstance) {
+        bodyEl._clubWysiwygInstance.setHtml(window._rnmDefaultBody || '');
+      }
+    }
     window.rnmSwitchTab('edit');
   }
 };
@@ -639,7 +671,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
   if (emailInput) emailInput.classList.remove('is-invalid');
 
   const targetSubject = subjectInput ? subjectInput.value.trim() : '';
-  const targetBody = bodyInput ? bodyInput.value.trim() : '';
+  const targetBody = (bodyInput?._clubWysiwygInstance ? bodyInput._clubWysiwygInstance.getCleanHtml() : bodyInput?.value)?.trim() || '';
 
   const recipient = (typeof rnGetRecipientForInvoice === 'function')
     ? rnGetRecipientForInvoice(inv)
@@ -761,13 +793,27 @@ window.rnExecuteSendMail = async function(invoiceId) {
     }
 
     // 3. Mail-HTML mit Vereins-CI
+    let finalBodyHtml = '';
+    if (/<[a-z][\s\S]*>/i.test(customLayout.mail_body || '')) {
+      finalBodyHtml = customLayout.mail_body;
+    } else {
+      finalBodyHtml = (customLayout.mail_body || '').split(/\n\s*\n/).map(p => 
+        `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+      ).join('');
+    }
+
     const emailHtml = (typeof window.renderClubEmailHtml === 'function')
       ? window.renderClubEmailHtml({
           title: customLayout.mail_subject || `Rechnung ${invoiceId}`,
           subtitle: inv.type || 'Rechnung',
-          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`
+          contentHtml: finalBodyHtml
         })
-      : `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`;
+      : finalBodyHtml;
+
+    const toPlain = (window.ClubWysiwyg && typeof window.ClubWysiwyg.htmlToPlainText === 'function')
+      ? window.ClubWysiwyg.htmlToPlainText
+      : (window.clubHtmlToPlainText || (s => s.replace(/<[^>]+>/g, '')));
+    const plainTextFallback = toPlain(customLayout.mail_body || `Rechnung ${invoiceId}`);
 
     // 4. Versand über zentrale Supabase Mail-Engine (Edge Function send-email)
     if (typeof window.sendMailViaEngine !== 'function') {
@@ -778,7 +824,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
       to: targetEmail,
       subject: customLayout.mail_subject || `Rechnung ${invoiceId} | Sportschützen Muhen`,
       html: emailHtml,
-      text: customLayout.mail_body || `Rechnung ${invoiceId}`,
+      text: plainTextFallback,
       senderName: sender?.name || 'Sportschützen Muhen',
       senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
       attachments: attachments,
@@ -3578,6 +3624,22 @@ window.rnOpenMahnungModal = async function(invoiceId, name) {
   const initialSenderPN = (sender && (sender.personNumber || sender.person_number || sender.PersonNumber)) || null;
   rnPopulateSenderSelect('rn-mahnung-sender-select', initialSenderPN, true);
   rnOnMahnungSenderChanged(inv.id);
+
+  if (window.ClubWysiwyg) {
+    const mbEl = document.getElementById('rn-mahnung-body');
+    if (mbEl) {
+      window.ClubWysiwyg.init(mbEl, {
+        mode: 'email',
+        minHeight: '220px',
+        placeholder: 'Mahnungs-Nachrichtentext bearbeiten...',
+        onChange: () => {
+          if (document.getElementById('rnm-mahn-pane-prev') && !document.getElementById('rnm-mahn-pane-prev').classList.contains('d-none')) {
+            window.rnSwitchMahnungTab('prev');
+          }
+        }
+      });
+    }
+  }
 };
 
 // Hilfsfunktion: Stufenauswahl im Mahn-Modal umschalten
@@ -3634,7 +3696,12 @@ window.rnSelectMahnstufe = function(st) {
   const subjEl = document.getElementById('rn-mahnung-subject');
   const bodyEl = document.getElementById('rn-mahnung-body');
   if (subjEl) subjEl.value = defSubj;
-  if (bodyEl) bodyEl.value = defBody;
+  if (bodyEl) {
+    bodyEl.value = defBody;
+    if (bodyEl._clubWysiwygInstance) {
+      bodyEl._clubWysiwygInstance.setHtml(defBody);
+    }
+  }
 
   // 3. Hinweise & Badges aktualisieren
   const hintEl = document.getElementById('rn-mahnung-body-hint');
@@ -3687,15 +3754,24 @@ window.rnSwitchMahnungTab = function(mode) {
     if (editPane) editPane.classList.add('d-none');
     if (prevPane) prevPane.classList.remove('d-none');
 
+    const mailBodyEl = document.getElementById('rn-mahnung-body');
+    const bodyText = (mailBodyEl?._clubWysiwygInstance ? mailBodyEl._clubWysiwygInstance.getCleanHtml() : mailBodyEl?.value) || '';
+
     const prevContent = document.getElementById('rnm-mahn-preview-body-content');
     if (prevContent) {
-      const clean = String(bodyText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-      const paras = clean.split(/\n\s*\n/);
-      const parasHtml = paras.map(p => {
-        const withBr = p.split('\n').map(line => escapeHtml(line.trim())).join('<br>');
-        return `<p style="margin:0 0 12px 0;line-height:1.6;font-size:13px;color:#333;">${withBr}</p>`;
-      }).join('');
-      prevContent.innerHTML = parasHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
+      if (/<[a-z][\s\S]*>/i.test(bodyText)) {
+        prevContent.innerHTML = (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function')
+          ? window.ClubWysiwyg.cleanHtml(bodyText)
+          : bodyText;
+      } else {
+        const clean = String(bodyText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        const paras = clean.split(/\n\s*\n/);
+        const parasHtml = paras.map(p => {
+          const withBr = p.split('\n').map(line => escapeHtml(line.trim())).join('<br>');
+          return `<p style="margin:0 0 12px 0;line-height:1.6;font-size:13px;color:#333;">${withBr}</p>`;
+        }).join('');
+        prevContent.innerHTML = parasHtml || '<p class="text-muted fst-italic">Kein Text vorhanden.</p>';
+      }
     }
     const subjPrev = document.getElementById('rnm-mahn-preview-subject');
     const subjVal = document.getElementById('rn-mahnung-subject')?.value || '';
@@ -3711,7 +3787,12 @@ window.rnSwitchMahnungTab = function(mode) {
     }
     if (prevPane) prevPane.classList.add('d-none');
     if (editPane) editPane.classList.remove('d-none');
-    document.getElementById('rn-mahnung-body')?.focus();
+    const mailBodyEl = document.getElementById('rn-mahnung-body');
+    if (mailBodyEl?._clubWysiwygInstance) {
+      mailBodyEl._clubWysiwygInstance.editor?.focus();
+    } else if (mailBodyEl) {
+      mailBodyEl.focus();
+    }
   }
 };
 
@@ -3720,7 +3801,12 @@ window.rnResetMahnungTemplate = function() {
     const subjectEl = document.getElementById('rn-mahnung-subject');
     const bodyEl = document.getElementById('rn-mahnung-body');
     if (subjectEl) subjectEl.value = window._rnMahnDefaultSubject || '';
-    if (bodyEl) bodyEl.value = window._rnMahnDefaultBody || '';
+    if (bodyEl) {
+      bodyEl.value = window._rnMahnDefaultBody || '';
+      if (bodyEl._clubWysiwygInstance) {
+        bodyEl._clubWysiwygInstance.setHtml(window._rnMahnDefaultBody || '');
+      }
+    }
     window.rnSwitchMahnungTab('edit');
   }
 };
@@ -3769,7 +3855,7 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
   }
 
   const targetSubject = subjectInput ? subjectInput.value.trim() : '';
-  const targetBody = bodyInput ? bodyInput.value.trim() : '';
+  const targetBody = (bodyInput?._clubWysiwygInstance ? bodyInput._clubWysiwygInstance.getCleanHtml() : bodyInput?.value)?.trim() || '';
 
   const recipient = (typeof rnGetRecipientForInvoice === 'function')
     ? rnGetRecipientForInvoice(inv)
@@ -3804,13 +3890,27 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
   }
 
   try {
+    let finalMahnBodyHtml = '';
+    if (/<[a-z][\s\S]*>/i.test(customLayout.mail_body || '')) {
+      finalMahnBodyHtml = customLayout.mail_body;
+    } else {
+      finalMahnBodyHtml = (customLayout.mail_body || '').split(/\n\s*\n/).map(p => 
+        `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+      ).join('');
+    }
+
     const emailHtml = (typeof window.renderClubEmailHtml === 'function')
       ? window.renderClubEmailHtml({
           title: customLayout.mail_subject || `${stufenTitle}: Rechnung ${invoiceId}`,
           subtitle: inv.type || 'Mahnung',
-          contentHtml: `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`
+          contentHtml: finalMahnBodyHtml
         })
-      : `<p>${(customLayout.mail_body || '').replace(/\n/g, '<br>')}</p>`;
+      : finalMahnBodyHtml;
+
+    const toPlain = (window.ClubWysiwyg && typeof window.ClubWysiwyg.htmlToPlainText === 'function')
+      ? window.ClubWysiwyg.htmlToPlainText
+      : (window.clubHtmlToPlainText || (s => s.replace(/<[^>]+>/g, '')));
+    const plainTextFallback = toPlain(customLayout.mail_body || `${stufenTitle}: Rechnung ${invoiceId}`);
 
     if (typeof window.sendMailViaEngine !== 'function') {
       throw new Error("Zentrale Mail-Engine (sendMailViaEngine) ist nicht verfügbar.");
@@ -3820,7 +3920,7 @@ window.rnExecuteSendMahnung = async function(event, invoiceId) {
       to: targetEmail,
       subject: customLayout.mail_subject || `${stufenTitle}: Rechnung ${invoiceId} | Sportschützen Muhen`,
       html: emailHtml,
-      text: customLayout.mail_body || `${stufenTitle}: Rechnung ${invoiceId}`,
+      text: plainTextFallback,
       senderName: sender?.name || 'Sportschützen Muhen',
       senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
       moduleRef: 'rechnung',
@@ -4905,13 +5005,27 @@ window.rnExecuteMassSend = async function() {
         .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
         .replace(/\bRE-(\d)/gi, '$1');
 
+      let bodyContentHtml = '';
+      if (/<[a-z][\s\S]*>/i.test(bodyText)) {
+        bodyContentHtml = bodyText;
+      } else {
+        bodyContentHtml = bodyText.split(/\n\s*\n/).map(p => 
+          `<p style="margin:0 0 12px 0; line-height: 1.55;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`
+        ).join('');
+      }
+
       const emailHtml = (typeof window.renderClubEmailHtml === 'function')
         ? window.renderClubEmailHtml({
             title: subjectText,
             subtitle: inv.type || 'Rechnung',
-            contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`
+            contentHtml: bodyContentHtml
           })
-        : `<p>${bodyText.replace(/\n/g, '<br>')}</p>`;
+        : bodyContentHtml;
+
+      const toPlain = (window.ClubWysiwyg && typeof window.ClubWysiwyg.htmlToPlainText === 'function')
+        ? window.ClubWysiwyg.htmlToPlainText
+        : (window.clubHtmlToPlainText || (s => s.replace(/<[^>]+>/g, '')));
+      const plainTextFallback = toPlain(bodyText);
 
       if (typeof window.sendMailViaEngine !== 'function') {
         throw new Error("Mail-Engine nicht verfügbar");
@@ -4922,7 +5036,7 @@ window.rnExecuteMassSend = async function() {
         to: itm.recipient.email,
         subject: subjectText,
         html: emailHtml,
-        text: bodyText,
+        text: plainTextFallback,
         senderName: senderDisplayName || 'Sportschützen Muhen',
         senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
         attachments: attachments,

@@ -282,3 +282,4 @@ const newInvoice = await window.RechnungsCore.createInvoice(invoiceOrder);
 2. **Niemals eine versendete oder bezahlte Rechnung im UI editieren lassen!** Die Mutationssperren in `rechnungen-actions.js` schützen die GoBD-Konformität.
 3. **Bei Privatpersonen niemals das Feld `firma` füllen!** Andernfalls bricht der Schweizer QR-Zahlteil die SIX-Norm.
 4. **Jedes PDF mit Cache-Busting abrufen:** `?t=${Date.now()}`.
+5. **E-Mail-Vorlagen & WYSIWYG-Harmonisierung:** Das Rechnungsmodul nutzt für E-Mail-Begleittexte (`rnm-mail-body`, `rn-mahnung-body`, `rnl-mail-body`) den globalen Vereins-WYSIWYG (`ClubWysiwyg`). Pre-gerendertes HTML aus `document_templates` wird visuell formatiert gerendert und nativ als HTML an `renderClubEmailHtml` übergeben (kein doppeltes `<p>`-Wrapping); für reine Text-Mailclients wird automatisiert ein bereinigter Plaintext ohne HTML-Tags erzeugt.
