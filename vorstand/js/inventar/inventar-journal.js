@@ -141,7 +141,7 @@ function renderTransaktionenTable() {
     if (!inventarState?.transaktionen?.length) {
         transTable.innerHTML = `<thead><tr class="table-dark">
             <th>Datum</th><th>Mitglied</th><th>Aktion</th>
-            <th>Kategorie</th><th>Gegenstand</th><th>Bemerkung</th><th>PDF</th>
+            <th>Kategorie</th><th>Gegenstand</th><th>Bemerkung</th><th class="text-center">Aktionen</th>
         </tr></thead>
         <tbody><tr><td colspan="7" class="text-center text-muted">Noch keine Transaktionen.</td></tr></tbody>`;
         return;
@@ -196,7 +196,7 @@ function renderTransaktionenTable() {
         <th>Kategorie</th>
         <th>Gegenstand</th>
         <th>Bemerkung</th>
-        <th>PDF</th>
+        <th class="text-center">Aktionen</th>
     </tr></thead><tbody>`;
 
     groups.slice(0, 50).forEach(group => {
@@ -205,10 +205,13 @@ function renderTransaktionenTable() {
             const date       = formatCH(t.Zeitstempel);
             const mitglied   = getInventarNameFromId(t.Aktueller_Besitzer_ID);
             const aktion     = (t.Aktion||"").toUpperCase();
+            const istStorno  = aktion === 'STORNO' || (t.Bemerkungen||'').includes('[STORNIERT]');
             const istVerkauf = aktion === 'VERKAUF';
             const istAusgabe = aktion === 'AUSGABE' || aktion === 'CHECKOUT';
             let aktionBadge  = '<span class="badge bg-success">Rückgabe</span>';
-            if (istVerkauf) {
+            if (istStorno) {
+                aktionBadge  = `<span class="badge bg-danger text-white fw-bold"><i class="fas fa-ban me-1"></i>Storniert</span>`;
+            } else if (istVerkauf) {
                 const methodeStr = t.Zahlungsart ? ` <span class="badge bg-light text-dark border ms-1">${t.Zahlungsart}</span>` : '';
                 aktionBadge  = `<span class="badge bg-info text-dark fw-bold">Verkauf</span>${methodeStr}`;
             } else if (istAusgabe) {
@@ -221,18 +224,31 @@ function renderTransaktionenTable() {
             const kat        = t.Kategorie || '-';
             const gegenstand = getItemLabelFromTrans(t);
 
-            let pdfCell = '';
+            let actionCell = '';
             if (idx === 0) {
                 const safeGroup = encodeURIComponent(JSON.stringify(group));
                 const backendPdfUrl = group[0].PDF_URL || "";
-                pdfCell = `<td rowspan="${rowspan}" class="text-center align-middle">
-                    ${backendPdfUrl
-                        ? `<a href="${backendPdfUrl}" target="_blank"
-                              class="btn btn-sm btn-success" title="PDF aus Drive öffnen">📄</a>`
-                        : `<button class="btn btn-sm btn-outline-secondary"
-                                   title="PDF lokal generieren"
-                                   onclick="regeneratePDF('${safeGroup}')">📄</button>`
-                    }
+                const isGroupCancelled = group.some(gt => (gt.Aktion||'').toUpperCase() === 'STORNO' || (gt.Bemerkungen||'').includes('[STORNIERT]'));
+                const pdfBtn = backendPdfUrl
+                    ? `<a href="${backendPdfUrl}" target="_blank"
+                          class="btn btn-sm btn-success py-1 px-2" title="Quittungs-PDF öffnen">📄</a>`
+                    : `<button class="btn btn-sm btn-outline-secondary py-1 px-2"
+                               title="PDF lokal generieren"
+                               onclick="regeneratePDF('${safeGroup}')">📄</button>`;
+
+                const stornoBtn = isGroupCancelled
+                    ? `<span class="badge bg-secondary py-1 px-2" title="Buchung bereits storniert">Storniert</span>`
+                    : (canDelete() ? `<button class="btn btn-sm btn-outline-danger py-1 px-2"
+                                title="Buchung stornieren / rückgängig machen"
+                                onclick="storniereInventarBuchung('${safeGroup}')">
+                            <i class="fas fa-undo me-1"></i>Storno
+                        </button>` : '');
+
+                actionCell = `<td rowspan="${rowspan}" class="text-center align-middle" style="white-space:nowrap;">
+                    <div class="d-inline-flex gap-1 align-items-center">
+                        ${pdfBtn}
+                        ${stornoBtn}
+                    </div>
                 </td>`;
             }
             html += `<tr>
@@ -242,12 +258,193 @@ function renderTransaktionenTable() {
                 <td><span class="badge bg-secondary">${kat}</span></td>
                 <td><small>${gegenstand}</small></td>
                 <td><small class="text-muted">${t.Bemerkungen||''}</small></td>
-                ${pdfCell}
+                ${actionCell}
             </tr>`;
         });
     });
     transTable.innerHTML = html + "</tbody>";
 }
+
+// =========================================================
+//  STORNO / RÜCKGÄNGIG MACHEN EINER BUCHUNG
+// =========================================================
+window.storniereInventarBuchung = async function(safeGroup) {
+    if (!canDelete()) {
+        alert("❌ Keine Berechtigung zum Stornieren von Buchungen.");
+        return;
+    }
+    let group = [];
+    try {
+        group = JSON.parse(decodeURIComponent(safeGroup));
+    } catch (e) {
+        alert("Fehler beim Lesen der Buchungsdaten.");
+        return;
+    }
+    if (!group || !group.length) return;
+
+    const first = group[0];
+    const aktion = (first.Aktion || '').toUpperCase();
+    const mitgliedName = getInventarNameFromId(first.Aktueller_Besitzer_ID);
+    const datumStr = formatCH(first.Zeitstempel);
+    const count = group.length;
+
+    const warnMsg = `⚠️ Möchtest du diese Buchung wirklich stornieren / rückgängig machen?\n\n` +
+        `• Datum: ${datumStr}\n` +
+        `• Aktion: ${first.Aktion}\n` +
+        `• Mitglied: ${mitgliedName}\n` +
+        `• Positionen: ${count} Gegenstand/Gegenstände\n\n` +
+        `Auswirkungen:\n` +
+        `1. Artikelbestand wird auf den vorherigen Status zurückgestellt (z.B. zurück ins Lager).\n` +
+        `2. Offene Pfandeinträge werden storniert.\n` +
+        `3. Eine verknüpfte QR-Rechnung im Modul Rechnungen wird automatisch storniert / gelöscht.\n` +
+        `(Hinweis: Bar-Kassenbuchungen bleiben unverändert).\n\n` +
+        `Fortfahren?`;
+
+    if (!confirm(warnMsg)) return;
+
+    setInventarBusy(true);
+    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+    if (!supa) {
+        alert("❌ Supabase Client nicht verfügbar.");
+        setInventarBusy(false);
+        return;
+    }
+
+    try {
+        const nowIso = new Date().toISOString();
+        let invoicesCancelled = [];
+
+        for (const t of group) {
+            const itemId = String(t.Inventar_ID || '').trim();
+            const memberId = t.Aktueller_Besitzer_ID ? parseInt(t.Aktueller_Besitzer_ID) : null;
+            const tAction = (t.Aktion || '').toUpperCase();
+
+            // 1. Artikelbestand zurücksetzen in inventory_items
+            if (itemId) {
+                if (tAction === 'VERKAUF' || tAction === 'AUSGABE' || tAction === 'CHECKOUT') {
+                    // War ausgegeben/verkauft -> wieder zurück ins Lager
+                    await supa.from('inventory_items')
+                        .update({ status: 'Im Lager', current_owner_id: null, updated_at: nowIso })
+                        .eq('id', itemId);
+                } else if (tAction === 'CHECKIN') {
+                    // War zurückgegeben -> wieder als ausgegeben an das Mitglied markieren
+                    await supa.from('inventory_items')
+                        .update({ status: 'Ausgegeben', current_owner_id: memberId, updated_at: nowIso })
+                        .eq('id', itemId);
+                }
+            }
+
+            // 2. Pfandkasse in inventory_deposits bereinigen
+            if (itemId && memberId) {
+                if (tAction === 'AUSGABE' || tAction === 'CHECKOUT') {
+                    // Offenes Pfand stornieren
+                    await supa.from('inventory_deposits')
+                        .update({ status: 'Storniert', updated_at: nowIso })
+                        .eq('member_id', memberId)
+                        .eq('item_id', itemId)
+                        .eq('status', 'Offen');
+                } else if (tAction === 'CHECKIN') {
+                    // Retourniertes Pfand wieder auf 'Offen' zurücksetzen
+                    await supa.from('inventory_deposits')
+                        .update({ status: 'Offen', date_returned: null, updated_at: nowIso })
+                        .eq('member_id', memberId)
+                        .eq('item_id', itemId)
+                        .eq('status', 'Retour');
+                }
+            }
+
+            // 3. Verknüpfte Rechnung im Rechnungsmodul stornieren / löschen (falls Einzahlungsschein)
+            if (itemId) {
+                try {
+                    // Suche in invoice_positions nach diesem Gegenstand
+                    const { data: positions } = await supa.from('invoice_positions')
+                        .select('invoice_id')
+                        .eq('source_field', itemId);
+                    
+                    const invIds = new Set((positions || []).map(p => p.invoice_id));
+
+                    // Suche zusätzlich nach source_id in invoices
+                    const { data: directInvs } = await supa.from('invoices')
+                        .select('id, mail_status, status')
+                        .eq('source_module', 'inventar')
+                        .eq('source_id', itemId);
+                    (directInvs || []).forEach(di => invIds.add(di.id));
+
+                    for (const invId of invIds) {
+                        const { data: invData } = await supa.from('invoices')
+                            .select('id, mail_status, status, total_paid')
+                            .eq('id', invId)
+                            .maybeSingle();
+
+                        if (invData && invData.status !== 'bezahlt' && (!invData.total_paid || Number(invData.total_paid) === 0)) {
+                            if (invData.mail_status === 'entwurf') {
+                                await supa.from('invoice_positions').delete().eq('invoice_id', invId);
+                                await supa.from('invoices').delete().eq('id', invId);
+                                invoicesCancelled.push(`${invId} (gelöscht)`);
+                            } else {
+                                await supa.from('invoices').update({
+                                    status: 'storniert',
+                                    cancel_reason: 'Storniert über Inventar-Journal',
+                                    cancelled_at: nowIso,
+                                    open_amount: 0.00,
+                                    updated_at: nowIso
+                                }).eq('id', invId);
+                                invoicesCancelled.push(`${invId} (storniert)`);
+                            }
+                        }
+                    }
+                } catch (invErr) {
+                    console.warn("Hinweis bei Rechnungs-Prüfung/Storno:", invErr);
+                }
+            }
+
+            // 4. Transaktion in inventory_transactions als STORNO markieren
+            const txDbId = t.db_id || t.id;
+            if (txDbId) {
+                await supa.from('inventory_transactions')
+                    .update({
+                        action: 'STORNO',
+                        notes: `[STORNIERT ${new Date().toLocaleDateString('de-CH')}] ` + (t.Bemerkungen || '')
+                    })
+                    .eq('id', txDbId);
+            } else if (itemId && t.Zeitstempel) {
+                await supa.from('inventory_transactions')
+                    .update({
+                        action: 'STORNO',
+                        notes: `[STORNIERT ${new Date().toLocaleDateString('de-CH')}] ` + (t.Bemerkungen || '')
+                    })
+                    .eq('item_id', itemId)
+                    .eq('timestamp', t.Zeitstempel);
+            }
+        }
+
+        // 5. Revisions-Auditlog erfassen
+        await supa.from('inventory_audit_log').insert([{
+            timestamp: nowIso,
+            user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
+            action: 'cancelBooking',
+            details: `Buchung (${first.Aktion}) für Mitglied ${mitgliedName} (${count} Positionen) storniert.${invoicesCancelled.length ? ' Verknüpfte Rechnungen: ' + invoicesCancelled.join(', ') : ''}`
+        }]);
+
+        // 6. Caches invalidieren & neu laden
+        if (typeof window.loadRechnungenData === 'function') {
+            window.loadRechnungenData(true, true).catch(() => {});
+        }
+        await loadInventarData(true);
+
+        const infoFeedback = invoicesCancelled.length 
+            ? `✅ Buchung erfolgreich storniert! Artikelbestand zurückgestellt & Rechnung ${invoicesCancelled.join(', ')} storniert.`
+            : `✅ Buchung erfolgreich storniert! Artikelbestand und Pfandkasse wurden zurückgestellt.`;
+
+        alert(infoFeedback);
+
+    } catch (err) {
+        console.error("Fehler beim Stornieren:", err);
+        alert("❌ Fehler beim Stornieren: " + err.message);
+    } finally {
+        setInventarBusy(false);
+    }
+};
 
 // =========================================================
 //  FINANZEN & PFAND

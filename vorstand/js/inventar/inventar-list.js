@@ -126,18 +126,45 @@ function renderInventoryTable() {
 }
 
 // =========================================================
-//  ADMIN FELDER RENDERN
+//  MODAL: ARTIKEL ERFASSEN & BEARBEITEN (NEUES KONZEPT)
 // =========================================================
-function renderAdminFields(target) {
-    const fieldsDiv = document.getElementById('dynamic-fields');
-    const saveBtn   = document.getElementById('btn-admin-save');
-    if (!target || !inventarState) {
-        fieldsDiv.innerHTML = ""; saveBtn.classList.add('d-none'); return;
+function openInventarItemModal(preferredCat) {
+    if (!canAdd()) {
+        alert("❌ Keine Berechtigung zum Erfassen von Gegenständen.");
+        return;
     }
-    saveBtn.classList.remove('d-none');
+    const filterVal = preferredCat || document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
+    const target = (filterVal === 'Personendaten') ? 'Inventar_Kleidung' : filterVal;
+
+    const modalEl = document.getElementById('modal-inventar-item');
+    if (!modalEl) return;
+
+    const titleEl = document.getElementById('modal-inventar-item-title');
+    if (titleEl) titleEl.innerHTML = `<i class="fas fa-plus-circle me-2 text-primary"></i>Neuen Gegenstand erfassen`;
+
+    const catSelect = document.getElementById('item-modal-category');
+    if (catSelect) catSelect.value = target;
+
+    const idInput = document.getElementById('item-modal-id');
+    if (idInput) idInput.value = '';
+
+    const statusCont = document.getElementById('container-item-modal-status');
+    if (statusCont) statusCont.style.display = 'none';
+
+    const form = document.getElementById('form-inventar-item');
+    if (form) form.reset();
+
+    renderItemModalFields(target);
+
+    const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    bsModal.show();
+}
+
+function renderItemModalFields(target) {
+    const fieldsDiv = document.getElementById('item-modal-fields');
+    if (!fieldsDiv || !target || !inventarState) return;
 
     const configs = {
-        "Personendaten":              ["PersonNumber","Vorname","Nachname","email","BirthDate","Status"],
         "Inventar_Gewehre":           ["Hersteller","Modell","Laufnummer","Diopter","Ringkorn",
                                        "Zubehoer","Spezielles","Distanz","Eigentümer_ID",
                                        "Gespendet_ID","Kauf_Spender_Jahr","Verkaeufer_ID","Kaufpreis","Depotbetrag"],
@@ -155,13 +182,13 @@ function renderAdminFields(target) {
 
     fieldsDiv.innerHTML = (configs[target]||[]).map(field => {
         if (field.endsWith("_ID")) {
-            const sorted = [...inventarState.mitglieder]
+            const sorted = [...(inventarState.mitglieder||[])]
                 .sort((a,b)=>(a.Nachname||"").localeCompare(b.Nachname||""));
             const options = sorted
                 .map(m=>`<option value="${m.ID}">${m.Nachname} ${m.Vorname}</option>`).join('');
             return `<div class="col-md-6 mb-3">
-                <label class="fw-bold">${field.replace(/_/g,' ')}</label>
-                <select name="${field}" class="form-select">
+                <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
+                <select name="${field}" class="form-select form-select-sm">
                     <option value="">-- Mitglied wählen --</option>${options}
                 </select></div>`;
         }
@@ -170,63 +197,80 @@ function renderAdminFields(target) {
                 .map(c=>c[dropdownMapping[field]]).filter(v=>v)
                 .map(v=>`<option value="${v}">${v}</option>`).join('');
             return `<div class="col-md-6 mb-3">
-                <label class="fw-bold">${field.replace(/_/g,' ')}</label>
-                <select name="${field}" class="form-select">
+                <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
+                <select name="${field}" class="form-select form-select-sm">
                     <option value="">-- wählen --</option>${options}
                 </select></div>`;
         }
         const isDate = ['datum','date','Jahr'].some(d=>field.toLowerCase().includes(d.toLowerCase()));
         return `<div class="col-md-6 mb-3">
-            <label class="fw-bold">${field.replace(/_/g,' ')}</label>
-            <input type="${isDate?'date':'text'}" name="${field}" class="form-control">
+            <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
+            <input type="${isDate?'date':'text'}" name="${field}" class="form-control form-control-sm">
         </div>`;
     }).join('');
 }
 
 // =========================================================
-//  EDIT ITEM
+//  EDIT ITEM (ÖFFNET MODAL DIREKT IM BESTAND)
 // =========================================================
 function editInventarItem(targetSheet, id) {
-    showInventarSection('admin');
-    const select = document.getElementById('admin-target');
-    select.value = targetSheet;
-    renderAdminFields(targetSheet);
+    if (targetSheet === 'Personendaten') {
+        alert("ℹ️ Mitgliederdaten werden im Modul 'Mitglieder' gepflegt.");
+        return;
+    }
 
     const keyMap = {
         "Inventar_Gewehre":"gewehre","Inventar_Schluessel":"schluessel",
-        "Inventar_Kleidung":"kleidung","Inventar_Schiessbekleidung":"schiessbekleidung",
-        "Personendaten":"mitglieder"
+        "Inventar_Kleidung":"kleidung","Inventar_Schiessbekleidung":"schiessbekleidung"
     };
     const data = (inventarState[keyMap[targetSheet]]||[])
         .find(item => item.ID.toString() === id.toString());
 
-    if (data) {
-        let idField = document.getElementById('admin-edit-id');
-        if (!idField) {
-            idField = document.createElement('input');
-            idField.type='hidden'; idField.id='admin-edit-id'; idField.name='ID';
-            document.getElementById('adminForm').appendChild(idField);
-        }
-        idField.value = id;
-        const form = document.getElementById('adminForm');
+    if (!data) {
+        alert("Gegenstand nicht gefunden.");
+        return;
+    }
+
+    const modalEl = document.getElementById('modal-inventar-item');
+    if (!modalEl) return;
+
+    const titleEl = document.getElementById('modal-inventar-item-title');
+    if (titleEl) titleEl.innerHTML = `<i class="fas fa-edit me-2 text-warning"></i>Gegenstand bearbeiten: <strong>${id}</strong>`;
+
+    const catSelect = document.getElementById('item-modal-category');
+    if (catSelect) catSelect.value = targetSheet;
+
+    const idInput = document.getElementById('item-modal-id');
+    if (idInput) idInput.value = id;
+
+    const statusCont = document.getElementById('container-item-modal-status');
+    if (statusCont) statusCont.style.display = 'block';
+
+    const statusSelect = document.getElementById('item-modal-status');
+    if (statusSelect) statusSelect.value = data.Status || 'Im Lager';
+
+    renderItemModalFields(targetSheet);
+
+    const form = document.getElementById('form-inventar-item');
+    if (form) {
         Object.keys(data).forEach(key => {
             const input = form.querySelector(`[name="${key}"]`);
             if (input) input.value = data[key];
         });
-        const btn = document.getElementById('btn-admin-save');
-        btn.innerText = "Änderungen speichern";
-        btn.classList.replace('btn-success','btn-warning');
     }
+
+    const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    bsModal.show();
 }
 
 // =========================================================
+//  SAVE / UPDATE VIA MODAL
 // =========================================================
-//  SAVE / UPDATE
-// =========================================================
-async function saveNewInventarItem(e) {
+async function saveInventarItemModal(e) {
     e.preventDefault();
     setInventarBusy(true);
-    const target = document.getElementById('admin-target').value;
+
+    const target = document.getElementById('item-modal-category')?.value || 'Inventar_Kleidung';
     const fields = {};
     new FormData(e.target).forEach((v,k) => fields[k]=v);
     const isUpdate = Boolean(fields.ID && fields.ID !== "");
@@ -322,20 +366,26 @@ async function saveNewInventarItem(e) {
             }]);
         }
 
-        e.target.reset();
-        const idField = document.getElementById('admin-edit-id');
-        if (idField) idField.remove();
-        const btn = document.getElementById('btn-admin-save');
-        btn.innerText = "Speichern";
-        btn.classList.replace('btn-warning','btn-success');
+        const modalEl = document.getElementById('modal-inventar-item');
+        if (modalEl) {
+            bootstrap.Modal.getInstance(modalEl)?.hide();
+        }
+
         await loadInventarData(true);
-        alert(isUpdate ? "✅ Änderung gespeichert (Supabase Master)!" : "✅ Neu erfasst (Supabase Master)!");
+        alert(isUpdate ? `✅ Änderung für ${fields.ID} gespeichert!` : `✅ Neuer Gegenstand ${fields.ID} erfolgreich angelegt!`);
     } catch (err) {
         alert("Fehler: " + err.message);
     } finally {
         setInventarBusy(false);
     }
 }
+
+// Abwärtskompatible Aliase
+window.openInventarItemModal = openInventarItemModal;
+window.renderItemModalFields = renderItemModalFields;
+window.saveInventarItemModal = saveInventarItemModal;
+window.renderAdminFields = renderItemModalFields;
+window.saveNewInventarItem = saveInventarItemModal;
 
 // =========================================================
 //  DELETE

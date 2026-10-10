@@ -195,3 +195,12 @@ vorstand/js/inventar/
 - **PDF-Synchronisation (Richtlinie 6):** Die PDF-Generierung wird über `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })` angestossen und im Supabase Storage hinterlegt. Bei Fehlern wird ein klarer UI-Fehler geworfen (keine stillen Fallbacks).
 - **Standard-Depot für Bekleidung:** Für alle Vereinsbekleidungs-Artikel (`category = 'kleidung'`) ist in `public.inventory_items` ein Standard-Depotbetrag von CHF 25.00 hinterlegt.
 
+### 5.3 Vereinfachtes Bestands- & Artikelmanagement (Harmonisiertes Modal)
+- **Konsolidierung im Tab «Bestand»:** Der historische, verwirrende Tab «Admin» wurde vollständig eliminiert.
+- **Neuer Artikel & Bearbeiten:** Im Kopfbereich des Bestands existiert nun der Button `[➕ Neuer Artikel]`, welcher ein fokussiertes Dialogfenster (`#modal-inventar-item`) passend zur gewählten Kategorie (Gewehre, Schlüssel, Kleidung, Schiessbekleidung) öffnet. Auch die Bearbeitung (`✏️`) bestehender Datensätze erfolgt direkt in diesem Modal vor Ort ohne Seiten- oder Tab-Sprung.
+- **Mitgliederverwaltung entkoppelt:** Die Erfassung von Mitgliedern im Inventar wurde entfernt; die Daten stammen aus der zentralen Single Source of Truth `public.members`.
+
+### 5.4 Buchungs-Storno & Zwei-Wege-Rückmeldung mit dem Rechnungsmodul
+- **Storno-Aktion im Journal (`storniereInventarBuchung`):** Fehlbuchungen können von berechtigten Benutzern im Journal per Knopfdruck rückgängig gemacht werden. Dies stellt den Artikelstatus in `public.inventory_items` auf den Vorzustand zurück (z.B. zurück ins Lager), storniert offene Pfandeinträge in `public.inventory_deposits`, setzt die Transaktion in `inventory_transactions` auf `STORNO` und storniert bzw. löscht eine verknüpfte, unbezahlte Entwurfsrechnung im Rechnungsmodul. Bar-Kassenbuchungen bleiben davon unberührt.
+- **Zwei-Wege-Kopplung bei Rechnungs-Löschung (`rnDeleteInvoicePrompt`):** Löscht ein Benutzer eine Inventar- oder Depot-Rechnung im Modul Rechnungen, meldet das Rechnungsmodul dies an das Inventar zurück: Die verknüpften Artikel werden automatisch wieder auf `Im Lager` gesetzt, die Transaktion auf `STORNO` aktualisiert und offene Pfandeinträge storniert.
+

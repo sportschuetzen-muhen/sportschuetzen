@@ -29,7 +29,7 @@ function renderInventarUI(container) {
             </button>` : ''}
             <button class="btn ${!canAdd() ? 'btn-primary' : 'btn-outline-secondary'} nav-btn" id="inv-btn-liste"
                     onclick="localStorage.setItem('inventar-activeTab','liste'); showInventarSection('liste')">
-                ✏️ Bestand
+                📦 Bestand
             </button>
             <button class="btn btn-outline-secondary nav-btn" id="inv-btn-journal"
                     onclick="localStorage.setItem('inventar-activeTab','journal'); showInventarSection('journal')">
@@ -39,11 +39,6 @@ function renderInventarUI(container) {
                     onclick="localStorage.setItem('inventar-activeTab','finanzen'); showInventarSection('finanzen')">
                 💰 Finanzen
             </button>
-         ${canAdd() ? `
-<button class="btn btn-outline-dark nav-btn" id="inv-btn-admin"
-        onclick="localStorage.setItem('inventar-activeTab','admin'); showInventarSection('admin')">
-    ➕ Admin
-</button>` : ''}
             <div class="ms-auto d-flex gap-2 align-items-center">
                 <button class="btn btn-outline-info nav-btn btn-sm fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
                     <i class="fas fa-sync-alt me-1"></i> Neu laden
@@ -222,6 +217,10 @@ function renderInventarUI(container) {
                             <option value="Inventar_Schiessbekleidung">Schiessbekleidung</option>
                             <option value="Personendaten">Mitglieder</option>
                         </select>
+                        ${canAdd() ? `
+                        <button type="button" class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="openInventarItemModal()" title="Neuen Gegenstand erfassen">
+                            <i class="fas fa-plus me-1"></i> Neuer Artikel
+                        </button>` : ''}
                         <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm" onclick="openInventarExcelImportModal()" title="Inventargegenstände aus Excel oder CSV importieren">
                             <i class="fas fa-file-excel me-1"></i> Excel / CSV Import
                         </button>
@@ -277,38 +276,51 @@ function renderInventarUI(container) {
             </div>
         </div>
 
-        <!-- SECTION: ADMIN (nur für admin/materialwart) -->
-        ${canAdd() ? `
-        <div id="inv-section-admin" class="inv-section d-none">
-            <div class="card border-0 shadow-sm p-4">
-                <h4>Neuen Eintrag erfassen</h4>
-                <select id="admin-target" class="form-select mb-4"
-                        onchange="renderAdminFields(this.value)">
-                    <option value="">-- Typ wählen --</option>
-                    <option value="Personendaten">👤 Mitglied</option>
-                    <option value="Inventar_Gewehre">🔫 Gewehr</option>
-                    <option value="Inventar_Schluessel">🔑 Schlüssel</option>
-                    <option value="Inventar_Kleidung">👕 Kleidung</option>
-                    <option value="Inventar_Schiessbekleidung">🎯 Schiessbekleidung</option>
-                </select>
-                <form id="adminForm" onsubmit="saveNewInventarItem(event)">
-                    <div id="dynamic-fields" class="row"></div>
-                    <button type="submit" class="btn btn-success mt-4 d-none inv-submit"
-                            id="btn-admin-save">Speichern</button>
-                </form>
+        <!-- MODAL: NEUER ARTIKEL / ARTIKEL BEARBEITEN -->
+        <div class="modal fade" id="modal-inventar-item" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content shadow-lg border-0">
+                    <div class="modal-header bg-dark text-white">
+                        <h5 class="modal-title" id="modal-inventar-item-title"><i class="fas fa-box me-2"></i>Artikel erfassen</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                    </div>
+                    <form id="form-inventar-item" onsubmit="saveInventarItemModal(event)">
+                        <div class="modal-body p-4">
+                            <input type="hidden" id="item-modal-id" name="ID">
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Kategorie</label>
+                                    <select id="item-modal-category" class="form-select" onchange="renderItemModalFields(this.value)" required>
+                                        <option value="Inventar_Gewehre">🔫 Gewehr</option>
+                                        <option value="Inventar_Schluessel">🔑 Schlüssel</option>
+                                        <option value="Inventar_Kleidung">👕 Kleidung</option>
+                                        <option value="Inventar_Schiessbekleidung">🎯 Schiessbekleidung</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6" id="container-item-modal-status" style="display:none;">
+                                    <label class="form-label fw-bold">Status</label>
+                                    <select id="item-modal-status" name="Status" class="form-select">
+                                        <option value="Im Lager">Im Lager</option>
+                                        <option value="Ausgegeben">Ausgegeben</option>
+                                        <option value="Defekt">Defekt</option>
+                                        <option value="Verkauft">Verkauft</option>
+                                        <option value="Ausgemustert">Ausgemustert</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <hr class="my-3 text-muted">
+                            <div id="item-modal-fields" class="row"></div>
+                        </div>
+                        <div class="modal-footer bg-light border-0">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                            <button type="submit" class="btn btn-primary fw-bold" id="btn-item-modal-save">
+                                <i class="fas fa-save me-1"></i> Speichern
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
-
-            <!-- Adressbuch-Sync (Google Sheets) deaktiviert nach Cut-Over -->
-            <!--
-            <div class="card border-0 shadow-sm p-4 mt-4">
-                <h4>🔄 Adressbuch synchronisieren</h4>
-                <p class="text-muted small">Aktualisiert die Personendaten mit der zentralen SSV-Mitgliederdatenbank. Spender und externe Personen bleiben erhalten.</p>
-                <button type="button" class="btn btn-outline-primary" onclick="syncInventarMembers()" id="btn-sync-members">
-                    <i class="fas fa-sync-alt me-2"></i>SSV-Daten jetzt synchronisieren
-                </button>
-            </div>
-            -->
-        </div>` : ''}
+        </div>
     `;
 }
 
@@ -316,6 +328,7 @@ function renderInventarUI(container) {
 //  NAV
 // =========================================================
 function showInventarSection(id) {
+    if (id === 'admin') id = 'liste';
     localStorage.setItem('inventar-activeTab', id);
     document.querySelectorAll('.inv-section').forEach(s => s.classList.add('d-none'));
     const el = document.getElementById('inv-section-' + id);

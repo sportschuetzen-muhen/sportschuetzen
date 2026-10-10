@@ -131,6 +131,7 @@ function mapSchiessbekleidungFromSupabase(r) {
 function mapTransaktionFromSupabase(t) {
     return {
         ID: t.legacy_id || t.id,
+        db_id: t.id,
         Zeitstempel: t.timestamp,
         Besitzer_ID: t.member_id ? String(t.member_id) : '',
         Aktueller_Besitzer_ID: t.member_id ? String(t.member_id) : '',
@@ -292,7 +293,7 @@ function initInventarUI(container) {
     // Aktiv-Tab wiederherstellen
     const requestedTab = window._inventarRequestedTab || null;
     let lastTab = requestedTab || localStorage.getItem('inventar-activeTab') || (canAdd() ? 'ausgabe' : 'liste');
-    if (!canAdd() && (lastTab === 'ausgabe' || lastTab === 'admin')) {
+    if (lastTab === 'admin' || (!canAdd() && lastTab === 'ausgabe')) {
         lastTab = 'liste';
     }
     window._inventarRequestedTab = null;

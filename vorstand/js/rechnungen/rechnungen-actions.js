@@ -3252,15 +3252,19 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
 
   const isSent = inv && (inv.mail_status === 'versendet' || inv.send_date);
   const isJb = inv && inv.type === 'Jahresbeitrag';
+  const isInv = inv && (inv.source_module === 'inventar' || inv.type === 'Materialverkauf' || inv.type === 'Depot / Pfand' || String(invoiceId).startsWith('DP-') || String(invoiceId).startsWith('INV-VERKAUF'));
   let warnText = '';
   if (isSent) {
     warnText = `⚠️ ACHTUNG: Die Rechnung ${invoiceId} wurde bereits an den Empfänger versandt!\n\n` +
       `Wenn du sie löschst, beachte bitte, dass der Empfänger das Dokument bereits vorliegen hat.\n` +
       (isJb ? `Der Jahresbeitrag wird im Modul Jahresbeitrag automatisch auf den Status 'berechnet' zurückgesetzt und kann dort neu erzeugt werden.\n\n` : `\n`) +
+      (isInv ? `Die verknüpften Artikel im Inventar werden automatisch wieder ins Lager zurückgestellt bzw. das offene Depot storniert.\n\n` : `\n`) +
       `Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?`;
   } else {
     warnText = `⚠️ Möchtest du die offene Rechnung ${invoiceId} wirklich unwiderruflich löschen?\n\n` +
-      (isJb ? `Der Jahresbeitrag wird im Modul Jahresbeitrag automatisch auf den Status 'berechnet' zurückgesetzt und kann dort neu erzeugt werden.\n\n` : `Dadurch werden die Rechnungsdaten und alle Positionen in der Tabelle gelöscht.\n\n`) +
+      (isJb ? `Der Jahresbeitrag wird im Modul Jahresbeitrag automatisch auf den Status 'berechnet' zurückgesetzt und kann dort neu erzeugt werden.\n\n` : '') +
+      (isInv ? `Die verknüpften Artikel im Inventar werden automatisch wieder ins Lager zurückgestellt bzw. das offene Depot storniert.\n\n` : '') +
+      (!isJb && !isInv ? `Dadurch werden die Rechnungsdaten und alle Positionen in der Tabelle gelöscht.\n\n` : '') +
       `Fortfahren?`;
   }
 
@@ -3283,6 +3287,45 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
   const sb = typeof getRechnungenSupabaseClient === 'function' ? getRechnungenSupabaseClient() : null;
   if (sb) {
     try {
+      // Quellmodul Inventar entkoppeln & zurücksetzen falls verknüpft (Zwei-Wege-Rückmeldung)
+      if (isInv) {
+        try {
+          const { data: posData } = await sb.from('invoice_positions').select('source_field').eq('invoice_id', invoiceId);
+          const itemIds = new Set();
+          if (inv && inv.source_id) itemIds.add(String(inv.source_id).trim());
+          (posData || []).forEach(p => {
+            if (p.source_field) itemIds.add(String(p.source_field).trim());
+          });
+
+          for (const itemId of itemIds) {
+            if (!itemId) continue;
+            // Wenn Materialverkauf: Artikel wieder ins Lager stellen & Transaktion auf STORNO
+            if (!inv || inv.type === 'Materialverkauf' || !inv.type || inv.type.includes('Verkauf')) {
+              await sb.from('inventory_items').update({ status: 'Im Lager', current_owner_id: null, updated_at: new Date().toISOString() }).eq('id', itemId);
+              await sb.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} gelöscht]` }).eq('item_id', itemId).eq('action', 'VERKAUF');
+            }
+            // Wenn Depot / Pfand: Offenes Pfand stornieren
+            if (inv && (inv.type === 'Depot / Pfand' || String(invoiceId).startsWith('DP-'))) {
+              await sb.from('inventory_deposits').update({ status: 'Storniert', updated_at: new Date().toISOString() }).eq('item_id', itemId).eq('status', 'Offen');
+            }
+          }
+
+          await sb.from('inventory_audit_log').insert([{
+            timestamp: new Date().toISOString(),
+            user_name: (window.currentUser || localStorage.getItem('portal_user') || 'Vorstand'),
+            action: 'cancelViaInvoiceDelete',
+            details: `Rechnung ${invoiceId} (${inv?.type || 'Inventar'}) gelöscht: Inventarbestand/Depot automatisch zurückgestellt (${Array.from(itemIds).join(', ')})`
+          }]);
+
+          if (typeof window.loadInventarData === 'function') {
+            try { await window.loadInventarData(true); } catch (_) {}
+          }
+          console.log(`✅ [Supabase] Inventar-Kopplung für Rechnung ${invoiceId} erfolgreich zurückgestellt.`);
+        } catch (invErr) {
+          console.warn("⚠️ Fehler beim Inventar-Rollback bei Rechnungs-Löschung:", invErr);
+        }
+      }
+
       await sb.from('invoice_positions').delete().eq('invoice_id', invoiceId);
       await sb.from('invoices').delete().eq('id', invoiceId);
       // Quellmodul Vermietung entkoppeln falls verknüpft
@@ -3316,6 +3359,8 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
       console.log(`✅ [Supabase] Invoice ${invoiceId} deleted from Supabase.`);
       if (isJb) {
         showSuccess(`🎉 Rechnung ${invoiceId} gelöscht. Beitrag im Modul Jahresbeitrag auf 'berechnet' zurückgesetzt.`);
+      } else if (isInv) {
+        showSuccess(`🎉 Rechnung ${invoiceId} gelöscht. Inventar-Artikel automatisch wieder ins Lager zurückgestellt.`);
       }
     } catch (sbEx) {
       console.warn("⚠️ [Supabase] Delete Invoice error:", sbEx);
