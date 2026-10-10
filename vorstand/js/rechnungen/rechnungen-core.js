@@ -819,6 +819,7 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
       || 'sportschuetzen.muhen@gmail.com';
 
     return {
+      personNumber: String(member.PersonNumber || member.person_number || ''),
       verein:   'Sportschützen Muhen',
       vorname:  member.FirstName || member.first_name || '',
       nachname: member.LastName || member.last_name || '',
@@ -945,39 +946,103 @@ window.RechnungsCore = {
    * @param {string|null} invoiceType
    * @returns {Promise<Object>}
    */
+  /**
+   * Sucht ein Vorstandsmitglied anhand seiner aktiven Vereinsfunktion
+   * (prüft zuerst den lokalen Cache, dann direkt die Supabase-Tabellen member_functions + members)
+   * @param {string} funcCategory - z.B. 'Kassier', 'Materialwart', 'Juniorenleiter Gewehr 50 m'
+   * @returns {Promise<Object|null>}
+   */
+  async findBoardMemberByFunction(funcCategory) {
+    if (!funcCategory) return null;
+    const cleanSearch = String(funcCategory).trim().toLowerCase();
+
+    // 1. Zuerst im Client-Cache prüfen
+    let members = window._mglData || [];
+    if (members.length === 0 && window.AppCache) {
+      const cached = window.AppCache.get('mitglieder');
+      if (cached && Array.isArray(cached.data)) members = cached.data;
+    }
+    const fnCache = window._mglFunktionenCache || {};
+
+    if (members.length > 0 && Object.keys(fnCache).length > 0) {
+      const found = members.find(m => {
+        const pn = String(m.PersonNumber || m.person_number || '').trim();
+        const fns = fnCache[pn] || [];
+        return fns.some(f => {
+          const cat = String(f.OfficialFunctionCategory || f.official_function_category || '').trim().toLowerCase();
+          const exitD = f.OfficialFunctionExitDate || f.official_function_exit_date;
+          return (cat === cleanSearch || cat.includes(cleanSearch)) && !exitD;
+        });
+      });
+      if (found) return found;
+    }
+
+    // 2. Fallback: Direkt aus Supabase abfragen
+    const supa = getRechnungenSupabaseClient();
+    if (supa) {
+      try {
+        const { data: fns } = await supa
+          .from('member_functions')
+          .select('person_number, official_function_category, official_function_exit_date')
+          .ilike('official_function_category', `%${cleanSearch}%`)
+          .is('official_function_exit_date', null)
+          .limit(1);
+
+        if (fns && fns.length > 0) {
+          const pn = fns[0].person_number;
+          const { data: mem } = await supa
+            .from('members')
+            .select('*')
+            .eq('person_number', pn)
+            .maybeSingle();
+          if (mem) return mem;
+        }
+      } catch (err) {
+        console.warn("[RechnungsCore] Fehler bei findBoardMemberByFunction:", err);
+      }
+    }
+    return null;
+  },
+
+  /**
+   * 7. ABSENDER-ERMITTLUNG: 2-stufiges Absender-Modell (Amts- & Ersteller-Prinzip)
+   * Ermittelt primär den zuständigen Amtsinhaber (Kassier bei Jahresbeitrag/Vermietung),
+   * sekundär die explizite Person und als Fallback die eingeloggte Person.
+   * @param {Object|null} senderInput
+   * @param {string|null} invoiceType
+   * @returns {Promise<Object>}
+   */
   async resolveSender(senderInput = null, invoiceType = null) {
     // 1. Primärer Standard: Eingeloggte Person
     const primary = (typeof window.rnGetLoggedInSender === 'function')
       ? window.rnGetLoggedInSender(invoiceType)
       : {
+          personNumber: '',
           verein: 'Sportschützen Muhen',
           vorname: '', nachname: '', strasse: '', plz: '5037', ort: 'Muhen',
           mobil: '', email: 'sportschuetzen.muhen@gmail.com', funktion: 'Vorstand', bereich: invoiceType || 'Rechnung'
         };
 
-    if (!senderInput || typeof senderInput !== 'object' || Object.keys(senderInput).length === 0) {
-      return primary;
-    }
+    const sIn = (senderInput && typeof senderInput === 'object') ? senderInput : {};
+    const targetPN = sIn.personNumber || sIn.PersonNumber || sIn.person_number;
+    const targetId = sIn.memberId || sIn.id;
 
-    // 2. Sekundär: Falls senderInput eine personNumber oder memberId mitgibt
     let resolvedSecondary = null;
-    const targetPN = senderInput.personNumber || senderInput.PersonNumber || senderInput.person_number;
-    const targetId = senderInput.memberId || senderInput.id;
+    let found = null;
 
+    // 2. Sekundär A: Falls explizite personNumber oder memberId vorgegeben ist
     if (targetPN || targetId) {
       let members = window._mglData || [];
       if (members.length === 0 && window.AppCache) {
         const cached = window.AppCache.get('mitglieder');
         if (cached && Array.isArray(cached.data)) members = cached.data;
       }
-      let found = null;
       if (targetPN) {
         found = members.find(m => String(m.PersonNumber || m.person_number || '').trim() === String(targetPN).trim());
       }
       if (!found && targetId) {
         found = members.find(m => String(m.id || m.member_id || '').trim() === String(targetId).trim());
       }
-      // Falls nicht im Cache gefunden, direkt aus Supabase nachladen
       if (!found) {
         const supa = getRechnungenSupabaseClient();
         if (supa) {
@@ -990,36 +1055,59 @@ window.RechnungsCore = {
           } catch (_) {}
         }
       }
+    } else {
+      // 2. Sekundär B: Amts-Prinzip nach Rechnungstyp bzw. Funktion
+      let roleToFind = null;
+      const reqFn = String(sIn.funktion || '').trim().toLowerCase();
+      const typeClean = String(invoiceType || '').trim().toLowerCase();
 
-      if (found) {
-        resolvedSecondary = {
-          verein: 'Sportschützen Muhen',
-          vorname: found.first_name || found.FirstName || '',
-          nachname: found.last_name || found.LastName || '',
-          strasse: found.street || found.Street || found.Strasse || '',
-          plz: String(found.post_code || found.PostCode || found.ZipCode || found.PLZ || '5037'),
-          ort: found.city || found.City || found.Ort || 'Muhen',
-          mobil: found.private_mobile_phone || found.PrivateMobilePhone || found.business_mobile_phone || found.BusinessMobilePhone || '',
-          email: found.primary_email || found.PrimaryEmail || found.Email || 'sportschuetzen.muhen@gmail.com',
-          funktion: senderInput.funktion || found.function || 'Vorstand',
-          bereich: senderInput.bereich || invoiceType || 'Rechnung'
-        };
+      if (reqFn.includes('kassier') || typeClean.includes('jahresbeitrag') || typeClean.includes('beitrag') || typeClean.includes('vermietung') || typeClean.includes('miete')) {
+        roleToFind = 'Kassier';
+      } else if (reqFn.includes('materialwart') || typeClean.includes('material') || typeClean.includes('inventar')) {
+        roleToFind = 'Materialwart';
+      } else if (reqFn.includes('schulsport') || reqFn.includes('junior') || typeClean.includes('schulsport') || typeClean.includes('junior')) {
+        roleToFind = 'Juniorenleiter Gewehr 50 m';
       }
+
+      if (roleToFind) {
+        found = await this.findBoardMemberByFunction(roleToFind);
+        if (found && !sIn.funktion) {
+          sIn.funktion = roleToFind;
+        }
+      }
+    }
+
+    if (found) {
+      const resolvedPN = String(found.person_number || found.PersonNumber || targetPN || '');
+      resolvedSecondary = {
+        personNumber: resolvedPN,
+        verein: 'Sportschützen Muhen',
+        vorname: found.first_name || found.FirstName || '',
+        nachname: found.last_name || found.LastName || '',
+        strasse: found.street || found.Street || found.Strasse || '',
+        plz: String(found.post_code || found.PostCode || found.ZipCode || found.PLZ || '5037'),
+        ort: found.city || found.City || found.Ort || 'Muhen',
+        mobil: found.private_mobile_phone || found.PrivateMobilePhone || found.business_mobile_phone || found.BusinessMobilePhone || '',
+        email: found.primary_email || found.PrimaryEmail || found.Email || 'sportschuetzen.muhen@gmail.com',
+        funktion: sIn.funktion || found.function || 'Vorstand',
+        bereich: sIn.bereich || invoiceType || 'Rechnung'
+      };
     }
 
     // 3. Mergen: Falls senderInput explizite Kontaktdaten enthält oder nur Teildaten (z.B. nur bereich)
     const base = resolvedSecondary || primary;
     return {
-      verein: senderInput.verein || base.verein || 'Sportschützen Muhen',
-      vorname: senderInput.vorname !== undefined ? senderInput.vorname : base.vorname,
-      nachname: senderInput.nachname !== undefined ? senderInput.nachname : base.nachname,
-      strasse: senderInput.strasse !== undefined ? senderInput.strasse : base.strasse,
-      plz: String(senderInput.plz !== undefined ? senderInput.plz : base.plz || '5037'),
-      ort: senderInput.ort !== undefined ? senderInput.ort : base.ort || 'Muhen',
-      mobil: senderInput.mobil !== undefined ? senderInput.mobil : base.mobil,
-      email: senderInput.email !== undefined ? senderInput.email : base.email,
-      funktion: senderInput.funktion || base.funktion || 'Vorstand',
-      bereich: senderInput.bereich || base.bereich || invoiceType || 'Rechnung'
+      personNumber: base.personNumber || targetPN || (found ? String(found.person_number || found.PersonNumber || '') : ''),
+      verein: sIn.verein || base.verein || 'Sportschützen Muhen',
+      vorname: sIn.vorname !== undefined ? sIn.vorname : base.vorname,
+      nachname: sIn.nachname !== undefined ? sIn.nachname : base.nachname,
+      strasse: sIn.strasse !== undefined ? sIn.strasse : base.strasse,
+      plz: String(sIn.plz !== undefined ? sIn.plz : base.plz || '5037'),
+      ort: sIn.ort !== undefined ? sIn.ort : base.ort || 'Muhen',
+      mobil: sIn.mobil !== undefined ? sIn.mobil : base.mobil,
+      email: sIn.email !== undefined ? sIn.email : base.email,
+      funktion: sIn.funktion || base.funktion || 'Vorstand',
+      bereich: sIn.bereich || base.bereich || invoiceType || 'Rechnung'
     };
   },
 

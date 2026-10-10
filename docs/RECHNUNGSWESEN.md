@@ -53,11 +53,12 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
   - **Sicherheitsnetz:** Bei `typ === 'privat'` darf niemals der Personenname in das Feld `firma` geschrieben werden.
   - **Ländercode & Zeichenkodierung (SIX SPC 0200 1 Validierung):** Im Schweizer QR-Payload (Zeile 11 Creditor & Zeile 27 Ultimate Debtor) ist zwingend ein 2-stelliger ISO 3166-1 alpha-2 Ländercode (`CH`, `LI`, `DE` etc.) vorgeschrieben; Freitexte wie `Schweiz` werden durch `normalizeCountryCode()` automatisch zu `CH` normalisiert. Zudem erfordert `CodingType: "1"` eine strikte UTF-8-Bytekodierung (`qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"]`), damit Umlaute in Vereins- und Personennamen von Beleglesern und E-Banking-Scannern fehlerfrei verarbeitet werden.
 
-### 2.6 Warum 2-stufige Absender-Ermittlung mit unveränderlichem JSONB-Snapshot?
-* **Problem:** Wechselt im Verein der Kassier oder der Präsident, dürfen historische Rechnungen aus den Vorjahren nicht plötzlich den Namen des neuen Amtsinhabers tragen.
-* **Lösung (`rnGetLoggedInSender` / `RechnungsCore.resolveSender`):**
-  1. *Stufe 1 (Ermittlung):* Der Absender wird live aus den Stammdaten (`members`) anhand des angemeldeten Benutzers (`admin_profiles` / Auth) mit Mobilnummer, Vereins-Mail und Funktion ermittelt.
-  2. *Stufe 2 (Snapshot):* Beim Speichern wird der Absender als JSONB-Objekt in `public.invoices.sender_address` eingefroren. Historische Belege bleiben damit zu 100% unveränderlich.
+### 2.6 Warum 2-stufige Absender-Ermittlung mit unveränderlichem JSONB-Snapshot & Amts-Prinzip?
+* **Problem:** Wechselt im Verein der Kassier oder der Präsident, dürfen historische Rechnungen aus den Vorjahren nicht plötzlich den Namen des neuen Amtsinhabers tragen. Zudem führten Rechnungsgenerierungen durch Hilfsadmins oder andere Vorstandsmitglieder zu falschen Kontaktdaten auf Belegen.
+* **Lösung (`RechnungsCore.resolveSender` / `findBoardMemberByFunction` / `rnGetLoggedInSender`):**
+  1. *Stufe 1 (Amts- & Rollen-Ermittlung):* Fachmodule erfordern feste Rollen (z. B. `Jahresbeitrag` und `Vermietung` $\rightarrow$ immer `Kassier`; `Materialverkauf` $\rightarrow$ `Materialwart`; `Schulsport` $\rightarrow$ `Juniorenleiter`). `resolveSender` löst diesen Amtsinhaber live aus den SSV-Stammdaten (`public.member_functions` und `public.members`) mit dessen vollständiger Postanschrift, Mobilnummer und E-Mail auf. Bei freien Rechnungen dient der angemeldete Benutzer als Fallback.
+  2. *Stufe 2 (Unveränderlicher DB-Snapshot):* Beim Speichern wird der Absender als JSONB-Objekt in `public.invoices.sender_address` eingefroren.
+  3. *Synchronität bei Versand:* Der Massenversand nutzt strikt `inv.sender_address` (wodurch Mail-Display-Name, Mail-Signatur und PDF-Briefkopf zu 100% übereinstimmen). Wird im Einzelversand der Absender im Dropdown manuell übersteuert, aktualisiert das System `sender_address` in der DB und stösst automatisch die sofortige Neugenerierung des Rechnungs-PDFs an (`RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })`).
 
 ### 2.7 Warum atomare Rechnungsnummern via PostgreSQL-Sequenz?
 * **Problem:** Clientseitig generierte Rechnungsnummern (Zählen von `window._invoices.length`) führen zu Doppelnummern (Race Conditions), wenn zwei Vorstandsmitglieder gleichzeitig Rechnungen erstellen.

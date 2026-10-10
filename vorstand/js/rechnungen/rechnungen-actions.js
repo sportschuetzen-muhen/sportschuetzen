@@ -689,8 +689,30 @@ window.rnExecuteSendMail = async function(invoiceId) {
     let pdfStoragePath = null;
     let pdfBase64 = null;
 
-    // 1. PDF sicherstellen (generieren, falls noch nicht vorhanden)
-    if (!pdfUrl && typeof window.generatePdfViaEngine === 'function') {
+    // Wenn Absender im Dropdown geändert wurde: DB-Snapshot aktualisieren
+    const oldSender = inv.sender_address || {};
+    const senderChanged = Boolean(sender && (
+      (sender.personNumber && oldSender.personNumber && String(sender.personNumber).trim() !== String(oldSender.personNumber).trim()) ||
+      (sender.email && oldSender.email && String(sender.email).trim().toLowerCase() !== String(oldSender.email).trim().toLowerCase())
+    ));
+
+    if (senderChanged || (!inv.sender_address || Object.keys(inv.sender_address).length === 0)) {
+      inv.sender_address = sender;
+      const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
+      if (supa) {
+        try {
+          await supa.from('invoices').update({
+            sender_address: sender,
+            updated_at: new Date().toISOString()
+          }).eq('id', invoiceId);
+        } catch (dbErr) {
+          console.warn("⚠️ Fehler beim Aktualisieren von sender_address in invoices:", dbErr);
+        }
+      }
+    }
+
+    // 1. PDF sicherstellen (oder bei geändertem Absender zwingend neu generieren)
+    if ((!pdfUrl || senderChanged) && typeof window.generatePdfViaEngine === 'function') {
       try {
         const pdfRes = await window.generatePdfViaEngine({
           action: 'generate-invoice',
@@ -4830,9 +4852,9 @@ window.rnExecuteMassSend = async function() {
     }
 
     try {
-      const sender = (typeof rnGetLoggedInSender === 'function')
-        ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag')
-        : null;
+      const sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
+        ? inv.sender_address
+        : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag') : null);
       const layout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || null;
 
       let pdfUrl = inv.pdf_url || '';

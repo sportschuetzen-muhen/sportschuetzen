@@ -258,13 +258,13 @@ Damit das Dossier wie aus einem Guss wirkt, stempelt die Edge Function über all
 ```
 
 ### 6.2 Dynamische Absender-Ermittlung (Backend & Frontend)
-> **Architektur-Standard für Frontend & RechnungsCore (`rnGetLoggedInSender` & `RechnungsCore.resolveSender`):**  
-> Die Funktion `rnGetLoggedInSender()` und `RechnungsCore.resolveSender()` bestücken alle Felder (`mobil`, `email`, `strasse`, `plz`, `ort`, `bereich`, `funktion`) vollständig aus der Mitgliedertabelle `public.members` über die `person_number` des angemeldeten Benutzers (`admin_profiles` / Auth).  
+> **Architektur-Standard für Frontend & RechnungsCore (`RechnungsCore.resolveSender` & `findBoardMemberByFunction`):**  
+> Die Funktion `RechnungsCore.resolveSender()` ermittelt für Fachmodule (Jahresbeitrag, Vermietung, Materialverkauf etc.) primär das zuständige Vorstandsmitglied nach dem **Amts-Prinzip** (z. B. `Kassier` für Jahresbeitrag und Vermietung, `Materialwart` für Inventar) live aus den SSV-Stammdaten (`public.member_functions` und `public.members`). Für freie/manuelle Rechnungen dient `rnGetLoggedInSender()` als Fallback.  
 > **Revisionssicherer DB-Snapshot:** Bei der Erstellung einer Rechnung (`RechnungsCore.createInvoice`) wird der Absender als unveränderlicher JSONB-Snapshot in `public.invoices.sender_address` festgeschrieben.  
-> **2-stufiges Absender-Modell:**
-> 1. *Primär (Default):* Automatisch die angemeldete Person (mit Fachbereich des Quellmoduls).
-> 2. *Sekundär (Übersteuerung):* Explizite Angabe im `InvoiceOrder` (`sender`-Objekt, `personNumber` oder gezielte Rollen/Funktionen).
-> *Status: Vollständig implementiert in `rechnungen-core.js`, Fachmodulen (Inventar, Vermietung, Jahresbeitrag) und Migration 29.*
+> **Versand-Synchronität & Einzelversand-Mutation:**  
+> - *Massenversand:* Nutzt strikt `inv.sender_address`, sodass E-Mail-Signatur, Anzeigename und PDF-Briefkopf zu 100 % übereinstimmen.  
+> - *Einzelversand:* Wählt der Benutzer im E-Mail-Modal manuell einen anderen Absender, wird `sender_address` in der Datenbank aktualisiert und das Rechnungs-PDF automatisch mit dem neuen Absender neu gerendert (`RechnungsCore.renderPdf(..., { forceRecreate: true })`).  
+> *Status: Vollständig harmonisiert in `rechnungen-core.js` und `rechnungen-actions.js`.*
 
 ### 6.3 Pre-Flight-Validierung (Missing Variables Check)
 - Vor dem Start des Batch-Renderings prüft das System alle Tags im Template gegen den Datensatz der Empfänger.
