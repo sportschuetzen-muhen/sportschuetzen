@@ -161,6 +161,19 @@ CREATE TABLE public.documents (
 
 ---
 
+### 2.7 Dynamischer Vorstand & Porträt-Fotos (Migration 54)
+* **Single Source of Truth:** View `public.v_board_members_public` in Supabase PostgreSQL (aggregiert aus `public.members` und `public.member_functions` mit `official_function_exit_date IS NULL`).
+* **Datenschutzkonforme Bereitstellung:** Die View exponiert ausschliesslich `first_name`, `last_name`, `role_title`, `avatar_url` und `sort_order` (keine privaten Kontakt- oder Adressdaten).
+* **Porträt-Upload im Vorstandsportal (`mitglieder-details.js` / `mitglieder-manager.js`):**
+  * Im Mitglieder-Modal können Porträtfotos per Drag & Drop hochgeladen werden.
+  * Fotos werden browser-nativ auf 600×600 px (quadratischer Center-Crop) als WebP komprimiert und in den Supabase Storage Bucket `operatives-storage/avatars/member_${pn}.webp` hochgeladen.
+  * Die URL wird direkt in `public.members.avatar_url` persistiert.
+* **Dynamisches Frontend (`verein.html`):**
+  * Das Raster `#board-grid-container` lädt die Vorstandsdaten live via Supabase REST.
+  * Liegt ein Porträt vor, wird `.board-photo` angezeigt; andernfalls greift der Initialen-Farbverlauf als Fallback. Das statische HTML bleibt als unzerstörbare Offline-Ausfallsicherung erhalten.
+
+---
+
 ## 3. Responsive Kompatibilität & Geräte-Standards
 
 | Gerät / Browser | Getroffene Massnahme | Ergebnis |

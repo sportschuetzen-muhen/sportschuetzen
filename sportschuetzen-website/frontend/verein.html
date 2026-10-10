@@ -208,7 +208,7 @@
                 <p>Die Köpfe hinter dem sportlichen und administrativen Erfolg unseres Vereins.</p>
             </div>
             
-            <div class="board-grid">
+            <div class="board-grid" id="board-grid-container">
                 <!-- Simon Hediger -->
                 <div class="board-card glass-card">
                     <div class="board-avatar grad-simon">SH</div>
@@ -365,6 +365,62 @@
     <script src="js/components.js"></script>
     <script src="js/main.js"></script>
     <script src="js/galerie.js?v=5"></script>
+    <script>
+        // Dynamisches Laden des Vorstands aus Supabase PostgreSQL (Single Source of Truth)
+        (async function loadBoardMembers() {
+            const container = document.getElementById('board-grid-container');
+            if (!container) return;
+
+            try {
+                const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+                const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+                const res = await fetch(`${SUPABASE_REST_URL}/v_board_members_public?select=*`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+
+                if (res.ok) {
+                    const members = await res.json();
+                    if (Array.isArray(members) && members.length > 0) {
+                        const gradients = [
+                            'linear-gradient(135deg, #0f3c5c 0%, #ef4444 100%)',
+                            'linear-gradient(135deg, #0f3c5c 0%, #06b6d4 100%)',
+                            'linear-gradient(135deg, #064e3b 0%, #10b981 100%)',
+                            'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)',
+                            'linear-gradient(135deg, #831843 0%, #ec4899 100%)',
+                            'linear-gradient(135deg, #78350f 0%, #f59e0b 100%)',
+                            'linear-gradient(135deg, #4c1d95 0%, #8b5cf6 100%)'
+                        ];
+
+                        container.innerHTML = members.map((m, idx) => {
+                            const name = `${m.first_name || ''} ${m.last_name || ''}`.trim();
+                            const initials = `${(m.first_name || '').charAt(0)}${(m.last_name || '').charAt(0)}`.toUpperCase() || '??';
+                            const grad = gradients[idx % gradients.length];
+                            const avatarHtml = m.avatar_url 
+                                ? `<img src="${m.avatar_url}" alt="${name}" class="board-photo" loading="lazy">`
+                                : initials;
+                            const avatarStyle = m.avatar_url ? '' : `style="background: ${grad};"`;
+
+                            return `
+                                <div class="board-card glass-card">
+                                    <div class="board-avatar" ${avatarStyle}>${avatarHtml}</div>
+                                    <div class="board-info">
+                                        <h3>${name}</h3>
+                                        <span class="board-role">${m.role_title || 'Vorstandsmitglied'}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    }
+                }
+            } catch (err) {
+                console.warn('Vorstandsmitglieder konnten nicht dynamisch geladen werden (Fallback bleibt aktiv):', err);
+            }
+        })();
+    </script>
 
 
     <!-- Fullscreen Lightbox Modal (Flickr details) -->

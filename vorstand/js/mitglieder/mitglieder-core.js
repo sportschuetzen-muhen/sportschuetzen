@@ -63,6 +63,7 @@ function mapMemberFromSupabase(r) {
     BIC: r.bic,
     Kontoinhaber: r.kontoinhaber,
     synced_at: r.synced_at,
+    AvatarUrl: r.avatar_url,
     _istEhren: Boolean(r.is_honorary),
     _istPassiv: Boolean(r.is_passive),
     _istVorstand: false,

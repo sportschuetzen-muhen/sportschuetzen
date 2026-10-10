@@ -165,7 +165,7 @@ function mglOpenDetail(pn) {
       <div class="p-3 p-md-4 bg-light">
         <div class="mgl-profile-head">
           <div class="d-flex flex-wrap gap-3 align-items-center">
-            <div class="mgl-avatar">${initials}</div>
+            <div class="mgl-avatar" style="overflow:hidden; padding:0; display:flex; align-items:center; justify-content:center;">${m.AvatarUrl ? `<img src="${m.AvatarUrl}" alt="${m.FirstName || ''}" style="width:100%; height:100%; object-fit:cover;">` : initials}</div>
             <div class="flex-grow-1">
               <div class="mgl-profile-name">${m.FirstName || ''} ${m.LastName || ''}</div>
               <div class="mgl-profile-meta">
@@ -311,6 +311,35 @@ function mglOpenDetail(pn) {
 
             <form id="mglEditForm" onsubmit="mglSaveMember(event, '${pn}')">
               
+              <!-- Sektion: Porträtfoto (Website & Portal) -->
+              <div class="card border mb-3 shadow-xs rounded-3">
+                <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase d-flex justify-content-between align-items-center">
+                  <span><i class="fas fa-camera text-primary me-1"></i> Porträtfoto (Website & Portal)</span>
+                  <span class="badge bg-secondary-subtle text-secondary small">WebP / JPG • 600×600 px</span>
+                </div>
+                <div class="card-body p-3">
+                  <div class="d-flex align-items-center gap-3">
+                    <div id="mglAvatarPreviewBox" style="width: 70px; height: 70px; border-radius: 50%; overflow: hidden; background: #e2e8f0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                      ${m.AvatarUrl ? `<img id="mglAvatarPreviewImg" src="${m.AvatarUrl}" style="width:100%; height:100%; object-fit:cover;">` : `<span id="mglAvatarPreviewInitials" class="fw-bold text-muted">${initials}</span>`}
+                    </div>
+                    <div class="flex-grow-1">
+                      <input type="hidden" id="mglEditAvatarUrl" value="${escapeHtml(m.AvatarUrl || '')}">
+                      <div class="d-flex gap-2 mb-1 flex-wrap">
+                        <label class="btn btn-sm btn-outline-primary mb-0 cursor-pointer">
+                          <i class="fas fa-upload me-1"></i> Foto hochladen...
+                          <input type="file" id="mglAvatarFileInput" accept="image/*" style="display: none;" onchange="mglHandleAvatarUpload(event, '${pn}')">
+                        </label>
+                        ${m.AvatarUrl ? `
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="mglRemoveAvatar('${pn}')">
+                          <i class="fas fa-trash-alt me-1"></i> Foto entfernen
+                        </button>` : ''}
+                      </div>
+                      <div class="small text-muted" id="mglAvatarStatusText">Wird öffentlich auf der Vereinswebsite im Vorstandsbereich angezeigt (automatisch auf 600×600 px optimiert).</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Sektion: Zahlungsdaten & Rechnungen -->
               <div class="card border mb-3 shadow-xs rounded-3">
                 <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase">

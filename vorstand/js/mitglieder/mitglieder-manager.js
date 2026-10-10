@@ -51,6 +51,9 @@ async function mglSaveMember(event, pn) {
   const konto = (document.getElementById('mglEditKonto')?.value || '').trim();
   const rv = document.getElementById('mglEditRV')?.value || 'E-Mail';
   const nieMahnen = document.getElementById('mglEditMahnen')?.checked || false;
+  const avatarUrl = document.getElementById('mglEditAvatarUrl')
+    ? (document.getElementById('mglEditAvatarUrl').value.trim() || null)
+    : (oldMember.AvatarUrl || oldMember.avatar_url || null);
 
   if (!firstName || !lastName) {
     alert('Mitgliedsdaten unvollständig (Vorname/Nachname fehlt).');
@@ -81,6 +84,7 @@ async function mglSaveMember(event, pn) {
     club_entry_date: clubEntry || null,
     club_exit_date: austritt || null,
     remark: remark || null,
+    avatar_url: avatarUrl,
     iban: iban || null,
     bic: bic || null,
     kontoinhaber: konto || null,
@@ -119,6 +123,7 @@ async function mglSaveMember(event, pn) {
       if (oldMember.Remark !== remark) changesSummary.push(`Notiz aktualisiert`);
       if (oldMember.Street !== street || oldMember.City !== city) changesSummary.push(`Adresse geändert`);
       if (oldMember.PrimaryEmail !== email) changesSummary.push(`E-Mail geändert`);
+      if ((oldMember.AvatarUrl || null) !== (avatarUrl || null)) changesSummary.push('Profilfoto / Avatar aktualisiert');
 
       try {
         const { error: histErr } = await supa.from('member_history').insert({
@@ -158,6 +163,7 @@ async function mglSaveMember(event, pn) {
         ClubEntryDate: clubEntry,
         Vereinsaustritt: austritt,
         Remark: remark,
+        AvatarUrl: avatarUrl,
         IBAN: iban,
         BIC: bic,
         Kontoinhaber: konto,
@@ -348,3 +354,89 @@ function mglOpenEdit(pn) {
     document.querySelector('[href="#mglTabEdit"]')?.click();
   }, 700);
 }
+
+/**
+ * Komprimiert und lädt ein Profilfoto für ein Mitglied in Supabase Storage hoch.
+ */
+async function mglHandleAvatarUpload(event, pn) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById('mglAvatarStatusText');
+  const previewBox = document.getElementById('mglAvatarPreviewBox');
+  const hiddenInput = document.getElementById('mglEditAvatarUrl');
+
+  if (statusEl) statusEl.innerHTML = '<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Foto wird optimiert & hochgeladen...</span>';
+
+  try {
+    // 1. Bild laden und via Canvas auf max 600x600 px zentriert zuschneiden
+    const imgBitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    const size = 600;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const minSide = Math.min(imgBitmap.width, imgBitmap.height);
+    const startX = (imgBitmap.width - minSide) / 2;
+    const startY = (imgBitmap.height - minSide) / 2;
+
+    ctx.drawImage(imgBitmap, startX, startY, minSide, minSide, 0, 0, size, size);
+
+    // 2. In WebP Blob konvertieren (Qualität 82%)
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), 'image/webp', 0.82);
+    });
+
+    if (!blob) throw new Error('Bildkonvertierung fehlgeschlagen.');
+
+    // 3. Supabase Client & Upload in operatives-storage Bucket
+    const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
+    if (!supa) throw new Error('Supabase Client nicht verfügbar.');
+
+    const filePath = `avatars/member_${pn}.webp`;
+    const { error: uploadErr } = await supa.storage
+      .from('operatives-storage')
+      .upload(filePath, blob, {
+        contentType: 'image/webp',
+        upsert: true
+      });
+
+    if (uploadErr) throw uploadErr;
+
+    // 4. Öffentliche URL mit Cache-Buster setzen
+    const publicUrl = `https://supabase-muhen.danfamily.uk/storage/v1/object/public/operatives-storage/${filePath}?t=${Date.now()}`;
+
+    if (hiddenInput) hiddenInput.value = publicUrl;
+
+    if (previewBox) {
+      previewBox.innerHTML = `<img id="mglAvatarPreviewImg" src="${publicUrl}" style="width:100%; height:100%; object-fit:cover;">`;
+    }
+
+    if (statusEl) statusEl.innerHTML = '<span class="text-success fw-semibold"><i class="fas fa-check-circle me-1"></i> Foto hochgeladen! Klicke unten auf «Zahlungsdaten speichern».</span>';
+
+  } catch (err) {
+    console.error('Avatar-Upload-Fehler:', err);
+    if (statusEl) statusEl.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> Upload-Fehler: ${escapeHtml(err.message)}</span>`;
+  }
+}
+window.mglHandleAvatarUpload = mglHandleAvatarUpload;
+
+function mglRemoveAvatar(pn) {
+  const hiddenInput = document.getElementById('mglEditAvatarUrl');
+  const previewBox = document.getElementById('mglAvatarPreviewBox');
+  const statusEl = document.getElementById('mglAvatarStatusText');
+
+  if (hiddenInput) hiddenInput.value = '';
+
+  const m = _mglData.find(x => String(x.PersonNumber) === String(pn));
+  const initials = m ? `${(m.FirstName || '').charAt(0)}${(m.LastName || '').charAt(0)}`.trim() : '??';
+
+  if (previewBox) {
+    previewBox.innerHTML = `<span id="mglAvatarPreviewInitials" class="fw-bold text-muted">${initials}</span>`;
+  }
+
+  if (statusEl) statusEl.innerHTML = '<span class="text-warning"><i class="fas fa-info-circle me-1"></i> Foto entfernt. Klicke unten auf «Zahlungsdaten speichern», um die Änderung zu übernehmen.</span>';
+}
+window.mglRemoveAvatar = mglRemoveAvatar;
+

@@ -355,8 +355,8 @@ function mglRenderRows(data) {
                 <div class="card-body p-3 d-flex flex-column">
                   
                   <div class="d-flex align-items-center gap-2 mb-2">
-                    <div class="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0" style="width: 44px; height: 44px; background: linear-gradient(135deg, var(--primary) 0%, #1e4b7a 100%); font-size: 1rem;">
-                      ${initials}
+                    <div class="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0" style="width: 44px; height: 44px; background: linear-gradient(135deg, var(--primary) 0%, #1e4b7a 100%); font-size: 1rem; overflow: hidden;">
+                      ${m.AvatarUrl ? `<img src="${m.AvatarUrl}" alt="${name}" style="width:100%; height:100%; object-fit:cover;">` : initials}
                     </div>
                     <div class="overflow-hidden flex-grow-1">
                       <div class="fw-bold text-dark text-truncate" style="font-size: 0.95rem;" title="${name}">${name}</div>
