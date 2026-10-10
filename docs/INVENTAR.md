@@ -188,3 +188,9 @@ vorstand/js/inventar/
    - Dropdowns und Filter befüllen (`fillInventarDropdowns`)
    - Tabellen aufbauen (`renderJournalTables`)
    - Letzten aktiven Tab wiederherstellen (`showInventarSection`).
+
+### 5.2 Pfandausleihe & RechnungsCore-Integration
+- **Validierung bei Pfand-QR-Rechnung:** Wird bei einer Ausgabe («Checkout») die Zahlungsmethode «QR-Rechnung (Einzahlungsschein)» gewählt, verlangt das Frontend zwingend einen Pfandbetrag $> 0$. Ein stillschweigendes Überspringen bei Betrag 0 ist ausgeschlossen.
+- **Zentraler RechnungsCore (`DP` / `Depot / Pfand`):** Pfandrechnungen werden über `window.RechnungsCore.createInvoice(invoiceOrder)` mit Typ `Depot / Pfand`, Buchungskonto `2030` (Kautionen / Depots) und Präfix `DP` angelegt und verbleiben für den gebündelten Vorstand-Massenversand in `mail_status: 'entwurf'`.
+- **PDF-Synchronisation (Richtlinie 6):** Die PDF-Generierung wird über `RechnungsCore.renderPdf(invoiceId, { forceRecreate: true })` angestossen und im Supabase Storage hinterlegt. Bei Fehlern wird ein klarer UI-Fehler geworfen (keine stillen Fallbacks).
+

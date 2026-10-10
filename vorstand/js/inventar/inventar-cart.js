@@ -45,6 +45,30 @@ function warenkorbAdd() {
         }
     }
 
+        if (action === 'verkauf' && pfand <= 0) {
+            alert("⚠️ Für einen Verkauf muss ein gültiger Verkaufspreis grösser als CHF 0.00 eingegeben werden.");
+            const pInput = document.getElementById('pfand-betrag');
+            if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
+            return;
+        }
+
+        if (action === 'checkout') {
+            if (pfandEin === 'Einzahlungsschein' && pfand <= 0) {
+                alert("⚠️ Für eine Pfandrechnung (Einzahlungsschein) muss ein Pfandbetrag grösser als CHF 0.00 eingegeben werden.");
+                const pInput = document.getElementById('pfand-betrag');
+                if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
+                return;
+            }
+            if ((pfandEin === 'Bar' || pfandEin === 'Twint') && pfand <= 0) {
+                alert(`⚠️ Für die Pfandeinnahme (${pfandEin}) muss ein Pfandbetrag grösser als CHF 0.00 eingegeben werden (oder 'Nein' wählen).`);
+                const pInput = document.getElementById('pfand-betrag');
+                if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
+                return;
+            }
+        }
+        const pInput = document.getElementById('pfand-betrag');
+        if (pInput) pInput.classList.remove('is-invalid');
+
         const verkaufMethode = document.getElementById('verkauf-methode') ? document.getElementById('verkauf-methode').value : null;
         const pfandMethode = action === 'checkout' ? (pfandEin === 'Nein' ? '-' : pfandEin) : (action === 'checkin' ? pfandRet : null);
 
@@ -497,53 +521,12 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const totalAmount = createdInv.total_amount;
             const positions = createdInv.positions || [];
 
-            // 1. Rechnungs-PDF via Supabase PDF-Engine erzeugen & im Storage sichern
-            let pdfUrl = null;
-            let pdfStoragePath = null;
-            let pdfBase64 = null;
-            if (typeof window.generatePdfViaEngine === 'function') {
+            // 1. Rechnungs-PDF via RechnungsCore.renderPdf (Richtlinie 6)
+            if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
                 try {
-                    let pdfRes = await window.generatePdfViaEngine({
-                        action: 'generate-invoice',
-                        invoiceId: invoiceId,
-                        recipient: {
-                            ...(createdInv.recipient_address || {}),
-                            ...(invoiceOrder.recipient || {})
-                        },
-                        sender: createdInv.sender_address || invoiceOrder.sender,
-                        positions: positions,
-                        totalAmount: totalAmount,
-                        year: new Date().getFullYear(),
-                        type: 'Materialverkauf'
-                    });
-                    if (!pdfRes || !pdfRes.success) {
-                        if (typeof window.generatePdfClientFallback === 'function') {
-                            pdfRes = await window.generatePdfClientFallback({
-                                invoiceId: invoiceId,
-                                recipient: invoiceOrder.recipient,
-                                positions: positions,
-                                totalAmount: totalAmount,
-                                year: new Date().getFullYear(),
-                                type: 'Materialverkauf'
-                            });
-                        }
-                    }
-                    if (pdfRes && (pdfRes.pdfUrl || pdfRes.storagePath || pdfRes.pdfBase64)) {
-                        pdfUrl = pdfRes.pdfUrl || null;
-                        pdfStoragePath = pdfRes.storagePath || null;
-                        pdfBase64 = pdfRes.pdfBase64 || null;
-
-                        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-                        if (supa) {
-                            await supa.from('invoices').update({
-                                pdf_url: pdfUrl,
-                                pdf_storage_path: pdfStoragePath,
-                                updated_at: new Date().toISOString()
-                            }).eq('id', invoiceId);
-                        }
-                    }
+                    await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
                 } catch (pdfErr) {
-                    console.warn("⚠️ PDF-Generierung fehlgeschlagen:", pdfErr);
+                    console.warn("⚠️ [Inventar->RechnungsCore] PDF-Generierung fehlgeschlagen:", pdfErr);
                 }
             }
 
@@ -601,7 +584,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             }
         }
     } catch (err) {
-        console.error("Fehler in der Verkaufs-Nachbereitung:", err);
+        console.error("❌ Fehler in der Verkaufs-Nachbereitung:", err);
+        throw new Error(`Fehler bei der Verkaufs-Rechnungserstellung: ${err.message}`);
     }
 }
 
@@ -777,53 +761,12 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         const totalAmount = createdInv.total_amount;
         const positions = createdInv.positions || [];
 
-        // 1. Rechnungs-PDF via Supabase PDF-Engine erzeugen
-        let pdfUrl = null;
-        let pdfStoragePath = null;
-        let pdfBase64 = null;
-        if (typeof window.generatePdfViaEngine === 'function') {
+        // 1. Rechnungs-PDF via RechnungsCore.renderPdf (Richtlinie 6)
+        if (window.RechnungsCore && typeof window.RechnungsCore.renderPdf === 'function') {
             try {
-                let pdfRes = await window.generatePdfViaEngine({
-                    action: 'generate-invoice',
-                    invoiceId: invoiceId,
-                    recipient: {
-                        ...(createdInv.recipient_address || {}),
-                        ...(invoiceOrder.recipient || {})
-                    },
-                    sender: createdInv.sender_address || invoiceOrder.sender,
-                    positions: positions,
-                    totalAmount: totalAmount,
-                    year: new Date().getFullYear(),
-                    type: 'Depot / Pfand'
-                });
-                if (!pdfRes || !pdfRes.success) {
-                    if (typeof window.generatePdfClientFallback === 'function') {
-                        pdfRes = await window.generatePdfClientFallback({
-                            invoiceId: invoiceId,
-                            recipient: invoiceOrder.recipient,
-                            positions: positions,
-                            totalAmount: totalAmount,
-                            year: new Date().getFullYear(),
-                            type: 'Depot / Pfand'
-                        });
-                    }
-                }
-                if (pdfRes && (pdfRes.pdfUrl || pdfRes.storagePath || pdfRes.pdfBase64)) {
-                    pdfUrl = pdfRes.pdfUrl || null;
-                    pdfStoragePath = pdfRes.storagePath || null;
-                    pdfBase64 = pdfRes.pdfBase64 || null;
-
-                    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-                    if (supa) {
-                        await supa.from('invoices').update({
-                            pdf_url: pdfUrl,
-                            pdf_storage_path: pdfStoragePath,
-                            updated_at: new Date().toISOString()
-                        }).eq('id', invoiceId);
-                    }
-                }
+                await window.RechnungsCore.renderPdf(invoiceId, { forceRecreate: true });
             } catch (pdfErr) {
-                console.warn("⚠️ PDF-Generierung fehlgeschlagen:", pdfErr);
+                console.warn("⚠️ [Inventar->RechnungsCore] PDF-Generierung fehlgeschlagen:", pdfErr);
             }
         }
 
@@ -837,8 +780,8 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
 
         return { success: true, invoiceId: invoiceId, totalAmount: totalAmount };
     } catch (err) {
-        console.error("Fehler in verarbeitePfandRechnungen:", err);
-        return null;
+        console.error("❌ Fehler in verarbeitePfandRechnungen:", err);
+        throw new Error(`Fehler bei der Pfand-Rechnungserstellung: ${err.message}`);
     }
 }
 

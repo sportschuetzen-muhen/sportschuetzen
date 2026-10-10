@@ -104,11 +104,11 @@ function renderInventarUI(container) {
                                 </div>
                                 <div class="col-6" id="container-pfand-einnahme">
                                     <label class="form-label fw-bold small">Pfand Einnahme</label>
-                                    <select id="pfand-einnahme" class="form-select">
-                                        <option value="Bar" selected>Ja – Bar (Pfand-Kasse)</option>
+                                    <select id="pfand-einnahme" class="form-select" onchange="onPfandEinnahmeChange(this.value)">
+                                        <option value="Einzahlungsschein" selected>Ja – QR-Rechnung (Einzahlungsschein)</option>
+                                        <option value="Bar">Ja – Bar (Pfand-Kasse)</option>
                                         <option value="Twint">Ja – Twint</option>
-                                        <option value="Einzahlungsschein">Ja – QR-Rechnung (Einzahlungsschein)</option>
-                                        <option value="Nein">Nein (noch nicht bezahlt)</option>
+                                        <option value="Nein">Nein (kein Pfand / nicht bezahlt)</option>
                                     </select>
                                 </div>
                                 <div class="col-6 d-none" id="container-pfand-retour">
@@ -694,6 +694,9 @@ function onGegenstandSelect() {
                     return;
                 }
             }
+            document.getElementById('pfand-betrag').value = '';
+            document.getElementById('pfand-betrag').placeholder = 'Pfandbetrag z.B. 50.00';
+            return;
         } else if (action === 'checkin') {
             // 3. Rückgabe: Nachschlagen, ob ein offenes Pfand für dieses Mitglied & Item existiert
             const mitgliedId = document.getElementById('select-mitglied').value;
@@ -727,6 +730,20 @@ function onGegenstandSelect() {
     }
     document.getElementById('pfand-betrag').value = '';
 }
+
+function onPfandEinnahmeChange(val) {
+    const pInput = document.getElementById('pfand-betrag');
+    if (!pInput) return;
+    if (val === 'Nein') {
+        pInput.classList.remove('is-invalid');
+    } else {
+        if (!pInput.value || parseFloat(pInput.value) <= 0) {
+            pInput.placeholder = 'Pfandbetrag z.B. 50.00';
+            pInput.focus();
+        }
+    }
+}
+window.onPfandEinnahmeChange = onPfandEinnahmeChange;
 
 function showJournalConfirmationAlert(message) {
     const journalSection = document.getElementById('inv-section-journal');
