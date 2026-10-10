@@ -3270,13 +3270,17 @@ Deno.serve(async (req: Request) => {
       if (typeof parsedSenderAddress === "string") {
         try { parsedSenderAddress = JSON.parse(parsedSenderAddress); } catch (_) {}
       }
-      const sender = {
-        ...(parsedSenderAddress || {}),
-        ...(payload.sender || {}),
-      };
-      if (!sender.funktion) sender.funktion = parsedSenderAddress?.funktion || "Kassier";
-      if (!sender.email) sender.email = parsedSenderAddress?.email || CLUB_EMAIL;
+      const hasCustomSender = Boolean(payload.sender && (payload.sender.personNumber || payload.sender.vorname || payload.sender.email));
+      const sender = hasCustomSender
+        ? { ...(payload.sender || {}) }
+        : {
+            ...(parsedSenderAddress || {}),
+            ...(payload.sender || {}),
+          };
+      if (!sender.funktion) sender.funktion = payload.sender?.funktion || parsedSenderAddress?.funktion || "Kassier";
+      if (!sender.email) sender.email = payload.sender?.email || parsedSenderAddress?.email || CLUB_EMAIL;
       if (!sender.verein) sender.verein = CLUB_NAME;
+      sender.name = sender.name || [sender.vorname, sender.nachname].filter(Boolean).join(" ");
 
       // Automatisches Nachladen aus admin_profiles & members bei unvollständigem Absender
       if ((!sender.vorname || !sender.strasse) && supabase) {
@@ -3565,14 +3569,14 @@ Deno.serve(async (req: Request) => {
       console.warn("⚠️ Storage-Upload Warnung:", uploadErr);
     }
 
-    // WORM-Archivierung: Kopie im unveränderlichen Revisions-Archiv ablegen
+    // WORM-Archivierung: Kopie im unveränderlichen Revisions-Archiv ablegen (bei forceRecreate überschreiben)
     if (payload.saveToStorage !== false && recordId) {
       try {
         await supabase.storage
           .from(storageBucket)
           .upload(archivePath, pdfBytes, {
             contentType: "application/pdf",
-            upsert: false,
+            upsert: Boolean(payload.forceRecreate),
           });
       } catch (_) {}
     }

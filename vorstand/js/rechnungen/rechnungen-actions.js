@@ -354,6 +354,11 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
 
   window._rnmDefaultSubject = defaultSubject;
   window._rnmDefaultBody = defaultBody;
+  window._rnmRawSubject = rawSubject;
+  window._rnmRawBody = rawBody;
+  window._rnmCurrentRecipient = recipient;
+  window._rnmBodyUserModified = false;
+  window._rnmSubjectUserModified = false;
 
   let modalEl = document.getElementById('rnModalSendInvoiceMail');
   if (modalEl) modalEl.remove();
@@ -553,6 +558,11 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
   rnPopulateSenderSelect('rnm-sender-select', initialSenderPN, true);
   rnOnMailSenderChanged(inv.id);
 
+  const subjEl = document.getElementById('rnm-subject');
+  if (subjEl) {
+    subjEl.addEventListener('input', () => { window._rnmSubjectUserModified = true; });
+  }
+
   if (window.ClubWysiwyg) {
     const mbEl = document.getElementById('rnm-mail-body');
     if (mbEl) {
@@ -561,6 +571,7 @@ window.rnOpenSendMailModal = async function(invoiceId, name) {
         minHeight: '220px',
         placeholder: 'E-Mail Nachrichtentext bearbeiten...',
         onChange: () => {
+          window._rnmBodyUserModified = true;
           if (document.getElementById('rnm-pane-prev') && !document.getElementById('rnm-pane-prev').classList.contains('d-none')) {
             window.rnmSwitchTab('prev');
           }
@@ -684,7 +695,9 @@ window.rnExecuteSendMail = async function(invoiceId) {
 
   const senderPn = document.getElementById('rnm-sender-select')?.value;
   let sender = null;
-  if (senderPn) {
+  if (window._rnmCurrentSender && String(window._rnmCurrentSender.personNumber) === String(senderPn)) {
+    sender = Object.assign({}, window._rnmCurrentSender);
+  } else if (senderPn) {
     sender = (window.RechnungsCore && typeof window.RechnungsCore.resolveSender === 'function')
       ? await window.RechnungsCore.resolveSender({ personNumber: senderPn }, inv.type)
       : null;
@@ -693,6 +706,9 @@ window.rnExecuteSendMail = async function(invoiceId) {
     sender = (inv.sender_address && Object.keys(inv.sender_address).length > 0)
       ? inv.sender_address
       : ((typeof rnGetLoggedInSender === 'function') ? rnGetLoggedInSender(inv.type || 'Jahresbeitrag') : null);
+  }
+  if (sender) {
+    sender.name = sender.name || [sender.vorname, sender.nachname].filter(Boolean).join(' ') || sender.verein || 'Sportschützen Muhen';
   }
 
   const baseLayout = (window._invoiceLayouts && window._invoiceLayouts[inv.type]) || {};
@@ -721,30 +737,27 @@ window.rnExecuteSendMail = async function(invoiceId) {
     let pdfStoragePath = null;
     let pdfBase64 = null;
 
-    // Wenn Absender im Dropdown geändert wurde: DB-Snapshot aktualisieren
-    const oldSender = inv.sender_address || {};
-    const senderChanged = Boolean(sender && (
-      (sender.personNumber && oldSender.personNumber && String(sender.personNumber).trim() !== String(oldSender.personNumber).trim()) ||
-      (sender.email && oldSender.email && String(sender.email).trim().toLowerCase() !== String(oldSender.email).trim().toLowerCase())
-    ));
-
-    if (senderChanged || (!inv.sender_address || Object.keys(inv.sender_address).length === 0)) {
+    // Wenn Absender gewählt ist: DB-Snapshot in invoices zwingend aktualisieren
+    if (sender) {
       inv.sender_address = sender;
       const supa = (typeof getRechnungenSupabaseClient === 'function') ? getRechnungenSupabaseClient() : null;
       if (supa) {
         try {
-          await supa.from('invoices').update({
+          const { error: upErr } = await supa.from('invoices').update({
             sender_address: sender,
             updated_at: new Date().toISOString()
           }).eq('id', invoiceId);
+          if (upErr) {
+            console.warn("⚠️ Fehler beim Aktualisieren von sender_address in invoices:", upErr);
+          }
         } catch (dbErr) {
-          console.warn("⚠️ Fehler beim Aktualisieren von sender_address in invoices:", dbErr);
+          console.warn("⚠️ Exception beim Aktualisieren von sender_address in invoices:", dbErr);
         }
       }
     }
 
-    // 1. PDF sicherstellen (oder bei geändertem Absender zwingend neu generieren)
-    if ((!pdfUrl || senderChanged) && typeof window.generatePdfViaEngine === 'function') {
+    // 1. PDF sicherstellen (mit aktuellem Absender neu generieren mit forceRecreate)
+    if (typeof window.generatePdfViaEngine === 'function') {
       try {
         const pdfRes = await window.generatePdfViaEngine({
           action: 'generate-invoice',
@@ -754,7 +767,8 @@ window.rnExecuteSendMail = async function(invoiceId) {
           layout: customLayout,
           totalAmount: inv.total_amount,
           year: inv.year || new Date().getFullYear(),
-          type: inv.type || 'Rechnung'
+          type: inv.type || 'Rechnung',
+          forceRecreate: true
         });
         if (pdfRes && pdfRes.success) {
           pdfUrl = pdfRes.pdfUrl || '';
@@ -825,7 +839,7 @@ window.rnExecuteSendMail = async function(invoiceId) {
       subject: customLayout.mail_subject || `Rechnung ${invoiceId} | Sportschützen Muhen`,
       html: emailHtml,
       text: plainTextFallback,
-      senderName: sender?.name || 'Sportschützen Muhen',
+      senderName: sender?.name || [sender?.vorname, sender?.nachname].filter(Boolean).join(' ') || 'Sportschützen Muhen',
       senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
       attachments: attachments,
       moduleRef: 'rechnung',
@@ -1262,7 +1276,12 @@ window.rnPopulateSenderSelect = function(selectElId, selectedPN = null, onlyVors
   const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
   const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
   const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
-  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+  const loggedInEmail = String(
+    localStorage.getItem('portal_mailadresse') ||
+    localStorage.getItem('portal_user_email') ||
+    localStorage.getItem('portal_email') ||
+    ''
+  ).trim();
 
   // Falls eingeloggter Benutzer nicht in activeMembers vorkommt (z.B. Admin ohne SSV-Mitgliedsnummer)
   if (loggedInUser && !activeMembers.some(m => (loggedInPN && String(m.PersonNumber) === loggedInPN) || `${m.LastName || ''} ${m.FirstName || ''}`.trim().toLowerCase() === loggedInUser.toLowerCase())) {
@@ -1414,7 +1433,12 @@ window.rnOnMailSenderChanged = function(invoiceId) {
   const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
   const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
   const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
-  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+  const loggedInEmail = String(
+    localStorage.getItem('portal_mailadresse') ||
+    localStorage.getItem('portal_user_email') ||
+    localStorage.getItem('portal_email') ||
+    ''
+  ).trim();
   const loggedInStrasse = String(localStorage.getItem('portal_strasse') || '').trim();
   const loggedInPlz = String(localStorage.getItem('portal_plz') || '').trim();
   const loggedInOrt = String(localStorage.getItem('portal_ort') || '').trim();
@@ -1478,6 +1502,41 @@ window.rnOnMailSenderChanged = function(invoiceId) {
     ort: senderOrt,
     telefon: senderPhone
   };
+
+  // Signatur & Absender im E-Mail-Nachrichtentext aktualisieren, sofern nicht manuell editiert
+  if (window._rnmRawBody && !window._rnmBodyUserModified) {
+    const inv = (window._invoices || []).find(i => String(i.id).trim() === String(invoiceId).trim());
+    if (inv) {
+      const replacer = typeof window.rnReplaceMailPlaceholders === 'function' ? window.rnReplaceMailPlaceholders : (s => s);
+      const cleanSubjNum = String(inv.id || '').replace(/^RE[-_]?/i, '') || String(inv.id || '');
+      const rawSubj = window._rnmRawSubject || `Rechnung ${cleanSubjNum} – ${inv.type || 'Rechnung'} | Sportschützen Muhen`;
+      const updatedSubj = replacer(rawSubj, { invoice: inv, recipient: window._rnmCurrentRecipient || {}, sender: window._rnmCurrentSender })
+        .replace(new RegExp('Rechnung\\s+' + String(inv.id || '').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), 'Rechnung ' + cleanSubjNum)
+        .replace(/Rechnung\s+RE[-_]/gi, 'Rechnung ')
+        .replace(/\bRE-(\d)/gi, '$1');
+      const updatedBody = replacer(window._rnmRawBody, { invoice: inv, recipient: window._rnmCurrentRecipient || {}, sender: window._rnmCurrentSender });
+
+      const subjInput = document.getElementById('rnm-subject');
+      if (subjInput && !window._rnmSubjectUserModified) {
+        subjInput.value = updatedSubj;
+        const prevSubj = document.getElementById('rnm-preview-subject');
+        if (prevSubj) prevSubj.textContent = updatedSubj;
+      }
+
+      const mailBodyEl = document.getElementById('rnm-mail-body');
+      if (mailBodyEl) {
+        if (mailBodyEl._clubWysiwygInstance) {
+          mailBodyEl._clubWysiwygInstance.setHtml(updatedBody);
+        } else {
+          mailBodyEl.value = updatedBody;
+        }
+      }
+      const prevContent = document.getElementById('rnm-preview-body-content');
+      if (prevContent && !document.getElementById('rnm-pane-prev')?.classList.contains('d-none')) {
+        window.rnmSwitchTab('prev');
+      }
+    }
+  }
 };
 
 window.rnOnMahnungSenderChanged = function(invoiceId) {
