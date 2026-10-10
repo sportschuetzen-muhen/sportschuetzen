@@ -130,6 +130,7 @@ Aufbau einer zentralen, robusten Dokumenten- und Kommunikations-Engine für den 
       `Sportschützen Muhen (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen · www.sportschuetzen-muhen.ch · sportschuetzen.muhen@gmail.com`
   - **Swiss QR-Bill Integration:**
     - Auf den unteren 105 mm der A4-Seite (SIX SPC 0200 1 konform) oder als separate QR-Beilage per `pdf-lib` Merge.
+    - *Spezifikations-Garantie:* Zwingende UTF-8 Enkodierung (`qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"]`) für deutsche Umlaute im Vereinskopf sowie automatische ISO 3166-1 alpha-2 Ländercode-Normalisierung (`CH`) für Creditor- und Debitor-Adressfelder.
 - **E-Mail (Shell & Corporate Footer via `renderClubEmailHtml`):**
   - Höfliche Information mit Fälligkeitsdatum, Betrag in CHF, Verweis auf das angehängte Original-PDF.
   - Der Textkörper (`contentHtml`) enthält die vollständige Grussformel und Absendersignatur. Keine nachgelagerten doppelten Infoboxen oder redundanten `senderInfo`-Blöcke.

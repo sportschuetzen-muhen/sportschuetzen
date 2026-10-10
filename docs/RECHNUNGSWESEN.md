@@ -51,6 +51,7 @@ Das Rechnungswesen bildet das zentrale kaufmännische Nervenzentrum des Vereins 
     Zeile 2: Optionale Abteilung / Zusatz.  
     Zeile 3: Ansprechperson mit Anrede (`Herr`/`Frau` Vorname Nachname im normalen Schriftgewicht).
   - **Sicherheitsnetz:** Bei `typ === 'privat'` darf niemals der Personenname in das Feld `firma` geschrieben werden.
+  - **Ländercode & Zeichenkodierung (SIX SPC 0200 1 Validierung):** Im Schweizer QR-Payload (Zeile 11 Creditor & Zeile 27 Ultimate Debtor) ist zwingend ein 2-stelliger ISO 3166-1 alpha-2 Ländercode (`CH`, `LI`, `DE` etc.) vorgeschrieben; Freitexte wie `Schweiz` werden durch `normalizeCountryCode()` automatisch zu `CH` normalisiert. Zudem erfordert `CodingType: "1"` eine strikte UTF-8-Bytekodierung (`qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"]`), damit Umlaute in Vereins- und Personennamen von Beleglesern und E-Banking-Scannern fehlerfrei verarbeitet werden.
 
 ### 2.6 Warum 2-stufige Absender-Ermittlung mit unveränderlichem JSONB-Snapshot?
 * **Problem:** Wechselt im Verein der Kassier oder der Präsident, dürfen historische Rechnungen aus den Vorjahren nicht plötzlich den Namen des neuen Amtsinhabers tragen.

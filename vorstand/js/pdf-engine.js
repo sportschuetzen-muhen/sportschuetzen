@@ -29,6 +29,20 @@
     const CLUB_EMAIL = 'sportschuetzen.muhen@gmail.com';
     const CLUB_WEBSITE = 'www.sportschuetzen-muhen.ch';
 
+    // Hilfsfunktion: Wandelt Ländereingaben in normierte 2-stellige ISO 3166-1 alpha-2 Codes um (SIX-Pflicht)
+    function normalizeCountryCode(country) {
+        if (!country) return "CH";
+        const c = String(country).trim().toUpperCase();
+        if (c === "CH" || c === "SCHWEIZ" || c === "SWITZERLAND" || c === "SUISSE" || c === "SVIZZERA") return "CH";
+        if (c === "LI" || c === "LIECHTENSTEIN" || c === "FL") return "LI";
+        if (c === "DE" || c === "DEUTSCHLAND" || c === "GERMANY") return "DE";
+        if (c === "AT" || c === "ÖSTERREICH" || c === "OESTERREICH" || c === "AUSTRIA") return "AT";
+        if (c === "FR" || c === "FRANKREICH" || c === "FRANCE") return "FR";
+        if (c === "IT" || c === "ITALIEN" || c === "ITALY") return "IT";
+        if (/^[A-Z]{2}$/.test(c)) return c;
+        return "CH";
+    }
+
     /**
      * Erzeugt den standardisierten Schweizer QR-Rechnungstext nach SIX SPC 0200 1
      */
@@ -49,7 +63,7 @@
         // Strasse und Hausnummer aufteilen
         const strasse = (recipient.strasse || '').trim();
         const parts = strasse.split(/\s+(?=\d)/);
-        const streetName = (parts[0] || '–').substring(0, 70);
+        const streetName = (parts[0] || '').substring(0, 70);
         const houseNumber = (parts.slice(1).join(' ') || '').substring(0, 16);
 
         const totalAmount = Number(invoice.total_amount || invoice.amount || 0);
@@ -78,7 +92,7 @@
             streetName, houseNumber,
             (recipient.plz || CLUB_ZIP).substring(0, 16),
             (recipient.ort || CLUB_CITY).substring(0, 35),
-            recipient.land || "CH",
+            normalizeCountryCode(recipient.land || recipient.country),
             refType, refValue,
             qrRefText,
             "EPD"

@@ -262,13 +262,27 @@ function normalizeRecipient(r: any): RecipientData {
   };
 }
 
+// Hilfsfunktion: Wandelt Ländereingaben in normierte 2-stellige ISO 3166-1 alpha-2 Codes um (SIX-Pflicht)
+function normalizeCountryCode(country: string | null | undefined): string {
+  if (!country) return "CH";
+  const c = country.trim().toUpperCase();
+  if (c === "CH" || c === "SCHWEIZ" || c === "SWITZERLAND" || c === "SUISSE" || c === "SVIZZERA") return "CH";
+  if (c === "LI" || c === "LIECHTENSTEIN" || c === "FL") return "LI";
+  if (c === "DE" || c === "DEUTSCHLAND" || c === "GERMANY") return "DE";
+  if (c === "AT" || c === "ÖSTERREICH" || c === "OESTERREICH" || c === "AUSTRIA") return "AT";
+  if (c === "FR" || c === "FRANKREICH" || c === "FRANCE") return "FR";
+  if (c === "IT" || c === "ITALIEN" || c === "ITALY") return "IT";
+  if (/^[A-Z]{2}$/.test(c)) return c;
+  return "CH";
+}
+
 // Hilfsfunktion: Strasse und Hausnummer trennen
 function splitStreetAndNumber(strasse: string): { streetName: string; houseNumber: string } {
-  if (!strasse) return { streetName: "–", houseNumber: "" };
+  if (!strasse) return { streetName: "", houseNumber: "" };
   const parts = strasse.trim().split(/\s+(?=\d)/);
   return {
-    streetName: parts[0] || strasse.trim(),
-    houseNumber: parts.slice(1).join(" ") || " ",
+    streetName: (parts[0] || strasse.trim()).substring(0, 70),
+    houseNumber: (parts.slice(1).join(" ") || "").substring(0, 16),
   };
 }
 
@@ -307,7 +321,7 @@ function createSwissQrBillString(
     cleanIban,
     "S",
     CLUB_NAME,
-    "",
+    CLUB_STREET,
     "",
     CLUB_ZIP,
     CLUB_CITY,
@@ -324,13 +338,13 @@ function createSwissQrBillString(
     "S",
     debtorName || "Debitor",
     streetName,
-    houseNumber || " ",
-    recipient.plz || CLUB_ZIP,
-    recipient.ort || CLUB_CITY,
-    recipient.land || "CH",
+    houseNumber,
+    (recipient.plz || CLUB_ZIP).substring(0, 16),
+    (recipient.ort || CLUB_CITY).substring(0, 35),
+    normalizeCountryCode(recipient.land),
     "NON",
     "",
-    qrRefText,
+    qrRefText.substring(0, 140),
     "EPD",
   ].join("\n");
 }
@@ -344,6 +358,11 @@ function drawSwissQrCodeVector(
   sizeMm: number = 46
 ) {
   const sizePt = sizeMm * MM;
+
+  // UTF-8 Encoding für SIX SPC 0200 1 sicherstellen (CodingType 1 = UTF-8)
+  if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs["UTF-8"]) {
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+  }
 
   // QR-Code Matrix mit Level M (erforderlich für 7x7mm Logo-Überdeckung)
   const qr = qrcode(0, "M");
