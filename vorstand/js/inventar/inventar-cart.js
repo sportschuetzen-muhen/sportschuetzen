@@ -432,15 +432,50 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     email: memberEmail
                 },
                 type: 'Materialverkauf',
-                positions: invoiceItems.map((w, index) => ({
-                    positionNr: index + 1,
-                    title: `Kleiderverkauf: ${w.label}`,
-                    quantity: 1,
-                    unitPrice: parseFloat(w.pfandBetrag) || 0,
-                    amount: parseFloat(w.pfandBetrag) || 0,
-                    accountHaben: customKontoHaben,
-                    sourceField: String(w.itemId)
-                })),
+                positions: (() => {
+                    const orderPositions = [];
+                    let posNr = 1;
+                    invoiceItems.forEach(w => {
+                        const invItem = (inventarState.kleidung || []).find(k => String(k.ID) === String(w.itemId)) || {};
+                        const endBetrag = parseFloat(w.pfandBetrag) || 0;
+                        const retailPrice = invItem.retail_price ? Math.ceil(parseFloat(invItem.retail_price)) : (invItem.Katalogpreis ? Math.ceil(parseFloat(invItem.Katalogpreis)) : null);
+                        const sponsorDiscount = invItem.discount_amount ? Math.round(parseFloat(invItem.discount_amount)) : (invItem.Sponsoring ? Math.round(parseFloat(invItem.Sponsoring)) : null);
+
+                        if (retailPrice && sponsorDiscount && (retailPrice - sponsorDiscount === Math.round(endBetrag))) {
+                            // Variante A: Regulärer Katalogpreis + Sponsoring-Abzug C-Ma Trading GmbH
+                            orderPositions.push({
+                                positionNr: posNr++,
+                                title: `${w.label}`,
+                                quantity: 1,
+                                unitPrice: retailPrice,
+                                amount: retailPrice,
+                                accountHaben: customKontoHaben,
+                                sourceField: String(w.itemId)
+                            });
+                            orderPositions.push({
+                                positionNr: posNr++,
+                                title: `Sponsoringbeitrag C-Ma Trading GmbH`,
+                                quantity: 1,
+                                unitPrice: -sponsorDiscount,
+                                amount: -sponsorDiscount,
+                                accountHaben: customKontoHaben,
+                                sourceField: String(w.itemId)
+                            });
+                        } else {
+                            // Standardposition
+                            orderPositions.push({
+                                positionNr: posNr++,
+                                title: `Kleiderverkauf: ${w.label}`,
+                                quantity: 1,
+                                unitPrice: endBetrag,
+                                amount: endBetrag,
+                                accountHaben: customKontoHaben,
+                                sourceField: String(w.itemId)
+                            });
+                        }
+                    });
+                    return orderPositions;
+                })(),
                 notes: `Materialverkauf über Vereinsinventar (${invoiceItems.length} Positionen)`,
                 sender: {
                     bereich: 'Materialverkauf',

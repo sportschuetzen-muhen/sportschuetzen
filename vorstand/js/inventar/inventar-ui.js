@@ -211,16 +211,21 @@ function renderInventarUI(container) {
         <!-- SECTION: BESTAND -->
         <div id="inv-section-liste" class="inv-section d-none">
             <div class="card border-0 shadow-sm p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h4>Bestandsliste</h4>
-                    <select id="filter-liste" class="form-select w-auto"
-                            onchange="renderInventoryTable()">
-                        <option value="Inventar_Gewehre">Gewehre</option>
-                        <option value="Inventar_Schluessel">Schlüssel</option>
-                        <option value="Inventar_Kleidung" selected>Kleidung</option>
-                        <option value="Inventar_Schiessbekleidung">Schiessbekleidung</option>
-                        <option value="Personendaten">Mitglieder</option>
-                    </select>
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h4 class="mb-0">Bestandsliste</h4>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select id="filter-liste" class="form-select w-auto"
+                                onchange="renderInventoryTable()">
+                            <option value="Inventar_Gewehre">Gewehre</option>
+                            <option value="Inventar_Schluessel">Schlüssel</option>
+                            <option value="Inventar_Kleidung" selected>Kleidung</option>
+                            <option value="Inventar_Schiessbekleidung">Schiessbekleidung</option>
+                            <option value="Personendaten">Mitglieder</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm" onclick="openInventarExcelImportModal()" title="Inventargegenstände aus Excel oder CSV importieren">
+                            <i class="fas fa-file-excel me-1"></i> Excel / CSV Import
+                        </button>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover table-sm align-middle"
@@ -670,8 +675,8 @@ function onGegenstandSelect() {
     
     if (item) {
         if (action === 'verkauf') {
-            // 1. Verkauf: Kaufpreis / Verkaufspreis vorblenden
-            let preisRaw = item.Kaufpreis || item.Preis || item.kaufpreis || item.Verkaufspreis || 0;
+            // 1. Verkauf: Verkaufspreis (Mitgliederpreis) vorblenden, sonst Kaufpreis
+            let preisRaw = item.Verkaufspreis || item.selling_price || item.Kaufpreis || item.Preis || item.kaufpreis || 0;
             if (preisRaw && preisRaw !== "") {
                 const preis = parseFloat(preisRaw.toString().replace("'", "").replace("CHF", "").trim());
                 if (!isNaN(preis) && preis > 0) {

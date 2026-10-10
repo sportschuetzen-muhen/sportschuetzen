@@ -43,11 +43,13 @@ Das Modul **Inventar-Verwaltung** bildet das operative Herzstück für den Mater
 
 ### 2.3 Warum Anbindung an `RechnungsCore` und doppelte Buchhaltung?
 * **Keine Schattenbuchhaltung:** Wenn ein Mitglied Schiesskleidung oder Munition bezieht, darf dies nicht in einem isolierten Inventar-Silo verbleiben.
-* **Materialverkauf auf Rechnung:** Erzeugt via `RechnungsCore.createInvoice(order)` sofort eine rechtskonforme DIN 5008 / SIX Swiss QR Rechnung:
-  - `source_module: 'inventar'`
-  - `type: 'Materialverkauf'` bzw. `'Depot / Pfand'`
-  - Verknüpfung über `source_id: itemId`
+  - **Materialverkauf auf Rechnung (Variante A mit Sponsoring):** Erzeugt via `RechnungsCore.createInvoice(order)` sofort eine rechtskonforme DIN 5008 / SIX Swiss QR Rechnung:
+    - Position 1: Artikel mit regulärem Katalogpreis (aufgerundet auf ganze CHF)
+    - Position 2: `Sponsoringbeitrag C-Ma Trading GmbH` als transparenter Minusbetrag
+    - Endbetrag: Netto-Mitgliederpreis
+    - Verknüpfung über `source_id: itemId`
   - **Entkopplung vom Direktversand:** Rechnungen werden nicht mehr direkt aus dem Inventar per Mail versendet, sondern verbleiben mit `mail_status: 'entwurf'` im zentralen Rechnungsmodul. Dort stehen sie für die manuelle Prüfung sowie den automatisierten Massenversand bereit.
+  - **Excel- & CSV-Massenimport (`SheetJS`):** Im Modul integrierter Import-Assistent mit Vorlagen-Download (.xlsx), Drag-and-Drop, Schema-Validierung und Live-Vorschautabelle für Kleidung, Schlüssel, Gewehre und Schiessbekleidung.
 * **Doppelter Buchungssatz:** Bei Bar- oder Twint-Kauf bzw. Pfandbuchung wird direkt in `accounting_journal` gebucht:
   - Verkauf Bar/Twint: Soll `1000 Kasse` bzw. `1020 Bank/Twint` an Haben `8501 Ertrag Kleiderverkauf`
   - Pfandeingang (Depot): Soll `1000 Kasse` an Haben `2030 Kautionen & Pfandkasse`

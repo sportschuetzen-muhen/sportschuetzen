@@ -93,12 +93,25 @@ function mapKleidungFromSupabase(r) {
     return {
         ID: r.id,
         Typ: r.item_type || '',
+        Modell: r.model || '',
+        Hersteller: r.manufacturer || '',
         Groesse: r.size || '',
         Kaufdatum: r.purchase_date || '',
         Kaufpreis: r.purchase_price !== null && r.purchase_price !== undefined ? r.purchase_price : '',
+        Verkaufspreis: r.selling_price !== null && r.selling_price !== undefined ? r.selling_price : '',
+        Katalogpreis: r.retail_price !== null && r.retail_price !== undefined ? r.retail_price : '',
+        Sponsoring: r.discount_amount !== null && r.discount_amount !== undefined ? r.discount_amount : '',
+        Grundpreis: r.base_price !== null && r.base_price !== undefined ? r.base_price : '',
+        Veredelung: r.finishing_price !== null && r.finishing_price !== undefined ? r.finishing_price : '',
         Depotbetrag: r.depot_amount || 0,
         Status: r.status || 'Im Lager',
-        Aktueller_Besitzer_ID: r.current_owner_id ? String(r.current_owner_id) : ''
+        Aktueller_Besitzer_ID: r.current_owner_id ? String(r.current_owner_id) : '',
+        selling_price: r.selling_price,
+        retail_price: r.retail_price,
+        discount_amount: r.discount_amount,
+        base_price: r.base_price,
+        finishing_price: r.finishing_price,
+        purchase_price: r.purchase_price
     };
 }
 

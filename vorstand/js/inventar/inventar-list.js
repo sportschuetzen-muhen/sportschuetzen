@@ -99,8 +99,16 @@ function renderInventoryTable() {
             }
             if (dateKeys.some(dk => key.toLowerCase().includes(dk.toLowerCase())) && val)
                 return `<td>${formatCH(val)}</td>`;
-            if (key.toLowerCase().includes("pfand") || key === "Depot")
-                return `<td class="fw-bold">${val ? parseFloat(val).toFixed(2) : '0.00'}</td>`;
+            if (key.toLowerCase().includes("preis") || key.toLowerCase().includes("sponsoring")) {
+                if (val !== undefined && val !== null && val !== "") {
+                    const num = parseFloat(val);
+                    const isNeg = key.toLowerCase().includes("sponsoring") && num > 0;
+                    return `<td class="text-end font-monospace ${key.toLowerCase().includes("sponsoring") ? 'text-danger' : (key.toLowerCase().includes("verkauf") ? 'fw-bold text-success' : '')}">${!isNaN(num) ? (isNeg ? '-CHF ' : 'CHF ') + num.toFixed(2) : val}</td>`;
+                }
+                return `<td class="text-end text-muted small">-</td>`;
+            }
+            if (key.toLowerCase().includes("pfand") || key === "Depot" || key === "Depotbetrag")
+                return `<td class="text-end font-monospace fw-bold text-primary">${val ? parseFloat(val).toFixed(2) : '0.00'}</td>`;
             return `<td>${val !== undefined && val !== null && val !== "" ? val : '-'}</td>`;
         }).join('');
 
@@ -134,7 +142,7 @@ function renderAdminFields(target) {
                                        "Zubehoer","Spezielles","Distanz","Eigentümer_ID",
                                        "Gespendet_ID","Kauf_Spender_Jahr","Verkaeufer_ID","Kaufpreis","Depotbetrag"],
         "Inventar_Schluessel":        ["Bezeichnung","Nummer","Depotbetrag"],
-        "Inventar_Kleidung":          ["Typ","Groesse","Kaufdatum","Kaufpreis","Depotbetrag"],
+        "Inventar_Kleidung":          ["Typ","Modell","Groesse","Kaufpreis","Verkaufspreis","Katalogpreis","Sponsoring","Depotbetrag"],
         "Inventar_Schiessbekleidung": ["Typ","Groesse","Kaufdatum","Kaufpreis","Depotbetrag"]
     };
     const dropdownMapping = {
@@ -292,7 +300,11 @@ async function saveNewInventarItem(e) {
                 supaItem.key_number = fields.Nummer ? String(fields.Nummer) : null;
             } else if (category === 'kleidung' || category === 'schiessbekleidung') {
                 supaItem.item_type = fields.Typ || '';
+                supaItem.model = fields.Modell || null;
                 supaItem.size = fields.Groesse || '';
+                supaItem.selling_price = fields.Verkaufspreis ? parseFloat(fields.Verkaufspreis) : null;
+                supaItem.retail_price = fields.Katalogpreis ? parseFloat(fields.Katalogpreis) : null;
+                supaItem.discount_amount = fields.Sponsoring ? parseFloat(fields.Sponsoring) : null;
             }
 
             const { error: saveErr } = await supa
