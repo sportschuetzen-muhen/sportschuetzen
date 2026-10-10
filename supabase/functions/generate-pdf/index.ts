@@ -961,6 +961,7 @@ async function generateInvoicePdf(
       .replace(/{vorname}/g, normRecipient.vorname || "")
       .replace(/{nachname}/g, normRecipient.nachname || "")
       .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
+      .replace(/{absender_name}/g, senderFullName)
       .replace(/{absender_vorname}/g, sender.vorname || "")
       .replace(/{absender_nachname}/g, sender.nachname || "")
       .replace(/{absender_funktion}/g, senderRole)
@@ -1200,6 +1201,7 @@ async function generateInvoicePdf(
     .replace(/{vorname}/g, normRecipient.vorname || "")
     .replace(/{nachname}/g, normRecipient.nachname || "")
     .replace(/{gesamtbetrag}/g, formatSwissChf(totalAmount))
+    .replace(/{absender_name}/g, [sender.vorname, sender.nachname].filter(Boolean).join(" ") || CLUB_NAME)
     .replace(/{absender_vorname}/g, sender.vorname || "")
     .replace(/{absender_nachname}/g, sender.nachname || "")
     .replace(/{absender_funktion}/g, senderRole)
@@ -3288,15 +3290,15 @@ Deno.serve(async (req: Request) => {
               .maybeSingle();
             if (prof) {
               const m = prof.members || {};
-              sender.vorname = sender.vorname || m.first_name || (prof.display_name ? prof.display_name.split(" ")[0] : "");
-              sender.nachname = sender.nachname || m.last_name || (prof.display_name ? prof.display_name.split(" ").slice(1).join(" ") : "");
+              sender.vorname = sender.vorname || prof.display_name?.split(" ")[0] || m.first_name || "";
+              sender.nachname = sender.nachname || prof.display_name?.split(" ").slice(1).join(" ") || m.last_name || "";
               sender.funktion = sender.funktion || prof.role_external || "Vorstand";
               sender.bereich = sender.bereich || prof.role_external || "";
-              sender.strasse = sender.strasse || m.street || "";
-              sender.plz = sender.plz || String(m.post_code || "5037");
-              sender.ort = sender.ort || m.city || "Muhen";
-              sender.mobil = sender.mobil || m.private_mobile_phone || m.business_mobile_phone || "";
-              sender.email = sender.email || m.primary_email || prof.email || CLUB_EMAIL;
+              sender.strasse = sender.strasse || prof.street || m.street || "";
+              sender.plz = sender.plz || prof.zip || String(m.post_code || "5037");
+              sender.ort = sender.ort || prof.city || m.city || "Muhen";
+              sender.mobil = sender.mobil || prof.phone || m.private_mobile_phone || m.business_mobile_phone || "";
+              sender.email = sender.email || prof.email || m.primary_email || CLUB_EMAIL;
             }
           }
         } catch (_) {}
@@ -3432,15 +3434,15 @@ Deno.serve(async (req: Request) => {
               .maybeSingle();
             if (prof) {
               const m = prof.members || {};
-              sender.vorname = sender.vorname || m.first_name || (prof.display_name ? prof.display_name.split(" ")[0] : "");
-              sender.nachname = sender.nachname || m.last_name || (prof.display_name ? prof.display_name.split(" ").slice(1).join(" ") : "");
+              sender.vorname = sender.vorname || prof.display_name?.split(" ")[0] || m.first_name || "";
+              sender.nachname = sender.nachname || prof.display_name?.split(" ").slice(1).join(" ") || m.last_name || "";
               sender.funktion = sender.funktion || prof.role_external || "Vorstand";
               sender.bereich = sender.bereich || prof.role_external || "";
-              sender.strasse = sender.strasse || m.street || "";
-              sender.plz = sender.plz || String(m.post_code || "5037");
-              sender.ort = sender.ort || m.city || "Muhen";
-              sender.mobil = sender.mobil || m.private_mobile_phone || m.business_mobile_phone || "";
-              sender.email = sender.email || m.primary_email || prof.email || CLUB_EMAIL;
+              sender.strasse = sender.strasse || prof.street || m.street || "";
+              sender.plz = sender.plz || prof.zip || String(m.post_code || "5037");
+              sender.ort = sender.ort || prof.city || m.city || "Muhen";
+              sender.mobil = sender.mobil || prof.phone || m.private_mobile_phone || m.business_mobile_phone || "";
+              sender.email = sender.email || prof.email || m.primary_email || CLUB_EMAIL;
             }
           }
         } catch (_) {}

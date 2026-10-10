@@ -305,3 +305,12 @@ Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatis
 * **Dualer Frontend-Schreibschutz:**
   1. applyModuleWriteProtection(targetView, canWrite) blendet automatisch alle .write-protected Aktionsbuttons aus bzw. sperrt Formularfelder - sowohl beim View-Wechsel (navTo) als auch nach Abschluss asynchroner Laderoutinen (loadPromise).
   2. Modul-interne Renderer (z.B. resultate-ui.js, manager-ui.js, buchhaltung-ui.js, anlaesse.js, mitglieder-list.js) evaluieren hasWriteAccess(modul) und unterbinden Mutations-Buttons, Drag-and-Drop-Zuweisungen und Inline-Edits bereits auf Komponentenebene.
+
+---
+
+## 12. Eigenes Profil & Absenderverwaltung (Migration 59)
+
+* **Persönliche Profilpflege für alle Benutzer:** Jedes Vorstandsmitglied und der Administrator können über das Profil-Modal (`#my-profile-modal`, erreichbar über den Klick auf den Benutzernamen oben links oder die Schaltfläche «Mein Profil & Absender» in der Sidebar) die eigenen Kontaktdaten (Anzeigename, Vorstandsfunktion, Anschrift mit Strasse/PLZ/Ort, Mobiltelefon, E-Mail und Verknüpfung zur SSV-Mitgliedsnummer) einsehen und bearbeiten.
+* **Sichere Persistierung via PostgreSQL RPC:** Das Speichern erfolgt direkt in `public.admin_profiles` über die RPC-Funktion `public.update_my_profile()`, serverseitig strikt abgesichert durch `auth.uid() = auth_user_id` (kein unbefugter Schreibzugriff auf fremde Profile).
+* **Zentrale Absenderquelle für Rechnungen & Dokumente:** Die gepflegten Profilwerte werden beim Login und nach Profilaktualisierungen im Frontend in `localStorage` hinterlegt (`portal_strasse`, `portal_plz`, `portal_ort`, `portal_telefon`) und fungieren als lückenlose Datenbasis für `rnGetLoggedInSender()`, das Rechnungs-Absender-Dropdown (`#rnm-sender-select`) und die PDF-Generierung (`generate-pdf`).
+

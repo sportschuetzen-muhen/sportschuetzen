@@ -758,7 +758,7 @@
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header d-none d-md-block">
                 <i class="fas fa-bullseye me-2"></i> <span class="sidebar-header-text">Muhen Portal</span>
-                <div id="user-info" class="small text-muted fw-normal mt-1">Nicht angemeldet</div>
+                <div id="user-info" class="small text-muted fw-normal mt-1" style="cursor: pointer;" onclick="openMyProfileModal()" title="Mein Profil &amp; Absenderdaten bearbeiten">Nicht angemeldet</div>
                 <div id="sidebar-presence-badge" class="mt-2"></div>
             </div>
 
@@ -848,6 +848,9 @@
                     <i class="fas fa-user-lock"></i> <span class="nav-text">Logins</span>
                 </div>
                 <div class="mt-auto border-top p-3">
+                    <button class="btn btn-outline-secondary w-100 btn-sm mb-2" onclick="openMyProfileModal()">
+                        <i class="fas fa-user-gear me-1"></i> <span class="nav-text">Mein Profil &amp; Absender</span>
+                    </button>
                     <button class="btn btn-outline-primary w-100 btn-sm mb-2" onclick="openChangePasswordModal()">
                         <i class="fas fa-key me-1"></i> <span class="nav-text">Passwort ändern</span>
                     </button>
@@ -1805,6 +1808,125 @@
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="cp-submit-btn">
                             <i class="fas fa-save me-1"></i> Passwort aktualisieren
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mein Profil & Absenderdaten Modal -->
+<div class="modal fade" id="my-profile-modal" tabindex="-1" aria-labelledby="myProfileModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);">
+            <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                <h5 class="modal-title fw-bold" id="myProfileModalLabel">
+                    <i class="fas fa-user-gear me-2"></i>Mein Profil &amp; Absenderdaten
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="my-profile-form" onsubmit="saveMyProfile(event)">
+                    
+                    <!-- Alert / Status Meldung -->
+                    <div id="mp-alert" class="alert d-none mb-3 py-2 px-3 small rounded-3" role="alert"></div>
+
+                    <!-- Sektion 1: Persönliche Angaben & Rolle -->
+                    <div class="card border-0 shadow-xs rounded-3 mb-3 p-3 bg-white">
+                        <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                            <span class="fw-bold small text-primary"><i class="fas fa-id-card me-1.5"></i>Persönliche Angaben &amp; Vorstandsfunktion</span>
+                            <span class="badge bg-light text-muted border font-monospace small" id="mp-username-badge">@user</span>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label for="mp-display-name" class="form-label fw-bold small text-muted">Anzeigename <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" id="mp-display-name" required placeholder="z.B. Daniel Hunziker">
+                                <div class="form-text text-muted" style="font-size:11px;">Erscheint auf Briefen, Rechnungen &amp; Begrüssung.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="mp-role-external" class="form-label fw-bold small text-muted">Vorstandsfunktion <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" id="mp-role-external" list="mp-funktionen-list" required placeholder="z.B. Präsident, Kassier...">
+                                <datalist id="mp-funktionen-list">
+                                    <option value="Präsident">
+                                    <option value="Vizepräsident">
+                                    <option value="Kassier">
+                                    <option value="Aktuar">
+                                    <option value="Aktuarin">
+                                    <option value="Mitgliederverwalter">
+                                    <option value="Schützenmeister 10m">
+                                    <option value="Schützenmeister 50m">
+                                    <option value="Vermieter">
+                                    <option value="Materialwart">
+                                    <option value="Beisitzer">
+                                    <option value="Webmaster">
+                                </datalist>
+                                <div class="form-text text-muted" style="font-size:11px;">Offizieller Vereinstitel für Belege &amp; Korrespondenz.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sektion 2: Verknüpfung Vereinsmitglied -->
+                    <div class="card border-0 shadow-xs rounded-3 mb-3 p-3 bg-white">
+                        <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                            <span class="fw-bold small text-primary"><i class="fas fa-link me-1.5"></i>Verknüpfung mit Mitgliederstamm (public.members)</span>
+                            <span id="mp-member-status-badge" class="badge bg-light text-secondary border small">Nicht verknüpft</span>
+                        </div>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-7">
+                                <label for="mp-person-number" class="form-label fw-bold small text-muted">SSV-Personennummer</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-light text-muted"><i class="fas fa-hashtag"></i></span>
+                                    <input type="number" class="form-control font-monospace" id="mp-person-number" placeholder="z.B. 1073722">
+                                </div>
+                            </div>
+                            <div class="col-md-5">
+                                <button type="button" class="btn btn-sm btn-outline-primary w-100 py-1.5" onclick="syncMyProfileFromMember()">
+                                    <i class="fas fa-arrows-rotate me-1"></i>Aus Mitgliedsdaten laden
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sektion 3: Absender- & Kontaktdaten -->
+                    <div class="card border-0 shadow-xs rounded-3 mb-4 p-3 bg-white">
+                        <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                            <span class="fw-bold small text-primary"><i class="fas fa-envelope-open-text me-1.5"></i>Offizielle Absenderanschrift (für Rechnungen &amp; Briefe)</span>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-12">
+                                <label for="mp-street" class="form-label fw-bold small text-muted">Strasse &amp; Hausnummer</label>
+                                <input type="text" class="form-control form-control-sm" id="mp-street" placeholder="z.B. Rebweg 12">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="mp-zip" class="form-label fw-bold small text-muted">PLZ</label>
+                                <input type="text" class="form-control form-control-sm font-monospace" id="mp-zip" placeholder="z.B. 5037">
+                            </div>
+                            <div class="col-md-8">
+                                <label for="mp-city" class="form-label fw-bold small text-muted">Ort</label>
+                                <input type="text" class="form-control form-control-sm" id="mp-city" placeholder="z.B. Muhen">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="mp-phone" class="form-label fw-bold small text-muted">Telefon / Mobilnummer</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-light text-muted"><i class="fas fa-phone"></i></span>
+                                    <input type="text" class="form-control font-monospace" id="mp-phone" placeholder="z.B. +41 79 123 45 67">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="mp-email" class="form-label fw-bold small text-muted">E-Mail (Auth &amp; Kontakt) <span class="text-danger">*</span></label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-light text-muted"><i class="fas fa-envelope"></i></span>
+                                    <input type="email" class="form-control" id="mp-email" required placeholder="name@email.ch">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center pt-2">
+                        <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+                        <button type="submit" class="btn btn-primary fw-bold px-4 shadow-sm" id="mp-submit-btn">
+                            <i class="fas fa-save me-1.5"></i>Profil speichern
                         </button>
                     </div>
                 </form>

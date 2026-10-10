@@ -285,6 +285,10 @@ async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resol
     localStorage.setItem('portal_mailanzeige', targetEmail);
     localStorage.setItem('portal_personnumber', (prof && prof.person_number) || (resolvedData && resolvedData.person_number) || '');
     localStorage.setItem('portal_rolle_extern', (prof && prof.role_external) || '');
+    localStorage.setItem('portal_strasse', (prof && prof.street) || '');
+    localStorage.setItem('portal_plz', (prof && prof.zip) || '');
+    localStorage.setItem('portal_ort', (prof && prof.city) || '');
+    localStorage.setItem('portal_telefon', (prof && prof.phone) || '');
 
     // Letzten Login aktualisieren
     if (prof && prof.id && supa) {
@@ -798,6 +802,10 @@ async function doLogout() {
     localStorage.removeItem('portal_mailadresse');
     localStorage.removeItem('portal_mailanzeige');
     localStorage.removeItem('portal_rolle_extern');
+    localStorage.removeItem('portal_strasse');
+    localStorage.removeItem('portal_plz');
+    localStorage.removeItem('portal_ort');
+    localStorage.removeItem('portal_telefon');
     sessionStorage.removeItem('csrf_token');
     sessionStorage.removeItem('portal_session_id');
     csrfToken = null;
@@ -852,5 +860,258 @@ async function doLogout() {
         console.warn("Auth Listener Check fehlgeschlagen:", e);
     }
 })();
+
+// =========================================================
+//  MEIN PROFIL & ABSENDERDATEN
+// =========================================================
+window.openMyProfileModal = async function() {
+    const modalEl = document.getElementById('my-profile-modal');
+    if (!modalEl) return;
+
+    const alertEl = document.getElementById('mp-alert');
+    if (alertEl) { alertEl.className = 'alert d-none'; alertEl.textContent = ''; }
+
+    const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+    let prof = null;
+
+    if (supa) {
+        try {
+            const { data, error } = await supa.rpc('get_my_profile');
+            if (!error && data && data.success && data.profile) {
+                prof = data.profile;
+            }
+        } catch (err) {
+            console.warn("Fehler beim Laden von get_my_profile:", err);
+        }
+    }
+
+    // Fallback auf LocalStorage / bisherige Daten
+    const displayName = prof?.display_name || localStorage.getItem('portal_user') || '';
+    const username = prof?.username || localStorage.getItem('portal_login_id') || 'benutzer';
+    const roleExternal = prof?.role_external || localStorage.getItem('portal_rolle_extern') || '';
+    const personNumber = prof?.person_number || localStorage.getItem('portal_personnumber') || '';
+    const street = prof?.street || localStorage.getItem('portal_strasse') || '';
+    const zip = prof?.zip || localStorage.getItem('portal_plz') || '';
+    const city = prof?.city || localStorage.getItem('portal_ort') || '';
+    const phone = prof?.phone || localStorage.getItem('portal_telefon') || '';
+    const email = prof?.email || localStorage.getItem('portal_mailadresse') || '';
+
+    const badgeUser = document.getElementById('mp-username-badge');
+    if (badgeUser) badgeUser.textContent = `@${username}`;
+
+    const inputName = document.getElementById('mp-display-name');
+    if (inputName) inputName.value = displayName;
+
+    const inputRole = document.getElementById('mp-role-external');
+    if (inputRole) inputRole.value = roleExternal;
+
+    const inputPN = document.getElementById('mp-person-number');
+    if (inputPN) inputPN.value = personNumber;
+
+    const inputStreet = document.getElementById('mp-street');
+    if (inputStreet) inputStreet.value = street;
+
+    const inputZip = document.getElementById('mp-zip');
+    if (inputZip) inputZip.value = zip;
+
+    const inputCity = document.getElementById('mp-city');
+    if (inputCity) inputCity.value = city;
+
+    const inputPhone = document.getElementById('mp-phone');
+    if (inputPhone) inputPhone.value = phone;
+
+    const inputEmail = document.getElementById('mp-email');
+    if (inputEmail) inputEmail.value = email;
+
+    const statusBadge = document.getElementById('mp-member-status-badge');
+    if (statusBadge) {
+        if (personNumber) {
+            statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle small';
+            statusBadge.innerHTML = `<i class="fas fa-check-circle me-1"></i>Verknüpft (Nr. ${personNumber})`;
+        } else {
+            statusBadge.className = 'badge bg-light text-secondary border small';
+            statusBadge.textContent = 'Nicht verknüpft';
+        }
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+};
+
+window.syncMyProfileFromMember = async function() {
+    const pnInput = document.getElementById('mp-person-number');
+    const pn = pnInput ? pnInput.value.trim() : '';
+    const alertEl = document.getElementById('mp-alert');
+
+    if (!pn) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-warning py-2 px-3 small rounded-3';
+            alertEl.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Bitte zuerst eine gültige SSV-Personennummer eingeben.';
+        }
+        return;
+    }
+
+    let member = null;
+    let members = window._mglData || [];
+    if (members.length === 0 && window.AppCache) {
+        const cached = window.AppCache.get('mitglieder');
+        if (cached && Array.isArray(cached.data)) members = cached.data;
+    }
+
+    member = members.find(m => String(m.PersonNumber || m.person_number || '').trim() === pn);
+
+    if (!member) {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (supa) {
+            try {
+                const { data } = await supa.from('members').select('*').eq('person_number', parseInt(pn, 10)).maybeSingle();
+                if (data) member = data;
+            } catch (_) {}
+        }
+    }
+
+    if (!member) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger py-2 px-3 small rounded-3';
+            alertEl.innerHTML = `<i class="fas fa-circle-xmark me-1"></i>Kein Mitglied mit der Personennummer <strong>${escapeHtml(pn)}</strong> in public.members gefunden.`;
+        }
+        return;
+    }
+
+    // Stammdaten übernehmen
+    const fn = member.first_name || member.FirstName || '';
+    const ln = member.last_name || member.LastName || '';
+    const fullName = [fn, ln].filter(Boolean).join(' ');
+    const street = member.street || member.Street || member.Strasse || '';
+    const zip = String(member.post_code || member.PostCode || member.ZipCode || member.PLZ || '');
+    const city = member.city || member.City || member.Ort || '';
+    const phone = member.private_mobile_phone || member.PrivateMobilePhone || member.business_mobile_phone || member.BusinessMobilePhone || '';
+    const email = member.primary_email || member.PrimaryEmail || member.Email || '';
+
+    if (fullName) document.getElementById('mp-display-name').value = fullName;
+    if (street) document.getElementById('mp-street').value = street;
+    if (zip) document.getElementById('mp-zip').value = zip;
+    if (city) document.getElementById('mp-city').value = city;
+    if (phone) document.getElementById('mp-phone').value = phone;
+    if (email && !document.getElementById('mp-email').value) document.getElementById('mp-email').value = email;
+
+    // Funktion ermitteln falls leer
+    const roleInput = document.getElementById('mp-role-external');
+    if (roleInput && !roleInput.value.trim()) {
+        let detFn = '';
+        const fns = window._mglFunktionenCache?.[pn] || [];
+        const activeFns = fns.filter(f => !f.OfficialFunctionExitDate);
+        if (activeFns.length > 0) detFn = activeFns.map(f => f.OfficialFunctionCategory).filter(Boolean).join(', ');
+        if (!detFn && member.OfficialFunctionCategory) detFn = member.OfficialFunctionCategory;
+        if (!detFn && member.Funktion) detFn = member.Funktion;
+        if (detFn) roleInput.value = detFn;
+    }
+
+    const statusBadge = document.getElementById('mp-member-status-badge');
+    if (statusBadge) {
+        statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle small';
+        statusBadge.innerHTML = `<i class="fas fa-check-circle me-1"></i>Aus Mitgliedsstamm geladen: ${escapeHtml(fullName)}`;
+    }
+
+    if (alertEl) {
+        alertEl.className = 'alert alert-success py-2 px-3 small rounded-3';
+        alertEl.innerHTML = `<i class="fas fa-check-circle me-1"></i>Stammdaten von <strong>${escapeHtml(fullName)}</strong> erfolgreich übernommen. Bitte mit «Profil speichern» bestätigen.`;
+    }
+};
+
+window.saveMyProfile = async function(event) {
+    if (event) event.preventDefault();
+
+    const submitBtn = document.getElementById('mp-submit-btn');
+    const alertEl = document.getElementById('mp-alert');
+    if (alertEl) { alertEl.className = 'alert d-none'; alertEl.textContent = ''; }
+
+    const displayName = (document.getElementById('mp-display-name')?.value || '').trim();
+    const roleExternal = (document.getElementById('mp-role-external')?.value || '').trim();
+    const rawPn = (document.getElementById('mp-person-number')?.value || '').trim();
+    const personNumber = rawPn ? parseInt(rawPn, 10) : null;
+    const street = (document.getElementById('mp-street')?.value || '').trim();
+    const zip = (document.getElementById('mp-zip')?.value || '').trim();
+    const city = (document.getElementById('mp-city')?.value || '').trim();
+    const phone = (document.getElementById('mp-phone')?.value || '').trim();
+    const email = (document.getElementById('mp-email')?.value || '').trim();
+
+    if (!displayName || !email) {
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger py-2 px-3 small rounded-3';
+            alertEl.textContent = 'Bitte mindestens Anzeigename und E-Mail ausfüllen.';
+        }
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1.5" role="status"></span>Wird gespeichert...';
+    }
+
+    try {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (!supa) throw new Error("Supabase Client ist nicht verfügbar.");
+
+        const { data, error } = await supa.rpc('update_my_profile', {
+            p_display_name: displayName,
+            p_role_external: roleExternal,
+            p_street: street,
+            p_zip: zip,
+            p_city: city,
+            p_phone: phone,
+            p_email: email,
+            p_person_number: personNumber
+        });
+
+        if (error) throw error;
+        if (data && data.success === false) throw new Error(data.error || 'Fehler beim Speichern');
+
+        // LocalStorage & Session synchronisieren
+        localStorage.setItem('portal_user', displayName);
+        window.currentUser = displayName;
+        if (roleExternal) localStorage.setItem('portal_rolle_extern', roleExternal);
+        if (personNumber) localStorage.setItem('portal_personnumber', String(personNumber));
+        if (street) localStorage.setItem('portal_strasse', street); else localStorage.removeItem('portal_strasse');
+        if (zip) localStorage.setItem('portal_plz', zip); else localStorage.removeItem('portal_plz');
+        if (city) localStorage.setItem('portal_ort', city); else localStorage.removeItem('portal_ort');
+        if (phone) localStorage.setItem('portal_telefon', phone); else localStorage.removeItem('portal_telefon');
+        if (email) localStorage.setItem('portal_mailadresse', email);
+
+        // UI-Aktualisierungen
+        const userInfo = document.getElementById('user-info');
+        if (userInfo) {
+            const role = localStorage.getItem('portal_role') || 'vorstand';
+            userInfo.innerHTML = `<span class="fw-semibold text-dark">${escapeHtml(displayName)}</span> <span class="badge bg-primary-subtle text-primary rounded-pill ms-1" style="font-size:0.7rem;">${escapeHtml(role)}</span>`;
+        }
+        const dbName = document.getElementById('dashboard-user-name');
+        if (dbName) dbName.textContent = displayName;
+
+        if (alertEl) {
+            alertEl.className = 'alert alert-success py-2 px-3 small rounded-3';
+            alertEl.innerHTML = '<i class="fas fa-check-circle me-1"></i>Profil &amp; Absenderdaten wurden erfolgreich in Supabase gespeichert!';
+        }
+
+        setTimeout(() => {
+            const modalEl = document.getElementById('my-profile-modal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+        }, 1200);
+
+    } catch (err) {
+        console.error("❌ Fehler beim Speichern des Profils:", err);
+        if (alertEl) {
+            alertEl.className = 'alert alert-danger py-2 px-3 small rounded-3';
+            alertEl.innerHTML = `<i class="fas fa-circle-xmark me-1"></i>Fehler beim Speichern: ${escapeHtml(err.message || 'Unbekannter Fehler')}`;
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-save me-1.5"></i>Profil speichern';
+        }
+    }
+};
 
 

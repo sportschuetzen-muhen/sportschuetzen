@@ -828,28 +828,35 @@ window.rnGetLoggedInSender = function(invoiceType = null) {
       verein:   'Sportschützen Muhen',
       vorname:  member.FirstName || member.first_name || '',
       nachname: member.LastName || member.last_name || '',
-      strasse:  member.Street || member.street || member.Strasse || '',
-      plz:      String(member.PostCode || member.post_code || member.ZipCode || member.PLZ || '5037'),
-      ort:      member.City || member.city || member.Ort || 'Muhen',
-      mobil:    member.PrivateMobilePhone || member.private_mobile_phone || member.BusinessMobilePhone || member.business_mobile_phone || '',
+      strasse:  localStorage.getItem('portal_strasse') || member.Street || member.street || member.Strasse || '',
+      plz:      String(localStorage.getItem('portal_plz') || member.PostCode || member.post_code || member.ZipCode || member.PLZ || '5037'),
+      ort:      localStorage.getItem('portal_ort') || member.City || member.city || member.Ort || 'Muhen',
+      mobil:    localStorage.getItem('portal_telefon') || member.PrivateMobilePhone || member.private_mobile_phone || member.BusinessMobilePhone || member.business_mobile_phone || '',
       email:    personalSenderEmail,
       funktion: loggedInRoleExtern || 'Vorstand',
       bereich:  invoiceType || 'Rechnung'
     };
   }
 
-  // Falls der Name Daniel Hunziker ist und Mitgliederdaten noch nicht geladen waren
-  if (cleanLogin.includes('hunziker') && cleanLogin.includes('daniel')) {
+  // Profil-Fallback aus localStorage (z.B. Dan Admin oder benutzerdefinierte Absenderdaten)
+  const profStrasse = localStorage.getItem('portal_strasse') || '';
+  const profPlz = localStorage.getItem('portal_plz') || '5037';
+  const profOrt = localStorage.getItem('portal_ort') || 'Muhen';
+  const profMobil = localStorage.getItem('portal_telefon') || '';
+  const profEmail = localStorage.getItem('portal_mailadresse') || localStorage.getItem('portal_user_email') || 'sportschuetzen.muhen@gmail.com';
+
+  if (loggedInName) {
     return {
+      personNumber: loggedInPN || '',
       verein:   'Sportschützen Muhen',
-      vorname:  'Daniel',
-      nachname: 'Hunziker',
-      strasse:  'Rebweg 12',
-      plz:      '5101',
-      ort:      'Hunzenschwil',
-      mobil:    '+41 79 578 51 68',
-      email:    'dan.hunziker@me.com',
-      funktion: loggedInRoleExtern || 'Vizepräsident',
+      vorname:  loggedInName.split(' ')[0] || '',
+      nachname: loggedInName.split(' ').slice(1).join(' ') || '',
+      strasse:  profStrasse,
+      plz:      profPlz,
+      ort:      profOrt,
+      mobil:    profMobil,
+      email:    profEmail,
+      funktion: loggedInRoleExtern || 'Vorstand',
       bereich:  invoiceType || 'Rechnung'
     };
   }
@@ -1037,7 +1044,10 @@ window.RechnungsCore = {
 
     // 2. Sekundär A: Falls explizite personNumber oder memberId vorgegeben ist
     if (targetPN || targetId) {
-      let members = window._mglData || [];
+      if ((primary && primary.personNumber && String(targetPN).trim() === String(primary.personNumber).trim()) || String(targetPN).trim() === 'admin') {
+        resolvedSecondary = Object.assign({}, primary);
+      } else {
+        let members = window._mglData || [];
       if (members.length === 0 && window.AppCache) {
         const cached = window.AppCache.get('mitglieder');
         if (cached && Array.isArray(cached.data)) members = cached.data;
@@ -1060,7 +1070,8 @@ window.RechnungsCore = {
           } catch (_) {}
         }
       }
-    } else {
+    }
+  } else {
       // 2. Sekundär B: Amts-Prinzip nach Rechnungstyp bzw. Funktion
       let roleToFind = null;
       const reqFn = String(sIn.funktion || '').trim().toLowerCase();

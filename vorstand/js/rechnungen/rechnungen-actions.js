@@ -1250,6 +1250,37 @@ window.rnPopulateSenderSelect = function(selectElId, selectedPN = null, onlyVors
     });
   }
 
+  // Deduplizieren nach PersonNumber
+  const seenPN = new Set();
+  activeMembers = activeMembers.filter(m => {
+    const pn = String(m.PersonNumber || '').trim();
+    if (!pn || seenPN.has(pn)) return false;
+    seenPN.add(pn);
+    return true;
+  });
+
+  const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
+  const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
+  const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
+  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+
+  // Falls eingeloggter Benutzer nicht in activeMembers vorkommt (z.B. Admin ohne SSV-Mitgliedsnummer)
+  if (loggedInUser && !activeMembers.some(m => (loggedInPN && String(m.PersonNumber) === loggedInPN) || `${m.LastName || ''} ${m.FirstName || ''}`.trim().toLowerCase() === loggedInUser.toLowerCase())) {
+    const parts = loggedInUser.split(' ');
+    activeMembers.unshift({
+      PersonNumber: loggedInPN || 'admin',
+      FirstName: parts[0] || '',
+      LastName: parts.slice(1).join(' ') || '',
+      Function: loggedInRole || 'Vorstand',
+      PrimaryEmail: loggedInEmail,
+      Street: localStorage.getItem('portal_strasse') || '',
+      PostCode: localStorage.getItem('portal_plz') || '',
+      City: localStorage.getItem('portal_ort') || '',
+      PrivateMobilePhone: localStorage.getItem('portal_telefon') || '',
+      _isLoggedInUser: true
+    });
+  }
+
   activeMembers.sort((a, b) => {
     const na = `${(a.LastName || '').trim()} ${(a.FirstName || '').trim()}`.trim();
     const nb = `${(b.LastName || '').trim()} ${(b.FirstName || '').trim()}`.trim();
@@ -1259,7 +1290,6 @@ window.rnPopulateSenderSelect = function(selectElId, selectedPN = null, onlyVors
   // Falls selectedPN noch nicht bestimmt ist, ermitteln wir die eingeloggte Person
   let targetPN = selectedPN;
   if (!targetPN) {
-    const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
     if (loggedInPN && activeMembers.some(m => String(m.PersonNumber) === loggedInPN)) {
       targetPN = loggedInPN;
     } else if (typeof window.rnGetLoggedInSender === 'function') {
@@ -1279,16 +1309,19 @@ window.rnPopulateSenderSelect = function(selectElId, selectedPN = null, onlyVors
 
   selectEl.innerHTML = activeMembers.map(m => {
     const pn = String(m.PersonNumber || '');
-    const name = `${m.LastName || ''} ${m.FirstName || ''}`.trim();
-    const isBoard = window.rnIsVorstandMember(m);
+    let name = `${m.LastName || ''} ${m.FirstName || ''}`.trim();
+    const isLoggedInMatch = (loggedInPN && pn === loggedInPN) || m._isLoggedInUser;
     let fnLabel = '';
-    if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
+    if (isLoggedInMatch && loggedInRole) {
+      fnLabel = loggedInRole;
+    } else if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
       const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
       if (activeFns.length > 0) {
         fnLabel = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
       }
     }
     if (!fnLabel && m.Function) fnLabel = m.Function;
+    const isBoard = window.rnIsVorstandMember(m) || isLoggedInMatch;
     const tag = fnLabel ? ` [${fnLabel}]` : (isBoard ? ' [Vorstand]' : '');
     const isSel = String(targetPN) === pn ? 'selected' : '';
     return `<option value="${escapeHtml(pn)}" ${isSel}>👤 ${escapeHtml(name)}${escapeHtml(tag)} (Nr: ${escapeHtml(pn)})</option>`;
@@ -1307,27 +1340,52 @@ window.rnUpdateSenderPreview = function(previewElId, personNumber) {
     || (window._mglData || []);
   const m = memberSource.find(x => String(x.PersonNumber) === String(personNumber));
 
-  if (!m) {
+  const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
+  const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
+  const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
+  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+  const loggedInStrasse = String(localStorage.getItem('portal_strasse') || '').trim();
+  const loggedInPlz = String(localStorage.getItem('portal_plz') || '').trim();
+  const loggedInOrt = String(localStorage.getItem('portal_ort') || '').trim();
+  const loggedInPhone = String(localStorage.getItem('portal_telefon') || '').trim();
+
+  const isLoggedIn = (loggedInPN && String(personNumber) === loggedInPN) || personNumber === 'admin';
+
+  if (!m && !isLoggedIn) {
     el.innerHTML = '<span class="text-muted small">Standard-Vereinsabsender (Sportschützen Muhen)</span>';
     return;
   }
 
-  const pn = String(m.PersonNumber || '');
   let fnLabel = 'Vorstand';
-  if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
-    const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
-    if (activeFns.length > 0) {
-      fnLabel = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
-    }
-  } else if (m.Function) {
-    fnLabel = m.Function;
-  }
+  let name = '';
+  let email = 'sportschuetzen.muhen@gmail.com';
+  let street = '';
+  let city = '5037 Muhen';
+  let phone = '';
 
-  const name = `${m.FirstName || ''} ${m.LastName || ''}`.trim();
-  const email = m.PrimaryEmail || m.Email || 'sportschuetzen.muhen@gmail.com';
-  const street = m.Street || m.Strasse || '';
-  const city = `${m.PostCode || m.ZipCode || m.PLZ || '5037'} ${m.City || m.Ort || 'Muhen'}`.trim();
-  const phone = m.PrivateMobilePhone || m.BusinessMobilePhone || '';
+  if (isLoggedIn) {
+    name = loggedInUser || (m ? `${m.FirstName || ''} ${m.LastName || ''}`.trim() : 'Sportschützen Muhen');
+    fnLabel = loggedInRole || 'Vorstand';
+    email = loggedInEmail || (m ? (m.PrimaryEmail || m.Email) : '') || 'sportschuetzen.muhen@gmail.com';
+    street = loggedInStrasse || (m ? (m.Street || m.Strasse) : '') || '';
+    city = `${loggedInPlz || (m ? (m.PostCode || m.ZipCode || m.PLZ) : '') || '5037'} ${loggedInOrt || (m ? (m.City || m.Ort) : '') || 'Muhen'}`.trim();
+    phone = loggedInPhone || (m ? (m.PrivateMobilePhone || m.BusinessMobilePhone) : '') || '';
+  } else {
+    const pn = String(m.PersonNumber || '');
+    if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
+      const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
+      if (activeFns.length > 0) {
+        fnLabel = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
+      }
+    } else if (m.Function) {
+      fnLabel = m.Function;
+    }
+    name = `${m.FirstName || ''} ${m.LastName || ''}`.trim();
+    email = m.PrimaryEmail || m.Email || 'sportschuetzen.muhen@gmail.com';
+    street = m.Street || m.Strasse || '';
+    city = `${m.PostCode || m.ZipCode || m.PLZ || '5037'} ${m.City || m.Ort || 'Muhen'}`.trim();
+    phone = m.PrivateMobilePhone || m.BusinessMobilePhone || '';
+  }
 
   el.innerHTML = `
     <div class="d-flex align-items-center justify-content-between p-2 rounded-2 bg-white border shadow-xs" style="font-size: 11.5px;">
@@ -1353,18 +1411,48 @@ window.rnOnMailSenderChanged = function(invoiceId) {
   const m = memberSource.find(x => String(x.PersonNumber) === String(pn));
   const infoEl = document.getElementById('rnm-sender-info');
 
+  const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
+  const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
+  const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
+  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+  const loggedInStrasse = String(localStorage.getItem('portal_strasse') || '').trim();
+  const loggedInPlz = String(localStorage.getItem('portal_plz') || '').trim();
+  const loggedInOrt = String(localStorage.getItem('portal_ort') || '').trim();
+  const loggedInPhone = String(localStorage.getItem('portal_telefon') || '').trim();
+
+  const isLoggedIn = (loggedInPN && String(pn) === loggedInPN) || pn === 'admin' || (loggedInUser && m && `${m.FirstName || ''} ${m.LastName || ''}`.trim().toLowerCase() === loggedInUser.toLowerCase());
+
   let senderName = 'Sportschützen Muhen';
   let senderEmail = 'sportschuetzen.muhen@gmail.com';
   let senderVorname = '';
   let senderNachname = '';
   let senderFunktion = 'Vorstand';
   let senderVerein = 'Sportschützen Muhen';
+  let senderStrasse = '';
+  let senderPlz = '5037';
+  let senderOrt = 'Muhen';
+  let senderPhone = '';
 
-  if (m) {
+  if (isLoggedIn) {
+    senderName = loggedInUser || (m ? `${m.FirstName || ''} ${m.LastName || ''}`.trim() : 'Sportschützen Muhen');
+    const parts = senderName.split(' ');
+    senderVorname = parts.length > 1 ? parts[0] : '';
+    senderNachname = parts.length > 1 ? parts.slice(1).join(' ') : senderName;
+    senderEmail = loggedInEmail || (m ? (m.PrimaryEmail || m.Email) : '') || 'sportschuetzen.muhen@gmail.com';
+    senderFunktion = loggedInRole || 'Vorstand';
+    senderStrasse = loggedInStrasse || (m ? (m.Street || m.Strasse) : '') || '';
+    senderPlz = loggedInPlz || (m ? (m.PostCode || m.ZipCode || m.PLZ) : '') || '5037';
+    senderOrt = loggedInOrt || (m ? (m.City || m.Ort) : '') || 'Muhen';
+    senderPhone = loggedInPhone || (m ? (m.PrivateMobilePhone || m.BusinessMobilePhone) : '') || '';
+  } else if (m) {
     senderVorname = m.FirstName || '';
     senderNachname = m.LastName || '';
     senderName = `${senderVorname} ${senderNachname}`.trim();
     senderEmail = m.PrimaryEmail || m.Email || 'sportschuetzen.muhen@gmail.com';
+    senderStrasse = m.Street || m.Strasse || '';
+    senderPlz = m.PostCode || m.ZipCode || m.PLZ || '5037';
+    senderOrt = m.City || m.Ort || 'Muhen';
+    senderPhone = m.PrivateMobilePhone || m.BusinessMobilePhone || '';
     if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
       const activeFns = window._mglFunktionenCache[pn].filter(f => !f.OfficialFunctionExitDate);
       if (activeFns.length > 0) senderFunktion = activeFns.map(f => f.OfficialFunctionCategory).join(', ');
@@ -1384,7 +1472,11 @@ window.rnOnMailSenderChanged = function(invoiceId) {
     name: senderName,
     email: senderEmail,
     funktion: senderFunktion,
-    verein: senderVerein
+    verein: senderVerein,
+    strasse: senderStrasse,
+    plz: senderPlz,
+    ort: senderOrt,
+    telefon: senderPhone
   };
 };
 
@@ -1397,11 +1489,22 @@ window.rnOnMahnungSenderChanged = function(invoiceId) {
   const m = memberSource.find(x => String(x.PersonNumber) === String(pn));
   const infoEl = document.getElementById('rn-mahnung-sender-info');
 
+  const loggedInPN = String(localStorage.getItem('portal_personnumber') || '').trim();
+  const loggedInUser = String(localStorage.getItem('portal_user') || '').trim();
+  const loggedInRole = String(localStorage.getItem('portal_rolle_extern') || '').trim();
+  const loggedInEmail = String(localStorage.getItem('portal_email') || '').trim();
+
+  const isLoggedIn = (loggedInPN && String(pn) === loggedInPN) || pn === 'admin' || (loggedInUser && m && `${m.FirstName || ''} ${m.LastName || ''}`.trim().toLowerCase() === loggedInUser.toLowerCase());
+
   let senderName = 'Sportschützen Muhen';
   let senderEmail = 'sportschuetzen.muhen@gmail.com';
   let senderFunktion = 'Vorstand';
 
-  if (m) {
+  if (isLoggedIn) {
+    senderName = loggedInUser || (m ? `${m.FirstName || ''} ${m.LastName || ''}`.trim() : 'Sportschützen Muhen');
+    senderEmail = loggedInEmail || (m ? (m.PrimaryEmail || m.Email) : '') || 'sportschuetzen.muhen@gmail.com';
+    senderFunktion = loggedInRole || 'Vorstand';
+  } else if (m) {
     senderName = `${m.FirstName || ''} ${m.LastName || ''}`.trim();
     senderEmail = m.PrimaryEmail || m.Email || 'sportschuetzen.muhen@gmail.com';
     if (window._mglFunktionenCache && window._mglFunktionenCache[pn]) {
