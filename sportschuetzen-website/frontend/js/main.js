@@ -125,19 +125,31 @@ async function fetchGoogleHausKalender() {
         if (resp.ok) {
             const raw = await resp.json();
             if (Array.isArray(raw) && raw.length > 0) {
-                return raw.map(r => ({
-                    id: 'cal_' + (r.datum_iso || r.datum || '') + '_' + Math.random().toString(36).substr(2, 6),
-                    datum: r.datum_iso || r.datum || '',
-                    datum_iso: r.datum_iso || r.datum || '',
-                    start: r.start || '',
-                    ende: r.ende || '',
-                    titel: r.titel || 'Schützenhaus Belegung',
-                    ort: r.ort || 'Schützenhaus',
-                    kategorie: 'Hauskalender',
-                    status: r.status || 'fix',
-                    typ: 'extern',
-                    map: r.map || ''
-                }));
+                return raw.map(r => {
+                    const rawTitel = (r.titel || '').trim();
+                    let cleanTitel = 'Schützenhaus Belegung';
+                    const lower = rawTitel.toLowerCase();
+                    const isReinigung = lower.includes('reinigung') || lower.includes('gesperrt');
+                    if (lower.includes('vermiet') || lower.includes('reserv')) {
+                        cleanTitel = 'Schützenhaus reserviert';
+                    } else if (isReinigung) {
+                        cleanTitel = 'Schützenhaus gesperrt (Reinigung)';
+                    }
+                    return {
+                        id: 'cal_' + (r.datum_iso || r.datum || '') + '_' + Math.random().toString(36).substr(2, 6),
+                        datum: r.datum_iso || r.datum || '',
+                        datum_iso: r.datum_iso || r.datum || '',
+                        start: r.start || '',
+                        ende: r.ende || '',
+                        titel: cleanTitel,
+                        is_cleaning: isReinigung,
+                        ort: r.ort || 'Schützenhaus',
+                        kategorie: 'Hauskalender',
+                        status: r.status || 'fix',
+                        typ: 'extern',
+                        map: r.map || ''
+                    };
+                });
             }
         }
     } catch (e) {
@@ -161,7 +173,8 @@ async function fetchGoogleHausKalender() {
                     datum_iso: r.start_date || '',
                     start: r.festbeginn || '',
                     ende: '',
-                    titel: r.is_inquiry ? 'Schützenhaus (Anfrage)' : 'Schützenhaus Vermietung',
+                    titel: r.is_inquiry ? 'Schützenhaus (Anfrage)' : 'Schützenhaus reserviert',
+                    is_cleaning: false,
                     ort: 'Schützenhaus',
                     kategorie: 'Hauskalender',
                     status: 'fix',
@@ -327,7 +340,10 @@ async function loadTermine() {
         const applyFilter = (filterKey) => {
             currentFilter = filterKey;
             let filtered = upcomingEvents;
-            if (filterKey === 'jahresprogramm') {
+            if (filterKey === 'all') {
+                // In der Gesamtübersicht reine Reinigungsblockaden ausblenden, damit Vereinsanlässe & Belegungen sichtbar bleiben
+                filtered = upcomingEvents.filter(t => !t.is_cleaning);
+            } else if (filterKey === 'jahresprogramm') {
                 filtered = upcomingEvents.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase() === 'jahresprogramm');
             } else if (filterKey === 'schiesstermine') {
                 filtered = upcomingEvents.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase().includes('schiess'));
@@ -368,7 +384,9 @@ async function loadVereinTermine() {
         const applyFilter = (filterKey) => {
             currentFilter = filterKey;
             let filtered = events;
-            if (filterKey === 'jahresprogramm') {
+            if (filterKey === 'all') {
+                filtered = events.filter(t => !t.is_cleaning);
+            } else if (filterKey === 'jahresprogramm') {
                 filtered = events.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase() === 'jahresprogramm');
             } else if (filterKey === 'schiesstermine') {
                 filtered = events.filter(t => t.typ === 'verein' && (t.kategorie || '').toLowerCase().includes('schiess'));
@@ -733,4 +751,16 @@ function initContactForm() {
         }
     });
 }
+
+// Hilfsfunktion: Betreff im Kontaktformular vorwählen
+window.preselectContactSubject = function(type) {
+    const sel = document.getElementById('contact-subject');
+    if (!sel) return;
+    if (type === 'schnuppern') {
+        sel.value = 'Schnuppertraining / Schiesssport';
+    } else if (type === 'vermietung') {
+        sel.value = 'Vermietung Schützenstube (Anfrage & Termine)';
+    }
+};
+
 

@@ -149,6 +149,18 @@ CREATE TABLE public.documents (
 
 ---
 
+### 2.6 Startseiten-Hub (3 Zielgruppen) & Termine-Filterung
+* **3-Zielgruppen-Navigator (`#zielgruppen`):**
+  * Direkter Einstieg unterhalb des Hero für:
+    1. 🎯 **Schiesssport & Nachwuchs:** Schnuppertraining-Call-to-Action (mit automatischer Betreff-Vorwahl) & J+S-Informationen.
+    2. 🏠 **Schützenstube mieten:** Belegungskalender & Konditionen.
+    3. 👥 **Vereinsportal & Schützen:** Schnelleinstieg in PWA, Resultate und internes Archiv.
+* **Datenschutzkonforme & entflochtene Terminedarstellung (`main.js`):**
+  * Hausbelegungen werden öffentlich neutral als `🏠 Schützenhaus reserviert` ausgegeben (keine internen Namenskürzel).
+  * Reine interne Reinigungsblockaden (`gesperrt für Reinigung`) werden aus dem Standard-Stream der Startseite gefiltert, damit echte Vereinsanlässe (Endschiessen, Generalversammlung) nicht verdrängt werden. Im Tab `🏠 Schützenhaus-Belegung` bleiben alle Buchungsfenster vollständig einsehbar.
+
+---
+
 ## 3. Responsive Kompatibilität & Geräte-Standards
 
 | Gerät / Browser | Getroffene Massnahme | Ergebnis |

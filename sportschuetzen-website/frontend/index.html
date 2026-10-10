@@ -3,10 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Sportschützen Muhen</title>
-    <meta name="description" content="Offizielle Website der Sportschützen Muhen.">
+    <title>Sportschützen Muhen | Kleinkaliber 50m, Luftgewehr 10m &amp; Schützenhaus mieten</title>
+    <meta name="description" content="Offizielle Website der Sportschützen Muhen (Kanton Aargau): Sportliches Schiessen (50m/10m), aktive Nachwuchsförderung, Resultate &amp; gemütliche Schützenstube für bis zu 40 Personen mieten.">
+    <meta name="keywords" content="Sportschützen Muhen, Schiesssport Aargau, Kleinkaliber 50m, Luftgewehr 10m, Schützenhaus mieten Muhen, Nachwuchsförderung, Schiessverein Suhrental">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://sportschuetzen-muhen.ch/">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://sportschuetzen-muhen.ch/">
+    <meta property="og:title" content="Sportschützen Muhen | Präzision &amp; Tradition seit 1919">
+    <meta property="og:description" content="Schiesssport (50m/10m), Nachwuchsförderung, Vereinsanlässe &amp; Schützenhaus mieten im Suhrental.">
+    <meta property="og:image" content="https://sportschuetzen-muhen.ch/bilder_haus/Sicht_auf_Kuche.webp">
+    <meta property="og:locale" content="de_CH">
+    <meta property="og:site_name" content="Sportschützen Muhen">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Sportschützen Muhen | Präzision &amp; Tradition">
+    <meta name="twitter:description" content="Sportliches Schiessen (50m/10m), Nachwuchskurse &amp; gemütliche Schützenstube mieten in Muhen.">
+    <meta name="twitter:image" content="https://sportschuetzen-muhen.ch/bilder_haus/Sicht_auf_Kuche.webp">
+
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    <link rel="apple-touch-icon" href="assets/logo.png">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="css/style.css">
+
+    <!-- Schema.org JSON-LD Structured Data: SportsClub -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SportsClub",
+      "name": "Sportschützen Muhen",
+      "alternateName": "SPS Muhen",
+      "url": "https://sportschuetzen-muhen.ch/",
+      "logo": "https://sportschuetzen-muhen.ch/assets/logo.png",
+      "image": "https://sportschuetzen-muhen.ch/bilder_haus/Sicht_auf_Kuche.webp",
+      "description": "Zweitgrösster Aargauer Schiesssportverein für 50m Kleinkaliber und 10m Luftgewehr mit aktiver Nachwuchsförderung und Schützenhausvermietung.",
+      "foundingDate": "1919-12-04",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Rütelistrasse",
+        "addressLocality": "Muhen",
+        "postalCode": "5037",
+        "addressRegion": "Aargau",
+        "addressCountry": "CH"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 47.3364,
+        "longitude": 8.0531
+      },
+      "email": "sportschuetzen.muhen@gmail.com",
+      "sport": ["Kleinkaliber 50m", "Luftgewehr 10m"]
+    }
+    </script>
 </head>
 <body>
     <site-header active="home"></site-header>
@@ -18,9 +69,63 @@
                 <h1 class="fade-in-up">Präzision & Tradition <br>in Muhen.</h1>
                 <p class="fade-in-up delay-1">Willkommen bei den Sportschützen Muhen. Entdecken Sie unsere Leidenschaft für den Schiesssport, Kameradschaft und Tradition seit vielen Generationen.</p>
                 <div class="hero-actions fade-in-up delay-2">
+                    <a href="#zielgruppen-schnuppern" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 700;">🎯 Schiesssport erleben</a>
                     <a href="schuetzenhaus_vermietung.html" class="btn btn-accent" style="display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 700;">🏠 Schützenhaus mieten</a>
-                    <a href="#about" class="btn btn-primary">Unser Verein</a>
-                    <a href="#reports" class="btn btn-secondary">Aktuelle Berichte</a>
+                    <a href="#zielgruppen-mitglieder" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600;">👥 Für Mitglieder</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3-ZIELGRUPPEN-HUB: Schneller Wegweiser für jeden Besucher -->
+        <section id="zielgruppen" class="audience-section">
+            <div class="container">
+                <div class="section-header" style="margin-bottom: 2rem;">
+                    <h2>Für wen dürfen wir <span class="text-red">da sein?</span></h2>
+                    <p>Wähle deinen Einstieg – egal ob Neuschütze, Festveranstalter oder aktives Vereinsmitglied.</p>
+                </div>
+                
+                <div class="audience-grid">
+                    <!-- Zielgruppe 1: Interessierte & Schnupperer -->
+                    <div id="zielgruppen-schnuppern" class="audience-card glass-card">
+                        <div class="audience-badge">🎯 Für Einsteiger &amp; Jugend</div>
+                        <div class="audience-icon" aria-hidden="true">🎯</div>
+                        <h3>Schiesssport &amp; Nachwuchs</h3>
+                        <p>Erlebe die Faszination der olympischen Disziplinen Kleinkaliber (50m) und Luftgewehr (10m). Wir bieten betreute Schnuppertrainings und fundierte J+S Juniorenausbildung – die Sportausrüstung wird gestellt.</p>
+                        <div class="audience-actions">
+                            <a href="#kontakt" class="btn btn-primary audience-btn" onclick="preselectContactSubject('schnuppern')">🎯 Schnuppertraining anfragen</a>
+                            <a href="verein.html#nachwuchs" class="btn btn-outline audience-btn">Juniorenförderung J+S →</a>
+                        </div>
+                    </div>
+
+                    <!-- Zielgruppe 2: Mietinteressenten -->
+                    <div id="zielgruppen-mieten" class="audience-card glass-card highlight-card">
+                        <div class="audience-badge badge-accent">🏠 Eventlocation im Grünen</div>
+                        <div class="audience-icon" aria-hidden="true">🏠</div>
+                        <h3>Schützenstube mieten</h3>
+                        <p>Feiere Geburtstage, Familienfeste oder Vereinsanlässe in unserer gemütlichen Schützenstube. Platz für bis zu 40 Personen, vollausgestattete Gastroküche, Parkplätze und faire CHF 300.-/Tag.</p>
+                        <div class="audience-actions">
+                            <a href="schuetzenhaus_vermietung.html#kalender" class="btn btn-accent audience-btn">📅 Belegung &amp; Buchung</a>
+                            <a href="schuetzenhaus_vermietung.html" class="btn btn-outline audience-btn">Ausstattung &amp; Konditionen →</a>
+                        </div>
+                    </div>
+
+                    <!-- Zielgruppe 3: Vereinsmitglieder -->
+                    <div id="zielgruppen-mitglieder" class="audience-card glass-card">
+                        <div class="audience-badge">👥 Für Vereinsmitglieder</div>
+                        <div class="audience-icon" aria-hidden="true">🏅</div>
+                        <h3>Vereinsportal &amp; Schützen</h3>
+                        <p>Aktuelle Schiessdaten, Standblatt-Erfassung in der Schützen-App, Ranglisten aller Meisterschaften sowie das historische Vereinsarchiv mit über 280 Dokumenten und Fotoalben.</p>
+                        <div class="audience-actions">
+                            <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" rel="noopener" class="btn btn-primary audience-btn">🎯 Zur Schützen-App (PWA)</a>
+                            <div class="audience-sublinks">
+                                <a href="resultate.html" class="sublink">🏆 Resultate</a>
+                                <span class="sep">•</span>
+                                <a href="intern.html" class="sublink">📂 Internes Archiv</a>
+                                <span class="sep">•</span>
+                                <a href="#termine" class="sublink">📅 Termine</a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>

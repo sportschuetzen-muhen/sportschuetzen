@@ -50,7 +50,7 @@
     --bg-dark: #f8fafc; /* slate-50 (main background) */
     --bg-card: #ffffff; /* pure white for cards */
     --text-light: #1e293b; /* slate-800 for main text */
-    --text-muted: #64748b; /* slate-500 for muted text */
+    --text-muted: #475569; /* slate-600 for optimal WCAG AA contrast (5.8:1) */
     --glass-border: rgba(15, 58, 93, 0.08); /* soft border in navy tint */
     --glass-bg: rgba(255, 255, 255, 0.85); /* white glass background */
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1036,11 +1036,12 @@ textarea.form-control {
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         flex-direction: column;
-        justify-content: center;
+        justify-content: flex-start;
         align-items: center;
         z-index: 99;
-        padding: max(2rem, env(safe-area-inset-top)) 1.5rem max(2rem, env(safe-area-inset-bottom));
+        padding: max(5.5rem, calc(env(safe-area-inset-top) + 4.5rem)) 1.5rem max(2rem, env(safe-area-inset-bottom));
         overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     .desktop-nav.open {
@@ -1048,10 +1049,46 @@ textarea.form-control {
     }
 
     .desktop-nav a {
-        font-size: 1.35rem;
-        margin: 0.75rem 0;
+        font-size: 1.25rem;
+        margin: 0.5rem 0;
         padding: 0.5rem 1.25rem;
         border-radius: 8px;
+        text-align: center;
+    }
+
+    .nav-member-badge {
+        width: 100%;
+        max-width: 280px;
+        margin-top: 1rem;
+        display: flex !important;
+        justify-content: center;
+    }
+
+    .nav-login-btn {
+        width: 100% !important;
+        justify-content: center !important;
+        padding: 0.75rem 1.5rem !important;
+        font-size: 1.05rem !important;
+        border-radius: 30px !important;
+    }
+
+    .nav-user-menu {
+        width: 100%;
+    }
+
+    .nav-user-chip {
+        width: 100% !important;
+        justify-content: center !important;
+        padding: 0.65rem 1.25rem !important;
+        font-size: 1rem !important;
+    }
+
+    .nav-user-dropdown {
+        position: static !important;
+        width: 100% !important;
+        box-shadow: none !important;
+        border: 1px solid rgba(15, 60, 92, 0.12) !important;
+        margin-top: 0.5rem;
     }
 
     .mobile-toggle {
@@ -2389,5 +2426,140 @@ textarea.form-control {
         display: none !important;
     }
 }
+
+/* ==========================================================================
+   ZIELGRUPPEN-HUB (Interessenten, Mieter, Vereinsmitglieder)
+   ========================================================================== */
+.audience-section {
+    padding: 3.5rem 0 4rem 0;
+    background: linear-gradient(180deg, rgba(15, 60, 92, 0.03) 0%, rgba(248, 250, 252, 1) 100%);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.audience-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+    .audience-grid {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+    }
+}
+
+.audience-card {
+    display: flex;
+    flex-direction: column;
+    padding: 2.25rem 1.75rem;
+    border-radius: 16px;
+    background: #ffffff;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 25px rgba(15, 60, 92, 0.05);
+    position: relative;
+    transition: var(--transition);
+}
+
+.audience-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 35px rgba(15, 60, 92, 0.1);
+    border-color: rgba(15, 60, 92, 0.2);
+}
+
+.audience-card.highlight-card {
+    border: 2px solid rgba(220, 38, 38, 0.35);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(254, 242, 242, 0.6) 100%);
+}
+
+.audience-badge {
+    align-self: flex-start;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(15, 60, 92, 0.08);
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+}
+
+.audience-badge.badge-accent {
+    background: rgba(220, 38, 38, 0.1);
+    color: var(--accent-color);
+}
+
+.audience-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    line-height: 1;
+}
+
+.audience-card h3 {
+    font-size: 1.4rem;
+    margin-bottom: 0.75rem;
+    color: var(--primary-color);
+}
+
+.audience-card p {
+    font-size: 0.98rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    flex-grow: 1;
+}
+
+.audience-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: auto;
+}
+
+.audience-btn {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.audience-sublinks {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.88rem;
+}
+
+.audience-sublinks .sublink {
+    color: var(--primary-color);
+    font-weight: 600;
+    transition: var(--transition);
+}
+
+.audience-sublinks .sublink:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
+}
+
+.audience-sublinks .sep {
+    color: #cbd5e1;
+}
+
+/* Universeller responsiver Tabellen-Wrapper */
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 
 
