@@ -240,23 +240,55 @@ function hasValidTitle(grid, c) {
 
 // Hilfsfunktion: Synchronisiert strukturierte Schützenlisten nach public.jm_shooters
 async function syncJMShootersToSupabase(sb, jahr, grid) {
-    if (!sb || !grid || grid.length < 10) return;
+    if (!sb || !grid || grid.length < 6) return;
 
     try {
-        const shooters = [];
-        const hasStatusCol = grid[4] && grid[4].some(val => String(val || '').trim().toLowerCase() === 'status');
-        
-        // Personen-Spalten ermitteln
+        const compRow = grid[2] || [];
         const headerRow = grid[4] || [];
+
+        // Personen-Spalten ermitteln
+        const colRang = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'rang');
         const colNachname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'nachname');
         const colVorname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'vorname');
         const colLizenz = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('lizenz'));
         const colJahrgang = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('jahrgang'));
-        
-        // Total- und Streich-Spalten
-        const compRow = grid[2] || [];
-        const colTotal = compRow.findIndex(t => String(t || '').trim().toLowerCase() === 'total' || String(t || '').trim().toLowerCase() === 'tot');
-        const colStreich = compRow.findIndex(t => String(t || '').trim().toLowerCase().includes('streich'));
+        const colStatus = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'status');
+
+        // Total- und Streich-Spalten (inkl. toleranter Übereinstimmung)
+        const colTotal = compRow.findIndex(t => String(t || '').toLowerCase().includes('total'));
+        const colStreich = compRow.findIndex(t => String(t || '').toLowerCase().includes('streich'));
+
+        // Meisterschafts-Wettkämpfe ermitteln
+        const firstCompCol = (colStatus !== -1 ? colStatus : headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('kombination'))) + 1;
+        const competitions = [];
+        for (let c = firstCompCol; c < colTotal; c++) {
+            const name = String(compRow[c] || '').trim();
+            if (name && name.toLowerCase() !== 'leer') {
+                const pctCol = compRow.findIndex((t, idx) => idx > colTotal && String(t || '').trim().toLowerCase() === (name.toLowerCase() + ' %'));
+                competitions.push({ col: c, name, pctCol });
+            }
+        }
+
+        // Mannschaftsrunden ermitteln
+        const mannschaftCols = [];
+        for (let c = colStreich + 1; c < compRow.length; c++) {
+            const name = String(compRow[c] || '').trim();
+            if (name.toLowerCase().startsWith('mannschaft #')) {
+                mannschaftCols.push({ col: c, name });
+            }
+        }
+
+        // Auswärtsschiessen ermitteln
+        const lastMannschaftCol = mannschaftCols.length > 0 ? mannschaftCols[mannschaftCols.length - 1].col : colStreich;
+        const auswaertsCols = [];
+        for (let c = lastMannschaftCol + 1; c < compRow.length; c++) {
+            const name = String(compRow[c] || '').trim();
+            if (name && name.toLowerCase() !== 'leer') {
+                auswaertsCols.push({ col: c, name });
+            }
+        }
+
+        const shooters = [];
 
         // Liga 1: Zeilen 5 bis 12
         for (let r = 5; r <= 12; r++) {
@@ -267,24 +299,41 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
             
             const fullName = `${nachname} ${vorname}`.trim();
             const lizenz = String(grid[r][colLizenz] || '').trim();
-            const total = parseFloat(grid[r][colTotal]) || 0;
+            const rangVal = parseInt(grid[r][colRang]) || (r - 4);
+            const total = colTotal !== -1 ? (parseFloat(grid[r][colTotal]) || 0) : 0;
             const streich = colStreich !== -1 ? (parseFloat(grid[r][colStreich]) || 0) : 0;
             const jg = parseInt(grid[r][colJahrgang]) || null;
             const isJunior = jg ? (new Date().getFullYear() - jg <= 20) : false;
 
+            const schiessen = competitions.map(comp => {
+                const pkt = parseFloat(grid[r][comp.col]) || 0;
+                const pct = comp.pctCol !== -1 ? (parseFloat(grid[r][comp.pctCol]) || 0) : 0;
+                return { name: comp.name, punkte: pkt, prozent: pct };
+            });
+
+            const mannschaft = mannschaftCols.map(m => {
+                const pkt = parseFloat(grid[r][m.col]) || 0;
+                return { name: m.name, punkte: pkt };
+            });
+
+            const auswaerts = auswaertsCols.map(a => {
+                const pkt = parseFloat(grid[r][a.col]) || 0;
+                return { name: a.name, punkte: pkt };
+            }).filter(a => a.punkte > 0);
+
             shooters.push({
-                id: `${jahr}_L1_${r}_${lizenz || fullName}`,
+                id: `${jahr}_L1_${r}_${lizenz || fullName.replace(/\s+/g, '_')}`,
                 jahr: jahr,
                 person_number: lizenz,
                 name: fullName,
                 jahrgang: jg,
                 liga: 1,
-                rang: r - 4,
+                rang: rangVal,
                 total: total,
                 streichresultat_prz: streich,
-                status: (r >= 11) ? 'abstieg' : 'neutral',
+                status: (rangVal >= 7) ? 'abstieg' : 'neutral',
                 is_junior: isJunior,
-                details: {},
+                details: { schiessen, mannschaft, auswaerts },
                 updated_at: new Date().toISOString()
             });
         }
@@ -298,24 +347,41 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
 
             const fullName = `${nachname} ${vorname}`.trim();
             const lizenz = String(grid[r][colLizenz] || '').trim();
-            const total = parseFloat(grid[r][colTotal]) || 0;
+            const rangVal = parseInt(grid[r][colRang]) || (r - 14);
+            const total = colTotal !== -1 ? (parseFloat(grid[r][colTotal]) || 0) : 0;
             const streich = colStreich !== -1 ? (parseFloat(grid[r][colStreich]) || 0) : 0;
             const jg = parseInt(grid[r][colJahrgang]) || null;
             const isJunior = jg ? (new Date().getFullYear() - jg <= 20) : false;
 
+            const schiessen = competitions.map(comp => {
+                const pkt = parseFloat(grid[r][comp.col]) || 0;
+                const pct = comp.pctCol !== -1 ? (parseFloat(grid[r][comp.pctCol]) || 0) : 0;
+                return { name: comp.name, punkte: pkt, prozent: pct };
+            });
+
+            const mannschaft = mannschaftCols.map(m => {
+                const pkt = parseFloat(grid[r][m.col]) || 0;
+                return { name: m.name, punkte: pkt };
+            });
+
+            const auswaerts = auswaertsCols.map(a => {
+                const pkt = parseFloat(grid[r][a.col]) || 0;
+                return { name: a.name, punkte: pkt };
+            }).filter(a => a.punkte > 0);
+
             shooters.push({
-                id: `${jahr}_L2_${r}_${lizenz || fullName}`,
+                id: `${jahr}_L2_${r}_${lizenz || fullName.replace(/\s+/g, '_')}`,
                 jahr: jahr,
                 person_number: lizenz,
                 name: fullName,
                 jahrgang: jg,
                 liga: 2,
-                rang: r - 14,
+                rang: rangVal,
                 total: total,
                 streichresultat_prz: streich,
-                status: (r <= 16) ? 'aufstieg' : 'neutral',
+                status: (rangVal <= 2) ? 'aufstieg' : 'neutral',
                 is_junior: isJunior,
-                details: {},
+                details: { schiessen, mannschaft, auswaerts },
                 updated_at: new Date().toISOString()
             });
         }

@@ -59,23 +59,19 @@ function initDashboard() {
     const selectElement = document.getElementById('jahr-select');
     if (!selectElement) return;
 
-    const startYear = 2025;
     const currentYear = new Date().getFullYear();
 
-    // 1. Populate Dropdown dynamically
-    let defaultOption = document.createElement('option');
-    defaultOption.value = "aktuell";
-    defaultOption.textContent = `Aktuelle Saison (${currentYear})`;
-    selectElement.appendChild(defaultOption);
+    // 1. Initial Populate mit Standardoptionen
+    selectElement.innerHTML = `
+        <option value="aktuell">Aktuelle Saison (${currentYear})</option>
+        <option value="2025">Saison 2025</option>
+        <option value="2023">Saison 2023</option>
+    `;
 
-    for (let y = currentYear - 1; y >= startYear; y--) {
-        let archiveOption = document.createElement('option');
-        archiveOption.value = y.toString();
-        archiveOption.textContent = `Saison ${y}`;
-        selectElement.appendChild(archiveOption);
-    }
+    // 2. Verfügbare Saisons dynamisch aus Supabase nachladen
+    loadAvailableSeasons(selectElement);
 
-    // 2. Tab switching logic mit voller ARIA-Barrierefreiheit
+    // 3. Tab switching logic mit voller ARIA-Barrierefreiheit
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.tab-btn').forEach(b => {
@@ -104,13 +100,52 @@ function initDashboard() {
         });
     });
 
-    // 3. Load initial data when year changes or on load
+    // 4. Load initial data when year changes or on load
     selectElement.addEventListener('change', () => {
         loadAllData(selectElement.value);
     });
 
     // Initial load
     loadAllData("aktuell");
+}
+
+async function loadAvailableSeasons(selectElement) {
+    const cacheKey = "res_cache_available_seasons";
+    fetchWithSWRCache(
+        `${SUPABASE_REST_URL}/jm_seasons?select=jahr,title,is_archived&order=jahr.desc`,
+        cacheKey,
+        (seasons) => {
+            if (!Array.isArray(seasons) || seasons.length === 0) return;
+            const currentVal = selectElement.value || "aktuell";
+            const currentYear = new Date().getFullYear();
+
+            const archivedYears = seasons
+                .filter(s => s.jahr !== 'current')
+                .map(s => s.jahr)
+                .sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
+
+            selectElement.innerHTML = '';
+            
+            const curOpt = document.createElement('option');
+            curOpt.value = 'aktuell';
+            curOpt.textContent = `Aktuelle Saison (${currentYear})`;
+            selectElement.appendChild(curOpt);
+
+            archivedYears.forEach(y => {
+                const opt = document.createElement('option');
+                opt.value = y;
+                opt.textContent = `Saison ${y}`;
+                selectElement.appendChild(opt);
+            });
+
+            if ([...selectElement.options].some(o => o.value === currentVal)) {
+                selectElement.value = currentVal;
+            }
+        },
+        (err) => {
+            console.warn("Konnte verfügbare Saisons nicht aus Supabase laden:", err);
+        }
+    );
 }
 
 function loadAllData(selectedYear) {
@@ -140,7 +175,7 @@ function loadAllData(selectedYear) {
 // === TAB 1: JAHRESMEISTERSCHAFT ===
 async function loadJahresmeisterschaft(yearParam) {
     const jmYear = (yearParam === "aktuell" || yearParam === "current") ? "current" : yearParam;
-    const API_URL = `${SUPABASE_REST_URL}/jm_shooters?jahr=eq.${encodeURIComponent(jmYear)}&order=rang.asc`;
+    const API_URL = `${SUPABASE_REST_URL}/jm_shooters?jahr=eq.${encodeURIComponent(jmYear)}&order=liga.asc,rang.asc`;
     const fmt = v => isFinite(v) ? Number(v).toFixed(2) : "0.00";
     const arr = v => Array.isArray(v) ? v : [];
     const cacheKey = `res_cache_jm_${yearParam}`;

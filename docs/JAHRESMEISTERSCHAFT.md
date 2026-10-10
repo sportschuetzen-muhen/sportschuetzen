@@ -58,7 +58,15 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 
 ---
 
-## 4. Fachliche Roadmap & Weiterentwicklung
+## 4. Migration 52: Korrektur der Datenextraktion & Dynamische Saisons (Oktober 2026)
+
+- **Extraktions-Korrektur in `jm_shooters`:** Der Synchronisations-Parser in `syncJMShootersToSupabase()` (`jahresmeisterschaft-core.js`) wurde korrigiert, um Spaltenüberschriften wie `TOTAL ... %` tolerant zu erkennen und vollständige Einzelresultate (`details`: Meisterschaft, Mannschaftsrunden, Auswärtsschiessen) zu strukturieren. Migration `52_fix_jm_shooters_data.sql` reparierte alle historischen Saisons (`current`, `2025`, `2023`).
+- **Dynamisches Saison-Archiv im Frontend:** In `resultate.js` wird die Saisonauswahl (`#jahr-select`) nun dynamisch via SWR-Cache aus `public.jm_seasons` gespeist, sodass alle archivierten Jahre sofort ladezeitoptimiert abrufbar sind.
+- **Sortierung:** Die REST-Abfragen in Website und PWA wurden auf `order=liga.asc,rang.asc` vereinheitlicht.
+
+---
+
+## 5. Fachliche Roadmap & Weiterentwicklung
 
 ### Phase A: Berechnungs-Architektur (Optional)
 - Evaluation zur Überführung der Streichresultat-Logik (Liga 1 Top 8, Auf-/Abstieg) in eine Postgres Stored Procedure (`public.recalculate_jahresmeisterschaft(jahr)`), um die Berechnung vollständig serverseitig zu kapseln.
