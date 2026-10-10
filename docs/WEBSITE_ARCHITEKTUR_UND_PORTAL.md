@@ -135,6 +135,20 @@ CREATE TABLE public.documents (
 
 ---
 
+### 2.5 Nativer Website-Kontaktdienst & Dynamische System-Mails (Migration 53)
+* **Entkopplung von externen Drittanbietern:** Das bisherige Formular (Web3Forms) wurde vollständig durch die native Supabase Mail-Engine und PostgreSQL abgelöst.
+* **Single Source of Truth:**
+  1. Jede Anfrage wird direkt per REST in `public.website_contact_messages` persistiert (`status = 'neu'`).
+  2. Der E-Mail-Versand erfolgt über die Supabase Edge Function `send-email`.
+* **Dynamische Empfänger-Auflösung via System-Mail:**
+  * Das Formular übergibt `systemMailKey: 'Info_Mail_Kontakt_Website'`.
+  * Die Empfänger werden serverseitig dynamisch über `public.system_mail_configs` und die RPC `get_system_mail_array` aufgelöst.
+  * Der Vorstand kann die Empfängerliste im Vorstandsportal unter **✉️ System-Mails** in der Kategorie **🌐 Website & Kontakt** jederzeit anpassen, ohne dass Code geändert werden muss.
+* **Komfortable Antwortfunktion:**
+  * Die Edge Function setzt den Header `Reply-To` auf die E-Mail-Adresse des Anfragenden. Vorstandsmitglieder können im Mailprogramm direkt auf «Antworten» klicken.
+
+---
+
 ## 3. Responsive Kompatibilität & Geräte-Standards
 
 | Gerät / Browser | Getroffene Massnahme | Ergebnis |
@@ -152,5 +166,7 @@ CREATE TABLE public.documents (
    Immer über `public.documents` via Supabase Studio, RPC oder Vorstandsportal einfügen. Niemals statische HTML-Textzeilen ohne Link hinterlegen.
 2. **Neue Fotos & Alben (Immich-Sync):**  
    Im Immich-Manager dem Album den Status-Tag zuweisen. Das Sync-Skript `sync-immich-album.js` übernimmt `visibility: 'public'` für historische Aufnahmen und Hausbilder, ansonsten automatisch `visibility: 'members'`.
-3. **Keine Google-Sheets-Fallbacks:**  
+3. **Keine Drittanbieter-Formulare:**  
+   Kontakt- und Buchungsformulare kommunizieren ausschliesslich über Supabase REST und die Edge Function `send-email` mit Empfänger-Steuerung via `system_mail_configs`.
+4. **Keine Google-Sheets-Fallbacks:**  
    Die Website fragt Daten direkt via Supabase REST (`/rest/v1/...`) oder den Cloudflare Worker ab.

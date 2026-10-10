@@ -41,8 +41,19 @@ if (mobileToggle && navLinks && !mobileToggle.hasAttribute('data-bound')) {
 // === TERMINE & GOOGLE KALENDER INTEGRATION ===
 
 const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
+const SUPABASE_FUNCTIONS_URL = "https://supabase-muhen.danfamily.uk/functions/v1";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 const GOOGLE_HAUS_KALENDER_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender";
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 let allMergedEvents = [];
 
@@ -558,7 +569,7 @@ window.addEventListener('hashchange', () => {
     }
 });
 
-// AJAX Contact Form Handler (Web3Forms)
+// Native Supabase Contact Form Handler (Single Source of Truth + Dynamic System-Mails)
 function initContactForm() {
     const form = document.getElementById('contact-form');
     const status = document.getElementById('contact-status');
@@ -567,45 +578,155 @@ function initContactForm() {
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
+        // Anti-Spam Botcheck
+        const botcheck = document.getElementById('contact-botcheck');
+        if (botcheck && botcheck.checked) {
+            console.warn('Bot submission blocked.');
+            status.style.display = "block";
+            status.style.backgroundColor = "rgba(16, 185, 129, 0.1)";
+            status.style.color = "#10b981";
+            status.style.border = "1px solid rgba(16, 185, 129, 0.2)";
+            status.innerText = "Vielen Dank! Ihre Nachricht wurde erfolgreich übermittelt.";
+            form.reset();
+            return;
+        }
+
+        const nameInput = document.getElementById('contact-name');
+        const emailInput = document.getElementById('contact-email');
+        const subjectInput = document.getElementById('contact-subject');
+        const messageInput = document.getElementById('contact-message');
+
+        const name = (nameInput?.value || '').trim();
+        const email = (emailInput?.value || '').trim();
+        const subject = (subjectInput?.value || '').trim();
+        const message = (messageInput?.value || '').trim();
+
+        if (!name || !email || !subject || !message) {
+            status.style.display = "block";
+            status.style.backgroundColor = "rgba(239, 68, 68, 0.1)";
+            status.style.color = "#ef4444";
+            status.style.border = "1px solid rgba(239, 68, 68, 0.2)";
+            status.innerText = "Bitte füllen Sie alle erforderlichen Felder aus.";
+            return;
+        }
+
         // Block consecutive submits
         submitBtn.disabled = true;
         const originalBtnText = submitBtn.innerText;
-        submitBtn.innerText = "Wird gesendet...";
+        submitBtn.innerText = "Wird übermittelt...";
 
         status.style.display = "none";
-        status.className = ""; // clear classes
-
-        const formData = new FormData(form);
+        status.className = "";
 
         try {
-            const response = await fetch(form.action, {
-                method: form.method,
-                body: formData,
+            // 1. In Supabase PostgreSQL speichern (Single Source of Truth)
+            let contactRecordId = null;
+            try {
+                const insertRes = await fetch(`${SUPABASE_REST_URL}/website_contact_messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({
+                        name,
+                        email,
+                        subject,
+                        message,
+                        status: 'neu'
+                    })
+                });
+            } catch (dbErr) {
+                console.warn('DB-Protokollierung fehlgeschlagen, versuche Mail-Versand:', dbErr);
+            }
+
+            // 2. Professionelle HTML-E-Mail formatieren
+            const nowFormatted = new Date().toLocaleString('de-CH', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+            const safeName = escapeHtml(name);
+            const safeEmail = escapeHtml(email);
+            const safeSubject = escapeHtml(subject);
+            const safeMessage = escapeHtml(message).replace(/\n/g, '<br>');
+
+            const mailHtml = `
+              <!DOCTYPE html>
+              <html>
+              <head><meta charset="utf-8"></head>
+              <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b;">
+                <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid rgba(15, 60, 92, 0.12); box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                  <div style="background-color: #0f3c5c; padding: 24px; text-align: center; border-bottom: 3px solid #dc2626;">
+                    <h2 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.3px;">Neue Website-Kontaktanfrage</h2>
+                    <p style="color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 13px;">Sportschützen Muhen (sportschuetzen-muhen.ch)</p>
+                  </div>
+                  <div style="padding: 24px;">
+                    <div style="background: #f1f5f9; border-radius: 8px; padding: 14px 16px; margin-bottom: 20px;">
+                      <p style="margin: 0 0 6px 0; font-size: 14px;"><strong>👤 Absender:</strong> ${safeName}</p>
+                      <p style="margin: 0 0 6px 0; font-size: 14px;"><strong>✉️ E-Mail:</strong> <a href="mailto:${safeEmail}" style="color: #0f3c5c; text-decoration: underline;">${safeEmail}</a></p>
+                      <p style="margin: 0 0 6px 0; font-size: 14px;"><strong>📌 Betreff:</strong> ${safeSubject}</p>
+                      <p style="margin: 0; font-size: 13px; color: #64748b;"><strong>🕒 Eingegangen:</strong> ${nowFormatted} Uhr</p>
+                    </div>
+                    <div style="margin-top: 16px;">
+                      <h4 style="margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">Mitteilung:</h4>
+                      <div style="background: #ffffff; border-left: 4px solid #0f3c5c; padding: 14px 16px; font-size: 15px; line-height: 1.6; color: #334155; border: 1px solid #e2e8f0; border-left-width: 4px; border-radius: 4px;">
+                        ${safeMessage}
+                      </div>
+                    </div>
+                    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5;">
+                      💡 <strong>Hinweis:</strong> Sie können direkt auf diese E-Mail antworten, um mit <strong>${safeName}</strong> in Kontakt zu treten (Reply-To ist auf <em>${safeEmail}</em> hinterlegt).
+                    </div>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `;
+
+            // 3. Zentrale Supabase Mail-Engine aufrufen (Empfänger dynamisch via Info_Mail_Kontakt_Website)
+            const mailPayload = {
+                systemMailKey: 'Info_Mail_Kontakt_Website',
+                subject: `[Website Kontakt] ${subject} (${name})`,
+                replyTo: email,
+                senderName: 'Sportschützen Muhen Website',
+                html: mailHtml,
+                text: `Neue Website-Kontaktanfrage von ${name} (${email})\nEingegangen: ${nowFormatted} Uhr\nBetreff: ${subject}\n\nNachricht:\n${message}`,
+                module: 'website',
+                moduleRef: 'kontakt',
+                recordId: contactRecordId
+            };
+
+            const mailRes = await fetch(`${SUPABASE_FUNCTIONS_URL}/send-email`, {
+                method: 'POST',
                 headers: {
-                    'Accept': 'application/json'
-                }
+                    'Content-Type': 'application/json',
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                },
+                body: JSON.stringify(mailPayload)
             });
 
-            const json = await response.json();
-
-            if (response.status === 200 || json.success) {
-                status.style.display = "block";
-                status.style.backgroundColor = "rgba(16, 185, 129, 0.1)";
-                status.style.color = "#10b981";
-                status.style.border = "1px solid rgba(16, 185, 129, 0.2)";
-                status.innerText = "Vielen Dank! Ihre Nachricht wurde erfolgreich an uns übermittelt. Wir setzen uns bald mit Ihnen in Verbindung.";
-                form.reset();
-            } else {
-                throw new Error(json.message || "Es gab ein Problem beim Übermitteln der Nachricht.");
+            if (!mailRes.ok) {
+                const errJson = await mailRes.json().catch(() => ({}));
+                throw new Error(errJson.error || `Server meldete HTTP ${mailRes.status}`);
             }
+
+            status.style.display = "block";
+            status.style.backgroundColor = "rgba(16, 185, 129, 0.1)";
+            status.style.color = "#10b981";
+            status.style.border = "1px solid rgba(16, 185, 129, 0.2)";
+            status.innerText = "Vielen Dank! Ihre Nachricht wurde erfolgreich an uns übermittelt. Wir setzen uns bald mit Ihnen in Verbindung.";
+            form.reset();
+
         } catch (error) {
             console.error("Kontaktformular Fehler:", error);
             status.style.display = "block";
             status.style.backgroundColor = "rgba(239, 68, 68, 0.1)";
             status.style.color = "#ef4444";
             status.style.border = "1px solid rgba(239, 68, 68, 0.2)";
-            status.innerText = "Fehler: " + (error.message || "Die Nachricht konnte nicht gesendet werden. Bitte versuchen Sie es später erneut.");
+            status.innerText = "Fehler: " + (error.message || "Die Nachricht konnte nicht gesendet werden. Bitte versuchen Sie es später erneut oder kontaktieren Sie uns direkt per E-Mail.");
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = originalBtnText;

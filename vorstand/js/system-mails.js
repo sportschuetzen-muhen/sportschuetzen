@@ -106,12 +106,13 @@ function renderSystemMailsUI(container) {
   const modulLabels = {
     jahresmeisterschaft: '🏆 Jahresmeisterschaft',
     vermietung:          '🏠 Vermietung',
+    website:             '🌐 Website & Kontakt',
     gv:                  '📋 Generalversammlung',
     termine:             '📅 Termine / Jahresprogramm',
     allgemein:           '⚙️ Allgemein'
   };
 
-  const groupOrder = ['jahresmeisterschaft', 'vermietung', 'gv', 'termine', 'allgemein'];
+  const groupOrder = ['jahresmeisterschaft', 'vermietung', 'website', 'gv', 'termine', 'allgemein'];
   const allModuls  = [...new Set([...groupOrder, ...Object.keys(groups)])];
 
   let html = `

@@ -25,6 +25,7 @@ interface Attachment {
 
 interface SendEmailPayload {
   to: string | string[];
+  replyTo?: string;
   cc?: string | string[];
   bcc?: string | string[];
   subject: string;
@@ -330,6 +331,10 @@ Deno.serve(async (req) => {
 
       let rfc822 = "";
       rfc822 += `From: ${fromHeader}\r\n`;
+      if (payload.replyTo) {
+        const cleanReplyTo = payload.replyTo.replace(/[<>\r\n]/g, "").trim();
+        if (cleanReplyTo) rfc822 += `Reply-To: <${cleanReplyTo}>\r\n`;
+      }
       rfc822 += `To: ${recipients.join(", ")}\r\n`;
       if (ccList.length > 0) rfc822 += `Cc: ${ccList.join(", ")}\r\n`;
       rfc822 += `Subject: ${encodeSubject(subject)}\r\n`;

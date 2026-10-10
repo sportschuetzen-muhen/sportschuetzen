@@ -203,13 +203,9 @@
                 </div>
                 
                 <div class="glass-card" style="box-shadow: 0 10px 30px rgba(15, 58, 93, 0.05);">
-                    <form id="contact-form" action="https://api.web3forms.com/submit" method="POST">
-                        <!-- Web3Forms Access Key: Hier tragen Sie Ihren kostenfreien Schlüssel ein -->
-                        <!-- Für den Testbetrieb nutzen wir eine Weiterleitung, bitte hier den Schlüssel einsetzen -->
-                        <input type="hidden" name="access_key" id="web3forms-key" value="YOUR_ACCESS_KEY_HERE">
-                        
+                    <form id="contact-form">
                         <!-- Anti-Spam Honeypot Field -->
-                        <input type="checkbox" name="botcheck" class="hidden" style="display: none;">
+                        <input type="checkbox" name="botcheck" id="contact-botcheck" class="hidden" style="display: none;" tabindex="-1" autocomplete="off">
                         
                         <div class="form-group">
                             <label for="contact-name">Name *</label>
