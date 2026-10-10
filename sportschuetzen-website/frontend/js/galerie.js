@@ -173,7 +173,7 @@ function generateAlbumFilters() {
     if (!isUserLoggedIn && hiddenCount > 0) {
         html += `
             <div style="width: 100%; text-align: center; margin-top: 0.35rem; font-size: 0.82rem; color: var(--text-muted);">
-                🔒 <b>${hiddenCount} weitere Vereinsfotos & Alben</b> im <a href="verein.html#mitglieder" onclick="window.AuthSession?.login('verein.html#mitglieder')" style="color: var(--accent-color); font-weight: 700; text-decoration: underline;">geschützten Mitgliederbereich</a> verfügbar.
+                🔒 <b>${hiddenCount} weitere Vereinsfotos & Alben</b> im <a href="intern.html" onclick="window.AuthSession?.login('intern.html')" style="color: var(--accent-color); font-weight: 700; text-decoration: underline;">geschützten Mitgliederbereich</a> verfügbar.
             </div>
         `;
     }

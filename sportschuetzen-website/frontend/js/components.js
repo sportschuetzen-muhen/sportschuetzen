@@ -49,7 +49,7 @@ class SiteHeader extends HTMLElement {
                         <a href="index.html#termine" class="${active === 'termine' ? 'active' : ''}">Termine</a>
                         <a href="index.html#reports" class="${active === 'reports' ? 'active' : ''}">Berichte</a>
                         <a href="resultate.html" class="${active === 'resultate' ? 'active' : ''}">Resultate</a>
-                        <a href="verein.html#mitglieder" id="nav-intern-link" class="${active === 'mitglieder' ? 'active' : ''}" style="display: none; color: var(--accent-color); font-weight: 700;">🔐 Intern</a>
+                        <a href="intern.html" id="nav-intern-link" class="${active === 'intern' || active === 'mitglieder' ? 'active' : ''}" style="display: none; color: var(--accent-color); font-weight: 700;">🔐 Intern</a>
                         <a href="schuetzenhaus_vermietung.html" class="nav-cta-btn ${active === 'vermietung' ? 'active' : ''}">🏠 Vermietung</a>
                         <div id="nav-member-badge" class="nav-member-badge" style="display: inline-flex; align-items: center; margin-left: 0.25rem;"></div>
                     </nav>
@@ -142,7 +142,7 @@ class SiteHeader extends HTMLElement {
                             <div style="padding: 0.5rem 1rem; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.78rem; color: var(--text-muted);">
                                 Angemeldet als <b style="color: var(--primary-color); display: block;">${user.name || displayName}</b>
                             </div>
-                            <a href="verein.html#mitglieder" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
+                            <a href="intern.html" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
                                 <span>📂</span> <span>Mitgliederbereich</span>
                             </a>
                             <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" rel="noopener" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
@@ -203,7 +203,7 @@ class SiteHeader extends HTMLElement {
                 if (loginBtn) {
                     loginBtn.addEventListener('click', (e) => {
                         e.preventDefault();
-                        window.AuthSession.login('verein.html#mitglieder');
+                        window.AuthSession.login('intern.html');
                     });
                 }
             }

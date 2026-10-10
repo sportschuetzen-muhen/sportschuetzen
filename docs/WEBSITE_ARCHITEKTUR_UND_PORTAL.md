@@ -1,8 +1,8 @@
 # Fachdokumentation: Vereins-Website, Medien & Geschützter Mitgliederbereich
 
 > **Status:** PRODUKTIV (Supabase Single Source of Truth)  
-> **Stand:** Oktober 2026 (Migration 50)  
-> **Komponenten:** `sportschuetzen-website/frontend/` (`index.html`, `verein.html`, `schuetzenhaus_vermietung.html`, `resultate.html`), `js/` (`components.js`, `auth-session.js`, `galerie.js`, `main.js`), Cloudflare Worker `sportschuetzen-website-worker.js`, Immich-Sync  
+> **Stand:** Oktober 2026 (Migration 51)  
+> **Komponenten:** `sportschuetzen-website/frontend/` (`index.html`, `verein.html`, `intern.html`, `schuetzenhaus_vermietung.html`, `resultate.html`), `js/` (`components.js`, `auth-session.js`, `galerie.js`, `main.js`), Cloudflare Worker `sportschuetzen-website-worker.js`, Immich-Sync  
 > **Backend & Single Source of Truth:** Supabase PostgreSQL (`public.members`, `public.documents`, `auth.users`), Supabase Storage (`operatives-storage`, `club-documents`), Immich Media Server (`immich-muhen.danfamily.uk`)  
 > **Relevanz für KI:** Verbindliche Referenz für die Frontend-Architektur der Website, die nahtlose Universal-SSO-Anbindung, die Medientrennung (öffentlich vs. geschützt), das dynamische PDF-Dokumentenarchiv und die Responsive-Standards für Mobilgeräte und iPads.
 
@@ -24,7 +24,7 @@ Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte
 │ • Schützenhaus-Vermietung     │   Upload, RSVPs, Termine       │   Mitgliederverwaltung, RBAC   │
 │ • Öffentliche Galerie & News  │ • Offline-fähig (ServiceWorker)│ • 20 Fachmodule mit RBAC-Matrix│
 │ • 🔐 Geschützter Mitglieder-  │ • Authentifizierung: Universal-│ • Authentifizierung: Supabase  │
-│   bereich (Alben, Archiv-PDF) │   SSO (Magic Link/PIN/OTP)     │   Auth (GoTrue) + 2FA / Audit  │
+│   bereich (intern.html)       │   SSO (Magic Link/PIN/OTP)     │   Auth (GoTrue) + 2FA / Audit  │
 └───────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
                                                 │
                                                 ▼
@@ -45,12 +45,12 @@ Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte
 * **Status 1: Nicht angemeldet (Gast / Öffentlich):**
   * Kein redundanter `🔐 Mitglieder`-Link im Hauptmenü.
   * Am rechten Rand der Navigation sitzt ausschliesslich der klare Button **`🔐 Login`** (`.nav-login-btn`).
-  * Klick darauf führt direkt zum zentralen Universal-SSO mit automatischem Rücksprung zu `verein.html#mitglieder`.
+  * Klick darauf führt direkt zum zentralen Universal-SSO mit automatischem Rücksprung zu `intern.html`.
 * **Status 2: Angemeldet (Vereinsmitglied):**
-  * In der Menüleiste erscheint der geschützte Punkt **`🔐 Intern`** (`#nav-intern-link`).
+  * In der Menüleiste erscheint der geschützte Punkt **`🔐 Intern`** (`#nav-intern-link` verweist auf `intern.html`).
   * Das Profil-Element (`.nav-user-chip`) zeigt den Vornamen und die Rolle (`👤 Daniel [Mitglied] ▾`).
   * Ein Klick öffnet ein barrierefreies Dropdown-Menü:
-    1. 📂 **Mitgliederbereich** (`verein.html#mitglieder`)
+    1. 📂 **Mitgliederbereich** (`intern.html`)
     2. 🎯 **Schützen-App (PWA)**
     3. 👑 **Vorstandsportal** *(nur für Benutzer mit Rolle `vorstand` oder `admin`)*
     4. 🚪 **Abmelden**
@@ -92,7 +92,7 @@ Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte
 
 ---
 
-### 2.4 Zentrales Dokumenten- & PDF-Archiv (Migration 50)
+### 2.4 Zentrales Dokumenten- & PDF-Archiv (Migration 50 & 51)
 * **Single Source of Truth:** Tabelle `public.documents` in PostgreSQL und Storage-Buckets `operatives-storage` / `club-documents`.
 * **Datenmodell (`public.documents`):**
 
@@ -101,7 +101,7 @@ CREATE TABLE public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255) NOT NULL,
     description TEXT,
-    category VARCHAR(50) NOT NULL, -- 'statuten', 'reglement', 'anleitung', 'gv', 'protokoll', 'finanzen'
+    category VARCHAR(50) NOT NULL, -- 'gv', 'einladungen', 'chronik'
     visibility VARCHAR(20) NOT NULL DEFAULT 'members', -- 'public', 'members', 'vorstand'
     file_url TEXT NOT NULL,
     file_size_kb INTEGER DEFAULT 0,
@@ -115,18 +115,22 @@ CREATE TABLE public.documents (
 
 * **Row-Level Security (RLS):**
   * `public`: Für jedermann sichtbar (z.B. Schützenhausordnung, Merkblatt Mieter).
-  * `members`: Für angemeldete Vereinsmitglieder sichtbar (Statuten, Schiessordnung, Munitionsbestellung, Spesenreglement, Standblatt-Leitfaden).
+  * `members`: Für angemeldete Vereinsmitglieder sichtbar (Archivdokumente, Einladungen, Chroniken).
   * `vorstand`: Vertraulich; nur über RBAC-Rechte `dokumente.view` / `dokumente.manage` oder Vorstandsrolle abrufbar (Vorstandsprotokolle, Buchhaltungsberichte).
-* **Frontend-Integration (`verein.html`):**
-  * Live-Abfrage via Supabase REST API (`/rest/v1/documents?order=sort_order.asc,year.desc`).
+* **Entkoppelter geschützter Bereich (`intern.html`):**
+  * Der Mitgliederbereich ist vollständig von `verein.html` in eine eigene Seite `intern.html` ausgelagert. Dadurch wird verhindert, dass beim Hoch- oder Runterscrollen versehentlich in allgemeine öffentliche Inhalte (Geschichte, Galerie, Nachwuchs) gescrollt wird.
+  * **Standard-Tab:** Beim Betreten des Bereichs ist **`📄 Vereinsdokumente & Archiv` sofort als primärer Tab geöffnet** (Fotos folgen als zweiter Tab; die redundante Termine-Doppelung wurde entfernt).
+  * Live-Abfrage via Supabase REST API (`/rest/v1/documents?order=year.desc,sort_order.asc,title.asc`).
   * Live-Suche (`#doc-search-input`) nach Titel, Beschreibung und Jahreszahl (z.B. Suche nach `1923` oder `1996`).
-  * Schnellfilter nach Kategorien: *Alle Dokumente*, *🗳️ Generalversammlungen (1919–heute)*, *📖 Chronik & Geschichte*, *📜 Statuten*, *🎯 Reglemente & Schiessordnung*, *📋 Leitfäden*, *💰 Finanzen & Spesen*.
-  * Responsive Karten mit Typ-Badge (`PDF`, `DOCX`, `XLSX`, `MSG`, `HTML`), Dateigrösse (`245 KB`), Jahr (`📅 1923`) und direktem Öffnen-Button (`target="_blank" rel="noopener"`).
+  * **Kompakte 3-Ordner-Struktur (Migration 51):**
+    1. 🗳️ **Generalversammlung** (`category = 'gv'`, 245 Dokumente: Protokolle & Jahresberichte ab Gründungsjahr 1919)
+    2. ✉️ **Einladungen** (`category = 'einladungen'`, 34 Dokumente: GV-Einladungen & Traktanden)
+    3. 📖 **Chronik** (`category = 'chronik'`, 2 Dokumente: Historische Vereinschroniken 1990 & 1997)
+    * Alle unvollständigen Dummy-Einträge ohne Archivbezug ("leere Hüllen") wurden bereinigt.
+  * Responsive Karten mit Typ-Badge (`PDF`, `DOCX`, `MSG`), Dateigrösse, Jahr (`📅 1923`) und direktem Öffnen-Button (`target="_blank" rel="noopener"`).
   * Dynamischer Dokumentenzähler (`#doc-count-badge`) zur transparenten Anzeige der gefilterten Trefferanzahl.
-  * Vollständige Entfernung alter Google-Apps-Script-Texte zugunsten der nahtlosen Vorstandsportal-Verlinkung (`vorstand/index.html`).
-* **Historisches Vereinsarchiv & Google-Drive-Entkopplung (Oktober 2026):**
-  * Einmalige Spiegelung und Bereinigung von 289 historischen Dokumenten (240+ MB) aus den Vorstands-Google-Drive-Ordnern (Protokolle ab Gründungsjahr 1919, Einladungen, Jahresberichte und Vereinschroniken) in den Supabase Storage Bucket `club-documents/archiv/`.
-  * Reine Binär- und Office-Dateien; proprietäre ZIP-Container wurden im Sinne des Webstandards und der mobilen Betrachtung entfernt.
+* **Historisches Vereinsarchiv & Google-Drive-Entkopplung:**
+  * Spiegelung von 281 historischen Originaldokumenten aus den Vorstands-Google-Drive-Ordnern in den Supabase Storage Bucket `club-documents/archiv/`.
   * Volle Datensouveränität auf CT 117 ohne Abhängigkeit von Google-Authentifizierung oder Drittanbieter-Laufzeiten.
 
 ---

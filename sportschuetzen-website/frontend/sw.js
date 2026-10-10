@@ -1,9 +1,10 @@
-const CACHE_NAME = 'sportschuetzen-cache-v4';
+const CACHE_NAME = 'sportschuetzen-cache-v5';
 
 const STATIC_ASSETS = [
     './',
     './index.html',
     './verein.html',
+    './intern.html',
     './resultate.html',
     './schuetzenhaus_vermietung.html',
     './datenschutz.html',
