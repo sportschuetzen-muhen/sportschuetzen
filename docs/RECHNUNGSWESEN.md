@@ -130,6 +130,10 @@ Wird eine Rechnung im Rechnungsmodul gelöscht – entweder einzeln (`rnDeleteIn
 * **Zusatzrechnung Wirtschaft/Vermietung (nach dem Anlass):** Fallen nach der Durchführung des Anlasses zusätzliche Kosten an (z. B. Nachreinigung CHF 35.–/h bei ungenügender Besenreinheit, zusätzliches Cheminéeholz CHF 20.–, Getränkebezüge Wirtschaft oder Sachbeschädigungen), wird hierfür über den `RechnungsCore` eine **«Zusatzrechnung Wirtschaft/Vermietung»** (Konto 3400) erstellt.
 * **Mahnwesen für Zusatzrechnungen:** Da der Anlass bereits stattgefunden hat, greift bei ausstehenden Zusatzrechnungen das reguläre, dreistufige kaufmännische Mahnwesen im zentralen Rechnungsmodul (`mahnung_1`, `mahnung_2`, `mahnung_3`).
 
+### 3.3 Materialverkauf & Depot-/Kautionsrechnungen (Inventar-Anbindung)
+* **Entkopplung vom Direktversand:** Rechnungen aus dem Inventarmodul (`source_module: 'inventar'`, Typen `Materialverkauf` und `Depot / Pfand`) werden nicht direkt im Fachmodul per E-Mail versendet, sondern im Rechnungsmodul im Status `mail_status: 'entwurf'` hinterlegt.
+* **Massenversand & Einzelkontrolle:** Im Rechnungs-Cockpit erscheinen diese Belege sofort unter «Noch nicht versendet» und können gezielt nach Typ gefiltert oder gesammelt via Massenversand per E-Mail mit QR-Rechnungs-PDF versendet werden.
+
 ---
 
 ## 4. Datenmodell (Supabase PostgreSQL)

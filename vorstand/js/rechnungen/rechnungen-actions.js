@@ -4435,8 +4435,16 @@ window.rnRenderMassSendModalContent = function(modalEl) {
   // 1. Rechnungen filtern
   let candidates = (window._invoices || []).filter(inv => {
     // Typ Filter
-    if (typeFilter !== 'alle' && String(inv.type || '').toLowerCase() !== typeFilter.toLowerCase()) {
-      return false;
+    if (typeFilter !== 'alle') {
+      const invType = String(inv.type || '').toLowerCase();
+      const targetFilter = typeFilter.toLowerCase();
+      if (targetFilter.includes('depot') || targetFilter.includes('pfand')) {
+        if (!invType.includes('depot') && !invType.includes('pfand') && !invType.includes('kaution')) {
+          return false;
+        }
+      } else if (invType !== targetFilter) {
+        return false;
+      }
     }
 
     if (currentFilter === 'selection') {
@@ -4571,6 +4579,7 @@ window.rnRenderMassSendModalContent = function(modalEl) {
                   <option value="Jahresbeitrag" ${typeFilter === 'Jahresbeitrag' ? 'selected' : ''}>Jahresbeitrag</option>
                   <option value="Vermietung" ${typeFilter === 'Vermietung' ? 'selected' : ''}>Vermietung</option>
                   <option value="Materialverkauf" ${typeFilter === 'Materialverkauf' ? 'selected' : ''}>Materialverkauf</option>
+                  <option value="Depot / Pfand" ${typeFilter === 'Depot / Pfand' ? 'selected' : ''}>Depot / Pfand</option>
                   <option value="Schulsport" ${typeFilter === 'Schulsport' ? 'selected' : ''}>Schulsport</option>
                   <option value="Sponsoring" ${typeFilter === 'Sponsoring' ? 'selected' : ''}>Sponsoring / Gönner</option>
                   <option value="Sonstige" ${typeFilter === 'Sonstige' ? 'selected' : ''}>Sonstige / Diverse</option>

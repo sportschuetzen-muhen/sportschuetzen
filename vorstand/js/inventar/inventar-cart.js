@@ -295,22 +295,34 @@ async function handleInventarSubmit(e) {
         );
 
         // --- NACHBEARBEITUNG (Rechnung/Buchhaltung) ---
+        let invoiceFeedback = '';
         if (action === 'verkauf') {
-            await verarbeiteVerkaufNachbereitung(warenkorb, mitgliedId);
+            const invRes = await verarbeiteVerkaufNachbereitung(warenkorb, mitgliedId);
+            if (invRes && invRes.invoiceId) {
+                invoiceFeedback = `Rechnung <strong>${invRes.invoiceId}</strong> (CHF ${Number(invRes.totalAmount).toFixed(2)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
+            }
         } else if (action === 'checkout') {
-            await verarbeitePfandRechnungen(warenkorb, mitgliedId);
+            const invRes = await verarbeitePfandRechnungen(warenkorb, mitgliedId);
+            if (invRes && invRes.invoiceId) {
+                invoiceFeedback = `Depot-Rechnung <strong>${invRes.invoiceId}</strong> (CHF ${Number(invRes.totalAmount).toFixed(2)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
+            }
             await verarbeitePfandBuchhaltung(warenkorb, 'checkout');
         } else if (action === 'checkin') {
             await verarbeitePfandBuchhaltung(warenkorb, 'checkin');
         }
 
+        const bookedCount = warenkorb.length || 1;
         warenkorb = [];
         renderWarenkorb();
         document.getElementById('form-ausgabe').reset();
         sigPadMitglied?.clear();
         sigPadVorstand?.clear();
 
-        showJournalConfirmationAlert(`${warenkorb.length || 1} Position(en) erfolgreich erfasst (Supabase Master). Bitte überprüfe die Buchung kurz unten in der Liste.`);
+        const alertText = invoiceFeedback 
+            ? `${bookedCount} Position(en) erfolgreich erfasst. ${invoiceFeedback}`
+            : `${bookedCount} Position(en) erfolgreich erfasst (Supabase Master).`;
+
+        showJournalConfirmationAlert(alertText);
         localStorage.setItem('inventar-activeTab', 'journal');
         showInventarSection('journal');
         
@@ -500,79 +512,15 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                 }
             }
 
-            // 2. Mailversand via Supabase Mail-Engine (Edge Function send-email)
-            if (memberEmail && memberEmail.includes('@') && typeof window.sendMailViaEngine === 'function') {
-                try {
-                    const attachments = [];
-                    if (pdfStoragePath) {
-                        attachments.push({
-                            filename: `Rechnung_${invoiceId}.pdf`,
-                            contentType: 'application/pdf',
-                            storagePath: pdfStoragePath,
-                            storageBucket: 'operatives-storage'
-                        });
-                    } else if (pdfBase64) {
-                        attachments.push({
-                            filename: `Rechnung_${invoiceId}.pdf`,
-                            contentType: 'application/pdf',
-                            contentBase64: pdfBase64.replace(/^data:application\/pdf;base64,/, '')
-                        });
-                    }
+            // 2. Rechnung ins Rechnungsmodul übertragen (Bereit für Prüfung & Massenversand, KEIN Direktversand)
+            console.log(`✅ [Inventar->RechnungsCore] Rechnung ${invoiceId} über CHF ${totalAmount} angelegt. Verbleibt in 'mail_status: entwurf' für Massenversand.`);
 
-                    const tmpl = await getInventarInvoiceTemplate('Materialverkauf');
-                    const sender = createdInv.sender_address || invoiceOrder.sender || {};
-                    const mailVars = {
-                        vorname: m.Vorname || mglMaster.FirstName || (recipientName.split(' ')[1] || recipientName.split(' ')[0]),
-                        nachname: m.Nachname || mglMaster.LastName || (recipientName.split(' ')[0] || ''),
-                        anrede: memberSalutation,
-                        rechnungsnummer: invoiceId,
-                        rechnungsjahr: new Date().getFullYear(),
-                        gesamtbetrag: totalAmount,
-                        absender_vorname: sender.vorname || '',
-                        absender_nachname: sender.nachname || '',
-                        absender_funktion: sender.funktion || 'Materialwart',
-                        absender_email: sender.email || 'sportschuetzen.muhen@gmail.com',
-                        absender_mobil: sender.mobil || ''
-                    };
-
-                    const defaultSubject = `Rechnung ${invoiceId} – Materialverkauf | Sportschützen Muhen`;
-                    const defaultBody = `Guten Tag ${mailVars.vorname} ${mailVars.nachname},\n\nvielen Dank für deinen Bezug aus unserem Vereinsinventar.\n\nAnbei senden wir dir die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} inkl. QR-Einzahlungsschein.\n\nBitte überweise den Betrag innert 30 Tagen.\n\nFreundliche Grüsse\n\nSportschützen Muhen\n\n${mailVars.absender_vorname} ${mailVars.absender_nachname}\n${mailVars.absender_funktion}`.trim();
-
-                    const finalSubject = tmpl?.mail_subject ? replaceInventarMailVars(tmpl.mail_subject, mailVars) : defaultSubject;
-                    const finalBody = tmpl?.mail_body ? replaceInventarMailVars(tmpl.mail_body, mailVars) : defaultBody;
-
-                    const emailHtml = (typeof window.renderClubEmailHtml === 'function')
-                        ? window.renderClubEmailHtml({
-                            title: finalSubject,
-                            subtitle: 'Materialverkauf',
-                            contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`
-                        })
-                        : `<p>${finalBody.replace(/\n/g, '<br>')}</p>`;
-
-                    await window.sendMailViaEngine({
-                        to: memberEmail,
-                        subject: finalSubject,
-                        html: emailHtml,
-                        text: finalBody,
-                        senderName: sender?.name || [sender?.vorname, sender?.nachname].filter(Boolean).join(' ') || 'Sportschützen Muhen',
-                        senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
-                        moduleRef: 'rechnung',
-                        recordId: invoiceId,
-                        attachments: attachments
-                    });
-
-                    const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-                    if (supa) {
-                        await supa.from('invoices').update({
-                            mail_status: 'gesendet',
-                            send_date: new Date().toISOString(),
-                            updated_at: new Date().toISOString()
-                        }).eq('id', invoiceId);
-                    }
-                } catch (mErr) {
-                    console.warn("⚠️ Fehler beim Supabase-Mailversand:", mErr);
-                }
+            // In-Memory Rechnungs-Cache invalidieren & neu laden
+            if (typeof window.loadRechnungenData === 'function') {
+                window.loadRechnungenData(true, true).catch(e => console.warn("Rechnungen Refresh:", e));
             }
+
+            return { success: true, invoiceId: invoiceId, totalAmount: totalAmount };
         }
 
         // 2. NUR BAR IN BUCHHALTUNG VERBUCHEN
@@ -844,81 +792,18 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
             }
         }
 
-        // 2. Mailversand via Supabase Mail-Engine (Edge Function send-email)
-        if (memberEmail && memberEmail.includes('@') && typeof window.sendMailViaEngine === 'function') {
-            try {
-                const attachments = [];
-                if (pdfStoragePath) {
-                    attachments.push({
-                        filename: `Rechnung_${invoiceId}.pdf`,
-                        contentType: 'application/pdf',
-                        storagePath: pdfStoragePath,
-                        storageBucket: 'operatives-storage'
-                    });
-                } else if (pdfBase64) {
-                    attachments.push({
-                        filename: `Rechnung_${invoiceId}.pdf`,
-                        contentType: 'application/pdf',
-                        contentBase64: pdfBase64.replace(/^data:application\/pdf;base64,/, '')
-                    });
-                }
+        // 2. Rechnung ins Rechnungsmodul übertragen (Bereit für Prüfung & Massenversand, KEIN Direktversand)
+        console.log(`✅ [Inventar->RechnungsCore] Kaution/Depot Rechnung ${invoiceId} über CHF ${totalAmount} angelegt. Verbleibt in 'mail_status: entwurf' für Massenversand.`);
 
-                const tmpl = await getInventarInvoiceTemplate('Depot / Pfand');
-                const sender = createdInv.sender_address || invoiceOrder.sender || {};
-                const mailVars = {
-                    vorname: m.Vorname || mglMaster.FirstName || (recipientName.split(' ')[1] || recipientName.split(' ')[0]),
-                    nachname: m.Nachname || mglMaster.LastName || (recipientName.split(' ')[0] || ''),
-                    anrede: memberSalutation,
-                    rechnungsnummer: invoiceId,
-                    rechnungsjahr: new Date().getFullYear(),
-                    gesamtbetrag: totalAmount,
-                    absender_vorname: sender.vorname || '',
-                    absender_nachname: sender.nachname || '',
-                    absender_funktion: sender.funktion || 'Materialwart',
-                    absender_email: sender.email || 'sportschuetzen.muhen@gmail.com',
-                    absender_mobil: sender.mobil || ''
-                };
-
-                const defaultSubject = `Rechnung ${invoiceId} – Depot / Kaution | Sportschützen Muhen`;
-                const defaultBody = `Guten Tag ${mailVars.vorname} ${mailVars.nachname},\n\nanbei senden wir dir die Rechnung ${invoiceId} über CHF ${Number(totalAmount).toFixed(2)} für das hinterlegte Depot / Pfand für das bezogene Vereinsmaterial.\n\nDieses Depot wird dir bei unversehrter Rückgabe des Materials vollumfänglich zurückerstattet.\n\nSportliche Grüsse\n\nSportschützen Muhen\n\n${mailVars.absender_vorname} ${mailVars.absender_nachname}\n${mailVars.absender_funktion}`.trim();
-
-                const finalSubject = tmpl?.mail_subject ? replaceInventarMailVars(tmpl.mail_subject, mailVars) : defaultSubject;
-                const finalBody = tmpl?.mail_body ? replaceInventarMailVars(tmpl.mail_body, mailVars) : defaultBody;
-
-                const emailHtml = (typeof window.renderClubEmailHtml === 'function')
-                    ? window.renderClubEmailHtml({
-                        title: finalSubject,
-                        subtitle: 'Depot / Kaution',
-                        contentHtml: `<p>${finalBody.replace(/\n/g, '<br>')}</p>`
-                    })
-                    : `<p>${finalBody.replace(/\n/g, '<br>')}</p>`;
-
-                await window.sendMailViaEngine({
-                    to: memberEmail,
-                    subject: finalSubject,
-                    html: emailHtml,
-                    text: finalBody,
-                    senderName: sender?.name || [sender?.vorname, sender?.nachname].filter(Boolean).join(' ') || 'Sportschützen Muhen',
-                    senderEmail: sender?.email || 'sportschuetzen.muhen@gmail.com',
-                    moduleRef: 'rechnung',
-                    recordId: invoiceId,
-                    attachments: attachments
-                });
-
-                const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
-                if (supa) {
-                    await supa.from('invoices').update({
-                        mail_status: 'gesendet',
-                        send_date: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    }).eq('id', invoiceId);
-                }
-            } catch (mErr) {
-                console.warn("⚠️ Fehler beim Supabase-Mailversand:", mErr);
-            }
+        // In-Memory Rechnungs-Cache invalidieren & neu laden
+        if (typeof window.loadRechnungenData === 'function') {
+            window.loadRechnungenData(true, true).catch(e => console.warn("Rechnungen Refresh:", e));
         }
+
+        return { success: true, invoiceId: invoiceId, totalAmount: totalAmount };
     } catch (err) {
         console.error("Fehler in verarbeitePfandRechnungen:", err);
+        return null;
     }
 }
 

@@ -151,7 +151,7 @@ function renderInventarUI(container) {
                                         <i class="fas fa-sync-alt me-1 fw-bold text-primary"></i>
                                         <strong>Automatische Buchhaltung & Rechnungs-Erstellung:</strong><br>
                                         • <strong>Bar / Twint:</strong> Bucht automatisch im Kassabuch (Soll 1000/1020 an Haben <span id="label-verwendungs-konto" class="fw-bold">8501</span>).<br>
-                                        • <strong>Einzahlungsschein:</strong> Erstellt automatisch eine QR-Rechnung und versendet sie per E-Mail.
+                                        • <strong>Einzahlungsschein:</strong> Erstellt eine QR-Rechnung im Modul Rechnungen (bereit für Prüfung, Einzel- oder Massenversand).
                                     </div>
                                 </div>
                             </div>
