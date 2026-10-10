@@ -232,13 +232,16 @@
                         </div>
 
                         <!-- Dokumenten-Kategoriefilter -->
-                        <div class="gallery-filters" id="doc-category-filters" style="margin-top: 1.25rem; margin-bottom: 0; justify-content: flex-start; overflow-x: auto; padding-bottom: 0.25rem;">
+                        <div class="gallery-filters" id="doc-category-filters" style="margin-top: 1.25rem; margin-bottom: 0; justify-content: flex-start; overflow-x: auto; padding-bottom: 0.25rem; gap: 0.5rem; flex-wrap: wrap;">
                             <button class="gallery-filter-btn active" data-cat="all">Alle Dokumente</button>
+                            <button class="gallery-filter-btn" data-cat="gv">🗳️ Generalversammlungen (1919–heute)</button>
+                            <button class="gallery-filter-btn" data-cat="chronik">📖 Chronik & Geschichte</button>
                             <button class="gallery-filter-btn" data-cat="statuten">📜 Statuten</button>
                             <button class="gallery-filter-btn" data-cat="reglement">🎯 Reglemente & Schiessordnung</button>
                             <button class="gallery-filter-btn" data-cat="anleitung">📋 Leitfäden & Merkblätter</button>
                             <button class="gallery-filter-btn" data-cat="finanzen">💰 Finanzen & Spesen</button>
                         </div>
+                        <div id="doc-count-badge" style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600; margin-top: 0.75rem;"></div>
                     </div>
 
                     <!-- Grid für dynamische Dokumentenkarten -->
@@ -665,24 +668,50 @@
                     if (query) {
                         const matchTitle = (doc.title || '').toLowerCase().includes(query);
                         const matchDesc = (doc.description || '').toLowerCase().includes(query);
-                        if (!matchTitle && !matchDesc) return false;
+                        const matchYear = doc.year ? String(doc.year).includes(query) : false;
+                        if (!matchTitle && !matchDesc && !matchYear) return false;
                     }
                     return true;
                 });
 
+                // Zähler aktualisieren
+                const countBadge = document.getElementById('doc-count-badge');
+                if (countBadge) {
+                    countBadge.textContent = `${filtered.length} Dokument${filtered.length === 1 ? '' : 'e'} verfügbar`;
+                }
+
                 if (filtered.length === 0) {
                     grid.innerHTML = `
-                        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2rem;">
-                            <p style="color: var(--text-muted); margin: 0;">Keine Dokumente für diese Auswahl gefunden.</p>
+                        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2.5rem;">
+                            <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔍</div>
+                            <p style="color: var(--text-muted); font-size: 1rem; margin: 0;">Keine Dokumente für diese Auswahl gefunden.</p>
+                            ${query ? `<button class="btn btn-outline" style="margin-top: 1rem; font-size: 0.85rem;" onclick="document.getElementById('doc-search-input').value=''; renderDocumentsGrid();">Suche zurücksetzen</button>` : ''}
                         </div>
                     `;
                     return;
                 }
 
+                const catLabels = {
+                    'statuten': 'Statuten',
+                    'reglement': 'Reglement',
+                    'anleitung': 'Leitfaden',
+                    'finanzen': 'Finanzen',
+                    'gv': 'Generalversammlung',
+                    'chronik': 'Chronik'
+                };
+
                 grid.innerHTML = filtered.map(doc => {
-                    const icon = doc.file_type === 'html' ? '🌐' : '📄';
+                    const ft = (doc.file_type || 'pdf').toLowerCase();
+                    let icon = '📄';
+                    if (doc.category === 'chronik') icon = '📖';
+                    else if (ft === 'html') icon = '🌐';
+                    else if (ft === 'docx' || ft === 'doc' || ft === 'odt') icon = '📝';
+                    else if (ft === 'xlsx' || ft === 'xls') icon = '📊';
+                    else if (ft === 'msg') icon = '✉️';
+
                     const sizeBadge = doc.file_size_kb ? `${doc.file_size_kb} KB` : '';
-                    const yearBadge = doc.year ? `Stand: ${doc.year}` : '';
+                    const yearBadge = doc.year ? `${doc.year}` : '';
+                    const catLabel = catLabels[doc.category] || doc.category;
 
                     return `
                         <div class="glass-card" style="display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem; transition: var(--transition);">
@@ -690,8 +719,9 @@
                                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 0.5rem;">
                                     <span style="font-size: 1.8rem; line-height: 1;">${icon}</span>
                                     <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end;">
-                                        ${yearBadge ? `<span class="badge" style="font-size: 0.72rem; background: rgba(15, 60, 92, 0.08); color: var(--primary-color);">${yearBadge}</span>` : ''}
-                                        <span class="badge" style="font-size: 0.72rem; background: var(--primary-color); color: white; text-transform: uppercase;">${doc.file_type || 'PDF'}</span>
+                                        ${yearBadge ? `<span class="badge" style="font-size: 0.72rem; background: rgba(15, 60, 92, 0.08); color: var(--primary-color); font-weight: 700;">📅 ${yearBadge}</span>` : ''}
+                                        <span class="badge" style="font-size: 0.72rem; background: rgba(0, 0, 0, 0.05); color: var(--text-color);">${catLabel}</span>
+                                        <span class="badge" style="font-size: 0.72rem; background: var(--primary-color); color: white; text-transform: uppercase;">${ft}</span>
                                     </div>
                                 </div>
                                 <h4 style="margin: 0 0 0.5rem; color: var(--primary-color); font-size: 1.05rem; line-height: 1.35;">

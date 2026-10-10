@@ -118,11 +118,16 @@ CREATE TABLE public.documents (
   * `members`: Für angemeldete Vereinsmitglieder sichtbar (Statuten, Schiessordnung, Munitionsbestellung, Spesenreglement, Standblatt-Leitfaden).
   * `vorstand`: Vertraulich; nur über RBAC-Rechte `dokumente.view` / `dokumente.manage` oder Vorstandsrolle abrufbar (Vorstandsprotokolle, Buchhaltungsberichte).
 * **Frontend-Integration (`verein.html`):**
-  * Live-Abfrage via Supabase REST API (`/rest/v1/documents`).
-  * Live-Suche (`#doc-search-input`) nach Titel und Beschreibung.
-  * Schnellfilter nach Kategorien: *Alle*, *Statuten*, *Reglemente*, *Leitfäden*, *Finanzen*.
-  * Responsive Karten mit Typ-Badge (`PDF` / `HTML`), Dateigrösse (`245 KB`), Stand (`Stand: 2026`) und sicherem Download-Button (`target="_blank" rel="noopener"`).
+  * Live-Abfrage via Supabase REST API (`/rest/v1/documents?order=sort_order.asc,year.desc`).
+  * Live-Suche (`#doc-search-input`) nach Titel, Beschreibung und Jahreszahl (z.B. Suche nach `1923` oder `1996`).
+  * Schnellfilter nach Kategorien: *Alle Dokumente*, *🗳️ Generalversammlungen (1919–heute)*, *📖 Chronik & Geschichte*, *📜 Statuten*, *🎯 Reglemente & Schiessordnung*, *📋 Leitfäden*, *💰 Finanzen & Spesen*.
+  * Responsive Karten mit Typ-Badge (`PDF`, `DOCX`, `XLSX`, `MSG`, `HTML`), Dateigrösse (`245 KB`), Jahr (`📅 1923`) und direktem Öffnen-Button (`target="_blank" rel="noopener"`).
+  * Dynamischer Dokumentenzähler (`#doc-count-badge`) zur transparenten Anzeige der gefilterten Trefferanzahl.
   * Vollständige Entfernung alter Google-Apps-Script-Texte zugunsten der nahtlosen Vorstandsportal-Verlinkung (`vorstand/index.html`).
+* **Historisches Vereinsarchiv & Google-Drive-Entkopplung (Oktober 2026):**
+  * Einmalige Spiegelung und Bereinigung von 289 historischen Dokumenten (240+ MB) aus den Vorstands-Google-Drive-Ordnern (Protokolle ab Gründungsjahr 1919, Einladungen, Jahresberichte und Vereinschroniken) in den Supabase Storage Bucket `club-documents/archiv/`.
+  * Reine Binär- und Office-Dateien; proprietäre ZIP-Container wurden im Sinne des Webstandards und der mobilen Betrachtung entfernt.
+  * Volle Datensouveränität auf CT 117 ohne Abhängigkeit von Google-Authentifizierung oder Drittanbieter-Laufzeiten.
 
 ---
 
