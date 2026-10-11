@@ -213,22 +213,16 @@ async function loginsSave() {
     if (tab === 'login_daten') {
       const username = document.getElementById('lf-username')?.value?.trim() || '';
       const anzeigename = document.getElementById('lf-anzeigename')?.value?.trim() || '';
-      const email = document.getElementById('lf-mailadresse')?.value?.trim() || '';
-      const isExternal = Boolean(document.getElementById('lf-is-external')?.checked);
-      
+      const rawPn = parseInt(document.getElementById('lf-personnumber')?.value?.trim());
       let personnumber = null;
-      if (!isExternal) {
-        const rawPn = parseInt(document.getElementById('lf-personnumber')?.value?.trim());
-        if (!isNaN(rawPn) && rawPn > 0) {
-          personnumber = rawPn;
-        }
+      if (!isNaN(rawPn) && rawPn > 0) {
+        personnumber = rawPn;
       }
 
       const rolleRaw = document.getElementById('lf-rolle-val')?.value?.trim() 
                     || document.getElementById('lf-rolle-custom')?.value?.trim() 
                     || document.getElementById('lf-rolle')?.value 
                     || 'vorstand';
-      const rolleExtern = document.getElementById('lf-rolle-extern')?.value?.trim() || '';
       const passwort = document.getElementById('lf-passwort')?.value?.trim() || '';
 
       if (!username) throw new Error("Benutzername ist ein Pflichtfeld.");
@@ -245,7 +239,7 @@ async function loginsSave() {
         p_username: username,
         p_display_name: anzeigename || username,
         p_email: email,
-        p_role_external: rolleExtern,
+        p_role_external: null,
         p_person_number: personnumber,
         p_roles: rolesArr,
         p_password: passwort || null
@@ -390,19 +384,26 @@ window.loginsOnMemberSelect = function(personNumber) {
   const anzeigeInput = document.getElementById('lf-anzeigename');
   const mailInput = document.getElementById('lf-mailadresse');
   const userInput = document.getElementById('lf-username');
-  const rolleExtInput = document.getElementById('lf-rolle-extern');
   const pnDisplay = document.getElementById('lf-pn-display');
   const pnDisplayWrap = document.getElementById('lf-pn-display-wrap');
+  const unlinkBtn = document.getElementById('btn-lf-unlink');
+  const badgeWrap = document.getElementById('lf-link-status-badge');
+  const nameDisplay = document.getElementById('lf-member-name-display');
 
   if (!pn) {
-    if (pnInput) pnInput.value = '';
-    if (pnDisplayWrap) pnDisplayWrap.classList.add('d-none');
+    if (typeof window.loginsUnlinkMember === 'function') {
+      window.loginsUnlinkMember();
+    }
     return;
   }
 
   if (pnInput) pnInput.value = pn;
   if (pnDisplay) pnDisplay.textContent = pn;
   if (pnDisplayWrap) pnDisplayWrap.classList.remove('d-none');
+  if (unlinkBtn) unlinkBtn.classList.remove('d-none');
+  if (badgeWrap) {
+    badgeWrap.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1"><i class="fas fa-link me-1"></i>Mitglied verknüpft</span>';
+  }
 
   const m = (window._mglData || []).find(x => String(x.PersonNumber || '').trim() === pn);
   if (!m) return;
@@ -410,10 +411,17 @@ window.loginsOnMemberSelect = function(personNumber) {
   const fn = String(m.FirstName || '').trim();
   const ln = String(m.LastName || '').trim();
   const fullName = [fn, ln].filter(Boolean).join(' ');
-  if (anzeigeInput) anzeigeInput.value = fullName;
+  if (nameDisplay) nameDisplay.textContent = fullName ? `(${fullName})` : '';
+
+  // Im Neuanlage-Modus oder wenn Felder noch leer sind: vorbefüllen
+  if (window._loginsEditMode === 'add' || !(anzeigeInput && anzeigeInput.value.trim())) {
+    if (anzeigeInput) anzeigeInput.value = fullName;
+  }
 
   const email = String(m.PrimaryEmail || m.Email || '').trim();
-  if (mailInput) mailInput.value = email;
+  if (email && (window._loginsEditMode === 'add' || !(mailInput && mailInput.value.trim()))) {
+    if (mailInput) mailInput.value = email;
+  }
 
   // Falls Benutzername noch leer ist: Vorschlag generieren
   if (userInput && !userInput.value.trim()) {
@@ -424,41 +432,6 @@ window.loginsOnMemberSelect = function(personNumber) {
     } else if (cleanLn) {
       userInput.value = cleanLn;
     }
-  }
-
-  // Vorstandsfunktion / Rolle extern aus Stammdaten ermitteln
-  let detectedFunction = '';
-  // 1. Aus member_functions Cache
-  const cachedFns = window._mglFunktionenCache?.[pn] || [];
-  const activeFns = cachedFns.filter(f => !f.OfficialFunctionExitDate);
-  if (activeFns.length > 0) {
-    detectedFunction = activeFns.map(f => f.OfficialFunctionCategory || f.OfficialFunctionRemark).filter(Boolean).join(', ');
-  }
-  // 2. Aus Member-Objekt direkt
-  if (!detectedFunction && m.OfficialFunctionCategory) {
-    detectedFunction = m.OfficialFunctionCategory;
-  }
-  if (!detectedFunction && m.Funktion) {
-    detectedFunction = m.Funktion;
-  }
-  // 3. Aus bekannten Vereinsfunktionen
-  if (!detectedFunction) {
-    const knownRoles = {
-      '1070293': 'Mitgliederverwalter',
-      '1073722': 'Präsident / IT',
-      '1073588': 'Aktuar',
-      '1073746': 'Aktuarin',
-      '1073758': 'Beisitzer',
-      '1073943': 'Schützenmeister 10m',
-      '1080350': 'Schützenmeister 50m'
-    };
-    if (knownRoles[pn]) {
-      detectedFunction = knownRoles[pn];
-    }
-  }
-
-  if (rolleExtInput && detectedFunction) {
-    rolleExtInput.value = detectedFunction;
   }
 };
 

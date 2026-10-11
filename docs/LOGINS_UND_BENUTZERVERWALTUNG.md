@@ -255,14 +255,17 @@ Die Durchsetzung der Berechtigungsmatrix (`public.role_permissions`) startete mi
 ## 11. Einheitliches «View & Manage»-Berechtigungsmodell (Migration 49)
 
 ### 11.1 Symmetrisches 2-Stufen-Prinzip
-Jedes der 20 Fachmodule im Vereinsportal verfügt in der Berechtigungsmatrix über exakt zwei Schalter:
+Jedes der 21 Fachmodule im Vereinsportal verfügt in der Berechtigungsmatrix über exakt zwei Schalter:
 1. **`<modul>.view` (👁️ Einsehen):** Schaltet Dashboard-Kachel und Sidebar-Navigation frei (Read-Only). Daten werden geladen und angezeigt. Mutationsbuttons sind ausgeblendet oder deaktiviert (`.write-protected`).
 2. **`<modul>.manage` (✏️ Verwalten):** Schaltet Schreib- und Aktionsfunktionen frei (Speichern, Löschen, Mutieren, Exportieren, Rechnungsstellung etc.) und autorisiert Schreibvorgänge in der PostgreSQL-Datenbank.
 *(Wer `manage` besitzt, hat automatisch auch Einsicht in die Kachel und die Tabellen).*
 
-**Ausnahme `Logins`:** Bleibt als Schutz vor Rechte-Eskalation strikt der System-Rolle `admin` vorbehalten.
+**Integration `Logins & Rollen` (Migration 60):** Wurde für Ausfallsicherheit (Stellvertretung des Administrators) in das Matrix-Modell aufgenommen:
+* `logins.view`: Ermöglicht Read-Only Einsicht in Benutzerlisten, PINs und Sessions.
+* `logins.manage`: Berechtigt zur Erstellung von Benutzern, Passwort-Provisioning und zur Steuerung der Berechtigungsmatrix (`toggle_role_permission`).
+* Die System-Rolle `admin` behält weiterhin globalen Vollzugriff (`*`).
 
-### 11.2 Die 20 Module & Berechtigungsschlüssel
+### 11.2 Die 21 Module & Berechtigungsschlüssel
 1. `inventar`: `inventar.view` / `inventar.manage`
 2. `termine`: `termine.view` / `termine.manage`
 3. `system-mails`: `system-mails.view` / `system-mails.manage`
@@ -283,6 +286,7 @@ Jedes der 20 Fachmodule im Vereinsportal verfügt in der Berechtigungsmatrix üb
 18. `meeting`: `meeting.view` / `meeting.manage`
 19. `news`: `news.view` / `news.manage`
 20. `galerie`: `galerie.view` / `galerie.manage`
+21. `logins`: `logins.view` / `logins.manage` (Logins & Rollenverwaltung)
 
 ### 11.3 Datenbank-Absicherung (RLS)
 * **SELECT Policy:** `(SELECT public.rbac_allows(ARRAY['<modul>.view', '<modul>.manage']))`

@@ -35,13 +35,25 @@ function refreshMemberSelectIfEmpty(currentPN) {
             const nb = `${b.LastName || ''} ${b.FirstName || ''}`.trim().toLowerCase();
             return na.localeCompare(nb, 'de');
           });
-        let opts = '<option value="">-- Vereinsmitglied auswählen (übernimmt PersonNr, Name, Mail, Funktion) --</option>';
+        let opts = '<option value="">-- Kein Mitglied verknüpft (Externer Administrator) --</option>';
         opts += members.map(m => {
           const pn = String(m.PersonNumber || '').trim();
           const isSel = cur && cur === pn;
           return `<option value="${escapeHtml(pn)}" ${isSel ? 'selected' : ''}>${escapeHtml(m.LastName || '')} ${escapeHtml(m.FirstName || '')} (${escapeHtml(pn)})</option>`;
         }).join('');
         selNow.innerHTML = opts;
+
+        if (cur) {
+          const m = members.find(x => String(x.PersonNumber || '').trim() === cur);
+          const nameDisplay = document.getElementById('lf-member-name-display');
+          if (nameDisplay && m) {
+            nameDisplay.textContent = `(${m.LastName || ''} ${m.FirstName || ''})`.trim();
+          }
+          const unlinkBtn = document.getElementById('btn-lf-unlink');
+          if (unlinkBtn) unlinkBtn.classList.remove('d-none');
+          const pnWrap = document.getElementById('lf-pn-display-wrap');
+          if (pnWrap) pnWrap.classList.remove('d-none');
+        }
       }).catch(e => console.warn("Mitglieder-Ladefehler für Login-Modal:", e));
     }
   }
@@ -186,22 +198,23 @@ function loginsOpenEdit(record) {
 //  Modal Interaktions-Handler (Globaler Standard)
 // =========================================================
 
-window.loginsToggleExternalAdmin = function(isExternal) {
-  const memberSec = document.getElementById('lf-member-section');
-  const extHint = document.getElementById('lf-external-hint');
-  const pnWrap = document.getElementById('lf-pn-display-wrap');
+window.loginsUnlinkMember = function() {
   const pnInput = document.getElementById('lf-personnumber');
-  const memberSel = document.getElementById('lf-member-select');
+  const sel = document.getElementById('lf-member-select');
+  const pnWrap = document.getElementById('lf-pn-display-wrap');
+  const pnDisplay = document.getElementById('lf-pn-display');
+  const nameDisplay = document.getElementById('lf-member-name-display');
+  const unlinkBtn = document.getElementById('btn-lf-unlink');
+  const badgeWrap = document.getElementById('lf-link-status-badge');
 
-  if (isExternal) {
-    if (memberSec) memberSec.classList.add('d-none');
-    if (extHint) extHint.classList.remove('d-none');
-    if (pnWrap) pnWrap.classList.add('d-none');
-    if (pnInput) pnInput.value = '';
-    if (memberSel) memberSel.value = '';
-  } else {
-    if (memberSec) memberSec.classList.remove('d-none');
-    if (extHint) extHint.classList.add('d-none');
+  if (pnInput) pnInput.value = '';
+  if (sel) sel.value = '';
+  if (pnWrap) pnWrap.classList.add('d-none');
+  if (pnDisplay) pnDisplay.textContent = '';
+  if (nameDisplay) nameDisplay.textContent = '';
+  if (unlinkBtn) unlinkBtn.classList.add('d-none');
+  if (badgeWrap) {
+    badgeWrap.innerHTML = '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-2.5 py-1"><i class="fas fa-user-tie me-1"></i>Externes Konto</span>';
   }
 };
 

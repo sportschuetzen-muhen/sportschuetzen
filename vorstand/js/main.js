@@ -762,7 +762,7 @@ const bgModuleLoader = {
         {
             id: 'logins',
             label: 'Logins',
-            load: () => (typeof loadLoginsData === 'function' && userHasRole('admin') ? loadLoginsData(false) : Promise.resolve()),
+            load: () => (typeof loadLoginsData === 'function' && (userHasRole('admin') || (window.Perms && window.Perms.canAccessView('logins'))) ? loadLoginsData(false) : Promise.resolve()),
             isLoaded: () => typeof window._loginsData !== 'undefined' && window._loginsData !== null && window._loginsData.length > 0
         }
     ],
@@ -942,16 +942,12 @@ const MODULE_MANAGE_PERMS = {
     'meeting-recorder':       'meeting.manage',
     'meeting':                'meeting.manage',
     'news':                   'news.manage',
-    'galerie':                'galerie.manage'
+    'galerie':                'galerie.manage',
+    'logins':                 'logins.manage'
 };
 
 // Matrix-Prüfung für Schreibrechte (einheitliches View & Manage Modell)
 function hasWriteAccess(module) {
-    // Logins bleibt strikt der System-Rolle admin vorbehalten (Schutz vor Rechte-Eskalation)
-    if (module === 'logins') {
-        return userHasRole('admin');
-    }
-
     // Wenn Perms geladen ist: Dynamische Prüfung über die Berechtigungsmatrix
     if (window.Perms) {
         if (window.Perms.has('*') || userHasRole('admin')) return true;

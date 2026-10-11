@@ -376,7 +376,6 @@ function renderLoginDatenTable(rows, canWrite) {
       </td>
       <td data-col-id="anzeigename" class="tk-col-anzeigename fw-medium">${escapeHtml(r.anzeigename)}</td>
       <td data-col-id="mailadresse" class="tk-col-mailadresse text-muted small">${escapeHtml(r.mailadresse || r.mailanzeige || '—')}</td>
-      <td data-col-id="rolle_extern" class="tk-col-rolle_extern text-muted small fw-medium">${escapeHtml(r.rolle_extern || '—')}</td>
       <td data-col-id="auth_status" class="tk-col-auth_status text-center">
         ${r.passwort_hash 
           ? '<span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 rounded-pill"><i class="fas fa-shield-alt me-1"></i>Supabase Auth</span>' 
@@ -399,7 +398,6 @@ function renderLoginDatenTable(rows, canWrite) {
               ${th('rolle','Rollen','rolle')}
               ${th('anzeigename','Anzeigename','anzeigename')}
               ${th('mailadresse','E-Mail (Auth)','mailadresse')}
-              ${th('rolle_extern','Vorstandsfunktion','rolle_extern')}
               <th data-col-id="auth_status" class="text-center">Auth-Status</th>
               <th style="width: 50px;"></th>
             </tr>
@@ -611,42 +609,53 @@ function loginDatenForm(r) {
     return `<option value="${escapeHtml(pn)}" ${isSel ? 'selected' : ''}>${escapeHtml(ln)} ${escapeHtml(fn)} (${escapeHtml(pn)})</option>`;
   }).join('');
 
+  const linkedMember = curPN ? members.find(m => String(m.PersonNumber || '').trim() === curPN) : null;
+  const linkedMemberName = linkedMember ? `${linkedMember.LastName || ''} ${linkedMember.FirstName || ''}`.trim() : '';
+
   return `
     <div class="container-fluid p-0">
       <!-- Sektion 1: Verknüpfung mit Vereinsmitglied -->
       <div class="card mb-3 border shadow-xs rounded-3 overflow-hidden bg-white">
         <div class="card-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
           <span class="fw-bold text-primary small text-uppercase">
-            <i class="fas fa-id-badge me-1.5"></i>1. Vereinszugehörigkeit & Stammdaten
+            <i class="fas fa-id-badge me-1.5"></i>1. Vereinszugehörigkeit &amp; Stammdaten
           </span>
-          <div class="form-check form-switch m-0">
-            <input class="form-check-input" type="checkbox" id="lf-is-external" onchange="loginsToggleExternalAdmin(this.checked)" ${!curPN && r ? 'checked' : ''}>
-            <label class="form-check-label small fw-semibold text-secondary" for="lf-is-external">Externer Admin (ohne SSV-Mitgliedschaft)</label>
+          <div id="lf-link-status-badge">
+            ${curPN 
+              ? `<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1"><i class="fas fa-link me-1"></i>Mitglied verknüpft</span>` 
+              : `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-2.5 py-1"><i class="fas fa-user-tie me-1"></i>Externes Konto</span>`}
           </div>
         </div>
         <div class="card-body p-3">
-          <div id="lf-member-section" class="${!curPN && r ? 'd-none' : ''}">
-            <label class="form-label fw-semibold small mb-1 text-dark">
-              <i class="fas fa-users me-1 text-primary"></i> Mitglied aus Stammdaten auswählen
-            </label>
-            <select class="form-select" id="lf-member-select" onchange="loginsOnMemberSelect(this.value)">
-              <option value="">-- Vereinsmitglied auswählen (übernimmt PersonNr, Name, Mail, Funktion) --</option>
-              ${memberOptions}
-            </select>
-            <div class="form-text small text-muted mt-1">
-              Wähle ein Vereinsmitglied: PersonNumber, Name, Vorname, Mail und Vorstandsfunktion werden automatisch übernommen.
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold small mb-1 text-dark">
+                <i class="fas fa-users me-1 text-primary"></i> Vereinsmitglied zuordnen / wechseln
+              </label>
+              <select class="form-select" id="lf-member-select" onchange="loginsOnMemberSelect(this.value)">
+                <option value="">-- Kein Mitglied verknüpft (Externer Administrator) --</option>
+                ${memberOptions}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <button type="button" class="btn btn-outline-danger w-100 ${curPN ? '' : 'd-none'}" id="btn-lf-unlink" onclick="loginsUnlinkMember()">
+                <i class="fas fa-unlink me-1"></i> Verknüpfung aufheben
+              </button>
             </div>
           </div>
           
-          <div id="lf-external-hint" class="alert alert-light border py-2 px-3 mb-0 small text-muted ${!curPN && r ? '' : 'd-none'}">
-            <i class="fas fa-user-tie me-1 text-secondary"></i> <strong>Externes Administrator-Konto:</strong> Dieses Konto ist mit keinem SSV-Vereinsmitglied verknüpft (PersonNumber bleibt <code>null</code>).
-          </div>
-          
           <input type="hidden" id="lf-personnumber" value="${curPN}">
-          <div class="mt-2 ${curPN ? '' : 'd-none'}" id="lf-pn-display-wrap">
-            <span class="badge bg-light text-dark border font-monospace px-2 py-1">
-              <i class="fas fa-link me-1 text-success"></i> Verknüpfte SSV-PersonNumber: <strong id="lf-pn-display">${curPN}</strong>
-            </span>
+          <div class="mt-2.5 ${curPN ? '' : 'd-none'}" id="lf-pn-display-wrap">
+            <div class="alert alert-success border-success-subtle py-2 px-3 mb-0 small d-flex justify-content-between align-items-center">
+              <div>
+                <i class="fas fa-circle-check text-success me-1.5"></i>
+                Verknüpfte SSV-PersonNumber: <strong id="lf-pn-display" class="font-monospace">${curPN}</strong>
+                <span id="lf-member-name-display" class="fw-semibold text-dark ms-1.5">${linkedMemberName ? `(${linkedMemberName})` : ''}</span>
+              </div>
+            </div>
+          </div>
+          <div class="form-text small text-muted mt-1.5">
+            Wähle ein Vereinsmitglied: PersonNumber, Name und E-Mail-Adresse werden bei Neuanlage automatisch abgeglichen.
           </div>
         </div>
       </div>
@@ -655,7 +664,7 @@ function loginDatenForm(r) {
       <div class="card mb-3 border shadow-xs rounded-3 overflow-hidden bg-white">
         <div class="card-header bg-light py-2 px-3 border-bottom">
           <span class="fw-bold text-primary small text-uppercase">
-            <i class="fas fa-user me-1.5"></i>2. Benutzerkonto & Profil
+            <i class="fas fa-user me-1.5"></i>2. Benutzerkonto &amp; Profil
           </span>
         </div>
         <div class="card-body p-3">
@@ -671,35 +680,15 @@ function loginDatenForm(r) {
             <div class="col-md-6">
               <label class="form-label fw-bold small">Anzeigename <span class="text-danger">*</span></label>
               <input type="text" class="form-control" id="lf-anzeigename" value="${v('anzeigename')}" placeholder="z.B. Daniel Muster" required>
-              <div class="form-text small text-muted">Vollständiger Name für Begrüssung & Logs.</div>
+              <div class="form-text small text-muted">Vollständiger Name für Begrüssung &amp; Logs.</div>
             </div>
-            <div class="col-md-6">
+            <div class="col-12">
               <label class="form-label fw-bold small">E-Mail-Adresse (Supabase Auth) <span class="text-danger">*</span></label>
               <div class="input-group">
                 <span class="input-group-text bg-light text-muted"><i class="fas fa-envelope"></i></span>
                 <input type="email" class="form-control" id="lf-mailadresse" value="${escapeHtml(r ? (r.mailadresse || r.mailanzeige || '') : '')}" placeholder="name@email.ch" required>
               </div>
-              <div class="form-text small text-muted">Primäre Adresse für Auth-Login & Passwort-Reset.</div>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-bold small">Vorstandsfunktion</label>
-              <input type="text" class="form-control" id="lf-rolle-extern" value="${v('rolle_extern')}" placeholder="z.B. Kassier, Aktuar..." list="vorstandsfunktionen-list">
-              <datalist id="vorstandsfunktionen-list">
-                <option value="Präsident">
-                <option value="Vizepräsident">
-                <option value="Kassier">
-                <option value="Aktuar">
-                <option value="Aktuarin">
-                <option value="Mitgliederverwalter">
-                <option value="Schützenmeister 10m">
-                <option value="Schützenmeister 50m">
-                <option value="Vermieter">
-                <option value="Materialwart">
-                <option value="Beisitzer">
-                <option value="Revisor">
-                <option value="Webmaster">
-              </datalist>
-              <div class="form-text small text-muted">Wird in der Übersicht als Funktion ausgewiesen.</div>
+              <div class="form-text small text-muted">Primäre Adresse für Auth-Login &amp; Passwort-Reset.</div>
             </div>
           </div>
         </div>

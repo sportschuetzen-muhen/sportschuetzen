@@ -36,7 +36,8 @@
     'archiv':                 ['archiv.view', 'archiv.manage'],
     'meeting-recorder':       ['meeting.view', 'meeting.manage'],
     'news':                   ['news.view', 'news.manage'],
-    'galerie':                ['galerie.view', 'galerie.manage']
+    'galerie':                ['galerie.view', 'galerie.manage'],
+    'logins':                 ['logins.view', 'logins.manage']
   };
 
   let permSet = null;      // Set<string> | null (null = nicht geladen)

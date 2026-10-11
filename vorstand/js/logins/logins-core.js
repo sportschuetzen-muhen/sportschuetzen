@@ -183,6 +183,14 @@ const RBAC_MODULES = [
       { key: 'galerie.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Alben & Fotos betrachten' },
       { key: 'galerie.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Fotos hochladen, Alben verwalten, Gesichter & EXIF-Tags bearbeiten' }
     ]
+  },
+  {
+    module: 'Logins & Rollen',
+    icon: 'fa-user-lock',
+    permissions: [
+      { key: 'logins.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Logins, PINs & Sessions einsehen' },
+      { key: 'logins.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Benutzer, Passwörter, PINs & Rollen-Matrix verwalten' }
+    ]
   }
 ];
 
