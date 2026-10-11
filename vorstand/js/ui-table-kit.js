@@ -161,6 +161,22 @@
         opacity: 1;
         width: 3px;
       }
+
+      /* TableKit: Spalten Drag & Drop Reordering */
+      th.tk-col-reorderable {
+        cursor: grab;
+      }
+      th.tk-col-reordering {
+        opacity: 0.45 !important;
+        background-color: #e9f2ff !important;
+        cursor: grabbing !important;
+      }
+      th.tk-col-drop-target-left {
+        border-left: 3px solid #0d6efd !important;
+      }
+      th.tk-col-drop-target-right {
+        border-right: 3px solid #0d6efd !important;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -187,8 +203,8 @@
       }
 
       th.addEventListener('click', (e) => {
-        // Nicht sortieren wenn Klick auf interaktives Element im Header oder Resizer
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.closest('.tk-col-resizer')) return;
+        // Nicht sortieren wenn Klick auf interaktives Element im Header oder Resizer oder nach Drag & Drop
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.closest('.tk-col-resizer') || th.dataset.justDragged === '1') return;
 
         const sortKey = th.dataset.sortKey;
         if (!sortKey) return;
@@ -584,6 +600,7 @@
     if (!cols.length) {
       const ths = table.querySelectorAll('thead th[data-col-id]');
       ths.forEach(th => {
+        if (th.dataset.colToggle === 'false') return;
         cols.push({
           id: th.dataset.colId,
           name: th.dataset.colName || th.innerText.replace(/[↕▲▼]/g, '').trim(),
@@ -925,8 +942,192 @@
     };
   }
 
+  // =========================================================
+  // 7. SPALTEN-REIHENFOLGE PER DRAG & DROP (TableKit.makeColumnReorderable)
+  // =========================================================
+  function makeColumnReorderable(tableOrSelector, options = {}) {
+    ensureStyles();
+    const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+    if (!table) return;
+
+    const storageKey = options.storageKey || (table.id ? `tk_col_order_${table.id}` : null);
+    const lockedCols = new Set(options.lockedColumns || []);
+
+    const thead = table.querySelector('thead');
+    if (!thead) return;
+    const headerRow = thead.querySelector('tr');
+    if (!headerRow) return;
+
+    // Gespeicherte Reihenfolge vorab anwenden falls vorhanden
+    if (storageKey) {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) {
+          const savedOrder = JSON.parse(raw);
+          if (Array.isArray(savedOrder) && savedOrder.length > 0) {
+            applyColumnOrder(table, savedOrder);
+          }
+        }
+      } catch (err) {
+        console.warn('Fehler beim Laden der Spaltenreihenfolge:', err);
+      }
+    }
+
+    const ths = Array.from(headerRow.querySelectorAll('th[data-col-id]'));
+    if (!ths.length) return;
+
+    let draggedTh = null;
+    let draggedColId = null;
+
+    ths.forEach(th => {
+      const colId = th.dataset.colId;
+      if (lockedCols.has(colId)) return;
+
+      th.classList.add('tk-col-reorderable');
+      th.setAttribute('draggable', 'true');
+
+      th.addEventListener('dragstart', (e) => {
+        if (e.target.closest('.tk-col-resizer') || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') {
+          e.preventDefault();
+          return;
+        }
+
+        draggedTh = th;
+        draggedColId = colId;
+        th.classList.add('tk-col-reordering');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', colId);
+      });
+
+      th.addEventListener('dragend', () => {
+        th.classList.remove('tk-col-reordering');
+        clearDropHighlights();
+        th.dataset.justDragged = '1';
+        setTimeout(() => {
+          delete th.dataset.justDragged;
+          draggedTh = null;
+          draggedColId = null;
+        }, 120);
+      });
+
+      th.addEventListener('dragover', (e) => {
+        if (!draggedTh || draggedTh === th) return;
+        if (lockedCols.has(th.dataset.colId)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+
+        clearDropHighlights();
+        const rect = th.getBoundingClientRect();
+        const mid = rect.left + rect.width / 2;
+        if (e.clientX < mid) {
+          th.classList.add('tk-col-drop-target-left');
+        } else {
+          th.classList.add('tk-col-drop-target-right');
+        }
+      });
+
+      th.addEventListener('dragleave', () => {
+        th.classList.remove('tk-col-drop-target-left', 'tk-col-drop-target-right');
+      });
+
+      th.addEventListener('drop', (e) => {
+        if (!draggedTh || draggedTh === th) return;
+        if (lockedCols.has(th.dataset.colId)) return;
+        e.preventDefault();
+
+        const rect = th.getBoundingClientRect();
+        const mid = rect.left + rect.width / 2;
+        const insertBefore = e.clientX < mid;
+
+        clearDropHighlights();
+
+        const targetNextTh = insertBefore ? th : th.nextElementSibling;
+        const targetNextColId = targetNextTh ? targetNextTh.dataset.colId : null;
+
+        // 1. Header verschieben
+        headerRow.insertBefore(draggedTh, targetNextTh);
+
+        // 2. Zeilenzellen verschieben
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(tr => {
+          const cellFrom = tr.querySelector(`td[data-col-id="${draggedColId}"]`);
+          const cellTo = targetNextColId ? tr.querySelector(`td[data-col-id="${targetNextColId}"]`) : null;
+          if (cellFrom) {
+            tr.insertBefore(cellFrom, cellTo);
+          }
+        });
+
+        // 3. Neue Reihenfolge speichern
+        const currentOrder = Array.from(headerRow.querySelectorAll('th[data-col-id]'))
+          .map(h => h.dataset.colId)
+          .filter(Boolean);
+
+        if (storageKey) {
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(currentOrder));
+          } catch (_) {}
+        }
+
+        if (typeof options.onReorder === 'function') {
+          options.onReorder(currentOrder);
+        }
+      });
+    });
+
+    function clearDropHighlights() {
+      headerRow.querySelectorAll('.tk-col-drop-target-left, .tk-col-drop-target-right').forEach(el => {
+        el.classList.remove('tk-col-drop-target-left', 'tk-col-drop-target-right');
+      });
+    }
+
+    return {
+      getOrder: () => Array.from(headerRow.querySelectorAll('th[data-col-id]')).map(h => h.dataset.colId),
+      reset: () => {
+        if (storageKey) {
+          try { localStorage.removeItem(storageKey); } catch (_) {}
+        }
+      }
+    };
+  }
+
+  function applyColumnOrder(tableOrSelector, order) {
+    const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+    if (!table || !Array.isArray(order) || !order.length) return;
+
+    const thead = table.querySelector('thead');
+    if (!thead) return;
+    const headerRow = thead.querySelector('tr');
+    if (!headerRow) return;
+
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+
+    order.forEach(colId => {
+      const th = headerRow.querySelector(`th[data-col-id="${colId}"]`);
+      if (th) {
+        headerRow.appendChild(th);
+      }
+      rows.forEach(tr => {
+        const td = tr.querySelector(`td[data-col-id="${colId}"]`);
+        if (td) {
+          tr.appendChild(td);
+        }
+      });
+    });
+
+    // Feste Endspalten (wie Aktionen) sicherstellen
+    const pinEndCols = ['col_aktionen', 'col_action', 'col_actions'];
+    pinEndCols.forEach(colId => {
+      const th = headerRow.querySelector(`th[data-col-id="${colId}"]`);
+      if (th) headerRow.appendChild(th);
+      rows.forEach(tr => {
+        const td = tr.querySelector(`td[data-col-id="${colId}"]`);
+        if (td) tr.appendChild(td);
+      });
+    });
+  }
+
   // ===========================================================================
-  // 7. MODAL DRAG & RESIZE STANDARD (UIModalKit)
+  // 8. MODAL DRAG & RESIZE STANDARD (UIModalKit)
   // ===========================================================================
   function makeModalMovableAndResizable(modalEl, options = {}) {
     if (typeof modalEl === 'string') modalEl = document.querySelector(modalEl);
@@ -1163,6 +1364,8 @@
     setupCollapsible,
     setupColumnToggle,
     makeResizable,
+    makeColumnReorderable,
+    applyColumnOrder,
     setupDraggableModal: makeModalMovableAndResizable,
     ensureStyles
   };

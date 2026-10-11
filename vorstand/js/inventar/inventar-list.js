@@ -107,7 +107,7 @@ function renderInventoryTable() {
                      <span class="text-muted small">${arrow}</span>
                  </th>`;
     });
-    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;">Aktionen</th></tr></thead><tbody>';
+    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;" data-col-id="col_aktionen" data-col-toggle="false">Aktionen</th></tr></thead><tbody>';
 
     html += sorted.map(row => {
         const idCell = `<td class="font-monospace fw-bold text-primary" data-col-id="col_id">${row.ID || '-'}</td>`;
@@ -144,7 +144,7 @@ function renderInventoryTable() {
             return `<td ${colAttr}>${val !== undefined && val !== null && val !== "" ? val : '-'}</td>`;
         }).join('');
 
-        return `<tr>${idCell}${cells}<td class="text-center">
+        return `<tr>${idCell}${cells}<td class="text-center" data-col-id="col_aktionen">
             <div class="btn-group btn-group-sm">
                 ${canAdd() ? `<button class="btn btn-outline-primary btn-sm rounded-2 me-1"
                         onclick="editInventarItem('${target}','${row.ID}')" title="Bearbeiten"><i class="fas fa-edit"></i></button>` : ''}
@@ -157,6 +157,12 @@ function renderInventoryTable() {
     table.innerHTML = html + "</tbody>";
 
     // TableKit-Features initialisieren
+    if (window.TableKit?.makeColumnReorderable) {
+        window.TableKit.makeColumnReorderable('#inventory-table', {
+            storageKey: `tk_inv_col_order_${target}`,
+            lockedColumns: ['col_id', 'col_aktionen']
+        });
+    }
     if (window.TableKit?.setupColumnToggle) {
         window.TableKit.setupColumnToggle('#inventory-table', {
             container: '#inv-col-toggle-container',
