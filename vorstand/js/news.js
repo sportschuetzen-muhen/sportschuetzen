@@ -467,6 +467,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- TAB-UMSCHALTER (KI vs DOKUMENT) - ZUVERLÄSSIG & DETERMINISTISCH ---
+    // --- TAB-UMSCHALTER (KI vs DOKUMENT vs PUBLIZIERT) ---
+    let currentDeleteReportId = null;
+    let loadedPublishedReports = [];
+
     window.switchNewsMode = function(mode) {
         const generateBtn = document.getElementById('news-generate-btn');
         const publishBtn = document.getElementById('news-publish-btn');
@@ -474,24 +478,44 @@ document.addEventListener('DOMContentLoaded', () => {
         const keywordsTextarea = document.getElementById('news-keywords');
         const kiTab = document.getElementById('ki-tab');
         const docTab = document.getElementById('doc-tab');
+        const publishedTab = document.getElementById('published-tab');
         const kiPanel = document.getElementById('ki-panel');
         const docPanel = document.getElementById('doc-panel');
+        const publishedPanel = document.getElementById('published-news-panel');
+        const newsForm = document.getElementById('newsForm');
         const draftEditor = document.getElementById('news-draft-editor');
 
+        // Alle Tabs zurücksetzen
+        [kiTab, docTab, publishedTab].forEach(tab => {
+            if (tab) {
+                tab.classList.remove('active', 'text-primary');
+                tab.classList.add('text-muted');
+                tab.setAttribute('aria-selected', 'false');
+            }
+        });
+
+        if (mode === 'published') {
+            if (publishedTab) {
+                publishedTab.classList.add('active', 'text-primary');
+                publishedTab.classList.remove('text-muted');
+                publishedTab.setAttribute('aria-selected', 'true');
+            }
+            if (newsForm) newsForm.style.display = 'none';
+            if (publishedPanel) publishedPanel.style.display = 'block';
+            window.loadPublishedNews();
+            return;
+        }
+
+        // Bei 'ki' oder 'doc': Erstellungs-Formular anzeigen
+        if (newsForm) newsForm.style.display = 'block';
+        if (publishedPanel) publishedPanel.style.display = 'none';
+
         if (mode === 'ki') {
-            // Tab Buttons anpassen
             if (kiTab) {
                 kiTab.classList.add('active', 'text-primary');
                 kiTab.classList.remove('text-muted');
                 kiTab.setAttribute('aria-selected', 'true');
             }
-            if (docTab) {
-                docTab.classList.remove('active', 'text-primary');
-                docTab.classList.add('text-muted');
-                docTab.setAttribute('aria-selected', 'false');
-            }
-            
-            // Tab Pane 1 anzeigen, Tab Pane 2 ausblenden
             if (kiPanel) {
                 kiPanel.classList.add('active', 'show');
                 kiPanel.style.display = 'block';
@@ -500,11 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 docPanel.classList.remove('active', 'show');
                 docPanel.style.display = 'none';
             }
-            
-            // KI-Generieren Button anzeigen
             if (generateBtn) generateBtn.classList.remove('d-none');
-            
-            // Publizieren-Button nur zeigen wenn bereits Text im Entwurf vorhanden ist
             if (publishBtn) {
                 if (draftEditor && draftEditor.innerHTML.trim() !== '') {
                     publishBtn.classList.remove('d-none');
@@ -512,23 +532,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     publishBtn.classList.add('d-none');
                 }
             }
-            
-            // Im KI-Modus: Stichworte sind Pflicht
             if (keywordsTextarea) keywordsTextarea.setAttribute('required', 'true');
-        } else {
-            // Tab Buttons anpassen
+        } else if (mode === 'doc') {
             if (docTab) {
                 docTab.classList.add('active', 'text-primary');
                 docTab.classList.remove('text-muted');
                 docTab.setAttribute('aria-selected', 'true');
             }
-            if (kiTab) {
-                kiTab.classList.remove('active', 'text-primary');
-                kiTab.classList.add('text-muted');
-                kiTab.setAttribute('aria-selected', 'false');
-            }
-
-            // Tab Pane 2 anzeigen, Tab Pane 1 ausblenden
             if (docPanel) {
                 docPanel.classList.add('active', 'show');
                 docPanel.style.display = 'block';
@@ -537,14 +547,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 kiPanel.classList.remove('active', 'show');
                 kiPanel.style.display = 'none';
             }
-
-            // KI-Generieren Button im Fertigtext-Modus ausblenden
             if (generateBtn) generateBtn.classList.add('d-none');
-            
-            // Im Fertigtext-Modus den Editor direkt einblenden für Strg+V oder Word-Import
             if (draftContainer) draftContainer.style.display = 'block';
-
-            // Publizieren-Button anzeigen falls schon Text vorhanden ist
             if (publishBtn) {
                 if (draftEditor && draftEditor.innerHTML.trim() !== '') {
                     publishBtn.classList.remove('d-none');
@@ -552,9 +556,151 @@ document.addEventListener('DOMContentLoaded', () => {
                     publishBtn.classList.add('d-none');
                 }
             }
-            
-            // Stichworte im Dokumenten-Modus nicht verpflichtend
             if (keywordsTextarea) keywordsTextarea.removeAttribute('required');
+        }
+    };
+
+    // --- PUBLIZIERTE BERICHTE VERWALTEN & LÖSCHEN ---
+    window.loadPublishedNews = async function(forceRefresh = false) {
+        const loadingEl = document.getElementById('published-news-loading');
+        const emptyEl = document.getElementById('published-news-empty');
+        const listEl = document.getElementById('published-news-list');
+        if (!listEl) return;
+
+        if (loadingEl) loadingEl.classList.remove('d-none');
+        if (emptyEl) emptyEl.classList.add('d-none');
+        listEl.innerHTML = '';
+
+        try {
+            // Live-Abruf der Berichte von GitHub Raw mit Cache-Buster
+            const url = `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/data/berichte.json?t=${Date.now()}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const reports = await res.json();
+            loadedPublishedReports = Array.isArray(reports) ? reports : [];
+
+            if (loadingEl) loadingEl.classList.add('d-none');
+
+            if (!loadedPublishedReports || loadedPublishedReports.length === 0) {
+                if (emptyEl) emptyEl.classList.remove('d-none');
+                return;
+            }
+
+            let html = '';
+            loadedPublishedReports.forEach((rep) => {
+                let dateStr = 'Unbekanntes Datum';
+                if (rep.date) {
+                    const d = new Date(rep.date);
+                    if (!isNaN(d.getTime())) {
+                        dateStr = d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    }
+                }
+
+                const firstImg = (rep.imageUrls && rep.imageUrls.length > 0) ? rep.imageUrls[0] : (rep.imageUrl || null);
+                const imgSrc = firstImg 
+                    ? (firstImg.startsWith('http') ? firstImg : `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${firstImg}`)
+                    : '';
+
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = rep.content || '';
+                let excerpt = tempDiv.textContent || tempDiv.innerText || '';
+                if (excerpt.length > 100) excerpt = excerpt.substring(0, 100) + '...';
+
+                html += `
+                    <div class="card border shadow-sm p-3">
+                        <div class="d-flex flex-column flex-sm-row gap-3 align-items-start align-items-sm-center">
+                            ${imgSrc ? `<img src="${imgSrc}" style="width: 70px; height: 70px; object-fit: cover; border-radius: 8px;" class="border flex-shrink-0">` : `<div style="width: 70px; height: 70px; border-radius: 8px; background: #e9ecef; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;" class="flex-shrink-0">📰</div>`}
+                            <div class="flex-grow-1 overflow-hidden">
+                                <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
+                                    <span class="badge bg-primary">${escapeHtml(dateStr)}</span>
+                                    <small class="text-muted"><i class="fas fa-user me-1"></i>${escapeHtml(rep.author || 'Vorstand')}</small>
+                                </div>
+                                <h6 class="fw-bold mb-1 text-truncate">${escapeHtml(rep.title || 'Ohne Titel')}</h6>
+                                <p class="text-muted small mb-0">${escapeHtml(excerpt)}</p>
+                            </div>
+                            <div class="flex-shrink-0 align-self-end align-self-sm-center">
+                                <button type="button" class="btn btn-outline-danger btn-sm" onclick="openDeleteReportModal('${escapeHtml(rep.id)}')">
+                                    <i class="fas fa-trash-alt me-1"></i>Löschen
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            listEl.innerHTML = html;
+        } catch (err) {
+            console.error('Fehler beim Laden der publizierten Berichte:', err);
+            if (loadingEl) loadingEl.classList.add('d-none');
+            listEl.innerHTML = `
+                <div class="alert alert-danger py-2 px-3 small border-0">
+                    <i class="fas fa-exclamation-triangle me-1"></i>Berichte konnten nicht geladen werden: ${escapeHtml(err.message)}
+                </div>
+            `;
+        }
+    };
+
+    window.openDeleteReportModal = function(reportId) {
+        currentDeleteReportId = reportId;
+        const report = loadedPublishedReports.find(r => r.id === reportId);
+        if (!report) return;
+
+        const titleEl = document.getElementById('delete-report-modal-title');
+        const metaEl = document.getElementById('delete-report-modal-meta');
+        if (titleEl) titleEl.innerText = report.title || 'Unbenannter Bericht';
+        if (metaEl) {
+            let dateStr = report.date ? new Date(report.date).toLocaleDateString('de-CH') : '';
+            metaEl.innerText = `Datum: ${dateStr} | Autor: ${report.author || 'Vorstand'}`;
+        }
+
+        const modalEl = document.getElementById('deleteReportModal');
+        if (modalEl && typeof bootstrap !== 'undefined') {
+            const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+            modal.show();
+        }
+    };
+
+    window.executeDeleteReport = async function() {
+        if (!currentDeleteReportId) return;
+
+        const btn = document.getElementById('confirm-delete-report-btn');
+        const btnText = document.getElementById('confirm-delete-report-btn-text');
+        const spinner = document.getElementById('confirm-delete-report-spinner');
+
+        if (btn) btn.disabled = true;
+        if (btnText) btnText.classList.add('d-none');
+        if (spinner) spinner.classList.remove('d-none');
+
+        try {
+            const response = await apiFetch('news', 'action=delete_report', {
+                method: 'POST',
+                body: JSON.stringify({ reportId: currentDeleteReportId })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP ${response.status}`);
+            }
+
+            showToast("Bericht erfolgreich von der Vereins-Website gelöscht!", "success");
+
+            const modalEl = document.getElementById('deleteReportModal');
+            if (modalEl && typeof bootstrap !== 'undefined') {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+
+            // Liste neu laden
+            await window.loadPublishedNews(true);
+
+        } catch (err) {
+            console.error('Fehler beim Löschen des Berichts:', err);
+            showToast(`Fehler beim Löschen: ${err.message}`, "danger");
+        } finally {
+            if (btn) btn.disabled = false;
+            if (btnText) btnText.classList.remove('d-none');
+            if (spinner) spinner.classList.add('d-none');
+            currentDeleteReportId = null;
         }
     };
 
@@ -567,18 +713,33 @@ document.addEventListener('DOMContentLoaded', () => {
             window.switchNewsMode('ki');
         });
     }
-    if (docTabBtn) {
-        docTabBtn.addEventListener('click', (e) => {
+    const publishedTabBtn = document.getElementById('published-tab');
+    if (publishedTabBtn) {
+        publishedTabBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            window.switchNewsMode('doc');
+            window.switchNewsMode('published');
+        });
+    }
+
+    const confirmDeleteBtn = document.getElementById('confirm-delete-report-btn');
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.executeDeleteReport();
         });
     }
 
     // Initialisierungs-Helfer beim Aufruf des Moduls
     window.initNewsView = function() {
         const docTab = document.getElementById('doc-tab');
-        const isDocActive = docTab && docTab.classList.contains('active');
-        window.switchNewsMode(isDocActive ? 'doc' : 'ki');
+        const publishedTab = document.getElementById('published-tab');
+        if (publishedTab && publishedTab.classList.contains('active')) {
+            window.switchNewsMode('published');
+        } else if (docTab && docTab.classList.contains('active')) {
+            window.switchNewsMode('doc');
+        } else {
+            window.switchNewsMode('ki');
+        }
 
         const modelSelect = document.getElementById('news-model');
         const modelDesc = document.getElementById('news-model-desc');

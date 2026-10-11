@@ -467,7 +467,9 @@ function displayReports(reports, container) {
         if (r.imageUrls && r.imageUrls.length > 1) {
             let galleryHtml = '<div style="margin-top: 30px; border-top: 1px solid var(--glass-border); padding-top: 20px;"><h4 style="color: var(--primary-color); margin-bottom: 15px; font-weight: 800;">Weitere Fotos</h4><div style="display:flex; gap:15px; overflow-x:auto; padding-bottom:15px;">';
             for (let i = 1; i < r.imageUrls.length; i++) {
-                galleryHtml += `<img src="${r.imageUrls[i]}" style="height:150px; border-radius:8px; object-fit:cover; border: 1px solid var(--glass-border); cursor:pointer; box-shadow: 0 4px 6px rgba(15,58,93,0.06);" onclick="window.open(this.src, '_blank')">`;
+                const subImg = r.imageUrls[i];
+                const rawFallback = subImg.startsWith('http') ? subImg : `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${subImg}`;
+                galleryHtml += `<img src="${subImg}" onerror="if(this.src!=='${rawFallback}'){this.src='${rawFallback}';}" style="height:150px; border-radius:8px; object-fit:cover; border: 1px solid var(--glass-border); cursor:pointer; box-shadow: 0 4px 6px rgba(15,58,93,0.06);" onclick="window.open(this.src, '_blank')">`;
             }
             galleryHtml += '</div></div>';
             contentHtml += galleryHtml;
@@ -475,10 +477,12 @@ function displayReports(reports, container) {
         
         document.getElementById('news-modal-content').innerHTML = contentHtml;
         
-        const imgUrl = (r.imageUrls && r.imageUrls.length > 0) ? r.imageUrls[0] : (r.image || r.imageUrl);
+        const rawCoverImg = (r.imageUrls && r.imageUrls.length > 0) ? r.imageUrls[0] : (r.image || r.imageUrl);
         const imgEl = document.getElementById('news-modal-image');
-        if (imgUrl) {
-            imgEl.style.backgroundImage = `url('${imgUrl}')`;
+        if (rawCoverImg) {
+            const rawFallback = rawCoverImg.startsWith('http') ? rawCoverImg : `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${rawCoverImg}`;
+            // Pre-test image or direct fallback
+            imgEl.style.backgroundImage = `url('${rawCoverImg}'), url('${rawFallback}')`;
             imgEl.style.display = 'block';
         } else {
             imgEl.style.display = 'none';
@@ -512,8 +516,10 @@ function displayReports(reports, container) {
         }
 
         const coverImgUrl = (r.imageUrls && r.imageUrls.length > 0) ? r.imageUrls[0] : (r.image || r.imageUrl);
+        const fallbackCover = (coverImgUrl && !coverImgUrl.startsWith('http')) ? `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${coverImgUrl}` : coverImgUrl;
+        
         const imgHtml = coverImgUrl 
-            ? `<div class="report-image" style="background-image: url('${coverImgUrl}'); background-size: cover; background-position: center; cursor: pointer;" onclick="window.openNewsModal(${index})"></div>`
+            ? `<div class="report-image" style="background-image: url('${coverImgUrl}'), url('${fallbackCover}'); background-size: cover; background-position: center; cursor: pointer;" onclick="window.openNewsModal(${index})"></div>`
             : `<div class="report-image" style="background: linear-gradient(45deg, #1e293b, #334155); display: flex; align-items: center; justify-content: center; font-size: 2rem; cursor: pointer;" onclick="window.openNewsModal(${index})">📰</div>`;
 
         container.innerHTML += `
@@ -536,11 +542,37 @@ async function loadReports() {
     if (!container) return;
 
     try {
-        // Cache-Busting durch Timestamp hinzugefügt
-        const response = await fetch('data/berichte.json?v=' + new Date().getTime());
-        if (!response.ok) throw new Error('Berichte nicht gefunden');
+        let reports = null;
+        try {
+            // Cache-Busting durch Timestamp
+            const response = await fetch('data/berichte.json?v=' + new Date().getTime());
+            if (response.ok) {
+                reports = await response.json();
+            }
+        } catch (fetchErr) {
+            console.warn('Lokale berichte.json nicht geladen, prüfe Live-Quelle...', fetchErr);
+        }
+
+        // Falls lokal leer oder nicht erreichbar, Live-Quelle von GitHub abfragen
+        if (!reports || reports.length === 0) {
+            try {
+                const liveResponse = await fetch('https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/data/berichte.json?v=' + new Date().getTime());
+                if (liveResponse.ok) {
+                    reports = await liveResponse.json();
+                }
+            } catch (liveErr) {
+                console.warn('Live GitHub berichte.json konnte nicht abgerufen werden:', liveErr);
+            }
+        }
         
-        const reports = await response.json();
+        if (!reports || reports.length === 0) {
+            container.innerHTML = '<p class="text-center text-muted" style="grid-column: 1 / -1;">Zurzeit sind keine Berichte vorhanden.</p>';
+            return;
+        }
+
+        displayReports(reports, container);
+
+    } catch (error) {
         
         if (!reports || reports.length === 0) {
             container.innerHTML = '<p class="text-center text-muted" style="grid-column: 1 / -1;">Zurzeit sind keine Berichte vorhanden.</p>';

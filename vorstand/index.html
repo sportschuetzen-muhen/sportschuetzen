@@ -1278,6 +1278,11 @@
                         <i class="fas fa-file-word me-2"></i>Fertigen Text einfügen / Word (.docx)
                     </button>
                 </li>
+                <li class="nav-item">
+                    <button class="nav-link py-3 fw-bold border-0 text-muted" id="published-tab" type="button" role="tab" aria-controls="published-panel" aria-selected="false" onclick="switchNewsMode('published')">
+                        <i class="fas fa-newspaper me-2"></i>Publizierte Berichte
+                    </button>
+                </li>
             </ul>
         </div>
         
@@ -1563,6 +1568,57 @@
                 <!-- Detailliertes Veröffentlichungs-Protokoll -->
                 <div id="news-publish-result" class="mt-3 d-none"></div>
             </form>
+
+            <!-- Tab 3: Publizierte Berichte verwalten -->
+            <div id="published-news-panel" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 text-primary"><i class="fas fa-newspaper me-2"></i>Aktive Berichte auf der Website</h5>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadPublishedNews(true)" title="Aktualisieren">
+                        <i class="fas fa-rotate me-1"></i>Aktualisieren
+                    </button>
+                </div>
+                <div class="alert alert-info py-2 px-3 small border-0 mb-3">
+                    <i class="fas fa-info-circle me-1"></i>Hier siehst du alle aktuell veröffentlichten Berichte. Beim Löschen wird der Bericht sicher von der Vereins-Website entfernt (GitHub &amp; Cloudflare Pages).
+                </div>
+                <div id="published-news-loading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted small mt-2">Lade Berichte...</p>
+                </div>
+                <div id="published-news-empty" class="alert alert-secondary text-center py-4 d-none">
+                    <i class="fas fa-inbox fa-2x mb-2 d-block text-muted"></i>
+                    Zurzeit sind keine publizierten Berichte vorhanden.
+                </div>
+                <div id="published-news-list" class="d-flex flex-column gap-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Bericht löschen Bestätigung -->
+<div class="modal fade" id="deleteReportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-trash-alt me-2"></i>Bericht löschen</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p>Möchtest du diesen Bericht wirklich unwiderruflich von der Vereins-Website löschen?</p>
+                <div class="p-3 bg-light rounded border mb-3">
+                    <strong id="delete-report-modal-title" class="text-danger d-block fs-6 mb-1"></strong>
+                    <small id="delete-report-modal-meta" class="text-muted"></small>
+                </div>
+                <div class="alert alert-warning py-2 px-3 small border-0 mb-0">
+                    <i class="fas fa-exclamation-triangle me-1"></i><strong>Hinweis:</strong> Falls dieser Beitrag auch auf <strong>Instagram</strong> oder <strong>Facebook</strong> geteilt wurde, entferne ihn dort bitte bei Bedarf direkt in der jeweiligen App.
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete-report-btn">
+                    <span id="confirm-delete-report-btn-text">Unwiderruflich löschen</span>
+                    <span id="confirm-delete-report-spinner" class="spinner-border spinner-border-sm d-none"></span>
+                </button>
+            </div>
         </div>
     </div>
 </div>

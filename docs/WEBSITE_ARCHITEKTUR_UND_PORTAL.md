@@ -174,6 +174,21 @@ CREATE TABLE public.documents (
 
 ---
 
+### 2.8 Dual-Publishing & Lösch-Management für News & Vereinsberichte
+* **Automatisches Dual-Publishing (`v1-vorstand.js`):**
+  * Veröffentlichte Berichte und Fotos aus dem Modul News & KI werden automatisch parallel in zwei Ziel-Repositories synchronisiert:
+    1. `sportschuetzen-muhen/website` (Branch `main`): Beliefert die klassische GitHub-Pages-Seite (`sportschuetzen-muhen.github.io/website/#reports`).
+    2. `sportschuetzen-muhen/sportschuetzen` (Branch `migration-supabase`): Beliefert die Cloudflare Pages Instanz (`sps-b55.pages.dev/sportschuetzen-website/frontend/#reports`).
+  * Jeder Publish im Vorstandsportal löst dadurch automatisch das Deployment auf Cloudflare Pages aus.
+* **Robuste Frontend-Darstellung mit Live-Fallback (`main.js`):**
+  * `loadReports()` lädt primär die lokale `data/berichte.json` mit automatischem Fallback auf die GitHub-Live-Quelle, falls ein Rebuild noch aussteht.
+  * Bild-URLs verwenden bei Bedarf die GitHub-Raw-URL als Fallback (`onerror`), um Darstellungsunterbrüche auszuschliessen.
+* **Sicheres Löschen fehlpublizierter Berichte:**
+  * Im Vorstandsportal (`news.js`) steht unter dem Reiter **«📋 Publizierte Berichte»** eine Echtzeit-Verwaltung zur Verfügung.
+  * Das Löschen erfolgt granular über die eindeutige Berichts-ID (`id: "report_..."`) über beide Repositories hinweg, inklusive Sicherheitsdialog und Hinweis auf allfällige manuelle Social-Media-Entfernungen.
+
+---
+
 ## 3. Responsive Kompatibilität & Geräte-Standards
 
 | Gerät / Browser | Getroffene Massnahme | Ergebnis |
