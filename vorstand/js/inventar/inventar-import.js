@@ -56,6 +56,21 @@ window.openInventarExcelImportModal = function() {
                         </div>
                     </div>
 
+                    <!-- Erklärung & Anleitung -->
+                    <div class="alert alert-light border border-info-subtle rounded-3 p-3 mb-3 small shadow-xs">
+                        <div class="d-flex align-items-start">
+                            <i class="fas fa-lightbulb text-warning fs-5 me-2.5 mt-0.5"></i>
+                            <div>
+                                <div class="fw-bold mb-1 text-dark">Hinweise zur Excel-Mustervorlage:</div>
+                                <ul class="mb-0 ps-3 text-secondary" style="line-height: 1.55;">
+                                    <li><strong>Zeile 1 (Spaltentitel):</strong> Nicht löschen oder umbenennen, damit das System die Felder korrekt zuordnen kann.</li>
+                                    <li><strong>Zeilen 2 bis 7 (Beispieldaten):</strong> Sind reine Muster zur Orientierung. Du kannst sie vor dem Import <u>löschen</u> oder durch deine echten Artikeldaten überschreiben.</li>
+                                    <li><strong>Spalte ID:</strong> Für neue Artikel einfach <u>leer lassen</u> – das System vergibt beim Import automatisch fortlaufende Nummern (z.&nbsp;B. <span class="font-monospace text-dark">K-54</span>). Trägst du eine bestehende ID ein, wird dieser Datensatz aktualisiert.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Dropzone -->
                     <div id="inv-import-dropzone" class="border border-2 border-dashed rounded-3 p-4 text-center mb-3 bg-white" 
                          style="cursor: pointer; border-color: #cbd5e1 !important;"
@@ -169,22 +184,34 @@ window.invProcessRawData = function(jsonRows) {
     const headerIndices = {};
     rawHeaders.forEach((h, idx) => {
         const n = norm(h);
-        if (n === 'id' || n === 'artikelid' || n === 'nummer') headerIndices.id = idx;
-        else if (n === 'typ' || n === 'artikel' || n === 'bezeichnung' || n === 'kategorie') headerIndices.typ = idx;
-        else if (n === 'modell' || n === 'model') headerIndices.modell = idx;
-        else if (n === 'hersteller' || n === 'marke') headerIndices.hersteller = idx;
-        else if (n === 'groesse' || n === 'grosse' || n === 'size') headerIndices.groesse = idx;
-        else if (n === 'status') headerIndices.status = idx;
-        else if (n === 'kaufpreis' || n === 'ek' || n === 'selbstkosten' || n === 'einkaufspreis') headerIndices.kaufpreis = idx;
-        else if (n === 'verkaufspreis' || n === 'vk' || n === 'mitgliederpreis' || n === 'endpreis') headerIndices.verkaufspreis = idx;
-        else if (n === 'katalogpreis' || n === 'uvp' || n === 'bruttopreis') headerIndices.katalogpreis = idx;
-        else if (n === 'sponsoring' || n === 'rabatt' || n === 'subvention') headerIndices.sponsoring = idx;
-        else if (n === 'depot' || n === 'depotbetrag' || n === 'pfand' || n === 'kaution') headerIndices.depotbetrag = idx;
-        else if (n === 'kaufdatum' || n === 'datum') headerIndices.kaufdatum = idx;
-        else if (n === 'laufnummer' || n === 'seriennummer') headerIndices.seriennummer = idx;
-        else if (n === 'diopter') headerIndices.diopter = idx;
-        else if (n === 'ringkorn') headerIndices.ringkorn = idx;
-        else if (n === 'distanz') headerIndices.distanz = idx;
+        if (category === 'schluessel') {
+            if (n === 'id' || n === 'artikelid' || n === 'inventarid') headerIndices.id = idx;
+            else if (n === 'nummer' || n === 'schluesselnummer' || n === 'keynumber') headerIndices.seriennummer = idx;
+            else if (n === 'typ' || n === 'artikel' || n === 'bezeichnung' || n === 'kategorie' || n === 'keyname') headerIndices.typ = idx;
+            else if (n === 'status') headerIndices.status = idx;
+            else if (n === 'depot' || n === 'depotbetrag' || n === 'pfand' || n === 'kaution') headerIndices.depotbetrag = idx;
+        } else {
+            if (n === 'id' || n === 'artikelid' || n === 'inventarid') headerIndices.id = idx;
+            else if (n === 'typ' || n === 'artikel' || n === 'bezeichnung' || n === 'kategorie') headerIndices.typ = idx;
+            else if (n === 'modell' || n === 'model') headerIndices.modell = idx;
+            else if (n === 'hersteller' || n === 'marke') headerIndices.hersteller = idx;
+            else if (n === 'groesse' || n === 'grosse' || n === 'size') headerIndices.groesse = idx;
+            else if (n === 'status') headerIndices.status = idx;
+            else if (n === 'kaufpreis' || n === 'ek' || n === 'selbstkosten' || n === 'einkaufspreis') headerIndices.kaufpreis = idx;
+            else if (n === 'verkaufspreis' || n === 'vk' || n === 'mitgliederpreis' || n === 'endpreis') headerIndices.verkaufspreis = idx;
+            else if (n === 'katalogpreis' || n === 'uvp' || n === 'bruttopreis') headerIndices.katalogpreis = idx;
+            else if (n === 'sponsoring' || n === 'rabatt' || n === 'subvention') headerIndices.sponsoring = idx;
+            else if (n === 'grundpreis' || n === 'netto' || n === 'grundpreisnetto') headerIndices.grundpreis = idx;
+            else if (n === 'veredelung' || n === 'veredelungskosten' || n === 'bestickung') headerIndices.veredelung = idx;
+            else if (n === 'depot' || n === 'depotbetrag' || n === 'pfand' || n === 'kaution') headerIndices.depotbetrag = idx;
+            else if (n === 'kaufdatum' || n === 'datum') headerIndices.kaufdatum = idx;
+            else if (n === 'laufnummer' || n === 'seriennummer' || n === 'nummer') headerIndices.seriennummer = idx;
+            else if (n === 'diopter') headerIndices.diopter = idx;
+            else if (n === 'ringkorn' || n === 'frontsight') headerIndices.ringkorn = idx;
+            else if (n === 'distanz' || n === 'kaliber' || n === 'kaliberdistanz') headerIndices.distanz = idx;
+            else if (n === 'zubehoer' || n === 'zubehor') headerIndices.zubehoer = idx;
+            else if (n === 'spezielles' || n === 'bemerkung' || n === 'notizen') headerIndices.spezielles = idx;
+        }
     });
 
     const parsedItems = [];
@@ -194,21 +221,43 @@ window.invProcessRawData = function(jsonRows) {
     const existingItems = inventarState?.[category === 'kleidung' ? 'kleidung' : (category === 'gewehr' ? 'gewehre' : (category === 'schluessel' ? 'schluessel' : 'schiessbekleidung'))] || [];
     let nextNum = 1;
     existingItems.forEach(it => {
-        const m = String(it.ID).match(new RegExp(`^${prefix}-(\\d+)`, 'i'));
+        const m = String(it.ID || it.id || '').match(new RegExp(`^${prefix}-(\\d+)`, 'i'));
         if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
     });
+
+    const parseNum = v => {
+        if (v === undefined || v === null || v === '') return null;
+        const n = parseFloat(String(v).replace("'", "").replace("CHF", "").replace(",", ".").trim());
+        return isNaN(n) ? null : n;
+    };
+
+    const parseDateSafe = v => {
+        if (v === undefined || v === null || String(v).trim() === '') return new Date().toISOString().slice(0, 10);
+        if (typeof v === 'number') {
+            const date = new Date(Math.round((v - 25569) * 86400 * 1000));
+            return !isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        }
+        if (v instanceof Date) {
+            return !isNaN(v.getTime()) ? v.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        }
+        const s = String(v).trim();
+        const deMatch = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+        if (deMatch) {
+            const day = deMatch[1].padStart(2, '0');
+            const month = deMatch[2].padStart(2, '0');
+            const year = deMatch[3];
+            return `${year}-${month}-${day}`;
+        }
+        const isoMatch = s.match(/^\d{4}-\d{2}-\d{2}/);
+        if (isoMatch) return isoMatch[0];
+        return new Date().toISOString().slice(0, 10);
+    };
 
     dataRows.forEach((row) => {
         let idVal = headerIndices.id !== undefined && row[headerIndices.id] ? String(row[headerIndices.id]).trim() : '';
         if (!idVal) {
             idVal = `${prefix}-${nextNum++}`;
         }
-
-        const parseNum = v => {
-            if (v === undefined || v === null || v === '') return null;
-            const n = parseFloat(String(v).replace("'", "").replace("CHF", "").replace(",", ".").trim());
-            return isNaN(n) ? null : n;
-        };
 
         const itemObj = {
             id: idVal,
@@ -222,9 +271,16 @@ window.invProcessRawData = function(jsonRows) {
             selling_price: parseNum(headerIndices.verkaufspreis !== undefined ? row[headerIndices.verkaufspreis] : null),
             retail_price: parseNum(headerIndices.katalogpreis !== undefined ? row[headerIndices.katalogpreis] : null),
             discount_amount: parseNum(headerIndices.sponsoring !== undefined ? row[headerIndices.sponsoring] : null),
+            base_price: parseNum(headerIndices.grundpreis !== undefined ? row[headerIndices.grundpreis] : null),
+            finishing_price: parseNum(headerIndices.veredelung !== undefined ? row[headerIndices.veredelung] : null),
             depot_amount: parseNum(headerIndices.depotbetrag !== undefined ? row[headerIndices.depotbetrag] : 0) || 0,
-            purchase_date: (headerIndices.kaufdatum !== undefined && row[headerIndices.kaufdatum]) ? String(row[headerIndices.kaufdatum]).slice(0, 10) : new Date().toISOString().slice(0, 10),
+            purchase_date: headerIndices.kaufdatum !== undefined ? parseDateSafe(row[headerIndices.kaufdatum]) : new Date().toISOString().slice(0, 10),
             serial_number: (headerIndices.seriennummer !== undefined && row[headerIndices.seriennummer]) ? String(row[headerIndices.seriennummer]).trim() : null,
+            diopter: (headerIndices.diopter !== undefined && row[headerIndices.diopter]) ? String(row[headerIndices.diopter]).trim() : null,
+            front_sight: (headerIndices.ringkorn !== undefined && row[headerIndices.ringkorn]) ? String(row[headerIndices.ringkorn]).trim() : null,
+            caliber_distance: (headerIndices.distanz !== undefined && row[headerIndices.distanz]) ? String(row[headerIndices.distanz]).trim() : (category === 'gewehr' ? '50m' : null),
+            accessories: (headerIndices.zubehoer !== undefined && row[headerIndices.zubehoer]) ? String(row[headerIndices.zubehoer]).trim() : null,
+            special_notes: (headerIndices.spezielles !== undefined && row[headerIndices.spezielles]) ? String(row[headerIndices.spezielles]).trim() : null,
             key_name: (category === 'schluessel' && headerIndices.typ !== undefined) ? String(row[headerIndices.typ]).trim() : null,
             key_number: (category === 'schluessel' && headerIndices.seriennummer !== undefined) ? String(row[headerIndices.seriennummer]).trim() : null
         };
@@ -234,6 +290,8 @@ window.invProcessRawData = function(jsonRows) {
         if (itemObj.selling_price !== null) itemObj.selling_price = Math.round(itemObj.selling_price);
         if (itemObj.retail_price !== null) itemObj.retail_price = Math.round(itemObj.retail_price);
         if (itemObj.discount_amount !== null) itemObj.discount_amount = Math.round(itemObj.discount_amount);
+        if (itemObj.base_price !== null) itemObj.base_price = Math.round(itemObj.base_price);
+        if (itemObj.finishing_price !== null) itemObj.finishing_price = Math.round(itemObj.finishing_price);
 
         // Falls Katalogpreis fehlt, aus Kaufpreis oder Verkaufspreis + Sponsoring ableiten:
         if (itemObj.retail_price === null && (category === 'kleidung' || category === 'schiessbekleidung')) {
@@ -280,7 +338,10 @@ window.invRenderPreview = function(items, category) {
             <th>Typ</th>
             <th>Modell</th>
             <th>Grösse</th>
+            <th>Kaufdatum</th>
             <th class="text-end">Einkauf (CHF)</th>
+            <th class="text-end">Grundpreis (CHF)</th>
+            <th class="text-end">Veredelung (CHF)</th>
             <th class="text-end">Katalog (CHF)</th>
             <th class="text-end">Sponsoring (CHF)</th>
             <th class="text-end">Verkauf (CHF)</th>
@@ -292,18 +353,24 @@ window.invRenderPreview = function(items, category) {
                 <td><span class="badge bg-light text-dark border">${escapeHtml(it.item_type || '-')}</span></td>
                 <td>${escapeHtml(it.model || '-')}</td>
                 <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(it.size || '-')}</span></td>
+                <td class="small text-muted font-monospace">${it.purchase_date || '-'}</td>
                 <td class="text-end font-monospace">${it.purchase_price !== null ? it.purchase_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-muted">${it.base_price !== null ? it.base_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-muted">${it.finishing_price !== null ? it.finishing_price + '.00' : '-'}</td>
                 <td class="text-end font-monospace text-muted">${it.retail_price !== null ? it.retail_price + '.00' : '-'}</td>
                 <td class="text-end font-monospace text-danger">${it.discount_amount !== null ? '-' + it.discount_amount + '.00' : '-'}</td>
                 <td class="text-end font-monospace fw-bold text-success">${it.selling_price !== null ? it.selling_price + '.00' : '-'}</td>
                 <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
             </tr>
         `).join('');
-    } else {
+    } else if (category === 'schiessbekleidung') {
         thead.innerHTML = `
             <th>ID</th>
-            <th>Bezeichnung / Typ</th>
-            <th>Hersteller / Details</th>
+            <th>Typ</th>
+            <th>Modell</th>
+            <th>Hersteller</th>
+            <th>Grösse</th>
+            <th>Kaufdatum</th>
             <th class="text-end">Kaufpreis (CHF)</th>
             <th class="text-end">Depot (CHF)</th>
             <th>Status</th>
@@ -311,9 +378,54 @@ window.invRenderPreview = function(items, category) {
         tbody.innerHTML = items.map(it => `
             <tr>
                 <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
-                <td><span class="badge bg-light text-dark border">${escapeHtml(it.item_type || it.key_name || '-')}</span></td>
-                <td>${escapeHtml(it.manufacturer || it.model || it.serial_number || '-')}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(it.item_type || '-')}</span></td>
+                <td>${escapeHtml(it.model || '-')}</td>
+                <td>${escapeHtml(it.manufacturer || '-')}</td>
+                <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(it.size || '-')}</span></td>
+                <td class="small text-muted font-monospace">${it.purchase_date || '-'}</td>
                 <td class="text-end font-monospace">${it.purchase_price !== null ? it.purchase_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-primary">${it.depot_amount ? Number(it.depot_amount).toFixed(2) : '-'}</td>
+                <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
+            </tr>
+        `).join('');
+    } else if (category === 'gewehr') {
+        thead.innerHTML = `
+            <th>ID</th>
+            <th>Hersteller & Modell</th>
+            <th>Laufnummer</th>
+            <th>Distanz</th>
+            <th>Visierung</th>
+            <th>Kaufdatum</th>
+            <th class="text-end">Kaufpreis (CHF)</th>
+            <th class="text-end">Depot (CHF)</th>
+            <th>Status</th>
+        `;
+        tbody.innerHTML = items.map(it => `
+            <tr>
+                <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
+                <td>${escapeHtml([it.manufacturer, it.model].filter(Boolean).join(' ') || '-')}</td>
+                <td class="font-monospace">${escapeHtml(it.serial_number || '-')}</td>
+                <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(it.caliber_distance || '50m')}</span></td>
+                <td class="small text-muted">${escapeHtml([it.diopter, it.front_sight].filter(Boolean).join(' / ') || '-')}</td>
+                <td class="small text-muted font-monospace">${it.purchase_date || '-'}</td>
+                <td class="text-end font-monospace">${it.purchase_price !== null ? it.purchase_price + '.00' : '-'}</td>
+                <td class="text-end font-monospace text-primary">${it.depot_amount ? Number(it.depot_amount).toFixed(2) : '-'}</td>
+                <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
+            </tr>
+        `).join('');
+    } else { // schluessel
+        thead.innerHTML = `
+            <th>ID</th>
+            <th>Bezeichnung</th>
+            <th>Schlüssel-Nummer</th>
+            <th class="text-end">Depot (CHF)</th>
+            <th>Status</th>
+        `;
+        tbody.innerHTML = items.map(it => `
+            <tr>
+                <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(it.key_name || '-')}</span></td>
+                <td class="font-monospace">${escapeHtml(it.key_number || '-')}</td>
                 <td class="text-end font-monospace text-primary">${it.depot_amount ? Number(it.depot_amount).toFixed(2) : '-'}</td>
                 <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
             </tr>
@@ -341,7 +453,6 @@ window.invExecuteImport = function() {
         return;
     }
 
-    // Upsert in Batches von 50
     const category = document.getElementById('inv-import-category').value;
     supa.from('inventory_items')
         .upsert(items, { onConflict: 'id' })
@@ -352,6 +463,22 @@ window.invExecuteImport = function() {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-check-circle me-1"></i> Jetzt importieren';
                 return;
+            }
+
+            // Falls neue Kleidungstypen importiert wurden, in inventory_config ergänzen
+            if ((category === 'kleidung' || category === 'schiessbekleidung') && supa) {
+                try {
+                    const typKey = category === 'schiessbekleidung' ? 'Schiessbekleidung_Typ' : 'Kleidung_Typ';
+                    const knownTypes = (inventarState?.config || []).map(c => c[typKey]).filter(Boolean);
+                    const newTypes = [...new Set(items.map(it => it.item_type).filter(Boolean))].filter(t => !knownTypes.includes(t));
+                    for (const nt of newTypes) {
+                        await supa.from('inventory_config').insert([{
+                            config_key: typKey,
+                            value: nt,
+                            sort_order: 99
+                        }]);
+                    }
+                } catch (_) {}
             }
 
             // Audit Log
@@ -395,107 +522,192 @@ window.invDownloadExcelTemplate = function() {
     if (category === 'kleidung') {
         sampleData = [
             {
-                "ID": "K-1",
+                "ID": "",
                 "Typ": "Trainerjacke",
                 "Modell": "Erima Celebrate 125",
                 "Hersteller": "Erima",
                 "Groesse": "XS",
+                "Kaufdatum": "2024-05-01",
                 "Kaufpreis": 80,
+                "Grundpreis": 42,
+                "Veredelung": 38,
                 "Katalogpreis": 83,
                 "Sponsoring": 20,
                 "Verkaufspreis": 63,
+                "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
             {
-                "ID": "K-22",
+                "ID": "",
                 "Typ": "Softshell-Jacke",
                 "Modell": "Erima Function",
                 "Hersteller": "Erima",
                 "Groesse": "38",
+                "Kaufdatum": "2024-05-01",
                 "Kaufpreis": 122,
+                "Grundpreis": 65,
+                "Veredelung": 57,
                 "Katalogpreis": 127,
                 "Sponsoring": 31,
                 "Verkaufspreis": 96,
+                "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
             {
-                "ID": "K-25",
+                "ID": "",
                 "Typ": "Team-Jacke",
                 "Modell": "Erima Team Jacke m. abnehmb. Ärmeln",
                 "Hersteller": "Erima",
                 "Groesse": "S",
+                "Kaufdatum": "2024-05-01",
                 "Kaufpreis": 110,
+                "Grundpreis": 60,
+                "Veredelung": 50,
                 "Katalogpreis": 114,
                 "Sponsoring": 27,
                 "Verkaufspreis": 87,
+                "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
             {
-                "ID": "K-28",
+                "ID": "",
                 "Typ": "Poloshirt",
                 "Modell": "Erima Celebrate 125",
                 "Hersteller": "Erima",
                 "Groesse": "XXL",
+                "Kaufdatum": "2024-05-01",
                 "Kaufpreis": 69,
+                "Grundpreis": 36,
+                "Veredelung": 33,
                 "Katalogpreis": 72,
                 "Sponsoring": 17,
                 "Verkaufspreis": 55,
+                "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
             {
-                "ID": "K-30",
+                "ID": "",
                 "Typ": "T-Shirt",
                 "Modell": "Erima Celebrate 125",
                 "Hersteller": "Erima",
                 "Groesse": "S",
+                "Kaufdatum": "2024-05-01",
                 "Kaufpreis": 65,
+                "Grundpreis": 34,
+                "Veredelung": 31,
                 "Katalogpreis": 68,
                 "Sponsoring": 17,
                 "Verkaufspreis": 51,
+                "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
             {
-                "ID": "K-46",
+                "ID": "",
                 "Typ": "T-Shirt",
                 "Modell": "Erima Celebrate 125",
                 "Hersteller": "Erima",
                 "Groesse": "164",
+                "Kaufdatum": "2024-05-01",
                 "Kaufpreis": 62,
+                "Grundpreis": 32,
+                "Veredelung": 30,
                 "Katalogpreis": 65,
                 "Sponsoring": 16,
                 "Verkaufspreis": 49,
+                "Depotbetrag": 0,
+                "Status": "Im Lager"
+            }
+        ];
+    } else if (category === 'schiessbekleidung') {
+        sampleData = [
+            {
+                "ID": "",
+                "Typ": "Schiessjacke",
+                "Modell": "Sauer Advantage",
+                "Hersteller": "Sauer",
+                "Groesse": "50",
+                "Kaufdatum": "2024-01-15",
+                "Kaufpreis": 650,
+                "Depotbetrag": 150,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "Schiesshose",
+                "Modell": "Capapie Match",
+                "Hersteller": "Capapie",
+                "Groesse": "48",
+                "Kaufdatum": "2024-01-15",
+                "Kaufpreis": 480,
+                "Depotbetrag": 100,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Typ": "Handschuh",
+                "Modell": "Kustermann Contact",
+                "Hersteller": "Kustermann",
+                "Groesse": "M",
+                "Kaufdatum": "2024-03-20",
+                "Kaufpreis": 85,
+                "Depotbetrag": 0,
                 "Status": "Im Lager"
             }
         ];
     } else if (category === 'schluessel') {
         sampleData = [
             {
-                "ID": "SCH-1",
-                "Bezeichnung": "Hauptschlüssel Schützenstube",
+                "ID": "",
+                "Bezeichnung": "allgemein",
                 "Nummer": "2410",
                 "Depotbetrag": 50,
                 "Status": "Im Lager"
             },
             {
-                "ID": "SCH-2",
-                "Bezeichnung": "Anlagenschlüssel 50m Stand",
+                "ID": "",
+                "Bezeichnung": "Wirtschaftsraum",
                 "Nummer": "5001",
+                "Depotbetrag": 50,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Bezeichnung": "Tresor 1",
+                "Nummer": "TR-01",
                 "Depotbetrag": 50,
                 "Status": "Im Lager"
             }
         ];
-    } else {
+    } else { // gewehr
         sampleData = [
             {
-                "ID": "G-1",
+                "ID": "",
                 "Hersteller": "Bleiker",
                 "Modell": "Challenger",
                 "Laufnummer": "CH-9812",
                 "Diopter": "Gehmann 510",
                 "Ringkorn": "Centra 3.8",
                 "Distanz": "50m",
+                "Zubehoer": "Handstop, Putzzeug, Koffer",
+                "Spezielles": "Vereinswaffe Nachwuchs",
+                "Kaufdatum": "2023-11-01",
                 "Kaufpreis": 2500,
                 "Depotbetrag": 200,
+                "Status": "Im Lager"
+            },
+            {
+                "ID": "",
+                "Hersteller": "Walther",
+                "Modell": "KK500",
+                "Laufnummer": "W-44321",
+                "Diopter": "Walther Insight Out",
+                "Ringkorn": "M18",
+                "Distanz": "50m",
+                "Zubehoer": "Visierlinienerhöhung",
+                "Spezielles": "Sehr gepflegt",
+                "Kaufdatum": "2024-02-10",
+                "Kaufpreis": 3200,
+                "Depotbetrag": 250,
                 "Status": "Im Lager"
             }
         ];
@@ -504,5 +716,17 @@ window.invDownloadExcelTemplate = function() {
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventar");
+
+    // Zweites Arbeitsblatt mit detaillierten Hinweisen
+    const guideData = [
+        { "Hinweis": "1. Spaltenzeile (Zeile 1)", "Erklärung": "Die oberste Zeile enthält die Feldnamen. Diese Zeile bitte nicht löschen oder umbenennen." },
+        { "Hinweis": "2. Beispieldaten (ab Zeile 2)", "Erklärung": "Die enthaltenen Zeilen sind Musterdaten zur Veranschaulichung. Du kannst sie vor dem Import löschen oder durch deine echten Artikel ersetzen." },
+        { "Hinweis": "3. Spalte ID", "Erklärung": "Für neue Artikel die Spalte ID einfach leer lassen. Das System vergibt beim Import automatisch die nächste fortlaufende Nummer (z.B. K-54, SCH-12, G-15). Wird eine bestehende ID eingetragen, wird der Datensatz aktualisiert." },
+        { "Hinweis": "4. Beträge & Zahlen", "Erklärung": "Preise als Zahl eingeben (z.B. 80 oder 63.50). Währungsangaben wie CHF oder Tausendertrennzeichen werden automatisch bereinigt." },
+        { "Hinweis": "5. Datumsformat", "Erklärung": "Kaufdatum als JJJJ-MM-TT (z.B. 2024-05-01) oder TT.MM.JJJJ (z.B. 01.05.2024) eingeben." }
+    ];
+    const wsGuide = XLSX.utils.json_to_sheet(guideData);
+    XLSX.utils.book_append_sheet(wb, wsGuide, "Anleitung");
+
     XLSX.writeFile(wb, fileName);
 };
