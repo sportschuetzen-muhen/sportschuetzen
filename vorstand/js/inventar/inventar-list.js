@@ -107,40 +107,41 @@ function renderInventoryTable() {
                      <span class="text-muted small">${arrow}</span>
                  </th>`;
     });
-    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;">Aktion</th></tr></thead><tbody>';
+    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;">Aktionen</th></tr></thead><tbody>';
 
     html += sorted.map(row => {
-        const idCell = `<td class="font-monospace fw-bold text-primary">${row.ID || '-'}</td>`;
+        const idCell = `<td class="font-monospace fw-bold text-primary" data-col-id="col_id">${row.ID || '-'}</td>`;
         const cells = displayHeaders.map(key => {
             const val = row[key];
+            const colAttr = `data-col-id="col_${key.toLowerCase()}"`;
             if (key.endsWith("_ID") || key === "Aktueller_Besitzer_ID")
-                return `<td>${getInventarNameFromId(val) || '<span class="text-muted">-</span>'}</td>`;
+                return `<td ${colAttr}>${getInventarNameFromId(val) || '<span class="text-muted">-</span>'}</td>`;
             if (key === "Status") {
                 if (val === "Im Lager" || val === "Aktiv")
-                    return `<td><span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 rounded-pill">${val==='Aktiv'?'Aktiv':'Lager'}</span></td>`;
+                    return `<td ${colAttr}><span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 rounded-pill">${val==='Aktiv'?'Aktiv':'Lager'}</span></td>`;
                 if (val === "Ausgegeben" || val === "Passiv")
-                    return `<td><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-1 px-2 rounded-pill">${val==='Passiv'?'Passiv':'Ausleihe'}</span></td>`;
+                    return `<td ${colAttr}><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-1 px-2 rounded-pill">${val==='Passiv'?'Passiv':'Ausleihe'}</span></td>`;
                 if (val === "Verkauft")
-                    return `<td><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2 rounded-pill">Verkauft</span></td>`;
+                    return `<td ${colAttr}><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2 rounded-pill">Verkauft</span></td>`;
                 if (val === "Defekt" || val === "Ausgemustert")
-                    return `<td><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2 rounded-pill">${val}</span></td>`;
+                    return `<td ${colAttr}><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2 rounded-pill">${val}</span></td>`;
                 if (val === "Verstorben")
-                    return `<td><span class="badge bg-dark text-white py-1 px-2 rounded-pill">† Verstorben</span></td>`;
-                return `<td><span class="badge bg-secondary py-1 px-2 rounded-pill">${val||'-'}</span></td>`;
+                    return `<td ${colAttr}><span class="badge bg-dark text-white py-1 px-2 rounded-pill">† Verstorben</span></td>`;
+                return `<td ${colAttr}><span class="badge bg-secondary py-1 px-2 rounded-pill">${val||'-'}</span></td>`;
             }
             if (dateKeys.some(dk => key.toLowerCase().includes(dk.toLowerCase())) && val)
-                return `<td>${formatCH(val)}</td>`;
+                return `<td ${colAttr}>${formatCH(val)}</td>`;
             if (key.toLowerCase().includes("preis") || key.toLowerCase().includes("sponsoring")) {
                 if (val !== undefined && val !== null && val !== "") {
                     const num = parseFloat(val);
                     const isNeg = key.toLowerCase().includes("sponsoring") && num > 0;
-                    return `<td class="text-end font-monospace ${key.toLowerCase().includes("sponsoring") ? 'text-danger fw-semibold' : (key.toLowerCase().includes("verkauf") ? 'fw-bold text-success' : '')}">${!isNaN(num) ? (isNeg ? '-CHF ' : 'CHF ') + num.toFixed(2) : val}</td>`;
+                    return `<td ${colAttr} class="text-end font-monospace ${key.toLowerCase().includes("sponsoring") ? 'text-danger fw-semibold' : (key.toLowerCase().includes("verkauf") ? 'fw-bold text-success' : '')}">${!isNaN(num) ? (isNeg ? '-CHF ' : 'CHF ') + num.toFixed(2) : val}</td>`;
                 }
-                return `<td class="text-end text-muted small">-</td>`;
+                return `<td ${colAttr} class="text-end text-muted small">-</td>`;
             }
             if (key.toLowerCase().includes("pfand") || key === "Depot" || key === "Depotbetrag")
-                return `<td class="text-end font-monospace fw-bold text-primary">${val ? parseFloat(val).toFixed(2) : '0.00'}</td>`;
-            return `<td>${val !== undefined && val !== null && val !== "" ? val : '-'}</td>`;
+                return `<td ${colAttr} class="text-end font-monospace fw-bold text-primary">${val ? parseFloat(val).toFixed(2) : '0.00'}</td>`;
+            return `<td ${colAttr}>${val !== undefined && val !== null && val !== "" ? val : '-'}</td>`;
         }).join('');
 
         return `<tr>${idCell}${cells}<td class="text-center">
