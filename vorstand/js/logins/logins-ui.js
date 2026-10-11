@@ -198,7 +198,18 @@ function initTableKitForLogins(tab) {
   const tableEl = document.querySelector(tableSelector);
   if (!tableEl) return;
 
-  // 1. Spalten-Sichtbarkeit per Dropdown
+  // 1. Spalten-Reihenfolge per Drag & Drop
+  if (typeof window.TableKit.makeColumnReorderable === 'function') {
+    const colReorder = window.TableKit.makeColumnReorderable(tableSelector, {
+      storageKey: `tk_order_${tab}`,
+      lockedColumns: ['actions']
+    });
+    if (colReorder && typeof colReorder.apply === 'function') {
+      colReorder.apply();
+    }
+  }
+
+  // 2. Spalten-Sichtbarkeit per Dropdown
   if (typeof window.TableKit.setupColumnToggle === 'function') {
     window.TableKit.setupColumnToggle(tableSelector, {
       container: '#logins-col-toggle-container',
@@ -206,7 +217,7 @@ function initTableKitForLogins(tab) {
     });
   }
 
-  // 2. Spaltenbreiten verändern
+  // 3. Spaltenbreiten verändern
   if (typeof window.TableKit.makeResizable === 'function') {
     window.TableKit.makeResizable(tableSelector, {
       storageKey: `tk_widths_${tab}`

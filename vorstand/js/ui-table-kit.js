@@ -1049,11 +1049,11 @@
         // 1. Header verschieben
         headerRow.insertBefore(draggedTh, targetNextTh);
 
-        // 2. Zeilenzellen verschieben
+        // 2. Zeilenzellen verschieben (unterstützt data-col-id="..." und tk-col-...)
         const rows = table.querySelectorAll('tbody tr');
         rows.forEach(tr => {
-          const cellFrom = tr.querySelector(`td[data-col-id="${draggedColId}"]`);
-          const cellTo = targetNextColId ? tr.querySelector(`td[data-col-id="${targetNextColId}"]`) : null;
+          const cellFrom = tr.querySelector(`td[data-col-id="${draggedColId}"], td.tk-col-${draggedColId}`);
+          const cellTo = targetNextColId ? tr.querySelector(`td[data-col-id="${targetNextColId}"], td.tk-col-${targetNextColId}`) : null;
           if (cellFrom) {
             tr.insertBefore(cellFrom, cellTo);
           }
@@ -1084,6 +1084,7 @@
 
     return {
       getOrder: () => Array.from(headerRow.querySelectorAll('th[data-col-id]')).map(h => h.dataset.colId),
+      apply: (customOrder) => applyColumnOrder(table, customOrder || (storageKey ? JSON.parse(localStorage.getItem(storageKey) || 'null') : null)),
       reset: () => {
         if (storageKey) {
           try { localStorage.removeItem(storageKey); } catch (_) {}
@@ -1103,26 +1104,39 @@
 
     const rows = Array.from(table.querySelectorAll('tbody tr'));
 
+    // 1. Feste Anfangsspalten (wie Checkbox, Index, Zeilen-Drag) an den Anfang setzen falls vorhanden
+    const pinStartCols = ['col_check', 'check', 'col_idx', 'idx', 'col_drag', 'drag'];
+    pinStartCols.forEach(colId => {
+      const th = headerRow.querySelector(`th[data-col-id="${colId}"]`);
+      if (th) headerRow.insertBefore(th, headerRow.firstChild);
+      rows.forEach(tr => {
+        const td = tr.querySelector(`td[data-col-id="${colId}"], td.tk-col-${colId}`);
+        if (td) tr.insertBefore(td, tr.firstChild);
+      });
+    });
+
+    // 2. Geordnete dynamische Spalten positionieren
     order.forEach(colId => {
+      if (pinStartCols.includes(colId)) return;
       const th = headerRow.querySelector(`th[data-col-id="${colId}"]`);
       if (th) {
         headerRow.appendChild(th);
       }
       rows.forEach(tr => {
-        const td = tr.querySelector(`td[data-col-id="${colId}"]`);
+        const td = tr.querySelector(`td[data-col-id="${colId}"], td.tk-col-${colId}`);
         if (td) {
           tr.appendChild(td);
         }
       });
     });
 
-    // Feste Endspalten (wie Aktionen) sicherstellen
-    const pinEndCols = ['col_aktionen', 'col_action', 'col_actions'];
+    // 3. Feste Endspalten (wie Aktionen) sicherstellen
+    const pinEndCols = ['col_aktionen', 'col_action', 'col_actions', 'aktionen', 'action', 'actions'];
     pinEndCols.forEach(colId => {
       const th = headerRow.querySelector(`th[data-col-id="${colId}"]`);
       if (th) headerRow.appendChild(th);
       rows.forEach(tr => {
-        const td = tr.querySelector(`td[data-col-id="${colId}"]`);
+        const td = tr.querySelector(`td[data-col-id="${colId}"], td.tk-col-${colId}`);
         if (td) tr.appendChild(td);
       });
     });

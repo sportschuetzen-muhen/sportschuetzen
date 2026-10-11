@@ -325,6 +325,15 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
 5. Das System triggert im Hintergrund unmittelbar `loadJahresbeitragData(true, false)`, sodass beim Tab-Wechsel ins Jahresbeitrags-Cockpit alle Zeilen ohne F5-Reload sofort auf **`berechnet`** stehen und der Zähler *«Rechnungen bereitstellen»* aktuell ist.
 6. Es entstehen keine verwaisten Rechnungs-IDs oder Inkonsistenzen.
 
+---
+
+### 8.7 TableKit-Standard (Spaltenverschiebung & Resizing)
+* Sowohl die Haupt-Beitragstabelle (`#jbTable`) als auch die Beitragsmatrix (`#jbMatrixTable`) nutzen das globale `TableKit`:
+  - Spalten per Drag & Drop verschiebbar via `TableKit.makeColumnReorderable` (mit lokaler Persistenz in `localStorage`).
+  - Spaltenbreiten anpassbar via `TableKit.makeResizable`.
+  - Spaltenauswahl via `TableKit.setupColumnToggle`.
+
+
 
 
 

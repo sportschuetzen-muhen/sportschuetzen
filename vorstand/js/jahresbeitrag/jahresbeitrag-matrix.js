@@ -521,7 +521,16 @@ function jbRenderMatrixTable() {
   // 5. Footer & KPIs berechnen
   jbCalculateMatrixTotals(rowsData, columns);
 
-  // 6. Spaltenauswahl & Resizing initialisieren
+  // 6. Spaltenauswahl, Resizing & Drag & Drop Verschieben initialisieren
+  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
+    window._jbMatrixColReorder = window.TableKit.makeColumnReorderable('#jbMatrixTable', {
+      storageKey: 'jb_matrix_col_order',
+      lockedColumns: ['check', 'name', 'gesamt']
+    });
+    if (window._jbMatrixColReorder && typeof window._jbMatrixColReorder.apply === 'function') {
+      window._jbMatrixColReorder.apply();
+    }
+  }
   if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbMatrixColToggleDropdown')) {
     window._jbMatrixColToggle = window.TableKit.setupColumnToggle('#jbMatrixTable', {
       container: '#jbMatrixColToggleDropdown',

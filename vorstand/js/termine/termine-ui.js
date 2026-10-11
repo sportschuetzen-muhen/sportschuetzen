@@ -133,7 +133,7 @@ function renderTermineUI(container) {
           <table class="table table-sm table-hover align-middle mb-0" id="termine-table" style="min-width: 860px;">
             <thead class="table-light">
               <tr>
-                <th style="width: 40px;" class="text-center" title="Manuell verschieben (Drag & Drop)">⋮⋮</th>
+                <th data-col-id="drag" style="width: 40px;" class="text-center" title="Manuell verschieben (Drag & Drop)">⋮⋮</th>
                 <th data-sort-key="datum" data-col-id="datum" data-col-name="Datum" style="width: 140px;">Datum</th>
                 <th data-sort-key="startzeit" data-col-id="startzeit" data-col-name="Start" style="width: 95px;">Start</th>
                 <th data-sort-key="endzeit" data-col-id="endzeit" data-col-name="Ende" style="width: 95px;">Ende</th>
@@ -141,7 +141,7 @@ function renderTermineUI(container) {
                 <th data-sort-key="ort" data-col-id="ort" data-col-name="Ort / Map">Ort / Map</th>
                 <th data-sort-key="kategorie" data-col-id="kategorie" data-col-name="Kategorie" style="width: 130px;">Kategorie</th>
                 <th data-sort-key="status" data-col-id="status" data-col-name="Status" style="width: 130px;">Status</th>
-                <th style="width: 45px;"></th>
+                <th data-col-id="actions" style="width: 45px;"></th>
               </tr>
             </thead>
             <tbody id="termine-body"></tbody>
@@ -233,22 +233,22 @@ function renderTermineList() {
 
     return `
       <tr data-id="${escapeHtml(String(t.id))}" class="tk-draggable-item ${rowClass}" draggable="true" data-index="${idx}">
-        <td class="text-center align-middle">
+        <td class="text-center align-middle tk-col-drag" data-col-id="drag">
           <span class="tk-drag-handle ${!canWrite ? 'd-none' : ''}" title="Zeile ziehen zum Verschieben">⋮⋮</span>
         </td>
-        <td class="tk-col-datum">
+        <td class="tk-col-datum" data-col-id="datum">
           <input data-field="datum" type="date" class="form-control form-control-sm write-protected"
             value="${isoDate(t.datum)}" ${!canWrite ? 'readonly disabled' : ''}>
         </td>
-        <td class="tk-col-startzeit">
+        <td class="tk-col-startzeit" data-col-id="startzeit">
           <input data-field="startzeit" type="time" class="form-control form-control-sm write-protected"
             value="${formatTime(t.startzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
         </td>
-        <td class="tk-col-endzeit">
+        <td class="tk-col-endzeit" data-col-id="endzeit">
           <input data-field="endzeit" type="time" class="form-control form-control-sm write-protected"
             value="${formatTime(t.endzeit)}" ${!canWrite ? 'readonly disabled' : ''}>
         </td>
-        <td class="tk-col-anlasstitel">
+        <td class="tk-col-anlasstitel" data-col-id="anlasstitel">
           <select data-field="anlasstitel" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
             <option value="">-- Anlass --</option>
             ${(adminState.dropdowns.anlaesse || []).map(a =>
@@ -256,7 +256,7 @@ function renderTermineList() {
             ).join('')}
           </select>
         </td>
-        <td class="tk-col-ort">
+        <td class="tk-col-ort" data-col-id="ort">
           <div class="d-flex align-items-center gap-1">
             <select data-field="ort" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
               <option value="">-- Ort --</option>
@@ -267,21 +267,21 @@ function renderTermineList() {
             <span class="ort-map-icon">${mapBtn}</span>
           </div>
         </td>
-        <td class="tk-col-kategorie">
+        <td class="tk-col-kategorie" data-col-id="kategorie">
           <select data-field="kategorie" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
             ${(adminState.dropdowns.kategorien || ['Jahresprogramm', 'Schiesstermine']).map(k =>
               `<option value="${escapeHtml(k)}" ${k === t.kategorie ? 'selected' : ''}>${escapeHtml(k)}</option>`
             ).join('')}
           </select>
         </td>
-        <td class="tk-col-status">
+        <td class="tk-col-status" data-col-id="status">
           <select data-field="status" class="form-select form-select-sm write-protected" ${!canWrite ? 'readonly disabled' : ''}>
             ${['fix', 'provisorisch', 'abgesagt'].map(s =>
               `<option value="${s}" ${s === t.status ? 'selected' : ''}>${s}</option>`
             ).join('')}
           </select>
         </td>
-        <td class="text-center">
+        <td class="text-center tk-col-actions" data-col-id="actions">
           <button type="button" class="btn btn-link text-danger p-0 write-protected ${!canWrite ? 'd-none' : ''}" data-action="remove" title="Termin löschen">
             <i class="fas fa-trash-alt"></i>
           </button>
@@ -292,6 +292,7 @@ function renderTermineList() {
 
   const countBadge = document.getElementById('termine-count-badge');
   if (countBadge) countBadge.innerText = adminState.termine.length;
+  if (window._termineColReorder) window._termineColReorder.apply();
   if (window._termineColToggle) window._termineColToggle.apply();
 }
 
@@ -445,11 +446,30 @@ function initTableKitForTermine() {
     'termine_orte'
   );
 
-  // 7. Spalten-Sichtbarkeit / Ein- und Ausblenden
+  // 7. Spalten-Verschiebung per Drag & Drop
+  if (typeof window.TableKit.makeColumnReorderable === 'function') {
+    window._termineColReorder = window.TableKit.makeColumnReorderable('#termine-table', {
+      storageKey: 'termine_columns_order',
+      lockedColumns: ['drag', 'actions']
+    });
+  }
+
+  // 8. Spalten-Sichtbarkeit / Ein- und Ausblenden
   if (typeof window.TableKit.setupColumnToggle === 'function') {
     window._termineColToggle = window.TableKit.setupColumnToggle('#termine-table', {
       container: '#termine-column-toggle',
       storageKey: 'termine_columns_visibility'
+    });
+  }
+
+  // 9. Spaltenbreiten anpassen
+  if (typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#termine-table', {
+      storageKey: 'termine_columns_widths',
+      columns: {
+        'drag': { resizable: false, defaultWidth: 40 },
+        'actions': { resizable: false, defaultWidth: 45 }
+      }
     });
   }
 }

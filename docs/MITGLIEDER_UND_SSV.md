@@ -31,6 +31,7 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
 ### 2.1.1 Einheitlicher TableKit-Standard im gesamten Modul
 * Sämtliche Tabellen des Mitgliederbereichs (Hauptliste `#mgl-table`, Import-Vorschau `#mglImportDiffTable` und Detail-Tabellen für Lizenzen und Funktionen) implementieren den globalen `TableKit`-Standard (`ui-table-kit.js`):
   - Heller Sticky-Header (`thead.table-light sticky-top small text-muted text-uppercase`) mit `z-index: 10`.
+  - Horizontale Spaltenverschiebung per Drag & Drop via `TableKit.makeColumnReorderable` mit `localStorage`-Persistenz.
   - Persistente Spaltenbreiten via `TableKit.makeResizable` mit lokalem Browser-Speicher.
   - Spaltenauswahl via `TableKit.setupColumnToggle`.
 

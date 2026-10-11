@@ -304,6 +304,13 @@ function mglRenderRows(data) {
       });
     }
 
+    if (typeof window.TableKit?.makeColumnReorderable === 'function') {
+      window._mglColReorder = window.TableKit.makeColumnReorderable('#mgl-table', {
+        storageKey: 'portal_mgl_col_order',
+        lockedColumns: ['idx', 'actions']
+      });
+    }
+
     if (typeof window.TableKit?.setupColumnToggle === 'function') {
       window._mglColToggle = window.TableKit.setupColumnToggle('#mgl-table', {
         container: '#mgl-column-toggle',

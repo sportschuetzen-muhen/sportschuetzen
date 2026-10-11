@@ -426,6 +426,16 @@ function jbRenderRows(data) {
   document.getElementById('jbCount').textContent =
     `${data.length} Einträge · ${openCount} offen`;
 
+  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
+    window._jbOverviewColReorder = window.TableKit.makeColumnReorderable('#jbTable', {
+      storageKey: 'jb_overview_col_order',
+      lockedColumns: ['actions']
+    });
+    if (window._jbOverviewColReorder && typeof window._jbOverviewColReorder.apply === 'function') {
+      window._jbOverviewColReorder.apply();
+    }
+  }
+
   if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
     window.TableKit.makeResizable('#jbTable', {
       storageKey: 'jb_overview_col_widths',

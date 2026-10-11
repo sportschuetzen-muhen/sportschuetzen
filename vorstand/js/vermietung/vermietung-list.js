@@ -131,6 +131,10 @@ function applyFiltersAndSearch() {
   const tbody = document.getElementById('vermietung-tbody');
   if (tbody) {
     tbody.innerHTML = renderVermietungRows(gefiltert);
+    // TableKit Spaltenreihenfolge nach Tabellen-Neuaufbau anwenden
+    if (window._vmColReorder && typeof window._vmColReorder.apply === 'function') {
+      window._vmColReorder.apply();
+    }
     // TableKit Spaltensichtbarkeit nach Tabellen-Neuaufbau anwenden
     if (window._vmColToggle && typeof window._vmColToggle.apply === 'function') {
       window._vmColToggle.apply();

@@ -704,6 +704,13 @@ window.rnRenderTable = function() {
     rnOnTableRowSelectChange();
   }
 
+  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
+    window._rnInvoicesColReorder = window.TableKit.makeColumnReorderable('#rn-invoices-table', {
+      storageKey: 'rn_invoices_table_col_order',
+      lockedColumns: ['check', 'actions']
+    });
+  }
+
   if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
     window.TableKit.setupColumnToggle('#rn-invoices-table', {
       container: '#rn-column-toggle',
@@ -1463,6 +1470,15 @@ window.renderTabContacts = function(content) {
     </div>
   `;
 
+  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
+    window._rnContactsColReorder = window.TableKit.makeColumnReorderable('#rn-contacts-table', {
+      storageKey: 'rn_contacts_table_col_order',
+      lockedColumns: ['idx', 'actions']
+    });
+    if (window._rnContactsColReorder && typeof window._rnContactsColReorder.apply === 'function') {
+      window._rnContactsColReorder.apply();
+    }
+  }
   if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
     window.TableKit.setupColumnToggle('#rn-contacts-table', {
       container: '#rn-contacts-col-toggle',

@@ -88,6 +88,15 @@ window.renderTabTemplates = function(content) {
     </div>
   `;
 
+  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
+    const colReorder = window.TableKit.makeColumnReorderable('#rn-templates-table', {
+      storageKey: 'rn_templates_table_col_order',
+      lockedColumns: ['actions']
+    });
+    if (colReorder && typeof colReorder.apply === 'function') {
+      colReorder.apply();
+    }
+  }
   if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
     window.TableKit.setupColumnToggle('#rn-templates-table', {
       container: '#rn-templates-col-toggle',

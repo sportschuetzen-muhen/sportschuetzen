@@ -460,8 +460,15 @@ function renderVermietungCockpit(daten) {
   }, 50);
 }
 
-// Initialisiert TableKit Column Toggle für die Vermietungstabelle
+// Initialisiert TableKit Column Features für die Vermietungstabelle
 function initVermietungColToggle() {
+  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
+    window._vmColReorder = window.TableKit.makeColumnReorderable('#vermietung-table', {
+      storageKey: 'tk_cols_vermietung_order',
+      lockedColumns: ['aktionen']
+    });
+  }
+
   if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('vermietungColToggleContainer')) {
     window._vmColToggle = window.TableKit.setupColumnToggle('#vermietung-table', {
       container: '#vermietungColToggleContainer',
@@ -476,6 +483,16 @@ function initVermietungColToggle() {
         { id: 'status', name: 'Status', defaultVisible: true },
         { id: 'aktionen', name: 'Aktionen', defaultVisible: true }
       ]
+    });
+  }
+
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    window.TableKit.makeResizable('#vermietung-table', {
+      storageKey: 'tk_cols_vermietung_widths',
+      minWidth: 45,
+      columns: {
+        'aktionen': { resizable: false, defaultWidth: 60 }
+      }
     });
   }
 }
