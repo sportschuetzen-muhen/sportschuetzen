@@ -241,5 +241,10 @@ vorstand/js/inventar/
 - **Warenkorb-Responsivität & Löschspalte:** Die Tabelle im Erfassungs-Warenkorb ist nun horizontal scrollbar (`table-responsive`, `overflow-x: auto`), Sponsoring-Badges brechen zweizeilig um und die Aktionsspalte besitzt eine feste Mindestbreite, wodurch der Lösch-Button `[✕]` jederzeit vollständig sichtbar und bedienbar bleibt.
 - **Scrollbare Sidebar & Sticky Header:** Die linke Modulleiste des Vorstandsportals (`.sidebar`) ist auf Desktop-Viewports vertikal scrollbar mit dezenter Scrollbar und sticky Header (`Muhen Portal` & Benutzerstatus).
 
+### 5.10 Bestands-Responsivität, Sticky-Spalten & Dropdown-Z-Index-Absicherung
+- **Dropdown-Z-Index & Stacking-Schutz:** Die Toolbar-Aktionsleiste im Bestand (`.inv-toolbar-card`) besitzt eine priorisierte Stacking-Ebene (`z-index: 45; overflow: visible`). Die Dropdown-Menüs für `Excel-Export` und `Drucken` nutzen Bootstrap Poppers Fixed-Strategy (`strategy: 'fixed'`, `z-index: 1070`), wodurch ein Vordrängen bzw. Überlagern durch den nachfolgenden Tabellenkopf (`<thead>`) wirksam verhindert wird.
+- **Sticky Spalten (ID links & Aktionen rechts):** In der Bestandsliste sind die `ID`-Spalte links (`inv-col-sticky-id`, `left: 0`) und die `Aktionen`-Spalte rechts (`inv-col-sticky-action`, `right: 0`) fixiert. Beim horizontalen Scrollen breiter Bestände bleiben Artikel-Identifikation sowie Bearbeiten- und Löschen-Buttons dauerhaft im Blickfeld und ohne Rechts-Scrollen direkt bedienbar.
+- **Kompakte Standard-Spaltensichtbarkeit:** Interne Preiskomponenten wie «Einstandspreis Material», «Einstandspreis Druck», «Total Einstandspreis» und «Kaufdatum» sind standardmässig per `data-col-default="hidden"` ausgeblendet, wodurch die Hauptansicht auf Standardbildschirmen sofort ohne horizontales Scrollen übersichtlich bleibt und bei Bedarf über das Dropdown «Spalten» eingeblendet werden kann.
+
 
 

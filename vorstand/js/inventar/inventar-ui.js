@@ -20,6 +20,51 @@ function renderInventarUI(container) {
             #inventar-container .table-sm { font-size:0.85rem; }
             .warenkorb-card { border:2px dashed #0d6efd; border-radius:10px; background:#f8f9ff; overflow-x:auto; max-width:100%; }
             #warenkorb-list { overflow-x:auto; max-width:100%; }
+
+            /* Sticky Spalten für Bestandsliste (ID links, Aktionen rechts) */
+            #inventory-table th.inv-col-sticky-id,
+            #inventory-table td.inv-col-sticky-id {
+                position: sticky !important;
+                left: 0 !important;
+                background-color: #ffffff !important;
+                z-index: 10 !important;
+            }
+            #inventory-table thead th.inv-col-sticky-id {
+                background-color: #f8fafc !important;
+                z-index: 22 !important;
+            }
+            #inventory-table tr:hover td.inv-col-sticky-id {
+                background-color: #f1f5f9 !important;
+            }
+            #inventory-table th.inv-col-sticky-action,
+            #inventory-table td.inv-col-sticky-action {
+                position: sticky !important;
+                right: 0 !important;
+                background-color: #ffffff !important;
+                box-shadow: -4px 0 8px rgba(0, 0, 0, 0.06);
+                z-index: 10 !important;
+            }
+            #inventory-table thead th.inv-col-sticky-action {
+                background-color: #f8fafc !important;
+                z-index: 22 !important;
+            }
+            #inventory-table tr:hover td.inv-col-sticky-action {
+                background-color: #f1f5f9 !important;
+            }
+
+            /* Toolbar-Ebene & Dropdown-Sicherheit gegen Header-Überlagerung */
+            .inv-toolbar-card {
+                position: relative !important;
+                z-index: 45 !important;
+                overflow: visible !important;
+            }
+            .inv-dropdown-menu {
+                z-index: 1070 !important;
+                min-width: 260px;
+                background-color: #ffffff !important;
+                border: 1px solid rgba(0,0,0,0.08) !important;
+                box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.2), 0 8px 10px -6px rgba(15, 23, 42, 0.2) !important;
+            }
         </style>
 
         <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
@@ -211,7 +256,7 @@ function renderInventarUI(container) {
                 </div>
 
                 <!-- Toolbar & Filter -->
-                <div class="card border p-2 mb-3 shadow-xs rounded-3 bg-light">
+                <div class="card border p-2 mb-3 shadow-xs rounded-3 bg-light inv-toolbar-card">
                     <div class="d-flex gap-2 align-items-center flex-wrap">
                         <div class="flex-grow-1 position-relative" style="min-width: 220px;">
                             <i class="fas fa-search position-absolute" style="left:12px;top:50%;transform:translateY(-50%);color:#aaa;"></i>
@@ -237,23 +282,23 @@ function renderInventarUI(container) {
 
                         <!-- Excel-Export Dropdown (Alle & nach Kategorie) -->
                         <div class="dropdown d-inline-block">
-                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" aria-expanded="false" title="Bestand in Excel (.xlsx) exportieren">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' data-bs-boundary="viewport" aria-expanded="false" title="Bestand in Excel (.xlsx) exportieren">
                                 <i class="fas fa-file-excel me-1.5 text-success"></i> Excel-Export
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3">
-                                <li><a class="dropdown-item py-2" href="#" onclick="exportInventarExcel('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie (.xlsx)</a></li>
-                                <li><a class="dropdown-item py-2" href="#" onclick="exportInventarExcel('all'); return false;"><i class="fas fa-layer-group me-2 text-success"></i>Gesamtes Inventar (Alle Kategorien) (.xlsx)</a></li>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 inv-dropdown-menu">
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="exportInventarExcel('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie (.xlsx)</a></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="exportInventarExcel('all'); return false;"><i class="fas fa-layer-group me-2 text-success"></i>Gesamtes Inventar (Alle Kategorien) (.xlsx)</a></li>
                             </ul>
                         </div>
 
                         <!-- Drucken / PDF Dropdown (Alle & nach Kategorie) -->
                         <div class="dropdown d-inline-block">
-                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" aria-expanded="false" title="Bestand drucken oder als PDF speichern">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' data-bs-boundary="viewport" aria-expanded="false" title="Bestand drucken oder als PDF speichern">
                                 <i class="fas fa-print me-1.5 text-dark"></i> Drucken
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3">
-                                <li><a class="dropdown-item py-2" href="#" onclick="printInventarBestand('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie drucken</a></li>
-                                <li><a class="dropdown-item py-2" href="#" onclick="printInventarBestand('all'); return false;"><i class="fas fa-layer-group me-2 text-dark"></i>Gesamtes Inventar drucken</a></li>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 inv-dropdown-menu">
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="printInventarBestand('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie drucken</a></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="printInventarBestand('all'); return false;"><i class="fas fa-layer-group me-2 text-dark"></i>Gesamtes Inventar drucken</a></li>
                             </ul>
                         </div>
                     </div>

@@ -90,8 +90,8 @@ function renderInventoryTable() {
 
     // Header mit Sortier-Pfeilen (Globaler Design-Standard)
     let html = '<thead class="table-light"><tr class="border-bottom">';
-    // ID-Spalte
-    html += `<th style="cursor:pointer;user-select:none;white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;"
+    // ID-Spalte (links fixiert)
+    html += `<th class="inv-col-sticky-id" style="cursor:pointer;user-select:none;white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;"
                  data-sort-key="ID" data-col-id="col_id" onclick="sortBestand('ID')">
                  ID
                  <span class="text-muted small">${bestandSortCol === 'ID' ? (bestandSortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅'}</span>
@@ -109,21 +109,30 @@ function renderInventoryTable() {
         'Aktueller_Besitzer_ID': 'Besitzer'
     };
 
+    const defaultHiddenCols = {
+        'Inventar_Kleidung': ['Grundpreis', 'Veredelung', 'Kaufpreis', 'Kaufdatum', 'Depotbetrag'],
+        'Inventar_Schiessbekleidung': ['Kaufpreis', 'Kaufdatum'],
+        'Inventar_Gewehre': ['Ringkorn', 'Zubehoer', 'Spezielles', 'Verkaeufer_ID', 'Kauf_Spender_Jahr']
+    };
+
     displayHeaders.forEach((h, idx) => {
         const arrow = bestandSortCol === h
             ? (bestandSortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
         const label = colLabels[h] || h.replace(/_/g,' ');
+        const isHiddenDefault = (defaultHiddenCols[target] || []).includes(h);
         html += `<th style="cursor:pointer;user-select:none;white-space:normal;line-height:1.25;vertical-align:bottom;font-size:12px;font-weight:700;letter-spacing:0.3px;color:#475569;min-width:80px;"
                      data-sort-key="${h}" data-col-id="col_${h.toLowerCase()}"
+                     ${isHiddenDefault ? 'data-col-default="hidden"' : ''}
                      onclick="sortBestand('${h}')">
                      <span class="d-inline-block">${label}</span>
                      <span class="text-muted small">${arrow}</span>
                  </th>`;
     });
-    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;white-space:normal;vertical-align:bottom;" data-col-id="col_aktionen" data-col-toggle="false">Aktionen</th></tr></thead><tbody>';
+    // Aktionen-Spalte (rechts fixiert)
+    html += '<th class="text-center inv-col-sticky-action" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;white-space:normal;vertical-align:bottom;" data-col-id="col_aktionen" data-col-toggle="false">Aktionen</th></tr></thead><tbody>';
 
     html += sorted.map(row => {
-        const idCell = `<td class="font-monospace fw-bold text-primary" data-col-id="col_id">${row.ID || '-'}</td>`;
+        const idCell = `<td class="font-monospace fw-bold text-primary inv-col-sticky-id" data-col-id="col_id">${row.ID || '-'}</td>`;
         const cells = displayHeaders.map(key => {
             const val = row[key];
             const colAttr = `data-col-id="col_${key.toLowerCase()}"`;
@@ -157,7 +166,7 @@ function renderInventoryTable() {
             return `<td ${colAttr}>${val !== undefined && val !== null && val !== "" ? val : '-'}</td>`;
         }).join('');
 
-        return `<tr>${idCell}${cells}<td class="text-center" data-col-id="col_aktionen">
+        return `<tr>${idCell}${cells}<td class="text-center inv-col-sticky-action" data-col-id="col_aktionen">
             <div class="btn-group btn-group-sm">
                 ${canAdd() ? `<button class="btn btn-outline-primary btn-sm rounded-2 me-1"
                         onclick="editInventarItem('${target}','${row.ID}')" title="Bearbeiten"><i class="fas fa-edit"></i></button>` : ''}
@@ -184,7 +193,11 @@ function renderInventoryTable() {
     }
     if (window.TableKit?.makeResizable) {
         window.TableKit.makeResizable('#inventory-table', {
-            storageKey: `tk_inv_widths_${target}`
+            storageKey: `tk_inv_widths_${target}`,
+            columns: {
+                'col_id': { resizable: false, defaultWidth: 80 },
+                'col_aktionen': { resizable: false, defaultWidth: 95 }
+            }
         });
     }
 }
