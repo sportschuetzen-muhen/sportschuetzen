@@ -18,7 +18,8 @@ function renderInventarUI(container) {
             }
             #inventar-container .nav-btn { font-weight:bold; border-radius:10px; padding:8px 16px; }
             #inventar-container .table-sm { font-size:0.85rem; }
-            .warenkorb-card { border:2px dashed #0d6efd; border-radius:10px; background:#f8f9ff; }
+            .warenkorb-card { border:2px dashed #0d6efd; border-radius:10px; background:#f8f9ff; overflow-x:auto; max-width:100%; }
+            #warenkorb-list { overflow-x:auto; max-width:100%; }
         </style>
 
         <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">

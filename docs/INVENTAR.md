@@ -236,5 +236,10 @@ vorstand/js/inventar/
   - Die Übergabe an den zentralen `RechnungsCore` erfolgt verlässlich über `accountHaben: customKontoHaben` in allen `InvoiceOrder`-Positionen.
 - **Excel-Import & Mustervorlage:** Die Mustervorlage `.xlsx` enthält die Spalte `Sponsor-Firma` (z.B. «Clientis») sowie die neuen Fachbegriffe. Die Parsing-Engine unterstützt sowohl die neuen als auch die historischen Begriffe tolerant via Fuzzy-Matching und deutscher Umlaut-Normalisierung.
 
+### 5.9 Sponsoring-Invarianten, Warenkorb-Responsivität & Portal-Sidebar (Migration 65)
+- **Mathematische Harmonisierung (`retail_price = 83.00`):** Bei der Trainer-Jacke wurde der Katalogpreis auf CHF 83.00 nachgeführt, womit die kaufmännische Gleichung `Verkaufspreis gerundet (83.00) - Sponsoring Beitrag (19.00) = Endpreis für Mitglied (64.00)` exakt aufgeht. In `inventar-cart.js` wird die Rechnungserstellung zusätzlich abgesichert: Liegt ein Sponsoring vor, wird der Bruttobetrag dynamisch als `endBetrag + sponsorDiscount` abgeleitet, sodass Sponsoring-Zeilen niemals verloren gehen.
+- **Warenkorb-Responsivität & Löschspalte:** Die Tabelle im Erfassungs-Warenkorb ist nun horizontal scrollbar (`table-responsive`, `overflow-x: auto`), Sponsoring-Badges brechen zweizeilig um und die Aktionsspalte besitzt eine feste Mindestbreite, wodurch der Lösch-Button `[✕]` jederzeit vollständig sichtbar und bedienbar bleibt.
+- **Scrollbare Sidebar & Sticky Header:** Die linke Modulleiste des Vorstandsportals (`.sidebar`) ist auf Desktop-Viewports vertikal scrollbar mit dezenter Scrollbar und sticky Header (`Muhen Portal` & Benutzerstatus).
+
 
 

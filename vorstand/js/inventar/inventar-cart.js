@@ -117,43 +117,49 @@ function renderWarenkorb() {
     const action = document.getElementById('select-action').value;
 
     container.innerHTML = `
-        <table class="table table-sm table-bordered mb-1">
-            <thead><tr class="table-light">
-                <th>Kat.</th><th>Gegenstand</th><th>Zustand</th><th>${action === 'verkauf' ? 'Preis' : 'Pfand'}</th><th></th>
-            </tr></thead>
-            <tbody>
-                ${warenkorb.map((w, i) => {
-                    let methodeInfo = '';
-                    if (w.pfandBetrag > 0) {
-                        if (action === 'verkauf') methodeInfo = ` (${w.verkaufMethode || 'Bar'})`;
-                        else if (action === 'checkout') methodeInfo = ` (${w.pfandMethode || 'Bar'})`;
-                        else if (action === 'checkin') methodeInfo = ` (${w.pfandRetourMethode || 'Bar retour'})`;
-                    }
-                    const sponsorCompanyText = w.sponsorCompany ? ` ${w.sponsorCompany}` : '';
-                    const sponsorBadge = (action === 'verkauf' && w.sponsorDiscount > 0) 
-                        ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 10px;">abzgl. CHF ${w.sponsorDiscount} Sponsoring${sponsorCompanyText}</span>` 
-                        : '';
-                    return `
-                    <tr>
-                        <td><span class="badge bg-secondary">${w.kategorie}</span></td>
-                        <td><small>${w.label}</small></td>
-                        <td><small>${action==='checkout' || action==='verkauf' ? w.zustandAbgabe : w.zustandRueckgabe}</small></td>
-                        <td><small class="fw-bold">${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)}${methodeInfo}${sponsorBadge}` : '-'}</small></td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-danger py-0"
-                                    onclick="warenkorbRemove(${i})">✕</button>
-                        </td>
-                    </tr>`;
-                }).join('')}
-            </tbody>
-            ${warenkorb.length > 1 ? `
-            <tfoot>
-                <tr class="table-light fw-bold">
-                    <td colspan="3" class="text-end">Total:</td>
-                    <td colspan="2">CHF ${warenkorb.reduce((sum, w) => sum + (parseFloat(w.pfandBetrag)||0), 0).toFixed(2)}</td>
-                </tr>
-            </tfoot>` : ''}
-        </table>
+        <div class="table-responsive w-100 mb-1" style="overflow-x: auto;">
+            <table class="table table-sm table-bordered mb-0 align-middle">
+                <thead><tr class="table-light">
+                    <th style="width: 55px;">Kat.</th>
+                    <th>Gegenstand</th>
+                    <th style="width: 60px;">Zustand</th>
+                    <th>${action === 'verkauf' ? 'Preis' : 'Pfand'}</th>
+                    <th style="width: 36px; text-align: center;"></th>
+                </tr></thead>
+                <tbody>
+                    ${warenkorb.map((w, i) => {
+                        let methodeInfo = '';
+                        if (w.pfandBetrag > 0) {
+                            if (action === 'verkauf') methodeInfo = ` (${w.verkaufMethode || 'Bar'})`;
+                            else if (action === 'checkout') methodeInfo = ` (${w.pfandMethode || 'Bar'})`;
+                            else if (action === 'checkin') methodeInfo = ` (${w.pfandRetourMethode || 'Bar retour'})`;
+                        }
+                        const sponsorCompanyText = w.sponsorCompany ? ` ${w.sponsorCompany}` : '';
+                        const sponsorBadge = (action === 'verkauf' && w.sponsorDiscount > 0) 
+                            ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle text-wrap text-start mt-1" style="font-size: 10px; line-height: 1.25; display: inline-block; max-width: 190px;">abzgl. CHF ${w.sponsorDiscount} Sponsoring${sponsorCompanyText}</span>` 
+                            : '';
+                        return `
+                        <tr>
+                            <td style="white-space: nowrap;"><span class="badge bg-secondary">${w.kategorie}</span></td>
+                            <td><small class="fw-semibold">${w.label}</small></td>
+                            <td><small>${action==='checkout' || action==='verkauf' ? w.zustandAbgabe : w.zustandRueckgabe}</small></td>
+                            <td><small class="fw-bold">${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)}${methodeInfo}${sponsorBadge}` : '-'}</small></td>
+                            <td style="width: 36px; text-align: center;">
+                                <button class="btn btn-sm btn-outline-danger py-0 px-1" title="Position entfernen"
+                                        onclick="warenkorbRemove(${i})">✕</button>
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+                ${warenkorb.length > 1 ? `
+                <tfoot>
+                    <tr class="table-light fw-bold">
+                        <td colspan="3" class="text-end">Total:</td>
+                        <td colspan="2">CHF ${warenkorb.reduce((sum, w) => sum + (parseFloat(w.pfandBetrag)||0), 0).toFixed(2)}</td>
+                    </tr>
+                </tfoot>` : ''}
+            </table>
+        </div>
         <small class="text-muted">${warenkorb.length} Position(en)</small>`;
 }
 
@@ -492,15 +498,18 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                             || (invItem.purchase_price ? Math.round(parseFloat(invItem.purchase_price)) : null)
                             || (sponsorDiscount > 0 ? Math.round(endBetrag + sponsorDiscount) : null);
 
-                        if (effectiveRetail && sponsorDiscount > 0 && (effectiveRetail - sponsorDiscount === Math.round(endBetrag))) {
-                            // Variante A: Regulärer Verkaufspreis gerundet + variabler Sponsoring-Abzug
+                        if (sponsorDiscount > 0) {
+                            // Bruttobetrag (Verkaufspreis gerundet) so ableiten, dass die Rechnung nach Abzug exakt endBetrag ergibt:
+                            const calculatedRetail = (effectiveRetail && (effectiveRetail - sponsorDiscount === Math.round(endBetrag)))
+                                ? effectiveRetail
+                                : Math.round(endBetrag + sponsorDiscount);
                             const sponsorTitle = (invItem.Sponsor_Firma || invItem.sponsor_company || w.sponsorCompany || '').trim();
                             orderPositions.push({
                                 positionNr: posNr++,
                                 title: `${w.label} (Verkaufspreis gerundet)`,
                                 quantity: 1,
-                                unitPrice: effectiveRetail,
-                                amount: effectiveRetail,
+                                unitPrice: calculatedRetail,
+                                amount: calculatedRetail,
                                 accountHaben: customKontoHaben,
                                 sourceField: String(w.itemId)
                             });
