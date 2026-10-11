@@ -573,15 +573,6 @@ async function loadReports() {
         displayReports(reports, container);
 
     } catch (error) {
-        
-        if (!reports || reports.length === 0) {
-            container.innerHTML = '<p class="text-center text-muted" style="grid-column: 1 / -1;">Zurzeit sind keine Berichte vorhanden.</p>';
-            return;
-        }
-
-        displayReports(reports, container);
-
-    } catch (error) {
         console.error('Fehler beim Laden der Berichte:', error);
         
         // Fallback-Berichte für lokale Entwicklung (CORS/Offline)
