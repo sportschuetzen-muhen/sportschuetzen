@@ -209,4 +209,10 @@ vorstand/js/inventar/
 - **Datalist-Comboboxen für Bekleidung:** Für Grössen und Bekleidungstypen kommen HTML5-Datalists zum Einsatz. Benutzer können aus Standardvorschlägen wählen oder freie Werte erfassen, welche bei der Speicherung automatisch in `inventory_config` übernommen werden.
 - **Harmonisiertes Erfassungsmodal:** Das Modal `#modal-inventar-item` folgt mit Primary-Header und abgerundetem Design dem einheitlichen Vorstand-Portalstandard.
 
+### 5.6 Robuster Sponsoring-Abzug, TableKit-Harmonisierung & Du-Form (Migration 62)
+- **Katalogpreis- & Sponsoring-Invarianten:** Beim Materialverkauf von Bekleidung wird auf Rechnungen immer der reguläre Katalogpreis vor Sponsoring (z.B. CHF 83.00) und der Sponsoringabzug C-Ma Trading GmbH (z.B. -CHF 20.00) als separate Positionen ausgewiesen. Fehlt `retail_price` in der Datenbank, ermittelt das System den Basispreis automatisch aus `purchase_price` bzw. `selling_price + discount_amount`. Ein DB-Trigger (`trg_inventory_auto_retail_price`) sichert diese Konsistenz bei Mutationen dauerhaft ab.
+- **Globaler Tabellen- & Modal-Standard:** Bestandes- und Pfandtabellen nutzen das helle Design (`table-light`), integrierte Live-Suche sowie `TableKit` (Spaltenbreiten anpassen, Spalten ein-/ausblenden). Das Erfassungsmodal ist via `UIModalKit` verschieb-, maximier- und skalierbar und bietet im Bearbeitungsmodus eine direkte Löschfunktion.
+- **Einheitliche Du-Kultur (Regel 8):** Sämtliche Benutzerhinweise, Tooltips und Formularmeldungen sprechen den Benutzer vereinsnah in der Du-Form an.
+
+
 

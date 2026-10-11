@@ -18,11 +18,11 @@ function warenkorbAdd() {
         const pfandRet   = document.getElementById('pfand-retour').value;
         const mitgliedId = document.getElementById('select-mitglied').value;
 
-        if (!mitgliedId) { alert("⚠️ Bitte zuerst ein Mitglied wählen."); return; }
-        if (!itemId)     { alert("⚠️ Bitte einen Gegenstand wählen."); return; }
+        if (!mitgliedId) { alert("⚠️ Bitte wähle zuerst ein Mitglied aus."); return; }
+        if (!itemId)     { alert("⚠️ Bitte wähle einen Gegenstand aus."); return; }
 
     if (warenkorb.find(w => w.itemId === itemId && w.kategorie === kategorie)) {
-        alert("Dieser Gegenstand ist bereits im Warenkorb."); return;
+        alert("Dieser Gegenstand ist bereits in deinem Warenkorb."); return;
     }
 
     const keyMap = { "gewehr":"gewehre","schluessel":"schluessel",
@@ -46,7 +46,7 @@ function warenkorbAdd() {
     }
 
         if (action === 'verkauf' && pfand <= 0) {
-            alert("⚠️ Für einen Verkauf muss ein gültiger Verkaufspreis grösser als CHF 0.00 eingegeben werden.");
+            alert("⚠️ Für einen Verkauf musst du einen gültigen Verkaufspreis grösser als CHF 0.00 eingeben.");
             const pInput = document.getElementById('pfand-betrag');
             if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
             return;
@@ -54,13 +54,13 @@ function warenkorbAdd() {
 
         if (action === 'checkout') {
             if (pfandEin === 'Einzahlungsschein' && pfand <= 0) {
-                alert("⚠️ Für eine Pfandrechnung (Einzahlungsschein) muss ein Pfandbetrag grösser als CHF 0.00 eingegeben werden.");
+                alert("⚠️ Für eine Pfandrechnung (Einzahlungsschein) musst du einen Pfandbetrag grösser als CHF 0.00 eingeben.");
                 const pInput = document.getElementById('pfand-betrag');
                 if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
                 return;
             }
             if ((pfandEin === 'Bar' || pfandEin === 'Twint') && pfand <= 0) {
-                alert(`⚠️ Für die Pfandeinnahme (${pfandEin}) muss ein Pfandbetrag grösser als CHF 0.00 eingegeben werden (oder 'Nein' wählen).`);
+                alert(`⚠️ Für die Pfandeinnahme (${pfandEin}) musst du einen Pfandbetrag grösser als CHF 0.00 eingeben (oder 'Nein' wählen).`);
                 const pInput = document.getElementById('pfand-betrag');
                 if (pInput) { pInput.focus(); pInput.classList.add('is-invalid'); }
                 return;
@@ -72,12 +72,19 @@ function warenkorbAdd() {
         const verkaufMethode = document.getElementById('verkauf-methode') ? document.getElementById('verkauf-methode').value : null;
         const pfandMethode = action === 'checkout' ? (pfandEin === 'Nein' ? '-' : pfandEin) : (action === 'checkin' ? pfandRet : null);
 
+        let itemSponsor = 0;
+        if (action === 'verkauf' && item) {
+            const rawSponsor = item.Sponsoring !== undefined && item.Sponsoring !== null && item.Sponsoring !== '' ? item.Sponsoring : item.discount_amount;
+            if (rawSponsor) itemSponsor = Math.round(parseFloat(rawSponsor)) || 0;
+        }
+
         warenkorb.push({ itemId, kategorie, label,
                          zustandAbgabe: zustandA, zustandRueckgabe: zustandR,
                          pfandBetrag: pfand, pfandEinnahme: pfandEin === 'Nein' ? 'Nein' : 'Ja',
                          pfandMethode: pfandMethode,
                          pfandRetour: pfandRet === 'Nein' ? 'Nein' : 'Ja',
                          pfandRetourMethode: pfandRet,
+                         sponsorDiscount: itemSponsor,
                          verkaufMethode: (action === 'verkauf' ? verkaufMethode : null) });
         renderWarenkorb();
         document.getElementById('pfand-betrag').value = '';
@@ -119,12 +126,15 @@ function renderWarenkorb() {
                         else if (action === 'checkout') methodeInfo = ` (${w.pfandMethode || 'Bar'})`;
                         else if (action === 'checkin') methodeInfo = ` (${w.pfandRetourMethode || 'Bar retour'})`;
                     }
+                    const sponsorBadge = (action === 'verkauf' && w.sponsorDiscount > 0) 
+                        ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 10px;">abzgl. CHF ${w.sponsorDiscount} Sponsoring C-Ma</span>` 
+                        : '';
                     return `
                     <tr>
                         <td><span class="badge bg-secondary">${w.kategorie}</span></td>
                         <td><small>${w.label}</small></td>
                         <td><small>${action==='checkout' || action==='verkauf' ? w.zustandAbgabe : w.zustandRueckgabe}</small></td>
-                        <td><small>${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)}${methodeInfo}` : '-'}</small></td>
+                        <td><small class="fw-bold">${w.pfandBetrag>0 ? `CHF ${w.pfandBetrag.toFixed(2)}${methodeInfo}${sponsorBadge}` : '-'}</small></td>
                         <td>
                             <button class="btn btn-sm btn-outline-danger py-0"
                                     onclick="warenkorbRemove(${i})">✕</button>
@@ -149,7 +159,7 @@ function renderWarenkorb() {
 async function handleInventarSubmit(e) {
     e.preventDefault();
     if (window._isInventarSubmitting) return;
-    if (warenkorb.length === 0) { alert("Warenkorb ist leer."); return; }
+    if (warenkorb.length === 0) { alert("Dein Warenkorb ist noch leer."); return; }
     
     window._isInventarSubmitting = true;
     setInventarBusy(true);
@@ -160,14 +170,14 @@ async function handleInventarSubmit(e) {
     const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
     const cleanKonto = rawKonto.split('|')[0].trim();
     if (action === 'verkauf' && !cleanKonto) {
-        alert("❌ Bitte wählen Sie für den Verkauf ein gültiges Haben-Konto aus dem Kontenrahmen aus.");
+        alert("❌ Bitte wähle für den Verkauf ein gültiges Haben-Konto aus dem Kontenrahmen aus.");
         window._isInventarSubmitting = false;
         setInventarBusy(false);
         return;
     }
     const hasPfandCheckout = action === 'checkout' && warenkorb.some(w => parseFloat(w.pfandBetrag) > 0);
     if (hasPfandCheckout && !cleanKonto) {
-        alert("❌ Bitte wählen Sie für das Depot ein gültiges Kautionskonto aus dem Kontenrahmen aus (Standard: 2030).");
+        alert("❌ Bitte wähle für das Depot ein gültiges Kautionskonto aus dem Kontenrahmen aus (Standard: 2030).");
         window._isInventarSubmitting = false;
         setInventarBusy(false);
         return;
@@ -462,17 +472,27 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                     invoiceItems.forEach(w => {
                         const invItem = (inventarState.kleidung || []).find(k => String(k.ID) === String(w.itemId)) || {};
                         const endBetrag = parseFloat(w.pfandBetrag) || 0;
-                        const retailPrice = invItem.retail_price ? Math.ceil(parseFloat(invItem.retail_price)) : (invItem.Katalogpreis ? Math.ceil(parseFloat(invItem.Katalogpreis)) : null);
-                        const sponsorDiscount = invItem.discount_amount ? Math.round(parseFloat(invItem.discount_amount)) : (invItem.Sponsoring ? Math.round(parseFloat(invItem.Sponsoring)) : null);
+                        const retailPrice = (invItem.Katalogpreis !== '' && invItem.Katalogpreis !== null && invItem.Katalogpreis !== undefined)
+                            ? Math.round(parseFloat(invItem.Katalogpreis))
+                            : (invItem.retail_price ? Math.round(parseFloat(invItem.retail_price)) : null);
+                        const sponsorDiscount = (invItem.Sponsoring !== '' && invItem.Sponsoring !== null && invItem.Sponsoring !== undefined)
+                            ? Math.round(parseFloat(invItem.Sponsoring))
+                            : (invItem.discount_amount ? Math.round(parseFloat(invItem.discount_amount)) : (w.sponsorDiscount || 0));
 
-                        if (retailPrice && sponsorDiscount && (retailPrice - sponsorDiscount === Math.round(endBetrag))) {
+                        // Robuste Fallbacks: Wenn retailPrice fehlt, aus Kaufpreis oder endBetrag + Sponsoring ableiten:
+                        const effectiveRetail = retailPrice 
+                            || (invItem.Kaufpreis ? Math.round(parseFloat(invItem.Kaufpreis)) : null)
+                            || (invItem.purchase_price ? Math.round(parseFloat(invItem.purchase_price)) : null)
+                            || (sponsorDiscount > 0 ? Math.round(endBetrag + sponsorDiscount) : null);
+
+                        if (effectiveRetail && sponsorDiscount > 0 && (effectiveRetail - sponsorDiscount === Math.round(endBetrag))) {
                             // Variante A: Regulärer Katalogpreis + Sponsoring-Abzug C-Ma Trading GmbH
                             orderPositions.push({
                                 positionNr: posNr++,
-                                title: `${w.label}`,
+                                title: `${w.label} (Katalogpreis)`,
                                 quantity: 1,
-                                unitPrice: retailPrice,
-                                amount: retailPrice,
+                                unitPrice: effectiveRetail,
+                                amount: effectiveRetail,
                                 accountHaben: customKontoHaben,
                                 sourceField: String(w.itemId)
                             });

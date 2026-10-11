@@ -74,4 +74,9 @@ Nach **jeder** vorgenommenen Code- oder Schemaänderung müssen der lokale Entwi
   3. Manage-Zuordnung in `MODULE_MANAGE_PERMS` (`vorstand/js/main.js`) hinterlegen.
   4. RLS-Policies der Tabellen auf `SELECT -> <modul>.view|<modul>.manage` und `WRITE -> <modul>.manage` setzen.
 
+## 8. Einheitliche Du-Form in der Benutzeransprache
+- **Vereinsnahe Tonalität (Du-Kultur):** Im gesamten Vereinsportal (Hilfetexte, Tipps, Erklärungen, Tooltips, Modale, Alerts, Infobanner, Eingabehinweise, Bestätigungs- und Fehlerdialoge) werden Benutzer grundsätzlich und ausnahmslos in der **Du-Form** angesprochen («du», «dein», «wähle aus», «trage ein»).
+- Die distanzierte Sie-Form («Sie», «Ihre») ist im internen Vorstand- und Mitgliederportal zu vermeiden. Externe Dokumente (offizielle Rechnungs-PDFs an externe Firmen/Kunden) richten sich weiterhin nach den dortigen Adress- und Vorlagenstandards.
+
+
 

@@ -189,7 +189,7 @@ function renderTransaktionenTable() {
         return 0;
     });
 
-    let html = `<thead><tr class="table-dark">
+    let html = `<thead><tr class="table-light border-bottom">
         ${sh('Datum','datum')}
         ${sh('Mitglied','mitgl')}
         ${sh('Aktion','aktion')}

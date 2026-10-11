@@ -27,7 +27,7 @@ function renderInventoryTable() {
     const table   = document.getElementById('inventory-table');
 
     if (!rawData?.length) {
-        table.innerHTML = "<thead><tr><th>Keine Daten vorhanden</th></tr></thead>";
+        table.innerHTML = `<thead class="table-light border-bottom"><tr><th class="py-3 px-3">Keine Daten vorhanden</th></tr></thead><tbody><tr><td class="text-muted p-4 text-center">In dieser Kategorie sind noch keine Datensätze vorhanden.</td></tr></tbody>`;
         return;
     }
 
@@ -43,8 +43,21 @@ function renderInventoryTable() {
     const dateKeys       = ['zeitstempel','kaufdatum','birthdate','kassiert_am',
                             'retour_am','kauf_spender_jahr','datum','date'];
 
-    // Sortieren
+    // Suchfilter (Live-Suche)
+    const search = (document.getElementById('inv-search-input')?.value || '').toLowerCase().trim();
+
+    // Sortieren & Filtern
     let sorted = [...rawData];
+
+    if (search) {
+        sorted = sorted.filter(row => {
+            return Object.values(row).some(v => {
+                if (v === null || v === undefined) return false;
+                return String(v).toLowerCase().includes(search);
+            });
+        });
+    }
+
     sorted.sort((a, b) => {
         let va = a[bestandSortCol];
         let vb = b[bestandSortCol];
@@ -70,32 +83,50 @@ function renderInventoryTable() {
         return 0;
     });
 
-    // Header mit Sortier-Pfeilen
-    let html = '<thead><tr class="table-dark">';
-    displayHeaders.forEach(h => {
+    if (sorted.length === 0) {
+        table.innerHTML = `<thead class="table-light border-bottom"><tr><th class="py-3 px-3">Keine Treffer</th></tr></thead><tbody><tr><td class="text-muted p-4 text-center">Kein Gegenstand entspricht deiner Suche «${escapeHtml(search)}».</td></tr></tbody>`;
+        return;
+    }
+
+    // Header mit Sortier-Pfeilen (Globaler Design-Standard)
+    let html = '<thead class="table-light"><tr class="border-bottom">';
+    // ID-Spalte
+    html += `<th style="cursor:pointer;user-select:none;white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;"
+                 data-sort-key="ID" data-col-id="col_id" onclick="sortBestand('ID')">
+                 ID
+                 <span class="text-muted small">${bestandSortCol === 'ID' ? (bestandSortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅'}</span>
+             </th>`;
+
+    displayHeaders.forEach((h, idx) => {
         const arrow = bestandSortCol === h
             ? (bestandSortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
-        html += `<th style="cursor:pointer;user-select:none;white-space:nowrap"
+        html += `<th style="cursor:pointer;user-select:none;white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;"
+                     data-sort-key="${h}" data-col-id="col_${h.toLowerCase()}"
                      onclick="sortBestand('${h}')">
                      ${h.replace(/_/g,' ')}
                      <span class="text-muted small">${arrow}</span>
                  </th>`;
     });
-    html += '<th>Aktion</th></tr></thead><tbody>';
+    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;">Aktion</th></tr></thead><tbody>';
 
     html += sorted.map(row => {
+        const idCell = `<td class="font-monospace fw-bold text-primary">${row.ID || '-'}</td>`;
         const cells = displayHeaders.map(key => {
             const val = row[key];
             if (key.endsWith("_ID") || key === "Aktueller_Besitzer_ID")
                 return `<td>${getInventarNameFromId(val) || '<span class="text-muted">-</span>'}</td>`;
             if (key === "Status") {
                 if (val === "Im Lager" || val === "Aktiv")
-                    return `<td><span class="badge bg-success">${val==='Aktiv'?'Aktiv':'Lager'}</span></td>`;
+                    return `<td><span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2 rounded-pill">${val==='Aktiv'?'Aktiv':'Lager'}</span></td>`;
                 if (val === "Ausgegeben" || val === "Passiv")
-                    return `<td><span class="badge bg-warning text-dark">${val==='Passiv'?'Passiv':'Ausleihe'}</span></td>`;
+                    return `<td><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-1 px-2 rounded-pill">${val==='Passiv'?'Passiv':'Ausleihe'}</span></td>`;
+                if (val === "Verkauft")
+                    return `<td><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2 rounded-pill">Verkauft</span></td>`;
+                if (val === "Defekt" || val === "Ausgemustert")
+                    return `<td><span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2 rounded-pill">${val}</span></td>`;
                 if (val === "Verstorben")
-                    return `<td><span class="badge bg-dark">† Verstorben</span></td>`;
-                return `<td><span class="badge bg-secondary">${val||'-'}</span></td>`;
+                    return `<td><span class="badge bg-dark text-white py-1 px-2 rounded-pill">† Verstorben</span></td>`;
+                return `<td><span class="badge bg-secondary py-1 px-2 rounded-pill">${val||'-'}</span></td>`;
             }
             if (dateKeys.some(dk => key.toLowerCase().includes(dk.toLowerCase())) && val)
                 return `<td>${formatCH(val)}</td>`;
@@ -103,7 +134,7 @@ function renderInventoryTable() {
                 if (val !== undefined && val !== null && val !== "") {
                     const num = parseFloat(val);
                     const isNeg = key.toLowerCase().includes("sponsoring") && num > 0;
-                    return `<td class="text-end font-monospace ${key.toLowerCase().includes("sponsoring") ? 'text-danger' : (key.toLowerCase().includes("verkauf") ? 'fw-bold text-success' : '')}">${!isNaN(num) ? (isNeg ? '-CHF ' : 'CHF ') + num.toFixed(2) : val}</td>`;
+                    return `<td class="text-end font-monospace ${key.toLowerCase().includes("sponsoring") ? 'text-danger fw-semibold' : (key.toLowerCase().includes("verkauf") ? 'fw-bold text-success' : '')}">${!isNaN(num) ? (isNeg ? '-CHF ' : 'CHF ') + num.toFixed(2) : val}</td>`;
                 }
                 return `<td class="text-end text-muted small">-</td>`;
             }
@@ -112,17 +143,30 @@ function renderInventoryTable() {
             return `<td>${val !== undefined && val !== null && val !== "" ? val : '-'}</td>`;
         }).join('');
 
-        return `<tr>${cells}<td>
-            <div class="btn-group">
-                ${canAdd() ? `<button class="btn btn-sm btn-outline-primary"
-                        onclick="editInventarItem('${target}','${row.ID}')">✏️</button>` : ''}
-                ${canDelete() ? `<button class="btn btn-sm btn-outline-danger"
-                        onclick="deleteInventarItem('${target}','${row.ID}')">🗑️</button>` : ''}
+        return `<tr>${idCell}${cells}<td class="text-center">
+            <div class="btn-group btn-group-sm">
+                ${canAdd() ? `<button class="btn btn-outline-primary btn-sm rounded-2 me-1"
+                        onclick="editInventarItem('${target}','${row.ID}')" title="Bearbeiten"><i class="fas fa-edit"></i></button>` : ''}
+                ${canDelete() ? `<button class="btn btn-outline-danger btn-sm rounded-2"
+                        onclick="deleteInventarItem('${target}','${row.ID}')" title="Löschen"><i class="fas fa-trash"></i></button>` : ''}
             </div>
         </td></tr>`;
     }).join('');
 
     table.innerHTML = html + "</tbody>";
+
+    // TableKit-Features initialisieren
+    if (window.TableKit?.setupColumnToggle) {
+        window.TableKit.setupColumnToggle('#inventory-table', {
+            container: '#inv-col-toggle-container',
+            storageKey: `tk_inv_cols_${target}`
+        });
+    }
+    if (window.TableKit?.makeResizable) {
+        window.TableKit.makeResizable('#inventory-table', {
+            storageKey: `tk_inv_widths_${target}`
+        });
+    }
 }
 
 // =========================================================
@@ -130,7 +174,7 @@ function renderInventoryTable() {
 // =========================================================
 function openInventarItemModal(preferredCat) {
     if (!canAdd()) {
-        alert("❌ Keine Berechtigung zum Erfassen von Gegenständen.");
+        alert("❌ Du hast keine Berechtigung zum Erfassen von Gegenständen.");
         return;
     }
     const filterVal = preferredCat || document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
@@ -138,6 +182,10 @@ function openInventarItemModal(preferredCat) {
 
     const modalEl = document.getElementById('modal-inventar-item');
     if (!modalEl) return;
+
+    if (window.UIModalKit?.makeMovableAndResizable) {
+        window.UIModalKit.makeMovableAndResizable(modalEl);
+    }
 
     const titleEl = document.getElementById('modal-inventar-item-title');
     if (titleEl) titleEl.innerHTML = `<i class="fas fa-plus-circle me-2 text-primary"></i>Neuen Gegenstand erfassen`;
@@ -150,6 +198,9 @@ function openInventarItemModal(preferredCat) {
 
     const statusCont = document.getElementById('container-item-modal-status');
     if (statusCont) statusCont.style.display = 'none';
+
+    const delBtn = document.getElementById('btn-item-modal-delete');
+    if (delBtn) delBtn.classList.add('d-none');
 
     const form = document.getElementById('form-inventar-item');
     if (form) form.reset();
@@ -169,8 +220,8 @@ function renderItemModalFields(target) {
                                        "Zubehoer","Spezielles","Distanz","Eigentümer_ID",
                                        "Gespendet_ID","Kauf_Spender_Jahr","Verkaeufer_ID","Kaufpreis","Depotbetrag"],
         "Inventar_Schluessel":        ["Bezeichnung","Nummer","Depotbetrag"],
-        "Inventar_Kleidung":          ["Typ","Modell","Groesse","Kaufpreis","Verkaufspreis","Katalogpreis","Sponsoring","Depotbetrag"],
-        "Inventar_Schiessbekleidung": ["Typ","Groesse","Kaufdatum","Kaufpreis","Depotbetrag"]
+        "Inventar_Kleidung":          ["Typ","Modell","Hersteller","Groesse","Kaufdatum","Verkaufspreis","Katalogpreis","Sponsoring","Kaufpreis","Grundpreis","Veredelung","Depotbetrag"],
+        "Inventar_Schiessbekleidung": ["Typ","Modell","Hersteller","Groesse","Kaufdatum","Kaufpreis","Depotbetrag"]
     };
     const dropdownMapping = {
         "Status":      "MG_Status",
@@ -180,14 +231,25 @@ function renderItemModalFields(target) {
         "Groesse":     "Kleidung_Schiessbekleidung_Groesse"
     };
 
+    const fieldLabels = {
+        "Verkaufspreis": "Verkaufspreis an Mitglied CHF",
+        "Katalogpreis": "Katalogpreis (vor Sponsoring) CHF",
+        "Sponsoring": "Sponsoring-Abzug (C-Ma) CHF",
+        "Kaufpreis": "Einkaufspreis Verein CHF",
+        "Grundpreis": "Netto-Grundpreis CHF",
+        "Veredelung": "Netto-Veredelung CHF",
+        "Depotbetrag": "Depotbetrag / Kaution CHF"
+    };
+
     fieldsDiv.innerHTML = (configs[target]||[]).map(field => {
+        const displayLabel = fieldLabels[field] || field.replace(/_/g,' ');
         if (field.endsWith("_ID")) {
             const sorted = [...(inventarState.mitglieder||[])]
                 .sort((a,b)=>(a.Nachname||"").localeCompare(b.Nachname||""));
             const options = sorted
                 .map(m=>`<option value="${m.ID}">${m.Nachname} ${m.Vorname}</option>`).join('');
             return `<div class="col-md-6 mb-3">
-                <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1">${displayLabel}</label>
                 <select name="${field}" class="form-select form-select-sm">
                     <option value="">-- Mitglied wählen --</option>${options}
                 </select></div>`;
@@ -207,24 +269,25 @@ function renderItemModalFields(target) {
             // Kleidung / Schiessbekleidung: Grössen und Typen flexibel via Datalist (Auswahl oder Freitext)
             if (field === 'Groesse' || field === 'Typ') {
                 return `<div class="col-md-6 mb-3">
-                    <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
-                    <input type="text" name="${field}" list="datalist-${field}" class="form-control form-control-sm" placeholder="Auswählen oder eingeben..." autocomplete="off">
+                    <label class="form-label fw-bold small text-muted text-uppercase mb-1">${displayLabel}</label>
+                    <input type="text" name="${field}" list="datalist-${field}" class="form-control form-control-sm" placeholder="Auswählen oder eintippen..." autocomplete="off">
                     <datalist id="datalist-${field}">
                         ${options}
                     </datalist>
+                    <div class="form-text text-muted" style="font-size: 11px;"><i class="fas fa-keyboard me-1"></i>Aus Liste wählen oder frei eingeben (wird gemerkt)</div>
                 </div>`;
             }
 
             return `<div class="col-md-6 mb-3">
-                <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
+                <label class="form-label fw-bold small text-muted text-uppercase mb-1">${displayLabel}</label>
                 <select name="${field}" class="form-select form-select-sm" ${field === 'Bezeichnung' ? 'required' : ''}>
                     <option value="">-- wählen --</option>${options}
                 </select></div>`;
         }
         const isDate = ['datum','date','Jahr'].some(d=>field.toLowerCase().includes(d.toLowerCase()));
         return `<div class="col-md-6 mb-3">
-            <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
-            <input type="${isDate?'date':'text'}" name="${field}" class="form-control form-control-sm">
+            <label class="form-label fw-bold small text-muted text-uppercase mb-1">${displayLabel}</label>
+            <input type="${isDate?'date':'text'}" name="${field}" class="form-control form-control-sm" placeholder="${field.includes('preis')||field.includes('Sponsoring')||field.includes('betrag') ? '0.00' : ''}">
         </div>`;
     }).join('');
 }
@@ -253,6 +316,10 @@ function editInventarItem(targetSheet, id) {
     const modalEl = document.getElementById('modal-inventar-item');
     if (!modalEl) return;
 
+    if (window.UIModalKit?.makeMovableAndResizable) {
+        window.UIModalKit.makeMovableAndResizable(modalEl);
+    }
+
     const titleEl = document.getElementById('modal-inventar-item-title');
     if (titleEl) titleEl.innerHTML = `<i class="fas fa-edit me-2 text-warning"></i>Gegenstand bearbeiten: <strong>${id}</strong>`;
 
@@ -267,6 +334,9 @@ function editInventarItem(targetSheet, id) {
 
     const statusSelect = document.getElementById('item-modal-status');
     if (statusSelect) statusSelect.value = data.Status || 'Im Lager';
+
+    const delBtn = document.getElementById('btn-item-modal-delete');
+    if (delBtn) delBtn.classList.remove('d-none');
 
     renderItemModalFields(targetSheet);
 
@@ -372,10 +442,13 @@ async function saveInventarItemModal(e) {
             } else if (category === 'kleidung' || category === 'schiessbekleidung') {
                 supaItem.item_type = fields.Typ || '';
                 supaItem.model = fields.Modell || null;
+                supaItem.manufacturer = fields.Hersteller || (category === 'kleidung' ? 'Erima' : null);
                 supaItem.size = fields.Groesse || '';
                 supaItem.selling_price = fields.Verkaufspreis ? parseFloat(fields.Verkaufspreis) : null;
-                supaItem.retail_price = fields.Katalogpreis ? parseFloat(fields.Katalogpreis) : null;
+                supaItem.retail_price = fields.Katalogpreis ? parseFloat(fields.Katalogpreis) : (fields.Kaufpreis ? parseFloat(fields.Kaufpreis) : null);
                 supaItem.discount_amount = fields.Sponsoring ? parseFloat(fields.Sponsoring) : null;
+                supaItem.base_price = fields.Grundpreis ? parseFloat(fields.Grundpreis) : null;
+                supaItem.finishing_price = fields.Veredelung ? parseFloat(fields.Veredelung) : null;
             }
 
             const { error: saveErr } = await supa
@@ -436,23 +509,16 @@ async function saveInventarItemModal(e) {
     }
 }
 
-// Abwärtskompatible Aliase
-window.openInventarItemModal = openInventarItemModal;
-window.renderItemModalFields = renderItemModalFields;
-window.saveInventarItemModal = saveInventarItemModal;
-window.renderAdminFields = renderItemModalFields;
-window.saveNewInventarItem = saveInventarItemModal;
-
 // =========================================================
 //  DELETE
 // =========================================================
 async function deleteInventarItem(target, id) {
     if (!canDelete()) {
-        alert("❌ Keine Berechtigung zum Löschen.");
+        alert("❌ Du hast keine Berechtigung zum Löschen.");
         return;
     }
 
-    if (!confirm(`Eintrag ${id} wirklich löschen?`)) return;
+    if (!confirm(`Möchtest du den Eintrag ${id} wirklich unwiderruflich löschen?`)) return;
 
     setInventarBusy(true);
 
@@ -476,10 +542,31 @@ async function deleteInventarItem(target, id) {
         }
 
         await loadInventarData(true);
-        alert(`✅ Eintrag ${id} erfolgreich gelöscht!`);
+        alert(`✅ Eintrag ${id} wurde erfolgreich gelöscht!`);
     } catch (err) {
         alert("Fehler: " + err.message);
     } finally {
         setInventarBusy(false);
     }
 }
+
+async function deleteItemFromModal() {
+    const id = document.getElementById('item-modal-id')?.value;
+    const cat = document.getElementById('item-modal-category')?.value;
+    if (!id) return;
+    const modalEl = document.getElementById('modal-inventar-item');
+    if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+    await deleteInventarItem(cat, id);
+}
+
+// Abwärtskompatible Aliase
+window.openInventarItemModal = openInventarItemModal;
+window.renderItemModalFields = renderItemModalFields;
+window.saveInventarItemModal = saveInventarItemModal;
+window.renderAdminFields = renderItemModalFields;
+window.saveNewInventarItem = saveInventarItemModal;
+window.deleteItemFromModal = deleteItemFromModal;
+window.deleteInventarItem = deleteInventarItem;
+window.renderInventoryTable = renderInventoryTable;
+window.sortBestand = sortBestand;
+window.editInventarItem = editInventarItem;

@@ -96,6 +96,7 @@ function renderInventarUI(container) {
                                     <label class="form-label fw-bold small" id="label-betrag">Pfandbetrag CHF</label>
                                     <input type="number" id="pfand-betrag" class="form-control"
                                            placeholder="0.00" step="0.01">
+                                    <div id="inv-verkauf-sponsoring-hint" class="d-none"></div>
                                 </div>
                                 <div class="col-6" id="container-pfand-einnahme">
                                     <label class="form-label fw-bold small">Pfand Einnahme</label>
@@ -205,29 +206,43 @@ function renderInventarUI(container) {
 
         <!-- SECTION: BESTAND -->
         <div id="inv-section-liste" class="inv-section d-none">
-            <div class="card border-0 shadow-sm p-4">
+            <div class="card border-0 shadow-sm p-3 p-md-4 rounded-3">
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                    <h4 class="mb-0">Bestandsliste</h4>
-                    <div class="d-flex gap-2 align-items-center">
-                        <select id="filter-liste" class="form-select w-auto"
+                    <div>
+                        <h4 class="mb-0 fw-bold text-primary"><i class="fas fa-boxes-stacked me-2"></i>Bestandsliste</h4>
+                        <small class="text-muted">Vereinsinventar, Sportgeräte & Bekleidung (Supabase)</small>
+                    </div>
+                </div>
+
+                <!-- Toolbar & Filter -->
+                <div class="card border p-2 mb-3 shadow-xs rounded-3 bg-light">
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <div class="flex-grow-1 position-relative" style="min-width: 220px;">
+                            <i class="fas fa-search position-absolute" style="left:12px;top:50%;transform:translateY(-50%);color:#aaa;"></i>
+                            <input type="text" class="form-control form-control-sm ps-4 rounded-2 bg-white" id="inv-search-input"
+                                   placeholder="Bestand durchsuchen (ID, Typ, Modell, Grösse, Besitzer...)" oninput="renderInventoryTable()">
+                        </div>
+                        <select id="filter-liste" class="form-select form-select-sm w-auto rounded-2 bg-white border"
                                 onchange="renderInventoryTable()">
-                            <option value="Inventar_Gewehre">Gewehre</option>
-                            <option value="Inventar_Schluessel">Schlüssel</option>
-                            <option value="Inventar_Kleidung" selected>Kleidung</option>
-                            <option value="Inventar_Schiessbekleidung">Schiessbekleidung</option>
-                            <option value="Personendaten">Mitglieder</option>
+                            <option value="Inventar_Kleidung" selected>👕 Vereinskleidung</option>
+                            <option value="Inventar_Schluessel">🔑 Schlüssel</option>
+                            <option value="Inventar_Gewehre">🔫 Gewehre</option>
+                            <option value="Inventar_Schiessbekleidung">🎯 Schiessbekleidung</option>
+                            <option value="Personendaten">👥 Mitglieder</option>
                         </select>
+                        <div id="inv-col-toggle-container"></div>
                         ${canAdd() ? `
-                        <button type="button" class="btn btn-sm btn-primary fw-bold shadow-sm" onclick="openInventarItemModal()" title="Neuen Gegenstand erfassen">
-                            <i class="fas fa-plus me-1"></i> Neuer Artikel
+                        <button type="button" class="btn btn-sm btn-primary fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" onclick="openInventarItemModal()" title="Neuen Gegenstand erfassen">
+                            <i class="fas fa-plus me-1.5"></i> Neuer Artikel
                         </button>` : ''}
-                        <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm" onclick="openInventarExcelImportModal()" title="Inventargegenstände aus Excel oder CSV importieren">
-                            <i class="fas fa-file-excel me-1"></i> Excel / CSV Import
+                        <button type="button" class="btn btn-sm btn-outline-success fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" onclick="openInventarExcelImportModal()" title="Inventargegenstände aus Excel oder CSV importieren">
+                            <i class="fas fa-file-excel me-1.5"></i> Excel / CSV Import
                         </button>
                     </div>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm align-middle"
+
+                <div class="table-responsive rounded-3 border" style="min-height: 380px;">
+                    <table class="table table-hover table-sm align-middle mb-0"
                            id="inventory-table"></table>
                 </div>
             </div>
@@ -243,9 +258,9 @@ function renderInventarUI(container) {
                         <i class="fas fa-sync"></i>
                     </button>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm align-middle" id="pfand-table">
-                        <thead class="table-dark">
+                <div class="table-responsive rounded-3 border">
+                    <table class="table table-hover table-sm align-middle mb-0" id="pfand-table">
+                        <thead class="table-light border-bottom">
                             <tr>
                                 <th>Datum</th>
                                 <th>Mitglied</th>
@@ -279,8 +294,8 @@ function renderInventarUI(container) {
         <!-- MODAL: NEUER ARTIKEL / ARTIKEL BEARBEITEN -->
         <div class="modal fade" id="modal-inventar-item" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
-                <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
-                    <div class="modal-header bg-primary text-white border-0 py-3">
+                <div class="modal-content shadow-lg border-0 rounded-3 overflow-hidden">
+                    <div class="modal-header bg-primary text-white py-2.5 px-3">
                         <div>
                             <h5 class="modal-title fw-bold mb-0" id="modal-inventar-item-title"><i class="fas fa-box me-2"></i>Artikel erfassen</h5>
                             <small class="text-white-50">Vereinsinventar & Sachwerte verwalten</small>
@@ -288,21 +303,30 @@ function renderInventarUI(container) {
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
                     </div>
                     <form id="form-inventar-item" onsubmit="saveInventarItemModal(event)">
-                        <div class="modal-body p-4">
+                        <div class="modal-body p-3 p-md-4" style="background-color: #f8fafc;">
                             <input type="hidden" id="item-modal-id" name="ID">
-                            <div class="row g-3 mb-3">
+                            
+                            <!-- Du-Form Benutzer-Hinweis für Datalist / Freitexteingabe -->
+                            <div class="alert alert-info border-0 rounded-3 py-2 px-3 small mb-3 shadow-xs d-flex align-items-center">
+                                <i class="fas fa-lightbulb text-warning fs-5 me-2.5"></i>
+                                <div>
+                                    <strong>Flexibles Erfassen:</strong> Bei Feldern wie <em>Typ</em> und <em>Grösse</em> kannst du bestehende Werte aus der Liste wählen <u>oder</u> direkt neue Begriffe / Grössen eintippen. Neue Werte werden beim Speichern automatisch dauerhaft in deine Auswahlliste übernommen.
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-3 bg-white p-3 rounded-3 border">
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold small text-muted text-uppercase mb-1">Kategorie</label>
-                                    <select id="item-modal-category" class="form-select" onchange="renderItemModalFields(this.value)" required>
-                                        <option value="Inventar_Gewehre">🔫 Gewehr</option>
-                                        <option value="Inventar_Schluessel">🔑 Schlüssel</option>
+                                    <select id="item-modal-category" class="form-select form-select-sm" onchange="renderItemModalFields(this.value)" required>
                                         <option value="Inventar_Kleidung">👕 Kleidung</option>
+                                        <option value="Inventar_Schluessel">🔑 Schlüssel</option>
+                                        <option value="Inventar_Gewehre">🔫 Gewehr</option>
                                         <option value="Inventar_Schiessbekleidung">🎯 Schiessbekleidung</option>
                                     </select>
                                 </div>
                                 <div class="col-md-6" id="container-item-modal-status" style="display:none;">
                                     <label class="form-label fw-bold small text-muted text-uppercase mb-1">Status</label>
-                                    <select id="item-modal-status" name="Status" class="form-select">
+                                    <select id="item-modal-status" name="Status" class="form-select form-select-sm">
                                         <option value="Im Lager">Im Lager</option>
                                         <option value="Ausgegeben">Ausgegeben</option>
                                         <option value="Defekt">Defekt</option>
@@ -311,14 +335,21 @@ function renderInventarUI(container) {
                                     </select>
                                 </div>
                             </div>
-                            <hr class="my-3 text-muted">
+
                             <div id="item-modal-fields" class="row"></div>
                         </div>
-                        <div class="modal-footer bg-light border-0 py-3">
-                            <button type="button" class="btn btn-outline-secondary rounded-2" data-bs-dismiss="modal">Abbrechen</button>
-                            <button type="submit" class="btn btn-primary fw-bold rounded-2 px-4 shadow-sm" id="btn-item-modal-save">
-                                <i class="fas fa-save me-1"></i> Speichern
-                            </button>
+                        <div class="modal-footer bg-white border-top py-2.5 px-3 d-flex justify-content-between align-items-center">
+                            <div>
+                                <button type="button" class="btn btn-sm btn-outline-danger d-none rounded-2" id="btn-item-modal-delete" onclick="deleteItemFromModal()">
+                                    <i class="fas fa-trash me-1"></i> Löschen
+                                </button>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-secondary px-3 rounded-2" data-bs-dismiss="modal">Abbrechen</button>
+                                <button type="submit" class="btn btn-sm btn-primary px-3 rounded-2 fw-semibold shadow-sm" id="btn-item-modal-save">
+                                    <i class="fas fa-save me-1.5"></i> Speichern
+                                </button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -690,17 +721,33 @@ function onGegenstandSelect() {
     const item = (inventarState[keyMap[kat]] || []).find(i => i.ID.toString() === itemId.toString());
     
     if (item) {
+        const sponsorHintEl = document.getElementById('inv-verkauf-sponsoring-hint');
         if (action === 'verkauf') {
             // 1. Verkauf: Verkaufspreis (Mitgliederpreis) vorblenden, sonst Kaufpreis
             let preisRaw = item.Verkaufspreis || item.selling_price || item.Kaufpreis || item.Preis || item.kaufpreis || 0;
+            const rawSponsor = item.Sponsoring !== undefined && item.Sponsoring !== null && item.Sponsoring !== '' ? item.Sponsoring : item.discount_amount;
             if (preisRaw && preisRaw !== "") {
                 const preis = parseFloat(preisRaw.toString().replace("'", "").replace("CHF", "").trim());
                 if (!isNaN(preis) && preis > 0) {
                     document.getElementById('pfand-betrag').value = preis.toFixed(2);
+                    if (sponsorHintEl) {
+                        const sponsorNum = parseFloat(rawSponsor) || 0;
+                        if (sponsorNum > 0) {
+                            const rawKatalog = item.Katalogpreis || item.retail_price || (item.Kaufpreis ? parseFloat(item.Kaufpreis) : (preis + sponsorNum));
+                            sponsorHintEl.className = 'small text-danger fw-semibold mt-1 d-block';
+                            sponsorHintEl.innerHTML = `<i class="fas fa-handshake me-1"></i>Katalogpreis CHF ${parseFloat(rawKatalog).toFixed(2)} abzgl. C-Ma Sponsoring -CHF ${sponsorNum.toFixed(2)} = <strong>CHF ${preis.toFixed(2)}</strong>`;
+                        } else {
+                            sponsorHintEl.className = 'd-none';
+                        }
+                    }
                     return;
                 }
             }
-        } else if (action === 'checkout') {
+            if (sponsorHintEl) sponsorHintEl.className = 'd-none';
+        } else {
+            if (sponsorHintEl) sponsorHintEl.className = 'd-none';
+        }
+        if (action === 'checkout') {
             // 2. Ausleihe (Option B): Depotbetrag vorblenden
             let depotRaw = item.Depotbetrag || item.Depot || item.depot || item.Pfandbetrag || item.Pfand || 0;
             if (depotRaw && depotRaw !== "") {

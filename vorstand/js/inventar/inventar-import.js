@@ -80,7 +80,7 @@ window.openInventarExcelImportModal = function() {
                     <!-- Vorschau-Tabelle -->
                     <div class="table-responsive border rounded-3 mb-3 d-none" id="inv-import-preview-wrapper" style="max-height: 380px; overflow-y: auto;">
                         <table class="table table-hover table-sm align-middle mb-0" id="inv-import-preview-table" style="font-size: 13px;">
-                            <thead class="table-dark sticky-top">
+                            <thead class="table-light sticky-top border-bottom">
                                 <tr id="inv-import-preview-thead"></tr>
                             </thead>
                             <tbody id="inv-import-preview-tbody"></tbody>
@@ -97,6 +97,10 @@ window.openInventarExcelImportModal = function() {
             </div>
         </div>
     `;
+
+    if (window.UIModalKit?.makeMovableAndResizable) {
+        window.UIModalKit.makeMovableAndResizable(modalEl);
+    }
 
     window._invImportParsedRows = [];
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -231,6 +235,15 @@ window.invProcessRawData = function(jsonRows) {
         if (itemObj.retail_price !== null) itemObj.retail_price = Math.round(itemObj.retail_price);
         if (itemObj.discount_amount !== null) itemObj.discount_amount = Math.round(itemObj.discount_amount);
 
+        // Falls Katalogpreis fehlt, aus Kaufpreis oder Verkaufspreis + Sponsoring ableiten:
+        if (itemObj.retail_price === null && (category === 'kleidung' || category === 'schiessbekleidung')) {
+            if (itemObj.purchase_price !== null) {
+                itemObj.retail_price = itemObj.purchase_price;
+            } else if (itemObj.selling_price !== null && itemObj.discount_amount !== null) {
+                itemObj.retail_price = itemObj.selling_price + itemObj.discount_amount;
+            }
+        }
+
         parsedItems.push(itemObj);
     });
 
@@ -312,7 +325,7 @@ window.invExecuteImport = function() {
     const items = window._invImportParsedRows;
     if (!items || items.length === 0) return;
 
-    if (!confirm(`Möchten Sie ${items.length} Datensätze jetzt verbindlich in die Supabase-Datenbank importieren?`)) {
+    if (!confirm(`Möchtest du ${items.length} Datensätze jetzt verbindlich in die Supabase-Datenbank importieren?`)) {
         return;
     }
 
