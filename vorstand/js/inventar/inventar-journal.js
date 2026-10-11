@@ -351,12 +351,27 @@ window.storniereInventarBuchung = async function(safeGroup) {
         // 1. Verknüpfte Rechnungen im Rechnungsmodul stornieren oder löschen
         for (const invId of groupInvoiceIds) {
             try {
-                const { data: invData } = await supa.from('invoices')
-                    .select('id, mail_status, status, total_paid')
+                const { data: invData, error: fetchErr } = await supa.from('invoices')
+                    .select('id, mail_status, status, total_amount, open_amount')
                     .eq('id', invId)
                     .maybeSingle();
 
-                if (invData && invData.status !== 'bezahlt' && (!invData.total_paid || Number(invData.total_paid) === 0)) {
+                if (fetchErr) {
+                    console.warn(`Fehler beim Laden der Rechnung ${invId}:`, fetchErr);
+                    continue;
+                }
+
+                if (!invData) continue;
+
+                // Prüfen, ob Zahlungen existieren
+                const { count: paymentCount } = await supa.from('invoice_payments')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('invoice_id', invId);
+
+                const hasPayments = (paymentCount && paymentCount > 0) ||
+                    (invData.open_amount !== null && Number(invData.open_amount) < Number(invData.total_amount));
+
+                if (invData.status !== 'bezahlt' && !hasPayments) {
                     if (invData.mail_status === 'entwurf') {
                         // Entwurf: Positionen & Rechnung sauber physisch löschen
                         await supa.from('invoice_positions').delete().eq('invoice_id', invId);
