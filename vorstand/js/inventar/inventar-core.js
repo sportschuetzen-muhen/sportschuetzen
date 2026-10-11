@@ -255,6 +255,7 @@ async function loadInventarData(force = false) {
                     pfand: (pfandRes.data || []).map(mapPfandFromSupabase),
                     protokoll: (logRes.data || []).map(mapLogFromSupabase),
                     config: configRows,
+                    rawConfig: confList,
                     mitglieder: mappedMembers,
                     _isSupabase: true
                 };

@@ -121,7 +121,7 @@ function renderInventarUI(container) {
                                 </div>
                                 <div class="col-12 d-none mt-2" id="container-verkauf-konto">
                                     <label class="form-label fw-bold small text-primary mb-1" id="label-verkauf-konto">
-                                      <i class="fas fa-book me-1"></i>Haben-Konto (Buchhaltung)
+                                      <i class="fas fa-book me-1"></i>Haben-Konto (Ertrag Materialverkauf)
                                     </label>
                                     <div class="input-group input-group-sm">
                                         <input type="text" id="verkauf-konto" class="form-control font-monospace" list="inv-konten-datalist"
@@ -134,7 +134,7 @@ function renderInventarUI(container) {
                                         </button>
                                     </div>
                                     <div class="form-text small" style="font-size: 10px;" id="help-verkauf-konto">
-                                        Standard: <code>8501</code> (Kleiderverkauf) oder <code>2030</code> (Kautionen / Depots). Variabel aus Kontenrahmen wählbar.
+                                        Standard: <code>8501</code> (Ertrag Materialverkauf) oder <code>2030</code> (Kautionen / Depots). Variabel aus Kontenrahmen wählbar.
                                     </div>
                                 </div>
                                 <div class="col-12 d-none mt-2" id="container-verkauf-info-banner">
@@ -489,24 +489,24 @@ function toggleBookingFields() {
     if (kontoContainer) {
         kontoContainer.classList.toggle('d-none', !isVerkauf && !isCheckout);
         if (isVerkauf) {
-            const savedVerkaufKonto = localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8501';
-            if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-book me-1"></i>Haben-Konto (Ertrag Kleiderverkauf)';
+            const savedVerkaufKonto = getInventarDefaultHabenKonto('verkauf');
+            if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-book me-1"></i>Haben-Konto (Ertrag Materialverkauf)';
             if (inputKonto && (inputKonto.value === '2030' || inputKonto.value.startsWith('2030 ') || !inputKonto.value)) {
                 inputKonto.value = savedVerkaufKonto;
             } else if (inputKonto && inputKonto.value === '8501' && savedVerkaufKonto !== '8501') {
                 inputKonto.value = savedVerkaufKonto;
             }
-            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>8501</code> (Kleiderverkauf). Ansonsten variabel aus Kontenrahmen wählbar (Auswahl wird gemerkt).';
+            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>8501</code> (Ertrag Materialverkauf). Ansonsten variabel aus Kontenrahmen wählbar.';
             onVerkaufKontoChange(inputKonto ? inputKonto.value : savedVerkaufKonto);
         } else if (isCheckout) {
-            const savedDepotKonto = localStorage.getItem('inventar_preferred_haben_konto_depot') || '2030';
+            const savedDepotKonto = getInventarDefaultHabenKonto('depot');
             if (labelKonto) labelKonto.innerHTML = '<i class="fas fa-shield-alt me-1"></i>Haben-Konto (Kautionen / Depots)';
             if (inputKonto && (inputKonto.value === '8501' || inputKonto.value.startsWith('8501 ') || inputKonto.value === '3200' || !inputKonto.value)) {
                 inputKonto.value = savedDepotKonto;
             } else if (inputKonto && inputKonto.value === '2030' && savedDepotKonto !== '2030') {
                 inputKonto.value = savedDepotKonto;
             }
-            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>2030</code> (Kautionen / Depots - Passivkonto). Ansonsten variabel aus Kontenrahmen wählbar (Auswahl wird gemerkt).';
+            if (helpKonto) helpKonto.innerHTML = 'Standard: <code>2030</code> (Kautionen / Depots - Passivkonto). Ansonsten variabel aus Kontenrahmen wählbar.';
             onVerkaufKontoChange(inputKonto ? inputKonto.value : savedDepotKonto);
         }
     }
@@ -516,7 +516,7 @@ function toggleBookingFields() {
     // Label umschalten für Betrag
     const labelBetrag = document.getElementById('label-betrag');
     if (isVerkauf) {
-        labelBetrag.innerText = 'Verkaufspreis CHF';
+        labelBetrag.innerText = 'Endpreis für Mitglied CHF';
     } else {
         labelBetrag.innerText = 'Pfandbetrag CHF';
     }
@@ -524,17 +524,55 @@ function toggleBookingFields() {
     updateSubOptions();
 }
 
-window.onVerkaufKontoChange = function(val) {
+function getInventarDefaultHabenKonto(type) {
+    const cfgKey = type === 'depot' ? 'inventar_haben_konto_depot' : 'inventar_haben_konto_verkauf';
+    const storageKey = type === 'depot' ? 'inventar_preferred_haben_konto_depot' : 'inventar_preferred_haben_konto_verkauf';
+    const fallback = type === 'depot' ? '2030' : '8501';
+
+    // 1. Aus Supabase inventory_config (in inventarState.rawConfig)
+    if (inventarState?.rawConfig) {
+        const found = inventarState.rawConfig.find(c => c.config_key === cfgKey);
+        if (found && found.value) return found.value;
+    }
+    // 2. Aus localStorage
+    const local = localStorage.getItem(storageKey);
+    if (local) return local;
+
+    return fallback;
+}
+window.getInventarDefaultHabenKonto = getInventarDefaultHabenKonto;
+
+window.onVerkaufKontoChange = async function(val) {
     const cleanKonto = (val || '').split('|')[0].trim();
     const lbl = document.getElementById('label-verwendungs-konto');
     if (lbl) lbl.innerText = cleanKonto || '8501';
 
-    const action = document.getElementById('select-aktion')?.value;
+    const action = document.getElementById('select-action')?.value;
     if (cleanKonto) {
-        if (action === 'verkauf') {
-            localStorage.setItem('inventar_preferred_haben_konto_verkauf', cleanKonto);
-        } else if (action === 'checkout') {
-            localStorage.setItem('inventar_preferred_haben_konto_depot', cleanKonto);
+        const isDepot = action === 'checkout';
+        const storageKey = isDepot ? 'inventar_preferred_haben_konto_depot' : 'inventar_preferred_haben_konto_verkauf';
+        const configKey = isDepot ? 'inventar_haben_konto_depot' : 'inventar_haben_konto_verkauf';
+
+        localStorage.setItem(storageKey, cleanKonto);
+
+        // Dauerhaft in Supabase inventory_config persistieren
+        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        if (supa) {
+            try {
+                await supa.from('inventory_config').delete().eq('config_key', configKey);
+                await supa.from('inventory_config').insert([{
+                    config_key: configKey,
+                    value: cleanKonto,
+                    sort_order: isDepot ? 2 : 1
+                }]);
+                if (inventarState?.rawConfig) {
+                    const existing = inventarState.rawConfig.find(c => c.config_key === configKey);
+                    if (existing) existing.value = cleanKonto;
+                    else inventarState.rawConfig.push({ config_key: configKey, value: cleanKonto, sort_order: isDepot ? 2 : 1 });
+                }
+            } catch (err) {
+                console.warn("⚠️ Habenkonto konnte nicht in inventory_config gespeichert werden:", err);
+            }
         }
     }
 };
@@ -751,9 +789,9 @@ function onGegenstandSelect() {
                         const sponsorNum = parseFloat(rawSponsor) || 0;
                         if (sponsorNum > 0) {
                             const rawKatalog = item.Katalogpreis || item.retail_price || (item.Kaufpreis ? parseFloat(item.Kaufpreis) : (preis + sponsorNum));
-                            const sponsorTitle = (item.Sponsor_Firma || item.sponsor_company || 'Sponsoring').trim();
+                            const sponsorTitle = (item.Sponsor_Firma || item.sponsor_company || 'Sponsoring Beitrag').trim();
                             sponsorHintEl.className = 'small text-danger fw-semibold mt-1 d-block';
-                            sponsorHintEl.innerHTML = `<i class="fas fa-handshake me-1"></i>Katalogpreis CHF ${parseFloat(rawKatalog).toFixed(2)} abzgl. ${escapeHtml(sponsorTitle)} -CHF ${sponsorNum.toFixed(2)} = <strong>CHF ${preis.toFixed(2)}</strong>`;
+                            sponsorHintEl.innerHTML = `<i class="fas fa-handshake me-1"></i>Verkaufspreis gerundet CHF ${parseFloat(rawKatalog).toFixed(2)} abzgl. ${escapeHtml(sponsorTitle)} -CHF ${sponsorNum.toFixed(2)} = <strong>Endpreis für Mitglied CHF ${preis.toFixed(2)}</strong>`;
                         } else {
                             sponsorHintEl.className = 'd-none';
                         }
@@ -886,13 +924,13 @@ function getCategoryExportRows(targetKey) {
             'Hersteller': r.Hersteller || '',
             'Grösse': r.Groesse || '',
             'Kaufdatum': r.Kaufdatum ? formatCH(r.Kaufdatum) : '',
-            'Katalogpreis CHF': formatChfNum(r.Katalogpreis),
-            'Sponsoring CHF': formatChfNum(r.Sponsoring),
+            'Verkaufspreis gerundet CHF': formatChfNum(r.Katalogpreis),
+            'Sponsoring Beitrag CHF': formatChfNum(r.Sponsoring),
             'Sponsor-Firma': r.Sponsor_Firma || '',
-            'Verkaufspreis CHF': formatChfNum(r.Verkaufspreis),
-            'Einkaufspreis CHF': formatChfNum(r.Kaufpreis),
-            'Grundpreis Netto CHF': formatChfNum(r.Grundpreis),
-            'Veredelung Netto CHF': formatChfNum(r.Veredelung),
+            'Endpreis für Mitglied CHF': formatChfNum(r.Verkaufspreis),
+            'Total Einstandspreis CHF': formatChfNum(r.Kaufpreis),
+            'Einstandspreis Material CHF': formatChfNum(r.Grundpreis),
+            'Einstandspreis Druck CHF': formatChfNum(r.Veredelung),
             'Depot CHF': formatChfNum(r.Depotbetrag),
             'Status': r.Status || 'Im Lager',
             'Aktueller Besitzer': getInventarNameFromId(r.Aktueller_Besitzer_ID)
@@ -923,7 +961,7 @@ function getCategoryExportRows(targetKey) {
             'Gespendet von': getInventarNameFromId(r.Gespendet_ID),
             'Spender-/Kaufjahr': r.Kauf_Spender_Jahr || '',
             'Verkäufer': getInventarNameFromId(r.Verkaeufer_ID),
-            'Kaufpreis CHF': formatChfNum(r.Kaufpreis),
+            'Total Einstandspreis CHF': formatChfNum(r.Kaufpreis),
             'Depot CHF': formatChfNum(r.Depotbetrag),
             'Status': r.Status || 'Im Lager',
             'Aktueller Besitzer': getInventarNameFromId(r.Aktueller_Besitzer_ID)
@@ -938,7 +976,7 @@ function getCategoryExportRows(targetKey) {
             'Grösse': r.Groesse || '',
             'Kaufdatum': r.Kaufdatum ? formatCH(r.Kaufdatum) : '',
             'Sponsor-Firma': r.Sponsor_Firma || '',
-            'Einkaufspreis CHF': formatChfNum(r.Kaufpreis),
+            'Total Einstandspreis CHF': formatChfNum(r.Kaufpreis),
             'Depot CHF': formatChfNum(r.Depotbetrag),
             'Status': r.Status || 'Im Lager',
             'Aktueller Besitzer': getInventarNameFromId(r.Aktueller_Besitzer_ID)

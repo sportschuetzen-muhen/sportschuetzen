@@ -129,6 +129,8 @@
       th.tk-col-resizable {
         position: relative !important;
         overflow: visible !important;
+        white-space: normal !important;
+        vertical-align: bottom !important;
       }
       .tk-col-resizer {
         position: absolute;

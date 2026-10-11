@@ -215,10 +215,26 @@ vorstand/js/inventar/
 - **Einheitliche Du-Kultur (Regel 8):** Sämtliche Benutzerhinweise, Tooltips und Formularmeldungen sprechen den Benutzer vereinsnah in der Du-Form an.
 
 ### 5.7 Variable Sponsor-Firma, Bestands-Export & Druckfunktionen (Migration 63)
-- **Variable Sponsoring-Firma (`sponsor_company`):** Die Sponsoring-Firma ist in `public.inventory_items` als eigenständige Spalte hinterlegt und nicht mehr hartcodiert. Bestehende Datensätze sind mit «C-Ma Trading GmbH» vorbelegt. Das Erfassungsmodal bietet ein Eingabefeld «Sponsor-Firma», und bei Materialverkäufen wird der Name der Firma dynamisch im Warenkorb sowie auf der generierten Rechnung («Sponsoringbeitrag [Firma]») ausgewiesen. Die Excel-Import-Engine erkennt Spaltenköpfe wie `Sponsor`, `Sponsor-Firma` oder `Firma` automatisch.
+- **Variable Sponsoring-Firma (`sponsor_company`):** Die Sponsoring-Firma ist in `public.inventory_items` als eigenständige Spalte hinterlegt und nicht mehr hartcodiert. Bestehende Datensätze sind mit «Clientis» bzw. früheren Sponsoren vorbelegt. Das Erfassungsmodal bietet ein Eingabefeld «Sponsor-Firma», und bei Materialverkäufen wird der Name der Firma dynamisch im Warenkorb sowie auf der generierten Rechnung («Sponsoringbeitrag [Firma]») ausgewiesen. Die Excel-Import-Engine erkennt Spaltenköpfe wie `Sponsor`, `Sponsor-Firma` oder `Firma` automatisch.
 - **Excel-Export (`exportInventarExcel` via SheetJS):** Über ein Dropdown im Bestand kann entweder die aktuell ausgewählte Kategorie als Einzel-Tabelle oder das gesamte Inventar (alle 4 Kategorien als separate Arbeitsmappen-Reiter) exportiert werden. Zahlen und Währungen werden sauber formatiert und verknüpfte Besitzer-IDs als Klarnamen ausgegeben.
 - **Druck- & PDF-Ausgabe (`printInventarBestand`):** Eine dedizierte Druckansicht im Vereinsdesign erlaubt den Ausdruck der Bestände nach aktueller Kategorie oder über das gesamte Inventar (nach Kategorien gegliedert). Sie enthält KPI-Zusammenfassungen (Gesamtanzahl, im Lager, ausgegeben), Stichtagsangabe und A4-Landscape-Optimierung.
 - **Bereinigung von Migrationsrelikten:** Der veraltete Button «Neu laden» oben rechts im Inventar sowie temporäre «Supabase»-Badges und Hinweistexte im gesamten Portal wurden vollständig entfernt.
+
+### 5.8 Standardisierte Preis-Begrifflichkeiten, 2-zeilige Header & Habenkonto-Persistierung (Migration 64)
+- **Kaufmännische Begriffs-Harmonisierung:** Alle Beschriftungen in Erfassungsmodalen, Bestandslisten, Exporten, Druckansichten und im Excel-Import wurden einheitlich auf die vereinsweit verbindliche Nomenklatur umgestellt:
+  - `Einstandspreis Material` (ehemals *Grundpreis*)
+  - `Einstandspreis Druck` (ehemals *Veredelung*)
+  - `Total Einstandspreis` (ehemals *Kaufpreis*)
+  - `Verkaufspreis gerundet` (ehemals *Katalogpreis*)
+  - `Sponsoring Beitrag` (ehemals *Sponsoring*)
+  - `Endpreis für Mitglied` (ehemals *Verkaufspreis*)
+- **Automatischer Zeilenumbruch für Tabellen-Header:** In der Bestandsliste und im `TableKit` brechen lange Spaltentitel (`th`) beim Zusammenschieben oder auf schmalen Bildschirmen automatisch harmonisch auf zwei Zeilen um (`white-space: normal; line-height: 1.25; vertical-align: bottom; min-width: 80px`).
+- **Persistierung des Haben-Kontos in Supabase (`public.inventory_config`):** 
+  - Die Auswahlliste für das Ertragskonto beim Materialverkauf wurde von «Ertrag Kleiderverkauf» auf «Ertrag Materialverkauf» verallgemeinert.
+  - Das gewählte Haben-Konto wird in Supabase unter `public.inventory_config` (`config_key: 'inventar_haben_konto_verkauf'`, Default `8501`) bzw. für Depots unter `inventar_haben_konto_depot` (Default `2030`) dauerhaft gespeichert.
+  - Jede manuelle Änderung im Dropdown wird sofort asynchron nach Supabase sowie `localStorage` synchronisiert.
+  - Die Übergabe an den zentralen `RechnungsCore` erfolgt verlässlich über `accountHaben: customKontoHaben` in allen `InvoiceOrder`-Positionen.
+- **Excel-Import & Mustervorlage:** Die Mustervorlage `.xlsx` enthält die Spalte `Sponsor-Firma` (z.B. «Clientis») sowie die neuen Fachbegriffe. Die Parsing-Engine unterstützt sowohl die neuen als auch die historischen Begriffe tolerant via Fuzzy-Matching und deutscher Umlaut-Normalisierung.
 
 
 

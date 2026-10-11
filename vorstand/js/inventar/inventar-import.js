@@ -179,7 +179,9 @@ window.invProcessRawData = function(jsonRows) {
     const dataRows = jsonRows.slice(1).filter(r => r && r.some(c => c !== undefined && c !== null && String(c).trim() !== ''));
 
     const category = document.getElementById('inv-import-category').value;
-    const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const norm = s => String(s || '').toLowerCase()
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]/g, '');
 
     const headerIndices = {};
     rawHeaders.forEach((h, idx) => {
@@ -197,13 +199,13 @@ window.invProcessRawData = function(jsonRows) {
             else if (n === 'hersteller' || n === 'marke') headerIndices.hersteller = idx;
             else if (n === 'groesse' || n === 'grosse' || n === 'size') headerIndices.groesse = idx;
             else if (n === 'status') headerIndices.status = idx;
-            else if (n === 'kaufpreis' || n === 'ek' || n === 'selbstkosten' || n === 'einkaufspreis') headerIndices.kaufpreis = idx;
-            else if (n === 'verkaufspreis' || n === 'vk' || n === 'mitgliederpreis' || n === 'endpreis') headerIndices.verkaufspreis = idx;
-            else if (n === 'katalogpreis' || n === 'uvp' || n === 'bruttopreis') headerIndices.katalogpreis = idx;
-            else if (n === 'sponsoring' || n === 'rabatt' || n === 'subvention') headerIndices.sponsoring = idx;
-            else if (n === 'sponsor' || n === 'sponsorfirma' || n === 'sponsor_firma' || n === 'firma') headerIndices.sponsor = idx;
-            else if (n === 'grundpreis' || n === 'netto' || n === 'grundpreisnetto') headerIndices.grundpreis = idx;
-            else if (n === 'veredelung' || n === 'veredelungskosten' || n === 'bestickung') headerIndices.veredelung = idx;
+            else if (n === 'totaleinstandspreis' || n === 'kaufpreis' || n === 'ek' || n === 'selbstkosten' || n === 'einkaufspreis' || n === 'einstandspreistotal' || n === 'totaleinstand' || n === 'einstandspreis') headerIndices.kaufpreis = idx;
+            else if (n === 'endpreisfuermitglied' || n === 'verkaufspreis' || n === 'vk' || n === 'mitgliederpreis' || n === 'endpreis' || n === 'endpreismitglied' || n === 'endpreisfrmitglied') headerIndices.verkaufspreis = idx;
+            else if (n === 'verkaufspreisgerundet' || n === 'katalogpreis' || n === 'uvp' || n === 'bruttopreis' || n === 'vkgerundet') headerIndices.katalogpreis = idx;
+            else if (n === 'sponsoringbeitrag' || n === 'sponsoring' || n === 'rabatt' || n === 'subvention' || n === 'sponsorbeitrag') headerIndices.sponsoring = idx;
+            else if (n === 'sponsorfirma' || n === 'sponsor' || n === 'sponsor_firma' || n === 'firma' || n === 'sponsorunternehmen') headerIndices.sponsor = idx;
+            else if (n === 'einstandspreismaterial' || n === 'grundpreis' || n === 'netto' || n === 'grundpreisnetto' || n === 'ekmaterial' || n === 'material') headerIndices.grundpreis = idx;
+            else if (n === 'einstandspreisdruck' || n === 'veredelung' || n === 'veredelungskosten' || n === 'bestickung' || n === 'ekdruck' || n === 'druckkosten' || n === 'druck') headerIndices.veredelung = idx;
             else if (n === 'depot' || n === 'depotbetrag' || n === 'pfand' || n === 'kaution') headerIndices.depotbetrag = idx;
             else if (n === 'kaufdatum' || n === 'datum') headerIndices.kaufdatum = idx;
             else if (n === 'laufnummer' || n === 'seriennummer' || n === 'nummer') headerIndices.seriennummer = idx;
@@ -341,13 +343,13 @@ window.invRenderPreview = function(items, category) {
             <th>Modell</th>
             <th>Grösse</th>
             <th>Kaufdatum</th>
-            <th class="text-end">Einkauf (CHF)</th>
-            <th class="text-end">Grundpreis (CHF)</th>
-            <th class="text-end">Veredelung (CHF)</th>
-            <th class="text-end">Katalog (CHF)</th>
-            <th class="text-end">Sponsoring (CHF)</th>
-            <th>Sponsor</th>
-            <th class="text-end">Verkauf (CHF)</th>
+            <th class="text-end">Total Einstand (CHF)</th>
+            <th class="text-end">Einstand Material (CHF)</th>
+            <th class="text-end">Einstand Druck (CHF)</th>
+            <th class="text-end">Verkauf gerundet (CHF)</th>
+            <th class="text-end">Sponsoring Beitrag (CHF)</th>
+            <th>Sponsor-Firma</th>
+            <th class="text-end">Endpreis Mitglied (CHF)</th>
             <th>Status</th>
         `;
         tbody.innerHTML = items.map(it => `
@@ -375,7 +377,7 @@ window.invRenderPreview = function(items, category) {
             <th>Hersteller</th>
             <th>Grösse</th>
             <th>Kaufdatum</th>
-            <th class="text-end">Kaufpreis (CHF)</th>
+            <th class="text-end">Total Einstand (CHF)</th>
             <th class="text-end">Depot (CHF)</th>
             <th>Status</th>
         `;
@@ -400,7 +402,7 @@ window.invRenderPreview = function(items, category) {
             <th>Distanz</th>
             <th>Visierung</th>
             <th>Kaufdatum</th>
-            <th class="text-end">Kaufpreis (CHF)</th>
+            <th class="text-end">Total Einstand (CHF)</th>
             <th class="text-end">Depot (CHF)</th>
             <th>Status</th>
         `;
@@ -532,12 +534,13 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Erima",
                 "Groesse": "XS",
                 "Kaufdatum": "2024-05-01",
-                "Kaufpreis": 80,
-                "Grundpreis": 42,
-                "Veredelung": 38,
-                "Katalogpreis": 83,
-                "Sponsoring": 20,
-                "Verkaufspreis": 63,
+                "Total Einstandspreis": 80,
+                "Einstandspreis Material": 42,
+                "Einstandspreis Druck": 38,
+                "Verkaufspreis gerundet": 83,
+                "Sponsoring Beitrag": 20,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 63,
                 "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
@@ -548,12 +551,13 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Erima",
                 "Groesse": "38",
                 "Kaufdatum": "2024-05-01",
-                "Kaufpreis": 122,
-                "Grundpreis": 65,
-                "Veredelung": 57,
-                "Katalogpreis": 127,
-                "Sponsoring": 31,
-                "Verkaufspreis": 96,
+                "Total Einstandspreis": 122,
+                "Einstandspreis Material": 65,
+                "Einstandspreis Druck": 57,
+                "Verkaufspreis gerundet": 127,
+                "Sponsoring Beitrag": 31,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 96,
                 "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
@@ -564,12 +568,13 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Erima",
                 "Groesse": "S",
                 "Kaufdatum": "2024-05-01",
-                "Kaufpreis": 110,
-                "Grundpreis": 60,
-                "Veredelung": 50,
-                "Katalogpreis": 114,
-                "Sponsoring": 27,
-                "Verkaufspreis": 87,
+                "Total Einstandspreis": 110,
+                "Einstandspreis Material": 60,
+                "Einstandspreis Druck": 50,
+                "Verkaufspreis gerundet": 114,
+                "Sponsoring Beitrag": 27,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 87,
                 "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
@@ -580,12 +585,13 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Erima",
                 "Groesse": "XXL",
                 "Kaufdatum": "2024-05-01",
-                "Kaufpreis": 69,
-                "Grundpreis": 36,
-                "Veredelung": 33,
-                "Katalogpreis": 72,
-                "Sponsoring": 17,
-                "Verkaufspreis": 55,
+                "Total Einstandspreis": 69,
+                "Einstandspreis Material": 36,
+                "Einstandspreis Druck": 33,
+                "Verkaufspreis gerundet": 72,
+                "Sponsoring Beitrag": 17,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 55,
                 "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
@@ -596,12 +602,13 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Erima",
                 "Groesse": "S",
                 "Kaufdatum": "2024-05-01",
-                "Kaufpreis": 65,
-                "Grundpreis": 34,
-                "Veredelung": 31,
-                "Katalogpreis": 68,
-                "Sponsoring": 17,
-                "Verkaufspreis": 51,
+                "Total Einstandspreis": 65,
+                "Einstandspreis Material": 34,
+                "Einstandspreis Druck": 31,
+                "Verkaufspreis gerundet": 68,
+                "Sponsoring Beitrag": 17,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 51,
                 "Depotbetrag": 0,
                 "Status": "Im Lager"
             },
@@ -612,12 +619,13 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Erima",
                 "Groesse": "164",
                 "Kaufdatum": "2024-05-01",
-                "Kaufpreis": 62,
-                "Grundpreis": 32,
-                "Veredelung": 30,
-                "Katalogpreis": 65,
-                "Sponsoring": 16,
-                "Verkaufspreis": 49,
+                "Total Einstandspreis": 62,
+                "Einstandspreis Material": 32,
+                "Einstandspreis Druck": 30,
+                "Verkaufspreis gerundet": 65,
+                "Sponsoring Beitrag": 16,
+                "Sponsor-Firma": "Clientis",
+                "Endpreis für Mitglied": 49,
                 "Depotbetrag": 0,
                 "Status": "Im Lager"
             }
@@ -631,7 +639,7 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Sauer",
                 "Groesse": "50",
                 "Kaufdatum": "2024-01-15",
-                "Kaufpreis": 650,
+                "Total Einstandspreis": 650,
                 "Depotbetrag": 150,
                 "Status": "Im Lager"
             },
@@ -642,7 +650,7 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Capapie",
                 "Groesse": "48",
                 "Kaufdatum": "2024-01-15",
-                "Kaufpreis": 480,
+                "Total Einstandspreis": 480,
                 "Depotbetrag": 100,
                 "Status": "Im Lager"
             },
@@ -653,7 +661,7 @@ window.invDownloadExcelTemplate = function() {
                 "Hersteller": "Kustermann",
                 "Groesse": "M",
                 "Kaufdatum": "2024-03-20",
-                "Kaufpreis": 85,
+                "Total Einstandspreis": 85,
                 "Depotbetrag": 0,
                 "Status": "Im Lager"
             }
@@ -695,7 +703,7 @@ window.invDownloadExcelTemplate = function() {
                 "Zubehoer": "Handstop, Putzzeug, Koffer",
                 "Spezielles": "Vereinswaffe Nachwuchs",
                 "Kaufdatum": "2023-11-01",
-                "Kaufpreis": 2500,
+                "Total Einstandspreis": 2500,
                 "Depotbetrag": 200,
                 "Status": "Im Lager"
             },
@@ -710,7 +718,7 @@ window.invDownloadExcelTemplate = function() {
                 "Zubehoer": "Visierlinienerhöhung",
                 "Spezielles": "Sehr gepflegt",
                 "Kaufdatum": "2024-02-10",
-                "Kaufpreis": 3200,
+                "Total Einstandspreis": 3200,
                 "Depotbetrag": 250,
                 "Status": "Im Lager"
             }
@@ -726,8 +734,9 @@ window.invDownloadExcelTemplate = function() {
         { "Hinweis": "1. Spaltenzeile (Zeile 1)", "Erklärung": "Die oberste Zeile enthält die Feldnamen. Diese Zeile bitte nicht löschen oder umbenennen." },
         { "Hinweis": "2. Beispieldaten (ab Zeile 2)", "Erklärung": "Die enthaltenen Zeilen sind Musterdaten zur Veranschaulichung. Du kannst sie vor dem Import löschen oder durch deine echten Artikel ersetzen." },
         { "Hinweis": "3. Spalte ID", "Erklärung": "Für neue Artikel die Spalte ID einfach leer lassen. Das System vergibt beim Import automatisch die nächste fortlaufende Nummer (z.B. K-54, SCH-12, G-15). Wird eine bestehende ID eingetragen, wird der Datensatz aktualisiert." },
-        { "Hinweis": "4. Beträge & Zahlen", "Erklärung": "Preise als Zahl eingeben (z.B. 80 oder 63.50). Währungsangaben wie CHF oder Tausendertrennzeichen werden automatisch bereinigt." },
-        { "Hinweis": "5. Datumsformat", "Erklärung": "Kaufdatum als JJJJ-MM-TT (z.B. 2024-05-01) oder TT.MM.JJJJ (z.B. 01.05.2024) eingeben." }
+        { "Hinweis": "4. Fachbegriffe Preise", "Erklärung": "Total Einstandspreis (Material + Druck), Einstandspreis Material (Grundpreis), Einstandspreis Druck (Veredelung), Verkaufspreis gerundet (Katalogpreis), Sponsoring Beitrag (vom Verein/Sponsor getragen), Sponsor-Firma (z.B. Clientis), Endpreis für Mitglied (effektiver Rechnungsbetrag)." },
+        { "Hinweis": "5. Beträge & Zahlen", "Erklärung": "Preise als Zahl eingeben (z.B. 80 oder 63.50). Währungsangaben wie CHF oder Tausendertrennzeichen werden automatisch bereinigt." },
+        { "Hinweis": "6. Datumsformat", "Erklärung": "Kaufdatum als JJJJ-MM-TT (z.B. 2024-05-01) oder TT.MM.JJJJ (z.B. 01.05.2024) eingeben." }
     ];
     const wsGuide = XLSX.utils.json_to_sheet(guideData);
     XLSX.utils.book_append_sheet(wb, wsGuide, "Anleitung");

@@ -97,17 +97,30 @@ function renderInventoryTable() {
                  <span class="text-muted small">${bestandSortCol === 'ID' ? (bestandSortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅'}</span>
              </th>`;
 
+    const colLabels = {
+        'Grundpreis': 'Einstandspreis Material',
+        'Veredelung': 'Einstandspreis Druck',
+        'Kaufpreis': 'Total Einstandspreis',
+        'Katalogpreis': 'Verkaufspreis gerundet',
+        'Sponsoring': 'Sponsoring Beitrag',
+        'Sponsor_Firma': 'Sponsor-Firma',
+        'Verkaufspreis': 'Endpreis für Mitglied',
+        'Groesse': 'Grösse',
+        'Aktueller_Besitzer_ID': 'Besitzer'
+    };
+
     displayHeaders.forEach((h, idx) => {
         const arrow = bestandSortCol === h
             ? (bestandSortDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
-        html += `<th style="cursor:pointer;user-select:none;white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;"
+        const label = colLabels[h] || h.replace(/_/g,' ');
+        html += `<th style="cursor:pointer;user-select:none;white-space:normal;line-height:1.25;vertical-align:bottom;font-size:12px;font-weight:700;letter-spacing:0.3px;color:#475569;min-width:80px;"
                      data-sort-key="${h}" data-col-id="col_${h.toLowerCase()}"
                      onclick="sortBestand('${h}')">
-                     ${h.replace(/_/g,' ')}
+                     <span class="d-inline-block">${label}</span>
                      <span class="text-muted small">${arrow}</span>
                  </th>`;
     });
-    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;" data-col-id="col_aktionen" data-col-toggle="false">Aktionen</th></tr></thead><tbody>';
+    html += '<th class="text-center" style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#475569;white-space:normal;vertical-align:bottom;" data-col-id="col_aktionen" data-col-toggle="false">Aktionen</th></tr></thead><tbody>';
 
     html += sorted.map(row => {
         const idCell = `<td class="font-monospace fw-bold text-primary" data-col-id="col_id">${row.ID || '-'}</td>`;
@@ -239,13 +252,13 @@ function renderItemModalFields(target) {
     };
 
     const fieldLabels = {
-        "Verkaufspreis": "Verkaufspreis an Mitglied CHF",
-        "Katalogpreis": "Katalogpreis (vor Sponsoring) CHF",
-        "Sponsoring": "Sponsoring-Abzug CHF",
+        "Grundpreis": "Einstandspreis Material CHF",
+        "Veredelung": "Einstandspreis Druck CHF",
+        "Kaufpreis": "Total Einstandspreis CHF",
+        "Katalogpreis": "Verkaufspreis gerundet CHF",
+        "Sponsoring": "Sponsoring Beitrag CHF",
         "Sponsor_Firma": "Sponsor-Firma",
-        "Kaufpreis": "Einkaufspreis Verein CHF",
-        "Grundpreis": "Netto-Grundpreis CHF",
-        "Veredelung": "Netto-Veredelung CHF",
+        "Verkaufspreis": "Endpreis für Mitglied CHF",
         "Depotbetrag": "Depotbetrag / Kaution CHF"
     };
 

@@ -441,7 +441,10 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
             const recipientName = `${m.Nachname || mglMaster.LastName || ''} ${m.Vorname || mglMaster.FirstName || ''}`.trim() || 'Mitglied';
 
             const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
-            const customKontoHaben = rawKonto.split('|')[0].trim() || '3200';
+            const defaultHaben = (typeof window.getInventarDefaultHabenKonto === 'function')
+                ? window.getInventarDefaultHabenKonto('verkauf')
+                : (localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8501');
+            const customKontoHaben = (rawKonto ? rawKonto.split('|')[0].trim() : '') || defaultHaben;
 
             // Einheitlicher Datenvertrag: InvoiceOrder
             const invoiceOrder = {
@@ -490,11 +493,11 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                             || (sponsorDiscount > 0 ? Math.round(endBetrag + sponsorDiscount) : null);
 
                         if (effectiveRetail && sponsorDiscount > 0 && (effectiveRetail - sponsorDiscount === Math.round(endBetrag))) {
-                            // Variante A: Regulärer Katalogpreis + variabler Sponsoring-Abzug
+                            // Variante A: Regulärer Verkaufspreis gerundet + variabler Sponsoring-Abzug
                             const sponsorTitle = (invItem.Sponsor_Firma || invItem.sponsor_company || w.sponsorCompany || '').trim();
                             orderPositions.push({
                                 positionNr: posNr++,
-                                title: `${w.label} (Katalogpreis)`,
+                                title: `${w.label} (Verkaufspreis gerundet)`,
                                 quantity: 1,
                                 unitPrice: effectiveRetail,
                                 amount: effectiveRetail,
@@ -503,7 +506,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                             });
                             orderPositions.push({
                                 positionNr: posNr++,
-                                title: sponsorTitle ? `Sponsoringbeitrag ${sponsorTitle}` : `Sponsoringbeitrag`,
+                                title: sponsorTitle ? `Sponsoring Beitrag (${sponsorTitle})` : `Sponsoring Beitrag`,
                                 quantity: 1,
                                 unitPrice: -sponsorDiscount,
                                 amount: -sponsorDiscount,
@@ -514,7 +517,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                             // Standardposition
                             orderPositions.push({
                                 positionNr: posNr++,
-                                title: `Kleiderverkauf: ${w.label}`,
+                                title: `Materialverkauf: ${w.label}`,
                                 quantity: 1,
                                 unitPrice: endBetrag,
                                 amount: endBetrag,
