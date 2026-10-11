@@ -147,7 +147,9 @@ function mapTransaktionFromSupabase(t) {
         Sig_Vorstand: t.sig_board_url || '',
         Unterschrift_URL: t.sig_member_url || '',
         PDF_URL: t.pdf_url || '',
-        Zahlungsart: t.payment_method || '-'
+        Zahlungsart: t.payment_method || '-',
+        invoice_id: t.invoice_id || '',
+        Invoice_ID: t.invoice_id || ''
     };
 }
 
@@ -162,7 +164,9 @@ function mapPfandFromSupabase(p) {
         Datum_Einnahme: p.date_out,
         Datum_Rueckgabe: p.date_returned,
         Status: p.status || 'Offen',
-        Zahlungsart: p.payment_method || '-'
+        Zahlungsart: p.payment_method || '-',
+        invoice_id: p.invoice_id || '',
+        Invoice_ID: p.invoice_id || ''
     };
 }
 

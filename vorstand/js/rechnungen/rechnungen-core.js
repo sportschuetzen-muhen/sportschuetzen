@@ -1603,6 +1603,31 @@ window.RechnungsCore = {
       if (typeof window.renderRechnungen === 'function') window.renderRechnungen();
     }
 
+    // Fachmodul-Kopplung Inventar: Transaktionen und Depots stornieren & Gegenstände zurück ins Lager
+    try {
+      const invRow = data;
+      if (invRow && (invRow.source_module === 'inventar' || String(invoiceId).startsWith('MV-') || String(invoiceId).startsWith('DP-'))) {
+        const { data: invTx } = await supa.from('inventory_transactions').select('item_id').eq('invoice_id', invoiceId);
+        const { data: posData } = await supa.from('invoice_positions').select('source_field').eq('invoice_id', invoiceId);
+        const itemIds = new Set();
+        (invTx || []).forEach(t => { if (t.item_id) itemIds.add(String(t.item_id).trim()); });
+        (posData || []).forEach(p => { if (p.source_field) itemIds.add(String(p.source_field).trim()); });
+        if (invRow.source_id) itemIds.add(String(invRow.source_id).trim());
+
+        for (const itemId of itemIds) {
+          if (!itemId) continue;
+          await supa.from('inventory_items').update({ status: 'Im Lager', current_owner_id: null, updated_at: nowIso }).eq('id', itemId);
+        }
+        await supa.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} storniert]` }).eq('invoice_id', invoiceId);
+        await supa.from('inventory_deposits').update({ status: 'Storniert', updated_at: nowIso }).eq('invoice_id', invoiceId);
+        if (typeof window.loadInventarData === 'function') {
+          try { await window.loadInventarData(true); } catch (_) {}
+        }
+      }
+    } catch (invStornoErr) {
+      console.warn("⚠️ Fehler beim Inventar-Rollback bei Rechnungs-Storno:", invStornoErr);
+    }
+
     return { success: true, invoice: data };
   },
 

@@ -285,10 +285,12 @@ async function handleInventarSubmit(e) {
             }
 
             // 3. Pfand-Verwaltung in Supabase
+            result.depositIds = [];
             if (action === 'checkout') {
                 for (const w of warenkorb) {
                     if (parseFloat(w.pfandBetrag) > 0) {
                         const pfandId = 'P-' + Math.floor(100000 + Math.random() * 900000);
+                        result.depositIds.push(pfandId);
                         await supa.from('inventory_deposits').insert([{
                             id: pfandId,
                             member_id: parseInt(mitgliedId),
@@ -341,12 +343,12 @@ async function handleInventarSubmit(e) {
         // --- NACHBEARBEITUNG (Rechnung/Buchhaltung) ---
         let invoiceFeedback = '';
         if (action === 'verkauf') {
-            const invRes = await verarbeiteVerkaufNachbereitung(warenkorb, mitgliedId);
+            const invRes = await verarbeiteVerkaufNachbereitung(warenkorb, mitgliedId, result.transactionIds);
             if (invRes && invRes.invoiceId) {
                 invoiceFeedback = `Rechnung <strong>${invRes.invoiceId}</strong> (CHF ${Number(invRes.totalAmount).toFixed(2)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
             }
         } else if (action === 'checkout') {
-            const invRes = await verarbeitePfandRechnungen(warenkorb, mitgliedId);
+            const invRes = await verarbeitePfandRechnungen(warenkorb, mitgliedId, result.depositIds, result.transactionIds);
             if (invRes && invRes.invoiceId) {
                 invoiceFeedback = `Depot-Rechnung <strong>${invRes.invoiceId}</strong> (CHF ${Number(invRes.totalAmount).toFixed(2)}) wurde ins <strong>Modul Rechnungen</strong> übertragen (bereit für Massenversand).`;
             }
@@ -429,7 +431,7 @@ function replaceInventarMailVars(text, vars) {
 // =========================================================
 //  VERKAUF NACHBEREITUNG (Rechnung via RechnungsCore / Buchhaltung)
 // =========================================================
-async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
+async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId, txIds = []) {
     try {
         const invoiceItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Einzahlungsschein');
         const barItems = verkaufWarenkorb.filter(w => w.verkaufMethode === 'Bar');
@@ -452,11 +454,13 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                 : (localStorage.getItem('inventar_preferred_haben_konto_verkauf') || '8501');
             const customKontoHaben = (rawKonto ? rawKonto.split('|')[0].trim() : '') || defaultHaben;
 
+            const primaryTxId = (txIds && txIds[0]) ? String(txIds[0]) : null;
+
             // Einheitlicher Datenvertrag: InvoiceOrder
             const invoiceOrder = {
                 source: {
                     module: 'inventar',
-                    entityId: (invoiceItems[0] && invoiceItems[0].itemId) ? String(invoiceItems[0].itemId) : null,
+                    entityId: primaryTxId || ((invoiceItems[0] && invoiceItems[0].itemId) ? String(invoiceItems[0].itemId) : null),
                     referenceCode: `INV-VERKAUF-${new Date().getFullYear()}`
                 },
                 recipient: {
@@ -567,7 +571,20 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                 }
             }
 
-            // 2. Rechnung ins Rechnungsmodul übertragen (Bereit für Prüfung & Massenversand, KEIN Direktversand)
+            // 2. Rechnungs-ID in inventory_transactions hinterlegen (Zwei-Wege-Identifikation)
+            const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+            if (supa && txIds && txIds.length > 0) {
+                try {
+                    await supa.from('inventory_transactions')
+                        .update({ invoice_id: invoiceId })
+                        .in('id', txIds);
+                    console.log(`✅ [Inventar->Supabase] invoice_id ${invoiceId} in ${txIds.length} Transaktion(en) hinterlegt.`);
+                } catch (txLinkErr) {
+                    console.warn("⚠️ Fehler beim Hinterlegen von invoice_id in inventory_transactions:", txLinkErr);
+                }
+            }
+
+            // 3. Rechnung ins Rechnungsmodul übertragen (Bereit für Prüfung & Massenversand, KEIN Direktversand)
             console.log(`✅ [Inventar->RechnungsCore] Rechnung ${invoiceId} über CHF ${totalAmount} angelegt. Verbleibt in 'mail_status: entwurf' für Massenversand.`);
 
             // In-Memory Rechnungs-Cache invalidieren & neu laden
@@ -719,7 +736,7 @@ async function verarbeitePfandBuchhaltung(cart, action) {
 // =========================================================
 //  PFAND / DEPOT RECHNUNG GENERIEREN (via zentralem RechnungsCore)
 // =========================================================
-async function verarbeitePfandRechnungen(cart, mitgliedId) {
+async function verarbeitePfandRechnungen(cart, mitgliedId, depositIds = [], txIds = []) {
     try {
         const invoicePfandItems = cart.filter(w => w.pfandMethode === 'Einzahlungsschein' && (parseFloat(w.pfandBetrag) || 0) > 0);
         if (invoicePfandItems.length === 0) return;
@@ -737,11 +754,13 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
         const rawKonto = document.getElementById('verkauf-konto') ? document.getElementById('verkauf-konto').value.trim() : '';
         const kautionsKonto = rawKonto.split('|')[0].trim() || '2030';
 
+        const primaryTxId = (txIds && txIds[0]) ? String(txIds[0]) : null;
+
         // Typisiertes InvoiceOrder Payload
         const invoiceOrder = {
             source: {
                 module: 'inventar',
-                entityId: (invoicePfandItems[0] && invoicePfandItems[0].itemId) ? String(invoicePfandItems[0].itemId) : null,
+                entityId: primaryTxId || ((invoicePfandItems[0] && invoicePfandItems[0].itemId) ? String(invoicePfandItems[0].itemId) : null),
                 referenceCode: `DEP-${new Date().getFullYear()}`
             },
             prefix: 'DP',
@@ -807,7 +826,27 @@ async function verarbeitePfandRechnungen(cart, mitgliedId) {
             }
         }
 
-        // 2. Rechnung ins Rechnungsmodul übertragen (Bereit für Prüfung & Massenversand, KEIN Direktversand)
+        // 2. Rechnungs-ID in inventory_transactions und inventory_deposits hinterlegen (Zwei-Wege-Identifikation)
+        const supa = (typeof getInventarSupabaseClient === 'function') ? getInventarSupabaseClient() : (window.supabaseClient || null);
+        if (supa) {
+            try {
+                if (txIds && txIds.length > 0) {
+                    await supa.from('inventory_transactions')
+                        .update({ invoice_id: invoiceId })
+                        .in('id', txIds);
+                }
+                if (depositIds && depositIds.length > 0) {
+                    await supa.from('inventory_deposits')
+                        .update({ invoice_id: invoiceId })
+                        .in('id', depositIds);
+                }
+                console.log(`✅ [Inventar->Supabase] invoice_id ${invoiceId} in Transaktion(en) & Deposit(s) hinterlegt.`);
+            } catch (pfandLinkErr) {
+                console.warn("⚠️ Fehler beim Hinterlegen von invoice_id in inventory_deposits/transactions:", pfandLinkErr);
+            }
+        }
+
+        // 3. Rechnung ins Rechnungsmodul übertragen (Bereit für Prüfung & Massenversand, KEIN Direktversand)
         console.log(`✅ [Inventar->RechnungsCore] Kaution/Depot Rechnung ${invoiceId} über CHF ${totalAmount} angelegt. Verbleibt in 'mail_status: entwurf' für Massenversand.`);
 
         // In-Memory Rechnungs-Cache invalidieren & neu laden

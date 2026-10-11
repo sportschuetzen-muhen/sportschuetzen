@@ -135,6 +135,7 @@ Wird eine Rechnung im Rechnungsmodul gelöscht – entweder einzeln (`rnDeleteIn
 ### 3.3 Materialverkauf & Depot-/Kautionsrechnungen (Inventar-Anbindung)
 * **Entkopplung vom Direktversand:** Rechnungen aus dem Inventarmodul (`source_module: 'inventar'`, Typen `Materialverkauf` und `Depot / Pfand`) werden nicht direkt im Fachmodul per E-Mail versendet, sondern im Rechnungsmodul im Status `mail_status: 'entwurf'` hinterlegt.
 * **Massenversand & Einzelkontrolle:** Im Rechnungs-Cockpit erscheinen diese Belege sofort unter «Noch nicht versendet» und können gezielt nach Typ gefiltert oder gesammelt via Massenversand per E-Mail mit QR-Rechnungs-PDF versendet werden.
+* **Zwei-Wege-Rückkoppelung (`invoice_id`):** `inventory_transactions` und `inventory_deposits` speichern die vom `RechnungsCore` vergebene `invoice_id`. Bei einer Stornierung im Inventar-Journal wird die verknüpfte Rechnung physisch gelöscht (Entwurf) oder revisionssicher storniert (versendet). Umgekehrt stellt ein Löschen oder Stornieren im Rechnungsmodul punktgenau die betroffenen Bestände und Depots zurück ins Lager.
 
 ---
 

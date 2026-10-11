@@ -3350,22 +3350,36 @@ window.rnDeleteInvoicePrompt = async function(invoiceId) {
       if (isInv) {
         try {
           const { data: posData } = await sb.from('invoice_positions').select('source_field').eq('invoice_id', invoiceId);
+          const { data: invTx } = await sb.from('inventory_transactions').select('item_id').eq('invoice_id', invoiceId);
           const itemIds = new Set();
           if (inv && inv.source_id) itemIds.add(String(inv.source_id).trim());
           (posData || []).forEach(p => {
             if (p.source_field) itemIds.add(String(p.source_field).trim());
           });
+          (invTx || []).forEach(t => {
+            if (t.item_id) itemIds.add(String(t.item_id).trim());
+          });
 
           for (const itemId of itemIds) {
             if (!itemId) continue;
-            // Wenn Materialverkauf: Artikel wieder ins Lager stellen & Transaktion auf STORNO
+            // Wenn Materialverkauf: Artikel wieder ins Lager stellen
             if (!inv || inv.type === 'Materialverkauf' || !inv.type || inv.type.includes('Verkauf')) {
               await sb.from('inventory_items').update({ status: 'Im Lager', current_owner_id: null, updated_at: new Date().toISOString() }).eq('id', itemId);
-              await sb.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} gelöscht]` }).eq('item_id', itemId).eq('action', 'VERKAUF');
             }
-            // Wenn Depot / Pfand: Offenes Pfand stornieren
+          }
+
+          // Primär über invoice_id punktgenau stornieren & entkoppeln
+          await sb.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} gelöscht]`, invoice_id: null }).eq('invoice_id', invoiceId);
+          await sb.from('inventory_deposits').update({ status: 'Storniert', updated_at: new Date().toISOString(), invoice_id: null }).eq('invoice_id', invoiceId);
+
+          // Fallback für Altdaten ohne invoice_id
+          for (const itemId of itemIds) {
+            if (!itemId) continue;
+            if (!inv || inv.type === 'Materialverkauf' || !inv.type || inv.type.includes('Verkauf')) {
+              await sb.from('inventory_transactions').update({ action: 'STORNO', notes: `[STORNO - Rechnung ${invoiceId} gelöscht]` }).eq('item_id', itemId).eq('action', 'VERKAUF').is('invoice_id', null);
+            }
             if (inv && (inv.type === 'Depot / Pfand' || String(invoiceId).startsWith('DP-'))) {
-              await sb.from('inventory_deposits').update({ status: 'Storniert', updated_at: new Date().toISOString() }).eq('item_id', itemId).eq('status', 'Offen');
+              await sb.from('inventory_deposits').update({ status: 'Storniert', updated_at: new Date().toISOString() }).eq('item_id', itemId).eq('status', 'Offen').is('invoice_id', null);
             }
           }
 
