@@ -419,6 +419,17 @@ async function loadVereinTermine() {
     }
 }
 
+// Hilfsfunktion: Bild-URLs zuverlässig und host-übergreifend auflösen
+function getReportImageUrl(img) {
+    if (!img) return '';
+    if (img.startsWith('http://') || img.startsWith('https://')) return img;
+    // Auf Cloudflare Pages (*.pages.dev) oder localhost: Immer von GitHub Raw laden, damit neue Bilder SOFORT live sind!
+    if (!window.location.hostname.includes('sportschuetzen-muhen.github.io')) {
+        return `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${img}`;
+    }
+    return img;
+}
+
 // Display and render reports in the DOM
 function displayReports(reports, container) {
     // Ensure Modal exists in DOM
@@ -467,9 +478,8 @@ function displayReports(reports, container) {
         if (r.imageUrls && r.imageUrls.length > 1) {
             let galleryHtml = '<div style="margin-top: 30px; border-top: 1px solid var(--glass-border); padding-top: 20px;"><h4 style="color: var(--primary-color); margin-bottom: 15px; font-weight: 800;">Weitere Fotos</h4><div style="display:flex; gap:15px; overflow-x:auto; padding-bottom:15px;">';
             for (let i = 1; i < r.imageUrls.length; i++) {
-                const subImg = r.imageUrls[i];
-                const rawFallback = subImg.startsWith('http') ? subImg : `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${subImg}`;
-                galleryHtml += `<img src="${subImg}" onerror="if(this.src!=='${rawFallback}'){this.src='${rawFallback}';}" style="height:150px; border-radius:8px; object-fit:cover; border: 1px solid var(--glass-border); cursor:pointer; box-shadow: 0 4px 6px rgba(15,58,93,0.06);" onclick="window.open(this.src, '_blank')">`;
+                const subImg = getReportImageUrl(r.imageUrls[i]);
+                galleryHtml += `<img src="${subImg}" style="height:150px; border-radius:8px; object-fit:cover; border: 1px solid var(--glass-border); cursor:pointer; box-shadow: 0 4px 6px rgba(15,58,93,0.06);" onclick="window.open(this.src, '_blank')">`;
             }
             galleryHtml += '</div></div>';
             contentHtml += galleryHtml;
@@ -477,12 +487,11 @@ function displayReports(reports, container) {
         
         document.getElementById('news-modal-content').innerHTML = contentHtml;
         
-        const rawCoverImg = (r.imageUrls && r.imageUrls.length > 0) ? r.imageUrls[0] : (r.image || r.imageUrl);
+        const rawCover = (r.imageUrls && r.imageUrls.length > 0) ? r.imageUrls[0] : (r.image || r.imageUrl);
+        const coverImg = getReportImageUrl(rawCover);
         const imgEl = document.getElementById('news-modal-image');
-        if (rawCoverImg) {
-            const rawFallback = rawCoverImg.startsWith('http') ? rawCoverImg : `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${rawCoverImg}`;
-            // Pre-test image or direct fallback
-            imgEl.style.backgroundImage = `url('${rawCoverImg}'), url('${rawFallback}')`;
+        if (coverImg) {
+            imgEl.style.backgroundImage = `url('${coverImg}')`;
             imgEl.style.display = 'block';
         } else {
             imgEl.style.display = 'none';
@@ -515,11 +524,11 @@ function displayReports(reports, container) {
             excerpt = excerpt.substring(0, 120) + '...';
         }
 
-        const coverImgUrl = (r.imageUrls && r.imageUrls.length > 0) ? r.imageUrls[0] : (r.image || r.imageUrl);
-        const fallbackCover = (coverImgUrl && !coverImgUrl.startsWith('http')) ? `https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/${coverImgUrl}` : coverImgUrl;
+        const rawImg = (r.imageUrls && r.imageUrls.length > 0) ? r.imageUrls[0] : (r.image || r.imageUrl);
+        const coverImgUrl = getReportImageUrl(rawImg);
         
         const imgHtml = coverImgUrl 
-            ? `<div class="report-image" style="background-image: url('${coverImgUrl}'), url('${fallbackCover}'); background-size: cover; background-position: center; cursor: pointer;" onclick="window.openNewsModal(${index})"></div>`
+            ? `<div class="report-image" style="background-image: url('${coverImgUrl}'); background-size: cover; background-position: center; cursor: pointer;" onclick="window.openNewsModal(${index})"></div>`
             : `<div class="report-image" style="background: linear-gradient(45deg, #1e293b, #334155); display: flex; align-items: center; justify-content: center; font-size: 2rem; cursor: pointer;" onclick="window.openNewsModal(${index})">📰</div>`;
 
         container.innerHTML += `
@@ -543,25 +552,26 @@ async function loadReports() {
 
     try {
         let reports = null;
+        
+        // 1. Primär: Immer direkt die aktuelle Live-Quelle von GitHub abfragen (Single Source of Truth)
         try {
-            // Cache-Busting durch Timestamp
-            const response = await fetch('data/berichte.json?v=' + new Date().getTime());
-            if (response.ok) {
-                reports = await response.json();
+            const liveResponse = await fetch('https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/data/berichte.json?v=' + Date.now());
+            if (liveResponse.ok) {
+                reports = await liveResponse.json();
             }
-        } catch (fetchErr) {
-            console.warn('Lokale berichte.json nicht geladen, prüfe Live-Quelle...', fetchErr);
+        } catch (liveErr) {
+            console.warn('Live GitHub berichte.json konnte nicht abgerufen werden, prüfe lokalen Fallback...', liveErr);
         }
 
-        // Falls lokal leer oder nicht erreichbar, Live-Quelle von GitHub abfragen
+        // 2. Fallback: Lokale Datei (nur falls GitHub nicht erreichbar ist)
         if (!reports || reports.length === 0) {
             try {
-                const liveResponse = await fetch('https://raw.githubusercontent.com/sportschuetzen-muhen/website/main/data/berichte.json?v=' + new Date().getTime());
-                if (liveResponse.ok) {
-                    reports = await liveResponse.json();
+                const response = await fetch('data/berichte.json?v=' + Date.now());
+                if (response.ok) {
+                    reports = await response.json();
                 }
-            } catch (liveErr) {
-                console.warn('Live GitHub berichte.json konnte nicht abgerufen werden:', liveErr);
+            } catch (fetchErr) {
+                console.warn('Lokale berichte.json nicht verfügbar:', fetchErr);
             }
         }
         
