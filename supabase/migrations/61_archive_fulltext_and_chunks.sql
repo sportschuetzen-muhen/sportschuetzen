@@ -64,7 +64,7 @@ INSERT INTO public.system_app_configs (key, value, description, category)
 VALUES
     ('archiv_ai_model', 'qwen/qwen3.8-27b', 'Aktives LLM-Modell für den Vereins-Archiv-Assistenten (z.B. qwen/qwen3.8-27b, llama-3.3-70b-versatile)', 'archiv'),
     ('archiv_ai_endpoint', 'https://homeassistant-api.dan-hunziker73.workers.dev/groq/chat/completions', 'API-Endpunkt des Groq-LLM-Proxys', 'archiv'),
-    ('archiv_ai_token', 'ha_token_8d7f2a1b9c3e5f4a6b0d8e2f1c9a4b5d', 'Authentifizierungs-Token für den KI-Proxy', 'archiv')
+    ('archiv_ai_token', '', 'Authentifizierungs-Token für den KI-Proxy', 'archiv')
 ON CONFLICT (key) DO UPDATE SET
     description = EXCLUDED.description,
     updated_at = now();

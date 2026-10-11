@@ -1100,7 +1100,7 @@ async function reindexAllVectors(btn) {
 let archivAiConfig = {
     model: localStorage.getItem('archiv_ai_model') || 'qwen/qwen3.8-27b',
     endpoint: localStorage.getItem('archiv_ai_endpoint') || 'https://homeassistant-api.dan-hunziker73.workers.dev/groq/chat/completions',
-    token: localStorage.getItem('archiv_ai_token') || 'ha_token_8d7f2a1b9c3e5f4a6b0d8e2f1c9a4b5d'
+    token: localStorage.getItem('archiv_ai_token') || ''
 };
 
 async function loadArchivAiConfig() {

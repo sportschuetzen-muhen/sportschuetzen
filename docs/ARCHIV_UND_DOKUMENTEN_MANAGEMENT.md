@@ -69,7 +69,7 @@
 
 ### 2.4 Groq LLM API (Live-RAG für Vorstand)
 - **Proxy-Endpunkt:** `https://homeassistant-api.dan-hunziker73.workers.dev/groq/chat/completions`
-- **Authentifizierung:** `Bearer ha_token_8d7f2a1b9c3e5f4a6b0d8e2f1c9a4b5d`
+- **Authentifizierung:** `Bearer <DEIN_TOKEN>`
 - **Aktives Modell:** `qwen/qwen3.8-27b` (Der Nachfolger des dekommissionierten `qwen3.6-27b`).
 - **Performance:** Liefert Antworten in unter 1,5 Sekunden.
 
