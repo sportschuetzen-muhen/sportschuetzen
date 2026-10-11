@@ -227,8 +227,8 @@ function renderItemModalFields(target) {
                                        "Zubehoer","Spezielles","Distanz","Eigentümer_ID",
                                        "Gespendet_ID","Kauf_Spender_Jahr","Verkaeufer_ID","Kaufpreis","Depotbetrag"],
         "Inventar_Schluessel":        ["Bezeichnung","Nummer","Depotbetrag"],
-        "Inventar_Kleidung":          ["Typ","Modell","Hersteller","Groesse","Kaufdatum","Verkaufspreis","Katalogpreis","Sponsoring","Kaufpreis","Grundpreis","Veredelung","Depotbetrag"],
-        "Inventar_Schiessbekleidung": ["Typ","Modell","Hersteller","Groesse","Kaufdatum","Kaufpreis","Depotbetrag"]
+        "Inventar_Kleidung":          ["Typ","Modell","Hersteller","Groesse","Kaufdatum","Verkaufspreis","Katalogpreis","Sponsoring","Sponsor_Firma","Kaufpreis","Grundpreis","Veredelung","Depotbetrag"],
+        "Inventar_Schiessbekleidung": ["Typ","Modell","Hersteller","Groesse","Kaufdatum","Sponsor_Firma","Kaufpreis","Depotbetrag"]
     };
     const dropdownMapping = {
         "Status":      "MG_Status",
@@ -241,7 +241,8 @@ function renderItemModalFields(target) {
     const fieldLabels = {
         "Verkaufspreis": "Verkaufspreis an Mitglied CHF",
         "Katalogpreis": "Katalogpreis (vor Sponsoring) CHF",
-        "Sponsoring": "Sponsoring-Abzug (C-Ma) CHF",
+        "Sponsoring": "Sponsoring-Abzug CHF",
+        "Sponsor_Firma": "Sponsor-Firma",
         "Kaufpreis": "Einkaufspreis Verein CHF",
         "Grundpreis": "Netto-Grundpreis CHF",
         "Veredelung": "Netto-Veredelung CHF",
@@ -454,6 +455,7 @@ async function saveInventarItemModal(e) {
                 supaItem.selling_price = fields.Verkaufspreis ? parseFloat(fields.Verkaufspreis) : null;
                 supaItem.retail_price = fields.Katalogpreis ? parseFloat(fields.Katalogpreis) : (fields.Kaufpreis ? parseFloat(fields.Kaufpreis) : null);
                 supaItem.discount_amount = fields.Sponsoring ? parseFloat(fields.Sponsoring) : null;
+                supaItem.sponsor_company = fields.Sponsor_Firma ? fields.Sponsor_Firma.trim() : null;
                 supaItem.base_price = fields.Grundpreis ? parseFloat(fields.Grundpreis) : null;
                 supaItem.finishing_price = fields.Veredelung ? parseFloat(fields.Veredelung) : null;
             }

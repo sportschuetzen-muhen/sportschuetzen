@@ -100,6 +100,7 @@ function mapKleidungFromSupabase(r) {
         Kaufdatum: r.purchase_date || '',
         Katalogpreis: rawRetail,
         Sponsoring: r.discount_amount !== null && r.discount_amount !== undefined ? r.discount_amount : '',
+        Sponsor_Firma: r.sponsor_company || '',
         Verkaufspreis: r.selling_price !== null && r.selling_price !== undefined ? r.selling_price : '',
         Kaufpreis: r.purchase_price !== null && r.purchase_price !== undefined ? r.purchase_price : '',
         Grundpreis: r.base_price !== null && r.base_price !== undefined ? r.base_price : '',
@@ -118,6 +119,7 @@ function mapSchiessbekleidungFromSupabase(r) {
         Hersteller: r.manufacturer || '',
         Groesse: r.size || '',
         Kaufdatum: r.purchase_date || '',
+        Sponsor_Firma: r.sponsor_company || '',
         Kaufpreis: r.purchase_price !== null && r.purchase_price !== undefined ? r.purchase_price : '',
         Depotbetrag: r.depot_amount || 0,
         Status: r.status || 'Im Lager',
@@ -329,7 +331,7 @@ function setInventarBusy(status) {
 //  SYNC MEMBERS
 // =========================================================
 async function syncInventarMembers() {
-    alert("ℹ️ Hinweis: Das Inventar ist direkt mit der Supabase-Mitgliederdatenbank (public.members) verknüpft. Ein manueller Sync mit Google Sheets ist nicht mehr erforderlich.");
+    alert("ℹ️ Hinweis: Das Inventar ist direkt mit der zentralen Mitgliederdatenbank verknüpft. Ein manueller Sync ist nicht mehr erforderlich.");
 }
 
 // =========================================================

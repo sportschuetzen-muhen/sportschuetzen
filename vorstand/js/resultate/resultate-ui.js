@@ -52,7 +52,7 @@ async function loadResultateData(force = false) {
 
         renderUI();
         updateBackendBadge();
-        setStatus("Alles geladen (Supabase)", false);
+        setStatus("Alles geladen", false);
         return;
       }
       throw new Error("Supabase Resultate-Abfrage fehlgeschlagen");

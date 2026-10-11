@@ -73,9 +73,11 @@ function warenkorbAdd() {
         const pfandMethode = action === 'checkout' ? (pfandEin === 'Nein' ? '-' : pfandEin) : (action === 'checkin' ? pfandRet : null);
 
         let itemSponsor = 0;
+        let itemSponsorCompany = '';
         if (action === 'verkauf' && item) {
             const rawSponsor = item.Sponsoring !== undefined && item.Sponsoring !== null && item.Sponsoring !== '' ? item.Sponsoring : item.discount_amount;
             if (rawSponsor) itemSponsor = Math.round(parseFloat(rawSponsor)) || 0;
+            itemSponsorCompany = item.Sponsor_Firma || item.sponsor_company || '';
         }
 
         warenkorb.push({ itemId, kategorie, label,
@@ -85,6 +87,7 @@ function warenkorbAdd() {
                          pfandRetour: pfandRet === 'Nein' ? 'Nein' : 'Ja',
                          pfandRetourMethode: pfandRet,
                          sponsorDiscount: itemSponsor,
+                         sponsorCompany: itemSponsorCompany,
                          verkaufMethode: (action === 'verkauf' ? verkaufMethode : null) });
         renderWarenkorb();
         document.getElementById('pfand-betrag').value = '';
@@ -126,8 +129,9 @@ function renderWarenkorb() {
                         else if (action === 'checkout') methodeInfo = ` (${w.pfandMethode || 'Bar'})`;
                         else if (action === 'checkin') methodeInfo = ` (${w.pfandRetourMethode || 'Bar retour'})`;
                     }
+                    const sponsorCompanyText = w.sponsorCompany ? ` ${w.sponsorCompany}` : '';
                     const sponsorBadge = (action === 'verkauf' && w.sponsorDiscount > 0) 
-                        ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 10px;">abzgl. CHF ${w.sponsorDiscount} Sponsoring C-Ma</span>` 
+                        ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 10px;">abzgl. CHF ${w.sponsorDiscount} Sponsoring${sponsorCompanyText}</span>` 
                         : '';
                     return `
                     <tr>
@@ -354,7 +358,7 @@ async function handleInventarSubmit(e) {
 
         const alertText = invoiceFeedback 
             ? `${bookedCount} Position(en) erfolgreich erfasst. ${invoiceFeedback}`
-            : `${bookedCount} Position(en) erfolgreich erfasst (Supabase Master).`;
+            : `${bookedCount} Position(en) erfolgreich erfasst.`;
 
         showJournalConfirmationAlert(alertText);
         localStorage.setItem('inventar-activeTab', 'journal');
@@ -486,7 +490,8 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                             || (sponsorDiscount > 0 ? Math.round(endBetrag + sponsorDiscount) : null);
 
                         if (effectiveRetail && sponsorDiscount > 0 && (effectiveRetail - sponsorDiscount === Math.round(endBetrag))) {
-                            // Variante A: Regulärer Katalogpreis + Sponsoring-Abzug C-Ma Trading GmbH
+                            // Variante A: Regulärer Katalogpreis + variabler Sponsoring-Abzug
+                            const sponsorTitle = (invItem.Sponsor_Firma || invItem.sponsor_company || w.sponsorCompany || '').trim();
                             orderPositions.push({
                                 positionNr: posNr++,
                                 title: `${w.label} (Katalogpreis)`,
@@ -498,7 +503,7 @@ async function verarbeiteVerkaufNachbereitung(verkaufWarenkorb, mitgliedId) {
                             });
                             orderPositions.push({
                                 positionNr: posNr++,
-                                title: `Sponsoringbeitrag C-Ma Trading GmbH`,
+                                title: sponsorTitle ? `Sponsoringbeitrag ${sponsorTitle}` : `Sponsoringbeitrag`,
                                 quantity: 1,
                                 unitPrice: -sponsorDiscount,
                                 amount: -sponsorDiscount,

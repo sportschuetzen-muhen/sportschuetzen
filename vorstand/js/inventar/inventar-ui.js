@@ -39,11 +39,6 @@ function renderInventarUI(container) {
                     onclick="localStorage.setItem('inventar-activeTab','finanzen'); showInventarSection('finanzen')">
                 💰 Finanzen
             </button>
-            <div class="ms-auto d-flex gap-2 align-items-center">
-                <button class="btn btn-outline-info nav-btn btn-sm fw-bold" onclick="loadInventarData(true)" title="Daten frisch vom Server laden">
-                    <i class="fas fa-sync-alt me-1"></i> Neu laden
-                </button>
-            </div>
         </div>
 
         <!-- SECTION: BUCHUNG -->
@@ -210,7 +205,7 @@ function renderInventarUI(container) {
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <div>
                         <h4 class="mb-0 fw-bold text-primary"><i class="fas fa-boxes-stacked me-2"></i>Bestandsliste</h4>
-                        <small class="text-muted">Vereinsinventar, Sportgeräte & Bekleidung (Supabase)</small>
+                        <small class="text-muted">Vereinsinventar, Sportgeräte & Bekleidung</small>
                     </div>
                 </div>
 
@@ -236,8 +231,30 @@ function renderInventarUI(container) {
                             <i class="fas fa-plus me-1.5"></i> Neuer Artikel
                         </button>` : ''}
                         <button type="button" class="btn btn-sm btn-outline-success fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" onclick="openInventarExcelImportModal()" title="Inventargegenstände aus Excel oder CSV importieren">
-                            <i class="fas fa-file-excel me-1.5"></i> Excel / CSV Import
+                            <i class="fas fa-file-import me-1.5"></i> Excel-Import
                         </button>
+
+                        <!-- Excel-Export Dropdown (Alle & nach Kategorie) -->
+                        <div class="dropdown d-inline-block">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" aria-expanded="false" title="Bestand in Excel (.xlsx) exportieren">
+                                <i class="fas fa-file-excel me-1.5 text-success"></i> Excel-Export
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3">
+                                <li><a class="dropdown-item py-2" href="#" onclick="exportInventarExcel('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie (.xlsx)</a></li>
+                                <li><a class="dropdown-item py-2" href="#" onclick="exportInventarExcel('all'); return false;"><i class="fas fa-layer-group me-2 text-success"></i>Gesamtes Inventar (Alle Kategorien) (.xlsx)</a></li>
+                            </ul>
+                        </div>
+
+                        <!-- Drucken / PDF Dropdown (Alle & nach Kategorie) -->
+                        <div class="dropdown d-inline-block">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" aria-expanded="false" title="Bestand drucken oder als PDF speichern">
+                                <i class="fas fa-print me-1.5 text-dark"></i> Drucken
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3">
+                                <li><a class="dropdown-item py-2" href="#" onclick="printInventarBestand('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie drucken</a></li>
+                                <li><a class="dropdown-item py-2" href="#" onclick="printInventarBestand('all'); return false;"><i class="fas fa-layer-group me-2 text-dark"></i>Gesamtes Inventar drucken</a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 
@@ -734,8 +751,9 @@ function onGegenstandSelect() {
                         const sponsorNum = parseFloat(rawSponsor) || 0;
                         if (sponsorNum > 0) {
                             const rawKatalog = item.Katalogpreis || item.retail_price || (item.Kaufpreis ? parseFloat(item.Kaufpreis) : (preis + sponsorNum));
+                            const sponsorTitle = (item.Sponsor_Firma || item.sponsor_company || 'Sponsoring').trim();
                             sponsorHintEl.className = 'small text-danger fw-semibold mt-1 d-block';
-                            sponsorHintEl.innerHTML = `<i class="fas fa-handshake me-1"></i>Katalogpreis CHF ${parseFloat(rawKatalog).toFixed(2)} abzgl. C-Ma Sponsoring -CHF ${sponsorNum.toFixed(2)} = <strong>CHF ${preis.toFixed(2)}</strong>`;
+                            sponsorHintEl.innerHTML = `<i class="fas fa-handshake me-1"></i>Katalogpreis CHF ${parseFloat(rawKatalog).toFixed(2)} abzgl. ${escapeHtml(sponsorTitle)} -CHF ${sponsorNum.toFixed(2)} = <strong>CHF ${preis.toFixed(2)}</strong>`;
                         } else {
                             sponsorHintEl.className = 'd-none';
                         }
@@ -834,3 +852,374 @@ function showJournalConfirmationAlert(message) {
     // Ganz oben einfügen
     journalSection.insertAdjacentHTML('afterbegin', alertHtml);
 }
+
+// =========================================================
+//  INVENTAR EXPORT & PRINT ENGINE (SheetJS & Native Print)
+// =========================================================
+function formatChfNum(val) {
+    if (val === null || val === undefined || val === '') return '';
+    const n = parseFloat(val);
+    return isNaN(n) ? '' : n.toFixed(2);
+}
+
+function getCategoryExportRows(targetKey) {
+    if (!inventarState) return [];
+    const catMap = {
+        'Inventar_Kleidung': { key: 'kleidung', name: 'Vereinskleidung' },
+        'Inventar_Schluessel': { key: 'schluessel', name: 'Schlüssel' },
+        'Inventar_Gewehre': { key: 'gewehre', name: 'Gewehre' },
+        'Inventar_Schiessbekleidung': { key: 'schiessbekleidung', name: 'Schiessbekleidung' },
+        'kleidung': { key: 'kleidung', name: 'Vereinskleidung' },
+        'schluessel': { key: 'schluessel', name: 'Schlüssel' },
+        'gewehre': { key: 'gewehre', name: 'Gewehre' },
+        'schiessbekleidung': { key: 'schiessbekleidung', name: 'Schiessbekleidung' }
+    };
+    const catInfo = catMap[targetKey];
+    if (!catInfo) return [];
+    const items = inventarState[catInfo.key] || [];
+
+    if (catInfo.key === 'kleidung') {
+        return items.map(r => ({
+            'ID': r.ID || '',
+            'Typ': r.Typ || '',
+            'Modell': r.Modell || '',
+            'Hersteller': r.Hersteller || '',
+            'Grösse': r.Groesse || '',
+            'Kaufdatum': r.Kaufdatum ? formatCH(r.Kaufdatum) : '',
+            'Katalogpreis CHF': formatChfNum(r.Katalogpreis),
+            'Sponsoring CHF': formatChfNum(r.Sponsoring),
+            'Sponsor-Firma': r.Sponsor_Firma || '',
+            'Verkaufspreis CHF': formatChfNum(r.Verkaufspreis),
+            'Einkaufspreis CHF': formatChfNum(r.Kaufpreis),
+            'Grundpreis Netto CHF': formatChfNum(r.Grundpreis),
+            'Veredelung Netto CHF': formatChfNum(r.Veredelung),
+            'Depot CHF': formatChfNum(r.Depotbetrag),
+            'Status': r.Status || 'Im Lager',
+            'Aktueller Besitzer': getInventarNameFromId(r.Aktueller_Besitzer_ID)
+        }));
+    }
+    if (catInfo.key === 'schluessel') {
+        return items.map(r => ({
+            'ID': r.ID || '',
+            'Bezeichnung': r.Bezeichnung || '',
+            'Schlüsselnummer': r.Nummer || '',
+            'Depot CHF': formatChfNum(r.Depotbetrag),
+            'Status': r.Status || 'Im Lager',
+            'Aktueller Besitzer': getInventarNameFromId(r.Aktueller_Besitzer_ID)
+        }));
+    }
+    if (catInfo.key === 'gewehre') {
+        return items.map(r => ({
+            'ID': r.ID || '',
+            'Hersteller': r.Hersteller || '',
+            'Modell': r.Modell || '',
+            'Laufnummer': r.Laufnummer || '',
+            'Diopter': r.Diopter || '',
+            'Ringkorn': r.Ringkorn || '',
+            'Zubehör': r.Zubehoer || '',
+            'Spezielles': r.Spezielles || '',
+            'Distanz': r.Distanz || '',
+            'Eigentümer': getInventarNameFromId(r.Eigentümer_ID),
+            'Gespendet von': getInventarNameFromId(r.Gespendet_ID),
+            'Spender-/Kaufjahr': r.Kauf_Spender_Jahr || '',
+            'Verkäufer': getInventarNameFromId(r.Verkaeufer_ID),
+            'Kaufpreis CHF': formatChfNum(r.Kaufpreis),
+            'Depot CHF': formatChfNum(r.Depotbetrag),
+            'Status': r.Status || 'Im Lager',
+            'Aktueller Besitzer': getInventarNameFromId(r.Aktueller_Besitzer_ID)
+        }));
+    }
+    if (catInfo.key === 'schiessbekleidung') {
+        return items.map(r => ({
+            'ID': r.ID || '',
+            'Typ': r.Typ || '',
+            'Modell': r.Modell || '',
+            'Hersteller': r.Hersteller || '',
+            'Grösse': r.Groesse || '',
+            'Kaufdatum': r.Kaufdatum ? formatCH(r.Kaufdatum) : '',
+            'Sponsor-Firma': r.Sponsor_Firma || '',
+            'Einkaufspreis CHF': formatChfNum(r.Kaufpreis),
+            'Depot CHF': formatChfNum(r.Depotbetrag),
+            'Status': r.Status || 'Im Lager',
+            'Aktueller Besitzer': getInventarNameFromId(r.Aktueller_Besitzer_ID)
+        }));
+    }
+    return [];
+}
+
+window.exportInventarExcel = function(scope = 'current') {
+    if (typeof XLSX === 'undefined') {
+        alert("❌ SheetJS (XLSX) Bibliothek ist im Portal nicht verfügbar.");
+        return;
+    }
+    if (!inventarState) {
+        alert("⚠️ Keine Inventardaten geladen.");
+        return;
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const wb = XLSX.utils.book_new();
+
+    const catLabels = {
+        'Inventar_Kleidung': 'Vereinskleidung',
+        'Inventar_Schluessel': 'Schlüssel',
+        'Inventar_Gewehre': 'Gewehre',
+        'Inventar_Schiessbekleidung': 'Schiessbekleidung'
+    };
+
+    if (scope === 'current') {
+        const currentTarget = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
+        if (currentTarget === 'Personendaten') {
+            alert("ℹ️ Mitglieder-Export steht direkt im Modul «Mitglieder» zur Verfügung.");
+            return;
+        }
+        const rows = getCategoryExportRows(currentTarget);
+        if (rows.length === 0) {
+            alert("⚠️ Keine Datensätze in dieser Kategorie vorhanden.");
+            return;
+        }
+        const sheetName = (catLabels[currentTarget] || 'Bestand').slice(0, 31);
+        const ws = XLSX.utils.json_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        XLSX.writeFile(wb, `Inventar_${sheetName}_${todayStr}.xlsx`);
+    } else {
+        const categories = [
+            { key: 'Inventar_Kleidung', name: 'Vereinskleidung' },
+            { key: 'Inventar_Schluessel', name: 'Schlüssel' },
+            { key: 'Inventar_Gewehre', name: 'Gewehre' },
+            { key: 'Inventar_Schiessbekleidung', name: 'Schiessbekleidung' }
+        ];
+
+        let totalExported = 0;
+        categories.forEach(c => {
+            const rows = getCategoryExportRows(c.key);
+            if (rows.length > 0) {
+                const ws = XLSX.utils.json_to_sheet(rows);
+                XLSX.utils.book_append_sheet(wb, ws, c.name.slice(0, 31));
+                totalExported += rows.length;
+            }
+        });
+
+        if (totalExported === 0) {
+            alert("⚠️ Keine Inventargegenstände zum Exportieren vorhanden.");
+            return;
+        }
+        XLSX.writeFile(wb, `Vereinsinventar_Gesamtbestand_${todayStr}.xlsx`);
+    }
+};
+
+window.printInventarBestand = function(scope = 'current') {
+    if (!inventarState) {
+        alert("⚠️ Keine Inventardaten vorhanden.");
+        return;
+    }
+
+    const catLabels = {
+        'Inventar_Kleidung': 'Vereinskleidung',
+        'Inventar_Schluessel': 'Schlüssel',
+        'Inventar_Gewehre': 'Gewehre',
+        'Inventar_Schiessbekleidung': 'Schiessbekleidung'
+    };
+
+    const categoriesToPrint = [];
+    if (scope === 'current') {
+        const currentTarget = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
+        if (currentTarget === 'Personendaten') {
+            alert("ℹ️ Druckfunktion für Mitglieder befindet sich im Modul «Mitglieder».");
+            return;
+        }
+        categoriesToPrint.push({ key: currentTarget, label: catLabels[currentTarget] || currentTarget });
+    } else {
+        categoriesToPrint.push(
+            { key: 'Inventar_Kleidung', label: 'Vereinskleidung' },
+            { key: 'Inventar_Schluessel', label: 'Schlüssel' },
+            { key: 'Inventar_Gewehre', label: 'Gewehre' },
+            { key: 'Inventar_Schiessbekleidung', label: 'Schiessbekleidung' }
+        );
+    }
+
+    const todayDate = new Date().toLocaleDateString('de-CH');
+    const todayTime = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+
+    let sectionsHtml = '';
+    let totalItems = 0;
+    let totalLager = 0;
+    let totalAusleihe = 0;
+
+    categoriesToPrint.forEach(cat => {
+        const rows = getCategoryExportRows(cat.key);
+        if (rows.length === 0) return;
+
+        totalItems += rows.length;
+        const lagerCount = rows.filter(r => (r.Status || '').toLowerCase().includes('lager')).length;
+        const ausleiheCount = rows.filter(r => (r.Status || '').toLowerCase().includes('ausgegeben') || (r.Status || '').toLowerCase().includes('ausleihe')).length;
+        totalLager += lagerCount;
+        totalAusleihe += ausleiheCount;
+
+        const headers = Object.keys(rows[0]);
+
+        sectionsHtml += `
+            <div class="category-section mb-4">
+                <div class="section-header d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
+                    <h5 class="fw-bold mb-0 text-primary">${cat.label}</h5>
+                    <span class="badge bg-light text-dark border">${rows.length} Gegenstände (${lagerCount} im Lager, ${ausleiheCount} ausgegeben)</span>
+                </div>
+                <table class="print-table mb-4">
+                    <thead>
+                        <tr>
+                            ${headers.map(h => `<th class="${h.includes('CHF') ? 'text-end' : ''}">${h}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => `
+                            <tr>
+                                ${headers.map(h => {
+                                    const val = r[h] !== undefined && r[h] !== null ? r[h] : '';
+                                    if (h === 'Status') {
+                                        const badgeClass = String(val).toLowerCase().includes('lager') ? 'status-lager' : (String(val).toLowerCase().includes('aus') ? 'status-ausleihe' : 'status-other');
+                                        return `<td><span class="status-badge ${badgeClass}">${val}</span></td>`;
+                                    }
+                                    if (h.includes('CHF')) {
+                                        return `<td class="text-end font-monospace">${val ? (h.includes('Sponsoring') ? '-CHF ' : 'CHF ') + val : '-'}</td>`;
+                                    }
+                                    return `<td>${val || '-'}</td>`;
+                                }).join('')}
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    });
+
+    if (totalItems === 0) {
+        alert("⚠️ Keine Datensätze zum Drucken vorhanden.");
+        return;
+    }
+
+    const printWin = window.open('', '_blank', 'width=1150,height=850');
+    if (!printWin) {
+        alert("Popup-Fenster wurde vom Browser blockiert. Bitte Popups für diese Seite erlauben.");
+        return;
+    }
+
+    printWin.document.write(`
+        <!DOCTYPE html>
+        <html lang="de">
+        <head>
+            <meta charset="UTF-8">
+            <title>Inventarbestand - Sportschützen Muhen</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <style>
+                @page { size: A4 landscape; margin: 10mm; }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+                    font-size: 11px;
+                    color: #1e293b;
+                    background: #fff;
+                    padding: 10px;
+                }
+                .print-header {
+                    border-bottom: 2px solid #0f3a5d;
+                    padding-bottom: 10px;
+                    margin-bottom: 15px;
+                }
+                .print-logo-title {
+                    font-size: 1.4rem;
+                    font-weight: 800;
+                    color: #0f3a5d;
+                    letter-spacing: -0.5px;
+                }
+                .kpi-box {
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    text-align: center;
+                }
+                .kpi-box .val {
+                    font-size: 1.1rem;
+                    font-weight: 700;
+                    color: #0f3a5d;
+                }
+                .kpi-box .lbl {
+                    font-size: 10px;
+                    color: #64748b;
+                    text-transform: uppercase;
+                }
+                .print-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 10px;
+                }
+                .print-table th {
+                    background-color: #f1f5f9;
+                    color: #334155;
+                    font-weight: 700;
+                    padding: 5px 6px;
+                    border: 1px solid #cbd5e1;
+                    white-space: nowrap;
+                }
+                .print-table td {
+                    padding: 4px 6px;
+                    border: 1px solid #e2e8f0;
+                    vertical-align: middle;
+                }
+                .print-table tr:nth-child(even) td {
+                    background-color: #f8fafc;
+                }
+                .status-badge {
+                    display: inline-block;
+                    padding: 1px 6px;
+                    border-radius: 4px;
+                    font-size: 9px;
+                    font-weight: 600;
+                }
+                .status-lager { background: #dcfce7; color: #166534; }
+                .status-ausleihe { background: #fef3c7; color: #92400e; }
+                .status-other { background: #f1f5f9; color: #475569; }
+                @media print {
+                    .no-print { display: none !important; }
+                    body { padding: 0; }
+                    .category-section { page-break-inside: auto; }
+                    tr { page-break-inside: avoid; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="print-header d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="print-logo-title">Sportschützen Muhen</div>
+                    <div class="text-muted" style="font-size: 12px; font-weight: 600;">Vereinsinventar – Bestandsliste</div>
+                    <div class="text-muted" style="font-size: 10px;">Stichtag: ${todayDate} um ${todayTime} Uhr</div>
+                </div>
+                <div class="d-flex gap-2">
+                    <div class="kpi-box"><div class="val">${totalItems}</div><div class="lbl">Total Artikel</div></div>
+                    <div class="kpi-box"><div class="val text-success">${totalLager}</div><div class="lbl">Im Lager</div></div>
+                    <div class="kpi-box"><div class="val text-warning">${totalAusleihe}</div><div class="lbl">Ausgegeben</div></div>
+                </div>
+            </div>
+
+            <div class="no-print mb-3 text-end">
+                <button class="btn btn-primary btn-sm px-3 fw-bold" onclick="window.print()">
+                    🖨️ Jetzt drucken / Als PDF speichern
+                </button>
+                <button class="btn btn-outline-secondary btn-sm px-3 ms-2" onclick="window.close()">
+                    Schliessen
+                </button>
+            </div>
+
+            ${sectionsHtml}
+
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 300);
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    printWin.document.close();
+};

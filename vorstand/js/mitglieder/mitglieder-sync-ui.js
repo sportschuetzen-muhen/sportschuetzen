@@ -69,24 +69,6 @@ function mglRenderSync() {
         </div>
       </div>
 
-      <!-- Supabase Single Source of Truth Banner -->
-      <div class="alert alert-success border-success d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4 p-3 rounded-3 shadow-sm" style="background-color: #f0fdf4;">
-        <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; font-size: 1.2rem; flex-shrink: 0;">
-            <i class="fas fa-database"></i>
-          </div>
-          <div>
-            <div class="d-flex align-items-center gap-2">
-              <strong class="text-success">Master-Datenbank: Supabase PostgreSQL</strong>
-              <span class="badge bg-success text-white font-monospace" style="font-size: 0.72rem;">Single Source of Truth</span>
-            </div>
-            <p class="mb-0 text-muted small">
-              Alle Fachmodule greifen direkt auf die einheitliche PostgreSQL-Datenbank zu. Google Sheets vollständig entkoppelt.
-            </p>
-          </div>
-        </div>
-      </div>
-
       <!-- 6 System Cards Grid -->
       <div class="row g-3" id="mglSyncCardGrid">
         <!-- 1. Jahresmeisterschaft -->
@@ -95,7 +77,7 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-trophy"></i></div>
-                <span class="badge bg-light text-primary border">Supabase: jm_shooters</span>
+                <span class="badge bg-light text-primary border">Tabelle: jm_shooters</span>
               </div>
               <h5 class="fw-bold mb-1">Jahresmeisterschaft</h5>
               <p class="text-muted small mb-3">Stammdaten, Jahrgang, 6-stellige Lizenz & E-Mail für Schiessresultate.</p>
@@ -117,7 +99,7 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-globe"></i></div>
-                <span class="badge bg-light text-primary border">Supabase: contest_teams</span>
+                <span class="badge bg-light text-primary border">Tabelle: contest_teams</span>
               </div>
               <h5 class="fw-bold mb-1">Homepage / Mannschaft</h5>
               <p class="text-muted small mb-3">Aktive Schützen mit 50m-Lizenz für Homepage & Gruppenaufstellungen.</p>
@@ -139,7 +121,7 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-boxes"></i></div>
-                <span class="badge bg-light text-primary border">Supabase: inventar_items</span>
+                <span class="badge bg-light text-primary border">Tabelle: inventar_items</span>
               </div>
               <h5 class="fw-bold mb-1">Vereinsinventar</h5>
               <p class="text-muted small mb-3">Adressbuch & Ausleiher mit M-ID (Aktiv, Passiv, Verstorben, Ehemalig).</p>
@@ -161,7 +143,7 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-key"></i></div>
-                <span class="badge bg-light text-primary border">Supabase: admin_profiles</span>
+                <span class="badge bg-light text-primary border">Tabelle: admin_profiles</span>
               </div>
               <h5 class="fw-bold mb-1">Vorstand & App-Login</h5>
               <p class="text-muted small mb-3">App-Benutzer und 6-stellige PINs aus AddressNumber synchron halten.</p>
@@ -183,7 +165,7 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-calendar-check"></i></div>
-                <span class="badge bg-light text-primary border">Supabase: event_participants</span>
+                <span class="badge bg-light text-primary border">Tabelle: event_participants</span>
               </div>
               <h5 class="fw-bold mb-1">Eventplaner (RSVP)</h5>
               <p class="text-muted small mb-3">Mitgliederliste für Event-Anmeldungen, Schiessanlässe & Rückmeldungen.</p>
@@ -205,7 +187,7 @@ function mglRenderSync() {
             <div>
               <div class="d-flex justify-content-between align-items-start">
                 <div class="sync-card-icon"><i class="fas fa-users-cog"></i></div>
-                <span class="badge bg-light text-primary border">Supabase: gv_participants</span>
+                <span class="badge bg-light text-primary border">Tabelle: gv_participants</span>
               </div>
               <h5 class="fw-bold mb-1">Admin Generalversammlung</h5>
               <p class="text-muted small mb-3">Teilnehmerliste für GV-Einladungen, Wahlen & Stimmrechtsprüfung.</p>

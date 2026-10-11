@@ -11,10 +11,10 @@ function renderLoginsShell() {
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div>
         <h2 class="mb-0 fw-bold text-primary"><i class="fas fa-user-lock me-2"></i>Login- & Zugangsverwaltung</h2>
-        <small class="text-muted">Benutzerkonten, Rollenrechte & Live-Sitzungen (Supabase PostgreSQL)</small>
+        <small class="text-muted">Benutzerkonten, Rollenrechte & Live-Sitzungen</small>
       </div>
       <div class="d-flex gap-2 flex-wrap align-items-center">
-        <button class="btn btn-sm btn-outline-primary shadow-xs rounded-2 d-inline-flex align-items-center" onclick="fetchLoginsData()" id="btn-logins-reload" title="Aktuelle Daten aus Supabase neu laden">
+        <button class="btn btn-sm btn-outline-primary shadow-xs rounded-2 d-inline-flex align-items-center" onclick="fetchLoginsData()" id="btn-logins-reload" title="Aktuelle Daten neu laden">
           <i class="fas fa-sync-alt me-1.5"></i> Aktualisieren
         </button>
       </div>

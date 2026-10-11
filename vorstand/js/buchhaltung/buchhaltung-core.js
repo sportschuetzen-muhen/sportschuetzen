@@ -237,7 +237,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
       content.innerHTML = `
         <div class="text-center py-5">
           <div class="spinner-border text-primary" role="status"></div>
-          <p class="mt-2 text-muted">Lade Buchhaltungsdaten (Supabase Master)...</p>
+          <p class="mt-2 text-muted">Lade Buchhaltungsdaten...</p>
         </div>`;
     }
   }

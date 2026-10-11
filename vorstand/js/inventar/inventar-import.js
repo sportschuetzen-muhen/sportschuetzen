@@ -201,6 +201,7 @@ window.invProcessRawData = function(jsonRows) {
             else if (n === 'verkaufspreis' || n === 'vk' || n === 'mitgliederpreis' || n === 'endpreis') headerIndices.verkaufspreis = idx;
             else if (n === 'katalogpreis' || n === 'uvp' || n === 'bruttopreis') headerIndices.katalogpreis = idx;
             else if (n === 'sponsoring' || n === 'rabatt' || n === 'subvention') headerIndices.sponsoring = idx;
+            else if (n === 'sponsor' || n === 'sponsorfirma' || n === 'sponsor_firma' || n === 'firma') headerIndices.sponsor = idx;
             else if (n === 'grundpreis' || n === 'netto' || n === 'grundpreisnetto') headerIndices.grundpreis = idx;
             else if (n === 'veredelung' || n === 'veredelungskosten' || n === 'bestickung') headerIndices.veredelung = idx;
             else if (n === 'depot' || n === 'depotbetrag' || n === 'pfand' || n === 'kaution') headerIndices.depotbetrag = idx;
@@ -271,6 +272,7 @@ window.invProcessRawData = function(jsonRows) {
             selling_price: parseNum(headerIndices.verkaufspreis !== undefined ? row[headerIndices.verkaufspreis] : null),
             retail_price: parseNum(headerIndices.katalogpreis !== undefined ? row[headerIndices.katalogpreis] : null),
             discount_amount: parseNum(headerIndices.sponsoring !== undefined ? row[headerIndices.sponsoring] : null),
+            sponsor_company: (headerIndices.sponsor !== undefined && row[headerIndices.sponsor]) ? String(row[headerIndices.sponsor]).trim() : null,
             base_price: parseNum(headerIndices.grundpreis !== undefined ? row[headerIndices.grundpreis] : null),
             finishing_price: parseNum(headerIndices.veredelung !== undefined ? row[headerIndices.veredelung] : null),
             depot_amount: parseNum(headerIndices.depotbetrag !== undefined ? row[headerIndices.depotbetrag] : 0) || 0,
@@ -344,6 +346,7 @@ window.invRenderPreview = function(items, category) {
             <th class="text-end">Veredelung (CHF)</th>
             <th class="text-end">Katalog (CHF)</th>
             <th class="text-end">Sponsoring (CHF)</th>
+            <th>Sponsor</th>
             <th class="text-end">Verkauf (CHF)</th>
             <th>Status</th>
         `;
@@ -359,6 +362,7 @@ window.invRenderPreview = function(items, category) {
                 <td class="text-end font-monospace text-muted">${it.finishing_price !== null ? it.finishing_price + '.00' : '-'}</td>
                 <td class="text-end font-monospace text-muted">${it.retail_price !== null ? it.retail_price + '.00' : '-'}</td>
                 <td class="text-end font-monospace text-danger">${it.discount_amount !== null ? '-' + it.discount_amount + '.00' : '-'}</td>
+                <td>${escapeHtml(it.sponsor_company || '-')}</td>
                 <td class="text-end font-monospace fw-bold text-success">${it.selling_price !== null ? it.selling_price + '.00' : '-'}</td>
                 <td><span class="badge bg-success-subtle text-success border">${escapeHtml(it.status)}</span></td>
             </tr>
