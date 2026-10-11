@@ -204,3 +204,9 @@ vorstand/js/inventar/
 - **Storno-Aktion im Journal (`storniereInventarBuchung`):** Fehlbuchungen können von berechtigten Benutzern im Journal per Knopfdruck rückgängig gemacht werden. Dies stellt den Artikelstatus in `public.inventory_items` auf den Vorzustand zurück (z.B. zurück ins Lager), storniert offene Pfandeinträge in `public.inventory_deposits`, setzt die Transaktion in `inventory_transactions` auf `STORNO` und storniert bzw. löscht eine verknüpfte, unbezahlte Entwurfsrechnung im Rechnungsmodul. Bar-Kassenbuchungen bleiben davon unberührt.
 - **Zwei-Wege-Kopplung bei Rechnungs-Löschung (`rnDeleteInvoicePrompt`):** Löscht ein Benutzer eine Inventar- oder Depot-Rechnung im Modul Rechnungen, meldet das Rechnungsmodul dies an das Inventar zurück: Die verknüpften Artikel werden automatisch wieder auf `Im Lager` gesetzt, die Transaktion auf `STORNO` aktualisiert und offene Pfandeinträge storniert.
 
+### 5.5 Schlüssel-Bezeichnungen & Flexible Bekleidungs-Attribute (Migration 58)
+- **Feste Schlüssel-Optionen:** Schlüsselbezeichnungen sind gemäss Vorstandsbeschluss standardmässig auf exakt 5 Werte beschränkt: `allgemein`, `Wirtschaftsraum`, `Tresor 1`, `Tresor 2`, `Tresor 3`. Diese werden über `public.inventory_config` (`config_key: 'Schluessel_Bezeichnung'`) gesteuert.
+- **Datalist-Comboboxen für Bekleidung:** Für Grössen und Bekleidungstypen kommen HTML5-Datalists zum Einsatz. Benutzer können aus Standardvorschlägen wählen oder freie Werte erfassen, welche bei der Speicherung automatisch in `inventory_config` übernommen werden.
+- **Harmonisiertes Erfassungsmodal:** Das Modal `#modal-inventar-item` folgt mit Primary-Header und abgerundetem Design dem einheitlichen Vorstand-Portalstandard.
+
+

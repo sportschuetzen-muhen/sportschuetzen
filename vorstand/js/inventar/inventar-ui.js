@@ -279,9 +279,12 @@ function renderInventarUI(container) {
         <!-- MODAL: NEUER ARTIKEL / ARTIKEL BEARBEITEN -->
         <div class="modal fade" id="modal-inventar-item" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered">
-                <div class="modal-content shadow-lg border-0">
-                    <div class="modal-header bg-dark text-white">
-                        <h5 class="modal-title" id="modal-inventar-item-title"><i class="fas fa-box me-2"></i>Artikel erfassen</h5>
+                <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
+                    <div class="modal-header bg-primary text-white border-0 py-3">
+                        <div>
+                            <h5 class="modal-title fw-bold mb-0" id="modal-inventar-item-title"><i class="fas fa-box me-2"></i>Artikel erfassen</h5>
+                            <small class="text-white-50">Vereinsinventar & Sachwerte verwalten</small>
+                        </div>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
                     </div>
                     <form id="form-inventar-item" onsubmit="saveInventarItemModal(event)">
@@ -289,7 +292,7 @@ function renderInventarUI(container) {
                             <input type="hidden" id="item-modal-id" name="ID">
                             <div class="row g-3 mb-3">
                                 <div class="col-md-6">
-                                    <label class="form-label fw-bold">Kategorie</label>
+                                    <label class="form-label fw-bold small text-muted text-uppercase mb-1">Kategorie</label>
                                     <select id="item-modal-category" class="form-select" onchange="renderItemModalFields(this.value)" required>
                                         <option value="Inventar_Gewehre">🔫 Gewehr</option>
                                         <option value="Inventar_Schluessel">🔑 Schlüssel</option>
@@ -298,7 +301,7 @@ function renderInventarUI(container) {
                                     </select>
                                 </div>
                                 <div class="col-md-6" id="container-item-modal-status" style="display:none;">
-                                    <label class="form-label fw-bold">Status</label>
+                                    <label class="form-label fw-bold small text-muted text-uppercase mb-1">Status</label>
                                     <select id="item-modal-status" name="Status" class="form-select">
                                         <option value="Im Lager">Im Lager</option>
                                         <option value="Ausgegeben">Ausgegeben</option>
@@ -311,9 +314,9 @@ function renderInventarUI(container) {
                             <hr class="my-3 text-muted">
                             <div id="item-modal-fields" class="row"></div>
                         </div>
-                        <div class="modal-footer bg-light border-0">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                            <button type="submit" class="btn btn-primary fw-bold" id="btn-item-modal-save">
+                        <div class="modal-footer bg-light border-0 py-3">
+                            <button type="button" class="btn btn-outline-secondary rounded-2" data-bs-dismiss="modal">Abbrechen</button>
+                            <button type="submit" class="btn btn-primary fw-bold rounded-2 px-4 shadow-sm" id="btn-item-modal-save">
                                 <i class="fas fa-save me-1"></i> Speichern
                             </button>
                         </div>

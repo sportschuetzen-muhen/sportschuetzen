@@ -193,12 +193,31 @@ function renderItemModalFields(target) {
                 </select></div>`;
         }
         if (dropdownMapping[field]) {
-            const options = (inventarState.config||[])
-                .map(c=>c[dropdownMapping[field]]).filter(v=>v)
-                .map(v=>`<option value="${v}">${v}</option>`).join('');
+            let optionsList = (inventarState.config||[])
+                .map(c=>c[dropdownMapping[field]]).filter(v=>v);
+
+            // Schlüssel: Exakte Vorgabe gemäss Vorstand ('allgemein', 'Wirtschaftsraum', 'Tresor 1', 'Tresor 2', 'Tresor 3')
+            if (target === 'Inventar_Schluessel' && field === 'Bezeichnung') {
+                const standardKeys = ['allgemein', 'Wirtschaftsraum', 'Tresor 1', 'Tresor 2', 'Tresor 3'];
+                optionsList = standardKeys;
+            }
+
+            const options = optionsList.map(v=>`<option value="${v}">${v}</option>`).join('');
+
+            // Kleidung / Schiessbekleidung: Grössen und Typen flexibel via Datalist (Auswahl oder Freitext)
+            if (field === 'Groesse' || field === 'Typ') {
+                return `<div class="col-md-6 mb-3">
+                    <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
+                    <input type="text" name="${field}" list="datalist-${field}" class="form-control form-control-sm" placeholder="Auswählen oder eingeben..." autocomplete="off">
+                    <datalist id="datalist-${field}">
+                        ${options}
+                    </datalist>
+                </div>`;
+            }
+
             return `<div class="col-md-6 mb-3">
                 <label class="form-label fw-bold small mb-1">${field.replace(/_/g,' ')}</label>
-                <select name="${field}" class="form-select form-select-sm">
+                <select name="${field}" class="form-select form-select-sm" ${field === 'Bezeichnung' ? 'required' : ''}>
                     <option value="">-- wählen --</option>${options}
                 </select></div>`;
         }
@@ -255,7 +274,15 @@ function editInventarItem(targetSheet, id) {
     if (form) {
         Object.keys(data).forEach(key => {
             const input = form.querySelector(`[name="${key}"]`);
-            if (input) input.value = data[key];
+            if (input) {
+                if (input.tagName === 'SELECT' && data[key] && !Array.from(input.options).some(o => o.value === String(data[key]))) {
+                    const opt = document.createElement('option');
+                    opt.value = data[key];
+                    opt.textContent = data[key];
+                    input.appendChild(opt);
+                }
+                input.value = data[key];
+            }
         });
     }
 
@@ -356,6 +383,35 @@ async function saveInventarItemModal(e) {
                 .upsert(supaItem, { onConflict: 'id' });
 
             if (saveErr) throw new Error("Supabase Speicherfehler: " + saveErr.message);
+
+            // Falls neuer Kleidungstyp oder neue Grösse erfasst wurde, in inventory_config abspeichern
+            if ((category === 'kleidung' || category === 'schiessbekleidung') && supa) {
+                try {
+                    if (fields.Typ && fields.Typ.trim()) {
+                        const typKey = category === 'schiessbekleidung' ? 'Schiessbekleidung_Typ' : 'Kleidung_Typ';
+                        const knownTypes = (inventarState?.config || []).map(c => c[typKey]).filter(Boolean);
+                        if (!knownTypes.includes(fields.Typ.trim())) {
+                            await supa.from('inventory_config').insert([{
+                                config_key: typKey,
+                                value: fields.Typ.trim(),
+                                sort_order: knownTypes.length + 1
+                            }]);
+                        }
+                    }
+                    if (fields.Groesse && fields.Groesse.trim()) {
+                        const knownSizes = (inventarState?.config || []).map(c => c['Kleidung_Schiessbekleidung_Groesse']).filter(Boolean);
+                        if (!knownSizes.includes(fields.Groesse.trim())) {
+                            await supa.from('inventory_config').insert([{
+                                config_key: 'Kleidung_Schiessbekleidung_Groesse',
+                                value: fields.Groesse.trim(),
+                                sort_order: knownSizes.length + 1
+                            }]);
+                        }
+                    }
+                } catch (confErr) {
+                    console.warn("Warnung beim Speichern neuer Typ/Grösse-Konfiguration:", confErr);
+                }
+            }
 
             // Revisions-Auditlog eintragen
             await supa.from('inventory_audit_log').insert([{
