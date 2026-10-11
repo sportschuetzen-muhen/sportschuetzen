@@ -390,12 +390,13 @@
                         if (activeFolder === 'chronik' && doc.category !== 'chronik') return false;
                     }
 
-                    // Suche
+                    // Suche (Titel, Beschreibung, Jahr & Volltext)
                     if (query) {
                         const matchTitle = (doc.title || '').toLowerCase().includes(query);
                         const matchDesc = (doc.description || '').toLowerCase().includes(query);
                         const matchYear = doc.year ? String(doc.year).includes(query) : false;
-                        if (!matchTitle && !matchDesc && !matchYear) return false;
+                        const matchContent = (doc.content_text || '').toLowerCase().includes(query);
+                        if (!matchTitle && !matchDesc && !matchYear && !matchContent) return false;
                     }
                     return true;
                 });
@@ -444,6 +445,22 @@
                     const yearBadge = doc.year ? `${doc.year}` : '';
                     const catLabel = catLabels[doc.category] || doc.category;
 
+                    // Textauszug anzeigen, falls Suchbegriff im transkribierten Volltext vorkommt
+                    let snippetHtml = '';
+                    if (query && doc.content_text && doc.content_text.toLowerCase().includes(query)) {
+                        const lowText = doc.content_text.toLowerCase();
+                        const idx = lowText.indexOf(query);
+                        const start = Math.max(0, idx - 35);
+                        const end = Math.min(doc.content_text.length, idx + query.length + 65);
+                        const snip = doc.content_text.substring(start, end).replace(/[\r\n]+/g, ' ').trim();
+                        snippetHtml = `
+                            <div style="font-size: 0.8rem; background: rgba(15, 60, 92, 0.04); padding: 6px 10px; border-radius: 8px; margin: 0.5rem 0 0.85rem; border-left: 3px solid var(--primary-color); color: var(--text-color); line-height: 1.4;">
+                                <strong style="color: var(--primary-color); font-size: 0.72rem; display: block; margin-bottom: 2px;">🔍 Gefundene Textstelle:</strong>
+                                <em>«...${snip}...»</em>
+                            </div>
+                        `;
+                    }
+
                     return `
                         <div class="doc-card">
                             <div>
@@ -458,11 +475,12 @@
                                 <h4 style="margin: 0 0 0.4rem; color: var(--primary-color); font-size: 1.05rem; line-height: 1.35;">
                                     ${doc.title}
                                 </h4>
-                                <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.25rem;">
+                                <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.4rem;">
                                     ${doc.description || ''}
                                 </p>
+                                ${snippetHtml}
                             </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 0.75rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--glass-border); padding-top: 0.75rem; margin-top: 0.5rem;">
                                 <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">${sizeBadge}</span>
                                 <a href="${doc.file_url}" target="_blank" rel="noopener" class="btn btn-outline" style="padding: 0.45rem 1rem; font-size: 0.85rem; border-radius: 20px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem;">
                                     <span>📥</span> <span>Öffnen</span>

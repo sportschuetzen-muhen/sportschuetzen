@@ -125,13 +125,18 @@ function initArchiv() {
                                         <span class="position-absolute bottom-0 end-0 bg-success border border-white border-2 rounded-circle" style="width: 12px; height: 12px;"></span>
                                     </div>
                                     <div>
-                                        <h6 class="mb-0 fw-bold">Vereins-Archivar (Groq Qwen 3.6 27B & Paperless RAG)</h6>
-                                        <small class="opacity-75">Volltext & KI-Suche in allen GV- & Vorstandsprotokollen</small>
+                                        <h6 class="mb-0 fw-bold" id="archiv-ai-header-title">Vereins-Archivar (Groq & Supabase RAG)</h6>
+                                        <small class="opacity-75" id="archiv-ai-header-subtitle">Volltext & KI-Suche in allen GV- & Vorstandsprotokollen</small>
                                     </div>
                                 </div>
-                                <button class="btn btn-sm btn-link text-white opacity-75 hover-opacity-100 text-decoration-none" onclick="clearChat()">
-                                    <i class="fas fa-trash-alt me-1"></i> Verlauf leeren
-                                </button>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button class="btn btn-sm btn-outline-light rounded-pill px-3 py-1 fs-8 text-white border-white-50" onclick="openArchivAiSettingsModal()" title="KI-Modell & Endpunkt anpassen">
+                                        <i class="fas fa-cog me-1"></i> <span id="archiv-model-badge">qwen3.8-27b</span>
+                                    </button>
+                                    <button class="btn btn-sm btn-link text-white opacity-75 hover-opacity-100 text-decoration-none" onclick="clearChat()">
+                                        <i class="fas fa-trash-alt me-1"></i> Verlauf leeren
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Chat Messages Area -->
@@ -141,8 +146,9 @@ function initArchiv() {
                                         <i class="fas fa-robot fa-xs"></i>
                                     </div>
                                     <div class="msg-bubble p-3 rounded-4 shadow-sm" style="background: white; border: 1px solid var(--border); max-width: 85%; border-top-left-radius: 4px;">
-                                        <p class="mb-0 small fw-medium">Grüezi! Ich bin euer intelligenter KI-Archiv-Assistent. Ich durchsuche alle eingelesenen Protokolle und Dokumente mit <strong>Groq Qwen 3.6 27B</strong>.</p>
+                                        <p class="mb-0 small fw-medium">Grüezi! Ich bin euer intelligenter KI-Archiv-Assistent. Ich durchsuche alle eingelesenen Protokolle und Dokumente mit <strong>Groq & Supabase Hybrid-RAG</strong>.</p>
                                         <hr class="my-2 opacity-25">
+
                                         <p class="mb-0 small text-muted"><strong>Tipp:</strong> Stelle eine Frage zu Beschlüssen, Personen, Jahreszahlen oder Verträgen des Vereins.</p>
                                     </div>
                                 </div>
@@ -174,6 +180,7 @@ function initArchiv() {
 
     // Standard-Tab laden (Google Drive)
     switchArchivTab('gdrive');
+    loadArchivAiConfig();
 }
 
 // === TAB SWITCHER & GOOGLE DRIVE VIEWER LOGIK ===
@@ -380,11 +387,15 @@ async function sendUserMessage() {
     input.disabled = true;
     sendBtn.disabled = true;
 
-    try {
-        // 3. API Fetch an den Cloudflare Worker
+        // 3. API Fetch an den Cloudflare Worker (mit dynamischer Modell- & Proxy-Konfiguration)
         const res = await apiFetch('archiv', { action: 'ask' }, {
             method: 'POST',
-            body: JSON.stringify({ question: question })
+            body: JSON.stringify({ 
+                question: question,
+                model: archivAiConfig.model,
+                endpoint: archivAiConfig.endpoint,
+                token: archivAiConfig.token
+            })
         });
 
         const data = await res.json();
@@ -1082,5 +1093,220 @@ async function reindexAllVectors(btn) {
     }
 }
 
+// ==============================================================================
+// DYNAMISCHE KI-MODELL- & ENDPUNKT-KONFIGURATION
+// Ermöglicht den schnellen Wechsel des Modells (z.B. qwen3.8-27b, llama-3.3-70b)
+// ==============================================================================
+let archivAiConfig = {
+    model: localStorage.getItem('archiv_ai_model') || 'qwen/qwen3.8-27b',
+    endpoint: localStorage.getItem('archiv_ai_endpoint') || 'https://homeassistant-api.dan-hunziker73.workers.dev/groq/chat/completions',
+    token: localStorage.getItem('archiv_ai_token') || 'ha_token_8d7f2a1b9c3e5f4a6b0d8e2f1c9a4b5d'
+};
+
+async function loadArchivAiConfig() {
+    try {
+        const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+        const res = await fetch(`${SUPABASE_REST_URL}/system_app_configs?category=eq.archiv&select=key,value`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+
+        if (res.ok) {
+            const configs = await res.json();
+            if (Array.isArray(configs) && configs.length > 0) {
+                configs.forEach(c => {
+                    if (c.key === 'archiv_ai_model' && c.value) {
+                        archivAiConfig.model = c.value;
+                        localStorage.setItem('archiv_ai_model', c.value);
+                    }
+                    if (c.key === 'archiv_ai_endpoint' && c.value) {
+                        archivAiConfig.endpoint = c.value;
+                        localStorage.setItem('archiv_ai_endpoint', c.value);
+                    }
+                    if (c.key === 'archiv_ai_token' && c.value) {
+                        archivAiConfig.token = c.value;
+                        localStorage.setItem('archiv_ai_token', c.value);
+                    }
+                });
+            }
+        }
+    } catch (err) {
+        console.warn('Archiv AI Config aus Supabase nicht geladen, verwende lokalen Cache:', err);
+    }
+    updateArchivAiHeaderBadge();
+}
+
+function updateArchivAiHeaderBadge() {
+    const badge = document.getElementById('archiv-model-badge');
+    const headerTitle = document.getElementById('archiv-ai-header-title');
+    const shortName = archivAiConfig.model.split('/').pop();
+    if (badge) {
+        badge.innerText = shortName;
+    }
+    if (headerTitle) {
+        headerTitle.innerText = `Vereins-Archivar (${shortName} & Hybrid-RAG)`;
+    }
+}
+
+function openArchivAiSettingsModal() {
+    let modalEl = document.getElementById('archiv-ai-settings-modal');
+    if (!modalEl) {
+        const modalHtml = `
+            <div class="modal fade" id="archiv-ai-settings-modal" tabindex="-1" aria-labelledby="archivAiSettingsModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 shadow-lg" style="border-radius: 16px;">
+                        <div class="modal-header bg-light border-bottom">
+                            <h5 class="modal-title fw-bold" id="archivAiSettingsModalLabel">
+                                <i class="fas fa-sliders-h text-primary me-2"></i>KI-Archiv-Konfiguration
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <p class="small text-muted mb-3">
+                                Hier kannst du das aktive Sprachmodell und den API-Proxy jederzeit anpassen, ohne den Programmcode zu ändern.
+                            </p>
+
+                            <!-- PRESETS -->
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-muted mb-1">Empfohlene Modelle (1-Klick-Schnellwahl):</label>
+                                <div class="d-flex flex-wrap gap-1">
+                                    <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-1 px-2.5 fs-8" onclick="applyArchivModelPreset('qwen/qwen3.8-27b')">
+                                        ⚡ Qwen 3.8 27B (Groq)
+                                    </button>
+                                    <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-1 px-2.5 fs-8" onclick="applyArchivModelPreset('openai/gpt-oss-120b')">
+                                        🧠 GPT-OSS 120B (Groq)
+                                    </button>
+                                    <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill py-1 px-2.5 fs-8" onclick="applyArchivLocalOllamaPreset()">
+                                        🏠 Lokales Ollama (GTX 1070)
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="archiv-cfg-model" class="form-label small fw-bold">Modell-Name (ID):</label>
+                                <input type="text" class="form-control font-monospace fs-8" id="archiv-cfg-model" placeholder="z. B. qwen/qwen3.8-27b">
+                                <div class="form-text small">Aktiver Modell-Identifier auf Groq oder im lokalen LLM.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="archiv-cfg-endpoint" class="form-label small fw-bold">API-Endpunkt (Chat-Proxy):</label>
+                                <input type="text" class="form-control font-monospace fs-8" id="archiv-cfg-endpoint" placeholder="https://homeassistant-api.dan-hunziker73.workers.dev/groq/chat/completions">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="archiv-cfg-token" class="form-label small fw-bold">Proxy Bearer-Token:</label>
+                                <input type="password" class="form-control font-monospace fs-8" id="archiv-cfg-token" placeholder="Bearer Token">
+                            </div>
+                        </div>
+                        <div class="modal-footer bg-light border-top">
+                            <button type="button" class="btn btn-sm btn-outline-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+                            <button type="button" class="btn btn-sm btn-primary px-4 fw-bold" onclick="saveArchivAiSettingsFromModal()">
+                                <i class="fas fa-check me-1"></i> Speichern & Aktivieren
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('archiv-ai-settings-modal');
+    }
+
+    // Werte füllen
+    document.getElementById('archiv-cfg-model').value = archivAiConfig.model;
+    document.getElementById('archiv-cfg-endpoint').value = archivAiConfig.endpoint;
+    document.getElementById('archiv-cfg-token').value = archivAiConfig.token;
+
+    if (window.bootstrap && window.bootstrap.Modal) {
+        const modalInstance = new bootstrap.Modal(modalEl);
+        modalInstance.show();
+    } else {
+        modalEl.style.display = 'block';
+        modalEl.classList.add('show');
+    }
+}
+
+function applyArchivModelPreset(modelName) {
+    const input = document.getElementById('archiv-cfg-model');
+    if (input) input.value = modelName;
+    const ep = document.getElementById('archiv-cfg-endpoint');
+    if (ep && ep.value.includes(':11434')) {
+        ep.value = 'https://homeassistant-api.dan-hunziker73.workers.dev/groq/chat/completions';
+    }
+}
+
+function applyArchivLocalOllamaPreset() {
+    const input = document.getElementById('archiv-cfg-model');
+    const ep = document.getElementById('archiv-cfg-endpoint');
+    if (input) input.value = 'qwen2.5:7b';
+    if (ep) ep.value = 'http://192.168.68.56:11434/api/generate';
+}
+
+async function saveArchivAiSettingsFromModal() {
+    const newModel = document.getElementById('archiv-cfg-model').value.trim();
+    const newEndpoint = document.getElementById('archiv-cfg-endpoint').value.trim();
+    const newToken = document.getElementById('archiv-cfg-token').value.trim();
+
+    if (!newModel || !newEndpoint) {
+        if (typeof showError === 'function') showError('Modell-Name und Endpunkt dürfen nicht leer sein.');
+        return;
+    }
+
+    archivAiConfig.model = newModel;
+    archivAiConfig.endpoint = newEndpoint;
+    archivAiConfig.token = newToken;
+
+    localStorage.setItem('archiv_ai_model', newModel);
+    localStorage.setItem('archiv_ai_endpoint', newEndpoint);
+    localStorage.setItem('archiv_ai_token', newToken);
+
+    try {
+        const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+        await fetch(`${SUPABASE_REST_URL}/system_app_configs?key=eq.archiv_ai_model`, {
+            method: 'PATCH',
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: newModel, updated_at: new Date().toISOString() })
+        });
+        await fetch(`${SUPABASE_REST_URL}/system_app_configs?key=eq.archiv_ai_endpoint`, {
+            method: 'PATCH',
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: newEndpoint, updated_at: new Date().toISOString() })
+        });
+        await fetch(`${SUPABASE_REST_URL}/system_app_configs?key=eq.archiv_ai_token`, {
+            method: 'PATCH',
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: newToken, updated_at: new Date().toISOString() })
+        });
+    } catch (e) {
+        console.warn('Sync zu Supabase Fehlgeschlagen (lokal gespeichert):', e);
+    }
+
+    updateArchivAiHeaderBadge();
+
+    const modalEl = document.getElementById('archiv-ai-settings-modal');
+    if (modalEl) {
+        if (window.bootstrap && window.bootstrap.Modal) {
+            const inst = bootstrap.Modal.getInstance(modalEl);
+            if (inst) inst.hide();
+        } else {
+            modalEl.style.display = 'none';
+        }
+    }
+
+    if (typeof showSuccess === 'function') {
+        showSuccess(`KI-Modell erfolgreich auf '${newModel.split('/').pop()}' aktualisiert!`);
+    }
+}
+
 // Global für navTo verfügbar machen
 window.initArchiv = initArchiv;
+window.openArchivAiSettingsModal = openArchivAiSettingsModal;
+window.applyArchivModelPreset = applyArchivModelPreset;
+window.applyArchivLocalOllamaPreset = applyArchivLocalOllamaPreset;
+window.saveArchivAiSettingsFromModal = saveArchivAiSettingsFromModal;
