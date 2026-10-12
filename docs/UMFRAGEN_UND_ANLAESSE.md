@@ -198,15 +198,14 @@ Die optimale Lösung ist ein **gestuftes 3-Ebenen-Modell**:
    * Jede Anmeldung behält das vertraute Muster: **Zusage / Absage / Begleitpersonen / Abmeldegrund**.
    * Auf dem Smartphone bleibt die Rückmeldung für Standard-Anlässe eine **1-Klick-Aktion**.
 
-2. **Ebene 2 – Vordefinierte Fach-Vorlagen (Templates):**
-   * Statt jedes Formular von Grund auf neu zu bauen, wählt der Vorstand aus einsatzbereiten Templates:
-     * **Vorlage «Helfer & Festwirtschaft»:** Schichten, Ressorts (Küche, Stand, Aufbau), Stunden.
-     * **Vorlage «Vereinsausflug / Jubiläum»:** Menüwahl, Transport/Fahrgemeinschaft, Übernachtung.
-     * **Vorlage «Feedback / Umfrage»:** Zufriedenheit, offene Textvorschläge.
-     * **Vorlage «Auswärtiges Gruppenschiessen»:** Terminauswahl mit Mehrfachauswahl und automatischer 5er-Teambildung.
+2. **Ebene 2 – Schützenspezifische Fach-Vorlagen (Domänen-Workflows):**
+   * **Auswärtiges Gruppenschiessen:** Terminauswahl mit Mehrfachauswahl (Poll-Slots) und automatischer 5er-Teambildung.
+   * **Generalversammlung (GV):** Abmeldefristen, Menüauswahl (Fleisch / Vegi) für den Wirt und Verknüpfung zu Traktanden & Stimmberechtigung.
+   * *(Hinweis: Helfer- & Festwirtschaftsplanung wird getrennt über das Modul **«Anlässe & Controlling»** via `events`, `event_shifts` und `event_items` gelöst. Ein separates Feedback-/Umfrage-Template entfällt, da Meinungsbilder bei Bedarf direkt über Ebene 3 abgebildet werden).*
 
-3. **Ebene 3 – Freie Zusatzfragen (Der Formularbaukasten):**
-   * Über das JSONB-Feld `questions_schema` kann der Vorstand jede Vorlage um **beliebig viele individuelle Zusatzfragen** ergänzen (z. B. «Bringst du einen Salat oder Kuchen mit?», «Welche T-Shirt-Grösse benötigst du?»).
+3. **Ebene 3 – Freie Zusatzfragen (Der Formularbaukasten via JSONB `questions_schema`):**
+   * Über das JSONB-Feld `questions_schema` kann der Vorstand zu jedem Event **beliebig viele individuelle Zusatzfragen** konfigurieren (z. B. «Bringst du einen Salat oder Kuchen mit?», «T-Shirt-Grösse», «Fahrgemeinschaft»).
+   * 100 % dynamisch ohne Programmieraufwand oder SQL-Migrationen.
 
 ### Warum dieser Weg der beste ist:
 * Er kombiniert die **Flexibilität eines Formularbaukastens** mit der **hohen Usability und Schnelligkeit** der bestehenden Schützen-App.
