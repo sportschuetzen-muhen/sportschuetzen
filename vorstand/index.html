@@ -19,10 +19,12 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.6/piexif.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 
     <!-- OneSignal Integration -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
@@ -1101,25 +1103,21 @@
                             <!-- Wird dynamisch gefüllt -->
                             <option value="current">Jahresmeisterschaft (aktuell)</option>
                         </select>
-                        <button class="btn btn-sm btn-outline-primary write-protected" onclick="migrateJMFromGoogleSheets()" title="Daten aus Google Sheets nach Supabase importieren">
-                            <i class="fas fa-file-import me-1"></i> Google Sheets Import
+                        <button class="btn btn-sm btn-outline-success write-protected" onclick="openJMImportModal()" title="Resultate aus Excel oder CSV importieren">
+                            <i class="fas fa-file-import me-1"></i> Resultate importieren
                         </button>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
                                 ⚙️ Aktionen
                             </button>
                             <ul class="dropdown-menu" id="jm-actions-menu">
-                                <li><a class="dropdown-item text-primary fw-semibold" href="#" onclick="migrateJMFromGoogleSheets()"><i class="fas fa-file-import me-2"></i>Aus Google Sheet importieren</a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereKantonalstichDaten', 'Kantonalstich importieren')">Import: Kantonalstich</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVerbandsschiessendaten', 'Verbandsschiessen importieren')">Import: Verband</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVereinswettschiessendaten', 'Vereinswettschiessen importieren')">Import: Vereinswettschiessen</a></li>
+                                <li><a class="dropdown-item text-success fw-semibold" href="#" onclick="openJMImportModal()"><i class="fas fa-file-import me-2"></i>Resultate importieren...</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')">Archivieren (Aktuelles Jahr)</a></li>
                                 <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')">Neues Jahr (Nullen)</a></li>
                             </ul>
                         </div>
-                        <button class="btn btn-sm btn-success write-protected" onclick="saveJahresmeisterschaftData()">
+                        <button id="btn-save-jm" class="btn btn-sm btn-success write-protected" onclick="saveJahresmeisterschaftData()">
                             💾 Speichern
                         </button>
                     </div>
@@ -1711,6 +1709,166 @@
     </div>
 </div>
 
+<!-- Jahresmeisterschaft Resultate Import Modal -->
+<div class="modal fade" id="jm-import-modal" tabindex="-1" aria-labelledby="jmImportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content border-0 rounded-4 shadow">
+            <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                <h5 class="modal-title fw-bold" id="jmImportModalLabel">
+                    <i class="fas fa-file-excel me-2 text-success"></i>Resultate importieren (Jahresmeisterschaft)
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted small mb-4">
+                    Wähle den passenden Wettkampf aus und lade das offizielle Resultatsblatt (Excel <code>.xlsx</code> / <code>.xls</code> oder <code>.csv</code>) hoch. 
+                    Das System erkennt die Schützen via Lizenznummer oder Name, überträgt die Punkte, ermittelt automatisch die besten 4 Mannschaftsrunden sowie die 2 besten Auswärtigen und berechnet die Totals in % neu.
+                </p>
+
+                <!-- 5 Kacheln für Resultate-Import -->
+                <div class="row g-3 mb-4">
+                    <!-- 1. Vereinswettschiessen -->
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #0d6efd; cursor: pointer;"
+                             onclick="document.getElementById('importFileVerein').click()">
+                            <input type="file" id="importFileVerein" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
+                                   onchange="jmHandleFileUpload(this.files[0], 'verein')">
+                            <i class="fas fa-trophy fa-2x mb-2 text-primary"></i>
+                            <h6 class="fw-bold mb-1">Vereinswettschiessen</h6>
+                            <span class="text-muted small" style="font-size: 11px;">AGSV-Blatt (.xlsx/.csv)<br>Ziel: Spalte 8</span>
+                            <div class="btn btn-sm btn-outline-primary mt-3 w-100">Datei wählen</div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Verbandsschiessen -->
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #198754; cursor: pointer;"
+                             onclick="document.getElementById('importFileVerband').click()">
+                            <input type="file" id="importFileVerband" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
+                                   onchange="jmHandleFileUpload(this.files[0], 'verband')">
+                            <i class="fas fa-medal fa-2x mb-2 text-success"></i>
+                            <h6 class="fw-bold mb-1">Verbandsschiessen</h6>
+                            <span class="text-muted small" style="font-size: 11px;">AGSV-Blatt (.xlsx/.csv)<br>Ziel: Spalte 6</span>
+                            <div class="btn btn-sm btn-outline-success mt-3 w-100">Datei wählen</div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Kantonalstich -->
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #fd7e14; cursor: pointer;"
+                             onclick="document.getElementById('importFileKantonal').click()">
+                            <input type="file" id="importFileKantonal" class="d-none" accept=".csv,.xlsx,.xls"
+                                   onchange="jmHandleFileUpload(this.files[0], 'kantonal')">
+                            <i class="fas fa-bullseye fa-2x mb-2 text-warning"></i>
+                            <h6 class="fw-bold mb-1">Kantonalstich</h6>
+                            <span class="text-muted small" style="font-size: 11px;">CSV-Export (.csv/.xlsx)<br>Ziel: Spalte 7</span>
+                            <div class="btn btn-sm btn-outline-warning mt-3 w-100 text-dark fw-semibold">Datei wählen</div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Mannschaft -->
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #6f42c1;">
+                            <input type="file" id="importFileMannschaft" class="d-none" accept=".xlsx,.xls,.csv"
+                                   onchange="jmHandleFileUpload(this.files[0], 'mannschaft')">
+                            <i class="fas fa-users fa-2x mb-2 text-purple" style="color: #6f42c1;"></i>
+                            <h6 class="fw-bold mb-1">Mannschaft</h6>
+                            <div class="my-2">
+                                <label for="jm-mannschaft-round-select" class="form-label small text-muted mb-0" style="font-size: 11px;">Runde (1–7):</label>
+                                <select id="jm-mannschaft-round-select" class="form-select form-select-sm text-center mx-auto" style="width: auto;">
+                                    <option value="1">Runde 1</option>
+                                    <option value="2">Runde 2</option>
+                                    <option value="3">Runde 3</option>
+                                    <option value="4">Runde 4</option>
+                                    <option value="5">Runde 5</option>
+                                    <option value="6">Runde 6</option>
+                                    <option value="7">Runde 7</option>
+                                </select>
+                            </div>
+                            <span class="text-muted small" style="font-size: 11px;">Ermittelt Top 4 automatisch!</span>
+                            <div class="btn btn-sm btn-outline-secondary mt-2 w-100" onclick="document.getElementById('importFileMannschaft').click()">Datei wählen</div>
+                        </div>
+                    </div>
+
+                    <!-- 5. Auswärtiges Schiessen / Standblatt (Foto oder PDF mit KI) -->
+                    <div class="col-12 col-sm-6 col-xl">
+                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #dc3545; cursor: pointer;"
+                             onclick="document.getElementById('importFileAuswaertig').click()">
+                            <input type="file" id="importFileAuswaertig" class="d-none" accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.csv,.xlsx,.xls"
+                                   onchange="jmHandleFileUpload(this.files[0], 'auswaertig')">
+                            <i class="fas fa-camera-retro fa-2x mb-2 text-danger"></i>
+                            <h6 class="fw-bold mb-1">Auswärtiges Schiessen</h6>
+                            <span class="text-muted small" style="font-size: 11px;">Foto, Standblatt, PDF<br>💡 KI prognostiziert Maximum</span>
+                            <div class="btn btn-sm btn-outline-danger mt-3 w-100 fw-semibold">Foto / PDF wählen</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lade-Indikator für KI & PDF-Analyse -->
+                <div id="jm-import-loading" class="text-center py-4 d-none">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                    <h5 class="fw-bold" id="jm-import-loading-title">Analysiere Datei mit KI...</h5>
+                    <p class="text-muted small" id="jm-import-loading-desc">Text & Schiessprogramm werden extrahiert. Bitte kurz warten.</p>
+                </div>
+
+                <!-- Vorschau-Bereich -->
+                <div id="jm-import-preview-container" class="mt-4 d-none">
+                    <hr>
+                    <!-- Konfigurationszeile für Auswärtige Schiessen (Anlass & Maximalpunkte) -->
+                    <div id="jm-import-auswaertig-config" class="card bg-light border-danger border-opacity-25 p-3 mb-3 d-none">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-md-5">
+                                <label class="form-label small fw-bold mb-1"><i class="fas fa-bullseye me-1 text-danger"></i>Ziel-Anlass in Jahresmeisterschaft:</label>
+                                <select id="jm-import-target-competition" class="form-select form-select-sm" onchange="jmOnTargetCompetitionChange()">
+                                    <!-- Dynamisch gefüllt aus Spalten 41+ -->
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold mb-1"><i class="fas fa-chart-line me-1 text-primary"></i>Maximalpunkte des Anlasses:</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="number" id="jm-import-max-points" class="form-control" placeholder="z.B. 100" oninput="jmOnMaxPointsChange()">
+                                    <span class="input-group-text bg-white" id="jm-import-max-source-badge" title="Herkunft des Maximalwerts">KI-Prognose</span>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-md-end">
+                                <span class="badge bg-info text-dark text-wrap p-2 small" id="jm-import-prognose-hint" style="font-size: 11px;">
+                                    💡 Programm erkannt
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <h6 class="fw-bold mb-0"><i class="fas fa-eye me-2 text-primary"></i>Vorschau & Abgleich mit Jahresmeisterschaft:</h6>
+                        <button id="jm-import-commit-btn" class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jmCommitImport()" disabled>
+                            <i class="fas fa-cloud-upload-alt me-1"></i> Werte in Jahresmeisterschaft übernehmen & speichern
+                        </button>
+                    </div>
+                    <div id="jm-import-stats" class="mb-3"></div>
+                    <div class="table-responsive border rounded bg-white" style="max-height: 420px; overflow-y: auto;">
+                        <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.88rem;">
+                            <thead class="table-dark sticky-top">
+                                <tr>
+                                    <th style="width: 100px;">Lizenz</th>
+                                    <th>Schütze</th>
+                                    <th style="width: 90px;" class="text-center">Bisher</th>
+                                    <th style="width: 90px;" class="text-center">Neu</th>
+                                    <th style="width: 90px;" class="text-center">Diff</th>
+                                    <th style="width: 130px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jm-import-preview-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0 py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schliessen</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- GV Einladungs-Mail Assistent Modal -->
 <div class="modal fade" id="gv-mail-modal" tabindex="-1" aria-labelledby="gvMailModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -2108,6 +2266,7 @@
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-ui.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-import.js"></script>
 
 <!-- NEU: Skript für Protokoll-Archiv KI -->
 <script src="js/archiv.js"></script>

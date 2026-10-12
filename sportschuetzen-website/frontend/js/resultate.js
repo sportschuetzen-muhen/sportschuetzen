@@ -199,8 +199,18 @@ async function loadJahresmeisterschaft(yearParam) {
                 liga1 = parsedList.filter(s => Number(s.liga) === 1);
                 liga2 = parsedList.filter(s => Number(s.liga) === 2);
             }
+            const allShooters = [...liga1, ...liga2];
+            const maxPercent = allShooters[0]?.details?.max_total_prz || 1000;
+
             renderLiga(1, liga1, 'tbody-liga1', fmt, arr);
             renderLiga(2, liga2, 'tbody-liga2', fmt, arr);
+
+            // Spaltenkopf mit dynamischem Maximum aktualisieren
+            document.querySelectorAll('#table-liga1 .col-total, #table-liga2 .col-total').forEach(el => {
+                if (el.tagName.toLowerCase() === 'th') {
+                    el.innerHTML = `Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. ${maxPercent}%)</span>`;
+                }
+            });
         },
         (err) => {
             console.error("Fehler beim Laden der Jahresmeisterschaft:", err);

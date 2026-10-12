@@ -160,14 +160,14 @@
         openRow=(el.style.display==="table-row")?id:null;
     };
 
-    function renderLiga(ligaNr, data){
+    function renderLiga(ligaNr, data, maxPercent){
         const isNumeric = isFinite(ligaNr);
         const title = isNumeric ? `Liga ${ligaNr}` : ligaNr;
         let html=`<div class="liga"><h2>${title}</h2>
         <table><thead><tr>
         <th class="col-rang">Rang</th>
         <th class="col-name">Name</th>
-        <th class="col-total">Total <span class="max-hint">max</span></th>
+        <th class="col-total">Total <span class="max-hint" title="Maximal erreichbar">(max. ${maxPercent || 1000}%)</span></th>
         </tr></thead><tbody>`;
 
         arr(data).forEach((t, i)=>{
@@ -225,17 +225,19 @@
             const liga2 = parsedList.filter(s => Number(s.liga) === 2);
             const junioren = parsedList.filter(s => s.is_junior).sort((a,b) => b.total - a.total).map((s, i) => ({ ...s, rang: i + 1 }));
 
+            const maxPercent = shooters[0]?.details?.max_total_prz || 1000;
+
             document.getElementById("content").innerHTML = 
-                renderLiga(1, liga1) + 
-                renderLiga(2, liga2) + 
-                renderLiga("Junioren (U21)", junioren);
+                renderLiga(1, liga1, maxPercent) + 
+                renderLiga(2, liga2, maxPercent) + 
+                renderLiga("Junioren (U21)", junioren, maxPercent);
             
             const tip=document.getElementById("tooltip");
             document.querySelectorAll(".max-hint").forEach(el=>{
                 el.addEventListener("click", e=>{
                     e.stopPropagation();
                     const rect=el.getBoundingClientRect();
-                    tip.textContent="Maximum Punkte";
+                    tip.textContent=`Maximal erreichbar: ${maxPercent} %`;
                     tip.style.top=(rect.top - 35)+"px";
                     tip.style.left=(rect.left - 20)+"px";
                     tip.classList.add("show");

@@ -1,5 +1,28 @@
 // === SUB-MODUL: JAHRESMEISTERSCHAFT - UI ===
 
+function updateJMSaveButtonState() {
+    const saveBtn = document.getElementById('btn-save-jm') || document.querySelector('button[onclick="saveJahresmeisterschaftData()"]');
+    if (!saveBtn) return;
+    const canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('jahresmeisterschaft') : true;
+    if (jmCurrentJahr !== "current" || !canWrite) {
+        saveBtn.disabled = true;
+        saveBtn.classList.add('d-none');
+        return;
+    }
+    saveBtn.classList.remove('d-none');
+    const changeCount = (jmPendingUpdates.length || 0) + (jmPendingMoves.length || 0) + (jmExclusionsChanged ? 1 : 0);
+    if (changeCount > 0) {
+        saveBtn.disabled = false;
+        saveBtn.className = 'btn btn-sm btn-warning write-protected fw-bold';
+        saveBtn.innerHTML = `<i class="fas fa-save me-1"></i> Speichern (${changeCount})`;
+    } else {
+        saveBtn.disabled = true;
+        saveBtn.className = 'btn btn-sm btn-outline-secondary write-protected';
+        saveBtn.innerHTML = `💾 Gespeichert`;
+    }
+}
+window.updateJMSaveButtonState = updateJMSaveButtonState;
+
 function renderJahresmeisterschaft(grid) {
     if (!grid || grid.length < 10) {
         document.getElementById('jahresmeisterschaft-container').innerHTML = '<div class="alert alert-warning">Ungültige Datenstruktur empfangen.</div>';
@@ -12,15 +35,8 @@ function renderJahresmeisterschaft(grid) {
     }
 
     // Speichern-Button und Aktions-Buttons im Header steuern
-    const saveBtn = document.querySelector('button[onclick="saveJahresmeisterschaftData()"]');
-    if (saveBtn) {
-        saveBtn.disabled = !canWrite;
-        saveBtn.classList.toggle('d-none', !canWrite);
-    }
-    const importBtn = document.querySelector('button[onclick="migrateJMFromGoogleSheets()"]');
-    if (importBtn) {
-        importBtn.classList.toggle('d-none', !canWrite);
-    }
+    updateJMSaveButtonState();
+
     const actionsDropdown = document.getElementById('jm-actions-menu')?.closest('.dropdown');
     if (actionsDropdown) {
         actionsDropdown.classList.toggle('d-none', !canWrite);
@@ -36,12 +52,10 @@ function renderJahresmeisterschaft(grid) {
     if (actionsMenu && canWrite) {
         if (jmCurrentJahr === "current") {
             actionsMenu.innerHTML = `
-                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereKantonalstichDaten', 'Kantonalstich importieren')">Import: Kantonalstich</a></li>
-                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVerbandsschiessendaten', 'Verbandsschiessen importieren')">Import: Verband</a></li>
-                <li><a class="dropdown-item" href="#" onclick="runJMAction('importiereVereinswettschiessendaten', 'Vereinswettschiessen importieren')">Import: Vereinswettschiessen</a></li>
+                <li><a class="dropdown-item text-success fw-semibold" href="#" onclick="openJMImportModal()"><i class="fas fa-file-import me-2"></i>Resultate importieren...</a></li>
                 <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')">Archivieren (Aktuelles Jahr)</a></li>
-                <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')">Neues Jahr (Nullen)</a></li>
+                <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')"><i class="fas fa-archive me-2"></i>Archivieren (Aktuelles Jahr)</a></li>
+                <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')"><i class="fas fa-undo me-2"></i>Neues Jahr (Nullen)</a></li>
             `;
         } else {
             actionsMenu.innerHTML = `
@@ -63,6 +77,12 @@ function renderJahresmeisterschaft(grid) {
             }
         }
     }
+
+    // Dynamisches Maximum & Live-Berechnung ausführen
+    const maxPercent = (typeof recalculateJMRawGrid === 'function')
+        ? recalculateJMRawGrid(grid)
+        : 1000;
+    const colTotal = hasStatusCol ? 19 : 18;
 
     // Spaltenindizes anpassen (dynamisch bei verschobenen Spalten durch Status)
     const baseHeaderCols = [6,7,8,9,10,11,12,13,14,15,16,17, 41,42,43,44,45,46,47,48,49,50,51];
@@ -97,7 +117,9 @@ function renderJahresmeisterschaft(grid) {
                             <th style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};">Einstellung</th>
                             ${filteredHeaderCols.map((c, colIndex) => {
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
-                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(grid[2][c] || '')}">${escapeHtml(grid[2][c] || ('Spalte '+(c+1)))}</th>`;
+                                let titleStr = grid[2][c] || ('Spalte '+(c+1));
+                                if (c === colTotal) titleStr = `Total (max. ${maxPercent}%)`;
+                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(titleStr)}">${escapeHtml(titleStr)}</th>`;
                             }).join('')}
                         </tr>
                     </thead>
@@ -143,10 +165,10 @@ function renderJahresmeisterschaft(grid) {
     `;
 
     // LIGA 1
-    let ligenHtml = buildLigaTable("Liga 1", grid, 5, 12, canWrite, hasStatusCol, statusColIndex, visibleShooterCols);
+    let ligenHtml = buildLigaTable("Liga 1", grid, 5, 12, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent);
     
     // LIGA 2
-    ligenHtml += buildLigaTable("Liga 2", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, visibleShooterCols);
+    ligenHtml += buildLigaTable("Liga 2", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent);
 
     // Bootstrap Tab-Layout
     let html = `
@@ -219,7 +241,7 @@ function checkLigaSizes() {
     }
 }
 
-function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, statusColIndex, visibleShooterCols) {
+function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent) {
     let tbodyHtml = '';
     
     // Gültige Schützen ermitteln und nach Total in % absteigend sortieren
@@ -304,7 +326,9 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                             ${statusTh}
                             ${visibleShooterCols.map((c, colIndex) => {
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
-                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(grid[2][c] || '')}">${escapeHtml(grid[2][c] || ('Spalte '+(c+1)))}</th>`;
+                                let titleStr = grid[2][c] || ('Spalte '+(c+1));
+                                if (c === totalCol) titleStr = `Total (max. ${maxPercent || 1000}%)`;
+                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(titleStr)}">${escapeHtml(titleStr)}</th>`;
                             }).join('')}
                         </tr>
                     </thead>

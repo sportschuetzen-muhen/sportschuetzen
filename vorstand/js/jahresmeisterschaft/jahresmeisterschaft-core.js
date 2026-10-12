@@ -243,6 +243,10 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
     if (!sb || !grid || grid.length < 6) return;
 
     try {
+        const maxPercent = (typeof recalculateJMRawGrid === 'function')
+            ? recalculateJMRawGrid(grid)
+            : 1000;
+
         const compRow = grid[2] || [];
         const headerRow = grid[4] || [];
 
@@ -333,7 +337,7 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
                 streichresultat_prz: streich,
                 status: (rangVal >= 7) ? 'abstieg' : 'neutral',
                 is_junior: isJunior,
-                details: { schiessen, mannschaft, auswaerts },
+                details: { schiessen, mannschaft, auswaerts, max_total_prz: maxPercent },
                 updated_at: new Date().toISOString()
             });
         }
@@ -381,7 +385,7 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
                 streichresultat_prz: streich,
                 status: (rangVal <= 2) ? 'aufstieg' : 'neutral',
                 is_junior: isJunior,
-                details: { schiessen, mannschaft, auswaerts },
+                details: { schiessen, mannschaft, auswaerts, max_total_prz: maxPercent },
                 updated_at: new Date().toISOString()
             });
         }

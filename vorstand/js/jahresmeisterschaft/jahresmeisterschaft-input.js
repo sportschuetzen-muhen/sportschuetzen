@@ -16,13 +16,20 @@ function handleCellEdit(r, c, val, inputElem) {
 
     jmRawGrid[r][c] = val;
 
+    // Gesamte Jahresmeisterschaft inklusive Top 4 Mannschaft, Top 2 Auswärtige & Totals live neu berechnen
+    if (typeof recalculateJMRawGrid === 'function') {
+        recalculateJMRawGrid(jmRawGrid);
+    }
+
     jmPendingUpdates = jmPendingUpdates.filter(u => !(u.r === r && u.c === c));
     jmPendingUpdates.push({ r, c, v: val });
     AppState.markUnsaved();
-
-    if (r === 0) {
-        renderJahresmeisterschaft(jmRawGrid);
+    if (typeof updateJMSaveButtonState === 'function') {
+        updateJMSaveButtonState();
     }
+
+    // Immer Tabelle neu rendern, damit Totals und Prozente live sichtbar sind
+    renderJahresmeisterschaft(jmRawGrid);
 }
 
 function handleSortEnd(evt) {
@@ -52,6 +59,9 @@ function handleSortEnd(evt) {
     // Record for backend
     jmPendingMoves.push({ from: fromRow, to: toRow });
     AppState.markUnsaved();
+    if (typeof updateJMSaveButtonState === 'function') {
+        updateJMSaveButtonState();
+    }
     
     // Re-render
     renderJahresmeisterschaft(jmRawGrid);
@@ -220,6 +230,9 @@ function handleJuniorSwitchChange(input) {
     jmJuniorExclusions[comp] = isExcluded;
     jmExclusionsChanged = true;
     AppState.markUnsaved();
+    if (typeof updateJMSaveButtonState === 'function') {
+        updateJMSaveButtonState();
+    }
     
     renderJuniorenTabContent();
 }

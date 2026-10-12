@@ -66,12 +66,18 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 
 ---
 
-## 5. Fachliche Roadmap & Weiterentwicklung
+## 6. Client-seitiger Resultate-Import & Dynamisches Maximum (Oktober 2026)
 
-### Phase A: Berechnungs-Architektur (Optional)
-- Evaluation zur Überführung der Streichresultat-Logik (Liga 1 Top 8, Auf-/Abstieg) in eine Postgres Stored Procedure (`public.recalculate_jahresmeisterschaft(jahr)`), um die Berechnung vollständig serverseitig zu kapseln.
+- **Ablösung Google Sheets & GAS Import:** Der alte Google Sheets Import Button und alle Cloudflare Worker / GAS Brücken wurden vollständig eliminiert. Neu steht im Cockpit das Modul `jahresmeisterschaft-import.js` bereit, das Excel- (`.xlsx`, `.xls`) und CSV-Dateien direkt via SheetJS im Browser einliest.
+- **Wettkampf-Kacheln mit Vorschau:** Direkte Imports für *Vereinswettschiessen*, *Verbandsschiessen*, *Kantonalstich* und *Mannschaft* (Runden 1–7) mit Lizenz-/Namens-Matching und interaktivem Vorschau-Abgleich vor dem atomaren Speichern in Supabase.
+- **Auswärtige Schiessen & KI-Standblatt-Erkennung:** Neu integrierte 5. Kachel für Auswärtige Schiessen:
+  - **Digitale PDF-Ranglisten:** Werden direkt im Browser via `pdf.js` in < 50 ms geparst. Alle Schützen aus Muhen werden automatisch anhand Name und Lizenz extrahiert.
+  - **Apple HEIC & Smartphone-Fotos:** Automatische clientseitige Konvertierung von `.heic`/`.heif` nach JPEG via `heic2any`.
+  - **Zentraler Gemini Vision OCR:** Fotos von Standblättern werden über den zentralen Vorstand-API-Worker (`action=ocr`, Gemini 2.5 Flash) analysiert.
+  - **Domain-Kontext Schweizer Schiessprogramme:** Die KI prognostiziert das Maximum dynamisch anhand gängiger Schweizer Programme ($6\times 10 = 60$, $8\times 10 = 80$, $10\times 10 = 100$ [Gruppenstich G50], $12\times 10 / 6\times 20 = 120$, $15\times 10 = 150$, $20\times 10 = 200$, $30\times 10 = 300$, $60\times 10 = 600$) und hinterlegt eine Begründungs-Pille im UI.
+- **PWA Standblatt-Upload (`app/upload.html`):** Schützen können Fotos (inkl. HEIC) oder PDF-Ranglisten hochladen. Die App analysiert die Datei direkt via PDF-Parser oder zentraler KI, schlägt erzielte Punkte und Maximum vor und loggt Metadaten revisionssicher in `public.contest_ocr_logs`.
+- **Top 4 Mannschaft & Top 2 Auswärtige:** Mannschaftsresultate aus den Runden 1–7 übertragen automatisch die 4 höchsten Resultate in die Spalten 9–12 (`Mannschaft #1` bis `#4`). Auswärtige Schiessen übertragen automatisch die beiden höchsten Prozentwerte in `Auswärtiges 1` und `Auswärtiges 2`.
+- **Dynamisches Maximum ($N \times 100\%$):** Das Maximum der Meisterschaft errechnet sich dynamisch anhand der Anzahl aktiver Checkboxen in Zeile 0 ($N \times 100\%$) und wird im Cockpit, auf der Website (`resultate.js`) und in der PWA (`app_jm.html`) im Spaltenkopf eingeblendet (`Total (max. X%)`).
+- **Smarter Speichern-Button:** Zeigt ungespeicherte Änderungen an, schützt die 8-Schützen-Integrität von Liga 1 und sperrt unnötige DB-Schreibvorgänge bei unverändertem Grid.
 
-### Phase B: Standblatt-Upload & KI-Pipeline
-- **Speicherort:** Prüfung der Migration von Cloudflare R2 auf den Supabase Storage Bucket `contest-sheets` für einheitliche RLS-Richtlinien.
-- **Self-Service KI:** Bereitstellung der Gemini-Vision-Erkennung für die Mitglieder-PWA mit manueller Bestätigung durch den Schützen vor dem Einreichen.
-- **Schützenmeister-Inbox:** Übergabe der PWA-Meldungen in eine Freigabe-Warteschlange im Cockpit für die 1-Klick-Übernahme ins Grid.
+

@@ -1,5 +1,4 @@
-// === SUB-MODUL: JAHRESMEISTERSCHAFT - MANAGER & API & ARCHIV ===
-// Native Supabase Architecture mit Google Apps Script Fallback & Dual-Write
+// === SUB-MODUL: JAHRESMEISTERSCHAFT - MANAGER & NATIVE SUPABASE ENGINE ===
 
 async function saveJahresmeisterschaftData() {
     if (jmPendingUpdates.length === 0 && jmPendingMoves.length === 0 && !jmExclusionsChanged) {
@@ -17,55 +16,64 @@ async function saveJahresmeisterschaftData() {
         return;
     }
 
-    // --- 1. SUPABASE-FIRST SPEICHERN ---
     const sb = getJMSupabaseClient();
-    if (sb && window._jmIsSupabase) {
-        try {
-            showLoadingOverlay('Speichere Jahresmeisterschaft in Supabase...');
-
-            // Aktualisiere jmRawGrid mit den pending updates
-            jmPendingUpdates.forEach(u => {
-                if (jmRawGrid[u.r]) {
-                    jmRawGrid[u.r][u.c] = u.v;
-                }
-            });
-
-            const juniorList = Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true);
-
-            const { error: errSb } = await sb
-                .from('jm_seasons')
-                .upsert({
-                    jahr: jmCurrentJahr,
-                    raw_grid: jmRawGrid,
-                    junior_exclusions: juniorList,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'jahr' });
-
-            if (errSb) throw errSb;
-
-            // Strukturierte Schützenliste im Hintergrund aktualisieren
-            if (typeof syncJMShootersToSupabase === 'function') {
-                syncJMShootersToSupabase(sb, jmCurrentJahr, jmRawGrid).catch(e => console.warn(e));
-            }
-
-            showSuccess("Erfolgreich in Supabase gespeichert!");
-            jmPendingUpdates = [];
-            jmPendingMoves = [];
-            jmExclusionsChanged = false;
-            AppState.clearUnsaved();
-            renderJahresmeisterschaft(jmRawGrid);
-            return;
-
-        } catch (sbErr) {
-            console.error("❌ Fehler beim Speichern in Supabase:", sbErr);
-            showError("Fehler beim Speichern in Supabase: " + sbErr.message);
-        } finally {
-            hideLoadingOverlay();
-        }
-    } else {
+    if (!sb || !window._jmIsSupabase) {
         showError("Supabase-Client ist nicht verfügbar.");
+        return;
+    }
+
+    try {
+        showLoadingOverlay('Speichere Jahresmeisterschaft in Supabase...');
+
+        // 1. Ausstehende Zelländerungen ins Grid übernehmen
+        jmPendingUpdates.forEach(u => {
+            if (jmRawGrid[u.r]) {
+                jmRawGrid[u.r][u.c] = u.v;
+            }
+        });
+
+        // 2. Gesamte Jahresmeisterschaft inklusive Top 4 Mannschaft, Top 2 Auswärtige & Totals live berechnen
+        if (typeof recalculateJMRawGrid === 'function') {
+            recalculateJMRawGrid(jmRawGrid);
+        }
+
+        const juniorList = Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true);
+
+        // 3. Atomares Speichern in public.jm_seasons
+        const { error: errSb } = await sb
+            .from('jm_seasons')
+            .upsert({
+                jahr: jmCurrentJahr,
+                raw_grid: jmRawGrid,
+                junior_exclusions: juniorList,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'jahr' });
+
+        if (errSb) throw errSb;
+
+        // 4. Strukturierte Schützenliste für Website und App aktualisieren
+        if (typeof syncJMShootersToSupabase === 'function') {
+            await syncJMShootersToSupabase(sb, jmCurrentJahr, jmRawGrid);
+        }
+
+        showSuccess("Erfolgreich in Supabase gespeichert!");
+        jmPendingUpdates = [];
+        jmPendingMoves = [];
+        jmExclusionsChanged = false;
+        AppState.clearUnsaved();
+        if (typeof updateJMSaveButtonState === 'function') {
+            updateJMSaveButtonState();
+        }
+        renderJahresmeisterschaft(jmRawGrid);
+
+    } catch (sbErr) {
+        console.error("❌ Fehler beim Speichern in Supabase:", sbErr);
+        showError("Fehler beim Speichern in Supabase: " + sbErr.message);
+    } finally {
+        hideLoadingOverlay();
     }
 }
+window.saveJahresmeisterschaftData = saveJahresmeisterschaftData;
 
 async function runJMAction(functionName, actionLabel) {
     if (!confirm(`Möchtest du die Aktion "${actionLabel}" ausführen?`)) {
@@ -73,6 +81,10 @@ async function runJMAction(functionName, actionLabel) {
     }
 
     const sb = getJMSupabaseClient();
+    if (!sb) {
+        showError("Supabase-Client ist nicht verfügbar.");
+        return;
+    }
 
     try {
         let archivJahr = null;
@@ -83,90 +95,59 @@ async function runJMAction(functionName, actionLabel) {
                 return;
             }
 
-            // Supabase-Archivierung
-            if (sb && window._jmIsSupabase) {
-                showLoadingOverlay(`Archiviere Saison ${archivJahr} in Supabase...`);
-                await sb.from('jm_seasons').upsert({
-                    jahr: archivJahr,
-                    title: `Jahresmeisterschaft ${archivJahr}`,
-                    raw_grid: jmRawGrid,
-                    junior_exclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true),
-                    is_archived: true,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'jahr' });
+            showLoadingOverlay(`Archiviere Saison ${archivJahr} in Supabase...`);
+            await sb.from('jm_seasons').upsert({
+                jahr: archivJahr,
+                title: `Jahresmeisterschaft ${archivJahr}`,
+                raw_grid: jmRawGrid,
+                junior_exclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true),
+                is_archived: true,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'jahr' });
 
-                if (typeof syncJMShootersToSupabase === 'function') {
-                    await syncJMShootersToSupabase(sb, archivJahr, jmRawGrid);
-                }
+            if (typeof syncJMShootersToSupabase === 'function') {
+                await syncJMShootersToSupabase(sb, archivJahr, jmRawGrid);
             }
+
+            showSuccess(`Saison ${archivJahr} wurde erfolgreich archiviert!`);
+            setTimeout(() => loadJahresmeisterschaftData(true), 800);
+
         } else if (functionName === 'jahresmeisterschaftZuruecksetzen') {
             if (!confirm("ACHTUNG: Dies setzt alle Resultate für das neue Jahr auf 0 zurück!\n\nFortfahren?")) {
                 return;
             }
-            if (sb && window._jmIsSupabase) {
-                showLoadingOverlay("Setze Jahresmeisterschaft in Supabase zurück...");
-                // Punkte auf 0 setzen
-                const resetGrid = JSON.parse(JSON.stringify(jmRawGrid));
-                for (let r = 5; r < resetGrid.length; r++) {
-                    if (!resetGrid[r]) continue;
-                    for (let c = 6; c < resetGrid[r].length; c++) {
-                        // Wenn es eine Punktspalte ist (Zahl)
-                        if (resetGrid[r][c] !== '' && !isNaN(parseFloat(resetGrid[r][c]))) {
-                            resetGrid[r][c] = '';
-                        }
+
+            showLoadingOverlay("Setze Jahresmeisterschaft in Supabase zurück...");
+            const resetGrid = JSON.parse(JSON.stringify(jmRawGrid));
+            for (let r = 5; r < resetGrid.length; r++) {
+                if (!resetGrid[r]) continue;
+                for (let c = 6; c < resetGrid[r].length; c++) {
+                    if (resetGrid[r][c] !== '' && !isNaN(parseFloat(resetGrid[r][c]))) {
+                        resetGrid[r][c] = '';
                     }
                 }
-                await sb.from('jm_seasons').upsert({
-                    jahr: 'current',
-                    title: 'Jahresmeisterschaft (aktuell)',
-                    raw_grid: resetGrid,
-                    junior_exclusions: [],
-                    is_archived: false,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'jahr' });
-
-                jmRawGrid = resetGrid;
             }
-        }
 
-        // Parallel/Fallback Aufruf an Google Apps Script für Import-Aktionen oder Spiegelung
-        showLoadingOverlay(`Führe ${actionLabel} aus...`);
-        
-        const payload = {
-            action: 'runFunction',
-            functionName: functionName,
-            archivJahr: archivJahr
-        };
-
-        const res = await fetch(WORKER_URL + "?module=jahresmeisterschaft", {
-            method: 'POST',
-            headers: {
-                'X-CSRF-Token': getCsrfToken(),
-                'X-User-Role': window.userRole,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-            showSuccess(`Aktion erfolgreich: ${data.message || actionLabel}`);
-            // Bei Imports auch Supabase mit den neu berechneten Werten synchronisieren
-            if (functionName.startsWith('importiere') && sb) {
-                setTimeout(async () => {
-                    await window.migrateJMFromGoogleSheets();
-                }, 2000);
-            } else {
-                setTimeout(loadJahresmeisterschaftData, 1000);
+            if (typeof recalculateJMRawGrid === 'function') {
+                recalculateJMRawGrid(resetGrid);
             }
-        } else {
-            if (sb && window._jmIsSupabase && (functionName === 'archiviereJahresmeisterschaft' || functionName === 'jahresmeisterschaftZuruecksetzen')) {
-                showSuccess(`In Supabase erfolgreich ausgeführt (GAS meldet: ${data.error || 'Timeout'})`);
-                setTimeout(loadJahresmeisterschaftData, 1000);
-            } else {
-                throw new Error(data.error || "Unbekannter Fehler bei der Ausführung.");
+
+            await sb.from('jm_seasons').upsert({
+                jahr: 'current',
+                title: 'Jahresmeisterschaft (aktuell)',
+                raw_grid: resetGrid,
+                junior_exclusions: [],
+                is_archived: false,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'jahr' });
+
+            jmRawGrid = resetGrid;
+            if (typeof syncJMShootersToSupabase === 'function') {
+                await syncJMShootersToSupabase(sb, 'current', resetGrid);
             }
+
+            showSuccess("Jahresmeisterschaft für das neue Jahr zurückgesetzt!");
+            setTimeout(() => loadJahresmeisterschaftData(true), 800);
         }
     } catch (e) {
         showError("Fehler bei der Aktion: " + e.message);
@@ -174,6 +155,7 @@ async function runJMAction(functionName, actionLabel) {
         hideLoadingOverlay();
     }
 }
+window.runJMAction = runJMAction;
 
 async function runDeleteArchivedYearAction(jahr) {
     const confirmation = prompt(`Bist du absolut sicher, dass du das gesamte Archiv für das Jahr ${jahr} UNWIDERRUFLICH löschen möchtest?\n\nBitte tippe "${jahr}" zur Bestätigung ein:`);
@@ -183,56 +165,36 @@ async function runDeleteArchivedYearAction(jahr) {
     }
     
     const sb = getJMSupabaseClient();
+    if (!sb) {
+        showError("Supabase-Client ist nicht verfügbar.");
+        return;
+    }
 
     try {
         showLoadingOverlay(`Lösche Archiv ${jahr}...`);
+        await sb.from('jm_seasons').delete().eq('jahr', jahr);
+        await sb.from('jm_shooters').delete().eq('jahr', jahr);
 
-        if (sb && window._jmIsSupabase) {
-            await sb.from('jm_seasons').delete().eq('jahr', jahr);
-            await sb.from('jm_shooters').delete().eq('jahr', jahr);
+        showSuccess(`Archiv ${jahr} wurde erfolgreich gelöscht!`);
+        jmCurrentJahr = "current";
+        const select = document.getElementById('jm-history-select');
+        if (select) {
+            select.value = "current";
         }
-        
-        const payload = {
-            action: 'runFunction',
-            functionName: 'loescheArchiviertesJahr',
-            archivJahr: jahr
-        };
-
-        const res = await fetch(WORKER_URL + "?module=jahresmeisterschaft", {
-            method: 'POST',
-            headers: {
-                'X-CSRF-Token': getCsrfToken(),
-                'X-User-Role': window.userRole,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-
-        if (data.success || (sb && window._jmIsSupabase)) {
-            showSuccess(`Archiv ${jahr} wurde erfolgreich gelöscht!`);
-            jmCurrentJahr = "current";
-            const select = document.getElementById('jm-history-select');
-            if (select) {
-                select.value = "current";
-            }
-            setTimeout(loadJahresmeisterschaftData, 1000);
-        } else {
-            throw new Error(data.error || "Fehler beim Löschen des Archivs.");
-        }
+        setTimeout(() => loadJahresmeisterschaftData(true), 800);
     } catch (e) {
         showError("Fehler beim Löschen: " + e.message);
     } finally {
         hideLoadingOverlay();
     }
 }
+window.runDeleteArchivedYearAction = runDeleteArchivedYearAction;
 
 async function addNewAuswaertigesSchiessen() {
     const name = prompt("Gib den Namen des neuen Auswärtsschießens ein (z. B. 'Freischießen Zofingen'):");
     if (!name || name.trim() === "") return;
     
-    const maxPunkteStr = prompt("Gib die maximale Punktzahl für dieses Schießen ein (z. B. '100'):");
+    const maxPunkteStr = prompt("Gib die maximale Punktzahl für dieses Schießen ein (z. B. '100'):", "100");
     if (maxPunkteStr === null) return;
     const maxPunkte = parseInt(maxPunkteStr);
     if (isNaN(maxPunkte) || maxPunkte <= 0) {
@@ -240,42 +202,74 @@ async function addNewAuswaertigesSchiessen() {
         return;
     }
 
+    const sb = getJMSupabaseClient();
+    if (!sb || !jmRawGrid || jmRawGrid.length < 5) {
+        showError("Supabase-Client oder Grid nicht verfügbar.");
+        return;
+    }
+
     try {
-        showLoadingOverlay('Erstelle neues Auswärtsschießen...');
-        
-        const payload = {
-            action: 'runFunction',
-            functionName: 'neuesAuswaertigesSchiessen',
-            name: name.trim(),
-            maxPunkte: maxPunkte
-        };
+        showLoadingOverlay('Erstelle neues Auswärtsschießen in Supabase...');
 
-        const res = await fetch(WORKER_URL + "?module=jahresmeisterschaft", {
-            method: 'POST',
-            headers: {
-                'X-CSRF-Token': getCsrfToken(),
-                'X-User-Role': window.userRole,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-        if (data.success) {
-            showSuccess(`Auswärtsschießen '${name}' wurde erfolgreich erstellt.`);
-            setTimeout(async () => {
-                if (window.migrateJMFromGoogleSheets) {
-                    await window.migrateJMFromGoogleSheets();
-                } else {
-                    loadJahresmeisterschaftData();
-                }
-            }, 1500);
-        } else {
-            showError(data.message || "Fehler beim Erstellen.");
+        const compRow = jmRawGrid[2] || [];
+        // Suche erste leere Spalte ab Spalte 41 oder hänge neue an
+        let targetCol = -1;
+        for (let c = 41; c < compRow.length; c++) {
+            const t = String(compRow[c] || '').trim().toLowerCase();
+            if (!t || t === '' || t.startsWith('spalte')) {
+                targetCol = c;
+                break;
+            }
         }
+        if (targetCol === -1) {
+            targetCol = compRow.length;
+        }
+
+        // Neue Spaltendaten ins Grid eintragen
+        if (!jmRawGrid[0]) jmRawGrid[0] = [];
+        if (!jmRawGrid[2]) jmRawGrid[2] = [];
+        if (!jmRawGrid[3]) jmRawGrid[3] = [];
+
+        jmRawGrid[0][targetCol] = 'TRUE';
+        jmRawGrid[2][targetCol] = name.trim();
+        jmRawGrid[3][targetCol] = maxPunkte;
+
+        // Alle Schützenzeilen initialisieren
+        for (let r = 5; r < jmRawGrid.length; r++) {
+            if (jmRawGrid[r]) {
+                if (jmRawGrid[r][targetCol] === undefined) {
+                    jmRawGrid[r][targetCol] = '';
+                }
+            }
+        }
+
+        if (typeof recalculateJMRawGrid === 'function') {
+            recalculateJMRawGrid(jmRawGrid);
+        }
+
+        // Direkt nach Supabase speichern
+        const { error: errSb } = await sb
+            .from('jm_seasons')
+            .upsert({
+                jahr: jmCurrentJahr,
+                raw_grid: jmRawGrid,
+                junior_exclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true),
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'jahr' });
+
+        if (errSb) throw errSb;
+
+        if (typeof syncJMShootersToSupabase === 'function') {
+            await syncJMShootersToSupabase(sb, jmCurrentJahr, jmRawGrid);
+        }
+
+        showSuccess(`Auswärtsschießen '${name.trim()}' erfolgreich erstellt!`);
+        renderJahresmeisterschaft(jmRawGrid);
+
     } catch (err) {
-        showError("Netzwerkfehler: " + err.message);
+        showError("Fehler beim Erstellen: " + err.message);
     } finally {
         hideLoadingOverlay();
     }
 }
+window.addNewAuswaertigesSchiessen = addNewAuswaertigesSchiessen;

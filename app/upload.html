@@ -6,9 +6,8 @@
 <title>Standblatt Upload</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../style.css">
-
-
-    
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body>
 
@@ -22,24 +21,40 @@
             <input type="hidden" id="name">
         </div>
         <div class="form-group">
-            <div class="upload-area" onclick="document.getElementById('foto').click()">
-                <span id="upload-hint">📸 Foto Standblatt aufnehmen</span>
-                <input type="file" id="foto" accept="image/*" style="display:none">
-                <img id="preview">
+            <div class="upload-area" onclick="document.getElementById('foto').click()" style="cursor:pointer;">
+                <span id="upload-hint">📸 Foto aufnehmen oder Standblatt / PDF wählen</span>
+                <input type="file" id="foto" accept="image/*,.heic,.heif,application/pdf,.pdf" style="display:none">
+                <img id="preview" style="max-height:220px; border-radius:6px; display:none; margin:0 auto;">
+                <div id="pdf-preview-box" style="display:none; padding:15px; background:#f8fafc; border:1px dashed #94a3b8; border-radius:8px; text-align:center;">
+                    <span style="font-size:2rem;">📄</span>
+                    <div id="pdf-file-name" style="font-size:0.85rem; font-weight:600; color:#334155; margin-top:5px;"></div>
+                </div>
             </div>
         </div>
 
-        <div style="display:flex; gap:20px; margin-bottom:20px;">
-            <div style="flex:1;"><label>Erzielt</label><input type="number" id="erzielt" placeholder="Pkt" required></div>
-            <div style="flex:1;"><label>Maximum</label><input type="number" id="maximal" placeholder="100" required></div>
+        <div class="form-group" style="margin-bottom:15px;">
+            <label style="font-weight:600; font-size:0.85rem; color:#475569; display:block; margin-bottom:4px;">Anlass / Schiessen (optional)</label>
+            <input type="text" id="anlass" placeholder="z.B. Bärenmoosschiessen Villmergen" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #cbd5e1; border-radius:8px; font-size:0.95rem;">
+        </div>
+
+        <div id="ai-status" style="display:none; margin: 12px 0; padding: 10px 14px; border-radius: 8px; font-size: 0.88rem; line-height: 1.4; text-align: center;"></div>
+
+        <div style="display:flex; gap:15px; margin-bottom:20px;">
+            <div style="flex:1;">
+                <label style="font-weight:600; font-size:0.85rem; color:#475569; display:block; margin-bottom:4px;">Erzielte Punkte</label>
+                <input type="number" id="erzielt" placeholder="z.B. 98" step="any" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #cbd5e1; border-radius:8px; font-size:1.05rem; font-weight:700;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-weight:600; font-size:0.85rem; color:#475569; display:block; margin-bottom:4px;">Maximalpunkte</label>
+                <input type="number" id="maximal" placeholder="100" step="any" required style="width:100%; box-sizing:border-box; padding:10px; border:1px solid #cbd5e1; border-radius:8px; font-size:1.05rem; font-weight:700;">
+            </div>
         </div>
         <div id="error-msg" style="display:none; color:#e53e3e; background:#fef2f2; padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.9rem; font-weight:600; text-align:center; border:1px solid #fee2e2;"></div>
         <button type="submit" id="submitBtn" class="btn-main">Jetzt senden</button>
     </form>
 </div>
 
-
-<script src="upload.js?v=3" defer></script>
+<script src="upload.js?v=4" defer></script>
 </body>
 </html>
 
