@@ -50,4 +50,7 @@ desktop.ini
 SSV Daten/
 SSV/
 *.xlsx
+*.xlsm
+*.xls
 *.csv
+/Jahresmeisterschaft/

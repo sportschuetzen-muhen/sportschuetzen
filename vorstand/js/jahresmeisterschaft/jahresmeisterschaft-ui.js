@@ -105,16 +105,16 @@ function renderJahresmeisterschaft(grid) {
     });
 
     let settingsHtml = `
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Allgemeine Einstellungen (Kopfzeilen)</h5>
-                ${canWrite ? `<button class="btn btn-sm btn-light fw-bold text-dark animate__animated animate__fadeIn" onclick="addNewAuswaertigesSchiessen()"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schießen</button>` : ''}
+        <div class="card rounded-4 border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold text-primary"><i class="fas fa-sliders-h text-primary me-2"></i>Allgemeine Einstellungen (Kopfzeilen)</h5>
+                ${canWrite ? `<button class="btn btn-sm btn-primary rounded-pill fw-semibold shadow-xs" onclick="addNewAuswaertigesSchiessen()"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schiessen</button>` : ''}
             </div>
-            <div class="card-body overflow-auto">
-                <table class="table table-bordered table-sm align-middle" style="min-width: 800px; font-size: 0.85rem; table-layout: fixed;">
+            <div class="card-body p-0 overflow-auto">
+                <table class="table table-bordered table-sm align-middle mb-0" style="min-width: 800px; font-size: 0.85rem; table-layout: fixed;">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};">Einstellung</th>
+                            <th style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'}; position: sticky; left: 0; z-index: 3; background-color: #f8f9fa; border-right: 2px solid #dee2e6;">Einstellung</th>
                             ${filteredHeaderCols.map((c, colIndex) => {
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
                                 let titleStr = grid[2][c] || ('Spalte '+(c+1));
@@ -126,7 +126,7 @@ function renderJahresmeisterschaft(grid) {
                     <tbody>
                         <!-- Checkboxen (Zeile 1) -->
                         <tr>
-                            <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Aktiv (Checkboxen)</strong></td>
+                            <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'}; position: sticky; left: 0; z-index: 2; background-color: #fff; border-right: 2px solid #dee2e6;"><strong>Aktiv (Checkboxen)</strong></td>
                             ${filteredHeaderCols.map((c, colIndex) => {
                                 const limit = hasStatusCol ? 18 : 17;
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
@@ -140,7 +140,7 @@ function renderJahresmeisterschaft(grid) {
                         </tr>
                         <!-- Titel (Zeile 3) -->
                         <tr>
-                            <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Wettkampf Titel</strong></td>
+                            <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'}; position: sticky; left: 0; z-index: 2; background-color: #fff; border-right: 2px solid #dee2e6;"><strong>Wettkampf Titel</strong></td>
                             ${filteredHeaderCols.map((c, colIndex) => {
                                 const val = grid[2][c] || '';
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
@@ -150,7 +150,7 @@ function renderJahresmeisterschaft(grid) {
                         </tr>
                         <!-- Max Werte (Zeile 4) -->
                         <tr>
-                            <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'};"><strong>Max. Punkte</strong></td>
+                            <td style="width: ${hasStatusCol ? '340px' : '240px'}; min-width: ${hasStatusCol ? '340px' : '240px'}; max-width: ${hasStatusCol ? '340px' : '240px'}; position: sticky; left: 0; z-index: 2; background-color: #fff; border-right: 2px solid #dee2e6;"><strong>Max. Punkte</strong></td>
                             ${filteredHeaderCols.map((c, colIndex) => {
                                 const val = grid[3][c] || '';
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
@@ -276,8 +276,8 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
         }
 
         tbodyHtml += `<tr data-row="${r}">
-            <td style="cursor: grab; width: 40px; min-width: 40px; max-width: 40px;" class="text-center text-muted"><i class="fas fa-grip-lines"></i></td>
-            <td class="fw-bold" style="width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(vorname)} ${escapeHtml(nachname)}</td>
+            <td style="cursor: grab; width: 40px; min-width: 40px; max-width: 40px; position: sticky; left: 0; z-index: 2; background-color: #fff;" class="text-center text-muted"><i class="fas fa-grip-lines tk-drag-handle"></i></td>
+            <td class="fw-bold" style="width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: sticky; left: 40px; z-index: 2; background-color: #fff; border-right: 2px solid #dee2e6;">${escapeHtml(vorname)} ${escapeHtml(nachname)}</td>
             ${statusTd}
             ${visibleShooterCols.map((c, colIndex) => {
                 let val = s.rowData[c] || '';
@@ -312,17 +312,17 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
     const statusTh = hasStatusCol ? `<th style="width: 100px; min-width: 100px; max-width: 100px;">Status</th>` : '';
 
     return `
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">${title}</h5>
-                <small class="badge bg-light text-dark">Drag & Drop zum Verschieben</small>
+        <div class="card rounded-4 border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold text-primary"><i class="fas fa-trophy text-warning me-2"></i>${title}</h5>
+                <span class="badge bg-light text-muted border"><i class="fas fa-arrows-alt-v me-1"></i>Drag & Drop zum Verschieben</span>
             </div>
-            <div class="card-body overflow-auto">
-                <table class="table table-hover table-sm align-middle" style="min-width: 800px; font-size: 0.9rem; table-layout: fixed;">
+            <div class="card-body p-0 overflow-auto">
+                <table class="table table-hover table-sm align-middle mb-0" style="min-width: 800px; font-size: 0.9rem; table-layout: fixed;">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 40px; min-width: 40px; max-width: 40px;"></th>
-                            <th style="width: 200px; min-width: 200px; max-width: 200px;">Schütze</th>
+                            <th style="width: 40px; min-width: 40px; max-width: 40px; position: sticky; left: 0; z-index: 3; background-color: #f8f9fa;"></th>
+                            <th style="width: 200px; min-width: 200px; max-width: 200px; position: sticky; left: 40px; z-index: 3; background-color: #f8f9fa; border-right: 2px solid #dee2e6;">Schütze</th>
                             ${statusTh}
                             ${visibleShooterCols.map((c, colIndex) => {
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';

@@ -77,7 +77,16 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
   - **Domain-Kontext Schweizer Schiessprogramme:** Die KI prognostiziert das Maximum dynamisch anhand gängiger Schweizer Programme ($6\times 10 = 60$, $8\times 10 = 80$, $10\times 10 = 100$ [Gruppenstich G50], $12\times 10 / 6\times 20 = 120$, $15\times 10 = 150$, $20\times 10 = 200$, $30\times 10 = 300$, $60\times 10 = 600$) und hinterlegt eine Begründungs-Pille im UI.
 - **PWA Standblatt-Upload (`app/upload.html`):** Schützen können Fotos (inkl. HEIC) oder PDF-Ranglisten hochladen. Die App analysiert die Datei direkt via PDF-Parser oder zentraler KI, schlägt erzielte Punkte und Maximum vor und loggt Metadaten revisionssicher in `public.contest_ocr_logs`.
 - **Top 4 Mannschaft & Top 2 Auswärtige:** Mannschaftsresultate aus den Runden 1–7 übertragen automatisch die 4 höchsten Resultate in die Spalten 9–12 (`Mannschaft #1` bis `#4`). Auswärtige Schiessen übertragen automatisch die beiden höchsten Prozentwerte in `Auswärtiges 1` und `Auswärtiges 2`.
-- **Dynamisches Maximum ($N \times 100\%$):** Das Maximum der Meisterschaft errechnet sich dynamisch anhand der Anzahl aktiver Checkboxen in Zeile 0 ($N \times 100\%$) und wird im Cockpit, auf der Website (`resultate.js`) und in der PWA (`app_jm.html`) im Spaltenkopf eingeblendet (`Total (max. X%)`).
 - **Smarter Speichern-Button:** Zeigt ungespeicherte Änderungen an, schützt die 8-Schützen-Integrität von Liga 1 und sperrt unnötige DB-Schreibvorgänge bei unverändertem Grid.
+
+---
+
+## 7. Import-Harmonisierung & Portal-Standardisierung (Oktober 2026)
+
+- **Header- & Metadaten-Filterung (Verein & Verband):** Die Tabellenkopf-Erkennung in `jahresmeisterschaft-import.js` erfordert nun zwingend das gleichzeitige Vorhandensein von Lizenz-, Namens- und Punktspalten. Kopfzeilen und Abrechnungs-Metadaten (Etiketten, Kranzkarten, Adressdaten) werden strikt herausgefiltert. Dadurch wurde der frühere Doppelimport (z. B. Marco Fischer mit falschen Werten aus dem Kopfbereich) vollständig behoben.
+- **Kantonalstich-Sheet-Selektion:** Liest gezielt das Resultatblatt `Eingabe` ein (statt der Limiten-Tabelle `Kategorie`), wodurch alle Vereinsresultate (30-Schuss-Programm) mit 100 % Trefferquote zugeordnet werden.
+- **Automatische Runden-Erkennung (Mannschaft / SMM):** Erkennt die Runden 1–7 automatisch aus Zelle `H6` des Standblatts sowie aus Dateinamen mit führenden Nummern (`04 smm...` $\rightarrow$ Runde 4) und synchronisiert die Dropdown-Vorauswahl unterbrechungsfrei.
+- **Selektiver Import mit Checkboxen & Direktkorrektur:** Die Vorschau-Tabelle bietet individuelle Checkboxen sowie einen Master-Toggle («Alle an-/abwählen») und editierbare Punktfelder. Nur aktiv markierte Schützen werden in `jmRawGrid` und Supabase übernommen; Schützen ausserhalb der JM sind standardmässig abgewählt.
+- **Portal-Standard & Sticky-Spalten:** Das Import-Modal (`#jm-import-modal`) wurde an das Design-System des Vorstands-Portals angeglichen (Farbgradient, Du-Kultur gemäss Richtlinie 8). Die Haupttabelle fixiert die Schützen- und Verschiebe-Spalte beim horizontalen Scrollen (`position: sticky`), während inaktive Spalten weiterhin sauber ausgeblendet bleiben.
 
 

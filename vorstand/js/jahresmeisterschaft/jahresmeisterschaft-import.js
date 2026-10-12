@@ -328,11 +328,17 @@ async function jmHandleFileUpload(file, type) {
                 const workbook = XLSX.read(data, { type: 'array' });
 
                 let chosenSheet = workbook.SheetNames[0];
-                if (type === 'mannschaft') {
-                    const eingabeSheet = workbook.SheetNames.find(s => s.toLowerCase().trim() === 'eingabe');
+                if (type === 'mannschaft' || type === 'kantonal') {
+                    const eingabeSheet = workbook.SheetNames.find(s => {
+                        const n = s.toLowerCase().trim();
+                        return n === 'eingabe' || n === 'resultatblatt' || n.includes('stich') || n.includes('kantonal');
+                    });
                     if (eingabeSheet) chosenSheet = eingabeSheet;
                 } else {
-                    const resSheet = workbook.SheetNames.find(s => s.toLowerCase().trim() === 'resultatblatt');
+                    const resSheet = workbook.SheetNames.find(s => {
+                        const n = s.toLowerCase().trim();
+                        return n === 'resultatblatt' || n === 'eingabe' || n.includes('resultat');
+                    });
                     if (resSheet) chosenSheet = resSheet;
                 }
 
@@ -585,14 +591,32 @@ function jmProcessImportRows(rows, type, fileName) {
     const meta = { fileName: fileName || '', soll: null, runde: 1 };
 
     // ──────────────────────────────────────────────
-    // 1. KANTONALSTICH (CSV / Excel)
+    // 1. KANTONALSTICH (CSV / Excel Blatt 'Eingabe')
     // ──────────────────────────────────────────────
     if (type === 'kantonal') {
+        let lizCol = 0;
+        let nameCol = 1;
+        let vornameCol = 2;
+        let totCol = 6;
         let startRow = 1;
-        for (let r = 0; r < Math.min(10, rows.length); r++) {
-            const rowStr = (rows[r] || []).join(' ').toLowerCase();
-            if (rowStr.includes('lizenz') || rowStr.includes('total') || rowStr.includes('punkte')) {
+
+        // Kopfzeile dynamisch finden (Lizenz / Ausweis + Total / Punkte / Name)
+        for (let r = 0; r < Math.min(15, rows.length); r++) {
+            const row = rows[r] || [];
+            const rowStr = row.join(' ').toLowerCase();
+            const hasLiz = rowStr.includes('lizenz') || rowStr.includes('ausweis');
+            const hasName = rowStr.includes('name') || rowStr.includes('schütze');
+            const hasPoints = rowStr.includes('total') || rowStr.includes('punkte') || rowStr.includes('passe');
+
+            if (hasLiz && (hasName || hasPoints)) {
                 startRow = r + 1;
+                for (let c = 0; c < row.length; c++) {
+                    const cell = String(row[c] || '').toLowerCase().trim();
+                    if (cell.includes('lizenz') || cell.includes('ausweis')) lizCol = c;
+                    if (cell === 'name' || cell === 'nachname') nameCol = c;
+                    if (cell === 'vorname') vornameCol = c;
+                    if (cell === 'total' || cell === 'punkte' || cell === 'resultat') totCol = c;
+                }
                 break;
             }
         }
@@ -601,11 +625,11 @@ function jmProcessImportRows(rows, type, fileName) {
             const row = rows[i];
             if (!row || row.length < 3) continue;
 
-            const rawLiz = String(row[0] || '').trim();
-            const nName = String(row[1] || '').trim();
-            const vName = String(row[2] || '').trim();
+            const rawLiz = String(row[lizCol] || '').trim();
+            const nName = String(row[nameCol] || '').trim();
+            const vName = String(row[vornameCol] || '').trim();
             
-            let tot = parseFloat(String(row[6] || '').replace(',', '.'));
+            let tot = parseFloat(String(row[totCol] || '').replace(',', '.'));
             if (isNaN(tot) || tot <= 0) {
                 for (let c = 3; c < row.length; c++) {
                     const num = parseFloat(String(row[c] || '').replace(',', '.'));
@@ -616,11 +640,16 @@ function jmProcessImportRows(rows, type, fileName) {
                 }
             }
 
-            if ((rawLiz || nName) && !isNaN(tot) && tot > 0) {
+            // Ignoriere Vorstands-Muster oder ungültige Zeilen
+            const fullName = `${nName} ${vName}`.trim() || nName;
+            const cleanName = fullName.replace(/[^a-zA-ZäöüÄÖÜ]/g, '');
+            const hasNumericLiz = rawLiz && rawLiz.replace(/\D/g, '').length >= 4;
+
+            if ((hasNumericLiz || cleanName.length >= 3) && !isNaN(tot) && tot > 0) {
                 const liz = rawLiz.replace(/\D/g, '').padStart(6, '0');
                 parsedData.push({
                     lizenz: liz,
-                    name: `${nName} ${vName}`.trim() || nName,
+                    name: fullName,
                     points: tot
                 });
             }
@@ -645,20 +674,33 @@ function jmProcessImportRows(rows, type, fileName) {
         let totCol = 9;
         let startRow = 18;
 
+        // Robuste Tabellenkopf-Erkennung: Muss zwingend Lizenz UND Name UND Total/Passe enthalten!
         for (let r = 0; r < Math.min(30, rows.length); r++) {
             const row = rows[r] || [];
-            for (let c = 0; c < row.length; c++) {
-                const cell = String(row[c] || '').toLowerCase().trim();
-                if (cell === 'lizenz' || cell === 'lizenz-nr' || cell === 'ausweis') lizCol = c;
-                if (cell === 'name' || cell === 'nachname') nameCol = c;
-                if (cell === 'vorname') vornameCol = c;
-                if (cell === 'total' || cell === 'punkte' || cell === 'resultat') totCol = c;
-            }
-            if (row.some(c => String(c || '').toLowerCase().includes('lizenz'))) {
+            const rowStr = row.join(' ').toLowerCase();
+            const hasLiz = rowStr.includes('lizenz') || rowStr.includes('ausweis');
+            const hasName = rowStr.includes('name') || rowStr.includes('nachname') || rowStr.includes('schütze');
+            const hasPoints = rowStr.includes('total') || rowStr.includes('punkte') || rowStr.includes('resultat') || rowStr.includes('passe');
+
+            if (hasLiz && (hasName || hasPoints)) {
+                for (let c = 0; c < row.length; c++) {
+                    const cell = String(row[c] || '').toLowerCase().trim();
+                    if (cell === 'lizenz' || cell === 'lizenz-nr' || cell === 'ausweis') lizCol = c;
+                    if (cell === 'name' || cell === 'nachname') nameCol = c;
+                    if (cell === 'vorname') vornameCol = c;
+                    if (cell === 'total' || cell === 'punkte' || cell === 'resultat') totCol = c;
+                }
                 startRow = r + 1;
                 break;
             }
         }
+
+        // Metadaten-Schlüsselwörter aus dem Kopf- oder Abrechnungsbereich ausschliessen
+        const ignoreKeywords = [
+            'verein', 'vereins-nr', 'funktionär', 'strasse', 'plz', 'ort', 'email', 'telefon',
+            'material', 'etiketten', 'standblätter', 'kranzkarte', 'sportschützenkarte', 'bemerkungen',
+            'bestellung', 'lieferung', 'verbrauch', 'verloren', 'retour', 'nachliefern'
+        ];
 
         for (let i = startRow; i < rows.length; i++) {
             const row = rows[i];
@@ -669,11 +711,18 @@ function jmProcessImportRows(rows, type, fileName) {
             const rawLiz = String(row[lizCol] || '').trim();
             const tot = parseFloat(String(row[totCol] || '').replace(',', '.'));
 
-            if ((nName || rawLiz) && !isNaN(tot) && tot > 0) {
+            // Kopfbereich oder Adresszeilen überspringen
+            if (ignoreKeywords.some(kw => nName.toLowerCase().includes(kw))) continue;
+
+            const fullName = `${nName} ${vName}`.trim() || nName;
+            const cleanName = fullName.replace(/[^a-zA-ZäöüÄÖÜ]/g, '');
+            const hasNumericLiz = rawLiz && rawLiz.replace(/\D/g, '').length >= 4;
+
+            if ((hasNumericLiz || cleanName.length >= 3) && !isNaN(tot) && tot > 0) {
                 const liz = rawLiz.replace(/\D/g, '').padStart(6, '0');
                 parsedData.push({
                     lizenz: liz,
-                    name: `${nName} ${vName}`.trim() || nName,
+                    name: fullName,
                     points: tot
                 });
             }
@@ -681,30 +730,52 @@ function jmProcessImportRows(rows, type, fileName) {
     }
 
     // ──────────────────────────────────────────────
-    // 4. MANNSCHAFT (Runden 1 bis 7)
+    // 4. MANNSCHAFT (Runden 1 bis 7 mit Auto-Erkennung)
     // ──────────────────────────────────────────────
     else if (type === 'mannschaft') {
-        let detectedRound = 1;
-        if (rows[5] && rows[5][15] !== undefined) {
-            const rNum = parseInt(rows[5][15]);
-            if (!isNaN(rNum) && rNum >= 1 && rNum <= 7) detectedRound = rNum;
-        } else if (rows[5] && rows[5][7] !== undefined) {
-            const rNum = parseInt(rows[5][7]);
-            if (!isNaN(rNum) && rNum >= 1 && rNum <= 7) detectedRound = rNum;
-        }
-        
-        const matchName = fileName ? fileName.match(/(?:runde|r)[\s_-]?([1-7])/i) : null;
-        if (matchName) {
-            detectedRound = parseInt(matchName[1]);
+        let detectedRound = null;
+
+        // 1. Suche nach Runden-Kennung in den ersten 10 Zeilen
+        for (let r = 0; r < Math.min(10, rows.length); r++) {
+            const row = rows[r] || [];
+            for (let c = 0; c < row.length; c++) {
+                const cellStr = String(row[c] || '').trim();
+                const mRoundText = cellStr.match(/(?:runde|tour)[\s_-]?([1-7])/i);
+                if (mRoundText) {
+                    detectedRound = parseInt(mRoundText[1]);
+                    break;
+                }
+                // Spezifisch für SMM Standblätter: Zelle H6 / Spalte 7 enthält die Rundennummer 1..7
+                if (r >= 4 && (c === 6 || c === 7 || c === 8 || c === 15)) {
+                    const num = parseInt(cellStr);
+                    if (!isNaN(num) && num >= 1 && num <= 7) {
+                        detectedRound = num;
+                        break;
+                    }
+                }
+            }
+            if (detectedRound) break;
         }
 
+        // 2. Suche nach Runden-Zahl im Dateinamen (z.B. "04 smm...", "Runde_4", "r4")
+        if (!detectedRound && fileName) {
+            const matchFnPrefix = fileName.match(/^0?([1-7])[\s_-]/i);
+            const matchFnText = fileName.match(/(?:runde|r)[\s_-]?([1-7])/i);
+            if (matchFnPrefix) {
+                detectedRound = parseInt(matchFnPrefix[1]);
+            } else if (matchFnText) {
+                detectedRound = parseInt(matchFnText[1]);
+            }
+        }
+
+        if (!detectedRound) {
+            detectedRound = 1;
+        }
+
+        // Runden-Auswahl im Modal synchronisieren
         const roundSelect = document.getElementById('jm-mannschaft-round-select');
         if (roundSelect) {
-            if (roundSelect.value && roundSelect.value !== '') {
-                detectedRound = parseInt(roundSelect.value) || detectedRound;
-            } else {
-                roundSelect.value = String(detectedRound);
-            }
+            roundSelect.value = String(detectedRound);
         }
         meta.runde = detectedRound;
 
@@ -723,7 +794,7 @@ function jmProcessImportRows(rows, type, fileName) {
                     if (v.includes('team') || v.includes('mannschaft')) teamCol = c;
                     if (v.includes('schütze') || v.includes('name')) nameCol = c;
                     if (v.includes('lizenz')) lizCol = c;
-                    if (v.includes('total') || v.includes('punkte')) totCol = c;
+                    if (v.includes('total') || v.includes('punkte') || v.includes('resultat')) totCol = c;
                 }
                 break;
             }
@@ -757,6 +828,7 @@ function jmProcessImportRows(rows, type, fileName) {
 
 /**
  * Rendert die Vorschau-Tabelle mit Abgleich gegen die Schützen in der Jahresmeisterschaft.
+ * Enthält Checkboxen zum Abwählen und editierbare Punktfelder für optionale manuelle Korrektur.
  */
 function jmRenderPreview(parsedData, type, meta) {
     const previewContainer = document.getElementById('jm-import-preview-container');
@@ -824,6 +896,7 @@ function jmRenderPreview(parsedData, type, meta) {
     let matchedCount = 0;
     let unmatchedCount = 0;
     const previewList = [];
+    const seenMatchedRows = new Set();
 
     parsedData.forEach(entry => {
         let matched = null;
@@ -835,16 +908,26 @@ function jmRenderPreview(parsedData, type, meta) {
         }
         if (!matched && entry.name) {
             const cleanEntryName = entry.name.toLowerCase().replace(/[^a-zäöü]/g, '');
-            matched = gridShooters.find(s => {
-                const sName = s.fullName.toLowerCase().replace(/[^a-zäöü]/g, '');
-                return sName.includes(cleanEntryName) || cleanEntryName.includes(sName);
-            });
+            // Strikt: Name muss mind. 3 Buchstaben haben, um fehlerhafte Matches zu verhindern
+            if (cleanEntryName.length >= 3) {
+                matched = gridShooters.find(s => {
+                    const sName = s.fullName.toLowerCase().replace(/[^a-zäöü]/g, '');
+                    return sName.length >= 3 && (sName.includes(cleanEntryName) || cleanEntryName.includes(sName));
+                });
+            }
+        }
+
+        // Verhindere Doppelimport desselben Schützen innerhalb einer Datei
+        if (matched && seenMatchedRows.has(matched.rowIndex)) {
+            matched = null;
         }
 
         if (matched) {
+            seenMatchedRows.add(matched.rowIndex);
             matchedCount++;
             const diff = entry.points - matched.currentScore;
             previewList.push({
+                selected: true,
                 matched: true,
                 rowIndex: matched.rowIndex,
                 targetCol: targetCol,
@@ -857,6 +940,7 @@ function jmRenderPreview(parsedData, type, meta) {
         } else {
             unmatchedCount++;
             previewList.push({
+                selected: false, // Standardmässig nicht ausgewählt bei Schützen ausserhalb der JM
                 matched: false,
                 rowIndex: null,
                 targetCol: targetCol,
@@ -873,51 +957,180 @@ function jmRenderPreview(parsedData, type, meta) {
 
     // Vorschau HTML
     let rowsHtml = '';
-    previewList.forEach(item => {
-        const badge = item.matched 
-            ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>` 
-            : `<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle me-1"></i>Nicht in JM</span>`;
-        
+    previewList.forEach((item, idx) => {
+        let badge = `<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle me-1"></i>Nicht in JM</span>`;
+        if (item.matched) {
+            badge = item.selected
+                ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
+                : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+        }
+
         let diffBadge = `<span class="text-muted">±0</span>`;
         if (item.diff > 0) diffBadge = `<span class="text-success fw-bold">+${item.diff}</span>`;
         else if (item.diff < 0) diffBadge = `<span class="text-danger fw-bold">${item.diff}</span>`;
 
+        const rowMutedClass = item.selected ? '' : 'table-light text-muted opacity-75';
+
         rowsHtml += `
-            <tr class="${item.matched ? '' : 'table-light text-muted'}">
+            <tr class="${rowMutedClass}" id="jm-import-row-${idx}">
+                <td class="text-center">
+                    <input type="checkbox" class="form-check-input jm-import-row-check" 
+                           data-idx="${idx}" ${item.selected ? 'checked' : ''} 
+                           onchange="jmTogglePreviewRow(${idx}, this.checked)">
+                </td>
                 <td><code>${escapeHtml(item.lizenz)}</code></td>
                 <td class="fw-semibold">${escapeHtml(item.name)}</td>
                 <td class="text-center">${item.matched ? item.oldScore : '–'}</td>
-                <td class="text-center fw-bold text-primary">${item.newScore}</td>
-                <td class="text-center">${diffBadge}</td>
-                <td>${badge}</td>
+                <td class="text-center" style="width: 100px;">
+                    <input type="number" step="any" 
+                           class="form-control form-control-sm text-center fw-bold text-primary px-1 jm-score-input" 
+                           style="width: 80px; margin: 0 auto;" 
+                           value="${item.newScore}" 
+                           onchange="jmUpdatePreviewScore(${idx}, this.value)"
+                           ${item.selected ? '' : 'disabled'}>
+                </td>
+                <td class="text-center" id="jm-import-diff-${idx}">${diffBadge}</td>
+                <td id="jm-import-badge-${idx}">${badge}</td>
             </tr>
         `;
     });
 
     previewBody.innerHTML = rowsHtml;
 
-    // Statistik-Hinweis
+    // Statistik-Hinweis & Aktionsbutton aktualisieren
+    jmUpdatePreviewStats(targetTitle, meta);
+}
+
+/**
+ * Aktualisiert die Statistik und den Übernehmen-Button basierend auf den aktiven Checkboxen.
+ */
+function jmUpdatePreviewStats(targetTitle, meta) {
+    const statsElem = document.getElementById('jm-import-stats');
+    const commitBtn = document.getElementById('jm-import-commit-btn');
+    const previewList = _jmImportState.previewData || [];
+
+    const totalCount = previewList.length;
+    const matchedCount = previewList.filter(item => item.matched).length;
+    const selectedCount = previewList.filter(item => item.matched && item.selected).length;
+    const unmatchedCount = previewList.filter(item => !item.matched).length;
+
     if (statsElem) {
-        let sollText = meta.soll ? ` | Soll-Teilnehmer: <strong>${meta.soll}</strong>` : '';
+        let sollText = (meta && meta.soll) ? ` | Soll-Teilnehmer: <strong>${meta.soll}</strong>` : '';
         statsElem.innerHTML = `
-            <div class="alert alert-info py-2 px-3 small mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="alert alert-info py-2 px-3 small mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2 rounded-3 border-0 shadow-xs">
                 <div>
                     <i class="fas fa-info-circle me-1"></i>
-                    Ziel: <strong>${escapeHtml(targetTitle || 'Auswärtiges')}</strong> |
-                    Gefunden in Datei: <strong>${parsedData.length}</strong> |
+                    Ziel: <strong>${escapeHtml(targetTitle || 'Jahresmeisterschaft')}</strong> |
+                    Gefunden in Datei: <strong>${totalCount}</strong> |
                     Gematcht: <strong class="text-success">${matchedCount}</strong> |
                     Ausserhalb JM: <strong class="text-warning">${unmatchedCount}</strong>
                     ${sollText}
                 </div>
-                ${matchedCount > 0 ? `<span class="badge bg-primary">${matchedCount} Resultate bereit</span>` : ''}
+                <div>
+                    <span class="badge ${selectedCount > 0 ? 'bg-primary' : 'bg-secondary'} px-2 py-1 fs-7">
+                        <i class="fas fa-check-square me-1"></i>${selectedCount} von ${matchedCount} zum Import ausgewählt
+                    </span>
+                </div>
             </div>
         `;
     }
 
     if (commitBtn) {
-        commitBtn.disabled = (matchedCount === 0);
+        commitBtn.disabled = (selectedCount === 0);
     }
 }
+window.jmUpdatePreviewStats = jmUpdatePreviewStats;
+
+/**
+ * Toggle für alle Zeilen in der Vorschau-Tabelle.
+ */
+function jmToggleAllPreviewRows(checked) {
+    const previewList = _jmImportState.previewData || [];
+    previewList.forEach((item, idx) => {
+        // Nur gematchte Zeilen als Standard selektieren; ungematchte bleiben nur selektiert wenn explizit gewünscht
+        if (item.matched) {
+            item.selected = checked;
+        } else {
+            item.selected = false;
+        }
+
+        const cb = document.querySelector(`.jm-import-row-check[data-idx="${idx}"]`);
+        if (cb) cb.checked = item.selected;
+
+        const rowEl = document.getElementById(`jm-import-row-${idx}`);
+        if (rowEl) {
+            rowEl.classList.toggle('table-light', !item.selected);
+            rowEl.classList.toggle('text-muted', !item.selected);
+            rowEl.classList.toggle('opacity-75', !item.selected);
+        }
+
+        const scoreInput = rowEl ? rowEl.querySelector('.jm-score-input') : null;
+        if (scoreInput) scoreInput.disabled = !item.selected;
+
+        const badgeEl = document.getElementById(`jm-import-badge-${idx}`);
+        if (badgeEl && item.matched) {
+            badgeEl.innerHTML = item.selected
+                ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
+                : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+        }
+    });
+
+    const targetTitle = _jmImportState.targetTitle || '';
+    jmUpdatePreviewStats(targetTitle, _jmImportState.metadata);
+}
+window.jmToggleAllPreviewRows = jmToggleAllPreviewRows;
+
+/**
+ * Toggle für eine einzelne Zeile.
+ */
+function jmTogglePreviewRow(idx, checked) {
+    const previewList = _jmImportState.previewData || [];
+    if (!previewList[idx]) return;
+
+    previewList[idx].selected = checked;
+
+    const rowEl = document.getElementById(`jm-import-row-${idx}`);
+    if (rowEl) {
+        rowEl.classList.toggle('table-light', !checked);
+        rowEl.classList.toggle('text-muted', !checked);
+        rowEl.classList.toggle('opacity-75', !checked);
+    }
+
+    const scoreInput = rowEl ? rowEl.querySelector('.jm-score-input') : null;
+    if (scoreInput) scoreInput.disabled = !checked;
+
+    const badgeEl = document.getElementById(`jm-import-badge-${idx}`);
+    if (badgeEl && previewList[idx].matched) {
+        badgeEl.innerHTML = checked
+            ? `<span class="badge bg-success"><i class="fas fa-check me-1"></i>Gematcht</span>`
+            : `<span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Abgewählt</span>`;
+    }
+
+    const targetTitle = _jmImportState.targetTitle || '';
+    jmUpdatePreviewStats(targetTitle, _jmImportState.metadata);
+}
+window.jmTogglePreviewRow = jmTogglePreviewRow;
+
+/**
+ * Aktualisiert die Punktzahl einer Vorschau-Zeile (manuelle Direktkorrektur).
+ */
+function jmUpdatePreviewScore(idx, newPoints) {
+    const previewList = _jmImportState.previewData || [];
+    if (!previewList[idx]) return;
+
+    const parsedPts = parseFloat(String(newPoints).replace(',', '.')) || 0;
+    previewList[idx].newScore = parsedPts;
+    previewList[idx].diff = parsedPts - previewList[idx].oldScore;
+
+    const diffEl = document.getElementById(`jm-import-diff-${idx}`);
+    if (diffEl) {
+        let diffBadge = `<span class="text-muted">±0</span>`;
+        if (previewList[idx].diff > 0) diffBadge = `<span class="text-success fw-bold">+${previewList[idx].diff}</span>`;
+        else if (previewList[idx].diff < 0) diffBadge = `<span class="text-danger fw-bold">${previewList[idx].diff}</span>`;
+        diffEl.innerHTML = diffBadge;
+    }
+}
+window.jmUpdatePreviewScore = jmUpdatePreviewScore;
 
 /**
  * Übernimmt die geprüften Werte atomar in jmRawGrid,
@@ -928,9 +1141,9 @@ async function jmCommitImport() {
     const previewList = _jmImportState.previewData;
     if (!previewList || previewList.length === 0) return;
 
-    const matchedEntries = previewList.filter(item => item.matched && item.rowIndex !== null);
+    const matchedEntries = previewList.filter(item => item.matched && item.rowIndex !== null && item.selected !== false);
     if (matchedEntries.length === 0) {
-        showError("Keine gematchten Schützen zum Eintragen vorhanden.");
+        showError("Keine ausgewählten Schützen zum Eintragen vorhanden.");
         return;
     }
 

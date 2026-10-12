@@ -1711,71 +1711,83 @@
 
 <!-- Jahresmeisterschaft Resultate Import Modal -->
 <div class="modal fade" id="jm-import-modal" tabindex="-1" aria-labelledby="jmImportModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-        <div class="modal-content border-0 rounded-4 shadow">
-            <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-                <h5 class="modal-title fw-bold" id="jmImportModalLabel">
-                    <i class="fas fa-file-excel me-2 text-success"></i>Resultate importieren (Jahresmeisterschaft)
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+            <div class="modal-header text-white border-0 py-3 px-4" style="background: linear-gradient(135deg, #0f3a5d 0%, #1e4b7a 100%);">
+                <div>
+                    <h5 class="modal-title fw-bold mb-0" id="jmImportModalLabel">
+                        <i class="fas fa-file-import me-2 text-warning"></i>Resultate importieren (Jahresmeisterschaft)
+                    </h5>
+                    <div class="small text-white-50 mt-1">Lade offizielle Resultatsblätter hoch und gleiche die Resultate direkt mit deiner Jahresmeisterschaft ab.</div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
             </div>
             <div class="modal-body p-4">
-                <p class="text-muted small mb-4">
-                    Wähle den passenden Wettkampf aus und lade das offizielle Resultatsblatt (Excel <code>.xlsx</code> / <code>.xls</code> oder <code>.csv</code>) hoch. 
-                    Das System erkennt die Schützen via Lizenznummer oder Name, überträgt die Punkte, ermittelt automatisch die besten 4 Mannschaftsrunden sowie die 2 besten Auswärtigen und berechnet die Totals in % neu.
-                </p>
+                <div class="alert alert-light border border-info-subtle rounded-3 p-3 mb-4 small shadow-xs">
+                    <i class="fas fa-info-circle text-primary me-2"></i>
+                    Wähle den passenden Wettkampf aus und lade das offizielle Resultatsblatt (Excel <code>.xlsx</code> / <code>.xlsm</code> / <code>.xls</code> oder <code>.csv</code>) hoch. 
+                    Das System erkennt die Schützen automatisch via Lizenznummer oder Name, überträgt die Punkte, ermittelt automatisch die besten 4 Mannschaftsrunden sowie die 2 besten Auswärtigen und berechnet die Totals in % neu.
+                </div>
 
                 <!-- 5 Kacheln für Resultate-Import -->
                 <div class="row g-3 mb-4">
                     <!-- 1. Vereinswettschiessen -->
                     <div class="col-12 col-sm-6 col-xl">
-                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #0d6efd; cursor: pointer;"
+                        <div class="card p-3 h-100 text-center border rounded-3 bg-white shadow-sm hover-lift" style="cursor: pointer; transition: all 0.2s ease;"
                              onclick="document.getElementById('importFileVerein').click()">
                             <input type="file" id="importFileVerein" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
                                    onchange="jmHandleFileUpload(this.files[0], 'verein')">
-                            <i class="fas fa-trophy fa-2x mb-2 text-primary"></i>
+                            <div class="p-2 rounded-circle bg-primary-subtle text-primary d-inline-flex mx-auto mb-2" style="width: 48px; height: 48px; align-items: center; justify-content: center;">
+                                <i class="fas fa-trophy fa-lg"></i>
+                            </div>
                             <h6 class="fw-bold mb-1">Vereinswettschiessen</h6>
-                            <span class="text-muted small" style="font-size: 11px;">AGSV-Blatt (.xlsx/.csv)<br>Ziel: Spalte 8</span>
-                            <div class="btn btn-sm btn-outline-primary mt-3 w-100">Datei wählen</div>
+                            <span class="text-muted small" style="font-size: 11px;">AGSV-Blatt (.xlsx/.xlsm)<br>Ziel: Spalte 8</span>
+                            <div class="btn btn-sm btn-outline-primary mt-3 w-100 rounded-pill">Datei wählen</div>
                         </div>
                     </div>
 
                     <!-- 2. Verbandsschiessen -->
                     <div class="col-12 col-sm-6 col-xl">
-                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #198754; cursor: pointer;"
+                        <div class="card p-3 h-100 text-center border rounded-3 bg-white shadow-sm hover-lift" style="cursor: pointer; transition: all 0.2s ease;"
                              onclick="document.getElementById('importFileVerband').click()">
                             <input type="file" id="importFileVerband" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
                                    onchange="jmHandleFileUpload(this.files[0], 'verband')">
-                            <i class="fas fa-medal fa-2x mb-2 text-success"></i>
+                            <div class="p-2 rounded-circle bg-success-subtle text-success d-inline-flex mx-auto mb-2" style="width: 48px; height: 48px; align-items: center; justify-content: center;">
+                                <i class="fas fa-medal fa-lg"></i>
+                            </div>
                             <h6 class="fw-bold mb-1">Verbandsschiessen</h6>
-                            <span class="text-muted small" style="font-size: 11px;">AGSV-Blatt (.xlsx/.csv)<br>Ziel: Spalte 6</span>
-                            <div class="btn btn-sm btn-outline-success mt-3 w-100">Datei wählen</div>
+                            <span class="text-muted small" style="font-size: 11px;">AGSV-Blatt (.xlsx/.xlsm)<br>Ziel: Spalte 6</span>
+                            <div class="btn btn-sm btn-outline-success mt-3 w-100 rounded-pill">Datei wählen</div>
                         </div>
                     </div>
 
                     <!-- 3. Kantonalstich -->
                     <div class="col-12 col-sm-6 col-xl">
-                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #fd7e14; cursor: pointer;"
+                        <div class="card p-3 h-100 text-center border rounded-3 bg-white shadow-sm hover-lift" style="cursor: pointer; transition: all 0.2s ease;"
                              onclick="document.getElementById('importFileKantonal').click()">
-                            <input type="file" id="importFileKantonal" class="d-none" accept=".csv,.xlsx,.xls"
+                            <input type="file" id="importFileKantonal" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
                                    onchange="jmHandleFileUpload(this.files[0], 'kantonal')">
-                            <i class="fas fa-bullseye fa-2x mb-2 text-warning"></i>
+                            <div class="p-2 rounded-circle bg-warning-subtle text-warning d-inline-flex mx-auto mb-2" style="width: 48px; height: 48px; align-items: center; justify-content: center;">
+                                <i class="fas fa-bullseye fa-lg"></i>
+                            </div>
                             <h6 class="fw-bold mb-1">Kantonalstich</h6>
-                            <span class="text-muted small" style="font-size: 11px;">CSV-Export (.csv/.xlsx)<br>Ziel: Spalte 7</span>
-                            <div class="btn btn-sm btn-outline-warning mt-3 w-100 text-dark fw-semibold">Datei wählen</div>
+                            <span class="text-muted small" style="font-size: 11px;">Resultatblatt (.xlsx/.csv)<br>Ziel: Spalte 7</span>
+                            <div class="btn btn-sm btn-outline-warning mt-3 w-100 rounded-pill text-dark fw-semibold">Datei wählen</div>
                         </div>
                     </div>
 
                     <!-- 4. Mannschaft -->
                     <div class="col-12 col-sm-6 col-xl">
-                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #6f42c1;">
-                            <input type="file" id="importFileMannschaft" class="d-none" accept=".xlsx,.xls,.csv"
+                        <div class="card p-3 h-100 text-center border rounded-3 bg-white shadow-sm hover-lift" style="transition: all 0.2s ease;">
+                            <input type="file" id="importFileMannschaft" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
                                    onchange="jmHandleFileUpload(this.files[0], 'mannschaft')">
-                            <i class="fas fa-users fa-2x mb-2 text-purple" style="color: #6f42c1;"></i>
-                            <h6 class="fw-bold mb-1">Mannschaft</h6>
+                            <div class="p-2 rounded-circle d-inline-flex mx-auto mb-2" style="width: 48px; height: 48px; align-items: center; justify-content: center; background-color: #f3e8ff; color: #7e22ce;">
+                                <i class="fas fa-users fa-lg"></i>
+                            </div>
+                            <h6 class="fw-bold mb-1">Mannschaft (SMM)</h6>
                             <div class="my-2">
-                                <label for="jm-mannschaft-round-select" class="form-label small text-muted mb-0" style="font-size: 11px;">Runde (1–7):</label>
-                                <select id="jm-mannschaft-round-select" class="form-select form-select-sm text-center mx-auto" style="width: auto;">
+                                <label for="jm-mannschaft-round-select" class="form-label small text-muted mb-0" style="font-size: 11px;">Runde (automatisch erkannt):</label>
+                                <select id="jm-mannschaft-round-select" class="form-select form-select-sm text-center mx-auto rounded-pill" style="width: auto;">
                                     <option value="1">Runde 1</option>
                                     <option value="2">Runde 2</option>
                                     <option value="3">Runde 3</option>
@@ -1786,20 +1798,22 @@
                                 </select>
                             </div>
                             <span class="text-muted small" style="font-size: 11px;">Ermittelt Top 4 automatisch!</span>
-                            <div class="btn btn-sm btn-outline-secondary mt-2 w-100" onclick="document.getElementById('importFileMannschaft').click()">Datei wählen</div>
+                            <div class="btn btn-sm btn-outline-secondary mt-2 w-100 rounded-pill" onclick="document.getElementById('importFileMannschaft').click()">Standblatt wählen</div>
                         </div>
                     </div>
 
                     <!-- 5. Auswärtiges Schiessen / Standblatt (Foto oder PDF mit KI) -->
                     <div class="col-12 col-sm-6 col-xl">
-                        <div class="card p-3 h-100 text-center border-dashed bg-light shadow-sm" style="border: 2px dashed #dc3545; cursor: pointer;"
+                        <div class="card p-3 h-100 text-center border rounded-3 bg-white shadow-sm hover-lift" style="cursor: pointer; transition: all 0.2s ease;"
                              onclick="document.getElementById('importFileAuswaertig').click()">
                             <input type="file" id="importFileAuswaertig" class="d-none" accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.csv,.xlsx,.xls"
                                    onchange="jmHandleFileUpload(this.files[0], 'auswaertig')">
-                            <i class="fas fa-camera-retro fa-2x mb-2 text-danger"></i>
+                            <div class="p-2 rounded-circle bg-danger-subtle text-danger d-inline-flex mx-auto mb-2" style="width: 48px; height: 48px; align-items: center; justify-content: center;">
+                                <i class="fas fa-camera-retro fa-lg"></i>
+                            </div>
                             <h6 class="fw-bold mb-1">Auswärtiges Schiessen</h6>
                             <span class="text-muted small" style="font-size: 11px;">Foto, Standblatt, PDF<br>💡 KI prognostiziert Maximum</span>
-                            <div class="btn btn-sm btn-outline-danger mt-3 w-100 fw-semibold">Foto / PDF wählen</div>
+                            <div class="btn btn-sm btn-outline-danger mt-3 w-100 rounded-pill fw-semibold">Foto / PDF wählen</div>
                         </div>
                     </div>
                 </div>
@@ -1815,7 +1829,7 @@
                 <div id="jm-import-preview-container" class="mt-4 d-none">
                     <hr>
                     <!-- Konfigurationszeile für Auswärtige Schiessen (Anlass & Maximalpunkte) -->
-                    <div id="jm-import-auswaertig-config" class="card bg-light border-danger border-opacity-25 p-3 mb-3 d-none">
+                    <div id="jm-import-auswaertig-config" class="card bg-light border-danger border-opacity-25 p-3 mb-3 d-none rounded-3">
                         <div class="row g-2 align-items-center">
                             <div class="col-md-5">
                                 <label class="form-label small fw-bold mb-1"><i class="fas fa-bullseye me-1 text-danger"></i>Ziel-Anlass in Jahresmeisterschaft:</label>
@@ -1840,21 +1854,22 @@
 
                     <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                         <h6 class="fw-bold mb-0"><i class="fas fa-eye me-2 text-primary"></i>Vorschau & Abgleich mit Jahresmeisterschaft:</h6>
-                        <button id="jm-import-commit-btn" class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="jmCommitImport()" disabled>
-                            <i class="fas fa-cloud-upload-alt me-1"></i> Werte in Jahresmeisterschaft übernehmen & speichern
-                        </button>
+                        <span class="text-muted small">Wähle Schützen ab, falls du einzelne Zeilen nicht übernehmen möchtest.</span>
                     </div>
                     <div id="jm-import-stats" class="mb-3"></div>
-                    <div class="table-responsive border rounded bg-white" style="max-height: 420px; overflow-y: auto;">
+                    <div class="table-responsive border rounded-3 bg-white shadow-xs" style="max-height: 420px; overflow-y: auto;">
                         <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.88rem;">
-                            <thead class="table-dark sticky-top">
+                            <thead class="table-light sticky-top border-bottom">
                                 <tr>
+                                    <th style="width: 44px;" class="text-center">
+                                        <input type="checkbox" id="jm-import-check-all" class="form-check-input" checked onchange="jmToggleAllPreviewRows(this.checked)" title="Alle an- oder abwählen">
+                                    </th>
                                     <th style="width: 100px;">Lizenz</th>
                                     <th>Schütze</th>
                                     <th style="width: 90px;" class="text-center">Bisher</th>
-                                    <th style="width: 90px;" class="text-center">Neu</th>
+                                    <th style="width: 110px;" class="text-center">Neu</th>
                                     <th style="width: 90px;" class="text-center">Diff</th>
-                                    <th style="width: 130px;">Status</th>
+                                    <th style="width: 140px;">Status</th>
                                 </tr>
                             </thead>
                             <tbody id="jm-import-preview-body"></tbody>
@@ -1862,8 +1877,13 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer bg-light border-0 py-2">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schliessen</button>
+            <div class="modal-footer bg-light border-0 py-3 px-4 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3 rounded-pill" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Schliessen
+                </button>
+                <button id="jm-import-commit-btn" class="btn btn-sm btn-success fw-bold px-4 rounded-pill shadow-sm" onclick="jmCommitImport()" disabled>
+                    <i class="fas fa-cloud-upload-alt me-1"></i> Werte in Jahresmeisterschaft übernehmen & speichern
+                </button>
             </div>
         </div>
     </div>
