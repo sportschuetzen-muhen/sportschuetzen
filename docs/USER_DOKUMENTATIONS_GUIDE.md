@@ -32,6 +32,7 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 │          - Inventar            ──► docs/INVENTAR.md                         │
 │          - Mail-Verteiler      ──► docs/MAIL_VERTEILER.md                   │
 │          - Logins & Rechte     ──► docs/LOGINS_UND_BENUTZERVERWALTUNG.md   │
+│          - Umfragen & Anlässe  ──► docs/UMFRAGEN_UND_ANLAESSE.md            │
 │          - Datenbank / Schema  ──► docs/SUPABASE_ARCHITECTURE.md            │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
@@ -81,4 +82,5 @@ Nach jeder vorgenommenen Code- oder Schemaänderung gilt:
 | **Inventar** | [`docs/INVENTAR.md`](INVENTAR.md) | Sportwaffen, Schlüssel & Bekleidung; Ausleihe mit digitaler Signatur; Kautions-/Pfandkasse; Materialverkauf via `RechnungsCore`. |
 | **Mail-Verteiler** | [`docs/MAIL_VERTEILER.md`](MAIL_VERTEILER.md) | Ad-hoc Empfängerauswahl, Adresskaskade (`primary`/`additional`), BCC-Datenschutz, Abgrenzung zur Mail-Engine. |
 | **Logins & Berechtigungen** | [`docs/LOGINS_UND_BENUTZERVERWALTUNG.md`](LOGINS_UND_BENUTZERVERWALTUNG.md) | Supabase Auth (GoTrue / bcrypt), entkoppeltes RBAC, Sitzungs-Audit (`login_sessions`), PIN-Zugang, Foreign-Key-Schutz. |
+| **Umfragen & Anlässe** | [`docs/UMFRAGEN_UND_ANLAESSE.md`](UMFRAGEN_UND_ANLAESSE.md) | Eventplaner, RSVP Hero-Cards, 5er-Gruppenschiessen, dynamischer Formularbaukasten mit hybridem JSONB-Schema. |
 | **Datenbank-Schema** | [`docs/SUPABASE_ARCHITECTURE.md`](SUPABASE_ARCHITECTURE.md) | Aktive PostgreSQL Tabellen, Fremdschlüssel und Row Level Security (RLS) Policies. |
