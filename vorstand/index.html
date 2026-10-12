@@ -1103,9 +1103,6 @@
                             <!-- Wird dynamisch gefüllt -->
                             <option value="current">Jahresmeisterschaft (aktuell)</option>
                         </select>
-                        <button class="btn btn-sm btn-outline-success write-protected" onclick="openJMImportModal()" title="Resultate aus Excel oder CSV importieren">
-                            <i class="fas fa-file-import me-1"></i> Resultate importieren
-                        </button>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
                                 ⚙️ Aktionen
@@ -1778,27 +1775,16 @@
 
                     <!-- 4. Mannschaft -->
                     <div class="col-12 col-sm-6 col-xl">
-                        <div class="card p-3 h-100 text-center border rounded-3 bg-white shadow-sm hover-lift" style="transition: all 0.2s ease;">
-                            <input type="file" id="importFileMannschaft" class="d-none" accept=".xlsx,.xlsm,.xls,.csv"
+                        <div class="card p-3 h-100 text-center border rounded-3 bg-white shadow-sm hover-lift" style="cursor: pointer; transition: all 0.2s ease;"
+                             onclick="document.getElementById('importFileMannschaft').click()">
+                            <input type="file" id="importFileMannschaft" class="d-none" accept=".xlsx,.xlsm,.xls,.csv,.pdf"
                                    onchange="jmHandleFileUpload(this.files[0], 'mannschaft')">
                             <div class="p-2 rounded-circle d-inline-flex mx-auto mb-2" style="width: 48px; height: 48px; align-items: center; justify-content: center; background-color: #f3e8ff; color: #7e22ce;">
                                 <i class="fas fa-users fa-lg"></i>
                             </div>
                             <h6 class="fw-bold mb-1">Mannschaft (SMM)</h6>
-                            <div class="my-2">
-                                <label for="jm-mannschaft-round-select" class="form-label small text-muted mb-0" style="font-size: 11px;">Runde (automatisch erkannt):</label>
-                                <select id="jm-mannschaft-round-select" class="form-select form-select-sm text-center mx-auto rounded-pill" style="width: auto;">
-                                    <option value="1">Runde 1</option>
-                                    <option value="2">Runde 2</option>
-                                    <option value="3">Runde 3</option>
-                                    <option value="4">Runde 4</option>
-                                    <option value="5">Runde 5</option>
-                                    <option value="6">Runde 6</option>
-                                    <option value="7">Runde 7</option>
-                                </select>
-                            </div>
-                            <span class="text-muted small" style="font-size: 11px;">Ermittelt Top 4 automatisch!</span>
-                            <div class="btn btn-sm btn-outline-secondary mt-2 w-100 rounded-pill" onclick="document.getElementById('importFileMannschaft').click()">Standblatt wählen</div>
+                            <span class="text-muted small" style="font-size: 11px;">Excel (.xlsx/.xlsm) oder PDF<br>Ermittelt Runde &amp; Top 4 automatisch!</span>
+                            <div class="btn btn-sm btn-outline-secondary mt-3 w-100 rounded-pill">Standblatt wählen</div>
                         </div>
                     </div>
 

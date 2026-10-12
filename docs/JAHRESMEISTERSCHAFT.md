@@ -89,4 +89,13 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 - **Selektiver Import mit Checkboxen & Direktkorrektur:** Die Vorschau-Tabelle bietet individuelle Checkboxen sowie einen Master-Toggle («Alle an-/abwählen») und editierbare Punktfelder. Nur aktiv markierte Schützen werden in `jmRawGrid` und Supabase übernommen; Schützen ausserhalb der JM sind standardmässig abgewählt.
 - **Portal-Standard & Sticky-Spalten:** Das Import-Modal (`#jm-import-modal`) wurde an das Design-System des Vorstands-Portals angeglichen (Farbgradient, Du-Kultur gemäss Richtlinie 8). Die Haupttabelle fixiert die Schützen- und Verschiebe-Spalte beim horizontalen Scrollen (`position: sticky`), während inaktive Spalten weiterhin sauber ausgeblendet bleiben.
 
+---
+
+## 8. SMM Standblatt PDF-Import, Blatt-Priorisierung & Wertungs-Ansichtsmodus (Oktober 2026)
+
+- **SMM Mannschafts-PDF-Import:** Offizielle SSV-Standblätter der Mannschaftsmeisterschaft (`.pdf`) werden clientseitig via `pdf.js` geparst; Runde und alle 8 Schützen inklusive Punkten werden automatisch extrahiert. Das manuelle Rundenauswahl-Dropdown wurde entfernt, da die Runderkennung autonom arbeitet.
+- **Exakte Blatt-Priorisierung (Vereins- & Verbandsschiessen):** Die SheetJS-Auswahl priorisiert exakt das Schützen-Blatt `Resultatblatt` bzw. `Eingabe`, wodurch Berechnungsblätter wie `BerechnungVereinsresultat` beim Vereins- und Verbandsschiessen nicht mehr fälschlicherweise vorzeitig ausgewählt werden.
+- **Wertungs-Ansichtsmodus (`Punkte` | `Prozent (%)` | `Punkte & %`):** Ein Segment-Umschalter in der Toolbar über der Tabelle erlaubt das flexible Umschalten zwischen Rohpunkten, berechneten Prozenten und der kombinierten Ansicht mit kompakten Badges. Streichresultate werden visuell markiert und durchgestrichen.
+- **Archiv-Schutz & Import-Duplikatbereinigung:** Der grüne Schnellzugriff-Button für den Import wurde aus der Toolbar entfernt. Der Import steht ausschliesslich im Aktionen-Menü des aktuellen Jahres (`current`) bereit, wodurch versehentliche Importe in archivierte Vorjahre sicher verhindert werden.
+
 

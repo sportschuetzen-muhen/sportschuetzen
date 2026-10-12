@@ -1,5 +1,16 @@
 // === SUB-MODUL: JAHRESMEISTERSCHAFT - UI ===
 
+let jmViewMode = 'points'; // 'points' | 'percent' | 'both'
+window.jmViewMode = jmViewMode;
+function setJMViewMode(mode) {
+    jmViewMode = mode;
+    window.jmViewMode = mode;
+    if (typeof jmRawGrid !== 'undefined' && Array.isArray(jmRawGrid) && jmRawGrid.length > 5) {
+        renderJahresmeisterschaft(jmRawGrid);
+    }
+}
+window.setJMViewMode = setJMViewMode;
+
 function updateJMSaveButtonState() {
     const saveBtn = document.getElementById('btn-save-jm') || document.querySelector('button[onclick="saveJahresmeisterschaftData()"]');
     if (!saveBtn) return;
@@ -170,20 +181,36 @@ function renderJahresmeisterschaft(grid) {
     // LIGA 2
     ligenHtml += buildLigaTable("Liga 2", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent);
 
-    // Bootstrap Tab-Layout
+    // Bootstrap Tab-Layout mit Ansichts-Umschalter (Punkte / % / Kombi)
     let html = `
-        <ul class="nav nav-tabs mb-4 border-bottom-0" id="jmTab" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active fw-bold text-dark px-4 py-2 border-0" id="ligen-tab" data-bs-toggle="tab" data-bs-target="#ligen-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);">
-                    <i class="fas fa-list-ol me-2"></i>1. & 2. Liga
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="renderJuniorenTabContent()">
-                    <i class="fas fa-user-graduate me-2"></i>Junioren-Wertung (U21)
-                </button>
-            </li>
-        </ul>
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <ul class="nav nav-tabs border-bottom-0 mb-0" id="jmTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active fw-bold text-dark px-4 py-2 border-0" id="ligen-tab" data-bs-toggle="tab" data-bs-target="#ligen-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);">
+                        <i class="fas fa-list-ol me-2"></i>1. & 2. Liga
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="renderJuniorenTabContent()">
+                        <i class="fas fa-user-graduate me-2"></i>Junioren-Wertung (U21)
+                    </button>
+                </li>
+            </ul>
+            <div class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-semibold me-1"><i class="fas fa-eye me-1"></i>Wertung:</span>
+                <div class="btn-group btn-group-sm rounded-pill shadow-xs p-1 bg-white border" role="group" aria-label="Ansichtsmodus">
+                    <button type="button" class="btn btn-sm rounded-pill px-3 fw-semibold ${jmViewMode === 'points' ? 'btn-primary' : 'btn-light text-muted'}" onclick="setJMViewMode('points')" title="Punkte anzeigen">
+                        <i class="fas fa-bullseye me-1"></i>Punkte
+                    </button>
+                    <button type="button" class="btn btn-sm rounded-pill px-3 fw-semibold ${jmViewMode === 'percent' ? 'btn-primary' : 'btn-light text-muted'}" onclick="setJMViewMode('percent')" title="Berechnete Prozente (%) anzeigen">
+                        <i class="fas fa-percent me-1"></i>Prozent (%)
+                    </button>
+                    <button type="button" class="btn btn-sm rounded-pill px-3 fw-semibold ${jmViewMode === 'both' ? 'btn-primary' : 'btn-light text-muted'}" onclick="setJMViewMode('both')" title="Punkte und Prozente gleichzeitig anzeigen">
+                        <i class="fas fa-columns me-1"></i>Punkte &amp; %
+                    </button>
+                </div>
+            </div>
+        </div>
         <div class="tab-content" id="jmTabContent">
             <div class="tab-pane fade show active" id="ligen-pane" role="tabpanel" aria-labelledby="ligen-tab">
                 <!-- Allgemeine Einstellungen -->
@@ -255,6 +282,7 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
     }
 
     const totalCol = hasStatusCol ? 19 : 18;
+    const colStreich = hasStatusCol ? 32 : 31;
     shooterRows.sort((a, b) => {
         const valA = parseFloat(String(a.rowData[totalCol] || '').replace(/%/g, '').trim()) || 0;
         const valB = parseFloat(String(b.rowData[totalCol] || '').replace(/%/g, '').trim()) || 0;
@@ -265,6 +293,7 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
         const r = s.rowIndex;
         const vorname = s.rowData[2] || '';
         const nachname = s.rowData[1] || '';
+        const shooterStreich = parseFloat(String(s.rowData[colStreich] || '0').replace(',', '.')) || 0;
 
         let statusTd = '';
         if (hasStatusCol && statusColIndex !== -1) {
@@ -295,15 +324,90 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                 
                 if (isTotal) {
                     const totalBg = (colIndex % 2 === 1) ? 'background-color: #e2e6ea;' : '';
-                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm fw-bold text-center" style="width: 100%; ${totalBg}" readonly value="${escapeHtml(val)}"></td>`;
+                    const totalText = val !== '' ? (escapeHtml(val) + ' %') : '0.00 %';
+                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">
+                        <input type="text" class="form-control form-control-sm fw-bold text-center text-primary" style="width: 100%; ${totalBg}" readonly value="${totalText}">
+                    </td>`;
                 }
+
+                // Prozentwert für die Zelle ermitteln
+                let pct = 0;
+                let pctStr = '';
+                const rawNum = parseFloat(String(val).replace(',', '.'));
+                if (!isNaN(rawNum) && rawNum > 0) {
+                    pct = getColumnPercentage(grid, r, c, hasStatusCol);
+                    if (pct > 0) {
+                        pctStr = (Math.round(pct * 100) / 100).toFixed(2) + '%';
+                    }
+                }
+
+                // Prüfen ob dieser Wettkampf das Streichresultat des Schützen ist
+                const isStreich = (pct > 0 && shooterStreich > 0 && Math.abs(pct - shooterStreich) < 0.05);
+
+                let cellContent = '';
 
                 if (isAuswaertiges || isPercent) {
                     const calcBg = (colIndex % 2 === 1) ? 'background-color: #e2e6ea;' : '';
-                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected cursor-pointer text-center" style="width: 100%; ${calcBg}" readonly value="${escapeHtml(val)}" onclick="${canWrite ? `openAuswaertigesCalculator(${r}, ${c})` : ''}"></td>`;
+                    let displayVal = escapeHtml(val);
+                    if (jmViewMode === 'percent' && pctStr) displayVal = pctStr;
+
+                    cellContent = `
+                        <input type="text" class="form-control form-control-sm write-protected cursor-pointer text-center" 
+                               style="width: 100%; ${calcBg}" readonly value="${displayVal}" 
+                               title="${pctStr ? `Wert: ${escapeHtml(val)} | Prozent: ${pctStr}` : ''}"
+                               onclick="${canWrite ? `openAuswaertigesCalculator(${r}, ${c})` : ''}">
+                    `;
+                    if (jmViewMode === 'both' && pctStr) {
+                        cellContent += `
+                            <div class="mt-1 d-flex justify-content-center">
+                                <span class="badge ${isStreich ? 'bg-warning-subtle text-danger border border-warning' : 'bg-primary-subtle text-primary border border-primary-subtle'} px-1 py-0" 
+                                      style="font-size: 10px; font-weight: 600;" 
+                                      title="${isStreich ? `Streichresultat (-${shooterStreich}%)` : `Prozentwert: ${pctStr}`}">
+                                    ${isStreich ? '<i class="fas fa-strikethrough me-1"></i>' : ''}${pctStr}
+                                </span>
+                            </div>
+                        `;
+                    }
+                } else if (jmViewMode === 'percent') {
+                    // Modus Prozent: Zeigt die berechneten % an
+                    const displayVal = pctStr || (val ? '0%' : '–');
+                    cellContent = `
+                        <div class="position-relative">
+                            <input type="text" class="form-control form-control-sm text-center fw-bold ${pct > 0 ? (isStreich ? 'text-danger text-decoration-line-through' : 'text-primary') : 'text-muted'}" 
+                                   style="width: 100%; ${inputStyle}" readonly value="${displayVal}"
+                                   title="${escapeHtml(val)} Punkte (Max: ${grid[3][c] || '–'})${isStreich ? ' [Streichresultat]' : ''}">
+                        </div>
+                    `;
+                } else if (jmViewMode === 'both') {
+                    // Modus Kombi: Punkte-Eingabefeld + kompakter Prozent-Badge
+                    cellContent = `
+                        <div class="d-flex flex-column align-items-center">
+                            <input type="text" class="form-control form-control-sm write-protected text-center ${isStreich ? 'text-decoration-line-through text-muted' : ''}" 
+                                   style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                                   value="${escapeHtml(val)}" onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                            <div class="mt-1" style="min-height: 16px;">
+                                ${pctStr ? `
+                                    <span class="badge ${isStreich ? 'bg-warning-subtle text-danger border border-warning' : 'bg-primary-subtle text-primary border border-primary-subtle'} px-1 py-0" 
+                                          style="font-size: 10px; font-weight: 600;" 
+                                          title="${isStreich ? `Streichresultat (-${shooterStreich}%)` : `Prozentwert: ${pctStr}`}">
+                                        ${isStreich ? '<i class="fas fa-strikethrough me-1"></i>' : ''}${pctStr}
+                                    </span>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Modus Standard (Punkte)
+                    cellContent = `
+                        <input type="text" class="form-control form-control-sm write-protected text-center ${isStreich ? 'text-muted' : ''}" 
+                               style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                               value="${escapeHtml(val)}" 
+                               title="${pctStr ? `Prozent: ${pctStr}` : ''}"
+                               onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                    `;
                 }
 
-                return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(${r}, ${c}, this.value, this)"></td>`;
+                return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">${cellContent}</td>`;
             }).join('')}
         </tr>`;
     }
@@ -359,8 +463,13 @@ function isCategoryExcluded(grid, category, hasStatusCol) {
 }
 
 function getColumnPercentage(grid, r, c, hasStatusCol) {
+    if (!grid || !grid[r]) return 0;
+    const colTotal = hasStatusCol ? 19 : 18;
+    const title = String(grid[2][c] || '').trim();
+    if (!title || title.toLowerCase() === 'leer') return 0;
+
+    // Sonderfall Auswärtiges 1 & 2
     const normalCol = (hasStatusCol && c >= 6) ? c - 1 : c;
-    
     if (normalCol === 14) {
         const pctCol = hasStatusCol ? 28 : 27;
         return parseFloat(String(grid[r][pctCol] || '').replace(/%/g, '').trim()) || 0;
@@ -369,9 +478,17 @@ function getColumnPercentage(grid, r, c, hasStatusCol) {
         const pctCol = hasStatusCol ? 29 : 28;
         return parseFloat(String(grid[r][pctCol] || '').replace(/%/g, '').trim()) || 0;
     }
-    
-    const val = parseFloat(String(grid[r][c] || '').trim());
-    const maxVal = parseFloat(String(grid[3][c] || '').trim());
+
+    // 1. Suche nach korrespondierender Spalte '<Wettkampf> %'
+    const pctCol = grid[2].findIndex((t, idx) => idx > colTotal && String(t || '').trim().toLowerCase() === (title.toLowerCase() + ' %'));
+    if (pctCol !== -1 && grid[r][pctCol] !== undefined && grid[r][pctCol] !== '') {
+        const p = parseFloat(String(grid[r][pctCol]).replace(/%/g, '').replace(',', '.').trim());
+        if (!isNaN(p) && p > 0) return p;
+    }
+
+    // 2. Fallback: Punkte geteilt durch Max-Punkte
+    const val = parseFloat(String(grid[r][c] || '').replace(',', '.').trim());
+    const maxVal = parseFloat(String(grid[3][c] || '').replace(',', '.').trim());
     if (isNaN(val) || isNaN(maxVal) || maxVal <= 0) return 0;
     return (val / maxVal) * 100;
 }

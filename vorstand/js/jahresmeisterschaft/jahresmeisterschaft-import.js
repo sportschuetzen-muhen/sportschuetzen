@@ -237,6 +237,14 @@ async function jmHandleFileUpload(file, type) {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
             const arrayBuffer = await file.arrayBuffer();
+
+            // Spezifischer Mannschafts-PDF-Import (Offizielles SMM Standblatt)
+            if (type === 'mannschaft') {
+                await jmProcessMannschaftFromPdf(arrayBuffer, file.name);
+                if (loadingElem) loadingElem.classList.add('d-none');
+                return;
+            }
+
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             let fullText = '';
             for (let i = 1; i <= pdf.numPages; i++) {
@@ -329,17 +337,27 @@ async function jmHandleFileUpload(file, type) {
 
                 let chosenSheet = workbook.SheetNames[0];
                 if (type === 'mannschaft' || type === 'kantonal') {
-                    const eingabeSheet = workbook.SheetNames.find(s => {
+                    const exactSheet = workbook.SheetNames.find(s => {
                         const n = s.toLowerCase().trim();
-                        return n === 'eingabe' || n === 'resultatblatt' || n.includes('stich') || n.includes('kantonal');
+                        return n === 'eingabe' || n === 'resultatblatt';
                     });
-                    if (eingabeSheet) chosenSheet = eingabeSheet;
+                    const matchSheet = exactSheet || workbook.SheetNames.find(s => {
+                        const n = s.toLowerCase().trim();
+                        return n.includes('stich') || n.includes('kantonal') || n.includes('eingabe');
+                    });
+                    if (matchSheet) chosenSheet = matchSheet;
                 } else {
-                    const resSheet = workbook.SheetNames.find(s => {
+                    // Für Verein & Verband: Zuerst exakt nach 'resultatblatt' oder 'eingabe' suchen!
+                    // Verhindert falsche Treffer auf Berechnungsblätter wie 'BerechnungVereinsresultat'.
+                    const exactSheet = workbook.SheetNames.find(s => {
                         const n = s.toLowerCase().trim();
-                        return n === 'resultatblatt' || n === 'eingabe' || n.includes('resultat');
+                        return n === 'resultatblatt' || n === 'eingabe';
                     });
-                    if (resSheet) chosenSheet = resSheet;
+                    const matchSheet = exactSheet || workbook.SheetNames.find(s => {
+                        const n = s.toLowerCase().trim();
+                        return n.includes('resultatblatt') || n.includes('eingabe');
+                    });
+                    if (matchSheet) chosenSheet = matchSheet;
                 }
 
                 const worksheet = workbook.Sheets[chosenSheet];
@@ -353,6 +371,138 @@ async function jmHandleFileUpload(file, type) {
     }
 }
 window.jmHandleFileUpload = jmHandleFileUpload;
+
+/**
+ * Extrahiert die Resultate und Runde aus einem offiziellen SMM Standblatt PDF (Schweizer Mannschaftsmeisterschaft).
+ */
+async function jmProcessMannschaftFromPdf(arrayBuffer, fileName) {
+    if (typeof pdfjsLib === 'undefined') {
+        throw new Error("PDF.js Bibliothek nicht geladen.");
+    }
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    if (pdf.numPages < 1) {
+        throw new Error("PDF enthält keine lesbaren Seiten.");
+    }
+    const page = await pdf.getPage(1);
+    const textContent = await page.getTextContent();
+    const items = (textContent.items || []).map(it => ({
+        text: String(it.str || '').trim(),
+        x: it.transform ? it.transform[4] : 0,
+        y: it.transform ? it.transform[5] : 0
+    })).filter(it => it.text.length > 0);
+
+    // 1. Automatische Runderkennung (aus Dateinamen oder PDF-Kopf)
+    let detectedRound = null;
+    const matchFn = fileName.match(/(?:runde|tour|r)[\s_-]?([1-7])/i) || fileName.match(/^0?([1-7])[\s_-]/i);
+    if (matchFn) {
+        detectedRound = parseInt(matchFn[1], 10);
+    }
+    if (!detectedRound) {
+        for (const it of items) {
+            if (Math.abs(it.x - 631.8) < 25 && it.y > 600 && /^[1-7]$/.test(it.text)) {
+                detectedRound = parseInt(it.text, 10);
+                break;
+            }
+        }
+    }
+    if (!detectedRound) {
+        const fullText = items.map(i => i.text).join(' ');
+        const mTxt = fullText.match(/(?:runde|tour)[\s/:]*([1-7])/i);
+        if (mTxt) detectedRound = parseInt(mTxt[1], 10);
+    }
+    if (!detectedRound || detectedRound < 1 || detectedRound > 7) {
+        detectedRound = 1;
+    }
+
+    // 2. Schützen aus jmRawGrid indizieren
+    const grid = jmRawGrid || [];
+    const gridShooters = [];
+    for (let r = 5; r < grid.length; r++) {
+        if (!grid[r] || r === 13 || r === 14) continue;
+        const nachname = String(grid[r][1] || '').trim();
+        const vorname = String(grid[r][2] || '').trim();
+        const rawLiz = String(grid[r][4] || '').replace(/\D/g, '');
+        const lizenz = rawLiz.padStart(6, '0');
+        const shortLiz = rawLiz ? String(parseInt(rawLiz, 10)) : '';
+        if (nachname || vorname) {
+            gridShooters.push({
+                rowIndex: r,
+                nachname,
+                vorname,
+                fullName: `${nachname} ${vorname}`.trim(),
+                lizenz,
+                shortLiz
+            });
+        }
+    }
+
+    const parsedData = [];
+    const seenRows = new Set();
+
+    for (const s of gridShooters) {
+        const lizMatch = items.filter(it => 
+            it.text === s.lizenz || 
+            (s.shortLiz && it.text === s.shortLiz) || 
+            (s.lizenz && it.text.includes(s.lizenz))
+        );
+        const nameMatch = items.filter(it => 
+            s.nachname.length >= 3 && 
+            it.text.toLowerCase().includes(s.nachname.toLowerCase()) && 
+            it.text.toLowerCase().includes(s.vorname.substring(0, 3).toLowerCase())
+        );
+        const targetItems = lizMatch.length > 0 ? lizMatch : nameMatch;
+
+        if (targetItems.length > 0) {
+            let score = null;
+            for (const ti of targetItems) {
+                // Punkte stehen typischerweise bei x = 580..660 auf gleicher Höhe (y ± 15)
+                const nearbyScores = items.filter(it => Math.abs(it.y - ti.y) <= 15 && it.x >= 580 && it.x <= 660);
+                for (const ns of nearbyScores) {
+                    const m = ns.text.match(/\b(1\d\d)\b/);
+                    if (m) {
+                        const pts = parseInt(m[1], 10);
+                        if (pts >= 150 && pts <= 200) {
+                            score = pts;
+                            break;
+                        }
+                    }
+                }
+                if (score) break;
+
+                // Fallback: alle Zahlen 150..200 auf dieser Zeilenhöhe (y ± 12)
+                const lineItems = items.filter(it => Math.abs(it.y - ti.y) <= 12);
+                for (const li of lineItems) {
+                    const m = li.text.match(/\b(1\d\d)\b/);
+                    if (m) {
+                        const pts = parseInt(m[1], 10);
+                        if (pts >= 150 && pts <= 200) {
+                            score = pts;
+                            break;
+                        }
+                    }
+                }
+                if (score) break;
+            }
+
+            if (score && !seenRows.has(s.rowIndex)) {
+                seenRows.add(s.rowIndex);
+                parsedData.push({
+                    rowIndex: s.rowIndex,
+                    lizenz: s.lizenz,
+                    name: s.fullName,
+                    team: 'Muhen',
+                    points: score
+                });
+            }
+        }
+    }
+
+    const meta = { fileName: fileName || '', runde: detectedRound, soll: 8 };
+    _jmImportState.rows = parsedData;
+    _jmImportState.metadata = meta;
+    jmRenderPreview(parsedData, 'mannschaft', meta);
+}
+window.jmProcessMannschaftFromPdf = jmProcessMannschaftFromPdf;
 
 /**
  * Analysiert den reinen Text eines PDFs/Dokuments auf Schützen, Punkte und Schiessprogramme.
