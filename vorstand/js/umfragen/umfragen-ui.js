@@ -43,6 +43,7 @@ function renderUmfragenUI(container) {
                             <th class="text-center" onclick="sortUmfragenEvents('frage_begleitung')">Frage:<br>Begleitung ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('frage_essen')">Frage:<br>Essen ⇅</th>
                             <th class="text-center" onclick="sortUmfragenEvents('frage_grund')">Frage:<br>Abmeldegrund 💬 ⇅</th>
+                            <th class="text-center" style="cursor:default;">Zusatzfragen 📝</th>
                             <th style="cursor:default; min-width: 175px;">Dokument / Link 📄</th>
                             <th style="cursor:default;"></th>
                         </tr>

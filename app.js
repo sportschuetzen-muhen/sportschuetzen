@@ -148,6 +148,9 @@ async function fetchRSVPEventsFromSupabase(lizenz) {
                 dokument_url: e.dokument_url || '',
                 details: e.details || '',
                 options: Array.isArray(e.options) ? e.options : [],
+                questions_schema: Array.isArray(e.questions_schema) ? e.questions_schema : [],
+                answers: (uResp && uResp.answers && typeof uResp.answers === 'object') ? uResp.answers : {},
+                event_type: e.event_type || 'standard',
                 attending: uResp ? uResp.attending : null,
                 optionids: uResp ? (uResp.optionids || '') : '',
                 count: uResp ? (parseInt(uResp.count) || 1) : 1,
@@ -165,7 +168,7 @@ async function fetchRSVPEventsFromSupabase(lizenz) {
 /**
  * 4. RSVP Antwort speichern (public.poll_responses)
  */
-async function saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, optionids) {
+async function saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, optionids, answers = {}) {
     const headers = {
         ...getSupabaseHeaders(),
         'Content-Type': 'application/json',
@@ -179,7 +182,8 @@ async function saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen,
         essen: parseInt(essen) || 0,
         vegi: parseInt(vegi) || 0,
         grund: String(grund || '').trim(),
-        optionids: String(optionids || '').trim()
+        optionids: String(optionids || '').trim(),
+        answers: (answers && typeof answers === 'object') ? answers : {}
     };
     try {
         const res = await fetch(`${SUPABASE_REST_URL}/poll_responses`, {
@@ -785,7 +789,8 @@ function renderTermine(data, activeLizenz) {
             const isAttending = t.attending === true || t.attending === "true";
             
             let onYesClick = `submitRSVP('${t.id}', true)`;
-            if (t.frage_begleitung || t.frage_essen) {
+            const hasDynamicQuestions = Array.isArray(t.questions_schema) && t.questions_schema.length > 0;
+            if (t.frage_begleitung || t.frage_essen || hasDynamicQuestions) {
                 const cCount = (t.count !== undefined && t.count !== null && t.count !== "") ? Number(t.count) : 1;
                 const cEssen = (t.essen !== undefined && t.essen !== null && t.essen !== "") ? Number(t.essen) : ((t.food !== undefined && t.food !== null && t.food !== "") ? Number(t.food) : 1);
                 const cVegi = (t.vegi !== undefined && t.vegi !== null && t.vegi !== "") ? Number(t.vegi) : 0;
@@ -1677,6 +1682,10 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount 
     const heroCard = document.getElementById(`rsvp-${eventId}`);
     if (!heroCard) return;
 
+    const curEvent = (allTermine || []).find(x => String(x.id) === String(eventId));
+    const dynamicQuestions = (curEvent && Array.isArray(curEvent.questions_schema)) ? curEvent.questions_schema : [];
+    const prevAnswers = (curEvent && curEvent.answers && typeof curEvent.answers === 'object') ? curEvent.answers : {};
+
     let html = `
         <div class="hero-card-inner">
             <h2 style="font-size:1.1rem; color: #1e293b; margin-bottom:15px;">Zusatzinfos</h2>
@@ -1687,7 +1696,7 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount 
         html += `
             <div>
                 <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Personen (inkl. dir):</label>
-                <input type="number" id="input-count-${eventId}" value="${currentCount}" min="1" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                <input type="number" id="input-count-${eventId}" value="${currentCount}" min="1" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box;">
             </div>
         `;
     }
@@ -1696,13 +1705,87 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount 
         html += `
             <div>
                 <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Standard):</label>
-                <input type="number" id="input-essen-${eventId}" value="${currentEssen}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                <input type="number" id="input-essen-${eventId}" value="${currentEssen}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box;">
             </div>
             <div style="margin-top:12px;">
                 <label style="font-size:0.9rem; font-weight:bold; color:#475569;">Anzahl Menüs (Vegetarisch):</label>
-                <input type="number" id="input-vegi-${eventId}" value="${currentVegi}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem;">
+                <input type="number" id="input-vegi-${eventId}" value="${currentVegi}" min="0" max="10" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box;">
             </div>
         `;
+    }
+
+    // DYNAMISCHE FRAGEN RENDERN
+    if (dynamicQuestions.length > 0) {
+        dynamicQuestions.forEach(q => {
+            const rawVal = prevAnswers[q.id];
+            const qReq = q.required ? '<span style="color:#e11d48;">*</span>' : '';
+
+            if (q.type === 'text') {
+                const val = rawVal !== undefined ? String(rawVal) : '';
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                        <input type="text" id="q-input-${eventId}-${q.id}" value="${escapeHtml(val)}" placeholder="Deine Antwort..." style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box;">
+                    </div>
+                `;
+            } else if (q.type === 'textarea') {
+                const val = rawVal !== undefined ? String(rawVal) : '';
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                        <textarea id="q-input-${eventId}-${q.id}" rows="2" placeholder="Deine Antwort..." style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:0.95rem; font-family:inherit; box-sizing:border-box;">${escapeHtml(val)}</textarea>
+                    </div>
+                `;
+            } else if (q.type === 'number') {
+                const val = (rawVal !== undefined && rawVal !== null && rawVal !== '') ? String(rawVal) : '';
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                        <input type="number" id="q-input-${eventId}-${q.id}" value="${escapeHtml(val)}" min="0" max="999" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box;">
+                    </div>
+                `;
+            } else if (q.type === 'boolean') {
+                const isJa = String(rawVal).toLowerCase() === 'ja' || rawVal === true;
+                const isNein = String(rawVal).toLowerCase() === 'nein' || rawVal === false;
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                        <select id="q-input-${eventId}-${q.id}" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box; background:white;">
+                            <option value="">-- Bitte wählen --</option>
+                            <option value="ja" ${isJa ? 'selected' : ''}>Ja</option>
+                            <option value="nein" ${isNein ? 'selected' : ''}>Nein</option>
+                        </select>
+                    </div>
+                `;
+            } else if (q.type === 'select') {
+                const opts = Array.isArray(q.options) ? q.options : (String(q.options || '').split(',').map(s => s.trim()).filter(Boolean));
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                        <select id="q-input-${eventId}-${q.id}" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box; background:white;">
+                            <option value="">-- Bitte wählen --</option>
+                            ${opts.map(o => `<option value="${escapeHtml(o)}" ${String(rawVal) === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            } else if (q.type === 'multiselect') {
+                const opts = Array.isArray(q.options) ? q.options : (String(q.options || '').split(',').map(s => s.trim()).filter(Boolean));
+                const checkedArr = Array.isArray(rawVal) ? rawVal : (rawVal ? [rawVal] : []);
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569; display:block; margin-bottom:6px;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            ${opts.map(o => `
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.92rem; color:#334155; cursor:pointer;">
+                                    <input type="checkbox" name="q-cb-${eventId}-${q.id}" value="${escapeHtml(o)}" ${checkedArr.includes(o) ? 'checked' : ''} style="width:18px; height:18px; accent-color:var(--primary);">
+                                    <span>${escapeHtml(o)}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+        });
     }
 
     html += `
@@ -1779,7 +1862,10 @@ window.submitRSVP = async function(eventId, attending) {
     let essen = 0;
     let vegi = 0;
     let grund = '';
+    const answers = {};
     
+    const curEvent = (allTermine || []).find(x => String(x.id) === String(eventId));
+
     if (attending) {
         const countInput = document.getElementById(`input-count-${eventId}`);
         if (countInput) count = parseInt(countInput.value) || 1;
@@ -1789,6 +1875,30 @@ window.submitRSVP = async function(eventId, attending) {
 
         const vegiInput = document.getElementById(`input-vegi-${eventId}`);
         if (vegiInput) vegi = parseInt(vegiInput.value) || 0;
+
+        // Dynamische Zusatzfragen validieren und sammeln
+        if (curEvent && Array.isArray(curEvent.questions_schema) && curEvent.questions_schema.length > 0) {
+            for (const q of curEvent.questions_schema) {
+                if (q.type === 'multiselect') {
+                    const checkedNodes = document.querySelectorAll(`input[name="q-cb-${eventId}-${q.id}"]:checked`);
+                    const checkedVals = Array.from(checkedNodes).map(cb => cb.value);
+                    if (q.required && checkedVals.length === 0) {
+                        alert(`Bitte wähle mindestens eine Option für: ${q.title || 'Zusatzfrage'}`);
+                        return;
+                    }
+                    answers[q.id] = checkedVals;
+                } else {
+                    const inp = document.getElementById(`q-input-${eventId}-${q.id}`);
+                    const val = inp ? inp.value.trim() : '';
+                    if (q.required && !val) {
+                        alert(`Bitte fülle das Pflichtfeld aus: ${q.title || 'Zusatzfrage'}`);
+                        if (inp) inp.focus();
+                        return;
+                    }
+                    answers[q.id] = (q.type === 'number') ? (val ? Number(val) : 0) : val;
+                }
+            }
+        }
     } else {
         const grundInput = document.getElementById(`input-grund-${eventId}`);
         if (grundInput) grund = grundInput.value.trim();
@@ -1797,14 +1907,11 @@ window.submitRSVP = async function(eventId, attending) {
     document.getElementById(`rsvp-${eventId}`).innerHTML = `<span style="font-size:0.8rem; color:white; font-weight:bold;">Verarbeite...</span>`;
 
     try {
-        // Sicherstellen dass Lizenz sechstellig ist
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
-
-        // 1. Supabase Master (direkt speichern)
-        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, '');
+        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, '', answers);
         if (!ok) throw new Error("Fehler beim Speichern in Supabase");
         
-        loadTermine(); // Bei Erfolg neu laden
+        loadTermine();
     } catch(e) { 
         console.error(e);
         alert("Fehler: Deine Antwort konnte nicht gespeichert werden. Bitte versuche es erneut.");

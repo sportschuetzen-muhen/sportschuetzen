@@ -1,8 +1,9 @@
 # Fachdokumentation: Umfragen, Anlässe & Dynamischer Formularbaukasten
 
-> **Status:** PRODUKTIV (Ist-Stand) / ZIELARCHITEKTUR FORMULARBAUKASTEN (Konzeption)  
+> **Status:** PRODUKTIV (Migration 67 umgesetzt)  
 > **Stand:** Oktober 2026  
 > **Komponenten:** `public.poll_events`, `poll_responses`, `poll_views`, `poll_responses_log`, `events`, `event_items`, `event_shifts`, `gv_instances`  
+> **Migration:** [`67_dynamic_survey_forms_and_responses.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/67_dynamic_survey_forms_and_responses.sql)  
 > **Frontend:** Vorstandsportal ([`vorstand/js/umfragen/`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/umfragen/)) & Mobile PWA ([`index.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/index.html), [`app.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app.js))  
 > **Berechtigungen:** `umfragen.view` (Einsehen) / `umfragen.manage` (Verwalten)
 

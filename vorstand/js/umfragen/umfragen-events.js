@@ -52,6 +52,7 @@ function renderDesktopEventRow(e, idx, canWrite) {
     const isSchiess = isTrue(e.schiessanlass);
     const parsedOpts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
     const optCount = parsedOpts.length;
+    const qCount = Array.isArray(e.questions_schema) ? e.questions_schema.length : 0;
 
     return `
     <tr>
@@ -98,6 +99,15 @@ function renderDesktopEventRow(e, idx, canWrite) {
             <input type="checkbox" id="cb-grund-${idx}" class="form-check-input" ${isTrue(e.frage_grund) && !isSchiess ? 'checked' : ''}
                 onchange="umfragenState[${idx}].frage_grund=this.checked; syncEventField(${idx}, 'frage_grund', this.checked); window.markUnsaved()"
                 ${!canWrite || isSchiess ? 'disabled' : ''}>
+        </td>
+        <td class="text-center align-middle">
+            <button class="btn btn-xs ${qCount > 0 ? 'btn-primary' : 'btn-outline-secondary'} px-2 py-1"
+                id="btn-questions-${idx}"
+                style="font-size:0.75rem;"
+                title="Zusatzfragen für diesen Anlass verwalten"
+                onclick="toggleQuestionsSchemaEditor(${idx})" ${!canWrite?'disabled':''}>
+                📝 ${qCount > 0 ? qCount + (qCount === 1 ? ' Frage' : ' Fragen') : '+ Fragen'}
+            </button>
         </td>
         <td class="align-middle">
             <div class="input-group input-group-sm" style="min-width: 185px;">
@@ -243,6 +253,18 @@ function renderMobileEventCard(e, idx, canWrite) {
                 </div>
             </div>
 
+            <!-- Zusatzfragen Button (Mobile) -->
+            <div class="mt-2 d-flex justify-content-between align-items-center">
+                <button class="btn btn-xs ${Array.isArray(e.questions_schema) && e.questions_schema.length > 0 ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2"
+                    id="mob-btn-questions-${idx}"
+                    style="font-size:0.75rem;"
+                    onclick="toggleQuestionsSchemaEditor(${idx})">
+                    📝 ${Array.isArray(e.questions_schema) && e.questions_schema.length > 0 ? e.questions_schema.length + (e.questions_schema.length === 1 ? ' Zusatzfrage' : ' Zusatzfragen') : '+ Zusatzfragen'}
+                </button>
+            </div>
+            <!-- Mobiler Zusatzfragen Editor Container -->
+            <div id="mob-questions-editor-${idx}" class="mt-2" style="display:none;"></div>
+
             <!-- Mobiler Poll-Optionen Editor Container -->
             <div id="mob-poll-editor-${idx}" class="mt-2 p-2 rounded border bg-white" style="display:none;">
                 <div style="font-weight:700; color:#0f3a5d; font-size:0.8rem; margin-bottom:6px;">
@@ -344,7 +366,9 @@ function addUmfrageEvent() {
         frage_essen: false,
         frage_grund: true,
         dokument_url: "",
-        options: []
+        options: [],
+        questions_schema: [],
+        event_type: 'standard'
     });
     renderUmfragenEventsList();
 }
@@ -388,7 +412,9 @@ async function saveUmfragenData() {
                 frage_grund: isTrue(e.frage_grund),
                 dokument_url: String(e.dokument_url || ''),
                 details: String(e.details || ''),
-                options: e.options || []
+                options: e.options || [],
+                questions_schema: e.questions_schema || [],
+                event_type: e.event_type || (isTrue(e.schiessanlass) ? 'schiessen' : 'standard')
             }));
 
             const { error: supaErr } = await supa.from('poll_events').upsert(pollRows);
@@ -716,3 +742,220 @@ async function uploadEventDocumentFiles(fileList, idx, isMobile = false) {
     if (iconEl) iconEl.className = 'fas fa-cloud-upload-alt';
     if (fileInputEl) fileInputEl.value = '';
 }
+
+// =====================================================================
+// DYNAMISCHER FORMULARBAUKASTEN (ZUSATZFRAGEN EDITOR)
+// =====================================================================
+
+function toggleQuestionsSchemaEditor(idx) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    if (!Array.isArray(e.questions_schema)) {
+        e.questions_schema = (typeof parseQuestionsSchema === 'function') ? parseQuestionsSchema(e.questions_schema) : [];
+    }
+
+    // 1. Mobile Editor umschalten, falls kleiner Bildschirm
+    const mobEditor = document.getElementById(`mob-questions-editor-${idx}`);
+    if (mobEditor && window.innerWidth < 768) {
+        const isShown = mobEditor.style.display !== 'none';
+        mobEditor.style.display = isShown ? 'none' : 'block';
+        if (!isShown) renderQuestionsSchemaContent(idx, mobEditor, true);
+        return;
+    }
+
+    // 2. Desktop Editor (unter der Tabellenzeile)
+    const editorId = `questions-editor-${idx}`;
+    const existing = document.getElementById(editorId);
+    if (existing) {
+        existing.remove();
+        return;
+    }
+
+    const tbody = document.getElementById('umfragen-events-body');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr');
+    const targetRow = rows[idx];
+    if (!targetRow) return;
+
+    const editorRow = document.createElement('tr');
+    editorRow.id = editorId;
+    editorRow.style.background = '#f8fafc';
+    const td = document.createElement('td');
+    td.colSpan = 13;
+    td.style.padding = '14px 20px';
+    renderQuestionsSchemaContent(idx, td, false);
+    editorRow.appendChild(td);
+    targetRow.insertAdjacentElement('afterend', editorRow);
+}
+window.toggleQuestionsSchemaEditor = toggleQuestionsSchemaEditor;
+
+function renderQuestionsSchemaContent(idx, container, isMobile) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    const questions = Array.isArray(e.questions_schema) ? e.questions_schema : [];
+
+    let html = `
+        <div class="border rounded p-3 bg-white shadow-sm" style="border-left: 4px solid #0d6efd !important;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-list-check me-2"></i>Zusatzfragen für &laquo;${escapeHtml(e.title || 'Anlass')}&raquo;</h6>
+                    <small class="text-muted">Definiere beliebige Zusatzfragen für diesen Anlass. Antworten erscheinen automatisch bei der Auswertung.</small>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleQuestionsSchemaEditor(${idx})">
+                    <i class="fas fa-times me-1"></i>Schliessen
+                </button>
+            </div>
+
+            <div id="questions-list-${idx}" class="d-flex flex-column gap-2 mb-3">
+    `;
+
+    if (questions.length === 0) {
+        html += `<div class="text-muted small p-2 bg-light rounded text-center" id="empty-questions-${idx}">Noch keine Zusatzfragen definiert. Klicke unten auf «+ Neue Frage hinzufügen».</div>`;
+    } else {
+        questions.forEach((q, qi) => {
+            html += renderQuestionRowHtml(idx, qi, q);
+        });
+    }
+
+    html += `
+            </div>
+
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button type="button" class="btn btn-sm btn-success" onclick="addQuestionToEvent(${idx})">
+                    <i class="fas fa-plus me-1"></i>+ Neue Frage hinzufügen
+                </button>
+                <small class="text-muted ms-2">Typen: Text, Mehrzeilig, Dropdown, Mehrfachauswahl, Zahl, Ja/Nein</small>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function renderQuestionRowHtml(idx, qi, q) {
+    const isChoice = q.type === 'select' || q.type === 'multiselect';
+    const optVal = Array.isArray(q.options) ? q.options.join(', ') : (q.options || '');
+
+    return `
+        <div class="card p-2 bg-light border" id="q-row-${idx}-${qi}">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-4 col-12">
+                    <label class="form-label small fw-bold mb-1">Fragetext / Bezeichnung:</label>
+                    <input type="text" class="form-control form-control-sm" placeholder="z.B. T-Shirt Grösse, Kuchenspende..."
+                        value="${escapeHtml(q.title || '')}"
+                        onchange="updateQuestionField(${idx}, ${qi}, 'title', this.value)">
+                </div>
+                <div class="col-md-2 col-6">
+                    <label class="form-label small fw-bold mb-1">Antworttyp:</label>
+                    <select class="form-select form-select-sm" onchange="updateQuestionField(${idx}, ${qi}, 'type', this.value); reRenderQuestionsList(${idx});">
+                        <option value="text" ${q.type === 'text' ? 'selected' : ''}>Text (einzeilig)</option>
+                        <option value="textarea" ${q.type === 'textarea' ? 'selected' : ''}>Kommentar (mehrzeilig)</option>
+                        <option value="select" ${q.type === 'select' ? 'selected' : ''}>Auswahl (Dropdown)</option>
+                        <option value="multiselect" ${q.type === 'multiselect' ? 'selected' : ''}>Mehrfachauswahl (Checkboxen)</option>
+                        <option value="number" ${q.type === 'number' ? 'selected' : ''}>Zahl / Menge</option>
+                        <option value="boolean" ${q.type === 'boolean' ? 'selected' : ''}>Ja / Nein</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-6" style="${isChoice ? '' : 'opacity:0.35;'}">
+                    <label class="form-label small fw-bold mb-1">Optionen (Kommagetrennt):</label>
+                    <input type="text" class="form-control form-control-sm" placeholder="z.B. S, M, L, XL"
+                        value="${escapeHtml(optVal)}"
+                        ${!isChoice ? 'disabled' : ''}
+                        onchange="updateQuestionOptions(${idx}, ${qi}, this.value)">
+                </div>
+                <div class="col-md-2 col-6 text-center">
+                    <label class="form-label small fw-bold mb-1 d-block">Pflichtfeld:</label>
+                    <div class="form-check form-switch d-inline-block">
+                        <input class="form-check-input" type="checkbox" ${q.required ? 'checked' : ''}
+                            onchange="updateQuestionField(${idx}, ${qi}, 'required', this.checked)">
+                    </div>
+                </div>
+                <div class="col-md-1 col-6 text-end">
+                    <label class="form-label small d-none d-md-block mb-1">&nbsp;</label>
+                    <button type="button" class="btn btn-sm btn-outline-danger" title="Frage löschen" onclick="removeQuestionFromEvent(${idx}, ${qi})">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function addQuestionToEvent(idx) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    if (!Array.isArray(e.questions_schema)) e.questions_schema = [];
+    e.questions_schema.push({
+        id: 'q_' + Math.random().toString(36).substring(2, 9),
+        title: '',
+        type: 'text',
+        required: false,
+        options: []
+    });
+    window.markUnsaved();
+    reRenderQuestionsList(idx);
+    updateQuestionsBadge(idx);
+}
+window.addQuestionToEvent = addQuestionToEvent;
+
+function removeQuestionFromEvent(idx, qi) {
+    const e = umfragenState[idx];
+    if (!e || !Array.isArray(e.questions_schema)) return;
+    e.questions_schema.splice(qi, 1);
+    window.markUnsaved();
+    reRenderQuestionsList(idx);
+    updateQuestionsBadge(idx);
+}
+window.removeQuestionFromEvent = removeQuestionFromEvent;
+
+function updateQuestionField(idx, qi, field, value) {
+    const e = umfragenState[idx];
+    if (!e || !Array.isArray(e.questions_schema) || !e.questions_schema[qi]) return;
+    e.questions_schema[qi][field] = value;
+    window.markUnsaved();
+}
+window.updateQuestionField = updateQuestionField;
+
+function updateQuestionOptions(idx, qi, rawStr) {
+    const e = umfragenState[idx];
+    if (!e || !Array.isArray(e.questions_schema) || !e.questions_schema[qi]) return;
+    const parts = String(rawStr || '').split(',').map(s => s.trim()).filter(Boolean);
+    e.questions_schema[qi].options = parts;
+    window.markUnsaved();
+}
+window.updateQuestionOptions = updateQuestionOptions;
+
+function reRenderQuestionsList(idx) {
+    const list = document.getElementById(`questions-list-${idx}`);
+    const e = umfragenState[idx];
+    if (!list || !e) return;
+    const questions = Array.isArray(e.questions_schema) ? e.questions_schema : [];
+    if (questions.length === 0) {
+        list.innerHTML = `<div class="text-muted small p-2 bg-light rounded text-center">Noch keine Zusatzfragen definiert. Klicke unten auf «+ Neue Frage hinzufügen».</div>`;
+    } else {
+        list.innerHTML = questions.map((q, qi) => renderQuestionRowHtml(idx, qi, q)).join('');
+    }
+}
+window.reRenderQuestionsList = reRenderQuestionsList;
+
+function updateQuestionsBadge(idx) {
+    const e = umfragenState[idx];
+    if (!e) return;
+    const count = Array.isArray(e.questions_schema) ? e.questions_schema.length : 0;
+    
+    // Desktop Button
+    const dtBtn = document.getElementById(`btn-questions-${idx}`);
+    if (dtBtn) {
+        dtBtn.className = `btn btn-xs ${count > 0 ? 'btn-primary' : 'btn-outline-secondary'} px-2 py-1`;
+        dtBtn.innerHTML = `📝 ${count > 0 ? count + (count === 1 ? ' Frage' : ' Fragen') : '+ Fragen'}`;
+    }
+
+    // Mobile Button
+    const mobBtn = document.getElementById(`mob-btn-questions-${idx}`);
+    if (mobBtn) {
+        mobBtn.className = `btn btn-xs ${count > 0 ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2`;
+        mobBtn.innerHTML = `📝 ${count > 0 ? count + (count === 1 ? ' Zusatzfrage' : ' Zusatzfragen') : '+ Zusatzfragen'}`;
+    }
+}
+window.updateQuestionsBadge = updateQuestionsBadge;
+

@@ -33,7 +33,8 @@ async function fetchEventParticipants(eventId) {
                         essen: parseInt(r.essen) || 0,
                         vegi: parseInt(r.vegi) || 0,
                         grund: r.grund || '',
-                        optionids: r.optionids || ''
+                        optionids: r.optionids || '',
+                        answers: (r.answers && typeof r.answers === 'object') ? r.answers : {}
                     };
                 });
                 window._umfragenParticipantsCache = window._umfragenParticipantsCache || {};
@@ -92,12 +93,23 @@ async function loadParticipantsIfEventSelected() {
             `;
         }
 
+        const currentEv = (umfragenState || []).find(e => String(e.id) === String(currentEventId));
+        const qSchema = (currentEv && Array.isArray(currentEv.questions_schema)) ? currentEv.questions_schema : [];
+
         html += `<div class="table-responsive"><table class="table table-sm table-striped">
-            <thead><tr><th>Lizenz</th><th>Name</th><th>Adresse (aus DB)</th><th>Begl.</th><th>Essen</th><th>Vegi</th></tr></thead>
+            <thead><tr>
+                <th>Lizenz</th>
+                <th>Name</th>
+                <th>Adresse (aus DB)</th>
+                <th>Begl.</th>
+                <th>Essen</th>
+                <th>Vegi</th>
+                ${qSchema.map(q => `<th>${escapeHtml(q.title || 'Frage')}</th>`).join('')}
+            </tr></thead>
             <tbody>`;
 
         if(pData.length === 0) {
-            html += `<tr><td colspan="6" class="text-center text-muted">Niemand hat sich bisher angemeldet.</td></tr></tbody>`;
+            html += `<tr><td colspan="${6 + qSchema.length}" class="text-center text-muted">Niemand hat sich bisher angemeldet.</td></tr></tbody>`;
         } else {
             pData.forEach(p => {
                 let liz = String(p.lizenz || '').trim();
@@ -144,7 +156,22 @@ async function loadParticipantsIfEventSelected() {
                     jahrgang: jahrgang,
                     strasse: strasse,
                     plz: plz,
-                    ort: ort
+                    ort: ort,
+                    answers: p.answers || {}
+                });
+
+                let extraAnswersHtml = '';
+                qSchema.forEach(q => {
+                    let ansVal = p.answers ? p.answers[q.id] : undefined;
+                    if (ansVal === undefined || ansVal === null || ansVal === '') {
+                        extraAnswersHtml += `<td class="text-muted">–</td>`;
+                    } else if (Array.isArray(ansVal)) {
+                        extraAnswersHtml += `<td><span class="badge bg-light text-dark border">${escapeHtml(ansVal.join(', '))}</span></td>`;
+                    } else if (typeof ansVal === 'boolean') {
+                        extraAnswersHtml += `<td>${ansVal ? '✅ Ja' : '❌ Nein'}</td>`;
+                    } else {
+                        extraAnswersHtml += `<td>${escapeHtml(String(ansVal))}</td>`;
+                    }
                 });
 
                 html += `<tr>
@@ -154,6 +181,7 @@ async function loadParticipantsIfEventSelected() {
                     <td>${p.count > 1 ? '<span class="badge bg-info text-dark">+'+(p.count-1)+'</span>' : '-'}</td>
                     <td>${p.essen > 0 ? '<span class="badge bg-success">'+p.essen+'</span>' : '-'}</td>
                     <td>${p.vegi > 0 ? '<span class="badge bg-warning text-dark">'+p.vegi+'</span>' : '-'}</td>
+                    ${extraAnswersHtml}
                 </tr>`;
             });
 
@@ -165,6 +193,7 @@ async function loadParticipantsIfEventSelected() {
                     <td class="text-center"><span class="badge bg-info text-dark" title="Gesamtzahl Personen">${sumCount} Pers.</span></td>
                     <td class="text-center"><span class="badge bg-success" title="Gesamtzahl Essen">${sumEssen}</span></td>
                     <td class="text-center"><span class="badge bg-warning text-dark" title="Gesamtzahl Vegi">${sumVegi}</span></td>
+                    ${qSchema.length > 0 ? `<td colspan="${qSchema.length}"></td>` : ''}
                 </tr>
             </tfoot>`;
         }

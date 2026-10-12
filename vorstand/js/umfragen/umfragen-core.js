@@ -72,6 +72,19 @@ function parsePollOptions(raw) {
 }
 window.parsePollOptions = parsePollOptions;
 
+function parseQuestionsSchema(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch(e) {}
+  }
+  return [];
+}
+window.parseQuestionsSchema = parseQuestionsSchema;
+
 function formatSwissDate(dateVal) {
     if (!dateVal) return '-';
     let str = dateVal.toString().trim();
@@ -355,6 +368,7 @@ async function loadUmfragenData(force = false) {
                 title: e.title || '',
                 datum: e.datum || '',
                 gruppe: e.gruppe || 'aktiv',
+                event_type: e.event_type || 'standard',
                 schiessanlass: isTrue(e.schiessanlass),
                 aktiv: isTrue(e.aktiv),
                 showparticipants: isTrue(e.showparticipants),
@@ -363,7 +377,8 @@ async function loadUmfragenData(force = false) {
                 frage_grund: isTrue(e.frage_grund),
                 dokument_url: e.dokument_url || '',
                 details: e.details || '',
-                options: parsePollOptions(e.options)
+                options: parsePollOptions(e.options),
+                questions_schema: parseQuestionsSchema(e.questions_schema)
             }));
             console.log(`✅ ${umfragenState.length} Umfragen & Events aus Supabase geladen.`);
             renderUmfragenUI(container);
