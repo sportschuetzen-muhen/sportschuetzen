@@ -87,66 +87,113 @@ async function runJMAction(functionName, actionLabel) {
     }
 
     try {
-        let archivJahr = null;
         if (functionName === 'archiviereJahresmeisterschaft') {
-            archivJahr = prompt("Bitte gib das Jahr für das Archiv ein (z.B. 2025):", new Date().getFullYear());
+            const defaultYear = new Date().getFullYear();
+            const archivJahr = prompt("Bitte gib das Jahr für das Archiv ein (z.B. 2025):", defaultYear);
             if (!archivJahr || !/^\d{4}$/.test(archivJahr)) {
                 showError("Ungültiges Jahr eingegeben. Aktion abgebrochen.");
                 return;
             }
 
             showLoadingOverlay(`Archiviere Saison ${archivJahr} in Supabase...`);
+
+            // Snapshot mit Status-Spalte und Badges erstellen
+            const archivedGrid = createArchivedGridWithStatus(jmRawGrid);
+
             await sb.from('jm_seasons').upsert({
                 jahr: archivJahr,
                 title: `Jahresmeisterschaft ${archivJahr}`,
-                raw_grid: jmRawGrid,
+                raw_grid: archivedGrid,
                 junior_exclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true),
                 is_archived: true,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'jahr' });
 
             if (typeof syncJMShootersToSupabase === 'function') {
-                await syncJMShootersToSupabase(sb, archivJahr, jmRawGrid);
+                await syncJMShootersToSupabase(sb, archivJahr, archivedGrid);
             }
 
-            showSuccess(`Saison ${archivJahr} wurde erfolgreich archiviert!`);
+            showSuccess(`Saison ${archivJahr} wurde erfolgreich archiviert (inkl. Auf- und Absteiger-Badges)!`);
             setTimeout(() => loadJahresmeisterschaftData(true), 800);
 
         } else if (functionName === 'jahresmeisterschaftZuruecksetzen') {
-            if (!confirm("ACHTUNG: Dies setzt alle Resultate für das neue Jahr auf 0 zurück!\n\nFortfahren?")) {
+            // 1. Schützenrangliste auswerten
+            const standing = analyzeJMStanding(jmRawGrid);
+            if (!standing) {
+                showError("Konnte Schützenrangliste für Auf- und Abstieg nicht ermitteln.");
                 return;
             }
 
-            showLoadingOverlay("Setze Jahresmeisterschaft in Supabase zurück...");
-            const resetGrid = JSON.parse(JSON.stringify(jmRawGrid));
-            for (let r = 5; r < resetGrid.length; r++) {
-                if (!resetGrid[r]) continue;
-                for (let c = 6; c < resetGrid[r].length; c++) {
-                    if (resetGrid[r][c] !== '' && !isNaN(parseFloat(resetGrid[r][c]))) {
-                        resetGrid[r][c] = '';
+            const aufsteigerNamen = standing.aufsteiger.map(s => `${s.vorname} ${s.nachname}`).join(', ') || 'Keine';
+            const absteigerNamen = standing.absteiger.map(s => `${s.vorname} ${s.nachname}`).join(', ') || 'Keine';
+
+            // 2. Bestätigung mit Anzeige von Auf- und Abstieg
+            const doProceed = confirm(
+                `NEUES JAHR STARTEN (SAISONWECHSEL & AUF-/ABSTIEG)\n\n` +
+                `Folgende Schützen wechseln die Liga:\n` +
+                `▲ Aufsteiger in Liga 1: ${aufsteigerNamen}\n` +
+                `▼ Absteiger in Liga 2: ${absteigerNamen}\n\n` +
+                `Möchtest du mit dem Saisonwechsel fortfahren?`
+            );
+            if (!doProceed) return;
+
+            // 3. Optionale automatische Archivierung vor dem Nullen
+            const doArchive = confirm(
+                `Möchtest du die abgelaufene Saison vor dem Nullen archivieren?\n\n` +
+                `(Empfohlen: Sichert alle bisherigen Resultate inkl. Auf- und Absteiger-Badges)`
+            );
+
+            if (doArchive) {
+                const prevYear = new Date().getFullYear();
+                const archivJahr = prompt("Bitte gib das Jahr für das Archiv ein (z.B. 2025):", prevYear);
+                if (archivJahr && /^\d{4}$/.test(archivJahr)) {
+                    showLoadingOverlay(`Archiviere Saison ${archivJahr} in Supabase...`);
+                    const archivedGrid = createArchivedGridWithStatus(jmRawGrid);
+                    await sb.from('jm_seasons').upsert({
+                        jahr: archivJahr,
+                        title: `Jahresmeisterschaft ${archivJahr}`,
+                        raw_grid: archivedGrid,
+                        junior_exclusions: Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true),
+                        is_archived: true,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'jahr' });
+
+                    if (typeof syncJMShootersToSupabase === 'function') {
+                        await syncJMShootersToSupabase(sb, archivJahr, archivedGrid);
+                    }
+                } else {
+                    if (!confirm("Archivierung übersprungen oder abgebrochen. Trotzdem mit dem Nullen für das neue Jahr fortfahren?")) {
+                        return;
                     }
                 }
             }
 
+            showLoadingOverlay("Führe Saisonwechsel & Auf-/Abstieg in Supabase aus...");
+
+            // 4. Neues Grid für 'current' mit transferierten Schützen aufbauen
+            const newGrid = buildNewSeasonGrid(jmRawGrid, standing);
+
+            // 5. Grid neu durchrechnen (alles wird 0.00 %)
             if (typeof recalculateJMRawGrid === 'function') {
-                recalculateJMRawGrid(resetGrid);
+                recalculateJMRawGrid(newGrid);
             }
 
+            // 6. In Supabase speichern
             await sb.from('jm_seasons').upsert({
                 jahr: 'current',
                 title: 'Jahresmeisterschaft (aktuell)',
-                raw_grid: resetGrid,
+                raw_grid: newGrid,
                 junior_exclusions: [],
                 is_archived: false,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'jahr' });
 
-            jmRawGrid = resetGrid;
+            jmRawGrid = newGrid;
             if (typeof syncJMShootersToSupabase === 'function') {
-                await syncJMShootersToSupabase(sb, 'current', resetGrid);
+                await syncJMShootersToSupabase(sb, 'current', newGrid);
             }
 
-            showSuccess("Jahresmeisterschaft für das neue Jahr zurückgesetzt!");
+            showSuccess("Neues Jahr erfolgreich gestartet! Liga 1 und 2 wurden mit Auf- und Abstieg aktualisiert.");
             setTimeout(() => loadJahresmeisterschaftData(true), 800);
         }
     } catch (e) {
@@ -156,6 +203,191 @@ async function runJMAction(functionName, actionLabel) {
     }
 }
 window.runJMAction = runJMAction;
+
+// Erstellt einen Snapshot der aktuellen Saison inklusive 'Status'-Spalte und Auf-/Absteiger-Badges
+function createArchivedGridWithStatus(grid) {
+    if (!grid || grid.length < 6) return grid;
+
+    const archivedGrid = JSON.parse(JSON.stringify(grid));
+
+    let hasStatusCol = false;
+    let statusColIndex = -1;
+    if (archivedGrid[4]) {
+        for (let c = 0; c < archivedGrid[4].length; c++) {
+            if (String(archivedGrid[4][c] || '').trim().toLowerCase() === 'status') {
+                hasStatusCol = true;
+                statusColIndex = c;
+                break;
+            }
+        }
+    }
+
+    // Wenn noch keine Status-Spalte existiert: An Index 6 in allen Zeilen einfügen
+    if (!hasStatusCol) {
+        statusColIndex = 6;
+        for (let r = 0; r < archivedGrid.length; r++) {
+            if (!archivedGrid[r]) archivedGrid[r] = [];
+            const cellVal = (r === 4) ? 'Status' : '';
+            archivedGrid[r].splice(statusColIndex, 0, cellVal);
+        }
+    }
+
+    const colTotal = 19; // Bei vorhandener Status-Spalte ist Total an Index 19
+
+    // 1. Liga 1 Schützen (Zeilen 5 bis 12)
+    const liga1Shooters = [];
+    for (let r = 5; r <= 12; r++) {
+        if (!archivedGrid[r]) continue;
+        const nachname = String(archivedGrid[r][1] || '').trim();
+        const vorname = String(archivedGrid[r][2] || '').trim();
+        if (!nachname && !vorname) continue;
+        const totalVal = parseFloat(String(archivedGrid[r][colTotal] || '').replace(/%/g, '').trim()) || 0;
+        liga1Shooters.push({ rowIndex: r, nachname, vorname, total: totalVal });
+    }
+    liga1Shooters.sort((a, b) => b.total - a.total);
+
+    // Die letzten 2 Schützen aus Liga 1 sind Absteiger
+    const absteigerRows = new Set(liga1Shooters.slice(Math.max(0, liga1Shooters.length - 2)).map(s => s.rowIndex));
+
+    // 2. Liga 2 Schützen (Zeilen 15 bis Ende)
+    const liga2Shooters = [];
+    for (let r = 15; r < archivedGrid.length; r++) {
+        if (!archivedGrid[r]) continue;
+        const nachname = String(archivedGrid[r][1] || '').trim();
+        const vorname = String(archivedGrid[r][2] || '').trim();
+        if (!nachname && !vorname) continue;
+        const totalVal = parseFloat(String(archivedGrid[r][colTotal] || '').replace(/%/g, '').trim()) || 0;
+        liga2Shooters.push({ rowIndex: r, nachname, vorname, total: totalVal });
+    }
+    liga2Shooters.sort((a, b) => b.total - a.total);
+
+    // Die ersten 2 Schützen aus Liga 2 sind Aufsteiger
+    const aufsteigerRows = new Set(liga2Shooters.slice(0, 2).map(s => s.rowIndex));
+
+    // Status-Werte eintragen
+    for (let r = 5; r < archivedGrid.length; r++) {
+        if (!archivedGrid[r] || r === 13 || r === 14) continue;
+        if (absteigerRows.has(r)) {
+            archivedGrid[r][statusColIndex] = '▼ Abstieg';
+        } else if (aufsteigerRows.has(r)) {
+            archivedGrid[r][statusColIndex] = '▲ Aufstieg';
+        } else {
+            archivedGrid[r][statusColIndex] = '';
+        }
+    }
+
+    return archivedGrid;
+}
+window.createArchivedGridWithStatus = createArchivedGridWithStatus;
+
+// Analysiert das Grid und ermittelt die Aufsteiger (Liga 2) und Absteiger (Liga 1)
+function analyzeJMStanding(grid) {
+    if (!grid || grid.length < 6) return null;
+
+    let hasStatusCol = false;
+    if (grid[4]) {
+        hasStatusCol = grid[4].some(c => String(c || '').trim().toLowerCase() === 'status');
+    }
+    const colTotal = hasStatusCol ? 19 : 18;
+
+    const liga1Shooters = [];
+    for (let r = 5; r <= 12; r++) {
+        if (!grid[r]) continue;
+        const nachname = String(grid[r][1] || '').trim();
+        const vorname = String(grid[r][2] || '').trim();
+        if (!nachname && !vorname) continue;
+        const totalVal = parseFloat(String(grid[r][colTotal] || '').replace(/%/g, '').trim()) || 0;
+        liga1Shooters.push({ rowIndex: r, nachname, vorname, total: totalVal, rowData: [...grid[r]] });
+    }
+    liga1Shooters.sort((a, b) => b.total - a.total);
+
+    const liga2Shooters = [];
+    for (let r = 15; r < grid.length; r++) {
+        if (!grid[r]) continue;
+        const nachname = String(grid[r][1] || '').trim();
+        const vorname = String(grid[r][2] || '').trim();
+        if (!nachname && !vorname) continue;
+        const totalVal = parseFloat(String(grid[r][colTotal] || '').replace(/%/g, '').trim()) || 0;
+        liga2Shooters.push({ rowIndex: r, nachname, vorname, total: totalVal, rowData: [...grid[r]] });
+    }
+    liga2Shooters.sort((a, b) => b.total - a.total);
+
+    const absteigerCount = Math.min(2, Math.max(0, liga1Shooters.length - 6));
+    const liga1Stay = liga1Shooters.slice(0, Math.max(0, liga1Shooters.length - absteigerCount));
+    const absteiger = liga1Shooters.slice(Math.max(0, liga1Shooters.length - absteigerCount));
+
+    const aufsteigerCount = Math.min(2, liga2Shooters.length);
+    const aufsteiger = liga2Shooters.slice(0, aufsteigerCount);
+    const liga2Stay = liga2Shooters.slice(aufsteigerCount);
+
+    return {
+        liga1Stay,
+        absteiger,
+        aufsteiger,
+        liga2Stay
+    };
+}
+window.analyzeJMStanding = analyzeJMStanding;
+
+// Erstellt ein sauberes neues 2D-Grid für die neue Saison mit transferierten Schützen
+function buildNewSeasonGrid(grid, standing) {
+    const { liga1Stay, aufsteiger, absteiger, liga2Stay } = standing;
+
+    const newGrid = [];
+    for (let r = 0; r <= 4; r++) {
+        newGrid.push(grid[r] ? [...grid[r]] : []);
+    }
+
+    let hasStatusCol = false;
+    let statusColIndex = -1;
+    if (newGrid[4]) {
+        for (let c = 0; c < newGrid[4].length; c++) {
+            if (String(newGrid[4][c] || '').trim().toLowerCase() === 'status') {
+                hasStatusCol = true;
+                statusColIndex = c;
+                break;
+            }
+        }
+    }
+
+    const firstScoreCol = hasStatusCol ? 7 : 6;
+    const colLen = (grid[0] && grid[0].length) ? grid[0].length : 60;
+
+    function createEmptyRowForShooter(originalRow, targetRang) {
+        const row = new Array(colLen).fill('');
+        for (let c = 0; c < firstScoreCol; c++) {
+            row[c] = originalRow[c] !== undefined ? originalRow[c] : '';
+        }
+        row[0] = targetRang || '';
+        if (hasStatusCol && statusColIndex !== -1) {
+            row[statusColIndex] = '';
+        }
+        return row;
+    }
+
+    // Neue Liga 1: 6 Verbleibende + 2 Aufsteiger (exakt 8 Schützen)
+    const newLiga1 = [...liga1Stay, ...aufsteiger];
+    for (let i = 0; i < 8; i++) {
+        if (newLiga1[i]) {
+            newGrid.push(createEmptyRowForShooter(newLiga1[i].rowData, i + 1));
+        } else {
+            newGrid.push(new Array(colLen).fill(''));
+        }
+    }
+
+    // Zeilen 13 und 14: Puffer- / Trennzeilen
+    newGrid.push(grid[13] ? [...grid[13]] : new Array(colLen).fill(''));
+    newGrid.push(grid[14] ? [...grid[14]] : new Array(colLen).fill(''));
+
+    // Neue Liga 2: 2 Absteiger + verbleibende Liga 2 Schützen
+    const newLiga2 = [...absteiger, ...liga2Stay];
+    for (let i = 0; i < newLiga2.length; i++) {
+        newGrid.push(createEmptyRowForShooter(newLiga2[i].rowData, i + 1));
+    }
+
+    return newGrid;
+}
+window.buildNewSeasonGrid = buildNewSeasonGrid;
 
 async function runDeleteArchivedYearAction(jahr) {
     const confirmation = prompt(`Bist du absolut sicher, dass du das gesamte Archiv für das Jahr ${jahr} UNWIDERRUFLICH löschen möchtest?\n\nBitte tippe "${jahr}" zur Bestätigung ein:`);

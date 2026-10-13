@@ -33,39 +33,8 @@ function handleCellEdit(r, c, val, inputElem) {
 }
 
 function handleSortEnd(evt) {
-    const item = evt.item;
-    const fromRow = parseInt(item.dataset.row);
-    if (isNaN(fromRow)) return;
-
-    const toTbody = evt.to;
-    const rows = Array.from(toTbody.querySelectorAll('tr'));
-    const localIndex = rows.indexOf(item);
-    if (localIndex === -1) return;
-
-    let toRow;
-    if (toTbody.id === 'tbody-liga-1') {
-        toRow = 5 + localIndex;
-    } else {
-        toRow = 15 + localIndex;
-    }
-
-    if (fromRow === toRow) return;
-
-    // Move in memory
-    const movedRow = jmRawGrid[fromRow];
-    jmRawGrid.splice(fromRow, 1);
-    jmRawGrid.splice(toRow, 0, movedRow);
-
-    // Record for backend
-    jmPendingMoves.push({ from: fromRow, to: toRow });
-    AppState.markUnsaved();
-    if (typeof updateJMSaveButtonState === 'function') {
-        updateJMSaveButtonState();
-    }
-    
-    // Re-render
-    renderJahresmeisterschaft(jmRawGrid);
-    showSuccess("Verschiebung vermerkt. Bitte Speichern nicht vergessen.");
+    // Manuelles Verschieben unter dem Jahr deaktiviert (Auf- und Abstieg erfolgt kontrolliert beim Saisonwechsel)
+    return;
 }
 
 function updateCalculatorAlertText(hasStatusCol) {

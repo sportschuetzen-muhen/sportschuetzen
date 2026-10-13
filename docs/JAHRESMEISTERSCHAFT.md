@@ -121,6 +121,15 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 - **Auswärtsschiessen Rohpunkte:** Sämtliche erfassten Auswärtsschiessen (Spalten ab Index 41 bzw. 42 wie Bärenmoos-Schiessen, Stumpenland-Schiessen etc.) werden in allen Cockpit-Ansichten (1. & 2. Liga, Junioren-Wertung, Gesamt-Matrix) strikt als Rohpunktzahlen (z. B. 95 Punkte) formatiert und sind direkt editierbar. Es erfolgt keine irreführende Umrechnung in prozentuale Badges oder 95.00%.
 - **Dynamische Junioren-Wettkampfschalter:** Die Schalterleiste im Junioren-Tab (U21) ist vollständig dynamisiert. Einzig die Mannschaft (Top 4 Runden 9–12 / SMM 1–7) ist als zusammenhängender Block fix verdrahtet. Alle weiteren Wettkämpfe vor der Totalspalte (Spalten 6 bis 17, inklusive `leer`, `Eidgenössisches` oder künftige Anlassumbenennungen) werden dynamisch aus Zeile 3 (`grid[2]`) abgebildet und bei Deaktivierung variabel aus dem virtuellen Junioren-Total abgezogen.
 
+---
+
+## 12. Behebung UI-Ladefehler, Badges beim Archivieren & Kontrollierter Saisonwechsel (Oktober 2026)
+
+- **Ladefehler `limitIndex` behoben:** In `buildLigaTable` (`jahresmeisterschaft-ui.js`) wurde die fehlende Variablendeklaration `const limitIndex = hasStatusCol ? 42 : 41;` ergänzt, wodurch der beim Laden aufgetretene `ReferenceError` behoben ist.
+- **Deaktivierung von Drag & Drop unter dem Jahr:** Manuelles Verschieben von Schützen via Drag & Drop wurde deaktiviert. Dadurch wird verhindert, dass durch fehlerhaftes Spleissen Schützen in die Pufferzeilen 13 & 14 verschoben werden und verschwinden. Die Rangierung während der Saison erfolgt ausschliesslich dynamisch anhand der Total-Prozente.
+- **Geführter Saisonwechsel («Neues Jahr starten»):** Führt vor dem Nullen eine Schützen-Ranglistenanalyse durch und transferiert die Schützen regelkonform (Liga 1: 6 Verbleibende + 2 Aufsteiger; Liga 2: 2 Absteiger + Verbleibende), bevor die Resultate genullt und in `current` persistiert werden. Liga 1 umfasst dadurch immer exakt 8 Schützen.
+- **Auf- & Absteiger-Badges beim Archivieren (`createArchivedGridWithStatus`):** Beim Erstellen eines Archiv-Snapshots wird automatisch eine Status-Spalte (Index 6) mit den Badges `▲ Aufstieg` (Top 2 Liga 2) und `▼ Abstieg` (Letzte 2 Liga 1) eingefügt, exakt wie in den historischen Snapshots (`2023`, `2025`).
+
 
 
 

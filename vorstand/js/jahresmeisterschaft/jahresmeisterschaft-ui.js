@@ -91,7 +91,7 @@ function renderJahresmeisterschaft(grid) {
                 <li><a class="dropdown-item text-success fw-semibold" href="#" onclick="openJMImportModal()"><i class="fas fa-file-import me-2"></i>Resultate importieren...</a></li>
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')"><i class="fas fa-archive me-2"></i>Archivieren (Aktuelles Jahr)</a></li>
-                <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')"><i class="fas fa-undo me-2"></i>Neues Jahr (Nullen)</a></li>
+                <li><a class="dropdown-item text-danger" href="#" onclick="runJMAction('jahresmeisterschaftZuruecksetzen', 'Neues Jahr starten')"><i class="fas fa-calendar-plus me-2"></i>Neues Jahr starten (Saisonwechsel &amp; Auf-/Abstieg)</a></li>
             `;
         } else {
             actionsMenu.innerHTML = `
@@ -263,24 +263,7 @@ function renderJahresmeisterschaft(grid) {
 
     document.getElementById('jahresmeisterschaft-container').innerHTML = html;
 
-    // Init Sortable für Liga 1 und Liga 2
-    if (canWrite) {
-        const tbody1 = document.getElementById('tbody-liga-1');
-        const tbody2 = document.getElementById('tbody-liga-2');
-        
-        const sortableOptions = {
-            group: 'shared',
-            animation: 150,
-            fallbackOnBody: true,
-            swapThreshold: 0.65,
-            onEnd: handleSortEnd
-        };
-
-        if (tbody1 && tbody2) {
-            new Sortable(tbody1, sortableOptions);
-            new Sortable(tbody2, sortableOptions);
-        }
-    }
+    // Drag & Drop unter dem Jahr deaktiviert (Auf- und Abstieg erfolgt kontrolliert beim Saisonwechsel)
     
     // Check sizes initially
     checkLigaSizes();
@@ -316,6 +299,7 @@ function checkLigaSizes() {
 function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent) {
     let tbodyHtml = '';
     
+    const limitIndex = hasStatusCol ? 42 : 41;
     const rawStart = hasStatusCol ? 34 : 33;
     const rawEnd = hasStatusCol ? 40 : 39;
     const rawCols = [rawStart, rawStart + 1, rawStart + 2, rawStart + 3, rawStart + 4, rawStart + 5, rawStart + 6];
@@ -359,16 +343,20 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
 
         let statusTd = '';
         if (hasStatusCol && statusColIndex !== -1) {
-            const statusVal = s.rowData[statusColIndex] || '';
-            let badgeClass = 'bg-secondary';
-            if (statusVal.includes('Aufstieg')) badgeClass = 'bg-success';
-            if (statusVal.includes('Abstieg')) badgeClass = 'bg-danger';
-            statusTd = `<td style="width: 100px; min-width: 100px; max-width: 100px;"><span class="badge ${badgeClass}">${escapeHtml(statusVal)}</span></td>`;
+            const statusVal = String(s.rowData[statusColIndex] || '').trim();
+            let badgeHtml = '';
+            if (statusVal.includes('Aufstieg')) {
+                badgeHtml = `<span class="badge bg-success">${escapeHtml(statusVal)}</span>`;
+            } else if (statusVal.includes('Abstieg')) {
+                badgeHtml = `<span class="badge bg-danger">${escapeHtml(statusVal)}</span>`;
+            } else if (statusVal !== '') {
+                badgeHtml = `<span class="badge bg-secondary">${escapeHtml(statusVal)}</span>`;
+            }
+            statusTd = `<td style="width: 100px; min-width: 100px; max-width: 100px;" class="text-center">${badgeHtml}</td>`;
         }
 
         tbodyHtml += `<tr data-row="${r}">
-            <td style="cursor: grab; width: 40px; min-width: 40px; max-width: 40px; position: sticky; left: 0; z-index: 2; background-color: #fff;" class="text-center text-muted"><i class="fas fa-grip-lines tk-drag-handle"></i></td>
-            <td class="fw-bold" style="width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: sticky; left: 40px; z-index: 2; background-color: #fff; border-right: 2px solid #dee2e6;">${escapeHtml(vorname)} ${escapeHtml(nachname)}</td>
+            <td class="fw-bold" style="width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: sticky; left: 0; z-index: 2; background-color: #fff; border-right: 2px solid #dee2e6;">${escapeHtml(vorname)} ${escapeHtml(nachname)}</td>
             ${statusTd}
             ${visibleShooterCols.map((c, colIndex) => {
                 let val = s.rowData[c] || '';
@@ -540,14 +528,12 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
         <div class="card rounded-4 border-0 shadow-sm mb-4">
             <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center">
                 <h5 class="mb-0 fw-bold text-primary"><i class="fas fa-trophy text-warning me-2"></i>${title}</h5>
-                <span class="badge bg-light text-muted border"><i class="fas fa-arrows-alt-v me-1"></i>Drag & Drop zum Verschieben</span>
             </div>
             <div class="card-body p-0 overflow-auto">
                 <table class="table table-hover table-sm align-middle mb-0" style="min-width: 800px; font-size: 0.9rem; table-layout: fixed;">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 40px; min-width: 40px; max-width: 40px; position: sticky; left: 0; z-index: 3; background-color: #f8f9fa;"></th>
-                            <th style="width: 200px; min-width: 200px; max-width: 200px; position: sticky; left: 40px; z-index: 3; background-color: #f8f9fa; border-right: 2px solid #dee2e6;">Schütze</th>
+                            <th style="width: 200px; min-width: 200px; max-width: 200px; position: sticky; left: 0; z-index: 3; background-color: #f8f9fa; border-right: 2px solid #dee2e6;">Schütze</th>
                             ${statusTh}
                             ${visibleShooterCols.map((c, colIndex) => {
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
@@ -1042,11 +1028,16 @@ function buildMatrixLigaTable(title, grid, startRow, endRow, canWrite, hasStatus
 
         let statusTd = '';
         if (hasStatusCol && statusColIndex !== -1) {
-            const statusVal = s.rowData[statusColIndex] || '';
-            let badgeClass = 'bg-secondary';
-            if (statusVal.includes('Aufstieg')) badgeClass = 'bg-success';
-            if (statusVal.includes('Abstieg')) badgeClass = 'bg-danger';
-            statusTd = `<td style="width: 100px; min-width: 100px; max-width: 100px;"><span class="badge ${badgeClass}">${escapeHtml(statusVal)}</span></td>`;
+            const statusVal = String(s.rowData[statusColIndex] || '').trim();
+            let badgeHtml = '';
+            if (statusVal.includes('Aufstieg')) {
+                badgeHtml = `<span class="badge bg-success">${escapeHtml(statusVal)}</span>`;
+            } else if (statusVal.includes('Abstieg')) {
+                badgeHtml = `<span class="badge bg-danger">${escapeHtml(statusVal)}</span>`;
+            } else if (statusVal !== '') {
+                badgeHtml = `<span class="badge bg-secondary">${escapeHtml(statusVal)}</span>`;
+            }
+            statusTd = `<td style="width: 100px; min-width: 100px; max-width: 100px;" class="text-center">${badgeHtml}</td>`;
         }
 
         tbodyHtml += `<tr data-row="${r}">
