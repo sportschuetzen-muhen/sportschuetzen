@@ -373,34 +373,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             return;
         }
 
-        // Supabase Audit-Log (asynchron in contest_ocr_logs protokollieren)
-        fetch(`${SUPABASE_REST_URL}/contest_ocr_logs`, {
-            method: "POST",
-            headers: {
-                "apikey": SUPABASE_ANON_KEY,
-                "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                id: `sb_${user.lizenz || user.id}_${Date.now()}`,
-                contest_type: "standblatt",
-                round: "auswaertig",
-                model_used: "client_ai_assisted",
-                recognized_count: 1,
-                raw_response: {
-                    anlass: anlass || "Auswärtiges Schiessen",
-                    erzielt,
-                    maximal,
-                    lizenz: user.lizenz || user.id,
-                    vorname: user.vorname,
-                    nachname: user.nachname,
-                    timestamp: new Date().toISOString()
-                },
-                created_by: String(user.lizenz || user.id)
-            })
-        }).catch(err => console.warn("Supabase Log Hinweis:", err));
-
-        // Upload an Worker übermitteln
+        // 1. Upload an Worker übermitteln (Cloudflare R2 Speicher)
         const res = await fetch(WORKER_UPLOAD_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -416,12 +389,50 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             })
         });
 
-        if (res.ok) {
-            alert("✔ Dein Standblatt wurde erfolgreich übermittelt!");
-            location.reload();
-        } else {
-            alert("Fehler beim Senden. Bitte versuche es nochmals.");
+        if (!res.ok) {
+            throw new Error("Fehler beim Übermitteln an den Speicher.");
         }
+
+        let fileName = null;
+        try {
+            const resData = await res.json();
+            fileName = resData.fileName;
+        } catch (_) {}
+
+        const fileUrl = fileName ? `${WORKER_UPLOAD_URL}?action=get_standblatt&file=${encodeURIComponent(fileName)}` : null;
+
+        // 2. Supabase Audit-Log & Inbox (in contest_ocr_logs protokollieren mit Status 'pending')
+        await fetch(`${SUPABASE_REST_URL}/contest_ocr_logs`, {
+            method: "POST",
+            headers: {
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                id: `sb_${user.lizenz || user.id}_${Date.now()}`,
+                contest_type: "standblatt",
+                round: "auswaertig",
+                model_used: "client_ai_assisted",
+                recognized_count: 1,
+                raw_response: {
+                    status: "pending",
+                    anlass: anlass || "Auswärtiges Schiessen",
+                    erzielt,
+                    maximal,
+                    lizenz: user.lizenz || user.id,
+                    vorname: user.vorname,
+                    nachname: user.nachname,
+                    fileName: fileName,
+                    fileUrl: fileUrl,
+                    timestamp: new Date().toISOString()
+                },
+                created_by: String(user.lizenz || user.id)
+            })
+        });
+
+        alert("✔ Dein Standblatt wurde erfolgreich übermittelt und zur Prüfung eingereicht!");
+        location.reload();
 
     } catch (err) {
         console.error(err);

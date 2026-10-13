@@ -85,6 +85,10 @@ async function loadJahresmeisterschaftData(force = false, silent = false) {
                     renderJahresmeisterschaft(jmRawGrid);
                     updateJMSupabaseBadge(true);
 
+                    if (typeof loadPendingStandblaetter === 'function') {
+                        loadPendingStandblaetter(true);
+                    }
+
                     if (historySelect) {
                         historySelect.dataset.loadedYear = jmCurrentJahr;
                         historySelect.disabled = false;

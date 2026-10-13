@@ -1103,11 +1103,16 @@
                             <!-- Wird dynamisch gefüllt -->
                             <option value="current">Jahresmeisterschaft (aktuell)</option>
                         </select>
+                        <button id="btn-jm-inbox" class="btn btn-sm btn-outline-primary position-relative" type="button" onclick="openJMStandblattInboxModal()" title="Eingereichte Standblätter prüfen">
+                            <i class="fas fa-inbox me-1"></i>Standblätter
+                            <span id="jm-inbox-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
+                        </button>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle write-protected" type="button" data-bs-toggle="dropdown">
                                 ⚙️ Aktionen
                             </button>
                             <ul class="dropdown-menu" id="jm-actions-menu">
+                                <li><a class="dropdown-item text-primary fw-semibold" href="#" onclick="openJMStandblattInboxModal()"><i class="fas fa-inbox me-2"></i>Eingereichte Standblätter...</a></li>
                                 <li><a class="dropdown-item text-success fw-semibold" href="#" onclick="openJMImportModal()"><i class="fas fa-file-import me-2"></i>Resultate importieren...</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')">Archivieren (Aktuelles Jahr)</a></li>
@@ -2177,6 +2182,69 @@
 </div>
 
 
+<!-- MODAL: STANDBLATT INBOX (Jahresmeisterschaft) -->
+<div class="modal fade" id="jm-standblatt-inbox-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header bg-light py-3 px-4 border-bottom">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="fs-4">📥</span>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0 text-dark">Eingereichte Standblätter (PWA-Uploads)</h5>
+                        <div class="text-muted small">Prüfe die von Schützen via Web-App eingereichten Belege und übernimm sie mit einem Klick in die Jahresmeisterschaft.</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+            <div class="modal-body p-4 bg-light bg-opacity-25">
+                <div id="jm-inbox-empty-alert" class="alert alert-info d-none text-center py-4 mb-0 rounded-3">
+                    <i class="fas fa-check-circle fa-2x mb-2 text-info d-block"></i>
+                    <strong>Keine ausstehenden Standblätter vorhanden.</strong>
+                    <div class="small text-muted mt-1">Alle eingereichten Resultate wurden bereits geprüft oder übernommen.</div>
+                </div>
+                <div id="jm-inbox-table-card" class="card border-0 shadow-xs rounded-3 overflow-hidden">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light small text-uppercase text-muted">
+                                <tr>
+                                    <th>Eingereicht</th>
+                                    <th>Schütze</th>
+                                    <th>Anlass</th>
+                                    <th class="text-center">Punkte</th>
+                                    <th class="text-center">Belegfoto</th>
+                                    <th class="text-end">Aktion</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jm-inbox-table-body" class="bg-white">
+                                <!-- Dynamisch befüllt -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light px-4 py-3 border-top">
+                <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Schliessen</button>
+                <button type="button" class="btn btn-outline-primary px-3" onclick="loadPendingStandblaetter()"><i class="fas fa-sync-alt me-1"></i>Aktualisieren</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: STANDBLATT PHOTO LIGHTBOX -->
+<div class="modal fade" id="jm-standblatt-photo-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-dark text-white py-2 px-3 border-0">
+                <h6 class="modal-title mb-0" id="jm-standblatt-photo-title">Standblatt Beleg</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+            <div class="modal-body p-2 text-center bg-dark">
+                <img id="jm-standblatt-photo-img" src="" alt="Standblatt" class="img-fluid rounded shadow" style="max-height: 80vh; object-fit: contain;">
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Supabase SDK & Global Client -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/supabase-client.js?v=20260926_1"></script>
@@ -2274,6 +2342,7 @@
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-import.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-inbox.js"></script>
 
 <!-- NEU: Skript für Protokoll-Archiv KI -->
 <script src="js/archiv.js"></script>

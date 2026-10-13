@@ -19,8 +19,9 @@ Die Kleinkaliber-Jahresmeisterschaft der Sportschützen Muhen basierte historisc
 2. **`public.jm_shooters` (Normalisierte Auswertung):**
    - Strukturierte Einzeldaten jedes Schützen (`jahr`, `liga`, `rang`, `name`, `vorname`, `total_pct`, `streich_pct`, `details`).
    - Dient als performante Datenquelle für die öffentliche Website und die Mitglieder-PWA (Sortierung: `order=liga.asc,rang.asc`).
-3. **`public.contest_ocr_logs` (Audit & Standblatt-Erfassung):**
-   - Revisionssicheres Logging aller Standblatt-Uploads (Schütze, Rohpunkte, Maximum, Bild-URL in Cloudflare R2, KI-Modell).
+3. **`public.contest_ocr_logs` (Audit, Standblatt-Erfassung & Inbox):**
+   - Revisionssicheres Logging aller Standblatt-Uploads (Schütze, Rohpunkte, Maximum, Bild-URL in Cloudflare R2, Status `pending`/`imported`/`rejected`).
+   - Autorisierung via RLS (`50_contest_ocr_logs_jm_rbac.sql`): Berechtigung `jahresmeisterschaft.view` für Inbox-Einsicht und `jahresmeisterschaft.manage` für 1-Klick-Übernahme.
 
 ---
 
@@ -29,10 +30,10 @@ Die Kleinkaliber-Jahresmeisterschaft der Sportschützen Muhen basierte historisc
 ```mermaid
 graph TD
     A["Mitglieder-PWA (Upload Standblatt)"] -->|"POST (Audit & R2 Image)"| B["Cloudflare Worker / R2"]
-    B -->|"Audit-Log"| C[("Supabase: contest_ocr_logs")]
+    B -->|"Status: pending"| C[("Supabase: contest_ocr_logs")]
     
-    D["Vorstand-Cockpit (Schützenmeister)"] -->|"1. PDF / Excel Import<br>2. Gemini Vision OCR"| E["Client-seitiger Parser (SheetJS, pdf.js)"]
-    E -->|"Manuelle Prüfung & Freigabe"| D
+    C -->|"Inbox (jahresmeisterschaft-inbox.js)"| D["Vorstand-Cockpit (Schützenmeister)"]
+    D -->|"1-Klick Übernahme / Beleg-Prüfung"| D
     D -->|"Atomares Speichern (Grid Snapshot)"| F[("Supabase: jm_seasons (raw_grid)")]
     D -->|"syncJMShootersToSupabase()"| G[("Supabase: jm_shooters")]
     
@@ -48,7 +49,7 @@ graph TD
 * **Lesen Website und PWA exklusiv aus Supabase?**
   Ja. Sowohl die Vereinswebsite ([`resultate.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/js/resultate.js)) als auch die Mitglieder-PWA ([`app_jm.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/app_jm.html)) fragen die Tabelle `public.jm_shooters` mit dynamischem SWR-Caching über die Supabase REST API ab.
 * **Schreibt die PWA direkt in die Rangliste?**
-  Nein. Die Erfassung in der PWA ([`upload.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/upload.js)) legt Standblätter in Cloudflare R2 ab und schreibt einen Eintrag in `public.contest_ocr_logs`. Die offizielle Freigabe und Einreihung in die Jahresmeisterschaft obliegt ausschliesslich dem Schützenmeister im Vorstandscockpit.
+  Nein. Die Erfassung in der PWA ([`upload.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/upload.js)) legt Standblätter in Cloudflare R2 ab und schreibt einen Eintrag mit Status `pending` in `public.contest_ocr_logs`. Die offizielle Freigabe und Einreihung in die Jahresmeisterschaft obliegt dem Schützenmeister über die neue Standblatt-Inbox ([`jahresmeisterschaft-inbox.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-inbox.js)).
 * **KI-Einsatz bei der Standblatt-Erkennung:**
   Über den zentralen Vorstand-API-Worker (`action=ocr`) ist Google Gemini Vision (`gemini-2.5-flash`) integriert. Die KI erkennt Schützen, erzielte Punkte sowie gängige Schweizer Schiessprogramme und prognostiziert das Programmmaximum.
 

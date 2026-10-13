@@ -100,6 +100,7 @@ function renderJahresmeisterschaft(grid) {
     if (actionsMenu && canWrite) {
         if (jmCurrentJahr === "current") {
             actionsMenu.innerHTML = `
+                <li><a class="dropdown-item text-primary fw-semibold" href="#" onclick="openJMStandblattInboxModal()"><i class="fas fa-inbox me-2"></i>Eingereichte Standblätter...</a></li>
                 <li><a class="dropdown-item text-success fw-semibold" href="#" onclick="openJMImportModal()"><i class="fas fa-file-import me-2"></i>Resultate importieren...</a></li>
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item text-warning" href="#" onclick="runJMAction('archiviereJahresmeisterschaft', 'Jahr archivieren')"><i class="fas fa-archive me-2"></i>Archivieren (Aktuelles Jahr)</a></li>

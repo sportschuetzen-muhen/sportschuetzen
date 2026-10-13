@@ -59,39 +59,32 @@ Alle drei Fachmodule der Web-App lesen **exklusiv und direkt** aus Supabase Post
 1. **KI-Unterstützung im Frontend:**
    - **PDF:** `pdfjs-dist` extrahiert Textblöcke direkt im Browser, erkennt den Schützen und Schiessname und prognostiziert über `forecastMaxPoints()` Schweizer Standard-Schiesstableaus (60, 80, 100, 120, 150, 200, 300, 600 Pkt).
    - **Fotos & Smartphone:** Apple HEIC wird via `heic2any` zu JPEG konvertiert. Bei Fotos analysiert die Gemini 2.5 Flash KI via Vorstand-API-Worker das Standblatt und extrahiert Punkte und Anlass.
-2. **Speicherung des Standblatts:**
-   - Das komprimierte Bild wird an Cloudflare R2 übermittelt (`worker_github-dropdown-refresh.js`).
-   - Die Metadaten (Punkte, Maximum, Schütze) werden in `public.contest_ocr_logs` protokolliert.
-3. **Aktuelle Lücke:**
-   - Das hochgeladene Resultat wird **nicht** automatisch in `jm_seasons` (`raw_grid`) eingetragen.
-   - Im Vorstandscockpit existiert aktuell noch keine Übersicht/Inbox, um eingereichte Standblätter aus `contest_ocr_logs` einzusehen und mit einem Klick in die Jahresmeisterschaft zu übernehmen.
+2. **Speicherung des Standblatts & Beleg-Abruf:**
+   - Das komprimierte Bild wird an Cloudflare R2 übermittelt (`worker_github-dropdown-refresh.js`, Route `action=upload_standblatt`).
+   - Die Datei kann über `action=get_standblatt&file=...` mit CORS-Headern und Cache-Headern im Frontend als Belegfoto angezeigt werden.
+   - Die Metadaten (Punkte, Maximum, Schütze, Beleg-URL) werden mit Status `pending` in `public.contest_ocr_logs` protokolliert.
+3. **Standblatt-Freigabe-Inbox im Vorstandscockpit (`jahresmeisterschaft-inbox.js`):**
+   - Schützenmeister sieht im Header der Jahresmeisterschaft ein Live-Badge `📥 Standblätter (N)`.
+   - Das Inbox-Modal listet alle ausstehenden Einreichungen inklusive Belegfoto-Lightbox.
+   - **1-Klick-Übernahme:** Resultat wird in `jmRawGrid` eingetragen (Spalte ab 41/42 automatisch zugeordnet oder erstellt), die Jahresmeisterschaft inklusive Rangierung neu berechnet, in `jm_seasons` und `jm_shooters` gespeichert und der Status auf `imported` gesetzt.
 
 ---
 
-## 4. Wichtiges Analyseergebnis: Rangierungs-Inkonsistenz in Liga 1
+## 4. Bereinigtes Analyseergebnis: Dynamische Rangierung in Liga 1 & 2
 
-Bei der Überprüfung der Rangierung in `public.jm_shooters` wurde eine Diskrepanz aufgedeckt:
-
-- **Morgenthaler Lars:** Total = `778.50 %` -> in DB hinterlegter Rang: **2**
-- **Fischer Marco:** Total = `777.83 %` -> in DB hinterlegter Rang: **1**
-
-### Ursache im Code:
-1. In `recalculateJMRawGrid()` (`jahresmeisterschaft-import.js`) werden zwar die Totals der Schützen in Spalte 18/19 neu berechnet, die Rangspalte (Spalte 0, `colRang`) wird jedoch **nicht** dynamisch aktualisiert.
-2. In `syncJMShootersToSupabase()` (`jahresmeisterschaft-core.js`) werden die Zeilen in physischer Reihenfolge (`r = 5..12`) durchlaufen und der Rang statisch aus Spalte 0 übernommen:
-   ```javascript
-   const rangVal = parseInt(grid[r][colRang]) || (r - 4);
-   ```
-3. `app_jm.html` und die Vereinswebsite sortieren nach `order=liga.asc,rang.asc`. Dadurch erscheint Fischer Marco fälschlicherweise auf Rang 1 vor Morgenthaler Lars.
+Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
+- `recalculateJMRawGrid()` (`jahresmeisterschaft-import.js`) sortiert Liga 1 und Liga 2 dynamisch nach Total absteigend und aktualisiert Spalte 0 (`colRang`).
+- `syncJMShootersToSupabase()` (`jahresmeisterschaft-core.js`) vergibt Ränge und Auf-/Abstiegsstati basierend auf den dynamisch errechneten Prozentpunkten.
+- Morgenthaler Lars führt Liga 1 mit `778.50 %` auf Rang 1 an.
 
 ---
 
-## 5. Empfohlene Verbesserungen
+## 5. Durchgeführte Verbesserungen & Architektur-Status
 
-1. **Dynamische Rangierung in `syncJMShootersToSupabase` & `recalculateJMRawGrid`:**
-   - Vor dem Speichern müssen Schützen in Liga 1 und Liga 2 strikt nach `total` absteigend sortiert und die Ränge `1, 2, 3...` dynamisch vergeben werden (analog zum alten GAS-Code).
-   - Die Rangspalte 0 in `raw_grid` wird synchron nachgeführt.
+1. **Dynamische Rangierung:**
+   - Liga 1 und Liga 2 werden bei jeder Berechnung und Synchronisation nach `total` absteigend sortiert.
 2. **Standblatt-Freigabe-Inbox im Vorstandscockpit:**
-   - Im Jahresmeisterschafts-Modul des Vorstands wird ein neuer Reiter oder Button «📥 Eingereichte Standblätter (${count})» integriert.
-   - Schützenmeister sieht die von Mitgliedern via PWA hochgeladenen Standblätter aus `contest_ocr_logs`, prüft das Vorschaubild und übernimmt das Resultat mit 1 Klick direkt in die Jahresmeisterschaft.
-3. **PWA Tab-Refresh bei Navigation:**
-   - In `app.js` bei Klick auf die Bottom-Nav-Tabs (JM, G&G, Mannschaft) die Daten der iFrames auffrischen bzw. das Event `app:resume` in den iFrames abfangen, damit Aktualisierungen ohne manuelles Pull-to-Refresh sichtbar sind.
+   - Vollständiger Prüf- und Übernahmeworkflow via `vorstand/js/jahresmeisterschaft/jahresmeisterschaft-inbox.js`.
+   - RLS-Berechtigungen auf `public.contest_ocr_logs` um `jahresmeisterschaft.view` und `jahresmeisterschaft.manage` erweitert (`50_contest_ocr_logs_jm_rbac.sql`).
+3. **PWA Tab-Synchronisation:**
+   - `app.js` sendet beim Umschalten der Tabs ein `app:resume`-PostMessage an alle iFrames (`app_jm.html`, `app_gruppe.html`, `app_mannschaft.html`), sodass neue Resultate sofort sichtbar werden.
