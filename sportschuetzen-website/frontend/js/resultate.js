@@ -117,14 +117,38 @@ async function loadAvailableSeasons(selectElement) {
     fetchWithSWRCache(
         `${SUPABASE_REST_URL}/jm_seasons?select=jahr,title,is_archived&order=jahr.desc`,
         cacheKey,
-        (seasons) => {
-            if (!Array.isArray(seasons) || seasons.length === 0) return;
+        async (seasons) => {
             const currentVal = selectElement.value || "aktuell";
             const currentYear = new Date().getFullYear();
 
-            const archivedYears = seasons
-                .filter(s => s.jahr !== 'current')
-                .map(s => s.jahr)
+            const yearsSet = new Set();
+            if (Array.isArray(seasons)) {
+                seasons.filter(s => s.jahr !== 'current').forEach(s => yearsSet.add(s.jahr));
+            }
+
+            // Auch Jahre aus contest_results nachladen
+            try {
+                const res = await fetch(`${SUPABASE_REST_URL}/contest_results?select=year`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                if (res.ok) {
+                    const cYears = await res.json();
+                    if (Array.isArray(cYears)) {
+                        cYears.forEach(item => {
+                            if (item.year && item.year < currentYear) {
+                                yearsSet.add(String(item.year));
+                            }
+                        });
+                    }
+                }
+            } catch (e) {
+                // Silently fallback to jm_seasons
+            }
+
+            const archivedYears = Array.from(yearsSet)
                 .sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
 
             selectElement.innerHTML = '';

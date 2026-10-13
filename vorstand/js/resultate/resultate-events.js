@@ -160,8 +160,15 @@ function confirmAddSelectedMember() {
   setStatus("Ungespeicherte Änderungen", true);
   if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState();
 
+  const modalEl = document.getElementById("modal-add-resultate-shooter");
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
   renderUI();
 }
+window.confirmAddSelectedMember = confirmAddSelectedMember;
 
 // =========================================================
 //  KI-BILDFOTO / OCR MODAL LOGIK

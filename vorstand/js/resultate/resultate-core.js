@@ -6,11 +6,14 @@
 window._resultateContestType = window._resultateContestType || "mannschaft";
 window._resultateYear = window._resultateYear || new Date().getFullYear();
 window._resultateIsSupabase = false;
+window._resultateActiveRound = window._resultateActiveRound || "all";
+window._resultateViewMode = window._resultateViewMode || "cards"; // 'cards' oder 'matrix'
 
 let resultateState = {
-  rows: [],      // [{id, name, stellung, r1_team, r1_p1, r1_p2, ..., r7_team, r7_p1, _autoR2, _autoR3}]
-  members: [],   // [{id, vorname, nachname, email}]
-  teams: [],     // team strings (ohne Pool) – Pool wird UI-seitig ergänzt
+  rows: [],          // [{id, name, stellung, r1_team, r1_p1, r1_p2, ..., r7_team, r7_p1, _autoR2, _autoR3}]
+  members: [],       // [{id, vorname, nachname, address_number, email}]
+  teams: [],         // team strings (ohne Pool) – Pool wird UI-seitig ergänzt
+  availableYears: [],// [2026, 2025, ...]
   isDirty: false
 };
 

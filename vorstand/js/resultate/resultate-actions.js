@@ -181,3 +181,67 @@ window.syncJmToContestMannschaftAction = syncJmToContestMannschaftAction;
 async function pushOneSignalGrenzland() {
   alert("ℹ️ Push-Mitteilungen: Das Google Apps Script Backend ist entkoppelt. Mobile Push Notifications werden über native Supabase Edge Functions verwaltet.");
 }
+
+async function archiveCurrentContestSeasonAction() {
+  const supa = getResultateSupabaseClient();
+  if (!supa) return alert("Kein Supabase-Client verfügbar.");
+  const contestType = window._resultateContestType || "gruppe";
+  const currentYear = window._resultateYear || new Date().getFullYear();
+  const nextYear = currentYear + 1;
+
+  const confirmed = confirm(
+    `Saison-Wechsel für "${contestType.toUpperCase()}":\n\n` +
+    `Möchtest du die Saison ${currentYear} abschliessen und das neue Jahr ${nextYear} vorbereiten?\n\n` +
+    `• Die Resultate von ${currentYear} bleiben dauerhaft im Archiv erhalten und auf der Website abrufbar.\n` +
+    `• Für ${nextYear} werden die Schützen und Team-Zuteilungen übernommen (Punkte werden zurückgesetzt).`
+  );
+  if (!confirmed) return;
+
+  try {
+    setStatus(`Initialisiere Saison ${nextYear}…`, false);
+
+    if (resultateState.rows && resultateState.rows.length > 0) {
+      const newRows = resultateState.rows.map(r => {
+        const row = {
+          id: `${contestType}_${nextYear}_${r.id}`,
+          contest_type: contestType,
+          year: nextYear,
+          person_number: String(r.id),
+          name: r.name,
+          stellung: r.stellung || "liegend",
+          is_auto_r2: true,
+          is_auto_r3: true,
+          r1_team: r.r1_team || "",
+          r2_team: r.r2_team || r.r1_team || "",
+          r3_team: r.r3_team || r.r2_team || "",
+          r1_p1: null,
+          r1_p2: null,
+          r2_p1: null,
+          r2_p2: null,
+          r3_p1: null,
+          r3_p2: null
+        };
+        for (let i = 4; i <= 7; i++) {
+          row[`r${i}_team`] = r[`r${i}_team`] || "";
+          row[`r${i}_p1`] = null;
+        }
+        return row;
+      });
+
+      const { error: insErr } = await supa.from('contest_results').upsert(newRows, {
+        onConflict: 'contest_type,year,person_number'
+      });
+      if (insErr) throw insErr;
+    }
+
+    alert(`✅ Saison ${nextYear} wurde erfolgreich initialisiert! Wechsle zur neuen Saison.`);
+    window._resultateYear = nextYear;
+    await loadResultateData(true);
+  } catch (err) {
+    console.error("Fehler beim Archivieren/Initialisieren:", err);
+    alert("Fehler: " + (err.message || err));
+    setStatus("Fehler beim Archivieren", true);
+  }
+}
+window.archiveCurrentContestSeasonAction = archiveCurrentContestSeasonAction;
+
