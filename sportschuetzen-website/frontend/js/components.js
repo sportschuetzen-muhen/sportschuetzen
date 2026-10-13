@@ -145,7 +145,7 @@ class SiteHeader extends HTMLElement {
                             <a href="intern.html" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
                                 <span>📂</span> <span>Mitgliederbereich</span>
                             </a>
-                            <a href="https://sportschuetzen-muhen.github.io/sportschuetzen/" target="_blank" rel="noopener" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
+                            <a href="https://sps-b55.pages.dev/" target="_blank" rel="noopener" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
                                 <span>🎯</span> <span>Schützen-App (PWA)</span>
                             </a>
                             ${isVorstand ? `

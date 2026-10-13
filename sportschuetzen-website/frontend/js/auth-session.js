@@ -231,7 +231,7 @@
             } else if (hostname.includes('sportschuetzen-muhen.ch')) {
                 webAppBase = 'https://sportschuetzen-muhen.ch/app/';
             } else {
-                webAppBase = 'https://sportschuetzen-muhen.github.io/sportschuetzen/';
+                webAppBase = 'https://sps-b55.pages.dev/';
             }
 
             const sep = webAppBase.includes('?') ? '&' : '?';

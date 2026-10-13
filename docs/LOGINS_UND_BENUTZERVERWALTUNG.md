@@ -228,6 +228,8 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 ### 9.4 Resilienz des Logins-Moduls & Stammdaten-Laden der Web-App
 * **Logins-Modul im Portal:** Die Einbindung von `vorstand/js/logins/logins-events.js` in `vorstand/index.html` stellt sicher, dass `loadLoginsData()` und sämtliche Modal- und Tab-Handler für Vorstandsmitglieder mit Rolle `admin` fehlerfrei geladen und gerendert werden.
 * **Stammdaten in Web-App (`app.js`):** `loadMembersFromSupabase()` fragt gezielt die tatsächlichen Spalten von `public.members` (`person_number, address_number, first_name, last_name, is_active`) mit Filter `is_active=eq.true` ab, sodass das Login-Dropdown sofort mit allen aktiven Vereinsmitgliedern befüllt wird.
+* **Dropdown- & PIN-Härtung (`app.js`):** Das Login-Dropdown hinterlegt als Options-Wert primär die numerische `person_number`. Die PIN-Prüfung validiert zuerst direkt im speicherresidenten Cache `allUsers` und trennt bei Live-REST-Abfragen strikt zwischen rein numerischen Identifikatoren (`person_number`/`address_number`) und Text-Namen (`first_name`/`last_name`), um PostgreSQL-Syntaxfehler (`invalid input syntax for type integer`) zu verhindern. Zudem gleicht die SSO-Verifikation die Sitzung vorrangig mit dem selektierten Mitglied ab, falls mehrere Testkonten dieselbe E-Mail teilen.
+* **PWA & Hosting Harmonisierung:** Veraltete statische GitHub-Pages-Pfade (`/sportschuetzen/manifest.json`, ServiceWorker Scope) wurden für Cloudflare Pages (`sps-b55.pages.dev`) dynamisiert und Querverweise in der Vereins-Website auf die aktive PWA-URL aktualisiert.
 
 ### 9.5 Test-Personas & Berechtigungs-Härtung (Migration 47)
 * **Vier Test-Personen für End-to-End Testing:**

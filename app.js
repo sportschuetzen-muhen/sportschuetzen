@@ -1190,7 +1190,8 @@ async function initLogin() {
         select.innerHTML = '<option value="">Bitte Namen wählen...</option>';
         users.forEach(u => {
             const opt = document.createElement('option');
-            opt.value = u.name || `${u.firstname || ''} ${u.lastname || ''}`.trim() || u.id;
+            opt.value = u.person_number ? String(u.person_number) : (u.id || u.name);
+            opt.dataset.name = u.name || `${u.firstname || ''} ${u.lastname || ''}`.trim();
             const vName = u.firstname || '';
             const nName = u.lastname || '';
             opt.textContent = (u.type === 'admin' ? `⭐ ${vName}` : `${nName} ${vName}`).trim();
@@ -1360,10 +1361,29 @@ document.getElementById('sso-verify-btn')?.addEventListener('click', async () =>
                     name: syncRes.display_name,
                     email: syncRes.email,
                     role: syncRes.primary_role || 'member',
-                    is_board: Boolean(syncRes.is_board)
+                    is_board: Boolean(syncRes.is_board),
+                    person_number: syncRes.person_number
                 };
             }
         } catch (_) {}
+
+        // Falls gezieltes Mitglied aufgelöst wurde (z.B. Nicole Zurbriggen):
+        if (window._ssoResolvedData && window._ssoResolvedData.person_number) {
+            const rData = window._ssoResolvedData;
+            if (!authedUser || (rData.person_number && String(authedUser.person_number || authedUser.id) !== String(rData.person_number) && !authedUser.is_board)) {
+                const nameParts = (rData.name || 'Mitglied').split(' ');
+                authedUser = {
+                    id: String(rData.person_number).padStart(6, '0'),
+                    lizenz: String(rData.person_number).padStart(6, '0'),
+                    vorname: nameParts[0] || 'Mitglied',
+                    nachname: nameParts.slice(1).join(' ') || '',
+                    name: rData.name || 'Mitglied',
+                    email: window._ssoPendingEmail,
+                    role: rData.type || 'member',
+                    person_number: rData.person_number
+                };
+            }
+        }
 
         if (!authedUser) {
             const rData = window._ssoResolvedData || {};
@@ -1450,35 +1470,76 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
         const cleanPin = pwdInput.trim();
         let authenticatedUser = null;
 
-        // 1. Zuerst prüfen, ob es sich um ein Mitglied aus Supabase public.members handelt
         const cleanId = String(userId).trim();
-        const memberRes = await fetch(`${SUPABASE_REST_URL}/members?select=person_number,address_number,first_name,last_name,primary_email&or=(address_number.eq.${encodeURIComponent(cleanId)},person_number.eq.${encodeURIComponent(cleanId)})&limit=1`, {
-            headers: getSupabaseHeaders()
+
+        // 1. Zuerst im bereits geladenen lokalen Mitgliederbestand (allUsers) suchen
+        const localMatch = (Array.isArray(allUsers) ? allUsers : []).find(u => {
+            const pn = String(u.person_number || '');
+            const an = String(u.address_number || u.id || '');
+            const uName = (u.name || '').toLowerCase();
+            const fullName1 = `${u.firstname || ''} ${u.lastname || ''}`.trim().toLowerCase();
+            const fullName2 = `${u.lastname || ''} ${u.firstname || ''}`.trim().toLowerCase();
+            const queryLower = cleanId.toLowerCase();
+            return pn === cleanId || an === cleanId || an.padStart(6, '0') === cleanId.padStart(6, '0') ||
+                   uName === queryLower || fullName1 === queryLower || fullName2 === queryLower;
         });
 
-        if (memberRes.ok) {
-            const mList = await memberRes.json();
-            if (Array.isArray(mList) && mList.length > 0) {
-                const m = mList[0];
-                const expectedPin = String(m.address_number || '').trim();
-                const expectedPinPadded = expectedPin.padStart(6, '0');
-                const cleanPinPadded = cleanPin.padStart(6, '0');
+        if (localMatch) {
+            const expectedPin = String(localMatch.address_number || localMatch.id || '').trim();
+            const expectedPinPadded = expectedPin.padStart(6, '0');
+            const cleanPinPadded = cleanPin.padStart(6, '0');
+            const expectedPn = String(localMatch.person_number || '').trim();
 
-                if (cleanPin === expectedPin || cleanPinPadded === expectedPinPadded || cleanPin === String(m.person_number)) {
-                    authenticatedUser = {
-                        id: String(m.address_number || m.person_number).padStart(6, '0'),
-                        lizenz: String(m.address_number || m.person_number).padStart(6, '0'),
-                        vorname: m.first_name || '',
-                        nachname: m.last_name || '',
-                        name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
-                        email: m.primary_email || '',
-                        role: 'member'
-                    };
+            if (cleanPin === expectedPin || cleanPinPadded === expectedPinPadded || (expectedPn && cleanPin === expectedPn)) {
+                authenticatedUser = {
+                    id: String(localMatch.address_number || localMatch.person_number || localMatch.id).padStart(6, '0'),
+                    lizenz: String(localMatch.address_number || localMatch.person_number || localMatch.id).padStart(6, '0'),
+                    vorname: localMatch.first_name || localMatch.firstname || '',
+                    nachname: localMatch.last_name || localMatch.lastname || '',
+                    name: localMatch.name || `${localMatch.first_name || localMatch.firstname || ''} ${localMatch.last_name || localMatch.lastname || ''}`.trim(),
+                    email: localMatch.primary_email || localMatch.email || '',
+                    role: 'member'
+                };
+            }
+        }
+
+        // 2. Falls lokal nicht gefunden, live gegen Supabase public.members prüfen:
+        if (!authenticatedUser) {
+            let filter = '';
+            if (/^\d+$/.test(cleanId)) {
+                filter = `or=(address_number.eq.${encodeURIComponent(cleanId)},person_number.eq.${encodeURIComponent(cleanId)})`;
+            } else {
+                filter = `or=(first_name.ilike.%${encodeURIComponent(cleanId)}%,last_name.ilike.%${encodeURIComponent(cleanId)}%)`;
+            }
+
+            const memberRes = await fetch(`${SUPABASE_REST_URL}/members?select=person_number,address_number,first_name,last_name,primary_email&${filter}&limit=1`, {
+                headers: getSupabaseHeaders()
+            });
+
+            if (memberRes.ok) {
+                const mList = await memberRes.json();
+                if (Array.isArray(mList) && mList.length > 0) {
+                    const m = mList[0];
+                    const expectedPin = String(m.address_number || '').trim();
+                    const expectedPinPadded = expectedPin.padStart(6, '0');
+                    const cleanPinPadded = cleanPin.padStart(6, '0');
+
+                    if (cleanPin === expectedPin || cleanPinPadded === expectedPinPadded || cleanPin === String(m.person_number)) {
+                        authenticatedUser = {
+                            id: String(m.address_number || m.person_number).padStart(6, '0'),
+                            lizenz: String(m.address_number || m.person_number).padStart(6, '0'),
+                            vorname: m.first_name || '',
+                            nachname: m.last_name || '',
+                            name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
+                            email: m.primary_email || '',
+                            role: 'member'
+                        };
+                    }
                 }
             }
         }
 
-        // 2. Falls kein Match bei Mitgliedern, prüfe admin_profiles & Supabase Auth
+        // 3. Falls kein Match bei Mitgliedern, prüfe RPC und Supabase Auth
         if (!authenticatedUser) {
             try {
                 const idRes = await fetch(`${SUPABASE_REST_URL}/rpc/resolve_login_identifier`, {
@@ -1488,24 +1549,52 @@ document.getElementById('login-btn')?.addEventListener('click', async () => {
                 });
                 if (idRes.ok) {
                     const idData = await idRes.json();
-                    if (idData && idData.success && idData.email) {
-                        const authRes = await fetch(`https://supabase-muhen.danfamily.uk/auth/v1/token?grant_type=password`, {
-                            method: 'POST',
-                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: idData.email, password: cleanPin })
-                        });
-                        if (authRes.ok) {
-                            const fullName = idData.name || 'Vorstand';
-                            const nameParts = fullName.split(' ');
-                            authenticatedUser = {
-                                id: cleanId,
-                                lizenz: String(idData.person_number || cleanId).padStart(6, '0'),
-                                vorname: nameParts[0] || fullName,
-                                nachname: nameParts.slice(1).join(' ') || '',
-                                name: fullName,
-                                email: idData.email,
-                                role: idData.type || 'vorstand'
-                            };
+                    if (idData && idData.success) {
+                        // Prüfe, ob es sich um ein Mitglied handelt, dessen PIN geprüft werden kann
+                        if (idData.type === 'member' && idData.person_number) {
+                            const mFetch = await fetch(`${SUPABASE_REST_URL}/members?person_number=eq.${idData.person_number}&select=person_number,address_number,first_name,last_name,primary_email&limit=1`, {
+                                headers: getSupabaseHeaders()
+                            });
+                            if (mFetch.ok) {
+                                const mRows = await mFetch.json();
+                                if (mRows && mRows.length > 0) {
+                                    const mObj = mRows[0];
+                                    const expPin = String(mObj.address_number || '').trim();
+                                    if (cleanPin === expPin || cleanPin.padStart(6, '0') === expPin.padStart(6, '0') || cleanPin === String(mObj.person_number)) {
+                                        authenticatedUser = {
+                                            id: String(mObj.address_number || mObj.person_number).padStart(6, '0'),
+                                            lizenz: String(mObj.address_number || mObj.person_number).padStart(6, '0'),
+                                            vorname: mObj.first_name || '',
+                                            nachname: mObj.last_name || '',
+                                            name: `${mObj.first_name || ''} ${mObj.last_name || ''}`.trim(),
+                                            email: mObj.primary_email || '',
+                                            role: 'member'
+                                        };
+                                    }
+                                }
+                            }
+                        }
+
+                        // Falls Admin mit Passwort
+                        if (!authenticatedUser && idData.email) {
+                            const authRes = await fetch(`https://supabase-muhen.danfamily.uk/auth/v1/token?grant_type=password`, {
+                                method: 'POST',
+                                headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: idData.email, password: cleanPin })
+                            });
+                            if (authRes.ok) {
+                                const fullName = idData.name || 'Vorstand';
+                                const nameParts = fullName.split(' ');
+                                authenticatedUser = {
+                                    id: cleanId,
+                                    lizenz: String(idData.person_number || cleanId).padStart(6, '0'),
+                                    vorname: nameParts[0] || fullName,
+                                    nachname: nameParts.slice(1).join(' ') || '',
+                                    name: fullName,
+                                    email: idData.email,
+                                    role: idData.type || 'vorstand'
+                                };
+                            }
                         }
                     }
                 }

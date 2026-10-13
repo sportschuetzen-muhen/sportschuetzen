@@ -15,15 +15,15 @@ if (window.location.search.includes('portal=vorstand') ||
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0f3a5d">
 
-<link rel="manifest" href="/sportschuetzen/manifest.json">
-<link rel="apple-touch-icon" sizes="180x180" href="/sportschuetzen/icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Sportschützen Muhen">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
-<link rel="icon" type="image/png" sizes="192x192" href="/sportschuetzen/icons/icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="/sportschuetzen/icons/icon-512.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 
 <!-- OneSignal SDK (nur EINMAL!) -->
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
@@ -42,16 +42,19 @@ OneSignalDeferred.push(async function (OneSignal) {
         }
 
         try {
+            const isGitHubPages = window.location.pathname.startsWith('/sportschuetzen/');
+            const baseScope = isGitHubPages ? "/sportschuetzen/" : "/";
+            const iconPath = isGitHubPages ? "/sportschuetzen/icons/icon-192.png" : "icons/icon-192.png";
             await OneSignal.init({
             appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
-            serviceWorkerParam: { scope: "/sportschuetzen/" },
+            serviceWorkerParam: { scope: baseScope },
             serviceWorkerPath: "OneSignalSDKWorker.js",
             autoRegister: false,
             notifyButton: { enable: true },
-            // NEU: Icon für Benachrichtigungen (gegen 404)
+            // Icon für Benachrichtigungen (gegen 404)
             notificationDisplay: {
                 display: true,
-                icon: "/sportschuetzen/icons/icon-192.png"
+                icon: iconPath
             }
         });
 
