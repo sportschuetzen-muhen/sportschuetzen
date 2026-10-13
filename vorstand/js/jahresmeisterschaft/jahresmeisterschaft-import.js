@@ -1518,6 +1518,15 @@ function updateTopMannschaft(grid) {
     const rawStart = hasStatusCol ? 34 : 33;
     const rawCols = [rawStart, rawStart + 1, rawStart + 2, rawStart + 3, rawStart + 4, rawStart + 5, rawStart + 6];
 
+    // Sicherstellen, dass die 7 Rohrunden ein definiertes Maximum von 200 haben
+    if (grid[3]) {
+        rawCols.forEach((c, idx) => {
+            if (!grid[3][c] || grid[3][c] === '') {
+                grid[3][c] = 200;
+            }
+        });
+    }
+
     // Zielspalten vor TOTAL: Mannschaft #1..#4
     const targetCols = [
         hasStatusCol ? 10 : 9,

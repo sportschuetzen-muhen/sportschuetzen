@@ -106,5 +106,13 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 - **Eindeutigkeit & dynamische Berechnung des Streichresultats:** Ein Streichresultat wird dynamisch in `recalculateJMRawGrid` nur dann ermittelt und abgezogen, wenn ein Schütze mindestens alle aktiven Wettkämpfe absolviert hat. Haben Schützen dasselbe Tiefstresultat mehrfach erzielt, wird sowohl rechnerisch als auch visuell im Cockpit (`streichMarked`) exakt nur ein einziges Resultat gestrichen.
 - **Tab-Persistenz & Junioren-Ansichtsmodus:** Beim Umschalten des Ansichtsmodus (`Punkte`, `Prozent (%)`, `Punkte & %`) bleibt der ausgewählte Tab (z. B. `Junioren-Wertung (U21)`) via `jmActiveTab` unterbrechungsfrei geöffnet. Die Junioren-Zellen unterstützen den gewählten Ansichtsmodus synchron mit formatierten Prozent-Badges.
 
+---
+
+## 10. Gesamt-Matrix, SMM Top-4-Kennzeichnung & Streichrunden-Transparenz (Oktober 2026)
+
+- **Gesamt-Matrix (Alle Spalten):** Ein dritter Tab (`#matrix-tab`) im Vorstandscockpit visualisiert alle Spalten des 2D-Grids geordnet nach Funktionsgruppen: Haupt-Wettkämpfe, gewertete Top-4-Mannschaft, alle 7 SMM-Einzelrunden, gewertete Auswärtige, alle erfassten Auswärtigen Schiessen sowie die Gesamtwertung (Streichresultat und Total in %). Ein Umschalter erlaubt die optionale Einblendung der Roh-Prozentspalten.
+- **SMM Top 4 vs. Streichrunden:** In den Tabellen von Liga 1 & 2 werden für jeden Schützen aus den 7 SMM-Runden dynamisch die 4 höchsten Resultate ermittelt und mit einem grünen Zähl-Badge (`<i class="fas fa-check"></i>`) markiert. Die 3 tiefsten Runden werden eindeutig als gestrichene Streichrunden formatiert (durchgestrichen, ausgegraut, Streich-Badge).
+- **Prozent-Badge-Korrektur:** `getColumnPercentage` berechnet die Prozentwerte der 7 Roh-Mannschaftsrunden autonom aus Punkten und Maximalwert (200 Pkt.), anstatt fehlerhaft auf die sortierten Top-1-bis-4-Prozentspalten zuzugreifen.
+
 
 

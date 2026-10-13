@@ -2,7 +2,7 @@
 
 let jmViewMode = 'points'; // 'points' | 'percent' | 'both'
 window.jmViewMode = jmViewMode;
-let jmActiveTab = 'ligen'; // 'ligen' | 'junioren'
+let jmActiveTab = 'ligen'; // 'ligen' | 'junioren' | 'matrix'
 window.jmActiveTab = jmActiveTab;
 
 function jmSetActiveTab(tab) {
@@ -10,6 +10,8 @@ function jmSetActiveTab(tab) {
     window.jmActiveTab = tab;
     if (tab === 'junioren') {
         renderJuniorenTabContent();
+    } else if (tab === 'matrix') {
+        renderMatrixTabContent();
     }
 }
 window.jmSetActiveTab = jmSetActiveTab;
@@ -22,6 +24,8 @@ function setJMViewMode(mode) {
     const activeNav = document.querySelector('#jmTab .nav-link.active');
     if (activeNav && activeNav.id === 'junioren-tab') {
         jmActiveTab = 'junioren';
+    } else if (activeNav && activeNav.id === 'matrix-tab') {
+        jmActiveTab = 'matrix';
     } else if (activeNav && activeNav.id === 'ligen-tab') {
         jmActiveTab = 'ligen';
     }
@@ -203,8 +207,9 @@ function renderJahresmeisterschaft(grid) {
     ligenHtml += buildLigaTable("Liga 2", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent);
 
     // Tabs definieren mit Berücksichtigung von jmActiveTab
-    const isLigenActive = (jmActiveTab !== 'junioren');
+    const isLigenActive = (jmActiveTab === 'ligen');
     const isJuniorenActive = (jmActiveTab === 'junioren');
+    const isMatrixActive = (jmActiveTab === 'matrix');
 
     // Bootstrap Tab-Layout mit Ansichts-Umschalter (Punkte / % / Kombi)
     let html = `
@@ -216,8 +221,13 @@ function renderJahresmeisterschaft(grid) {
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link ${isJuniorenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('junioren')">
+                    <button class="nav-link ${isJuniorenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('junioren')">
                         <i class="fas fa-user-graduate me-2"></i>Junioren-Wertung (U21)
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link ${isMatrixActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('matrix')">
+                        <i class="fas fa-table me-2"></i>Gesamt-Matrix (Alle Spalten)
                     </button>
                 </li>
             </ul>
@@ -244,6 +254,9 @@ function renderJahresmeisterschaft(grid) {
             </div>
             <div class="tab-pane fade ${isJuniorenActive ? 'show active' : ''}" id="junioren-pane" role="tabpanel" aria-labelledby="junioren-tab">
                 <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Lade Junioren-Daten...</div>
+            </div>
+            <div class="tab-pane fade ${isMatrixActive ? 'show active' : ''}" id="matrix-pane" role="tabpanel" aria-labelledby="matrix-tab">
+                <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Lade Gesamt-Matrix...</div>
             </div>
         </div>
     `;
@@ -272,9 +285,11 @@ function renderJahresmeisterschaft(grid) {
     // Check sizes initially
     checkLigaSizes();
 
-    // Falls der Junioren-Tab aktiv war, Inhalt sofort rendern
+    // Falls der Junioren- oder Matrix-Tab aktiv war, Inhalt sofort rendern
     if (isJuniorenActive) {
         renderJuniorenTabContent();
+    } else if (isMatrixActive) {
+        renderMatrixTabContent();
     }
 }
 
@@ -301,6 +316,10 @@ function checkLigaSizes() {
 function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent) {
     let tbodyHtml = '';
     
+    const rawStart = hasStatusCol ? 34 : 33;
+    const rawEnd = hasStatusCol ? 40 : 39;
+    const rawCols = [rawStart, rawStart + 1, rawStart + 2, rawStart + 3, rawStart + 4, rawStart + 5, rawStart + 6];
+
     // Gültige Schützen ermitteln und nach Total in % absteigend sortieren
     const shooterRows = [];
     for (let r = startRow; r <= endRow; r++) {
@@ -325,6 +344,18 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
         const nachname = s.rowData[1] || '';
         const shooterStreich = parseFloat(String(s.rowData[colStreich] || '0').replace(',', '.')) || 0;
         let streichMarked = false; // Garantiert, dass bei identischen Tiefstwerten visuell nur genau 1 Resultat gestrichen wird
+
+        // Die 4 besten Mannschaftsrunden für diesen Schützen ermitteln
+        const mRounds = [];
+        rawCols.forEach(colIdx => {
+            const rawVal = s.rowData[colIdx];
+            const num = parseFloat(String(rawVal || '').replace(',', '.'));
+            if (!isNaN(num) && num > 0) {
+                mRounds.push({ col: colIdx, score: num });
+            }
+        });
+        mRounds.sort((a, b) => b.score - a.score);
+        const top4MannschaftCols = new Set(mRounds.slice(0, 4).map(item => item.col));
 
         let statusTd = '';
         if (hasStatusCol && statusColIndex !== -1) {
@@ -372,9 +403,22 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                     }
                 }
 
-                // Prüfen ob dieser Wettkampf das Streichresultat des Schützen ist (genau ein Treffer!)
+                // Prüfen auf Mannschaftsrunde (Top 4 vs Streichrunde)
+                const isRawMannschaft = (c >= rawStart && c <= rawEnd);
+                let isMannschaftStreich = false;
+                let isCountedMannschaft = false;
+                if (isRawMannschaft && rawNum > 0) {
+                    if (top4MannschaftCols.has(c)) {
+                        isCountedMannschaft = true;
+                    } else {
+                        isMannschaftStreich = true;
+                    }
+                }
+
+                // Prüfen ob dieser Wettkampf das Haupt-Streichresultat des Schützen ist (genau ein Treffer!)
+                // WICHTIG: Gilt nur für Meisterschaftswettkämpfe, NICHT für die Rohrunden der Mannschaft!
                 let isStreich = false;
-                if (!streichMarked && pct > 0 && shooterStreich > 0 && Math.abs(pct - shooterStreich) < 0.05) {
+                if (!isRawMannschaft && !streichMarked && pct > 0 && shooterStreich > 0 && Math.abs(pct - shooterStreich) < 0.05) {
                     isStreich = true;
                     streichMarked = true;
                 }
@@ -406,26 +450,46 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                 } else if (jmViewMode === 'percent') {
                     // Modus Prozent: Zeigt die berechneten % an
                     const displayVal = pctStr || (val ? '0%' : '–');
+                    const isStruck = isStreich || isMannschaftStreich;
+                    const isGreen = isCountedMannschaft && !isStruck;
                     cellContent = `
                         <div class="position-relative">
-                            <input type="text" class="form-control form-control-sm text-center fw-bold ${pct > 0 ? (isStreich ? 'text-danger text-decoration-line-through' : 'text-primary') : 'text-muted'}" 
+                            <input type="text" class="form-control form-control-sm text-center ${isStruck ? 'text-muted text-decoration-line-through opacity-75' : (isGreen ? 'text-success fw-bold' : (pct > 0 ? 'text-primary fw-bold' : 'text-muted'))}" 
                                    style="width: 100%; ${inputStyle}" readonly value="${displayVal}"
-                                   title="${escapeHtml(val)} Punkte (Max: ${grid[3][c] || '–'})${isStreich ? ' [Streichresultat]' : ''}">
+                                   title="${escapeHtml(val)} Punkte (Max: ${grid[3][c] || '–'})${isMannschaftStreich ? ' [SMM Streichrunde (zählt nicht)]' : (isCountedMannschaft ? ' [Top 4 SMM gewertet]' : (isStreich ? ' [Haupt-Streichresultat]' : ''))}">
                         </div>
                     `;
                 } else if (jmViewMode === 'both') {
-                    // Modus Kombi: Punkte-Eingabefeld + kompakter Prozent-Badge
+                    // Modus Kombi: Punkte-Eingabefeld + intelligenter Badge
+                    const isStruck = isStreich || isMannschaftStreich;
+                    let badgeClass = 'bg-primary-subtle text-primary border border-primary-subtle';
+                    let badgeTitle = `Prozentwert: ${pctStr}`;
+                    let badgeIcon = '';
+                    if (isMannschaftStreich) {
+                        badgeClass = 'bg-secondary-subtle text-muted border border-secondary-subtle text-decoration-line-through';
+                        badgeTitle = 'Streichrunde SMM (zählt nicht)';
+                        badgeIcon = '<i class="fas fa-strikethrough me-1"></i>';
+                    } else if (isCountedMannschaft) {
+                        badgeClass = 'bg-success-subtle text-success border border-success-subtle';
+                        badgeTitle = 'Zählt für Jahresmeisterschaft (Top 4 SMM)';
+                        badgeIcon = '<i class="fas fa-check me-1"></i>';
+                    } else if (isStreich) {
+                        badgeClass = 'bg-warning-subtle text-danger border border-warning';
+                        badgeTitle = `Haupt-Streichresultat (-${shooterStreich}%)`;
+                        badgeIcon = '<i class="fas fa-strikethrough me-1"></i>';
+                    }
+
                     cellContent = `
                         <div class="d-flex flex-column align-items-center">
-                            <input type="text" class="form-control form-control-sm write-protected text-center ${isStreich ? 'text-decoration-line-through text-muted' : ''}" 
+                            <input type="text" class="form-control form-control-sm write-protected text-center ${isStruck ? 'text-decoration-line-through text-muted opacity-75' : (isCountedMannschaft ? 'fw-semibold' : '')}" 
                                    style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                    value="${escapeHtml(val)}" onchange="handleCellEdit(${r}, ${c}, this.value, this)">
                             <div class="mt-1" style="min-height: 16px;">
                                 ${pctStr ? `
-                                    <span class="badge ${isStreich ? 'bg-warning-subtle text-danger border border-warning' : 'bg-primary-subtle text-primary border border-primary-subtle'} px-1 py-0" 
+                                    <span class="badge ${badgeClass} px-1 py-0" 
                                           style="font-size: 10px; font-weight: 600;" 
-                                          title="${isStreich ? `Streichresultat (-${shooterStreich}%)` : `Prozentwert: ${pctStr}`}">
-                                        ${isStreich ? '<i class="fas fa-strikethrough me-1"></i>' : ''}${pctStr}
+                                          title="${badgeTitle}">
+                                        ${badgeIcon}${pctStr}
                                     </span>
                                 ` : ''}
                             </div>
@@ -433,11 +497,17 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                     `;
                 } else {
                     // Modus Standard (Punkte)
+                    const isStruck = isStreich || isMannschaftStreich;
+                    let titleNote = '';
+                    if (isMannschaftStreich) titleNote = ' | Streichrunde SMM (zählt nicht)';
+                    else if (isCountedMannschaft) titleNote = ' | Top 4 SMM gewertet';
+                    else if (isStreich) titleNote = ' | Haupt-Streichresultat';
+
                     cellContent = `
-                        <input type="text" class="form-control form-control-sm write-protected text-center ${isStreich ? 'text-muted' : ''}" 
+                        <input type="text" class="form-control form-control-sm write-protected text-center ${isStruck ? 'text-muted text-decoration-line-through opacity-75' : (isCountedMannschaft ? 'fw-bold' : '')}" 
                                style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                value="${escapeHtml(val)}" 
-                               title="${pctStr ? `Prozent: ${pctStr}` : ''}"
+                               title="${pctStr ? `Prozent: ${pctStr}` : ''}${titleNote}"
                                onchange="handleCellEdit(${r}, ${c}, this.value, this)">
                     `;
                 }
@@ -466,8 +536,18 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                             ${visibleShooterCols.map((c, colIndex) => {
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
                                 let titleStr = grid[2][c] || ('Spalte '+(c+1));
-                                if (c === totalCol) titleStr = `Total (max. ${maxPercent || 1000}%)`;
-                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(titleStr)}">${escapeHtml(titleStr)}</th>`;
+                                let headerHtml = escapeHtml(titleStr);
+                                let thTitle = titleStr;
+                                if (c === totalCol) {
+                                    titleStr = `Total (max. ${maxPercent || 1000}%)`;
+                                    headerHtml = escapeHtml(titleStr);
+                                    thTitle = titleStr;
+                                } else if (c >= rawStart && c <= rawEnd) {
+                                    const rNum = c - rawStart + 1;
+                                    thTitle = `Mannschaftsmeisterschaft Runde ${rNum} (Die besten 4 Runden zählen)`;
+                                    headerHtml = `<div class="d-flex flex-column align-items-center" style="line-height: 1.1;"><span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-1 py-0 mb-1" style="font-size: 8px; font-weight: 700;">SMM</span><span>R${rNum}</span></div>`;
+                                }
+                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate align-middle" title="${escapeHtml(thTitle)}">${headerHtml}</th>`;
                             }).join('')}
                         </tr>
                     </thead>
@@ -512,6 +592,17 @@ function getColumnPercentage(grid, r, c, hasStatusCol) {
     if (normalCol === 15) {
         const pctCol = hasStatusCol ? 29 : 28;
         return parseFloat(String(grid[r][pctCol] || '').replace(/%/g, '').trim()) || 0;
+    }
+
+    // Sonderfall Roh-Mannschaftsrunden 33..39 (bzw. 34..40):
+    // Maximum ist 200 Punkte; darf NICHT in den Spalten 'Mannschaft #1..#4 %' nachgeschlagen werden!
+    const rawStart = hasStatusCol ? 34 : 33;
+    const rawEnd = hasStatusCol ? 40 : 39;
+    if (c >= rawStart && c <= rawEnd) {
+        const val = parseFloat(String(grid[r][c] || '').replace(',', '.').trim());
+        const maxVal = parseFloat(String(grid[3][c] || '').replace(',', '.').trim()) || 200;
+        if (isNaN(val) || val <= 0 || isNaN(maxVal) || maxVal <= 0) return 0;
+        return (val / maxVal) * 100;
     }
 
     // 1. Suche nach korrespondierender Spalte '<Wettkampf> %'
@@ -733,3 +824,362 @@ function renderJuniorenTabContent() {
 
     document.getElementById('junioren-pane').innerHTML = switchesHtml + tableHtml;
 }
+
+// === GESAMT-MATRIX (ALLE SPALTEN) ===
+window._jmMatrixShowPct = false;
+
+function renderMatrixTabContent() {
+    const pane = document.getElementById('matrix-pane');
+    if (!pane) return;
+    const grid = jmRawGrid;
+    if (!grid || grid.length < 6) {
+        pane.innerHTML = '<div class="alert alert-warning">Keine Daten für die Gesamt-Matrix verfügbar.</div>';
+        return;
+    }
+
+    let canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('jahresmeisterschaft') : true;
+    if (jmCurrentJahr !== "current") {
+        canWrite = false;
+    }
+
+    // Statusspalte ermitteln
+    let hasStatusCol = false;
+    let statusColIndex = -1;
+    if (grid[4]) {
+        for (let c = 0; c < grid[4].length; c++) {
+            const val = String(grid[4][c] || '').trim().toLowerCase();
+            if (val === 'status') {
+                hasStatusCol = true;
+                statusColIndex = c;
+                break;
+            }
+        }
+    }
+
+    const colTotal = hasStatusCol ? 19 : 18;
+    const colStreich = hasStatusCol ? 32 : 31;
+    const rawStart = hasStatusCol ? 34 : 33;
+    const rawEnd = hasStatusCol ? 40 : 39;
+    const limitIndex = hasStatusCol ? 42 : 41;
+
+    // Spaltengruppen definieren:
+    // 1. Hauptwettkämpfe (Verband, Kantonalstich, Vereinswettkampf, Endschiessen, evtl. Eidgenössisches)
+    const hauptCols = [];
+    [hasStatusCol ? 7 : 6, hasStatusCol ? 8 : 7, hasStatusCol ? 9 : 8, hasStatusCol ? 14 : 13, hasStatusCol ? 17 : 16].forEach(c => {
+        if (c < grid[2].length && hasValidTitle(grid, c)) {
+            hauptCols.push(c);
+        }
+    });
+
+    // 2. Top 4 Mannschaft
+    const top4Cols = [
+        hasStatusCol ? 10 : 9,
+        hasStatusCol ? 11 : 10,
+        hasStatusCol ? 12 : 11,
+        hasStatusCol ? 13 : 12
+    ];
+
+    // 3. SMM Runden 1 bis 7
+    const smmCols = [];
+    for (let c = rawStart; c <= rawEnd; c++) {
+        if (c < grid[2].length) {
+            smmCols.push(c);
+        }
+    }
+
+    // 4. Top 2 Auswärtige
+    const topAuswCols = [
+        hasStatusCol ? 15 : 14,
+        hasStatusCol ? 16 : 15
+    ];
+
+    // 5. Alle Auswärtigen Schiessen
+    const auswCols = [];
+    for (let c = limitIndex; c < grid[2].length; c++) {
+        if (hasValidTitle(grid, c) && isColumnActive(grid, c)) {
+            auswCols.push(c);
+        }
+    }
+
+    // 6. Roh-Prozentspalten (optional einblendbar)
+    const showPct = Boolean(window._jmMatrixShowPct);
+    const pctCols = [];
+    if (showPct) {
+        const startPct = hasStatusCol ? 20 : 19;
+        const endPct = hasStatusCol ? 31 : 30;
+        for (let c = startPct; c <= endPct; c++) {
+            if (c < grid[2].length && hasValidTitle(grid, c)) {
+                pctCols.push(c);
+            }
+        }
+    }
+
+    let matrixHtml = `
+        <div class="card rounded-4 border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h5 class="mb-1 fw-bold text-primary"><i class="fas fa-table text-primary me-2"></i>Gesamt-Matrix (Alle Spalten)</h5>
+                    <p class="text-muted small mb-0">Vollständige 2D-Übersicht aller Meisterschafts-, Mannschafts- (Top 4 &amp; R1–7) und Auswärtigen Resultate.</p>
+                </div>
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="matrix-toggle-pct" onchange="window._jmMatrixShowPct = this.checked; renderMatrixTabContent();" ${showPct ? 'checked' : ''}>
+                        <label class="form-check-label small fw-semibold text-muted" for="matrix-toggle-pct">Roh-Prozentspalten einblenden</label>
+                    </div>
+                    <div class="d-flex align-items-center gap-1">
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1"><i class="fas fa-trophy me-1"></i>Meisterschaft</span>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="fas fa-check-circle me-1"></i>Top 4 SMM</span>
+                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1"><i class="fas fa-users me-1"></i>SMM R1–7</span>
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1"><i class="fas fa-map-marker-alt me-1"></i>Auswärtige</span>
+                        <span class="badge bg-dark text-white border px-2 py-1"><i class="fas fa-calculator me-1"></i>Total &amp; Streich</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    matrixHtml += buildMatrixLigaTable("Liga 1 (Gesamt-Matrix)", grid, 5, 12, canWrite, hasStatusCol, statusColIndex, hauptCols, top4Cols, smmCols, topAuswCols, auswCols, pctCols, showPct, colStreich, colTotal);
+    matrixHtml += buildMatrixLigaTable("Liga 2 (Gesamt-Matrix)", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, hauptCols, top4Cols, smmCols, topAuswCols, auswCols, pctCols, showPct, colStreich, colTotal);
+
+    pane.innerHTML = matrixHtml;
+}
+window.renderMatrixTabContent = renderMatrixTabContent;
+
+function buildMatrixLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, statusColIndex, hauptCols, top4Cols, smmCols, topAuswCols, auswCols, pctCols, showPct, colStreich, colTotal) {
+    const rawStart = hasStatusCol ? 34 : 33;
+    const rawEnd = hasStatusCol ? 40 : 39;
+    const rawCols = [rawStart, rawStart + 1, rawStart + 2, rawStart + 3, rawStart + 4, rawStart + 5, rawStart + 6];
+
+    const shooterRows = [];
+    for (let r = startRow; r <= endRow; r++) {
+        if (!grid[r]) continue;
+        const vorname = grid[r][2] || '';
+        const nachname = grid[r][1] || '';
+        if (!nachname && !vorname) continue;
+        shooterRows.push({ rowIndex: r, rowData: grid[r] });
+    }
+
+    shooterRows.sort((a, b) => {
+        const valA = parseFloat(String(a.rowData[colTotal] || '').replace(/%/g, '').trim()) || 0;
+        const valB = parseFloat(String(b.rowData[colTotal] || '').replace(/%/g, '').trim()) || 0;
+        return valB - valA;
+    });
+
+    const allMatrixCols = [
+        ...hauptCols,
+        ...top4Cols,
+        ...smmCols,
+        ...topAuswCols,
+        ...auswCols,
+        ...(showPct ? pctCols : []),
+        colStreich,
+        colTotal
+    ];
+
+    let tbodyHtml = '';
+    for (let sIdx = 0; sIdx < shooterRows.length; sIdx++) {
+        const s = shooterRows[sIdx];
+        const r = s.rowIndex;
+        const vorname = s.rowData[2] || '';
+        const nachname = s.rowData[1] || '';
+        const shooterStreich = parseFloat(String(s.rowData[colStreich] || '0').replace(',', '.')) || 0;
+        let streichMarked = false;
+
+        // Top 4 SMM Runden für diesen Schützen ermitteln
+        const mRounds = [];
+        rawCols.forEach(colIdx => {
+            const rawVal = s.rowData[colIdx];
+            const num = parseFloat(String(rawVal || '').replace(',', '.'));
+            if (!isNaN(num) && num > 0) {
+                mRounds.push({ col: colIdx, score: num });
+            }
+        });
+        mRounds.sort((a, b) => b.score - a.score);
+        const top4MannschaftCols = new Set(mRounds.slice(0, 4).map(item => item.col));
+
+        let statusTd = '';
+        if (hasStatusCol && statusColIndex !== -1) {
+            const statusVal = s.rowData[statusColIndex] || '';
+            let badgeClass = 'bg-secondary';
+            if (statusVal.includes('Aufstieg')) badgeClass = 'bg-success';
+            if (statusVal.includes('Abstieg')) badgeClass = 'bg-danger';
+            statusTd = `<td style="width: 100px; min-width: 100px; max-width: 100px;"><span class="badge ${badgeClass}">${escapeHtml(statusVal)}</span></td>`;
+        }
+
+        tbodyHtml += `<tr data-row="${r}">
+            <td style="width: 40px; min-width: 40px; max-width: 40px; position: sticky; left: 0; z-index: 2; background-color: #fff;" class="text-center text-muted fw-bold">${sIdx + 1}</td>
+            <td class="fw-bold" style="width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: sticky; left: 40px; z-index: 2; background-color: #fff; border-right: 2px solid #dee2e6;">${escapeHtml(vorname)} ${escapeHtml(nachname)}</td>
+            ${statusTd}
+            ${allMatrixCols.map((c, colIndex) => {
+                let val = s.rowData[c] || '';
+                if (typeof val === 'string' && (val.includes('#NUM!') || val.includes('#REF!'))) {
+                    val = '';
+                }
+                const isTotal = (c === colTotal);
+                const isStreichCol = (c === colStreich);
+                const isRawMannschaft = (c >= rawStart && c <= rawEnd);
+                const isTop4Mannschaft = top4Cols.includes(c);
+                const isTopAusw = topAuswCols.includes(c);
+
+                const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+
+                if (isTotal) {
+                    const totalText = val !== '' ? (escapeHtml(val) + ' %') : '0.00 %';
+                    return `<td style="width: 95px; min-width: 95px; max-width: 95px; background-color: #212529; color: #fff;">
+                        <input type="text" class="form-control form-control-sm fw-bold text-center text-white bg-dark border-0" style="width: 100%;" readonly value="${totalText}">
+                    </td>`;
+                }
+
+                if (isStreichCol) {
+                    const streichText = val !== '' && parseFloat(val) > 0 ? (escapeHtml(val) + ' %') : '–';
+                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; background-color: #fff3cd;">
+                        <input type="text" class="form-control form-control-sm fw-bold text-center text-danger border-warning" style="width: 100%; background-color: #fff3cd;" readonly value="${streichText}" title="Haupt-Streichresultat der Jahresmeisterschaft">
+                    </td>`;
+                }
+
+                // Prozentwert ermitteln
+                let pct = 0;
+                let pctStr = '';
+                const rawNum = parseFloat(String(val).replace(',', '.'));
+                if (!isNaN(rawNum) && rawNum > 0) {
+                    pct = getColumnPercentage(grid, r, c, hasStatusCol);
+                    if (pct > 0) {
+                        pctStr = (Math.round(pct * 100) / 100).toFixed(2) + '%';
+                    }
+                }
+
+                let isMannschaftStreich = false;
+                let isCountedMannschaft = false;
+                if (isRawMannschaft && rawNum > 0) {
+                    if (top4MannschaftCols.has(c)) {
+                        isCountedMannschaft = true;
+                    } else {
+                        isMannschaftStreich = true;
+                    }
+                }
+
+                // Streich-Check für Hauptwettkämpfe
+                let isStreich = false;
+                if (!isRawMannschaft && !streichMarked && pct > 0 && shooterStreich > 0 && Math.abs(pct - shooterStreich) < 0.05) {
+                    isStreich = true;
+                    streichMarked = true;
+                }
+
+                // Farbliche Hervorhebung von Top 4 und Top Auswärtig
+                let colCategoryStyle = inputStyle;
+                if (isTop4Mannschaft) {
+                    colCategoryStyle = 'background-color: #e8f5e9; font-weight: 600; color: #2e7d32;';
+                } else if (isTopAusw) {
+                    colCategoryStyle = 'background-color: #fffde7; font-weight: 600; color: #f57f17;';
+                }
+
+                let cellContent = '';
+                if (jmViewMode === 'percent') {
+                    let displayVal = pctStr || (val ? '0%' : '–');
+                    cellContent = `
+                        <input type="text" class="form-control form-control-sm text-center ${isMannschaftStreich || isStreich ? 'text-decoration-line-through text-muted opacity-75' : (isCountedMannschaft ? 'text-success fw-bold' : '')}" 
+                               style="width: 100%; ${colCategoryStyle}" readonly value="${displayVal}"
+                               title="${escapeHtml(val)} Punkte (Max: ${grid[3][c] || '–'})${isMannschaftStreich ? ' [SMM Streichrunde]' : (isStreich ? ' [Haupt-Streichresultat]' : '')}">
+                    `;
+                } else if (jmViewMode === 'both') {
+                    let badgeHtml = '';
+                    if (isMannschaftStreich && pctStr) {
+                        badgeHtml = `<span class="badge bg-secondary-subtle text-muted border border-secondary-subtle px-1 py-0 text-decoration-line-through" style="font-size: 10px;" title="Streichrunde SMM (zählt nicht)"><i class="fas fa-strikethrough me-1"></i>${pctStr}</span>`;
+                    } else if (isCountedMannschaft && pctStr) {
+                        badgeHtml = `<span class="badge bg-success-subtle text-success border border-success-subtle px-1 py-0" style="font-size: 10px;" title="Zählt für Jahresmeisterschaft (Top 4 SMM)"><i class="fas fa-check me-1"></i>${pctStr}</span>`;
+                    } else if (isStreich && pctStr) {
+                        badgeHtml = `<span class="badge bg-warning-subtle text-danger border border-warning px-1 py-0" style="font-size: 10px;" title="Haupt-Streichresultat (-${shooterStreich}%)"><i class="fas fa-strikethrough me-1"></i>${pctStr}</span>`;
+                    } else if (pctStr) {
+                        badgeHtml = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle px-1 py-0" style="font-size: 10px;">${pctStr}</span>`;
+                    }
+
+                    cellContent = `
+                        <div class="d-flex flex-column align-items-center">
+                            <input type="text" class="form-control form-control-sm write-protected text-center ${isMannschaftStreich || isStreich ? 'text-decoration-line-through text-muted opacity-75' : ''}" 
+                                   style="width: 100%; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                                   value="${escapeHtml(val)}" onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                            <div class="mt-1" style="min-height: 16px;">
+                                ${badgeHtml}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Standard: Punkte
+                    cellContent = `
+                        <input type="text" class="form-control form-control-sm write-protected text-center ${isMannschaftStreich || isStreich ? 'text-muted text-decoration-line-through opacity-75' : ''}" 
+                               style="width: 100%; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                               value="${escapeHtml(val)}" 
+                               title="${pctStr ? `Prozent: ${pctStr}` : ''}${isMannschaftStreich ? ' [SMM Streichrunde]' : (isCountedMannschaft ? ' [Top 4 SMM]' : '')}"
+                               onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                    `;
+                }
+
+                return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">${cellContent}</td>`;
+            }).join('')}
+        </tr>`;
+    }
+
+    const statusThTop = hasStatusCol ? `<th rowspan="2" style="width: 100px; min-width: 100px; max-width: 100px;" class="align-middle text-center bg-light">Status</th>` : '';
+
+    return `
+        <div class="card rounded-4 border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold text-primary"><i class="fas fa-trophy text-warning me-2"></i>${title}</h5>
+                <span class="badge bg-light text-muted border"><i class="fas fa-arrows-alt-h me-1"></i>Horizontal scrollbar</span>
+            </div>
+            <div class="card-body p-0 overflow-auto">
+                <table class="table table-hover table-sm align-middle mb-0" style="min-width: 1400px; font-size: 0.85rem; table-layout: fixed;">
+                    <thead class="table-light">
+                        <!-- Zeile 1: Gruppen-Header -->
+                        <tr>
+                            <th rowspan="2" style="width: 40px; min-width: 40px; max-width: 40px; position: sticky; left: 0; z-index: 4; background-color: #f8f9fa;" class="align-middle text-center">#</th>
+                            <th rowspan="2" style="width: 200px; min-width: 200px; max-width: 200px; position: sticky; left: 40px; z-index: 4; background-color: #f8f9fa; border-right: 2px solid #dee2e6;" class="align-middle">Schütze</th>
+                            ${statusThTop}
+                            <th colspan="${hauptCols.length}" class="text-center bg-primary text-white py-1 fw-bold" style="font-size: 0.8rem;"><i class="fas fa-trophy me-1"></i>Haupt-Wettkämpfe</th>
+                            <th colspan="${top4Cols.length}" class="text-center bg-success text-white py-1 fw-bold" style="font-size: 0.8rem;"><i class="fas fa-check-circle me-1"></i>Top 4 SMM (Gewertet)</th>
+                            <th colspan="${smmCols.length}" class="text-center bg-info text-white py-1 fw-bold" style="font-size: 0.8rem;"><i class="fas fa-users me-1"></i>SMM Einzelrunden (1–7)</th>
+                            <th colspan="${topAuswCols.length}" class="text-center bg-warning text-dark py-1 fw-bold" style="font-size: 0.8rem;"><i class="fas fa-star me-1"></i>Top Auswärtige</th>
+                            <th colspan="${auswCols.length}" class="text-center bg-secondary text-white py-1 fw-bold" style="font-size: 0.8rem;"><i class="fas fa-map-marker-alt me-1"></i>Auswärtige Schiessen</th>
+                            ${showPct ? `<th colspan="${pctCols.length}" class="text-center bg-light text-muted py-1 fw-bold" style="font-size: 0.8rem;">Roh-Prozente (%)</th>` : ''}
+                            <th colspan="2" class="text-center bg-dark text-white py-1 fw-bold" style="font-size: 0.8rem;"><i class="fas fa-calculator me-1"></i>Wertung</th>
+                        </tr>
+                        <!-- Zeile 2: Spaltentitel & Max -->
+                        <tr>
+                            ${allMatrixCols.map((c, colIndex) => {
+                                let titleStr = grid[2][c] || ('Spalte ' + (c + 1));
+                                const maxPts = grid[3][c] ? ` (Max. ${grid[3][c]})` : '';
+                                const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
+
+                                if (c === colTotal) {
+                                    return `<th style="width: 95px; min-width: 95px; max-width: 95px; background-color: #212529; color: #fff;" class="text-center text-truncate align-middle" title="Gesamttotal in %">Total %</th>`;
+                                }
+                                if (c === colStreich) {
+                                    return `<th style="width: 90px; min-width: 90px; max-width: 90px; background-color: #fff3cd; color: #856404;" class="text-center text-truncate align-middle" title="Haupt-Streichresultat">Streich %</th>`;
+                                }
+                                if (c >= rawStart && c <= rawEnd) {
+                                    const rNum = c - rawStart + 1;
+                                    return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate align-middle" title="SMM Runde ${rNum} (Max. 200 Pkt. - Top 4 zählen)">R${rNum}</th>`;
+                                }
+                                if (top4Cols.includes(c)) {
+                                    const idx = top4Cols.indexOf(c) + 1;
+                                    return `<th style="width: 90px; min-width: 90px; max-width: 90px; background-color: #e8f5e9; color: #2e7d32;" class="text-center text-truncate align-middle" title="Top ${idx} Mannschaft (Max. 200 Pkt.)">Top #${idx}</th>`;
+                                }
+                                if (topAuswCols.includes(c)) {
+                                    const idx = topAuswCols.indexOf(c) + 1;
+                                    return `<th style="width: 90px; min-width: 90px; max-width: 90px; background-color: #fffde7; color: #f57f17;" class="text-center text-truncate align-middle" title="Top ${idx} Auswärtiges Schiessen">Top #${idx}</th>`;
+                                }
+
+                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate align-middle" title="${escapeHtml(titleStr)}${escapeHtml(maxPts)}">${escapeHtml(titleStr)}</th>`;
+                            }).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tbodyHtml}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
