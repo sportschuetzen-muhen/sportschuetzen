@@ -246,17 +246,17 @@ async function jmHandleFileUpload(file, type) {
             }
 
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = '';
+            const fullLines = [];
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(' ');
-                fullText += '\n' + pageText;
+                const pageLines = extractLinesFromPdfPage(textContent);
+                fullLines.push(...pageLines);
             }
 
-            if (fullText.trim().length > 30) {
-                // Digitales PDF mit Text (wie das Villmergen-Beispiel)
-                jmProcessAuswaertigFromText(fullText, file.name);
+            if (fullLines.length > 0 && fullLines.join(' ').trim().length > 30) {
+                // Digitales PDF mit Text (wie WinFire Bärenmoos oder Villmergen)
+                jmProcessAuswaertigFromText(fullLines, file.name);
                 if (loadingElem) loadingElem.classList.add('d-none');
                 return;
             } else {
@@ -505,32 +505,94 @@ async function jmProcessMannschaftFromPdf(arrayBuffer, fileName) {
 window.jmProcessMannschaftFromPdf = jmProcessMannschaftFromPdf;
 
 /**
+ * Extrahiert echte Tabellenzeilen aus einer PDF-Seite durch Gruppierung nach vertikaler Koordinate (y).
+ */
+function extractLinesFromPdfPage(textContent) {
+    const items = (textContent.items || []).filter(it => it.str && it.str.trim().length > 0);
+    if (items.length === 0) return [];
+
+    // Sortiere nach y absteigend (von oben nach unten), danach nach x aufsteigend (von links nach rechts)
+    items.sort((a, b) => {
+        const yA = a.transform ? a.transform[5] : 0;
+        const yB = b.transform ? b.transform[5] : 0;
+        if (Math.abs(yB - yA) > 3.5) {
+            return yB - yA;
+        }
+        const xA = a.transform ? a.transform[4] : 0;
+        const xB = b.transform ? b.transform[4] : 0;
+        return xA - xB;
+    });
+
+    const lines = [];
+    let currentLine = [];
+    let currentY = null;
+
+    for (const it of items) {
+        const y = it.transform ? it.transform[5] : 0;
+        if (currentY === null || Math.abs(currentY - y) <= 3.5) {
+            currentLine.push(it);
+            currentY = y;
+        } else {
+            currentLine.sort((a, b) => (a.transform ? a.transform[4] : 0) - (b.transform ? b.transform[4] : 0));
+            lines.push(currentLine.map(i => i.str.trim()).join(' '));
+            currentLine = [it];
+            currentY = y;
+        }
+    }
+    if (currentLine.length > 0) {
+        currentLine.sort((a, b) => (a.transform ? a.transform[4] : 0) - (b.transform ? b.transform[4] : 0));
+        lines.push(currentLine.map(i => i.str.trim()).join(' '));
+    }
+    return lines;
+}
+
+/**
  * Analysiert den reinen Text eines PDFs/Dokuments auf Schützen, Punkte und Schiessprogramme.
  */
-function jmProcessAuswaertigFromText(text, fileName) {
+function jmProcessAuswaertigFromText(linesOrText, fileName) {
     const grid = jmRawGrid;
     if (!grid || grid.length < 6) return;
 
-    // Bekannte Schützen aus jmRawGrid indizieren
+    const lines = Array.isArray(linesOrText)
+        ? linesOrText.map(l => l.trim()).filter(l => l.length > 0)
+        : String(linesOrText || '').split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+    const fullText = lines.join('\n');
+
+    // Bekannte Schützen aus jmRawGrid indizieren (inkl. Jahrgang & Lizenz)
+    let colJahrgang = -1;
+    if (grid[4]) {
+        colJahrgang = grid[4].findIndex(t => String(t || '').trim().toLowerCase() === 'jahrgang');
+    }
+    if (colJahrgang === -1) colJahrgang = 3;
+
     const knownShooters = [];
     for (let r = 5; r < grid.length; r++) {
         if (!grid[r] || r === 13 || r === 14) continue;
         const nachname = String(grid[r][1] || '').trim();
         const vorname = String(grid[r][2] || '').trim();
-        const lizenz = String(grid[r][4] || '').replace(/\D/g, '').padStart(6, '0');
+        const rawLiz = String(grid[r][4] || '').replace(/\D/g, '');
+        const lizenz = rawLiz.padStart(6, '0');
+        const shortLiz = rawLiz ? String(parseInt(rawLiz, 10)) : '';
+
+        const rawJg = grid[r][colJahrgang];
+        const jgMatch = String(rawJg || '').match(/\b(19|20)\d{2}\b/);
+        const jg = jgMatch ? parseInt(jgMatch[0]) : null;
+
         if (nachname || vorname) {
             knownShooters.push({
                 rowIndex: r,
                 nachname,
                 vorname,
                 fullName: `${nachname} ${vorname}`.trim(),
-                lizenz
+                lizenz,
+                shortLiz,
+                jg
             });
         }
     }
 
     // Wettkampf-Titel erkennen
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
     let detectedTitle = fileName ? fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : 'Auswärtiges Schiessen';
     for (let i = 0; i < Math.min(10, lines.length); i++) {
         const l = lines[i];
@@ -540,34 +602,67 @@ function jmProcessAuswaertigFromText(text, fileName) {
         }
     }
 
-    // Schützen-Matching
+    // Schützen-Matching ZEILENWEISE
     const matchedResults = [];
     const seenRows = new Set();
+    const escapeReg = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     lines.forEach(line => {
         knownShooters.forEach(s => {
             if (seenRows.has(s.rowIndex)) return;
-            const nachnameMatches = s.nachname && new RegExp('\\b' + s.nachname + '\\b', 'i').test(line);
-            const vornameMatches = s.vorname && new RegExp('\\b' + s.vorname + '\\b', 'i').test(line);
-            const lizenzMatches = s.lizenz && s.lizenz !== '000000' && line.includes(s.lizenz);
+
+            const nachnameMatches = s.nachname && new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i').test(line);
+            const vornameMatches = s.vorname && (
+                new RegExp('\\b' + escapeReg(s.vorname) + '\\b', 'i').test(line) ||
+                (s.vorname.length >= 3 && new RegExp('\\b' + escapeReg(s.vorname.substring(0, 3)), 'i').test(line))
+            );
+            const lizenzMatches = s.lizenz && s.lizenz !== '000000' && (line.includes(s.lizenz) || (s.shortLiz && line.includes(s.shortLiz)));
 
             if ((nachnameMatches && vornameMatches) || lizenzMatches) {
-                // Punktzahlen suchen (Schiesssport typisch 40 bis 600)
-                const nums = line.match(/\b(100|[4-9][0-9]|1[0-9]{2}|200|5[0-9]{2}|600)\b/g);
-                if (nums && nums.length > 0) {
-                    // Filter Jahrgänge (1940..2025)
-                    const validNums = nums.filter(n => !/^19[4-9][0-9]$|^20[0-2][0-9]$/.test(n));
-                    if (validNums.length > 0) {
-                        const pts = parseFloat(validNums[0]);
-                        matchedResults.push({
-                            rowIndex: s.rowIndex,
-                            name: s.fullName,
-                            lizenz: s.lizenz,
-                            points: pts,
-                            matched: true
-                        });
-                        seenRows.add(s.rowIndex);
+                // Punktzahlen AUS DIESER ZEILE extrahieren
+                // Jahrgänge und Lizenzen maskieren, um Fehlmatches zu verhindern
+                let cleanLine = line;
+                if (s.jg) {
+                    cleanLine = cleanLine.replace(new RegExp('\\b' + s.jg + '\\b', 'g'), ' ');
+                }
+                cleanLine = cleanLine.replace(/\b(19\d{2}|20\d{2})\b/g, ' ');
+                if (s.lizenz && s.lizenz !== '000000') {
+                    cleanLine = cleanLine.replace(new RegExp('\\b' + s.lizenz + '\\b', 'g'), ' ');
+                }
+                if (s.shortLiz) {
+                    cleanLine = cleanLine.replace(new RegExp('\\b' + s.shortLiz + '\\b', 'g'), ' ');
+                }
+
+                // Suche Punktzahlen im Schiessbereich (40..600 oder 10..600)
+                const allNums = cleanLine.match(/\b([4-9][0-9]|100|1[0-9]{2}|200|300|5[0-9]{2}|600)\b/g);
+
+                let pts = null;
+                if (allNums && allNums.length > 0) {
+                    if (allNums.length === 1) {
+                        pts = parseFloat(allNums[0]);
+                    } else {
+                        // Bei mehreren Zahlen (z.B. Rang oder Tiefschuss): Bevorzuge Zahl nahe am Namen
+                        const tokens = cleanLine.split(/\s+/);
+                        const nIdx = tokens.findIndex(t => t.toLowerCase().includes(s.nachname.toLowerCase()));
+                        if (nIdx > 0 && !isNaN(parseFloat(tokens[nIdx - 1]))) {
+                            pts = parseFloat(tokens[nIdx - 1]);
+                        } else if (nIdx !== -1 && nIdx < tokens.length - 1 && !isNaN(parseFloat(tokens[nIdx + 1]))) {
+                            pts = parseFloat(tokens[nIdx + 1]);
+                        } else {
+                            pts = parseFloat(allNums[0]);
+                        }
                     }
+                }
+
+                if (pts !== null && !isNaN(pts) && pts > 0) {
+                    matchedResults.push({
+                        rowIndex: s.rowIndex,
+                        name: s.fullName,
+                        lizenz: s.lizenz,
+                        points: pts,
+                        matched: true
+                    });
+                    seenRows.add(s.rowIndex);
                 }
             }
         });
@@ -581,25 +676,25 @@ function jmProcessAuswaertigFromText(text, fileName) {
     let forecastMax = 100;
     let forecastReason = '10 Schuss à 10 Pkt. (Gruppenstich G50)';
     
-    if (/60\s*schuss|liegend/i.test(text) || maxScore > 300) {
+    if (/60\s*schuss|liegend/i.test(fullText) || maxScore > 300) {
         forecastMax = 600;
         forecastReason = '60 Schuss Liegendmatch / Meisterschaft (Max. 600)';
-    } else if (/kantonalstich|30\s*schuss/i.test(text) || maxScore > 200) {
+    } else if (/kantonalstich|30\s*schuss/i.test(fullText) || maxScore > 200) {
         forecastMax = 300;
         forecastReason = '30 Schuss Programm (Max. 300)';
-    } else if (/vereinsstich|verband|20\s*schuss/i.test(text) || maxScore > 150) {
+    } else if (/vereinsstich|verband|20\s*schuss/i.test(fullText) || maxScore > 150) {
         forecastMax = 200;
         forecastReason = '20 Schuss Programm (Max. 200)';
-    } else if (/15\s*schuss|auszahlung|sektion/i.test(text) || (maxScore > 120 && maxScore <= 150)) {
+    } else if (/15\s*schuss|auszahlung|sektion/i.test(fullText) || (maxScore > 120 && maxScore <= 150)) {
         forecastMax = 150;
         forecastReason = '15 Schuss Programm (Max. 150)';
-    } else if (/12\s*schuss|6\s*x\s*20/i.test(text) || (maxScore > 100 && maxScore <= 120)) {
+    } else if (/12\s*schuss|6\s*x\s*20/i.test(fullText) || (maxScore > 100 && maxScore <= 120)) {
         forecastMax = 120;
         forecastReason = '12 Schuss bzw. 6x20 Programm (Max. 120)';
-    } else if (/8\s*schuss|8\s*x\s*10/i.test(text) || (maxScore > 60 && maxScore <= 80 && !text.includes('10 Schuss'))) {
+    } else if (/8\s*schuss|8\s*x\s*10/i.test(fullText) || (maxScore > 60 && maxScore <= 80 && !fullText.includes('10 Schuss'))) {
         forecastMax = 80;
         forecastReason = '8 Schuss à 10 Pkt. (Max. 80)';
-    } else if (/6\s*schuss|6\s*x\s*10/i.test(text) || (maxScore <= 60 && !text.includes('10 Schuss'))) {
+    } else if (/6\s*schuss|6\s*x\s*10/i.test(fullText) || (maxScore <= 60 && !fullText.includes('10 Schuss'))) {
         forecastMax = 60;
         forecastReason = '6 Schuss à 10 Pkt. (Max. 60)';
     } else {
@@ -1612,6 +1707,7 @@ function recalculateJMRawGrid(grid) {
         if (!nachname && !vorname) continue;
 
         let shooterTotalPct = 0;
+        const validPercentages = [];
 
         activeCompCols.forEach(compCol => {
             const compTitle = String(grid[2][compCol] || '').trim();
@@ -1645,10 +1741,23 @@ function recalculateJMRawGrid(grid) {
                 }
             }
 
+            if (pctVal > 0) {
+                validPercentages.push(pctVal);
+            }
             shooterTotalPct += pctVal;
         });
 
-        const streich = parseFloat(String(grid[r][colStreich] || '0').replace(',', '.')) || 0;
+        // Streichresultat dynamisch berechnen:
+        // Nur wenn genügend Resultate vorhanden sind (mindestens alle aktiven Wettkämpfe absolviert wurden)
+        let streich = 0;
+        if (activeCount > 1 && validPercentages.length >= activeCount) {
+            streich = Math.min(...validPercentages);
+        }
+
+        if (grid[r][colStreich] !== undefined) {
+            grid[r][colStreich] = streich > 0 ? (Math.round(streich * 100) / 100) : 0;
+        }
+
         const finalTotal = Math.max(0, shooterTotalPct - streich);
         grid[r][colTotal] = Math.round(finalTotal * 100) / 100;
     }

@@ -2,9 +2,30 @@
 
 let jmViewMode = 'points'; // 'points' | 'percent' | 'both'
 window.jmViewMode = jmViewMode;
+let jmActiveTab = 'ligen'; // 'ligen' | 'junioren'
+window.jmActiveTab = jmActiveTab;
+
+function jmSetActiveTab(tab) {
+    jmActiveTab = tab;
+    window.jmActiveTab = tab;
+    if (tab === 'junioren') {
+        renderJuniorenTabContent();
+    }
+}
+window.jmSetActiveTab = jmSetActiveTab;
+
 function setJMViewMode(mode) {
     jmViewMode = mode;
     window.jmViewMode = mode;
+
+    // Aktuellen Tab im DOM abfragen, um Zurückspringen zu verhindern
+    const activeNav = document.querySelector('#jmTab .nav-link.active');
+    if (activeNav && activeNav.id === 'junioren-tab') {
+        jmActiveTab = 'junioren';
+    } else if (activeNav && activeNav.id === 'ligen-tab') {
+        jmActiveTab = 'ligen';
+    }
+
     if (typeof jmRawGrid !== 'undefined' && Array.isArray(jmRawGrid) && jmRawGrid.length > 5) {
         renderJahresmeisterschaft(jmRawGrid);
     }
@@ -181,17 +202,21 @@ function renderJahresmeisterschaft(grid) {
     // LIGA 2
     ligenHtml += buildLigaTable("Liga 2", grid, 15, grid.length - 1, canWrite, hasStatusCol, statusColIndex, visibleShooterCols, maxPercent);
 
+    // Tabs definieren mit Berücksichtigung von jmActiveTab
+    const isLigenActive = (jmActiveTab !== 'junioren');
+    const isJuniorenActive = (jmActiveTab === 'junioren');
+
     // Bootstrap Tab-Layout mit Ansichts-Umschalter (Punkte / % / Kombi)
     let html = `
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <ul class="nav nav-tabs border-bottom-0 mb-0" id="jmTab" role="tablist">
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link active fw-bold text-dark px-4 py-2 border-0" id="ligen-tab" data-bs-toggle="tab" data-bs-target="#ligen-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);">
+                    <button class="nav-link ${isLigenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="ligen-tab" data-bs-toggle="tab" data-bs-target="#ligen-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; margin-right: 4px; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('ligen')">
                         <i class="fas fa-list-ol me-2"></i>1. & 2. Liga
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="renderJuniorenTabContent()">
+                    <button class="nav-link ${isJuniorenActive ? 'active' : ''} fw-bold text-dark px-4 py-2 border-0" id="junioren-tab" data-bs-toggle="tab" data-bs-target="#junioren-pane" type="button" role="tab" style="border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: rgba(0,0,0,0.03);" onclick="jmSetActiveTab('junioren')">
                         <i class="fas fa-user-graduate me-2"></i>Junioren-Wertung (U21)
                     </button>
                 </li>
@@ -212,12 +237,12 @@ function renderJahresmeisterschaft(grid) {
             </div>
         </div>
         <div class="tab-content" id="jmTabContent">
-            <div class="tab-pane fade show active" id="ligen-pane" role="tabpanel" aria-labelledby="ligen-tab">
+            <div class="tab-pane fade ${isLigenActive ? 'show active' : ''}" id="ligen-pane" role="tabpanel" aria-labelledby="ligen-tab">
                 <!-- Allgemeine Einstellungen -->
                 ${settingsHtml}
                 ${ligenHtml}
             </div>
-            <div class="tab-pane fade" id="junioren-pane" role="tabpanel" aria-labelledby="junioren-tab">
+            <div class="tab-pane fade ${isJuniorenActive ? 'show active' : ''}" id="junioren-pane" role="tabpanel" aria-labelledby="junioren-tab">
                 <div class="text-center py-4 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Lade Junioren-Daten...</div>
             </div>
         </div>
@@ -246,6 +271,11 @@ function renderJahresmeisterschaft(grid) {
     
     // Check sizes initially
     checkLigaSizes();
+
+    // Falls der Junioren-Tab aktiv war, Inhalt sofort rendern
+    if (isJuniorenActive) {
+        renderJuniorenTabContent();
+    }
 }
 
 function checkLigaSizes() {
@@ -294,6 +324,7 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
         const vorname = s.rowData[2] || '';
         const nachname = s.rowData[1] || '';
         const shooterStreich = parseFloat(String(s.rowData[colStreich] || '0').replace(',', '.')) || 0;
+        let streichMarked = false; // Garantiert, dass bei identischen Tiefstwerten visuell nur genau 1 Resultat gestrichen wird
 
         let statusTd = '';
         if (hasStatusCol && statusColIndex !== -1) {
@@ -341,8 +372,12 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                     }
                 }
 
-                // Prüfen ob dieser Wettkampf das Streichresultat des Schützen ist
-                const isStreich = (pct > 0 && shooterStreich > 0 && Math.abs(pct - shooterStreich) < 0.05);
+                // Prüfen ob dieser Wettkampf das Streichresultat des Schützen ist (genau ein Treffer!)
+                let isStreich = false;
+                if (!streichMarked && pct > 0 && shooterStreich > 0 && Math.abs(pct - shooterStreich) < 0.05) {
+                    isStreich = true;
+                    streichMarked = true;
+                }
 
                 let cellContent = '';
 
@@ -666,7 +701,23 @@ function renderJuniorenTabContent() {
                         const cellStyle = isExcluded ? 'text-decoration: line-through; opacity: 0.5;' : '';
                         const tdBg = isTotal ? 'background-color: #e2e6ea;' : bgStyle;
 
-                        return `<td class="text-center" style="width: 90px; min-width: 90px; max-width: 90px; ${tdBg}; ${cellStyle}">${escapeHtml(val)}</td>`;
+                        let displayVal = escapeHtml(val);
+                        if (!isTotal && val !== '' && val !== '-') {
+                            const pct = getColumnPercentage(grid, jr.rowIndex, c, hasStatusCol);
+                            const pctStr = pct > 0 ? (Math.round(pct * 100) / 100).toFixed(2) + '%' : '';
+                            if (jmViewMode === 'percent' && pctStr) {
+                                displayVal = `<span class="fw-bold text-primary">${pctStr}</span>`;
+                            } else if (jmViewMode === 'both' && pctStr) {
+                                displayVal = `
+                                    <div class="d-flex flex-column align-items-center">
+                                        <span>${escapeHtml(val)}</span>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-1 py-0 mt-1" style="font-size: 10px; font-weight: 600;">${pctStr}</span>
+                                    </div>
+                                `;
+                            }
+                        }
+
+                        return `<td class="text-center" style="width: 90px; min-width: 90px; max-width: 90px; ${tdBg}; ${cellStyle}">${displayVal}</td>`;
                     }).join('')}
                 </tr>
             `;

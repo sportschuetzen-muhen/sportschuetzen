@@ -98,4 +98,13 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 - **Wertungs-Ansichtsmodus (`Punkte` | `Prozent (%)` | `Punkte & %`):** Ein Segment-Umschalter in der Toolbar über der Tabelle erlaubt das flexible Umschalten zwischen Rohpunkten, berechneten Prozenten und der kombinierten Ansicht mit kompakten Badges. Streichresultate werden visuell markiert und durchgestrichen.
 - **Archiv-Schutz & Import-Duplikatbereinigung:** Der grüne Schnellzugriff-Button für den Import wurde aus der Toolbar entfernt. Der Import steht ausschliesslich im Aktionen-Menü des aktuellen Jahres (`current`) bereit, wodurch versehentliche Importe in archivierte Vorjahre sicher verhindert werden.
 
+---
+
+## 9. PDF-Zeilen-Extraktion, Streichresultat-Eindeutigkeit & Tab-Persistenz (Oktober 2026)
+
+- **PDF-Zeilengruppierung (Auswärtige Schiessen):** Digitale Ranglisten (z. B. WinFire Gruppen- und Einzelranglisten wie Bärenmoosschiessen) gruppieren Textelemente vertikal nach y-Koordinaten zu echten Tabellenzeilen (`extractLinesFromPdfPage`). Schützen und Punkte werden zeilenweise extrahiert (unter Maskierung von Jahrgängen und Lizenzen), wodurch frühere Fehlzuordnungen des ersten Seitenwerts (z. B. 99 Punkte) vollständig behoben sind.
+- **Eindeutigkeit & dynamische Berechnung des Streichresultats:** Ein Streichresultat wird dynamisch in `recalculateJMRawGrid` nur dann ermittelt und abgezogen, wenn ein Schütze mindestens alle aktiven Wettkämpfe absolviert hat. Haben Schützen dasselbe Tiefstresultat mehrfach erzielt, wird sowohl rechnerisch als auch visuell im Cockpit (`streichMarked`) exakt nur ein einziges Resultat gestrichen.
+- **Tab-Persistenz & Junioren-Ansichtsmodus:** Beim Umschalten des Ansichtsmodus (`Punkte`, `Prozent (%)`, `Punkte & %`) bleibt der ausgewählte Tab (z. B. `Junioren-Wertung (U21)`) via `jmActiveTab` unterbrechungsfrei geöffnet. Die Junioren-Zellen unterstützen den gewählten Ansichtsmodus synchron mit formatierten Prozent-Badges.
+
+
 
