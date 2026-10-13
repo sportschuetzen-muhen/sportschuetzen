@@ -361,7 +361,12 @@ function ensureResultateShell(forceRebuild = false) {
                     </select>
                   </div>
                   <div class="col-6">
-                    <label class="form-label fw-bold small text-muted">KI-Modell & Kapazität</label>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <label class="form-label fw-bold small text-muted mb-0">KI-Modell & Kapazität</label>
+                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size: 0.72rem;" onclick="window.openAiHealthModal()" title="KI-Modellstatus anzeigen">
+                        <i class="fas fa-heartbeat text-danger me-1"></i>Status
+                      </button>
+                    </div>
                     <select id="ocr-model" class="form-select">
                       <option value="gemini-3-flash-preview" selected>Gemini 3 Flash Preview (Standard)</option>
                       <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>

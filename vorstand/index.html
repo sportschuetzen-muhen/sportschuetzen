@@ -1308,7 +1308,12 @@
                         </div>
                         
                         <div class="mb-3">
-                            <label class="form-label fw-bold">KI-Modell & Kapazität</label>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label fw-bold mb-0">KI-Modell & Kapazität</label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.75rem;" onclick="window.openAiHealthModal()" title="KI-Modellstatus und Selbsttest anzeigen">
+                                    <i class="fas fa-heartbeat me-1 text-danger"></i>KI-Status
+                                </button>
+                            </div>
                             <select id="news-model" class="form-select">
                                 <option value="gemini-3-flash-preview" data-info="Modernstes Gemini 3 Modell: Extrem schnell, präzise Bild- & Textanalyse." selected>Gemini 3 Flash (Empfohlen / Standard)</option>
                                 <option value="gemini-3.5-flash" data-info="Gemini 3.5 Flash: Hohe Stabilität und exzellente Textgenerierung.">Gemini 3.5 Flash</option>
@@ -2307,6 +2312,37 @@
     </div>
 </div>
 
+<!-- Modal: KI-Modell Health & Status-Zentrale -->
+<div class="modal fade" id="modal-ai-health" tabindex="-1" aria-labelledby="modalAiHealthLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-dark text-white py-3">
+                <h5 class="modal-title fw-bold" id="modalAiHealthLabel">
+                    <i class="fas fa-brain text-info me-2"></i>KI-Modelle & Healthcheck-Zentrale
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+            </div>
+            <div class="modal-body p-4" id="ai-health-status-body">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" role="status"></div>
+                    <h6 class="text-muted">Lade aktuellen KI-Status...</h6>
+                </div>
+            </div>
+            <div class="modal-footer bg-light d-flex justify-content-between py-2">
+                <div class="small text-muted">
+                    <i class="fas fa-info-circle me-1"></i>Automatischer Cron-Check täglich um 04:00 Uhr
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" id="btn-run-ai-check" onclick="window.runAiModelCheck()">
+                        <i class="fas fa-sync-alt me-1"></i>Modelle jetzt prüfen & testen
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schliessen</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Supabase SDK & Global Client -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/supabase-client.js?v=20260926_1"></script>
@@ -2417,6 +2453,9 @@
 
 <!-- Modul ANLÄSSE (Native Supabase Migration) -->
 <script src="js/anlaesse.js"></script>
+
+<!-- KI-Modell Healthcheck & Status-Engine -->
+<script src="js/ai-health.js"></script>
 
 <script>
 window.rnJumpToJahresbeitrag = async function(pn) {

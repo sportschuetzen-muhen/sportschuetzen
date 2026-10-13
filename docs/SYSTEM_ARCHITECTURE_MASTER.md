@@ -146,7 +146,7 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 | **Phase 26** | Atomare Rechnungsnummernvergabe (`26_atomic_invoice_numbers.sql`, `invoice_number_seq`) | PostgreSQL Sequence & Stored Proc | ✅ Abgeschlossen |
 | **Phase 27** | Zentraler Vorlagen- & Klauselpool (`27_document_templates_and_clauses.sql`, Rüteli-Klauseln, `templates-ui.js`, GV-Anbindung) | Supabase PostgreSQL / Edge Function | 🔄 Schritte 1–4 abgeschlossen (Schritt 5 Verifikation) |
 | **Phase 28** | Infomaniak Cut-Over (Domain-Transfer, DNS-Aufschaltung, CalDAV für Schützenhaus) | Infomaniak / Supabase | ⏳ Geplant |
-| **Phase 29** | Zeitgesteuerte Automationen via `pg_cron` & endgültige Stilllegung von GAS-Triggern | PostgreSQL (`pg_cron`, `pg_net`) | ⏳ Geplant |
+| **Phase 29** | Zeitgesteuerte Automationen via `pg_cron` & endgültige Stilllegung von GAS-Triggern | PostgreSQL (`pg_cron`, `pg_net`) | 🔄 In Betrieb (`pg_cron` & `pg_net` mit täglichem KI-Healthcheck um 04:00 Uhr) |
 
 ---
 
@@ -159,6 +159,8 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 * **Datenbank- & RLS-Referenzhandbuch:** [`docs/SUPABASE_ARCHITECTURE.md`](SUPABASE_ARCHITECTURE.md) – Bereinigtes Nachschlagewerk für Tabellenschemata, Typen, Relationen und Row Level Security (RLS).
 
 ### 6.2 Modulspezifische Fachkonzepte (Das «Warum» & Business-Invarianten)
+* **KI-Modell-Harmonisierung & Healthcheck:** [`docs/KI_MODELL_HARMONISIERUNG_UND_HEALTHCHECK.md`](KI_MODELL_HARMONISIERUNG_UND_HEALTHCHECK.md) – Google Gemini Multi-Modell Fallback Kette, automatischer Ping-Selbsttest via `pg_cron` & Worker, Selbstheilung & Admin-Alarmierung.
+* **Web-App & Standblatt-Workflow:** [`docs/WEB_APP_UND_STANDBLATT_WORKFLOW.md`](WEB_APP_UND_STANDBLATT_WORKFLOW.md) – PWA Standblatt-Upload mit 3-stufiger Validierung, Schützen-/Anlass-Abgleich, R2 Belegspeicher & Vorstand-Inbox.
 * **Jahresbeitrag & Beitragsverwaltung:** [`docs/JAHRESBEITRAG.md`](JAHRESBEITRAG.md) – Dynamische Gebührenordnung, Rechnungs-Kopplung via `RechnungsCore`, Bearbeitungssperre im Rechnungsmodul, CAMT.054 Batch-Abgleich.
 * **Rechnungswesen & RechnungsCore:** [`docs/RECHNUNGSWESEN.md`](RECHNUNGSWESEN.md) – `RechnungsCore`, Zahlungsverbuchung, Adress-Kontrakt, Unveränderlichkeitsgrenzen, `InvoiceOrder`-Payload.
 * **Dokumenten- & Mail-Engine:** [`docs/DOCUMENT_AND_MAIL_ENGINE_SPEC.md`](DOCUMENT_AND_MAIL_ENGINE_SPEC.md) – DIN 5008 Geometrie, SIX Swiss QR SPC 0200 1 Norm, WinAnsi-Schutz, SMTP-Dispatch.
