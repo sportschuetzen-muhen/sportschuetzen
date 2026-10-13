@@ -1771,6 +1771,43 @@ function recalculateJMRawGrid(grid) {
         grid[r][colTotal] = Math.round(finalTotal * 100) / 100;
     }
 
+    // 4. Dynamische Rangierung für Liga 1 und Liga 2 in Spalte 0 nachführen
+    const headerRow = grid[4] || [];
+    const colRang = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'rang');
+    if (colRang !== -1) {
+        // Liga 1: Zeilen 5 bis 12
+        const l1 = [];
+        for (let r = 5; r <= 12; r++) {
+            if (!grid[r]) continue;
+            const nachname = String(grid[r][1] || '').trim();
+            const vorname = String(grid[r][2] || '').trim();
+            if (nachname || vorname) {
+                const tot = parseFloat(grid[r][colTotal]) || 0;
+                l1.push({ r, tot });
+            }
+        }
+        l1.sort((a, b) => b.tot - a.tot);
+        l1.forEach((item, idx) => {
+            grid[item.r][colRang] = String(idx + 1);
+        });
+
+        // Liga 2: Zeilen 15 bis Ende
+        const l2 = [];
+        for (let r = 15; r < grid.length; r++) {
+            if (!grid[r]) continue;
+            const nachname = String(grid[r][1] || '').trim();
+            const vorname = String(grid[r][2] || '').trim();
+            if (nachname || vorname) {
+                const tot = parseFloat(grid[r][colTotal]) || 0;
+                l2.push({ r, tot });
+            }
+        }
+        l2.sort((a, b) => b.tot - a.tot);
+        l2.forEach((item, idx) => {
+            grid[item.r][colRang] = String(idx + 1);
+        });
+    }
+
     return maxPercent;
 }
 window.recalculateJMRawGrid = recalculateJMRawGrid;

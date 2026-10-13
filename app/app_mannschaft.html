@@ -241,13 +241,19 @@
         }
     }
 
-    // Speziell für iOS: Erkennt das "Aufwachen" der App (Visibility Change)
+    // Speziell für iOS: Erkennt das "Aufwachen" der App (Visibility Change & Tab-Wechsel)
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
             console.log("App wurde in den Vordergrund geholt - lade Daten neu.");
             if (typeof loadData === "function") {
                 loadData();
             }
+        }
+    });
+
+    window.addEventListener("message", e => {
+        if (e.data && e.data.type === "app:resume") {
+            if (typeof loadData === "function") loadData();
         }
     });
 

@@ -239,9 +239,13 @@
         }
     }, {passive: true});
 
-    // iOS App-Wakeup Logik
+    // iOS App-Wakeup Logik & Tab-Wechsel
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") loadAllData();
+    });
+
+    window.addEventListener("message", e => {
+        if (e.data && e.data.type === "app:resume") loadAllData();
     });
 
     window.onload = loadAllData;

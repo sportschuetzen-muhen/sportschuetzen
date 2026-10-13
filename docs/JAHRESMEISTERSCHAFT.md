@@ -62,7 +62,7 @@ Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeister
 * **Liga 1:** Zeilen 5–12 im 2D-Grid (immer exakt 8 Schützen).
 * **Pufferzeilen:** Zeilen 13 und 14 dienen als Trennung und sind schreibgeschützt.
 * **Liga 2:** Zeile 15 bis Tabellenende (variable Anzahl Schützen).
-* **Rangierung:** Schützen werden nach `total_pct` absteigend sortiert. Manuelles Drag & Drop unter dem Jahr ist deaktiviert, um versehentliches Verschieben in Pufferzeilen zu verhindern.
+* **Rangierung:** Schützen werden nach `total_pct` absteigend sortiert. Manuelles Drag & Drop unter dem Jahr ist deaktiviert, um versehentliches Verschieben in Pufferzeilen zu verhindern. Vor der Synchronisation nach `public.jm_shooters` werden Liga 1 und Liga 2 in `syncJMShootersToSupabase()` strikt nach Gesamttotal sortiert und die Ränge dynamisch neu vergeben (`1..8` in Liga 1, `1..n` in Liga 2). Spalte 0 (`colRang`) im 2D-Grid wird in `recalculateJMRawGrid()` synchron nachgeführt.
 
 ### 3.2 SMM Runden (1–7) & Top 4 Wertung
 * Die 7 Einzelrunden der Schweizerischen Mannschaftsmeisterschaft (SMM) liegen in den Spalten 33–39 (bzw. 34–40 bei vorhandener Statusspalte).

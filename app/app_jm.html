@@ -253,9 +253,15 @@
     // Beim ersten Start laden
     window.onload = loadJMData;
 
-    // Automatischer Refresh beim Wiederöffnen (iOS Push Support)
+    // Automatischer Refresh beim Wiederöffnen (iOS Push Support & Tab-Wechsel)
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
+            loadJMData();
+        }
+    });
+
+    window.addEventListener("message", e => {
+        if (e.data && e.data.type === "app:resume") {
             loadJMData();
         }
     });

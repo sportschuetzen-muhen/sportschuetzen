@@ -292,7 +292,7 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
             }
         }
 
-        const shooters = [];
+        const liga1 = [];
 
         // Liga 1: Zeilen 5 bis 12
         for (let r = 5; r <= 12; r++) {
@@ -303,7 +303,6 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
             
             const fullName = `${nachname} ${vorname}`.trim();
             const lizenz = String(grid[r][colLizenz] || '').trim();
-            const rangVal = parseInt(grid[r][colRang]) || (r - 4);
             const total = colTotal !== -1 ? (parseFloat(grid[r][colTotal]) || 0) : 0;
             const streich = colStreich !== -1 ? (parseFloat(grid[r][colStreich]) || 0) : 0;
             const jg = parseInt(grid[r][colJahrgang]) || null;
@@ -325,22 +324,28 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
                 return { name: a.name, punkte: pkt };
             }).filter(a => a.punkte > 0);
 
-            shooters.push({
+            liga1.push({
                 id: `${jahr}_L1_${r}_${lizenz || fullName.replace(/\s+/g, '_')}`,
                 jahr: jahr,
                 person_number: lizenz,
                 name: fullName,
                 jahrgang: jg,
                 liga: 1,
-                rang: rangVal,
                 total: total,
                 streichresultat_prz: streich,
-                status: (rangVal >= 7) ? 'abstieg' : 'neutral',
                 is_junior: isJunior,
                 details: { schiessen, mannschaft, auswaerts, max_total_prz: maxPercent },
                 updated_at: new Date().toISOString()
             });
         }
+        // Dynamische Rangierung Liga 1 nach Total absteigend (analog GAS Standard)
+        liga1.sort((a, b) => b.total - a.total);
+        liga1.forEach((s, idx) => {
+            s.rang = idx + 1;
+            s.status = (s.rang >= 7) ? 'abstieg' : 'neutral';
+        });
+
+        const liga2 = [];
 
         // Liga 2: Zeilen 15 bis Ende
         for (let r = 15; r < grid.length; r++) {
@@ -351,7 +356,6 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
 
             const fullName = `${nachname} ${vorname}`.trim();
             const lizenz = String(grid[r][colLizenz] || '').trim();
-            const rangVal = parseInt(grid[r][colRang]) || (r - 14);
             const total = colTotal !== -1 ? (parseFloat(grid[r][colTotal]) || 0) : 0;
             const streich = colStreich !== -1 ? (parseFloat(grid[r][colStreich]) || 0) : 0;
             const jg = parseInt(grid[r][colJahrgang]) || null;
@@ -373,22 +377,28 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
                 return { name: a.name, punkte: pkt };
             }).filter(a => a.punkte > 0);
 
-            shooters.push({
+            liga2.push({
                 id: `${jahr}_L2_${r}_${lizenz || fullName.replace(/\s+/g, '_')}`,
                 jahr: jahr,
                 person_number: lizenz,
                 name: fullName,
                 jahrgang: jg,
                 liga: 2,
-                rang: rangVal,
                 total: total,
                 streichresultat_prz: streich,
-                status: (rangVal <= 2) ? 'aufstieg' : 'neutral',
                 is_junior: isJunior,
                 details: { schiessen, mannschaft, auswaerts, max_total_prz: maxPercent },
                 updated_at: new Date().toISOString()
             });
         }
+        // Dynamische Rangierung Liga 2 nach Total absteigend (analog GAS Standard)
+        liga2.sort((a, b) => b.total - a.total);
+        liga2.forEach((s, idx) => {
+            s.rang = idx + 1;
+            s.status = (s.rang <= 2) ? 'aufstieg' : 'neutral';
+        });
+
+        const shooters = [...liga1, ...liga2];
 
         if (shooters.length > 0) {
             await sb.from('jm_shooters').delete().eq('jahr', jahr);

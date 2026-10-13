@@ -371,8 +371,13 @@ function nav(id, title, btn) {
 
     if (id === 'page-upload') {
         const uploadIFrame = document.querySelector('#page-upload iframe');
-        if (uploadIFrame) {
+        if (uploadIFrame && uploadIFrame.contentWindow) {
             uploadIFrame.contentWindow.location.reload();
+        }
+    } else {
+        const targetIframe = targetPage ? targetPage.querySelector('iframe') : null;
+        if (targetIframe && targetIframe.contentWindow) {
+            targetIframe.contentWindow.postMessage({ type: 'app:resume', source: 'nav' }, '*');
         }
     }
 
