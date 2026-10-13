@@ -36,7 +36,7 @@ function setJMViewMode(mode) {
 }
 window.setJMViewMode = setJMViewMode;
 
-function updateJMSaveButtonState() {
+function updateJMSaveButtonState(isSaving = false) {
     const saveBtn = document.getElementById('btn-save-jm') || document.querySelector('button[onclick="saveJahresmeisterschaftData()"]');
     if (!saveBtn) return;
     const canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('jahresmeisterschaft') : true;
@@ -45,16 +45,28 @@ function updateJMSaveButtonState() {
         saveBtn.classList.add('d-none');
         return;
     }
-    saveBtn.classList.remove('d-none');
     const changeCount = (jmPendingUpdates.length || 0) + (jmPendingMoves.length || 0) + (jmExclusionsChanged ? 1 : 0);
-    if (changeCount > 0) {
-        saveBtn.disabled = false;
-        saveBtn.className = 'btn btn-sm btn-warning write-protected fw-bold';
-        saveBtn.innerHTML = `<i class="fas fa-save me-1"></i> Speichern (${changeCount})`;
+    if (window.SaveButtonKit) {
+        SaveButtonKit.update(saveBtn, {
+            count: changeCount,
+            canWrite: true,
+            isSaving: isSaving
+        });
     } else {
-        saveBtn.disabled = true;
-        saveBtn.className = 'btn btn-sm btn-outline-secondary write-protected';
-        saveBtn.innerHTML = `💾 Gespeichert`;
+        saveBtn.classList.remove('d-none');
+        if (isSaving) {
+            saveBtn.disabled = true;
+            saveBtn.className = 'btn btn-sm btn-warning write-protected fw-bold';
+            saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Speichern...`;
+        } else if (changeCount > 0) {
+            saveBtn.disabled = false;
+            saveBtn.className = 'btn btn-sm btn-warning write-protected fw-bold';
+            saveBtn.innerHTML = `<i class="fas fa-save me-1"></i> Speichern (${changeCount})`;
+        } else {
+            saveBtn.disabled = true;
+            saveBtn.className = 'btn btn-sm btn-outline-secondary write-protected';
+            saveBtn.innerHTML = `💾 Gespeichert`;
+        }
     }
 }
 window.updateJMSaveButtonState = updateJMSaveButtonState;

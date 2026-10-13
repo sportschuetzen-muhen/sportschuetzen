@@ -17,6 +17,7 @@ function onPointsInputEvent(e) {
   r[p1Field] = cleaned;
   resultateState.isDirty = true;
   setStatus("Ungespeicherte Änderungen", true);
+  if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState();
 
   // nur dieses Feld validieren
   if (cleaned === "" || isValidPoints(cleaned)) el.classList.remove("is-invalid");
@@ -82,6 +83,7 @@ function onTeamChangeEvent(e) {
 
   resultateState.isDirty = true;
   setStatus("Ungespeicherte Änderungen", true);
+  if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState();
 
   // Weil Cards nach Team gruppieren: nach Team-Wechsel müssen wir neu rendern (aber nur nach Dropdown, nicht bei Punkte)
   renderRounds();
@@ -163,6 +165,7 @@ function confirmAddSelectedMember() {
   resultateState.isDirty = true;
 
   renderUI();
+  if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState();
   sel.value = "";
 }
 
@@ -448,6 +451,7 @@ function applyOcrResults() {
     
     // Re-render the UI rounds to show the newly entered points
     renderRounds();
+    if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState();
     
     // Close modal
     const modalEl = document.getElementById("resultate-ocr-modal");

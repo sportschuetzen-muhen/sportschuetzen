@@ -119,8 +119,8 @@ function renderSystemMailsUI(container) {
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0">📬 System-Mail-Verteiler</h5>
       ${canWrite ? `
-      <button class="btn btn-sm btn-success write-protected" onclick="saveSystemMailsData()">
-        💾 Speichern
+      <button id="btn-save-system-mails" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="saveSystemMailsData()">
+        💾 Gespeichert
       </button>` : ''}
     </div>
     <p class="text-muted small mb-3">
@@ -185,6 +185,7 @@ function renderSystemMailsUI(container) {
 
   html += `</div>`;
   container.innerHTML = html;
+  if (typeof updateSysMailSaveButtonState === 'function') updateSysMailSaveButtonState();
 }
 
 // =========================================================
@@ -226,9 +227,11 @@ function sysMailRemove(idx, email) {
 // =========================================================
 async function saveSystemMailsData() {
   if (!confirm('System-Mail-Verteiler speichern?')) return;
+  if (typeof updateSysMailSaveButtonState === 'function') updateSysMailSaveButtonState(true);
 
   const supa = getSysMailSupabaseClient();
   if (!supa) {
+    if (typeof updateSysMailSaveButtonState === 'function') updateSysMailSaveButtonState(false);
     alert('❌ Fehler: Supabase Client ist nicht initialisiert.');
     return;
   }
@@ -261,12 +264,41 @@ async function saveSystemMailsData() {
 
     if (typeof window.clearUnsaved === 'function') window.clearUnsaved();
     sysMailOriginal = JSON.parse(JSON.stringify(sysMailState.configs));
+    if (typeof updateSysMailSaveButtonState === 'function') updateSysMailSaveButtonState(false);
 
     alert('✅ System-Mail-Verteiler erfolgreich in Supabase gespeichert!');
     await loadSystemMailsData(true);
 
   } catch (supaErr) {
     console.error('❌ Fehler beim Speichern in Supabase:', supaErr);
+    if (typeof updateSysMailSaveButtonState === 'function') updateSysMailSaveButtonState(false);
     alert('❌ Fehler beim Speichern in Supabase: ' + supaErr.message);
   }
 }
+
+function getSysMailChangeCount() {
+  if (!sysMailOriginal || !sysMailState?.configs) return 0;
+  let count = 0;
+  const origMap = new Map(sysMailOriginal.map(c => [c.schluessel, c]));
+  sysMailState.configs.forEach(cfg => {
+    const orig = origMap.get(cfg.schluessel);
+    if (!orig || (cfg.mailadresse || '') !== (orig.mailadresse || '')) {
+      count++;
+    }
+  });
+  return count;
+}
+window.getSysMailChangeCount = getSysMailChangeCount;
+
+function updateSysMailSaveButtonState(isSaving = false) {
+  const canWrite = typeof hasWriteAccess === 'function' ? (hasWriteAccess('system_mails') || hasWriteAccess('system-mails')) : true;
+  const count = getSysMailChangeCount();
+  if (window.SaveButtonKit) {
+    SaveButtonKit.update('btn-save-system-mails', {
+      count,
+      canWrite,
+      isSaving
+    });
+  }
+}
+window.updateSysMailSaveButtonState = updateSysMailSaveButtonState;

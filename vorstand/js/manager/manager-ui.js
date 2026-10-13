@@ -156,6 +156,8 @@ function renderContestUI() {
         // Fix #6b: Pool-Suchfilter nach re-render wiederherstellen
         if (typeof restorePoolFilter === 'function') restorePoolFilter();
     });
+
+    if (typeof updateManagerSaveButtonState === 'function') updateManagerSaveButtonState();
 }
 
 function renderTeamCard(team, config) {

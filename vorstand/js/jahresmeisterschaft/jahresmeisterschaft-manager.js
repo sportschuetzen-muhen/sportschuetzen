@@ -23,6 +23,7 @@ async function saveJahresmeisterschaftData() {
     }
 
     try {
+        if (typeof updateJMSaveButtonState === 'function') updateJMSaveButtonState(true);
         showLoadingOverlay('Speichere Jahresmeisterschaft in Supabase...');
 
         // 1. Ausstehende Zelländerungen ins Grid übernehmen
@@ -71,6 +72,9 @@ async function saveJahresmeisterschaftData() {
         showError("Fehler beim Speichern in Supabase: " + sbErr.message);
     } finally {
         hideLoadingOverlay();
+        if (typeof updateJMSaveButtonState === 'function') {
+            updateJMSaveButtonState();
+        }
     }
 }
 window.saveJahresmeisterschaftData = saveJahresmeisterschaftData;

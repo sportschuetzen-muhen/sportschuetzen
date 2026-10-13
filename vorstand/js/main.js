@@ -134,6 +134,66 @@ const AppState = {
 };
 
 // =========================================================
+//  SAVE BUTTON KIT (Zentraler Standard für Speichern-Buttons)
+// =========================================================
+const SaveButtonKit = {
+    /**
+     * Aktualisiert Zustand, Styling, Zähler und Icon eines Speichern-Buttons.
+     * @param {HTMLElement|string} btnOrId - DOM-Element oder Selector/ID
+     * @param {Object} options
+     * @param {number} options.count - Anzahl ungespeicherter Änderungen (0 = sauber/gespeichert)
+     * @param {boolean} [options.canWrite=true] - Ob Benutzer Schreibrechte besitzt
+     * @param {boolean} [options.isSaving=false] - Ob Speicher-Vorgang im Gange ist
+     * @param {string} [options.label='Speichern'] - Text für aktiven Zustand
+     * @param {string} [options.savedLabel='Gespeichert'] - Text für inaktiven/gespeicherten Zustand
+     * @param {string} [options.icon='fas fa-save'] - FontAwesome Icon
+     */
+    update(btnOrId, {
+        count = 0,
+        canWrite = true,
+        isSaving = false,
+        label = 'Speichern',
+        savedLabel = 'Gespeichert',
+        icon = 'fas fa-save'
+    } = {}) {
+        const btn = (typeof btnOrId === 'string')
+            ? (document.getElementById(btnOrId.replace(/^#/, '')) || document.querySelector(btnOrId))
+            : btnOrId;
+            
+        if (!btn) return;
+
+        // Falls keine Schreibrechte: Button komplett ausblenden
+        if (!canWrite) {
+            btn.disabled = true;
+            btn.classList.add('d-none');
+            return;
+        }
+        btn.classList.remove('d-none');
+
+        // Während Speichervorgang: Ladeindikator anzeigen
+        if (isSaving) {
+            btn.disabled = true;
+            btn.className = 'btn btn-sm btn-warning write-protected fw-bold';
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Speichern...`;
+            return;
+        }
+
+        const changeCount = Math.max(0, parseInt(count, 10) || 0);
+
+        if (changeCount > 0) {
+            btn.disabled = false;
+            btn.className = 'btn btn-sm btn-warning write-protected fw-bold';
+            btn.innerHTML = `<i class="${icon} me-1"></i> ${label} (${changeCount})`;
+        } else {
+            btn.disabled = true;
+            btn.className = 'btn btn-sm btn-outline-secondary write-protected';
+            btn.innerHTML = `💾 ${savedLabel}`;
+        }
+    }
+};
+window.SaveButtonKit = SaveButtonKit;
+
+// =========================================================
 //  SMART STORAGE CACHE MANAGER (Versioniert & TTL-gesteuert)
 // =========================================================
 const AppCache = {

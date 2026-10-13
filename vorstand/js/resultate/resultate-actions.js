@@ -35,8 +35,12 @@ async function saveResultateData() {
   }
 
   const btn = document.getElementById("btn-save-resultate");
-  const original = btn ? btn.innerText : "Speichern";
-  if (btn) { btn.disabled = true; btn.innerText = "Speichere..."; }
+  if (typeof updateResultateSaveButtonState === 'function') {
+    updateResultateSaveButtonState(true);
+  } else if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Speichere...";
+  }
 
   const contestType = window._resultateContestType || "grenzland";
   const year = window._resultateYear || new Date().getFullYear();
@@ -76,25 +80,22 @@ async function saveResultateData() {
       console.log("✅ [Supabase] Resultate erfolgreich gesichert.");
     } catch (supaErr) {
       alert("Fehler beim Speichern in Supabase: " + (supaErr.message || supaErr));
-      if (btn) { btn.disabled = false; btn.innerText = original; }
+      if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState(false);
       setStatus("Fehler beim Speichern", true);
       return;
     }
   } else {
     alert("Fehler: Kein Supabase Client verfügbar.");
-    if (btn) { btn.disabled = false; btn.innerText = original; }
+    if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState(false);
     setStatus("Fehler beim Speichern", true);
     return;
   }
 
   if (savedSuccessfully) {
     resultateState.isDirty = false;
+    window._resultateOriginalRows = JSON.parse(JSON.stringify(resultateState.rows));
     setStatus("✅ Gespeichert", false);
-
-    if (btn) {
-      btn.innerText = "✅ OK";
-      setTimeout(() => { btn.innerText = original; btn.disabled = false; }, 1200);
-    }
+    if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState(false);
   }
 }
 

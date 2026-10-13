@@ -103,8 +103,8 @@ function renderTermineUI(container) {
                 <button class="btn btn-sm btn-success write-protected ${!canWrite ? 'd-none' : ''}" onclick="addTerminRow()">
                   <i class="fas fa-plus me-1"></i> Neuer Termin
                 </button>
-                <button id="btn-save-termine" class="btn btn-sm btn-primary write-protected ${!canWrite ? 'd-none' : ''}" onclick="saveTermineData()">
-                  <i class="fas fa-save me-1"></i> Speichern
+                <button id="btn-save-termine" class="btn btn-sm btn-outline-secondary write-protected ${!canWrite ? 'd-none' : ''}" disabled onclick="saveTermineData()">
+                  💾 Gespeichert
                 </button>
                 <div class="vr mx-1 d-none d-md-block ${!canWrite ? 'd-none' : ''}"></div>
                 <!-- TableKit Filter-Pills -->
@@ -211,6 +211,7 @@ function renderTermineUI(container) {
   bindTermineEventsOnce();
   initTableKitForTermine();
   applyWriteProtection();
+  updateTermineSaveButtonState();
 }
 
 function renderTermineList() {
@@ -366,6 +367,7 @@ function initTableKitForTermine() {
       });
       renderTermineList();
       if (window.markUnsaved) window.markUnsaved();
+      updateTermineSaveButtonState();
       if (termineFilterCtrl) termineFilterCtrl.apply();
     }
   });
@@ -389,6 +391,7 @@ function initTableKitForTermine() {
       });
       adminState.termine = reordered;
       if (window.markUnsaved) window.markUnsaved();
+      updateTermineSaveButtonState();
       console.log('🔄 Termine neu angeordnet via Drag & Drop.');
     }
   });
@@ -400,6 +403,7 @@ function initTableKitForTermine() {
       const newAnlaesse = items.map(el => el.querySelector('input')?.value || '').filter(Boolean);
       adminState.dropdowns.anlaesse = newAnlaesse;
       if (window.markUnsaved) window.markUnsaved();
+      updateTermineSaveButtonState();
     }
   });
 
@@ -413,6 +417,7 @@ function initTableKitForTermine() {
       }).filter(p => p[0]);
       adminState.dropdowns.orteMitMaps = newOrte;
       if (window.markUnsaved) window.markUnsaved();
+      updateTermineSaveButtonState();
     }
   });
 
@@ -490,6 +495,7 @@ function bindTermineEventsOnce() {
     if (!el.closest('#termine-body')) return;
 
     if (window.markUnsaved) window.markUnsaved();
+    updateTermineSaveButtonState();
 
     const tr = el.closest('tr[data-id]');
     if (!tr) return;
@@ -540,6 +546,7 @@ function bindTermineEventsOnce() {
 
     if (window.markUnsaved) window.markUnsaved();
     removeTerminById(tr.dataset.id);
+    updateTermineSaveButtonState();
   });
 }
 
@@ -580,6 +587,7 @@ function addTerminRow() {
   });
   renderTermineList();
   initTableKitForTermine();
+  updateTermineSaveButtonState();
 }
 
 function addAnlass() {
@@ -588,6 +596,7 @@ function addAnlass() {
   adminState.dropdowns.anlaesse.push('');
   renderDropdownEditor();
   initTableKitForTermine();
+  updateTermineSaveButtonState();
 }
 
 function removeAnlass(i) {
@@ -595,6 +604,7 @@ function removeAnlass(i) {
   adminState.dropdowns.anlaesse.splice(i, 1);
   renderDropdownEditor();
   initTableKitForTermine();
+  updateTermineSaveButtonState();
 }
 
 function sortAnlaesseAZ() {
@@ -603,6 +613,7 @@ function sortAnlaesseAZ() {
   adminState.dropdowns.anlaesse.sort((a, b) => a.localeCompare(b, 'de-CH'));
   renderDropdownEditor();
   initTableKitForTermine();
+  updateTermineSaveButtonState();
 }
 
 function addOrt() {
@@ -611,6 +622,7 @@ function addOrt() {
   adminState.dropdowns.orteMitMaps.push(['', '']);
   renderDropdownEditor();
   initTableKitForTermine();
+  updateTermineSaveButtonState();
 }
 
 function removeOrt(i) {
@@ -618,6 +630,7 @@ function removeOrt(i) {
   adminState.dropdowns.orteMitMaps.splice(i, 1);
   renderDropdownEditor();
   initTableKitForTermine();
+  updateTermineSaveButtonState();
 }
 
 function sortOrteAZ() {
@@ -626,6 +639,7 @@ function sortOrteAZ() {
   adminState.dropdowns.orteMitMaps.sort((a, b) => (a[0] || '').localeCompare(b[0] || '', 'de-CH'));
   renderDropdownEditor();
   initTableKitForTermine();
+  updateTermineSaveButtonState();
 }
 
 function applyWriteProtection() {
@@ -644,3 +658,48 @@ function applyWriteProtection() {
     }
   });
 }
+
+function getTermineChangeCount() {
+  if (!originalAdminState || !adminState) return 0;
+  let count = 0;
+  const currTermine = adminState.termine || [];
+  const origTermine = originalAdminState.termine || [];
+  const origMap = new Map(origTermine.map(t => [String(t.id), t]));
+  const currMap = new Map(currTermine.map(t => [String(t.id), t]));
+
+  currTermine.forEach(t => {
+    const orig = origMap.get(String(t.id));
+    if (!orig || JSON.stringify(t) !== JSON.stringify(orig)) {
+      count++;
+    }
+  });
+
+  origTermine.forEach(t => {
+    if (!currMap.has(String(t.id))) {
+      count++;
+    }
+  });
+
+  if (JSON.stringify(adminState.dropdowns?.anlaesse) !== JSON.stringify(originalAdminState.dropdowns?.anlaesse)) {
+    count++;
+  }
+  if (JSON.stringify(adminState.dropdowns?.orteMitMaps) !== JSON.stringify(originalAdminState.dropdowns?.orteMitMaps)) {
+    count++;
+  }
+
+  return count;
+}
+window.getTermineChangeCount = getTermineChangeCount;
+
+function updateTermineSaveButtonState(isSaving = false) {
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('termine') : true;
+  const count = getTermineChangeCount();
+  if (window.SaveButtonKit) {
+    SaveButtonKit.update('btn-save-termine', {
+      count,
+      canWrite,
+      isSaving
+    });
+  }
+}
+window.updateTermineSaveButtonState = updateTermineSaveButtonState;

@@ -49,10 +49,12 @@ async function loadResultateData(force = false) {
         resultateState.rows = supaRows.map(r => mapContestResultFromSupabase(r));
         resultateState.teams = buildTeamsList(supaTeams, resultateState.rows);
         resultateState.isDirty = false;
+        window._resultateOriginalRows = JSON.parse(JSON.stringify(resultateState.rows));
 
         renderUI();
         updateBackendBadge();
         setStatus("Alles geladen", false);
+        updateResultateSaveButtonState(false);
         return;
       }
       throw new Error("Supabase Resultate-Abfrage fehlgeschlagen");
@@ -106,7 +108,7 @@ function ensureResultateShell() {
             <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup übernehmen (nur fehlende)">📥 Von Setup laden</button>
           ` : ''}
           <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData(true)">🔄 Laden</button>
-          ${canWrite ? `<button id="btn-save-resultate" class="btn btn-success btn-sm fw-bold" onclick="saveResultateData()">💾 Speichern</button>` : ''}
+          ${canWrite ? `<button id="btn-save-resultate" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="saveResultateData()">💾 Gespeichert</button>` : ''}
         </div>
       </div>
 
@@ -279,6 +281,7 @@ function renderUI() {
   renderMemberDropdown();
   renderRounds();
   setStatus(resultateState.isDirty ? "Ungespeicherte Änderungen" : "Alles gespeichert", resultateState.isDirty);
+  updateResultateSaveButtonState();
 }
 
 function renderMemberDropdown() {
@@ -422,3 +425,36 @@ function setStatus(text, dirty) {
   el.classList.toggle("text-danger", !!dirty);
   el.classList.toggle("text-muted", !dirty);
 }
+
+function getResultateChangeCount() {
+  if (!window._resultateOriginalRows || !resultateState?.rows) return resultateState?.isDirty ? 1 : 0;
+  let count = 0;
+  const origMap = new Map((window._resultateOriginalRows || []).map(r => [String(r.id), r]));
+  (resultateState.rows || []).forEach(r => {
+    const orig = origMap.get(String(r.id));
+    if (!orig) {
+      count++;
+    } else {
+      if (r.r1_team !== orig.r1_team || r.r1_p1 !== orig.r1_p1 ||
+          r.r2_team !== orig.r2_team || r.r2_p1 !== orig.r2_p1 ||
+          r.r3_team !== orig.r3_team || r.r3_p1 !== orig.r3_p1) {
+        count++;
+      }
+    }
+  });
+  return count;
+}
+window.getResultateChangeCount = getResultateChangeCount;
+
+function updateResultateSaveButtonState(isSaving = false) {
+  const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('resultate') : true;
+  const count = getResultateChangeCount();
+  if (window.SaveButtonKit) {
+    SaveButtonKit.update('btn-save-resultate', {
+      count,
+      canWrite,
+      isSaving
+    });
+  }
+}
+window.updateResultateSaveButtonState = updateResultateSaveButtonState;

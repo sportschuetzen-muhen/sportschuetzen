@@ -350,6 +350,7 @@ function syncEventField(idx, field, value) {
         const dt = document.getElementById(`cb-grund-${idx}`);
         if (dt && dt.checked !== value) dt.checked = value;
     }
+    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
 }
 
 function addUmfrageEvent() {
@@ -371,6 +372,7 @@ function addUmfrageEvent() {
         event_type: 'standard'
     });
     renderUmfragenEventsList();
+    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
 }
 
 function removeUmfrageEvent(idx) {
@@ -378,10 +380,12 @@ function removeUmfrageEvent(idx) {
     window.markUnsaved();
     umfragenState.splice(idx, 1);
     renderUmfragenEventsList();
+    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
 }
 
 async function saveUmfragenData() {
     if(!confirm("Alle Events in der Umfrage-App speichern?")) return;
+    if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(true);
     try {
         const cleanEvents = (umfragenState || []).map(e => {
             const opts = (typeof parsePollOptions === 'function') ? parsePollOptions(e.options) : (Array.isArray(e.options) ? e.options : []);
@@ -426,9 +430,12 @@ async function saveUmfragenData() {
         }
 
         window.clearUnsaved();
+        window._umfragenOriginalState = JSON.parse(JSON.stringify(umfragenState));
+        if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(false);
         alert("✅ Umfragen erfolgreich in Supabase gespeichert!");
         loadUmfragenData();
     } catch(e) {
+        if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(false);
         alert("Fehler beim Speichern der Umfragen: " + e.message);
     }
 }

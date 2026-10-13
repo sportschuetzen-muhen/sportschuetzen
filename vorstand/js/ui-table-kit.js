@@ -1383,6 +1383,7 @@
     makeColumnReorderable,
     applyColumnOrder,
     setupDraggableModal: makeModalMovableAndResizable,
+    SaveButton: window.SaveButtonKit || null,
     ensureStyles
   };
 

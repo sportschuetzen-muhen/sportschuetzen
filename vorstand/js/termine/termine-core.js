@@ -169,6 +169,7 @@ async function saveTermineData() {
   const user = localStorage.getItem('portal_user') || 'Admin';
   const supa = getTermineSupabaseClient();
 
+  if (window.updateTermineSaveButtonState) window.updateTermineSaveButtonState(true);
   showTermineOverlay(true, 'Speichere Jahresprogramm…');
 
   const payloadGAS = {
@@ -248,6 +249,7 @@ async function saveTermineData() {
     alert('Fehler beim Speichern: ' + (err.message || err));
   } finally {
     showTermineOverlay(false);
+    if (window.updateTermineSaveButtonState) window.updateTermineSaveButtonState(false);
   }
 }
 

@@ -545,8 +545,10 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
             appState.pool = JSON.parse(JSON.stringify(cached.pool));
             appState.isDirty = false;
             window.clearUnsaved();
+            window._managerOriginalState = JSON.stringify({ teams: appState.teams, pool: appState.pool });
             appState.mailList = [];
             renderContestUI();
+            if (typeof updateManagerSaveButtonState === 'function') updateManagerSaveButtonState(false);
             if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
 
             // Singleton-Guard: DnD nur einmal initialisieren
@@ -630,9 +632,11 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
                     teams: JSON.parse(JSON.stringify(appState.teams)),
                     pool: JSON.parse(JSON.stringify(appState.pool))
                 };
+                window._managerOriginalState = JSON.stringify({ teams: appState.teams, pool: appState.pool });
 
                 if (!isPreload) {
                     renderContestUI();
+                    if (typeof updateManagerSaveButtonState === 'function') updateManagerSaveButtonState(false);
                     if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
 
                     if (!window._managerDndInited) {
@@ -667,9 +671,11 @@ async function loadContestData(moduleKey, force = false, isPreload = false) {
                     teams: JSON.parse(JSON.stringify(appState.teams)),
                     pool: JSON.parse(JSON.stringify(appState.pool))
                 };
+                window._managerOriginalState = JSON.stringify({ teams: appState.teams, pool: appState.pool });
 
                 if (!isPreload) {
                     renderContestUI();
+                    if (typeof updateManagerSaveButtonState === 'function') updateManagerSaveButtonState(false);
                     if (typeof updateManagerBackendBadge === 'function') updateManagerBackendBadge();
                     if (!window._managerDndInited) {
                         initDragAndDrop();
@@ -752,8 +758,8 @@ function ensureManagerShell() {
                     <i class="fas fa-layer-group"></i> Alle
                 </button>
                 ${canWrite ? `
-                <button id="btn-save-manager-desktop" class="btn btn-success btn-sm fw-bold" onclick="saveContest()">
-                    <i class="fas fa-save"></i> Speichern
+                <button id="btn-save-manager-desktop" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="saveContest()">
+                    💾 Gespeichert
                 </button>
                 ` : ''}
             </div>
@@ -809,11 +815,18 @@ async function saveContest() {
     const fabSaveBtn = document.querySelector('#fab-container .fab-item.bg-success');
 
     const setLoading = () => {
-        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Speichert…'; }
+        if (typeof updateManagerSaveButtonState === 'function') {
+            updateManagerSaveButtonState(true);
+        } else if (btn) {
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Speichert…';
+        }
         if (fabSaveBtn) fabSaveBtn.disabled = true;
     };
     const setSuccess = () => {
-        if (btn) {
+        window._managerOriginalState = JSON.stringify({ teams: appState.teams, pool: appState.pool });
+        if (typeof updateManagerSaveButtonState === 'function') {
+            updateManagerSaveButtonState(false);
+        } else if (btn) {
             btn.disabled = false;
             btn.className = 'btn btn-outline-success btn-sm fw-bold';
             btn.innerHTML = '<i class="fas fa-check"></i> Gespeichert!';
@@ -826,7 +839,11 @@ async function saveContest() {
         showToast('✅ Gespeichert!', 'success');
     };
     const setError = () => {
-        if (btn) { btn.disabled = false; btn.className = 'btn btn-success btn-sm fw-bold'; btn.innerHTML = '<i class="fas fa-save"></i> Speichern'; }
+        if (typeof updateManagerSaveButtonState === 'function') {
+            updateManagerSaveButtonState(false);
+        } else if (btn) {
+            btn.disabled = false; btn.className = 'btn btn-success btn-sm fw-bold'; btn.innerHTML = '<i class="fas fa-save"></i> Speichern';
+        }
         if (fabSaveBtn) fabSaveBtn.disabled = false;
     };
 
@@ -993,3 +1010,44 @@ async function autoSeedManagerToSupabase(moduleKey, year, data, config) {
 
 // escapeJs() wird von main.js bereitgestellt (vollständige Version mit ", \n, \r).
 // Keine lokale Redefinition nötig – Bug-Fix: verhindert Überschreiben der globalen Funktion.
+
+function getManagerChangeCount() {
+    if (!window._managerOriginalState || !appState.teams) return appState.isDirty ? 1 : 0;
+    try {
+        const orig = JSON.parse(window._managerOriginalState);
+        let count = 0;
+        const origShooterMap = new Map();
+        (orig.pool || []).forEach(p => origShooterMap.set(String(p.id), { team: 'pool', zone: '' }));
+        (orig.teams || []).forEach(t => {
+            (t.shooters || []).forEach(s => origShooterMap.set(String(s.id), { team: t.name, zone: s.zone || '' }));
+        });
+
+        (appState.pool || []).forEach(p => {
+            const oldPos = origShooterMap.get(String(p.id));
+            if (!oldPos || oldPos.team !== 'pool') count++;
+        });
+        (appState.teams || []).forEach(t => {
+            (t.shooters || []).forEach(s => {
+                const oldPos = origShooterMap.get(String(s.id));
+                if (!oldPos || oldPos.team !== t.name || (s.zone && oldPos.zone !== s.zone)) count++;
+            });
+        });
+        return count;
+    } catch (e) {
+        return appState.isDirty ? 1 : 0;
+    }
+}
+window.getManagerChangeCount = getManagerChangeCount;
+
+function updateManagerSaveButtonState(isSaving = false) {
+    const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('manager') : true;
+    const count = getManagerChangeCount();
+    if (window.SaveButtonKit) {
+        SaveButtonKit.update('btn-save-manager-desktop', {
+            count,
+            canWrite,
+            isSaving
+        });
+    }
+}
+window.updateManagerSaveButtonState = updateManagerSaveButtonState;

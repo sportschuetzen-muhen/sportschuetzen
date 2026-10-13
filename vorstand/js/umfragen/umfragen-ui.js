@@ -21,7 +21,7 @@ function renderUmfragenUI(container) {
                 <div class="d-flex gap-2">
                     ${canWrite ? `
                     <button class="btn btn-sm btn-success write-protected" onclick="addUmfrageEvent()">+ Neuer Event</button>
-                    <button class="btn btn-sm btn-primary write-protected" onclick="saveUmfragenData()"><i class="fas fa-save me-1"></i> Speichern</button>
+                    <button id="btn-save-umfragen" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="saveUmfragenData()">💾 Gespeichert</button>
                     ` : ''}
                 </div>
             </div>
@@ -404,6 +404,7 @@ function renderUmfragenUI(container) {
     </div>
   `;
   renderUmfragenEventsList();
+  if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState();
 }
 
 async function ensureMembersLookup() {
@@ -441,3 +442,38 @@ function updateGVBackendBadge() {
     if (badge) badge.remove();
 }
 window.updateGVBackendBadge = updateGVBackendBadge;
+
+function getUmfragenChangeCount() {
+    if (!window._umfragenOriginalState || !Array.isArray(umfragenState)) return 0;
+    let count = 0;
+    const origMap = new Map((window._umfragenOriginalState || []).map(e => [String(e.id), e]));
+    const currMap = new Map((umfragenState || []).map(e => [String(e.id), e]));
+
+    umfragenState.forEach(e => {
+        const orig = origMap.get(String(e.id));
+        if (!orig || JSON.stringify(e) !== JSON.stringify(orig)) {
+            count++;
+        }
+    });
+
+    (window._umfragenOriginalState || []).forEach(e => {
+        if (!currMap.has(String(e.id))) {
+            count++;
+        }
+    });
+    return count;
+}
+window.getUmfragenChangeCount = getUmfragenChangeCount;
+
+function updateUmfragenSaveButtonState(isSaving = false) {
+    let canWrite = (typeof hasWriteAccess === 'function') ? hasWriteAccess('umfragen') : (window.currentRoles || []).includes('admin');
+    const count = getUmfragenChangeCount();
+    if (window.SaveButtonKit) {
+        SaveButtonKit.update('btn-save-umfragen', {
+            count,
+            canWrite,
+            isSaving
+        });
+    }
+}
+window.updateUmfragenSaveButtonState = updateUmfragenSaveButtonState;

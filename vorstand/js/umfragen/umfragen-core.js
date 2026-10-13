@@ -381,7 +381,9 @@ async function loadUmfragenData(force = false) {
                 questions_schema: parseQuestionsSchema(e.questions_schema)
             }));
             console.log(`✅ ${umfragenState.length} Umfragen & Events aus Supabase geladen.`);
+            window._umfragenOriginalState = JSON.parse(JSON.stringify(umfragenState));
             renderUmfragenUI(container);
+            if (typeof updateUmfragenSaveButtonState === 'function') updateUmfragenSaveButtonState(false);
             return;
         } else if (error) {
             console.error("Supabase poll_events Abfragefehler:", error.message);
