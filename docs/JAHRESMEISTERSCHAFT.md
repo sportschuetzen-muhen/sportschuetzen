@@ -114,5 +114,13 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 - **SMM Top 4 vs. Streichrunden:** In den Tabellen von Liga 1 & 2 werden für jeden Schützen aus den 7 SMM-Runden dynamisch die 4 höchsten Resultate ermittelt und mit einem grünen Zähl-Badge (`<i class="fas fa-check"></i>`) markiert. Die 3 tiefsten Runden werden eindeutig als gestrichene Streichrunden formatiert (durchgestrichen, ausgegraut, Streich-Badge).
 - **Prozent-Badge-Korrektur:** `getColumnPercentage` berechnet die Prozentwerte der 7 Roh-Mannschaftsrunden autonom aus Punkten und Maximalwert (200 Pkt.), anstatt fehlerhaft auf die sortierten Top-1-bis-4-Prozentspalten zuzugreifen.
 
+---
+
+## 11. Rohwert-Darstellung Auswärtsschiessen & Dynamische Junioren-Wettkampfschalter (Oktober 2026)
+
+- **Auswärtsschiessen Rohpunkte:** Sämtliche erfassten Auswärtsschiessen (Spalten ab Index 41 bzw. 42 wie Bärenmoos-Schiessen, Stumpenland-Schiessen etc.) werden in allen Cockpit-Ansichten (1. & 2. Liga, Junioren-Wertung, Gesamt-Matrix) strikt als Rohpunktzahlen (z. B. 95 Punkte) formatiert und sind direkt editierbar. Es erfolgt keine irreführende Umrechnung in prozentuale Badges oder 95.00%.
+- **Dynamische Junioren-Wettkampfschalter:** Die Schalterleiste im Junioren-Tab (U21) ist vollständig dynamisiert. Einzig die Mannschaft (Top 4 Runden 9–12 / SMM 1–7) ist als zusammenhängender Block fix verdrahtet. Alle weiteren Wettkämpfe vor der Totalspalte (Spalten 6 bis 17, inklusive `leer`, `Eidgenössisches` oder künftige Anlassumbenennungen) werden dynamisch aus Zeile 3 (`grid[2]`) abgebildet und bei Deaktivierung variabel aus dem virtuellen Junioren-Total abgezogen.
+
+
 
 

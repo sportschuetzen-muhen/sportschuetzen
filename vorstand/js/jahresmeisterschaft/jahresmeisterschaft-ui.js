@@ -392,6 +392,19 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                     </td>`;
                 }
 
+                // Auswärtsschiessen (ab Spalte limitIndex / 41 bzw. 42) sind reine Punkteresultate (z. B. 95)
+                const isSingleAuswaertig = (c >= limitIndex);
+                if (isSingleAuswaertig) {
+                    cellContent = `
+                        <input type="text" class="form-control form-control-sm write-protected text-center" 
+                               style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                               value="${escapeHtml(val)}" 
+                               title="${escapeHtml(grid[2][c] || '')}: ${escapeHtml(val)} Punkte" 
+                               onchange="handleCellEdit(${r}, ${c}, this.value, this)">
+                    `;
+                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">${cellContent}</td>`;
+                }
+
                 // Prozentwert für die Zelle ermitteln
                 let pct = 0;
                 let pctStr = '';
@@ -425,7 +438,10 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
 
                 let cellContent = '';
 
-                if (isAuswaertiges || isPercent) {
+                const normalCol = (hasStatusCol && c >= 6) ? c - 1 : c;
+                const isTopAuswaertiges = (normalCol === 14 || normalCol === 15);
+
+                if (isTopAuswaertiges || isPercent) {
                     const calcBg = (colIndex % 2 === 1) ? 'background-color: #e2e6ea;' : '';
                     let displayVal = escapeHtml(val);
                     if (jmViewMode === 'percent' && pctStr) displayVal = pctStr;
@@ -560,26 +576,62 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
     `;
 }
 
-function getCompCategory(c, hasStatusCol) {
+function getCompCategory(c, hasStatusCol, grid = (typeof jmRawGrid !== 'undefined' ? jmRawGrid : null)) {
+    if (!grid || !grid[2]) return null;
+    const colTotal = hasStatusCol ? 19 : 18;
+    const firstCompCol = hasStatusCol ? 7 : 6;
     const normalCol = (hasStatusCol && c >= 6) ? c - 1 : c;
-    if (normalCol === 6) return "Verbandsschiessen";
-    if (normalCol === 7) return "Kantonalstich";
-    if (normalCol === 8) return "Vereinswettschiessen";
-    if ((normalCol >= 9 && normalCol <= 12) || (normalCol >= 33 && normalCol <= 39)) return "Mannschaftsschießen";
-    if (normalCol === 13) return "Endschiessen";
-    if (normalCol === 14) return "Auswärtiges 1";
-    if (normalCol === 15) return "Auswärtiges 2";
-    if (normalCol === 16) return "Eidgenössisches";
+
+    // Fix verdrahtet ist ausschliesslich die Mannschaft (Spalten 9..12 bzw. Runden 33..39)
+    if ((normalCol >= 9 && normalCol <= 12) || (normalCol >= 33 && normalCol <= 39)) {
+        return "Mannschaft";
+    }
+
+    // Alle anderen Meisterschafts-Wettkämpfe vor TOTAL nehmen ihren Namen dynamisch aus Zeile 3 (grid[2][c])
+    if (c >= firstCompCol && c < colTotal) {
+        const title = String(grid[2][c] || '').trim();
+        return title || (`Spalte ${c + 1}`);
+    }
+
     return null;
 }
 
 function isCategoryExcluded(grid, category, hasStatusCol) {
+    if (!category) return false;
+    // Unterstützung für "Mannschaft" sowie historisches "Mannschaftsschießen"
+    if (category === "Mannschaft" || category === "Mannschaftsschießen") {
+        return jmJuniorExclusions["Mannschaft"] === true || jmJuniorExclusions["Mannschaftsschießen"] === true;
+    }
     return jmJuniorExclusions[category] === true;
+}
+
+function getJuniorCategories(grid, hasStatusCol) {
+    if (!grid || !grid[2]) return [];
+    const colTotal = hasStatusCol ? 19 : 18;
+    const firstCompCol = hasStatusCol ? 7 : 6;
+    const categories = [];
+    const seen = new Set();
+
+    for (let c = firstCompCol; c < colTotal; c++) {
+        const cat = getCompCategory(c, hasStatusCol, grid);
+        if (cat && !seen.has(cat)) {
+            seen.add(cat);
+            categories.push(cat);
+        }
+    }
+    return categories;
 }
 
 function getColumnPercentage(grid, r, c, hasStatusCol) {
     if (!grid || !grid[r]) return 0;
     const colTotal = hasStatusCol ? 19 : 18;
+    const limitIndex = hasStatusCol ? 42 : 41;
+
+    // Auswärtsschiessen ab limitIndex sind reine Punkteresultate ohne Prozentwert
+    if (c >= limitIndex) {
+        return 0;
+    }
+
     const title = String(grid[2][c] || '').trim();
     if (!title || title.toLowerCase() === 'leer') return 0;
 
@@ -646,17 +698,8 @@ function renderJuniorenTabContent() {
         return isColumnActive(grid, c);
     });
 
-    // 8 feste Kategorien definieren
-    const juniorCategories = [
-        "Verbandsschiessen",
-        "Kantonalstich",
-        "Vereinswettschiessen",
-        "Mannschaftsschießen",
-        "Endschiessen",
-        "Auswärtiges 1",
-        "Auswärtiges 2",
-        "Eidgenössisches"
-    ];
+    // Dynamische Kategorien aus Zeile 3 ermitteln (nur Mannschaft fix verdrahtet)
+    const juniorCategories = getJuniorCategories(grid, hasStatusCol);
 
     // Schalter UI rendern
     let switchesHtml = `
@@ -671,10 +714,11 @@ function renderJuniorenTabContent() {
 
     juniorCategories.forEach(comp => {
         const isExcluded = isCategoryExcluded(grid, comp, hasStatusCol);
+        const switchId = 'switch-junior-' + comp.replace(/[^a-zA-Z0-9_-]/g, '_');
         switchesHtml += `
             <div class="form-check form-switch form-check-inline">
-                <input class="form-check-input" type="checkbox" role="switch" id="switch-junior-${comp.replace(/\s+/g, '-')}" data-comp="${comp}" ${isExcluded ? '' : 'checked'} ${canWrite ? '' : 'disabled'} onchange="handleJuniorSwitchChange(this)">
-                <label class="form-check-label fw-semibold" for="switch-junior-${comp.replace(/\s+/g, '-')}">${escapeHtml(comp)}</label>
+                <input class="form-check-input" type="checkbox" role="switch" id="${switchId}" data-comp="${escapeHtml(comp)}" ${isExcluded ? '' : 'checked'} ${canWrite ? '' : 'disabled'} onchange="handleJuniorSwitchChange(this)">
+                <label class="form-check-label fw-semibold" for="${switchId}">${escapeHtml(comp)}</label>
             </div>
         `;
     });
@@ -698,6 +742,7 @@ function renderJuniorenTabContent() {
     }
     const juniors = [];
     const totalCol = hasStatusCol ? 19 : 18;
+    const firstCompCol = hasStatusCol ? 7 : 6;
 
     for (let r = 5; r < grid.length; r++) {
         if (r === 13 || r === 14) continue; // Excluded rows
@@ -718,19 +763,16 @@ function renderJuniorenTabContent() {
         let rawTotal = parseFloat(String(grid[r][totalCol] || '').replace(/%/g, '').trim()) || 0;
         let virtualTotal = rawTotal;
 
-        // Subtraction columns (Verband, Kantonal, Vereinswett, Best 4 Mannschaft (9-12), Endschiessen, Auswaertiges 1-2, Eidgenoessisches)
-        const subtractionCols = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        const activeSubtractionCols = subtractionCols.map(c => (hasStatusCol && c >= 6) ? c + 1 : c);
-
-        activeSubtractionCols.forEach(c => {
-            const cat = getCompCategory(c, hasStatusCol);
-            if (!cat) return; // skip total, streich, raw external, etc.
+        // Subtraktions-Spalten dynamisch von firstCompCol bis vor totalCol
+        for (let c = firstCompCol; c < totalCol; c++) {
+            const cat = getCompCategory(c, hasStatusCol, grid);
+            if (!cat) continue;
 
             if (isCategoryExcluded(grid, cat, hasStatusCol)) {
                 const colPct = getColumnPercentage(grid, r, c, hasStatusCol);
                 virtualTotal -= colPct;
             }
-        });
+        }
 
         juniors.push({
             rowIndex: r,
@@ -787,13 +829,14 @@ function renderJuniorenTabContent() {
                         const isTotal = colTitle.includes('total') || colTitle === 'tot' || colTitle === 't';
                         const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
                         
-                        const cat = getCompCategory(c, hasStatusCol);
+                        const cat = getCompCategory(c, hasStatusCol, grid);
                         const isExcluded = cat && isCategoryExcluded(grid, cat, hasStatusCol);
                         const cellStyle = isExcluded ? 'text-decoration: line-through; opacity: 0.5;' : '';
                         const tdBg = isTotal ? 'background-color: #e2e6ea;' : bgStyle;
 
                         let displayVal = escapeHtml(val);
-                        if (!isTotal && val !== '' && val !== '-') {
+                        const isSingleAuswaertig = (c >= limitIndex);
+                        if (!isTotal && val !== '' && val !== '-' && !isSingleAuswaertig) {
                             const pct = getColumnPercentage(grid, jr.rowIndex, c, hasStatusCol);
                             const pctStr = pct > 0 ? (Math.round(pct * 100) / 100).toFixed(2) + '%' : '';
                             if (jmViewMode === 'percent' && pctStr) {
@@ -1035,6 +1078,17 @@ function buildMatrixLigaTable(title, grid, startRow, endRow, canWrite, hasStatus
                     const streichText = val !== '' && parseFloat(val) > 0 ? (escapeHtml(val) + ' %') : '–';
                     return `<td style="width: 90px; min-width: 90px; max-width: 90px; background-color: #fff3cd;">
                         <input type="text" class="form-control form-control-sm fw-bold text-center text-danger border-warning" style="width: 100%; background-color: #fff3cd;" readonly value="${streichText}" title="Haupt-Streichresultat der Jahresmeisterschaft">
+                    </td>`;
+                }
+
+                if (auswCols.includes(c)) {
+                    // Auswärtige Schiessen sind reine Punkteresultate (z. B. 95)
+                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">
+                        <input type="text" class="form-control form-control-sm write-protected text-center" 
+                               style="width: 100%; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                               value="${escapeHtml(val)}" 
+                               title="${escapeHtml(grid[2][c] || '')}: ${escapeHtml(val)} Punkte" 
+                               onchange="handleCellEdit(${r}, ${c}, this.value, this)">
                     </td>`;
                 }
 
