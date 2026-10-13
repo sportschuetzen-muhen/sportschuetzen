@@ -1,136 +1,134 @@
 # Fachdokumentation: KK-Jahresmeisterschaft & Supabase-Migration
 
 > **Status:** PRODUKTIV (Supabase Single Source of Truth)  
-> **Stand:** 27. September 2026  
+> **Stand:** 13. Oktober 2026  
 > **Zielarchitektur:** Supabase PostgreSQL (`jm_seasons`, `jm_shooters`, `jm_competitions`), Cloudflare R2, Gemini Vision OCR  
 
 ---
 
-## 1. Executive Summary & Ausgangslage
+## 1. Ausgangslage & Datenmodell
 
-Die Kleinkaliber-Jahresmeisterschaft der Sportschützen Muhen basierte historisch auf einer hochkomplexen 2D-Tabellenkalkulationsmatrix in Google Sheets (`Jahresmeisterschaft_GAS_Original`, Spreadsheet-ID `1ye7nbT1lLLYzilwNhw6NnslwvUrtxFuT-ZZJRrG2sT0`). 
+Die Kleinkaliber-Jahresmeisterschaft der Sportschützen Muhen basierte historisch auf einer komplexen 2D-Tabellenkalkulation in Google Sheets (`Jahresmeisterschaft_GAS_Original`). Mit dem Abschluss der Migrationsphasen ist **Supabase PostgreSQL** die verbindliche Single Source of Truth; sämtliche stillen GAS-Fallbacks und redundanten Dual-Writes wurden vollständig eliminiert.
 
-Im Rahmen von **Phase 15**, **Phase 19** und **Phase 21.1** wurde die Zielarchitektur vollständig auf **Supabase PostgreSQL** umgestellt:
-- **Phase 15 (Fachmodul):** Definition des relationalen und dokumentenbasierten Datenmodells (`16_jahresmeisterschaft_module.sql`) mit den Tabellen `jm_seasons` (2D-Grid Snapshot im JSONB-Feld `raw_grid`), `jm_shooters` (normalisierte Schützen- und Ranglistendaten) und `jm_competitions` (Spalten/Wettkämpfe).
-- **Phase 19 (Cut-Over):** Vollständige Deaktivierung des redundanten Dual-Writes an Google Sheets, wodurch die früheren Sheet-Lock-Latenzen (10–15 Sekunden je Speichervorgang) eliminiert wurden.
-- **Phase 21.1 (GAS-Entkopplung):** Endgültige Beseitigung aller stillen Lese-Fallbacks; Supabase ist verbindlich der alleinige Single Source of Truth.
+### 1.1 Datenstrukturen in Supabase (`16_jahresmeisterschaft_module.sql`)
 
----
-
-## 2. Architektur & Beantwortung der Kernfragen
-
-### 2.1 Ist die Jahresmeisterschaft vom Google Dual-Write abgehängt?
-* **Ja.** In [`vorstand/js/jahresmeisterschaft/jahresmeisterschaft-manager.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-manager.js#L51-L79) ist der asynchrone Dual-Write an Google Sheets (`WORKER_URL + "?module=jahresmeisterschaft"`) vollständig deaktiviert.
-* Sämtliche Mutationen im Vorstandscockpit schreiben atomar und direkt nach Supabase (`jm_seasons` und `jm_shooters`).
-
-### 2.2 Lesen Website und PWA nur noch aus Supabase?
-* **Ja:**
-  * **Website (`sportschuetzen-website`):** [`resultate.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/js/resultate.js#L141-L166) (`loadJahresmeisterschaft()`) fragt `public.jm_shooters?jahr=eq.current&order=rang.asc` via Supabase REST API ab.
-  * **Mitglieder-PWA:** [`app_jm.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/app_jm.html#L207-L225) (`loadJMData()`) fragt ebenfalls exklusiv `public.jm_shooters?jahr=eq.current&order=rang.asc` aus Supabase ab.
-  * **Vorstand-Cockpit:** Lädt direkt mit `< 30 ms` Latenz aus `public.jm_seasons` (JSONB `raw_grid`) via Supabase REST API.
-
-### 2.3 Wie sind die komplexen Berechnungsfunktionen implementiert?
-* In Supabase existiert in der Migration [`16_jahresmeisterschaft_module.sql`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/supabase/migrations/16_jahresmeisterschaft_module.sql) die Datenhaltung und ein Zeitstempel-Trigger (`trigger_set_updated_at`).
-* **Berechnungs-Verteilung:**
-  1. **Google Sheets (historisch abgelöst):** Die Tabellenmatrix enthielt Formeln für Totals, Streichresultate und Ränge.
-  2. **Supabase `jm_seasons`:** Speichert die gesamte 2D-Matrix als Snapshot im JSONB-Feld `raw_grid`.
-  3. **Frontend-Logik (`syncJMShootersToSupabase()` in `jahresmeisterschaft-core.js`):** Extrahiert beim Speichern die Zeilen von Liga 1 (Zeilen 5–12) und Liga 2 (Zeile 15 ff.), liest Totals und Streichwerte aus und persistiert die Datensätze strukturiert in `jm_shooters`.
-  4. **Frontend-Logik (`jahresmeisterschaft-ui.js`):** Berechnet die U21-Junioren-Wertung mit virtuellen Totals (Abzug von ausgeschlossenen Streichwettkämpfen wie Verband, Kantonalstich, Vereinswettschiessen) dynamisch im Client-Browser.
-
-### 2.4 Schreibt der Upload von der PWA (Web_app) direkt in Supabase?
-* Beim Standblatt-Upload in [`app/upload.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/upload.js#L122-L160) wird ein Audit-Log mit Metadaten (Schütze, Datum, erzielte Punkte, Modell `"manual_upload"`) in `public.contest_ocr_logs` geschrieben.
-* Das Bild und die Punktedaten selbst werden per `POST` an den Cloudflare Worker gesendet, welcher das Foto in **Cloudflare R2** speichert.
-* Es erfolgt **kein direkter unmoderierter Schreibzugriff** in die Meisterschaftstabellen `jm_shooters` oder `jm_seasons`. Die offizielle Freigabe und Erfassung in die Jahresmeisterschaft obliegt dem Schützenmeister.
-
-### 2.5 Wird eine KI für die Standblatt-Erkennung genutzt?
-* **In der Mitglieder-PWA (`app/upload.html`):** Schützen erfassen Foto, erzielte Punkte und Maximum manuell zur Dokumentation.
-* **Im Vorstand-Cockpit (Resultate-Modul):** In [`vorstand/js/resultate/resultate-events.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/resultate/resultate-events.js#L266-L316) ist **Google Gemini Vision** (`gemini-2.5-flash`, `gemini-1.5-pro`) angebunden. Standblätter werden gescannt, Schützen automatisiert zugeordnet und in `public.contest_ocr_logs` protokolliert.
+1. **`public.jm_seasons` (Snapshot- & Archivspeicher):**
+   - Hält pro Saison (`jahr`, z. B. `'current'`, `'2025'`, `'2023'`) das vollständige zweidimensionale Tabellengrid im JSONB-Feld `raw_grid`.
+   - Speichert im JSONB-Feld `junior_exclusions` die Liste der für die Junioren-Wertung deaktivierten Wettkämpfe.
+   - Steuert über `is_archived` den Bearbeitungsschutz.
+2. **`public.jm_shooters` (Normalisierte Auswertung):**
+   - Strukturierte Einzeldaten jedes Schützen (`jahr`, `liga`, `rang`, `name`, `vorname`, `total_pct`, `streich_pct`, `details`).
+   - Dient als performante Datenquelle für die öffentliche Website und die Mitglieder-PWA (Sortierung: `order=liga.asc,rang.asc`).
+3. **`public.contest_ocr_logs` (Audit & Standblatt-Erfassung):**
+   - Revisionssicheres Logging aller Standblatt-Uploads (Schütze, Rohpunkte, Maximum, Bild-URL in Cloudflare R2, KI-Modell).
 
 ---
 
-## 3. Historischer Rückblick: Behebung der Dateninitialisierung (Phase 21.1)
+## 2. Systemarchitektur & Datenflüsse
 
-Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons` und `jm_shooters` temporär noch nicht befüllt worden, weshalb im Cockpit ein GAS-Warnbanner erschien.
+```mermaid
+graph TD
+    A["Mitglieder-PWA (Upload Standblatt)"] -->|"POST (Audit & R2 Image)"| B["Cloudflare Worker / R2"]
+    B -->|"Audit-Log"| C[("Supabase: contest_ocr_logs")]
+    
+    D["Vorstand-Cockpit (Schützenmeister)"] -->|"1. PDF / Excel Import<br>2. Gemini Vision OCR"| E["Client-seitiger Parser (SheetJS, pdf.js)"]
+    E -->|"Manuelle Prüfung & Freigabe"| D
+    D -->|"Atomares Speichern (Grid Snapshot)"| F[("Supabase: jm_seasons (raw_grid)")]
+    D -->|"syncJMShootersToSupabase()"| G[("Supabase: jm_shooters")]
+    
+    F -->|"REST (< 30 ms)"| D
+    G -->|"REST (order=liga.asc,rang.asc)"| H["Website (resultate.js)"]
+    G -->|"REST (order=liga.asc,rang.asc)"| I["PWA (app_jm.html)"]
+```
 
-### Durchgeführte Massnahmen:
-1. **Google Sheets 1-Klick-Import:** Über den Button `Google Sheets Import` im Vorstandscockpit (`migrateJMFromGoogleSheets()`) wurden die historischen Saisons und das aktuelle Jahr (`current`) aus Google Sheets extrahiert, als 2D-Grids in `jm_seasons` persistiert und via `syncJMShootersToSupabase()` in `jm_shooters` überführt.
-2. **Kappung der stillen Fallbacks:** Stille Lese-Fallbacks wurden im gesamten Codebase entfernt (entsprechend Projekt-Richtlinie 1). Das Cockpit lädt zuverlässig und sub-sekündlich aus Supabase.
+### 2.1 Beantwortung der Kernfragen
 
----
-
-## 4. Migration 52: Korrektur der Datenextraktion & Dynamische Saisons (Oktober 2026)
-
-- **Extraktions-Korrektur in `jm_shooters`:** Der Synchronisations-Parser in `syncJMShootersToSupabase()` (`jahresmeisterschaft-core.js`) wurde korrigiert, um Spaltenüberschriften wie `TOTAL ... %` tolerant zu erkennen und vollständige Einzelresultate (`details`: Meisterschaft, Mannschaftsrunden, Auswärtsschiessen) zu strukturieren. Migration `52_fix_jm_shooters_data.sql` reparierte alle historischen Saisons (`current`, `2025`, `2023`).
-- **Dynamisches Saison-Archiv im Frontend:** In `resultate.js` wird die Saisonauswahl (`#jahr-select`) nun dynamisch via SWR-Cache aus `public.jm_seasons` gespeist, sodass alle archivierten Jahre sofort ladezeitoptimiert abrufbar sind.
-- **Sortierung:** Die REST-Abfragen in Website und PWA wurden auf `order=liga.asc,rang.asc` vereinheitlicht.
-
----
-
-## 6. Client-seitiger Resultate-Import & Dynamisches Maximum (Oktober 2026)
-
-- **Ablösung Google Sheets & GAS Import:** Der alte Google Sheets Import Button und alle Cloudflare Worker / GAS Brücken wurden vollständig eliminiert. Neu steht im Cockpit das Modul `jahresmeisterschaft-import.js` bereit, das Excel- (`.xlsx`, `.xls`) und CSV-Dateien direkt via SheetJS im Browser einliest.
-- **Wettkampf-Kacheln mit Vorschau:** Direkte Imports für *Vereinswettschiessen*, *Verbandsschiessen*, *Kantonalstich* und *Mannschaft* (Runden 1–7) mit Lizenz-/Namens-Matching und interaktivem Vorschau-Abgleich vor dem atomaren Speichern in Supabase.
-- **Auswärtige Schiessen & KI-Standblatt-Erkennung:** Neu integrierte 5. Kachel für Auswärtige Schiessen:
-  - **Digitale PDF-Ranglisten:** Werden direkt im Browser via `pdf.js` in < 50 ms geparst. Alle Schützen aus Muhen werden automatisch anhand Name und Lizenz extrahiert.
-  - **Apple HEIC & Smartphone-Fotos:** Automatische clientseitige Konvertierung von `.heic`/`.heif` nach JPEG via `heic2any`.
-  - **Zentraler Gemini Vision OCR:** Fotos von Standblättern werden über den zentralen Vorstand-API-Worker (`action=ocr`, Gemini 2.5 Flash) analysiert.
-  - **Domain-Kontext Schweizer Schiessprogramme:** Die KI prognostiziert das Maximum dynamisch anhand gängiger Schweizer Programme ($6\times 10 = 60$, $8\times 10 = 80$, $10\times 10 = 100$ [Gruppenstich G50], $12\times 10 / 6\times 20 = 120$, $15\times 10 = 150$, $20\times 10 = 200$, $30\times 10 = 300$, $60\times 10 = 600$) und hinterlegt eine Begründungs-Pille im UI.
-- **PWA Standblatt-Upload (`app/upload.html`):** Schützen können Fotos (inkl. HEIC) oder PDF-Ranglisten hochladen. Die App analysiert die Datei direkt via PDF-Parser oder zentraler KI, schlägt erzielte Punkte und Maximum vor und loggt Metadaten revisionssicher in `public.contest_ocr_logs`.
-- **Top 4 Mannschaft & Top 2 Auswärtige:** Mannschaftsresultate aus den Runden 1–7 übertragen automatisch die 4 höchsten Resultate in die Spalten 9–12 (`Mannschaft #1` bis `#4`). Auswärtige Schiessen übertragen automatisch die beiden höchsten Prozentwerte in `Auswärtiges 1` und `Auswärtiges 2`.
-- **Smarter Speichern-Button:** Zeigt ungespeicherte Änderungen an, schützt die 8-Schützen-Integrität von Liga 1 und sperrt unnötige DB-Schreibvorgänge bei unverändertem Grid.
+* **Google Dual-Write entkoppelt?**
+  Ja. In [`jahresmeisterschaft-manager.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-manager.js) ist jeglicher Schreibzugriff auf Google Apps Script / Google Sheets deaktiviert. Das Cockpit schreibt direkt und atomar nach Supabase (`jm_seasons` und `jm_shooters`).
+* **Lesen Website und PWA exklusiv aus Supabase?**
+  Ja. Sowohl die Vereinswebsite ([`resultate.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/js/resultate.js)) als auch die Mitglieder-PWA ([`app_jm.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/app_jm.html)) fragen die Tabelle `public.jm_shooters` mit dynamischem SWR-Caching über die Supabase REST API ab.
+* **Schreibt die PWA direkt in die Rangliste?**
+  Nein. Die Erfassung in der PWA ([`upload.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/upload.js)) legt Standblätter in Cloudflare R2 ab und schreibt einen Eintrag in `public.contest_ocr_logs`. Die offizielle Freigabe und Einreihung in die Jahresmeisterschaft obliegt ausschliesslich dem Schützenmeister im Vorstandscockpit.
+* **KI-Einsatz bei der Standblatt-Erkennung:**
+  Über den zentralen Vorstand-API-Worker (`action=ocr`) ist Google Gemini Vision (`gemini-2.5-flash`) integriert. Die KI erkennt Schützen, erzielte Punkte sowie gängige Schweizer Schiessprogramme und prognostiziert das Programmmaximum.
 
 ---
 
-## 7. Import-Harmonisierung & Portal-Standardisierung (Oktober 2026)
+## 3. Berechnungs- & Wertungsregeln im Cockpit
 
-- **Header- & Metadaten-Filterung (Verein & Verband):** Die Tabellenkopf-Erkennung in `jahresmeisterschaft-import.js` erfordert nun zwingend das gleichzeitige Vorhandensein von Lizenz-, Namens- und Punktspalten. Kopfzeilen und Abrechnungs-Metadaten (Etiketten, Kranzkarten, Adressdaten) werden strikt herausgefiltert. Dadurch wurde der frühere Doppelimport (z. B. Marco Fischer mit falschen Werten aus dem Kopfbereich) vollständig behoben.
-- **Kantonalstich-Sheet-Selektion:** Liest gezielt das Resultatblatt `Eingabe` ein (statt der Limiten-Tabelle `Kategorie`), wodurch alle Vereinsresultate (30-Schuss-Programm) mit 100 % Trefferquote zugeordnet werden.
-- **Automatische Runden-Erkennung (Mannschaft / SMM):** Erkennt die Runden 1–7 automatisch aus Zelle `H6` des Standblatts sowie aus Dateinamen mit führenden Nummern (`04 smm...` $\rightarrow$ Runde 4) und synchronisiert die Dropdown-Vorauswahl unterbrechungsfrei.
-- **Selektiver Import mit Checkboxen & Direktkorrektur:** Die Vorschau-Tabelle bietet individuelle Checkboxen sowie einen Master-Toggle («Alle an-/abwählen») und editierbare Punktfelder. Nur aktiv markierte Schützen werden in `jmRawGrid` und Supabase übernommen; Schützen ausserhalb der JM sind standardmässig abgewählt.
-- **Portal-Standard & Sticky-Spalten:** Das Import-Modal (`#jm-import-modal`) wurde an das Design-System des Vorstands-Portals angeglichen (Farbgradient, Du-Kultur gemäss Richtlinie 8). Die Haupttabelle fixiert die Schützen- und Verschiebe-Spalte beim horizontalen Scrollen (`position: sticky`), während inaktive Spalten weiterhin sauber ausgeblendet bleiben.
+Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeisterschaft-ui.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-ui.js) und [`jahresmeisterschaft-core.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-core.js).
 
----
+### 3.1 Tabellenaufbau & Ligen-Integrität
+* **Liga 1:** Zeilen 5–12 im 2D-Grid (immer exakt 8 Schützen).
+* **Pufferzeilen:** Zeilen 13 und 14 dienen als Trennung und sind schreibgeschützt.
+* **Liga 2:** Zeile 15 bis Tabellenende (variable Anzahl Schützen).
+* **Rangierung:** Schützen werden nach `total_pct` absteigend sortiert. Manuelles Drag & Drop unter dem Jahr ist deaktiviert, um versehentliches Verschieben in Pufferzeilen zu verhindern.
 
-## 8. SMM Standblatt PDF-Import, Blatt-Priorisierung & Wertungs-Ansichtsmodus (Oktober 2026)
+### 3.2 SMM Runden (1–7) & Top 4 Wertung
+* Die 7 Einzelrunden der Schweizerischen Mannschaftsmeisterschaft (SMM) liegen in den Spalten 33–39 (bzw. 34–40 bei vorhandener Statusspalte).
+* Das System ermittelt für jeden Schützen dynamisch die **4 höchsten Punkteresultate** und überträgt sie in die Meisterschaftsspalten 9–12 (`Mannschaft #1` bis `#4`).
+* Im Cockpit werden die zählenden Top-4-Runden mit einem grünen Badge (`<i class="fas fa-check"></i>`) markiert; die verbleibenden 3 Runden werden automatisch durchgestrichen und als Streichrunden gekennzeichnet.
 
-- **SMM Mannschafts-PDF-Import:** Offizielle SSV-Standblätter der Mannschaftsmeisterschaft (`.pdf`) werden clientseitig via `pdf.js` geparst; Runde und alle 8 Schützen inklusive Punkten werden automatisch extrahiert. Das manuelle Rundenauswahl-Dropdown wurde entfernt, da die Runderkennung autonom arbeitet.
-- **Exakte Blatt-Priorisierung (Vereins- & Verbandsschiessen):** Die SheetJS-Auswahl priorisiert exakt das Schützen-Blatt `Resultatblatt` bzw. `Eingabe`, wodurch Berechnungsblätter wie `BerechnungVereinsresultat` beim Vereins- und Verbandsschiessen nicht mehr fälschlicherweise vorzeitig ausgewählt werden.
-- **Wertungs-Ansichtsmodus (`Punkte` | `Prozent (%)` | `Punkte & %`):** Ein Segment-Umschalter in der Toolbar über der Tabelle erlaubt das flexible Umschalten zwischen Rohpunkten, berechneten Prozenten und der kombinierten Ansicht mit kompakten Badges. Streichresultate werden visuell markiert und durchgestrichen.
-- **Archiv-Schutz & Import-Duplikatbereinigung:** Der grüne Schnellzugriff-Button für den Import wurde aus der Toolbar entfernt. Der Import steht ausschliesslich im Aktionen-Menü des aktuellen Jahres (`current`) bereit, wodurch versehentliche Importe in archivierte Vorjahre sicher verhindert werden.
+### 3.3 Streichresultat-Eindeutigkeit
+* Ein Streichresultat wird nur abgezogen, wenn ein Schütze mindestens alle aktiven Meisterschaftswettkämpfe absolviert hat.
+* Wurde das identische Tiefstresultat mehrfach erzielt, wird sowohl rechnerisch als auch visuell exakt **ein einziges Resultat** gestrichen (`streichMarked`).
 
----
+### 3.4 Auswärtsschiessen (Rohwerte & Top 2)
+* Sämtliche Auswärtsschiessen (Spalten ab Index 41 bzw. 42, z. B. Bärenmoos, Stumpenland) werden als reine Rohpunktzahlen (z. B. `95`) erfasst und dargestellt.
+* Die beiden prozentual besten Auswärtsschiessen werden automatisch in die Meisterschaftsspalten 14 und 15 (`Auswärtiges 1` und `Auswärtiges 2`) übernommen.
 
-## 9. PDF-Zeilen-Extraktion, Streichresultat-Eindeutigkeit & Tab-Persistenz (Oktober 2026)
+### 3.5 Junioren-Wertung (U21)
+* Berechnet dynamisch ein virtuelles Total für Nachwuchsschützen im Tab *Junioren-Wertung*.
+* Die Schalterleiste im Tab liest alle Wettkämpfe dynamisch aus Zeile 3 (`grid[2]`) aus. Deaktivierte Wettkämpfe werden aus dem Gesamttotal des Juniors abgezogen. Einzig der Mannschaftsblock (Top 4) ist als feste Einheit verdrahtet.
 
-- **PDF-Zeilengruppierung (Auswärtige Schiessen):** Digitale Ranglisten (z. B. WinFire Gruppen- und Einzelranglisten wie Bärenmoosschiessen) gruppieren Textelemente vertikal nach y-Koordinaten zu echten Tabellenzeilen (`extractLinesFromPdfPage`). Schützen und Punkte werden zeilenweise extrahiert (unter Maskierung von Jahrgängen und Lizenzen), wodurch frühere Fehlzuordnungen des ersten Seitenwerts (z. B. 99 Punkte) vollständig behoben sind.
-- **Eindeutigkeit & dynamische Berechnung des Streichresultats:** Ein Streichresultat wird dynamisch in `recalculateJMRawGrid` nur dann ermittelt und abgezogen, wenn ein Schütze mindestens alle aktiven Wettkämpfe absolviert hat. Haben Schützen dasselbe Tiefstresultat mehrfach erzielt, wird sowohl rechnerisch als auch visuell im Cockpit (`streichMarked`) exakt nur ein einziges Resultat gestrichen.
-- **Tab-Persistenz & Junioren-Ansichtsmodus:** Beim Umschalten des Ansichtsmodus (`Punkte`, `Prozent (%)`, `Punkte & %`) bleibt der ausgewählte Tab (z. B. `Junioren-Wertung (U21)`) via `jmActiveTab` unterbrechungsfrei geöffnet. Die Junioren-Zellen unterstützen den gewählten Ansichtsmodus synchron mit formatierten Prozent-Badges.
-
----
-
-## 10. Gesamt-Matrix, SMM Top-4-Kennzeichnung & Streichrunden-Transparenz (Oktober 2026)
-
-- **Gesamt-Matrix (Alle Spalten):** Ein dritter Tab (`#matrix-tab`) im Vorstandscockpit visualisiert alle Spalten des 2D-Grids geordnet nach Funktionsgruppen: Haupt-Wettkämpfe, gewertete Top-4-Mannschaft, alle 7 SMM-Einzelrunden, gewertete Auswärtige, alle erfassten Auswärtigen Schiessen sowie die Gesamtwertung (Streichresultat und Total in %). Ein Umschalter erlaubt die optionale Einblendung der Roh-Prozentspalten.
-- **SMM Top 4 vs. Streichrunden:** In den Tabellen von Liga 1 & 2 werden für jeden Schützen aus den 7 SMM-Runden dynamisch die 4 höchsten Resultate ermittelt und mit einem grünen Zähl-Badge (`<i class="fas fa-check"></i>`) markiert. Die 3 tiefsten Runden werden eindeutig als gestrichene Streichrunden formatiert (durchgestrichen, ausgegraut, Streich-Badge).
-- **Prozent-Badge-Korrektur:** `getColumnPercentage` berechnet die Prozentwerte der 7 Roh-Mannschaftsrunden autonom aus Punkten und Maximalwert (200 Pkt.), anstatt fehlerhaft auf die sortierten Top-1-bis-4-Prozentspalten zuzugreifen.
+### 3.6 Ansichtsmodi & Gesamt-Matrix
+* **Wertungs-Ansichtsmodus:** Toolbar-Umschalter für `Punkte`, `Prozent (%)` oder `Punkte & %` (Kombiansicht mit Badges).
+* **Gesamt-Matrix:** Ein separater Tab visualisiert alle Spalten (Hauptwettkämpfe, Top 4 SMM, alle 7 SMM-Runden, Auswärtige und Gesamtwertung) mit optional einblendbaren Roh-Prozentspalten.
 
 ---
 
-## 11. Rohwert-Darstellung Auswärtsschiessen & Dynamische Junioren-Wettkampfschalter (Oktober 2026)
+## 4. Resultate-Import & KI-Standblatt-Erkennung
 
-- **Auswärtsschiessen Rohpunkte:** Sämtliche erfassten Auswärtsschiessen (Spalten ab Index 41 bzw. 42 wie Bärenmoos-Schiessen, Stumpenland-Schiessen etc.) werden in allen Cockpit-Ansichten (1. & 2. Liga, Junioren-Wertung, Gesamt-Matrix) strikt als Rohpunktzahlen (z. B. 95 Punkte) formatiert und sind direkt editierbar. Es erfolgt keine irreführende Umrechnung in prozentuale Badges oder 95.00%.
-- **Dynamische Junioren-Wettkampfschalter:** Die Schalterleiste im Junioren-Tab (U21) ist vollständig dynamisiert. Einzig die Mannschaft (Top 4 Runden 9–12 / SMM 1–7) ist als zusammenhängender Block fix verdrahtet. Alle weiteren Wettkämpfe vor der Totalspalte (Spalten 6 bis 17, inklusive `leer`, `Eidgenössisches` oder künftige Anlassumbenennungen) werden dynamisch aus Zeile 3 (`grid[2]`) abgebildet und bei Deaktivierung variabel aus dem virtuellen Junioren-Total abgezogen.
+Der Import ([`jahresmeisterschaft-import.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-import.js)) läuft vollständig clientseitig im Browser ohne externe Skripte:
+
+```mermaid
+graph LR
+    A["Excel / CSV (SheetJS)"] --> E["Vorschau-Modal mit Checkboxen"]
+    B["SMM Standblatt (PDF)"] --> E
+    C["Auswärtige Ranglisten (PDF)"] --> E
+    D["Foto Standblatt (Gemini Vision)"] --> E
+    E -->|"Schützenmeister bestätigt"| F["Übernahme in jmRawGrid"]
+    F -->|"Speichern"| G[("Supabase: jm_seasons & jm_shooters")]
+```
+
+1. **Excel & CSV (SheetJS):**
+   * Automatische Selektion des korrekten Tabellenblatts (z. B. `Eingabe` bei Kantonalstich, `Resultatblatt` bei Vereinswettschiessen).
+   * Kopfzeilen- und Abrechnungsfilterung: Verhindert doppelte Schützenimporte durch strikten Abgleich auf Lizenz-, Namens- und Punktestruktur.
+2. **Offizieller SSV SMM PDF-Standblatt-Import:**
+   * Liest PDF-Standblätter via `pdf.js` ein.
+   * Erkennt die Wettkampfrunde (1–7) autonom aus dem Dokumentkopf und extrahiert alle 8 Schützen inklusive Punkten.
+3. **Auswärtige PDF-Ranglisten:**
+   * Textblöcke werden über y-Koordinaten zu konsistenten Tabellenzeilen gruppiert (`extractLinesFromPdfPage`). Schützen aus Muhen werden via Lizenz- und Namensabgleich unter Maskierung von Jahrgängen exakt zugeordnet.
+4. **Foto-Upload & Gemini Vision OCR:**
+   * Konvertiert Smartphone-Formate (inkl. Apple `.heic` via `heic2any`) clientseitig zu JPEG.
+   * Gemini 2.5 Flash prognostiziert das Programmmaximum anhand typischer Schweizer Schiessprogramme ($60, 80, 100, 120, 150, 200, 300, 600$) und liefert eine nachvollziehbare Begründung.
+5. **Vorschau-Modal:**
+   * Schützen können vor der Übernahme per Checkbox einzeln selektiert oder korrigiert werden.
 
 ---
 
-## 12. Behebung UI-Ladefehler, Badges beim Archivieren & Kontrollierter Saisonwechsel (Oktober 2026)
+## 5. Saison-Lebenszyklus, Archivierung & Historie
 
-- **Ladefehler `limitIndex` behoben:** In `buildLigaTable` (`jahresmeisterschaft-ui.js`) wurde die fehlende Variablendeklaration `const limitIndex = hasStatusCol ? 42 : 41;` ergänzt, wodurch der beim Laden aufgetretene `ReferenceError` behoben ist.
-- **Deaktivierung von Drag & Drop unter dem Jahr:** Manuelles Verschieben von Schützen via Drag & Drop wurde deaktiviert. Dadurch wird verhindert, dass durch fehlerhaftes Spleissen Schützen in die Pufferzeilen 13 & 14 verschoben werden und verschwinden. Die Rangierung während der Saison erfolgt ausschliesslich dynamisch anhand der Total-Prozente.
-- **Geführter Saisonwechsel («Neues Jahr starten»):** Führt vor dem Nullen eine Schützen-Ranglistenanalyse durch und transferiert die Schützen regelkonform (Liga 1: 6 Verbleibende + 2 Aufsteiger; Liga 2: 2 Absteiger + Verbleibende), bevor die Resultate genullt und in `current` persistiert werden. Liga 1 umfasst dadurch immer exakt 8 Schützen.
-- **Auf- & Absteiger-Badges beim Archivieren (`createArchivedGridWithStatus`):** Beim Erstellen eines Archiv-Snapshots wird automatisch eine Status-Spalte (Index 6) mit den Badges `▲ Aufstieg` (Top 2 Liga 2) und `▼ Abstieg` (Letzte 2 Liga 1) eingefügt, exakt wie in den historischen Snapshots (`2023`, `2025`).
-- **Behebung TDZ-Ladefehler (`cellContent` & `colCategoryStyle`):** In `buildLigaTable` und `buildMatrixLigaTable` (`jahresmeisterschaft-ui.js`) wurden Zugriffe auf `cellContent` und `colCategoryStyle` vor ihrer jeweiligen Deklaration bereinigt (Temporal Dead Zone), wodurch das Rendern der Jahresmeisterschaftstabellen beim Laden aus Supabase wieder fehlerfrei erfolgt.
+### 5.1 Kontrollierter Saisonwechsel («Neues Jahr starten»)
+Beim Starten eines neuen Jahres über das Aktionen-Menü wird ein automatisierter Ablauf angestossen:
+1. **Ranglistenanalyse:** Ermittelt die finalen Ränge der abgelaufenen Saison.
+2. **Liga-Transfer (Auf- und Abstieg):**
+   - Die besten 2 Schützen aus Liga 2 steigen in Liga 1 auf.
+   - Die letzten 2 Schützen aus Liga 1 steigen in Liga 2 ab.
+   - Liga 1 behält exakt 8 Schützen; Liga 2 nimmt alle weiteren Schützen auf.
+3. **Nullung:** Sämtliche Wettkampfresultate werden zurückgesetzt und das neue Grid atomar in `current` gespeichert.
 
-
-
-
+### 5.2 Archiv-Snapshots & Status-Badges
+* Vor dem Saisonwechsel wird die Saison über «Jahr archivieren» in `jm_seasons` persistiert (z. B. `2026`).
+* Die Funktion `createArchivedGridWithStatus` fügt im Snapshot automatisch eine Statusspalte mit den Badges `▲ Aufstieg` und `▼ Abstieg` ein, wodurch historische Ranglisten konsistent dokumentiert bleiben.
+* Archivierte Saisons sind im Vorstandscockpit schreibgeschützt und sperren Import-Aktionen.
