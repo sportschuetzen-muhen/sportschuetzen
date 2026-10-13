@@ -51,7 +51,7 @@ graph TD
 * **Schreibt die PWA direkt in die Rangliste?**
   Nein. Die Erfassung in der PWA ([`upload.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/upload.js)) legt Standblätter in Cloudflare R2 ab und schreibt einen Eintrag mit Status `pending` in `public.contest_ocr_logs`. Die offizielle Freigabe und Einreihung in die Jahresmeisterschaft obliegt dem Schützenmeister über die neue Standblatt-Inbox ([`jahresmeisterschaft-inbox.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-inbox.js)).
 * **KI-Einsatz bei der Standblatt-Erkennung:**
-  Über den zentralen Vorstand-API-Worker (`action=ocr`) ist Google Gemini Vision (`gemini-2.5-flash`) integriert. Die KI erkennt Schützen, erzielte Punkte sowie gängige Schweizer Schiessprogramme und prognostiziert das Programmmaximum.
+  Über den zentralen Vorstand-API-Worker (`action=ocr_standblatt` / `action=ocr`) ist die Google Gemini Vision API integriert (`gemini-3-flash-preview` mit automatischem Multi-Modell Fallback auf `gemini-3.5-flash`, `gemini-flash-latest`, `gemini-3.8-flash`, `gemini-3.1-flash-lite`). Die Erkennungs-Pipeline führt einen 3-stufigen Abgleich durch: Schützenidentifikation (Vorname, Nachname, SSV-Lizenznummer & Barcode-Check, Jahrgang), automatischer Abgleich des Schiessanlasses mit den Spalten der aktuellen Jahresmeisterschaft sowie Erkennung von Stich, Punktzahl und Maximum.
 
 ---
 

@@ -60,14 +60,28 @@ function loadTeilnehmer() {
 
     const user = JSON.parse(userStr);
     const lizenzFormatted = user.lizenz ? String(user.lizenz).padStart(6, '0') : '';
-    badge.innerHTML = `👤 Angemeldet als:<br><strong>${user.vorname} ${user.nachname || ''}</strong> ${lizenzFormatted ? `(${lizenzFormatted})` : ''}`;
+
+    // Jahrgang ergänzen falls in _knownShooters vorhanden
+    if (!user.jahrgang && Array.isArray(_knownShooters) && _knownShooters.length > 0) {
+        const sh = _knownShooters.find(s => 
+            (lizenzFormatted && s.lizenz === lizenzFormatted) || 
+            (s.nachname && s.nachname.toLowerCase() === (user.nachname || '').toLowerCase())
+        );
+        if (sh && sh.jahrgang) {
+            user.jahrgang = sh.jahrgang;
+            localStorage.setItem('sportschuetzen_user', JSON.stringify(user));
+        }
+    }
+
+    badge.innerHTML = `👤 Angemeldet als:<br><strong>${user.vorname} ${user.nachname || ''}</strong> ${lizenzFormatted ? `(${lizenzFormatted})` : ''}${user.jahrgang ? ` · Jg. ${user.jahrgang}` : ''}`;
     nameInput.value = lizenzFormatted || user.vorname;
 }
 
 /* ---------------------------------------------
-   BEKANNTE ANLÄSSE AUS SUPABASE LADEN & AUTO-FILL
+   BEKANNTE ANLÄSSE & SCHÜTZEN AUS SUPABASE LADEN
 --------------------------------------------- */
 let _knownCompetitions = [];
+let _knownShooters = [];
 
 async function loadKnownCompetitions() {
     try {
@@ -86,7 +100,9 @@ async function loadKnownCompetitions() {
         const datalist = document.getElementById("anlaesse-list");
 
         _knownCompetitions = [];
+        _knownShooters = [];
 
+        // 1. Bekannte Schiessanlässe (Spaltenüberschriften der Saison)
         for (let c = 2; c < titles.length; c++) {
             const title = String(titles[c] || '').trim();
             if (!title || title.toLowerCase().startsWith('spalte') || title.toLowerCase() === 'leer') continue;
@@ -98,6 +114,31 @@ async function loadKnownCompetitions() {
                 opt.value = title;
                 opt.label = `Max. ${maxVal} Pkt`;
                 datalist.appendChild(opt);
+            }
+        }
+
+        // 2. Bekannte Schützen aus dem Grid (Liga 1 & Liga 2)
+        const headerRow = grid[4] || [];
+        const colNachname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'nachname');
+        const colVorname = headerRow.findIndex(t => String(t || '').trim().toLowerCase() === 'vorname');
+        const colJahrgang = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('jahrgang'));
+        const colLizenz = headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('lizenz'));
+
+        for (let r = 5; r < grid.length; r++) {
+            if (!grid[r] || r === 13 || r === 14) continue;
+            const nachname = String(grid[r][colNachname !== -1 ? colNachname : 1] || '').trim();
+            const vorname = String(grid[r][colVorname !== -1 ? colVorname : 2] || '').trim();
+            const jahrgang = String(grid[r][colJahrgang !== -1 ? colJahrgang : 3] || '').trim();
+            const lizenz = String(grid[r][colLizenz !== -1 ? colLizenz : 4] || '').trim().padStart(6, '0');
+
+            if (nachname || vorname) {
+                _knownShooters.push({
+                    nachname,
+                    vorname,
+                    fullName: `${vorname} ${nachname}`.trim(),
+                    jahrgang,
+                    lizenz: (lizenz && lizenz !== '000000') ? lizenz : ''
+                });
             }
         }
 
@@ -115,8 +156,46 @@ async function loadKnownCompetitions() {
             });
         }
     } catch (err) {
-        console.warn("Konnte bekannte Anlässe nicht vorladen:", err);
+        console.warn("Konnte bekannte Anlässe und Schützen nicht vorladen:", err);
     }
+}
+
+/**
+ * Findet den besten passenden Anlass aus den Spalten der Jahresmeisterschaft
+ */
+function findBestMatchingCompetition(text) {
+    if (!text || !Array.isArray(_knownCompetitions) || _knownCompetitions.length === 0) return null;
+    const cleanFull = String(text).toLowerCase().replace(/[^a-z0-9äöü]/gi, ' ');
+
+    let bestComp = null;
+    let bestScore = 0;
+
+    for (const comp of _knownCompetitions) {
+        const compTitle = (comp.title || '').trim();
+        const cleanTitle = compTitle.toLowerCase().replace(/[^a-z0-9äöü]/gi, ' ');
+        const words = cleanTitle.split(/\s+/).filter(w => w.length >= 4 && w !== 'schiessen' && w !== 'verband' && w !== 'stich');
+
+        let score = 0;
+        for (const w of words) {
+            if (cleanFull.includes(w)) {
+                score += w.length;
+            }
+        }
+
+        // Exakter Substring Match auf den ganzen bereinigten Titel gibt Bonus
+        const compactTitle = compTitle.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+        const compactFull = String(text).toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+        if (compactTitle.length >= 6 && compactFull.includes(compactTitle)) {
+            score += 30;
+        }
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestComp = comp;
+        }
+    }
+
+    return bestScore >= 5 ? bestComp : null;
 }
 
 /* ---------------------------------------------
@@ -205,27 +284,16 @@ async function processPdfStandblatt(file, user) {
 
     // Titel & bekannten Anlass erkennen
     const lines = fullText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-    let detectedTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-    let matchedKnownComp = null;
+    let bestComp = findBestMatchingCompetition(fullText);
+    let detectedTitle = bestComp ? bestComp.title : (file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
 
-    // Zuerst gegen bekannte Anlässe der Jahresmeisterschaft matchen
-    if (Array.isArray(_knownCompetitions) && _knownCompetitions.length > 0) {
-        for (const comp of _knownCompetitions) {
-            const cleanTitle = comp.title.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
-            const cleanText = fullText.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
-            if (cleanTitle.length >= 5 && cleanText.includes(cleanTitle)) {
-                detectedTitle = comp.title;
-                matchedKnownComp = comp;
-                break;
-            }
-        }
-    }
-
-    if (!matchedKnownComp) {
+    if (!bestComp) {
         for (let i = 0; i < Math.min(10, lines.length); i++) {
             const l = lines[i];
-            if (/(?:schiessen|stich|cup|fest|verband|verein|bärenmoos|freischiessen|sektion|gruppe)/i.test(l)) {
+            if (/(?:schiessen|stich|cup|fest|verband|verein|bärenmoos|stumpenland|freischiessen|sektion|gruppe)/i.test(l)) {
                 detectedTitle = l;
+                bestComp = findBestMatchingCompetition(l);
+                if (bestComp) detectedTitle = bestComp.title;
                 break;
             }
         }
@@ -237,17 +305,22 @@ async function processPdfStandblatt(file, user) {
     const uLizenz = user.lizenz ? String(user.lizenz).padStart(6, '0') : '';
     const uJahrgang = user.jahrgang ? String(user.jahrgang).trim() : '';
 
-    let matchedLine = null;
+    let nameMatches = false;
+    let lizenzMatches = false;
+    let jahrgangMatches = false;
     let foundPoints = null;
 
     for (const line of lines) {
-        const nachnameMatches = uNachname && new RegExp('\\b' + uNachname + '\\b', 'i').test(line);
-        const vornameMatches = uVorname && new RegExp('\\b' + uVorname + '\\b', 'i').test(line);
-        const lizenzMatches = uLizenz && uLizenz !== '000000' && line.includes(uLizenz);
-        const jahrgangMatches = uJahrgang && (line.includes(uJahrgang) || (uJahrgang.length === 4 && line.includes(uJahrgang.slice(2))));
+        const nachMatches = uNachname && new RegExp('\\b' + uNachname + '\\b', 'i').test(line);
+        const vorMatches = uVorname && new RegExp('\\b' + uVorname + '\\b', 'i').test(line);
+        const lizMatches = uLizenz && uLizenz !== '000000' && line.includes(uLizenz);
+        const jgMatches = uJahrgang && (line.includes(uJahrgang) || (uJahrgang.length === 4 && line.includes(uJahrgang.slice(2))));
 
-        if ((nachnameMatches && vornameMatches) || lizenzMatches || (nachnameMatches && jahrgangMatches)) {
-            matchedLine = line;
+        if (nachMatches && vorMatches) nameMatches = true;
+        if (lizMatches) lizenzMatches = true;
+        if (jgMatches) jahrgangMatches = true;
+
+        if ((nachMatches && vorMatches) || lizMatches || (nachMatches && jgMatches)) {
             const nums = line.match(/\b(100|[4-9][0-9]|1[0-9]{2}|200|5[0-9]{2}|600)\b/g);
             if (nums && nums.length > 0) {
                 const validNums = nums.filter(n => !/^19[4-9][0-9]$|^20[0-2][0-9]$/.test(n));
@@ -264,14 +337,42 @@ async function processPdfStandblatt(file, user) {
         anlassInput.value = detectedTitle;
     }
 
+    // Schützen-Feedback
+    let shooterMsg = "";
+    if (nameMatches && (lizenzMatches || jahrgangMatches)) {
+        shooterMsg = `✅ <strong>Schütze bestätigt:</strong> ${user.vorname} ${user.nachname} ${lizenzMatches ? `(Lizenz: ${uLizenz})` : ''} ${jahrgangMatches ? `(Jg. ${uJahrgang})` : ''}`;
+    } else if (nameMatches) {
+        shooterMsg = `✅ <strong>Schütze erkannt:</strong> ${user.vorname} ${user.nachname}`;
+    } else {
+        shooterMsg = `👤 <strong>Schütze:</strong> ${user.vorname} ${user.nachname || ''}`;
+    }
+
+    // Anlass-Feedback
+    let contestMsg = "";
+    if (bestComp) {
+        contestMsg = `🎯 <strong>Anlass erkannt & zugeordnet:</strong> ${detectedTitle} <span style="font-size:0.8em; color:#15803d; font-weight:600;">(in Jahresmeisterschaft vorhanden)</span>`;
+    } else {
+        contestMsg = `📝 <strong>Anlass erkannt:</strong> ${detectedTitle}`;
+    }
+
     if (foundPoints !== null) {
-        const defaultMax = matchedKnownComp ? matchedKnownComp.max : null;
+        const defaultMax = bestComp ? bestComp.max : null;
         const { max, reason } = defaultMax ? { max: defaultMax, reason: "Aus Tabelle bekannte Maximalpunktzahl" } : forecastMaxPoints(fullText, foundPoints);
         document.getElementById("erzielt").value = foundPoints;
         document.getElementById("maximal").value = max;
-        showAiStatus(`✨ <strong>${foundPoints} Punkte</strong> (Max. ${max}, ${reason}) in der PDF-Rangliste gefunden! Bitte kurz prüfen.`, "success");
+        const pct = max > 0 ? ((foundPoints / max) * 100).toFixed(2) : '100.00';
+
+        const statusHtml = `
+            <div style="text-align:left; font-size:0.87rem; line-height:1.45;">
+                <div style="font-weight:700; margin-bottom:4px; color:#166534;">📄 PDF-Rangliste erfolgreich ausgewertet:</div>
+                <div>${shooterMsg}</div>
+                <div>${contestMsg}</div>
+                <div>💯 <strong>Punkte & Maximum:</strong> <strong>${foundPoints}</strong> / ${max} Pkt. (${pct}% · ${reason})</div>
+            </div>
+        `;
+        showAiStatus(statusHtml, "success");
     } else {
-        showAiStatus(`📄 PDF geladen: <em>${detectedTitle}</em>. Dein Name wurde nicht automatisch gefunden – bitte Punkte kurz manuell erfassen.`, "warning");
+        showAiStatus(`📄 PDF geladen: <em>${detectedTitle}</em>. Punkte wurden nicht automatisch gefunden – bitte kurz eintragen.`, "warning");
     }
 
     // Render Erste Seite als Vorschaubild
@@ -296,30 +397,99 @@ async function processImageStandblatt(base64Data, user) {
     showAiStatus("🔍 Standblatt wird mit KI analysiert...", "info");
 
     try {
-        const res = await fetch(WORKER_OCR_URL, {
+        const ocrUrl = WORKER_OCR_URL.replace('action=ocr', 'action=ocr_standblatt');
+        const res = await fetch(ocrUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 image: base64Data,
-                shooters: [{
-                    id: user.lizenz || "user",
-                    name: `${user.vorname} ${user.nachname || ''}`.trim()
-                }],
-                round: "standblatt",
-                model: "gemini-2.5-flash"
+                user: {
+                    vorname: user.vorname || '',
+                    nachname: user.nachname || '',
+                    lizenz: user.lizenz || '',
+                    jahrgang: user.jahrgang || ''
+                },
+                known_competitions: _knownCompetitions,
+                model: "gemini-3-flash-preview"
             })
         });
 
+        if (!res.ok) {
+            throw new Error(`Server antwortete mit Status ${res.status}`);
+        }
+
         const data = await res.json();
-        if (data && data.success && Array.isArray(data.ergebnisse) && data.ergebnisse.length > 0) {
-            const bestResult = data.ergebnisse[0];
-            const pts = parseFloat(bestResult.points);
+        if (data && data.success) {
+            const rawText = data.raw_text || '';
+            const detectedShooter = data.schuetze || {};
+            const detectedContest = data.anlass || {};
+            const detectedResult = data.ergebnis || {};
+
+            // 1. Schütze abgleichen
+            const uVor = (user.vorname || '').toLowerCase().trim();
+            const uNach = (user.nachname || '').toLowerCase().trim();
+            const uLiz = user.lizenz ? String(user.lizenz).padStart(6, '0') : '';
+            const uJg = user.jahrgang ? String(user.jahrgang).trim() : '';
+
+            const textLower = (rawText + ' ' + JSON.stringify(detectedShooter)).toLowerCase();
+            const nameFound = (uVor && textLower.includes(uVor)) && (uNach && textLower.includes(uNach));
+            const lizenzFound = uLiz && uLiz !== '000000' && (textLower.includes(uLiz) || (detectedShooter.lizenz && detectedShooter.lizenz.includes(uLiz)));
+            const jgFound = uJg && textLower.includes(uJg);
+
+            let shooterMsg = "";
+            if (nameFound && (lizenzFound || jgFound)) {
+                shooterMsg = `✅ <strong>Schütze bestätigt:</strong> ${user.vorname} ${user.nachname} ${lizenzFound ? `(Lizenz: ${uLiz})` : ''} ${jgFound ? `(Jg. ${uJg})` : ''}`;
+            } else if (nameFound) {
+                shooterMsg = `✅ <strong>Schütze erkannt:</strong> ${user.vorname} ${user.nachname} ${lizenzFound ? `(Lizenz: ${uLiz})` : ''}`;
+            } else {
+                shooterMsg = `👤 <strong>Schütze:</strong> ${user.vorname} ${user.nachname || ''} ${lizenzFound ? `(Lizenz: ${uLiz})` : ''}`;
+            }
+
+            // 2. Anlass mit Jahresmeisterschaft abgleichen
+            const fullContestSearchText = `${detectedContest.erkannt || ''} ${detectedContest.veranstalter || ''} ${detectedContest.stich || ''} ${detectedContest.matched_title || ''} ${rawText}`;
+            let bestComp = findBestMatchingCompetition(fullContestSearchText);
+
+            const chosenTitle = (bestComp ? bestComp.title : (detectedContest.matched_title || detectedContest.erkannt || '')).trim();
+            const anlassInput = document.getElementById("anlass");
+            if (anlassInput && chosenTitle) {
+                anlassInput.value = chosenTitle;
+            }
+
+            let contestMsg = "";
+            if (bestComp) {
+                contestMsg = `🎯 <strong>Anlass erkannt & zugeordnet:</strong> ${chosenTitle} <span style="font-size:0.8em; color:#15803d; font-weight:600;">(in Jahresmeisterschaft vorhanden)</span>`;
+            } else if (chosenTitle) {
+                contestMsg = `📝 <strong>Anlass erkannt:</strong> ${chosenTitle}`;
+            } else {
+                contestMsg = `📝 <strong>Anlass:</strong> Auswärtiges Schiessen`;
+            }
+
+            // 3. Punkte & Maximum ermitteln
+            const pts = parseFloat(detectedResult.punkte);
+            let maxPts = parseFloat(detectedResult.maximal);
+
+            if (bestComp && (!maxPts || isNaN(maxPts))) {
+                maxPts = bestComp.max;
+            } else if (!maxPts || isNaN(maxPts)) {
+                const fc = forecastMaxPoints(rawText, pts || 100);
+                maxPts = fc.max;
+            }
 
             if (!isNaN(pts) && pts > 0) {
-                const { max, reason } = forecastMaxPoints(bestResult.comment || '', pts);
                 document.getElementById("erzielt").value = pts;
-                document.getElementById("maximal").value = max;
-                showAiStatus(`✨ KI-Erkennung: <strong>${pts} Punkte</strong> (Max. ${max}, ${reason}). Bitte kurz prüfen.`, "success");
+                document.getElementById("maximal").value = maxPts;
+                const pct = maxPts > 0 ? ((pts / maxPts) * 100).toFixed(2) : '100.00';
+                const stichName = detectedContest.stich ? ` · ${detectedContest.stich}` : '';
+
+                const statusHtml = `
+                    <div style="text-align:left; font-size:0.87rem; line-height:1.45;">
+                        <div style="font-weight:700; margin-bottom:4px; color:#166534;">✨ Standblatt erfolgreich ausgewertet:</div>
+                        <div>${shooterMsg}</div>
+                        <div>${contestMsg}</div>
+                        <div>💯 <strong>Punkte & Maximum:</strong> <strong>${pts}</strong> / ${maxPts} Pkt. (${pct}%${stichName})</div>
+                    </div>
+                `;
+                showAiStatus(statusHtml, "success");
                 return;
             }
         }
@@ -502,6 +672,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                     lizenz: user.lizenz || user.id,
                     vorname: user.vorname,
                     nachname: user.nachname,
+                    jahrgang: user.jahrgang || '',
                     fileName: fileName,
                     fileUrl: fileUrl,
                     timestamp: new Date().toISOString()
@@ -522,7 +693,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
     }
 };
 
-window.onload = () => {
+window.onload = async () => {
+    await loadKnownCompetitions();
     loadTeilnehmer();
-    loadKnownCompetitions();
 };

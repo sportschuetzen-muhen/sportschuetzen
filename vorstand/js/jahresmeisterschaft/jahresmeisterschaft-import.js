@@ -740,7 +740,7 @@ async function jmProcessAuswaertigFromImage(base64Data, fileName) {
                 image: base64Data,
                 shooters: shooters,
                 round: "auswaertig",
-                model: "gemini-2.5-flash"
+                model: "gemini-3-flash-preview"
             })
         });
 

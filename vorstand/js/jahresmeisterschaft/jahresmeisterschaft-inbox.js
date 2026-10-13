@@ -138,7 +138,7 @@ function renderJMStandblattInboxTable() {
                 <td class="small text-muted text-nowrap">${dateStr}</td>
                 <td>
                     <div class="fw-bold text-dark">${fullName}</div>
-                    <div class="small text-muted">Lizenz: ${lizenz}</div>
+                    <div class="small text-muted">Lizenz: ${lizenz}${raw.jahrgang ? ` · Jg. ${escapeHtml(raw.jahrgang)}` : ''}</div>
                 </td>
                 <td>
                     <div class="fw-semibold text-primary">${anlass}</div>

@@ -231,6 +231,13 @@ function openResultateOcrModal() {
   if (modalEl) {
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
+
+    // Dynamische Modelle laden falls verfügbar
+    const modelSelect = document.getElementById("ocr-model");
+    const modelDesc = document.getElementById("ocr-model-desc");
+    if (modelSelect && typeof window.initDynamicModels === "function") {
+      window.initDynamicModels(modelSelect, modelDesc, "gemini-3-flash-preview", "resultate");
+    }
   }
 }
 
@@ -264,7 +271,7 @@ async function startOcrAnalysis() {
   if (!_selectedOcrFile) return alert("Bitte zuerst ein Foto auswählen.");
 
   showOcrStep("loading");
-  const model = document.getElementById("ocr-model")?.value || "gemini-2.5-flash";
+  const model = document.getElementById("ocr-model")?.value || "gemini-3-flash-preview";
   const targetRound = document.getElementById("ocr-target-round")?.value || "r1";
   const contestType = window._resultateContestType || "grenzland";
 

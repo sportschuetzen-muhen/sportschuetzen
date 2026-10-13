@@ -363,9 +363,10 @@ function ensureResultateShell(forceRebuild = false) {
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted">KI-Modell & Kapazität</label>
                     <select id="ocr-model" class="form-select">
-                      <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Standard)</option>
-                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (Lite - Schnell)</option>
-                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Beste Erkennungsrate)</option>
+                      <option value="gemini-3-flash-preview" selected>Gemini 3 Flash Preview (Standard)</option>
+                      <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                      <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Schnell)</option>
                     </select>
                   </div>
                 </div>

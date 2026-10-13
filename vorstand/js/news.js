@@ -163,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Dynamische Modelle von Google abrufen (mit Session-Cache)
-        window.initDynamicModels = async function(selectElement, descElement, defaultModel = 'gemini-2.5-flash', module = 'news') {
+        window.initDynamicModels = async function(selectElement, descElement, defaultModel = 'gemini-3-flash-preview', module = 'news') {
             try {
                 let models = window._cachedGeminiModels;
                 if (!models) {
@@ -177,19 +177,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (models && models.length > 0) {
                     const modelInfos = {
-                        'gemini-2.5-flash': 'Hervorragende Qualität, beste Bildanalyse. Ideal für Berichte mit Bildern. (Tageslimit-anfälliger)',
-                        'gemini-2.0-flash-lite': 'Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.',
+                        'gemini-3-flash-preview': 'Modernstes Gemini 3 Modell: Extrem schnell, präzise Bild- & Textanalyse.',
+                        'gemini-3.5-flash': 'Gemini 3.5 Flash: Hohe Stabilität und exzellente Textgenerierung.',
+                        'gemini-3.1-flash-lite': 'Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.',
                         'gemini-2.5-pro': 'Höchste logische Qualität und beste Erkennungsrate, aber langsamer.'
                     };
 
                     const recommendedNames = {
-                        'gemini-2.5-flash': 'Gemini 2.5 Flash (Empfohlen / Standard)',
-                        'gemini-2.0-flash-lite': 'Gemini 2.0 Flash Lite (Lite / Höchste Kapazität)',
+                        'gemini-3-flash-preview': 'Gemini 3 Flash (Empfohlen / Standard)',
+                        'gemini-3.5-flash': 'Gemini 3.5 Flash (Stabilität)',
+                        'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite (Lite / Höchste Kapazität)',
                         'gemini-2.5-pro': 'Gemini 2.5 Pro (Höchste Genauigkeit)'
                     };
 
-                    // Exclude legacy/deprecated models containing 1.5 or 1.0
-                    const activeModels = models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0'));
+                    // Exclude legacy/deprecated models containing 1.5, 1.0 or deprecated 2.5-flash
+                    const activeModels = models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0') && m.name !== 'gemini-2.5-flash');
 
                     // Sortiere Modelle: Moderne/Empfohlene Modelle (Flash/Pro/Lite) zuerst, danach andere
                     const sortedModels = activeModels.sort((a, b) => {

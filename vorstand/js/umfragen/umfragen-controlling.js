@@ -1547,7 +1547,7 @@ async function enhanceGVMailTextWithAI() {
         keywords: promptKeywords,
         images: [],
         useImageContent: false,
-        model: 'gemini-2.5-flash'
+        model: 'gemini-3-flash-preview'
       })
     });
 

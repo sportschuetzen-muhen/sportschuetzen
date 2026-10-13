@@ -56,16 +56,20 @@ Alle drei Fachmodule der Web-App lesen **exklusiv und direkt** aus Supabase Post
    ```
 
 ### 3.2 Neuer Ablauf mit Supabase & Client-seitiger KI (`app/upload.js`)
-1. **KI-Unterstützung im Frontend:**
+1. **KI-Unterstützung im Frontend (3-stufige Validierung):**
    - **PDF:** `pdfjs-dist` extrahiert Textblöcke direkt im Browser, erkennt den Schützen und Schiessname und prognostiziert über `forecastMaxPoints()` Schweizer Standard-Schiesstableaus (60, 80, 100, 120, 150, 200, 300, 600 Pkt).
-   - **Fotos & Smartphone:** Apple HEIC wird via `heic2any` zu JPEG konvertiert. Bei Fotos analysiert die Gemini 2.5 Flash KI via Vorstand-API-Worker das Standblatt und extrahiert Punkte und Anlass.
+   - **Fotos & Smartphone:** Apple HEIC wird via `heic2any` zu JPEG konvertiert. Bei Fotos analysiert die Gemini 3 Vision KI (`action=ocr_standblatt` mit Multi-Modell Fallback `gemini-3-flash-preview` -> `gemini-3.5-flash` -> `gemini-flash-latest` -> `gemini-3.8-flash` -> `gemini-3.1-flash-lite`) via Vorstand-API-Worker das Standblatt.
+   - **3-stufige Validierung & Feedback:**
+     1. *Schütze identifiziert:* Name komplett, SSV-Lizenznummer (auch aus Barcode wie `1018033721`) und Jahrgang (z.B. 1984) abgeglichen mit allen lizenzierten Schützen aus `jm_seasons`.
+     2. *Anlass erkannt:* Fuzzy-Matching gleicht Anlass & Veranstalter (z.B. «43. Stumpenlandschiessen 2026, Menziken-Burg») exakt mit vorhandenen Schiessspalten der aktuellen Jahresmeisterschaft ab (z.B. «Stumpenland-Schiessen Menziken-Burg»).
+     3. *Punkte & Maximum:* Stich (z.B. Gruppenstich), erreichte Punktzahl und Maximum (100 Pkt) werden validiert.
 2. **Speicherung des Standblatts & Beleg-Abruf:**
    - Das komprimierte Bild wird an Cloudflare R2 übermittelt (`worker_github-dropdown-refresh.js`, Route `action=upload_standblatt`).
    - Die Datei kann über `action=get_standblatt&file=...` mit CORS-Headern und Cache-Headern im Frontend als Belegfoto angezeigt werden.
-   - Die Metadaten (Punkte, Maximum, Schütze, Beleg-URL) werden mit Status `pending` in `public.contest_ocr_logs` protokolliert.
+   - Die Metadaten (Punkte, Maximum, Schütze, Beleg-URL, Jahrgang, exakter Anlassname) werden mit Status `pending` in `public.contest_ocr_logs` protokolliert.
 3. **Standblatt-Freigabe-Inbox im Vorstandscockpit (`jahresmeisterschaft-inbox.js`):**
    - Schützenmeister sieht im Header der Jahresmeisterschaft ein Live-Badge `📥 Standblätter (N)`.
-   - Das Inbox-Modal listet alle ausstehenden Einreichungen inklusive Belegfoto-Lightbox.
+   - Das Inbox-Modal listet alle ausstehenden Einreichungen inklusive Belegfoto-Lightbox und Jahrgangsanzeige.
    - **1-Klick-Übernahme:** Resultat wird in `jmRawGrid` eingetragen (Spalte ab 41/42 automatisch zugeordnet oder erstellt), die Jahresmeisterschaft inklusive Rangierung neu berechnet, in `jm_seasons` und `jm_shooters` gespeichert und der Status auf `imported` gesetzt.
 
 ---
