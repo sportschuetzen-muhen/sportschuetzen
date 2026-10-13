@@ -383,14 +383,13 @@ function buildLigaTable(title, grid, startRow, endRow, canWrite, hasStatusCol, s
                 // Auswärtsschiessen (ab Spalte limitIndex / 41 bzw. 42) sind reine Punkteresultate (z. B. 95)
                 const isSingleAuswaertig = (c >= limitIndex);
                 if (isSingleAuswaertig) {
-                    cellContent = `
+                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">
                         <input type="text" class="form-control form-control-sm write-protected text-center" 
                                style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                value="${escapeHtml(val)}" 
                                title="${escapeHtml(grid[2][c] || '')}: ${escapeHtml(val)} Punkte" 
                                onchange="handleCellEdit(${r}, ${c}, this.value, this)">
-                    `;
-                    return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">${cellContent}</td>`;
+                    </td>`;
                 }
 
                 // Prozentwert für die Zelle ermitteln
@@ -1076,7 +1075,7 @@ function buildMatrixLigaTable(title, grid, startRow, endRow, canWrite, hasStatus
                     // Auswärtige Schiessen sind reine Punkteresultate (z. B. 95)
                     return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}">
                         <input type="text" class="form-control form-control-sm write-protected text-center" 
-                               style="width: 100%; ${colCategoryStyle}" ${canWrite ? '' : 'disabled readonly'} 
+                               style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} 
                                value="${escapeHtml(val)}" 
                                title="${escapeHtml(grid[2][c] || '')}: ${escapeHtml(val)} Punkte" 
                                onchange="handleCellEdit(${r}, ${c}, this.value, this)">

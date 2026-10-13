@@ -129,6 +129,7 @@ Vor der vollständigen Entkopplung in Phase 21.1 waren die Tabellen `jm_seasons`
 - **Deaktivierung von Drag & Drop unter dem Jahr:** Manuelles Verschieben von Schützen via Drag & Drop wurde deaktiviert. Dadurch wird verhindert, dass durch fehlerhaftes Spleissen Schützen in die Pufferzeilen 13 & 14 verschoben werden und verschwinden. Die Rangierung während der Saison erfolgt ausschliesslich dynamisch anhand der Total-Prozente.
 - **Geführter Saisonwechsel («Neues Jahr starten»):** Führt vor dem Nullen eine Schützen-Ranglistenanalyse durch und transferiert die Schützen regelkonform (Liga 1: 6 Verbleibende + 2 Aufsteiger; Liga 2: 2 Absteiger + Verbleibende), bevor die Resultate genullt und in `current` persistiert werden. Liga 1 umfasst dadurch immer exakt 8 Schützen.
 - **Auf- & Absteiger-Badges beim Archivieren (`createArchivedGridWithStatus`):** Beim Erstellen eines Archiv-Snapshots wird automatisch eine Status-Spalte (Index 6) mit den Badges `▲ Aufstieg` (Top 2 Liga 2) und `▼ Abstieg` (Letzte 2 Liga 1) eingefügt, exakt wie in den historischen Snapshots (`2023`, `2025`).
+- **Behebung TDZ-Ladefehler (`cellContent` & `colCategoryStyle`):** In `buildLigaTable` und `buildMatrixLigaTable` (`jahresmeisterschaft-ui.js`) wurden Zugriffe auf `cellContent` und `colCategoryStyle` vor ihrer jeweiligen Deklaration bereinigt (Temporal Dead Zone), wodurch das Rendern der Jahresmeisterschaftstabellen beim Laden aus Supabase wieder fehlerfrei erfolgt.
 
 
 
