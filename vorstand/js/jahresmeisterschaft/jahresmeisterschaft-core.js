@@ -249,7 +249,7 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
     try {
         const maxPercent = (typeof recalculateJMRawGrid === 'function')
             ? recalculateJMRawGrid(grid)
-            : 1000;
+            : 900;
 
         const compRow = grid[2] || [];
         const headerRow = grid[4] || [];

@@ -59,11 +59,12 @@ graph TD
 
 Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeisterschaft-ui.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-ui.js) und [`jahresmeisterschaft-core.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/jahresmeisterschaft/jahresmeisterschaft-core.js).
 
-### 3.1 Tabellenaufbau & Ligen-Integrität
+### 3.1 Tabellenaufbau, Maximum & Ligen-Integrität
 * **Liga 1:** Zeilen 5–12 im 2D-Grid (immer exakt 8 Schützen).
 * **Pufferzeilen:** Zeilen 13 und 14 dienen als Trennung und sind schreibgeschützt.
 * **Liga 2:** Zeile 15 bis Tabellenende (variable Anzahl Schützen).
-* **Rangierung:** Schützen werden nach `total_pct` absteigend sortiert. Manuelles Drag & Drop unter dem Jahr ist deaktiviert, um versehentliches Verschieben in Pufferzeilen zu verhindern. Vor der Synchronisation nach `public.jm_shooters` werden Liga 1 und Liga 2 in `syncJMShootersToSupabase()` strikt nach Gesamttotal sortiert und die Ränge dynamisch neu vergeben (`1..8` in Liga 1, `1..n` in Liga 2). Spalte 0 (`colRang`) im 2D-Grid wird in `recalculateJMRawGrid()` synchron nachgeführt.
+* **Dynamisches Maximum (%):** Das theoretische Maximum berücksichtigt das Streichresultat (-100 %) und berechnet sich dynamisch als `(activeCount > 1 ? (activeCount - 1) : activeCount) * 100 %` (bei 10 aktiven Wettkämpfen somit exakt 900 %).
+* **Rangierung:** Schützen werden in Vorstand, PWA (`app_jm.html`) und Website (`resultate.js`) strikt nach `total` absteigend sortiert und die Ränge dynamisch neu vergeben (`1..8` in Liga 1, `1..n` in Liga 2). Spalte 0 (`colRang`) im 2D-Grid wird in `recalculateJMRawGrid()` synchron nachgeführt.
 
 ### 3.2 SMM Runden (1–7) & Top 4 Wertung
 * Die 7 Einzelrunden der Schweizerischen Mannschaftsmeisterschaft (SMM) liegen in den Spalten 33–39 (bzw. 34–40 bei vorhandener Statusspalte).
@@ -81,6 +82,7 @@ Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeister
 ### 3.5 Junioren-Wertung (U21)
 * Berechnet dynamisch ein virtuelles Total für Nachwuchsschützen im Tab *Junioren-Wertung*.
 * Die Schalterleiste im Tab liest alle Wettkämpfe dynamisch aus Zeile 3 (`grid[2]`) aus. Deaktivierte Wettkämpfe werden aus dem Gesamttotal des Juniors abgezogen. Einzig der Mannschaftsblock (Top 4) ist als feste Einheit verdrahtet.
+* **Website & PWA:** Sowohl in der PWA ([`app_jm.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/app_jm.html)) als auch auf der Website ([`resultate.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/resultate.html)) werden Junioren (U21) in einer dedizierten Rangliste mit Einzelresultat-Akkordeon nach Total absteigend ausgewiesen.
 
 ### 3.6 Ansichtsmodi & Gesamt-Matrix
 * **Wertungs-Ansichtsmodus:** Toolbar-Umschalter für `Punkte`, `Prozent (%)` oder `Punkte & %` (Kombiansicht mit Badges).

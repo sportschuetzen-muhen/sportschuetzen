@@ -190,7 +190,7 @@ function recalculateJMRawGrid(grid) {
         }
     }
 
-    const maxPercent = activeCount * 100;
+    const maxPercent = activeCount > 1 ? (activeCount - 1) * 100 : activeCount * 100;
     grid[3][colTotal] = `MAX. = ${maxPercent} %`;
 
     for (let r = 5; r < grid.length; r++) {
@@ -425,7 +425,18 @@ function buildShootersList(jahr, grid, maxPercent) {
         });
     }
 
-    return shooters;
+    const l1 = shooters.filter(s => s.liga === 1).sort((a, b) => b.total - a.total);
+    l1.forEach((s, idx) => {
+        s.rang = idx + 1;
+        s.status = (s.rang >= 7) ? 'abstieg' : 'neutral';
+    });
+    const l2 = shooters.filter(s => s.liga === 2).sort((a, b) => b.total - a.total);
+    l2.forEach((s, idx) => {
+        s.rang = idx + 1;
+        s.status = (s.rang <= 2) ? 'aufstieg' : 'neutral';
+    });
+
+    return [...l1, ...l2];
 }
 
 async function processSeason(jahr) {

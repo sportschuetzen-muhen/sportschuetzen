@@ -180,6 +180,8 @@ function loadAllData(selectedYear) {
     const spinners = `<tr class="no-hover"><td colspan="8"><div class="results-loading"><div class="spinner"></div>Daten werden geladen...</div></td></tr>`;
     document.getElementById('tbody-liga1').innerHTML = spinners;
     document.getElementById('tbody-liga2').innerHTML = spinners;
+    const u21Spin = document.getElementById('tbody-u21');
+    if (u21Spin) u21Spin.innerHTML = spinners;
     document.getElementById('tbody-gm').innerHTML = spinners;
     document.getElementById('tbody-gc').innerHTML = spinners;
     document.getElementById('tbody-mannschaft').innerHTML = spinners;
@@ -213,9 +215,11 @@ async function loadJahresmeisterschaft(yearParam) {
         (data) => {
             let liga1 = [];
             let liga2 = [];
+            let junioren = [];
             if (data && (data.liga1 || data.liga2)) {
                 liga1 = data.liga1 || [];
                 liga2 = data.liga2 || [];
+                junioren = data.junioren || [];
             } else if (Array.isArray(data)) {
                 const parsedList = data.map(s => ({
                     ...s,
@@ -223,19 +227,30 @@ async function loadJahresmeisterschaft(yearParam) {
                     mannschaft: s.details?.mannschaft || [],
                     auswaerts: s.details?.auswaerts || []
                 }));
-                liga1 = parsedList.filter(s => Number(s.liga) === 1);
-                liga2 = parsedList.filter(s => Number(s.liga) === 2);
-                liga1.sort((a, b) => (Number(a.rang) || 999) - (Number(b.rang) || 999));
-                liga2.sort((a, b) => (Number(a.rang) || 999) - (Number(b.rang) || 999));
+                liga1 = parsedList
+                    .filter(s => Number(s.liga) === 1)
+                    .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
+                    .map((s, idx) => ({ ...s, rang: idx + 1, status: idx >= 6 ? 'abstieg' : 'neutral' }));
+
+                liga2 = parsedList
+                    .filter(s => Number(s.liga) === 2)
+                    .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
+                    .map((s, idx) => ({ ...s, rang: idx + 1, status: idx < 2 ? 'aufstieg' : 'neutral' }));
+
+                junioren = parsedList
+                    .filter(s => s.is_junior)
+                    .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
+                    .map((s, idx) => ({ ...s, rang: idx + 1, status: 'neutral' }));
             }
             const allShooters = [...liga1, ...liga2];
-            const maxPercent = allShooters[0]?.details?.max_total_prz || 1000;
+            const maxPercent = allShooters[0]?.details?.max_total_prz || 900;
 
             renderLiga(1, liga1, 'tbody-liga1', fmt, arr);
             renderLiga(2, liga2, 'tbody-liga2', fmt, arr);
+            renderLiga("u21", junioren, 'tbody-u21', fmt, arr);
 
             // Spaltenkopf mit dynamischem Maximum aktualisieren
-            document.querySelectorAll('#table-liga1 .col-total, #table-liga2 .col-total').forEach(el => {
+            document.querySelectorAll('#table-liga1 .col-total, #table-liga2 .col-total, #table-u21 .col-total').forEach(el => {
                 if (el.tagName.toLowerCase() === 'th') {
                     el.innerHTML = `Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. ${maxPercent}%)</span>`;
                 }
@@ -246,6 +261,8 @@ async function loadJahresmeisterschaft(yearParam) {
             const errorRow = `<tr><td colspan="3"><div class="results-error-msg">Jahresmeisterschaft konnte nicht geladen werden.</div></td></tr>`;
             document.getElementById('tbody-liga1').innerHTML = errorRow;
             document.getElementById('tbody-liga2').innerHTML = errorRow;
+            const u21Tbody = document.getElementById('tbody-u21');
+            if (u21Tbody) u21Tbody.innerHTML = errorRow;
         }
     );
 }

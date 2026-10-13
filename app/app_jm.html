@@ -167,7 +167,7 @@
         <table><thead><tr>
         <th class="col-rang">Rang</th>
         <th class="col-name">Name</th>
-        <th class="col-total">Total <span class="max-hint" title="Maximal erreichbar">(max. ${maxPercent || 1000}%)</span></th>
+        <th class="col-total">Total <span class="max-hint" title="Maximal erreichbar">(max. ${maxPercent || 900}%)</span></th>
         </tr></thead><tbody>`;
 
         arr(data).forEach((t, i)=>{
@@ -221,11 +221,22 @@
                 auswaerts: s.details?.auswaerts || []
             }));
 
-            const liga1 = parsedList.filter(s => Number(s.liga) === 1);
-            const liga2 = parsedList.filter(s => Number(s.liga) === 2);
-            const junioren = parsedList.filter(s => s.is_junior).sort((a,b) => b.total - a.total).map((s, i) => ({ ...s, rang: i + 1 }));
+            const liga1 = parsedList
+                .filter(s => Number(s.liga) === 1)
+                .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
+                .map((s, i) => ({ ...s, rang: i + 1 }));
 
-            const maxPercent = shooters[0]?.details?.max_total_prz || 1000;
+            const liga2 = parsedList
+                .filter(s => Number(s.liga) === 2)
+                .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
+                .map((s, i) => ({ ...s, rang: i + 1 }));
+
+            const junioren = parsedList
+                .filter(s => s.is_junior)
+                .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
+                .map((s, i) => ({ ...s, rang: i + 1 }));
+
+            const maxPercent = shooters[0]?.details?.max_total_prz || 900;
 
             document.getElementById("content").innerHTML = 
                 renderLiga(1, liga1, maxPercent) + 

@@ -1704,7 +1704,8 @@ function recalculateJMRawGrid(grid) {
         }
     }
 
-    const maxPercent = activeCount * 100;
+    // Streichresultat-Bereinigung: Bei mehr als einem Wettkampf wird 1 Streichresultat (-100%) abgezogen
+    const maxPercent = activeCount > 1 ? (activeCount - 1) * 100 : activeCount * 100;
     // Row 3 Total Max anpassen
     grid[3][colTotal] = `MAX. = ${maxPercent} %`;
 
