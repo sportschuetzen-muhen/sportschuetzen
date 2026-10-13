@@ -210,3 +210,5 @@ CREATE TABLE public.documents (
    Kontakt- und Buchungsformulare kommunizieren ausschliesslich über Supabase REST und die Edge Function `send-email` mit Empfänger-Steuerung via `system_mail_configs`.
 4. **Keine Google-Sheets-Fallbacks:**  
    Die Website fragt Daten direkt via Supabase REST (`/rest/v1/...`) oder den Cloudflare Worker ab.
+5. **Entkoppelte Skript-Scopes & Resultate-Dashboard (`resultate.js`):**  
+   Modulspezifische Frontend-Skripte werden in IIFEs gekapselt, um globale Namensraum-Kollisionen mit `main.js` auszuschliessen. `resultate.html` bindet ausschliesslich die benötigten Komponenten (`components.js`, `auth-session.js`, `resultate.js`) ein und lädt Schützendaten (`jm_shooters`) performant und rangiert direkt aus Supabase.

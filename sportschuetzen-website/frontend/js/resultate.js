@@ -1,14 +1,17 @@
-document.addEventListener("DOMContentLoaded", () => {
-    initDashboard();
-});
+(() => {
+    'use strict';
 
-// Global state to store raw results for detailed lookups
-let rawGM = [];
-let rawGC = [];
-let rawMannschaft = [];
+    document.addEventListener("DOMContentLoaded", () => {
+        initDashboard();
+    });
 
-const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
+    // Global state to store raw results for detailed lookups
+    let rawGM = [];
+    let rawGC = [];
+    let rawMannschaft = [];
+
+    const SUPABASE_REST_URL = window.SUPABASE_REST_URL || "https://supabase-muhen.danfamily.uk/rest/v1";
+    const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
 // === SWR CACHING HELPER ===
 // Zeigt gecachte Daten sofort an (keine Ladezeit!) und aktualisiert im Hintergrund
@@ -198,6 +201,8 @@ async function loadJahresmeisterschaft(yearParam) {
                 }));
                 liga1 = parsedList.filter(s => Number(s.liga) === 1);
                 liga2 = parsedList.filter(s => Number(s.liga) === 2);
+                liga1.sort((a, b) => (Number(a.rang) || 999) - (Number(b.rang) || 999));
+                liga2.sort((a, b) => (Number(a.rang) || 999) - (Number(b.rang) || 999));
             }
             const allShooters = [...liga1, ...liga2];
             const maxPercent = allShooters[0]?.details?.max_total_prz || 1000;
@@ -237,10 +242,10 @@ function renderLiga(ligaNr, listData, tbodyId, fmt, arr) {
         let rowClass = "clickable-row";
         let statusLabel = "";
         
-        if (ligaNr === 1 && i >= listData.length - 2) {
+        if (t.status === 'abstieg' || (ligaNr === 1 && i >= listData.length - 2)) {
             rowClass += " down-status";
             statusLabel = '<span class="status-lbl down">Abstieg</span>';
-        } else if (ligaNr === 2 && i < 2) {
+        } else if (t.status === 'aufstieg' || (ligaNr === 2 && i < 2)) {
             rowClass += " up-status";
             statusLabel = '<span class="status-lbl up">Aufstieg</span>';
         }
@@ -785,3 +790,5 @@ function getTrend(curr, prev) {
     if (curr < prev) return '<span class="trend-ind down" title="Verschlechterung gegenüber Vorrunde">▼</span>';
     return '<span class="trend-ind steady" title="Konstante Leistung">▶</span>';
 }
+
+})();
