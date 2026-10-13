@@ -58,6 +58,14 @@ async function loadResultateData(force = false) {
         }));
 
         resultateState.rows = supaRows.map(r => mapContestResultFromSupabase(r));
+        if (contestType === 'gruppe') {
+          resultateState.rows.sort((a, b) => {
+            const stA = (a.stellung || 'liegend').toLowerCase();
+            const stB = (b.stellung || 'liegend').toLowerCase();
+            if (stA !== stB) return stA === 'liegend' ? -1 : 1;
+            return (a.name || '').localeCompare(b.name || '', 'de');
+          });
+        }
         resultateState.teams = buildTeamsList(supaTeams, resultateState.rows);
         resultateState.isDirty = false;
         window._resultateOriginalRows = JSON.parse(JSON.stringify(resultateState.rows));
@@ -444,6 +452,9 @@ function injectStylesOnce() {
       border: 1px solid #e1e7ed;
       border-radius: 0.5rem;
     }
+    .team-card-body {
+      overflow-x: auto;
+    }
     .team-badge {
       font-size: 0.8rem;
     }
@@ -453,15 +464,54 @@ function injectStylesOnce() {
       gap: 6px;
       align-items: center;
     }
+    .rowline-header {
+      display: grid;
+      grid-template-columns: minmax(130px, 1fr) 115px 85px;
+      gap: 6px;
+      align-items: center;
+      font-size: 0.72rem;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      color: #6c757d;
+      font-weight: 700;
+      padding-bottom: 4px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #e9ecef;
+    }
     .rowline-gruppe {
       display: grid;
-      grid-template-columns: minmax(130px, 1.2fr) 95px 105px 65px 65px 45px;
-      gap: 5px;
+      grid-template-columns: minmax(130px, 1.4fr) 72px 100px 52px 52px 48px;
+      gap: 6px;
       align-items: center;
+      min-width: 460px;
+    }
+    .rowline-gruppe-header {
+      display: grid;
+      grid-template-columns: minmax(130px, 1.4fr) 72px 100px 52px 52px 48px;
+      gap: 6px;
+      align-items: center;
+      font-size: 0.72rem;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      color: #6c757d;
+      font-weight: 700;
+      padding-bottom: 4px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #e9ecef;
+      min-width: 460px;
+    }
+    .stellung-pill {
+      font-size: 0.75rem;
+      padding: 0.22rem 0.4rem;
+      font-weight: 600;
+      text-align: center;
+      display: block;
+      border-radius: 4px;
     }
     .points-input {
       text-align: right;
       font-weight: 600;
+      padding: 0.25rem 0.35rem;
     }
     .matrix-input {
       max-width: 70px;
@@ -607,7 +657,21 @@ function renderMatrixView(wrap) {
   }
 
   let rowsHtml = "";
-  resultateState.rows.forEach((row, rowIndex) => {
+  const sortedMatrixRows = resultateState.rows.map((row, rowIndex) => ({ row, rowIndex }));
+  if (contestType === "gruppe") {
+    sortedMatrixRows.sort((a, b) => {
+      const stA = (a.row.stellung || 'liegend').toLowerCase();
+      const stB = (b.row.stellung || 'liegend').toLowerCase();
+      if (stA !== stB) {
+        return stA === 'liegend' ? -1 : 1;
+      }
+      return (a.row.name || '').localeCompare(b.row.name || '', 'de');
+    });
+  } else {
+    sortedMatrixRows.sort((a, b) => (a.row.name || '').localeCompare(b.row.name || '', 'de'));
+  }
+
+  sortedMatrixRows.forEach(({ row, rowIndex }) => {
     let roundsCells = "";
     let shooterTotal = 0;
 
@@ -714,24 +778,74 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
     const count = list.length;
     const isPool = (teamName === POOL_LABEL);
 
+    // Sortierung innerhalb des Teams: Zuerst Liegend, dann Kniend
+    if (contestType === "gruppe") {
+      list.sort((a, b) => {
+        const stA = (a.r.stellung || 'liegend').toLowerCase();
+        const stB = (b.r.stellung || 'liegend').toLowerCase();
+        if (stA !== stB) {
+          return stA === 'liegend' ? -1 : 1;
+        }
+        return (a.r.name || '').localeCompare(b.r.name || '', 'de');
+      });
+    } else {
+      list.sort((a, b) => (a.r.name || '').localeCompare(b.r.name || '', 'de'));
+    }
+
+    // Runden-Summe für das Team berechnen
+    let teamTotal = 0;
+    list.forEach(({ r }) => {
+      const p1 = parseInt(r[`${roundKey}_p1`] || "0", 10) || 0;
+      const p2 = (contestType === "gruppe") ? (parseInt(r[`${roundKey}_p2`] || "0", 10) || 0) : 0;
+      teamTotal += (p1 + p2);
+    });
+
+    const safeTeamId = escapeHtml(teamName).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const totalBadge = (!isPool && teamTotal > 0)
+      ? `<span id="team-total-${roundKey}-${safeTeamId}" class="badge bg-success-subtle text-success border fw-bold me-2">${teamTotal} Pkt</span>`
+      : '';
+
     const header = `
-      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
-        <span class="fw-bold">${escapeHtml(teamName)}</span>
+      <div class="card-header bg-white d-flex justify-content-between align-items-center py-2 px-3">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-bold">${escapeHtml(teamName)}</span>
+          ${totalBadge}
+        </div>
         <span class="badge ${isPool ? "bg-secondary" : (count > limit ? "bg-danger" : "bg-primary")} team-badge">
           ${count}${isPool ? "" : "/" + limit}
         </span>
       </div>
     `;
 
+    const tableHeader = (list.length > 0)
+      ? (contestType === "gruppe"
+          ? `<div class="rowline-gruppe-header">
+               <span>Schütze</span>
+               <span class="text-center">Stellung</span>
+               <span>Team</span>
+               <span class="text-end pe-1">P1</span>
+               <span class="text-end pe-1">P2</span>
+               <span class="text-center">Total</span>
+             </div>`
+          : `<div class="rowline-header">
+               <span>Schütze</span>
+               <span>Team</span>
+               <span class="text-end pe-1">Punkte</span>
+             </div>`)
+      : '';
+
     const body = list.length
-      ? list.map(({r, idx}) => renderShooterLine(idx, roundKey, teamsPlusPool)).join("")
-      : `<div class="text-muted small p-2 text-center">— Keine Schützen zugeteilt —</div>`;
+      ? `${tableHeader}${list.map(({r, idx}) => renderShooterLine(idx, roundKey, teamsPlusPool)).join("")}`
+      : `<div class="text-muted small p-3 text-center">— Keine Schützen zugeteilt —</div>`;
+
+    // Bei Gruppe: 2 breite Spalten (col-12 col-lg-6), bei mannschaft/grenzland: 3 Spalten (col-12 col-md-6 col-xl-4)
+    const colClass = (contestType === "gruppe") ? "col-12 col-lg-6" : "col-12 col-md-6 col-xl-4";
 
     return `
-      <div class="col-12 col-md-6 col-xl-4">
+      <div class="${colClass}">
         <div class="card team-card h-100 shadow-sm border">
           ${header}
-          <div class="card-body p-2.5">
+          <div class="card-body p-2.5 team-card-body">
             ${body}
           </div>
         </div>
@@ -771,8 +885,8 @@ function renderShooterLine(rowIndex, roundKey, teamsPlusPool) {
 
   if (contestType === "gruppe") {
     const stellungBadge = r.stellung === 'kniend'
-      ? '<span class="badge bg-warning text-dark border">Kniend</span>'
-      : '<span class="badge bg-info text-dark border">Liegend</span>';
+      ? '<span class="badge bg-warning text-dark border stellung-pill">Kniend</span>'
+      : '<span class="badge bg-info text-dark border stellung-pill">Liegend</span>';
 
     const p1 = parseInt(r[p1Field] || "0", 10) || 0;
     const p2 = parseInt(r[p2Field] || "0", 10) || 0;
@@ -807,7 +921,7 @@ function renderShooterLine(rowIndex, roundKey, teamsPlusPool) {
                ${canWrite ? '' : 'disabled readonly'}
                value="${escapeHtml(r[p2Field] ?? "")}"
                oninput="onPointsInputEvent(event)">
-        <span id="sum-${roundKey}-${rowIndex}" class="badge bg-dark fw-bold">${sumText}</span>
+        <span id="sum-${roundKey}-${rowIndex}" class="badge bg-dark fw-bold text-center d-flex align-items-center justify-content-center" style="height: 31px;">${sumText}</span>
       </div>
     `;
   }

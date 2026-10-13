@@ -414,6 +414,12 @@ async function loadGruppeGrenzland(yearParam) {
                 r3P1: r.r3_p1 || 0,
                 r3P2: r.r3_p2 || 0
             }));
+            rawGM.sort((a, b) => {
+                const stA = (a.stellung || 'liegend').toLowerCase();
+                const stB = (b.stellung || 'liegend').toLowerCase();
+                if (stA !== stB) return stA === 'liegend' ? -1 : 1;
+                return (a.name || '').localeCompare(b.name || '', 'de');
+            });
             buildGroupTable("gm", rawGM, "tbody-gm");
         },
         (err) => {
@@ -515,6 +521,17 @@ window.toggleGroupDetail = (type, team, round, tIdx) => {
     const data = type === "gm" ? rawGM : rawGC;
     const teamRows = data.filter(p => p[`r${round}Team`] === team);
     if (teamRows.length === 0) return;
+
+    if (type === "gm") {
+        teamRows.sort((a, b) => {
+            const stA = (a.stellung || 'liegend').toLowerCase();
+            const stB = (b.stellung || 'liegend').toLowerCase();
+            if (stA !== stB) {
+                return stA === 'liegend' ? -1 : 1;
+            }
+            return (a.name || '').localeCompare(b.name || '', 'de');
+        });
+    }
 
     let html = `
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--glass-border); padding-bottom: 0.5rem; margin-bottom: 1rem;">

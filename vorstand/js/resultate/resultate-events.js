@@ -37,6 +37,24 @@ function onPointsInputEvent(e) {
       sumEl.innerText = (p1 + p2 > 0) ? String(p1 + p2) : "–";
     }
   }
+
+  // Live-Aktualisierung des Team-Rundentotals im Header
+  const curTeam = (r[`${roundKey}_team`] || "").trim();
+  if (curTeam && curTeam !== POOL_LABEL) {
+    const safeTeamId = curTeam.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const teamTotalEl = document.getElementById(`team-total-${roundKey}-${safeTeamId}`);
+    if (teamTotalEl) {
+      let tSum = 0;
+      resultateState.rows.forEach(row => {
+        if ((row[`${roundKey}_team`] || "").trim() === curTeam) {
+          const p1 = parseInt(row[`${roundKey}_p1`] || "0", 10) || 0;
+          const p2 = (contestType === "gruppe") ? (parseInt(row[`${roundKey}_p2`] || "0", 10) || 0) : 0;
+          tSum += (p1 + p2);
+        }
+      });
+      teamTotalEl.innerText = `${tSum} Pkt`;
+    }
+  }
 }
 
 function onTeamChangeEvent(e) {
