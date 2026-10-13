@@ -65,6 +65,61 @@ function loadTeilnehmer() {
 }
 
 /* ---------------------------------------------
+   BEKANNTE ANLÄSSE AUS SUPABASE LADEN & AUTO-FILL
+--------------------------------------------- */
+let _knownCompetitions = [];
+
+async function loadKnownCompetitions() {
+    try {
+        const res = await fetch(`${SUPABASE_REST_URL}/jm_seasons?jahr=eq.current&select=raw_grid`, {
+            headers: {
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0 || !data[0].raw_grid) return;
+
+        const grid = data[0].raw_grid;
+        const titles = grid[2] || [];
+        const maxPts = grid[3] || [];
+        const datalist = document.getElementById("anlaesse-list");
+
+        _knownCompetitions = [];
+
+        for (let c = 2; c < titles.length; c++) {
+            const title = String(titles[c] || '').trim();
+            if (!title || title.toLowerCase().startsWith('spalte') || title.toLowerCase() === 'leer') continue;
+            const maxVal = parseFloat(maxPts[c]) || 100;
+            _knownCompetitions.push({ title, max: maxVal });
+
+            if (datalist) {
+                const opt = document.createElement("option");
+                opt.value = title;
+                opt.label = `Max. ${maxVal} Pkt`;
+                datalist.appendChild(opt);
+            }
+        }
+
+        const anlassInput = document.getElementById("anlass");
+        if (anlassInput) {
+            anlassInput.addEventListener("input", () => {
+                const val = anlassInput.value.trim().toLowerCase();
+                const match = _knownCompetitions.find(k => k.title.toLowerCase() === val);
+                if (match) {
+                    const maxEl = document.getElementById("maximal");
+                    if (maxEl && !maxEl.value) {
+                        maxEl.value = match.max;
+                    }
+                }
+            });
+        }
+    } catch (err) {
+        console.warn("Konnte bekannte Anlässe nicht vorladen:", err);
+    }
+}
+
+/* ---------------------------------------------
    BILD-KOMPRESSION (Canvas zu JPEG Data-URL)
 --------------------------------------------- */
 async function compressImage(fileOrBlob, maxWidth = 1800, quality = 0.85) {
@@ -148,21 +203,39 @@ async function processPdfStandblatt(file, user) {
         fullText += pageText + "\n";
     }
 
-    // Titel erkennen
+    // Titel & bekannten Anlass erkennen
     const lines = fullText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
     let detectedTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-    for (let i = 0; i < Math.min(10, lines.length); i++) {
-        const l = lines[i];
-        if (/(?:schiessen|stich|cup|fest|verband|verein|bärenmoos|freischiessen|sektion|gruppe)/i.test(l)) {
-            detectedTitle = l;
-            break;
+    let matchedKnownComp = null;
+
+    // Zuerst gegen bekannte Anlässe der Jahresmeisterschaft matchen
+    if (Array.isArray(_knownCompetitions) && _knownCompetitions.length > 0) {
+        for (const comp of _knownCompetitions) {
+            const cleanTitle = comp.title.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+            const cleanText = fullText.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+            if (cleanTitle.length >= 5 && cleanText.includes(cleanTitle)) {
+                detectedTitle = comp.title;
+                matchedKnownComp = comp;
+                break;
+            }
         }
     }
 
-    // Nach Benutzer suchen
+    if (!matchedKnownComp) {
+        for (let i = 0; i < Math.min(10, lines.length); i++) {
+            const l = lines[i];
+            if (/(?:schiessen|stich|cup|fest|verband|verein|bärenmoos|freischiessen|sektion|gruppe)/i.test(l)) {
+                detectedTitle = l;
+                break;
+            }
+        }
+    }
+
+    // Nach Benutzer & Schützen-Identität suchen (Name, Lizenz, Jahrgang)
     const uNachname = (user.nachname || '').trim();
     const uVorname = (user.vorname || '').trim();
     const uLizenz = user.lizenz ? String(user.lizenz).padStart(6, '0') : '';
+    const uJahrgang = user.jahrgang ? String(user.jahrgang).trim() : '';
 
     let matchedLine = null;
     let foundPoints = null;
@@ -171,8 +244,9 @@ async function processPdfStandblatt(file, user) {
         const nachnameMatches = uNachname && new RegExp('\\b' + uNachname + '\\b', 'i').test(line);
         const vornameMatches = uVorname && new RegExp('\\b' + uVorname + '\\b', 'i').test(line);
         const lizenzMatches = uLizenz && uLizenz !== '000000' && line.includes(uLizenz);
+        const jahrgangMatches = uJahrgang && (line.includes(uJahrgang) || (uJahrgang.length === 4 && line.includes(uJahrgang.slice(2))));
 
-        if ((nachnameMatches && vornameMatches) || lizenzMatches) {
+        if ((nachnameMatches && vornameMatches) || lizenzMatches || (nachnameMatches && jahrgangMatches)) {
             matchedLine = line;
             const nums = line.match(/\b(100|[4-9][0-9]|1[0-9]{2}|200|5[0-9]{2}|600)\b/g);
             if (nums && nums.length > 0) {
@@ -191,7 +265,8 @@ async function processPdfStandblatt(file, user) {
     }
 
     if (foundPoints !== null) {
-        const { max, reason } = forecastMaxPoints(fullText, foundPoints);
+        const defaultMax = matchedKnownComp ? matchedKnownComp.max : null;
+        const { max, reason } = defaultMax ? { max: defaultMax, reason: "Aus Tabelle bekannte Maximalpunktzahl" } : forecastMaxPoints(fullText, foundPoints);
         document.getElementById("erzielt").value = foundPoints;
         document.getElementById("maximal").value = max;
         showAiStatus(`✨ <strong>${foundPoints} Punkte</strong> (Max. ${max}, ${reason}) in der PDF-Rangliste gefunden! Bitte kurz prüfen.`, "success");
@@ -394,12 +469,16 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
         }
 
         let fileName = null;
+        let fileUrl = null;
         try {
             const resData = await res.json();
             fileName = resData.fileName;
+            fileUrl = resData.fileUrl || (fileName ? `${WORKER_UPLOAD_URL}?action=get_standblatt&file=${encodeURIComponent(fileName)}` : null);
         } catch (_) {}
 
-        const fileUrl = fileName ? `${WORKER_UPLOAD_URL}?action=get_standblatt&file=${encodeURIComponent(fileName)}` : null;
+        if (!fileUrl && fileName) {
+            fileUrl = `${WORKER_UPLOAD_URL}?action=get_standblatt&file=${encodeURIComponent(fileName)}`;
+        }
 
         // 2. Supabase Audit-Log & Inbox (in contest_ocr_logs protokollieren mit Status 'pending')
         await fetch(`${SUPABASE_REST_URL}/contest_ocr_logs`, {
@@ -443,4 +522,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
     }
 };
 
-window.onload = loadTeilnehmer;
+window.onload = () => {
+    loadTeilnehmer();
+    loadKnownCompetitions();
+};

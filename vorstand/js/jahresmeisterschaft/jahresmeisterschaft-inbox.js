@@ -2,6 +2,7 @@
 // Ermöglicht dem Schützenmeister die Prüfung und 1-Klick-Übernahme von via PWA eingereichten Standblättern
 
 let _jmPendingStandblaetter = [];
+let _jmArchivedStandblaetter = [];
 let _jmInboxActive = false;
 
 /**
@@ -20,9 +21,15 @@ async function loadPendingStandblaetter(silent = false) {
 
         if (error) throw error;
 
-        _jmPendingStandblaetter = (Array.isArray(data) ? data : []).filter(item => {
+        const allItems = Array.isArray(data) ? data : [];
+        _jmPendingStandblaetter = allItems.filter(item => {
             const resp = item.raw_response || {};
             return resp.status !== 'imported' && resp.status !== 'rejected';
+        });
+
+        _jmArchivedStandblaetter = allItems.filter(item => {
+            const resp = item.raw_response || {};
+            return resp.status === 'imported' || resp.status === 'rejected';
         });
 
         updateJMInboxBadge(_jmPendingStandblaetter.length);
@@ -35,18 +42,23 @@ async function loadPendingStandblaetter(silent = false) {
 window.loadPendingStandblaetter = loadPendingStandblaetter;
 
 /**
- * Aktualisiert das Benachrichtigungs-Badge im Header
+ * Aktualisiert die Benachrichtigungs-Badges synchron (Header, Sidebar & Dashboard-Kachel)
  */
 function updateJMInboxBadge(count) {
     const badge = document.getElementById('jm-inbox-badge');
-    if (!badge) return;
+    const navBadge = document.getElementById('jm-nav-badge');
+    const tileBadge = document.getElementById('jm-tile-badge');
+    const tabBadge = document.getElementById('jm-tab-badge-pending');
 
-    if (count > 0) {
-        badge.innerText = count;
-        badge.classList.remove('d-none');
-    } else {
-        badge.classList.add('d-none');
-    }
+    [badge, navBadge, tileBadge, tabBadge].forEach(el => {
+        if (!el) return;
+        if (count > 0) {
+            el.innerText = count;
+            el.classList.remove('d-none');
+        } else {
+            el.classList.add('d-none');
+        }
+    });
 }
 window.updateJMInboxBadge = updateJMInboxBadge;
 
@@ -151,6 +163,105 @@ function renderJMStandblattInboxTable() {
     }).join('');
 }
 
+let _jmCurrentInboxTab = 'pending';
+
+/**
+ * Wechselt zwischen 'pending' (Ausstehend) und 'archive' (Archiv/Historie)
+ */
+function switchJMInboxTab(tab) {
+    _jmCurrentInboxTab = tab;
+    if (tab === 'archive') {
+        renderJMStandblattArchiveTable();
+    } else {
+        renderJMStandblattInboxTable();
+    }
+}
+window.switchJMInboxTab = switchJMInboxTab;
+
+/**
+ * Rendert die historische Archiv-Tabelle (übernommene & abgelehnte Standblätter)
+ */
+function renderJMStandblattArchiveTable() {
+    const body = document.getElementById('jm-archive-table-body');
+    const emptyAlert = document.getElementById('jm-archive-empty-alert');
+    const tableCard = document.getElementById('jm-archive-table-card');
+    const countInfo = document.getElementById('jm-archive-count-info');
+    const yearSelect = document.getElementById('jm-archive-year-select');
+    if (!body) return;
+
+    const selectedYear = yearSelect ? yearSelect.value : 'all';
+    const items = (_jmArchivedStandblaetter || []).filter(item => {
+        if (selectedYear === 'all') return true;
+        const d = item.created_at ? new Date(item.created_at) : null;
+        return d && String(d.getFullYear()) === selectedYear;
+    });
+
+    if (countInfo) {
+        countInfo.innerText = `${items.length} archivierte Standblätter ${selectedYear !== 'all' ? '(' + selectedYear + ')' : ''}`;
+    }
+
+    if (items.length === 0) {
+        if (emptyAlert) emptyAlert.classList.remove('d-none');
+        if (tableCard) tableCard.classList.add('d-none');
+        body.innerHTML = '';
+        return;
+    }
+
+    if (emptyAlert) emptyAlert.classList.add('d-none');
+    if (tableCard) tableCard.classList.remove('d-none');
+
+    body.innerHTML = items.map(item => {
+        const raw = item.raw_response || {};
+        const vorname = escapeHtml(raw.vorname || '');
+        const nachname = escapeHtml(raw.nachname || '');
+        const fullName = `${vorname} ${nachname}`.trim() || 'Unbekannt';
+        const lizenz = escapeHtml(raw.lizenz ? String(raw.lizenz).padStart(6, '0') : '-');
+        const anlass = escapeHtml(raw.anlass || 'Auswärtiges Schiessen');
+        const erzielt = parseFloat(raw.erzielt) || 0;
+        const maximal = parseFloat(raw.maximal) || 100;
+        const pct = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(2) : '0.00';
+        const status = raw.status || 'imported';
+
+        const dateStr = item.created_at ? new Date(item.created_at).toLocaleString('de-CH', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        }) : '-';
+
+        const fileUrl = raw.fileUrl || '';
+        let belegHtml = '<span class="text-muted small">Kein Beleg</span>';
+        if (fileUrl) {
+            belegHtml = `
+                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 py-1" onclick="jmViewStandblattPhoto('${escapeHtml(fileUrl)}', '${escapeHtml(fullName + ' - ' + anlass)}')">
+                    <i class="fas fa-image me-1"></i>Beleg ansehen
+                </button>
+            `;
+        }
+
+        const statusBadge = status === 'imported'
+            ? '<span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2 py-1"><i class="fas fa-check me-1"></i>Übernommen</span>'
+            : '<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-semibold px-2 py-1"><i class="fas fa-times me-1"></i>Abgelehnt</span>';
+
+        return `
+            <tr>
+                <td class="small text-muted text-nowrap">${dateStr}</td>
+                <td>
+                    <div class="fw-bold text-dark">${fullName}</div>
+                    <div class="small text-muted">Lizenz: ${lizenz}</div>
+                </td>
+                <td>
+                    <div class="fw-semibold text-primary">${anlass}</div>
+                </td>
+                <td class="text-center">
+                    <span class="badge bg-secondary fs-6 px-2 py-1">${erzielt}</span>
+                    <span class="text-muted small ms-1">/ ${maximal} Pkt (${pct}%)</span>
+                </td>
+                <td class="text-center">${statusBadge}</td>
+                <td class="text-center">${belegHtml}</td>
+            </tr>
+        `;
+    }).join('');
+}
+window.renderJMStandblattArchiveTable = renderJMStandblattArchiveTable;
+
 /**
  * Zeigt das Foto des Standblatts in voller Grösse an
  */
@@ -246,10 +357,17 @@ async function jmImportStandblatt(logId) {
 
         let targetCol = -1;
 
-        // Prio 1: Gleicher Anlassname
+        // Prio 1: Gleicher Anlassname (exakt oder intelligenter Fuzzy-Match)
+        const cleanAnlass = anlass.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
         for (let c = startDynamic; c < compRow.length; c++) {
-            const title = String(compRow[c] || '').trim().toLowerCase();
-            if (title === anlass.toLowerCase()) {
+            const title = String(compRow[c] || '').trim();
+            const cleanTitle = title.toLowerCase().replace(/[^a-z0-9äöü]/gi, '');
+            if (!cleanTitle || cleanTitle.startsWith('spalte')) continue;
+
+            if (title.toLowerCase() === anlass.toLowerCase() ||
+                cleanTitle === cleanAnlass ||
+                (cleanAnlass.length >= 5 && cleanTitle.includes(cleanAnlass)) ||
+                (cleanTitle.length >= 5 && cleanAnlass.includes(cleanTitle))) {
                 targetCol = c;
                 break;
             }
@@ -327,10 +445,15 @@ async function jmImportStandblatt(logId) {
             })
             .eq('id', logId);
 
-        // 8. Inbox bereinigen & UI aktualisieren
+        // 8. Inbox & Archiv bereinigen & UI aktualisieren
         _jmPendingStandblaetter = _jmPendingStandblaetter.filter(i => i.id !== logId);
+        _jmArchivedStandblaetter.unshift({
+            ...item,
+            raw_response: { ...raw, status: 'imported', imported_at: new Date().toISOString() }
+        });
         updateJMInboxBadge(_jmPendingStandblaetter.length);
         renderJMStandblattInboxTable();
+        renderJMStandblattArchiveTable();
 
         if (typeof renderJahresmeisterschaft === 'function') {
             renderJahresmeisterschaft(grid);
@@ -376,8 +499,13 @@ async function jmRejectStandblatt(logId) {
             .eq('id', logId);
 
         _jmPendingStandblaetter = _jmPendingStandblaetter.filter(i => i.id !== logId);
+        _jmArchivedStandblaetter.unshift({
+            ...item,
+            raw_response: { ...raw, status: 'rejected', rejected_at: new Date().toISOString() }
+        });
         updateJMInboxBadge(_jmPendingStandblaetter.length);
         renderJMStandblattInboxTable();
+        renderJMStandblattArchiveTable();
         showSuccess("Standblatt abgelehnt.");
     } catch (err) {
         showError("Fehler beim Ablehnen: " + err.message);

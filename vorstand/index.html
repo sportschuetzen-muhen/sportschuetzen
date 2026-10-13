@@ -823,9 +823,10 @@
                      onclick="navTo('vermietung', this)">
                     <i class="fas fa-home"></i> <span class="nav-text">Vermietung</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('jahresmeisterschaft', this)">
-                    <i class="fas fa-medal"></i> <span class="nav-text">Jahresmeisterschaft KK</span>
+                    <i class="fas fa-medal me-2"></i> <span class="nav-text flex-grow-1">Jahresmeisterschaft KK</span>
+                    <span id="jm-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('mail', this)">
@@ -960,9 +961,12 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
                              onclick="navTo('jahresmeisterschaft')" style="cursor:pointer">
-                            <h5 class="mb-1">🏅 Jahresmeisterschaft KK</h5>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🏅 Jahresmeisterschaft KK</h5>
+                                <span id="jm-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                            </div>
                             <p class="small text-muted mb-0">Kleinkaliber Meisterschaft verwalten</p>
                         </div>
                     </div>
@@ -2197,28 +2201,85 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schliessen"></button>
             </div>
             <div class="modal-body p-4 bg-light bg-opacity-25">
-                <div id="jm-inbox-empty-alert" class="alert alert-info d-none text-center py-4 mb-0 rounded-3">
-                    <i class="fas fa-check-circle fa-2x mb-2 text-info d-block"></i>
-                    <strong>Keine ausstehenden Standblätter vorhanden.</strong>
-                    <div class="small text-muted mt-1">Alle eingereichten Resultate wurden bereits geprüft oder übernommen.</div>
-                </div>
-                <div id="jm-inbox-table-card" class="card border-0 shadow-xs rounded-3 overflow-hidden">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light small text-uppercase text-muted">
-                                <tr>
-                                    <th>Eingereicht</th>
-                                    <th>Schütze</th>
-                                    <th>Anlass</th>
-                                    <th class="text-center">Punkte</th>
-                                    <th class="text-center">Belegfoto</th>
-                                    <th class="text-end">Aktion</th>
-                                </tr>
-                            </thead>
-                            <tbody id="jm-inbox-table-body" class="bg-white">
-                                <!-- Dynamisch befüllt -->
-                            </tbody>
-                        </table>
+                <!-- TABS: AUSSTEHEND VS. ARCHIV -->
+                <ul class="nav nav-pills mb-3 gap-2" id="jm-inbox-pills" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active rounded-pill px-3 py-1.5 fw-semibold" id="tab-jm-inbox-pending" data-bs-toggle="pill" data-bs-target="#pane-jm-inbox-pending" type="button" role="tab" onclick="switchJMInboxTab('pending')">
+                            📥 Ausstehend <span id="jm-tab-badge-pending" class="badge bg-danger rounded-pill ms-1 d-none">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link rounded-pill px-3 py-1.5 fw-semibold" id="tab-jm-inbox-archive" data-bs-toggle="pill" data-bs-target="#pane-jm-inbox-archive" type="button" role="tab" onclick="switchJMInboxTab('archive')">
+                            🗄️ Archiv &amp; Historie
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="jm-inbox-tabContent">
+                    <!-- TAB 1: AUSSTEHEND -->
+                    <div class="tab-pane fade show active" id="pane-jm-inbox-pending" role="tabpanel">
+                        <div id="jm-inbox-empty-alert" class="alert alert-info d-none text-center py-4 mb-0 rounded-3">
+                            <i class="fas fa-check-circle fa-2x mb-2 text-info d-block"></i>
+                            <strong>Keine ausstehenden Standblätter vorhanden.</strong>
+                            <div class="small text-muted mt-1">Alle eingereichten Resultate wurden bereits geprüft oder übernommen.</div>
+                        </div>
+                        <div id="jm-inbox-table-card" class="card border-0 shadow-xs rounded-3 overflow-hidden">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light small text-uppercase text-muted">
+                                        <tr>
+                                            <th>Eingereicht</th>
+                                            <th>Schütze</th>
+                                            <th>Anlass</th>
+                                            <th class="text-center">Punkte</th>
+                                            <th class="text-center">Belegfoto</th>
+                                            <th class="text-end">Aktion</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="jm-inbox-table-body" class="bg-white">
+                                        <!-- Dynamisch befüllt -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: ARCHIV / HISTORIE -->
+                    <div class="tab-pane fade" id="pane-jm-inbox-archive" role="tabpanel">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <label for="jm-archive-year-select" class="form-label mb-0 small fw-semibold text-muted">Saison / Jahr:</label>
+                                <select id="jm-archive-year-select" class="form-select form-select-sm" style="width: auto;" onchange="renderJMStandblattArchiveTable()">
+                                    <option value="all">Alle Jahre</option>
+                                    <option value="2026" selected>2026</option>
+                                    <option value="2025">2025</option>
+                                </select>
+                            </div>
+                            <div class="small text-muted" id="jm-archive-count-info">0 archivierte Standblätter</div>
+                        </div>
+                        <div id="jm-archive-empty-alert" class="alert alert-light border text-center py-4 mb-0 rounded-3 d-none">
+                            <i class="fas fa-archive fa-2x mb-2 text-muted d-block"></i>
+                            <strong>Keine archivierten Standblätter für diesen Zeitraum gefunden.</strong>
+                        </div>
+                        <div id="jm-archive-table-card" class="card border-0 shadow-xs rounded-3 overflow-hidden">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light small text-uppercase text-muted">
+                                        <tr>
+                                            <th>Datum</th>
+                                            <th>Schütze</th>
+                                            <th>Anlass</th>
+                                            <th class="text-center">Punkte</th>
+                                            <th class="text-center">Status</th>
+                                            <th class="text-center">Belegfoto</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="jm-archive-table-body" class="bg-white">
+                                        <!-- Dynamisch befüllt -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

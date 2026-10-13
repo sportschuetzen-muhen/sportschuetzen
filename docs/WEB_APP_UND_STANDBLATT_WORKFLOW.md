@@ -88,3 +88,10 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
    - RLS-Berechtigungen auf `public.contest_ocr_logs` um `jahresmeisterschaft.view` und `jahresmeisterschaft.manage` erweitert (`50_contest_ocr_logs_jm_rbac.sql`).
 3. **PWA Tab-Synchronisation:**
    - `app.js` sendet beim Umschalten der Tabs ein `app:resume`-PostMessage an alle iFrames (`app_jm.html`, `app_gruppe.html`, `app_mannschaft.html`), sodass neue Resultate sofort sichtbar werden.
+4. **Cloudflare R2 & Google Drive Sicherheitskopie:**
+   - Der Worker speichert Standblatt-Belege originär in Cloudflare R2 (`MY_BUCKET`) und triggert parallel eine Non-blocking Sicherungskopie in den konfigurierten Google-Drive-Ordner (`1qXvWfBCZx6ZipGMIuANyOCzNMKLkqfuY`).
+5. **Synchronisierte Badges & Jahresarchiv:**
+   - Offene Standblätter (`_jmPendingStandblaetter`) synchronisieren automatisch Badges im Modul-Header, in der Sidebar-Navigation und auf der Dashboard-Kachel der Jahresmeisterschaft KK.
+   - Das Standblatt-Modal bietet ein dediziertes «Archiv & Historie»-Tab mit Jahresfilter zur permanenten Einsicht aller übernommenen oder abgelehnten Belege.
+   - Beim Upload werden bekannte Saison-Wettkämpfe via Datalist geladen und beim Import via Fuzzy-Matching mit bestehenden Tabellenspalten verknüpft.
+
