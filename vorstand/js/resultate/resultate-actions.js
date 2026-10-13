@@ -1,6 +1,6 @@
 // =========================================================
-//  RESULTATE (Grenzland) - Actions / Server Requests
-//  Native Supabase Architecture mit Google Apps Script Dual-Write
+//  RESULTATE (Mannschaft & G & G) - Actions / Server Requests
+//  Native Supabase Architecture mit Multi-Wettbewerbs-Support
 // =========================================================
 
 async function saveResultateData() {
@@ -9,17 +9,31 @@ async function saveResultateData() {
     return;
   }
 
-  // 1. Validierung Punkte (nur 0-100 oder leer)
+  const contestType = window._resultateContestType || "grenzland";
+  const year = window._resultateYear || new Date().getFullYear();
+  const supa = getResultateSupabaseClient();
+  const limit = getContestLimit(contestType);
+  const roundCount = getContestRoundCount(contestType);
+  const maxPts = (contestType === "mannschaft") ? 200 : 100;
+
+  // 1. Validierung Punkte
   for (const r of resultateState.rows) {
     if (!r.id) return alert("Es gibt eine Zeile ohne ID / Personennummer.");
-    if (!isValidPoints(r.r1_p1) || !isValidPoints(r.r2_p1) || !isValidPoints(r.r3_p1)) {
-      return alert("Bitte Punkte korrigieren: nur ganze Zahlen 0–100 (oder leer).");
+    for (let i = 1; i <= roundCount; i++) {
+      if (!isValidPoints(r[`r${i}_p1`], contestType)) {
+        return alert(`Bitte Punkte korrigieren bei ${r.name}: Runde ${i} muss zwischen 0 und ${maxPts} liegen.`);
+      }
+      if (contestType === "gruppe" && i <= 3) {
+        if (!isValidPoints(r[`r${i}_p2`], contestType)) {
+          return alert(`Bitte Punkte korrigieren bei ${r.name}: Runde ${i} (Passe 2) muss zwischen 0 und 100 liegen.`);
+        }
+      }
     }
   }
 
-  // 2. Limit-Check (Sperre) – max 4 pro Team, Pool ausgenommen
-  const rounds = ["r1", "r2", "r3"];
-  for (const rk of rounds) {
+  // 2. Limit-Check (Sperre) – max X pro Team, Pool ausgenommen
+  for (let i = 1; i <= roundCount; i++) {
+    const rk = `r${i}`;
     const counts = new Map();
     resultateState.rows.forEach(r => {
       const t = (r[`${rk}_team`] || "").trim();
@@ -27,9 +41,8 @@ async function saveResultateData() {
       counts.set(t, (counts.get(t) || 0) + 1);
     });
     for (const [team, cnt] of counts.entries()) {
-      if (cnt > TEAM_LIMIT) {
-        const rLabel = rk === "r1" ? "Runde 1" : rk === "r2" ? "Runde 2" : "Runde 3";
-        return alert(`${rLabel}: Team "${team}" hat ${cnt} Zuteilungen (max ${TEAM_LIMIT}). Bitte korrigieren (Pool ist unbegrenzt).`);
+      if (cnt > limit) {
+        return alert(`Runde ${i}: Team "${team}" hat ${cnt} Zuteilungen (max ${limit}). Bitte korrigieren (Pool ist unbegrenzt).`);
       }
     }
   }
@@ -42,28 +55,11 @@ async function saveResultateData() {
     btn.innerText = "Speichere...";
   }
 
-  const contestType = window._resultateContestType || "grenzland";
-  const year = window._resultateYear || new Date().getFullYear();
-  const supa = getResultateSupabaseClient();
-
-  // Payload für GAS
-  const payloadRows = resultateState.rows.map(r => ({
-    id: r.id,
-    r1_team: (r.r1_team === POOL_LABEL) ? "" : (r.r1_team || ""),
-    r1_p1: r.r1_p1 || "",
-    r2_team: (r.r2_team === POOL_LABEL) ? "" : (r.r2_team || ""),
-    r2_p1: r.r2_p1 || "",
-    r3_team: (r.r3_team === POOL_LABEL) ? "" : (r.r3_team || ""),
-    r3_p1: r.r3_p1 || ""
-  }));
-
-  let savedSuccessfully = false;
-
   // 3. PRIMÄR: SUPABASE UPSERT (Single Source of Truth)
   if (supa) {
     try {
       const supaRows = resultateState.rows.map(r => mapContestResultToSupabase(r, contestType, year));
-      console.log(`💾 [Supabase] Speichere ${supaRows.length} Resultate-Zeilen...`);
+      console.log(`💾 [Supabase] Speichere ${supaRows.length} Resultate-Zeilen für ${contestType} (${year})...`);
 
       const { data, error } = await supa.from('contest_results').upsert(supaRows, {
         onConflict: 'contest_type,year,person_number'
@@ -74,28 +70,23 @@ async function saveResultateData() {
         throw error;
       }
 
-      savedSuccessfully = true;
       window._resultateIsSupabase = true;
       if (typeof updateBackendBadge === 'function') updateBackendBadge();
       console.log("✅ [Supabase] Resultate erfolgreich gesichert.");
+
+      resultateState.isDirty = false;
+      window._resultateOriginalRows = JSON.parse(JSON.stringify(resultateState.rows));
+      setStatus("✅ Gespeichert", false);
+      if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState(false);
     } catch (supaErr) {
       alert("Fehler beim Speichern in Supabase: " + (supaErr.message || supaErr));
       if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState(false);
       setStatus("Fehler beim Speichern", true);
-      return;
     }
   } else {
     alert("Fehler: Kein Supabase Client verfügbar.");
     if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState(false);
     setStatus("Fehler beim Speichern", true);
-    return;
-  }
-
-  if (savedSuccessfully) {
-    resultateState.isDirty = false;
-    window._resultateOriginalRows = JSON.parse(JSON.stringify(resultateState.rows));
-    setStatus("✅ Gespeichert", false);
-    if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState(false);
   }
 }
 
@@ -108,7 +99,6 @@ async function syncSetupToResultate() {
   const contestType = window._resultateContestType || "grenzland";
   const year = window._resultateYear || new Date().getFullYear();
 
-  // 1. ZUERST IN SUPABASE PRÜFEN
   if (supa) {
     try {
       const { data: setupData, error: sErr } = await supa
@@ -124,22 +114,22 @@ async function syncSetupToResultate() {
         if (missing.length > 0) {
           const newSupaRows = missing.map(s => {
             const team = (s.team || "").trim();
-            return {
+            const row = {
               id: `${contestType}_${year}_${s.person_number}`,
               contest_type: contestType,
               year: year,
               person_number: String(s.person_number),
               name: s.name,
               stellung: s.stellung || "liegend",
-              r1_team: team,
-              r1_p1: null,
-              r2_team: team,
-              r2_p1: null,
-              r3_team: team,
-              r3_p1: null,
               is_auto_r2: true,
               is_auto_r3: true
             };
+            for (let i = 1; i <= 7; i++) {
+              row[`r${i}_team`] = team;
+              row[`r${i}_p1`] = null;
+              if (i <= 3) row[`r${i}_p2`] = null;
+            }
+            return row;
           });
 
           const { error: insErr } = await supa.from('contest_results').upsert(newSupaRows, {
@@ -155,6 +145,8 @@ async function syncSetupToResultate() {
           alert('Alle Setup-Schützen sind bereits in Resultate vorhanden – nichts hinzugefügt.');
           return;
         }
+      } else {
+        alert(`Keine Schützen im Setup für ${contestType} (${year}) gefunden.`);
       }
     } catch (err) {
       console.warn("Supabase Setup-Sync:", err);
@@ -165,6 +157,27 @@ async function syncSetupToResultate() {
   }
 }
 
+async function syncJmToContestMannschaftAction() {
+  const supa = getResultateSupabaseClient();
+  if (!supa) return alert("Kein Supabase-Client verfügbar.");
+  const year = window._resultateYear || new Date().getFullYear();
+  const confirmed = confirm(`Möchtest du die Resultate der Runden 1–7 für die Mannschaftsmeisterschaft aus der Jahresmeisterschaft (${year}) synchronisieren?`);
+  if (!confirmed) return;
+
+  try {
+    setStatus("Synchronisiere aus Jahresmeisterschaft…", false);
+    const { data, error } = await supa.rpc('sync_jm_to_contest_mannschaft', { p_year: year });
+    if (error) throw error;
+    alert(`✅ Synchronisation erfolgreich! ${data?.updated_count || 0} Schützen-Ergebnisse wurden aktualisiert.`);
+    await loadResultateData(true);
+  } catch (err) {
+    console.error("Fehler bei JM-Synchronisation:", err);
+    alert("Fehler bei der Synchronisation: " + (err.message || err));
+    setStatus("Fehler", true);
+  }
+}
+window.syncJmToContestMannschaftAction = syncJmToContestMannschaftAction;
+
 async function pushOneSignalGrenzland() {
-  alert("ℹ️ Push-Mitteilungen: Das Google Apps Script Backend ist entkoppelt. Mobile Push Notifications werden künftig über native Supabase Edge Functions verwaltet.");
+  alert("ℹ️ Push-Mitteilungen: Das Google Apps Script Backend ist entkoppelt. Mobile Push Notifications werden über native Supabase Edge Functions verwaltet.");
 }

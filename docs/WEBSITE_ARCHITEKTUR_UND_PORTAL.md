@@ -189,6 +189,16 @@ CREATE TABLE public.documents (
 
 ---
 
+### 2.9 Resultate Mannschaft & G & G (Migration 53)
+* **Modul-Harmonisierung & Multi-Wettbewerbs-Architektur:** Das Modul «Resultate» im Vorstandsportal wurde in **«Resultate Mannschaft & G & G»** umbenannt und unterstützt die drei Hauptwettbewerbe:
+  1. **👥 Mannschaft (SMM):** 7 Runden à 200 Pkt, 8 Schützen je Team (Muhen 1–3).
+  2. **🎯 Gruppe (SGM):** 3 Runden à 2 Passen (P1+P2 à 100 Pkt), 5 Schützen je Team (3 Liegend, 2 Kniend).
+  3. **🛡️ Grenzland Cup:** 3 Runden à 100 Pkt, 4 Schützen je Team.
+* **Single Source of Truth in `public.contest_results`:** Sämtliche Wettkampfresultate werden direkt in `public.contest_results` geführt und über PostgREST für Website und App bereitgestellt.
+* **Schnittstelle zur Jahresmeisterschaft:** Die 7 SMM-Runden werden über die Stored Procedure `public.sync_jm_to_contest_mannschaft(p_year)` auf Knopfdruck oder automatisiert aus `jm_shooters.details->'mannschaft'` nach `contest_results` synchronisiert. Doppelerfassungen und E-Mail-Polling entfallen vollständig.
+
+---
+
 ## 3. Responsive Kompatibilität & Geräte-Standards
 
 | Gerät / Browser | Getroffene Massnahme | Ergebnis |

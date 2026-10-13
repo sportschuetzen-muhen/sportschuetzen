@@ -755,7 +755,7 @@ const bgModuleLoader = {
         },
         {
             id: 'resultate',
-            label: 'Resultate',
+            label: 'Resultate Mannschaft & G & G',
             load: () => (typeof loadResultateData === 'function' ? loadResultateData(false) : Promise.resolve()),
             isLoaded: () => typeof resultateState !== 'undefined' && resultateState && resultateState.rows && resultateState.rows.length > 0
         },

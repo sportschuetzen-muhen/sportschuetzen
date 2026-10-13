@@ -1,6 +1,6 @@
 // =========================================================
-//  RESULTATE (Grenzland) - UI Rendering
-//  Native Supabase Architecture mit Google Apps Script Fallback
+//  RESULTATE (Mannschaft & G & G) - UI Rendering
+//  Native Supabase Architecture mit Multi-Wettbewerbs-Support
 // =========================================================
 
 async function loadResultateData(force = false) {
@@ -15,7 +15,7 @@ async function loadResultateData(force = false) {
   renderLoading();
 
   const supa = getResultateSupabaseClient();
-  const contestType = window._resultateContestType || "grenzland";
+  const contestType = window._resultateContestType || "mannschaft";
   const year = window._resultateYear || new Date().getFullYear();
 
   // 1. ZUERST SUPABASE PRÜFEN
@@ -34,10 +34,9 @@ async function loadResultateData(force = false) {
       const supaMembers = (membersResult.status === 'fulfilled' && !membersResult.value.error) ? (membersResult.value.data || []) : [];
       const supaTeams = (teamsResult.status === 'fulfilled' && !teamsResult.value.error) ? (teamsResult.value.data || []).map(t => t.team_name) : [];
 
-      // Wenn Supabase Daten liefert (auch leeres Array wenn noch keine Zeilen erfasst)
       if (supaRows !== null) {
         window._resultateIsSupabase = true;
-        console.log(`✅ [Supabase] ${supaRows.length} Resultate-Zeilen geladen.`);
+        console.log(`✅ [Supabase] ${supaRows.length} Resultate-Zeilen geladen für ${contestType}.`);
 
         resultateState.members = supaMembers.map(m => ({
           id: String(m.person_number),
@@ -82,29 +81,60 @@ function updateBackendBadge() {
   if (badge) badge.remove();
 }
 
-function ensureResultateShell() {
+function switchResultateContest(type) {
+  if (resultateState.isDirty && !confirm("Du hast ungespeicherte Änderungen. Möchtest du wirklich den Wettbewerb wechseln?")) {
+    return;
+  }
+  window._resultateContestType = type;
+  resultateState.rows = [];
+  ensureResultateShell(true);
+  loadResultateData(true);
+}
+window.switchResultateContest = switchResultateContest;
+
+function ensureResultateShell(forceRebuild = false) {
   const host = document.getElementById("resultate-container");
   if (!host) return;
 
-  if (document.getElementById("resultate-app")) return;
+  if (!forceRebuild && document.getElementById("resultate-app")) return;
 
   injectStylesOnce();
 
   const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('resultate') : true;
+  const currentContest = window._resultateContestType || "mannschaft";
+  const limit = getContestLimit(currentContest);
+
+  let subtitle = "";
+  if (currentContest === "mannschaft") {
+    subtitle = `Schweizer Mannschaftsmeisterschaft (SMM): 7 Runden à 200 Pkt. Team-Limit: ${limit} Schützen/Team.`;
+  } else if (currentContest === "gruppe") {
+    subtitle = `Gruppenmeisterschaft (SGM): 3 Runden à 2 Passen (P1+P2 à 100 Pkt). Team-Limit: ${limit} Schützen (3 Liegend, 2 Kniend).`;
+  } else {
+    subtitle = `Grenzland Cup: 3 Runden à 100 Pkt. Team-Limit: ${limit} Schützen/Team (Pool unbegrenzt).`;
+  }
 
   host.innerHTML = `
     <div id="resultate-app">
       <div class="d-flex justify-content-between align-items-center mb-3 sticky-top bg-white p-2 shadow-sm rounded" style="z-index: 600;">
         <div>
-          <div class="d-flex align-items-center">
-            <h4 class="m-0 fw-bold">🏁 Resultate – Grenzland</h4>
+          <div class="d-flex align-items-center gap-3 flex-wrap">
+            <h4 class="m-0 fw-bold">🏁 Resultate – Mannschaft & G & G</h4>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Wettbewerb wählen">
+              <button type="button" class="btn btn-outline-primary ${currentContest === 'mannschaft' ? 'active fw-bold' : ''}" onclick="switchResultateContest('mannschaft')">👥 Mannschaft</button>
+              <button type="button" class="btn btn-outline-primary ${currentContest === 'gruppe' ? 'active fw-bold' : ''}" onclick="switchResultateContest('gruppe')">🎯 Gruppe</button>
+              <button type="button" class="btn btn-outline-primary ${currentContest === 'grenzland' ? 'active fw-bold' : ''}" onclick="switchResultateContest('grenzland')">🛡️ Grenzland</button>
+            </div>
           </div>
-          <div class="small text-muted mt-1">Teams (R2/R3) werden von der vorherigen Runde übernommen, solange nicht manuell geändert. (Max. 4 Schützen/Team)</div>
+          <div class="small text-muted mt-1">${subtitle}</div>
         </div>
-        <div class="d-flex gap-2 flex-wrap">
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          ${canWrite && currentContest === 'mannschaft' ? `
+            <button class="btn btn-outline-success btn-sm fw-semibold" onclick="syncJmToContestMannschaftAction()" title="SMM-Runden 1–7 aus Jahresmeisterschaft übernehmen">
+              <i class="fas fa-sync-alt me-1"></i>Aus Jahresmeisterschaft synchronisieren
+            </button>
+          ` : ''}
           ${canWrite ? `
             <button class="btn btn-outline-warning btn-sm fw-semibold" onclick="openResultateOcrModal()" title="Resultate aus Foto mit KI einlesen">📸 Foto einlesen</button>
-            <button class="btn btn-outline-primary btn-sm" onclick="pushOneSignalGrenzland()">📣 Push</button>
             <button class="btn btn-outline-info btn-sm" onclick="syncSetupToResultate()" title="Schützen aus Setup übernehmen (nur fehlende)">📥 Von Setup laden</button>
           ` : ''}
           <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData(true)">🔄 Laden</button>
@@ -122,9 +152,16 @@ function ensureResultateShell() {
           <div class="mt-3 p-2 border rounded bg-light">
             <div class="fw-bold mb-2">Schütze hinzufügen (nur aus Mitglieder)</div>
             <div class="d-flex gap-2 flex-wrap align-items-center">
-              <select id="new-member-select" class="form-select form-select-sm" style="max-width: 360px;">
+              <select id="new-member-select" class="form-select form-select-sm" style="max-width: 320px;">
                 <option value="">— Mitglied wählen —</option>
               </select>
+
+              ${currentContest === 'gruppe' ? `
+              <select id="new-start-stellung" class="form-select form-select-sm" style="max-width: 150px;">
+                <option value="liegend">🛌 Liegend</option>
+                <option value="kniend">🧎 Kniend</option>
+              </select>
+              ` : ''}
 
               <select id="new-start-round" class="form-select form-select-sm" style="max-width: 170px;">
                 <option value="r1">Start ab Runde 1</option>
@@ -132,7 +169,7 @@ function ensureResultateShell() {
                 <option value="r3">Start ab Runde 3</option>
               </select>
 
-              <select id="new-start-team" class="form-select form-select-sm" style="max-width: 220px;">
+              <select id="new-start-team" class="form-select form-select-sm" style="max-width: 200px;">
                 <option value="">— Team wählen —</option>
               </select>
 
@@ -214,7 +251,6 @@ function ensureResultateShell() {
                                       </tr>
                                   </thead>
                                   <tbody id="ocr-results-tbody">
-                                      <!-- Wird dynamisch befüllt -->
                                   </tbody>
                               </table>
                           </div>
@@ -236,36 +272,39 @@ function injectStylesOnce() {
   const s = document.createElement("style");
   s.id = "resultate-inline-style";
   s.textContent = `
-    .round-head { border-left: 6px solid #0d6efd; }
-    .round-1 .team-card { border-top: 4px solid #0d6efd; background: #fbfdff; }
-    .round-2 .team-card { border-top: 4px solid #198754; background: #fbfffd; }
-    .round-3 .team-card { border-top: 4px solid #fd7e14; background: #fffdf9; }
-
-    .team-card { border: 1px solid rgba(0,0,0,.08); }
-    .team-card .card-body {
-      overflow-x: hidden;
+    .round-head {
+      background: #eef3f8;
+      border-left: 5px solid #0f3a5d;
     }
-    .team-badge { font-size: .75rem; }
+    .round-1 { border-left-color: #0d6efd; }
+    .round-2 { border-left-color: #198754; }
+    .round-3 { border-left-color: #fd7e14; }
+    .round-4 { border-left-color: #6f42c1; }
+    .round-5 { border-left-color: #d63384; }
+    .round-6 { border-left-color: #0dcaf0; }
+    .round-7 { border-left-color: #20c997; }
+
+    .team-card {
+      border: 1px solid #e1e7ed;
+    }
+    .team-badge {
+      font-size: 0.8rem;
+    }
     .rowline {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .5rem;
+      display: grid;
+      grid-template-columns: minmax(130px, 1fr) 115px 85px;
+      gap: 6px;
       align-items: center;
     }
-    @media (max-width: 576px) {
-      .rowline { grid-template-columns: 1fr 1fr 80px; }
-    }
-    .name-cell {
-      flex: 1 1 220px;
-      min-width: 160px;
-    }
-    .rowline select {
-      flex: 0 1 170px;
-      min-width: 140px;
+    .rowline-gruppe {
+      display: grid;
+      grid-template-columns: minmax(130px, 1.2fr) 95px 105px 65px 65px 45px;
+      gap: 5px;
+      align-items: center;
     }
     .points-input {
-      flex: 0 0 90px;
-      max-width: 100%;
+      text-align: right;
+      font-weight: 600;
     }
   `;
   document.head.appendChild(s);
@@ -315,17 +354,21 @@ function renderRounds() {
   if (!wrap) return;
 
   const teams = [...resultateState.teams];
-  // Pool nur im UI ergänzen
   const teamsPlusPool = [...teams, POOL_LABEL];
+  const contestType = window._resultateContestType || "mannschaft";
+  const roundCount = getContestRoundCount(contestType);
 
-  wrap.innerHTML = `
-    ${renderRoundSection("Runde 1", "r1", "round-1", teamsPlusPool)}
-    ${renderRoundSection("Runde 2", "r2", "round-2", teamsPlusPool)}
-    ${renderRoundSection("Runde 3", "r3", "round-3", teamsPlusPool)}
-  `;
+  let html = "";
+  for (let i = 1; i <= roundCount; i++) {
+    html += renderRoundSection(`Runde ${i}`, `r${i}`, `round-${i}`, teamsPlusPool);
+  }
+  wrap.innerHTML = html;
 }
 
 function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
+  const contestType = window._resultateContestType || "grenzland";
+  const limit = getContestLimit(contestType);
+
   // Gruppieren nach Team
   const grouped = new Map();
   teamsPlusPool.forEach(t => grouped.set(t, []));
@@ -344,8 +387,8 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
     const header = `
       <div class="card-header d-flex justify-content-between align-items-center">
         <span class="fw-bold">${escapeHtml(teamName)}</span>
-        <span class="badge ${isPool ? "bg-secondary" : (count > TEAM_LIMIT ? "bg-danger" : "bg-primary")} team-badge">
-          ${count}${isPool ? "" : "/" + TEAM_LIMIT}
+        <span class="badge ${isPool ? "bg-secondary" : (count > limit ? "bg-danger" : "bg-primary")} team-badge">
+          ${count}${isPool ? "" : "/" + limit}
         </span>
       </div>
     `;
@@ -370,7 +413,7 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
     <div class="p-2 mb-3 rounded round-head ${roundClass}">
       <div class="d-flex justify-content-between align-items-center">
         <h5 class="m-0 fw-bold">${escapeHtml(title)}</h5>
-        <div class="small text-muted">Team-Limit: ${TEAM_LIMIT} (Pool unbegrenzt)</div>
+        <div class="small text-muted">Team-Limit: ${limit} (Pool unbegrenzt)</div>
       </div>
     </div>
     <div class="row g-3 mb-4">
@@ -382,22 +425,68 @@ function renderRoundSection(title, roundKey, roundClass, teamsPlusPool) {
 function renderShooterLine(rowIndex, roundKey, teamsPlusPool) {
   const canWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('resultate') : true;
   const r = resultateState.rows[rowIndex];
+  const contestType = window._resultateContestType || "grenzland";
   const teamField = `${roundKey}_team`;
   const p1Field = `${roundKey}_p1`;
+  const p2Field = `${roundKey}_p2`;
 
   const selected = (r[teamField] || "") || POOL_LABEL;
-  const invalid = (r[p1Field] === "" || isValidPoints(r[p1Field])) ? "" : "is-invalid";
+  const invalidP1 = (r[p1Field] === "" || isValidPoints(r[p1Field], contestType)) ? "" : "is-invalid";
+  const invalidP2 = (r[p2Field] === "" || isValidPoints(r[p2Field], contestType)) ? "" : "is-invalid";
 
-  // Dropdown options (Pool darf gewählt werden, wird aber nicht ins Sheet geschrieben)
   const opts = teamsPlusPool.map(t => {
     const sel = (t === selected) ? "selected" : "";
     return `<option value="${escapeHtml(t)}" ${sel}>${escapeHtml(t)}</option>`;
   }).join("");
 
+  if (contestType === "gruppe") {
+    const stellungBadge = r.stellung === 'kniend'
+      ? '<span class="badge bg-warning text-dark border">Kniend</span>'
+      : '<span class="badge bg-info text-dark border">Liegend</span>';
+
+    const p1 = parseInt(r[p1Field] || "0", 10) || 0;
+    const p2 = parseInt(r[p2Field] || "0", 10) || 0;
+    const sumText = (p1 + p2 > 0) ? String(p1 + p2) : "–";
+
+    return `
+      <div class="rowline-gruppe mb-2">
+        <div class="name-cell text-truncate fw-bold" title="${escapeHtml(r.name)}">${escapeHtml(r.name)}</div>
+        <div>${stellungBadge}</div>
+        <select class="form-select form-select-sm"
+                data-row="${rowIndex}"
+                data-round="${roundKey}"
+                ${canWrite ? '' : 'disabled'}
+                onchange="onTeamChangeEvent(event)">
+          ${opts}
+        </select>
+        <input class="form-control form-control-sm points-input ${invalidP1}"
+               data-row="${rowIndex}"
+               data-round="${roundKey}"
+               data-part="p1"
+               inputmode="numeric"
+               placeholder="P1"
+               ${canWrite ? '' : 'disabled readonly'}
+               value="${escapeHtml(r[p1Field] ?? "")}"
+               oninput="onPointsInputEvent(event)">
+        <input class="form-control form-control-sm points-input ${invalidP2}"
+               data-row="${rowIndex}"
+               data-round="${roundKey}"
+               data-part="p2"
+               inputmode="numeric"
+               placeholder="P2"
+               ${canWrite ? '' : 'disabled readonly'}
+               value="${escapeHtml(r[p2Field] ?? "")}"
+               oninput="onPointsInputEvent(event)">
+        <span id="sum-${roundKey}-${rowIndex}" class="badge bg-dark fw-bold">${sumText}</span>
+      </div>
+    `;
+  }
+
+  const placeholder = (contestType === "mannschaft") ? "0-200" : "0-100";
+
   return `
     <div class="rowline mb-2">
-      <div class="name-cell text-truncate fw-bold">${escapeHtml(r.name)}</div>
-
+      <div class="name-cell text-truncate fw-bold" title="${escapeHtml(r.name)}">${escapeHtml(r.name)}</div>
       <select class="form-select form-select-sm"
               data-row="${rowIndex}"
               data-round="${roundKey}"
@@ -405,12 +494,12 @@ function renderShooterLine(rowIndex, roundKey, teamsPlusPool) {
               onchange="onTeamChangeEvent(event)">
         ${opts}
       </select>
-
-      <input class="form-control form-control-sm points-input ${invalid}"
+      <input class="form-control form-control-sm points-input ${invalidP1}"
              data-row="${rowIndex}"
              data-round="${roundKey}"
+             data-part="p1"
              inputmode="numeric"
-             placeholder="0-100"
+             placeholder="${placeholder}"
              ${canWrite ? '' : 'disabled readonly'}
              value="${escapeHtml(r[p1Field] ?? "")}"
              oninput="onPointsInputEvent(event)">
@@ -435,11 +524,18 @@ function getResultateChangeCount() {
     if (!orig) {
       count++;
     } else {
-      if (r.r1_team !== orig.r1_team || r.r1_p1 !== orig.r1_p1 ||
-          r.r2_team !== orig.r2_team || r.r2_p1 !== orig.r2_p1 ||
-          r.r3_team !== orig.r3_team || r.r3_p1 !== orig.r3_p1) {
-        count++;
+      let isChanged = false;
+      for (let i = 1; i <= 7; i++) {
+        if (r[`r${i}_team`] !== orig[`r${i}_team`] || r[`r${i}_p1`] !== orig[`r${i}_p1`]) {
+          isChanged = true;
+          break;
+        }
+        if (i <= 3 && r[`r${i}_p2`] !== orig[`r${i}_p2`]) {
+          isChanged = true;
+          break;
+        }
       }
+      if (isChanged) count++;
     }
   });
   return count;
