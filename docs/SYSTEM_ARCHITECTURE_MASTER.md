@@ -153,9 +153,10 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 ## 6. Dokumenten-Governance & Referenzen
 
 ### 6.1 Systemweite Master- & Regel-Dokumente
-* **Systemweite Projekt-Richtlinien:** [`AGENTS.md`](../AGENTS.md) – Verbindliche Grundregeln (GAS-Verbot, Single Source of Truth, Rechnungs-Lifecycle & Adress-Kontrakt, Deployment-Pflicht).
+* **Systemweite Projekt-Richtlinien:** [`AGENTS.md`](../AGENTS.md) – Verbindliche Grundregeln (GAS-Verbot, Single Source of Truth, Rechnungs-Lifecycle & Adress-Kontrakt, Deployment-Pflicht, Du-Form).
 * **Master-Architektur (dieses Dokument):** [`docs/SYSTEM_ARCHITECTURE_MASTER.md`](SYSTEM_ARCHITECTURE_MASTER.md) – Verbindliche Gesamtsystem-Übersicht, 3-Frontend-Modell, Shared Engines und Phasenstand.
-* **Entwickler- & User-Leitfaden:** [`docs/USER_DOKUMENTATIONS_GUIDE.md`](USER_DOKUMENTATIONS_GUIDE.md) – Schnellübersicht für den Entwickler (Dokumentations-Lebenszyklus, KI-Zusammenspiel, Deployment).
+* **UI/UX & System-Harmonisierung:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md) – Bereinigte UI/UX-Leitlinie (TableKit, Modale, Status-Tokens, Du-Kultur).
+* **Entwickler- & User-Leitfaden:** [`docs/USER_DOKUMENTATIONS_GUIDE.md`](USER_DOKUMENTATIONS_GUIDE.md) – Schnellübersicht für Entwickler und Vorstand (Dokumentations-Lebenszyklus, KI-Zusammenspiel, Deployment).
 * **Datenbank- & RLS-Referenzhandbuch:** [`docs/SUPABASE_ARCHITECTURE.md`](SUPABASE_ARCHITECTURE.md) – Bereinigtes Nachschlagewerk für Tabellenschemata, Typen, Relationen und Row Level Security (RLS).
 
 ### 6.2 Modulspezifische Fachkonzepte (Das «Warum» & Business-Invarianten)
@@ -172,6 +173,8 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 
 ### 6.3 Historische Archive
 * **Migrations-Chronik (Phasen 0 bis 23):** [`docs/Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md`](Archiv/MIGRATION_HISTORY_PHASES_0_TO_23.md) – Vollständiges Umsetzungstagebuch aller Entwicklungsschritte.
+* **Historie System-Harmonisierung (Phasen 1 bis 12):** [`docs/Archiv/HISTORIE_SYSTEM_HARMONISIERUNG_PHASEN_1_BIS_12.md`](Archiv/HISTORIE_SYSTEM_HARMONISIERUNG_PHASEN_1_BIS_12.md) – Historisches Umsetzungsprotokoll der Phasen 1 bis 12 der System-Harmonisierung.
+* **Historie Supabase-Migrationsphasen:** [`docs/Archiv/HISTORIE_SUPABASE_MIGRATIONSPHASEN.md`](Archiv/HISTORIE_SUPABASE_MIGRATIONSPHASEN.md) – Historischer Meilenstein- und Phasenplan der Supabase-Migration.
 * **Historische Vor-Migrationsanalyse:** [`docs/Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md`](Archiv/LEGACY_ARCHITECTURE_ANALYSIS_2026-09-19.md) – Ursprünglicher Stand mit Google Sheets und GAS vor Beginn der Migration.
 
 

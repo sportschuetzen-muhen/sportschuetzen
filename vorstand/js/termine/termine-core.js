@@ -2,8 +2,8 @@
  * termine-core.js
  * Modul: JAHRESPROGRAMM (Termine, Anlässe & Orte) - CORE
  *
- * Supabase-First Architektur mit Dual-Write zu Google Apps Script,
- * 1-Klick Migration, AppCache-Integration und Stammdaten-Verwaltung.
+ * Supabase Architektur (Single Source of Truth),
+ * AppCache-Integration und Stammdaten-Verwaltung.
  */
 
 // Globaler State
@@ -158,7 +158,7 @@ function mapTerminToSupabase(t, index) {
 }
 
 // =========================================================
-//  SPEICHERN (Supabase Master mit Dual-Write zu GAS)
+//  SPEICHERN (Supabase PostgreSQL - Single Source of Truth)
 // =========================================================
 async function saveTermineData() {
   if (!confirm('Alle Änderungen im Jahresprogramm speichern?')) return;
@@ -171,16 +171,6 @@ async function saveTermineData() {
 
   if (window.updateTermineSaveButtonState) window.updateTermineSaveButtonState(true);
   showTermineOverlay(true, 'Speichere Jahresprogramm…');
-
-  const payloadGAS = {
-    action: 'saveAdminData',
-    user: user,
-    termine: adminState.termine,
-    platzhalter: adminState.platzhalter || [],
-    app_info: adminState.app_info || [],
-    dropdowns: adminState.dropdowns,
-    logDetails: buildChangeLogDetails()
-  };
 
   try {
     // 1. In Supabase speichern (falls verfügbar)

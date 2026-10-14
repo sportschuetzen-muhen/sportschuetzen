@@ -1499,7 +1499,7 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
   const entryDate = new Date(payload.datum);
   const entryYear = isNaN(entryDate.getTime()) ? null : entryDate.getFullYear();
   if (entryYear && entryYear !== Number(window._bhYear)) {
-    const confirmMsg = `⚠️ Buchungsdatum weicht ab!\n\nDas eingegebene Datum liegt im Jahr ${entryYear}, Sie buchen jedoch im aktiven Buchungsjahr ${window._bhYear}.\n\nMöchten Sie diese Buchung trotzdem durchführen?`;
+    const confirmMsg = `⚠️ Buchungsdatum weicht ab!\n\nDas eingegebene Datum liegt im Jahr ${entryYear}, du buchst jedoch im aktiven Buchungsjahr ${window._bhYear}.\n\nMöchtest du diese Buchung trotzdem durchführen?`;
     if (!confirm(confirmMsg)) {
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -1605,7 +1605,7 @@ window.bhDeleteJournalEntry = async function(entryId) {
     return;
   }
 
-  const conf = confirm(`⚠️ Buchungssatz löschen?\n\nMöchten Sie den Buchungssatz (ID: ${entryId}) wirklich unwiderruflich aus dem Journal löschen?\n\nBeleg: ${entry.beleg_nr}\nBetrag: ${typeof fmtChf === 'function' ? fmtChf(entry.betrag) : 'CHF ' + Number(entry.betrag).toFixed(2)}\nText: ${entry.beschreibung}`);
+  const conf = confirm(`⚠️ Buchungssatz löschen?\n\nMöchtest du den Buchungssatz (ID: ${entryId}) wirklich unwiderruflich aus dem Journal löschen?\n\nBeleg: ${entry.beleg_nr}\nBetrag: ${typeof fmtChf === 'function' ? fmtChf(entry.betrag) : 'CHF ' + Number(entry.betrag).toFixed(2)}\nText: ${entry.beschreibung}`);
   if (!conf) return;
 
   await bhExecuteDeleteJournalDirect(entryId);
@@ -2214,7 +2214,7 @@ window.bhConfirmDeleteSelectedJournalEntries = function() {
             <div>
               <div class="fw-bold fs-6">Achtung: Unwiderruflicher Vorgang!</div>
               <div>
-                Möchten Sie die folgenden <strong>${selectedEntries.length} Buchungssatz/-sätze</strong> mit einem Gesamtwert von 
+                Möchtest du die folgenden <strong>${selectedEntries.length} Buchungssatz/-sätze</strong> mit einem Gesamtwert von 
                 <strong>${fmtChf(totalAmount)}</strong> wirklich endgültig aus dem Kassabuch-Journal entfernen?
               </div>
             </div>

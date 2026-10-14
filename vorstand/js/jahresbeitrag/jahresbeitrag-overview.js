@@ -1451,7 +1451,7 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
   }
 
   if (!silent) {
-    if (!confirm(`Möchten Sie für ${toProcess.length} berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?\n\nDie Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status 'Entwurf' (noch nicht an Mitglieder versendet).`)) {
+    if (!confirm(`Möchtest du für ${toProcess.length} berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?\n\nDie Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status 'Entwurf' (noch nicht an Mitglieder versendet).`)) {
       return 0;
     }
   }
@@ -1594,12 +1594,12 @@ async function jbResetYear(mode) {
     ? 'alle Rechnungen, Posten SOWIE ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen' 
     : 'alle Beitragsrechnungen und Posten (Turnierteilnahmen bleiben erhalten)';
   
-  if (!confirm(`⚠️ ACHTUNG: Möchten Sie wirklich ${modeText} für das Beitragsjahr ${_jbYear} zurücksetzen?\n\nVorjahre bleiben unberührt. Diese Aktion kann nicht rückgängig gemacht werden!`)) {
+  if (!confirm(`⚠️ ACHTUNG: Möchtest du wirklich ${modeText} für das Beitragsjahr ${_jbYear} zurücksetzen?\n\nVorjahre bleiben unberührt. Diese Aktion kann nicht rückgängig gemacht werden!`)) {
     return;
   }
   
   // Zweite Bestätigung zur Sicherheit
-  if (!confirm(`Sind Sie absolut sicher?`)) {
+  if (!confirm(`Bist du absolut sicher?`)) {
     return;
   }
   

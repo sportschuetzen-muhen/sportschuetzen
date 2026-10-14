@@ -11,7 +11,7 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ STUFE 1: AUTOMATISCH BEI JEDEM PROMPT (0 Aufwand für Sie)                   │
+│ STUFE 1: AUTOMATISCH BEI JEDEM PROMPT (0 Aufwand für dich)                  │
 │          AGENTS.md                                                          │
 │          Wird bei jeder Anfrage zwingend als Systemregel mitgesendet.       │
 │          Enthält die unverrückbaren Gesetze (GAS-Verbot, Single Source of   │

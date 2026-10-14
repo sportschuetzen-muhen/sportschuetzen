@@ -764,7 +764,7 @@ function jbUpdateGebuehrLivePreview() {
     container.innerHTML = `
       <div class="alert alert-light border text-center text-muted py-3 small mb-0">
         <i class="fas fa-info-circle me-1 text-primary"></i>
-        Bitte wählen Sie oben eine <strong>UI-Gruppe</strong> aus, um die Schnellerfassungs-Card und Sortierung anzuzeigen.
+        Bitte wähle oben eine <strong>UI-Gruppe</strong> aus, um die Schnellerfassungs-Card und Sortierung anzuzeigen.
       </div>`;
     return;
   }
@@ -1171,12 +1171,12 @@ async function jbSaveGebuehrFromModal() {
 
   // D) Haben-Konto (Ertragskonto) - Pflichtprüfung gegen KMU-Kontenrahmen!
   if (!konto) {
-    setFieldError(kontoInput, 'Haben-Konto ist ein Pflichtfeld. Wählen Sie ein Ertragskonto aus dem Kontenrahmen (z. B. 1300, 3410 oder 8500).');
+    setFieldError(kontoInput, 'Haben-Konto ist ein Pflichtfeld. Wähle ein Ertragskonto aus dem Kontenrahmen (z. B. 1300, 3410 oder 8500).');
   } else {
     const konten = window._bhKontenrahmen || [];
     const foundAcc = konten.find(a => String(a.konto).trim() === konto);
     if (!foundAcc && konten.length > 0) {
-      setFieldError(kontoInput, `Das Haben-Konto '${konto}' existiert nicht im KMU-Kontenrahmen. Bitte wählen Sie ein gültiges Konto über das Buch-Symbol, z.B. 1300 (Wettkampfbeiträge), 3410 (Mitgliederbeiträge), 3420 (Jugendförderung) oder 8500 (Zusatzerträge).`);
+      setFieldError(kontoInput, `Das Haben-Konto '${konto}' existiert nicht im KMU-Kontenrahmen. Bitte wähle ein gültiges Konto über das Buch-Symbol, z.B. 1300 (Wettkampfbeiträge), 3410 (Mitgliederbeiträge), 3420 (Jugendförderung) oder 8500 (Zusatzerträge).`);
     }
   }
 

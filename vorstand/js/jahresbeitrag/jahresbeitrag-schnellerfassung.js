@@ -52,8 +52,8 @@ function renderSchnellerfassungTab() {
       <div class="col-md-9 p-3 d-flex flex-column" id="jbEntryWorkspace" style="min-height: calc(100vh - 225px);">
         <div class="text-center my-auto text-muted py-5">
           <i class="fas fa-users fa-3x mb-3 text-primary" style="opacity: 0.3;"></i>
-          <h5>Wählen Sie ein Mitglied aus der linken Liste aus</h5>
-          <p class="small">Nutzen Sie die Liste oder die Pfeiltasten (▲/▼) zur schnellen Navigation.</p>
+          <h5>Wähle ein Mitglied aus der linken Liste aus</h5>
+          <p class="small">Nutze die Liste oder die Pfeiltasten (▲/▼) zur schnellen Navigation.</p>
         </div>
       </div>
 
@@ -900,7 +900,7 @@ function jbConfirmEntrySchuetzenhaus(chk, pn) {
   const currentVal = chk.checked;
   const prevVal = !currentVal;
   
-  if (confirm("Möchten Sie den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?")) {
+  if (confirm("Möchtest du den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?")) {
     jbUpdateState('schuetzenhaus', currentVal, pn);
   } else {
     chk.checked = prevVal;
@@ -1830,7 +1830,7 @@ window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {
   const feeKonto = zFee ? (zFee.konto_haben || zFee.konto || '8500') : '8500';
 
   const textMsg = activateState ? `für ALLE aktiven Schützen aktivieren` : `für ALLE Schützen abwählen`;
-  const ok = confirm(`Möchten Sie die Zusatzposition ${feeKey} (${feeName}) ${textMsg}?`);
+  const ok = confirm(`Möchtest du die Zusatzposition ${feeKey} (${feeName}) ${textMsg}?`);
   if (!ok) return;
 
   _jbMembers.forEach(m => {

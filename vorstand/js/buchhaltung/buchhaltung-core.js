@@ -218,7 +218,7 @@ function getBuchhaltungSupabaseClient() {
 }
 window.getBuchhaltungSupabaseClient = getBuchhaltungSupabaseClient;
 
-// Lädt alle Buchhaltungsdaten (Supabase-First mit GAS-Fallback)
+// Lädt alle Buchhaltungsdaten aus Supabase (Single Source of Truth)
 window.loadBuchhaltungData = async function(silent = false, forceReload = false) {
   const hasCachedData = window._bhJournal && window._bhJournal.length > 0 && window._bhKontenrahmen && window._bhKontenrahmen.length > 0;
   

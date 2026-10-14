@@ -1069,7 +1069,7 @@
   };
 
   window.docDeleteClause = async function(clauseId) {
-    if (!confirm("⚠️ Möchten Sie diese Klausel wirklich unwiderruflich löschen?")) return;
+    if (!confirm("⚠️ Möchtest du diese Klausel wirklich unwiderruflich löschen?")) return;
     const sb = getDocSupabaseClient();
     if (!sb) return;
 

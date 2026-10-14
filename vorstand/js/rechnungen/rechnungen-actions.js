@@ -1952,7 +1952,7 @@ window.rnOpenCreateModal = async function(btnEl) {
             <!-- Adressdaten (Gesperrt / Readonly Master-Kärtchen) -->
             <div id="rnc-recipient-box" class="p-3 bg-light rounded-3 border mb-4 shadow-2xs">
               <div id="rnc-empty-hint" class="text-muted small text-center py-2">
-                <i class="fas fa-info-circle me-1 text-primary"></i> Bitte wählen Sie oben einen Empfänger aus oder erfassen Sie einen neuen Kontakt.
+                <i class="fas fa-info-circle me-1 text-primary"></i> Bitte wähle oben einen Empfänger aus oder erfasse einen neuen Kontakt.
               </div>
               
               <div id="rnc-details-wrap" style="display:none;">
@@ -2475,7 +2475,7 @@ window.rnSaveCreateInvoice = async function(event) {
   if (!isFreierBrief) {
     for (let i = 0; i < positions.length; i++) {
       if (!positions[i].konto) {
-        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
         return;
       }
     }
@@ -3208,7 +3208,7 @@ window.rnSaveEditInvoice = async function(event, invoiceId) {
   if (!isFreierBriefEdit) {
     for (let i = 0; i < positions.length; i++) {
       if (!positions[i].konto) {
-        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wählen Sie in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
+        alert(`❌ Position ${positions[i].position_nr} („${positions[i].description || 'Ohne Bezeichnung'}“) hat kein Gegenkonto (Haben).\n\nJede Rechnungsposition muss zwingend ein gültiges Gegenkonto aufweisen.\nBitte wähle in der Spalte „Konto (Haben)“ ein Konto aus dem Kontenrahmen aus.`);
         return;
       }
     }
@@ -4437,7 +4437,7 @@ window.rnUpdateBatchSelectedCount = function() {
 window.rnExecuteBatchMahnung = async function() {
   const checkedBoxes = document.querySelectorAll('.rn-batch-check:checked');
   if (checkedBoxes.length === 0) {
-    alert("❌ Bitte wählen Sie mindestens eine Rechnung für den Mahnlauf aus.");
+    alert("❌ Bitte wähle mindestens eine Rechnung für den Mahnlauf aus.");
     return;
   }
 
@@ -5768,7 +5768,7 @@ window.rnSaveContactForm = async function(event) {
 window.rnDeleteContactPrompt = async function(contactId) {
   const c = (window._externalContacts || []).find(x => String(x.id).trim() === String(contactId).trim());
   const label = c ? (window.rnGetContactDisplayName ? window.rnGetContactDisplayName(c) : (c.firma || c.name || `ID ${c.id}`)) : `ID ${contactId}`;
-  if (!confirm(`Möchten Sie den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`)) return;
+  if (!confirm(`Möchtest du den externen Kontakt "${label}" (EXT-${contactId}) wirklich löschen?`)) return;
 
   showLoadingOverlay('Lösche Kontakt...');
 

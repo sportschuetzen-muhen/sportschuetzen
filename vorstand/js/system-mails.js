@@ -1,13 +1,12 @@
 // === MODUL: SYSTEM-MAILS ===
-// Supabase-First Architektur (Phase 14)
+// Supabase-Architektur (Single Source of Truth)
 // Liest/schreibt aus public.system_mail_configs.
-// Dual-Write: Nach Supabase-Speicherung wird asynchron zu GAS (App_Info) gespiegelt.
 
 let sysMailState = {
   configs: [],   // Zeilen aus public.system_mail_configs
   members: []    // Mitglieder für Dropdown (nicht verstorben, nicht ausgetreten, mit E-Mail)
 };
-let sysMailOriginal = null; // Deep-Copy für Change-Detection beim Dual-Write
+let sysMailOriginal = null; // Deep-Copy für Change-Detection beim Speichern
 
 // =========================================================
 //  SUPABASE CLIENT HELPER

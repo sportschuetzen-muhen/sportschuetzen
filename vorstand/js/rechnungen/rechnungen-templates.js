@@ -267,7 +267,7 @@ window.rnSaveTemplate = async function(event, templateId) {
 };
 
 window.rnDeleteTemplate = async function(templateId, desc) {
-  if (!confirm(`⚠️ Möchten Sie die Standard-Position "${desc}" wirklich aus den Vorlagen löschen?`)) return;
+  if (!confirm(`⚠️ Möchtest du die Standard-Position "${desc}" wirklich aus den Vorlagen löschen?`)) return;
   
   const isServerTpl = templateId !== null && templateId !== undefined && templateId !== '';
   

@@ -15,7 +15,7 @@ async function loadUmfragenHistorie(force = false) {
         await ensureMembersLookup();
 
         if (force || !hasLogs) {
-            // 1. Hole rohe Logs (zuerst Supabase, sonst Google Apps Script)
+            // 1. Hole rohe Logs aus Supabase
             const supa = (typeof getPollSupabaseClient === 'function') ? getPollSupabaseClient() : (window.supabaseClient || null);
             if (supa) {
                 try {

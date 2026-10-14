@@ -2655,7 +2655,7 @@ window.bhBankBookOne = async function(txIdx, customBelegNr, isBatch = false) {
     }
   };
 
-  // Streng sequentiell an die Queue hängen, damit HTTP-Requests nie zeitgleich bei GAS eintreffen
+  // Streng sequentiell an die Queue hängen, um Race Conditions bei Buchungsnummern und Journal-Einträgen zu vermeiden
   window._bhBookingPromiseQueue = window._bhBookingPromiseQueue.then(runTask, runTask);
   return window._bhBookingPromiseQueue;
 };
@@ -2950,7 +2950,7 @@ window.bhBankBookAll = async function() {
       throw new Error('Keine gültigen Buchungssätze generiert.');
     }
 
-    // 3. Sammel-Commit (Supabase First + Dual-Write to GAS)
+    // 3. Sammel-Commit (Supabase PostgreSQL - Single Source of Truth)
     const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
     let sbBatchSuccess = false;
     let createdBatchEntries = [];
@@ -2981,13 +2981,13 @@ window.bhBankBookAll = async function() {
 
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
-          console.warn('[Buchhaltung Supabase] Batch insert error, falling back to GAS:', sbErr);
+          console.error('[Buchhaltung Supabase] Batch insert error:', sbErr);
         } else {
           sbBatchSuccess = true;
           createdBatchEntries = sbData || rowsToInsert;
         }
       } catch (sbEx) {
-        console.warn('[Buchhaltung Supabase] Batch insert exception:', sbEx);
+        console.error('[Buchhaltung Supabase] Batch insert exception:', sbEx);
       }
     }
 
@@ -2996,7 +2996,7 @@ window.bhBankBookAll = async function() {
     }
     if (batchToast) {
       const span = batchToast.querySelector('span');
-      if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze an GAS (Dual-Write)...`;
+      if (span) span.textContent = `⏳ Verbuche ${allJournalEntries.length} Buchungssätze in Supabase...`;
     }
 
     if (!sbBatchSuccess) {
@@ -3226,7 +3226,7 @@ window.bhBankBookSelected = async function() {
       throw new Error('Keine gültigen Buchungssätze generiert.');
     }
 
-    // 3. Sammel-Commit (Supabase First + Dual-Write to GAS)
+    // 3. Sammel-Commit (Supabase PostgreSQL - Single Source of Truth)
     const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
     let sbBatchSuccess = false;
     let createdBatchEntries = [];
@@ -3257,13 +3257,13 @@ window.bhBankBookSelected = async function() {
 
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
-          console.warn('[Buchhaltung Supabase] Batch selected insert error, falling back to GAS:', sbErr);
+          console.error('[Buchhaltung Supabase] Batch selected insert error:', sbErr);
         } else {
           sbBatchSuccess = true;
           createdBatchEntries = sbData || rowsToInsert;
         }
       } catch (sbEx) {
-        console.warn('[Buchhaltung Supabase] Batch selected insert exception:', sbEx);
+        console.error('[Buchhaltung Supabase] Batch selected insert exception:', sbEx);
       }
     }
 
@@ -3272,7 +3272,7 @@ window.bhBankBookSelected = async function() {
     }
     if (batchToast) {
       const span = batchToast.querySelector('span');
-      if (span) span.textContent = `⏳ Sende ${allJournalEntries.length} Buchungssätze an GAS (Dual-Write)...`;
+      if (span) span.textContent = `⏳ Verbuche ${allJournalEntries.length} Buchungssätze in Supabase...`;
     }
 
     if (!sbBatchSuccess) {

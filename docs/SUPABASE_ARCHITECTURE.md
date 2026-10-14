@@ -51,73 +51,64 @@ Die Migration von Google Sheets / Google Apps Script (GAS) auf Supabase folgt f�
 
 ## 2. Gesamtsystem & Systemgrenzen
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                       BENUTZER (Browser)                                        │
+`	ext
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   BENUTZER (Browser)                                    │
 │         Vorstand (Desktop/Tablet)        Mitglieder (Mobile PWA)        Öffentlich (Website)    │
-└────────────────┬─────────────────────────────────┬───────────────────────────────┬──────────────┘
-                 │ HTTPS                           │ HTTPS                         │ HTTPS
-                 ▼                                 ▼                               ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                         DREI FRONTENDS                                          │
-│  1. Vorstand-Portal:    vorstand/index.html + vorstand/js/* (SPA, Bootstrap 5)                  │
-│  2. Mitglieder-App:     index.html + app.js + app/* (PWA, Standblatt, RSVP)                     │
-│  3. Vereins-Website:    sportschuetzen-website/frontend/* (Homepage, News, Buchungsanfrage)    │
-└────────────────┬─────────────────────────────────┬───────────────────────────────┬──────────────┘
-                 │                                 │                               │
-                 │ HTTPS (REST / GraphQL / Realtime) via Supabase Client           │
-                 ▼                                 ▼                               ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                               CLOUDFLARE WORKERS (Edge Gateways)                                │
-│  - v1-vorstand-api / sportschuetzen-website-worker / Hilfs-Worker                               │
-│  - Leiten Legacy-Requests an GAS weiter / Neue Endpunkte an Supabase REST                       │
-│  - Immich Proxy (Fotogalerien) & Social Media Graph APIs                                        │
-└────────────────┬─────────────────────────────────────────────────────────────────┬──────────────┘
-                 │                                                                 │
-                 ▼                                                                 ▼
+└──────────────────────────────────────────┬──────────────────────────────────────────┘
+                                             │ HTTPS
+                                             ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                     DREI FRONTENDS                                      │
+│  1. Vorstand-Portal:    vorstand/index.html + vorstand/js/* (SPA, Bootstrap 5)          │
+│  2. Mitglieder-App:     index.html + app.js + app/* (PWA, Standblatt, RSVP)             │
+│  3. Vereins-Website:    sportschuetzen-website/frontend/* (Homepage, News, Buchungen)   │
+└──────────────────────────────────────────┬──────────────────────────────────────────┘
+                                             │
+                                             │ HTTPS (REST / Auth / Storage / Edge Functions)
+                                             ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                          CLOUDFLARE TUNNEL (Zero Trust Gateway)                         │
+│                          https://supabase-muhen.danfamily.uk                            │
+└──────────────────────────────────────────┬──────────────────────────────────────────┘
+                                             │
+                                             ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                            PROXMOX VE CT 117 (Supabase Server)                          │
+│  ┌──────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                        SUPABASE CORE SERVICES (Docker)                            │  │
+│  │  ├── GoTrue Auth (JWT, Magic Link, Session-Management)                            │  │
+│  │  ├── PostgreSQL 17.6 (Single Source of Truth, Row Level Security RLS)             │  │
+│  │  ├── PostgREST (Auto-REST API Gateway)                                            │  │
+│  │  ├── Storage API (operatives-storage, campaign-assets)                            │  │
+│  │  ├── Edge Functions (Deno Runtime: generate-pdf, send-email)                      │  │
+│  │  └── Realtime (Websockets für Live-Updates)                                       │  │
+│  └─────────────────────────────────┬─────────────────────────────────────────────────┘  │
+└────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                     │
+                 ┌───────────────────┴───────────────────┐
+                 │                                       │
+                 ▼ Revisionssicheres WORM-Archiv         ▼ Kalender-Synchronisation
 ┌──────────────────────────────────────────────┐  ┌───────────────────────────────────────────────┐
-│         LEGACY-SCHICHT (Google Sheets)       │  │        PROXMOX VE HOST (Self-Hosted)          │
-│                                              │  │                                               │
-│  - Google Sheets (10 Master-Spreadsheets)    │  │  ┌─────────────────────────────────────────┐  │
-│  - Google Apps Script (11 Projekte)          │  │  │        SUPABASE (Docker / VM)           │  │
-│  - SSV-XLSX Import (Verbandsdaten)           │  │  │  ├── Auth (GoTrue / JWT)                │  │
-│                                              │  │  │  ├── PostgreSQL (Relational + RLS)     │  │
-│  [Bleibt Master für SSV-Stammdaten & Legacy] │  │  │  ├── Storage (Operative PDFs)          │  │
-│                        │                     │  │  │  └── PostgREST (Auto-REST API)         │  │
-│                        │ manueller Sync      │  │  └────────────────────┬────────────────────┘  │
-│                        ▼                     │  │                       │                       │
-│        ┌─────────────────────────────┐       │  │                       ▼ Asynchroner Push      │
-│        │  Supabase Read-Replica      │───────┼──┼─►┌─────────────────────────────────────────┐  │
-│        │  public.members             │       │  │  │   PAPERLESS-NGX (Dokumenten-Archiv)     │  │
-│        └─────────────────────────────┘       │  │  │   Langfristarchiv Verträge & Quittungen │  │
-│                                              │  │  └─────────────────────────────────────────┘  │
-│                                              │  │  ┌─────────────────────────────────────────┐  │
-│                                              │  │  │   IMMICH (Fotoverwaltung & Alben)       │  │
-│                                              │  │  └─────────────────────────────────────────┘  │
-└──────────────────────┬───────────────────────┘  └───────────────────────────────────────────────┘
-                       │
-                       ▼ API-Call bei Buchungsbestätigung
-┌──────────────────────────────────────────────┐
-│       GOOGLE CALENDAR (Belegungs-Master)     │
-│   Führendes System für Schützenhaus-Belegung │
-└──────────────────────────────────────────────┘
+│       PAPERLESS-NGX (LXC 114)                │  │       GOOGLE CALENDAR (Service Account)       │
+│   Langfristarchiv für Rechnungen & Verträge  │  │   Belegungsanzeige auf der Vereins-Website    │
+└──────────────────────────────────────────────┘  └───────────────────────────────────────────────┘
 ```
 
-> **UI-Design im Vorstand-Portal:** Da sämtliche Kernmodule erfolgreich auf Supabase migriert wurden, wurden temporäre Migrations-Badges und Banner entfernt. Das Vorstand-Portal präsentiert sich nun einheitlich im finalen Produktions-Design ohne visuelles Rauschen.
+> **UI-Design im Vorstand-Portal:** Sämtliche Kernmodule laufen produktiv und verbindlich über Supabase. Temporäre Migrations-Badges und Banner wurden entfernt. Das Vorstand-Portal präsentiert sich einheitlich im finalen Produktions-Design ohne visuelles Rauschen.
 
 ### Rollenverteilung der Teilsysteme
 
 | System / Komponente | Host / Umgebung | Führende Zuständigkeit (Single Source of Truth) |
 |:--------------------|:----------------|:------------------------------------------------|
-| **Supabase PostgreSQL** | Proxmox VE (LXC/VM) | Anlässe, Vermietungs-Verwaltung, Buchungsstatus, Inventar, Benutzerrollen, Berechtigungen |
-| **Supabase Auth** | Proxmox VE | Zentrales Login (JWT) für alle 3 Frontends, Passwortverwaltung mit bcrypt |
-| **Supabase Storage** | Proxmox VE | Operative Dokumentenablage (generierte Mietvertrags-PDFs, temporäre Uploads) |
-| **Google Calendar** | Google Cloud | Tatsächliche Raumbelegung / Belegungsstatus des Schützenhauses |
-| **Paperless-NGX** | Proxmox VE | Revisionssicheres Langzeitarchiv für Verträge, Rechnungen und Protokolle |
+| **Supabase PostgreSQL** | Proxmox CT 117 | Alle Vereinsdaten: Mitglieder, Rechnungen, Vermietung, Termine, Jahresbeiträge, Resultate, Inventar, Buchhaltung, Logins & RBAC |
+| **Supabase Auth** | Proxmox CT 117 | Zentrales Login (JWT) für alle 3 Frontends, Passwortverwaltung mit bcrypt |
+| **Supabase Storage** | Proxmox CT 117 | Operative Dokumentenablage (`operatives-storage`, `campaign-assets`) |
+| **Supabase Edge Functions** | Proxmox CT 117 | Vollvektorielle PDF-Generierung (`generate-pdf`) inkl. SIX Swiss QR-Bill & SMTP-Versand (`send-email`) |
+| **Google Calendar** | Google Cloud API | Belegungsanzeige auf der Website via verifiziertes Dienstkonto |
+| **Paperless-NGX** | Proxmox LXC 114 | Revisionssicheres WORM-Langzeitarchiv für Verträge, Rechnungen und Protokolle |
 | **Immich** | Proxmox VE | Original-Bildverwaltung, Gesichts- und Objekterkennung, Fotogalerien |
-| **Google Sheets** | Google Drive | Vorübergehender Master für SSV-Mitgliederdaten (während Phasen 0–5) |
-| **Cloudflare Workers** | Cloudflare Edge | Caching, Edge-Proxy, API-Routing zwischen Legacy- und Supabase-Welt |
-| **Cloudflare Tunnel** | Proxmox VE (LXC 112) | Sichere, weltweite HTTPS-Verbindung ohne offene Router-Ports |
+| **Cloudflare Tunnel** | Proxmox LXC 112 | Sichere, weltweite HTTPS-Verbindung ohne offene Router-Ports |
 
 ### 2.3 Netzwerk-Architektur & Anbindung (Cloudflare Tunnel)
 
@@ -594,23 +585,21 @@ Das Modul ist im bestehenden Vorstand-Portal (`vorstand/`) nahtlos als eigenstä
 
 ---
 
-### Fachmodul: VERMIETUNG (Phase 3 – Abgeschlossen)
+### Fachmodul: VERMIETUNG (Produktiv)
 
-Die Vermietungsverwaltung für Schützenstube und Schützenhaus wurde als erstes operatives Altsystem erfolgreich migriert.
+Die Vermietungsverwaltung für Schützenstube und Schützenhaus wird vollständig über Supabase und angebundene Schnittstellen gesteuert:
 
-#### Architektur & Aufgabenteilung (Hybridbetrieb):
+#### Architektur & Aufgabenteilung:
 * **Supabase PostgreSQL (Master-Datenbank):**
   * Hält alle Buchungen (`rental_requests`), Statusabläufe (`rental_status_logs`), Storno-Feedbacks (`rental_cancellation_feedbacks`), Tarife (`rental_pricing`) und dynamische Konfigurationen (`rental_settings`).
-  * Keine Hartcodierung: Mietpreise (Standard CHF 300.-), Vorlagen-ID (`1j6s4pq0dOHyF0Viko_uDfhbTwO5pPCX_ZYfu6nC0N-o`), IBAN, Absender- und Wirtschaftsdaten werden dynamisch verwaltet.
-* **Google Apps Script & Google Calendar (Ausführungs-Dienstleister):**
-  * Belegungs-Master & Concurrency-Schutz: Miettermin ganztägig belegt, Folgetag automatisch als Reinigungspuffer gesperrt; Freigabe bei Stornierung.
-  * PDF-Mietvertrag: Erstellung mit amtlicher Schweizer QR-Rechnung (SPC 0200 1) via Google Doc Template.
-  * E-Mail-Versand: Versand von Vertrag, Mahnung, Schlüsselübergabe, Storno-Mail mit Feedbacklink und Wirtschafts-Benachrichtigung.
-  * E-Banking Scan: `raiffeisen.js` scannt automatische Gutschrifts-Mails der Raiffeisenbank im Gmail-Label `Raiffeisen` und stößt automatische Zahlungsbestätigung an.
-* **Automatischer Abgleich & Schutz vor Doppelversand:**
-  * Mails werden ausschließlich über definierte Workflow-Trigger versendet.
-  * Das Vorstand-Portal (`vorstand/js/vermietung/`) prüft vor Mailaktionen (z. B. Mahnung, Schlüsselübergabe), ob diese bereits versandt wurden, und gleicht im Hintergrund neue Raiffeisen-Zahlungseingänge automatisch nach Supabase ab.
-  * Bereinigt: Clubdesk-Export und WhatsApp/CallMeBot wurden vollständig entfernt.
+  * Keine Hartcodierung: Mietpreise, Zahlungsfristen (`payment_due_days`), IBAN und Absenderdaten werden dynamisch verwaltet.
+* **Supabase Edge Functions (`generate-pdf` & `send-email`):**
+  * Vertragserstellung: Generiert mehrseitige Mietverträge mit dynamischen Klauseln (`document_template_clauses`) und offiziellem Schweizer QR-Zahlteil (SIX SPC 0200 1).
+  * Automatischer E-Mail-Versand: Vertrag, Bestätigung, Mahnung, Schlüsselübergabe und Storno via SMTP mit Audit-Log in `public.mail_logs`.
+* **Google Calendar Integration:**
+  * Synchronisation von Belegungs- und Reinigungspuffern über das offizielle Dienstkonto (`vermietung-bot@kalender-api-zugriff.iam.gserviceaccount.com`).
+* **Zentraler RechnungsCore:**
+  * Buchungen erzeugen automatisiert standardisierte Rechnungen (`InvoiceOrder`) im RechnungsCore. Zahlungseingänge werden direkt im Buchhaltungsjournal (`accounting_journal`) verbucht.
 
 ```sql
 -- 1. Dynamische Einstellungen (100% ohne Hartcodierung)

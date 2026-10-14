@@ -1105,8 +1105,8 @@
 
         const hasChildren = (state.traktanden || []).some(t => t.parent_id === trId);
         const msg = hasChildren
-            ? `Möchten Sie das Traktandum "${item.titel}" und ALLE dazugehörigen Untertraktanden wirklich löschen?`
-            : `Möchten Sie das Traktandum "${item.titel}" wirklich löschen?`;
+            ? `Möchtest du das Traktandum "${item.titel}" und ALLE dazugehörigen Untertraktanden wirklich löschen?`
+            : `Möchtest du das Traktandum "${item.titel}" wirklich löschen?`;
 
         if (!confirm(msg)) return;
 
@@ -1336,7 +1336,7 @@
     };
 
     window.gvDossierDeleteAttachment = async function (attId) {
-        if (!confirm("Möchten Sie diese Beilage wirklich aus dem Dossier entfernen?")) return;
+        if (!confirm("Möchtest du diese Beilage wirklich aus dem Dossier entfernen?")) return;
         const supa = getSupabase();
         if (!supa) return;
 
@@ -1519,12 +1519,12 @@
         }
 
         if (!state.compiledPdfUrl) {
-            if (!confirm("⚠️ Achtung: Es wurde noch kein Master-Dossier kompiliert!\n\nMöchten Sie den Massenversand trotzdem starten?")) {
+            if (!confirm("⚠️ Achtung: Es wurde noch kein Master-Dossier kompiliert!\n\nMöchtest du den Massenversand trotzdem starten?")) {
                 return;
             }
         }
 
-        if (!confirm(`🚀 Massenversand freigeben:\n\nEs werden ${validMembers.length} E-Mails via zentrale Mail-Engine versendet.\n\nMöchten Sie den Versand jetzt definitiv starten?`)) {
+        if (!confirm(`🚀 Massenversand freigeben:\n\nEs werden ${validMembers.length} E-Mails via zentrale Mail-Engine versendet.\n\nMöchtest du den Versand jetzt definitiv starten?`)) {
             return;
         }
 

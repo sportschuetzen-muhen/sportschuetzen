@@ -1,5 +1,5 @@
 // === SUB-MODUL: JAHRESMEISTERSCHAFT - CORE ===
-// Native Supabase Architecture mit Google Apps Script Fallback & Dual-Write
+// Native Supabase PostgreSQL Architecture (Single Source of Truth)
 
 let jmRawGrid = [];
 let jmCurrentJahr = "current";
