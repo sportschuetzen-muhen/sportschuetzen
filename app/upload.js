@@ -3,6 +3,8 @@ const WORKER_OCR_URL = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?modu
 const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
+let _currentOcrAnalysis = null;
+
 if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 }
@@ -355,6 +357,37 @@ async function processPdfStandblatt(file, user) {
         contestMsg = `📝 <strong>Anlass erkannt:</strong> ${detectedTitle}`;
     }
 
+    const isVerifiedPdf = nameMatches && (lizenzMatches || jahrgangMatches) && foundPoints !== null;
+    _currentOcrAnalysis = {
+        source: "pdf",
+        modelUsed: "pdfjs_client",
+        schuetze: {
+            formName: `${user.vorname || ''} ${user.nachname || ''}`.trim(),
+            formLizenz: uLizenz,
+            formJahrgang: uJahrgang,
+            nameFound: nameMatches,
+            nameStatus: nameMatches ? "MATCH" : "NOT_FOUND",
+            lizenzFound: lizenzMatches,
+            lizenzStatus: lizenzMatches ? "MATCH" : "NOT_FOUND",
+            jgFound: jahrgangMatches,
+            jgStatus: jahrgangMatches ? "MATCH" : "NOT_FOUND"
+        },
+        anlass: {
+            erkannt: detectedTitle,
+            matchedTitle: bestComp ? bestComp.title : "",
+            isKnown: !!bestComp,
+            status: bestComp ? "MATCH" : "NEW_COL"
+        },
+        ergebnis: {
+            punkte: foundPoints,
+            maximal: foundPoints !== null ? (bestComp ? bestComp.max : 100) : null,
+            status: foundPoints !== null ? "MATCH" : "NOT_FOUND"
+        },
+        raw_text: fullText ? fullText.substring(0, 1000) : "",
+        snippet: lines.slice(0, 8).join(" | "),
+        verified: isVerifiedPdf
+    };
+
     if (foundPoints !== null) {
         const defaultMax = bestComp ? bestComp.max : null;
         const { max, reason } = defaultMax ? { max: defaultMax, reason: "Aus Tabelle bekannte Maximalpunktzahl" } : forecastMaxPoints(fullText, foundPoints);
@@ -474,6 +507,44 @@ async function processImageStandblatt(base64Data, user) {
                 const fc = forecastMaxPoints(rawText, pts || 100);
                 maxPts = fc.max;
             }
+
+            const nameStatus = nameFound ? "MATCH" : ((uVor && textLower.includes(uVor)) || (uNach && textLower.includes(uNach)) ? "PARTIAL" : "NOT_FOUND");
+            const lizenzStatus = lizenzFound ? "MATCH" : "NOT_FOUND";
+            const contestStatus = bestComp ? "MATCH" : (chosenTitle ? "NEW_COL" : "ERROR");
+            const scoreStatus = (!isNaN(pts) && pts > 0) ? "MATCH" : "NOT_FOUND";
+            const isVerified = (nameStatus === "MATCH") && (lizenzStatus === "MATCH") && (scoreStatus === "MATCH");
+
+            _currentOcrAnalysis = {
+                source: "gemini_vision",
+                modelUsed: data.modelUsed || "gemini-3-flash-preview",
+                schuetze: {
+                    formName: `${user.vorname || ''} ${user.nachname || ''}`.trim(),
+                    formLizenz: uLiz,
+                    formJahrgang: uJg,
+                    detectedShooter: detectedShooter,
+                    nameFound: nameFound,
+                    nameStatus: nameStatus,
+                    lizenzFound: lizenzFound,
+                    lizenzStatus: lizenzStatus,
+                    jgFound: jgFound,
+                    jgStatus: jgFound ? "MATCH" : "NOT_FOUND"
+                },
+                anlass: {
+                    erkannt: chosenTitle,
+                    matchedTitle: bestComp ? bestComp.title : "",
+                    stich: detectedContest.stich || "",
+                    isKnown: !!bestComp,
+                    status: contestStatus
+                },
+                ergebnis: {
+                    punkte: !isNaN(pts) ? pts : null,
+                    maximal: !isNaN(maxPts) ? maxPts : null,
+                    status: scoreStatus
+                },
+                raw_text: rawText,
+                snippet: rawText ? (rawText.length > 500 ? rawText.substring(0, 500) + '...' : rawText) : "",
+                verified: isVerified
+            };
 
             if (!isNaN(pts) && pts > 0) {
                 document.getElementById("erzielt").value = pts;
@@ -650,7 +721,27 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             fileUrl = `${WORKER_UPLOAD_URL}?action=get_standblatt&file=${encodeURIComponent(fileName)}`;
         }
 
-        // 2. Supabase Audit-Log & Inbox (in contest_ocr_logs protokollieren mit Status 'pending')
+        // Fallback falls keine OCR stattfand (z.B. manuelle Eingabe)
+        if (!_currentOcrAnalysis) {
+            _currentOcrAnalysis = {
+                source: "manual",
+                modelUsed: "none",
+                schuetze: {
+                    formName: `${user.vorname || ''} ${user.nachname || ''}`.trim(),
+                    formLizenz: String(user.lizenz || user.id || ''),
+                    nameStatus: "UNCHECKED",
+                    lizenzStatus: "UNCHECKED"
+                },
+                anlass: { erkannt: anlass || "Auswärtiges Schiessen", status: "UNCHECKED" },
+                ergebnis: { punkte: erzielt, maximal: maximal, status: "UNCHECKED" },
+                snippet: "Manuell eingereicht ohne vorherige automatische KI-Prüfung.",
+                verified: false
+            };
+        }
+
+        const logId = `sb_${user.lizenz || user.id}_${Date.now()}`;
+
+        // 2. Supabase Audit-Log & Inbox (in contest_ocr_logs protokollieren mit Status 'pending' & ocr_analysis)
         await fetch(`${SUPABASE_REST_URL}/contest_ocr_logs`, {
             method: "POST",
             headers: {
@@ -659,10 +750,10 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                id: `sb_${user.lizenz || user.id}_${Date.now()}`,
+                id: logId,
                 contest_type: "standblatt",
                 round: "auswaertig",
-                model_used: "client_ai_assisted",
+                model_used: _currentOcrAnalysis.modelUsed || "client_ai_assisted",
                 recognized_count: 1,
                 raw_response: {
                     status: "pending",
@@ -675,11 +766,117 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                     jahrgang: user.jahrgang || '',
                     fileName: fileName,
                     fileUrl: fileUrl,
+                    ocr_analysis: _currentOcrAnalysis,
                     timestamp: new Date().toISOString()
                 },
                 created_by: String(user.lizenz || user.id)
             })
         });
+
+        // 3. E-Mail-Bestätigung an Schützen & Kopie an System-Mails (Info_Mail_Standblatt_Upload)
+        try {
+            let shooterEmail = user.email || '';
+            if (!shooterEmail && (user.lizenz || user.id)) {
+                try {
+                    const lizVal = encodeURIComponent(String(user.lizenz || user.id));
+                    const memRes = await fetch(`${SUPABASE_REST_URL}/members?person_number=eq.${lizVal}&select=primary_email`, {
+                        headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` }
+                    });
+                    const memData = await memRes.json();
+                    if (Array.isArray(memData) && memData.length > 0 && memData[0].primary_email) {
+                        shooterEmail = memData[0].primary_email;
+                    }
+                } catch (memErr) {
+                    console.warn("Konnte E-Mail aus Mitgliederstamm nicht nachladen:", memErr);
+                }
+            }
+
+            const isVerified = _currentOcrAnalysis && _currentOcrAnalysis.verified;
+            const perf = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(1) : '100.0';
+            const subject = isVerified
+                ? `Bestätigung: Eingang Standblatt – ${anlass || 'Auswärtiges Schiessen'} (${erzielt} Pkt)`
+                : `Eingang bestätigt: Meldung (${erzielt} Pkt) – ${anlass || 'Auswärtiges Schiessen'}`;
+
+            const headerColor = isVerified ? '#2e7d32' : '#b45309';
+            const headerTitle = isVerified ? 'Eingang bestätigt: Standblatt erfasst' : 'Eingang bestätigt: Manuelle Prüfung eingeleitet';
+            const infoBanner = isVerified
+                ? `<div style="background:#dcfce7; border-left:4px solid #22c55e; padding:12px 16px; border-radius:6px; margin:16px 0; color:#166534; font-size:14px;">
+                     <strong>✅ Standblatt automatisch zugeordnet:</strong> Dein Resultat wurde erfasst und zur 1-Klick-Übernahme in die Jahresmeisterschaft bereitgestellt.
+                   </div>`
+                : `<div style="background:#fef9c3; border-left:4px solid #eab308; padding:12px 16px; border-radius:6px; margin:16px 0; color:#854d0e; font-size:14px;">
+                     <strong>ℹ️ Hinweis zur Verarbeitung:</strong> Dein Standblatt-Foto konnte automatisch noch nicht vollständig zweifelsfrei zugeordnet werden. Dein Schützenmeister wird das Resultat <strong>manuell prüfen und in die Jahresmeisterschaft übernehmen</strong>. Du musst nichts weiter unternehmen.
+                   </div>`;
+
+            const htmlBody = `
+                <div style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width:620px; margin:0 auto; padding:24px; color:#1f2937; line-height:1.5;">
+                    <div style="border-bottom:2px solid ${headerColor}; padding-bottom:12px; margin-bottom:20px;">
+                        <h2 style="color:${headerColor}; margin:0; font-size:20px;">${headerTitle}</h2>
+                        <div style="font-size:13px; color:#6b7280; margin-top:4px;">Sportschützen Muhen · Jahresmeisterschaft</div>
+                    </div>
+
+                    <p style="font-size:15px; margin-bottom:16px;">
+                        Hallo <strong>${user.vorname || 'Schütze'}</strong>,<br>
+                        vielen Dank für deine Meldung über <strong>${erzielt} Punkte</strong> für das <strong>${anlass || 'Auswärtiges Schiessen'}</strong>.
+                    </p>
+
+                    ${infoBanner}
+
+                    <table style="width:100%; border-collapse:collapse; margin:20px 0; background:#f9fafb; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;">
+                        <tr>
+                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; width:35%; color:#4b5563;">Schütze</td>
+                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${user.vorname} ${user.nachname || ''} ${user.lizenz ? `(Lizenz: ${user.lizenz})` : ''}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; color:#4b5563;">Schiessanlass</td>
+                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${anlass || 'Auswärtiges Schiessen'}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:12px 16px; font-weight:600; color:#4b5563;">Resultat</td>
+                            <td style="padding:12px 16px; color:#111827;">
+                                <span style="font-size:18px; font-weight:bold; color:${headerColor};">${erzielt}</span> / ${maximal} Pkt.
+                                <span style="color:#6b7280; font-size:13px; margin-left:6px;">(${perf}%)</span>
+                            </td>
+                        </tr>
+                    </table>
+
+                    ${fileUrl ? `
+                    <div style="margin:20px 0; text-align:center;">
+                        <a href="${fileUrl}" target="_blank" style="display:inline-block; background:#0284c7; color:#ffffff; font-weight:600; padding:10px 20px; border-radius:6px; text-decoration:none; font-size:14px;">
+                            📄 Standblatt-Beleg anzeigen
+                        </a>
+                    </div>` : ''}
+
+                    <p style="font-size:13px; color:#6b7280; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:16px;">
+                        Sobald die Freigabe durch den Schützenmeister erfolgt ist, erscheint dein Resultat offiziell in der Jahresmeisterschaft.<br>
+                        <a href="https://www.sportschuetzen-muhen.ch/resultate/aktuelles_Jahr/jahresmeisterschaft" style="color:#0284c7; text-decoration:none;">Zur Online-Rangliste</a>
+                    </p>
+
+                    <p style="font-size:14px; margin-top:20px; color:#374151;">
+                        Guet Schuss!<br>
+                        <strong>Sportschützen Muhen</strong>
+                    </p>
+                </div>
+            `;
+
+            await fetch("https://supabase-muhen.danfamily.uk/functions/v1/send-email", {
+                method: "POST",
+                headers: {
+                    "apikey": SUPABASE_ANON_KEY,
+                    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    to: shooterEmail || undefined,
+                    ccSystemMailKey: "Info_Mail_Standblatt_Upload",
+                    subject: subject,
+                    html: htmlBody,
+                    module: "jahresmeisterschaft",
+                    recordId: logId
+                })
+            });
+        } catch (mailErr) {
+            console.warn("Mail-Versand an Schütze / Info-Mail nicht erfolgreich:", mailErr);
+        }
 
         alert("✔ Dein Standblatt wurde erfolgreich übermittelt und zur Prüfung eingereicht!");
         location.reload();

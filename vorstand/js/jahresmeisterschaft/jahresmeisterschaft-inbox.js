@@ -86,6 +86,359 @@ function renderJMStandblattInboxLoading() {
 }
 
 /**
+ * Ermittelt das visuelle Status-Badge für ein Standblatt
+ */
+function renderJMStandblattStatusBadge(raw) {
+    const ocr = raw.ocr_analysis;
+    if (raw.status === 'imported') {
+        return '<span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2 py-1"><i class="fas fa-check me-1"></i>Übernommen</span>';
+    }
+    if (raw.status === 'rejected') {
+        return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-semibold px-2 py-1"><i class="fas fa-times me-1"></i>Abgelehnt</span>';
+    }
+    if (!ocr) {
+        return '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-semibold px-2 py-1"><i class="fas fa-clock me-1"></i>Ausstehend</span>';
+    }
+    if (ocr.verified === true) {
+        return '<span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2 py-1"><i class="fas fa-check-circle me-1"></i>Verifiziert</span>';
+    }
+    if (ocr.anlass && ocr.anlass.status === 'NEW_COL') {
+        return '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-semibold px-2 py-1"><i class="fas fa-sparkles me-1"></i>Neuer Anlass</span>';
+    }
+    return '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-semibold px-2 py-1"><i class="fas fa-exclamation-triangle me-1"></i>Prüfung nötig</span>';
+}
+
+/**
+ * Toggelt die Sichtbarkeit des Detail-Prüfberichts
+ */
+function jmTogglePrüfbericht(logId, forceOpen = false) {
+    const detailRow = document.getElementById(`inbox-detail-${logId}`);
+    const btn = document.getElementById(`btn-toggle-report-${logId}`);
+    if (!detailRow) return;
+
+    const isHidden = detailRow.classList.contains('d-none');
+    if (forceOpen || isHidden) {
+        detailRow.classList.remove('d-none');
+        if (btn) {
+            btn.classList.add('active', 'btn-primary');
+            btn.classList.remove('btn-outline-primary');
+            btn.innerHTML = `<i class="fas fa-chevron-up me-1"></i>Prüfbericht verbergen`;
+        }
+    } else {
+        detailRow.classList.add('d-none');
+        if (btn) {
+            btn.classList.remove('active', 'btn-primary');
+            btn.classList.add('btn-outline-primary');
+            btn.innerHTML = `<i class="fas fa-table-list me-1"></i>Prüfbericht`;
+        }
+    }
+}
+window.jmTogglePrüfbericht = jmTogglePrüfbericht;
+
+/**
+ * Rendert die Detailkarte des Prüfberichts (Gegenüberstellung Formular vs. OCR-Erkennung & Beweis-Text)
+ */
+function renderJMStandblattDetailRow(item, canWrite) {
+    const raw = item.raw_response || {};
+    const ocr = raw.ocr_analysis || null;
+    const vorname = escapeHtml(raw.vorname || '');
+    const nachname = escapeHtml(raw.nachname || '');
+    const fullName = `${vorname} ${nachname}`.trim() || 'Unbekannt';
+    const lizenz = escapeHtml(raw.lizenz ? String(raw.lizenz).padStart(6, '0') : '-');
+    const jg = escapeHtml(raw.jahrgang ? String(raw.jahrgang) : '');
+    const anlass = escapeHtml(raw.anlass || 'Auswärtiges Schiessen');
+    const erzielt = parseFloat(raw.erzielt) || 0;
+    const maximal = parseFloat(raw.maximal) || 100;
+    const pct = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(2) : '0.00';
+    const fileUrl = raw.fileUrl || '';
+    const dateStr = item.created_at ? new Date(item.created_at).toLocaleString('de-CH') : '-';
+    const modelUsed = ocr ? (ocr.modelUsed || ocr.source || 'KI') : 'Nicht analysiert';
+    const snippet = ocr ? (ocr.snippet || ocr.raw_text || '') : '';
+
+    const isVerified = ocr && ocr.verified === true;
+    const isNewCol = ocr && ocr.anlass && ocr.anlass.status === 'NEW_COL';
+
+    let bannerHtml = '';
+    if (isVerified) {
+        bannerHtml = `
+            <div class="alert alert-success d-flex align-items-center mb-3 py-2 px-3 border border-success-subtle rounded-3">
+                <i class="fas fa-check-circle fa-lg me-2 text-success"></i>
+                <div><strong>Resultat verifiziert:</strong> Schütze, Lizenz und Punkte stimmen mit dem Standblatt-Beleg überein.</div>
+            </div>
+        `;
+    } else if (isNewCol) {
+        bannerHtml = `
+            <div class="alert alert-info d-flex align-items-center mb-3 py-2 px-3 border border-info-subtle rounded-3">
+                <i class="fas fa-sparkles fa-lg me-2 text-info"></i>
+                <div><strong>✨ Neuer Anlass:</strong> Die Spalte <em>«${escapeHtml(anlass)}»</em> existiert noch nicht und wird beim Übernehmen neu angelegt.</div>
+            </div>
+        `;
+    } else if (ocr) {
+        bannerHtml = `
+            <div class="alert alert-warning d-flex align-items-center mb-3 py-2 px-3 border border-warning-subtle rounded-3">
+                <i class="fas fa-exclamation-triangle fa-lg me-2 text-warning"></i>
+                <div><strong>⚠️ Manuelle Prüfung erforderlich:</strong> Die KI konnte die Angaben nicht vollständig zweifelsfrei verifizieren. Bitte prüfe die Eingabe gegen das Originalfoto.</div>
+            </div>
+        `;
+    } else {
+        bannerHtml = `
+            <div class="alert alert-secondary d-flex align-items-center justify-content-between mb-3 py-2 px-3 border rounded-3 flex-wrap gap-2">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-info-circle fa-lg me-2 text-secondary"></i>
+                    <div>Dieses Standblatt besitzt noch keine automatische KI-Erkennung.</div>
+                </div>
+                ${fileUrl ? `
+                    <button type="button" id="btn-ocr-ondemand-${item.id}" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1" onclick="jmRunOnDemandOcr('${item.id}')">
+                        <i class="fas fa-magic me-1"></i>KI-Prüfbericht jetzt durchführen
+                    </button>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    // Schütze Vergleich
+    let ocrShooterHtml = '<span class="text-muted small">Nicht analysiert</span>';
+    if (ocr && ocr.schuetze) {
+        const s = ocr.schuetze;
+        const nameIcon = s.nameStatus === 'MATCH' ? '✔️' : (s.nameStatus === 'PARTIAL' ? '⚠️' : '❌');
+        const lizIcon = s.lizenzStatus === 'MATCH' ? '✔️' : '❌';
+        ocrShooterHtml = `
+            <div>Name: <span class="fw-semibold">${nameIcon} ${s.nameStatus || 'UNBEKANNT'}</span></div>
+            <div>Lizenz: <span class="fw-semibold">${lizIcon} ${s.lizenzStatus || 'UNBEKANNT'}</span></div>
+            ${s.jgFound ? `<div>Jahrgang: <span class="fw-semibold">✔️ MATCH</span></div>` : ''}
+        `;
+    }
+
+    // Anlass Vergleich
+    let ocrAnlassHtml = '<span class="text-muted small">Nicht analysiert</span>';
+    if (ocr && ocr.anlass) {
+        const a = ocr.anlass;
+        const aIcon = a.status === 'MATCH' ? '✔️' : (a.status === 'NEW_COL' ? '✨' : '⚠️');
+        ocrAnlassHtml = `
+            <div class="fw-semibold">${escapeHtml(a.erkannt || 'Auswärtiges Schiessen')}</div>
+            <small class="text-muted">Status: ${aIcon} ${a.status === 'MATCH' ? 'In Tabelle gefunden' : (a.status === 'NEW_COL' ? 'Neue Spalte' : a.status)}</small>
+        `;
+    }
+
+    // Punkte Vergleich
+    let ocrPointsHtml = '<span class="text-muted small">Nicht analysiert</span>';
+    if (ocr && ocr.ergebnis) {
+        const e = ocr.ergebnis;
+        const pVal = e.punkte !== null && e.punkte !== undefined ? e.punkte : '???';
+        const maxVal = e.maximal ? ` / ${e.maximal} Pkt.` : '';
+        const pStatus = e.status === 'MATCH' ? '✔️ MATCH' : (e.status === 'DISCREPANCY' ? '⚠️ ABWEICHUNG' : '❌ NOT_FOUND');
+        ocrPointsHtml = `
+            <span class="fs-6 fw-bold ${e.status === 'MATCH' ? 'text-success' : 'text-danger'}">${pVal}</span>${maxVal}
+            <small class="text-muted ms-1">(${pStatus})</small>
+        `;
+    }
+
+    return `
+        <div class="p-3 bg-white border border-light-subtle rounded-3 shadow-xs">
+            ${bannerHtml}
+            <div class="card border border-light-subtle shadow-none rounded-3 overflow-hidden mb-3">
+                <table class="table table-sm table-bordered align-middle mb-0 bg-white">
+                    <thead class="table-light small text-uppercase text-muted">
+                        <tr>
+                            <th style="width: 22%;">Bereich</th>
+                            <th style="width: 39%;">Formular-Eingabe</th>
+                            <th style="width: 39%;">OCR-Erkennung (Foto)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="fw-semibold text-secondary">Schütze / Lizenz</td>
+                            <td>
+                                <div class="fw-bold text-dark">${fullName}</div>
+                                <small class="text-muted">Lizenz: ${lizenz}${jg ? ` · Jg. ${jg}` : ''}</small>
+                            </td>
+                            <td>${ocrShooterHtml}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-semibold text-secondary">Schiessanlass</td>
+                            <td>
+                                <div class="fw-semibold text-primary">${anlass}</div>
+                            </td>
+                            <td>${ocrAnlassHtml}</td>
+                        </tr>
+                        <tr class="table-light">
+                            <td class="fw-semibold text-secondary">Totalpunkte & Maximum</td>
+                            <td>
+                                <span class="fs-6 fw-bold text-dark">${erzielt}</span> / ${maximal} Pkt.
+                                <span class="badge bg-secondary ms-1">${pct}%</span>
+                            </td>
+                            <td>${ocrPointsHtml}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            ${snippet ? `
+                <div class="p-2.5 bg-light border border-light-subtle rounded-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <strong class="small text-muted text-uppercase"><i class="fas fa-file-alt me-1"></i>Beweis-Text aus OCR:</strong>
+                        <span class="badge bg-white text-muted border small">${escapeHtml(modelUsed)}</span>
+                    </div>
+                    <code class="d-block p-2 bg-white border rounded text-dark small font-monospace" style="white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${escapeHtml(snippet)}</code>
+                </div>
+            ` : ''}
+
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-2 border-top">
+                <div class="small text-muted">
+                    <i class="fas fa-clock me-1"></i>Eingereicht: ${dateStr}
+                    ${raw.fileName ? ` · Datei: <code>${escapeHtml(raw.fileName)}</code>` : ''}
+                </div>
+                <div class="d-flex gap-2">
+                    ${fileUrl ? `
+                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3" onclick="jmViewStandblattPhoto('${escapeHtml(fileUrl)}', '${escapeHtml(fullName + ' - ' + anlass)}')">
+                            <i class="fas fa-image me-1"></i>Standblatt-Original öffnen
+                        </button>
+                    ` : ''}
+                    ${canWrite && raw.status !== 'imported' && raw.status !== 'rejected' ? `
+                        <button type="button" class="btn btn-sm btn-success rounded-pill px-3 fw-semibold shadow-xs" onclick="jmImportStandblatt('${item.id}')">
+                            <i class="fas fa-check me-1"></i>Resultat übernehmen
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-2.5" onclick="jmRejectStandblatt('${item.id}')">
+                            <i class="fas fa-times me-1"></i>Ablehnen
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Führt für ein bestehendes Standblatt eine On-Demand-OCR durch
+ */
+async function jmRunOnDemandOcr(logId) {
+    const item = (_jmPendingStandblaetter || []).find(i => i.id === logId) || (_jmArchivedStandblaetter || []).find(i => i.id === logId);
+    if (!item) return;
+
+    const raw = item.raw_response || {};
+    const fileUrl = raw.fileUrl;
+    if (!fileUrl) {
+        showError("Kein Belegfoto für diesen Eintrag hinterlegt.");
+        return;
+    }
+
+    const btn = document.getElementById(`btn-ocr-ondemand-${logId}`);
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>KI analysiert...`;
+    }
+
+    try {
+        const imgResp = await fetch(fileUrl);
+        const blob = await imgResp.blob();
+        const base64Data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+
+        const compList = (typeof _knownCompetitions !== 'undefined' && Array.isArray(_knownCompetitions)) ? _knownCompetitions : [];
+        const ocrUrl = "https://v1-vorstand-api.dan-hunziker73.workers.dev/?module=resultate&action=ocr_standblatt";
+        const res = await fetch(ocrUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                image: base64Data,
+                user: {
+                    vorname: raw.vorname || '',
+                    nachname: raw.nachname || '',
+                    lizenz: raw.lizenz || '',
+                    jahrgang: raw.jahrgang || ''
+                },
+                known_competitions: compList,
+                model: "gemini-3-flash-preview"
+            })
+        });
+
+        const data = await res.json();
+        if (!data || !data.success) {
+            throw new Error(data?.error || "KI-Analyse lieferte kein Ergebnis.");
+        }
+
+        const rawText = data.raw_text || '';
+        const detectedShooter = data.schuetze || {};
+        const detectedContest = data.anlass || {};
+        const detectedResult = data.ergebnis || {};
+
+        const uVor = (raw.vorname || '').toLowerCase().trim();
+        const uNach = (raw.nachname || '').toLowerCase().trim();
+        const uLiz = raw.lizenz ? String(raw.lizenz).padStart(6, '0') : '';
+        const textLower = (rawText + ' ' + JSON.stringify(detectedShooter)).toLowerCase();
+
+        const nameFound = (uVor && textLower.includes(uVor)) && (uNach && textLower.includes(uNach));
+        const lizenzFound = uLiz && uLiz !== '000000' && (textLower.includes(uLiz) || (detectedShooter.lizenz && detectedShooter.lizenz.includes(uLiz)));
+        const jgFound = raw.jahrgang && textLower.includes(String(raw.jahrgang).trim());
+        const pts = parseFloat(detectedResult.punkte);
+
+        const nameStatus = nameFound ? "MATCH" : ((uVor && textLower.includes(uVor)) || (uNach && textLower.includes(uNach)) ? "PARTIAL" : "NOT_FOUND");
+        const lizenzStatus = lizenzFound ? "MATCH" : "NOT_FOUND";
+        const scoreStatus = (!isNaN(pts) && pts > 0) ? "MATCH" : "NOT_FOUND";
+
+        const ocrAnalysis = {
+            source: "gemini_vision",
+            modelUsed: data.modelUsed || "gemini-3-flash-preview",
+            schuetze: {
+                formName: `${raw.vorname || ''} ${raw.nachname || ''}`.trim(),
+                formLizenz: uLiz,
+                formJahrgang: raw.jahrgang || '',
+                detectedShooter: detectedShooter,
+                nameFound: nameFound,
+                nameStatus: nameStatus,
+                lizenzFound: lizenzFound,
+                lizenzStatus: lizenzStatus,
+                jgFound: jgFound,
+                jgStatus: jgFound ? "MATCH" : "NOT_FOUND"
+            },
+            anlass: {
+                erkannt: detectedContest.matched_title || detectedContest.erkannt || raw.anlass,
+                matchedTitle: detectedContest.matched_title || "",
+                stich: detectedContest.stich || "",
+                status: detectedContest.matched_title ? "MATCH" : "NEW_COL"
+            },
+            ergebnis: {
+                punkte: !isNaN(pts) ? pts : null,
+                maximal: parseFloat(detectedResult.maximal) || raw.maximal || 100,
+                status: scoreStatus
+            },
+            raw_text: rawText,
+            snippet: rawText ? (rawText.length > 500 ? rawText.substring(0, 500) + '...' : rawText) : "",
+            verified: (nameStatus === "MATCH") && (lizenzStatus === "MATCH") && (scoreStatus === "MATCH")
+        };
+
+        const sb = (typeof getJMSupabaseClient === 'function') ? getJMSupabaseClient() : (window.supabaseClient || null);
+        if (sb) {
+            await sb.from('contest_ocr_logs').update({
+                raw_response: {
+                    ...raw,
+                    ocr_analysis: ocrAnalysis
+                }
+            }).eq('id', logId);
+        }
+
+        item.raw_response.ocr_analysis = ocrAnalysis;
+        renderJMStandblattInboxTable();
+        renderJMStandblattArchiveTable();
+        jmTogglePrüfbericht(logId, true);
+        showSuccess("✨ KI-Prüfbericht erfolgreich erstellt und gespeichert!");
+
+    } catch (err) {
+        console.error("On-Demand OCR Fehler:", err);
+        showError("Fehler bei der KI-Analyse: " + err.message);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fas fa-magic me-1"></i>KI-Prüfbericht jetzt durchführen`;
+        }
+    }
+}
+window.jmRunOnDemandOcr = jmRunOnDemandOcr;
+
+/**
  * Rendert die Tabelle der ausstehenden Standblätter
  */
 function renderJMStandblattInboxTable() {
@@ -123,19 +476,21 @@ function renderJMStandblattInboxTable() {
         }) : '-';
 
         const fileUrl = raw.fileUrl || '';
-
         let belegHtml = '<span class="text-muted small">Kein Beleg</span>';
         if (fileUrl) {
             belegHtml = `
-                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 py-1" onclick="jmViewStandblattPhoto('${escapeHtml(fileUrl)}', '${escapeHtml(fullName + ' - ' + anlass)}')">
-                    <i class="fas fa-image me-1"></i>Beleg ansehen
+                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2.5 py-1" onclick="jmViewStandblattPhoto('${escapeHtml(fileUrl)}', '${escapeHtml(fullName + ' - ' + anlass)}')">
+                    <i class="fas fa-image me-1"></i>Beleg
                 </button>
             `;
         }
 
+        const statusBadge = renderJMStandblattStatusBadge(raw);
+
         return `
             <tr id="inbox-row-${item.id}">
                 <td class="small text-muted text-nowrap">${dateStr}</td>
+                <td>${statusBadge}</td>
                 <td>
                     <div class="fw-bold text-dark">${fullName}</div>
                     <div class="small text-muted">Lizenz: ${lizenz}${raw.jahrgang ? ` · Jg. ${escapeHtml(raw.jahrgang)}` : ''}</div>
@@ -147,6 +502,11 @@ function renderJMStandblattInboxTable() {
                     <span class="badge bg-primary fs-6 px-2 py-1">${erzielt}</span>
                     <span class="text-muted small ms-1">/ ${maximal} Pkt (${pct}%)</span>
                 </td>
+                <td class="text-center">
+                    <button type="button" id="btn-toggle-report-${item.id}" class="btn btn-sm btn-outline-primary rounded-pill px-2.5 py-1" onclick="jmTogglePrüfbericht('${item.id}')">
+                        <i class="fas fa-table-list me-1"></i>Prüfbericht
+                    </button>
+                </td>
                 <td class="text-center">${belegHtml}</td>
                 <td class="text-end text-nowrap">
                     ${canWrite ? `
@@ -157,6 +517,11 @@ function renderJMStandblattInboxTable() {
                             <i class="fas fa-times"></i>
                         </button>
                     ` : '<span class="badge bg-secondary">Nur Ansicht</span>'}
+                </td>
+            </tr>
+            <tr id="inbox-detail-${item.id}" class="d-none bg-light bg-opacity-25 border-bottom border-primary-subtle">
+                <td colspan="8" class="p-3">
+                    ${renderJMStandblattDetailRow(item, canWrite)}
                 </td>
             </tr>
         `;
@@ -220,7 +585,6 @@ function renderJMStandblattArchiveTable() {
         const erzielt = parseFloat(raw.erzielt) || 0;
         const maximal = parseFloat(raw.maximal) || 100;
         const pct = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(2) : '0.00';
-        const status = raw.status || 'imported';
 
         const dateStr = item.created_at ? new Date(item.created_at).toLocaleString('de-CH', {
             day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -230,19 +594,18 @@ function renderJMStandblattArchiveTable() {
         let belegHtml = '<span class="text-muted small">Kein Beleg</span>';
         if (fileUrl) {
             belegHtml = `
-                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2 py-1" onclick="jmViewStandblattPhoto('${escapeHtml(fileUrl)}', '${escapeHtml(fullName + ' - ' + anlass)}')">
-                    <i class="fas fa-image me-1"></i>Beleg ansehen
+                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-2.5 py-1" onclick="jmViewStandblattPhoto('${escapeHtml(fileUrl)}', '${escapeHtml(fullName + ' - ' + anlass)}')">
+                    <i class="fas fa-image me-1"></i>Beleg
                 </button>
             `;
         }
 
-        const statusBadge = status === 'imported'
-            ? '<span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2 py-1"><i class="fas fa-check me-1"></i>Übernommen</span>'
-            : '<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-semibold px-2 py-1"><i class="fas fa-times me-1"></i>Abgelehnt</span>';
+        const statusBadge = renderJMStandblattStatusBadge(raw);
 
         return `
             <tr>
                 <td class="small text-muted text-nowrap">${dateStr}</td>
+                <td>${statusBadge}</td>
                 <td>
                     <div class="fw-bold text-dark">${fullName}</div>
                     <div class="small text-muted">Lizenz: ${lizenz}</div>
@@ -254,8 +617,17 @@ function renderJMStandblattArchiveTable() {
                     <span class="badge bg-secondary fs-6 px-2 py-1">${erzielt}</span>
                     <span class="text-muted small ms-1">/ ${maximal} Pkt (${pct}%)</span>
                 </td>
-                <td class="text-center">${statusBadge}</td>
+                <td class="text-center">
+                    <button type="button" id="btn-toggle-report-${item.id}" class="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-1" onclick="jmTogglePrüfbericht('${item.id}')">
+                        <i class="fas fa-table-list me-1"></i>Prüfbericht
+                    </button>
+                </td>
                 <td class="text-center">${belegHtml}</td>
+            </tr>
+            <tr id="inbox-detail-${item.id}" class="d-none bg-light bg-opacity-25 border-bottom">
+                <td colspan="7" class="p-3">
+                    ${renderJMStandblattDetailRow(item, false)}
+                </td>
             </tr>
         `;
     }).join('');
@@ -460,6 +832,57 @@ async function jmImportStandblatt(logId) {
         }
 
         showSuccess(`✅ Standblatt für ${vorname} ${nachname} (${erzielt} Pkt) erfolgreich in die Jahresmeisterschaft übernommen!`);
+
+        // 9. Info-Mail an Schützen über erfolgreiche Übernahme & Kopie an Info_Mail_Standblatt_Upload
+        try {
+            let shooterEmail = '';
+            if (lizenz) {
+                const { data: mems } = await sb.from('members').select('primary_email').eq('person_number', lizenz);
+                if (mems && mems.length > 0 && mems[0].primary_email) shooterEmail = mems[0].primary_email;
+            }
+            const perf = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(1) : '100.0';
+            const htmlBody = `
+                <div style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width:620px; margin:0 auto; padding:24px; color:#1f2937; line-height:1.5;">
+                    <div style="border-bottom:2px solid #2e7d32; padding-bottom:12px; margin-bottom:20px;">
+                        <h2 style="color:#2e7d32; margin:0; font-size:20px;">Resultat freigegeben: Jahresmeisterschaft</h2>
+                        <div style="font-size:13px; color:#6b7280; margin-top:4px;">Sportschützen Muhen</div>
+                    </div>
+                    <p style="font-size:15px;">Hallo <strong>${escapeHtml(vorname)}</strong>,</p>
+                    <p>dein Standblatt für das <strong>${escapeHtml(anlass)}</strong> wurde soeben vom Schützenmeister geprüft und erfolgreich in die Jahresmeisterschaft übernommen.</p>
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; margin:20px 0; text-align:center;">
+                        <div style="font-size:26px; font-weight:bold; color:#15803d;">${erzielt} Punkte</div>
+                        <div style="color:#4b5563; font-size:14px; margin-top:4px;">Max. ${maximal} Pkt · Leistung: <strong>${perf}%</strong></div>
+                    </div>
+                    <p style="font-size:14px;">
+                        <a href="https://www.sportschuetzen-muhen.ch/resultate/aktuelles_Jahr/jahresmeisterschaft" style="color:#0284c7; font-weight:600; text-decoration:none;">
+                            Zur Online-Rangliste der Jahresmeisterschaft →
+                        </a>
+                    </p>
+                    <p style="font-size:13px; color:#6b7280; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:16px;">
+                        Guet Schuss!<br>
+                        <strong>Sportschützen Muhen</strong>
+                    </p>
+                </div>
+            `;
+            fetch("https://supabase-muhen.danfamily.uk/functions/v1/send-email", {
+                method: "POST",
+                headers: {
+                    "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M",
+                    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    to: shooterEmail || undefined,
+                    ccSystemMailKey: "Info_Mail_Standblatt_Upload",
+                    subject: `Jahresmeisterschaft: Resultat freigegeben – ${anlass} (${erzielt} Pkt)`,
+                    html: htmlBody,
+                    module: "jahresmeisterschaft",
+                    recordId: logId
+                })
+            }).catch(e => console.warn("Mail-Versand nach Freigabe Warnung:", e));
+        } catch (mailErr) {
+            console.warn("Mail-Versand nach Freigabe fehlgeschlagen:", mailErr);
+        }
 
     } catch (err) {
         console.error("Fehler beim Übernehmen des Standblatts:", err);

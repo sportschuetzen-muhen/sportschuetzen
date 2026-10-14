@@ -66,11 +66,13 @@ Alle drei Fachmodule der Web-App lesen **exklusiv und direkt** aus Supabase Post
 2. **Speicherung des Standblatts & Beleg-Abruf:**
    - Das komprimierte Bild wird an Cloudflare R2 übermittelt (`worker_github-dropdown-refresh.js`, Route `action=upload_standblatt`).
    - Die Datei kann über `action=get_standblatt&file=...` mit CORS-Headern und Cache-Headern im Frontend als Belegfoto angezeigt werden.
-   - Die Metadaten (Punkte, Maximum, Schütze, Beleg-URL, Jahrgang, exakter Anlassname) werden mit Status `pending` in `public.contest_ocr_logs` protokolliert.
+   - Die Metadaten (Punkte, Maximum, Schütze, Beleg-URL, Jahrgang, exakter Anlassname) sowie die strukturierte `ocr_analysis` (Schütze-Status, Anlass-Status, Score-Status, Beweis-Text) werden mit Status `pending` in `public.contest_ocr_logs` protokolliert.
+   - **System-Mails & Bestätigung:** Der Schütze erhält unmittelbar eine Bestätigungs-Mail über den Eingang via Supabase Edge Function `send-email`. Eine Kopie wird automatisch an den Verteiler `Info_Mail_Standblatt_Upload` gesendet (konfigurierbar im Modul System-Mails via `public.system_mail_configs`).
 3. **Standblatt-Freigabe-Inbox im Vorstandscockpit (`jahresmeisterschaft-inbox.js`):**
    - Schützenmeister sieht im Header der Jahresmeisterschaft ein Live-Badge `📥 Standblätter (N)`.
-   - Das Inbox-Modal listet alle ausstehenden Einreichungen inklusive Belegfoto-Lightbox und Jahrgangsanzeige.
-   - **1-Klick-Übernahme:** Resultat wird in `jmRawGrid` eingetragen (Spalte ab 41/42 automatisch zugeordnet oder erstellt), die Jahresmeisterschaft inklusive Rangierung neu berechnet, in `jm_seasons` und `jm_shooters` gespeichert und der Status auf `imported` gesetzt.
+   - Das Inbox-Modal listet alle ausstehenden Einreichungen inklusive Belegfoto-Lightbox, Jahrgangsanzeige und Statusbadge (`Verifiziert`, `Prüfung nötig`, `Neuer Anlass`).
+   - **Prüfbericht & OCR-Vergleich:** Zu jedem Standblatt kann ein detaillierter Prüfbericht eingeblendet werden, der eine 3-Spalten-Gegenüberstellung (Bereich | Formular-Eingabe | OCR-Erkennung), den Beweis-Text aus dem Beleg und direkte Beleg-Vorschau enthält. Ältere Standblätter ohne OCR können über einen Button «KI-Prüfbericht jetzt durchführen» on demand analysiert werden.
+   - **1-Klick-Übernahme:** Resultat wird in `jmRawGrid` eingetragen (Spalte ab 41/42 automatisch zugeordnet oder erstellt), die Jahresmeisterschaft inklusive Rangierung neu berechnet, in `jm_seasons` und `jm_shooters` gespeichert und der Status auf `imported` gesetzt. Bei Freigabe wird der Schütze automatisch per E-Mail informiert.
 
 ---
 
@@ -89,12 +91,18 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
    - Liga 1 und Liga 2 werden bei jeder Berechnung und Synchronisation nach `total` absteigend sortiert.
 2. **Standblatt-Freigabe-Inbox im Vorstandscockpit:**
    - Vollständiger Prüf- und Übernahmeworkflow via `vorstand/js/jahresmeisterschaft/jahresmeisterschaft-inbox.js`.
+   - Detaillierter Prüfbericht mit visueller Gegenüberstellung (Formular vs. OCR-Erkennung), Beweis-Text und On-Demand-Nachprüfung.
    - RLS-Berechtigungen auf `public.contest_ocr_logs` um `jahresmeisterschaft.view` und `jahresmeisterschaft.manage` erweitert (`50_contest_ocr_logs_jm_rbac.sql`).
 3. **PWA Tab-Synchronisation:**
    - `app.js` sendet beim Umschalten der Tabs ein `app:resume`-PostMessage an alle iFrames (`app_jm.html`, `app_gruppe.html`, `app_mannschaft.html`), sodass neue Resultate sofort sichtbar werden.
-4. **Cloudflare R2 & Google Drive Sicherheitskopie:**
-   - Der Worker speichert Standblatt-Belege originär in Cloudflare R2 (`MY_BUCKET`) und triggert parallel eine Non-blocking Sicherungskopie in den konfigurierten Google-Drive-Ordner (`1qXvWfBCZx6ZipGMIuANyOCzNMKLkqfuY`).
-5. **Synchronisierte Badges & Jahresarchiv:**
+4. **Cloudflare R2 & Vollständige GAS-Entkopplung:**
+   - Standblatt-Uploads speichern Belege exklusiv in Cloudflare R2 (`MY_BUCKET`).
+   - Die alte Hintergrund-Weiterleitung an Google Apps Script (`GOOGLE_WEB_APP_URL` / `V_main_dopost.js`) wurde vollständig entfernt (striktes Verbot stiller GAS-Fallbacks gemäss Projekt-Richtlinie 1).
+   - Der Google Schützenhaus-Belegungskalender (`GOOGLE_HAUS_KALENDER_URL`) bleibt wie spezifiziert aktiv.
+5. **System-Mails Verteiler & Benachrichtigungen:**
+   - Neuer Verteiler `Info_Mail_Standblatt_Upload` im Modul System-Mails unter Jahresmeisterschaft integriert (`public.system_mail_configs`, Migration `69_standblatt_upload_system_mail.sql`).
+   - Schützen erhalten Eingangs- und Freigabebestätigungen, der Vorstand/Schützenmeister automatisch eine Kopie.
+6. **Synchronisierte Badges & Jahresarchiv:**
    - Offene Standblätter (`_jmPendingStandblaetter`) synchronisieren automatisch Badges im Modul-Header, in der Sidebar-Navigation und auf der Dashboard-Kachel der Jahresmeisterschaft KK.
    - Das Standblatt-Modal bietet ein dediziertes «Archiv & Historie»-Tab mit Jahresfilter zur permanenten Einsicht aller übernommenen oder abgelehnten Belege.
    - Beim Upload werden bekannte Saison-Wettkämpfe via Datalist geladen und beim Import via Fuzzy-Matching mit bestehenden Tabellenspalten verknüpft.
