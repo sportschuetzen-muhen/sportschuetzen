@@ -13,6 +13,28 @@ function getSupabaseHeaders() {
     };
 }
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function parseQuestionsSchema(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed;
+        } catch(e) {}
+    }
+    return [];
+}
+
 /**
  * 1. Termine direkt aus Supabase (public.termine)
  */
@@ -148,7 +170,7 @@ async function fetchRSVPEventsFromSupabase(lizenz) {
                 dokument_url: e.dokument_url || '',
                 details: e.details || '',
                 options: Array.isArray(e.options) ? e.options : [],
-                questions_schema: Array.isArray(e.questions_schema) ? e.questions_schema : [],
+                questions_schema: parseQuestionsSchema(e.questions_schema),
                 answers: (uResp && uResp.answers && typeof uResp.answers === 'object') ? uResp.answers : {},
                 event_type: e.event_type || 'standard',
                 attending: uResp ? uResp.attending : null,
@@ -572,6 +594,9 @@ async function loadTermine() {
                 existing.frage_grund = r.frage_grund;
                 existing.options = r.options || [];
                 existing.optionids = r.optionids || '';
+                existing.questions_schema = parseQuestionsSchema(r.questions_schema);
+                existing.answers = (r.answers && typeof r.answers === 'object') ? r.answers : {};
+                existing.event_type = r.event_type || 'standard';
                 existing.attending = r.attending;
                 existing.count = r.count;
                 existing.essen = r.essen;
@@ -589,6 +614,10 @@ async function loadTermine() {
                     titel: r.title || r.titel,
                     frage_begleitung: r.frage_begleitung,
                     frage_essen: r.frage_essen,
+                    frage_grund: r.frage_grund,
+                    questions_schema: parseQuestionsSchema(r.questions_schema),
+                    answers: (r.answers && typeof r.answers === 'object') ? r.answers : {},
+                    event_type: r.event_type || 'standard',
                     options: r.options || [],
                     optionids: r.optionids || ''
                 });
@@ -720,6 +749,128 @@ function buildDetailsHtml(t) {
     `;
 }
 
+function buildPollQuestionsHtml(t) {
+    const questions = Array.isArray(t.questions_schema) ? t.questions_schema : [];
+    if (questions.length === 0) return '';
+    const prevAnswers = (t.answers && typeof t.answers === 'object') ? t.answers : {};
+    let html = `
+        <div class="poll-extra-questions" style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: left; display: flex; flex-direction: column; gap: 12px;">
+            <div style="font-weight: 700; font-size: 0.92rem; color: #334155;">📝 Zusatzfragen:</div>
+    `;
+    questions.forEach(q => {
+        const rawVal = prevAnswers[q.id];
+        const qReq = q.required ? '<span style="color:#e11d48;">*</span>' : '';
+        if (q.type === 'text') {
+            const val = rawVal !== undefined ? String(rawVal) : '';
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                    <input type="text" id="poll-q-input-${t.id}-${q.id}" value="${escapeHtml(val)}" placeholder="Deine Antwort..." style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; box-sizing:border-box;">
+                </div>
+            `;
+        } else if (q.type === 'textarea') {
+            const val = rawVal !== undefined ? String(rawVal) : '';
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                    <textarea id="poll-q-input-${t.id}-${q.id}" rows="2" placeholder="Deine Antwort..." style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; font-family:inherit; box-sizing:border-box;">${escapeHtml(val)}</textarea>
+                </div>
+            `;
+        } else if (q.type === 'number') {
+            const val = (rawVal !== undefined && rawVal !== null && rawVal !== '') ? String(rawVal) : '';
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                    <input type="number" id="poll-q-input-${t.id}-${q.id}" value="${escapeHtml(val)}" min="0" max="999" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; box-sizing:border-box;">
+                </div>
+            `;
+        } else if (q.type === 'boolean') {
+            const isJa = String(rawVal).toLowerCase() === 'ja' || rawVal === true;
+            const isNein = String(rawVal).toLowerCase() === 'nein' || rawVal === false;
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                    <select id="poll-q-input-${t.id}-${q.id}" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; box-sizing:border-box; background:white;">
+                        <option value="">-- Bitte wählen --</option>
+                        <option value="ja" ${isJa ? 'selected' : ''}>Ja</option>
+                        <option value="nein" ${isNein ? 'selected' : ''}>Nein</option>
+                    </select>
+                </div>
+            `;
+        } else if (q.type === 'select') {
+            const opts = Array.isArray(q.options) ? q.options : (String(q.options || '').split(',').map(s => s.trim()).filter(Boolean));
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                    <select id="poll-q-input-${t.id}-${q.id}" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; box-sizing:border-box; background:white;">
+                        <option value="">-- Bitte wählen --</option>
+                        ${opts.map(o => `<option value="${escapeHtml(o)}" ${String(rawVal) === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+                    </select>
+                </div>
+            `;
+        } else if (q.type === 'multiselect') {
+            const opts = Array.isArray(q.options) ? q.options : (String(q.options || '').split(',').map(s => s.trim()).filter(Boolean));
+            const checkedArr = Array.isArray(rawVal) ? rawVal : (rawVal ? [rawVal] : []);
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569; display:block; margin-bottom:6px;">${escapeHtml(q.title || 'Frage')} ${qReq}</label>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        ${opts.map(o => `
+                            <label style="display:flex; align-items:center; gap:8px; font-size:0.9rem; color:#334155; cursor:pointer;">
+                                <input type="checkbox" name="poll-q-cb-${t.id}-${q.id}" value="${escapeHtml(o)}" ${checkedArr.includes(o) ? 'checked' : ''} style="width:17px; height:17px; accent-color:var(--primary);">
+                                <span>${escapeHtml(o)}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        } else if (q.type === 'date') {
+            const val = rawVal !== undefined ? String(rawVal) : '';
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569;">${escapeHtml(q.title || 'Datum')} ${qReq}</label>
+                    <input type="date" id="poll-q-input-${t.id}-${q.id}" value="${escapeHtml(val)}" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; box-sizing:border-box;">
+                </div>
+            `;
+        } else if (q.type === 'time') {
+            const val = rawVal !== undefined ? String(rawVal) : '';
+            html += `
+                <div>
+                    <label style="font-size:0.88rem; font-weight:600; color:#475569;">${escapeHtml(q.title || 'Uhrzeit')} ${qReq}</label>
+                    <input type="time" id="poll-q-input-${t.id}-${q.id}" value="${escapeHtml(val)}" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1; margin-top:4px; font-size:0.95rem; box-sizing:border-box;">
+                </div>
+            `;
+        }
+    });
+    html += `</div>`;
+    return html;
+}
+
+function buildPollAnswersSummaryHtml(t) {
+    const questions = Array.isArray(t.questions_schema) ? t.questions_schema : [];
+    if (questions.length === 0 || !t.answers || typeof t.answers !== 'object') return '';
+    const parts = [];
+    questions.forEach(q => {
+        const ans = t.answers[q.id];
+        if (ans !== undefined && ans !== null && ans !== '') {
+            let ansTxt = '';
+            if (Array.isArray(ans)) ansTxt = ans.join(', ');
+            else if (typeof ans === 'boolean') ansTxt = ans ? 'Ja' : 'Nein';
+            else ansTxt = String(ans);
+            if (ansTxt.trim()) {
+                parts.push(`${escapeHtml(q.title || 'Frage')}: <strong>${escapeHtml(ansTxt)}</strong>`);
+            }
+        }
+    });
+    if (parts.length === 0) return '';
+    return `
+        <div style="margin: 10px 0; padding: 10px 14px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 8px; font-size: 0.88rem; color: #0369a1; display: flex; flex-direction: column; gap: 4px; text-align: left;">
+            <span style="font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85;">Deine Zusatzangaben:</span>
+            ${parts.map(p => `<div>• ${p}</div>`).join('')}
+        </div>
+    `;
+}
+
 function renderTermine(data, activeLizenz) {
     const wrap = document.getElementById("termine");
     const heroWrap = document.getElementById("hero-rsvps");
@@ -847,10 +998,49 @@ function renderTermine(data, activeLizenz) {
             let bodyContent = '';
             
             if (isAttending) {
+                let summaryBox = '';
+                const parts = [];
+                if (t.frage_begleitung && t.count && Number(t.count) > 1) {
+                    parts.push(`👥 <strong>${t.count}</strong> Personen angemeldet`);
+                }
+                if (t.frage_essen) {
+                    const eCount = Number(t.essen) || 0;
+                    const vCount = Number(t.vegi) || 0;
+                    if (eCount > 0 || vCount > 0) {
+                        const foodArr = [];
+                        if (eCount > 0) foodArr.push(`${eCount}x Standard`);
+                        if (vCount > 0) foodArr.push(`${vCount}x Vegi`);
+                        parts.push(`🍽️ Menü: <strong>${foodArr.join(', ')}</strong>`);
+                    }
+                }
+                if (hasDynamicQuestions && t.answers && typeof t.answers === 'object') {
+                    t.questions_schema.forEach(q => {
+                        const ans = t.answers[q.id];
+                        if (ans !== undefined && ans !== null && ans !== '') {
+                            let ansTxt = '';
+                            if (Array.isArray(ans)) ansTxt = ans.join(', ');
+                            else if (typeof ans === 'boolean') ansTxt = ans ? 'Ja' : 'Nein';
+                            else ansTxt = String(ans);
+                            if (ansTxt.trim()) {
+                                parts.push(`${escapeHtml(q.title || 'Frage')}: <strong>${escapeHtml(ansTxt)}</strong>`);
+                            }
+                        }
+                    });
+                }
+                if (parts.length > 0) {
+                    summaryBox = `
+                        <div style="margin: 8px 0 12px 0; padding: 10px 14px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; font-size: 0.88rem; color: #065f46; display: flex; flex-direction: column; gap: 4px; text-align: left; width: 100%; box-sizing: border-box;">
+                            <span style="font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; margin-bottom: 2px;">Deine Rückmeldung:</span>
+                            ${parts.map(p => `<div>• ${p}</div>`).join('')}
+                        </div>
+                    `;
+                }
+
                 bodyContent = `<div class="hero-chip success" style="margin-bottom:0; align-self:center;">✅ Angemeldet</div>`;
+                bodyContent += summaryBox;
                 if (t.dokument_url) bodyContent += docButton;
                 if (t.details) bodyContent += detailsBlock;
-                if (t.frage_begleitung || t.frage_essen) {
+                if (t.frage_begleitung || t.frage_essen || hasDynamicQuestions) {
                     bodyContent += `<button class="hero-link" style="color:var(--primary); font-weight:bold; margin-top:5px;" onclick="${onYesClick}">Details ändern</button>`;
                 }
                 bodyContent += `<button class="hero-link" style="margin-top:5px;" onclick="${onNoClick}">Absagen</button>`;
@@ -1878,6 +2068,22 @@ window.openRSVPForm = function(eventId, asksBegleitung, asksEssen, currentCount 
                         </div>
                     </div>
                 `;
+            } else if (q.type === 'date') {
+                const val = rawVal !== undefined ? String(rawVal) : '';
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569;">${escapeHtml(q.title || 'Datum')} ${qReq}</label>
+                        <input type="date" id="q-input-${eventId}-${q.id}" value="${escapeHtml(val)}" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box;">
+                    </div>
+                `;
+            } else if (q.type === 'time') {
+                const val = rawVal !== undefined ? String(rawVal) : '';
+                html += `
+                    <div style="margin-top:4px;">
+                        <label style="font-size:0.9rem; font-weight:bold; color:#475569;">${escapeHtml(q.title || 'Uhrzeit')} ${qReq}</label>
+                        <input type="time" id="q-input-${eventId}-${q.id}" value="${escapeHtml(val)}" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; margin-top:5px; font-size:1rem; box-sizing:border-box;">
+                    </div>
+                `;
             }
         });
     }
@@ -2005,6 +2211,15 @@ window.submitRSVP = async function(eventId, attending) {
         const ok = await saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen, vegi, grund, '', answers);
         if (!ok) throw new Error("Fehler beim Speichern in Supabase");
         
+        if (curEvent) {
+            curEvent.attending = attending;
+            curEvent.count = count;
+            curEvent.essen = essen;
+            curEvent.vegi = vegi;
+            curEvent.grund = grund;
+            curEvent.answers = answers;
+        }
+
         loadTermine();
     } catch(e) { 
         console.error(e);
@@ -2118,6 +2333,7 @@ function renderPollCard(t, heroWrap) {
                 <div class="poll-status-banner ${statusClass}">
                     ${statusText}
                 </div>
+                ${buildPollAnswersSummaryHtml(t)}
                 ${buildDocButtonsHtml(t)}
                 ${buildDetailsHtml(t)}
 
@@ -2170,6 +2386,8 @@ function renderPollCard(t, heroWrap) {
             <div class="poll-voting-list" id="poll-options-${t.id}">
                 ${optionsHtml}
             </div>
+
+            ${buildPollQuestionsHtml(t)}
 
             <div class="poll-voting-actions">
                 <button type="button" class="poll-btn-submit" onclick="submitPollVote('${t.id}')">
@@ -2261,12 +2479,37 @@ window.submitPollVote = async function(eventId) {
     const user = JSON.parse(localStorage.getItem('sportschuetzen_user'));
     if (!user) return;
 
-    const checkboxes = document.querySelectorAll(`#rsvp-${eventId} input[type="checkbox"]:checked`);
+    const checkboxes = document.querySelectorAll(`#rsvp-${eventId} input[name="poll-${eventId}"]:checked`);
     const selectedIds = Array.from(checkboxes).map(cb => cb.value).filter(Boolean);
 
     if (selectedIds.length === 0) {
         alert('Bitte wähle mindestens einen Termin aus, oder klicke auf "Keiner dieser Termine passt mir".');
         return;
+    }
+
+    const curEvent = (allTermine || []).find(x => String(x.id) === String(eventId));
+    const answers = {};
+    if (curEvent && Array.isArray(curEvent.questions_schema) && curEvent.questions_schema.length > 0) {
+        for (const q of curEvent.questions_schema) {
+            if (q.type === 'multiselect') {
+                const checkedNodes = document.querySelectorAll(`input[name="poll-q-cb-${eventId}-${q.id}"]:checked`);
+                const checkedVals = Array.from(checkedNodes).map(cb => cb.value);
+                if (q.required && checkedVals.length === 0) {
+                    alert(`Bitte wähle mindestens eine Option für: ${q.title || 'Zusatzfrage'}`);
+                    return;
+                }
+                answers[q.id] = checkedVals;
+            } else {
+                const inp = document.getElementById(`poll-q-input-${eventId}-${q.id}`);
+                const val = inp ? inp.value.trim() : '';
+                if (q.required && !val) {
+                    alert(`Bitte fülle das Pflichtfeld aus: ${q.title || 'Zusatzfrage'}`);
+                    if (inp) inp.focus();
+                    return;
+                }
+                answers[q.id] = (q.type === 'number') ? (val ? Number(val) : 0) : val;
+            }
+        }
     }
 
     const btn = document.querySelector(`#rsvp-${eventId} .poll-btn-submit`) || document.querySelector(`#rsvp-${eventId} .poll-submit-btn`);
@@ -2277,9 +2520,15 @@ window.submitPollVote = async function(eventId) {
         const rawOptIds = selectedIds.join(',');
 
         // 1. Supabase Master (direkt speichern)
-        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, true, 1, 0, 0, '', rawOptIds);
+        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, true, 1, 0, 0, '', rawOptIds, answers);
         if (!ok) throw new Error('Fehler beim Speichern in Supabase');
         
+        if (curEvent) {
+            curEvent.attending = true;
+            curEvent.optionids = rawOptIds;
+            curEvent.answers = answers;
+        }
+
         // Cache leeren für Event, damit frische Daten geladen werden
         delete pollResultsCache[eventId];
         loadTermine();
@@ -2302,8 +2551,16 @@ window.submitPollAbsent = async function(eventId) {
         const cleanLizenz = String(user.lizenz).padStart(6, '0');
 
         // 1. Supabase Master (direkt speichern)
-        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, false, 1, 0, 0, 'Kein Termin passt', '');
+        const ok = await saveRSVPToSupabase(eventId, cleanLizenz, false, 1, 0, 0, 'Kein Termin passt', '', {});
         if (!ok) throw new Error('Fehler beim Speichern in Supabase');
+
+        const curEvent = (allTermine || []).find(x => String(x.id) === String(eventId));
+        if (curEvent) {
+            curEvent.attending = false;
+            curEvent.optionids = '';
+            curEvent.grund = 'Kein Termin passt';
+            curEvent.answers = {};
+        }
 
         delete pollResultsCache[eventId];
         loadTermine();

@@ -212,3 +212,15 @@ Die optimale Lösung ist ein **gestuftes 3-Ebenen-Modell**:
 * Er kombiniert die **Flexibilität eines Formularbaukastens** mit der **hohen Usability und Schnelligkeit** der bestehenden Schützen-App.
 * Bestehende Spezialfunktionen (5er-Gruppen, GV-Controlling, Menüsummen) bleiben zu 100 % erhalten und funktionsfähig.
 * Es entstehen keine komplexen Datenbank-Pivots oder Performance-Einbrüche bei Auswertungen.
+
+---
+
+## 7. Web-App Integration & Lifecycle der Zusatzfragen
+
+* **Lifecycle & Synchronisation:** Termine aus dem Jahresprogramm (`termine`) und RSVP-Anlässe (`poll_events`) werden im Frontend-Merge (`app.js`) verlustfrei mit `questions_schema`, `answers` und `event_type` synchronisiert.
+* **Hero-Card & Poll-Card Integration:** 
+  * Bei Anlässen mit Zusatzfragen (`questions_schema.length > 0`) öffnet der Button «Ja, sicher» bzw. «Details ändern» das dynamische Formular (`openRSVPForm`).
+  * Unterstützte Fragetypen: `text`, `textarea`, `number`, `boolean`, `select`, `multiselect`, `date`, `time`.
+  * Nach erfolgter Zusage werden alle erfassten Antworten als Zusammenfassung auf der Karte (`✅ Angemeldet`) übersichtlich angezeigt.
+  * Auch Terminumfragen (`renderPollCard`) binden Zusatzfragen nativ im Abstimmungs- und Auswertungsmodus ein und persistieren sie transaktionssicher in `public.poll_responses.answers`.
+
