@@ -208,13 +208,18 @@ async function saveRSVPToSupabase(eventId, cleanLizenz, attending, count, essen,
         answers: (answers && typeof answers === 'object') ? answers : {}
     };
     try {
-        const res = await fetch(`${SUPABASE_REST_URL}/poll_responses`, {
+        const res = await fetch(`${SUPABASE_REST_URL}/poll_responses?on_conflict=event_id,lizenz`, {
             method: 'POST',
             headers,
             body: JSON.stringify(body)
         });
+        if (!res.ok) {
+            const errText = await res.text();
+            console.error('Supabase saveRSVP Error:', res.status, errText);
+        }
         return res.ok;
     } catch(e) {
+        console.error('saveRSVPToSupabase Exception:', e);
         return false;
     }
 }
@@ -2224,6 +2229,7 @@ window.submitRSVP = async function(eventId, attending) {
     } catch(e) { 
         console.error(e);
         alert("Fehler: Deine Antwort konnte nicht gespeichert werden. Bitte versuche es erneut.");
+        loadTermine();
     }
 };
 
