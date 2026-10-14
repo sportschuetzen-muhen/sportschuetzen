@@ -6,6 +6,220 @@
 // =========================================================
 //  BESTANDESLISTE
 // =========================================================
+// =========================================================
+//  BESTANDESLISTE & FILTER-ENGINE
+// =========================================================
+let inventarFilterStatus = 'all';
+let lastFilterTargetCategory = null;
+
+function safeEscapeHtml(val) {
+    if (typeof escapeHtml === 'function') return escapeHtml(val);
+    return String(val || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function setInventarStatusFilter(statusVal) {
+    if (inventarFilterStatus === statusVal && statusVal !== 'all') {
+        inventarFilterStatus = 'all';
+    } else {
+        inventarFilterStatus = statusVal;
+    }
+    updateStatusPillButtons();
+    renderInventoryTable();
+}
+window.setInventarStatusFilter = setInventarStatusFilter;
+
+function updateStatusPillButtons() {
+    const buttons = document.querySelectorAll('.inv-status-pills button');
+    buttons.forEach(btn => {
+        const btnStatus = btn.getAttribute('data-status');
+        const isActive = (btnStatus === inventarFilterStatus);
+        btn.classList.toggle('active', isActive);
+
+        if (btnStatus === 'all') {
+            btn.className = `btn btn-sm ${isActive ? 'btn-secondary' : 'btn-outline-secondary'} fw-semibold`;
+        } else if (btnStatus === 'Im Lager' || btnStatus === 'Aktiv') {
+            btn.className = `btn btn-sm ${isActive ? 'btn-success text-white' : 'btn-outline-success'} fw-semibold`;
+        } else if (btnStatus === 'Ausgegeben' || btnStatus === 'Passiv') {
+            btn.className = `btn btn-sm ${isActive ? 'btn-warning text-dark' : 'btn-outline-warning'} fw-semibold`;
+        } else if (btnStatus === 'Verkauft') {
+            btn.className = `btn btn-sm ${isActive ? 'btn-primary text-white' : 'btn-outline-primary'} fw-semibold`;
+        } else if (btnStatus === 'Defekt' || btnStatus === 'Verstorben') {
+            btn.className = `btn btn-sm ${isActive ? 'btn-danger text-white' : 'btn-outline-danger'} fw-semibold`;
+        }
+    });
+}
+
+function resetInventarFilters(triggerRender = true) {
+    const searchInput = document.getElementById('inv-search-input');
+    if (searchInput) searchInput.value = '';
+
+    inventarFilterStatus = 'all';
+    updateStatusPillButtons();
+
+    const dropdownIds = [
+        'inv-filter-typ', 'inv-filter-modell', 'inv-filter-hersteller',
+        'inv-filter-groesse', 'inv-filter-besitzer', 'inv-filter-distanz',
+        'inv-filter-bezeichnung', 'inv-filter-sponsor'
+    ];
+    dropdownIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
+    if (triggerRender) {
+        renderInventoryTable();
+    }
+}
+window.resetInventarFilters = resetInventarFilters;
+
+function onInventarCategoryChange() {
+    resetInventarFilters(false);
+    updateInventarFilterDropdowns(true);
+    renderInventoryTable();
+}
+window.onInventarCategoryChange = onInventarCategoryChange;
+
+function updateInventarFilterDropdowns(force = false) {
+    if (!inventarState) return;
+    const target = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
+    if (!force && lastFilterTargetCategory === target) {
+        return;
+    }
+    lastFilterTargetCategory = target;
+
+    const keyMap = {
+        "Inventar_Gewehre":           "gewehre",
+        "Inventar_Schluessel":        "schluessel",
+        "Inventar_Kleidung":          "kleidung",
+        "Inventar_Schiessbekleidung": "schiessbekleidung",
+        "Personendaten":              "mitglieder"
+    };
+    const rawData = inventarState[keyMap[target]] || [];
+
+    const typSelect = document.getElementById('inv-filter-typ');
+    const modellSelect = document.getElementById('inv-filter-modell');
+    const herstellerSelect = document.getElementById('inv-filter-hersteller');
+    const groesseSelect = document.getElementById('inv-filter-groesse');
+    const besitzerSelect = document.getElementById('inv-filter-besitzer');
+    const distanzSelect = document.getElementById('inv-filter-distanz');
+    const bezeichnungSelect = document.getElementById('inv-filter-bezeichnung');
+    const sponsorSelect = document.getElementById('inv-filter-sponsor');
+    const filterRow = document.getElementById('inv-filter-dropdowns-row');
+
+    if (target === 'Inventar_Kleidung' || target === 'Inventar_Schiessbekleidung') {
+        if (filterRow) filterRow.classList.remove('d-none');
+        if (typSelect) typSelect.classList.remove('d-none');
+        if (modellSelect) modellSelect.classList.remove('d-none');
+        if (herstellerSelect) herstellerSelect.classList.remove('d-none');
+        if (groesseSelect) groesseSelect.classList.remove('d-none');
+        if (besitzerSelect) besitzerSelect.classList.remove('d-none');
+        if (distanzSelect) distanzSelect.classList.add('d-none');
+        if (bezeichnungSelect) bezeichnungSelect.classList.add('d-none');
+        if (sponsorSelect) sponsorSelect.classList.remove('d-none');
+    } else if (target === 'Inventar_Gewehre') {
+        if (filterRow) filterRow.classList.remove('d-none');
+        if (typSelect) typSelect.classList.add('d-none');
+        if (modellSelect) modellSelect.classList.remove('d-none');
+        if (herstellerSelect) herstellerSelect.classList.remove('d-none');
+        if (groesseSelect) groesseSelect.classList.add('d-none');
+        if (besitzerSelect) besitzerSelect.classList.remove('d-none');
+        if (distanzSelect) distanzSelect.classList.remove('d-none');
+        if (bezeichnungSelect) bezeichnungSelect.classList.add('d-none');
+        if (sponsorSelect) sponsorSelect.classList.add('d-none');
+    } else if (target === 'Inventar_Schluessel') {
+        if (filterRow) filterRow.classList.remove('d-none');
+        if (typSelect) typSelect.classList.add('d-none');
+        if (modellSelect) modellSelect.classList.add('d-none');
+        if (herstellerSelect) herstellerSelect.classList.add('d-none');
+        if (groesseSelect) groesseSelect.classList.add('d-none');
+        if (besitzerSelect) besitzerSelect.classList.remove('d-none');
+        if (distanzSelect) distanzSelect.classList.add('d-none');
+        if (bezeichnungSelect) bezeichnungSelect.classList.remove('d-none');
+        if (sponsorSelect) sponsorSelect.classList.add('d-none');
+    } else {
+        if (filterRow) filterRow.classList.add('d-none');
+    }
+
+    function populateDropdown(selectEl, defaultText, values) {
+        if (!selectEl) return;
+        const currentVal = selectEl.value;
+        selectEl.innerHTML = `<option value="">${defaultText}</option>` +
+            values.map(v => `<option value="${safeEscapeHtml(v)}">${safeEscapeHtml(v)}</option>`).join('');
+        if (values.includes(currentVal)) {
+            selectEl.value = currentVal;
+        } else {
+            selectEl.value = '';
+        }
+    }
+
+    const uniqueTypes = [...new Set(rawData.map(r => r.Typ).filter(Boolean))].sort();
+    const uniqueModels = [...new Set(rawData.map(r => r.Modell).filter(Boolean))].sort();
+    const uniqueHersteller = [...new Set(rawData.map(r => r.Hersteller).filter(Boolean))].sort();
+    const uniqueDistanz = [...new Set(rawData.map(r => r.Distanz).filter(Boolean))].sort();
+    const uniqueBezeichnung = [...new Set(rawData.map(r => r.Bezeichnung).filter(Boolean))].sort();
+    const uniqueSponsor = [...new Set(rawData.map(r => r.Sponsor_Firma).filter(Boolean))].sort();
+
+    const sizeHierarchy = ['116', '128', '140', '152', '164', '36', '38', '40', '42', '44', '46', '48', '50', '52', '54', '56', 'XS', 'S', 'M', 'L', 'XL', '2XL', 'XXL', '3XL', 'XXXL'];
+    const uniqueGroessen = [...new Set(rawData.map(r => r.Groesse).filter(Boolean))].sort((a, b) => {
+        const ia = sizeHierarchy.indexOf(String(a).toUpperCase());
+        const ib = sizeHierarchy.indexOf(String(b).toUpperCase());
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return String(a).localeCompare(String(b));
+    });
+
+    populateDropdown(typSelect, '👕 Alle Typen', uniqueTypes);
+    populateDropdown(modellSelect, '🏷️ Alle Modelle', uniqueModels);
+    populateDropdown(herstellerSelect, '🏭 Alle Hersteller', uniqueHersteller);
+    populateDropdown(groesseSelect, '📏 Alle Grössen', uniqueGroessen);
+    populateDropdown(distanzSelect, '🎯 Alle Distanzen', uniqueDistanz);
+    populateDropdown(bezeichnungSelect, '🔑 Alle Bezeichnungen', uniqueBezeichnung);
+    populateDropdown(sponsorSelect, '🤝 Alle Sponsoren', uniqueSponsor);
+
+    if (besitzerSelect) {
+        const ownerCounts = {};
+        rawData.forEach(r => {
+            const oid = r.Aktueller_Besitzer_ID;
+            if (oid && oid !== '' && oid !== '0') {
+                ownerCounts[oid] = (ownerCounts[oid] || 0) + 1;
+            }
+        });
+
+        const ownerEntries = Object.keys(ownerCounts).map(id => ({
+            id: id,
+            name: getInventarNameFromId(id),
+            count: ownerCounts[id]
+        })).sort((a, b) => a.name.localeCompare(b.name));
+
+        const currentBesitzerVal = besitzerSelect.value;
+        let besitzerHtml = `
+            <option value="">👤 Alle Besitzer</option>
+            <option value="__unassigned__">🟢 Frei (Im Lager / Ohne Besitzer)</option>
+            <option value="__assigned__">👤 Zugewiesen (Mit Besitzer)</option>
+        `;
+        if (ownerEntries.length > 0) {
+            besitzerHtml += `<optgroup label="Aktuelle Besitzer">`;
+            ownerEntries.forEach(o => {
+                besitzerHtml += `<option value="${safeEscapeHtml(o.id)}">${safeEscapeHtml(o.name)} (${o.count})</option>`;
+            });
+            besitzerHtml += `</optgroup>`;
+        }
+        besitzerSelect.innerHTML = besitzerHtml;
+        if (currentBesitzerVal === '__unassigned__' || currentBesitzerVal === '__assigned__' || ownerCounts[currentBesitzerVal]) {
+            besitzerSelect.value = currentBesitzerVal;
+        } else {
+            besitzerSelect.value = '';
+        }
+    }
+}
+window.updateInventarFilterDropdowns = updateInventarFilterDropdowns;
+
 function sortBestand(col) {
     bestandSortDir = bestandSortCol === col
         ? (bestandSortDir === 'asc' ? 'desc' : 'asc') : 'asc';
@@ -15,7 +229,7 @@ function sortBestand(col) {
 
 function renderInventoryTable() {
     if (!inventarState) return;
-    const target = document.getElementById('filter-liste').value;
+    const target = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
     const keyMap = {
         "Inventar_Gewehre":           "gewehre",
         "Inventar_Schluessel":        "schluessel",
@@ -25,9 +239,16 @@ function renderInventoryTable() {
     };
     const rawData = inventarState[keyMap[target]];
     const table   = document.getElementById('inventory-table');
+    if (!table) return;
+
+    // Filter-Dropdowns für aktuelle Kategorie synchronisieren
+    updateInventarFilterDropdowns();
 
     if (!rawData?.length) {
         table.innerHTML = `<thead class="table-light border-bottom"><tr><th class="py-3 px-3">Keine Daten vorhanden</th></tr></thead><tbody><tr><td class="text-muted p-4 text-center">In dieser Kategorie sind noch keine Datensätze vorhanden.</td></tr></tbody>`;
+        const statsEl = document.getElementById('inv-filter-stats');
+        if (statsEl) statsEl.innerText = '0 Gegenstände';
+        window._lastFilteredInventoryItems = [];
         return;
     }
 
@@ -43,48 +264,138 @@ function renderInventoryTable() {
     const dateKeys       = ['zeitstempel','kaufdatum','birthdate','kassiert_am',
                             'retour_am','kauf_spender_jahr','datum','date'];
 
-    // Suchfilter (Live-Suche)
+    // Filter-Werte auslesen
     const search = (document.getElementById('inv-search-input')?.value || '').toLowerCase().trim();
+    const filterTyp = (document.getElementById('inv-filter-typ')?.value || '').trim();
+    const filterModell = (document.getElementById('inv-filter-modell')?.value || '').trim();
+    const filterHersteller = (document.getElementById('inv-filter-hersteller')?.value || '').trim();
+    const filterGroesse = (document.getElementById('inv-filter-groesse')?.value || '').trim();
+    const filterBesitzer = (document.getElementById('inv-filter-besitzer')?.value || '').trim();
+    const filterDistanz = (document.getElementById('inv-filter-distanz')?.value || '').trim();
+    const filterBezeichnung = (document.getElementById('inv-filter-bezeichnung')?.value || '').trim();
+    const filterSponsor = (document.getElementById('inv-filter-sponsor')?.value || '').trim();
 
-    // Sortieren & Filtern
-    let sorted = [...rawData];
+    // 1. Zwischenfilterung (alle Filter AUSSER Status)
+    let intermediate = [...rawData];
 
+    if (filterTyp) {
+        intermediate = intermediate.filter(r => (r.Typ || '').trim().toLowerCase() === filterTyp.toLowerCase());
+    }
+    if (filterModell) {
+        intermediate = intermediate.filter(r => (r.Modell || '').trim().toLowerCase() === filterModell.toLowerCase());
+    }
+    if (filterHersteller) {
+        intermediate = intermediate.filter(r => (r.Hersteller || '').trim().toLowerCase() === filterHersteller.toLowerCase());
+    }
+    if (filterGroesse) {
+        intermediate = intermediate.filter(r => (r.Groesse || '').trim().toLowerCase() === filterGroesse.toLowerCase());
+    }
+    if (filterBesitzer) {
+        if (filterBesitzer === '__unassigned__') {
+            intermediate = intermediate.filter(r => !r.Aktueller_Besitzer_ID || r.Aktueller_Besitzer_ID === '' || r.Aktueller_Besitzer_ID === '0');
+        } else if (filterBesitzer === '__assigned__') {
+            intermediate = intermediate.filter(r => r.Aktueller_Besitzer_ID && r.Aktueller_Besitzer_ID !== '' && r.Aktueller_Besitzer_ID !== '0');
+        } else {
+            intermediate = intermediate.filter(r => String(r.Aktueller_Besitzer_ID) === String(filterBesitzer));
+        }
+    }
+    if (filterDistanz) {
+        intermediate = intermediate.filter(r => (r.Distanz || '').trim().toLowerCase() === filterDistanz.toLowerCase());
+    }
+    if (filterBezeichnung) {
+        intermediate = intermediate.filter(r => (r.Bezeichnung || '').trim().toLowerCase() === filterBezeichnung.toLowerCase());
+    }
+    if (filterSponsor) {
+        intermediate = intermediate.filter(r => (r.Sponsor_Firma || '').trim().toLowerCase() === filterSponsor.toLowerCase());
+    }
     if (search) {
-        sorted = sorted.filter(row => {
-            return Object.values(row).some(v => {
+        intermediate = intermediate.filter(row => {
+            const hasDirectMatch = Object.values(row).some(v => {
                 if (v === null || v === undefined) return false;
                 return String(v).toLowerCase().includes(search);
             });
+            if (hasDirectMatch) return true;
+            if (row.Aktueller_Besitzer_ID) {
+                const ownerName = getInventarNameFromId(row.Aktueller_Besitzer_ID).toLowerCase();
+                if (ownerName.includes(search)) return true;
+            }
+            return false;
         });
     }
 
-    sorted.sort((a, b) => {
-        let va = a[bestandSortCol];
-        let vb = b[bestandSortCol];
+    // 2. Status-Pill Badges aktualisieren
+    const countAll = intermediate.length;
+    const countLager = intermediate.filter(r => (r.Status || '').trim().toLowerCase() === 'im lager' || (r.Status || '').trim().toLowerCase() === 'aktiv').length;
+    const countAusgegeben = intermediate.filter(r => (r.Status || '').trim().toLowerCase() === 'ausgegeben' || (r.Status || '').trim().toLowerCase() === 'passiv').length;
+    const countVerkauft = intermediate.filter(r => (r.Status || '').trim().toLowerCase() === 'verkauft').length;
+    const countDefekt = intermediate.filter(r => (r.Status || '').trim().toLowerCase() === 'defekt' || (r.Status || '').trim().toLowerCase() === 'ausgemustert' || (r.Status || '').trim().toLowerCase() === 'verstorben').length;
 
-        // Mitglieder: Nachname + Vorname kombiniert
-        if (target === 'Personendaten' && bestandSortCol === 'Nachname') {
-            va = (a['Nachname']||'') + ' ' + (a['Vorname']||'');
-            vb = (b['Nachname']||'') + ' ' + (b['Vorname']||'');
+    const elCountAll = document.getElementById('inv-count-all');
+    const elCountLager = document.getElementById('inv-count-lager');
+    const elCountAusgegeben = document.getElementById('inv-count-ausgegeben');
+    const elCountVerkauft = document.getElementById('inv-count-verkauft');
+    const elCountDefekt = document.getElementById('inv-count-defekt');
+    const btnDefekt = document.getElementById('btn-status-defekt');
+
+    if (elCountAll) elCountAll.innerText = countAll;
+    if (elCountLager) elCountLager.innerText = countLager;
+    if (elCountAusgegeben) elCountAusgegeben.innerText = countAusgegeben;
+    if (elCountVerkauft) elCountVerkauft.innerText = countVerkauft;
+    if (elCountDefekt) elCountDefekt.innerText = countDefekt;
+    if (btnDefekt) {
+        if (countDefekt > 0) btnDefekt.classList.remove('d-none');
+        else btnDefekt.classList.add('d-none');
+    }
+
+    // 3. Status-Filter anwenden
+    let sorted = [...intermediate];
+    if (inventarFilterStatus && inventarFilterStatus !== 'all') {
+        sorted = sorted.filter(row => {
+            const st = (row.Status || '').trim().toLowerCase();
+            if (inventarFilterStatus === 'Im Lager') {
+                return st === 'im lager' || st === 'aktiv';
+            }
+            if (inventarFilterStatus === 'Ausgegeben') {
+                return st === 'ausgegeben' || st === 'passiv';
+            }
+            if (inventarFilterStatus === 'Verkauft') {
+                return st === 'verkauft';
+            }
+            if (inventarFilterStatus === 'Defekt') {
+                return st === 'defekt' || st === 'ausgemustert' || st === 'verstorben';
+            }
+            return st === inventarFilterStatus.toLowerCase();
+        });
+    }
+
+    // Gefilterten Stand merken (für Excel-Export & Druck)
+    window._lastFilteredInventoryItems = sorted;
+
+    // Treffer-Statistik & Reset-Button Sichtbarkeit
+    const hasActiveFilters = Boolean(
+        search ||
+        (inventarFilterStatus && inventarFilterStatus !== 'all') ||
+        filterTyp || filterModell || filterHersteller || filterGroesse ||
+        filterBesitzer || filterDistanz || filterBezeichnung || filterSponsor
+    );
+
+    const resetBtn = document.getElementById('btn-inv-reset-filters');
+    if (resetBtn) {
+        resetBtn.classList.toggle('d-none', !hasActiveFilters);
+    }
+
+    const statsEl = document.getElementById('inv-filter-stats');
+    if (statsEl) {
+        const noun = target === 'Personendaten' ? 'Mitgliedern' : 'Artikeln';
+        if (hasActiveFilters) {
+            statsEl.innerHTML = `<span class="text-primary fw-bold">Zeige ${sorted.length}</span> von ${rawData.length} ${noun}`;
+        } else {
+            statsEl.innerText = `${rawData.length} ${target === 'Personendaten' ? 'Mitglieder' : 'Gegenstände'}`;
         }
-
-        // Status-Sortierung: Im Lager zuerst
-        if (bestandSortCol === 'Status') {
-            const order = { 'Im Lager': 0, 'Ausgegeben': 1 };
-            va = order[va] !== undefined ? order[va] : 2;
-            vb = order[vb] !== undefined ? order[vb] : 2;
-            return bestandSortDir === 'asc' ? va - vb : vb - va;
-        }
-
-        if (va === undefined || va === null || va === '') va = '';
-        if (vb === undefined || vb === null || vb === '') vb = '';
-        if (va < vb) return bestandSortDir === 'asc' ? -1 : 1;
-        if (va > vb) return bestandSortDir === 'asc' ?  1 : -1;
-        return 0;
-    });
+    }
 
     if (sorted.length === 0) {
-        table.innerHTML = `<thead class="table-light border-bottom"><tr><th class="py-3 px-3">Keine Treffer</th></tr></thead><tbody><tr><td class="text-muted p-4 text-center">Kein Gegenstand entspricht deiner Suche «${escapeHtml(search)}».</td></tr></tbody>`;
+        table.innerHTML = `<thead class="table-light border-bottom"><tr><th class="py-3 px-3">Keine Treffer</th></tr></thead><tbody><tr><td class="text-muted p-4 text-center">Kein Gegenstand entspricht deinen aktuellen Filterkriterien. <button class="btn btn-sm btn-link p-0 text-decoration-none ms-1" onclick="resetInventarFilters(true)">Filter zurücksetzen</button></td></tr></tbody>`;
         return;
     }
 
@@ -605,3 +916,7 @@ window.deleteInventarItem = deleteInventarItem;
 window.renderInventoryTable = renderInventoryTable;
 window.sortBestand = sortBestand;
 window.editInventarItem = editInventarItem;
+window.setInventarStatusFilter = setInventarStatusFilter;
+window.resetInventarFilters = resetInventarFilters;
+window.onInventarCategoryChange = onInventarCategoryChange;
+window.updateInventarFilterDropdowns = updateInventarFilterDropdowns;

@@ -264,7 +264,7 @@ function renderInventarUI(container) {
                                    placeholder="Bestand durchsuchen (ID, Typ, Modell, Grösse, Besitzer...)" oninput="renderInventoryTable()">
                         </div>
                         <select id="filter-liste" class="form-select form-select-sm w-auto rounded-2 bg-white border"
-                                onchange="renderInventoryTable()">
+                                onchange="if(typeof onInventarCategoryChange==='function'){onInventarCategoryChange();}else{renderInventoryTable();}">
                             <option value="Inventar_Kleidung" selected>👕 Vereinskleidung</option>
                             <option value="Inventar_Schluessel">🔑 Schlüssel</option>
                             <option value="Inventar_Gewehre">🔫 Gewehre</option>
@@ -280,27 +280,90 @@ function renderInventarUI(container) {
                             <i class="fas fa-file-import me-1.5"></i> Excel-Import
                         </button>
 
-                        <!-- Excel-Export Dropdown (Alle & nach Kategorie) -->
+                        <!-- Excel-Export Dropdown (Gefiltert, Aktuelle Kategorie & Gesamtes Inventar) -->
                         <div class="dropdown d-inline-block">
                             <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' data-bs-boundary="viewport" aria-expanded="false" title="Bestand in Excel (.xlsx) exportieren">
                                 <i class="fas fa-file-excel me-1.5 text-success"></i> Excel-Export
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 inv-dropdown-menu">
-                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="exportInventarExcel('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie (.xlsx)</a></li>
-                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="exportInventarExcel('all'); return false;"><i class="fas fa-layer-group me-2 text-success"></i>Gesamtes Inventar (Alle Kategorien) (.xlsx)</a></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="exportInventarExcel('filtered'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Filterung / Ansicht (.xlsx)</a></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="exportInventarExcel('current'); return false;"><i class="fas fa-layer-group me-2 text-secondary"></i>Ganze Kategorie (ohne Filter) (.xlsx)</a></li>
+                                <li><hr class="dropdown-divider my-1"></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="exportInventarExcel('all'); return false;"><i class="fas fa-boxes-stacked me-2 text-success"></i>Gesamtes Inventar (Alle 4 Kategorien) (.xlsx)</a></li>
                             </ul>
                         </div>
 
-                        <!-- Drucken / PDF Dropdown (Alle & nach Kategorie) -->
+                        <!-- Drucken / PDF Dropdown (Gefiltert, Aktuelle Kategorie & Gesamtes Inventar) -->
                         <div class="dropdown d-inline-block">
                             <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle fw-semibold rounded-2 shadow-xs d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' data-bs-boundary="viewport" aria-expanded="false" title="Bestand drucken oder als PDF speichern">
                                 <i class="fas fa-print me-1.5 text-dark"></i> Drucken
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-3 inv-dropdown-menu">
-                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="printInventarBestand('current'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Kategorie drucken</a></li>
-                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="printInventarBestand('all'); return false;"><i class="fas fa-layer-group me-2 text-dark"></i>Gesamtes Inventar drucken</a></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="printInventarBestand('filtered'); return false;"><i class="fas fa-filter me-2 text-primary"></i>Aktuelle Filterung drucken</a></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="printInventarBestand('current'); return false;"><i class="fas fa-layer-group me-2 text-secondary"></i>Ganze Kategorie drucken</a></li>
+                                <li><hr class="dropdown-divider my-1"></li>
+                                <li><a class="dropdown-item py-2 fw-medium" href="#" onclick="printInventarBestand('all'); return false;"><i class="fas fa-boxes-stacked me-2 text-dark"></i>Gesamtes Inventar drucken</a></li>
                             </ul>
                         </div>
+                    </div>
+
+                    <!-- Zeile 2: Status-Pills & Treffer-Statistik -->
+                    <div class="d-flex gap-2 align-items-center justify-content-between flex-wrap mt-2 pt-2 border-top">
+                        <div class="btn-group btn-group-sm inv-status-pills flex-wrap" role="group" aria-label="Status Filter">
+                            <button type="button" class="btn btn-secondary active fw-semibold" data-status="all" onclick="setInventarStatusFilter('all')" title="Alle Gegenstände anzeigen">
+                                Alle <span class="badge bg-white text-dark ms-1" id="inv-count-all">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-success fw-semibold" data-status="Im Lager" onclick="setInventarStatusFilter('Im Lager')" title="Nur freie Gegenstände im Lager anzeigen">
+                                <i class="fas fa-box me-1"></i>Im Lager <span class="badge bg-success-subtle text-success ms-1" id="inv-count-lager">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-warning fw-semibold" data-status="Ausgegeben" onclick="setInventarStatusFilter('Ausgegeben')" title="Nur ausgegebene / ausgeliehene Gegenstände anzeigen">
+                                <i class="fas fa-hand-holding me-1"></i>Ausgegeben <span class="badge bg-warning-subtle text-warning-emphasis ms-1" id="inv-count-ausgegeben">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-primary fw-semibold" data-status="Verkauft" onclick="setInventarStatusFilter('Verkauft')" title="Nur verkaufte Gegenstände anzeigen">
+                                <i class="fas fa-shopping-bag me-1"></i>Verkauft <span class="badge bg-primary-subtle text-primary ms-1" id="inv-count-verkauft">0</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger fw-semibold d-none" data-status="Defekt" id="btn-status-defekt" onclick="setInventarStatusFilter('Defekt')" title="Nur defekte Gegenstände anzeigen">
+                                <i class="fas fa-triangle-exclamation me-1"></i>Defekt <span class="badge bg-danger-subtle text-danger ms-1" id="inv-count-defekt">0</span>
+                            </button>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 ms-auto">
+                            <button type="button" id="btn-inv-reset-filters" class="btn btn-sm btn-outline-danger rounded-2 d-none fw-semibold" onclick="resetInventarFilters(true)" title="Alle gesetzten Filter zurücksetzen">
+                                <i class="fas fa-times me-1"></i>Filter zurücksetzen
+                            </button>
+                            <span class="small text-muted fw-bold" id="inv-filter-stats">Lade Bestand...</span>
+                        </div>
+                    </div>
+
+                    <!-- Zeile 3: Detail-Filter Dropdowns (Typ, Modell, Hersteller, Grösse, Besitzer, Sponsor) -->
+                    <div id="inv-filter-dropdowns-row" class="d-flex gap-2 align-items-center flex-wrap mt-2 pt-2 border-top">
+                        <span class="small fw-bold text-muted d-flex align-items-center me-1">
+                            <i class="fas fa-sliders-h text-primary me-1"></i>Filter:
+                        </span>
+                        <select id="inv-filter-typ" class="form-select form-select-sm w-auto rounded-2 bg-white" onchange="renderInventoryTable()" title="Nach Typ filtern">
+                            <option value="">👕 Alle Typen</option>
+                        </select>
+                        <select id="inv-filter-modell" class="form-select form-select-sm w-auto rounded-2 bg-white" onchange="renderInventoryTable()" title="Nach Modell filtern">
+                            <option value="">🏷️ Alle Modelle</option>
+                        </select>
+                        <select id="inv-filter-hersteller" class="form-select form-select-sm w-auto rounded-2 bg-white" onchange="renderInventoryTable()" title="Nach Hersteller filtern">
+                            <option value="">🏭 Alle Hersteller</option>
+                        </select>
+                        <select id="inv-filter-groesse" class="form-select form-select-sm w-auto rounded-2 bg-white" onchange="renderInventoryTable()" title="Nach Grösse filtern">
+                            <option value="">📏 Alle Grössen</option>
+                        </select>
+                        <select id="inv-filter-besitzer" class="form-select form-select-sm w-auto rounded-2 bg-white" onchange="renderInventoryTable()" title="Nach aktuellem Besitzer filtern">
+                            <option value="">👤 Alle Besitzer</option>
+                        </select>
+                        <select id="inv-filter-distanz" class="form-select form-select-sm w-auto rounded-2 bg-white d-none" onchange="renderInventoryTable()" title="Nach Distanz filtern">
+                            <option value="">🎯 Alle Distanzen</option>
+                        </select>
+                        <select id="inv-filter-bezeichnung" class="form-select form-select-sm w-auto rounded-2 bg-white d-none" onchange="renderInventoryTable()" title="Nach Bezeichnung filtern">
+                            <option value="">🔑 Alle Bezeichnungen</option>
+                        </select>
+                        <select id="inv-filter-sponsor" class="form-select form-select-sm w-auto rounded-2 bg-white d-none" onchange="renderInventoryTable()" title="Nach Sponsor-Firma filtern">
+                            <option value="">🤝 Alle Sponsoren</option>
+                        </select>
+                    </div>
                     </div>
                 </div>
 
@@ -946,7 +1009,7 @@ function formatChfNum(val) {
     return isNaN(n) ? '' : n.toFixed(2);
 }
 
-function getCategoryExportRows(targetKey) {
+function getCategoryExportRows(targetKey, onlyFiltered = false) {
     if (!inventarState) return [];
     const catMap = {
         'Inventar_Kleidung': { key: 'kleidung', name: 'Vereinskleidung' },
@@ -960,7 +1023,9 @@ function getCategoryExportRows(targetKey) {
     };
     const catInfo = catMap[targetKey];
     if (!catInfo) return [];
-    const items = inventarState[catInfo.key] || [];
+    const items = (onlyFiltered && Array.isArray(window._lastFilteredInventoryItems))
+        ? window._lastFilteredInventoryItems
+        : (inventarState[catInfo.key] || []);
 
     if (catInfo.key === 'kleidung') {
         return items.map(r => ({
@@ -1051,18 +1116,20 @@ window.exportInventarExcel = function(scope = 'current') {
         'Inventar_Schiessbekleidung': 'Schiessbekleidung'
     };
 
-    if (scope === 'current') {
+    if (scope === 'filtered' || scope === 'current') {
         const currentTarget = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
         if (currentTarget === 'Personendaten') {
             alert("ℹ️ Mitglieder-Export steht direkt im Modul «Mitglieder» zur Verfügung.");
             return;
         }
-        const rows = getCategoryExportRows(currentTarget);
+        const isFiltered = (scope === 'filtered');
+        const rows = getCategoryExportRows(currentTarget, isFiltered);
         if (rows.length === 0) {
-            alert("⚠️ Keine Datensätze in dieser Kategorie vorhanden.");
+            alert(isFiltered ? "⚠️ Keine Datensätze entsprechen deiner aktuellen Filterung." : "⚠️ Keine Datensätze in dieser Kategorie vorhanden.");
             return;
         }
-        const sheetName = (catLabels[currentTarget] || 'Bestand').slice(0, 31);
+        const baseName = (catLabels[currentTarget] || 'Bestand').slice(0, 20);
+        const sheetName = (isFiltered ? `${baseName}_Filter` : baseName).slice(0, 31);
         const ws = XLSX.utils.json_to_sheet(rows);
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
         XLSX.writeFile(wb, `Inventar_${sheetName}_${todayStr}.xlsx`);
@@ -1076,7 +1143,7 @@ window.exportInventarExcel = function(scope = 'current') {
 
         let totalExported = 0;
         categories.forEach(c => {
-            const rows = getCategoryExportRows(c.key);
+            const rows = getCategoryExportRows(c.key, false);
             if (rows.length > 0) {
                 const ws = XLSX.utils.json_to_sheet(rows);
                 XLSX.utils.book_append_sheet(wb, ws, c.name.slice(0, 31));
@@ -1106,19 +1173,24 @@ window.printInventarBestand = function(scope = 'current') {
     };
 
     const categoriesToPrint = [];
-    if (scope === 'current') {
+    if (scope === 'filtered' || scope === 'current') {
         const currentTarget = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
         if (currentTarget === 'Personendaten') {
             alert("ℹ️ Druckfunktion für Mitglieder befindet sich im Modul «Mitglieder».");
             return;
         }
-        categoriesToPrint.push({ key: currentTarget, label: catLabels[currentTarget] || currentTarget });
+        const isFiltered = (scope === 'filtered');
+        categoriesToPrint.push({
+            key: currentTarget,
+            label: (catLabels[currentTarget] || currentTarget) + (isFiltered ? ' (Gefiltert)' : ''),
+            isFiltered: isFiltered
+        });
     } else {
         categoriesToPrint.push(
-            { key: 'Inventar_Kleidung', label: 'Vereinskleidung' },
-            { key: 'Inventar_Schluessel', label: 'Schlüssel' },
-            { key: 'Inventar_Gewehre', label: 'Gewehre' },
-            { key: 'Inventar_Schiessbekleidung', label: 'Schiessbekleidung' }
+            { key: 'Inventar_Kleidung', label: 'Vereinskleidung', isFiltered: false },
+            { key: 'Inventar_Schluessel', label: 'Schlüssel', isFiltered: false },
+            { key: 'Inventar_Gewehre', label: 'Gewehre', isFiltered: false },
+            { key: 'Inventar_Schiessbekleidung', label: 'Schiessbekleidung', isFiltered: false }
         );
     }
 
@@ -1131,7 +1203,7 @@ window.printInventarBestand = function(scope = 'current') {
     let totalAusleihe = 0;
 
     categoriesToPrint.forEach(cat => {
-        const rows = getCategoryExportRows(cat.key);
+        const rows = getCategoryExportRows(cat.key, Boolean(cat.isFiltered));
         if (rows.length === 0) return;
 
         totalItems += rows.length;

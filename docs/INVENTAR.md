@@ -247,5 +247,10 @@ vorstand/js/inventar/
 - **Sticky Spalten (ID links & Aktionen rechts):** In der Bestandsliste sind die `ID`-Spalte links (`inv-col-sticky-id`, `left: 0`) und die `Aktionen`-Spalte rechts (`inv-col-sticky-action`, `right: 0`) fixiert. Beim horizontalen Scrollen breiter Bestände bleiben Artikel-Identifikation sowie Bearbeiten- und Löschen-Buttons dauerhaft im Blickfeld und ohne Rechts-Scrollen direkt bedienbar.
 - **Kompakte Standard-Spaltensichtbarkeit:** Interne Preiskomponenten wie «Einstandspreis Material», «Einstandspreis Druck», «Total Einstandspreis» und «Kaufdatum» sind standardmässig per `data-col-default="hidden"` ausgeblendet, wodurch die Hauptansicht auf Standardbildschirmen sofort ohne horizontales Scrollen übersichtlich bleibt und bei Bedarf über das Dropdown «Spalten» eingeblendet werden kann.
 
+### 5.11 Schnelle Multi-Kriterien Bestandsfilterung & Quick-Check (Oktober 2026)
+- **Status-Schnellfilter mit Live-KPI-Badges:** Klickbare Status-Pills (`Alle`, `🟢 Im Lager`, `🟡 Ausgegeben`, `⚪ Verkauft`, optional `🔴 Defekt`) berechnen in Echtzeit die Mengenzahlen der aktuellen Auswahl und erlauben den sofortigen Statuswechsel mit nur einem Klick für schnelle Bestandskontrollen ohne Excel.
+- **Kategorie-adaptive Attribut-Filter:** Dropdowns für `Typ`, `Modell`, `Hersteller`, `Grösse`, `Besitzer`, `Distanz`, `Bezeichnung` und `Sponsor` hydrieren sich dynamisch aus den Echtdaten der gewählten Kategorie. Der Besitzer-Filter unterscheidet komfortabel zwischen «Frei (Im Lager)», «Zugewiesen» und konkreten Mitgliedern. Textil-Grössen folgen einer natürlichen Grössen-Hierarchie (`116`–`164`, `XS`–`3XL`).
+- **Synchronisierter Filter-Export & Druck:** Die Dropdowns für «Excel-Export» und «Drucken» bieten zusätzlich die Option «Aktuelle Filterung / Ansicht», wodurch exakt die auf dem Bildschirm sichtbare Auswahl ohne Nachbearbeitung exportiert oder zu Papier gebracht werden kann. Ein smarter Reset-Button (`[✕ Filter zurücksetzen]`) setzt alle Filterkriterien inklusive Suchfeld auf Knopfdruck zurück.
+
 
 
