@@ -873,6 +873,10 @@
                     <i class="fas fa-user-lock"></i> <span class="nav-text">Logins</span>
                 </div>
                 <div class="mt-auto border-top p-3">
+                    <button class="btn btn-outline-secondary w-100 btn-sm mb-2 d-flex align-items-center justify-content-between" onclick="openAiHealthModal()" title="Google Gemini KI-Infrastruktur & Status prüfen">
+                        <span><i class="fas fa-microchip me-1 text-primary"></i> <span class="nav-text">KI-Status</span></span>
+                        <span id="sidebar-ai-indicator" class="badge rounded-pill bg-success-subtle text-success border border-success-subtle" style="font-size: 0.68rem;"><i class="fas fa-circle fa-2xs me-1"></i>Online</span>
+                    </button>
                     <button class="btn btn-outline-secondary w-100 btn-sm mb-2" onclick="openMyProfileModal()">
                         <i class="fas fa-user-gear me-1"></i> <span class="nav-text">Mein Profil &amp; Absender</span>
                     </button>
@@ -1267,6 +1271,11 @@
 <div id="view-news" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>🗞️ KI-Berichte Generator</h2>
+        <div class="d-flex align-items-center gap-2">
+            <span id="news-header-ai-chip" class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3 py-2 shadow-sm" style="cursor: pointer; font-size: 0.8rem;" onclick="openAiHealthModal()" title="KI-Infrastruktur & Status prüfen">
+                <i class="fas fa-circle fa-2xs me-1"></i>KI betriebsbereit
+            </span>
+        </div>
     </div>
     
     <div class="card border-0 shadow-lg overflow-hidden mx-auto" style="max-width: 650px; background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 20px;">
@@ -1308,19 +1317,44 @@
                         </div>
                         
                         <div class="mb-3">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label fw-bold mb-0">KI-Modell & Kapazität</label>
-                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.75rem;" onclick="window.openAiHealthModal()" title="KI-Modellstatus und Selbsttest anzeigen">
-                                    <i class="fas fa-heartbeat me-1 text-danger"></i>KI-Status
-                                </button>
+                            <!-- Standard / Endbenutzer-Ansicht: Vollkommen autonom, beruhigend & elegant -->
+                            <div class="p-2.5 px-3 rounded-3 bg-light border d-flex justify-content-between align-items-center shadow-xs">
+                                <div class="d-flex align-items-center">
+                                    <div class="me-2 text-primary" style="font-size: 1.15rem;">
+                                        <i class="fas fa-wand-magic-sparkles"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-semibold small text-dark" id="news-active-model-label">Smarte KI (Autonom & Ausfallsicher)</div>
+                                        <div class="text-muted" style="font-size: 0.73rem;" id="news-active-model-sub">Wählt automatisch das aktuell schnellste & stabilste Google-Modell</div>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-1">
+                                    <button type="button" class="btn btn-sm btn-white border py-1 px-2" style="font-size: 0.72rem;" onclick="window.openAiHealthModal()" title="KI-Diagnose & Healthcheck öffnen">
+                                        <i class="fas fa-heartbeat text-danger me-1"></i>Status
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-link text-decoration-none text-muted py-1 px-1 role-protected" data-roles="admin" data-bs-toggle="collapse" data-bs-target="#news-admin-model-collapse" title="Modell manuell erzwingen (Admin)">
+                                        <i class="fas fa-sliders"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <select id="news-model" class="form-select">
-                                <option value="gemini-3-flash-preview" data-info="Modernstes Gemini 3 Modell: Extrem schnell, präzise Bild- & Textanalyse." selected>Gemini 3 Flash (Empfohlen / Standard)</option>
-                                <option value="gemini-3.5-flash" data-info="Gemini 3.5 Flash: Hohe Stabilität und exzellente Textgenerierung.">Gemini 3.5 Flash</option>
-                                <option value="gemini-3.1-flash-lite" data-info="Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen.">Gemini 3.1 Flash Lite (Lite - Hohe Verfügbarkeit)</option>
-                                <option value="gemini-2.5-pro" data-info="Höchste logische Qualität, aber langsamer.">Gemini 2.5 Pro</option>
-                            </select>
-                            <div id="news-model-desc" class="form-text text-muted mt-1 small">Modernstes Gemini 3 Modell: Extrem schnell, präzise Bild- & Textanalyse.</div>
+
+                            <!-- Für Admins: Erweiterte manuelle Modell-Auswahl (Collapse) -->
+                            <div class="collapse mt-2" id="news-admin-model-collapse">
+                                <div class="card card-body p-3 bg-white border rounded-3 shadow-sm">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label fw-bold small text-muted text-uppercase mb-0">Admin-Override: Modell manuell festlegen</label>
+                                        <span class="badge bg-secondary-subtle text-secondary" style="font-size: 0.65rem;">Experten-Modus</span>
+                                    </div>
+                                    <select id="news-model" class="form-select form-select-sm">
+                                        <option value="auto" selected>✨ Automatische Selbstwahl (Empfohlen)</option>
+                                        <option value="gemini-3.5-flash">Gemini 3.5 Flash (Aktuell Primär)</option>
+                                        <option value="gemini-flash-lite-latest">Gemini Flash Lite Latest (Schnell)</option>
+                                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
+                                        <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
+                                    </select>
+                                    <div id="news-model-desc" class="form-text text-muted mt-1 small" style="font-size: 0.73rem;">Das System wählt automatisch das gesündeste Modell aus dem Healthcheck.</div>
+                                </div>
+                            </div>
                         </div>
                         
                         <div class="form-check form-switch mb-3">
@@ -1563,8 +1597,11 @@
                     <div id="news-social-status-info" class="mt-2 small d-none"></div>
                 </div>
 
+                <!-- Live Status- & Ausweich-Info Box -->
+                <div id="news-ai-status-box" class="mt-3 d-none"></div>
+
                 <!-- Aktions-Buttons -->
-                <div class="mt-4 d-flex gap-2">
+                <div class="mt-3 d-flex gap-2">
                     <button type="button" class="btn btn-outline-primary flex-grow-1 py-2 fw-bold" id="news-generate-btn">
                         <span id="news-btn-text">KI-Entwurf generieren</span>
                         <span class="spinner-border spinner-border-sm d-none" id="news-spinner" role="status" aria-hidden="true"></span>

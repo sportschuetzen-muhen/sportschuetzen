@@ -714,6 +714,13 @@ function showApp() {
 
     // 2. Online-Präsenz pingen
     startPresencePingTimer();
+
+    // 3. KI-Infrastruktur Status aktualisieren
+    if (typeof window.loadAiHealthStatus === 'function') {
+        window.loadAiHealthStatus().then(r => {
+            if (typeof window.updateAiStatusBadges === 'function') window.updateAiStatusBadges(r);
+        });
+    }
 }
 
 // =========================================================

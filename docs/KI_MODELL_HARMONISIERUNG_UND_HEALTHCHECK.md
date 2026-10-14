@@ -90,8 +90,17 @@ Die Prüfergebnisse werden atomar in der Tabelle `public.system_app_configs` abg
 3. **Alarmierung bei Ausfall:**
    Sollte das Standardmodell ausfallen oder kein gesundes Modell mehr verfügbar sein, wird automatisch ein Eintrag in `public.mail_logs` mit Status `system_alert` angelegt und der Administrator benachrichtigt.
 
-### 3.5 Cockpit-UI (`ai-health.js` & `#modal-ai-health`)
-Im Vorstand-Cockpit steht ein Diagnose-Modal zur Verfügung:
-- Schneller Aufruf über den Button **«KI-Status»** in News- und Resultate-Modulen.
-- Übersichtliche Darstellung mit Status-Badges (🟢 Funktionsfähig, 🟡 Hohe Nachfrage, 🔴 Eingestellt) und gemessenen Antwortzeiten in Millisekunden.
-- Button **«Modelle jetzt prüfen & testen»** für sofortige On-Demand-Prüfung.
+### 3.5 Cockpit-UI & Platzierung (`ai-health.js` & `#modal-ai-health`)
+Im Vorstand-Cockpit ist der Healthcheck optimal im Blickfeld platziert:
+- **Sidebar-Footer (Systemweit):** Klickbarer Status-Indikator (`[ ⚡ KI-Status: Online (7) ]`) direkt über dem Benutzerprofil für sofortigen Zugriff aus jedem Modul.
+- **Modul-Header:** Eleganter Status-Chip (`[ 🟢 KI betriebsbereit ]`) im Header von News KI und Resultate OCR.
+- **Diagnose-Modal:** Detaillierte Übersicht aller Google Gemini Modelle mit Latenzen, Error-Gründen (503 High Demand, 429 Quota, 404 Deprecated) und 1-Klick On-Demand Test.
+
+### 3.6 Autonome Modellwahl & «Zero Cognitive Load» (UX/UI)
+- **Keine technischen Modellnamen für Endnutzer:** Vereinsfunktionäre und Redaktoren müssen keine komplexen API-Namen (`gemini-3.5-flash`, `gemini-3.1-flash-lite`) kennen oder vergleichen. Die Modellauswahl erfolgt standardmässig vollautonom (`value="auto"`), basierend auf dem aktuellen Healthcheck.
+- **Admin-Override (Experten-Modus):** Autorisierte Administratoren können über ein dezentes Slider-Icon (`.role-protected` mit Rolle `admin`) ein Collapse-Menü öffnen, um bei Bedarf gezielt ein einzelnes Testmodell manuell zu erzwingen.
+
+### 3.7 Live-Ausweich-Feedback (`#news-ai-status-box`)
+- **Automatisches Failover ohne Unterbrechung:** Meldet ein Modell während der Text- oder Resultate-Erkennung temporäre Überlastung (`503 UNAVAILABLE / High Demand`), Quota-Limits (`429`) oder Timeouts, schaltet das Frontend selbstheilend auf das nächste gesunde Modell in der `recommended_chain` um.
+- **Animierte Info-Box:** Anstelle einer kryptischen Fehlermeldung sieht der Benutzer im Lade-Overlay eine beruhigende Statusanzeige (*«Hohe Google-Auslastung: Weiche automatisch auf Ersatzmodell aus...»*). Der Benutzer muss keine Aktion ausführen.
+

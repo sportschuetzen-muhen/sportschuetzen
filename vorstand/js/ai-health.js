@@ -222,4 +222,72 @@
             window.renderAiHealthReport(report);
         }
     };
+
+    // 5. Autonome Modell-Ermittlung & Fallback-Kette für Fachmodule
+    window.getAiPrimaryModel = async function () {
+        if (!_lastHealthReport) {
+            await window.loadAiHealthStatus();
+        }
+        return (_lastHealthReport && _lastHealthReport.primary_model) ? _lastHealthReport.primary_model : 'gemini-3.5-flash';
+    };
+
+    window.getAiFallbackChain = async function () {
+        if (!_lastHealthReport) {
+            await window.loadAiHealthStatus();
+        }
+        if (_lastHealthReport && Array.isArray(_lastHealthReport.recommended_chain) && _lastHealthReport.recommended_chain.length > 0) {
+            return _lastHealthReport.recommended_chain;
+        }
+        return ['gemini-3.5-flash', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'];
+    };
+
+    // 6. Status-Badges im Portal synchronisieren (Sidebar & Header)
+    window.updateAiStatusBadges = function (report) {
+        const r = report || _lastHealthReport;
+        const healthyCount = r ? (r.healthy_count || 0) : 0;
+        const primaryModel = r ? (r.primary_model || 'Auto') : 'Auto';
+        const isDegraded = r && healthyCount === 0;
+
+        // Sidebar-Indikator
+        const sidebarBadge = document.getElementById("sidebar-ai-indicator");
+        if (sidebarBadge) {
+            if (isDegraded) {
+                sidebarBadge.className = "badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle";
+                sidebarBadge.innerHTML = `<i class="fas fa-exclamation-triangle fa-2xs me-1"></i>Offline`;
+            } else if (r) {
+                sidebarBadge.className = "badge rounded-pill bg-success-subtle text-success border border-success-subtle";
+                sidebarBadge.innerHTML = `<i class="fas fa-circle fa-2xs me-1"></i>Online (${healthyCount})`;
+            } else {
+                sidebarBadge.className = "badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle";
+                sidebarBadge.innerHTML = `<i class="fas fa-circle fa-2xs me-1"></i>Prüfe...`;
+            }
+        }
+
+        // News Header Chip
+        const headerChip = document.getElementById("news-header-ai-chip");
+        if (headerChip) {
+            if (isDegraded) {
+                headerChip.className = "badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-3 py-2";
+                headerChip.innerHTML = `<i class="fas fa-triangle-exclamation me-1"></i>KI eingeschränkt`;
+            } else {
+                headerChip.className = "badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3 py-2";
+                headerChip.innerHTML = `<i class="fas fa-circle fa-2xs me-1"></i>KI betriebsbereit`;
+            }
+        }
+
+        // News aktives Modell Label
+        const activeModelSub = document.getElementById("news-active-model-sub");
+        if (activeModelSub && primaryModel) {
+            activeModelSub.textContent = `Aktiv: ${primaryModel} (${healthyCount} gesunde Modelle online)`;
+        }
+    };
+
+    // Beim Laden des Skripts initial im Hintergrund Status abfragen
+    document.addEventListener("DOMContentLoaded", () => {
+        setTimeout(async () => {
+            const report = await window.loadAiHealthStatus();
+            window.updateAiStatusBadges(report);
+        }, 1500);
+    });
 })();
+

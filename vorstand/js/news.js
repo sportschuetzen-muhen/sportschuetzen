@@ -163,37 +163,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Dynamische Modelle von Google abrufen (mit Session-Cache)
-        window.initDynamicModels = async function(selectElement, descElement, defaultModel = 'gemini-3-flash-preview', module = 'news') {
+        window.initDynamicModels = async function(selectElement, descElement, defaultModel = 'auto', module = 'news') {
             try {
                 let models = window._cachedGeminiModels;
                 if (!models) {
                     const res = await apiFetch(module, 'action=list_models');
-                    if (!res.ok) throw new Error("API request failed");
-                    const data = await res.json();
-                    if (data.success && data.models && data.models.length > 0) {
-                        models = data.models;
-                        window._cachedGeminiModels = models;
+                    if (res && res.ok) {
+                        const data = await res.json();
+                        if (data.success && data.models && data.models.length > 0) {
+                            models = data.models;
+                            window._cachedGeminiModels = models;
+                        }
                     }
                 }
+
                 if (models && models.length > 0) {
                     const modelInfos = {
-                        'gemini-3-flash-preview': 'Modernstes Gemini 3 Modell: Extrem schnell, präzise Bild- & Textanalyse.',
-                        'gemini-3.5-flash': 'Gemini 3.5 Flash: Hohe Stabilität und exzellente Textgenerierung.',
-                        'gemini-3.1-flash-lite': 'Sehr schnell und hohe Kapazitätsgrenzen. Gut bei Quotenüberschreitungen des Standardmodells.',
-                        'gemini-2.5-pro': 'Höchste logische Qualität und beste Erkennungsrate, aber langsamer.'
+                        'auto': 'Das System wählt vollautomatisch das aktuell schnellste und stabilste Modell.',
+                        'gemini-3.5-flash': 'Gemini 3.5 Flash: Hohe Stabilität, schnell und exzellente Textgenerierung.',
+                        'gemini-flash-lite-latest': 'Gemini Flash Lite: Sehr hohe Verfügbarkeit und geringe Latenz.',
+                        'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite: Hohe Kapazitätsgrenzen.',
+                        'gemini-3.1-flash-lite': 'Schnell und hohe Kapazitätsgrenzen bei Quotenüberschreitungen.',
+                        'gemini-3-flash-preview': 'Gemini 3 Flash Preview (sofern online).'
                     };
 
                     const recommendedNames = {
-                        'gemini-3-flash-preview': 'Gemini 3 Flash (Empfohlen / Standard)',
-                        'gemini-3.5-flash': 'Gemini 3.5 Flash (Stabilität)',
-                        'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite (Lite / Höchste Kapazität)',
-                        'gemini-2.5-pro': 'Gemini 2.5 Pro (Höchste Genauigkeit)'
+                        'auto': '✨ Automatische Selbstwahl (Empfohlen)',
+                        'gemini-3.5-flash': 'Gemini 3.5 Flash (Standard)',
+                        'gemini-flash-lite-latest': 'Gemini Flash Lite (Hohe Verfügbarkeit)',
+                        'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite (Schnell)',
+                        'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
+                        'gemini-3-flash-preview': 'Gemini 3 Flash Preview'
                     };
 
-                    // Exclude legacy/deprecated models containing 1.5, 1.0 or deprecated 2.5-flash
-                    const activeModels = models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0') && m.name !== 'gemini-2.5-flash');
+                    // Veraltete 1.0/1.5-Modelle ausfiltern
+                    const activeModels = models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0'));
 
-                    // Sortiere Modelle: Moderne/Empfohlene Modelle (Flash/Pro/Lite) zuerst, danach andere
                     const sortedModels = activeModels.sort((a, b) => {
                         const hasA = (recommendedNames[a.name] || a.name.includes('flash') || a.name.includes('pro')) ? 1 : 0;
                         const hasB = (recommendedNames[b.name] || b.name.includes('flash') || b.name.includes('pro')) ? 1 : 0;
@@ -201,25 +206,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         return a.name.localeCompare(b.name);
                     });
 
-                    const prevValue = selectElement.value;
-                    selectElement.innerHTML = sortedModels.map(m => {
-                        let displayName = recommendedNames[m.name] || m.displayName || m.name;
-                        
-                        // Dynamisches Tagging für neue/unbekannte Modelle
-                        if (!recommendedNames[m.name]) {
-                            if (m.name.includes('flash-lite') || m.name.includes('lite')) {
-                                displayName = `${m.displayName || m.name} (Lite / Höchste Kapazität)`;
-                            } else if (m.name.includes('flash')) {
-                                displayName = `${m.displayName || m.name} (Schnell / Standard)`;
-                            } else if (m.name.includes('pro')) {
-                                displayName = `${m.displayName || m.name} (Premium / Höchste Präzision)`;
-                            }
-                        }
+                    const prevValue = selectElement.value || defaultModel;
+                    let optionsHtml = `<option value="auto" data-info="Das System wählt vollautomatisch das aktuell schnellste und stabilste Modell." ${prevValue === 'auto' ? 'selected' : ''}>✨ Automatische Selbstwahl (Empfohlen)</option>`;
 
-                        const info = modelInfos[m.name] || m.description || 'Verfügbares Modell von Google Gemini.';
-                        const isSelected = m.name === (prevValue || defaultModel) ? 'selected' : '';
+                    optionsHtml += sortedModels.map(m => {
+                        let displayName = recommendedNames[m.name] || m.displayName || m.name;
+                        const info = modelInfos[m.name] || m.description || 'Google Gemini KI-Modell.';
+                        const isSelected = m.name === prevValue ? 'selected' : '';
                         return `<option value="${escapeHtml(m.name)}" data-info="${escapeHtml(info)}" ${isSelected}>${escapeHtml(displayName)}</option>`;
                     }).join('');
+
+                    selectElement.innerHTML = optionsHtml;
 
                     if (descElement) {
                         const selectedOption = selectElement.options[selectElement.selectedIndex];
@@ -232,6 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn("Konnte Modelle nicht dynamisch von Google laden:", err);
             }
         };
+
 
         // Kein vorzeitiger Abruf bei DOMContentLoaded - lädt erst bei initNewsView (Lazy Loading)
     }
@@ -254,6 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const btnText = document.getElementById('news-btn-text');
             const spinner = document.getElementById('news-spinner');
+            const statusBox = document.getElementById('news-ai-status-box');
 
             generateBtn.disabled = true;
             btnText.classList.add('d-none');
@@ -261,30 +260,118 @@ document.addEventListener('DOMContentLoaded', () => {
             draftContainer.style.display = 'none';
             publishBtn.classList.add('d-none');
 
-            const selectedModel = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
+            // Autonome Modell-Ermittlung & Fallback-Kette
+            let targetChain = [];
+            const manualChoice = modelSelect ? modelSelect.value : 'auto';
+            
+            if (manualChoice && manualChoice !== 'auto') {
+                targetChain.push(manualChoice);
+            }
+            
+            // Standard-Fallback-Kette anfügen
+            if (typeof window.getAiFallbackChain === 'function') {
+                const chain = await window.getAiFallbackChain();
+                (chain || []).forEach(m => {
+                    if (!targetChain.includes(m)) targetChain.push(m);
+                });
+            } else {
+                ['gemini-3.5-flash', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].forEach(m => {
+                    if (!targetChain.includes(m)) targetChain.push(m);
+                });
+            }
+
+            const useImageContent = document.getElementById('news-use-image-content') ? document.getElementById('news-use-image-content').checked : true;
+            let successData = null;
+            let lastError = null;
 
             try {
-                const useImageContent = document.getElementById('news-use-image-content') ? document.getElementById('news-use-image-content').checked : true;
-                
-                const response = await apiFetch('news', 'action=generate', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        keywords: keywords,
-                        images: base64Images,
-                        useImageContent: useImageContent,
-                        model: selectedModel
-                    })
-                });
+                for (let i = 0; i < targetChain.length; i++) {
+                    const currentModel = targetChain[i];
 
-                if (!response.ok) {
-                    const errData = await response.json().catch(() => ({}));
-                    throw new Error(errData.error || `HTTP Error ${response.status}`);
+                    // Status-Box anzeigen / aktualisieren
+                    if (statusBox) {
+                        statusBox.classList.remove('d-none');
+                        if (i === 0) {
+                            statusBox.innerHTML = `
+                                <div class="alert alert-primary py-2 px-3 small border-0 d-flex align-items-center mb-0 shadow-xs">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2 flex-shrink-0" role="status"></div>
+                                    <div>KI analysiert Stichworte & Bilder und formuliert deinen Entwurf...</div>
+                                </div>
+                            `;
+                        } else {
+                            statusBox.innerHTML = `
+                                <div class="alert alert-warning py-2 px-3 small border-0 d-flex align-items-center mb-0 shadow-xs">
+                                    <i class="fas fa-bolt text-warning me-2 fa-lg flex-shrink-0"></i>
+                                    <div>
+                                        <strong>Hohe Google-Auslastung:</strong> Weiche automatisch auf Ersatzmodell aus (<code>${escapeHtml(currentModel)}</code>)...
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    try {
+                        const response = await apiFetch('news', 'action=generate', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                keywords: keywords,
+                                images: base64Images,
+                                useImageContent: useImageContent,
+                                model: currentModel
+                            })
+                        });
+
+                        if (!response.ok) {
+                            const errData = await response.json().catch(() => ({}));
+                            const errMsg = errData.error || `HTTP ${response.status}`;
+                            const isTransient = response.status === 503 || response.status === 429 || response.status === 504 ||
+                                                errMsg.includes('503') || errMsg.includes('429') || errMsg.includes('quota') ||
+                                                errMsg.includes('limit') || errMsg.includes('timeout') || errMsg.includes('RESOURCE_EXHAUSTED') ||
+                                                errMsg.includes('UNAVAILABLE') || errMsg.includes('overload') || errMsg.includes('high demand');
+                            
+                            if (isTransient && i < targetChain.length - 1) {
+                                console.warn(`Modell ${currentModel} ausgelastet/Fehler (${errMsg}), teste nächstes Modell...`);
+                                lastError = new Error(errMsg);
+                                continue;
+                            }
+                            throw new Error(errMsg);
+                        }
+
+                        const data = await response.json();
+                        if (data.error) {
+                            const isTransient = data.error.includes('503') || data.error.includes('429') || data.error.includes('quota') ||
+                                                data.error.includes('limit') || data.error.includes('timeout') || data.error.includes('RESOURCE_EXHAUSTED') ||
+                                                data.error.includes('UNAVAILABLE') || data.error.includes('overload');
+                            if (isTransient && i < targetChain.length - 1) {
+                                console.warn(`Modell ${currentModel} meldete Fehler (${data.error}), teste nächstes Modell...`);
+                                lastError = new Error(data.error);
+                                continue;
+                            }
+                            throw new Error(data.error);
+                        }
+
+                        successData = data;
+                        break; // ERFOLGREICH!
+                    } catch (attemptErr) {
+                        lastError = attemptErr;
+                        const msg = attemptErr.message || '';
+                        const isTransient = msg.includes('503') || msg.includes('429') || msg.includes('quota') ||
+                                            msg.includes('limit') || msg.includes('timeout') || msg.includes('aborted') ||
+                                            msg.includes('RESOURCE_EXHAUSTED') || msg.includes('UNAVAILABLE') || msg.includes('overload');
+                        if (isTransient && i < targetChain.length - 1) {
+                            console.warn(`Ausnahme bei Modell ${currentModel}: ${msg}, versuche nächstes Modell in Kette.`);
+                            continue;
+                        }
+                        throw attemptErr;
+                    }
                 }
 
-                const data = await response.json();
-                
+                if (!successData) {
+                    throw lastError || new Error("Generierung konnte mit keinem verfügbaren Modell abgeschlossen werden.");
+                }
+
                 // Entwurf anzeigen
-                draftEditor.innerHTML = data.html || "";
+                draftEditor.innerHTML = successData.html || "";
                 
                 // Social-Media Entwürfe befüllen
                 const igCaptionEl = document.getElementById('news-ig-caption');
@@ -292,12 +379,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const badgeIg = document.getElementById('badge-ig-status');
                 const badgeFb = document.getElementById('badge-fb-status');
 
-                if (igCaptionEl && data.instagramCaption) {
-                    igCaptionEl.value = data.instagramCaption;
+                if (igCaptionEl && successData.instagramCaption) {
+                    igCaptionEl.value = successData.instagramCaption;
                     if (badgeIg) badgeIg.classList.remove('d-none');
                 }
-                if (fbPostEl && data.facebookPost) {
-                    fbPostEl.value = data.facebookPost;
+                if (fbPostEl && successData.facebookPost) {
+                    fbPostEl.value = successData.facebookPost;
                     if (badgeFb) badgeFb.classList.remove('d-none');
                 }
                 if (typeof window.updateNewsCounters === 'function') {
@@ -309,33 +396,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 draftContainer.style.display = 'block';
-                publishBtn.classList.remove('d-none'); // Jetzt Publizieren Button einblenden
+                publishBtn.classList.remove('d-none');
                 
-                showToast("Entwurf & Social-Media-Texte generiert! Bitte prüfen und ggf. anpassen.", "success");
-                
-            } catch (err) {
-                console.error(err);
-                if (err.message === 'QUOTA_EXCEEDED' || err.message.includes('limit') || err.message.includes('quota') || err.message.includes('Quota exceeded') || err.message.includes('RESOURCE_EXHAUSTED')) {
-                    // Hole Alternativen aus dem Dropdown, falls vorhanden
-                    let alternatives = [];
-                    if (modelSelect) {
-                        Array.from(modelSelect.options).forEach(opt => {
-                            if (opt.value !== selectedModel) {
-                                const cleanName = opt.text.split(" (")[0];
-                                alternatives.push(cleanName);
-                            }
-                        });
-                    }
-                    const altText = alternatives.length > 0 ? ` (z. B. ${alternatives.slice(0, 3).map(a => `'${a}'`).join(' oder ')})` : "";
-                    showToast(`Kapazitätsengpass beim gewählten Modell! Bitte wähle ein alternatives Modell${altText} und versuche es erneut.`, "warning");
-                    if (modelSelect) {
-                        modelSelect.classList.add('border-warning');
-                        modelSelect.focus();
-                        setTimeout(() => modelSelect.classList.remove('border-warning'), 5000);
-                    }
-                } else {
-                    showToast("Fehler beim Generieren: " + err.message, "danger");
+                if (statusBox) {
+                    statusBox.classList.add('d-none');
+                    statusBox.innerHTML = '';
                 }
+
+                showToast("Entwurf & Social-Media-Texte erfolgreich generiert! Bitte prüfen und anpassen.", "success");
+
+            } catch (err) {
+                console.error("Generierungs-Gesamtfehler:", err);
+                if (statusBox) {
+                    statusBox.classList.remove('d-none');
+                    statusBox.innerHTML = `
+                        <div class="alert alert-danger py-2 px-3 small border-0 d-flex align-items-center mb-0">
+                            <i class="fas fa-exclamation-triangle me-2 text-danger flex-shrink-0"></i>
+                            <div><strong>Fehler bei der KI-Generierung:</strong> ${escapeHtml(err.message || 'Unbekannter Fehler')}</div>
+                        </div>
+                    `;
+                }
+                showToast("Fehler beim Generieren: " + err.message, "danger");
             } finally {
                 generateBtn.disabled = false;
                 btnText.classList.remove('d-none');
@@ -746,7 +827,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const modelSelect = document.getElementById('news-model');
         const modelDesc = document.getElementById('news-model-desc');
         if (modelSelect && modelSelect.options.length <= 3 && typeof window.initDynamicModels === 'function') {
-            window.initDynamicModels(modelSelect, modelDesc, 'gemini-2.5-flash', 'news');
+            window.initDynamicModels(modelSelect, modelDesc, 'auto', 'news');
         }
     };
 
@@ -868,7 +949,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const title = titleInput ? titleInput.value.trim() : '';
-        const selectedModel = modelSelect ? modelSelect.value : 'gemini-2.5-flash';
+        const manualModel = modelSelect ? modelSelect.value : 'auto';
+        const selectedModel = (manualModel && manualModel !== 'auto') 
+            ? manualModel 
+            : ((typeof window.getAiPrimaryModel === 'function') ? await window.getAiPrimaryModel() : 'gemini-3.5-flash');
 
         if (socialBtn) socialBtn.disabled = true;
         if (btnText) btnText.classList.add('d-none');

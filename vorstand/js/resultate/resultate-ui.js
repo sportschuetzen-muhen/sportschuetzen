@@ -362,20 +362,30 @@ function ensureResultateShell(forceRebuild = false) {
                   </div>
                   <div class="col-6">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                      <label class="form-label fw-bold small text-muted mb-0">KI-Modell & Kapazität</label>
+                      <label class="form-label fw-bold small text-muted mb-0">KI-Erkennung</label>
                       <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size: 0.72rem;" onclick="window.openAiHealthModal()" title="KI-Modellstatus anzeigen">
                         <i class="fas fa-heartbeat text-danger me-1"></i>Status
                       </button>
                     </div>
-                    <select id="ocr-model" class="form-select">
-                      <option value="gemini-3-flash-preview" selected>Gemini 3 Flash Preview (Standard)</option>
-                      <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
-                      <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
-                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Schnell)</option>
-                    </select>
+                    <div class="p-1.5 px-2 rounded-2 bg-light border d-flex justify-content-between align-items-center">
+                      <span class="small fw-semibold text-dark" style="font-size: 0.78rem;">
+                        <i class="fas fa-wand-magic-sparkles text-primary me-1"></i>Smarte OCR (Auto)
+                      </span>
+                      <button type="button" class="btn btn-sm btn-link text-decoration-none text-muted p-0 role-protected" data-roles="admin" data-bs-toggle="collapse" data-bs-target="#ocr-admin-model-collapse" title="Modell manuell wählen (Admin)">
+                        <i class="fas fa-sliders" style="font-size: 0.75rem;"></i>
+                      </button>
+                    </div>
+                    <div class="collapse mt-1" id="ocr-admin-model-collapse">
+                      <select id="ocr-model" class="form-select form-select-sm" style="font-size: 0.78rem;">
+                        <option value="auto" selected>✨ Auto-Wahl (Empfohlen)</option>
+                        <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                        <option value="gemini-flash-lite-latest">Gemini Flash Lite</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-                <div id="ocr-model-desc" class="form-text text-muted mb-3 small" style="min-height: 20px;"></div>
+                <div id="ocr-model-desc" class="form-text text-muted mb-3 small d-none" style="min-height: 0;"></div>
                 <div class="mb-4">
                   <label class="form-label fw-bold small text-muted">Foto auswählen oder aufnehmen</label>
                   <div class="border rounded p-4 text-center bg-light position-relative" style="cursor:pointer; border-style: dashed !important; transition: border-color 0.2s;" id="ocr-dropzone" onclick="document.getElementById('ocr-file-input').click()">
