@@ -320,3 +320,11 @@ Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatis
 * **Sichere Persistierung via PostgreSQL RPC:** Das Speichern erfolgt direkt in `public.admin_profiles` über die RPC-Funktion `public.update_my_profile()`, serverseitig strikt abgesichert durch `auth.uid() = auth_user_id` (kein unbefugter Schreibzugriff auf fremde Profile).
 * **Zentrale Absenderquelle für Rechnungen & Dokumente:** Die gepflegten Profilwerte werden beim Login und nach Profilaktualisierungen im Frontend in `localStorage` hinterlegt (`portal_strasse`, `portal_plz`, `portal_ort`, `portal_telefon`) und fungieren als lückenlose Datenbasis für `rnGetLoggedInSender()`, das Rechnungs-Absender-Dropdown (`#rnm-sender-select`) und die PDF-Generierung (`generate-pdf`).
 
+---
+
+## 13. PWA-Login: Öffentliche Mitglieder-Lese-Policy & Manueller Eingabe-Leitfaden (Migration 70)
+
+* **Öffentliche RLS-Lese-Policy für `anon`:** Nach der RBAC-Harmonisierung (Migration 49) war `public.members` ausschliesslich für authentifizierte Vorstandsmitglieder lesbar. Nicht angemeldete Besucher der Mitglieder-App (PWA) erhielten bei leerem Browser-Cache (`localStorage`) ein leeres Resultat, wodurch das Dropdown auf «Lade Teilnehmer...» verharrte. Migration 70 gewährt der Rolle `anon` gezieltes SELECT auf aktive Mitglieder (`is_active = true`).
+* **Manueller Eingabe-Leitfaden & Flexibilität:** Das Direkteingabefeld im Login-Modal führt Benutzer mit klaren Platzhaltern und Hinweisen («z.B. Max Muster oder Muster Max, E-Mail, Lizenz-Nr...»). Die serverseitige Auflösung via `public.resolve_login_identifier()` akzeptiert Vorname Nachname oder Nachname Vorname ohne Rücksicht auf Gross-/Kleinschreibung.
+
+

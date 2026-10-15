@@ -1421,9 +1421,20 @@ async function initLogin() {
             return nA.localeCompare(nB);
         });
 
-        populateDropdown(allUsers);
+        if (!allUsers || allUsers.length === 0) {
+            const select = document.getElementById('login-user-select');
+            if (select) {
+                select.innerHTML = '<option value="">⚠️ Name unten im Textfeld eingeben...</option>';
+            }
+        } else {
+            populateDropdown(allUsers);
+        }
     } catch (e) {
         console.error("Fehler beim Laden der Teilnehmer", e);
+        const select = document.getElementById('login-user-select');
+        if (select) {
+            select.innerHTML = '<option value="">⚠️ Name unten im Textfeld eingeben...</option>';
+        }
     }
 }
 
@@ -1440,7 +1451,7 @@ document.getElementById('sso-send-btn')?.addEventListener('click', async () => {
 
     if (!identifier) {
         if (errorDiv) {
-            errorDiv.textContent = "Bitte deinen Namen aus der Liste wählen oder deine E-Mail/Lizenznummer eingeben.";
+            errorDiv.textContent = "Bitte deinen Namen aus der Liste wählen oder im Feld darunter eingeben (z.B. Max Muster oder Muster Max).";
             errorDiv.style.display = 'block';
         }
         return;
