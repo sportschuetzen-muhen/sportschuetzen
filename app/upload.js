@@ -98,14 +98,8 @@ function startAiProgress(title = "Standblatt-Erkennung läuft...", estSeconds = 
     const controller = {
         finish: (statusHtml) => {
             clearInterval(timerId);
-            if (bar) {
-                bar.style.width = "100%";
-                bar.style.background = "#10b981";
-            }
             if (statusHtml) {
-                setTimeout(() => {
-                    showAiStatus(statusHtml, "success");
-                }, 300);
+                showAiStatus(statusHtml, "success");
             }
         },
         cancel: () => {
@@ -527,7 +521,7 @@ async function processImageStandblatt(base64Data, user) {
     }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 12000);
+    const timeoutId = setTimeout(() => abortController.abort(), 45000);
 
     try {
         const ocrUrl = WORKER_OCR_URL.replace('action=ocr', 'action=ocr_standblatt');
@@ -661,6 +655,18 @@ async function processImageStandblatt(base64Data, user) {
                         <div>${shooterMsg}</div>
                         <div>${contestMsg}</div>
                         <div>💯 <strong>Punkte & Maximum:</strong> <strong>${pts}</strong> / ${maxPts} Pkt. (${pct}%${stichName})</div>
+                    </div>
+                `;
+                progress.finish(statusHtml);
+                return;
+            } else {
+                if (maxPts) document.getElementById("maximal").value = maxPts;
+                const statusHtml = `
+                    <div style="text-align:left; font-size:0.87rem; line-height:1.45;">
+                        <div style="font-weight:700; margin-bottom:4px; color:#166534;">✨ Standblatt erfolgreich erkannt:</div>
+                        <div>${shooterMsg}</div>
+                        <div>${contestMsg}</div>
+                        <div style="color:#166534; font-weight:600; margin-top:2px;">💯 Punkte bitte kurz manuell prüfen und eintragen.</div>
                     </div>
                 `;
                 progress.finish(statusHtml);
