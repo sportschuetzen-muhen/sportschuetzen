@@ -175,9 +175,16 @@ function renderJMStandblattDetailRow(item, canWrite) {
         `;
     } else if (ocr) {
         bannerHtml = `
-            <div class="alert alert-warning d-flex align-items-center mb-3 py-2 px-3 border border-warning-subtle rounded-3">
-                <i class="fas fa-exclamation-triangle fa-lg me-2 text-warning"></i>
-                <div><strong>⚠️ Manuelle Prüfung erforderlich:</strong> Die KI konnte die Angaben nicht vollständig zweifelsfrei verifizieren. Bitte prüfe die Eingabe gegen das Originalfoto.</div>
+            <div class="alert alert-warning d-flex align-items-center justify-content-between mb-3 py-2 px-3 border border-warning-subtle rounded-3 flex-wrap gap-2">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-exclamation-triangle fa-lg me-2 text-warning"></i>
+                    <div><strong>⚠️ Manuelle Prüfung erforderlich:</strong> Die Angaben wurden noch nicht vollständig verifiziert. Bitte prüfe die Eingabe gegen das Originalfoto oder starte die KI-Erkennung.</div>
+                </div>
+                ${fileUrl && canWrite ? `
+                    <button type="button" class="btn btn-sm btn-outline-warning text-dark border-warning rounded-pill px-3 py-1 btn-ocr-ondemand-${item.id}" onclick="jmRunOnDemandOcr('${item.id}')">
+                        <i class="fas fa-magic me-1"></i>KI-Prüfbericht jetzt durchführen
+                    </button>
+                ` : ''}
             </div>
         `;
     } else {
@@ -187,8 +194,8 @@ function renderJMStandblattDetailRow(item, canWrite) {
                     <i class="fas fa-info-circle fa-lg me-2 text-secondary"></i>
                     <div>Dieses Standblatt besitzt noch keine automatische KI-Erkennung.</div>
                 </div>
-                ${fileUrl ? `
-                    <button type="button" id="btn-ocr-ondemand-${item.id}" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1" onclick="jmRunOnDemandOcr('${item.id}')">
+                ${fileUrl && canWrite ? `
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 btn-ocr-ondemand-${item.id}" onclick="jmRunOnDemandOcr('${item.id}')">
                         <i class="fas fa-magic me-1"></i>KI-Prüfbericht jetzt durchführen
                     </button>
                 ` : ''}
@@ -288,7 +295,12 @@ function renderJMStandblattDetailRow(item, canWrite) {
                     <i class="fas fa-clock me-1"></i>Eingereicht: ${dateStr}
                     ${raw.fileName ? ` · Datei: <code>${escapeHtml(raw.fileName)}</code>` : ''}
                 </div>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap">
+                    ${fileUrl && canWrite && !isVerified ? `
+                        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 btn-ocr-ondemand-${item.id}" onclick="jmRunOnDemandOcr('${item.id}')">
+                            <i class="fas fa-magic me-1"></i>KI-Prüfbericht durchführen
+                        </button>
+                    ` : ''}
                     ${fileUrl ? `
                         <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3" onclick="jmViewStandblattPhoto('${escapeHtml(fileUrl)}', '${escapeHtml(fullName + ' - ' + anlass)}')">
                             <i class="fas fa-image me-1"></i>Standblatt-Original öffnen
@@ -322,11 +334,11 @@ async function jmRunOnDemandOcr(logId) {
         return;
     }
 
-    const btn = document.getElementById(`btn-ocr-ondemand-${logId}`);
-    if (btn) {
+    const btns = document.querySelectorAll(`.btn-ocr-ondemand-${logId}, #btn-ocr-ondemand-${logId}`);
+    btns.forEach(btn => {
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>KI analysiert...`;
-    }
+    });
 
     try {
         const imgResp = await fetch(fileUrl);
@@ -430,10 +442,10 @@ async function jmRunOnDemandOcr(logId) {
     } catch (err) {
         console.error("On-Demand OCR Fehler:", err);
         showError("Fehler bei der KI-Analyse: " + err.message);
-        if (btn) {
+        btns.forEach(btn => {
             btn.disabled = false;
             btn.innerHTML = `<i class="fas fa-magic me-1"></i>KI-Prüfbericht jetzt durchführen`;
-        }
+        });
     }
 }
 window.jmRunOnDemandOcr = jmRunOnDemandOcr;

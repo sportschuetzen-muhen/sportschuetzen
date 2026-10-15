@@ -267,7 +267,14 @@ function forecastMaxPoints(text, score) {
 --------------------------------------------- */
 async function processPdfStandblatt(file, user) {
     showAiStatus("📄 PDF-Rangliste wird durchsucht...", "info");
-    const arrayBuffer = await file.arrayBuffer();
+    const submitBtn = document.getElementById("submitBtn");
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "📄 PDF wird analysiert...";
+    }
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
 
     if (typeof pdfjsLib === 'undefined') {
         throw new Error("PDF.js ist nicht geladen.");
@@ -420,6 +427,11 @@ async function processPdfStandblatt(file, user) {
         document.getElementById("foto").dataset.compressed = pdfImgData;
     } catch (renderErr) {
         console.warn("PDF-Vorschau Render Warnung:", renderErr);
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Standblatt jetzt einreichen";
+        }
     }
 }
 
@@ -428,6 +440,11 @@ async function processPdfStandblatt(file, user) {
 --------------------------------------------- */
 async function processImageStandblatt(base64Data, user) {
     showAiStatus("🔍 Standblatt wird mit KI analysiert...", "info");
+    const submitBtn = document.getElementById("submitBtn");
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "🔍 KI analysiert Standblatt...";
+    }
 
     try {
         const ocrUrl = WORKER_OCR_URL.replace('action=ocr', 'action=ocr_standblatt');
@@ -563,12 +580,15 @@ async function processImageStandblatt(base64Data, user) {
                 showAiStatus(statusHtml, "success");
                 return;
             }
-        }
     } catch (err) {
         console.warn("Zentraler KI-OCR Aufruf nicht erfolgreich, Fallback auf manuelle Eingabe:", err);
+        showAiStatus("📸 Foto bereit. Bitte trage deine Punkte und das Maximum kurz ein.", "info");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Standblatt jetzt einreichen";
+        }
     }
-
-    showAiStatus("📸 Foto bereit. Bitte trage deine Punkte und das Maximum kurz ein.", "info");
 }
 
 /* ---------------------------------------------

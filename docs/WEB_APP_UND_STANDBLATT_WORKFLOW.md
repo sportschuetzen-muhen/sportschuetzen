@@ -71,7 +71,7 @@ Alle drei Fachmodule der Web-App lesen **exklusiv und direkt** aus Supabase Post
 3. **Standblatt-Freigabe-Inbox im Vorstandscockpit (`jahresmeisterschaft-inbox.js`):**
    - Schützenmeister sieht im Header der Jahresmeisterschaft ein Live-Badge `📥 Standblätter (N)`.
    - Das Inbox-Modal listet alle ausstehenden Einreichungen inklusive Belegfoto-Lightbox, Jahrgangsanzeige und Statusbadge (`Verifiziert`, `Prüfung nötig`, `Neuer Anlass`).
-   - **Prüfbericht & OCR-Vergleich:** Zu jedem Standblatt kann ein detaillierter Prüfbericht eingeblendet werden, der eine 3-Spalten-Gegenüberstellung (Bereich | Formular-Eingabe | OCR-Erkennung), den Beweis-Text aus dem Beleg und direkte Beleg-Vorschau enthält. Ältere Standblätter ohne OCR können über einen Button «KI-Prüfbericht jetzt durchführen» on demand analysiert werden.
+   - **Prüfbericht & OCR-Vergleich:** Zu jedem Standblatt kann ein detaillierter Prüfbericht eingeblendet werden, der eine 3-Spalten-Gegenüberstellung (Bereich | Formular-Eingabe | OCR-Erkennung), den Beweis-Text aus dem Beleg und direkte Beleg-Vorschau enthält. Standblätter mit manuellem Status oder unvollständiger Erkennung bieten im Warnbanner und in der Aktionsleiste einen Button «KI-Prüfbericht jetzt durchführen», um die Gemini-Vision-OCR on-demand auf dem Originalbeleg auszuführen. Beim PWA-Upload wird zudem der Submit-Button während der laufenden KI-Analyse deaktiviert.
    - **1-Klick-Übernahme:** Resultat wird in `jmRawGrid` eingetragen (Spalte ab 41/42 automatisch zugeordnet oder erstellt), die Jahresmeisterschaft inklusive Rangierung neu berechnet, in `jm_seasons` und `jm_shooters` gespeichert und der Status auf `imported` gesetzt. Bei Freigabe wird der Schütze automatisch per E-Mail informiert.
 
 ---
