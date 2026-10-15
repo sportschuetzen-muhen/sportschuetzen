@@ -280,12 +280,30 @@ async function startOcrAnalysis() {
 
   try {
     const base64Data = await fileToBase64(_selectedOcrFile);
-    const knownShooters = resultateState.rows.map(r => r.name);
+    // 1. Schützenliste aus vorhandenen Zeilen + allen aktiven Vereinsmitgliedern aufbauen
+    const shooterMap = new Map();
+    (resultateState.rows || []).forEach(r => {
+      if (r.name) {
+        shooterMap.set(r.name.toLowerCase().trim(), {
+          id: String(r.id || r.name),
+          name: r.name
+        });
+      }
+    });
 
-    const shootersList = resultateState.rows.map((r, idx) => ({
-      id: idx,
-      name: r.name
-    }));
+    (resultateState.members || []).forEach(m => {
+      const fullName = `${m.nachname} ${m.vorname}`.trim();
+      const key = fullName.toLowerCase();
+      if (!shooterMap.has(key)) {
+        shooterMap.set(key, {
+          id: String(m.id),
+          name: fullName
+        });
+      }
+    });
+
+    const shootersList = Array.from(shooterMap.values());
+    const knownShooters = shootersList.map(s => s.name);
 
     const payload = {
       model: model,
@@ -326,8 +344,15 @@ async function startOcrAnalysis() {
     _currentOcrResults = rawResults.map((item, idx) => {
       let shooterName = item.name;
       if (!shooterName && item.id !== undefined) {
-        const found = resultateState.rows[item.id] || resultateState.rows.find(r => r.id === item.id);
-        if (found) shooterName = found.name;
+        const foundRow = resultateState.rows.find(r => String(r.id) === String(item.id) || r.name.toLowerCase() === String(item.id).toLowerCase());
+        if (foundRow) {
+          shooterName = foundRow.name;
+        } else {
+          const foundMem = (resultateState.members || []).find(m => String(m.id) === String(item.id));
+          if (foundMem) {
+            shooterName = `${foundMem.nachname} ${foundMem.vorname}`.trim();
+          }
+        }
       }
       return {
         ...item,
@@ -361,13 +386,17 @@ function renderOcrResultsTable(results, targetRound) {
   tbody.innerHTML = results.map((res, i) => {
     const matchedRow = resultateState.rows.find(r => r.name.toLowerCase().trim() === (res.name || "").toLowerCase().trim());
     const currentVal = matchedRow ? (matchedRow[pField] || "–") : "–";
+    const isNew = !matchedRow;
 
     return `
       <tr>
         <td>
-          <input class="form-check-input ocr-row-select" type="checkbox" data-idx="${i}" ${matchedRow ? 'checked' : ''}>
+          <input class="form-check-input ocr-row-select" type="checkbox" data-idx="${i}" checked>
         </td>
-        <td class="fw-bold">${escapeHtml(res.name || "Unbekannt")}</td>
+        <td>
+          <div class="fw-bold">${escapeHtml(res.name || "Unbekannt")}</div>
+          ${isNew ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:0.68rem;"><i class="fas fa-plus me-1"></i>Neu hinzufügen</span>' : ''}
+        </td>
         <td class="text-muted small">${escapeHtml(currentVal)}</td>
         <td>
           <input type="number" class="form-control form-control-sm text-center fw-bold ocr-result-input" 
@@ -384,6 +413,7 @@ function applyOcrResults() {
   const targetRound = document.getElementById("ocr-target-round")?.value || "r1";
   const pField = `${targetRound}_p1`;
   let appliedCount = 0;
+  let addedCount = 0;
 
   document.querySelectorAll(".ocr-row-select:checked").forEach(chk => {
     const idx = parseInt(chk.dataset.idx, 10);
@@ -393,7 +423,36 @@ function applyOcrResults() {
     const inputVal = document.querySelector(`.ocr-result-input[data-idx="${idx}"]`)?.value;
     const finalPoints = (inputVal !== undefined && inputVal !== "") ? inputVal : item.points;
 
-    const matchedRow = resultateState.rows.find(r => r.name.toLowerCase().trim() === (item.name || "").toLowerCase().trim());
+    let matchedRow = resultateState.rows.find(r => r.name.toLowerCase().trim() === (item.name || "").toLowerCase().trim());
+
+    // Falls Schütze noch nicht in der Tabelle, aus Vereinsmitgliedern anlegen
+    if (!matchedRow && item.name) {
+      const member = (resultateState.members || []).find(m => 
+        String(m.id) === String(item.id) ||
+        `${m.nachname} ${m.vorname}`.toLowerCase() === item.name.toLowerCase() ||
+        `${m.vorname} ${m.nachname}`.toLowerCase() === item.name.toLowerCase()
+      );
+
+      const memberId = member ? member.id : (item.id || Date.now().toString());
+      const memberName = member ? `${member.nachname} ${member.vorname}`.trim() : item.name;
+
+      matchedRow = normalizeRow({
+        id: memberId,
+        name: memberName,
+        stellung: "liegend"
+      });
+
+      const roundCount = getContestRoundCount();
+      for (let r = 1; r <= roundCount; r++) {
+        matchedRow[`r${r}_team`] = "";
+      }
+      matchedRow._autoR2 = true;
+      matchedRow._autoR3 = true;
+
+      resultateState.rows.push(matchedRow);
+      addedCount++;
+    }
+
     if (matchedRow) {
       matchedRow[pField] = String(finalPoints);
       appliedCount++;
@@ -404,7 +463,7 @@ function applyOcrResults() {
     resultateState.isDirty = true;
     setStatus("Ungespeicherte Änderungen", true);
     if (typeof updateResultateSaveButtonState === 'function') updateResultateSaveButtonState();
-    renderRounds();
+    renderUI();
   }
 
   const modalEl = document.getElementById("resultate-ocr-modal");
@@ -412,7 +471,8 @@ function applyOcrResults() {
     bootstrap.Modal.getInstance(modalEl)?.hide();
   }
 
-  alert(`✅ ${appliedCount} Resultate wurden in ${roundLabel(targetRound)} übernommen.`);
+  const addedMsg = addedCount > 0 ? ` (${addedCount} neu angelegt)` : '';
+  alert(`✅ ${appliedCount} Resultate wurden in ${roundLabel(targetRound)} übernommen${addedMsg}.`);
 }
 
 function resetOcrModal() {
