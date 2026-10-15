@@ -84,9 +84,13 @@ Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeister
 * Die Schalterleiste im Tab liest alle Wettkämpfe dynamisch aus Zeile 3 (`grid[2]`) aus. Deaktivierte Wettkämpfe werden aus dem Gesamttotal des Juniors abgezogen. Einzig der Mannschaftsblock (Top 4) ist als feste Einheit verdrahtet.
 * **Website & PWA:** Sowohl in der PWA ([`app_jm.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/app/app_jm.html)) als auch auf der Website ([`resultate.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/resultate.html)) werden Junioren (U21) in einer dedizierten Rangliste mit Einzelresultat-Akkordeon nach Total absteigend ausgewiesen.
 
-### 3.6 Ansichtsmodi & Gesamt-Matrix
+### 3.6 Ansichtsmodi, Gesamt-Matrix & Excel-Export
 * **Wertungs-Ansichtsmodus:** Toolbar-Umschalter für `Punkte`, `Prozent (%)` oder `Punkte & %` (Kombiansicht mit Badges).
 * **Gesamt-Matrix:** Ein separater Tab visualisiert alle Spalten (Hauptwettkämpfe, Top 4 SMM, alle 7 SMM-Runden, Auswärtige und Gesamtwertung) mit optional einblendbaren Roh-Prozentspalten.
+* **Zahlen-Priorität vor Zellenbegrenzung:** Die Matrix nutzt ein flexibles Layout (`width: max-content; min-width: 100%`) mit kompaktem Innenabstand (`padding: 2px 4px; font-weight: 700`), wodurch 3-stellige Resultate und Prozentwerte auch bei hoher Spaltendichte niemals abgeschnitten werden.
+* **U21-Juniorenwertung integriert:** Die Gesamt-Matrix umfasst neben Liga 1 und Liga 2 eine vollwertige U21-Juniorentabelle mit Rangierung nach virtuellem Total und U21-Badges in den Hauptligen.
+* **Horizontales Scrolling:** Ausgestattet mit Schnell-Scroll-Buttons (`[ ◀ Links ]`, `[ Rechts ▶ ]`), einer oberen synchronisierten Scrollleiste direkt über der Tabelle sowie automatischer Mausrad-Unterstützung (`wheel` auf `scrollLeft`).
+* **Multi-Sheet Excel-Export (`.xlsx` via SheetJS):** 1-Klick-Export aller Daten in eine strukturierte Excel-Arbeitsmappe mit drei Reitern (*Liga 1*, *Liga 2*, *Junioren U21*) und automatisch berechneten Spaltenbreiten.
 
 ---
 
