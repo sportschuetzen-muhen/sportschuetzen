@@ -104,3 +104,7 @@ Im Vorstand-Cockpit ist der Healthcheck optimal im Blickfeld platziert:
 - **Automatisches Failover ohne Unterbrechung:** Meldet ein Modell während der Text- oder Resultate-Erkennung temporäre Überlastung (`503 UNAVAILABLE / High Demand`), Quota-Limits (`429`) oder Timeouts, schaltet das Frontend selbstheilend auf das nächste gesunde Modell in der `recommended_chain` um.
 - **Animierte Info-Box:** Anstelle einer kryptischen Fehlermeldung sieht der Benutzer im Lade-Overlay eine beruhigende Statusanzeige (*«Hohe Google-Auslastung: Weiche automatisch auf Ersatzmodell aus...»*). Der Benutzer muss keine Aktion ausführen.
 
+### 3.8 Vision- & Multimodal-Filterung für Standblätter & OCR
+- **Ausschluss von Audio- & Robotikmodellen:** Reine TTS- (Text-to-Speech), Audio-, Transkriptions- (`-transcribe`) und Robotik-Modelle (`gemini-robotics-er-2-preview`) werden in `initDynamicModels` und `ai-health.js` strikt herausgefiltert. Sie unterstützen keine Bildanalyse und dürfen nicht für OCR gewählt werden.
+- **Standblatt- & Resultate-Payload (`action=ocr`):** Das Bild wird im JSON-Payload als `image` (Base64) übergeben. Der Worker liefert die erkannten Positionen im Array `ergebnisse` zurück und matcht sie auf die Schützenliste.
+

@@ -224,11 +224,22 @@
     };
 
     // 5. Autonome Modell-Ermittlung & Fallback-Kette für Fachmodule
+    function isVisionSafeModel(name) {
+        if (!name) return false;
+        const n = String(name).toLowerCase();
+        if (n.includes('-tts') || n.includes('-transcribe') || n.includes('-audio')) return false;
+        if (n.includes('-robotics') || n.includes('customtools') || n.includes('computer-use')) return false;
+        return true;
+    }
+
     window.getAiPrimaryModel = async function () {
         if (!_lastHealthReport) {
             await window.loadAiHealthStatus();
         }
-        return (_lastHealthReport && _lastHealthReport.primary_model) ? _lastHealthReport.primary_model : 'gemini-3.5-flash';
+        if (_lastHealthReport && _lastHealthReport.primary_model && isVisionSafeModel(_lastHealthReport.primary_model)) {
+            return _lastHealthReport.primary_model;
+        }
+        return 'gemini-3.5-flash';
     };
 
     window.getAiFallbackChain = async function () {
@@ -236,7 +247,8 @@
             await window.loadAiHealthStatus();
         }
         if (_lastHealthReport && Array.isArray(_lastHealthReport.recommended_chain) && _lastHealthReport.recommended_chain.length > 0) {
-            return _lastHealthReport.recommended_chain;
+            const filtered = _lastHealthReport.recommended_chain.filter(isVisionSafeModel);
+            if (filtered.length > 0) return filtered;
         }
         return ['gemini-3.5-flash', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'];
     };

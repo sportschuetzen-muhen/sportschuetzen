@@ -196,8 +196,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         'gemini-3-flash-preview': 'Gemini 3 Flash Preview'
                     };
 
-                    // Veraltete 1.0/1.5-Modelle ausfiltern
-                    const activeModels = models.filter(m => !m.name.includes('gemini-1.5') && !m.name.includes('gemini-1.0'));
+                    // Veraltete 1.0/1.5-Modelle sowie reine Sprach/Audio/Robotik-Modelle ausfiltern
+                    const activeModels = models.filter(m => {
+                        const n = (m.name || '').toLowerCase();
+                        if (n.includes('gemini-1.5') || n.includes('gemini-1.0')) return false;
+                        if (n.includes('-tts') || n.includes('-transcribe') || n.includes('-audio')) return false;
+                        if (n.includes('-robotics') || n.includes('customtools') || n.includes('computer-use')) return false;
+                        return true;
+                    });
 
                     const sortedModels = activeModels.sort((a, b) => {
                         const hasA = (recommendedNames[a.name] || a.name.includes('flash') || a.name.includes('pro')) ? 1 : 0;

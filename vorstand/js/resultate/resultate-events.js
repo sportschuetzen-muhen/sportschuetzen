@@ -282,11 +282,18 @@ async function startOcrAnalysis() {
     const base64Data = await fileToBase64(_selectedOcrFile);
     const knownShooters = resultateState.rows.map(r => r.name);
 
+    const shootersList = resultateState.rows.map((r, idx) => ({
+      id: idx,
+      name: r.name
+    }));
+
     const payload = {
       model: model,
       contest_type: contestType,
       round: targetRound,
+      image: base64Data,
       image_base64: base64Data,
+      shooters: shootersList,
       known_shooters: knownShooters
     };
 
@@ -301,16 +308,34 @@ async function startOcrAnalysis() {
       });
       if (resp.ok) {
         ocrResponse = await resp.json();
+      } else {
+        const errJson = await resp.json().catch(() => null);
+        throw new Error(errJson?.error || `Server meldete HTTP ${resp.status}`);
       }
     } catch (netErr) {
-      console.warn("Worker OCR fehlgeschlagen, prüfe Fallback:", netErr);
+      console.warn("Worker OCR fehlgeschlagen:", netErr);
+      throw netErr;
     }
 
-    if (!ocrResponse || !ocrResponse.results) {
-      throw new Error("Erkennung über KI-Endpunkt lieferte keine Resultate.");
+    const rawResults = (ocrResponse && (ocrResponse.ergebnisse || ocrResponse.results)) || [];
+    if (!ocrResponse || !Array.isArray(rawResults) || rawResults.length === 0) {
+      const serverErr = ocrResponse && (ocrResponse.error || ocrResponse.message);
+      throw new Error(serverErr || "Erkennung über KI-Endpunkt lieferte keine Resultate auf dem Standblatt.");
     }
 
-    _currentOcrResults = ocrResponse.results;
+    _currentOcrResults = rawResults.map((item, idx) => {
+      let shooterName = item.name;
+      if (!shooterName && item.id !== undefined) {
+        const found = resultateState.rows[item.id] || resultateState.rows.find(r => r.id === item.id);
+        if (found) shooterName = found.name;
+      }
+      return {
+        ...item,
+        name: shooterName || item.name || `Schütze ${idx + 1}`,
+        points: (item.points !== undefined && item.points !== null) ? item.points : ""
+      };
+    });
+
     renderOcrResultsTable(_currentOcrResults, targetRound);
     showOcrStep("results");
 
