@@ -119,3 +119,7 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
    - Automatische Erkennung von Namens- und Lizenzabweichungen auf Belegen gegenüber dem eingeloggten Schützen.
    - Frontend bietet 1-Klick-Stellvertretung («Für [Name] einreichen»), Neuauswahl oder manuelle Bestätigung; Submit-Button wird bei Abweichung bis zur Bestätigung gesperrt.
    - Vorstand-Inbox markiert Diskrepanzen visuell und fragt beim Übernehmen gezielt nach der Schützen-Zuordnung.
+
+10. **Scope- & Fehlerbehebungs-Bereinigung bei Stellvertretungs-Submit:**
+   - Behebung eines Laufzeitfehlers (`ReferenceError: targetFullName is not defined`) in `app/upload.js`, der bei aktivierter Stellvertretung fälschlicherweise als «Netzwerkfehler beim Übermitteln» gemeldet wurde.
+   - Präzisierung der Fehlerbehandlung zur Ausgabe echter Fehlermeldungen sowie Cache-Busting (`upload.html?v=7`, `upload.js?v=9`).

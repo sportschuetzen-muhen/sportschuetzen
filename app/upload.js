@@ -1102,6 +1102,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
         }
 
         const shooterToSubmit = _effectiveShooter;
+        const targetFullName = `${shooterToSubmit.vorname || ''} ${shooterToSubmit.nachname || ''}`.trim() || 'Schütze';
         const compressedImage = document.getElementById("foto").dataset.compressed;
 
         if (!compressedImage) {
@@ -1313,8 +1314,8 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
         location.reload();
 
     } catch (err) {
-        console.error(err);
-        alert("Netzwerkfehler beim Übermitteln.");
+        console.error("Fehler beim Übermitteln des Standblatts:", err);
+        alert(`Fehler beim Übermitteln: ${err.message || "Netzwerkfehler"}`);
     } finally {
         btn.disabled = false;
         btn.textContent = "Jetzt senden";
