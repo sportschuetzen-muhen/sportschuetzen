@@ -106,4 +106,9 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
    - Offene Standblätter (`_jmPendingStandblaetter`) synchronisieren automatisch Badges im Modul-Header, in der Sidebar-Navigation und auf der Dashboard-Kachel der Jahresmeisterschaft KK.
    - Das Standblatt-Modal bietet ein dediziertes «Archiv & Historie»-Tab mit Jahresfilter zur permanenten Einsicht aller übernommenen oder abgelehnten Belege.
    - Beim Upload werden bekannte Saison-Wettkämpfe via Datalist geladen und beim Import via Fuzzy-Matching mit bestehenden Tabellenspalten verknüpft.
+7. **Browserübergreifende Upload-Stabilität (Edge, Firefox, Safari):**
+   - Vollständige Syntaxbereinigung der Try-Catch- und Kontrollfluss-Blöcke in `app/upload.js` (`processPdfStandblatt` und `processImageStandblatt`).
+   - Bubbling- und klicksichere Bindung des Datei-Auswahldialogs via nativem `<label for="foto" class="upload-area">` in `app/upload.html` ohne fehleranfälliges Inline-`onclick`.
+   - Versions- und Cache-Busting (`upload.html?v=4`, `upload.js?v=5`) für sofortige Ausführung auf allen Desktop- und Mobil-Browsern.
+
 

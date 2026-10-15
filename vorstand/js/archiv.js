@@ -387,6 +387,7 @@ async function sendUserMessage() {
     input.disabled = true;
     sendBtn.disabled = true;
 
+    try {
         // 3. API Fetch an den Cloudflare Worker (mit dynamischer Modell- & Proxy-Konfiguration)
         const res = await apiFetch('archiv', { action: 'ask' }, {
             method: 'POST',

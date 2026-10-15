@@ -427,6 +427,10 @@ async function processPdfStandblatt(file, user) {
         document.getElementById("foto").dataset.compressed = pdfImgData;
     } catch (renderErr) {
         console.warn("PDF-Vorschau Render Warnung:", renderErr);
+    }
+    } catch (err) {
+        console.error("PDF-Auswertung Fehler:", err);
+        showAiStatus(`⚠️ ${err.message || 'PDF konnte nicht automatisch ausgewertet werden.'}`, "warning");
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;
@@ -580,6 +584,7 @@ async function processImageStandblatt(base64Data, user) {
                 showAiStatus(statusHtml, "success");
                 return;
             }
+        }
     } catch (err) {
         console.warn("Zentraler KI-OCR Aufruf nicht erfolgreich, Fallback auf manuelle Eingabe:", err);
         showAiStatus("📸 Foto bereit. Bitte trage deine Punkte und das Maximum kurz ein.", "info");
