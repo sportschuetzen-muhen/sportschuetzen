@@ -99,6 +99,18 @@ function renderJMStandblattStatusBadge(raw) {
     if (!ocr) {
         return '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-semibold px-2 py-1"><i class="fas fa-clock me-1"></i>Ausstehend</span>';
     }
+
+    const s = ocr.schuetze || {};
+    const det = s.detectedShooter || s.detectedClubMember || {};
+    const detVor = (det.vorname || '').toLowerCase().trim();
+    const detNach = (det.nachname || '').toLowerCase().trim();
+    const rawVor = (raw.vorname || '').toLowerCase().trim();
+    const rawNach = (raw.nachname || '').toLowerCase().trim();
+    const isMismatch = (s.nameStatus === 'MISMATCH') || ((detVor || detNach) && (detVor !== rawVor || detNach !== rawNach));
+
+    if (isMismatch) {
+        return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-semibold px-2 py-1" title="Erkannter Schütze weicht von der Meldung ab"><i class="fas fa-user-slash me-1"></i>Namensabweichung</span>';
+    }
     if (ocr.verified === true) {
         return '<span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold px-2 py-1"><i class="fas fa-check-circle me-1"></i>Verifiziert</span>';
     }
@@ -158,8 +170,28 @@ function renderJMStandblattDetailRow(item, canWrite) {
     const isVerified = ocr && ocr.verified === true;
     const isNewCol = ocr && ocr.anlass && ocr.anlass.status === 'NEW_COL';
 
+    const s = ocr ? (ocr.schuetze || {}) : {};
+    const detShooter = s.detectedShooter || s.detectedClubMember || {};
+    const detName = `${detShooter.vorname || ''} ${detShooter.nachname || ''}`.trim();
+    const detVor = (detShooter.vorname || '').toLowerCase().trim();
+    const detNach = (detShooter.nachname || '').toLowerCase().trim();
+    const rawVor = (raw.vorname || '').toLowerCase().trim();
+    const rawNach = (raw.nachname || '').toLowerCase().trim();
+    const isMismatch = (s.nameStatus === 'MISMATCH') || (detName && (detVor !== rawVor || detNach !== rawNach));
+
     let bannerHtml = '';
-    if (isVerified) {
+    if (isMismatch) {
+        bannerHtml = `
+            <div class="alert alert-danger d-flex align-items-center mb-3 py-2 px-3 border border-danger-subtle rounded-3">
+                <i class="fas fa-user-slash fa-lg me-2 text-danger"></i>
+                <div>
+                    <strong>⚠️ Namensabweichung auf Beleg:</strong> Auf dem Standblatt steht <strong>«${escapeHtml(detName)}»</strong>${detShooter.lizenz ? ` (Lizenz: ${escapeHtml(detShooter.lizenz)})` : ''}.
+                    Eingereicht wurde es unter <strong>«${fullName}»</strong> (Lizenz: ${lizenz}).
+                    ${raw.submitted_by ? `<div class="small mt-1 text-muted"><i class="fas fa-share me-1"></i>Eingereicht durch: ${escapeHtml(raw.submitted_by.vorname || '')} ${escapeHtml(raw.submitted_by.nachname || '')} (Lizenz: ${escapeHtml(raw.submitted_by.lizenz || '')})</div>` : ''}
+                </div>
+            </div>
+        `;
+    } else if (isVerified) {
         bannerHtml = `
             <div class="alert alert-success d-flex align-items-center mb-3 py-2 px-3 border border-success-subtle rounded-3">
                 <i class="fas fa-check-circle fa-lg me-2 text-success"></i>
@@ -206,12 +238,12 @@ function renderJMStandblattDetailRow(item, canWrite) {
     // Schütze Vergleich
     let ocrShooterHtml = '<span class="text-muted small">Nicht analysiert</span>';
     if (ocr && ocr.schuetze) {
-        const s = ocr.schuetze;
         const nameIcon = s.nameStatus === 'MATCH' ? '✔️' : (s.nameStatus === 'PARTIAL' ? '⚠️' : '❌');
         const lizIcon = s.lizenzStatus === 'MATCH' ? '✔️' : '❌';
         ocrShooterHtml = `
-            <div>Name: <span class="fw-semibold">${nameIcon} ${s.nameStatus || 'UNBEKANNT'}</span></div>
-            <div>Lizenz: <span class="fw-semibold">${lizIcon} ${s.lizenzStatus || 'UNBEKANNT'}</span></div>
+            <div>Status: <span class="fw-semibold">${nameIcon} ${s.nameStatus || 'UNBEKANNT'}</span></div>
+            ${detName ? `<div>Beleg-Name: <strong class="${isMismatch ? 'text-danger' : 'text-success'}">${escapeHtml(detName)}</strong> ${detShooter.lizenz ? `(Lizenz: ${escapeHtml(detShooter.lizenz)})` : ''}</div>` : ''}
+            <div>Lizenz-Status: <span class="fw-semibold">${lizIcon} ${s.lizenzStatus || 'UNBEKANNT'}</span></div>
             ${s.jgFound ? `<div>Jahrgang: <span class="fw-semibold">✔️ MATCH</span></div>` : ''}
         `;
     }
@@ -499,6 +531,24 @@ function renderJMStandblattInboxTable() {
 
         const statusBadge = renderJMStandblattStatusBadge(raw);
 
+        const ocr = raw.ocr_analysis || {};
+        const s = ocr.schuetze || {};
+        const detShooter = s.detectedShooter || s.detectedClubMember || {};
+        const detName = `${detShooter.vorname || ''} ${detShooter.nachname || ''}`.trim();
+        const detVor = (detShooter.vorname || '').toLowerCase().trim();
+        const detNach = (detShooter.nachname || '').toLowerCase().trim();
+        const rawVor = (raw.vorname || '').toLowerCase().trim();
+        const rawNach = (raw.nachname || '').toLowerCase().trim();
+        const isMismatch = (s.nameStatus === 'MISMATCH') || (detName && (detVor !== rawVor || detNach !== rawNach));
+
+        let shooterExtraHtml = '';
+        if (raw.submitted_by) {
+            shooterExtraHtml += `<div class="small text-primary"><i class="fas fa-share me-1"></i>Via: ${escapeHtml(raw.submitted_by.vorname || '')} ${escapeHtml(raw.submitted_by.nachname || '')}</div>`;
+        }
+        if (isMismatch && detName) {
+            shooterExtraHtml += `<div class="small text-danger fw-semibold"><i class="fas fa-exclamation-triangle me-1"></i>Beleg: ${escapeHtml(detName)}</div>`;
+        }
+
         return `
             <tr id="inbox-row-${item.id}">
                 <td class="small text-muted text-nowrap">${dateStr}</td>
@@ -506,6 +556,7 @@ function renderJMStandblattInboxTable() {
                 <td>
                     <div class="fw-bold text-dark">${fullName}</div>
                     <div class="small text-muted">Lizenz: ${lizenz}${raw.jahrgang ? ` · Jg. ${escapeHtml(raw.jahrgang)}` : ''}</div>
+                    ${shooterExtraHtml}
                 </td>
                 <td>
                     <div class="fw-semibold text-primary">${anlass}</div>
@@ -683,8 +734,47 @@ async function jmImportStandblatt(logId) {
     const erzielt = parseFloat(raw.erzielt) || 0;
     const maximal = parseFloat(raw.maximal) || 100;
 
-    if (!confirm(`Möchtest du das Standblatt für "${vorname} ${nachname}" (${erzielt} / ${maximal} Pkt beim "${anlass}") in die Jahresmeisterschaft übernehmen?`)) {
-        return;
+    const ocr = raw.ocr_analysis || {};
+    const s = ocr.schuetze || {};
+    const detShooter = s.detectedShooter || s.detectedClubMember || {};
+    const detName = `${detShooter.vorname || ''} ${detShooter.nachname || ''}`.trim();
+    const detVor = (detShooter.vorname || '').toLowerCase().trim();
+    const detNach = (detShooter.nachname || '').toLowerCase().trim();
+    const rawVor = vorname.toLowerCase();
+    const rawNach = nachname.toLowerCase();
+    const isMismatch = (s.nameStatus === 'MISMATCH') || (detName && (detVor !== rawVor || detNach !== rawNach));
+
+    let finalVorname = vorname;
+    let finalNachname = nachname;
+    let finalLizenz = lizenz;
+
+    if (isMismatch && detName) {
+        const choice = confirm(
+            `⚠️ ACHTUNG: Namensabweichung erkannt!\n\n` +
+            `Auf dem Standblatt steht: "${detName}" (Lizenz: ${detShooter.lizenz || '-'})\n` +
+            `Eingereicht wurde es unter: "${vorname} ${nachname}" (Lizenz: ${lizenz})\n\n` +
+            `Möchtest du das Resultat (${erzielt} / ${maximal} Pkt) für den Beleg-Schützen "${detName}" übernehmen?\n\n` +
+            `[OK] = Für Beleg-Schütze "${detName}" übernehmen\n` +
+            `[Abbrechen] = Weiter zur Bestätigung für "${vorname} ${nachname}" oder Abbruch`
+        );
+        if (choice) {
+            finalVorname = detShooter.vorname || '';
+            finalNachname = detShooter.nachname || '';
+            let rawDetLiz = String(detShooter.lizenz || '').trim();
+            if (/^10\d{8}$/.test(rawDetLiz)) rawDetLiz = rawDetLiz.substring(2, 8);
+            finalLizenz = rawDetLiz ? rawDetLiz.padStart(6, '0') : '';
+        } else {
+            const confirmOrig = confirm(
+                `Soll das Resultat wirklich für "${vorname} ${nachname}" übernommen werden?\n\n` +
+                `[OK] = Ja, für "${vorname} ${nachname}" eintragen\n` +
+                `[Abbrechen] = Nicht übernehmen (Vorgang abbrechen)`
+            );
+            if (!confirmOrig) return;
+        }
+    } else {
+        if (!confirm(`Möchtest du das Standblatt für "${vorname} ${nachname}" (${erzielt} / ${maximal} Pkt beim "${anlass}") in die Jahresmeisterschaft übernehmen?`)) {
+            return;
+        }
     }
 
     const grid = jmRawGrid;
@@ -719,18 +809,18 @@ async function jmImportStandblatt(logId) {
             const rowNach = String(grid[r][colNachname] || '').trim().toLowerCase();
             const rowVor = String(grid[r][colVorname] || '').trim().toLowerCase();
 
-            if (lizenz && rowLiz === lizenz) {
+            if (finalLizenz && rowLiz === finalLizenz) {
                 targetRowIndex = r;
                 break;
             }
-            if (rowNach === nachname.toLowerCase() && rowVor === vorname.toLowerCase()) {
+            if (rowNach === finalNachname.toLowerCase() && rowVor === finalVorname.toLowerCase()) {
                 targetRowIndex = r;
                 break;
             }
         }
 
         if (targetRowIndex === -1) {
-            throw new Error(`Schütze "${vorname} ${nachname}" (Lizenz: ${lizenz}) wurde in der Jahresmeisterschaft nicht gefunden.`);
+            throw new Error(`Schütze "${finalVorname} ${finalNachname}" (Lizenz: ${finalLizenz || '-'}) wurde in der Jahresmeisterschaft nicht gefunden.`);
         }
 
         // 2. Passende Spalte suchen oder neue Spalte anlegen (ab Spalte 41 bzw. 42)
@@ -824,7 +914,12 @@ async function jmImportStandblatt(logId) {
                 raw_response: {
                     ...raw,
                     status: 'imported',
-                    imported_at: new Date().toISOString()
+                    imported_at: new Date().toISOString(),
+                    imported_for: {
+                        vorname: finalVorname,
+                        nachname: finalNachname,
+                        lizenz: finalLizenz
+                    }
                 }
             })
             .eq('id', logId);
@@ -833,7 +928,16 @@ async function jmImportStandblatt(logId) {
         _jmPendingStandblaetter = _jmPendingStandblaetter.filter(i => i.id !== logId);
         _jmArchivedStandblaetter.unshift({
             ...item,
-            raw_response: { ...raw, status: 'imported', imported_at: new Date().toISOString() }
+            raw_response: { 
+                ...raw, 
+                status: 'imported', 
+                imported_at: new Date().toISOString(),
+                imported_for: {
+                    vorname: finalVorname,
+                    nachname: finalNachname,
+                    lizenz: finalLizenz
+                }
+            }
         });
         updateJMInboxBadge(_jmPendingStandblaetter.length);
         renderJMStandblattInboxTable();
@@ -843,13 +947,13 @@ async function jmImportStandblatt(logId) {
             renderJahresmeisterschaft(grid);
         }
 
-        showSuccess(`✅ Standblatt für ${vorname} ${nachname} (${erzielt} Pkt) erfolgreich in die Jahresmeisterschaft übernommen!`);
+        showSuccess(`✅ Standblatt für ${finalVorname} ${finalNachname} (${erzielt} Pkt) erfolgreich in die Jahresmeisterschaft übernommen!`);
 
         // 9. Info-Mail an Schützen über erfolgreiche Übernahme & Kopie an Info_Mail_Standblatt_Upload
         try {
             let shooterEmail = '';
-            if (lizenz) {
-                const { data: mems } = await sb.from('members').select('primary_email').eq('person_number', lizenz);
+            if (finalLizenz) {
+                const { data: mems } = await sb.from('members').select('primary_email').eq('person_number', finalLizenz);
                 if (mems && mems.length > 0 && mems[0].primary_email) shooterEmail = mems[0].primary_email;
             }
             const perf = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(1) : '100.0';
@@ -859,7 +963,7 @@ async function jmImportStandblatt(logId) {
                         <h2 style="color:#2e7d32; margin:0; font-size:20px;">Resultat freigegeben: Jahresmeisterschaft</h2>
                         <div style="font-size:13px; color:#6b7280; margin-top:4px;">Sportschützen Muhen</div>
                     </div>
-                    <p style="font-size:15px;">Hallo <strong>${escapeHtml(vorname)}</strong>,</p>
+                    <p style="font-size:15px;">Hallo <strong>${escapeHtml(finalVorname)}</strong>,</p>
                     <p>dein Standblatt für das <strong>${escapeHtml(anlass)}</strong> wurde soeben vom Schützenmeister geprüft und erfolgreich in die Jahresmeisterschaft übernommen.</p>
                     <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; margin:20px 0; text-align:center;">
                         <div style="font-size:26px; font-weight:bold; color:#15803d;">${erzielt} Punkte</div>

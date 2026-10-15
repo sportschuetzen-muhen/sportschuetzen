@@ -60,7 +60,7 @@ Alle drei Fachmodule der Web-App lesen **exklusiv und direkt** aus Supabase Post
    - **PDF:** `pdfjs-dist` extrahiert Textblöcke direkt im Browser, erkennt den Schützen und Schiessname und prognostiziert über `forecastMaxPoints()` Schweizer Standard-Schiesstableaus (60, 80, 100, 120, 150, 200, 300, 600 Pkt).
    - **Fotos & Smartphone:** Apple HEIC wird via `heic2any` zu JPEG konvertiert. Bei Fotos analysiert die Gemini 3 Vision KI (`action=ocr_standblatt` mit Multi-Modell Fallback `gemini-3-flash-preview` -> `gemini-3.5-flash` -> `gemini-flash-latest` -> `gemini-3.8-flash` -> `gemini-3.1-flash-lite`) via Vorstand-API-Worker das Standblatt.
    - **3-stufige Validierung & Feedback:**
-     1. *Schütze identifiziert:* Name komplett, SSV-Lizenznummer (auch aus Barcode wie `1018033721`) und Jahrgang (z.B. 1984) abgeglichen mit allen lizenzierten Schützen aus `jm_seasons`.
+      1. *Schütze identifiziert & Namensabgleich:* Name komplett, SSV-Lizenznummer (auch aus Barcode wie `1018033721` -> `828521`) und Jahrgang werden mit dem angemeldeten Profil sowie allen Vereinsmitgliedern aus `jm_seasons` (`_knownShooters`) abgeglichen. Weicht der Name ab (z.B. Standblatt von Lukas Burkhalter hochgeladen unter Nicole Zurbriggen), warnt das Frontend unübersehbar und bietet eine 1-Klick-Stellvertretung («Für Lukas Burkhalter einreichen»), Neuauswahl oder manuelle Bestätigung.
      2. *Anlass erkannt:* Fuzzy-Matching gleicht Anlass & Veranstalter (z.B. «43. Stumpenlandschiessen 2026, Menziken-Burg») exakt mit vorhandenen Schiessspalten der aktuellen Jahresmeisterschaft ab (z.B. «Stumpenland-Schiessen Menziken-Burg»).
      3. *Punkte & Maximum:* Stich (z.B. Gruppenstich), erreichte Punktzahl und Maximum (100 Pkt) werden validiert.
 2. **Speicherung des Standblatts & Beleg-Abruf:**
@@ -72,7 +72,7 @@ Alle drei Fachmodule der Web-App lesen **exklusiv und direkt** aus Supabase Post
    - Schützenmeister sieht im Header der Jahresmeisterschaft ein Live-Badge `📥 Standblätter (N)`.
    - Das Inbox-Modal listet alle ausstehenden Einreichungen inklusive Belegfoto-Lightbox, Jahrgangsanzeige und Statusbadge (`Verifiziert`, `Prüfung nötig`, `Neuer Anlass`).
    - **Prüfbericht & OCR-Vergleich:** Zu jedem Standblatt kann ein detaillierter Prüfbericht eingeblendet werden, der eine 3-Spalten-Gegenüberstellung (Bereich | Formular-Eingabe | OCR-Erkennung), den Beweis-Text aus dem Beleg und direkte Beleg-Vorschau enthält. Standblätter mit manuellem Status oder unvollständiger Erkennung bieten im Warnbanner und in der Aktionsleiste einen Button «KI-Prüfbericht jetzt durchführen», um die Gemini-Vision-OCR on-demand auf dem Originalbeleg auszuführen. Beim PWA-Upload wird zudem der Submit-Button während der laufenden KI-Analyse deaktiviert.
-   - **1-Klick-Übernahme:** Resultat wird in `jmRawGrid` eingetragen (Spalte ab 41/42 automatisch zugeordnet oder erstellt), die Jahresmeisterschaft inklusive Rangierung neu berechnet, in `jm_seasons` und `jm_shooters` gespeichert und der Status auf `imported` gesetzt. Bei Freigabe wird der Schütze automatisch per E-Mail informiert.
+   - **1-Klick-Übernahme mit Schützen-Prüfung:** Resultat wird in `jmRawGrid` eingetragen (Spalte ab 41/42 automatisch zugeordnet oder erstellt). Bei erkannter Namensabweichung fragt das System explizit nach, ob das Resultat für den Beleg-Schützen oder den Einsender verbucht werden soll. Die Jahresmeisterschaft inklusive Rangierung wird neu berechnet, in `jm_seasons` und `jm_shooters` gespeichert und der Status auf `imported` gesetzt. Bei Freigabe wird der Schütze automatisch per E-Mail informiert.
 
 ---
 
@@ -115,5 +115,7 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
    - Visuelle Fortschrittsanzeige: Sobald ein Beleg gewählt wird, visualisiert ein animierter Farb-Ladebalken mit Countdown (ca. 6s) und Erklärungstext die aktive Standblatt-Analyse.
    - Manuelle Sofort-Freigabe & Spin-Button-Bereinigung: Tippt der Schütze Punkte manuell ein, wird der Senden-Button sofort aktiviert. Die Up/Down-Pfeile an Zahlenfeldern wurden browserübergreifend ausgeblendet.
 
-
-
+9. **Zuverlässiger Schützenabgleich, Mismatch-Erkennung & Stellvertretung:**
+   - Automatische Erkennung von Namens- und Lizenzabweichungen auf Belegen gegenüber dem eingeloggten Schützen.
+   - Frontend bietet 1-Klick-Stellvertretung («Für [Name] einreichen»), Neuauswahl oder manuelle Bestätigung; Submit-Button wird bei Abweichung bis zur Bestätigung gesperrt.
+   - Vorstand-Inbox markiert Diskrepanzen visuell und fragt beim Übernehmen gezielt nach der Schützen-Zuordnung.

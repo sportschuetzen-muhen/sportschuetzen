@@ -4,6 +4,7 @@ const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
 let _currentOcrAnalysis = null;
+let _effectiveShooter = null;
 
 if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -145,6 +146,7 @@ function loadTeilnehmer() {
 
     badge.innerHTML = `👤 Angemeldet als:<br><strong>${user.vorname} ${user.nachname || ''}</strong> ${lizenzFormatted ? `(${lizenzFormatted})` : ''}${user.jahrgang ? ` · Jg. ${user.jahrgang}` : ''}`;
     nameInput.value = lizenzFormatted || user.vorname;
+    _effectiveShooter = { ...user, isSelf: true };
 }
 
 /* ---------------------------------------------
@@ -266,6 +268,265 @@ function findBestMatchingCompetition(text) {
     }
 
     return bestScore >= 5 ? bestComp : null;
+}
+
+/**
+ * Gleicht erkannten Text und detectedShooter mit den Vereinsmitgliedern ab.
+ * Ermittelt, ob es sich um den angemeldeten Benutzer handelt, ein anderes
+ * bekanntes Vereinsmitglied oder einen unbekannten Schützen.
+ */
+function analyzeShooterMatch(user, detectedShooter = {}, rawText = '') {
+    const uVor = (user.vorname || '').toLowerCase().trim();
+    const uNach = (user.nachname || '').toLowerCase().trim();
+    const uLiz = user.lizenz ? String(user.lizenz).padStart(6, '0') : '';
+    const uJg = user.jahrgang ? String(user.jahrgang).trim() : '';
+
+    const detVor = (detectedShooter.vorname || '').toLowerCase().trim();
+    const detNach = (detectedShooter.nachname || '').toLowerCase().trim();
+    let detLiz = (detectedShooter.lizenz || '').trim();
+
+    // Barcode 10-stellig auf 6-stellige Lizenz normalisieren (z.B. 1082852128 -> 828521)
+    if (/^10\d{8}$/.test(detLiz)) {
+        detLiz = detLiz.substring(2, 8);
+    }
+
+    const textLower = `${rawText || ''} ${JSON.stringify(detectedShooter || {})}`.toLowerCase();
+
+    // 1. Prüfen, ob der angemeldete Benutzer auf dem Beleg steht
+    const userVorMatches = uVor && textLower.includes(uVor);
+    const userNachMatches = uNach && textLower.includes(uNach);
+    const userNameMatches = userVorMatches && userNachMatches;
+    const userLizMatches = uLiz && uLiz !== '000000' && (
+        textLower.includes(uLiz) || 
+        (detLiz && detLiz.padStart(6, '0') === uLiz)
+    );
+    const userJgMatches = uJg && textLower.includes(uJg);
+
+    const isSelfMatch = userNameMatches || (userNachMatches && (userLizMatches || userJgMatches)) || userLizMatches;
+
+    if (isSelfMatch) {
+        return {
+            status: "MATCH",
+            isSelf: true,
+            detectedClubMember: null,
+            nameFound: true,
+            lizenzFound: userLizMatches,
+            jgFound: userJgMatches,
+            shooterName: `${user.vorname} ${user.nachname || ''}`.trim(),
+            shooterLizenz: uLiz,
+            shooterJahrgang: uJg
+        };
+    }
+
+    // 2. Prüfen, ob ein anderes bekanntes Vereinsmitglied (_knownShooters) auf dem Beleg steht
+    let otherMember = null;
+    let otherConfidence = 0; // 3: Lizenz + Name, 2: Lizenz, 1: Name
+
+    if (Array.isArray(_knownShooters) && _knownShooters.length > 0) {
+        for (const s of _knownShooters) {
+            const sVor = (s.vorname || '').toLowerCase().trim();
+            const sNach = (s.nachname || '').toLowerCase().trim();
+            const sLiz = s.lizenz ? String(s.lizenz).padStart(6, '0') : '';
+
+            // Angemeldeten Schützen selbst überspringen
+            if (sLiz && sLiz === uLiz) continue;
+            if (sNach && sNach === uNach && sVor && sVor === uVor) continue;
+
+            const sVorInText = sVor.length >= 3 && textLower.includes(sVor);
+            const sNachInText = sNach.length >= 3 && textLower.includes(sNach);
+            const sNameMatch = sVorInText && sNachInText;
+            
+            const sLizInText = sLiz && sLiz !== '000000' && (
+                textLower.includes(sLiz) || 
+                (detLiz && detLiz.padStart(6, '0') === sLiz)
+            );
+
+            if (sLizInText && sNameMatch) {
+                otherMember = s;
+                otherConfidence = 3;
+                break;
+            } else if (sLizInText && otherConfidence < 2) {
+                otherMember = s;
+                otherConfidence = 2;
+            } else if (sNameMatch && otherConfidence < 1) {
+                otherMember = s;
+                otherConfidence = 1;
+            }
+        }
+    }
+
+    // 3. Wenn ein anderes Vereinsmitglied erkannt wurde -> MISMATCH
+    if (otherMember) {
+        return {
+            status: "MISMATCH",
+            isSelf: false,
+            detectedClubMember: otherMember,
+            nameFound: false,
+            lizenzFound: false,
+            jgFound: false,
+            confidence: otherConfidence,
+            shooterName: otherMember.fullName || `${otherMember.vorname} ${otherMember.nachname}`.trim(),
+            shooterLizenz: otherMember.lizenz,
+            shooterJahrgang: otherMember.jahrgang || ''
+        };
+    }
+
+    // 4. Wenn OCR einen Schützen erkannt hat, der nicht in _knownShooters ist
+    if (detVor || detNach || detLiz) {
+        const detectedName = `${detectedShooter.vorname || ''} ${detectedShooter.nachname || ''}`.trim();
+        return {
+            status: "MISMATCH",
+            isSelf: false,
+            detectedClubMember: {
+                vorname: detectedShooter.vorname || '',
+                nachname: detectedShooter.nachname || '',
+                fullName: detectedName || 'Anderer Schütze',
+                lizenz: detLiz || '',
+                jahrgang: detectedShooter.jahrgang || ''
+            },
+            nameFound: false,
+            lizenzFound: false,
+            jgFound: false,
+            confidence: 1,
+            shooterName: detectedName || 'Anderer Schütze',
+            shooterLizenz: detLiz || '',
+            shooterJahrgang: detectedShooter.jahrgang || ''
+        };
+    }
+
+    // 5. Gar kein Schütze auf dem Beleg erkannt
+    return {
+        status: "NOT_FOUND",
+        isSelf: false,
+        detectedClubMember: null,
+        nameFound: false,
+        lizenzFound: false,
+        jgFound: false,
+        shooterName: `${user.vorname} ${user.nachname || ''}`.trim(),
+        shooterLizenz: uLiz,
+        shooterJahrgang: uJg
+    };
+}
+
+function renderMismatchBanner(matchResult, user) {
+    const target = matchResult.detectedClubMember;
+    const targetName = target ? (target.fullName || `${target.vorname} ${target.nachname}`.trim()) : 'Anderer Schütze';
+    const targetLiz = (target && target.lizenz) ? ` (Lizenz: ${target.lizenz})` : '';
+
+    return `
+        <div id="ai-mismatch-box" style="background:#fffbeb; border:2px solid #f59e0b; border-radius:10px; padding:12px 14px; margin:10px 0; text-align:left;">
+            <div style="display:flex; align-items:flex-start; gap:8px;">
+                <span style="font-size:1.4rem; line-height:1;">⚠️</span>
+                <div style="flex:1;">
+                    <div style="font-weight:700; color:#92400e; font-size:0.95rem; margin-bottom:4px;">
+                        Namensabweichung auf Standblatt erkannt!
+                    </div>
+                    <div style="font-size:0.85rem; color:#78350f; line-height:1.4; margin-bottom:10px;">
+                        Auf dem Standblatt steht: <strong>${targetName}</strong>${targetLiz}.<br>
+                        Du bist angemeldet als: <strong>${user.vorname} ${user.nachname || ''}</strong>${user.lizenz ? ` (${user.lizenz})` : ''}.
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        ${target ? `
+                            <button type="button" id="btn-submit-proxy" style="background:#2563eb; color:#ffffff; border:none; padding:8px 12px; border-radius:6px; font-weight:600; font-size:0.85rem; cursor:pointer; text-align:center;">
+                                👥 Standblatt für ${target.vorname || targetName} einreichen (Stellvertretung)
+                            </button>
+                        ` : ''}
+                        <button type="button" id="btn-change-photo" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:7px 12px; border-radius:6px; font-weight:600; font-size:0.83rem; cursor:pointer; text-align:center;">
+                            🔄 Anderes Foto wählen
+                        </button>
+                        <label style="font-size:0.8rem; color:#64748b; display:flex; align-items:center; gap:6px; margin-top:2px; cursor:pointer;">
+                            <input type="checkbox" id="chk-self-override"> Standblatt gehört trotz Erkennung zu mir (${user.vorname})
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function bindMismatchListeners(matchResult, user) {
+    const btnProxy = document.getElementById("btn-submit-proxy");
+    const btnReselect = document.getElementById("btn-change-photo");
+    const chkOverride = document.getElementById("chk-self-override");
+    const submitBtn = document.getElementById("submitBtn");
+
+    if (btnProxy && matchResult.detectedClubMember) {
+        btnProxy.onclick = () => {
+            const m = matchResult.detectedClubMember;
+            _effectiveShooter = {
+                vorname: m.vorname,
+                nachname: m.nachname,
+                lizenz: m.lizenz,
+                jahrgang: m.jahrgang || '',
+                isProxy: true,
+                submittedBy: {
+                    vorname: user.vorname,
+                    nachname: user.nachname,
+                    lizenz: user.lizenz
+                }
+            };
+            const targetName = m.fullName || `${m.vorname} ${m.nachname}`.trim();
+            const targetLiz = m.lizenz ? ` (${m.lizenz})` : '';
+            const box = document.getElementById("ai-mismatch-box");
+            if (box) {
+                box.style.background = "#eff6ff";
+                box.style.borderColor = "#3b82f6";
+                box.innerHTML = `
+                    <div style="font-weight:700; color:#1d4ed8; font-size:0.92rem; margin-bottom:2px;">
+                        👥 Stellvertretung aktiviert
+                    </div>
+                    <div style="font-size:0.85rem; color:#1e40af; line-height:1.4;">
+                        Resultat wird für <strong>${targetName}</strong>${targetLiz} eingereicht (übermittelt von ${user.vorname} ${user.nachname || ''}).
+                    </div>
+                `;
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = `Jetzt für ${m.vorname || targetName} senden`;
+            }
+        };
+    }
+
+    if (btnReselect) {
+        btnReselect.onclick = () => {
+            const fileInput = document.getElementById("foto");
+            if (fileInput) fileInput.value = "";
+            const preview = document.getElementById("preview");
+            if (preview) {
+                preview.src = "";
+                preview.style.display = "none";
+            }
+            const pdfBox = document.getElementById("pdf-preview-box");
+            if (pdfBox) pdfBox.style.display = "none";
+            const uploadHint = document.getElementById("upload-hint");
+            if (uploadHint) uploadHint.style.display = "block";
+            hideAiStatus();
+            _effectiveShooter = { ...user, isSelf: true };
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = "Jetzt senden";
+            }
+            if (fileInput) fileInput.click();
+        };
+    }
+
+    if (chkOverride) {
+        chkOverride.onchange = (e) => {
+            if (e.target.checked) {
+                _effectiveShooter = { ...user, isSelf: true, forceSelf: true };
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "Jetzt senden";
+                }
+            } else {
+                _effectiveShooter = null;
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = "⚠️ Schützen bestätigen...";
+                }
+            }
+        };
+    }
 }
 
 /* ---------------------------------------------
@@ -414,17 +675,25 @@ async function processPdfStandblatt(file, user) {
         anlassInput.value = detectedTitle;
     }
 
-    // Schützen-Feedback
+    let isMismatchPdf = false;
+
+    // 1. Schützenabgleich via Vereinsliste
+    const matchResult = analyzeShooterMatch(user, {}, fullText);
+    isMismatchPdf = (matchResult.status === "MISMATCH");
+
     let shooterMsg = "";
-    if (nameMatches && (lizenzMatches || jahrgangMatches)) {
-        shooterMsg = `✅ <strong>Schütze bestätigt:</strong> ${user.vorname} ${user.nachname} ${lizenzMatches ? `(Lizenz: ${uLizenz})` : ''} ${jahrgangMatches ? `(Jg. ${uJahrgang})` : ''}`;
-    } else if (nameMatches) {
-        shooterMsg = `✅ <strong>Schütze erkannt:</strong> ${user.vorname} ${user.nachname}`;
+    if (matchResult.status === "MATCH") {
+        _effectiveShooter = { ...user, isSelf: true };
+        shooterMsg = `✅ <strong>Schütze bestätigt:</strong> ${user.vorname} ${user.nachname} ${matchResult.lizenzFound ? `(Lizenz: ${uLizenz})` : ''} ${matchResult.jgFound ? `(Jg. ${uJahrgang})` : ''}`;
+    } else if (isMismatchPdf) {
+        _effectiveShooter = null;
+        shooterMsg = renderMismatchBanner(matchResult, user);
     } else {
-        shooterMsg = `👤 <strong>Schütze:</strong> ${user.vorname} ${user.nachname || ''}`;
+        _effectiveShooter = { ...user, isSelf: true };
+        shooterMsg = `👤 <strong>Schütze:</strong> ${user.vorname} ${user.nachname || ''} <span style="color:#854d0e; font-size:0.85em;">(nicht zweifelsfrei im PDF gefunden)</span>`;
     }
 
-    // Anlass-Feedback
+    // 2. Anlass-Feedback
     let contestMsg = "";
     if (bestComp) {
         contestMsg = `🎯 <strong>Anlass erkannt & zugeordnet:</strong> ${detectedTitle} <span style="font-size:0.8em; color:#15803d; font-weight:600;">(in Jahresmeisterschaft vorhanden)</span>`;
@@ -432,7 +701,7 @@ async function processPdfStandblatt(file, user) {
         contestMsg = `📝 <strong>Anlass erkannt:</strong> ${detectedTitle}`;
     }
 
-    const isVerifiedPdf = nameMatches && (lizenzMatches || jahrgangMatches) && foundPoints !== null;
+    const isVerifiedPdf = (matchResult.status === "MATCH") && foundPoints !== null;
     _currentOcrAnalysis = {
         source: "pdf",
         modelUsed: "pdfjs_client",
@@ -440,12 +709,14 @@ async function processPdfStandblatt(file, user) {
             formName: `${user.vorname || ''} ${user.nachname || ''}`.trim(),
             formLizenz: uLizenz,
             formJahrgang: uJahrgang,
-            nameFound: nameMatches,
-            nameStatus: nameMatches ? "MATCH" : "NOT_FOUND",
-            lizenzFound: lizenzMatches,
-            lizenzStatus: lizenzMatches ? "MATCH" : "NOT_FOUND",
-            jgFound: jahrgangMatches,
-            jgStatus: jahrgangMatches ? "MATCH" : "NOT_FOUND"
+            nameFound: matchResult.nameFound,
+            nameStatus: matchResult.status,
+            lizenzFound: matchResult.lizenzFound,
+            lizenzStatus: matchResult.lizenzFound ? "MATCH" : "NOT_FOUND",
+            jgFound: matchResult.jgFound,
+            jgStatus: matchResult.jgFound ? "MATCH" : "NOT_FOUND",
+            detectedShooter: matchResult.detectedClubMember || null,
+            detectedClubMember: matchResult.detectedClubMember || null
         },
         anlass: {
             erkannt: detectedTitle,
@@ -472,16 +743,22 @@ async function processPdfStandblatt(file, user) {
 
         const statusHtml = `
             <div style="text-align:left; font-size:0.87rem; line-height:1.45;">
-                <div style="font-weight:700; margin-bottom:4px; color:#166534;">📄 PDF-Rangliste erfolgreich ausgewertet:</div>
+                <div style="font-weight:700; margin-bottom:4px; color:${isMismatchPdf ? '#b45309' : '#166534'};">${isMismatchPdf ? '⚠️ PDF geladen (Schütze prüfen):' : '📄 PDF-Rangliste erfolgreich ausgewertet:'}</div>
                 <div>${shooterMsg}</div>
                 <div>${contestMsg}</div>
                 <div>💯 <strong>Punkte & Maximum:</strong> <strong>${foundPoints}</strong> / ${max} Pkt. (${pct}% · ${reason})</div>
             </div>
         `;
         progress.finish(statusHtml);
+        if (isMismatchPdf) {
+            bindMismatchListeners(matchResult, user);
+        }
     } else {
         progress.cancel();
         showAiStatus(`📄 PDF geladen: <em>${detectedTitle}</em>. Punkte wurden nicht automatisch gefunden – bitte kurz eintragen.`, "warning");
+        if (isMismatchPdf) {
+            bindMismatchListeners(matchResult, user);
+        }
     }
 
     // Render Erste Seite als Vorschaubild
@@ -503,8 +780,13 @@ async function processPdfStandblatt(file, user) {
         showAiStatus(`⚠️ ${err.message || 'PDF konnte nicht automatisch ausgewertet werden.'}`, "warning");
     } finally {
         if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Jetzt senden";
+            if (isMismatchPdf) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = "⚠️ Schützen bestätigen...";
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Jetzt senden";
+            }
         }
     }
 }
@@ -522,6 +804,8 @@ async function processImageStandblatt(base64Data, user) {
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 45000);
+
+    let isMismatchImg = false;
 
     try {
         const ocrUrl = WORKER_OCR_URL.replace('action=ocr', 'action=ocr_standblatt');
@@ -555,24 +839,25 @@ async function processImageStandblatt(base64Data, user) {
             const detectedContest = data.anlass || {};
             const detectedResult = data.ergebnis || {};
 
-            // 1. Schütze abgleichen
+            // 1. Schütze abgleichen via Vereinsliste
             const uVor = (user.vorname || '').toLowerCase().trim();
             const uNach = (user.nachname || '').toLowerCase().trim();
             const uLiz = user.lizenz ? String(user.lizenz).padStart(6, '0') : '';
             const uJg = user.jahrgang ? String(user.jahrgang).trim() : '';
 
-            const textLower = (rawText + ' ' + JSON.stringify(detectedShooter)).toLowerCase();
-            const nameFound = (uVor && textLower.includes(uVor)) && (uNach && textLower.includes(uNach));
-            const lizenzFound = uLiz && uLiz !== '000000' && (textLower.includes(uLiz) || (detectedShooter.lizenz && detectedShooter.lizenz.includes(uLiz)));
-            const jgFound = uJg && textLower.includes(uJg);
+            const matchResult = analyzeShooterMatch(user, detectedShooter, rawText);
+            isMismatchImg = (matchResult.status === "MISMATCH");
 
             let shooterMsg = "";
-            if (nameFound && (lizenzFound || jgFound)) {
-                shooterMsg = `✅ <strong>Schütze bestätigt:</strong> ${user.vorname} ${user.nachname} ${lizenzFound ? `(Lizenz: ${uLiz})` : ''} ${jgFound ? `(Jg. ${uJg})` : ''}`;
-            } else if (nameFound) {
-                shooterMsg = `✅ <strong>Schütze erkannt:</strong> ${user.vorname} ${user.nachname} ${lizenzFound ? `(Lizenz: ${uLiz})` : ''}`;
+            if (matchResult.status === "MATCH") {
+                _effectiveShooter = { ...user, isSelf: true };
+                shooterMsg = `✅ <strong>Schütze bestätigt:</strong> ${user.vorname} ${user.nachname} ${matchResult.lizenzFound ? `(Lizenz: ${uLiz})` : ''} ${matchResult.jgFound ? `(Jg. ${uJg})` : ''}`;
+            } else if (isMismatchImg) {
+                _effectiveShooter = null;
+                shooterMsg = renderMismatchBanner(matchResult, user);
             } else {
-                shooterMsg = `👤 <strong>Schütze:</strong> ${user.vorname} ${user.nachname || ''} ${lizenzFound ? `(Lizenz: ${uLiz})` : ''}`;
+                _effectiveShooter = { ...user, isSelf: true };
+                shooterMsg = `👤 <strong>Schütze:</strong> ${user.vorname} ${user.nachname || ''} <span style="color:#854d0e; font-size:0.85em;">(nicht zweifelsfrei auf Beleg gefunden)</span>`;
             }
 
             // 2. Anlass mit Jahresmeisterschaft abgleichen
@@ -605,11 +890,9 @@ async function processImageStandblatt(base64Data, user) {
                 maxPts = fc.max;
             }
 
-            const nameStatus = nameFound ? "MATCH" : ((uVor && textLower.includes(uVor)) || (uNach && textLower.includes(uNach)) ? "PARTIAL" : "NOT_FOUND");
-            const lizenzStatus = lizenzFound ? "MATCH" : "NOT_FOUND";
             const contestStatus = bestComp ? "MATCH" : (chosenTitle ? "NEW_COL" : "ERROR");
             const scoreStatus = (!isNaN(pts) && pts > 0) ? "MATCH" : "NOT_FOUND";
-            const isVerified = (nameStatus === "MATCH") && (lizenzStatus === "MATCH") && (scoreStatus === "MATCH");
+            const isVerified = (matchResult.status === "MATCH") && (scoreStatus === "MATCH");
 
             _currentOcrAnalysis = {
                 source: "gemini_vision",
@@ -619,12 +902,13 @@ async function processImageStandblatt(base64Data, user) {
                     formLizenz: uLiz,
                     formJahrgang: uJg,
                     detectedShooter: detectedShooter,
-                    nameFound: nameFound,
-                    nameStatus: nameStatus,
-                    lizenzFound: lizenzFound,
-                    lizenzStatus: lizenzStatus,
-                    jgFound: jgFound,
-                    jgStatus: jgFound ? "MATCH" : "NOT_FOUND"
+                    detectedClubMember: matchResult.detectedClubMember,
+                    nameFound: matchResult.nameFound,
+                    nameStatus: matchResult.status,
+                    lizenzFound: matchResult.lizenzFound,
+                    lizenzStatus: matchResult.lizenzFound ? "MATCH" : "NOT_FOUND",
+                    jgFound: matchResult.jgFound,
+                    jgStatus: matchResult.jgFound ? "MATCH" : "NOT_FOUND"
                 },
                 anlass: {
                     erkannt: chosenTitle,
@@ -651,25 +935,31 @@ async function processImageStandblatt(base64Data, user) {
 
                 const statusHtml = `
                     <div style="text-align:left; font-size:0.87rem; line-height:1.45;">
-                        <div style="font-weight:700; margin-bottom:4px; color:#166534;">✨ Standblatt erfolgreich ausgewertet:</div>
+                        <div style="font-weight:700; margin-bottom:4px; color:${isMismatchImg ? '#b45309' : '#166534'};">${isMismatchImg ? '⚠️ Standblatt analysiert (Schütze prüfen):' : '✨ Standblatt erfolgreich ausgewertet:'}</div>
                         <div>${shooterMsg}</div>
                         <div>${contestMsg}</div>
                         <div>💯 <strong>Punkte & Maximum:</strong> <strong>${pts}</strong> / ${maxPts} Pkt. (${pct}%${stichName})</div>
                     </div>
                 `;
                 progress.finish(statusHtml);
+                if (isMismatchImg) {
+                    bindMismatchListeners(matchResult, user);
+                }
                 return;
             } else {
                 if (maxPts) document.getElementById("maximal").value = maxPts;
                 const statusHtml = `
                     <div style="text-align:left; font-size:0.87rem; line-height:1.45;">
-                        <div style="font-weight:700; margin-bottom:4px; color:#166534;">✨ Standblatt erfolgreich erkannt:</div>
+                        <div style="font-weight:700; margin-bottom:4px; color:${isMismatchImg ? '#b45309' : '#166534'};">${isMismatchImg ? '⚠️ Standblatt analysiert (Schütze prüfen):' : '✨ Standblatt erfolgreich erkannt:'}</div>
                         <div>${shooterMsg}</div>
                         <div>${contestMsg}</div>
                         <div style="color:#166534; font-weight:600; margin-top:2px;">💯 Punkte bitte kurz manuell prüfen und eintragen.</div>
                     </div>
                 `;
                 progress.finish(statusHtml);
+                if (isMismatchImg) {
+                    bindMismatchListeners(matchResult, user);
+                }
                 return;
             }
         }
@@ -682,8 +972,13 @@ async function processImageStandblatt(base64Data, user) {
         showAiStatus("📸 Foto bereit. Bitte trage deine Punkte und das Maximum kurz ein.", "info");
     } finally {
         if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Jetzt senden";
+            if (isMismatchImg) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = "⚠️ Schützen bestätigen...";
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Jetzt senden";
+            }
         }
     }
 }
@@ -796,6 +1091,17 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             return;
         }
         const user = JSON.parse(userStr);
+
+        // Prüfen, ob eine unbestätigte Namensabweichung vorliegt
+        if (!_effectiveShooter) {
+            errorDiv.textContent = "Bitte bestätige zuerst die Schützenauswahl (Stellvertretung oder Eigenmeldung).";
+            errorDiv.style.display = "block";
+            btn.disabled = false;
+            btn.textContent = "⚠️ Schützen bestätigen...";
+            return;
+        }
+
+        const shooterToSubmit = _effectiveShooter;
         const compressedImage = document.getElementById("foto").dataset.compressed;
 
         if (!compressedImage) {
@@ -813,9 +1119,9 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             body: JSON.stringify({
                 action: "upload_standblatt",
                 anlass: anlass || "Auswärtiges Schiessen",
-                lizenz: user.lizenz || user.id,
-                vorname: user.vorname,
-                nachname: user.nachname,
+                lizenz: shooterToSubmit.lizenz || shooterToSubmit.id,
+                vorname: shooterToSubmit.vorname,
+                nachname: shooterToSubmit.nachname,
                 erzielt,
                 maximal,
                 foto: compressedImage
@@ -844,8 +1150,8 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                 source: "manual",
                 modelUsed: "none",
                 schuetze: {
-                    formName: `${user.vorname || ''} ${user.nachname || ''}`.trim(),
-                    formLizenz: String(user.lizenz || user.id || ''),
+                    formName: `${shooterToSubmit.vorname || ''} ${shooterToSubmit.nachname || ''}`.trim(),
+                    formLizenz: String(shooterToSubmit.lizenz || shooterToSubmit.id || ''),
                     nameStatus: "UNCHECKED",
                     lizenzStatus: "UNCHECKED"
                 },
@@ -856,7 +1162,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             };
         }
 
-        const logId = `sb_${user.lizenz || user.id}_${Date.now()}`;
+        const logId = `sb_${shooterToSubmit.lizenz || shooterToSubmit.id}_${Date.now()}`;
 
         // 2. Supabase Audit-Log & Inbox (in contest_ocr_logs protokollieren mit Status 'pending' & ocr_analysis)
         await fetch(`${SUPABASE_REST_URL}/contest_ocr_logs`, {
@@ -877,10 +1183,15 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                     anlass: anlass || "Auswärtiges Schiessen",
                     erzielt,
                     maximal,
-                    lizenz: user.lizenz || user.id,
-                    vorname: user.vorname,
-                    nachname: user.nachname,
-                    jahrgang: user.jahrgang || '',
+                    lizenz: shooterToSubmit.lizenz || shooterToSubmit.id,
+                    vorname: shooterToSubmit.vorname,
+                    nachname: shooterToSubmit.nachname,
+                    jahrgang: shooterToSubmit.jahrgang || '',
+                    submitted_by: shooterToSubmit.isProxy ? {
+                        vorname: user.vorname,
+                        nachname: user.nachname,
+                        lizenz: user.lizenz
+                    } : null,
                     fileName: fileName,
                     fileUrl: fileUrl,
                     ocr_analysis: _currentOcrAnalysis,
@@ -933,7 +1244,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
 
                     <p style="font-size:15px; margin-bottom:16px;">
                         Hallo <strong>${user.vorname || 'Schütze'}</strong>,<br>
-                        vielen Dank für deine Meldung über <strong>${erzielt} Punkte</strong> für das <strong>${anlass || 'Auswärtiges Schiessen'}</strong>.
+                        vielen Dank für deine Meldung über <strong>${erzielt} Punkte</strong> für das <strong>${anlass || 'Auswärtiges Schiessen'}</strong>${shooterToSubmit.isProxy ? ` (eingereicht für <strong>${targetFullName}</strong>)` : ''}.
                     </p>
 
                     ${infoBanner}
@@ -941,7 +1252,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                     <table style="width:100%; border-collapse:collapse; margin:20px 0; background:#f9fafb; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;">
                         <tr>
                             <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; width:35%; color:#4b5563;">Schütze</td>
-                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${user.vorname} ${user.nachname || ''} ${user.lizenz ? `(Lizenz: ${user.lizenz})` : ''}</td>
+                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${targetFullName} ${shooterToSubmit.lizenz ? `(Lizenz: ${shooterToSubmit.lizenz})` : ''}${shooterToSubmit.isProxy ? `<br><small style="color:#6b7280;">(Eingereicht via ${user.vorname} ${user.nachname || ''})</small>` : ''}</td>
                         </tr>
                         <tr>
                             <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; color:#4b5563;">Schiessanlass</td>
@@ -964,7 +1275,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                     </div>` : ''}
 
                     <p style="font-size:13px; color:#6b7280; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:16px;">
-                        Sobald die Freigabe durch den Schützenmeister erfolgt ist, erscheint dein Resultat offiziell in der Jahresmeisterschaft.<br>
+                        Sobald die Freigabe durch den Schützenmeister erfolgt ist, erscheint das Resultat offiziell in der Jahresmeisterschaft.<br>
                         <a href="https://www.sportschuetzen-muhen.ch/resultate/aktuelles_Jahr/jahresmeisterschaft" style="color:#0284c7; text-decoration:none;">Zur Online-Rangliste</a>
                     </p>
 
@@ -995,7 +1306,10 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
             console.warn("Mail-Versand an Schütze / Info-Mail nicht erfolgreich:", mailErr);
         }
 
-        alert("✔ Dein Standblatt wurde erfolgreich übermittelt und zur Prüfung eingereicht!");
+        const alertMsg = shooterToSubmit.isProxy 
+            ? `✔ Das Standblatt für ${targetFullName} wurde erfolgreich zur Prüfung eingereicht!` 
+            : "✔ Dein Standblatt wurde erfolgreich übermittelt und zur Prüfung eingereicht!";
+        alert(alertMsg);
         location.reload();
 
     } catch (err) {
