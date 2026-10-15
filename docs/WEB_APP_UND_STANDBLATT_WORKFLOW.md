@@ -109,6 +109,11 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
 7. **Browserübergreifende Upload-Stabilität (Edge, Firefox, Safari):**
    - Vollständige Syntaxbereinigung der Try-Catch- und Kontrollfluss-Blöcke in `app/upload.js` (`processPdfStandblatt` und `processImageStandblatt`).
    - Bubbling- und klicksichere Bindung des Datei-Auswahldialogs via nativem `<label for="foto" class="upload-area">` in `app/upload.html` ohne fehleranfälliges Inline-`onclick`.
-   - Versions- und Cache-Busting (`upload.html?v=4`, `upload.js?v=5`) für sofortige Ausführung auf allen Desktop- und Mobil-Browsern.
+   - Versions- und Cache-Busting (`upload.html?v=5`, `upload.js?v=6`) für sofortige Ausführung auf allen Desktop- und Mobil-Browsern.
+8. **Formular-Verschlankung & Animierter KI-Fortschritts-Timer:**
+   - Entfernung des sichtbaren Anlassfeldes: Der Schütze muss den Anlass nicht mehr manuell wählen oder erfassen; die Zuordnung erfolgt vollautomatisch im Hintergrund via Hidden-Field (`#anlass`) und OCR-Matching.
+   - Visuelle Fortschrittsanzeige: Sobald ein Beleg gewählt wird, visualisiert ein animierter Farb-Ladebalken mit Countdown (ca. 6s) und Erklärungstext die aktive Standblatt-Analyse.
+   - Manuelle Sofort-Freigabe & Spin-Button-Bereinigung: Tippt der Schütze Punkte manuell ein, wird der Senden-Button sofort aktiviert. Die Up/Down-Pfeile an Zahlenfeldern wurden browserübergreifend ausgeblendet.
+
 
 

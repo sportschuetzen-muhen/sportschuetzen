@@ -44,6 +44,80 @@ function hideAiStatus() {
 }
 
 /* ---------------------------------------------
+   ANIMIERTER KI-FORTSCHRITTSBALKEN / TIMER
+--------------------------------------------- */
+let _currentAiProgress = null;
+
+function startAiProgress(title = "Standblatt-Erkennung läuft...", estSeconds = 6) {
+    if (_currentAiProgress) {
+        _currentAiProgress.cancel();
+    }
+
+    const el = document.getElementById("ai-status");
+    if (!el) return null;
+
+    el.style.display = "block";
+    el.style.background = "#eff6ff";
+    el.style.color = "#1e40af";
+    el.style.border = "1px solid #bfdbfe";
+
+    el.innerHTML = `
+        <div style="text-align:left;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:0.92rem; margin-bottom:4px;">
+                <span>🤖 ${title}</span>
+                <span id="ai-timer-count" style="font-size:0.8rem; font-weight:600; color:#2563eb;">ca. ${estSeconds}s</span>
+            </div>
+            <div style="font-size:0.82rem; color:#475569; line-height:1.4;">
+                Foto wird per KI analysiert und Punkte werden automatisch ermittelt. Du kannst die Punkte auch direkt manuell eingeben oder absenden.
+            </div>
+            <div class="ai-progress-track">
+                <div id="ai-progress-bar" class="ai-progress-bar"></div>
+            </div>
+        </div>
+    `;
+
+    const bar = document.getElementById("ai-progress-bar");
+    const countEl = document.getElementById("ai-timer-count");
+    const startTime = Date.now();
+    const duration = estSeconds * 1000;
+
+    const timerId = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const pct = Math.min(94, Math.round((elapsed / duration) * 92));
+        if (bar) bar.style.width = pct + "%";
+        const remain = Math.max(1, Math.ceil((duration - elapsed) / 1000));
+        if (countEl) {
+            if (elapsed < duration) {
+                countEl.textContent = `ca. ${remain}s`;
+            } else {
+                countEl.textContent = "Finalisiere...";
+            }
+        }
+    }, 150);
+
+    const controller = {
+        finish: (statusHtml) => {
+            clearInterval(timerId);
+            if (bar) {
+                bar.style.width = "100%";
+                bar.style.background = "#10b981";
+            }
+            if (statusHtml) {
+                setTimeout(() => {
+                    showAiStatus(statusHtml, "success");
+                }, 300);
+            }
+        },
+        cancel: () => {
+            clearInterval(timerId);
+        }
+    };
+
+    _currentAiProgress = controller;
+    return controller;
+}
+
+/* ---------------------------------------------
    TEILNEHMER AUS LOGIN LADEN (Du-Form)
 --------------------------------------------- */
 function loadTeilnehmer() {
@@ -266,11 +340,11 @@ function forecastMaxPoints(text, score) {
    DIGITALE PDF-ANALYSE (Client-seitig < 50ms)
 --------------------------------------------- */
 async function processPdfStandblatt(file, user) {
-    showAiStatus("📄 PDF-Rangliste wird durchsucht...", "info");
+    const progress = startAiProgress("PDF-Rangliste wird durchsucht...", 3);
     const submitBtn = document.getElementById("submitBtn");
     if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = "📄 PDF wird analysiert...";
+        submitBtn.textContent = "⏳ PDF wird geprüft...";
     }
 
     try {
@@ -410,8 +484,9 @@ async function processPdfStandblatt(file, user) {
                 <div>💯 <strong>Punkte & Maximum:</strong> <strong>${foundPoints}</strong> / ${max} Pkt. (${pct}% · ${reason})</div>
             </div>
         `;
-        showAiStatus(statusHtml, "success");
+        progress.finish(statusHtml);
     } else {
+        progress.cancel();
         showAiStatus(`📄 PDF geladen: <em>${detectedTitle}</em>. Punkte wurden nicht automatisch gefunden – bitte kurz eintragen.`, "warning");
     }
 
@@ -429,12 +504,13 @@ async function processPdfStandblatt(file, user) {
         console.warn("PDF-Vorschau Render Warnung:", renderErr);
     }
     } catch (err) {
+        if (progress) progress.cancel();
         console.error("PDF-Auswertung Fehler:", err);
         showAiStatus(`⚠️ ${err.message || 'PDF konnte nicht automatisch ausgewertet werden.'}`, "warning");
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.textContent = "Standblatt jetzt einreichen";
+            submitBtn.textContent = "Jetzt senden";
         }
     }
 }
@@ -443,18 +519,22 @@ async function processPdfStandblatt(file, user) {
    ZENTRALE GEMINI VISION OCR (Standblatt Bild)
 --------------------------------------------- */
 async function processImageStandblatt(base64Data, user) {
-    showAiStatus("🔍 Standblatt wird mit KI analysiert...", "info");
+    const progress = startAiProgress("Standblatt-Erkennung läuft...", 6);
     const submitBtn = document.getElementById("submitBtn");
     if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = "🔍 KI analysiert Standblatt...";
+        submitBtn.textContent = "⏳ Standblatt wird geprüft...";
     }
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 12000);
 
     try {
         const ocrUrl = WORKER_OCR_URL.replace('action=ocr', 'action=ocr_standblatt');
         const res = await fetch(ocrUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal: abortController.signal,
             body: JSON.stringify({
                 image: base64Data,
                 user: {
@@ -467,6 +547,8 @@ async function processImageStandblatt(base64Data, user) {
                 model: "gemini-3-flash-preview"
             })
         });
+
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
             throw new Error(`Server antwortete mit Status ${res.status}`);
@@ -581,17 +663,21 @@ async function processImageStandblatt(base64Data, user) {
                         <div>💯 <strong>Punkte & Maximum:</strong> <strong>${pts}</strong> / ${maxPts} Pkt. (${pct}%${stichName})</div>
                     </div>
                 `;
-                showAiStatus(statusHtml, "success");
+                progress.finish(statusHtml);
                 return;
             }
         }
+        progress.cancel();
+        showAiStatus("📸 Foto bereit. Bitte trage deine Punkte und das Maximum kurz ein.", "info");
     } catch (err) {
+        clearTimeout(timeoutId);
+        if (progress) progress.cancel();
         console.warn("Zentraler KI-OCR Aufruf nicht erfolgreich, Fallback auf manuelle Eingabe:", err);
         showAiStatus("📸 Foto bereit. Bitte trage deine Punkte und das Maximum kurz ein.", "info");
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.textContent = "Standblatt jetzt einreichen";
+            submitBtn.textContent = "Jetzt senden";
         }
     }
 }
@@ -918,4 +1004,17 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
 window.onload = async () => {
     await loadKnownCompetitions();
     loadTeilnehmer();
+
+    // Sofortige Button-Freigabe, sobald der Schütze manuell Punkte eintippt
+    const onManualScoreInput = () => {
+        const submitBtn = document.getElementById("submitBtn");
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Jetzt senden";
+        }
+    };
+    const erzEl = document.getElementById("erzielt");
+    const maxEl = document.getElementById("maximal");
+    if (erzEl) erzEl.addEventListener("input", onManualScoreInput);
+    if (maxEl) maxEl.addEventListener("input", onManualScoreInput);
 };
