@@ -245,7 +245,7 @@ function ensureResultateShell(forceRebuild = false) {
                   <i class="fas fa-camera text-warning me-2"></i>KI-Standblattfoto einlesen (OCR)
                 </a></li>
                 <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item text-danger" href="#" onclick="archiveCurrentContestSeasonAction(); return false;">
+                <li><a class="dropdown-item text-danger" href="#" onclick="openArchiveSeasonModal(); return false;">
                   <i class="fas fa-archive me-2"></i>Saison archivieren / Neues Jahr starten...
                 </a></li>
               </ul>
@@ -257,7 +257,6 @@ function ensureResultateShell(forceRebuild = false) {
             </button>
           ` : ''}
 
-          <button class="btn btn-outline-secondary btn-sm" onclick="loadResultateData(true)" title="Daten aus Supabase neu laden">🔄 Laden</button>
           ${canWrite ? `<button id="btn-save-resultate" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="saveResultateData()">💾 Gespeichert</button>` : ''}
         </div>
       </div>
@@ -433,6 +432,53 @@ function ensureResultateShell(forceRebuild = false) {
           </div>
         </div>
       </div>
+
+      <!-- 7. MODAL: SAISON ARCHIVIEREN & NEUES JAHR STARTEN -->
+      <div class="modal fade" id="modal-archive-resultate-season" tabindex="-1" aria-labelledby="modalArchiveSeasonLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content border-0 rounded-4 shadow">
+            <div class="modal-header bg-danger text-white border-0 py-3 rounded-top-4">
+              <h5 class="modal-title fw-bold" id="modalArchiveSeasonLabel"><i class="fas fa-archive me-2"></i>Saison archivieren & neues Jahr starten</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+              <div class="alert alert-info border-0 rounded-3 mb-3 small">
+                <i class="fas fa-info-circle me-1"></i>
+                Wettbewerb: <strong id="archive-modal-contest-badge"></strong><br>
+                Das bisherige Archivjahr bleibt unverändert gespeichert und auf der Website abrufbar.
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-6">
+                  <label class="form-label fw-bold small text-muted">Bisheriges Jahr (Archiv)</label>
+                  <input type="number" id="archive-source-year" class="form-control bg-light" readonly disabled>
+                </div>
+                <div class="col-6">
+                  <label for="archive-target-year" class="form-label fw-bold small text-primary">Neues Zieljahr *</label>
+                  <input type="number" id="archive-target-year" class="form-control fw-bold border-primary" min="2000" max="2100" step="1">
+                </div>
+              </div>
+              <div class="text-muted small">
+                <strong>Was passiert beim Initialisieren?</strong>
+                <ul class="ps-3 mb-0 mt-1">
+                  <li>Alle Schützen & Team-Zuteilungen werden für das neue Jahr übernommen.</li>
+                  <li>Sämtliche Rundenpunkte werden auf <code>null</code> zurückgesetzt.</li>
+                  <li>Bei der Gruppenmeisterschaft (SGM) bleibt die Schiessstellung (Liegend/Kniend) erhalten.</li>
+                </ul>
+              </div>
+              <div id="archive-warning-box" class="alert alert-warning border-0 rounded-3 mt-3 mb-0 small d-none">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                <span id="archive-warning-text"></span>
+              </div>
+            </div>
+            <div class="modal-footer border-0 p-3 bg-light rounded-bottom-4">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+              <button type="button" class="btn btn-danger fw-bold" id="btn-confirm-archive-season" onclick="executeArchiveSeasonAction()">
+                <i class="fas fa-check me-1"></i>Saison jetzt initialisieren
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -446,6 +492,42 @@ function openAddShooterModal() {
   }
 }
 window.openAddShooterModal = openAddShooterModal;
+
+function openArchiveSeasonModal() {
+  const modalEl = document.getElementById('modal-archive-resultate-season');
+  if (!modalEl) return;
+
+  const contestType = window._resultateContestType || "gruppe";
+  const sourceYear = window._resultateYear || new Date().getFullYear();
+  const defaultTargetYear = sourceYear + 1;
+
+  let badgeText = "";
+  if (contestType === "mannschaft") badgeText = "👥 Mannschaft (SMM)";
+  else if (contestType === "gruppe") badgeText = "🎯 Gruppe (SGM)";
+  else badgeText = "🛡️ Grenzland";
+
+  const badgeEl = document.getElementById("archive-modal-contest-badge");
+  if (badgeEl) badgeEl.innerText = badgeText;
+
+  const srcInput = document.getElementById("archive-source-year");
+  if (srcInput) srcInput.value = sourceYear;
+
+  const targetInput = document.getElementById("archive-target-year");
+  if (targetInput) targetInput.value = defaultTargetYear;
+
+  const warnBox = document.getElementById("archive-warning-box");
+  if (warnBox) warnBox.classList.add("d-none");
+
+  const btnConfirm = document.getElementById("btn-confirm-archive-season");
+  if (btnConfirm) {
+    btnConfirm.disabled = false;
+    btnConfirm.innerHTML = '<i class="fas fa-check me-1"></i>Saison jetzt initialisieren';
+  }
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+window.openArchiveSeasonModal = openArchiveSeasonModal;
 
 function injectStylesOnce() {
   if (document.getElementById("resultate-inline-style")) return;

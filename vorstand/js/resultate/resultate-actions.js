@@ -182,30 +182,65 @@ async function pushOneSignalGrenzland() {
   alert("ℹ️ Push-Mitteilungen: Das Google Apps Script Backend ist entkoppelt. Mobile Push Notifications werden über native Supabase Edge Functions verwaltet.");
 }
 
-async function archiveCurrentContestSeasonAction() {
+async function executeArchiveSeasonAction() {
   const supa = getResultateSupabaseClient();
   if (!supa) return alert("Kein Supabase-Client verfügbar.");
-  const contestType = window._resultateContestType || "gruppe";
-  const currentYear = window._resultateYear || new Date().getFullYear();
-  const nextYear = currentYear + 1;
 
-  const confirmed = confirm(
-    `Saison-Wechsel für "${contestType.toUpperCase()}":\n\n` +
-    `Möchtest du die Saison ${currentYear} abschliessen und das neue Jahr ${nextYear} vorbereiten?\n\n` +
-    `• Die Resultate von ${currentYear} bleiben dauerhaft im Archiv erhalten und auf der Website abrufbar.\n` +
-    `• Für ${nextYear} werden die Schützen und Team-Zuteilungen übernommen (Punkte werden zurückgesetzt).`
-  );
-  if (!confirmed) return;
+  const contestType = window._resultateContestType || "gruppe";
+  const sourceYear = window._resultateYear || new Date().getFullYear();
+
+  const targetInput = document.getElementById("archive-target-year");
+  const targetYear = parseInt(targetInput ? targetInput.value : "", 10);
+
+  if (isNaN(targetYear) || targetYear < 2000 || targetYear > 2100) {
+    alert("Bitte gib ein gültiges Zieljahr zwischen 2000 und 2100 ein.");
+    if (targetInput) targetInput.focus();
+    return;
+  }
+
+  if (targetYear === sourceYear) {
+    alert(`Das Zieljahr (${targetYear}) darf nicht identisch mit dem bisherigen Archivjahr (${sourceYear}) sein.`);
+    if (targetInput) targetInput.focus();
+    return;
+  }
+
+  const btnConfirm = document.getElementById("btn-confirm-archive-season");
+  const origBtnHtml = btnConfirm ? btnConfirm.innerHTML : '';
+  if (btnConfirm) {
+    btnConfirm.disabled = true;
+    btnConfirm.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Initialisiere...';
+  }
 
   try {
-    setStatus(`Initialisiere Saison ${nextYear}…`, false);
+    // 1. Duplikat-/Kollisionsprüfung in Supabase
+    const { data: existingData, error: checkErr } = await supa
+      .from('contest_results')
+      .select('person_number')
+      .eq('contest_type', contestType)
+      .eq('year', targetYear);
 
+    if (checkErr) {
+      console.warn("Fehler bei Kollisionsprüfung:", checkErr);
+    } else if (existingData && existingData.length > 0) {
+      const proceed = confirm(
+        `Achtung: Für die Saison ${targetYear} (${contestType.toUpperCase()}) existieren bereits ${existingData.length} Schützen-Einträge in der Datenbank.\n\n` +
+        `Möchtest du fortfahren? Vorhandene Schützen-Einträge für ${targetYear} werden aktualisiert.`
+      );
+      if (!proceed) {
+        if (btnConfirm) { btnConfirm.disabled = false; btnConfirm.innerHTML = origBtnHtml; }
+        return;
+      }
+    }
+
+    setStatus(`Initialisiere Saison ${targetYear}…`, false);
+
+    // 2. Daten für neues Zieljahr mappen
     if (resultateState.rows && resultateState.rows.length > 0) {
       const newRows = resultateState.rows.map(r => {
         const row = {
-          id: `${contestType}_${nextYear}_${r.id}`,
+          id: `${contestType}_${targetYear}_${r.id}`,
           contest_type: contestType,
-          year: nextYear,
+          year: targetYear,
           person_number: String(r.id),
           name: r.name,
           stellung: r.stellung || "liegend",
@@ -234,13 +269,38 @@ async function archiveCurrentContestSeasonAction() {
       if (insErr) throw insErr;
     }
 
-    alert(`✅ Saison ${nextYear} wurde erfolgreich initialisiert! Wechsle zur neuen Saison.`);
-    window._resultateYear = nextYear;
+    // Modal schliessen
+    const modalEl = document.getElementById('modal-archive-resultate-season');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+
+    // Verfügbare Jahre aktualisieren & zur neuen Saison wechseln
+    if (!resultateState.availableYears.includes(targetYear)) {
+      resultateState.availableYears.push(targetYear);
+      resultateState.availableYears.sort((a, b) => b - a);
+    }
+
+    alert(`✅ Saison ${targetYear} wurde erfolgreich initialisiert! Wechsle zur neuen Saison.`);
+    window._resultateYear = targetYear;
     await loadResultateData(true);
   } catch (err) {
     console.error("Fehler beim Archivieren/Initialisieren:", err);
     alert("Fehler: " + (err.message || err));
     setStatus("Fehler beim Archivieren", true);
+  } finally {
+    if (btnConfirm) {
+      btnConfirm.disabled = false;
+      btnConfirm.innerHTML = origBtnHtml;
+    }
+  }
+}
+window.executeArchiveSeasonAction = executeArchiveSeasonAction;
+
+function archiveCurrentContestSeasonAction() {
+  if (typeof openArchiveSeasonModal === 'function') {
+    openArchiveSeasonModal();
   }
 }
 window.archiveCurrentContestSeasonAction = archiveCurrentContestSeasonAction;

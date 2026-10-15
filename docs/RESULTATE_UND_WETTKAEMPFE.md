@@ -68,12 +68,14 @@ In Supabase existiert kein physisches «Blatt-Kopieren» mehr. Jeder Datensatz i
 1. **Jahres-Umschalter im Vorstandscockpit:**
    - Oben im Cockpit wird ein Dropdown für das Jahr ergänzt (`2026 (Aktiv)`, `2025 (Archiv)` etc.).
    - Archivierte Jahre werden schreibgeschützt geöffnet.
-2. **Aktion «Saison archivieren & neues Jahr starten»:**
-   - Wird am Ende der Saison (Oktober/November) im Aktionen-Menü ausgelöst.
-   - Bestätigungsdialog: Fragt Schützenmeister, ob die Saison `2026` abgeschlossen und die Saison `2027` initialisiert werden soll.
+2. **Aktion «Saison archivieren & neues Jahr starten» (mit manuellem Zieljahr & Kollisionsschutz):**
+   - Wird am Ende der Saison (Oktober/November) im Aktionen-Menü ausgelöst (`openArchiveSeasonModal`).
+   - Ein übersichtliches Modal zeigt das aktuelle Quell-/Archivjahr (z. B. `2026`) und bietet ein **frei editierbares Eingabefeld für das neue Zieljahr** (z. B. `2027`).
+   - **Kollisionsprüfung:** Existieren für das gewählte Zieljahr in `contest_results` bereits Einträge, erfolgt eine explizite Warn- und Bestätigungsabfrage vor dem Überschreiben.
    - **Code-Ablauf:**
-     1. Die Teams und Schützen-Zuordnungen werden für das neue Jahr (`2027`) aus `contest_setups` oder der Vorsaison vorerfasst (Punkte auf `NULL`).
-     2. Die alte Saison `2026` bleibt vollständig in `contest_results` konserviert.
+     1. Die Teams und Schützen-Zuordnungen werden für das neue Jahr (`targetYear`) aus der aktuellen Saison vorerfasst (Punkte auf `NULL`). Bei der SGM bleibt die Schiessstellung (`liegend`/`kniend`) strikt erhalten.
+     2. Die alte Saison bleibt unverändert in `public.contest_results` konserviert und wandert ins Archiv.
+     3. Das Cockpit schaltet automatisch auf die neu initialisierte Saison um.
 3. **Automatischer Abruf auf der Vereins-Homepage (`resultate.html`):**
    - Das Archiv-Dropdown (`jahr-select`) auf der Homepage liest dynamisch alle vorhandenen Jahre aus Supabase (`contest_results` und `jm_seasons`).
    - Wählt ein Besucher `2025` oder `2026`, sendet das Frontend einfach:
@@ -87,27 +89,28 @@ In Supabase existiert kein physisches «Blatt-Kopieren» mehr. Jeder Datensatz i
 
 ### 4.1 Warum wirkt das Resultate-Modul aktuell überfrachtet?
 1. **Karten-Explosion (28 Karten bei Mannschaft):**
-   - Bei 7 Runden à 4 Teams (Muhen 1, Muhen 2, Muhen 3, Pool) werden aktuell **28 grosse Karten** untereinander gerendert. Der Nutzer verliert die Übersicht und muss endlos scrollen.
+   - Bei 7 Runden à 4 Teams (Muhen 1, Muhen 2, Muhen 3, Pool) wurden historisch **28 grosse Karten** untereinander gerendert. Der Nutzer verlor die Übersicht und musste endlos scrollen.
 2. **Button-Dschungel in der Kopfzeile:**
-   - `Aus Jahresmeisterschaft synchronisieren`, `📸 Foto einlesen`, `📥 Von Setup laden`, `🔄 Laden`, `💾 Gespeichert` stehen alle unstrukturiert nebeneinander.
+   - Ein redundanter «🔄 Laden»-Button sowie verschiedene Spezialfunktionen standen unstrukturiert nebeneinander.
 3. **Ständiges «Schütze hinzufügen» Formular:**
-   - Ein grosses graues Formular am unteren Seitenrand mit 4 Dropdowns nimmt dauerhaft Platz weg, obwohl neue Schützen selten unter dem Jahr hinzugefügt werden.
+   - Ein grosses graues Formular am unteren Seitenrand mit 4 Dropdowns nahm dauerhaft Platz weg, obwohl neue Schützen selten unter dem Jahr hinzugefügt werden.
 
 ### 4.2 Der 4-Punkte-Bereinigungsplan
 1. **Runden-Sub-Navigation (Tabs / Pills):**
    - Statt alle 7 Runden gleichzeitig anzuzeigen, führt eine schlanke Runden-Leiste (`Runde 1` bis `Runde 7` sowie `Kompakt-Matrix`) durch den Wettbewerb.
    - Auf einen Blick sieht der Schützenmeister genau die 3–4 Teams der aktuellen Runde.
-2. **Bündelung im «⚡ Aktionen»-Dropdown:**
+2. **Bündelung im «⚡ Aktionen»-Dropdown & Bereinigung:**
+   - Der redundante «🔄 Laden»-Button wurde entfernt, da Daten automatisch bei Navigation und Modulstart geladen werden.
    - Alle Sonderfunktionen wandern in ein aufgeräumtes Dropdown-Menü:
-     - 📥 *SGM Excel-Standblatt importieren* (neu)
+     - 📥 *SGM Excel-Standblatt importieren* (bei Gruppe)
      - 🔄 *Aus Jahresmeisterschaft synchronisieren* (bei Mannschaft)
      - 👥 *Aus Team-Setup laden*
      - 📸 *KI-Standblattfoto einlesen (OCR)*
-     - 🗄️ *Saison archivieren & Jahr wechseln...*
+     - 🗄️ *Saison archivieren / Neues Jahr starten...* (mit manuellem Zieljahr-Modal)
 3. **Standardisierter Speichern-Button (`SaveButtonKit`):**
    - Konsistent wie in Jahresmeisterschaft und Termine: Dezent grau wenn gespeichert, auffällig orange-gelb mit Änderungszähler (`💾 Speichern (3)`), sobald Änderungen vorliegen.
 4. **Schützen-Verwaltung als kompaktes Modal:**
-   - Ein eleganter Button `+ Schütze erfassen` öffnet bei Bedarf ein kleines Modal, statt permanent die Seite zu überfrachten.
+   - Ein eleganter Button `+ Schütze` öffnet bei Bedarf ein kleines Modal, statt permanent die Seite zu überfrachten.
 
 ### 4.3 SGM Gruppenmeisterschaft Layout & Stellungs-Sortierung
 - **Grosszügiges 2-Spalten-Layout:** Da in der SGM 6 Spalten (Name, Stellung, Team, P1, P2, Total) erfasst werden, nutzen die Gruppen-Karten `col-12 col-lg-6` und `overflow-x: auto`. Dies verhindert das Abschneiden von Passe 2 (P2) und Namenskürzungen.
