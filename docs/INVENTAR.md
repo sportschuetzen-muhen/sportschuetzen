@@ -256,6 +256,11 @@ vorstand/js/inventar/
 - **Frontend- & UI-Integration:** In der Bestandsliste wird die Spalte als `Schaft` geführt (inkl. Sortierung und TableKit-Spaltensteuerung). Im Erfassungs- und Bearbeitungsmodal `#modal-inventar-item` steht das Feld für Gewehre direkt zur Verfügung und wird beim Speichern in Supabase persistiert.
 - **Smarter Excel- & CSV-Import:** Der Importer erkennt Spaltenköpfe wie `Schaft`, `Stock`, `Schaftart` und `Schafttyp`. Enthält eine angelieferte Tabelle Schaft-Daten in einer fälschlicherweise als `Distanz` bezeichneten Spalte (z. B. *Holzschaft*, *Aluschaft*, *Alu*, *Bügel*, *Standard*), erkennt das System dies automatisch, weist den Wert `stock` zu und setzt die Schiessdistanz standardmässig auf `50m`. Die herunterladbare Mustervorlage (.xlsx) wurde für Gewehre entsprechend um die Spalte `Schaft` erweitert.
 
+### 5.13 Live-Zahlungsstatus & Debitoren-Abgleich in der Pfandkasse
+- **Echtzeit-Synchronisation mit dem Rechnungsmodul:** In der Tabelle «Finanzen & Pfand» wird zu jedem offenen Pfandposten die hinterlegte Zahlungsart bzw. QR-Rechnungsnummer (`DP-2026-XXXX`) inklusive aktuellem Debitoren-Status angezeigt (z. B. `Bezahlt 🟢` via Bank/Camt.054 oder `Rechnung offen 🟡`).
+- **Differenzierte Kassenkarten:** Die KPI-Übersicht im Pfand-Journal schlüsselt das offene Gesamtdepot transparent auf in tatsächlich erhaltene Mittel (`Bezahlt/Erhalten` via Bar/Twint/Bank) und noch `Ausstehende Rechnungen`. Dies ermöglicht dem Materialwart und Kassier den sofortigen Abgleich mit dem Passivkonto `2030 (Kautionen & Depots)` in der Buchhaltung.
+
+
 
 
 

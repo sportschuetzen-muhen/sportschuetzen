@@ -392,6 +392,7 @@ function renderInventarUI(container) {
                                 <th>Mitglied</th>
                                 <th>Kategorie</th>
                                 <th>Gegenstand</th>
+                                <th>Zahlungsart / QR-Rechnung</th>
                                 <th class="text-end">Betrag</th>
                             </tr>
                         </thead>

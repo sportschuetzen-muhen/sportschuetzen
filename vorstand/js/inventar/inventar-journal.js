@@ -505,8 +505,31 @@ window.storniereInventarBuchung = async function(safeGroup) {
 function renderFinanzen() {
     if (!inventarState?.pfand) return;
 
+    // Aktuelle Rechnungsstati dynamisch mit window._invoices abgleichen (falls im Portal frisch bezahlt)
+    if (window._invoices && Array.isArray(window._invoices)) {
+        inventarState.pfand.forEach(p => {
+            if (p.invoice_id) {
+                const liveInv = window._invoices.find(i => String(i.id).trim() === String(p.invoice_id).trim());
+                if (liveInv) {
+                    p.Invoice_Status = liveInv.status;
+                    p.Invoice_Open = Number(liveInv.open_amount || 0);
+                    p.Invoice_Total = Number(liveInv.total_amount || 0);
+                }
+            }
+        });
+    }
+
     const offene = inventarState.pfand.filter(p => p.Status === 'Offen');
     const total  = offene.reduce((sum, p) => sum + (parseFloat(p.Betrag) || 0), 0);
+
+    // Unterteilung: Bereits erhalten (Bar/Twint/Rechnung bezahlt) vs. Ausstehende QR-Rechnungen
+    const bezahltTotal = offene.reduce((sum, p) => {
+        const isPaid = (p.Invoice_Status === 'bezahlt') || 
+                       (!p.invoice_id && (p.Zahlungsart || '').toLowerCase().includes('bar')) ||
+                       (!p.invoice_id && (p.Zahlungsart || '').toLowerCase().includes('twint'));
+        return isPaid ? sum + (parseFloat(p.Betrag) || 0) : sum;
+    }, 0);
+    const ausstehendRechnungTotal = Math.max(0, total - bezahltTotal);
     
     // Stats Karten
     const statsEl = document.getElementById('finanz-stats');
@@ -517,19 +540,23 @@ function renderFinanzen() {
         }, {});
 
         statsEl.innerHTML = `
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm p-3 bg-primary text-white">
+            <div class="col-md-5">
+                <div class="card border-0 shadow-sm p-3 bg-primary text-white h-100">
                     <div class="small text-uppercase fw-bold opacity-75">Pfand-Kasse (Offen)</div>
                     <div class="fs-2 fw-bold">CHF ${total.toFixed(2)}</div>
+                    <div class="small opacity-90 mt-1 d-flex flex-wrap gap-2 pt-1 border-top border-white-50">
+                        <span><i class="fas fa-check-circle me-1"></i>Bezahlt/Erhalten: <strong>CHF ${bezahltTotal.toFixed(2)}</strong></span>
+                        ${ausstehendRechnungTotal > 0 ? `<span><i class="fas fa-clock me-1 text-warning"></i>Offene Rechnungen: <strong>CHF ${ausstehendRechnungTotal.toFixed(2)}</strong></span>` : ''}
+                    </div>
                 </div>
             </div>
-            <div class="col-md-8">
-                <div class="card border-0 shadow-sm p-3">
+            <div class="col-md-7">
+                <div class="card border-0 shadow-sm p-3 h-100">
                     <div class="small text-uppercase fw-bold text-muted mb-2">Nach Kategorie</div>
-                    <div class="d-flex gap-3">
+                    <div class="d-flex flex-wrap gap-2">
                         ${Object.entries(katStats).map(([kat, val]) => `
                             <div>
-                                <span class="badge bg-light text-dark">${kat}: CHF ${val.toFixed(2)}</span>
+                                <span class="badge bg-light text-dark border px-2.5 py-1.5">${kat}: <strong>CHF ${val.toFixed(2)}</strong></span>
                             </div>
                         `).join('')}
                     </div>
@@ -542,7 +569,7 @@ function renderFinanzen() {
     const tbody = document.getElementById('pfand-table-body');
     if (tbody) {
         if (offene.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">Kein offenes Pfand vorhanden.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Kein offenes Pfand vorhanden.</td></tr>';
             return;
         }
 
@@ -553,12 +580,49 @@ function renderFinanzen() {
             const item = (inventarState[keyMap[p.Kategorie]] || []).find(it => it.ID.toString() === p.Inventar_ID.toString());
             const label = item ? getItemLabel(p.Kategorie, item) : p.Inventar_ID;
 
+            let paymentBadge = '';
+            if (p.invoice_id) {
+                const invStatus = (p.Invoice_Status || 'offen').toLowerCase();
+                if (invStatus === 'bezahlt') {
+                    paymentBadge = `
+                        <div class="d-inline-flex align-items-center gap-1.5">
+                            <span class="badge bg-light text-primary border font-monospace" title="QR-Rechnung ${p.invoice_id}"><i class="fas fa-file-invoice me-1"></i>${p.invoice_id}</span>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold"><i class="fas fa-check-circle me-1"></i>Bezahlt</span>
+                        </div>`;
+                } else if (invStatus === 'storniert') {
+                    paymentBadge = `
+                        <div class="d-inline-flex align-items-center gap-1.5">
+                            <span class="badge bg-light text-muted border font-monospace text-decoration-line-through">${p.invoice_id}</span>
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-ban me-1"></i>Storniert</span>
+                        </div>`;
+                } else if (invStatus.includes('teilweise')) {
+                    paymentBadge = `
+                        <div class="d-inline-flex align-items-center gap-1.5">
+                            <span class="badge bg-light text-primary border font-monospace"><i class="fas fa-file-invoice me-1"></i>${p.invoice_id}</span>
+                            <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle"><i class="fas fa-adjust me-1"></i>Teilzahlung</span>
+                        </div>`;
+                } else {
+                    paymentBadge = `
+                        <div class="d-inline-flex align-items-center gap-1.5">
+                            <span class="badge bg-light text-primary border font-monospace"><i class="fas fa-file-invoice me-1"></i>${p.invoice_id}</span>
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-semibold"><i class="fas fa-clock me-1"></i>Rechnung offen</span>
+                        </div>`;
+                }
+            } else if ((p.Zahlungsart || '').toLowerCase().includes('bar')) {
+                paymentBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-coins me-1"></i>Bar bezahlt</span>`;
+            } else if ((p.Zahlungsart || '').toLowerCase().includes('twint')) {
+                paymentBadge = `<span class="badge bg-info-subtle text-info border border-info-subtle"><i class="fas fa-mobile-alt me-1"></i>Twint bezahlt</span>`;
+            } else {
+                paymentBadge = `<span class="badge bg-light text-secondary border">${p.Zahlungsart || '-'}</span>`;
+            }
+
             return `<tr>
                 <td>${formatCH(p.Datum_Einnahme)}</td>
                 <td class="fw-bold">${mitglied}</td>
                 <td><span class="badge bg-secondary">${p.Kategorie}</span></td>
-                <td><small>${label}</small></td>
-                <td class="text-end fw-bold">CHF ${(parseFloat(p.Betrag)||0).toFixed(2)}</td>
+                <td><small class="fw-semibold">${label}</small></td>
+                <td>${paymentBadge}</td>
+                <td class="text-end fw-bold font-monospace">CHF ${(parseFloat(p.Betrag)||0).toFixed(2)}</td>
             </tr>`;
         }).join('');
     }

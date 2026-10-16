@@ -154,7 +154,10 @@ function mapTransaktionFromSupabase(t) {
     };
 }
 
-function mapPfandFromSupabase(p) {
+function mapPfandFromSupabase(p, invMap = {}) {
+    const inv = (p.invoice_id && invMap[p.invoice_id]) 
+        ? invMap[p.invoice_id] 
+        : ((window._invoices || []).find(i => String(i.id).trim() === String(p.invoice_id).trim()) || null);
     return {
         ID: p.id,
         Mitglied_ID: p.member_id ? String(p.member_id) : '',
@@ -167,7 +170,10 @@ function mapPfandFromSupabase(p) {
         Status: p.status || 'Offen',
         Zahlungsart: p.payment_method || '-',
         invoice_id: p.invoice_id || '',
-        Invoice_ID: p.invoice_id || ''
+        Invoice_ID: p.invoice_id || '',
+        Invoice_Status: inv ? inv.status : (p.invoice_id ? 'offen' : null),
+        Invoice_Open: inv ? Number(inv.open_amount || 0) : (p.invoice_id ? Number(p.amount || 0) : 0),
+        Invoice_Total: inv ? Number(inv.total_amount || 0) : (p.invoice_id ? Number(p.amount || 0) : 0)
     };
 }
 
@@ -251,13 +257,29 @@ async function loadInventarData(force = false) {
                     configRows.push(row);
                 }
 
+                // Rechnungsstati für Pfandpositionen ermitteln
+                const rawPfand = pfandRes.data || [];
+                const pfandInvIds = [...new Set(rawPfand.map(p => p.invoice_id).filter(Boolean))];
+                let pfandInvMap = {};
+                if (pfandInvIds.length > 0) {
+                    try {
+                        const { data: invList } = await supa
+                            .from('invoices')
+                            .select('id, status, open_amount, total_amount, payment_method, payment_date')
+                            .in('id', pfandInvIds);
+                        (invList || []).forEach(inv => { pfandInvMap[inv.id] = inv; });
+                    } catch (invErr) {
+                        console.warn("Hinweis beim Laden der Pfand-Rechnungsstati:", invErr);
+                    }
+                }
+
                 inventarState = {
                     gewehre: items.filter(i => i.category === 'gewehr').map(mapGewehrFromSupabase),
                     schluessel: items.filter(i => i.category === 'schluessel').map(mapSchluesselFromSupabase),
                     kleidung: items.filter(i => i.category === 'kleidung').map(mapKleidungFromSupabase),
                     schiessbekleidung: items.filter(i => i.category === 'schiessbekleidung').map(mapSchiessbekleidungFromSupabase),
                     transaktionen: (transRes.data || []).map(mapTransaktionFromSupabase),
-                    pfand: (pfandRes.data || []).map(mapPfandFromSupabase),
+                    pfand: rawPfand.map(p => mapPfandFromSupabase(p, pfandInvMap)),
                     protokoll: (logRes.data || []).map(mapLogFromSupabase),
                     config: configRows,
                     rawConfig: confList,
