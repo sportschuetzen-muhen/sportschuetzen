@@ -12,11 +12,23 @@ function renderUmfragenUI(container) {
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-gruppen" onclick="loadGroupsIfEventSelected()">🎯 Gruppenschiessen Anmeldung</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-historie" onclick="loadUmfragenHistorie()">📜 Rückmeldungen & Status komplett</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-personenkreise" onclick="loadUmfragenPersonenkreise()">👥 Einladungskreise</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-controlling" onclick="initGVControllingTab()">⚙️ GV-Planung & Auswertung</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-umfragen-controlling">🏛️ GV-Schaltzentrale</a></li>
     </ul>
 
     <div class="tab-content">
         <!-- TAB 1: EVENTS VERWALTEN -->
+        <div class="tab-pane fade show active" id="tab-umfragen-events">
+            <!-- Hinweis für Generalversammlung -->
+            <div class="alert alert-light border py-2.5 px-3 small rounded-3 mb-2 text-muted d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-xs">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fas fa-landmark text-primary"></i>
+                    <span><strong>Tipp für die Generalversammlung:</strong> Damit Anmeldungen und Menüwünsche automatisch mit der GV-Schaltzentrale und der Mitglieder-App verknüpft werden, muss der Titel das Wort <strong>«Generalversammlung»</strong> enthalten (Gross-/Kleinschreibung egal).</span>
+                </div>
+                <button class="btn btn-xs btn-outline-primary py-1 px-2.5 rounded-2" onclick="navTo('gv-dossier')">
+                    <i class="fas fa-external-link-alt me-1"></i> Zur GV-Schaltzentrale
+                </button>
+            </div>
+
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <div class="d-flex gap-2">
                     ${canWrite ? `
@@ -237,78 +249,33 @@ function renderUmfragenUI(container) {
             </div>
         </div>
 
-        <!-- TAB 4: ERWEITERTES CONTROLLING (GV & PRAESENZ) -->
+        <!-- TAB 4: GENERALVERSAMMLUNG (WEITERLEITUNG IN GV-SCHALTZENTRALE) -->
         <div class="tab-pane fade" id="tab-umfragen-controlling">
-            <div class="row g-3">
-                <div class="col-md-12">
-                    <div class="card border-0 rounded-4 p-3 mb-3 bg-primary-subtle border-primary-subtle shadow-sm">
-                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <div class="d-flex align-items-center gap-3">
-                                <div class="rounded-3 bg-primary text-white d-flex align-items-center justify-content-center" style="width: 42px; height: 42px; font-size: 1.2rem;">
-                                    <i class="fas fa-landmark"></i>
-                                </div>
-                                <div>
-                                    <h6 class="mb-0 fw-bold text-primary">Generalversammlung Schaltzentrale</h6>
-                                    <p class="small text-muted mb-0">Die zentrale Steuerung der GV, Traktanden mit Untertraktanden, Beilagen-Uploads und der E-Mail-Versand werden im Modul <strong>Generalversammlung</strong> verwaltet.</p>
-                                </div>
-                            </div>
-                            <button class="btn btn-primary btn-sm fw-bold px-3 py-2 rounded-3 shadow-sm" onclick="navTo('gv-dossier')">
-                                <i class="fas fa-external-link-alt me-1.5"></i> Zum GV-Cockpit wechseln
-                            </button>
+            <div class="card border-0 rounded-4 p-4 shadow-sm bg-white">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="rounded-3 bg-primary text-white d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; font-size: 1.5rem;">
+                        <i class="fas fa-landmark"></i>
+                    </div>
+                    <div>
+                        <h5 class="mb-1 fw-bold text-dark">Generalversammlung – Vollständig in die GV-Schaltzentrale integriert</h5>
+                        <p class="text-muted small mb-0">Die Planung, Traktanden, Beilagen, Mailaussendungen sowie Anmeldungen und die Menüzählung für den Wirt werden jetzt zentral im Modul <strong>Generalversammlung</strong> verwaltet.</p>
+                    </div>
+                </div>
+
+                <div class="alert alert-light border py-3 px-3 rounded-3 mb-4">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="fas fa-info-circle text-primary mt-1"></i>
+                        <div class="small text-muted">
+                            <strong>Wichtiger Hinweis zur automatischen Verknüpfung:</strong><br>
+                            Damit eine Umfrage für die Generalversammlung automatisch von der GV-Schaltzentrale und der Mitglieder-App erkannt und mit Traktanden/Einladung verknüpft wird, muss ihr Titel im Reiter <em>«Events verwalten»</em> zwingend das Wort <strong>«Generalversammlung»</strong> enthalten (Gross-/Kleinschreibung egal, z. B. <em>«100. Generalversammlung 2026»</em>).
                         </div>
                     </div>
                 </div>
-                <div class="col-md-6">
-                    <div class="card p-3">
-                        <h5 class="card-title">Stammdaten / Platzhalter</h5>
-                        <div id="gv-list-embedded"></div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="card p-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h5 class="card-title mb-0">Praesenz / Anmeldungen (Eventplaner)</h5>
-                            <button class="btn btn-outline-secondary btn-sm py-0 px-2" title="Teilnehmerliste neu laden" onclick="reloadGVParticipants()">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label small mb-1 fw-bold">Verknuepftes Event waehlen:</label>
-                            <select class="form-select form-select-sm gv-event-selector" id="gv-event-selector" onchange="loadGVParticipants(this.value)">
-                                <option value="">-- Lade Events... --</option>
-                            </select>
-                        </div>
 
-                        <!-- Such- und Filterleiste -->
-                        <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-                            <div class="input-group input-group-sm flex-grow-1" style="min-width: 150px;">
-                                <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
-                                <input type="text" class="form-control border-start-0 ps-0" id="gv-search-input" placeholder="Mitglied suchen..." oninput="filterGvTable()">
-                            </div>
-                            <div class="btn-group btn-group-sm" role="group" id="gv-status-filter-group">
-                                <button type="button" class="btn btn-outline-secondary btn-sm active" id="gv-filter-alle" onclick="setGvStatusFilter('alle', this)">Alle</button>
-                                <button type="button" class="btn btn-outline-success btn-sm" id="gv-filter-ja" onclick="setGvStatusFilter('ja', this)">Ja</button>
-                                <button type="button" class="btn btn-outline-danger btn-sm" id="gv-filter-nein" onclick="setGvStatusFilter('nein', this)">Nein</button>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" id="gv-filter-offen" onclick="setGvStatusFilter('offen', this)">Offen</button>
-                            </div>
-                        </div>
-
-                        <div class="table-responsive" style="max-height: 430px;">
-                            <table class="table table-sm table-striped align-middle mb-0">
-                                <thead class="table-light sticky-top">
-                                    <tr>
-                                        <th style="cursor: pointer;" onclick="sortGvTable('name')">Name &#8645;</th>
-                                        <th style="cursor: pointer;" onclick="sortGvTable('status')">Teilnahme &#8645;</th>
-                                        <th class="text-end" style="width: 135px;">Aktion</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="gv-anmelde-body" class="gv-anmelde-body">
-                                    <tr><td colspan="3" class="text-center text-muted">Bitte Event auswaehlen</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="gv-anmelde-summary" class="mt-3 gv-anmelde-summary"></div>
-                    </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary fw-bold px-4 py-2.5 rounded-3 shadow-sm" onclick="navTo('gv-dossier')">
+                        <i class="fas fa-external-link-alt me-1.5"></i> Direkt zur GV-Schaltzentrale wechseln
+                    </button>
                 </div>
             </div>
         </div>

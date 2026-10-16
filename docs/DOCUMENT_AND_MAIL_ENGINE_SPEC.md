@@ -427,3 +427,17 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
   - Tab 4 („Tools & GV-Steuerung“) und die 4 historischen Einzelfelder (`doc_*_url`) in „Anlässe & Umfragen“ wurden entkoppelt.
   - Alle Berichte und Dokumente werden als Single Source of Truth über `public.campaign_attachments` im Modul Generalversammlung geführt und vom Master-Assembler gestempelt.
 
+### 11.2 Konsolidierung: Anmeldungen, Präsenzkontrolle & Gastronomie-Bestellung (Oktober 2026)
+- **Zentraler Reiter 5 `[ 👥 Anmeldungen & Präsenz ]`:**
+  - Live-Verknüpfung mit `public.poll_events` (über `linked_event_id` in `gv_instances`).
+  - Teilnehmer-Cockpit mit Echtzeit-Status: Zusagen, Absagen, Offen (Nicht-Reagiert), Essen (Fleisch / Vegi).
+  - Vor-Ort-Präsenzkontrolle: 1-Klick-Toggle (`gvDossierToggleAnwesend`) zur Erfassung der tatsächlichen Anwesenheit am GV-Abend in `public.gv_praesenz` mit automatischer Berechnung des absoluten Mehrs (Stimmquorum).
+  - Manuelle Nachmeldung / Mutation via Modal (`gvDossierOpenRSVPModal`) direkt in `public.poll_responses`.
+- **Ansicht `[ 🍽️ Gastronomie & Wirt ]`:**
+  - Druck- und versandfertige Menü-Bestellung für den Schützenstuben-Wirt (Gesamtzahl Essen, Aufteilung Fleisch vs. Vegi, Gästeliste mit Sonderwünschen / Allergien).
+  - 1-Klick-Aktion «In Zwischenablage kopieren» für den unkomplizierten Versand per E-Mail oder WhatsApp an das Gastroteam.
+- **Automatische Verknüpfung über das Schlüsselwort «Generalversammlung»:**
+  - Beim Erstellen oder Auswählen einer GV verknüpft das System automatisch den passenden Umfrage-Event des gleichen Jahres, wenn der Titel das Wort **«Generalversammlung»** enthält (Case-Insensitive).
+  - Ein dezenter Hinweisbanner im Dashboard erinnert den Benutzer an diese Schreibweise.
+
+

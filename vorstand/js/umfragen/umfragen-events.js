@@ -57,7 +57,12 @@ function renderDesktopEventRow(e, idx, canWrite) {
     return `
     <tr>
         <td class="text-muted small align-middle">${escapeHtml(e.id || '-')}</td>
-        <td><input type="text" class="form-control form-control-sm" value="${escapeHtml(e.title || '')}" onchange="umfragenState[${idx}].title=this.value; syncEventField(${idx}, 'title', this.value); window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
+        <td>
+            <div class="d-flex flex-column gap-1">
+                <input type="text" class="form-control form-control-sm" value="${escapeHtml(e.title || '')}" onchange="onUmfrageTitleChange(${idx}, this.value)" ${!canWrite?'readonly disabled':''}>
+                ${(e.title || '').toLowerCase().includes('generalversammlung') ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle text-start py-0.5 px-1.5" style="font-size:0.68rem; width: fit-content;"><i class="fas fa-landmark me-1"></i>Generalversammlung</span>' : ''}
+            </div>
+        </td>
         <td><input type="date" class="form-control form-control-sm" value="${formatISODate(e.datum)}" onchange="umfragenState[${idx}].datum=this.value; syncEventField(${idx}, 'datum', this.value); window.markUnsaved()" ${!canWrite?'readonly disabled':''}></td>
         <td>
             <select class="form-select form-select-sm" onchange="umfragenState[${idx}].gruppe=this.value; syncEventField(${idx}, 'gruppe', this.value); window.markUnsaved()" ${!canWrite?'disabled':''}>
@@ -173,12 +178,19 @@ function renderMobileEventCard(e, idx, canWrite) {
 
         <!-- Titel Input (Vollbreite, sofort lesbar & editierbar) -->
         <div class="mb-2">
-            <label class="form-label text-muted small mb-1 fw-bold">Titel des Anlasses</label>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label text-muted small mb-0 fw-bold">Titel des Anlasses</label>
+                ${(e.title || '').toLowerCase().includes('generalversammlung') ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:0.68rem;"><i class="fas fa-landmark me-1"></i>Generalversammlung</span>' : ''}
+            </div>
             <input type="text" id="mob-input-title-${idx}" class="form-control"
                 value="${escapeHtml(e.title || '')}"
-                placeholder="z.B. Endschiessen 2026"
-                onchange="umfragenState[${idx}].title=this.value; syncEventField(${idx}, 'title', this.value); window.markUnsaved()"
+                placeholder="z.B. 100. Generalversammlung 2026"
+                onchange="onUmfrageTitleChange(${idx}, this.value)"
                 ${!canWrite ? 'readonly disabled' : ''}>
+            <div class="form-text text-muted" style="font-size:0.72rem;">
+                <i class="fas fa-info-circle text-primary me-1"></i>
+                <strong>Tipp für die GV:</strong> Der Titel muss das Wort <strong>«Generalversammlung»</strong> enthalten (Gross-/Kleinschreibung egal), damit Anmeldungen &amp; Menüwünsche automatisch mit der GV-Schaltzentrale und der Mitglieder-App verknüpft werden.
+            </div>
         </div>
 
         <!-- Datum & Personenkreis nebeneinander -->
@@ -965,4 +977,29 @@ function updateQuestionsBadge(idx) {
     }
 }
 window.updateQuestionsBadge = updateQuestionsBadge;
+
+// Intelligente Titel-Änderung mit automatischer GV-Erkennung
+function onUmfrageTitleChange(idx, val) {
+    if (!umfragenState || !umfragenState[idx]) return;
+    const cleanVal = String(val || '').trim();
+    umfragenState[idx].title = cleanVal;
+    syncEventField(idx, 'title', cleanVal);
+
+    if (cleanVal.toLowerCase().includes('generalversammlung')) {
+        umfragenState[idx].event_type = 'gv';
+        if (!umfragenState[idx].frage_essen) {
+            umfragenState[idx].frage_essen = true;
+            syncEventField(idx, 'frage_essen', true);
+        }
+        if (!umfragenState[idx].frage_grund) {
+            umfragenState[idx].frage_grund = true;
+            syncEventField(idx, 'frage_grund', true);
+        }
+        console.log(`🏛️ [Umfragen] Generalversammlung erkannt in Event #${idx} -> frage_essen & frage_grund aktiviert.`);
+        renderUmfragenEventsList();
+    }
+    window.markUnsaved();
+}
+window.onUmfrageTitleChange = onUmfrageTitleChange;
+
 

@@ -29,12 +29,15 @@
         pollEvents: [],
         members: [],
         selectedMemberId: null,
-        activeLeftTab: 'traktanden',   // 'traktanden' | 'stammdaten' | 'beilagen' | 'mail'
-        activeRightTab: 'preview-pdf', // 'preview-mail' | 'preview-pdf'
+        activeLeftTab: 'traktanden',   // 'traktanden' | 'stammdaten' | 'beilagen' | 'mail' | 'anmeldungen'
+        activeRightTab: 'preview-pdf', // 'preview-mail' | 'preview-pdf' | 'preview-wirt'
         compiledPdfUrl: null,
         compiledPdfBase64: null,
         isCompiling: false,
-        isSending: false
+        isSending: false,
+        participantsData: [],
+        participantsSearchQuery: '',
+        participantsFilter: 'alle'
     };
 
     function getSupabase() {
@@ -130,8 +133,23 @@
                     is_election_year: false,
                     linked_event_id: '',
                     praesident_wort: '',
-                    budget_text: ''
+                    budget_text: '',
+                    vorstand_mails: []
                 };
+            }
+
+            // Intelligente Auto-Vorbelegung des verknüpften Umfrage-Events, falls noch nicht explizit gewählt
+            if (!state.gvInstance.linked_event_id && state.pollEvents && state.pollEvents.length > 0) {
+                const autoMatch = state.pollEvents.find(ev => {
+                    const t = (ev.title || '').toLowerCase();
+                    const d = (ev.datum || '');
+                    return t.includes('generalversammlung') && d.startsWith(String(curYear));
+                }) || state.pollEvents.find(ev => (ev.title || '').toLowerCase().includes('generalversammlung'));
+
+                if (autoMatch) {
+                    state.gvInstance.linked_event_id = autoMatch.id;
+                    console.log(`💡 [GV-Dossier] Auto-Preselect verknüpftes Event gefunden: "${autoMatch.title}" (${autoMatch.id})`);
+                }
             }
 
             // 4. Kampagne aus communication_campaigns suchen oder erstellen
@@ -191,9 +209,101 @@
                 .order('sort_order', { ascending: true });
             state.traktanden = trData || [];
 
+            // 7. Teilnehmer- & Anmeldedaten laden
+            await loadGVParticipantsData();
+
         } catch (err) {
             console.error("❌ Fehler beim Laden der GV-Daten:", err);
             if (typeof showError === 'function') showError("Fehler beim Laden: " + err.message);
+        }
+    }
+
+    /**
+     * Lädt Teilnehmer, RSVPs und Vor-Ort-Präsenz für die Generalversammlung
+     */
+    async function loadGVParticipantsData(forceRefresh = false) {
+        const state = window._gvDossierState;
+        const eventId = state.gvInstance?.linked_event_id;
+        const curYear = state.year;
+        const gvId = state.gvInstance?.id || `gv_${curYear}`;
+        const supa = getSupabase();
+        if (!supa) return;
+
+        if (!forceRefresh && state.participantsData && state.participantsData.length > 0 && state.participantsEventId === eventId) {
+            return;
+        }
+
+        try {
+            const [membersRes, responsesRes, praesenzRes] = await Promise.allSettled([
+                supa.from('members')
+                    .select('id, person_number, first_name, last_name, primary_email, is_active, status_u21')
+                    .eq('is_active', true)
+                    .order('last_name', { ascending: true }),
+                eventId ? supa.from('poll_responses').select('*').eq('event_id', eventId) : Promise.resolve({ data: [] }),
+                supa.from('gv_praesenz').select('*').eq('gv_id', gvId)
+            ]);
+
+            const members = (membersRes.status === 'fulfilled' && !membersRes.value.error) ? (membersRes.value.data || []) : [];
+            const responses = (responsesRes.status === 'fulfilled' && !responsesRes.value.error) ? (responsesRes.value.data || []) : [];
+            const praesenzList = (praesenzRes.status === 'fulfilled' && !praesenzRes.value.error) ? (praesenzRes.value.data || []) : [];
+
+            const respMap = new Map();
+            responses.forEach(r => {
+                const liz = String(r.lizenz || '').trim();
+                if (liz) {
+                    respMap.set(liz, r);
+                    respMap.set(liz.length <= 6 ? liz.padStart(6, '0') : liz, r);
+                }
+            });
+
+            const praesenzMap = new Map();
+            praesenzList.forEach(p => {
+                const pn = String(p.person_number || '').trim();
+                if (pn) praesenzMap.set(pn, p);
+            });
+
+            state.participantsData = members.map(m => {
+                const pn = String(m.person_number || '');
+                const liz = pn.length <= 6 ? pn.padStart(6, '0') : pn;
+                const resp = respMap.get(liz) || respMap.get(pn);
+                const praesenz = praesenzMap.get(pn) || praesenzMap.get(liz);
+
+                let status = 'offen';
+                let essen = 0;
+                let vegi = 0;
+                let grund = '';
+
+                if (resp) {
+                    status = (resp.attending === true || resp.attending === 'true' || resp.attending === 1) ? 'ja' : 'nein';
+                    essen = parseInt(resp.essen) || 0;
+                    vegi = parseInt(resp.vegi) || 0;
+                    grund = resp.grund || '';
+                }
+
+                const isAnwesend = praesenz ? Boolean(praesenz.anwesend) : false;
+                const isStimmberechtigt = praesenz ? (praesenz.stimmberechtigt !== false) : true;
+
+                return {
+                    id: m.id,
+                    person_number: pn,
+                    lizenz: liz,
+                    name: `${m.last_name || ''} ${m.first_name || ''}`.trim(),
+                    first_name: m.first_name || '',
+                    last_name: m.last_name || '',
+                    email: m.primary_email || '',
+                    status: status,
+                    essen: essen,
+                    vegi: vegi,
+                    grund: grund,
+                    anwesend: isAnwesend,
+                    stimmberechtigt: isStimmberechtigt
+                };
+            });
+
+            state.participantsEventId = eventId;
+            console.log(`✅ [GV-Dossier] ${state.participantsData.length} Teilnehmer & Präsenzen synchronisiert.`);
+        } catch (err) {
+            console.error("❌ [GV-Dossier] Fehler beim Laden der Teilnehmer:", err);
         }
     }
 
@@ -287,6 +397,12 @@
                                         <i class="fas fa-envelope me-1.5"></i> E-Mail-Versand
                                     </button>
                                 </li>
+                                <li class="nav-item">
+                                    <button class="nav-link ${state.activeLeftTab === 'anmeldungen' ? 'active fw-bold text-primary border-bottom border-primary border-2' : 'text-muted'} pb-2.5" 
+                                            onclick="gvDossierSetLeftTab('anmeldungen')">
+                                        <i class="fas fa-users-cog me-1.5"></i> Anmeldungen &amp; Präsenz (${(state.participantsData || []).filter(p => p.status === 'ja').length})
+                                    </button>
+                                </li>
                             </ul>
                         </div>
 
@@ -297,7 +413,7 @@
                     </div>
                 </div>
 
-                <!-- RECHTE SPALTE: LIVE-MONITOR (E-MAIL & PDF VORSCHAU) -->
+                <!-- RECHTE SPALTE: LIVE-MONITOR (E-MAIL, PDF & WIRT VORSCHAU) -->
                 <div class="col-lg-6">
                     <div class="card border-0 shadow-sm rounded-4 h-100 bg-white">
                         <!-- HEADER RECHTE SPALTE: LIVE-MONITOR -->
@@ -309,6 +425,9 @@
                                     </button>
                                     <button type="button" class="btn ${state.activeRightTab === 'preview-mail' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="gvDossierSetRightTab('preview-mail')">
                                         <i class="fas fa-desktop me-1"></i> E-Mail-Vorschau
+                                    </button>
+                                    <button type="button" class="btn ${state.activeRightTab === 'preview-wirt' ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'}" onclick="gvDossierSetRightTab('preview-wirt')">
+                                        <i class="fas fa-utensils me-1"></i> Gastronomie &amp; Wirt
                                     </button>
                                 </div>
                             </div>
@@ -534,7 +653,7 @@
 
                     <div class="mb-2">
                         <label class="form-label small fw-bold mb-1">Verknüpftes RSVP-Event (Eventplaner / Rückmeldungen)</label>
-                        <select id="gv-stamm-linked-event" class="form-select form-select-sm">
+                        <select id="gv-stamm-linked-event" class="form-select form-select-sm" onchange="gvDossierOnLinkedEventChange(this.value)">
                             <option value="">-- Kein Event verknüpft --</option>
                             ${(state.pollEvents || []).map(ev => `
                                 <option value="${ev.id}" ${gv.linked_event_id === ev.id ? 'selected' : ''}>
@@ -542,7 +661,16 @@
                                 </option>
                             `).join('')}
                         </select>
-                        <div class="form-text small text-muted">Aus diesem Event werden die Rückmeldungen für Menüs & Entschuldigungen synchronisiert.</div>
+                        <div class="form-text small text-muted">
+                            <i class="fas fa-info-circle text-primary me-1"></i>
+                            Verknüpft die RSVPs aus dem Modul «Anlässe &amp; Umfragen». Damit ein Anlass hier automatisch zugeordnet wird, muss dessen Titel das Wort <strong>«Generalversammlung»</strong> enthalten (Gross-/Kleinschreibung egal).
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1">Vorstands-Kopien (E-Mail-Verteiler für GV-Prüfmails)</label>
+                        <input type="text" id="gv-stamm-vorstand-mails" class="form-control form-control-sm" placeholder="z.B. aktuar@example.ch; kassier@example.ch" value="${escapeHtml((gv.vorstand_mails || []).join('; '))}">
+                        <div class="form-text small text-muted">Mehrere E-Mail-Adressen mit Strichpunkt (;) trennen.</div>
                     </div>
 
                     <div class="mb-2">
@@ -737,6 +865,191 @@
                 });
             }
         }
+
+        // ---------------------------------------------------------------------
+        // TAB 5: ANMELDUNGEN & PRÄSENZKONTROLLE (TEILNEHMER & MENÜS)
+        // ---------------------------------------------------------------------
+        else if (state.activeLeftTab === 'anmeldungen') {
+            renderAnmeldungenPanel(panel);
+        }
+    }
+
+    /**
+     * Rendert das Panel für Teilnehmer, Menüs und Vor-Ort-Präsenzkontrolle
+     */
+    function renderAnmeldungenPanel(panel) {
+        if (!panel) return;
+        const state = window._gvDossierState;
+        const curYear = state.year;
+        const participants = state.participantsData || [];
+        const linkedId = state.gvInstance?.linked_event_id;
+        const linkedEvent = (state.pollEvents || []).find(e => e.id === linkedId);
+
+        // Kennzahlen berechnen
+        let countJa = 0;
+        let countNein = 0;
+        let countOffen = 0;
+        let countEssen = 0;
+        let countVegi = 0;
+        let countAnwesend = 0;
+        let countAnwesendStimm = 0;
+
+        participants.forEach(p => {
+            if (p.status === 'ja') {
+                countJa++;
+                countEssen += (p.essen || 0);
+                countVegi += (p.vegi || 0);
+            } else if (p.status === 'nein') {
+                countNein++;
+            } else {
+                countOffen++;
+            }
+            if (p.anwesend) {
+                countAnwesend++;
+                if (p.stimmberechtigt) countAnwesendStimm++;
+            }
+        });
+
+        const absolutesMehr = countAnwesendStimm > 0 ? (Math.floor(countAnwesendStimm / 2) + 1) : 0;
+
+        // Filtern nach Suche und Status
+        const q = (state.participantsSearchQuery || '').toLowerCase().trim();
+        const f = state.participantsFilter || 'alle';
+
+        const filtered = participants.filter(p => {
+            if (f === 'ja' && p.status !== 'ja') return false;
+            if (f === 'nein' && p.status !== 'nein') return false;
+            if (f === 'offen' && p.status !== 'offen') return false;
+            if (f === 'anwesend' && !p.anwesend) return false;
+
+            if (q) {
+                const nameMatch = (p.name || '').toLowerCase().includes(q);
+                const grundMatch = (p.grund || '').toLowerCase().includes(q);
+                if (!nameMatch && !grundMatch) return false;
+            }
+            return true;
+        });
+
+        panel.innerHTML = `
+            <!-- STATUS LEISTE -->
+            <div class="d-flex justify-content-between align-items-center mb-2.5 flex-wrap gap-2">
+                <div>
+                    <span class="small fw-bold text-muted text-uppercase">Anmeldungen &amp; Präsenzkontrolle ${curYear}:</span>
+                    <div class="small text-muted">
+                        ${linkedEvent ? `<i class="fas fa-link text-primary me-1"></i>Verknüpft: <strong>${escapeHtml(linkedEvent.title)}</strong>` : '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Kein Event verknüpft (in Stammdaten wählen)</span>'}
+                    </div>
+                </div>
+                <div class="d-flex gap-1.5">
+                    <button class="btn btn-xs btn-outline-secondary px-2 py-1" onclick="gvDossierReloadParticipants()" title="Teilnehmerliste neu laden">
+                        <i class="fas fa-sync-alt me-1"></i> Aktualisieren
+                    </button>
+                </div>
+            </div>
+
+            <!-- KENNZAHLEN CARDS -->
+            <div class="card p-2.5 bg-light border rounded-3 mb-2.5">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2"><i class="fas fa-check-circle me-1"></i>Zugesagt: ${countJa}</span>
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2"><i class="fas fa-times-circle me-1"></i>Abgesagt: ${countNein}</span>
+                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2"><i class="fas fa-question-circle me-1"></i>Offen: ${countOffen}</span>
+                    </div>
+                    <span class="badge bg-primary text-white py-1 px-2.5 shadow-xs" style="cursor:pointer;" onclick="gvDossierSetRightTab('preview-wirt')" title="Menübestellung für den Wirt anzeigen">
+                        <i class="fas fa-utensils me-1"></i> Essen: ${countEssen + countVegi} (🥩 ${countEssen} | 🥗 ${countVegi})
+                    </span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center small text-dark border-top pt-1.5 flex-wrap gap-1">
+                    <div>
+                        <i class="fas fa-user-check text-primary me-1"></i> Vor Ort anwesend: <strong>${countAnwesend}</strong>
+                        <span class="text-muted ms-1">(${countAnwesendStimm} stimmberechtigt)</span>
+                    </div>
+                    <div>
+                        🗳️ Absolutes Mehr: <strong class="text-primary">${countAnwesendStimm > 0 ? absolutesMehr : 0} Stimmen</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FILTER & SUCHE -->
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                <div class="input-group input-group-sm flex-grow-1" style="min-width: 140px;">
+                    <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-0" placeholder="Mitglied suchen..." value="${escapeHtml(state.participantsSearchQuery || '')}" oninput="gvDossierSearchParticipants(this.value)">
+                </div>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn ${f === 'alle' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="gvDossierFilterParticipants('alle')">Alle (${participants.length})</button>
+                    <button type="button" class="btn ${f === 'ja' ? 'btn-success fw-bold text-white' : 'btn-outline-success'}" onclick="gvDossierFilterParticipants('ja')">Ja (${countJa})</button>
+                    <button type="button" class="btn ${f === 'nein' ? 'btn-danger fw-bold text-white' : 'btn-outline-danger'}" onclick="gvDossierFilterParticipants('nein')">Nein (${countNein})</button>
+                    <button type="button" class="btn ${f === 'offen' ? 'btn-secondary fw-bold text-white' : 'btn-outline-secondary'}" onclick="gvDossierFilterParticipants('offen')">Offen (${countOffen})</button>
+                    <button type="button" class="btn ${f === 'anwesend' ? 'btn-info fw-bold text-white' : 'btn-outline-info'}" onclick="gvDossierFilterParticipants('anwesend')">Vor Ort (${countAnwesend})</button>
+                </div>
+            </div>
+
+            <!-- TABELLE -->
+            <div class="table-responsive border rounded-3 bg-white" style="max-height: 410px;">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Name</th>
+                            <th>Rückmeldung</th>
+                            <th>Essen</th>
+                            <th class="text-center" title="Vor Ort am GV-Abend anwesend">Vor Ort</th>
+                            <th class="text-end" style="width: 90px;">Aktion</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filtered.length === 0 ? `
+                            <tr><td colspan="5" class="text-center text-muted py-3">Keine passenden Mitglieder gefunden.</td></tr>
+                        ` : filtered.map(p => {
+                            const isJa = p.status === 'ja';
+                            const isNein = p.status === 'nein';
+
+                            let statusBadge = '<span class="badge bg-secondary-subtle text-secondary border">Offen</span>';
+                            if (isJa) {
+                                statusBadge = '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fas fa-check me-1"></i>Ja</span>';
+                            } else if (isNein) {
+                                statusBadge = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fas fa-times me-1"></i>Nein</span>${p.grund ? `<div class="text-muted fst-italic mt-0.5" style="font-size:0.72rem;">💬 ${escapeHtml(p.grund)}</div>` : ''}`;
+                            }
+
+                            let essenBadge = '-';
+                            if (isJa) {
+                                const parts = [];
+                                if (p.essen > 0) parts.push(`${p.essen}x Fleisch`);
+                                if (p.vegi > 0) parts.push(`${p.vegi}x Vegi`);
+                                essenBadge = parts.length > 0 ? `<span class="small fw-semibold text-dark">${parts.join(', ')}</span>` : '<span class="text-muted small">Kein</span>';
+                            }
+
+                            return `
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold text-dark small">${escapeHtml(p.name)}</div>
+                                    <div class="text-muted" style="font-size:0.7rem;">PN: ${escapeHtml(p.person_number || '-')}</div>
+                                </td>
+                                <td>${statusBadge}</td>
+                                <td>${essenBadge}</td>
+                                <td class="text-center">
+                                    <div class="form-check form-switch d-inline-block mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" ${p.anwesend ? 'checked' : ''} onchange="gvDossierToggleAnwesend('${p.person_number}', this.checked)" title="Vor Ort anwesend">
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        ${!isNein ? `
+                                            <button type="button" class="btn btn-xs btn-outline-danger p-1" title="Schnell als Abgemeldet eintragen" onclick="gvDossierOpenRSVPModal('${p.person_number}', 'nein', 'Abmeldung via E-Mail')">
+                                                <i class="fas fa-envelope-open-text"></i>
+                                            </button>
+                                        ` : ''}
+                                        <button type="button" class="btn btn-xs btn-outline-secondary p-1" title="Teilnahme manuell bearbeiten" onclick="gvDossierOpenRSVPModal('${p.person_number}')">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
     }
 
     /**
@@ -748,6 +1061,84 @@
 
         const state = window._gvDossierState;
         const curMember = state.members.find(m => m.id === state.selectedMemberId) || state.members[0] || {};
+
+        // RECHTE VORSCHAU: WIRT & GASTRONOMIE
+        if (state.activeRightTab === 'preview-wirt') {
+            const participants = state.participantsData || [];
+            const eaters = participants.filter(p => p.status === 'ja' && (p.essen > 0 || p.vegi > 0));
+            const totalEssen = eaters.reduce((sum, p) => sum + (p.essen || 0), 0);
+            const totalVegi = eaters.reduce((sum, p) => sum + (p.vegi || 0), 0);
+            const grandTotal = totalEssen + totalVegi;
+
+            const clipboardText = `Generalversammlung ${state.year} - Menübestellung für den Wirt\n` +
+                `Datum: ${state.gvInstance?.datum || 'Gemäss Programm'}\n` +
+                `Total Essen: ${grandTotal}\n` +
+                `- Standard (Fleisch): ${totalEssen}\n` +
+                `- Vegetarisch (Vegi): ${totalVegi}\n\n` +
+                `Teilnehmerliste Essen:\n` +
+                eaters.map((e, idx) => `${idx + 1}. ${e.name} (${e.essen > 0 ? e.essen + 'x Fleisch' : ''}${e.essen > 0 && e.vegi > 0 ? ', ' : ''}${e.vegi > 0 ? e.vegi + 'x Vegi' : ''})`).join('\n');
+
+            panel.innerHTML = `
+                <div class="p-4 overflow-auto" style="max-height: 580px;">
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                        <div>
+                            <h6 class="fw-bold text-dark mb-0"><i class="fas fa-utensils text-primary me-2"></i>Menübestellung für den Schützenstuben-Wirt</h6>
+                            <span class="small text-muted">Aus den Anmeldungen der Generalversammlung ${state.year}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="navigator.clipboard.writeText(${JSON.stringify(clipboardText)}); if(typeof showToast==='function') showToast('📋 In Zwischenablage kopiert!', 'success');">
+                            <i class="fas fa-copy me-1"></i> Kopieren
+                        </button>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-4">
+                            <div class="card p-2 text-center bg-light border-0 rounded-3">
+                                <div class="fs-4 fw-bold text-primary">${grandTotal}</div>
+                                <div class="text-muted" style="font-size:0.75rem;">Total Menüs</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="card p-2 text-center bg-light border-0 rounded-3">
+                                <div class="fs-4 fw-bold text-success">${totalEssen}</div>
+                                <div class="text-muted" style="font-size:0.75rem;">🥩 Fleisch</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="card p-2 text-center bg-light border-0 rounded-3">
+                                <div class="fs-4 fw-bold text-info">${totalVegi}</div>
+                                <div class="text-muted" style="font-size:0.75rem;">🥗 Vegi</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive border rounded-3 bg-white">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Name</th>
+                                    <th>Fleisch</th>
+                                    <th>Vegi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${eaters.length === 0 ? `
+                                    <tr><td colspan="4" class="text-center py-4 text-muted">Noch keine Essensbestellungen vorhanden.</td></tr>
+                                ` : eaters.map((e, idx) => `
+                                    <tr>
+                                        <td class="text-muted small">${idx + 1}</td>
+                                        <td class="fw-semibold">${escapeHtml(e.name)}</td>
+                                        <td>${e.essen > 0 ? `<span class="badge bg-success-subtle text-success border">${e.essen}x Fleisch</span>` : '-'}</td>
+                                        <td>${e.vegi > 0 ? `<span class="badge bg-info-subtle text-info border">${e.vegi}x Vegi</span>` : '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            return;
+        }
 
         if (state.activeRightTab === 'preview-pdf') {
             const pdfUrl = state.compiledPdfUrl;
@@ -1210,6 +1601,10 @@
         const linked_event_id = document.getElementById('gv-stamm-linked-event')?.value || null;
         const praesident_wort = document.getElementById('gv-stamm-praesident-wort')?.value || '';
         const budget_text = document.getElementById('gv-stamm-budget-text')?.value || '';
+        const vorstand_mails = (document.getElementById('gv-stamm-vorstand-mails')?.value || '')
+            .split(';')
+            .map(x => x.trim())
+            .filter(Boolean);
 
         try {
             const { error } = await supa.from('gv_instances').upsert({
@@ -1226,6 +1621,7 @@
                 linked_event_id: linked_event_id,
                 praesident_wort: praesident_wort,
                 budget_text: budget_text,
+                vorstand_mails: vorstand_mails,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'year' });
 
@@ -1639,5 +2035,245 @@
         renderGVDossierWorkspace();
     };
 
-    console.log("🚀 [GV-Dossier] Modul geladen: window.renderGVDossierView aktiv mit Traktanden & Stammdaten.");
+    // =========================================================================
+    // ANMELDUNGEN & PRÄSENZKONTROLLE AKTIONEN
+    // =========================================================================
+
+    window.gvDossierToggleAnwesend = async function (personNumber, isAnwesend) {
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const curYear = state.year;
+        const gvId = state.gvInstance?.id || `gv_${curYear}`;
+
+        const p = (state.participantsData || []).find(x => String(x.person_number) === String(personNumber));
+        if (!p) return;
+        p.anwesend = isAnwesend;
+
+        try {
+            await supa.from('gv_praesenz').upsert({
+                id: `praesenz_${curYear}_${personNumber}`,
+                gv_id: gvId,
+                person_number: String(personNumber),
+                name: p.name,
+                lizenz: p.lizenz,
+                anwesend: isAnwesend,
+                anmeldung_status: p.status,
+                essen: p.essen || 0,
+                vegi: p.vegi || 0,
+                grund: p.grund || '',
+                stimmberechtigt: p.stimmberechtigt !== false,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'gv_id,person_number' });
+
+            renderLeftPanel();
+        } catch (err) {
+            console.error("Fehler beim Aktualisieren der Anwesenheit:", err);
+            alert("Fehler bei Anwesenheit: " + err.message);
+        }
+    };
+
+    window.gvDossierFilterParticipants = function (fKey) {
+        window._gvDossierState.participantsFilter = fKey;
+        renderLeftPanel();
+    };
+
+    window.gvDossierSearchParticipants = function (q) {
+        window._gvDossierState.participantsSearchQuery = q;
+        renderLeftPanel();
+    };
+
+    window.gvDossierReloadParticipants = async function () {
+        await loadGVParticipantsData(true);
+        renderLeftPanel();
+        if (window._gvDossierState.activeRightTab === 'preview-wirt') renderRightPanel();
+    };
+
+    window.gvDossierOnLinkedEventChange = async function (newEventId) {
+        const state = window._gvDossierState;
+        if (!state.gvInstance) state.gvInstance = {};
+        state.gvInstance.linked_event_id = newEventId;
+        await loadGVParticipantsData(true);
+        renderLeftPanel();
+        if (state.activeRightTab === 'preview-wirt') renderRightPanel();
+    };
+
+    window.gvDossierOpenRSVPModal = function (personNumber, defaultStatus = null, defaultReason = null) {
+        const state = window._gvDossierState;
+        const p = (state.participantsData || []).find(x => String(x.person_number) === String(personNumber));
+        if (!p) return;
+
+        const curStatus = defaultStatus || p.status || 'offen';
+        const curGrund = defaultReason || p.grund || '';
+
+        const modalHtml = `
+            <div class="modal fade show" id="gvRSVPModal" tabindex="-1" style="display:block; background:rgba(0,0,0,0.5);" aria-modal="true" role="dialog">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 rounded-4 shadow-lg">
+                        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                            <h5 class="modal-title fw-bold">
+                                <i class="fas fa-user-check me-2"></i>GV-Teilnahme: ${escapeHtml(p.name)}
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" onclick="gvDossierCloseModal()"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <input type="hidden" id="gv-modal-pn" value="${escapeHtml(personNumber)}">
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-muted">Teilnahmestatus</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="gv-modal-status-radio" id="gv-m-radio-ja" value="ja" ${curStatus === 'ja' ? 'checked' : ''} onchange="gvDossierRSVPStatusChanged('ja')">
+                                    <label class="btn btn-outline-success fw-bold" for="gv-m-radio-ja">✅ Zusage (Ja)</label>
+
+                                    <input type="radio" class="btn-check" name="gv-modal-status-radio" id="gv-m-radio-nein" value="nein" ${curStatus === 'nein' ? 'checked' : ''} onchange="gvDossierRSVPStatusChanged('nein')">
+                                    <label class="btn btn-outline-danger fw-bold" for="gv-m-radio-nein">❌ Absage (Nein)</label>
+
+                                    <input type="radio" class="btn-check" name="gv-modal-status-radio" id="gv-m-radio-offen" value="offen" ${curStatus === 'offen' ? 'checked' : ''} onchange="gvDossierRSVPStatusChanged('offen')">
+                                    <label class="btn btn-outline-secondary" for="gv-m-radio-offen">❓ Offen</label>
+                                </div>
+                            </div>
+
+                            <!-- ZUSAGE BEREICH (MENÜS) -->
+                            <div id="gv-modal-sec-ja" class="p-3 bg-light rounded-3 border mb-3 ${curStatus === 'ja' ? '' : 'd-none'}">
+                                <div class="fw-bold small text-dark mb-2"><i class="fas fa-utensils text-primary me-1"></i>Menüauswahl (Wirt):</div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small text-muted mb-1">🥩 Standard (Fleisch)</label>
+                                        <input type="number" id="gv-modal-essen" class="form-control form-control-sm text-center" min="0" max="10" value="${p.essen || (curStatus === 'ja' ? 1 : 0)}">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small text-muted mb-1">🥗 Vegetarisch</label>
+                                        <input type="number" id="gv-modal-vegi" class="form-control form-control-sm text-center" min="0" max="10" value="${p.vegi || 0}">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ABSAGE BEREICH (GRUND) -->
+                            <div id="gv-modal-sec-nein" class="p-3 bg-light rounded-3 border mb-3 ${curStatus === 'nein' ? '' : 'd-none'}">
+                                <label class="form-label small fw-bold text-dark mb-1"><i class="fas fa-comment-alt text-danger me-1"></i>Begründung der Absage</label>
+                                <select class="form-select form-select-sm mb-2" onchange="document.getElementById('gv-modal-grund').value = this.value">
+                                    <option value="">-- Standard-Grund wählen --</option>
+                                    <option value="Abmeldung via E-Mail" ${curGrund === 'Abmeldung via E-Mail' ? 'selected' : ''}>Abmeldung via E-Mail</option>
+                                    <option value="Ferienhalber abwesend" ${curGrund === 'Ferienhalber abwesend' ? 'selected' : ''}>Ferienhalber abwesend</option>
+                                    <option value="Beruflich verhindert" ${curGrund === 'Beruflich verhindert' ? 'selected' : ''}>Beruflich verhindert</option>
+                                    <option value="Krankheitsbedingt" ${curGrund === 'Krankheitsbedingt' ? 'selected' : ''}>Krankheitsbedingt</option>
+                                    <option value="Familiäre Verpflichtung" ${curGrund === 'Familiäre Verpflichtung' ? 'selected' : ''}>Familiäre Verpflichtung</option>
+                                </select>
+                                <input type="text" id="gv-modal-grund" class="form-control form-control-sm" placeholder="Details oder individueller Grund..." value="${escapeHtml(curGrund)}">
+                            </div>
+
+                            <div class="d-flex justify-content-end gap-2 pt-2 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="gvDossierCloseModal()">Abbrechen</button>
+                                <button type="button" class="btn btn-sm btn-primary fw-bold px-3" onclick="gvDossierSaveRSVPModal()">Speichern</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('gv-dossier-modal-container').innerHTML = modalHtml;
+    };
+
+    window.gvDossierRSVPStatusChanged = function (status) {
+        const secJa = document.getElementById('gv-modal-sec-ja');
+        const secNein = document.getElementById('gv-modal-sec-nein');
+        if (secJa) secJa.classList.toggle('d-none', status !== 'ja');
+        if (secNein) secNein.classList.toggle('d-none', status !== 'nein');
+    };
+
+    window.gvDossierSaveRSVPModal = async function () {
+        const supa = getSupabase();
+        if (!supa) return;
+
+        const state = window._gvDossierState;
+        const curYear = state.year;
+        const gvId = state.gvInstance?.id || `gv_${curYear}`;
+        const eventId = state.gvInstance?.linked_event_id;
+
+        const pn = document.getElementById('gv-modal-pn')?.value;
+        const p = (state.participantsData || []).find(x => String(x.person_number) === String(pn));
+        if (!p) return;
+
+        let statusVal = 'offen';
+        if (document.getElementById('gv-m-radio-ja')?.checked) statusVal = 'ja';
+        if (document.getElementById('gv-m-radio-nein')?.checked) statusVal = 'nein';
+
+        const essenVal = statusVal === 'ja' ? (parseInt(document.getElementById('gv-modal-essen')?.value, 10) || 0) : 0;
+        const vegiVal = statusVal === 'ja' ? (parseInt(document.getElementById('gv-modal-vegi')?.value, 10) || 0) : 0;
+        const countVal = statusVal === 'ja' ? (essenVal + vegiVal || 1) : 0;
+        const grundVal = statusVal === 'nein' ? (document.getElementById('gv-modal-grund')?.value.trim() || 'Abmeldung') : '';
+
+        try {
+            // 1. In poll_responses schreiben (falls Umfrage verknüpft)
+            if (eventId && p.lizenz) {
+                if (statusVal === 'offen') {
+                    await supa.from('poll_responses')
+                        .delete()
+                        .eq('event_id', String(eventId))
+                        .eq('lizenz', String(p.lizenz));
+                    await supa.from('poll_responses_log').insert({
+                        event_id: String(eventId),
+                        lizenz: String(p.lizenz),
+                        action: 'reset_to_open',
+                        zeitstempel: new Date().toISOString()
+                    });
+                } else {
+                    const isAttending = (statusVal === 'ja');
+                    await supa.from('poll_responses').upsert({
+                        event_id: String(eventId),
+                        lizenz: String(p.lizenz),
+                        attending: isAttending,
+                        count: countVal,
+                        essen: essenVal,
+                        vegi: vegiVal,
+                        grund: grundVal
+                    }, { onConflict: 'event_id,lizenz' });
+
+                    await supa.from('poll_responses_log').insert({
+                        event_id: String(eventId),
+                        lizenz: String(p.lizenz),
+                        action: isAttending ? 'attending' : 'declined',
+                        count: countVal,
+                        essen: essenVal,
+                        vegi: vegiVal,
+                        grund: grundVal,
+                        zeitstempel: new Date().toISOString()
+                    });
+                }
+            }
+
+            // 2. In gv_praesenz spiegeln
+            await supa.from('gv_praesenz').upsert({
+                id: `praesenz_${curYear}_${p.person_number}`,
+                gv_id: gvId,
+                person_number: String(p.person_number),
+                name: p.name,
+                lizenz: p.lizenz,
+                anwesend: p.anwesend,
+                anmeldung_status: statusVal,
+                essen: essenVal,
+                vegi: vegiVal,
+                grund: grundVal,
+                stimmberechtigt: p.stimmberechtigt !== false,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'gv_id,person_number' });
+
+            // 3. Lokalen State aktualisieren
+            p.status = statusVal;
+            p.essen = essenVal;
+            p.vegi = vegiVal;
+            p.grund = grundVal;
+
+            gvDossierCloseModal();
+            if (typeof showToast === 'function') showToast(`Rückmeldung für ${p.name} gespeichert!`, 'success');
+
+            renderLeftPanel();
+            if (state.activeRightTab === 'preview-wirt') renderRightPanel();
+        } catch (err) {
+            console.error("Fehler beim Speichern der Rückmeldung:", err);
+            alert("Speichern fehlgeschlagen: " + err.message);
+        }
+    };
+
+    console.log("🚀 [GV-Dossier] Modul geladen: window.renderGVDossierView aktiv mit Traktanden, Stammdaten & Anmeldungen.");
 })();

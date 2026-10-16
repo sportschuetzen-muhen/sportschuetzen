@@ -176,10 +176,11 @@ Gemäss **Projekt-Richtlinie 7** (`AGENTS.md`) gilt für das Modul das symmetris
 * Der bestehende Algorithmus in [`vorstand/js/umfragen/umfragen-eval.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/umfragen/umfragen-eval.js) gruppiert Schützen mit passenden Datumswünschen automatisch in 5er-Teams und bereitet die Anmelde-E-Mail vor.
 * **Invariant:** Diese Fachlogik bleibt unberührt und wird durch den dynamischen Baukasten nicht abstrahiert oder verlangsamt.
 
-### 5.2 Generalversammlung (GV)
-* Die GV greift über das Feld `event_type = 'gv'` bzw. `gv_instances` auf das Umfragemodul zu.
-* Anmeldungen fliessen in die Präsenzkontrolle und die Menüauswertung (Standard / Vegi) für den Wirt.
-* Stimmberechtigungen werden direkt mit der Mitgliedertabelle (`members`) verknüpft.
+### 5.2 Generalversammlung (GV) & Konsolidierung im GV-Dossier
+* **Zentrale Schaltzentrale (`gv-dossier.js`):** Die vollständige Steuerung der GV (Traktanden, Beilagen-Assembler, Kampagnen-Versand, Live-Präsenzkontrolle und Gastronomie-/Menüauswertung für den Schützenstuben-Wirt) ist im Modul **Generalversammlung / GV-Dossier** konsolidiert (Reiter 5 «Anmeldungen & Präsenz» und Ansicht «Gastronomie & Wirt»).
+* **Tab 4 in Umfragen als Weiterleitung:** Im Modul Umfragen dient der bisherige Tab 4 («GV-Controlling») als redundanzfreier Schnellzugriff und verweist direkt auf das GV-Dossier.
+* **Schlüsselwort-Invariante «Generalversammlung»:** Damit die mobile PWA (`app.js`) und das GV-Cockpit den Umfrage-Event automatisch erkennen und verknüpfen, muss der Event-Titel zwingend das Wort **«Generalversammlung»** enthalten (Gross-/Kleinschreibung irrelevant, z. B. `112. Generalversammlung 2026`). Beim Eintippen des Titels in der Event-Erfassung wird das Wort automatisch erkannt und setzt selbsttätig `event_type = 'gv'`, `frage_essen = true` und `frage_grund = true`.
+* **Single Source of Truth:** `public.poll_responses` fungiert als transaktionssichere Datenbasis für die Anmeldungen der Mitglieder; Vor-Ort-Anwesenheiten und Stimmbeteiligungen werden in `public.gv_praesenz` geführt.
 
 ### 5.3 Kalender- & E-Mail-Engine
 * **Kalenderexport:** Automatische Generierung von `.ics`-Dateien mit Weckfunktion (1 Tag und 1 Stunde vor Anlass) via `downloadEventICS()`.
