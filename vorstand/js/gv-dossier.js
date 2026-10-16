@@ -4,17 +4,19 @@
  * Generalversammlung (GV-Cockpit) & Dossier-Compiler
  * Projekt: Vereinsportal Sportschützen Muhen
  *
- * Enthält 4 Haupt-Bereiche (Left-Panel):
- * 1. Traktanden-Manager: Hierarchische Haupt- und Untertraktanden mit ▲/▼-Verschieben,
- *    Bearbeiten und Löschen. Single Source of Truth: public.gv_traktanden.
+ * Enthält 5 Haupt-Bereiche (Left-Panel):
+ * 1. Traktanden-Manager: SortableJS Drag & Drop, Hierarchische Haupt- und Untertraktanden,
+ *    Vorjahresübernahme & dynamischer Wahljahr-Trigger. Single Source: public.gv_traktanden.
  * 2. GV-Stammdaten & Fristen: Nummer, Datum, Zeit, Ort, Wahljahr, Abmelde-/Mahndatum,
- *    verknüpftes RSVP-Event aus poll_events. Single Source of Truth: public.gv_instances.
+ *    verknüpftes RSVP-Event mit SaveButtonKit-Dirty-Tracking. Single Source: public.gv_instances.
  * 3. Dossier-Beilagen: PDF-Uploads für Berichte/Protokolle nach 'campaign-assets',
  *    SortableJS Reihenfolge & Button "Gesamtes GV-Dossier jetzt kompilieren & stempeln".
- * 4. E-Mail-Text & Kampagne: Betreff, WYSIWYG/Text mit Platzhaltern, Test-Mail, Massenversand.
+ * 4. E-Mail-Text & Kampagne: Betreff, ClubWysiwyg mit Platzhaltern, Test-Mail, Massenversand.
+ * 5. Anmeldungen & Präsenzkontrolle: Live-Zusagen, Essen (Fleisch/Vegi), Vor-Ort-Check,
+ *    druckfertige Präsenzliste (PDF & Mail an Aktuar), Zwischenstand-Mail an Vorstand.
  *
  * Rechtes Panel:
- * - Live-Monitor: Umschaltbar zwischen [ 📄 PDF-Vorschau ] und [ ✉️ E-Mail-Vorschau ]
+ * - Live-Monitor: Umschaltbar zwischen [ 📄 PDF-Vorschau ], [ ✉️ E-Mail-Vorschau ] und [ 🍽️ Gastronomie & Wirt ]
  * - Empfängerauswahl für Personalisierung
  * ==============================================================================
  */
@@ -25,6 +27,7 @@
         campaign: null,
         attachments: [],
         gvInstance: null,
+        gvInstanceOriginal: null,
         traktanden: [],
         pollEvents: [],
         members: [],
@@ -57,6 +60,22 @@
     }
 
     /**
+     * Formatiert ISO-Datum YYYY-MM-DD in deutsches Schweizer Format
+     */
+    function formatSwissDate(dateStr) {
+        if (!dateStr) return '';
+        const p = String(dateStr).split('-');
+        if (p.length === 3) {
+            const months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+            const mIdx = parseInt(p[1], 10) - 1;
+            if (mIdx >= 0 && mIdx < 12) {
+                return `${parseInt(p[2], 10)}. ${months[mIdx]} ${p[0]}`;
+            }
+        }
+        return dateStr;
+    }
+
+    /**
      * Haupt-Einstiegspunkt für das Rendern der GV-Schaltzentrale
      */
     window.renderGVDossierView = async function (targetContainer) {
@@ -68,7 +87,7 @@
         container.innerHTML = `
             <div class="text-center py-5">
                 <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;"></div>
-                <div class="fw-bold text-muted">Lade GV-Cockpit & Traktanden aus Supabase...</div>
+                <div class="fw-bold text-muted">Lade GV-Cockpit, Traktanden & Mitglieder aus Supabase...</div>
             </div>
         `;
 
@@ -90,17 +109,26 @@
         const curYear = state.year;
 
         try {
-            // 1. Mitglieder laden (für Vorschau & Test-Empfänger)
-            if (!state.members.length) {
-                const { data: mData } = await supa
-                    .from('members')
-                    .select('id, person_number, first_name, last_name, street, post_code, city, primary_email')
-                    .eq('is_active', true)
-                    .order('last_name', { ascending: true });
-                state.members = mData || [];
-                if (state.members.length && !state.selectedMemberId) {
-                    state.selectedMemberId = state.members[0].id;
-                }
+            // 1. Mitglieder laden (person_number ist Primärschlüssel in public.members)
+            const { data: mData, error: mErr } = await supa
+                .from('members')
+                .select('person_number, first_name, last_name, street, post_code, city, primary_email, is_active')
+                .eq('is_active', true)
+                .eq('deceased', false)
+                .is('club_exit_date', null)
+                .order('last_name', { ascending: true });
+
+            if (mErr) {
+                console.warn("⚠️ Warnung beim Laden der Mitglieder:", mErr);
+            }
+
+            state.members = (mData || []).map(m => ({
+                ...m,
+                id: String(m.person_number)
+            }));
+
+            if (state.members.length && !state.selectedMemberId) {
+                state.selectedMemberId = state.members[0].id;
             }
 
             // 2. Poll-Events laden (für RSVP-Verknüpfung)
@@ -133,10 +161,13 @@
                     is_election_year: false,
                     linked_event_id: '',
                     praesident_wort: '',
-                    budget_text: '',
                     vorstand_mails: []
                 };
             }
+
+            // Deep-Copy für Dirty-Tracker & Entwurfsspeicher
+            state.gvInstanceOriginal = JSON.parse(JSON.stringify(state.gvInstance));
+            state.gvDraft = JSON.parse(JSON.stringify(state.gvInstance));
 
             // Intelligente Auto-Vorbelegung des verknüpften Umfrage-Events, falls noch nicht explizit gewählt
             if (!state.gvInstance.linked_event_id && state.pollEvents && state.pollEvents.length > 0) {
@@ -197,7 +228,7 @@
                     .eq('campaign_id', state.campaign.id)
                     .order('sort_order', { ascending: true });
                 state.attachments = attData || [];
-                state.compiledPdfUrl = state.campaign.dossier_pdf_url || state.gvInstance?.doc_anhaenge_url || null;
+                state.compiledPdfUrl = state.campaign.dossier_pdf_url || state.gvInstance?.doc_anhaenge_url || state.gvInstance?.doc_einladung_url || null;
             }
 
             // 6. Traktanden direkt aus public.gv_traktanden für diese GV laden
@@ -236,8 +267,10 @@
         try {
             const [membersRes, responsesRes, praesenzRes] = await Promise.allSettled([
                 supa.from('members')
-                    .select('id, person_number, first_name, last_name, primary_email, is_active, status_u21')
+                    .select('person_number, first_name, last_name, primary_email, is_active')
                     .eq('is_active', true)
+                    .eq('deceased', false)
+                    .is('club_exit_date', null)
                     .order('last_name', { ascending: true }),
                 eventId ? supa.from('poll_responses').select('*').eq('event_id', eventId) : Promise.resolve({ data: [] }),
                 supa.from('gv_praesenz').select('*').eq('gv_id', gvId)
@@ -275,8 +308,8 @@
 
                 if (resp) {
                     status = (resp.attending === true || resp.attending === 'true' || resp.attending === 1) ? 'ja' : 'nein';
-                    essen = parseInt(resp.essen) || 0;
-                    vegi = parseInt(resp.vegi) || 0;
+                    essen = parseInt(resp.essen, 10) || 0;
+                    vegi = parseInt(resp.vegi, 10) || 0;
                     grund = resp.grund || '';
                 }
 
@@ -284,7 +317,7 @@
                 const isStimmberechtigt = praesenz ? (praesenz.stimmberechtigt !== false) : true;
 
                 return {
-                    id: m.id,
+                    id: pn,
                     person_number: pn,
                     lizenz: liz,
                     name: `${m.last_name || ''} ${m.first_name || ''}`.trim(),
@@ -358,7 +391,10 @@
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <button class="btn btn-sm btn-outline-secondary rounded-3" onclick="gvDossierReload()" title="Aktualisieren">
+                        <button id="btn-save-gv-global" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="gvDossierSaveStammdaten()">
+                            💾 Gespeichert
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary rounded-3" onclick="gvDossierReload()" title="Alle Daten neu laden">
                             <i class="fas fa-sync-alt me-1"></i> Aktualisieren
                         </button>
                     </div>
@@ -430,6 +466,9 @@
                                         <i class="fas fa-utensils me-1"></i> Gastronomie &amp; Wirt
                                     </button>
                                 </div>
+                                <button class="btn btn-xs btn-outline-primary" onclick="gvDossierRefreshPreview()" title="Vorschau live neu generieren">
+                                    <i class="fas fa-redo me-1"></i> Vorschau aktualisieren
+                                </button>
                             </div>
                             <!-- LIVE EMPFÄNGERAUSWAHL -->
                             <div class="d-flex align-items-center gap-1.5">
@@ -467,6 +506,7 @@
 
         renderLeftPanel();
         renderRightPanel();
+        gvDossierUpdateStammdatenDirtyState();
     }
 
     /**
@@ -478,10 +518,10 @@
 
         const state = window._gvDossierState;
         const curYear = state.year;
-        const gv = state.gvInstance || {};
+        const gv = state.gvDraft || state.gvInstance || {};
 
         // ---------------------------------------------------------------------
-        // TAB 1: TRAKTANDEN-MANAGER
+        // TAB 1: TRAKTANDEN-MANAGER MIT DRAG & DROP
         // ---------------------------------------------------------------------
         if (state.activeLeftTab === 'traktanden') {
             const allItems = state.traktanden || [];
@@ -491,7 +531,9 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <div>
                         <span class="small fw-bold text-muted text-uppercase">Traktandenliste ${curYear}:</span>
-                        <div class="text-muted" style="font-size:0.75rem;">Haupt- & Untertraktanden (direkt in Supabase gespeichert)</div>
+                        <div class="text-muted" style="font-size:0.75rem;">
+                            <i class="fas fa-arrows-alt text-primary me-1"></i>Traktanden per Drag &amp; Drop verschiebbar
+                        </div>
                     </div>
                     <div class="d-flex gap-2">
                         <button class="btn btn-sm btn-primary py-1 px-2.5 rounded-2 fw-semibold shadow-sm" onclick="gvDossierAddTraktandumModal(null)">
@@ -504,25 +546,29 @@
                     <div class="alert alert-warning border-0 rounded-3 p-3 text-center my-4">
                         <i class="fas fa-exclamation-circle fa-2x mb-2 text-warning"></i>
                         <h6 class="fw-bold text-dark">Noch keine Traktanden für die GV ${curYear} erfasst</h6>
-                        <p class="small text-muted mb-3">Sie können Standard-Traktanden mit 1 Klick anlegen oder manuell starten:</p>
+                        <p class="small text-muted mb-3">Du kannst die Traktanden aus dem Vorjahr übernehmen oder die Vorlage laden:</p>
                         <div class="d-flex justify-content-center gap-2 flex-wrap">
+                            <button class="btn btn-sm btn-primary fw-semibold" onclick="gvDossierCopyPreviousYearTraktanden()">
+                                <i class="fas fa-copy me-1"></i> Aus Vorjahr (${curYear - 1}) übernehmen
+                            </button>
                             <button class="btn btn-sm btn-outline-primary fw-semibold" onclick="gvDossierSeedDefaultTraktanden(false)">
-                                <i class="fas fa-magic me-1"></i> Standard-Traktanden (Normaljahr) laden
+                                <i class="fas fa-magic me-1"></i> Standard (Normaljahr) laden
                             </button>
                             <button class="btn btn-sm btn-outline-info fw-semibold" onclick="gvDossierSeedDefaultTraktanden(true)">
-                                <i class="fas fa-users-cog me-1"></i> Standard-Traktanden (Wahljahr) laden
+                                <i class="fas fa-users-cog me-1"></i> Standard (Wahljahr) laden
                             </button>
                         </div>
                     </div>
                 ` : `
-                    <div class="list-group rounded-3 shadow-none mb-3">
+                    <div class="list-group rounded-3 shadow-none mb-3" id="gvTraktandenSortableList">
                         ${mainItems.map((main, mIdx) => {
                             const subItems = allItems.filter(t => t.parent_id === main.id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
                             return `
-                                <div class="list-group-item p-2.5 border mb-2 rounded-2 shadow-xs bg-white">
+                                <div class="list-group-item p-2.5 border mb-2 rounded-2 shadow-xs bg-white gv-traktandum-main-row" data-tr-id="${main.id}">
                                     <!-- HAUPTTRAKTANDUM ZEILE -->
                                     <div class="d-flex align-items-center justify-content-between">
                                         <div class="d-flex align-items-center gap-2">
+                                            <i class="fas fa-grip-vertical text-muted cursor-grab me-1 gv-main-drag-handle" style="cursor: grab;" title="Ziehen zum Verschieben"></i>
                                             <span class="badge bg-primary text-white rounded-pill px-2 py-1 fs-7">${escapeHtml(main.nummer || String(mIdx + 1))}</span>
                                             <div>
                                                 <div class="fw-bold small text-dark">${escapeHtml(main.titel)}</div>
@@ -531,7 +577,7 @@
                                         </div>
                                         <div class="d-flex align-items-center gap-1">
                                             ${main.referent ? `<span class="badge bg-light text-secondary border me-1 py-1 px-1.5" style="font-size:0.7rem;"><i class="fas fa-user-tie me-1"></i>${escapeHtml(main.referent)}</span>` : ''}
-                                            <!-- REIHENFOLGE PFEILE -->
+                                            <!-- REIHENFOLGE PFEILE (ACCESSIBILITY FALLBACK) -->
                                             <button class="btn btn-xs btn-outline-secondary p-1" title="Nach oben verschieben" onclick="gvDossierMoveTraktandum('${main.id}', 'up')" ${mIdx === 0 ? 'disabled' : ''}>
                                                 <i class="fas fa-arrow-up"></i>
                                             </button>
@@ -552,12 +598,13 @@
                                         </div>
                                     </div>
 
-                                    <!-- UNTERTRAKTANDEN (EINGERÜCKT) -->
+                                    <!-- UNTERTRAKTANDEN (EINGERÜCKT & SORTIERBAR) -->
                                     ${subItems.length > 0 ? `
-                                        <div class="ms-4 mt-2 ps-2 border-start border-2 border-primary-subtle">
+                                        <div class="ms-4 mt-2 ps-2 border-start border-2 border-primary-subtle gv-subtraktanden-list" data-parent-id="${main.id}">
                                             ${subItems.map((sub, sIdx) => `
-                                                <div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1 bg-light rounded-2 border border-light-subtle">
+                                                <div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1 bg-light rounded-2 border border-light-subtle gv-sub-row" data-tr-id="${sub.id}">
                                                     <div class="d-flex align-items-center gap-2">
+                                                        <i class="fas fa-grip-vertical text-muted cursor-grab me-1 gv-sub-drag-handle" style="cursor: grab; font-size: 0.75rem;" title="Ziehen zum Verschieben"></i>
                                                         <span class="badge bg-secondary-subtle text-dark rounded-pill px-1.5 py-0.5" style="font-size:0.7rem;">${escapeHtml(sub.nummer || (main.nummer + '.' + (sIdx + 1)))}</span>
                                                         <div>
                                                             <span class="small fw-semibold text-dark">${escapeHtml(sub.titel)}</span>
@@ -589,17 +636,19 @@
                     </div>
                 `}
             `;
+
+            initSortableTraktanden();
         }
 
         // ---------------------------------------------------------------------
-        // TAB 2: STAMMDATEN & FRISTEN
+        // TAB 2: STAMMDATEN & FRISTEN (MIT SAVEBUTTONKIT DIRTY TRACKER)
         // ---------------------------------------------------------------------
         else if (state.activeLeftTab === 'stammdaten') {
             panel.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="small fw-bold text-muted text-uppercase">GV-Stammdaten & Termine ${curYear}:</span>
-                    <button class="btn btn-sm btn-success fw-bold px-3 py-1 rounded-2 shadow-sm" onclick="gvDossierSaveStammdaten()">
-                        <i class="fas fa-save me-1"></i> Stammdaten speichern
+                    <span class="small fw-bold text-muted text-uppercase">GV-Stammdaten &amp; Termine ${curYear}:</span>
+                    <button id="btn-save-gv-stammdaten" class="btn btn-sm btn-outline-secondary write-protected" disabled onclick="gvDossierSaveStammdaten()">
+                        💾 Stammdaten gespeichert
                     </button>
                 </div>
 
@@ -609,28 +658,28 @@
                             <label class="form-label small fw-bold mb-1">Nummer der GV</label>
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text bg-white">Nr.</span>
-                                <input type="number" id="gv-stamm-number" class="form-control" value="${escapeHtml(gv.number || 100)}">
+                                <input type="number" id="gv-stamm-number" class="form-control" value="${escapeHtml(gv.number || 100)}" oninput="gvDossierOnStammdatenFieldChange()">
                             </div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-bold mb-1">Datum der GV</label>
-                            <input type="date" id="gv-stamm-datum" class="form-control form-control-sm" value="${escapeHtml(gv.datum || '')}">
+                            <input type="date" id="gv-stamm-datum" class="form-control form-control-sm" value="${escapeHtml(gv.datum || '')}" onchange="gvDossierOnStammdatenFieldChange()">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-bold mb-1">Startzeit</label>
-                            <input type="text" id="gv-stamm-zeit" class="form-control form-control-sm" placeholder="19:30" value="${escapeHtml(gv.zeit || '19:30')}">
+                            <input type="text" id="gv-stamm-zeit" class="form-control form-control-sm" placeholder="19:30" value="${escapeHtml(gv.zeit || '19:30')}" oninput="gvDossierOnStammdatenFieldChange()">
                         </div>
                     </div>
 
                     <div class="row g-2 mb-2">
                         <div class="col-md-8">
                             <label class="form-label small fw-bold mb-1">Austragungsort</label>
-                            <input type="text" id="gv-stamm-ort" class="form-control form-control-sm" value="${escapeHtml(gv.ort || 'Schützenhaus Muhen')}">
+                            <input type="text" id="gv-stamm-ort" class="form-control form-control-sm" value="${escapeHtml(gv.ort || 'Schützenhaus Muhen')}" oninput="gvDossierOnStammdatenFieldChange()">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-bold mb-1">Wahljahr</label>
                             <div class="form-check form-switch mt-1">
-                                <input class="form-check-input" type="checkbox" id="gv-stamm-wahljahr" ${gv.is_election_year ? 'checked' : ''} style="cursor: pointer;">
+                                <input class="form-check-input" type="checkbox" id="gv-stamm-wahljahr" ${gv.is_election_year ? 'checked' : ''} style="cursor: pointer;" onchange="gvDossierToggleWahljahr(this.checked)">
                                 <label class="form-check-label small fw-semibold" for="gv-stamm-wahljahr">Gesamterneuerungswahlen</label>
                             </div>
                         </div>
@@ -639,15 +688,15 @@
                     <div class="row g-2 mb-2">
                         <div class="col-md-4">
                             <label class="form-label small fw-bold mb-1">Datum Vorjahres-GV</label>
-                            <input type="date" id="gv-stamm-vorjahr" class="form-control form-control-sm" value="${escapeHtml(gv.datum_vorjahr || '')}">
+                            <input type="date" id="gv-stamm-vorjahr" class="form-control form-control-sm" value="${escapeHtml(gv.datum_vorjahr || '')}" onchange="gvDossierOnStammdatenFieldChange()">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-bold mb-1">Abmeldefrist</label>
-                            <input type="date" id="gv-stamm-abmeldung" class="form-control form-control-sm" value="${escapeHtml(gv.abmelde_datum || '')}">
+                            <input type="date" id="gv-stamm-abmeldung" class="form-control form-control-sm" value="${escapeHtml(gv.abmelde_datum || '')}" onchange="gvDossierOnStammdatenFieldChange()">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-bold mb-1">Mahndatum</label>
-                            <input type="date" id="gv-stamm-mahnung" class="form-control form-control-sm" value="${escapeHtml(gv.mahn_datum || '')}">
+                            <input type="date" id="gv-stamm-mahnung" class="form-control form-control-sm" value="${escapeHtml(gv.mahn_datum || '')}" onchange="gvDossierOnStammdatenFieldChange()">
                         </div>
                     </div>
 
@@ -663,27 +712,24 @@
                         </select>
                         <div class="form-text small text-muted">
                             <i class="fas fa-info-circle text-primary me-1"></i>
-                            Verknüpft die RSVPs aus dem Modul «Anlässe &amp; Umfragen». Damit ein Anlass hier automatisch zugeordnet wird, muss dessen Titel das Wort <strong>«Generalversammlung»</strong> enthalten (Gross-/Kleinschreibung egal).
+                            Verknüpft die RSVPs aus dem Modul «Anlässe &amp; Umfragen». Ein Anlass wird automatisch vorgeschlagen, wenn sein Titel <strong>«Generalversammlung»</strong> enthält.
                         </div>
                     </div>
 
                     <div class="mb-2">
                         <label class="form-label small fw-bold mb-1">Vorstands-Kopien (E-Mail-Verteiler für GV-Prüfmails)</label>
-                        <input type="text" id="gv-stamm-vorstand-mails" class="form-control form-control-sm" placeholder="z.B. aktuar@example.ch; kassier@example.ch" value="${escapeHtml((gv.vorstand_mails || []).join('; '))}">
+                        <input type="text" id="gv-stamm-vorstand-mails" class="form-control form-control-sm" placeholder="z.B. aktuar@example.ch; kassier@example.ch" value="${escapeHtml(gv.vorstand_mails_str !== undefined ? gv.vorstand_mails_str : (gv.vorstand_mails || []).join('; '))}" oninput="gvDossierOnStammdatenFieldChange()">
                         <div class="form-text small text-muted">Mehrere E-Mail-Adressen mit Strichpunkt (;) trennen.</div>
                     </div>
 
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold mb-1">Wort des Präsidenten (Begleittext)</label>
-                        <textarea id="gv-stamm-praesident-wort" class="form-control form-control-sm" rows="3" placeholder="Grusswort des Präsidenten zur GV...">${escapeHtml(gv.praesident_wort || '')}</textarea>
-                    </div>
-
                     <div class="mb-0">
-                        <label class="form-label small fw-bold mb-1">Budget-Kommentar / Erläuterung</label>
-                        <textarea id="gv-stamm-budget-text" class="form-control form-control-sm" rows="2" placeholder="Optionale Bemerkungen zum Budget...">${escapeHtml(gv.budget_text || '')}</textarea>
+                        <label class="form-label small fw-bold mb-1">Wort des Präsidenten (Begleittext)</label>
+                        <textarea id="gv-stamm-praesident-wort" class="form-control form-control-sm" rows="3" placeholder="Grusswort des Präsidenten zur GV..." oninput="gvDossierOnStammdatenFieldChange()">${escapeHtml(gv.praesident_wort || '')}</textarea>
                     </div>
                 </div>
             `;
+
+            gvDossierUpdateStammdatenDirtyState();
         }
 
         // ---------------------------------------------------------------------
@@ -696,7 +742,7 @@
                 <div class="alert alert-info py-2.5 px-3 border-0 rounded-3 mb-3 d-flex align-items-start gap-2" style="background:#eef6ff; font-size:0.85rem;">
                     <i class="fas fa-info-circle text-primary mt-1"></i>
                     <div>
-                        <strong>GV-Dossier Compiler:</strong> Fügen Sie die Jahresberichte und Protokolle als PDF hinzu.
+                        <strong>GV-Dossier Compiler:</strong> Füge die Jahresberichte und Protokolle als PDF hinzu.
                         Beim Kompilieren assembliert die Engine Einladung, Jahresprogramm und alle Berichte zu einem Gesamt-Dossier mit fortlaufenden Seitenzahlen.
                     </div>
                 </div>
@@ -712,19 +758,16 @@
                     <input type="file" id="gvAttachmentFileInput" class="d-none" accept="application/pdf" multiple onchange="gvDossierHandleFileUpload(this.files)">
                 </div>
 
-                <!-- LISTE DER DOKUMENTE IM DOSSIER (SORTIERBAR) -->
+                <!-- FIXE BASIS-DOKUMENTE -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="small fw-bold text-muted text-uppercase" style="letter-spacing:0.5px;">Reihenfolge im Dossier-Heftli:</span>
-                    <span class="small text-muted"><i class="fas fa-arrows-alt me-1"></i> Drag & Drop zum Sortieren</span>
+                    <span class="small fw-bold text-muted text-uppercase" style="letter-spacing:0.5px;">Basis-Dokumente:</span>
                 </div>
-
-                <div class="list-group rounded-3 shadow-none mb-3" id="gvAttachmentsSortableList">
-                    <!-- FIXE BASIS-DOKUMENTE (DYNAMISCH AUS DB GENERIERT) -->
+                <div class="list-group rounded-3 shadow-none mb-3">
                     <div class="list-group-item p-2.5 d-flex align-items-center justify-content-between border mb-1.5 bg-light rounded-2">
                         <div class="d-flex align-items-center gap-2.5">
                             <span class="badge bg-primary text-white rounded-pill px-2 py-1">1</span>
                             <div>
-                                <div class="fw-bold small mb-0">Einladung & Traktandenliste</div>
+                                <div class="fw-bold small mb-0">Einladung &amp; Traktandenliste</div>
                                 <div class="text-muted" style="font-size:0.75rem;">Seite 1 · Dynamisch aus Traktandenmanager generiert</div>
                             </div>
                         </div>
@@ -745,9 +788,20 @@
                                    onchange="gvDossierToggleCalendar(this.checked)">
                         </div>
                     </div>
+                </div>
 
-                    <!-- HOCHGELADENE BEILAGEN (SORTIERBAR) -->
-                    ${state.attachments.map((att, idx) => `
+                <!-- LISTE DER DOKUMENTE IM DOSSIER (SORTIERBAR) -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small fw-bold text-muted text-uppercase" style="letter-spacing:0.5px;">Beilagen-Berichte (sortierbar):</span>
+                    <span class="small text-muted"><i class="fas fa-arrows-alt me-1"></i> Drag &amp; Drop zum Sortieren</span>
+                </div>
+
+                <div class="list-group rounded-3 shadow-none mb-3" id="gvAttachmentsSortableList">
+                    ${state.attachments.length === 0 ? `
+                        <div class="list-group-item p-3 text-center text-muted small bg-light rounded-2 border">
+                            Noch keine Berichte hochgeladen. Lade oben Protokolle und Jahresberichte als PDF hoch.
+                        </div>
+                    ` : state.attachments.map((att, idx) => `
                         <div class="list-group-item p-2.5 d-flex align-items-center justify-content-between border mb-1.5 rounded-2 gv-sortable-item bg-white" data-att-id="${att.id}">
                             <div class="d-flex align-items-center gap-2.5">
                                 <i class="fas fa-grip-vertical text-muted cursor-grab" title="Ziehen zum Sortieren" style="cursor: grab;"></i>
@@ -779,9 +833,9 @@
                     <button class="btn btn-primary py-2.5 fw-bold shadow-sm rounded-3" onclick="gvDossierCompileNow()" ${state.isCompiling ? 'disabled' : ''}>
                         ${state.isCompiling ? `
                             <span class="spinner-border spinner-border-sm me-1.5" role="status"></span>
-                            Assembler & Corporate Stempel laufen...
+                            Assembler &amp; Corporate Stempel laufen...
                         ` : `
-                            <i class="fas fa-stamp me-1.5"></i> Gesamtes GV-Dossier jetzt kompilieren & stempeln
+                            <i class="fas fa-stamp me-1.5"></i> Gesamtes GV-Dossier jetzt kompilieren &amp; stempeln
                         `}
                     </button>
                     ${hasCompiled ? `
@@ -799,7 +853,7 @@
         }
 
         // ---------------------------------------------------------------------
-        // TAB 4: E-MAIL-TEXT & KAMPAGNE
+        // TAB 4: E-MAIL-TEXT & KAMPAGNE (CLUB WYSIWYG INTEGRATION)
         // ---------------------------------------------------------------------
         else if (state.activeLeftTab === 'mail') {
             const camp = state.campaign || {};
@@ -828,7 +882,7 @@
 
                 <!-- ANHÄNGE-STRATEGIE (BOUNCE-SCHUTZ) -->
                 <div class="card border rounded-3 p-3 bg-light mb-3">
-                    <div class="fw-bold small text-dark mb-1"><i class="fas fa-shield-alt text-success me-1"></i> Versand- & Anhangstrategie:</div>
+                    <div class="fw-bold small text-dark mb-1"><i class="fas fa-shield-alt text-success me-1"></i> Versand- &amp; Anhangstrategie:</div>
                     <div class="form-check form-switch mb-1">
                         <input class="form-check-input" type="checkbox" id="gvAttachLightPdf" checked>
                         <label class="form-check-label small" for="gvAttachLightPdf">
@@ -844,13 +898,12 @@
                 </div>
 
                 <div class="d-flex justify-content-end gap-2">
-                    <button class="btn btn-sm btn-outline-primary" onclick="gvDossierSaveCampaignText()">
-                        <i class="fas fa-save me-1"></i> Entwurf speichern
+                    <button class="btn btn-sm btn-outline-primary fw-bold" onclick="gvDossierSaveCampaignText()">
+                        <i class="fas fa-save me-1"></i> E-Mail-Text speichern
                     </button>
                 </div>
             `;
 
-            // Club WYSIWYG initialisieren falls vorhanden
             if (typeof window.ClubWysiwyg !== 'undefined') {
                 window.ClubWysiwyg.init('gv-camp-body', {
                     height: 200,
@@ -939,10 +992,29 @@
                         ${linkedEvent ? `<i class="fas fa-link text-primary me-1"></i>Verknüpft: <strong>${escapeHtml(linkedEvent.title)}</strong>` : '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Kein Event verknüpft (in Stammdaten wählen)</span>'}
                     </div>
                 </div>
-                <div class="d-flex gap-1.5">
+                <div class="d-flex gap-1.5 flex-wrap">
                     <button class="btn btn-xs btn-outline-secondary px-2 py-1" onclick="gvDossierReloadParticipants()" title="Teilnehmerliste neu laden">
                         <i class="fas fa-sync-alt me-1"></i> Aktualisieren
                     </button>
+                </div>
+            </div>
+
+            <!-- AKTIONEN-BAR FÜR PRÄSENZLISTE & VORSTANDS-REPORT -->
+            <div class="card p-2.5 bg-white border rounded-3 mb-2.5 shadow-xs">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div class="d-flex gap-1.5 flex-wrap">
+                        <button class="btn btn-sm btn-outline-primary fw-semibold" onclick="gvDossierOpenPraesenzlistePdf()" title="Druckfertige Präsenzliste für den Versammlungsabend öffnen">
+                            <i class="fas fa-print me-1"></i> Präsenzliste (PDF)
+                        </button>
+                        <button class="btn btn-sm btn-outline-info fw-semibold" onclick="gvDossierSendPraesenzlisteToAktuar()" title="Präsenzliste an den Aktuar senden">
+                            <i class="fas fa-paper-plane me-1"></i> An Aktuar senden
+                        </button>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-success fw-semibold" onclick="gvDossierSendAnmeldeZusammenfassungToVorstand()" title="Zwischenstand an Vorstand allgemein senden">
+                            <i class="fas fa-chart-pie me-1"></i> Zwischenstand an Vorstand senden
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -1071,7 +1143,7 @@
             const grandTotal = totalEssen + totalVegi;
 
             const clipboardText = `Generalversammlung ${state.year} - Menübestellung für den Wirt\n` +
-                `Datum: ${state.gvInstance?.datum || 'Gemäss Programm'}\n` +
+                `Datum: ${formatSwissDate(state.gvInstance?.datum) || 'Gemäss Programm'}\n` +
                 `Total Essen: ${grandTotal}\n` +
                 `- Standard (Fleisch): ${totalEssen}\n` +
                 `- Vegetarisch (Vegi): ${totalVegi}\n\n` +
@@ -1143,19 +1215,31 @@
         if (state.activeRightTab === 'preview-pdf') {
             const pdfUrl = state.compiledPdfUrl;
             if (pdfUrl) {
+                const busterUrl = pdfUrl.includes('?') ? `${pdfUrl}&t=${Date.now()}` : `${pdfUrl}?t=${Date.now()}`;
                 panel.innerHTML = `
-                    <iframe src="${pdfUrl}#toolbar=0&navpanes=0" class="w-100 h-100 border-0 rounded-bottom-4" style="min-height: 580px;"></iframe>
+                    <div class="d-flex justify-content-between align-items-center p-2 bg-light border-bottom">
+                        <span class="small text-muted"><i class="fas fa-file-pdf text-danger me-1"></i> Aktuelle PDF-Vorschau</span>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-xs btn-outline-primary" onclick="gvDossierRefreshPreview()" title="Vorschau neu kompilieren">
+                                <i class="fas fa-sync-alt me-1"></i> Vorschau neu generieren
+                            </button>
+                            <a href="${pdfUrl}" target="_blank" class="btn btn-xs btn-outline-secondary" title="In neuem Tab öffnen">
+                                <i class="fas fa-external-link-alt"></i>
+                            </a>
+                        </div>
+                    </div>
+                    <iframe src="${busterUrl}#toolbar=0&navpanes=0" class="w-100 h-100 border-0 rounded-bottom-4" style="min-height: 540px;"></iframe>
                 `;
             } else {
                 panel.innerHTML = `
                     <div class="d-flex flex-column align-items-center justify-content-center h-100 text-center p-5 text-muted">
                         <i class="fas fa-file-pdf fa-3x text-secondary mb-3 opacity-50"></i>
-                        <h6 class="fw-bold text-dark">Noch kein kompiliertes Dossier vorhanden</h6>
-                        <p class="small text-muted mb-3" style="max-width: 320px;">
-                            Klicken Sie im Reiter <strong>„Beilagen“</strong> auf <strong>„Gesamtes GV-Dossier jetzt kompilieren“</strong>, um die Einladung mit allen Berichten zu einem gestempelten Gesamt-PDF zusammenzuführen.
+                        <h6 class="fw-bold text-dark">Noch kein Vorschaudokument vorhanden</h6>
+                        <p class="small text-muted mb-3" style="max-width: 340px;">
+                            Klicke auf <strong>«Vorschau jetzt generieren»</strong>, um die Einladung mit den aktuellen Traktanden und Terminen druckfertig zu rendern.
                         </p>
-                        <button class="btn btn-outline-primary btn-sm rounded-3 fw-semibold" onclick="gvDossierCompileNow()">
-                            <i class="fas fa-stamp me-1"></i> Jetzt erstmals kompilieren
+                        <button class="btn btn-primary btn-sm rounded-3 fw-semibold shadow-sm" onclick="gvDossierRefreshPreview()">
+                            <i class="fas fa-magic me-1"></i> Vorschau jetzt generieren
                         </button>
                     </div>
                 `;
@@ -1170,7 +1254,7 @@
                 .replace(/{{mitglied\.vorname}}/gi, escapeHtml(curMember.first_name || 'Hans'))
                 .replace(/{{mitglied\.nachname}}/gi, escapeHtml(curMember.last_name || 'Muster'))
                 .replace(/{{mitglied\.anrede}}/gi, `Lieber ${escapeHtml(curMember.first_name || 'Hans')}`)
-                .replace(/{{event\.datum_formatiert}}/gi, `${state.gvInstance?.datum || 'im März'} ${state.year}`)
+                .replace(/{{event\.datum_formatiert}}/gi, formatSwissDate(state.gvInstance?.datum) || `im März ${state.year}`)
                 .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank" class="fw-bold text-primary">👉 GV-Dossier ${state.year} herunterladen (PDF)</a>`);
 
             let renderedBodyHtml = '';
@@ -1182,6 +1266,13 @@
 
             panel.innerHTML = `
                 <div class="p-4 overflow-auto" style="max-height: 580px;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small fw-bold text-muted text-uppercase">E-Mail-Vorschau für ${escapeHtml(curMember.first_name)} ${escapeHtml(curMember.last_name)}</span>
+                        <button class="btn btn-xs btn-outline-primary" onclick="gvDossierSetLeftTab('mail')" title="Text im Editor bearbeiten">
+                            <i class="fas fa-edit me-1"></i> E-Mail-Text bearbeiten
+                        </button>
+                    </div>
+
                     <!-- E-MAIL KOPF -->
                     <div class="border rounded-3 p-3 bg-light mb-3">
                         <div class="d-flex mb-1.5"><span class="text-muted small fw-bold me-2" style="width:50px;">Von:</span><span class="small fw-semibold">Sportschützen Muhen &lt;sportschuetzen.muhen@gmail.com&gt;</span></div>
@@ -1207,8 +1298,72 @@
     }
 
     // =========================================================================
-    // TRAKTANDEN MANAGER: AKTIONEN & MODALS
+    // TRAKTANDEN MANAGER: AKTIONEN & DRAG & DROP
     // =========================================================================
+
+    function initSortableTraktanden() {
+        if (typeof Sortable === 'undefined') return;
+
+        // 1. Haupttraktanden Sortable
+        const mainList = document.getElementById('gvTraktandenSortableList');
+        if (mainList) {
+            Sortable.create(mainList, {
+                animation: 150,
+                handle: '.gv-main-drag-handle',
+                draggable: '.gv-traktandum-main-row',
+                onEnd: async function () {
+                    const supa = getSupabase();
+                    if (!supa) return;
+                    const rows = mainList.querySelectorAll('.gv-traktandum-main-row');
+                    const updates = [];
+                    rows.forEach((row, idx) => {
+                        const trId = row.dataset.trId;
+                        if (trId) {
+                            updates.push(supa.from('gv_traktanden').update({ sort_order: idx + 1 }).eq('id', trId));
+                        }
+                    });
+                    try {
+                        await Promise.all(updates);
+                        if (typeof showToast === 'function') showToast("Traktanden-Reihenfolge gespeichert!", 'success');
+                        await loadGVDossierData();
+                        renderLeftPanel();
+                    } catch (e) {
+                        console.error("Fehler beim Sortieren:", e);
+                    }
+                }
+            });
+        }
+
+        // 2. Untertraktanden Sortable
+        const subLists = document.querySelectorAll('.gv-subtraktanden-list');
+        subLists.forEach(subList => {
+            Sortable.create(subList, {
+                animation: 150,
+                handle: '.gv-sub-drag-handle',
+                draggable: '.gv-sub-row',
+                onEnd: async function () {
+                    const supa = getSupabase();
+                    if (!supa) return;
+                    const rows = subList.querySelectorAll('.gv-sub-row');
+                    const updates = [];
+                    rows.forEach((row, idx) => {
+                        const trId = row.dataset.trId;
+                        if (trId) {
+                            updates.push(supa.from('gv_traktanden').update({ sort_order: idx + 1 }).eq('id', trId));
+                        }
+                    });
+                    try {
+                        await Promise.all(updates);
+                        if (typeof showToast === 'function') showToast("Unterpunkt-Reihenfolge gespeichert!", 'success');
+                        await loadGVDossierData();
+                        renderLeftPanel();
+                    } catch (e) {
+                        console.error("Fehler beim Sortieren der Unterpunkte:", e);
+                    }
+                }
+            });
+        });
+    }
 
     /**
      * Modal zum Hinzufügen eines neuen Haupt- oder Untertraktandums
@@ -1258,6 +1413,7 @@
                                             <option value="Kassier">
                                             <option value="Rechnungsrevisoren">
                                             <option value="Aktuar">
+                                            <option value="Tagespräsident">
                                         </datalist>
                                     </div>
                                 </div>
@@ -1349,8 +1505,6 @@
         const item = (state.traktanden || []).find(t => t.id === trId);
         if (!item) return;
 
-        const isSub = Boolean(item.parent_id);
-
         const modalHtml = `
             <div class="modal fade show" id="gvTraktandumModal" tabindex="-1" style="display:block; background:rgba(0,0,0,0.5);" aria-modal="true" role="dialog">
                 <div class="modal-dialog modal-dialog-centered">
@@ -1378,6 +1532,7 @@
                                             <option value="Kassier">
                                             <option value="Rechnungsrevisoren">
                                             <option value="Aktuar">
+                                            <option value="Tagespräsident">
                                         </datalist>
                                     </div>
                                 </div>
@@ -1444,7 +1599,7 @@
     };
 
     /**
-     * Traktandum nach oben oder unten verschieben (Tauscht sort_order mit dem Nachbarn auf gleicher Ebene)
+     * Traktandum nach oben oder unten verschieben
      */
     window.gvDossierMoveTraktandum = async function (trId, direction) {
         const supa = getSupabase();
@@ -1455,7 +1610,6 @@
         const currentItem = allItems.find(t => t.id === trId);
         if (!currentItem) return;
 
-        // Geschwister-Elemente (gleicher parent_id)
         const siblings = allItems
             .filter(t => t.parent_id === currentItem.parent_id)
             .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
@@ -1467,8 +1621,6 @@
         if (targetIndex < 0 || targetIndex >= siblings.length) return;
 
         const targetItem = siblings[targetIndex];
-
-        // Sort Orders tauschen
         const currentOrder = currentItem.sort_order || (currentIndex + 1);
         const targetOrder = targetItem.sort_order || (targetIndex + 1);
 
@@ -1487,7 +1639,7 @@
     };
 
     /**
-     * Traktandum löschen (Untertraktanden werden per CASCADE gelöscht)
+     * Traktandum löschen
      */
     window.gvDossierDeleteTraktandum = async function (trId) {
         const state = window._gvDossierState;
@@ -1518,6 +1670,85 @@
     };
 
     /**
+     * Kopiert alle Traktanden aus dem Vorjahr ins aktuelle Jahr
+     */
+    window.gvDossierCopyPreviousYearTraktanden = async function () {
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const curYear = state.year;
+        const prevYear = curYear - 1;
+        const prevGvId = `gv_${prevYear}`;
+        const targetGvId = state.gvInstance?.id || `gv_${curYear}`;
+
+        try {
+            const { data: prevItems, error } = await supa
+                .from('gv_traktanden')
+                .select('*')
+                .eq('gv_id', prevGvId)
+                .order('sort_order', { ascending: true });
+
+            if (error) throw error;
+            if (!prevItems || prevItems.length === 0) {
+                alert(`Keine Traktanden aus dem Vorjahr ${prevYear} gefunden.`);
+                return;
+            }
+
+            const idMap = new Map();
+            const mainItems = prevItems.filter(t => !t.parent_id);
+            const subItems = prevItems.filter(t => Boolean(t.parent_id));
+
+            for (const main of mainItems) {
+                const newId = `tr_${curYear}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+                idMap.set(main.id, newId);
+                const titleClean = (main.titel || '')
+                    .replace(new RegExp(String(prevYear), 'g'), String(curYear))
+                    .replace(new RegExp(String(prevYear - 1), 'g'), String(curYear - 1));
+
+                await supa.from('gv_traktanden').insert({
+                    id: newId,
+                    gv_id: targetGvId,
+                    parent_id: null,
+                    sort_order: main.sort_order,
+                    nummer: main.nummer,
+                    titel: titleClean,
+                    beschreibung: main.beschreibung,
+                    referent: main.referent,
+                    status: 'offen'
+                });
+            }
+
+            for (const sub of subItems) {
+                const newParentId = idMap.get(sub.parent_id);
+                if (!newParentId) continue;
+                const newSubId = `tr_${curYear}_sub_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+                const subTitleClean = (sub.titel || '')
+                    .replace(new RegExp(String(prevYear), 'g'), String(curYear))
+                    .replace(new RegExp(String(prevYear - 1), 'g'), String(curYear - 1));
+
+                await supa.from('gv_traktanden').insert({
+                    id: newSubId,
+                    gv_id: targetGvId,
+                    parent_id: newParentId,
+                    sort_order: sub.sort_order,
+                    nummer: sub.nummer,
+                    titel: subTitleClean,
+                    beschreibung: sub.beschreibung,
+                    referent: sub.referent,
+                    status: 'offen'
+                });
+            }
+
+            if (typeof showSuccess === 'function') showSuccess(`Traktanden erfolgreich aus ${prevYear} übernommen!`);
+            await loadGVDossierData();
+            renderLeftPanel();
+        } catch (err) {
+            console.error("Fehler bei Vorjahresübernahme:", err);
+            alert("Vorjahresübernahme fehlgeschlagen: " + err.message);
+        }
+    };
+
+    /**
      * Standard-Traktanden aus Vorlage in public.gv_traktanden laden
      */
     window.gvDossierSeedDefaultTraktanden = async function (isWahljahr) {
@@ -1531,15 +1762,14 @@
         const defaultNormal = [
             { num: '1', title: 'Begrüssung und Appell', ref: 'Präsident', text: 'Eröffnung der Versammlung und Feststellung der Beschlussfähigkeit.' },
             { num: '2', title: 'Wahl der Stimmenzähler', ref: 'Präsident', text: 'Bestimmung der Stimmenzähler für offene und geheime Wahlen.' },
-            { num: '3', title: `Genehmigung des Protokolls der GV ${curYear - 1}`, ref: 'Aktuar', text: 'Genehmigung des Vorjahres-Protokolls.' },
+            { num: '3', title: `Protokoll der GV vom ${curYear - 1}`, ref: 'Aktuar', text: 'Genehmigung des Vorjahres-Protokolls.' },
             { num: '4', title: 'Mutationen (Aufnahmen, Austritte, Ehrungen)', ref: 'Präsident', text: 'Aufnahme neuer Mitglieder und Totengedenken.' },
-            { num: '5', title: 'Jahresberichte', ref: 'Präsident', text: 'Berichte des Vorstands und der Spartenleiter.' },
-            { num: '6', title: `Jahresrechnung ${curYear - 1} und Revisorenbericht`, ref: 'Kassier', text: 'Abnahme der Jahresrechnung und Décharge-Erteilung.' },
+            { num: '5', title: 'Jahresberichte (Präsident, Schützenmeister, Jungschützen)', ref: 'Vorstand', text: 'Berichte des Vorstands und der Spartenleiter.' },
+            { num: '6', title: `Jahresrechnung ${curYear - 1} und Revisorenbericht`, ref: 'Kassier / Revisoren', text: 'Abnahme der Jahresrechnung und Décharge-Erteilung.' },
             { num: '7', title: `Budget ${curYear} und Festsetzung der Jahresbeiträge`, ref: 'Kassier', text: 'Genehmigung des Voranschlags und der Beiträge.' },
-            { num: '8', title: `Tätigkeitsprogramm & Jahresmeisterschaft ${curYear}`, ref: 'Schützenmeister', text: 'Vorstellung und Festlegung des Schiesskalenders.' },
-            { num: '9', title: 'Anträge von Mitgliedern', ref: 'Präsident', text: 'Behandlung statutengemäss eingereichter Anträge.' },
-            { num: '10', title: 'Ehrungen und Auszeichnungen', ref: 'Präsident', text: 'Würdigung verdienter Schützen und Jubilare.' },
-            { num: '11', title: 'Verschiedenes und Umfrage', ref: 'Präsident', text: 'Allgemeine Wortmeldungen.' }
+            { num: '8', title: `Jahresprogramm ${curYear}`, ref: 'Schützenmeister', text: 'Vorstellung und Festlegung des Schiesskalenders.' },
+            { num: '9', title: 'Ehrungen und Auszeichnungen', ref: 'Präsident', text: 'Würdigung verdienter Schützen und Jubilare.' },
+            { num: '10', title: 'Erledigung von Anträgen & Varia', ref: 'Präsident', text: 'Behandlung statutengemäss eingereichter Anträge.' }
         ];
 
         const defaultWahl = [
@@ -1575,9 +1805,147 @@
         }
     };
 
+    /**
+     * Schalter für Gesamterneuerungswahlen: Fügt Wahltraktanden dynamisch ein
+     */
+    window.gvDossierToggleWahljahr = async function (isChecked) {
+        gvDossierOnStammdatenFieldChange();
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const curYear = state.year;
+        const gvId = state.gvInstance?.id || `gv_${curYear}`;
+
+        if (isChecked) {
+            const allItems = state.traktanden || [];
+            const hasWahl = allItems.some(t => !t.parent_id && (t.titel.toLowerCase().includes('wahl') || t.titel.toLowerCase().includes('gesamterneuerung')));
+            if (!hasWahl) {
+                if (confirm("Wahljahr aktiviert:\nMöchtest du das Traktandum «Gesamterneuerungswahlen» mit den 4 Unterpunkten (Vorstand, Präsident, Revisoren, Fähnrich) jetzt automatisch hinzufügen?")) {
+                    const wahlMainId = `tr_${curYear}_wahlen_${Date.now().toString(36)}`;
+                    await supa.from('gv_traktanden').insert({
+                        id: wahlMainId,
+                        gv_id: gvId,
+                        parent_id: null,
+                        sort_order: 8,
+                        nummer: '8',
+                        titel: 'Gesamterneuerungswahlen',
+                        referent: 'Tagespräsident',
+                        beschreibung: 'Wahlen des Vorstands, des Präsidenten, der Revisoren und des Fähnrichs.',
+                        status: 'offen'
+                    });
+                    const subWahlen = [
+                        { nr: '8.1', titel: 'Wahl der Vorstandsmitglieder', ref: 'Tagespräsident' },
+                        { nr: '8.2', titel: 'Wahl des Präsidenten', ref: 'Tagespräsident' },
+                        { nr: '8.3', titel: 'Wahl der Rechnungsrevisoren', ref: 'Präsident' },
+                        { nr: '8.4', titel: 'Wahl des Fähnrichs', ref: 'Präsident' }
+                    ];
+                    for (let sIdx = 0; sIdx < subWahlen.length; sIdx++) {
+                        const sw = subWahlen[sIdx];
+                        await supa.from('gv_traktanden').insert({
+                            id: `${wahlMainId}_sub_${sIdx + 1}`,
+                            gv_id: gvId,
+                            parent_id: wahlMainId,
+                            sort_order: sIdx + 1,
+                            nummer: sw.nr,
+                            titel: sw.titel,
+                            referent: sw.ref,
+                            beschreibung: '',
+                            status: 'offen'
+                        });
+                    }
+                    if (typeof showSuccess === 'function') showSuccess("Wahltraktanden erfolgreich hinzugefügt!");
+                    await loadGVDossierData();
+                    renderLeftPanel();
+                }
+            }
+        }
+    };
+
     // =========================================================================
-    // STAMMDATEN: SPEICHERN
+    // STAMMDATEN: DIRTY TRACKER & SPEICHERN
     // =========================================================================
+
+    function gvDossierCollectStammdatenFormValues() {
+        const state = window._gvDossierState;
+        const curDraft = state.gvDraft || state.gvInstance || {};
+
+        // Falls die DOM-Felder aktuell gemountet sind, Draft aktualisieren
+        const numEl = document.getElementById('gv-stamm-number');
+        if (numEl) {
+            state.gvDraft = {
+                number: parseInt(numEl.value, 10) || curDraft.number || 100,
+                datum: document.getElementById('gv-stamm-datum')?.value || '',
+                zeit: document.getElementById('gv-stamm-zeit')?.value?.trim() || '19:30',
+                ort: document.getElementById('gv-stamm-ort')?.value?.trim() || 'Schützenhaus Muhen',
+                is_election_year: Boolean(document.getElementById('gv-stamm-wahljahr')?.checked),
+                datum_vorjahr: document.getElementById('gv-stamm-vorjahr')?.value || '',
+                abmelde_datum: document.getElementById('gv-stamm-abmeldung')?.value || '',
+                mahn_datum: document.getElementById('gv-stamm-mahnung')?.value || '',
+                linked_event_id: document.getElementById('gv-stamm-linked-event')?.value || '',
+                praesident_wort: document.getElementById('gv-stamm-praesident-wort')?.value || '',
+                vorstand_mails_str: document.getElementById('gv-stamm-vorstand-mails')?.value?.trim() || ''
+            };
+            return state.gvDraft;
+        }
+
+        // Falls Tab nicht aktiv ist, bestehenden Draft nutzen
+        const origMailsStr = Array.isArray(curDraft.vorstand_mails)
+            ? curDraft.vorstand_mails.join('; ')
+            : (curDraft.vorstand_mails_str || '');
+
+        return {
+            number: curDraft.number || 100,
+            datum: curDraft.datum || '',
+            zeit: curDraft.zeit || '19:30',
+            ort: curDraft.ort || 'Schützenhaus Muhen',
+            is_election_year: Boolean(curDraft.is_election_year),
+            datum_vorjahr: curDraft.datum_vorjahr || '',
+            abmelde_datum: curDraft.abmelde_datum || '',
+            mahn_datum: curDraft.mahn_datum || '',
+            linked_event_id: curDraft.linked_event_id || '',
+            praesident_wort: curDraft.praesident_wort || '',
+            vorstand_mails_str: curDraft.vorstand_mails_str !== undefined ? curDraft.vorstand_mails_str : origMailsStr
+        };
+    }
+
+    function gvDossierUpdateStammdatenDirtyState() {
+        const cur = gvDossierCollectStammdatenFormValues();
+        const orig = window._gvDossierState.gvInstanceOriginal || {};
+        const origMailsStr = (orig.vorstand_mails || []).join('; ');
+
+        let diffCount = 0;
+        if (cur.number !== (orig.number || 100)) diffCount++;
+        if (cur.datum !== (orig.datum || '')) diffCount++;
+        if (cur.zeit !== (orig.zeit || '19:30')) diffCount++;
+        if (cur.ort !== (orig.ort || 'Schützenhaus Muhen')) diffCount++;
+        if (cur.is_election_year !== Boolean(orig.is_election_year)) diffCount++;
+        if (cur.datum_vorjahr !== (orig.datum_vorjahr || '')) diffCount++;
+        if (cur.abmelde_datum !== (orig.abmelde_datum || '')) diffCount++;
+        if (cur.mahn_datum !== (orig.mahn_datum || '')) diffCount++;
+        if (cur.linked_event_id !== (orig.linked_event_id || '')) diffCount++;
+        if (cur.praesident_wort !== (orig.praesident_wort || '')) diffCount++;
+        if (cur.vorstand_mails_str !== origMailsStr) diffCount++;
+
+        if (window.SaveButtonKit) {
+            window.SaveButtonKit.update('btn-save-gv-global', {
+                count: diffCount,
+                canWrite: true,
+                label: 'Speichern',
+                savedLabel: 'Gespeichert'
+            });
+            window.SaveButtonKit.update('btn-save-gv-stammdaten', {
+                count: diffCount,
+                canWrite: true,
+                label: 'Stammdaten speichern',
+                savedLabel: 'Stammdaten gespeichert'
+            });
+        }
+    }
+
+    window.gvDossierOnStammdatenFieldChange = function () {
+        gvDossierCollectStammdatenFormValues();
+        gvDossierUpdateStammdatenDirtyState();
+    };
 
     /**
      * Speichert die Stammdaten in public.gv_instances
@@ -1586,22 +1954,17 @@
         const supa = getSupabase();
         if (!supa) return;
 
+        if (window.SaveButtonKit) {
+            window.SaveButtonKit.update('btn-save-gv-global', { isSaving: true });
+            window.SaveButtonKit.update('btn-save-gv-stammdaten', { isSaving: true });
+        }
+
         const state = window._gvDossierState;
         const curYear = state.year;
         const gvId = state.gvInstance?.id || `gv_${curYear}`;
 
-        const number = parseInt(document.getElementById('gv-stamm-number')?.value, 10) || 100;
-        const datum = document.getElementById('gv-stamm-datum')?.value || null;
-        const zeit = document.getElementById('gv-stamm-zeit')?.value.trim() || '19:30';
-        const ort = document.getElementById('gv-stamm-ort')?.value.trim() || 'Schützenhaus Muhen';
-        const is_election_year = Boolean(document.getElementById('gv-stamm-wahljahr')?.checked);
-        const datum_vorjahr = document.getElementById('gv-stamm-vorjahr')?.value || null;
-        const abmelde_datum = document.getElementById('gv-stamm-abmeldung')?.value || null;
-        const mahn_datum = document.getElementById('gv-stamm-mahnung')?.value || null;
-        const linked_event_id = document.getElementById('gv-stamm-linked-event')?.value || null;
-        const praesident_wort = document.getElementById('gv-stamm-praesident-wort')?.value || '';
-        const budget_text = document.getElementById('gv-stamm-budget-text')?.value || '';
-        const vorstand_mails = (document.getElementById('gv-stamm-vorstand-mails')?.value || '')
+        const vals = gvDossierCollectStammdatenFormValues();
+        const vorstand_mails = vals.vorstand_mails_str
             .split(';')
             .map(x => x.trim())
             .filter(Boolean);
@@ -1610,17 +1973,16 @@
             const { error } = await supa.from('gv_instances').upsert({
                 id: gvId,
                 year: curYear,
-                number: number,
-                datum: datum,
-                zeit: zeit,
-                ort: ort,
-                is_election_year: is_election_year,
-                datum_vorjahr: datum_vorjahr,
-                abmelde_datum: abmelde_datum,
-                mahn_datum: mahn_datum,
-                linked_event_id: linked_event_id,
-                praesident_wort: praesident_wort,
-                budget_text: budget_text,
+                number: vals.number,
+                datum: vals.datum || null,
+                zeit: vals.zeit,
+                ort: vals.ort,
+                is_election_year: vals.is_election_year,
+                datum_vorjahr: vals.datum_vorjahr || null,
+                abmelde_datum: vals.abmelde_datum || null,
+                mahn_datum: vals.mahn_datum || null,
+                linked_event_id: vals.linked_event_id || null,
+                praesident_wort: vals.praesident_wort,
                 vorstand_mails: vorstand_mails,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'year' });
@@ -1629,15 +1991,18 @@
 
             if (typeof showSuccess === 'function') showSuccess("GV-Stammdaten erfolgreich gespeichert!");
             await loadGVDossierData();
+            gvDossierUpdateStammdatenDirtyState();
             renderLeftPanel();
+            renderRightPanel();
         } catch (err) {
             console.error("Fehler beim Speichern der Stammdaten:", err);
             alert("Speichern fehlgeschlagen: " + err.message);
+            gvDossierUpdateStammdatenDirtyState();
         }
     };
 
     // =========================================================================
-    // BEILAGEN, E-MAIL & VERSAND (BESTEHENDE CORE-FUNKTIONEN)
+    // BEILAGEN, E-MAIL & VERSAND
     // =========================================================================
 
     function initSortableAttachments() {
@@ -1663,7 +2028,7 @@
 
                 try {
                     await Promise.all(updates);
-                    if (typeof showToast === 'function') showToast("Reihenfolge aktualisiert!", 'success');
+                    if (typeof showToast === 'function') showToast("Beilagen-Reihenfolge aktualisiert!", 'success');
                 } catch (e) {
                     console.error("Sortier-Fehler:", e);
                 }
@@ -1785,11 +2150,15 @@
             state.campaign.email_body = email_body;
 
             if (typeof showSuccess === 'function') showSuccess("E-Mail-Konfiguration gespeichert!");
+            if (state.activeRightTab === 'preview-mail') renderRightPanel();
         } catch (e) {
             alert("Speichern fehlgeschlagen: " + e.message);
         }
     };
 
+    /**
+     * Gesamtes Master-GV-Dossier assembliert kompilieren
+     */
     window.gvDossierCompileNow = async function () {
         const state = window._gvDossierState;
         const campId = state.campaign?.id;
@@ -1808,7 +2177,8 @@
                 gvNummer: state.gvInstance?.number || 100,
                 datum: state.gvInstance?.datum || '',
                 zeit: state.gvInstance?.zeit || '19:30',
-                ort: state.gvInstance?.ort || 'Schützenhaus Muhen'
+                ort: state.gvInstance?.ort || 'Schützenhaus Muhen',
+                datumVorjahr: state.gvInstance?.datum_vorjahr || ''
             };
 
             const res = await window.gvCompileDossierPdf(campId, year, gvData, {
@@ -1848,6 +2218,40 @@
         }
     };
 
+    /**
+     * Rendert die PDF-Vorschau der Einladung live neu
+     */
+    window.gvDossierRefreshPreview = async function () {
+        const state = window._gvDossierState;
+        const year = state.year;
+
+        if (typeof window.gvGenerateInvitationPdf !== 'function') {
+            alert("PDF-Engine für GV-Einladung nicht geladen.");
+            return;
+        }
+
+        const gvData = {
+            gvId: state.gvInstance?.id || `gv_${year}`,
+            gvNummer: state.gvInstance?.number || 100,
+            datum: state.gvInstance?.datum || '',
+            zeit: state.gvInstance?.zeit || '19:30',
+            ort: state.gvInstance?.ort || 'Schützenhaus Muhen',
+            datumVorjahr: state.gvInstance?.datum_vorjahr || ''
+        };
+
+        const res = await window.gvGenerateInvitationPdf(year, gvData, {
+            forceRecreate: true,
+            openInNewTab: false
+        });
+
+        if (res && res.success && res.pdfUrl) {
+            state.compiledPdfUrl = res.pdfUrl;
+            state.activeRightTab = 'preview-pdf';
+            renderRightPanel();
+            if (typeof showToast === 'function') showToast("Vorschau aktualisiert!", 'success');
+        }
+    };
+
     window.gvDossierSendTestMail = async function () {
         const state = window._gvDossierState;
         const loggedUser = window.currentUser || localStorage.getItem('portal_user') || 'Vorstand';
@@ -1872,7 +2276,7 @@
             const bodyHtml = (document.getElementById('gv-camp-body')?.value || state.campaign?.email_body || '')
                 .replace(/{{mitglied\.vorname}}/gi, curMember.first_name || 'Hans')
                 .replace(/{{mitglied\.nachname}}/gi, curMember.last_name || 'Muster')
-                .replace(/{{event\.datum_formatiert}}/gi, `${state.gvInstance?.datum || 'im März'} ${state.year}`)
+                .replace(/{{event\.datum_formatiert}}/gi, formatSwissDate(state.gvInstance?.datum) || `im März ${state.year}`)
                 .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank">GV-Dossier ${state.year} herunterladen (PDF)</a>`)
                 .replace(/\n/g, '<br>');
 
@@ -1953,7 +2357,7 @@
                 const personalizedBody = bodyTpl
                     .replace(/{{mitglied\.vorname}}/gi, m.first_name || '')
                     .replace(/{{mitglied\.nachname}}/gi, m.last_name || '')
-                    .replace(/{{event\.datum_formatiert}}/gi, `${state.gvInstance?.datum || 'im März'} ${state.year}`)
+                    .replace(/{{event\.datum_formatiert}}/gi, formatSwissDate(state.gvInstance?.datum) || `im März ${state.year}`)
                     .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank">GV-Dossier ${state.year} herunterladen (PDF)</a>`)
                     .replace(/\n/g, '<br>');
 
@@ -1992,6 +2396,9 @@
     };
 
     window.gvDossierSetLeftTab = function (tabKey) {
+        if (window._gvDossierState.activeLeftTab === 'stammdaten') {
+            gvDossierCollectStammdatenFormValues();
+        }
         window._gvDossierState.activeLeftTab = tabKey;
         renderGVDossierWorkspace();
     };
@@ -2090,6 +2497,7 @@
     };
 
     window.gvDossierOnLinkedEventChange = async function (newEventId) {
+        gvDossierOnStammdatenFieldChange();
         const state = window._gvDossierState;
         if (!state.gvInstance) state.gvInstance = {};
         state.gvInstance.linked_event_id = newEventId;
@@ -2204,19 +2612,12 @@
         const grundVal = statusVal === 'nein' ? (document.getElementById('gv-modal-grund')?.value.trim() || 'Abmeldung') : '';
 
         try {
-            // 1. In poll_responses schreiben (falls Umfrage verknüpft)
             if (eventId && p.lizenz) {
                 if (statusVal === 'offen') {
                     await supa.from('poll_responses')
                         .delete()
                         .eq('event_id', String(eventId))
                         .eq('lizenz', String(p.lizenz));
-                    await supa.from('poll_responses_log').insert({
-                        event_id: String(eventId),
-                        lizenz: String(p.lizenz),
-                        action: 'reset_to_open',
-                        zeitstempel: new Date().toISOString()
-                    });
                 } else {
                     const isAttending = (statusVal === 'ja');
                     await supa.from('poll_responses').upsert({
@@ -2228,21 +2629,9 @@
                         vegi: vegiVal,
                         grund: grundVal
                     }, { onConflict: 'event_id,lizenz' });
-
-                    await supa.from('poll_responses_log').insert({
-                        event_id: String(eventId),
-                        lizenz: String(p.lizenz),
-                        action: isAttending ? 'attending' : 'declined',
-                        count: countVal,
-                        essen: essenVal,
-                        vegi: vegiVal,
-                        grund: grundVal,
-                        zeitstempel: new Date().toISOString()
-                    });
                 }
             }
 
-            // 2. In gv_praesenz spiegeln
             await supa.from('gv_praesenz').upsert({
                 id: `praesenz_${curYear}_${p.person_number}`,
                 gv_id: gvId,
@@ -2258,7 +2647,6 @@
                 updated_at: new Date().toISOString()
             }, { onConflict: 'gv_id,person_number' });
 
-            // 3. Lokalen State aktualisieren
             p.status = statusVal;
             p.essen = essenVal;
             p.vegi = vegiVal;
@@ -2275,5 +2663,245 @@
         }
     };
 
-    console.log("🚀 [GV-Dossier] Modul geladen: window.renderGVDossierView aktiv mit Traktanden, Stammdaten & Anmeldungen.");
+    // =========================================================================
+    // SYSTEM-MAILS: PRÄSENZLISTE & ZWISCHENSTAND
+    // =========================================================================
+
+    /**
+     * Druckfertige Präsenzliste als PDF öffnen
+     */
+    window.gvDossierOpenPraesenzlistePdf = async function () {
+        const state = window._gvDossierState;
+        if (typeof window.gvGeneratePraesenzlistePdf !== 'function') {
+            alert("Präsenzlisten-Generator nicht verfügbar.");
+            return;
+        }
+
+        const gvData = {
+            gvNummer: state.gvInstance?.number || 100,
+            datum: state.gvInstance?.datum || '',
+            datumFormatiert: formatSwissDate(state.gvInstance?.datum) || '',
+            zeit: state.gvInstance?.zeit || '19:30',
+            ort: state.gvInstance?.ort || 'Schützenhaus Muhen'
+        };
+
+        await window.gvGeneratePraesenzlistePdf(state.year, gvData, state.participantsData, {
+            openInNewTab: true,
+            forceRecreate: true
+        });
+    };
+
+    /**
+     * Druckfertige Präsenzliste per E-Mail an den Aktuar senden (Adresse aus system_mail_configs)
+     */
+    window.gvDossierSendPraesenzlisteToAktuar = async function () {
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const curYear = state.year;
+
+        // Empfänger aus public.system_mail_configs für Aktuar holen
+        let aktuarMail = 'aktuar@example.ch';
+        try {
+            const { data: cfg } = await supa
+                .from('system_mail_configs')
+                .select('mailadresse')
+                .eq('schluessel', 'Info_Mail_Aktuar')
+                .maybeSingle();
+            if (cfg && cfg.mailadresse) aktuarMail = cfg.mailadresse;
+        } catch (_) {}
+
+        const targetMail = prompt(`Präsenzliste für GV ${curYear} an Aktuar senden:`, aktuarMail);
+        if (!targetMail) return;
+
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere Präsenzliste & sende an Aktuar (${targetMail})...`);
+        }
+
+        try {
+            const gvData = {
+                gvNummer: state.gvInstance?.number || 100,
+                datum: state.gvInstance?.datum || '',
+                datumFormatiert: formatSwissDate(state.gvInstance?.datum) || '',
+                zeit: state.gvInstance?.zeit || '19:30',
+                ort: state.gvInstance?.ort || 'Schützenhaus Muhen'
+            };
+
+            const pdfRes = await window.gvGeneratePraesenzlistePdf(curYear, gvData, state.participantsData, {
+                openInNewTab: false,
+                forceRecreate: true
+            });
+
+            if (!pdfRes || !pdfRes.success) {
+                throw new Error(pdfRes?.error || "PDF-Generierung fehlgeschlagen.");
+            }
+
+            const attachments = [];
+            if (pdfRes.storagePath) {
+                attachments.push({
+                    filename: `GV_Praesenzliste_${curYear}.pdf`,
+                    storagePath: pdfRes.storagePath,
+                    storageBucket: pdfRes.storageBucket || 'operatives-storage'
+                });
+            }
+
+            await window.sendMailViaEngine({
+                to: targetMail,
+                subject: `📄 Präsenzliste: ${gvData.gvNummer}. Generalversammlung ${curYear}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; color: #1e293b; line-height: 1.6;">
+                        <p>Hallo</p>
+                        <p>Anbei findest du die druckfertige Präsenzliste für die <strong>${gvData.gvNummer}. Generalversammlung ${curYear}</strong> vom ${gvData.datumFormatiert || gvData.datum}.</p>
+                        <p>Das Dokument enthält alle angemeldeten und aktiven Mitglieder in alphabetischer Reihenfolge sowie zusätzliche Leerzeilen für spontane Nachmeldungen am Abend.</p>
+                        <p style="margin-top: 20px;">Sportliche Grüsse<br><strong>Sportschützen Muhen</strong></p>
+                    </div>
+                `,
+                text: `Präsenzliste für die ${gvData.gvNummer}. Generalversammlung ${curYear} vom ${gvData.datumFormatiert || gvData.datum}.`,
+                moduleRef: 'gv',
+                attachments: attachments.length ? attachments : undefined
+            });
+
+            alert(`✅ Präsenzliste erfolgreich an ${targetMail} versendet!`);
+        } catch (err) {
+            console.error("Fehler beim Senden an den Aktuar:", err);
+            alert("Senden fehlgeschlagen: " + err.message);
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+        }
+    };
+
+    /**
+     * Sendet den aktuellen Zwischenstand der Anmeldungen an den Vorstand (Adresse aus system_mail_configs)
+     */
+    window.gvDossierSendAnmeldeZusammenfassungToVorstand = async function () {
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const curYear = state.year;
+        const participants = state.participantsData || [];
+
+        // Empfänger aus public.system_mail_configs für Vorstand holen
+        let vorstandMail = 'vorstand@sportschuetzen-muhen.ch';
+        try {
+            const { data: cfg } = await supa
+                .from('system_mail_configs')
+                .select('mailadresse')
+                .eq('schluessel', 'Info_Mail_Vorstand')
+                .maybeSingle();
+            if (cfg && cfg.mailadresse) vorstandMail = cfg.mailadresse;
+        } catch (_) {}
+
+        const targetMail = prompt(`Zwischenstand der GV-Anmeldungen senden an:`, vorstandMail);
+        if (!targetMail) return;
+
+        // Statistiken berechnen
+        let jaListe = [];
+        let neinListe = [];
+        let offenListe = [];
+        let totalEssen = 0;
+        let totalVegi = 0;
+
+        participants.forEach(p => {
+            if (p.status === 'ja') {
+                jaListe.push(p.name);
+                totalEssen += (p.essen || 0);
+                totalVegi += (p.vegi || 0);
+            } else if (p.status === 'nein') {
+                const grundTxt = p.grund ? ` (${p.grund})` : '';
+                neinListe.push(p.name + grundTxt);
+            } else {
+                offenListe.push(p.name);
+            }
+        });
+
+        const totalMitglieder = participants.length;
+        const totalJa = jaListe.length;
+        const totalNein = neinListe.length;
+        const totalOffen = offenListe.length;
+        const quote = totalMitglieder > 0 ? ((totalJa + totalNein) / totalMitglieder * 100).toFixed(1) : 0;
+
+        const gvNummer = state.gvInstance?.number || 100;
+        const datumStr = formatSwissDate(state.gvInstance?.datum) || `März ${curYear}`;
+
+        const reportHtml = `
+            <div style="font-family: Arial, sans-serif; color: #444; max-width: 650px; border: 1px solid #eee; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin: 0 auto;">
+                <div style="background-color: #0f3a5d; color: white; padding: 25px; text-align: center;">
+                    <h2 style="margin: 0; letter-spacing: 1px;">📊 GV-ÜBERSICHT ${curYear}</h2>
+                    <p style="margin: 8px 0 0 0; opacity: 0.85; font-size: 14px;">${gvNummer}. Generalversammlung vom ${datumStr}</p>
+                </div>
+
+                <div style="padding: 25px;">
+                    <p style="margin-bottom: 8px; font-size: 15px;"><b>Aktueller Rücklauf: ${quote}%</b> (${totalJa + totalNein} von ${totalMitglieder} Mitgliedern)</p>
+                    <div style="width: 100%; background-color: #eee; border-radius: 20px; height: 14px; margin-bottom: 25px;">
+                        <div style="width: ${quote}%; background-color: #3b82f6; height: 14px; border-radius: 20px;"></div>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: separate; border-spacing: 5px; margin-bottom: 20px; text-align: center;">
+                        <tr>
+                            <td style="width: 33%; padding: 15px; background: #e8f5e9; border-radius: 10px;">
+                                <span style="display: block; font-size: 26px; color: #2e7d32; font-weight: bold;">${totalJa}</span>
+                                <span style="font-size: 11px; color: #2e7d32; text-transform: uppercase; font-weight: bold;">Zusagen</span>
+                            </td>
+                            <td style="width: 33%; padding: 15px; background: #ffebee; border-radius: 10px;">
+                                <span style="display: block; font-size: 26px; color: #c62828; font-weight: bold;">${totalNein}</span>
+                                <span style="font-size: 11px; color: #c62828; text-transform: uppercase; font-weight: bold;">Absagen</span>
+                            </td>
+                            <td style="width: 33%; padding: 15px; background: #fff3e0; border-radius: 10px;">
+                                <span style="display: block; font-size: 26px; color: #e65100; font-weight: bold;">${totalOffen}</span>
+                                <span style="font-size: 11px; color: #e65100; text-transform: uppercase; font-weight: bold;">Offen</span>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <div style="background-color: #f1f5f9; padding: 12px; border-radius: 8px; margin-bottom: 25px; font-size: 14px; text-align: center;">
+                        🍽️ <b>Essen-Zusammenfassung (Wirt):</b> Standard: <b>${totalEssen}</b> | Vegetarisch: <b>${totalVegi}</b> (Gesamt: <b>${totalEssen + totalVegi}</b>)
+                    </div>
+
+                    <table style="width: 100%; font-size: 13px; line-height: 1.6; border-collapse: collapse;">
+                        <tr style="vertical-align: top;">
+                            <td style="width: 33%; padding-right: 10px;">
+                                <h4 style="color: #2e7d32; border-bottom: 2px solid #2e7d32; padding-bottom: 4px; margin-top: 0;">✅ Ja (${totalJa})</h4>
+                                ${jaListe.map(n => "• " + escapeHtml(n)).join("<br>") || "-"}
+                            </td>
+                            <td style="width: 33%; padding: 0 8px;">
+                                <h4 style="color: #c62828; border-bottom: 2px solid #c62828; padding-bottom: 4px; margin-top: 0;">❌ Nein (${totalNein})</h4>
+                                ${neinListe.map(n => "• " + escapeHtml(n)).join("<br>") || "-"}
+                            </td>
+                            <td style="width: 33%; padding-left: 10px;">
+                                <h4 style="color: #e65100; border-bottom: 2px solid #e65100; padding-bottom: 4px; margin-top: 0;">⏳ Offen (${totalOffen})</h4>
+                                ${offenListe.map(n => "• " + escapeHtml(n)).join("<br>") || "-"}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div style="background-color: #f8f9fa; padding: 15px; text-align: center; font-size: 11px; color: #888; border-top: 1px solid #eee;">
+                    Automatisch generiert aus dem Portal der Sportschützen Muhen
+                </div>
+            </div>
+        `;
+
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Sende GV-Zwischenstand an ${targetMail}...`);
+        }
+
+        try {
+            await window.sendMailViaEngine({
+                to: targetMail,
+                subject: `📊 GV-Update: ${quote}% Rücklauf (${totalJa} Ja / ${totalNein} Nein) – Generalversammlung ${curYear}`,
+                html: reportHtml,
+                text: `GV-Zwischenstand: ${quote}% Rücklauf (${totalJa} Ja, ${totalNein} Nein, ${totalOffen} Offen).`,
+                moduleRef: 'gv'
+            });
+
+            alert(`✅ GV-Zwischenstand erfolgreich an ${targetMail} versendet!`);
+        } catch (err) {
+            console.error("Fehler beim Senden des Zwischenstands:", err);
+            alert("Senden fehlgeschlagen: " + err.message);
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+        }
+    };
+
+    console.log("🚀 [GV-Dossier] Modul geladen: SortableJS Drag & Drop, SaveButtonKit, Präsenzliste & System-Mails aktiv.");
 })();

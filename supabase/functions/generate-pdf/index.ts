@@ -97,7 +97,10 @@ function sanitizeWinAnsiText(str: string | null | undefined): string {
     .replace(/[\u2013\u2014]/g, "-")                         // – —
     .replace(/\u2022/g, "-")                                 // •
     .replace(/\u2026/g, "...")                               // …
-    .replace(/[\u00A0\u202F]/g, " ");                        // Non-breaking spaces
+    .replace(/[\u00A0\u202F]/g, " ")                         // Non-breaking spaces
+    .replace(/a\u0308/g, "ä").replace(/o\u0308/g, "ö").replace(/u\u0308/g, "ü")
+    .replace(/A\u0308/g, "Ä").replace(/O\u0308/g, "Ö").replace(/U\u0308/g, "Ü")
+    .replace(/M\?rz/g, "März");                              // Reparatur allfälliger Alt-Artefakte
 
   // Stufe 2: WinAnsi-Bereich (0x00 - 0xFF) sicherstellen
   // Bekannte Sonderzeichen oberhalb von 255 sauber mappen
@@ -1863,11 +1866,37 @@ async function generateGVInvitationPdf(
         .maybeSingle();
 
       if (tData) {
+        const rawDatum = gvData.datum || "";
+        let formattedDatum = rawDatum;
+        if (rawDatum && rawDatum.includes("-")) {
+          const dp = rawDatum.split("-");
+          if (dp.length === 3) {
+            const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+            const mIdx = parseInt(dp[1], 10) - 1;
+            if (mIdx >= 0 && mIdx < 12) {
+              formattedDatum = `${parseInt(dp[2], 10)}. ${months[mIdx]} ${dp[0]}`;
+            }
+          }
+        }
+        if (!formattedDatum) formattedDatum = `im März ${year}`;
+
+        const gvZeitClean = gvData.zeit ? (gvData.zeit.includes("Uhr") ? gvData.zeit : `${gvData.zeit} Uhr`) : "19:30 Uhr";
+        const gvOrtClean = gvData.ort || "Schützenstube Hard, Muhen";
+        const praesiName = gvData.praesidentName || gvData.praesident_name || "Andrea Rossi";
+        const vorjahrDatum = gvData.datumVorjahr || gvData.datum_vorjahr || `${year - 1}`;
+
         const replacePlaceholders = (text: string) => {
+          if (!text) return "";
           return text
             .replace(/{jahr}/gi, String(year))
             .replace(/{rechnungsjahr}/gi, String(year))
-            .replace(/{gv_nummer}/gi, String(gvData.gvNummer || ""));
+            .replace(/{gv_nummer}/gi, String(gvData.gvNummer || gvData.number || "100"))
+            .replace(/{gv_datum}/gi, formattedDatum)
+            .replace(/{gv_zeit}/gi, gvZeitClean)
+            .replace(/{gv_ort}/gi, gvOrtClean)
+            .replace(/{praesident_name}/gi, praesiName)
+            .replace(/{{Datum_Vorjahr}}/gi, String(vorjahrDatum))
+            .replace(/{datum_vorjahr}/gi, String(vorjahrDatum));
         };
 
         if (tData.title) templateTitle = replacePlaceholders(tData.title);
@@ -2004,9 +2033,9 @@ async function generateGVInvitationPdf(
     color: rgb(0.94, 0.96, 0.99),
   });
 
-  const gvDatum = gvData.datum || `Freitag, im März ${year}`;
-  const gvZeit = gvData.zeit || "19:30 Uhr";
-  const gvOrt = gvData.ort || "Schützenstube Hard, Muhen";
+  const gvDatum = formattedDatum;
+  const gvZeit = gvZeitClean;
+  const gvOrt = gvOrtClean;
 
   page1.drawText(`Datum & Zeit:  ${sanitizeWinAnsiText(gvDatum)}, ${sanitizeWinAnsiText(gvZeit)}`, {
     x: 24 * MM,
@@ -3105,6 +3134,287 @@ async function compileGvDossierPdf(
   };
 }
 
+// ==============================================================================
+// GENERATOR: DRUCKFERTIGE GV-PRÄSENZLISTE (MIT UNTERSCHRIFTEN & AUSZÄHLUNGSBOX)
+// ==============================================================================
+async function generateGvPraesenzlistePdf(
+  year: number,
+  gvData: any,
+  participants: any[],
+  supabaseClient?: any
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // 1. Logo laden
+  let logoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      logoImage = await pdfDoc.embedPng(logoBytes);
+    } catch (_) {
+      try {
+        logoImage = await pdfDoc.embedJpg(logoBytes);
+      } catch (_) {}
+    }
+  }
+
+  // Teilnehmerliste sortieren
+  let list = (participants || []).slice().sort((a: any, b: any) => {
+    const na = (a.last_name || a.nachname || "").localeCompare(b.last_name || b.nachname || "");
+    if (na !== 0) return na;
+    return (a.first_name || a.vorname || "").localeCompare(b.first_name || b.vorname || "");
+  });
+
+  if (list.length === 0 && supabaseClient) {
+    try {
+      const { data: mems } = await supabaseClient
+        .from("members")
+        .select("person_number, first_name, last_name")
+        .eq("is_active", true)
+        .eq("deceased", false)
+        .is("club_exit_date", null)
+        .order("last_name", { ascending: true });
+      if (mems && mems.length > 0) {
+        list = mems;
+      }
+    } catch (_) {}
+  }
+
+  // 15 Leerzeilen für manuelle Ergänzungen am Abend
+  for (let i = 0; i < 15; i++) {
+    list.push({ isBlank: true });
+  }
+
+  const gvNummer = gvData.gvNummer || gvData.number || 100;
+  const rawD = gvData.datum || "";
+  let formattedD = rawD;
+  if (rawD && rawD.includes("-")) {
+    const dp = rawD.split("-");
+    if (dp.length === 3) {
+      const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+      const mIdx = parseInt(dp[1], 10) - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        formattedD = `${parseInt(dp[2], 10)}. ${months[mIdx]} ${dp[0]}`;
+      }
+    }
+  }
+  if (!formattedD) formattedD = `März ${year}`;
+
+  const renderPraesenzHeader = (page: any, isFirst: boolean) => {
+    let curY = A4_HEIGHT - 16 * MM;
+
+    // Logo oben links
+    if (logoImage) {
+      const dims = logoImage.scaleToFit(26 * MM, 26 * MM);
+      page.drawImage(logoImage, {
+        x: 18 * MM,
+        y: curY - dims.height + 2 * MM,
+        width: dims.width,
+        height: dims.height,
+      });
+    }
+
+    // Titel oben rechts
+    page.drawText("Präsenzliste", {
+      x: A4_WIDTH - 85 * MM,
+      y: curY,
+      size: 18,
+      font: fontBold,
+      color: rgb(0.08, 0.15, 0.35),
+    });
+    page.drawText(sanitizeWinAnsiText(`${gvNummer}. Generalversammlung ${year}`), {
+      x: A4_WIDTH - 85 * MM,
+      y: curY - 5.5 * MM,
+      size: 9.5,
+      font: fontBold,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+    page.drawText(sanitizeWinAnsiText(`Sportschützen Muhen · ${formattedD}`), {
+      x: A4_WIDTH - 85 * MM,
+      y: curY - 9.5 * MM,
+      size: 8.5,
+      font: fontRegular,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+
+    curY -= 14 * MM;
+
+    // Nur auf Seite 1: Auszählung / Beschlussfähigkeits-Box
+    if (isFirst) {
+      curY -= 2 * MM;
+      const boxW = 125 * MM;
+      const boxH = 16 * MM;
+      page.drawRectangle({
+        x: 18 * MM,
+        y: curY - boxH,
+        width: boxW,
+        height: boxH,
+        color: rgb(0.97, 0.98, 0.99),
+        borderColor: rgb(0.7, 0.75, 0.82),
+        borderWidth: 0.8,
+      });
+
+      page.drawText("Auszählung / Beschlussfähigkeit", {
+        x: 22 * MM,
+        y: curY - 4.5 * MM,
+        size: 8.5,
+        font: fontBold,
+        color: rgb(0.12, 0.2, 0.4),
+      });
+
+      page.drawText("Anwesende Stimmberechtigte (Total Kreuze):", {
+        x: 22 * MM,
+        y: curY - 9.5 * MM,
+        size: 8,
+        font: fontRegular,
+      });
+      page.drawLine({
+        start: { x: 92 * MM, y: curY - 10 * MM },
+        end: { x: 114 * MM, y: curY - 10 * MM },
+        thickness: 0.8,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      page.drawText("Pers.", { x: 116 * MM, y: curY - 9.5 * MM, size: 8, font: fontRegular });
+
+      page.drawText("Absolutes Mehr (Hälfte + 1):", {
+        x: 22 * MM,
+        y: curY - 14 * MM,
+        size: 8,
+        font: fontRegular,
+      });
+      page.drawLine({
+        start: { x: 92 * MM, y: curY - 14.5 * MM },
+        end: { x: 114 * MM, y: curY - 14.5 * MM },
+        thickness: 0.8,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      page.drawText("Stimmen", { x: 116 * MM, y: curY - 14 * MM, size: 8, font: fontRegular });
+
+      curY -= (boxH + 4 * MM);
+    }
+
+    // Tabellen-Header
+    const tableHeaderY = curY - 5.5 * MM;
+    page.drawRectangle({
+      x: 18 * MM,
+      y: tableHeaderY,
+      width: 174 * MM,
+      height: 6 * MM,
+      color: rgb(0.1, 0.18, 0.35),
+    });
+
+    page.drawText("Nr.", { x: 20 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("✔", { x: 29 * MM, y: tableHeaderY + 1.8 * MM, size: 8.5, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Nachname", { x: 38 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Vorname", { x: 82 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Unterschrift (bei Anwesenheit)", { x: 126 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
+
+    return tableHeaderY;
+  };
+
+  let page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let curY = renderPraesenzHeader(page, true);
+
+  const rowHeight = 6.4 * MM;
+  list.forEach((m: any, idx: number) => {
+    if (curY < 20 * MM) {
+      page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      curY = renderPraesenzHeader(page, false);
+    }
+
+    const isEven = idx % 2 === 0;
+    if (isEven) {
+      page.drawRectangle({
+        x: 18 * MM,
+        y: curY - rowHeight,
+        width: 174 * MM,
+        height: rowHeight,
+        color: rgb(0.98, 0.98, 0.99),
+      });
+    }
+
+    // Zeilen-Umrandung
+    page.drawRectangle({
+      x: 18 * MM,
+      y: curY - rowHeight,
+      width: 174 * MM,
+      height: rowHeight,
+      borderColor: rgb(0.85, 0.88, 0.92),
+      borderWidth: 0.5,
+    });
+
+    // Anwesenheits-Kästchen
+    page.drawRectangle({
+      x: 28.5 * MM,
+      y: curY - rowHeight + 1.5 * MM,
+      width: 3.4 * MM,
+      height: 3.4 * MM,
+      borderColor: rgb(0.55, 0.6, 0.7),
+      borderWidth: 0.8,
+    });
+
+    const nrStr = String(idx + 1);
+    page.drawText(nrStr, {
+      x: 20 * MM,
+      y: curY - rowHeight + 2 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+
+    if (!m.isBlank) {
+      const lName = m.last_name || m.nachname || "";
+      const fName = m.first_name || m.vorname || "";
+      page.drawText(sanitizeWinAnsiText(lName), {
+        x: 38 * MM,
+        y: curY - rowHeight + 2 * MM,
+        size: 8.5,
+        font: fontBold,
+        color: rgb(0.12, 0.15, 0.2),
+      });
+      page.drawText(sanitizeWinAnsiText(fName), {
+        x: 82 * MM,
+        y: curY - rowHeight + 2 * MM,
+        size: 8.5,
+        font: fontRegular,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+    }
+
+    curY -= rowHeight;
+  });
+
+  // 2-Pass Seitennummerierung
+  const totalPages = pdfDoc.getPageCount();
+  const allPages = pdfDoc.getPages();
+  allPages.forEach((p, idx) => {
+    const pageStr = `Seite ${idx + 1} von ${totalPages}`;
+    const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+    const centerX = (A4_WIDTH - pageStrW) / 2;
+    p.drawText(pageStr, {
+      x: centerX,
+      y: 7 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.45, 0.45, 0.45),
+    });
+    p.drawText(`Sportschützen Muhen · Generalversammlung ${year} · Präsenzliste`, {
+      x: 18 * MM,
+      y: 7 * MM,
+      size: 7.0,
+      font: fontRegular,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+  });
+
+  return await pdfDoc.save();
+}
+
 // Optionaler Paperless-NGX REST-Upload
 async function syncToPaperlessNgx(
   pdfBytes: Uint8Array,
@@ -3401,6 +3711,27 @@ Deno.serve(async (req: Request) => {
       fileName = `GV_Dossier_${year}_Gesamt.pdf`;
       storageSubDir = `gv-dossiers/${year}`;
       docTitle = `GV-Dossier ${year} Gesamt (${res.pageCount} Seiten)`;
+    }
+
+    // --------------------------------------------------------------------------
+    // FALL 4b: GENERALVERSAMMLUNGS-PRÄSENZLISTE (DRUCKFERTIGES PDF)
+    // --------------------------------------------------------------------------
+    else if (action === "generate-gv-praesenzliste" || action === "generateGVPraesenzlistePDF") {
+      const year = Number(payload.year || curYear);
+      const gvData = (payload as any).gvData || {};
+      const participants = (payload as any).participants || [];
+      recordId = `GV-PRAESENZ-${year}`;
+
+      pdfBytes = await generateGvPraesenzlistePdf(
+        year,
+        gvData,
+        participants,
+        supabase
+      );
+
+      fileName = `GV_Praesenzliste_${year}.pdf`;
+      storageSubDir = `gv/${curYear}`;
+      docTitle = `Präsenzliste zur ${gvData.gvNummer || ''}. Generalversammlung ${year}`;
     }
 
     // --------------------------------------------------------------------------

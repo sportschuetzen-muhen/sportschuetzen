@@ -637,6 +637,58 @@
     };
 
     /**
+     * Generiert die druckfertige Präsenzliste für den GV-Abend (A4 mit Unterschriften & Auszählungsbox)
+     * @param {number|string} year - Das Jahr der GV
+     * @param {Object} [gvData] - { gvNummer, datum, zeit, ort }
+     * @param {Array}  [participants] - Liste der Teilnehmer / Stimmberechtigten
+     * @param {Object} [options] - Optionen: { openInNewTab, forceRecreate }
+     */
+    window.gvGeneratePraesenzlistePdf = async function (year, gvData = {}, participants = [], options = {}) {
+        const curYear = Number(year || new Date().getFullYear());
+        if (typeof showLoadingOverlay === 'function') {
+            showLoadingOverlay(`Generiere druckfertige Präsenzliste für GV ${curYear}...`);
+        }
+
+        const payload = {
+            action: 'generate-gv-praesenzliste',
+            year: curYear,
+            gvData: gvData,
+            participants: participants,
+            forceRecreate: options.forceRecreate !== false,
+            saveToStorage: true
+        };
+
+        try {
+            let res = await window.generatePdfViaEngine(payload);
+            if (!res.success) {
+                throw new Error(res.error || "Generierung der Präsenzliste fehlgeschlagen.");
+            }
+
+            if (options.openInNewTab !== false) {
+                if (res.pdfUrl && res.pdfUrl.startsWith('http')) {
+                    window.open(res.pdfUrl, '_blank');
+                } else if (res.pdfBase64 && typeof openPdfBase64 === 'function') {
+                    openPdfBase64(res.pdfBase64);
+                }
+            }
+
+            return res;
+        } catch (err) {
+            console.error("Präsenzliste PDF Fehler:", err);
+            if (typeof showError === 'function') {
+                showError("Fehler beim Generieren der Präsenzliste: " + err.message);
+            } else {
+                alert("❌ Fehler beim Generieren der Präsenzliste: " + err.message);
+            }
+            return { success: false, error: err.message };
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') {
+                hideLoadingOverlay();
+            }
+        }
+    };
+
+    /**
      * Zentrale PDF-Generierung für offizielle Vorstandsbriefe (Typ 2)
      * @param {Object} options
      * @param {string} [options.letterId]

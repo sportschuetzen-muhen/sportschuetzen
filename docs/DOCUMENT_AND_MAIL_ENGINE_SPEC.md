@@ -440,4 +440,20 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
   - Beim Erstellen oder Auswählen einer GV verknüpft das System automatisch den passenden Umfrage-Event des gleichen Jahres, wenn der Titel das Wort **«Generalversammlung»** enthält (Case-Insensitive).
   - Ein dezenter Hinweisbanner im Dashboard erinnert den Benutzer an diese Schreibweise.
 
+### 11.3 Harmonisierung Traktanden, SaveButtonKit, Präsenzliste & Mail-Verteiler (Oktober 2026)
+- **SortableJS Drag & Drop für Traktanden & Beilagen:**
+  - Haupttraktanden (`.gv-main-drag-handle`) und Unterpunkte (`.gv-sub-drag-handle`) sowie Dossier-Beilagen können intuitiv per Drag & Drop verschoben werden. Die Sortierreihenfolge (`sort_order`) wird direkt in Supabase persistiert.
+  - Wahljahr-Toggle (`gvDossierToggleWahljahr`) injiziert oder entfernt dynamisch das Traktandum «Wahlen» samt den 4 statutarischen Unterpunkten (Vorstand, Präsident, Revisoren, Fähnrich).
+  - Vorjahres-Übernahme (`gvDossierCopyPreviousYearTraktanden`) kopiert auf Knopfdruck alle Traktanden des Vorjahres inklusive Unterstrukturen.
+- **Globaler SaveButtonKit Dirty Tracker:**
+  - Stammdaten-Änderungen werden mit `SaveButtonKit` synchronisiert. Der Speichern-Button ist sowohl im Modul-Header (`btn-save-gv-global`) als auch im Stammdaten-Tab (`btn-save-gv-stammdaten`) aktiv und zeigt die Anzahl ungespeicherter Änderungen (`Speichern (N)`).
+  - Die Entwurfsdaten (`state.gvDraft`) bleiben beim Wechsel zwischen den Tabs vollständig erhalten.
+- **Druckfertige Präsenzliste DIN A4 (`generate-gv-praesenzliste`):**
+  - Edge Function generiert ein druckfertiges DIN A4 PDF mit Quorum-Box (Anwesende Stimmberechtigte / Absolutes Mehr), Stimmberechtigten-Tabelle (`Nr.`, `✔`, `Nachname`, `Vorname`, `Unterschrift`) und 15 Leerzeilen für spontane Nachmeldungen.
+- **Dynamische E-Mail-Verteiler (`public.system_mail_configs`):**
+  - Versand der druckfertigen Präsenzliste an den Aktuar via Schlüssel `Info_Mail_Aktuar`.
+  - Versand des aktuellen Zwischenstands der Anmeldungen an den Vorstand via Schlüssel `Info_Mail_Vorstand` (inkl. Quote, Zusagen/Absagen-Listen und Menü-Zusammenfassung).
+  - Beide Verteiler unterstützen Semikolon-getrennte Mehrfachempfänger und werden vollautomatisch über die Mail-Engine versendet.
+
+
 
