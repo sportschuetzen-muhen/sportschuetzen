@@ -185,5 +185,13 @@ Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung
   * Simon Hediger (Schützenmeister bis 12.03.2026 $\rightarrow$ beendet; seit 12.03.2026 neu Präsident $\rightarrow$ aktiv)
   * Stefanie Berchtold (Juniorenleiterin bis 12.03.2026 $\rightarrow$ beendet)
 
+### 7.7 Porträtfoto-Pipeline & Zentraler `ImageKit`-Standard
+* **Zweck:** Bereitstellung von hochwertigen Porträt- und Avatarfotos für Vorstandscockpit, Schützen-Web-App und Vereinswebsite (Bucket `operatives-storage/avatars/member_{person_number}.webp`).
+* **Multi-Format & Apple HEIC-Support:** Clientseitige Normalisierung via globalem `window.ImageKit` (`vorstand/js/image-kit.js`). Apple iPhone Fotos (`.heic`/`.heif`) werden vor der Weiterverarbeitung automatisch via `heic2any` in JPEG gewandelt.
+* **Resiliente Dekodierungs-Pipeline:** Dreistufiger Fallback (`createImageBitmap` $\rightarrow$ `HTMLImageElement` via `URL.createObjectURL` $\rightarrow$ `FileReader` DataURL) verhindert zuverlässig Browser-Dekodierungsfehler (`The source image could not be decoded`).
+* **Zuschnitt & Optimierung:** Vollautomatischer zentrierter quadratischer Zuschnitt (Center-Crop) auf 600×600 px mit anschliessender WebP-Komprimierung (Qualität 85%, automatischer JPEG-Fallback bei älteren Browsern).
+* **Persistenz & Cache-Busting:** Das optimierte Bild wird direkt in Supabase Storage (`operatives-storage`) hochgeladen und mit Cache-Busting-Timestamp (`?t=${Date.now()}`) in `members.avatar_url` gespeichert.
+
+
 
 

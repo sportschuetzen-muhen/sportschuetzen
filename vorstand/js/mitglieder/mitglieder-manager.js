@@ -366,39 +366,47 @@ async function mglHandleAvatarUpload(event, pn) {
   const previewBox = document.getElementById('mglAvatarPreviewBox');
   const hiddenInput = document.getElementById('mglEditAvatarUrl');
 
-  if (statusEl) statusEl.innerHTML = '<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Foto wird optimiert & hochgeladen...</span>';
+  const isHeic = window.ImageKit && window.ImageKit.isHeic(file);
+  if (statusEl) {
+    statusEl.innerHTML = isHeic 
+      ? '<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> 🍎 Apple HEIC wird konvertiert & optimiert...</span>'
+      : '<span class="text-primary"><i class="fas fa-spinner fa-spin me-1"></i> Foto wird optimiert & hochgeladen...</span>';
+  }
 
   try {
-    // 1. Bild laden und via Canvas auf max 600x600 px zentriert zuschneiden
-    const imgBitmap = await createImageBitmap(file);
-    const canvas = document.createElement('canvas');
-    const size = 600;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-
-    const minSide = Math.min(imgBitmap.width, imgBitmap.height);
-    const startX = (imgBitmap.width - minSide) / 2;
-    const startY = (imgBitmap.height - minSide) / 2;
-
-    ctx.drawImage(imgBitmap, startX, startY, minSide, minSide, 0, 0, size, size);
-
-    // 2. In WebP Blob konvertieren (Qualität 82%)
-    const blob = await new Promise((resolve) => {
-      canvas.toBlob((b) => resolve(b), 'image/webp', 0.82);
-    });
+    // 1. Zentrales ImageKit: HEIC-Normalisierung, robuste Multi-Fallback Dekodierung & 600x600 WebP Zuschnitt
+    let blob;
+    let format = 'image/webp';
+    if (window.ImageKit && typeof window.ImageKit.cropSquare === 'function') {
+      const processed = await window.ImageKit.cropSquare(file, { size: 600, quality: 0.85, format: 'image/webp' });
+      blob = processed.blob;
+      format = processed.format || 'image/webp';
+    } else {
+      // Fallback
+      const imgBitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      canvas.width = 600;
+      canvas.height = 600;
+      const ctx = canvas.getContext('2d');
+      const minSide = Math.min(imgBitmap.width, imgBitmap.height);
+      const startX = (imgBitmap.width - minSide) / 2;
+      const startY = (imgBitmap.height - minSide) / 2;
+      ctx.drawImage(imgBitmap, startX, startY, minSide, minSide, 0, 0, 600, 600);
+      blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.82));
+    }
 
     if (!blob) throw new Error('Bildkonvertierung fehlgeschlagen.');
 
-    // 3. Supabase Client & Upload in operatives-storage Bucket
+    // 2. Supabase Client & Upload in operatives-storage Bucket
     const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
     if (!supa) throw new Error('Supabase Client nicht verfügbar.');
 
-    const filePath = `avatars/member_${pn}.webp`;
+    const ext = format === 'image/jpeg' ? 'jpg' : 'webp';
+    const filePath = `avatars/member_${pn}.${ext}`;
     const { error: uploadErr } = await supa.storage
       .from('operatives-storage')
       .upload(filePath, blob, {
-        contentType: 'image/webp',
+        contentType: format,
         upsert: true
       });
 

@@ -315,7 +315,7 @@ function mglOpenDetail(pn) {
               <div class="card border mb-3 shadow-xs rounded-3">
                 <div class="card-header bg-light py-2 fw-bold small text-muted text-uppercase d-flex justify-content-between align-items-center">
                   <span><i class="fas fa-camera text-primary me-1"></i> Porträtfoto (Website & Portal)</span>
-                  <span class="badge bg-secondary-subtle text-secondary small">WebP / JPG • 600×600 px</span>
+                  <span class="badge bg-secondary-subtle text-secondary small">Alle Formate (JPG, PNG, HEIC, WebP) • 600×600 px</span>
                 </div>
                 <div class="card-body p-3">
                   <div class="d-flex align-items-center gap-3">
@@ -327,14 +327,14 @@ function mglOpenDetail(pn) {
                       <div class="d-flex gap-2 mb-1 flex-wrap">
                         <label class="btn btn-sm btn-outline-primary mb-0 cursor-pointer">
                           <i class="fas fa-upload me-1"></i> Foto hochladen...
-                          <input type="file" id="mglAvatarFileInput" accept="image/*" style="display: none;" onchange="mglHandleAvatarUpload(event, '${pn}')">
+                          <input type="file" id="mglAvatarFileInput" accept="image/*,.heic,.heif" style="display: none;" onchange="mglHandleAvatarUpload(event, '${pn}')">
                         </label>
                         ${m.AvatarUrl ? `
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="mglRemoveAvatar('${pn}')">
                           <i class="fas fa-trash-alt me-1"></i> Foto entfernen
                         </button>` : ''}
                       </div>
-                      <div class="small text-muted" id="mglAvatarStatusText">Wird öffentlich auf der Vereinswebsite im Vorstandsbereich angezeigt (automatisch auf 600×600 px optimiert).</div>
+                      <div class="small text-muted" id="mglAvatarStatusText">Wird öffentlich auf der Vereinswebsite im Vorstandsbereich angezeigt (automatisch zentriert auf 600×600 px optimiert).</div>
                     </div>
                   </div>
                 </div>
