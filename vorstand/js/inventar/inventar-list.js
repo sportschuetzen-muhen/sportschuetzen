@@ -417,6 +417,7 @@ function renderInventoryTable() {
         'Sponsor_Firma': 'Sponsor-Firma',
         'Verkaufspreis': 'Endpreis für Mitglied',
         'Groesse': 'Grösse',
+        'Schaft': 'Schaft',
         'Aktueller_Besitzer_ID': 'Besitzer'
     };
 
@@ -560,7 +561,7 @@ function renderItemModalFields(target) {
     if (!fieldsDiv || !target || !inventarState) return;
 
     const configs = {
-        "Inventar_Gewehre":           ["Hersteller","Modell","Laufnummer","Diopter","Ringkorn",
+        "Inventar_Gewehre":           ["Hersteller","Modell","Laufnummer","Diopter","Ringkorn","Schaft",
                                        "Zubehoer","Spezielles","Distanz","Eigentümer_ID",
                                        "Gespendet_ID","Kauf_Spender_Jahr","Verkaeufer_ID","Kaufpreis","Depotbetrag"],
         "Inventar_Schluessel":        ["Bezeichnung","Nummer","Depotbetrag"],
@@ -576,6 +577,7 @@ function renderItemModalFields(target) {
     };
 
     const fieldLabels = {
+        "Schaft": "Schaft / Schaftart",
         "Grundpreis": "Einstandspreis Material CHF",
         "Veredelung": "Einstandspreis Druck CHF",
         "Kaufpreis": "Total Einstandspreis CHF",
@@ -775,6 +777,7 @@ async function saveInventarItemModal(e) {
                 supaItem.serial_number = fields.Laufnummer || null;
                 supaItem.diopter = fields.Diopter || null;
                 supaItem.front_sight = fields.Ringkorn || null;
+                supaItem.stock = fields.Schaft ? fields.Schaft.trim() : null;
                 supaItem.accessories = fields.Zubehoer || null;
                 supaItem.special_notes = fields.Spezielles || null;
                 supaItem.caliber_distance = fields.Distanz || '50m';

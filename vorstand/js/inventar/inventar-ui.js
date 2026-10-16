@@ -1065,6 +1065,7 @@ function getCategoryExportRows(targetKey, onlyFiltered = false) {
             'Laufnummer': r.Laufnummer || '',
             'Diopter': r.Diopter || '',
             'Ringkorn': r.Ringkorn || '',
+            'Schaft': r.Schaft || '',
             'Zubehör': r.Zubehoer || '',
             'Spezielles': r.Spezielles || '',
             'Distanz': r.Distanz || '',

@@ -211,6 +211,7 @@ window.invProcessRawData = function(jsonRows) {
             else if (n === 'laufnummer' || n === 'seriennummer' || n === 'nummer') headerIndices.seriennummer = idx;
             else if (n === 'diopter') headerIndices.diopter = idx;
             else if (n === 'ringkorn' || n === 'frontsight') headerIndices.ringkorn = idx;
+            else if (n === 'schaft' || n === 'stock' || n === 'schaftart' || n === 'schafttyp' || n === 'schaftausfuehrung') headerIndices.schaft = idx;
             else if (n === 'distanz' || n === 'kaliber' || n === 'kaliberdistanz') headerIndices.distanz = idx;
             else if (n === 'zubehoer' || n === 'zubehor') headerIndices.zubehoer = idx;
             else if (n === 'spezielles' || n === 'bemerkung' || n === 'notizen') headerIndices.spezielles = idx;
@@ -282,12 +283,22 @@ window.invProcessRawData = function(jsonRows) {
             serial_number: (headerIndices.seriennummer !== undefined && row[headerIndices.seriennummer]) ? String(row[headerIndices.seriennummer]).trim() : null,
             diopter: (headerIndices.diopter !== undefined && row[headerIndices.diopter]) ? String(row[headerIndices.diopter]).trim() : null,
             front_sight: (headerIndices.ringkorn !== undefined && row[headerIndices.ringkorn]) ? String(row[headerIndices.ringkorn]).trim() : null,
+            stock: (headerIndices.schaft !== undefined && row[headerIndices.schaft]) ? String(row[headerIndices.schaft]).trim() : null,
             caliber_distance: (headerIndices.distanz !== undefined && row[headerIndices.distanz]) ? String(row[headerIndices.distanz]).trim() : (category === 'gewehr' ? '50m' : null),
             accessories: (headerIndices.zubehoer !== undefined && row[headerIndices.zubehoer]) ? String(row[headerIndices.zubehoer]).trim() : null,
             special_notes: (headerIndices.spezielles !== undefined && row[headerIndices.spezielles]) ? String(row[headerIndices.spezielles]).trim() : null,
             key_name: (category === 'schluessel' && headerIndices.typ !== undefined) ? String(row[headerIndices.typ]).trim() : null,
             key_number: (category === 'schluessel' && headerIndices.seriennummer !== undefined) ? String(row[headerIndices.seriennummer]).trim() : null
         };
+
+        // Smarte Toleranz bei Gewehren: Falls in der Spalte "Distanz" Schaft-Begriffe stehen
+        if (category === 'gewehr') {
+            const distNorm = (itemObj.caliber_distance || '').toLowerCase();
+            if (!itemObj.stock && (distNorm.includes('schaft') || distNorm.includes('alu') || distNorm.includes('holz') || distNorm.includes('bügel') || distNorm.includes('buegel') || distNorm.includes('standard'))) {
+                itemObj.stock = itemObj.caliber_distance;
+                itemObj.caliber_distance = '50m';
+            }
+        }
 
         // Auf ganze Franken runden falls Dezimalstellen vorhanden (gemäss Vorstands-Vorgabe)
         if (itemObj.purchase_price !== null) itemObj.purchase_price = Math.round(itemObj.purchase_price);
@@ -399,6 +410,7 @@ window.invRenderPreview = function(items, category) {
             <th>ID</th>
             <th>Hersteller & Modell</th>
             <th>Laufnummer</th>
+            <th>Schaft</th>
             <th>Distanz</th>
             <th>Visierung</th>
             <th>Kaufdatum</th>
@@ -411,6 +423,7 @@ window.invRenderPreview = function(items, category) {
                 <td class="font-monospace fw-bold text-primary">${escapeHtml(it.id)}</td>
                 <td>${escapeHtml([it.manufacturer, it.model].filter(Boolean).join(' ') || '-')}</td>
                 <td class="font-monospace">${escapeHtml(it.serial_number || '-')}</td>
+                <td>${escapeHtml(it.stock || '-')}</td>
                 <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(it.caliber_distance || '50m')}</span></td>
                 <td class="small text-muted">${escapeHtml([it.diopter, it.front_sight].filter(Boolean).join(' / ') || '-')}</td>
                 <td class="small text-muted font-monospace">${it.purchase_date || '-'}</td>
@@ -699,6 +712,7 @@ window.invDownloadExcelTemplate = function() {
                 "Laufnummer": "CH-9812",
                 "Diopter": "Gehmann 510",
                 "Ringkorn": "Centra 3.8",
+                "Schaft": "Aluschaft mit verstellbarer Hakenkappe",
                 "Distanz": "50m",
                 "Zubehoer": "Handstop, Putzzeug, Koffer",
                 "Spezielles": "Vereinswaffe Nachwuchs",
@@ -714,6 +728,7 @@ window.invDownloadExcelTemplate = function() {
                 "Laufnummer": "W-44321",
                 "Diopter": "Walther Insight Out",
                 "Ringkorn": "M18",
+                "Schaft": "Holzschaft mit Bügel",
                 "Distanz": "50m",
                 "Zubehoer": "Visierlinienerhöhung",
                 "Spezielles": "Sehr gepflegt",

@@ -64,6 +64,7 @@ function mapGewehrFromSupabase(r) {
         Laufnummer: r.serial_number || '',
         Diopter: r.diopter || '',
         Ringkorn: r.front_sight || '',
+        Schaft: r.stock || '',
         Zubehoer: r.accessories || '',
         Spezielles: r.special_notes || '',
         Distanz: r.caliber_distance || '50m',
