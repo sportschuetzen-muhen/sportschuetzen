@@ -57,6 +57,25 @@ Der Konverter wird vollständig im Browser via **SheetJS** (`XLSX`) realisiert (
    - Aktualisiert `resultateState.rows` im Cockpit.
    - Aktiviert den Speichern-Button für atomaren Supabase-Upsert in `public.contest_results`.
 
+### 2.3 Grenzland-Cup: Client-seitiger PDF-Ranglisten-Parser (IKSV)
+Zur schnellen und fehlerfreien Erfassung der offiziellen IKSV-Ranglisten (Internationale Kleinkaliber-Schützenvereinigung Bodensee-Rhein) liest das System die PDF-Ranglisten direkt im Browser via **PDF.js** (`pdfjsLib`) aus (kein Server-Upload, keine API-Kosten):
+1. **Datei wählen / Drag & Drop:** Nutzer wählt die mehrseitige PDF-Rangliste über das Aktionen-Menü oder zieht sie in das OCR-Modal.
+2. **Autonome Seitenanalyse & Textextraktion:**
+   - Extrahiert Textzeilen koordinatengenau (`y`-Gruppierung und `x`-Sortierung über `extractLinesFromPdfTextContent`).
+   - Erkennt automatisch Wettbewerb («Grenzland-Cup»), Saisonjahr (`2026`) und Rundennummer (`Runde 1`, `Runde 2` oder `Runde 3`).
+   - Scannt alle Seiten gezielt nach `Sportschützen Muhen` und isoliert alle teilnehmenden Gruppen (`Gruppe 1`, `Gruppe 2`, `Gruppe 3` etc.).
+3. **Schützen-Extraktion & Summenvalidierung:**
+   - Liest je Gruppe die 4 Schützen und deren Punktzahl (0–100 Ringe) aus.
+   - Prüft die Summenintegrität gegen das im PDF deklarierte Gruppentotal (z. B. `394 = 99+99+99+97 ✓`).
+   - Führt einen automatischen Abgleich gegen die Mitgliederdatenbank `public.members` via `matchShooterWithMembers` durch (über SSV-Personennummer, Lizenz oder Vor-/Nachname).
+4. **Vorschau-Modal (`renderGrenzlandImportModal`):**
+   - Zeigt die erkannten Gruppen auf übersichtlichen Karten mit Ziel-Rundenauswahl, Einzelpunkten, Team-Zuweisung und Status (`Update` / `Neu`).
+   - Ermöglicht Korrekturen oder selektives Abwählen per Checkbox vor der Übernahme.
+5. **Übernahme & Speichern:**
+   - Überträgt die Rundenpunkte (`r1_p1` etc.) und Teams atomar in `resultateState.rows`.
+   - Setzt `isDirty = true` und aktiviert den Save-Button für den finalen Supabase-Upsert in `public.contest_results`.
+
+
 ---
 
 ## 3. Code-basiertes Archivierungs- & Saison-Konzept
@@ -104,8 +123,9 @@ In Supabase existiert kein physisches «Blatt-Kopieren» mehr. Jeder Datensatz i
    - Alle Sonderfunktionen wandern in ein aufgeräumtes Dropdown-Menü:
      - 📥 *SGM Excel-Standblatt importieren* (bei Gruppe)
      - 🔄 *Aus Jahresmeisterschaft synchronisieren* (bei Mannschaft)
+     - 📄 *Grenzland Rangliste importieren (PDF)* (bei Grenzland)
      - 👥 *Aus Team-Setup laden*
-     - 📸 *KI-Standblattfoto einlesen (OCR)*
+     - 📸 *KI-Standblattfoto / Rangliste einlesen (OCR / PDF)*
      - 🗄️ *Saison archivieren / Neues Jahr starten...* (mit manuellem Zieljahr-Modal)
 3. **Standardisierter Speichern-Button (`SaveButtonKit`):**
    - Konsistent wie in Jahresmeisterschaft und Termine: Dezent grau wenn gespeichert, auffällig orange-gelb mit Änderungszähler (`💾 Speichern (3)`), sobald Änderungen vorliegen.

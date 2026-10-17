@@ -238,6 +238,12 @@ function ensureResultateShell(forceRebuild = false) {
                   </a></li>
                   <li><hr class="dropdown-divider"></li>
                 ` : ''}
+                ${currentContest === 'grenzland' ? `
+                  <li><a class="dropdown-item fw-bold text-success" href="#" onclick="triggerGrenzlandPdfImport(); return false;">
+                    <i class="fas fa-file-pdf me-2"></i>Grenzland Rangliste importieren (PDF)
+                  </a></li>
+                  <li><hr class="dropdown-divider"></li>
+                ` : ''}
                 <li><a class="dropdown-item" href="#" onclick="syncSetupToResultate(); return false;">
                   <i class="fas fa-users-cog text-info me-2"></i>Aus Team-Setup laden (fehlende Schützen)
                 </a></li>
@@ -389,12 +395,12 @@ function ensureResultateShell(forceRebuild = false) {
                   <label class="form-label fw-bold small text-muted">Foto auswählen oder aufnehmen</label>
                   <div class="border rounded p-4 text-center bg-light position-relative" style="cursor:pointer; border-style: dashed !important; transition: border-color 0.2s;" id="ocr-dropzone" onclick="document.getElementById('ocr-file-input').click()">
                     <i class="fas fa-file-image fa-3x text-muted mb-2"></i>
-                    <p class="mb-0 text-muted fw-semibold">Bild hierhin ziehen oder klicken zum Auswählen</p>
+                    <p class="mb-0 text-muted fw-semibold">Bild oder PDF-Rangliste hierhin ziehen oder klicken zum Auswählen</p>
                     <div id="ocr-preview-container" class="mt-3 d-none">
                       <img id="ocr-image-preview" src="" class="img-fluid rounded border shadow-sm" style="max-height: 250px; max-width: 100%;">
                     </div>
                   </div>
-                  <input type="file" id="ocr-file-input" accept="image/*" style="display:none" onchange="onOcrFileSelected(event)">
+                  <input type="file" id="ocr-file-input" accept="image/*,.pdf,application/pdf" style="display:none" onchange="onOcrFileSelected(event)">
                 </div>
                 <div class="d-grid">
                   <button type="button" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="btn-start-ocr" onclick="startOcrAnalysis()" disabled>

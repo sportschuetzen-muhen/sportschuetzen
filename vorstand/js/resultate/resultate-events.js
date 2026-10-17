@@ -252,6 +252,20 @@ function showOcrStep(step) {
 function onOcrFileSelected(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
+
+  // Wenn ein PDF ausgewählt wurde, direkt an den schnellen Client-PDF-Parser übergeben
+  if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
+    const modalEl = document.getElementById("resultate-ocr-modal");
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+    if (typeof handleGrenzlandPdfUpload === 'function') {
+      handleGrenzlandPdfUpload(file);
+    }
+    return;
+  }
+
   _selectedOcrFile = file;
 
   const prevImg = document.getElementById("ocr-image-preview");
