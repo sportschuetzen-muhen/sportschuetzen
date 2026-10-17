@@ -1119,13 +1119,8 @@ function navTo(viewId, el) {
         else if (viewId === 'jahresbeitrag' && typeof loadJahresbeitragData === 'function') loadPromise = loadJahresbeitragData();
         else if (viewId === 'rechnungen'    && typeof loadRechnungenData    === 'function') loadPromise = loadRechnungenData(false, true);
         else if (viewId === 'dokument-vorlagen' && typeof window.renderDokumentVorlagen === 'function') loadPromise = window.renderDokumentVorlagen();
-        else if (viewId === 'gv-dossier') {
-            window._selectedDocCategory = 'gv';
-            if (typeof window.renderDokumentVorlagen === 'function') {
-                loadPromise = window.renderDokumentVorlagen();
-            } else if (typeof window.renderGVDossierView === 'function') {
-                loadPromise = window.renderGVDossierView();
-            }
+        else if (viewId === 'gv-dossier' && typeof window.renderGVDossierView === 'function') {
+            loadPromise = window.renderGVDossierView('#gv-dossier-container');
         }
         else if (viewId === 'mitglieder'    && typeof loadMitgliederData    === 'function') loadPromise = loadMitgliederData();
         else if (viewId === 'buchhaltung'      && typeof renderBuchhaltung     === 'function') loadPromise = renderBuchhaltung();

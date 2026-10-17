@@ -389,12 +389,14 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
    - Überschreitet der Fliesstext die Höhe von Seite 1, sodass ein „Waisen-Absatz“ mit wenigen Zeilen auf Seite 2 entsteht, warnt das Vorstands-UI aktiv:  
      *⚠️ „Achtung: Der Brieftext erzeugt eine 2. Seite mit nur wenigen Zeilen. Text bitte kürzen oder Schriftgrösse anpassen.“*
 
-### 8.3 Harmonisierte 4-Reiter-Dokumentenzentrale & Globaler Vereins-WYSIWYG (Oktober 2026)
-- **4 Haupt-Reiter:**
-  1. `[ 🏛️ Generalversammlung ]`: Vollständig integrierte GV-Schaltzentrale (Traktanden, Beilagen-Assembler, Kampagne & Massenversand).
-  2. `[ 🧾 Rechnungen & Mahnwesen ]`: Vorlagen für Jahresbeitrag, Schulsport, Material, Sponsoring und Mahnungen 1–3 mit QR-Bill Vorschau.
-  3. `[ 🏠 Vermietung Schützenstube ]`: Mietvertrag & Benützungsordnung PDF (Klausel-Editor 1–8) sowie alle 8 Transaktions-Mails mit Live-HTML-Vorschau.
-  4. `[ ✉️ Vorstandsbriefe & Rundschreiben ]`: Freier Vorstandsbrief (DIN 5008) und Vereins-Rundmails.
+### 8.3 Harmonisierte 3-Reiter-Vorlagenzentrale & Globaler Vereins-WYSIWYG (Oktober 2026)
+- **3 Haupt-Reiter des Vorlagen-Pools (`templates-ui.js`):**
+  1. `[ 🧾 Rechnungen & Mahnwesen ]`: Vorlagen für Jahresbeitrag, Schulsport, Material, Sponsoring und Mahnungen 1–3 mit QR-Bill Vorschau.
+  2. `[ 🏠 Vermietung Schützenstube ]`: Mietvertrag & Benützungsordnung PDF (Klausel-Editor 1–8) sowie alle 8 Transaktions-Mails mit Live-HTML-Vorschau.
+  3. `[ ✉️ Vorstandsbriefe & Rundschreiben ]`: Freier Vorstandsbrief (DIN 5008) und Vereins-Rundmails.
+- **Eigenständiges Modul Generalversammlung:**
+  - Die Generalversammlung wurde als vollkommen eigenständiges Fachmodul (`gv-dossier`) mit eigener Sidebar-Navigation, Dashboard-Kachel und Berechtigungen (`gv.view` / `gv.manage`) entkoppelt.
+  - Vollständige Spezifikation siehe [GENERALVERSAMMLUNG.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/GENERALVERSAMMLUNG.md).
 - **Globaler Vereins-WYSIWYG (`vorstand/js/club-wysiwyg.js`):**
   - Universelle Rich-Text-Komponente für News KI, E-Mail-Vorlagen, GV-Aussendungen und Rundmails.
   - Toolbar-Aktionen: Undo (`fa-undo`), Redo (`fa-redo`), Formatierung aufheben (`fa-eraser`), dynamisches H3-Toggle (Absatz <-> Titel) sowie visuelle Aktiv-Zustände.
@@ -412,7 +414,7 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
 | :--- | :--- | :--- | :--- |
 | **Typ 1: Rechnung & QR-Rechnung** | ✅ `generate-invoice` (`operatives-storage/invoices/`) | ✅ Rechnungs-Dashboard (`rechnungen/`) | **Produktiv** |
 | **Typ 2: Freier Vorstandsbrief** | ✅ `generate-letter` (DIN 5008, WORM-Archiv, Paperless) | ✅ Vorlagen-Pool & Live-PDF-Test (`templates-ui.js`) | **Vollständig implementiert** |
-| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` & hierarchische Traktanden (`parent_id`) | ✅ GV-Cockpit (`gv-dossier.js`, Traktanden, Stammdaten, Dossier) | **Vollständig integriert** |
+| **Typ 3: GV-Dossier & Kampagne** | ✅ `compile-gv-dossier` & hierarchische Traktanden (`parent_id`) | ✅ Eigenständiges GV-Cockpit (`gv-dossier.js`, Traktanden, Stammdaten, Dossier) | **Produktiv & Entkoppelt** (Details: [GENERALVERSAMMLUNG.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/GENERALVERSAMMLUNG.md)) |
 | **Typ 4: Endschiessen / Festführer** | ✅ `generate-endschiessen` (Schiesstage, Ablösung, Gaben) | ✅ Vorlagen-Pool & Remote-Generator (`pdf-engine.js`) | **Vollständig implementiert** |
 | **Globaler Vereins-WYSIWYG** | N/A (Frontend Standard) | ✅ News KI, Vorlagen-Pool, GV-Schaltzentrale (`club-wysiwyg.js`) | **Vollständig implementiert** |
 
@@ -423,6 +425,7 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
   - Die PDF-Engine (`generateGVInvitationPdf`) rendert Untertraktanden sauber eingerückt unter dem Haupttraktandum.
 - **Entkopplung vom Vorlagen-Pool:**
   - Traktanden werden nicht mehr im statischen Vorlagen-Pool verwaltet, sondern exklusiv jahresspezifisch in `public.gv_traktanden`.
+  - Das Modul Generalversammlung ist nun ein eigenständiges Modul mit direktem Einstieg in der Sidebar und im Dashboard.
 - **Bereinigung der Anhänge & Entflechtung aus „Anlässe & Umfragen“:**
   - Tab 4 („Tools & GV-Steuerung“) und die 4 historischen Einzelfelder (`doc_*_url`) in „Anlässe & Umfragen“ wurden entkoppelt.
   - Alle Berichte und Dokumente werden als Single Source of Truth über `public.campaign_attachments` im Modul Generalversammlung geführt und vom Master-Assembler gestempelt.

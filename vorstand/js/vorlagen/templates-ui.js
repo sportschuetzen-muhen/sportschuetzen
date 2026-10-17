@@ -119,59 +119,29 @@
       await window.loadDocumentTemplatesData();
     }
 
-    // 4 HAUPT-REITER DER DOKUMENTEN- & KAMPAGNEN-ZENTRALE
+    // 3 HAUPT-REITER DES DOKUMENTEN- & VORLAGEN-POOLS
     const mainCategories = [
-      { key: 'gv', label: 'Generalversammlung', icon: 'fa-users-between-lines text-success', badge: 'Schaltzentrale' },
       { key: 'rechnung', label: 'Rechnungen & Mahnwesen', icon: 'fa-file-invoice-dollar text-primary' },
       { key: 'vermietung', label: 'Vermietung Schützenstube', icon: 'fa-house-chimney text-warning' },
       { key: 'brief', label: 'Vorstandsbriefe & Rundschreiben', icon: 'fa-envelope-open-text text-info' }
     ];
 
-    const currentCat = window._selectedDocCategory || 'gv';
+    let currentCat = window._selectedDocCategory || 'rechnung';
+    if (currentCat === 'gv') {
+      currentCat = 'rechnung';
+      window._selectedDocCategory = 'rechnung';
+    }
 
-    // HTML für die 4 Haupt-Reiter
+    // HTML für die 3 Haupt-Reiter
     const mainTabsHtml = mainCategories.map(c => `
       <button class="btn ${currentCat === c.key ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'} d-flex align-items-center gap-2 py-2 px-3 rounded-3" onclick="docSelectCategory('${c.key}')">
         <i class="fas ${c.icon}"></i>
         <span>${c.label}</span>
-        ${c.badge ? `<span class="badge ${currentCat === c.key ? 'bg-white text-primary' : 'bg-success text-white'} ms-1" style="font-size:10px;">${c.badge}</span>` : ''}
       </button>
     `).join('');
 
     // =========================================================================
-    // FALL 1: GENERALVERSAMMLUNG (VOLLSTÄNDIGE EINGEBETTETE GV-SCHALTZENTRALE)
-    // =========================================================================
-    if (currentCat === 'gv') {
-      container.innerHTML = `
-        <div class="card border border-light shadow-sm p-4 rounded-4 mb-4">
-          <!-- Header & Toolbar -->
-          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div>
-              <h4 class="fw-bold text-primary mb-1"><i class="fas fa-folder-open me-2"></i>Dokumente & Kampagnen-Zentrale</h4>
-              <p class="text-muted small mb-0">
-                Zentraler Workspace für Generalversammlung, Rechnungs-Vorlagen, Vermietung Schützenstube und Vereins-Mitteilungen.
-              </p>
-            </div>
-          </div>
-
-          <!-- DIE 4 HAUPT-REITER -->
-          <div class="d-flex gap-2 mb-3 flex-wrap pb-2 border-bottom">
-            ${mainTabsHtml}
-          </div>
-
-          <!-- Eingebettete GV-Schaltzentrale -->
-          <div id="gv-dossier-workspace-inner" class="mt-2"></div>
-        </div>
-      `;
-
-      if (typeof window.renderGVDossierView === 'function') {
-        window.renderGVDossierView('#gv-dossier-workspace-inner');
-      }
-      return;
-    }
-
-    // =========================================================================
-    // FÄLLE 2, 3, 4: RECHNUNGEN, VERMIETUNG ODER VORSTANDSBRIEFE
+    // FÄLLE 1, 2, 3: RECHNUNGEN, VERMIETUNG ODER VORSTANDSBRIEFE
     // =========================================================================
 
     // Templates nach Fachbereich filtern
@@ -254,12 +224,15 @@
         <!-- Header & Toolbar -->
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
           <div>
-            <h4 class="fw-bold text-primary mb-1"><i class="fas fa-folder-open me-2"></i>Dokumente & Kampagnen-Zentrale</h4>
+            <h4 class="fw-bold text-primary mb-1"><i class="fas fa-file-lines me-2"></i>Dokumenten-Vorlagen &amp; Klausel-Pool</h4>
             <p class="text-muted small mb-0">
-              Zentrale Verwaltung aller Vorlagentexte, Klauseln, Benützungsreglemente und E-Mail-Begleittexte (Single Source of Truth).
+              Zentraler Vorlagen-Pool für Rechnungen, Mahnwesen, Mietverträge und Vorstandsbriefe (Single Source of Truth).
             </p>
           </div>
           <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="navTo('gv-dossier')" title="Zur Generalversammlung wechseln">
+              <i class="fas fa-landmark me-1.5 text-success"></i> Generalversammlung
+            </button>
             ${isVermietungMail ? `
               <button class="btn btn-sm btn-outline-primary" onclick="docSendTestMail('${currentTemplate.code}')" title="Test-E-Mail an meine Adresse senden">
                 <i class="fas fa-paper-plane me-1.5 text-primary"></i> Test-Mail an mich
@@ -570,10 +543,12 @@
 
   // 3. NAVIGATION & INTERAKTIONEN
   window.docSelectCategory = function(cat) {
-    window._selectedDocCategory = cat;
     if (cat === 'gv') {
-      window._selectedDocCode = 'gv_normal';
-    } else if (cat === 'rechnung') {
+      navTo('gv-dossier');
+      return;
+    }
+    window._selectedDocCategory = cat;
+    if (cat === 'rechnung') {
       window._selectedDocCode = 'jahresbeitrag';
     } else if (cat === 'vermietung') {
       window._selectedDocCode = 'mietvertrag';
