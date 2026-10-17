@@ -207,9 +207,18 @@ function jbCalculateLiveTotal(m, settings) {
       key: keyClean
     });
 
-    // Merkmal für Zusammenzug: Kategorie = 'Kostenübernahme_Jugend'
+    // Option A: Automatische Kostenübernahme für Junioren bei allen Wettkämpfen (KK & LG)
     const feeKat = feeObj ? String(feeObj.kategorie || '').trim().toLowerCase() : '';
-    const isKostenuebernahme = feeKat === 'kostenübernahme_jugend' || feeKat === 'kostenuebernahme_jugend';
+    const isKostenuebernahme = isJunior && (
+      feeKat === 'kostenübernahme_jugend' || 
+      feeKat === 'kostenuebernahme_jugend' ||
+      feeKat.includes('kleinkaliber') ||
+      feeKat.includes('luftgewehr') ||
+      feeKat.includes('wettkampf') ||
+      feeKat.includes('schiessgeld') ||
+      keyClean.startsWith('KK') ||
+      keyClean.startsWith('LG')
+    );
 
     if (isKostenuebernahme && totalFee > 0) {
       // Gegenkonto variabel aus der Gebührenconfig des Eintrags oder Master-Eintrags holen

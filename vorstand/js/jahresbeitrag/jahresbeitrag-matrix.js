@@ -138,12 +138,20 @@ function renderMatrixTab(canEdit, years) {
               Nur Bezahlt
             </button>
           </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="jbMatrixResetColumns()" title="Spaltenreihenfolge und Breiten auf Standard zurücksetzen">
+            <i class="fas fa-undo me-1"></i> Standard-Spalten
+          </button>
           <div id="jbMatrixColToggleDropdown"></div>
         </div>
       </div>
 
+      <!-- Obere synchrone Scrollleiste für schnelles horizontales Scrollen -->
+      <div id="jbMatrixTopScroll" class="border rounded-top-3 bg-light overflow-x-auto overflow-y-hidden d-print-none" style="height: 12px; margin-bottom: -1px;">
+        <div id="jbMatrixTopScrollTrack" style="height: 1px; min-width: 100%;"></div>
+      </div>
+
       <!-- Matrix Tabelle -->
-      <div class="table-responsive border rounded-3 shadow-sm jb-matrix-container" style="max-height: calc(100vh - 290px); overflow: auto;">
+      <div class="table-responsive border rounded-bottom-3 shadow-sm jb-matrix-container" id="jbMatrixContainer" style="max-height: calc(100vh - 410px); min-height: 380px; overflow: auto;">
         <table class="table table-hover table-sm align-middle mb-0 jb-matrix-table" id="jbMatrixTable">
           <thead class="table-light sticky-top small text-muted text-uppercase" style="font-size: 11px; z-index: 10;">
             <tr id="jbMatrixHeaderRow">
@@ -163,13 +171,18 @@ function renderMatrixTab(canEdit, years) {
 
     </div>
 
-    <!-- Druck-Optimiertes Stylesheet -->
+    <!-- Druck- & Matrix-Optimiertes Stylesheet -->
     <style>
+      .jb-matrix-table thead th {
+        vertical-align: top !important;
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+      }
       .jb-matrix-table th.tk-col-sticky-left,
       .jb-matrix-table td.tk-col-sticky-left {
         position: sticky;
         left: 0;
-        z-index: 5;
+        z-index: 6;
         background-color: #ffffff;
       }
       .jb-matrix-table tr:hover td.tk-col-sticky-left {
@@ -179,17 +192,35 @@ function renderMatrixTab(canEdit, years) {
       .jb-matrix-table td.tk-col-sticky-name {
         position: sticky;
         left: 42px;
-        z-index: 5;
+        z-index: 6;
         background-color: #ffffff;
         box-shadow: 2px 0 4px rgba(0,0,0,0.04);
       }
       .jb-matrix-table tr:hover td.tk-col-sticky-name {
         background-color: #f8fafc;
       }
+      .jb-matrix-table th.tk-col-sticky-status,
+      .jb-matrix-table td.tk-col-sticky-status {
+        position: sticky;
+        left: 192px;
+        z-index: 6;
+        background-color: #ffffff;
+        box-shadow: 3px 0 5px rgba(0,0,0,0.05);
+      }
+      .jb-matrix-table tr:hover td.tk-col-sticky-status {
+        background-color: #f8fafc;
+      }
+      .jb-matrix-table thead th.tk-col-sticky-left,
+      .jb-matrix-table thead th.tk-col-sticky-name,
+      .jb-matrix-table thead th.tk-col-sticky-status {
+        background-color: #f8fafc !important;
+        z-index: 15 !important;
+      }
       .jb-matrix-table tfoot td.tk-col-sticky-left,
-      .jb-matrix-table tfoot td.tk-col-sticky-name {
+      .jb-matrix-table tfoot td.tk-col-sticky-name,
+      .jb-matrix-table tfoot td.tk-col-sticky-status {
         background-color: #f1f5f9 !important;
-        z-index: 11;
+        z-index: 15 !important;
       }
       .jb-matrix-row-deselected {
         opacity: 0.45 !important;
@@ -273,17 +304,17 @@ function jbGetMatrixCategory(key) {
   if (k.startsWith('JB')) {
     return { id: 'jb', label: 'Jahresbeitrag', badge: 'JB', color: '#1d4ed8', bg: '#eff6ff', border: '#2563eb', sort: 1 };
   }
-  if (k.startsWith('RA')) {
-    return { id: 'rabatt', label: 'Rabatte', badge: 'RABATT', color: '#047857', bg: '#ecfdf5', border: '#10b981', sort: 2 };
-  }
   if (k.startsWith('LI') || k.startsWith('GE')) {
-    return { id: 'anlage', label: 'Lizenzen & Anlage', badge: 'LIZENZ / GEB', color: '#0f766e', bg: '#f0fdfa', border: '#0d9488', sort: 3 };
+    return { id: 'anlage', label: 'Lizenzen & Anlage', badge: 'LIZENZ / GEB', color: '#0f766e', bg: '#f0fdfa', border: '#0d9488', sort: 2 };
   }
   if (k.startsWith('KK')) {
-    return { id: 'kk', label: 'Kleinkaliber (50m)', badge: 'KK 50m', color: '#c2410c', bg: '#fff7ed', border: '#ea580c', sort: 4 };
+    return { id: 'kk', label: 'Kleinkaliber (50m)', badge: 'KK 50m', color: '#c2410c', bg: '#fff7ed', border: '#ea580c', sort: 3 };
   }
   if (k.startsWith('LG')) {
-    return { id: 'lg', label: 'Luftgewehr (10m)', badge: 'LG 10m', color: '#7c3aed', bg: '#faf5ff', border: '#8b5cf6', sort: 5 };
+    return { id: 'lg', label: 'Luftgewehr (10m)', badge: 'LG 10m', color: '#7c3aed', bg: '#faf5ff', border: '#8b5cf6', sort: 4 };
+  }
+  if (k.startsWith('RA') || k.includes('JUGEND') || k === 'KOSTENUEBERNAHME_JUGEND') {
+    return { id: 'rabatt', label: 'Rabatte & Gutschriften', badge: 'RABATT', color: '#047857', bg: '#ecfdf5', border: '#10b981', sort: 5 };
   }
   if (k.startsWith('Z')) {
     return { id: 'var', label: 'Variable Positionen', badge: 'VAR', color: '#475569', bg: '#f8fafc', border: '#64748b', sort: 6 };
@@ -431,17 +462,37 @@ function jbRenderMatrixTable() {
   const someSelected = rowsData.some(r => _jbMatrixSelected.has(String(r.PersonNumber).trim()));
 
   let thHtml = `
-    <th class="text-center tk-col-sticky-left" style="width: 42px;">
-      <input type="checkbox" class="form-check-input" id="jbMatrixMasterCheck" 
-             ${allSelected ? 'checked' : ''} 
-             onclick="jbMatrixMasterCheckToggle(this.checked)" 
-             title="Alle Schützen auswählen / abwählen">
+    <th class="text-center tk-col-sticky-left" data-col-id="check" style="width: 42px;">
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+        <div class="mb-1" style="height: 14px;"></div>
+        <div class="my-auto">
+          <input type="checkbox" class="form-check-input" id="jbMatrixMasterCheck" 
+                 ${allSelected ? 'checked' : ''} 
+                 onclick="jbMatrixMasterCheckToggle(this.checked)" 
+                 title="Alle Schützen auswählen / abwählen">
+        </div>
+        <div class="mt-auto" style="height: 12px;"></div>
+      </div>
     </th>
-    <th class="tk-col-sticky-name" style="min-width: 170px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('name')">
-      Schütze <span class="tk-sort-ind">${_jbMatrixSortCol === 'name' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+    <th class="tk-col-sticky-name" data-col-id="name" style="width: 150px; min-width: 110px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('name')">
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="badge px-1 py-0 text-muted bg-white border" style="font-size: 8px; font-weight: 700;">NAME</span>
+          <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'name' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+        </div>
+        <div class="my-auto py-1 fw-bold text-dark" style="font-size: 11px;">Schütze</div>
+        <div class="mt-auto text-muted" style="font-size: 8.5px; font-family: monospace;">Mitglied</div>
+      </div>
     </th>
-    <th class="text-center tk-col-status" data-col-id="status" data-col-name="Status" style="width: 80px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('status')">
-      Status <span class="tk-sort-ind">${_jbMatrixSortCol === 'status' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+    <th class="text-center tk-col-status tk-col-sticky-status" data-col-id="status" data-col-name="Status" style="width: 80px; min-width: 75px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('status')">
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="badge px-1 py-0 text-muted bg-white border" style="font-size: 8px; font-weight: 700;">INFO</span>
+          <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'status' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+        </div>
+        <div class="my-auto py-1 fw-bold text-dark" style="font-size: 11px;">Status</div>
+        <div class="mt-auto text-muted" style="font-size: 8.5px; font-family: monospace;">Beleg</div>
+      </div>
     </th>
   `;
 
@@ -457,12 +508,14 @@ function jbRenderMatrixTable() {
           style="min-width: 58px; cursor: pointer; user-select: none; border-top: 4px solid ${cat.border} !important; background-color: ${cat.bg} !important; transition: background-color 0.15s ease;" 
           onclick="jbMatrixSort('${col.key}')" 
           title="${escHtml(cat.label)}: ${escHtml(col.bezeichnung)} (${col.key})">
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <span class="badge px-1 py-0 shadow-xs" style="font-size: 8px; font-weight: 700; background-color: ${cat.color}; color: #ffffff; letter-spacing: 0.3px;">${cat.badge}</span>
-          <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === col.key ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+        <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="badge px-1 py-0 shadow-xs" style="font-size: 8px; font-weight: 700; background-color: ${cat.color}; color: #ffffff; letter-spacing: 0.3px;">${cat.badge}</span>
+            <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === col.key ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+          </div>
+          <div class="my-auto py-1" style="font-size: 10px; font-weight: 700; color: #1e293b; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${escHtml(col.label)}</div>
+          <div class="mt-auto" style="font-size: 8.5px; font-weight: 600; font-family: monospace; color: ${cat.color};">${col.key}</div>
         </div>
-        <div style="font-size: 10px; font-weight: 700; color: #1e293b; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${escHtml(col.label)}</div>
-        <div class="mt-1" style="font-size: 8.5px; font-weight: 600; font-family: monospace; color: ${cat.color};">${col.key}</div>
       </th>
     `;
   });
@@ -471,12 +524,14 @@ function jbRenderMatrixTable() {
     <th class="text-end pe-3 tk-col-gesamt" data-col-id="gesamt" data-col-name="Total CHF" 
         style="min-width: 95px; cursor: pointer; user-select: none; border-top: 4px solid #0f3a5d !important; background-color: #f1f5f9 !important;" 
         onclick="jbMatrixSort('gesamt')">
-      <div class="d-flex justify-content-between align-items-center mb-1">
-        <span class="badge px-1 py-0" style="font-size: 8px; font-weight: 700; background-color: #0f3a5d; color: #ffffff;">TOTAL</span>
-        <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'gesamt' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="badge px-1 py-0" style="font-size: 8px; font-weight: 700; background-color: #0f3a5d; color: #ffffff;">TOTAL</span>
+          <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'gesamt' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+        </div>
+        <div class="my-auto py-1 fw-bold text-dark" style="font-size: 11px;">Total CHF</div>
+        <div class="mt-auto text-muted" style="font-size: 8.5px; font-family: monospace;">Saldo</div>
       </div>
-      <div class="fw-bold text-dark" style="font-size: 11px;">Total CHF</div>
-      <div class="text-muted" style="font-size: 8.5px; font-family: monospace;">Saldo</div>
     </th>
   `;
 
@@ -554,12 +609,12 @@ function jbRenderMatrixTable() {
                    value="${pn}" ${isSelected ? 'checked' : ''} 
                    onchange="jbMatrixToggleMember('${pn}', this.checked)">
           </td>
-          <td class="tk-col-sticky-name py-2">
-            <a href="#" class="text-decoration-none fw-semibold text-primary" 
-               onclick="jbShowPositionen('${r.id}'); return false;">${escHtml(name)}</a>
-            <div class="text-muted small" style="font-size: 10px;">${pn}</div>
+          <td class="tk-col-sticky-name py-2" data-col-id="name" style="max-width: 150px;">
+            <a href="#" class="text-decoration-none fw-semibold text-primary d-block text-truncate" 
+               onclick="jbShowPositionen('${r.id}'); return false;" title="${escHtml(name)}">${escHtml(name)}</a>
+            <div class="text-muted small text-truncate" style="font-size: 10px;" title="${pn}">${pn}</div>
           </td>
-          <td class="text-center tk-col-status" data-col-id="status">${statusBadge}</td>
+          <td class="text-center tk-col-status tk-col-sticky-status" data-col-id="status">${statusBadge}</td>
           ${cellsHtml}
           <td class="text-end pe-3 fw-bold bg-light font-monospace tk-col-gesamt" data-col-id="gesamt" style="font-size: 13px; color: #0f3a5d;">
             ${fmtChf(r.Gesamt)}
@@ -576,7 +631,7 @@ function jbRenderMatrixTable() {
   if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
     window._jbMatrixColReorder = window.TableKit.makeColumnReorderable('#jbMatrixTable', {
       storageKey: 'jb_matrix_col_order',
-      lockedColumns: ['check', 'name', 'gesamt']
+      lockedColumns: ['check', 'name', 'status', 'gesamt']
     });
     if (window._jbMatrixColReorder && typeof window._jbMatrixColReorder.apply === 'function') {
       window._jbMatrixColReorder.apply();
@@ -591,9 +646,22 @@ function jbRenderMatrixTable() {
   if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
     window.TableKit.makeResizable('#jbMatrixTable', {
       storageKey: 'jb_matrix_col_widths',
-      minWidth: 40
+      minWidth: 40,
+      columns: {
+        'name': { defaultWidth: 150, minWidth: 100 },
+        'status': { defaultWidth: 80, minWidth: 65 }
+      },
+      onResize: function() {
+        jbMatrixSyncStickyOffsets();
+        jbMatrixSyncTopScroll();
+      }
     });
   }
+
+  // Sticky-Offsets, Top-Scroll & Mausrad initial synchronisieren
+  jbMatrixSyncStickyOffsets();
+  jbMatrixSyncTopScroll();
+  jbMatrixSetupWheelScroll();
 }
 
 // ============================================================
@@ -664,7 +732,7 @@ function jbCalculateMatrixTotals(rowsData, columns) {
         <div class="fw-bold text-dark">SUMME (${selectedRows.length} Schützen)</div>
         <div class="text-muted small" style="font-size: 10px;">von ${rowsData.length} gefiltert</div>
       </td>
-      <td class="text-center tk-col-status" data-col-id="status">–</td>
+      <td class="text-center tk-col-status tk-col-sticky-status" data-col-id="status">–</td>
     `;
 
     columns.forEach(col => {
@@ -689,6 +757,10 @@ function jbCalculateMatrixTotals(rowsData, columns) {
   if (window._jbMatrixColToggle && typeof window._jbMatrixColToggle.apply === 'function') {
     window._jbMatrixColToggle.apply();
   }
+
+  // Sticky-Offsets und Scroll-Breite nach Footer-Render nachführen
+  jbMatrixSyncStickyOffsets();
+  jbMatrixSyncTopScroll();
 
   // 2. KPI Karten aktualisieren
   const kpiCount = document.getElementById('jbMatrixKpiCount');
@@ -966,6 +1038,68 @@ function jbPrintMatrix() {
   window.print();
 }
 
+// ============================================================
+// STICKY OFFSETS, SYNCED SCROLLBAR & WHEEL HANDLER
+// ============================================================
+function jbMatrixSyncStickyOffsets() {
+  const checkTh = document.querySelector('#jbMatrixTable th.tk-col-sticky-left');
+  const nameTh = document.querySelector('#jbMatrixTable th.tk-col-sticky-name');
+  if (!nameTh) return;
+  const leftPos = (checkTh ? checkTh.offsetWidth : 42) + nameTh.offsetWidth;
+  document.querySelectorAll('#jbMatrixTable .tk-col-sticky-status').forEach(el => {
+    el.style.left = leftPos + 'px';
+  });
+}
+
+function jbMatrixSyncTopScroll() {
+  const table = document.getElementById('jbMatrixTable');
+  const container = document.getElementById('jbMatrixContainer');
+  const topScroll = document.getElementById('jbMatrixTopScroll');
+  const topTrack = document.getElementById('jbMatrixTopScrollTrack');
+  if (!table || !container || !topScroll || !topTrack) return;
+
+  topTrack.style.width = table.scrollWidth + 'px';
+  topScroll.scrollLeft = container.scrollLeft;
+
+  if (!topScroll._syncBound) {
+    topScroll._syncBound = true;
+    topScroll.addEventListener('scroll', () => {
+      if (topScroll._preventSync) return;
+      container._preventSync = true;
+      container.scrollLeft = topScroll.scrollLeft;
+      container._preventSync = false;
+    });
+    container.addEventListener('scroll', () => {
+      if (container._preventSync) return;
+      topScroll._preventSync = true;
+      topScroll.scrollLeft = container.scrollLeft;
+      topScroll._preventSync = false;
+    });
+  }
+}
+
+function jbMatrixSetupWheelScroll() {
+  const container = document.getElementById('jbMatrixContainer');
+  if (!container || container._wheelBound) return;
+  container._wheelBound = true;
+  container.addEventListener('wheel', (e) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      container.scrollLeft += (e.deltaY || e.deltaX);
+    }
+  }, { passive: false });
+}
+
+function jbMatrixResetColumns() {
+  localStorage.removeItem('jb_matrix_col_order');
+  localStorage.removeItem('jb_matrix_col_widths');
+  localStorage.removeItem('portal_jb_matrix_cols');
+  if (typeof jbToast === 'function') {
+    jbToast('Standard-Spaltenordnung und -breiten wiederhergestellt.', 'info');
+  }
+  jbRenderMatrixTable();
+}
+
 window.renderMatrixTab = renderMatrixTab;
 window.jbInitMatrixTab = jbInitMatrixTab;
 window.jbRenderMatrixTable = jbRenderMatrixTable;
@@ -977,3 +1111,7 @@ window.jbFilterMatrixTable = jbFilterMatrixTable;
 window.jbMatrixSort = jbMatrixSort;
 window.jbExportMatrixExcel = jbExportMatrixExcel;
 window.jbPrintMatrix = jbPrintMatrix;
+window.jbMatrixResetColumns = jbMatrixResetColumns;
+window.jbMatrixSyncStickyOffsets = jbMatrixSyncStickyOffsets;
+window.jbMatrixSyncTopScroll = jbMatrixSyncTopScroll;
+window.jbMatrixSetupWheelScroll = jbMatrixSetupWheelScroll;

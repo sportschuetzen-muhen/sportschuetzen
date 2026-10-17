@@ -56,8 +56,10 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 ### 2.8 Beitragsmatrix & Gebühren-Übersicht (`jahresbeitrag-matrix.js`)
 * **Problem:** In der klassischen Rechnungsliste sieht man nur das Gesamttotal pro Schütze, hat aber keinen Gesamtüberblick über alle Gebühreneinnahmen (z. B. Wie viel nimmt der Verein insgesamt an Aktivbeiträgen, Lizenzen, Schützenhausgebühren oder Turnieren ein?).
 * **Lösung:** Ein eigenständiger Reiter **«Beitragsmatrix»** stellt alle Schützen als Zeilen und alle anfallenden Gebühren als Spalten gegenüber:
-  - **Farbliche Gruppierung & Kategorisierung im Header:** Alle Gebührenspalten sind logisch und farblich strukturiert (Blau = Jahresbeitrag `JB...`, Grün = Rabatte `RA...`, Teal = Lizenzen & Schützenhaus `LI...`/`GE...`, Orange = Kleinkaliber 50m `KK...`, Violett = Luftgewehr 10m `LG...`, Slate = Variable Positionen `Z...`). Jeder Spaltenkopf besitzt einen farbigen Top-Border, einen kompakten Kategorie-Badge und einen harmonischen Hintergrund-Tint.
-  - **Strukturierte Spaltenauswahl (`TableKit.setupColumnToggle`):** Das Dropdown-Menü *«Spalten»* unterteilt alle Gebühren sauber nach Kategorien mit Zwischenüberschriften, sodass Schiessarten gezielt überblickt und ein-/ausgeblendet werden können.
+  - **Farbliche Gruppierung & Kategorisierung im Header:** Alle Gebührenspalten sind logisch und farblich strukturiert (Blau = Jahresbeitrag `JB...`, Teal = Lizenzen & Schützenhaus `LI...`/`GE...`, Orange = Kleinkaliber 50m `KK...`, Violett = Luftgewehr 10m `LG...`, Grün = Rabatte & Nachwuchsförderung `RA...`/`KOSTENUEBERNAHME_JUGEND`, Slate = Variable Positionen `Z...`). Alle Badges sind bündig an der Oberkante ausgerichtet.
+  - **Sticky Schütze & Status:** Checkbox, Schützenname (stufenlos skalierbar mit Ellipsis) und Status sind fix am linken Rand verankert (`position: sticky`), sodass der Status beim horizontalen Durchscrollen der Gebührenspalten nie verdeckt wird.
+  - **Dual-Scrollbar & Barrierefreiheit:** Eine synchronisierte obere Scrollleiste (`#jbMatrixTopScroll`) sowie Shift+Mausrad-Unterstützung erlauben horizontales Gleiten direkt vom Bildschirmkopf aus, ohne vorher zum Tabellenende scrollen zu müssen.
+  - **Strukturierte Spaltenauswahl & Reset:** Spalten können über das Menü *«Spalten»* ein-/ausgeblendet oder mit *«Standard-Spalten»* jederzeit auf die Standardordnung zurückgesetzt werden.
   - **Pickliste ganz links:** Standardmässig sind alle Schützen ausgewählt. Wird ein Schütze abgewählt, wird er gedimmt und seine Beträge werden **live aus den Spaltensummen und dem Gesamttotal herausgerechnet**.
   - **Summenzeile (`<tfoot>`):** Fixierte Fusszeile mit Spaltensumme für jede Gebühr und Gesamttotal; passt sich live an sichtbare Spalten und ausgewählte Schützen an.
   - **Excel-Export:** Direkter Export der Matrix nach `.xlsx` über SheetJS (`XLSX`) unter Berücksichtigung der aktiv eingeblendeten Spalten und Kategorien.
@@ -173,8 +175,10 @@ Die Beitragsberechnung erfolgt nach einer deterministischen Kaskade aus Mitglied
 - Das System verwendet keine hardcodierten Betrags- oder Konten-Fallbacks mehr.
 - Fehlt ein Pflicht-Tarif oder ein Haben-Konto in `gebuehren_config`, wird im Frontend ein auffälliges Warn-Banner mit konkreter Handlungsanweisung angezeigt und die Rechnungsgenerierung blockiert.
 
-### 5.8 Jugendförderung (Kostenübernahme Verein)
-- Bei Junioren werden alle Wettkampfpositionen der Kategorie `Kostenübernahme_Jugend` saldiert und als Gegenposition `KOSTENUEBERNAHME_JUGEND` gutgeschrieben.
+### 5.8 Jugendförderung (Kostenübernahme Verein / Option A)
+- **Vollautomatische Kostenübernahme:** Bei Junioren (`is_junior = true` bzw. Alter $\le$ 20 Jahre oder Tarif `JB006`/`JB007`) werden sämtliche Wettkampfteilnahmen (Kategorien `Kleinkaliber`, `Luftgewehr`, `Wettkampf` bzw. Schlüssel `KK%`, `LG%`) vollautomatisch saldiert.
+- **Buchhalterischer Gegenbeleg:** Das System generiert automatisch eine Gegenposition **`KOSTENUEBERNAHME_JUGEND`** (*«Kostenübernahme Verein (Nachwuchsförderung)»*) in Höhe der summierten Wettkampfgebühren (Konto `3420` bzw. Aufwandskonto).
+- **Transparenz:** Auf der Beitragsrechnung des Nachwuchsschützen sowie in der Beitragsmatrix sind alle geschossenen Stiche einzeln als Soll aufgeführt und durch die Vereinssubvention auf Saldo CHF 0.00 ausgeglichen. In der Buchhaltung (`RechnungsCore`) ist die Kostenübernahme durch den Verein lückenlos ausgewiesen.
 
 ### 5.9 Floor-Regel
 - Rechnungsbetrag wird auf mindestens CHF 0.00 begrenzt, ausser bei Hausmeister-Gutschriften (`RA002`), wo negative Auszahlungsbeträge für Unterhaltsentschädigungen zulässig sind.
