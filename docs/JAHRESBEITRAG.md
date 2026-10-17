@@ -98,6 +98,13 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 * **Problem:** Haben Schützen in Excel-Blättern mehrere Starts im selben Wettkampf (z. B. SSV- und AGSV-Dezernat oder Mehrfachstarts), lieferte der Parser denselben `event_key` mehrfach im selben Batch. PostgreSQL lehnte den Batch mit Fehler `21000 (ON CONFLICT DO UPDATE command cannot affect row a second time)` ab.
 * **Lösung & Warum:**
   - `jbSubmitExcelImport` dedupliziert alle Teilnahmen vor dem Schreiben nach `(person_number, year, event_key)` (`dedupMap`), sodass jeder Schlüssel pro Schütze und Jahr exakt einmal im Upsert-Payload vorkommt.
+
+### 2.14 Multi-Select Checkbox-Dropdowns für Kategorien & Belegstatus (`jahresbeitrag-matrix.js`, `jahresbeitrag-overview.js`)
+* **Problem:** Einzelne `<select>`-Dropdowns erlaubten jeweils nur das Auswählen einer einzigen Kategorie oder eines einzigen Status (z. B. nur «Aktiv A» oder nur «Offen»). Kombinationen (z. B. Aktiv A + Aktiv B oder Offen + Versendet) konnten nicht gleichzeitig betrachtet oder exportiert werden.
+* **Lösung & Warum:**
+  - Ersatz der bisherigen Einfach-Selects durch Bootstrap-Dropdowns mit `data-bs-auto-close="outside"`, Checkbox-Zeilen und dynamischen Zähler-Badges.
+  - Ermöglicht das flexible, schrittweise Ankreuzen beliebiger Optionen (z. B. 1, 2, 5 Kategorien) sowie komfortable Schnellumschaltung («Alle Kategorien» / «Alle Status» / «Leeren»).
+  - Die Filterlogik operiert reaktiv über JavaScript-`Set`-Objekte (`_jbMatrixCategoryFilter`, `_jbMatrixStatusFilter`, `_jbOverviewCategoryFilter`, `_jbOverviewStatusFilter`) und wird sowohl bei der Tabellenanzeige als auch bei Live-Summen und Excel-Exporten konsistent angewendet.
   - Das Parsing für `type === 'dez'` verhindert doppelte Event-Keys bereits in der Einzelzeilen-Erkennung (`addDezEvent`).
   - Echte Fehlerüberwachung: Fehler von `supa.from('member_participations').upsert` und `calculate_member_contributions` werfen nun explizite Ausnahmen, anstatt stillschweigend einen Erfolgs-Toast auszugeben.
 

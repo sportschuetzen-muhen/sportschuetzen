@@ -46,6 +46,129 @@ function jbGetEffectiveStatus(r) {
 window.jbGetEffectiveStatus = jbGetEffectiveStatus;
 
 // ============================================================
+// MULTI-SELECT FILTER STATE & HANDLERS (ÜBERSICHT)
+// ============================================================
+let _jbOverviewCategoryFilter = new Set();
+let _jbOverviewStatusFilter = new Set();
+window._jbOverviewCategoryFilter = _jbOverviewCategoryFilter;
+window._jbOverviewStatusFilter = _jbOverviewStatusFilter;
+
+function jbOverviewToggleCategoryItem(catVal, isChecked) {
+  if (isChecked) {
+    _jbOverviewCategoryFilter.add(catVal);
+  } else {
+    _jbOverviewCategoryFilter.delete(catVal);
+  }
+  jbOverviewUpdateCategoryDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewToggleAllCategories(checked) {
+  _jbOverviewCategoryFilter.clear();
+  document.querySelectorAll('.jb-overview-cat-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewCatAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateCategoryDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewResetCategoryFilter() {
+  _jbOverviewCategoryFilter.clear();
+  document.querySelectorAll('.jb-overview-cat-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewCatAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateCategoryDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewUpdateCategoryDropdownUI() {
+  const btnText = document.getElementById('jbOverviewCategoryLabel');
+  const badge = document.getElementById('jbOverviewCategoryBadge');
+  const allChk = document.getElementById('jbOverviewCatAll');
+  if (!btnText) return;
+
+  const count = _jbOverviewCategoryFilter.size;
+  if (count === 0) {
+    btnText.textContent = 'Alle Kategorien';
+    if (badge) badge.classList.add('d-none');
+    if (allChk) allChk.checked = true;
+  } else if (count === 1) {
+    const singleVal = Array.from(_jbOverviewCategoryFilter)[0];
+    btnText.textContent = singleVal;
+    if (badge) {
+      badge.textContent = '1';
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  } else {
+    btnText.textContent = `${count} Kategorien`;
+    if (badge) {
+      badge.textContent = String(count);
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  }
+}
+
+function jbOverviewToggleStatusItem(stVal, isChecked) {
+  if (isChecked) {
+    _jbOverviewStatusFilter.add(stVal);
+  } else {
+    _jbOverviewStatusFilter.delete(stVal);
+  }
+  jbOverviewUpdateStatusDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewToggleAllStatus(checked) {
+  _jbOverviewStatusFilter.clear();
+  document.querySelectorAll('.jb-overview-st-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewStatusAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateStatusDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewResetStatusFilter() {
+  _jbOverviewStatusFilter.clear();
+  document.querySelectorAll('.jb-overview-st-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbOverviewStatusAll');
+  if (allChk) allChk.checked = true;
+  jbOverviewUpdateStatusDropdownUI();
+  jbFilter();
+}
+
+function jbOverviewUpdateStatusDropdownUI() {
+  const btnText = document.getElementById('jbOverviewStatusLabel');
+  const badge = document.getElementById('jbOverviewStatusBadge');
+  const allChk = document.getElementById('jbOverviewStatusAll');
+  if (!btnText) return;
+
+  const count = _jbOverviewStatusFilter.size;
+  if (count === 0) {
+    btnText.textContent = 'Alle Status';
+    if (badge) badge.classList.add('d-none');
+    if (allChk) allChk.checked = true;
+  } else if (count === 1) {
+    const singleVal = Array.from(_jbOverviewStatusFilter)[0];
+    const item = (window.JB_FILTER_STATUSES || []).find(s => s.value === singleVal);
+    btnText.textContent = item ? item.label.split(' ')[0] : singleVal;
+    if (badge) {
+      badge.textContent = '1';
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  } else {
+    btnText.textContent = `${count} Status`;
+    if (badge) {
+      badge.textContent = String(count);
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  }
+}
+
+// ============================================================
 // TAB 1: OVERVIEW TAB RENDER
 // ============================================================
 function renderOverviewTab(canEdit, years) {
@@ -73,15 +196,77 @@ function renderOverviewTab(canEdit, years) {
       </select>
       <input type="text" class="form-control form-control-sm" style="width:220px"
              id="jbSearch" placeholder="🔍 Name / PersonenNummer…" oninput="jbFilter()">
-      <select class="form-select form-select-sm" style="width:160px" id="jbStatusFilter" onchange="jbFilter()">
-        <option value="">Alle Status</option>
-        <option value="offen">Offen (Ausstehend)</option>
-        <option value="berechnet">Nur Berechnet (ohne RE)</option>
-        <option value="entwurf">Nur Entwurf (RE erstellt)</option>
-        <option value="versendet">Nur Versendet</option>
-        <option value="bezahlt">Bezahlt</option>
-        <option value="befreit">Befreit (0.-)</option>
-      </select>
+      <!-- Kategorie Multi-Select Filter -->
+      <div class="dropdown d-inline-block" id="jbOverviewCategoryDropdownContainer">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center justify-content-between text-truncate shadow-xs"
+                type="button" 
+                id="jbOverviewCategoryDropdownBtn" 
+                data-bs-toggle="dropdown" 
+                data-bs-auto-close="outside" 
+                aria-expanded="false" 
+                style="min-width: 170px; max-width: 220px;"
+                title="Tabelle nach Schützen-Kategorien filtern">
+          <span class="text-truncate" id="jbOverviewCategoryLabel">Alle Kategorien</span>
+          <span class="badge bg-primary ms-1 d-none" id="jbOverviewCategoryBadge">0</span>
+        </button>
+        <ul class="dropdown-menu shadow-sm py-1" style="min-width: 230px; font-size: 12px; max-height: 380px; overflow-y: auto;">
+          <li class="px-2 py-1 border-bottom bg-light d-flex justify-content-between align-items-center">
+            <div class="form-check m-0">
+              <input class="form-check-input" type="checkbox" id="jbOverviewCatAll" ${(!_jbOverviewCategoryFilter || _jbOverviewCategoryFilter.size === 0) ? 'checked' : ''} onchange="jbOverviewToggleAllCategories(this.checked)">
+              <label class="form-check-label fw-bold" for="jbOverviewCatAll" style="cursor: pointer;">Alle Kategorien</label>
+            </div>
+            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" style="font-size: 11px;" onclick="jbOverviewResetCategoryFilter()">Leeren</button>
+          </li>
+          ${(window.JB_FILTER_CATEGORIES || []).map(cat => {
+            const checked = _jbOverviewCategoryFilter && _jbOverviewCategoryFilter.has(cat.value);
+            const safeId = 'jbOverviewCat_' + cat.value.replace(/[^a-zA-Z0-9]/g, '_');
+            return `
+              <li class="px-2 py-1">
+                <div class="form-check m-0">
+                  <input class="form-check-input jb-overview-cat-chk" type="checkbox" value="${cat.value}" id="${safeId}" ${checked ? 'checked' : ''} onchange="jbOverviewToggleCategoryItem('${cat.value}', this.checked)">
+                  <label class="form-check-label w-100" for="${safeId}" style="cursor: pointer;">${cat.label}</label>
+                </div>
+              </li>
+            `;
+          }).join('')}
+        </ul>
+      </div>
+
+      <!-- Status Multi-Select Filter -->
+      <div class="dropdown d-inline-block" id="jbOverviewStatusDropdownContainer">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center justify-content-between text-truncate shadow-xs"
+                type="button" 
+                id="jbOverviewStatusDropdownBtn" 
+                data-bs-toggle="dropdown" 
+                data-bs-auto-close="outside" 
+                aria-expanded="false" 
+                style="min-width: 160px; max-width: 220px;"
+                title="Tabelle nach Rechnungs-Status filtern">
+          <span class="text-truncate" id="jbOverviewStatusLabel">Alle Status</span>
+          <span class="badge bg-primary ms-1 d-none" id="jbOverviewStatusBadge">0</span>
+        </button>
+        <ul class="dropdown-menu shadow-sm py-1" style="min-width: 230px; font-size: 12px; max-height: 380px; overflow-y: auto;">
+          <li class="px-2 py-1 border-bottom bg-light d-flex justify-content-between align-items-center">
+            <div class="form-check m-0">
+              <input class="form-check-input" type="checkbox" id="jbOverviewStatusAll" ${(!_jbOverviewStatusFilter || _jbOverviewStatusFilter.size === 0) ? 'checked' : ''} onchange="jbOverviewToggleAllStatus(this.checked)">
+              <label class="form-check-label fw-bold" for="jbOverviewStatusAll" style="cursor: pointer;">Alle Status</label>
+            </div>
+            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" style="font-size: 11px;" onclick="jbOverviewResetStatusFilter()">Leeren</button>
+          </li>
+          ${(window.JB_FILTER_STATUSES || []).map(st => {
+            const checked = _jbOverviewStatusFilter && _jbOverviewStatusFilter.has(st.value);
+            const safeId = 'jbOverviewSt_' + st.value.replace(/[^a-zA-Z0-9]/g, '_');
+            return `
+              <li class="px-2 py-1">
+                <div class="form-check m-0">
+                  <input class="form-check-input jb-overview-st-chk" type="checkbox" value="${st.value}" id="${safeId}" ${checked ? 'checked' : ''} onchange="jbOverviewToggleStatusItem('${st.value}', this.checked)">
+                  <label class="form-check-label w-100" for="${safeId}" style="cursor: pointer;">${st.label}</label>
+                </div>
+              </li>
+            `;
+          }).join('')}
+        </ul>
+      </div>
 
       <!-- Spalten-Ausblender (TableKit Standard) -->
       <div id="jbTableColToggleContainer" class="d-inline-block"></div>
@@ -455,20 +640,37 @@ function jbRenderRows(data) {
 
 function jbFilter() {
   const search = (document.getElementById('jbSearch')?.value || '').toLowerCase();
-  const status = document.getElementById('jbStatusFilter')?.value || '';
 
   const filtered = _jbData.filter(r => {
     const m    = _jbMemberMap[String(r.PersonNumber)] || {};
     const name = ((m.FirstName || '') + ' ' + (m.LastName || '') + ' ' + r.PersonNumber).toLowerCase();
     const matchSearch = !search || name.includes(search);
     const effStatus = jbGetEffectiveStatus(r);
-    let matchStatus = !status;
-    if (status === 'offen') {
-      matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
-    } else if (status) {
-      matchStatus = effStatus === status;
+    
+    // Status Multi-Filter
+    let matchStatus = true;
+    if (_jbOverviewStatusFilter && _jbOverviewStatusFilter.size > 0) {
+      matchStatus = Array.from(_jbOverviewStatusFilter).some(st => {
+        if (st === 'offen') {
+          return effStatus !== 'bezahlt' && effStatus !== 'befreit';
+        }
+        return effStatus === st;
+      });
     }
-    return matchSearch && matchStatus;
+
+    // Kategorie Multi-Filter
+    let matchCategory = true;
+    if (_jbOverviewCategoryFilter && _jbOverviewCategoryFilter.size > 0) {
+      matchCategory = Array.from(_jbOverviewCategoryFilter).some(cat => {
+        if (typeof jbMemberMatchesCategory === 'function') {
+          return jbMemberMatchesCategory(m, r, cat);
+        }
+        const cats = m._kategorien || (m._kategorie ? [m._kategorie] : []);
+        return cats.some(c => String(c).toLowerCase().includes(cat.toLowerCase()));
+      });
+    }
+
+    return matchSearch && matchStatus && matchCategory;
   });
 
   jbRenderRows(filtered);
@@ -1677,3 +1879,13 @@ function jbSortTable(col) {
   jbApplyTableSorting();
   renderJahresbeitragView();
 }
+
+window.jbOverviewToggleCategoryItem = jbOverviewToggleCategoryItem;
+window.jbOverviewToggleAllCategories = jbOverviewToggleAllCategories;
+window.jbOverviewResetCategoryFilter = jbOverviewResetCategoryFilter;
+window.jbOverviewUpdateCategoryDropdownUI = jbOverviewUpdateCategoryDropdownUI;
+window.jbOverviewToggleStatusItem = jbOverviewToggleStatusItem;
+window.jbOverviewToggleAllStatus = jbOverviewToggleAllStatus;
+window.jbOverviewResetStatusFilter = jbOverviewResetStatusFilter;
+window.jbOverviewUpdateStatusDropdownUI = jbOverviewUpdateStatusDropdownUI;
+

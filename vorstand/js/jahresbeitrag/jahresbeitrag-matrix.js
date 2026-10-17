@@ -4,12 +4,130 @@
 // ============================================================
 
 let _jbMatrixSearch = '';
-let _jbMatrixCategoryFilter = ''; // '' = alle, 'aktiv', 'junior', 'veteran', 'ehren', 'passiv'
-let _jbMatrixStatusFilter = ''; // '' = alle, 'offen', 'bezahlt'
+let _jbMatrixCategoryFilter = new Set(); // leer = Alle Kategorien aktiv
+let _jbMatrixStatusFilter = new Set();   // leer = Alle Status aktiv
 let _jbMatrixSelected = new Set();
 let _jbMatrixInitializedYear = null;
 let _jbMatrixSortCol = 'name';
 let _jbMatrixSortAsc = true;
+
+// ============================================================
+// MULTI-SELECT DROPDOWN HANDLERS (KATEGORIEN & STATUS)
+// ============================================================
+function jbMatrixToggleCategoryItem(catVal, isChecked) {
+  if (isChecked) {
+    _jbMatrixCategoryFilter.add(catVal);
+  } else {
+    _jbMatrixCategoryFilter.delete(catVal);
+  }
+  jbMatrixUpdateCategoryDropdownUI();
+  jbRenderMatrixTable();
+}
+
+function jbMatrixToggleAllCategories(checked) {
+  _jbMatrixCategoryFilter.clear();
+  document.querySelectorAll('.jb-matrix-cat-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbMatrixCatAll');
+  if (allChk) allChk.checked = true;
+  jbMatrixUpdateCategoryDropdownUI();
+  jbRenderMatrixTable();
+}
+
+function jbMatrixResetCategoryFilter() {
+  _jbMatrixCategoryFilter.clear();
+  document.querySelectorAll('.jb-matrix-cat-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbMatrixCatAll');
+  if (allChk) allChk.checked = true;
+  jbMatrixUpdateCategoryDropdownUI();
+  jbRenderMatrixTable();
+}
+
+function jbMatrixUpdateCategoryDropdownUI() {
+  const btnText = document.getElementById('jbMatrixCategoryLabel');
+  const badge = document.getElementById('jbMatrixCategoryBadge');
+  const allChk = document.getElementById('jbMatrixCatAll');
+  if (!btnText) return;
+
+  const count = _jbMatrixCategoryFilter.size;
+  if (count === 0) {
+    btnText.textContent = 'Alle Kategorien';
+    if (badge) badge.classList.add('d-none');
+    if (allChk) allChk.checked = true;
+  } else if (count === 1) {
+    const singleVal = Array.from(_jbMatrixCategoryFilter)[0];
+    btnText.textContent = singleVal;
+    if (badge) {
+      badge.textContent = '1';
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  } else {
+    btnText.textContent = `${count} Kategorien`;
+    if (badge) {
+      badge.textContent = String(count);
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  }
+}
+
+function jbMatrixToggleStatusItem(stVal, isChecked) {
+  if (isChecked) {
+    _jbMatrixStatusFilter.add(stVal);
+  } else {
+    _jbMatrixStatusFilter.delete(stVal);
+  }
+  jbMatrixUpdateStatusDropdownUI();
+  jbRenderMatrixTable();
+}
+
+function jbMatrixToggleAllStatus(checked) {
+  _jbMatrixStatusFilter.clear();
+  document.querySelectorAll('.jb-matrix-st-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbMatrixStatusAll');
+  if (allChk) allChk.checked = true;
+  jbMatrixUpdateStatusDropdownUI();
+  jbRenderMatrixTable();
+}
+
+function jbMatrixResetStatusFilter() {
+  _jbMatrixStatusFilter.clear();
+  document.querySelectorAll('.jb-matrix-st-chk').forEach(c => { c.checked = false; });
+  const allChk = document.getElementById('jbMatrixStatusAll');
+  if (allChk) allChk.checked = true;
+  jbMatrixUpdateStatusDropdownUI();
+  jbRenderMatrixTable();
+}
+
+function jbMatrixUpdateStatusDropdownUI() {
+  const btnText = document.getElementById('jbMatrixStatusLabel');
+  const badge = document.getElementById('jbMatrixStatusBadge');
+  const allChk = document.getElementById('jbMatrixStatusAll');
+  if (!btnText) return;
+
+  const count = _jbMatrixStatusFilter.size;
+  if (count === 0) {
+    btnText.textContent = 'Alle Status';
+    if (badge) badge.classList.add('d-none');
+    if (allChk) allChk.checked = true;
+  } else if (count === 1) {
+    const singleVal = Array.from(_jbMatrixStatusFilter)[0];
+    const item = (window.JB_FILTER_STATUSES || []).find(s => s.value === singleVal);
+    btnText.textContent = item ? item.label.split(' ')[0] : singleVal;
+    if (badge) {
+      badge.textContent = '1';
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  } else {
+    btnText.textContent = `${count} Status`;
+    if (badge) {
+      badge.textContent = String(count);
+      badge.classList.remove('d-none');
+    }
+    if (allChk) allChk.checked = false;
+  }
+}
 
 // ============================================================
 // HILFSFUNKTIONEN: MULTI-KATEGORIE EINES MITGLIEDS (FÜR FILTER & HOVER)
@@ -267,37 +385,78 @@ function renderMatrixTab(canEdit, years) {
           </div>
         </div>
 
-        <!-- Kategorie-Filter (Schnellauswahl) -->
+        <!-- Kategorie-Filter (Multi-Select) -->
         <div class="col-md-2">
-          <select class="form-select form-select-sm" id="jbMatrixCategorySelect" onchange="jbFilterMatrixTable()" title="Tabelle nach Schützen-Kategorie filtern">
-            <option value="" ${_jbMatrixCategoryFilter === '' ? 'selected' : ''}>Alle Kategorien</option>
-            <option value="Aktiv A" ${_jbMatrixCategoryFilter === 'Aktiv A' ? 'selected' : ''}>Aktiv A</option>
-            <option value="Aktiv B" ${_jbMatrixCategoryFilter === 'Aktiv B' ? 'selected' : ''}>Aktiv B</option>
-            <option value="G50m (A)" ${_jbMatrixCategoryFilter === 'G50m (A)' ? 'selected' : ''}>G50m (A)</option>
-            <option value="G50m (B)" ${_jbMatrixCategoryFilter === 'G50m (B)' ? 'selected' : ''}>G50m (B)</option>
-            <option value="G10m (A)" ${_jbMatrixCategoryFilter === 'G10m (A)' ? 'selected' : ''}>G10m (A)</option>
-            <option value="G10m (B)" ${_jbMatrixCategoryFilter === 'G10m (B)' ? 'selected' : ''}>G10m (B)</option>
-            <option value="G10m Aufl. (A)" ${_jbMatrixCategoryFilter === 'G10m Aufl. (A)' ? 'selected' : ''}>G10m Aufl. (A)</option>
-            <option value="Ehrenmitglied" ${_jbMatrixCategoryFilter === 'Ehrenmitglied' ? 'selected' : ''}>Ehrenmitglied</option>
-            <option value="Junior" ${_jbMatrixCategoryFilter === 'Junior' ? 'selected' : ''}>Junior (U21)</option>
-            <option value="Veteran" ${_jbMatrixCategoryFilter === 'Veteran' ? 'selected' : ''}>Veteran (60+)</option>
-            <option value="Vorstand" ${_jbMatrixCategoryFilter === 'Vorstand' ? 'selected' : ''}>Vorstand</option>
-            <option value="Passiv" ${_jbMatrixCategoryFilter === 'Passiv' ? 'selected' : ''}>Passiv</option>
-          </select>
+          <div class="dropdown" id="jbMatrixCategoryDropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 d-flex justify-content-between align-items-center text-truncate" 
+                    type="button" 
+                    id="jbMatrixCategoryDropdownBtn" 
+                    data-bs-toggle="dropdown" 
+                    data-bs-auto-close="outside" 
+                    aria-expanded="false" 
+                    title="Tabelle nach Schützen-Kategorien filtern">
+              <span class="text-truncate" id="jbMatrixCategoryLabel">Alle Kategorien</span>
+              <span class="badge bg-primary ms-1 d-none" id="jbMatrixCategoryBadge">0</span>
+            </button>
+            <ul class="dropdown-menu shadow-sm py-1" style="min-width: 230px; font-size: 12px; max-height: 380px; overflow-y: auto;">
+              <li class="px-2 py-1 border-bottom bg-light d-flex justify-content-between align-items-center">
+                <div class="form-check m-0">
+                  <input class="form-check-input" type="checkbox" id="jbMatrixCatAll" ${(!_jbMatrixCategoryFilter || _jbMatrixCategoryFilter.size === 0) ? 'checked' : ''} onchange="jbMatrixToggleAllCategories(this.checked)">
+                  <label class="form-check-label fw-bold" for="jbMatrixCatAll" style="cursor: pointer;">Alle Kategorien</label>
+                </div>
+                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" style="font-size: 11px;" onclick="jbMatrixResetCategoryFilter()">Leeren</button>
+              </li>
+              ${(window.JB_FILTER_CATEGORIES || []).map(cat => {
+                const checked = _jbMatrixCategoryFilter && _jbMatrixCategoryFilter.has(cat.value);
+                const safeId = 'jbMatrixCat_' + cat.value.replace(/[^a-zA-Z0-9]/g, '_');
+                return `
+                  <li class="px-2 py-1">
+                    <div class="form-check m-0">
+                      <input class="form-check-input jb-matrix-cat-chk" type="checkbox" value="${cat.value}" id="${safeId}" ${checked ? 'checked' : ''} onchange="jbMatrixToggleCategoryItem('${cat.value}', this.checked)">
+                      <label class="form-check-label w-100" for="${safeId}" style="cursor: pointer;">${cat.label}</label>
+                    </div>
+                  </li>
+                `;
+              }).join('')}
+            </ul>
+          </div>
         </div>
 
-        <!-- Beleg- / Rechnungs-Status Filter -->
+        <!-- Beleg- / Rechnungs-Status Filter (Multi-Select) -->
         <div class="col-md-2">
-          <select class="form-select form-select-sm" id="jbMatrixStatusSelect" onchange="jbFilterMatrixTable()">
-            <option value="" ${_jbMatrixStatusFilter === '' ? 'selected' : ''}>Alle Status</option>
-            <option value="berechnet" ${_jbMatrixStatusFilter === 'berechnet' ? 'selected' : ''}>Berechnet (Noch keine RE)</option>
-            <option value="entwurf" ${_jbMatrixStatusFilter === 'entwurf' ? 'selected' : ''}>Entwurf (RE im RechnungsCore)</option>
-            <option value="versendet" ${_jbMatrixStatusFilter === 'versendet' ? 'selected' : ''}>Versendet (Offen)</option>
-            <option value="teilbezahlt" ${_jbMatrixStatusFilter === 'teilbezahlt' ? 'selected' : ''}>Teilbezahlt</option>
-            <option value="bezahlt" ${_jbMatrixStatusFilter === 'bezahlt' ? 'selected' : ''}>Bezahlt</option>
-            <option value="befreit" ${_jbMatrixStatusFilter === 'befreit' ? 'selected' : ''}>Befreit (0 CHF)</option>
-            <option value="offen" ${_jbMatrixStatusFilter === 'offen' ? 'selected' : ''}>Ausstehend (Offen)</option>
-          </select>
+          <div class="dropdown" id="jbMatrixStatusDropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 d-flex justify-content-between align-items-center text-truncate" 
+                    type="button" 
+                    id="jbMatrixStatusDropdownBtn" 
+                    data-bs-toggle="dropdown" 
+                    data-bs-auto-close="outside" 
+                    aria-expanded="false" 
+                    title="Tabelle nach Rechnungs-Status filtern">
+              <span class="text-truncate" id="jbMatrixStatusLabel">Alle Status</span>
+              <span class="badge bg-primary ms-1 d-none" id="jbMatrixStatusBadge">0</span>
+            </button>
+            <ul class="dropdown-menu shadow-sm py-1" style="min-width: 230px; font-size: 12px; max-height: 380px; overflow-y: auto;">
+              <li class="px-2 py-1 border-bottom bg-light d-flex justify-content-between align-items-center">
+                <div class="form-check m-0">
+                  <input class="form-check-input" type="checkbox" id="jbMatrixStatusAll" ${(!_jbMatrixStatusFilter || _jbMatrixStatusFilter.size === 0) ? 'checked' : ''} onchange="jbMatrixToggleAllStatus(this.checked)">
+                  <label class="form-check-label fw-bold" for="jbMatrixStatusAll" style="cursor: pointer;">Alle Status</label>
+                </div>
+                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-muted" style="font-size: 11px;" onclick="jbMatrixResetStatusFilter()">Leeren</button>
+              </li>
+              ${(window.JB_FILTER_STATUSES || []).map(st => {
+                const checked = _jbMatrixStatusFilter && _jbMatrixStatusFilter.has(st.value);
+                const safeId = 'jbMatrixSt_' + st.value.replace(/[^a-zA-Z0-9]/g, '_');
+                return `
+                  <li class="px-2 py-1">
+                    <div class="form-check m-0">
+                      <input class="form-check-input jb-matrix-st-chk" type="checkbox" value="${st.value}" id="${safeId}" ${checked ? 'checked' : ''} onchange="jbMatrixToggleStatusItem('${st.value}', this.checked)">
+                      <label class="form-check-label w-100" for="${safeId}" style="cursor: pointer;">${st.label}</label>
+                    </div>
+                  </li>
+                `;
+              }).join('')}
+            </ul>
+          </div>
         </div>
 
         <div class="col-md-5 d-flex justify-content-md-end gap-1 flex-wrap">
@@ -483,6 +642,8 @@ function jbInitMatrixTab() {
     _jbMatrixInitializedYear = currentYear;
   }
 
+  jbMatrixUpdateCategoryDropdownUI();
+  jbMatrixUpdateStatusDropdownUI();
   jbRenderMatrixTable();
 }
 
@@ -593,8 +754,6 @@ function jbRenderMatrixTable() {
 
   const columns = jbGetMatrixColumns();
   const search = (_jbMatrixSearch || '').toLowerCase().trim();
-  const statusFilter = _jbMatrixStatusFilter;
-  const categoryFilter = _jbMatrixCategoryFilter;
 
   // 1. Daten filtern
   const rowsData = (_jbData || []).filter(r => {
@@ -604,14 +763,24 @@ function jbRenderMatrixTable() {
     
     const matchSearch = !search || fullName.includes(search);
     const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+    
+    // Status Multi-Filter
     let matchStatus = true;
-    if (statusFilter === 'offen') {
-      matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
-    } else if (statusFilter) {
-      matchStatus = effStatus === statusFilter;
+    if (_jbMatrixStatusFilter && _jbMatrixStatusFilter.size > 0) {
+      matchStatus = Array.from(_jbMatrixStatusFilter).some(st => {
+        if (st === 'offen') {
+          return effStatus !== 'bezahlt' && effStatus !== 'befreit';
+        }
+        return effStatus === st;
+      });
     }
 
-    const matchCategory = jbMemberMatchesCategory(m, r, categoryFilter);
+    // Kategorie Multi-Filter
+    let matchCategory = true;
+    if (_jbMatrixCategoryFilter && _jbMatrixCategoryFilter.size > 0) {
+      matchCategory = Array.from(_jbMatrixCategoryFilter).some(cat => jbMemberMatchesCategory(m, r, cat));
+    }
+
     return matchSearch && matchStatus && matchCategory;
   });
 
@@ -865,22 +1034,28 @@ function jbRenderMatrixTable() {
 function jbCalculateMatrixTotals(rowsData, columns) {
   if (!rowsData) {
     const search = (_jbMatrixSearch || '').toLowerCase().trim();
-    const statusFilter = _jbMatrixStatusFilter;
-    const categoryFilter = _jbMatrixCategoryFilter;
     rowsData = (_jbData || []).filter(r => {
       const pn = String(r.PersonNumber).trim();
       const m = _jbMemberMap[pn] || {};
       const fullName = `${m.FirstName || ''} ${m.LastName || ''} ${pn}`.toLowerCase();
       const matchSearch = !search || fullName.includes(search);
       const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+      
       let matchStatus = true;
-      if (statusFilter === 'offen') {
-        matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
-      } else if (statusFilter) {
-        matchStatus = effStatus === statusFilter;
+      if (_jbMatrixStatusFilter && _jbMatrixStatusFilter.size > 0) {
+        matchStatus = Array.from(_jbMatrixStatusFilter).some(st => {
+          if (st === 'offen') {
+            return effStatus !== 'bezahlt' && effStatus !== 'befreit';
+          }
+          return effStatus === st;
+        });
       }
 
-      const matchCategory = jbMemberMatchesCategory(m, r, categoryFilter);
+      let matchCategory = true;
+      if (_jbMatrixCategoryFilter && _jbMatrixCategoryFilter.size > 0) {
+        matchCategory = Array.from(_jbMatrixCategoryFilter).some(cat => jbMemberMatchesCategory(m, r, cat));
+      }
+
       return matchSearch && matchStatus && matchCategory;
     });
   }
@@ -1072,8 +1247,6 @@ function jbMatrixSelectCategory(catKey) {
 
 function jbFilterMatrixTable() {
   _jbMatrixSearch = document.getElementById('jbMatrixSearchInput')?.value || '';
-  _jbMatrixCategoryFilter = document.getElementById('jbMatrixCategorySelect')?.value || '';
-  _jbMatrixStatusFilter = document.getElementById('jbMatrixStatusSelect')?.value || '';
   jbRenderMatrixTable();
 }
 
@@ -1098,8 +1271,6 @@ function jbExportMatrixExcel() {
 
   const columns = jbGetMatrixColumns();
   const search = (_jbMatrixSearch || '').toLowerCase().trim();
-  const statusFilter = _jbMatrixStatusFilter;
-  const categoryFilter = _jbMatrixCategoryFilter;
 
   // Nur sichtbare/gefilterte Zeilen exportieren
   const rowsData = (_jbData || []).filter(r => {
@@ -1108,14 +1279,22 @@ function jbExportMatrixExcel() {
     const fullName = `${m.FirstName || ''} ${m.LastName || ''} ${pn}`.toLowerCase();
     const matchSearch = !search || fullName.includes(search);
     const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+    
     let matchStatus = true;
-    if (statusFilter === 'offen') {
-      matchStatus = effStatus !== 'bezahlt' && effStatus !== 'befreit';
-    } else if (statusFilter) {
-      matchStatus = effStatus === statusFilter;
+    if (_jbMatrixStatusFilter && _jbMatrixStatusFilter.size > 0) {
+      matchStatus = Array.from(_jbMatrixStatusFilter).some(st => {
+        if (st === 'offen') {
+          return effStatus !== 'bezahlt' && effStatus !== 'befreit';
+        }
+        return effStatus === st;
+      });
     }
 
-    const matchCategory = jbMemberMatchesCategory(m, r, categoryFilter);
+    let matchCategory = true;
+    if (_jbMatrixCategoryFilter && _jbMatrixCategoryFilter.size > 0) {
+      matchCategory = Array.from(_jbMatrixCategoryFilter).some(cat => jbMemberMatchesCategory(m, r, cat));
+    }
+
     return matchSearch && matchStatus && matchCategory;
   });
 
@@ -1329,3 +1508,11 @@ window.jbMatrixResetColumns = jbMatrixResetColumns;
 window.jbMatrixSyncStickyOffsets = jbMatrixSyncStickyOffsets;
 window.jbMatrixSyncTopScroll = jbMatrixSyncTopScroll;
 window.jbMatrixSetupWheelScroll = jbMatrixSetupWheelScroll;
+window.jbMatrixToggleCategoryItem = jbMatrixToggleCategoryItem;
+window.jbMatrixToggleAllCategories = jbMatrixToggleAllCategories;
+window.jbMatrixResetCategoryFilter = jbMatrixResetCategoryFilter;
+window.jbMatrixUpdateCategoryDropdownUI = jbMatrixUpdateCategoryDropdownUI;
+window.jbMatrixToggleStatusItem = jbMatrixToggleStatusItem;
+window.jbMatrixToggleAllStatus = jbMatrixToggleAllStatus;
+window.jbMatrixResetStatusFilter = jbMatrixResetStatusFilter;
+window.jbMatrixUpdateStatusDropdownUI = jbMatrixUpdateStatusDropdownUI;

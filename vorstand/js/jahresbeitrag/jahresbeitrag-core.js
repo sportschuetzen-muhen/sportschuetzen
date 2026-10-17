@@ -47,6 +47,194 @@ const EVENT_KEYS = {
   lg_ch_kniend: 'LG007'
 };
 
+// ============================================================
+// GEMEINSAME FILTER-KONFIGURATIONEN (KATEGORIEN & STATUS)
+// ============================================================
+window.JB_FILTER_CATEGORIES = window.JB_FILTER_CATEGORIES || [
+  { value: 'Aktiv A', label: 'Aktiv A' },
+  { value: 'Aktiv B', label: 'Aktiv B' },
+  { value: 'G50m (A)', label: 'G50m (A)' },
+  { value: 'G50m (B)', label: 'G50m (B)' },
+  { value: 'G10m (A)', label: 'G10m (A)' },
+  { value: 'G10m (B)', label: 'G10m (B)' },
+  { value: 'G10m Aufl. (A)', label: 'G10m Aufl. (A)' },
+  { value: 'Ehrenmitglied', label: 'Ehrenmitglied' },
+  { value: 'Junior', label: 'Junior (U21)' },
+  { value: 'Veteran', label: 'Veteran (60+)' },
+  { value: 'Vorstand', label: 'Vorstand' },
+  { value: 'Passiv', label: 'Passiv' }
+];
+
+window.JB_FILTER_STATUSES = window.JB_FILTER_STATUSES || [
+  { value: 'offen', label: 'Ausstehend (Offen)' },
+  { value: 'berechnet', label: 'Berechnet (Noch keine RE)' },
+  { value: 'entwurf', label: 'Entwurf (RE im RechnungsCore)' },
+  { value: 'versendet', label: 'Versendet (Offen)' },
+  { value: 'teilbezahlt', label: 'Teilbezahlt' },
+  { value: 'bezahlt', label: 'Bezahlt' },
+  { value: 'befreit', label: 'Befreit (0 CHF)' }
+];
+
+// ============================================================
+// HILFSFUNKTIONEN: MULTI-KATEGORIE EINES MITGLIEDS (FÜR FILTER & BADGES)
+// ============================================================
+function jbGetMemberCategories(m, r) {
+  const cats = [];
+  const addCat = (c) => {
+    if (c && !cats.includes(c)) cats.push(c);
+  };
+
+  const positions = (r && r.id && window._jbPositionsCache && window._jbPositionsCache[r.id]) || [];
+  const posKeys = new Set(positions.map(p => String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase()));
+
+  // 1. Ehrenmitglied
+  if (m?.is_honorary || m?.IsHonoraryMember == 1 || m?._istEhren || posKeys.has('JB003') || posKeys.has('RA003')) {
+    addCat('Ehrenmitglied');
+  }
+
+  // 2. Vorstand
+  if (m?._istVorstand || (m?._aktiveFunktionenCount > 0) || posKeys.has('JB004')) {
+    addCat('Vorstand');
+  }
+
+  // 3. Junior (U21)
+  const age = m?.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  if ((age > 0 && age <= 20) || posKeys.has('JB006') || posKeys.has('JB007') || posKeys.has('KOSTENUEBERNAHME_JUGEND')) {
+    addCat('Junior');
+  }
+
+  // 4. Veteran (60+)
+  if (age >= 60) {
+    addCat('Veteran');
+  }
+
+  // 5. Passiv
+  if (m?.is_passive || m?.IsPassive == 1 || m?._istPassiv || posKeys.has('JB005')) {
+    addCat('Passiv');
+  }
+
+  // 6. Lizenzen (Disziplinen & A/B)
+  const lics = [
+    ...(m?._aktiveLizenzen || []),
+    ...(m?._lizenzen || [])
+  ];
+  const seenLics = new Set();
+
+  lics.forEach(lic => {
+    const rawCat = String(lic?.MembershipCategory || lic?.membership_category || '').trim();
+    if (!rawCat || seenLics.has(rawCat)) return;
+    seenLics.add(rawCat);
+
+    const is50m = /50m/i.test(rawCat) || /g50/i.test(rawCat);
+    const is10m = /10m/i.test(rawCat) || /g10/i.test(rawCat);
+    const isAuflage = /aufl/i.test(rawCat);
+    const isB = /b/i.test(rawCat) && !/a/i.test(rawCat.replace(/auflage/i, ''));
+
+    if (is50m && isAuflage) {
+      addCat(`G50m Aufl. (${isB ? 'B' : 'A'})`);
+    } else if (is50m) {
+      addCat(`G50m (${isB ? 'B' : 'A'})`);
+    } else if (is10m && isAuflage) {
+      addCat(`G10m Aufl. (${isB ? 'B' : 'A'})`);
+    } else if (is10m) {
+      addCat(`G10m (${isB ? 'B' : 'A'})`);
+    } else {
+      addCat(rawCat.replace('Aktiv-', 'Aktiv '));
+    }
+  });
+
+  // Falls in _kategorien noch Strings vorliegen
+  if (Array.isArray(m?._kategorien)) {
+    m._kategorien.forEach(k => {
+      const s = String(k || '').trim();
+      if (!s || seenLics.has(s)) return;
+      seenLics.add(s);
+      if (/50m/i.test(s)) addCat(/b/i.test(s) ? 'G50m (B)' : 'G50m (A)');
+      else if (/10m/i.test(s)) addCat(/b/i.test(s) ? 'G10m (B)' : 'G10m (A)');
+      else addCat(s.replace('Aktiv-', 'Aktiv '));
+    });
+  }
+
+  // Position-basierte Ergänzungen (falls keine Lizenzen im Mitglied gepflegt sind)
+  if (posKeys.has('JB001') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv A'))) {
+    addCat('Aktiv A');
+  }
+  if (posKeys.has('JB002') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv B'))) {
+    addCat('Aktiv B');
+  }
+  if (posKeys.has('LI001') && !cats.some(c => c.includes('G50m'))) {
+    addCat('G50m (A)');
+  }
+  if (posKeys.has('LI002') && !cats.some(c => c.includes('G10m'))) {
+    addCat('G10m (A)');
+  }
+
+  // Fallback
+  if (cats.length === 0) {
+    const fb = (r?._kategorie || m?._kategorie || 'Aktiv').replace('Aktiv-', 'Aktiv ');
+    addCat(fb);
+  }
+
+  return cats;
+}
+
+function jbGetMemberCategoryLabel(m, r) {
+  const cats = jbGetMemberCategories(m, r);
+  return cats.join(', ');
+}
+
+function jbMemberMatchesCategory(m, r, filterVal) {
+  if (!filterVal) return true;
+  const cats = jbGetMemberCategories(m, r);
+  const target = filterVal.toLowerCase().trim();
+
+  return cats.some(c => {
+    const cLow = c.toLowerCase().trim();
+    if (cLow === target) return true;
+    if (target === 'aktiv a') {
+      return cLow.includes('(a)') || cLow.includes('aktiv a') || cLow.includes('aktiv-a');
+    }
+    if (target === 'aktiv b') {
+      return cLow.includes('(b)') || cLow.includes('aktiv b') || cLow.includes('aktiv-b');
+    }
+    if (target === 'g50m (a)') {
+      return cLow.includes('g50m') && cLow.includes('(a)') && !cLow.includes('aufl');
+    }
+    if (target === 'g50m (b)') {
+      return cLow.includes('g50m') && cLow.includes('(b)');
+    }
+    if (target === 'g10m (a)') {
+      return cLow.includes('g10m') && cLow.includes('(a)') && !cLow.includes('aufl');
+    }
+    if (target === 'g10m (b)') {
+      return cLow.includes('g10m') && cLow.includes('(b)');
+    }
+    if (target.includes('aufl')) {
+      return cLow.includes('aufl');
+    }
+    if (target === 'ehrenmitglied') {
+      return cLow.includes('ehren');
+    }
+    if (target === 'junior') {
+      return cLow.includes('junior') || cLow.includes('schüler');
+    }
+    if (target === 'veteran') {
+      return cLow.includes('veteran');
+    }
+    if (target === 'passiv') {
+      return cLow.includes('passiv');
+    }
+    if (target === 'vorstand') {
+      return cLow.includes('vorstand');
+    }
+    return cLow.includes(target);
+  });
+}
+
+window.jbGetMemberCategories = jbGetMemberCategories;
+window.jbGetMemberCategoryLabel = jbGetMemberCategoryLabel;
+window.jbMemberMatchesCategory = jbMemberMatchesCategory;
+
 // Supabase Client Access & State
 function getJahresbeitragSupabaseClient() {
   if (typeof window.getSupabaseClient === 'function') {
@@ -463,7 +651,13 @@ function renderJahresbeitragView() {
   document.getElementById('jahresbeitrag-container').innerHTML = tabControlHTML + contentHTML;
 
   if (_jbActiveTab === 'overview') {
-    jbRenderRows(_jbData);
+    if (typeof jbOverviewUpdateCategoryDropdownUI === 'function') jbOverviewUpdateCategoryDropdownUI();
+    if (typeof jbOverviewUpdateStatusDropdownUI === 'function') jbOverviewUpdateStatusDropdownUI();
+    if (typeof jbFilter === 'function') {
+      jbFilter();
+    } else {
+      jbRenderRows(_jbData);
+    }
     if (typeof TableKit !== 'undefined') {
       setTimeout(() => {
         if (typeof TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleContainer')) {
