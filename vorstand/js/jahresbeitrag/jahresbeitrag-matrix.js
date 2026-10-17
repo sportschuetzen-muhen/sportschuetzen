@@ -266,6 +266,32 @@ function jbInitMatrixTab() {
 }
 
 // ============================================================
+// HILFSFUNKTION: KATEGORISIERUNG & FARBEN DER GEBÜHREN
+// ============================================================
+function jbGetMatrixCategory(key) {
+  const k = String(key || '').trim().toUpperCase();
+  if (k.startsWith('JB')) {
+    return { id: 'jb', label: 'Jahresbeitrag', badge: 'JB', color: '#1d4ed8', bg: '#eff6ff', border: '#2563eb', sort: 1 };
+  }
+  if (k.startsWith('RA')) {
+    return { id: 'rabatt', label: 'Rabatte', badge: 'RABATT', color: '#047857', bg: '#ecfdf5', border: '#10b981', sort: 2 };
+  }
+  if (k.startsWith('LI') || k.startsWith('GE')) {
+    return { id: 'anlage', label: 'Lizenzen & Anlage', badge: 'LIZENZ / GEB', color: '#0f766e', bg: '#f0fdfa', border: '#0d9488', sort: 3 };
+  }
+  if (k.startsWith('KK')) {
+    return { id: 'kk', label: 'Kleinkaliber (50m)', badge: 'KK 50m', color: '#c2410c', bg: '#fff7ed', border: '#ea580c', sort: 4 };
+  }
+  if (k.startsWith('LG')) {
+    return { id: 'lg', label: 'Luftgewehr (10m)', badge: 'LG 10m', color: '#7c3aed', bg: '#faf5ff', border: '#8b5cf6', sort: 5 };
+  }
+  if (k.startsWith('Z')) {
+    return { id: 'var', label: 'Variable Positionen', badge: 'VAR', color: '#475569', bg: '#f8fafc', border: '#64748b', sort: 6 };
+  }
+  return { id: 'sonst', label: 'Sonstige Gebühren', badge: 'SONST', color: '#6b7280', bg: '#f9fafb', border: '#9ca3af', sort: 7 };
+}
+
+// ============================================================
 // SPALTEN-ERMITTLUNG (ALLE RELEVANTEN GEBÜHREN DES JAHRES)
 // ============================================================
 function jbGetMatrixColumns() {
@@ -303,12 +329,15 @@ function jbGetMatrixColumns() {
     if (!colKeys.includes(k)) colKeys.push(k);
   });
 
-  // 3. Sortierung der Spalten (Kategorie, sort_order, key)
+  // 3. Sortierung der Spalten (Kategorie-Gruppierung, dann sort_order, dann Key)
   colKeys.sort((a, b) => {
+    const catA = jbGetMatrixCategory(a);
+    const catB = jbGetMatrixCategory(b);
+    if (catA.sort !== catB.sort) return catA.sort - catB.sort;
+
     const objA = catalogMap[a] || {};
     const objB = catalogMap[b] || {};
     
-    // Sort Order
     const sortA = objA.sort_order !== undefined ? Number(objA.sort_order) : 99;
     const sortB = objB.sort_order !== undefined ? Number(objB.sort_order) : 99;
     if (sortA !== sortB) return sortA - sortB;
@@ -319,12 +348,14 @@ function jbGetMatrixColumns() {
   return colKeys.map(k => {
     const f = catalogMap[k] || {};
     const label = f.ui_feld || f.bezeichnung_frontend || f.bezeichnungfrontend || f.bezeichnung || k;
-    
+    const cat = jbGetMatrixCategory(k);
+
     return {
       key: k,
       label: label,
       bezeichnung: f.bezeichnung || f.bezeichnung_frontend || f.bezeichnungfrontend || label,
-      kategorie: f.kategorie || 'Gebühr',
+      kategorie: f.kategorie || cat.label,
+      categoryInfo: cat,
       konto: f.konto_haben || f.konto || ''
     };
   });
@@ -415,17 +446,37 @@ function jbRenderMatrixTable() {
   `;
 
   columns.forEach(col => {
+    const cat = col.categoryInfo || jbGetMatrixCategory(col.key);
     thHtml += `
-      <th class="text-end tk-col-${col.key}" data-col-id="${col.key}" data-col-name="${escHtml(col.label)} (${col.key})" style="min-width: 45px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('${col.key}')" title="${escHtml(col.bezeichnung)} (${col.key})">
-        <div style="font-size: 10px; font-weight: 700; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${escHtml(col.label)}</div>
-        <div class="text-muted" style="font-size: 9px; font-weight: normal; font-family: monospace;">${col.key}</div>
+      <th class="text-end tk-col-${col.key}" 
+          data-col-id="${col.key}" 
+          data-col-name="[${cat.badge}] ${escHtml(col.label)} (${col.key})"
+          data-col-cat="${cat.id}"
+          data-col-cat-name="${cat.label}"
+          data-col-cat-color="${cat.color}"
+          style="min-width: 58px; cursor: pointer; user-select: none; border-top: 4px solid ${cat.border} !important; background-color: ${cat.bg} !important; transition: background-color 0.15s ease;" 
+          onclick="jbMatrixSort('${col.key}')" 
+          title="${escHtml(cat.label)}: ${escHtml(col.bezeichnung)} (${col.key})">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="badge px-1 py-0 shadow-xs" style="font-size: 8px; font-weight: 700; background-color: ${cat.color}; color: #ffffff; letter-spacing: 0.3px;">${cat.badge}</span>
+          <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === col.key ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+        </div>
+        <div style="font-size: 10px; font-weight: 700; color: #1e293b; white-space: normal; word-break: break-word; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; line-height: 1.15;" lang="de">${escHtml(col.label)}</div>
+        <div class="mt-1" style="font-size: 8.5px; font-weight: 600; font-family: monospace; color: ${cat.color};">${col.key}</div>
       </th>
     `;
   });
 
   thHtml += `
-    <th class="text-end pe-3 bg-light tk-col-gesamt" data-col-id="gesamt" data-col-name="Total CHF" style="min-width: 95px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('gesamt')">
-      Total CHF <span class="tk-sort-ind">${_jbMatrixSortCol === 'gesamt' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+    <th class="text-end pe-3 tk-col-gesamt" data-col-id="gesamt" data-col-name="Total CHF" 
+        style="min-width: 95px; cursor: pointer; user-select: none; border-top: 4px solid #0f3a5d !important; background-color: #f1f5f9 !important;" 
+        onclick="jbMatrixSort('gesamt')">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="badge px-1 py-0" style="font-size: 8px; font-weight: 700; background-color: #0f3a5d; color: #ffffff;">TOTAL</span>
+        <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'gesamt' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
+      </div>
+      <div class="fw-bold text-dark" style="font-size: 11px;">Total CHF</div>
+      <div class="text-muted" style="font-size: 8.5px; font-family: monospace;">Saldo</div>
     </th>
   `;
 

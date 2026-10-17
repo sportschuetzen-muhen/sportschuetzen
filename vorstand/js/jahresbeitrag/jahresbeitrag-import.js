@@ -499,30 +499,35 @@ function jbProcessExcelRows(rows, type, appendMode) {
       const colK = String(row[10] || '').trim();
 
       let matchedEvents = [];
+      const addDezEvent = (key, name) => {
+        if (!matchedEvents.some(e => e.key === key)) {
+          matchedEvents.push({ key, name });
+        }
+      };
 
       if (isJunior) {
         if (colJ !== '' && colJ !== '-') {
-          matchedEvents.push({ key: EVENT_KEYS.ssv_dez_liegend, name: '50m CH DEZ (Junior)' });
+          addDezEvent(EVENT_KEYS.ssv_dez_liegend, '50m CH DEZ (Junior)');
         } else if (colK !== '' && colK !== '-') {
-          matchedEvents.push({ key: EVENT_KEYS.ssv_dez_liegend, name: '50m AG DEZ 1D (Junior)' });
+          addDezEvent(EVENT_KEYS.ssv_dez_liegend, '50m AG DEZ 1D (Junior)');
         } else {
-          matchedEvents.push({ key: EVENT_KEYS.ssv_dez_sv, name: '50m AG DEZ SV (Junior)' });
+          addDezEvent(EVENT_KEYS.ssv_dez_sv, '50m AG DEZ SV (Junior)');
         }
       } else {
         if (colJ !== '' && colJ !== '-') {
           if (valueL > 200 || valueQ > 200 || valueR > 200) {
-            matchedEvents.push({ key: EVENT_KEYS.ssv_dez_liegend, name: '50m CH DEZ' });
+            addDezEvent(EVENT_KEYS.ssv_dez_liegend, '50m CH DEZ');
           }
         }
 
         if (colK !== '' && colK !== '-') {
-          if (valueL > 200) matchedEvents.push({ key: EVENT_KEYS.ssv_dez_liegend,   name: '50m AG DEZ 1D' });
-          if (valueQ > 200) matchedEvents.push({ key: EVENT_KEYS.ssv_dez_2stellung, name: '50m AG DEZ 2D' });
-          if (valueR > 200) matchedEvents.push({ key: EVENT_KEYS.ssv_dez_3stellung, name: '50m AG DEZ 3D' });
+          if (valueL > 200) addDezEvent(EVENT_KEYS.ssv_dez_liegend,   '50m AG DEZ 1D');
+          if (valueQ > 200) addDezEvent(EVENT_KEYS.ssv_dez_2stellung, '50m AG DEZ 2D');
+          if (valueR > 200) addDezEvent(EVENT_KEYS.ssv_dez_3stellung, '50m AG DEZ 3D');
         }
 
         if ((colJ === '' || colJ === '-') && (valueN > 200 || valueO > 200)) {
-          matchedEvents.push({ key: EVENT_KEYS.ssv_dez_sv, name: '50m AG DEZ SV' });
+          addDezEvent(EVENT_KEYS.ssv_dez_sv, '50m AG DEZ SV');
         }
       }
 
@@ -591,16 +596,29 @@ async function jbSubmitExcelImport() {
     if (!validList.length) {
       alert('Keine gültigen Einträge zum Importieren (kein Mitglied via AddressNumber gefunden).');
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import starten';
+      btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i> Import nach Supabase starten';
       return;
     }
 
-    showLoadingOverlay(`Importiere Excel-Daten für ${validList.length} Schützen in Supabase und berechne Beiträge neu…`);
+    // DEDUPLIZIERUNG: PostgreSQL ON CONFLICT DO UPDATE verbietet doppelte Zielzeilen im selben Batch!
+    const dedupMap = new Map();
+    validList.forEach(item => {
+      const dedupKey = `${String(item.pn).trim()}_${Number(item.year)}_${String(item.eventkey).trim()}`;
+      if (!dedupMap.has(dedupKey)) {
+        dedupMap.set(dedupKey, { ...item });
+      } else {
+        const existing = dedupMap.get(dedupKey);
+        existing.teilgenommen = Math.max(Number(existing.teilgenommen || 1), Number(item.teilgenommen || 1));
+      }
+    });
+    const deduplicatedList = Array.from(dedupMap.values());
+
+    showLoadingOverlay(`Importiere Excel-Daten für ${deduplicatedList.length} Teilnahmen in Supabase und berechne Beiträge neu…`);
 
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
     if (!supa) throw new Error("Supabase Client nicht verfügbar");
 
-    const dbParts = validList.map(item => ({
+    const dbParts = deduplicatedList.map(item => ({
       id: `${item.pn}-${item.year}-${item.eventkey}`,
       person_number: String(item.pn).trim(),
       year: Number(item.year),
@@ -615,10 +633,13 @@ async function jbSubmitExcelImport() {
     for (let i = 0; i < dbParts.length; i += 50) {
       const chunk = dbParts.slice(i, i + 50);
       const { error: partErr } = await supa.from('member_participations').upsert(chunk, { onConflict: 'person_number,year,event_key' });
-      if (partErr) console.warn("Supabase member_participations import warning:", partErr);
+      if (partErr) {
+        console.error("Supabase member_participations import error:", partErr);
+        throw new Error("Fehler beim Speichern der Teilnahmen in Supabase: " + (partErr.message || JSON.stringify(partErr)));
+      }
     }
 
-    const uniquePns = [...new Set(validList.map(x => String(x.pn).trim()))];
+    const uniquePns = [...new Set(deduplicatedList.map(x => String(x.pn).trim()))];
 
     // Für alle betroffenen Schützen den Beitrag serverseitig neu berechnen
     if (uniquePns.length > 0) {
@@ -628,13 +649,14 @@ async function jbSubmitExcelImport() {
         p_target_pns: uniquePns
       });
       if (rpcErr) {
-        console.warn("⚠️ Fehler bei RPC Neuberechnung nach Import:", rpcErr);
+        console.error("⚠️ Fehler bei RPC Neuberechnung nach Import:", rpcErr);
+        throw new Error("Fehler bei Neuberechnung der Beiträge: " + (rpcErr.message || JSON.stringify(rpcErr)));
       } else {
         console.log(`✅ [Supabase RPC] ${rpcRes?.message || 'Neuberechnung abgeschlossen'}`);
       }
     }
 
-    showToast(`🎉 ${validList.length} Teilnahmen für ${uniquePns.length} Schützen erfolgreich in Supabase importiert!`);
+    showToast(`🎉 ${deduplicatedList.length} Teilnahmen für ${uniquePns.length} Schützen erfolgreich in Supabase importiert!`);
     document.getElementById('jbImportPreviewContainer').classList.add('d-none');
     _jbImportData = null;
 

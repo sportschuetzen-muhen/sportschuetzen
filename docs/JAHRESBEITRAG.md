@@ -56,10 +56,11 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 ### 2.8 Beitragsmatrix & Gebühren-Übersicht (`jahresbeitrag-matrix.js`)
 * **Problem:** In der klassischen Rechnungsliste sieht man nur das Gesamttotal pro Schütze, hat aber keinen Gesamtüberblick über alle Gebühreneinnahmen (z. B. Wie viel nimmt der Verein insgesamt an Aktivbeiträgen, Lizenzen, Schützenhausgebühren oder Turnieren ein?).
 * **Lösung:** Ein eigenständiger Reiter **«Beitragsmatrix»** stellt alle Schützen als Zeilen und alle anfallenden Gebühren als Spalten gegenüber:
+  - **Farbliche Gruppierung & Kategorisierung im Header:** Alle Gebührenspalten sind logisch und farblich strukturiert (Blau = Jahresbeitrag `JB...`, Grün = Rabatte `RA...`, Teal = Lizenzen & Schützenhaus `LI...`/`GE...`, Orange = Kleinkaliber 50m `KK...`, Violett = Luftgewehr 10m `LG...`, Slate = Variable Positionen `Z...`). Jeder Spaltenkopf besitzt einen farbigen Top-Border, einen kompakten Kategorie-Badge und einen harmonischen Hintergrund-Tint.
+  - **Strukturierte Spaltenauswahl (`TableKit.setupColumnToggle`):** Das Dropdown-Menü *«Spalten»* unterteilt alle Gebühren sauber nach Kategorien mit Zwischenüberschriften, sodass Schiessarten gezielt überblickt und ein-/ausgeblendet werden können.
   - **Pickliste ganz links:** Standardmässig sind alle Schützen ausgewählt. Wird ein Schütze abgewählt, wird er gedimmt und seine Beträge werden **live aus den Spaltensummen und dem Gesamttotal herausgerechnet**.
-  - **Spaltenauswahl (`TableKit.setupColumnToggle`):** Sämtliche Gebührenspalten, Status und Gesamttotal können über das Dropdown-Menü *«Spalten»* frei ein- und ausgeblendet werden. Der Zustand wird im `localStorage` (`portal_jb_matrix_cols`) persistiert.
   - **Summenzeile (`<tfoot>`):** Fixierte Fusszeile mit Spaltensumme für jede Gebühr und Gesamttotal; passt sich live an sichtbare Spalten und ausgewählte Schützen an.
-  - **Excel-Export:** Direkter Export der Matrix nach `.xlsx` über SheetJS (`XLSX`) unter Berücksichtigung der aktiv eingeblendeten Spalten.
+  - **Excel-Export:** Direkter Export der Matrix nach `.xlsx` über SheetJS (`XLSX`) unter Berücksichtigung der aktiv eingeblendeten Spalten und Kategorien.
   - **Druckansicht:** Spezialisiertes `@media print`-Stylesheet optimiert für A4-Querformat mit wiederholten Kopf-/Fusszeilen, bei dem ausgeblendete Spalten automatisch unterdrückt werden.
 
 ### 2.9 Hausmeister-Rabatt (`RA002`) über die Beitragsverwaltung (Option B)
@@ -89,7 +90,12 @@ Das Modul Jahresbeitrag steuert die jährliche Beitragsbemessung, Rechnungsstell
 * **Problem:** Wurden Dialoge (`#jbModalPositionen`, `#jbModalZahlung`) innerhalb von `#jahresbeitrag-container` gerendert, löschte jeder asynchrone Re-Render der Tabelle (`loadJahresbeitragData` / `renderJahresbeitragView`) den DOM-Knoten des aktiven Modals. Zurück blieb ein verwaistes `.modal-backdrop`-Overlay und die Klasse `body.modal-open`, was das gesamte UI unbedienbar machte (schwarzer Bildschirm / Freeze).
 * **Lösung & Warum:**
   - Die Modale werden über `jbEnsureOverviewModals()` direkt als Kinder von `document.body` instanziiert.
-  - Ein zentraler Bereinigungsmechanismus (`jbCleanupModals()`) stellt sicher, dass beim Schliessen, bei Fehlern oder bei Modal-Übergängen (z. B. Wechsel zu Rechnungsdetails oder Mail-Prompt via `rnTransitionFromDetails`) alle Backdrop-Fragmente rückstandslos entfernt und der Scroll-Status des Bodys wiederhergestellt wird.
+### 2.13 Robuste Deduplizierung beim Turnier- & Dez-Import (`jahresbeitrag-import.js`)
+* **Problem:** Haben Schützen in Excel-Blättern mehrere Starts im selben Wettkampf (z. B. SSV- und AGSV-Dezernat oder Mehrfachstarts), lieferte der Parser denselben `event_key` mehrfach im selben Batch. PostgreSQL lehnte den Batch mit Fehler `21000 (ON CONFLICT DO UPDATE command cannot affect row a second time)` ab.
+* **Lösung & Warum:**
+  - `jbSubmitExcelImport` dedupliziert alle Teilnahmen vor dem Schreiben nach `(person_number, year, event_key)` (`dedupMap`), sodass jeder Schlüssel pro Schütze und Jahr exakt einmal im Upsert-Payload vorkommt.
+  - Das Parsing für `type === 'dez'` verhindert doppelte Event-Keys bereits in der Einzelzeilen-Erkennung (`addDezEvent`).
+  - Echte Fehlerüberwachung: Fehler von `supa.from('member_participations').upsert` und `calculate_member_contributions` werfen nun explizite Ausnahmen, anstatt stillschweigend einen Erfolgs-Toast auszugeben.
 
 ---
 

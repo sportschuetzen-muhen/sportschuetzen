@@ -606,6 +606,9 @@
         cols.push({
           id: th.dataset.colId,
           name: th.dataset.colName || th.innerText.replace(/[↕▲▼]/g, '').trim(),
+          category: th.dataset.colCat || '',
+          categoryName: th.dataset.colCatName || '',
+          categoryColor: th.dataset.colCatColor || '',
           defaultVisible: th.dataset.colDefault !== 'hidden'
         });
       });
@@ -668,6 +671,26 @@
     }
 
     if (container) {
+      let lastCat = null;
+      const listItemsHtml = cols.map(c => {
+        let catHeader = '';
+        if (c.category && c.category !== lastCat) {
+          lastCat = c.category;
+          catHeader = `
+            <div class="fw-bold small text-uppercase px-2 pt-2 pb-1 border-top mt-1" style="font-size: 0.7rem; color: ${c.categoryColor || '#475569'}; background: rgba(0,0,0,0.02); border-radius: 4px;">
+              ${c.categoryName || c.category}
+            </div>
+          `;
+        }
+        return `
+          ${catHeader}
+          <label class="dropdown-item d-flex align-items-center justify-content-between py-1 px-2 rounded cursor-pointer mb-0">
+            <span>${c.name}</span>
+            <input class="form-check-input ms-2 tk-col-checkbox" type="checkbox" data-col-toggle="${c.id}" ${colState[c.id] ? 'checked' : ''}>
+          </label>
+        `;
+      }).join('');
+
       container.innerHTML = `
         <div class="dropdown">
           <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-1 shadow-xs" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Spalten ein- oder ausblenden">
@@ -675,7 +698,7 @@
             <span>Spalten</span>
             <span class="badge bg-secondary ms-1 tk-col-count" style="font-size: 0.72rem;">${cols.length}/${cols.length}</span>
           </button>
-          <div class="dropdown-menu dropdown-menu-end shadow p-2" style="min-width: 240px; font-size: 0.85rem; z-index: 1060;">
+          <div class="dropdown-menu dropdown-menu-end shadow p-2" style="min-width: 260px; font-size: 0.85rem; z-index: 1060;">
             <div class="d-flex justify-content-between align-items-center mb-2 px-1 border-bottom pb-1">
               <span class="fw-bold small text-muted text-uppercase" style="font-size: 0.72rem;">Spalten</span>
               <div class="d-flex gap-2">
@@ -684,13 +707,8 @@
                 <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-secondary small tk-col-hide-all" style="font-size: 0.75rem;">Alle aus</button>
               </div>
             </div>
-            <div class="tk-col-dropdown-list d-flex flex-column gap-1" style="max-height: 380px; overflow-y: auto;">
-              ${cols.map(c => `
-                <label class="dropdown-item d-flex align-items-center justify-content-between py-1 px-2 rounded cursor-pointer mb-0">
-                  <span>${c.name}</span>
-                  <input class="form-check-input ms-2 tk-col-checkbox" type="checkbox" data-col-toggle="${c.id}" ${colState[c.id] ? 'checked' : ''}>
-                </label>
-              `).join('')}
+            <div class="tk-col-dropdown-list d-flex flex-column gap-1" style="max-height: 420px; overflow-y: auto;">
+              ${listItemsHtml}
             </div>
           </div>
         </div>
