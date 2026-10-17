@@ -12,36 +12,159 @@ let _jbMatrixSortCol = 'name';
 let _jbMatrixSortAsc = true;
 
 // ============================================================
-// HILFSFUNKTION: KATEGORIE EINES MITGLIEDS ERMITTELN (FÜR FILTER & HOVER)
+// HILFSFUNKTIONEN: MULTI-KATEGORIE EINES MITGLIEDS (FÜR FILTER & HOVER)
 // ============================================================
-function jbGetMemberCategoryLabel(m, r) {
+function jbGetMemberCategories(m, r) {
+  const cats = [];
+  const addCat = (c) => {
+    if (c && !cats.includes(c)) cats.push(c);
+  };
+
   const positions = (r && r.id && _jbPositionsCache[r.id]) || [];
-  const keys = new Set(positions.map(p => String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase()));
-  
-  if (keys.has('JB006') || keys.has('JB007') || keys.has('KOSTENUEBERNAHME_JUGEND')) return 'Junior';
-  if (keys.has('JB004')) return 'Vorstand';
-  if (keys.has('JB003') || keys.has('RA003')) return 'Ehrenmitglied';
-  if (keys.has('JB005')) return 'Passiv';
-  if (keys.has('JB001')) return 'Aktiv A';
-  if (keys.has('JB002')) return 'Aktiv B';
+  const posKeys = new Set(positions.map(p => String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase()));
 
-  const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-  if (age > 0 && age <= 20) return 'Junior';
+  // 1. Ehrenmitglied
+  if (m?.is_honorary || m?.IsHonoraryMember == 1 || m?._istEhren || posKeys.has('JB003') || posKeys.has('RA003')) {
+    addCat('Ehrenmitglied');
+  }
 
-  if (m && (m.IsHonoraryMember == 1 || m._istEhren)) return 'Ehrenmitglied';
-  if (m && (m.IsPassive == 1 || m._istPassiv)) return 'Passiv';
+  // 2. Vorstand
+  if (m?._istVorstand || (m?._aktiveFunktionenCount > 0) || posKeys.has('JB004')) {
+    addCat('Vorstand');
+  }
 
-  const str = `${m?._kategorie || ''} ${(m?._kategorien || []).join(' ')} ${r?._kategorie || ''}`.toLowerCase();
-  if (str.includes('junior') || str.includes('schüler') || str.includes('u21')) return 'Junior';
-  if (str.includes('vorstand')) return 'Vorstand';
-  if (str.includes('ehren')) return 'Ehrenmitglied';
-  if (str.includes('passiv')) return 'Passiv';
-  if (str.includes('aktiv-a') || str.includes('aktiv a')) return 'Aktiv A';
-  if (str.includes('aktiv-b') || str.includes('aktiv b')) return 'Aktiv B';
-  if (str.includes('aktiv')) return 'Aktiv';
-  if (age >= 60) return 'Veteran';
+  // 3. Junior (U21)
+  const age = m?.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  if ((age > 0 && age <= 20) || posKeys.has('JB006') || posKeys.has('JB007') || posKeys.has('KOSTENUEBERNAHME_JUGEND')) {
+    addCat('Junior');
+  }
 
-  return (r && r._kategorie) ? r._kategorie.replace('Aktiv-', 'Aktiv ') : 'Aktiv';
+  // 4. Veteran (60+)
+  if (age >= 60) {
+    addCat('Veteran');
+  }
+
+  // 5. Passiv
+  if (m?.is_passive || m?.IsPassive == 1 || m?._istPassiv || posKeys.has('JB005')) {
+    addCat('Passiv');
+  }
+
+  // 6. Lizenzen (Disziplinen & A/B)
+  const lics = [
+    ...(m?._aktiveLizenzen || []),
+    ...(m?._lizenzen || [])
+  ];
+  const seenLics = new Set();
+
+  lics.forEach(lic => {
+    const rawCat = String(lic?.MembershipCategory || lic?.membership_category || '').trim();
+    if (!rawCat || seenLics.has(rawCat)) return;
+    seenLics.add(rawCat);
+
+    const isB = /aktiv.*b/i.test(rawCat) || lic?.LicenseCategory === 'B';
+    const isAuflage = /auflage/i.test(rawCat);
+    const is50m = /50m/i.test(rawCat);
+    const is10m = /10m/i.test(rawCat);
+
+    if (is50m && isAuflage) {
+      addCat(`G50m Aufl. (${isB ? 'B' : 'A'})`);
+    } else if (is50m) {
+      addCat(`G50m (${isB ? 'B' : 'A'})`);
+    } else if (is10m && isAuflage) {
+      addCat(`G10m Aufl. (${isB ? 'B' : 'A'})`);
+    } else if (is10m) {
+      addCat(`G10m (${isB ? 'B' : 'A'})`);
+    } else {
+      addCat(rawCat.replace('Aktiv-', 'Aktiv '));
+    }
+  });
+
+  // Falls in _kategorien noch Strings vorliegen
+  if (Array.isArray(m?._kategorien)) {
+    m._kategorien.forEach(k => {
+      const s = String(k || '').trim();
+      if (!s || seenLics.has(s)) return;
+      seenLics.add(s);
+      if (/50m/i.test(s)) addCat(/b/i.test(s) ? 'G50m (B)' : 'G50m (A)');
+      else if (/10m/i.test(s)) addCat(/b/i.test(s) ? 'G10m (B)' : 'G10m (A)');
+      else addCat(s.replace('Aktiv-', 'Aktiv '));
+    });
+  }
+
+  // Position-basierte Ergänzungen (falls keine Lizenzen im Mitglied gepflegt sind)
+  if (posKeys.has('JB001') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv A'))) {
+    addCat('Aktiv A');
+  }
+  if (posKeys.has('JB002') && !cats.some(c => c.includes('G50m') || c.includes('Aktiv B'))) {
+    addCat('Aktiv B');
+  }
+  if (posKeys.has('LI001') && !cats.some(c => c.includes('G50m'))) {
+    addCat('G50m (A)');
+  }
+  if (posKeys.has('LI002') && !cats.some(c => c.includes('G10m'))) {
+    addCat('G10m (A)');
+  }
+
+  // Fallback
+  if (cats.length === 0) {
+    const fb = (r?._kategorie || m?._kategorie || 'Aktiv').replace('Aktiv-', 'Aktiv ');
+    addCat(fb);
+  }
+
+  return cats;
+}
+
+function jbGetMemberCategoryLabel(m, r) {
+  const cats = jbGetMemberCategories(m, r);
+  return cats.join(', ');
+}
+
+function jbMemberMatchesCategory(m, r, filterVal) {
+  if (!filterVal) return true;
+  const cats = jbGetMemberCategories(m, r);
+  const target = filterVal.toLowerCase().trim();
+
+  return cats.some(c => {
+    const cLow = c.toLowerCase().trim();
+    if (cLow === target) return true;
+    if (target === 'aktiv a') {
+      return cLow.includes('(a)') || cLow.includes('aktiv a') || cLow.includes('aktiv-a');
+    }
+    if (target === 'aktiv b') {
+      return cLow.includes('(b)') || cLow.includes('aktiv b') || cLow.includes('aktiv-b');
+    }
+    if (target === 'g50m (a)') {
+      return cLow.includes('g50m') && cLow.includes('(a)') && !cLow.includes('aufl');
+    }
+    if (target === 'g50m (b)') {
+      return cLow.includes('g50m') && cLow.includes('(b)');
+    }
+    if (target === 'g10m (a)') {
+      return cLow.includes('g10m') && cLow.includes('(a)') && !cLow.includes('aufl');
+    }
+    if (target === 'g10m (b)') {
+      return cLow.includes('g10m') && cLow.includes('(b)');
+    }
+    if (target.includes('aufl')) {
+      return cLow.includes('aufl');
+    }
+    if (target === 'ehrenmitglied') {
+      return cLow.includes('ehren');
+    }
+    if (target === 'junior') {
+      return cLow.includes('junior') || cLow.includes('schüler');
+    }
+    if (target === 'veteran') {
+      return cLow.includes('veteran');
+    }
+    if (target === 'passiv') {
+      return cLow.includes('passiv');
+    }
+    if (target === 'vorstand') {
+      return cLow.includes('vorstand');
+    }
+    return cLow.includes(target);
+  });
 }
 
 // ============================================================
@@ -148,11 +271,18 @@ function renderMatrixTab(canEdit, years) {
         <div class="col-md-2">
           <select class="form-select form-select-sm" id="jbMatrixCategorySelect" onchange="jbFilterMatrixTable()" title="Tabelle nach Schützen-Kategorie filtern">
             <option value="" ${_jbMatrixCategoryFilter === '' ? 'selected' : ''}>Alle Kategorien</option>
-            <option value="aktiv" ${_jbMatrixCategoryFilter === 'aktiv' ? 'selected' : ''}>Nur Aktive</option>
-            <option value="junior" ${_jbMatrixCategoryFilter === 'junior' ? 'selected' : ''}>Nur Junioren (U21)</option>
-            <option value="veteran" ${_jbMatrixCategoryFilter === 'veteran' ? 'selected' : ''}>Nur Veteranen (60+)</option>
-            <option value="ehren" ${_jbMatrixCategoryFilter === 'ehren' ? 'selected' : ''}>Nur Ehrenmitglieder</option>
-            <option value="passiv" ${_jbMatrixCategoryFilter === 'passiv' ? 'selected' : ''}>Nur Passive</option>
+            <option value="Aktiv A" ${_jbMatrixCategoryFilter === 'Aktiv A' ? 'selected' : ''}>Aktiv A</option>
+            <option value="Aktiv B" ${_jbMatrixCategoryFilter === 'Aktiv B' ? 'selected' : ''}>Aktiv B</option>
+            <option value="G50m (A)" ${_jbMatrixCategoryFilter === 'G50m (A)' ? 'selected' : ''}>G50m (A)</option>
+            <option value="G50m (B)" ${_jbMatrixCategoryFilter === 'G50m (B)' ? 'selected' : ''}>G50m (B)</option>
+            <option value="G10m (A)" ${_jbMatrixCategoryFilter === 'G10m (A)' ? 'selected' : ''}>G10m (A)</option>
+            <option value="G10m (B)" ${_jbMatrixCategoryFilter === 'G10m (B)' ? 'selected' : ''}>G10m (B)</option>
+            <option value="G10m Aufl. (A)" ${_jbMatrixCategoryFilter === 'G10m Aufl. (A)' ? 'selected' : ''}>G10m Aufl. (A)</option>
+            <option value="Ehrenmitglied" ${_jbMatrixCategoryFilter === 'Ehrenmitglied' ? 'selected' : ''}>Ehrenmitglied</option>
+            <option value="Junior" ${_jbMatrixCategoryFilter === 'Junior' ? 'selected' : ''}>Junior (U21)</option>
+            <option value="Veteran" ${_jbMatrixCategoryFilter === 'Veteran' ? 'selected' : ''}>Veteran (60+)</option>
+            <option value="Vorstand" ${_jbMatrixCategoryFilter === 'Vorstand' ? 'selected' : ''}>Vorstand</option>
+            <option value="Passiv" ${_jbMatrixCategoryFilter === 'Passiv' ? 'selected' : ''}>Passiv</option>
           </select>
         </div>
 
@@ -185,15 +315,19 @@ function renderMatrixTab(canEdit, years) {
               </button>
               <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="font-size: 12px;">
                 <li><h6 class="dropdown-header text-uppercase" style="font-size: 10px;">Nach Belegstatus</h6></li>
-                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectStatus('offen'); return false;"><i class="fas fa-clock text-danger me-2"></i>Nur Offene ankreuzen</a></li>
-                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectStatus('bezahlt'); return false;"><i class="fas fa-check-circle text-success me-2"></i>Nur Bezahlt ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectStatus('offen'); return false;"><i class="fas fa-clock text-danger me-2"></i>Offene ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectStatus('bezahlt'); return false;"><i class="fas fa-check-circle text-success me-2"></i>Bezahlt ankreuzen</a></li>
                 <li><hr class="dropdown-divider"></li>
-                <li><h6 class="dropdown-header text-uppercase" style="font-size: 10px;">Nach Kategorie</h6></li>
-                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('junior'); return false;"><i class="fas fa-user-graduate text-info me-2"></i>Nur Junioren ankreuzen</a></li>
-                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('aktiv'); return false;"><i class="fas fa-bullseye text-primary me-2"></i>Nur Aktive ankreuzen</a></li>
-                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('veteran'); return false;"><i class="fas fa-medal text-warning me-2"></i>Nur Veteranen ankreuzen</a></li>
-                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('ehren'); return false;"><i class="fas fa-award text-secondary me-2"></i>Nur Ehrenmitglieder ankreuzen</a></li>
-                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('passiv'); return false;"><i class="fas fa-user-clock text-muted me-2"></i>Nur Passive ankreuzen</a></li>
+                <li><h6 class="dropdown-header text-uppercase" style="font-size: 10px;">Nach Kategorie / Lizenz</h6></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('G50m (A)'); return false;"><i class="fas fa-crosshairs text-primary me-2"></i>G50m (A) ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('G10m (A)'); return false;"><i class="fas fa-bullseye text-info me-2"></i>G10m (A) ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('Aktiv A'); return false;"><i class="fas fa-user-check text-primary me-2"></i>Aktive A ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('Aktiv B'); return false;"><i class="fas fa-user text-secondary me-2"></i>Aktive B ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('Junior'); return false;"><i class="fas fa-user-graduate text-success me-2"></i>Junioren ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('Veteran'); return false;"><i class="fas fa-medal text-warning me-2"></i>Veteranen ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('Ehrenmitglied'); return false;"><i class="fas fa-award text-warning me-2"></i>Ehrenmitglieder ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('Vorstand'); return false;"><i class="fas fa-crown text-primary me-2"></i>Vorstand ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('Passiv'); return false;"><i class="fas fa-user-clock text-muted me-2"></i>Passive ankreuzen</a></li>
               </ul>
             </div>
           </div>
@@ -477,26 +611,7 @@ function jbRenderMatrixTable() {
       matchStatus = effStatus === statusFilter;
     }
 
-    const catLabel = jbGetMemberCategoryLabel(m, r);
-    let matchCategory = true;
-    if (categoryFilter) {
-      const catLower = catLabel.toLowerCase();
-      if (categoryFilter === 'junior') {
-        matchCategory = catLower.includes('junior') || catLower.includes('schüler');
-      } else if (categoryFilter === 'aktiv') {
-        matchCategory = catLower.includes('aktiv') || catLower.includes('vorstand');
-      } else if (categoryFilter === 'veteran') {
-        const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-        matchCategory = age >= 60;
-      } else if (categoryFilter === 'ehren') {
-        matchCategory = catLower.includes('ehren');
-      } else if (categoryFilter === 'passiv') {
-        matchCategory = catLower.includes('passiv');
-      } else {
-        matchCategory = catLower.includes(categoryFilter.toLowerCase());
-      }
-    }
-
+    const matchCategory = jbMemberMatchesCategory(m, r, categoryFilter);
     return matchSearch && matchStatus && matchCategory;
   });
 
@@ -765,26 +880,7 @@ function jbCalculateMatrixTotals(rowsData, columns) {
         matchStatus = effStatus === statusFilter;
       }
 
-      const catLabel = jbGetMemberCategoryLabel(m, r);
-      let matchCategory = true;
-      if (categoryFilter) {
-        const catLower = catLabel.toLowerCase();
-        if (categoryFilter === 'junior') {
-          matchCategory = catLower.includes('junior') || catLower.includes('schüler');
-        } else if (categoryFilter === 'aktiv') {
-          matchCategory = catLower.includes('aktiv') || catLower.includes('vorstand');
-        } else if (categoryFilter === 'veteran') {
-          const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-          matchCategory = age >= 60;
-        } else if (categoryFilter === 'ehren') {
-          matchCategory = catLower.includes('ehren');
-        } else if (categoryFilter === 'passiv') {
-          matchCategory = catLower.includes('passiv');
-        } else {
-          matchCategory = catLower.includes(categoryFilter.toLowerCase());
-        }
-      }
-
+      const matchCategory = jbMemberMatchesCategory(m, r, categoryFilter);
       return matchSearch && matchStatus && matchCategory;
     });
   }
@@ -967,28 +1063,7 @@ function jbMatrixSelectCategory(catKey) {
   (_jbData || []).forEach(r => {
     const pn = String(r.PersonNumber).trim();
     const m = _jbMemberMap[pn] || {};
-    const catLabel = jbGetMemberCategoryLabel(m, r);
-    const catLower = catLabel.toLowerCase();
-    
-    let match = false;
-    if (catKey === 'junior') {
-      match = catLower.includes('junior') || catLower.includes('schüler');
-    } else if (catKey === 'aktiv') {
-      match = catLower.includes('aktiv') || catLower.includes('vorstand');
-    } else if (catKey === 'veteran') {
-      const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-      match = age >= 60;
-    } else if (catKey === 'ehren') {
-      match = catLower.includes('ehren');
-    } else if (catKey === 'passiv') {
-      match = catLower.includes('passiv');
-    } else if (!catKey) {
-      match = true;
-    } else {
-      match = catLower.includes(catKey.toLowerCase());
-    }
-
-    if (match) {
+    if (jbMemberMatchesCategory(m, r, catKey)) {
       _jbMatrixSelected.add(pn);
     }
   });
@@ -1040,26 +1115,7 @@ function jbExportMatrixExcel() {
       matchStatus = effStatus === statusFilter;
     }
 
-    const catLabel = jbGetMemberCategoryLabel(m, r);
-    let matchCategory = true;
-    if (categoryFilter) {
-      const catLower = catLabel.toLowerCase();
-      if (categoryFilter === 'junior') {
-        matchCategory = catLower.includes('junior') || catLower.includes('schüler');
-      } else if (categoryFilter === 'aktiv') {
-        matchCategory = catLower.includes('aktiv') || catLower.includes('vorstand');
-      } else if (categoryFilter === 'veteran') {
-        const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
-        matchCategory = age >= 60;
-      } else if (categoryFilter === 'ehren') {
-        matchCategory = catLower.includes('ehren');
-      } else if (categoryFilter === 'passiv') {
-        matchCategory = catLower.includes('passiv');
-      } else {
-        matchCategory = catLower.includes(categoryFilter.toLowerCase());
-      }
-    }
-
+    const matchCategory = jbMemberMatchesCategory(m, r, categoryFilter);
     return matchSearch && matchStatus && matchCategory;
   });
 
@@ -1262,7 +1318,9 @@ window.jbMatrixMasterCheckToggle = jbMatrixMasterCheckToggle;
 window.jbMatrixSelectAll = jbMatrixSelectAll;
 window.jbMatrixSelectStatus = jbMatrixSelectStatus;
 window.jbMatrixSelectCategory = jbMatrixSelectCategory;
+window.jbGetMemberCategories = jbGetMemberCategories;
 window.jbGetMemberCategoryLabel = jbGetMemberCategoryLabel;
+window.jbMemberMatchesCategory = jbMemberMatchesCategory;
 window.jbFilterMatrixTable = jbFilterMatrixTable;
 window.jbMatrixSort = jbMatrixSort;
 window.jbExportMatrixExcel = jbExportMatrixExcel;
