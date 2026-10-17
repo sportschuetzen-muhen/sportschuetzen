@@ -401,16 +401,31 @@ async function mglHandleAvatarUpload(event, pn) {
     const supa = window.getSupabaseClient ? window.getSupabaseClient() : null;
     if (!supa) throw new Error('Supabase Client nicht verfügbar.');
 
-    const ext = format === 'image/jpeg' ? 'jpg' : 'webp';
-    const filePath = `avatars/member_${pn}.${ext}`;
-    const { error: uploadErr } = await supa.storage
+    let ext = format === 'image/jpeg' ? 'jpg' : 'webp';
+    let filePath = `avatars/member_${pn}.${ext}`;
+    let uploadRes = await supa.storage
       .from('operatives-storage')
       .upload(filePath, blob, {
         contentType: format,
         upsert: true
       });
 
-    if (uploadErr) throw uploadErr;
+    // Transparenter Fallback auf JPEG, falls ein Browser oder Storage unerwartet WebP ablehnen sollte
+    if (uploadRes.error && format === 'image/webp' && /mime type/i.test(uploadRes.error.message || '')) {
+      console.warn('WebP abgewiesen, erstelle automatischen JPEG-Fallback...');
+      const jpegProcessed = await window.ImageKit.cropSquare(file, { size: 600, quality: 0.85, format: 'image/jpeg' });
+      ext = 'jpg';
+      format = 'image/jpeg';
+      filePath = `avatars/member_${pn}.jpg`;
+      uploadRes = await supa.storage
+        .from('operatives-storage')
+        .upload(filePath, jpegProcessed.blob, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+    }
+
+    if (uploadRes.error) throw uploadRes.error;
 
     // 4. Öffentliche URL mit Cache-Buster setzen
     const publicUrl = `https://supabase-muhen.danfamily.uk/storage/v1/object/public/operatives-storage/${filePath}?t=${Date.now()}`;

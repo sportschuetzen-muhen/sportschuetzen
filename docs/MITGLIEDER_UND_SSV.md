@@ -191,6 +191,7 @@ Dies erleichtert dem Vorstand und den Schützenmeistern die sofortige Einordnung
 * **Resiliente Dekodierungs-Pipeline:** Dreistufiger Fallback (`createImageBitmap` $\rightarrow$ `HTMLImageElement` via `URL.createObjectURL` $\rightarrow$ `FileReader` DataURL) verhindert zuverlässig Browser-Dekodierungsfehler (`The source image could not be decoded`).
 * **Zuschnitt & Optimierung:** Vollautomatischer zentrierter quadratischer Zuschnitt (Center-Crop) auf 600×600 px mit anschliessender WebP-Komprimierung (Qualität 85%, automatischer JPEG-Fallback bei älteren Browsern).
 * **Persistenz & Cache-Busting:** Das optimierte Bild wird direkt in Supabase Storage (`operatives-storage`) hochgeladen und mit Cache-Busting-Timestamp (`?t=${Date.now()}`) in `members.avatar_url` gespeichert.
+* **Storage-Bucket MIME-Whitelist:** Im Bucket `operatives-storage` (sowie `campaign-assets`) ist `image/webp` neben `pdf`, `png` und `jpeg` verbindlich in `allowed_mime_types` freigeschaltet (Migration 71). Zudem existiert ein clientseitiger automatischer JPEG-Retry-Fallback.
 
 
 
