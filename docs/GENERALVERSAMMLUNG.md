@@ -189,7 +189,9 @@ Beim Laden oder Neuanlegen einer GV sucht das System in `public.poll_events` nac
 
 ## 7. Entflechtung & Klare Abgrenzung zu «Dokumenten-Vorlagen»
 
-Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templates-ui.js` eingeklinkt und in `DOCUMENT_AND_MAIL_ENGINE_SPEC.md` integriert. Zur Vermeidung von Redundanzen und Architektur-Konflikten gilt folgende saubere Trennung:
+Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templates-ui.js` eingeklinkt und in `DOCUMENT_AND_MAIL_ENGINE_SPEC.md` integriert. Zur Vermeidung von Redundanzen und Architektur-Konflikten wurde die Trennung im Oktober 2026 radikal und vollständig vollzogen:
+* **Keine GV-Elemente mehr im Dokumente-Modul:** Sämtliche GV-Vorlagen (`gv_normal`, `gv_wahljahr`), Kategorien, Filter und Modale wurden restlos aus `vorstand/js/vorlagen/templates-ui.js` und dem Vorlagen-Pool entfernt.
+* **Autonomer PDF-Editor in der GV:** Die Generalversammlung besitzt in Tab 3 («📄 Einladung (PDF)») einen komplett eigenständigen Text- und Vorlageneditor direkt im Modul (`gv_instances`).
 
 | Bereich | Modul Generalversammlung (`gv-dossier`) | Modul Dokumenten-Vorlagen (`dokument-vorlagen`) |
 | :--- | :--- | :--- |
@@ -197,7 +199,7 @@ Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templ
 | **Datenbasis** | `gv_instances`, `gv_traktanden`, `campaign_attachments`, `gv_praesenz` | `document_templates`, `document_template_clauses` |
 | **Navigation** | Eigene Navigations-Kachel `🏛️ Generalversammlung` & eigener Sidebar-Link | Kachel `📄 Dokumenten-Vorlagen` & eigener Sidebar-Link |
 | **Berechtigung** | `gv.view` / `gv.manage` | `dokumente.view` / `dokumente.manage` |
-| **Fokus** | Operatives Event- und Dossier-Management | Textvorlagen, Klauseln und Standardtexte für das Gesamtsystem |
+| **Fokus** | Operatives Event-, Traktanden- und Dossier-Management | Textvorlagen, Klauseln und Standardtexte für das Gesamtsystem |
 
 ---
 
@@ -205,3 +207,14 @@ Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templ
 * **Vollvektorielle PDF-Generierung:** Das Rendering der Einladung (`generate-gv-invitation`) greift primär direkt auf `public.gv_traktanden` des aktuellen Durchführungsjahres zu. Die Variablenauflösung (`{gv_datum}`, `{gv_zeit}`, `{gv_ort}`) ist auf Funktionsebene entkoppelt und WinAnsi-sicher (inklusive `generate-gv-praesenzliste` mit `Anw.` statt Unicode-Sonderzeichen).
 * **ClubWysiwyg E-Mail-Editor:** Der E-Mail-Versand nutzt das zentrale Vereinsmodell `ClubWysiwyg` mit dynamischen Platzhalter-Pills (`{{mitglied.vorname}}`, `{{mitglied.nachname}}`, `{{event.datum_formatiert}}`, `{{dossier.download_url}}`), sauberem HTML-Sanitizing (`getCleanHtml()`) und WYSIWYG-Livevorschau im rechten Monitor.
 * **SSV-Adress- und Lizenznummer-Matching:** `loadGVParticipantsData` lädt zusätzlich `address_number` aus `public.members`. Rückmeldungen aus `public.poll_responses` werden redundant über Personennummer, 6-stellige SSV-Adressnummer und führende Nullen abgeglichen. Spontane Nachmeldungen oder Statusänderungen im RSVP-Modal synchronisieren bidirektional mit `poll_responses` und `gv_praesenz`.
+
+---
+
+## 9. Layout-Harmonisierung nach offiziellen Printscreens (Oktober 2026)
+* **Exaktes Printscreen-Layout (Broschüre Seiten 19–21):**
+  * **Seite 19 (Jahresprogramm):** Wappen linksbündig (26x26mm) mit Titel `Sportschützen Muhen` (24pt) auf gleicher Höhe. Sektionstitel `Jahresprogramm` (17pt). Einträge linksbündig mit Anlass und Ort (`in Muhen`), rechtsbündig Spaltentitel `Zeit` (10pt) und Zeitangaben im Format `HH:mm bis HH:mm Uhr` (bzw. `HH:mm Uhr` für Einzeltrainings und `Datum folgt später` für provisorische Einträge wie Arbeitstag/Endschiessen).
+  * **Seite 20 (Schiesstermine):** Wappen & Vereinstitel, Sektionstitel `Schiesstermine`. Spaltentitel `Schiesstag` rechtsbündig. Mehrteilige Anlässe (SSV GM, AGSV GM, Freundschaftsschiessen, Finals SSV/AGSV, Jugendtag) mit zweizeiligem Zeilenumbruch bei 69mm für exakten Wortumbruch (`Freundschaftsschiessen Muhen - / Gretzenbach in Muhen`, `Final SSV ... Elite in / Thun`).
+  * **Seite 21 (Mannschaftsmeisterschaft):** Automatischer Seitenumbruch für die Mannschaftsmeisterschaft (7 Runden). Header wiederholt Wappen und `Sportschützen Muhen` ohne Zwischentitel, Runden `1. Runde` bis `7. Runde` linksbündig, Sonntags-Termine rechtsbündig unter `Schiesstag`.
+* **Dynamische Wahlen statt Template-Duplikate:** Wahlen werden nicht mehr über separate Vorlagensätze (`gv_wahljahr`) gesteuert, sondern durch feldbasierte Attribute:
+  * `is_election: true` und `candidate_names` pro Traktandum in `public.gv_traktanden`.
+  * `amtsdauer_text` (z. B. `Amtsdauer 2026–2028`) in `public.gv_instances`.

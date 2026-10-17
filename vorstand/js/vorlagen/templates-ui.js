@@ -33,7 +33,8 @@
       ]);
 
       if (tRes.data && tRes.data.length > 0) {
-        window._docTemplatesData = tRes.data;
+        // GV-Vorlagen werden vollständig und autonom im Fachmodul Generalversammlung verwaltet
+        window._docTemplatesData = tRes.data.filter(t => t.category !== 'gv');
       }
       if (cRes.data && cRes.data.length > 0) {
         window._docClausesData = cRes.data;
@@ -85,8 +86,6 @@
       'vm_storno_verzug': 'Mail: Stornierung Zahlungsverzug',
       'vm_anfrage': 'Mail: Bestätigung Vorab-Terminanfrage',
       'vm_info_wirtschaft': 'Mail: Info Wirtschaft (Intern)',
-      'gv_normal': 'GV-Einladung (Standard)',
-      'gv_wahljahr': 'GV-Einladung (Wahljahr)',
       'freier_brief': 'Freier Vorstandsbrief'
     };
     if (friendlyMap[t.code?.toLowerCase()]) return friendlyMap[t.code.toLowerCase()];
@@ -119,15 +118,18 @@
       await window.loadDocumentTemplatesData();
     }
 
-    // 4 HAUPT-REITER DES DOKUMENTEN- & VORLAGEN-POOLS
+    // 3 HAUPT-REITER DES DOKUMENTEN- & VORLAGEN-POOLS (GV vollständig entkoppelt in eigenem Fachmodul)
     const mainCategories = [
       { key: 'rechnung', label: 'Rechnungen & Mahnwesen', icon: 'fa-file-invoice-dollar text-primary' },
       { key: 'vermietung', label: 'Vermietung Schützenstube', icon: 'fa-house-chimney text-warning' },
-      { key: 'brief', label: 'Vorstandsbriefe & Rundschreiben', icon: 'fa-envelope-open-text text-info' },
-      { key: 'gv', label: 'GV-Einladung (PDF-Texte)', icon: 'fa-landmark text-success' }
+      { key: 'brief', label: 'Vorstandsbriefe & Rundschreiben', icon: 'fa-envelope-open-text text-info' }
     ];
 
     let currentCat = window._selectedDocCategory || 'rechnung';
+    if (!mainCategories.some(c => c.key === currentCat)) {
+      currentCat = 'rechnung';
+      window._selectedDocCategory = 'rechnung';
+    }
 
     // HTML für die Haupt-Reiter
     const mainTabsHtml = mainCategories.map(c => `
@@ -210,8 +212,6 @@
       ];
     } else if (currentCat === 'brief') {
       categoryPlaceholders = ['{betreff}', '{datum}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
-    } else if (currentCat === 'gv') {
-      categoryPlaceholders = ['{gv_nummer}', '{gv_datum}', '{gv_zeit}', '{gv_ort}', '{praesident_name}', '{datum_vorjahr}', '{abmelde_datum}'];
     }
 
     const placeholdersHtml = categoryPlaceholders.map(ph => `

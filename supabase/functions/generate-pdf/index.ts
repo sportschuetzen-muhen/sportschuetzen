@@ -1880,33 +1880,31 @@ async function generateGVInvitationPdf(
   let templateNotice = "Der Vorstand freut sich über eine zahlreiche und pünktliche Teilnahme!";
   let clauses: any[] = [];
   let termine: any[] = [];
+  let instData: any = null;
 
   if (supabaseClient) {
     try {
-      // 2a. Template aus document_templates laden falls vorhanden
-      let tQuery = supabaseClient
-        .from("document_templates")
-        .select("*");
-      if (gvData.templateId) {
-        tQuery = tQuery.eq("id", gvData.templateId);
-      } else if (gvData.templateCode) {
-        tQuery = tQuery.eq("code", gvData.templateCode);
-      } else {
-        tQuery = tQuery.eq("category", "gv");
-      }
-      const { data: tData } = await tQuery
-        .order("created_at", { ascending: false })
-        .limit(1)
+      // 2a. Daten direkt aus public.gv_instances für dieses GV-Jahr laden (kein document_templates Umweg)
+      const gvInstanceId = gvData.gvId || `gv_${year}`;
+      const { data: dbInst } = await supabaseClient
+        .from("gv_instances")
+        .select("*")
+        .or(`id.eq.${gvInstanceId},year.eq.${year}`)
         .maybeSingle();
 
-      if (tData) {
-        if (tData.title) templateTitle = replacePlaceholders(tData.title);
-        if (tData.intro) templateIntro = replacePlaceholders(tData.intro);
-        if (tData.notice) templateNotice = replacePlaceholders(tData.notice);
+      if (dbInst) {
+        instData = dbInst;
+        if (instData.einladung_titel) templateTitle = replacePlaceholders(instData.einladung_titel);
+        if (instData.einladung_intro) templateIntro = replacePlaceholders(instData.einladung_intro);
+        if (instData.antragsfrist_hinweis) templateNotice = replacePlaceholders(instData.antragsfrist_hinweis);
       }
 
+      // Direkte Übergabe in gvData hat höchste Priorität (z. B. bei Live-Vorschau aus dem Editor)
+      if (gvData.einladung_titel || gvData.title) templateTitle = replacePlaceholders(gvData.einladung_titel || gvData.title);
+      if (gvData.einladung_intro || gvData.intro) templateIntro = replacePlaceholders(gvData.einladung_intro || gvData.intro);
+      if (gvData.antragsfrist_hinweis || gvData.notice) templateNotice = replacePlaceholders(gvData.antragsfrist_hinweis || gvData.notice);
+
       // 2b. Traktanden laden: Primär aus public.gv_traktanden für das spezifische GV-Jahr
-      const gvInstanceId = gvData.gvId || `gv_${year}`;
       const { data: trData } = await supabaseClient
         .from("gv_traktanden")
         .select("*")
@@ -1936,21 +1934,6 @@ async function generateGVInvitationPdf(
           });
         });
         clauses = hierarchicalList;
-      } else if (tData) {
-        // Fallback: Aus Vorlagen-Pool falls noch keine jahresspezifischen Traktanden existieren
-        const { data: cData } = await supabaseClient
-          .from("document_template_clauses")
-          .select("*")
-          .eq("template_id", tData.id)
-          .order("sort_order", { ascending: true });
-
-        if (cData && cData.length > 0) {
-          clauses = cData.map((c: any) => ({
-            ...c,
-            clause_title: replacePlaceholders(c.clause_title),
-            clause_text: replacePlaceholders(c.clause_text || "")
-          }));
-        }
       }
 
       // 2c. Termine aus public.termine für das GV-Jahr laden
@@ -2135,192 +2118,383 @@ async function generateGVInvitationPdf(
   curY -= 2 * MM;
 
   // Gruss & Schluss
-  page1.drawText(sanitizeWinAnsiText(templateNotice), {
-    x: 20 * MM,
-    y: curY,
-    size: 8.5,
-    font: fontRegular,
-    color: rgb(0.3, 0.3, 0.3),
+  if (templateNotice) {
+    page1.drawText(sanitizeWinAnsiText(templateNotice), {
+      x: 20 * MM,
+      y: curY,
+      size: 8.5,
+      font: fontRegular,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    curY -= 4.5 * MM;
+  }
+
+  const grussLines = (gvData.grussformel || (instData as any)?.grussformel || "Freundliche Schützengrüsse\nDer Vorstand der Sportschützen Muhen")
+    .split("\n")
+    .map((l: string) => l.trim())
+    .filter((l: string) => l.length > 0);
+
+  grussLines.forEach((gl: string, gIdx: number) => {
+    const isLast = (gIdx === grussLines.length - 1);
+    page1.drawText(sanitizeWinAnsiText(replacePlaceholders(gl)), {
+      x: 20 * MM,
+      y: curY,
+      size: isLast ? 9 : 8.5,
+      font: isLast ? fontBold : fontRegular,
+      color: isLast ? rgb(0.12, 0.23, 0.54) : rgb(0.2, 0.2, 0.2),
+    });
+    curY -= 4 * MM;
   });
-  curY -= 4.5 * MM;
-  page1.drawText("Freundliche Schützengrüsse", { x: 20 * MM, y: curY, size: 8.5, font: fontRegular });
-  curY -= 4 * MM;
-  page1.drawText("Der Vorstand der Sportschützen Muhen", { x: 20 * MM, y: curY, size: 9, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
 
   // ============================================================================
-  // SEITE 2+: JAHRESPROGRAMM & SCHIESSTERMINE (GETRENNT GEMÄSS MUSTER)
+  // SEITE 2+: JAHRESPROGRAMM & SCHIESSTERMINE (EXAKT GEMÄSS PRINTSCREEN-LAYOUT)
   // ============================================================================
-  const formatZeitStr = (start?: string, end?: string) => {
-    const s = (start || "").replace(/:00$/, "").trim();
-    const e = (end || "").replace(/:00$/, "").trim();
-    if (s && e) return `${s} bis ${e} Uhr`;
-    if (s) return `${s} Uhr`;
-    return "–";
+  const formatSwissFullDate = (dateStr?: string): string => {
+    if (!dateStr) return "Datum folgt später";
+    const p = String(dateStr).split("-");
+    if (p.length !== 3) return dateStr;
+    const d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+    if (isNaN(d.getTime())) return dateStr;
+    const days = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+    const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+    return `${days[d.getDay()]}, ${d.getDate()}. ${months[d.getMonth()]} ${d.getFullYear()}`;
   };
 
-  const renderTerminBlock = (
-    title: string,
-    subtitle: string,
-    items: any[]
-  ) => {
-    if (!items || items.length === 0) return;
-
-    const drawHeader = (p: any, y: number) => {
-      if (logoImage) {
-        const scaledLogo = logoImage.scaleToFit(20 * MM, 20 * MM);
-        p.drawImage(logoImage, {
-          x: 20 * MM,
-          y: y - scaledLogo.height + 4 * MM,
-          width: scaledLogo.width,
-          height: scaledLogo.height,
-        });
+  const formatZeitStr = (start?: string, end?: string, title?: string): string => {
+    const cleanTime = (t?: string): string => {
+      if (!t) return "";
+      const p = t.trim().split(":");
+      if (p.length >= 2) {
+        return `${p[0].padStart(2, "0")}:${p[1].padStart(2, "0")}`;
       }
+      return t.trim();
+    };
+    const s = cleanTime(start);
+    const e = cleanTime(end);
+    if (title && title.toLowerCase().includes("training")) {
+      return s ? `${s} Uhr` : "";
+    }
+    if (s && e && s !== e) return `${s} bis ${e} Uhr`;
+    if (s) return `${s} Uhr`;
+    return "";
+  };
 
-      p.drawText(CLUB_NAME.toUpperCase(), {
-        x: 44 * MM,
-        y: y,
-        size: 13,
-        font: fontBold,
-        color: rgb(0.12, 0.23, 0.54),
+  const drawPageHeader = (p: any, title: string) => {
+    if (logoImage) {
+      const scaledLogo = logoImage.scaleToFit(26 * MM, 26 * MM);
+      p.drawImage(logoImage, {
+        x: 20 * MM,
+        y: 285 * MM - scaledLogo.height,
+        width: scaledLogo.width,
+        height: scaledLogo.height,
       });
+    }
 
+    p.drawText("Sportschützen Muhen", {
+      x: 50 * MM,
+      y: 268 * MM,
+      size: 24,
+      font: fontBold,
+      color: rgb(0.08, 0.08, 0.08),
+    });
+
+    if (title) {
       p.drawText(title, {
         x: 20 * MM,
-        y: y - 14 * MM,
-        size: 13,
+        y: 236 * MM,
+        size: 17,
         font: fontBold,
-        color: rgb(0.1, 0.15, 0.3),
+        color: rgb(0.08, 0.08, 0.08),
       });
-      p.drawText(subtitle, {
-        x: 20 * MM,
-        y: y - 18.5 * MM,
-        size: 8,
-        font: fontRegular,
-        color: rgb(0.4, 0.45, 0.55),
-      });
-      p.drawLine({
-        start: { x: 20 * MM, y: y - 20.5 * MM },
-        end: { x: 190 * MM, y: y - 20.5 * MM },
-        thickness: 0.5,
-        color: rgb(0.7, 0.7, 0.7),
-      });
-      return y - 26 * MM;
-    };
-
-    const drawTableHeader = (p: any, y: number) => {
-      p.drawRectangle({
-        x: 20 * MM,
-        y: y - 2 * MM,
-        width: 170 * MM,
-        height: 6 * MM,
-        color: rgb(0.93, 0.95, 0.98),
-      });
-      p.drawText("Datum", { x: 22 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-      p.drawText("Tag", { x: 44 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-      p.drawText("Zeit", { x: 55 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-      p.drawText("Anlass / Programm", { x: 88 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-      p.drawText("Ort / Stand", { x: 155 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-      return y - 6 * MM;
-    };
-
-    let curPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-    let pageY = drawHeader(curPage, 275 * MM);
-    pageY = drawTableHeader(curPage, pageY);
-
-    items.forEach((term, idx) => {
-      if (pageY < 25 * MM) {
-        curPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-        pageY = drawHeader(curPage, 275 * MM);
-        pageY = drawTableHeader(curPage, pageY);
-      }
-
-      const dObj = term.datum ? new Date(term.datum) : null;
-      const dStr = dObj && !isNaN(dObj.getTime())
-        ? dObj.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" })
-        : (term.datum || "Datum folgt");
-      const weekdayStr = dObj && !isNaN(dObj.getTime())
-        ? dObj.toLocaleDateString("de-CH", { weekday: "short" })
-        : "";
-      const zeitStr = formatZeitStr(term.startzeit, term.endzeit);
-      const titleStr = term.anlasstitel || term.titel || term.anlass || "–";
-      const ortStr = term.ort || "Schiessanlage Hard";
-
-      // Zebrastreifen
-      if (idx % 2 === 1) {
-        curPage.drawRectangle({
-          x: 20 * MM,
-          y: pageY - 1.5 * MM,
-          width: 170 * MM,
-          height: 4.8 * MM,
-          color: rgb(0.98, 0.98, 0.99),
-        });
-      }
-
-      curPage.drawText(sanitizeWinAnsiText(dStr), { x: 22 * MM, y: pageY, size: 7.5, font: fontRegular });
-      curPage.drawText(sanitizeWinAnsiText(weekdayStr), { x: 44 * MM, y: pageY, size: 7.5, font: fontRegular });
-      curPage.drawText(sanitizeWinAnsiText(zeitStr), { x: 55 * MM, y: pageY, size: 7.2, font: fontRegular });
-
-      const titleClean = sanitizeWinAnsiText(titleStr);
-      const maxTitleLen = 38;
-      const displayTitle = titleClean.length > maxTitleLen ? titleClean.substring(0, maxTitleLen) + "..." : titleClean;
-      curPage.drawText(displayTitle, { x: 88 * MM, y: pageY, size: 7.5, font: fontBold });
-
-      const ortClean = sanitizeWinAnsiText(ortStr);
-      const displayOrt = ortClean.length > 22 ? ortClean.substring(0, 22) + "..." : ortClean;
-      curPage.drawText(displayOrt, { x: 155 * MM, y: pageY, size: 7.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
-
-      pageY -= 4.8 * MM;
-    });
+      return 218 * MM;
+    }
+    return 246 * MM;
   };
 
   if (termine && termine.length > 0) {
-    const progItems = termine.filter((t: any) => 
-      t.kategorie === "Jahresprogramm" || (!t.kategorie && !t.anlasstitel?.toLowerCase().includes("meisterschaft"))
-    );
-    const schiessItems = termine.filter((t: any) => 
-      t.kategorie === "Schiesstermine" || t.anlasstitel?.toLowerCase().includes("meisterschaft")
-    );
+    // --------------------------------------------------------------------------
+    // 1. BLOCK: JAHRESPROGRAMM (Exakt gemäss Screenshot Seite 19)
+    // --------------------------------------------------------------------------
+    const progItems = termine.filter((t: any) => {
+      const kat = (t.kategorie || "").toLowerCase();
+      const tit = (t.anlasstitel || t.titel || "").toLowerCase();
+      if (tit.includes("ausserordentliche") || tit.includes("bundesprogramm 300m") || tit.includes("infoabend")) return false;
+      if (kat === "jahresprogramm") return true;
+      if (tit.includes("endschiessen")) return true;
+      if (tit.includes("arbeitstag")) return true;
+      if (tit.includes("jugendtag")) return true;
+      return false;
+    });
 
-    // 1. Block: Jahresprogramm
     if (progItems.length > 0) {
-      renderTerminBlock(
-        `Jahresprogramm ${year}`,
-        "Übersicht der Vereinsanlässe, Trainings, Generalversammlung & Festivitäten",
-        progItems
-      );
+      const progGroups: Array<{ title: string; items: any[] }> = [];
+      progItems.forEach((term: any) => {
+        let rawTitle = (term.anlasstitel || term.titel || "Anlass").trim();
+        let ort = (term.ort || "").trim();
+        if (ort.toLowerCase().replace(/[\s\/-]+/g, "") === "domatems") ort = "Domat/Ems";
+        let displayTitle = rawTitle;
+        if (ort && !displayTitle.toLowerCase().includes(ort.toLowerCase()) && !displayTitle.toLowerCase().includes("domat/ems")) {
+          displayTitle = `${displayTitle} in ${ort}`;
+        }
+        let grp = progGroups.find((g) => g.title.toLowerCase() === displayTitle.toLowerCase());
+        if (!grp) {
+          grp = { title: displayTitle, items: [] };
+          progGroups.push(grp);
+        }
+        grp.items.push(term);
+      });
+
+      // Sortierung Jahresprogramm exakt gemäss Screenshot Seite 19:
+      const getProgOrder = (title: string): number => {
+        const t = title.toLowerCase();
+        if (t.includes("generalversammlung")) return 1;
+        if (t.includes("1. training") || t.includes("training")) return 2;
+        if (t.includes("verbandsschiessen")) return 3;
+        if (t.includes("vereinswettschiessen")) return 4;
+        if (t.includes("eidgenössisches") && !t.includes("empfang")) return 5;
+        if (t.includes("empfang")) return 6;
+        if (t.includes("jugendtag")) return 7;
+        if (t.includes("arbeitstag")) return 8;
+        if (t.includes("endschiessen")) return 9;
+        return 50;
+      };
+
+      progGroups.sort((a, b) => getProgOrder(a.title) - getProgOrder(b.title));
+      progGroups.forEach((grp) => {
+        grp.items.sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
+      });
+
+      let progPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      let progY = drawPageHeader(progPage, "Jahresprogramm");
+
+      progGroups.forEach((grp) => {
+        const titleLines = wrapText(grp.title, fontBold, 10, 115 * MM);
+        const dateRowsCount = grp.items.length;
+        const requiredHeight = (titleLines.length + dateRowsCount) * 4.4 * MM + 6 * MM;
+
+        if (progY - requiredHeight < 20 * MM) {
+          progPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          progY = drawPageHeader(progPage, "");
+        }
+
+        const startBlockY = progY;
+
+        // Zeile 1: Titel links
+        let tY = startBlockY;
+        titleLines.forEach((tLine) => {
+          progPage.drawText(sanitizeWinAnsiText(tLine), {
+            x: 20 * MM,
+            y: tY,
+            size: 10,
+            font: fontBold,
+            color: rgb(0.08, 0.08, 0.08),
+          });
+          tY -= 4.2 * MM;
+        });
+
+        // "Zeit" Header rechtsbündig auf Höhe der ersten Titelzeile
+        const zeitHdr = "Zeit";
+        const zhWidth = fontBold.widthOfTextAtSize(zeitHdr, 10);
+        progPage.drawText(zeitHdr, {
+          x: 190 * MM - zhWidth,
+          y: startBlockY,
+          size: 10,
+          font: fontBold,
+          color: rgb(0.08, 0.08, 0.08),
+        });
+
+        // Termindaten unterhalb des Titels
+        let itemY = Math.min(tY, startBlockY - 4.2 * MM);
+
+        grp.items.forEach((item) => {
+          const isProvisorisch = (item.status === "provisorisch" || !item.datum || (item.anlasstitel?.toLowerCase().includes("endschiessen") && !item.fix));
+          const dText = (isProvisorisch || !item.datum) ? "Datum folgt später" : formatSwissFullDate(item.datum);
+          const zText = isProvisorisch ? "" : formatZeitStr(item.startzeit, item.endzeit, item.anlasstitel);
+
+          progPage.drawText(sanitizeWinAnsiText(dText), {
+            x: 20 * MM,
+            y: itemY,
+            size: 9.5,
+            font: fontRegular,
+            color: rgb(0.12, 0.12, 0.12),
+          });
+
+          if (zText) {
+            const zWidth = fontRegular.widthOfTextAtSize(zText, 9.5);
+            progPage.drawText(sanitizeWinAnsiText(zText), {
+              x: 190 * MM - zWidth,
+              y: itemY,
+              size: 9.5,
+              font: fontRegular,
+              color: rgb(0.12, 0.12, 0.12),
+            });
+          }
+
+          itemY -= 4.2 * MM;
+        });
+
+        progY = itemY - 5.5 * MM;
+      });
     }
 
-    // 2. Block: Schiesstermine
+    // --------------------------------------------------------------------------
+    // 2. BLOCK: SCHIESSTERMINE (Exakt gemäss Screenshot Seite 20 & 21)
+    // --------------------------------------------------------------------------
+    const schiessItems = termine.filter((t: any) => {
+      const kat = (t.kategorie || "").toLowerCase();
+      const tit = (t.anlasstitel || t.titel || "").toLowerCase();
+      if (kat === "schiesstermine") {
+        if (tit.includes("endschiessen")) return false; // Endschiessen ist im Jahresprogramm
+        if (tit.includes("kader training")) return false;
+        if (tit.includes("grenzland-cup")) return false;
+        return true;
+      }
+      if (tit.includes("meisterschaft")) return true;
+      return false;
+    });
+
     if (schiessItems.length > 0) {
-      renderTerminBlock(
-        `Schiesstermine ${year}`,
-        "Übersicht aller Meisterschaften, Rundenwettkämpfe, Gruppenmeisterschaften & Finals",
-        schiessItems
-      );
+      const schiessGroups: Array<{ title: string; items: any[] }> = [];
+      schiessItems.forEach((term: any) => {
+        let rawTitle = (term.anlasstitel || term.titel || "Schiessen").trim();
+        let ort = (term.ort || "").trim();
+        let displayTitle = rawTitle;
+        if (ort && !displayTitle.toLowerCase().includes(` in ${ort.toLowerCase()}`)) {
+          displayTitle = `${displayTitle} in ${ort}`;
+        }
+        let grp = schiessGroups.find((g) => g.title.toLowerCase() === displayTitle.toLowerCase());
+        if (!grp) {
+          grp = { title: displayTitle, items: [] };
+          schiessGroups.push(grp);
+        }
+        grp.items.push(term);
+      });
+
+      // Sortierung Schiesstermine exakt gemäss Screenshot Seite 20 & 21:
+      const getSchiessOrder = (title: string): number => {
+        const t = title.toLowerCase();
+        if (t.includes("freundschaft")) return 1;
+        if (t.includes("ssv") && t.includes("gruppenmeisterschaft") && !t.includes("final")) return 2;
+        if (t.includes("agsv") && t.includes("gruppenmeisterschaft") && !t.includes("final")) return 3;
+        if (t.includes("final") && t.includes("ssv") && t.includes("elite")) return 4;
+        if (t.includes("final") && t.includes("ssv") && (t.includes("junior") || t.includes("nachwuchs"))) return 5;
+        if (t.includes("jugendtag")) return 6;
+        if (t.includes("final") && t.includes("agsv")) return 7;
+        if (t.includes("mannschaft")) return 99; // Mannschaftsmeisterschaft auf eigener Folgeseite (Seite 21)
+        return 50;
+      };
+
+      schiessGroups.sort((a, b) => getSchiessOrder(a.title) - getSchiessOrder(b.title));
+      schiessGroups.forEach((grp) => {
+        grp.items.sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
+      });
+
+      let schiessPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      let schiessY = drawPageHeader(schiessPage, "Schiesstermine");
+
+      schiessGroups.forEach((grp) => {
+        const isMultiRound = grp.items.length > 1;
+        const isMannschaft = grp.title.toLowerCase().includes("mannschaft");
+        // Titelumbruch bei 69mm für exakten Umbruch wie im Screenshot (Thun auf neuer Zeile, Gretzenbach in Muhen auf neuer Zeile)
+        const titleLines = wrapText(grp.title, fontBold, 10, 69 * MM);
+        const requiredRows = isMultiRound ? (1 + grp.items.length) : Math.max(2, titleLines.length);
+        const requiredHeight = requiredRows * 4.4 * MM + 6 * MM;
+
+        if (isMannschaft || schiessY - requiredHeight < 28 * MM) {
+          schiessPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+          schiessY = drawPageHeader(schiessPage, ""); // Folgeseite ohne Zwischentitel (gemäss Screenshot 3)
+        }
+
+        const startBlockY = schiessY;
+
+        // "Schiesstag" Header immer rechtsbündig auf Start-Höhe
+        const stHdr = "Schiesstag";
+        const stWidth = fontBold.widthOfTextAtSize(stHdr, 10);
+        schiessPage.drawText(stHdr, {
+          x: 190 * MM - stWidth,
+          y: startBlockY,
+          size: 10,
+          font: fontBold,
+          color: rgb(0.08, 0.08, 0.08),
+        });
+
+        if (isMultiRound) {
+          // Multi-Runden (z.B. SSV GM, AGSV GM, Mannschaftsmeisterschaft)
+          // Zeile 1: Titel
+          schiessPage.drawText(sanitizeWinAnsiText(grp.title), {
+            x: 20 * MM,
+            y: startBlockY,
+            size: 10,
+            font: fontBold,
+            color: rgb(0.08, 0.08, 0.08),
+          });
+
+          // Ab Zeile 2: Runden links, Datum rechts
+          let roundY = startBlockY - 4.2 * MM;
+          grp.items.forEach((item, rIdx) => {
+            const roundLabel = `${rIdx + 1}. Runde`;
+            schiessPage.drawText(roundLabel, {
+              x: 20 * MM,
+              y: roundY,
+              size: 9.5,
+              font: fontRegular,
+              color: rgb(0.12, 0.12, 0.12),
+            });
+
+            const dText = formatSwissFullDate(item.datum);
+            const dWidth = fontRegular.widthOfTextAtSize(dText, 9.5);
+            schiessPage.drawText(sanitizeWinAnsiText(dText), {
+              x: 190 * MM - dWidth,
+              y: roundY,
+              size: 9.5,
+              font: fontRegular,
+              color: rgb(0.12, 0.12, 0.12),
+            });
+
+            roundY -= 4.2 * MM;
+          });
+
+          schiessY = roundY - 5.5 * MM;
+        } else {
+          // Einzel-Anlass (z.B. Freundschaftsschiessen, Finale SSV, Finale AGSV, Jugendtag)
+          const singleItem = grp.items[0];
+          const dText = formatSwissFullDate(singleItem.datum);
+          const dWidth = fontRegular.widthOfTextAtSize(dText, 9.5);
+
+          // Zeile 1: Titel (Teil 1)
+          schiessPage.drawText(sanitizeWinAnsiText(titleLines[0]), {
+            x: 20 * MM,
+            y: startBlockY,
+            size: 10,
+            font: fontBold,
+            color: rgb(0.08, 0.08, 0.08),
+          });
+
+          // Zeile 2: Falls Titel umbricht (Teil 2) links, Datum immer rechts
+          const line2Y = startBlockY - 4.2 * MM;
+          if (titleLines.length > 1) {
+            schiessPage.drawText(sanitizeWinAnsiText(titleLines[1]), {
+              x: 20 * MM,
+              y: line2Y,
+              size: 10,
+              font: fontBold,
+              color: rgb(0.08, 0.08, 0.08),
+            });
+          }
+
+          schiessPage.drawText(sanitizeWinAnsiText(dText), {
+            x: 190 * MM - dWidth,
+            y: line2Y,
+            size: 9.5,
+            font: fontRegular,
+            color: rgb(0.12, 0.12, 0.12),
+          });
+
+          schiessY = line2Y - 5.5 * MM;
+        }
+      });
     }
   }
-
-  // ============================================================================
-  // SEITENNUMMERIERUNG (2-Pass)
-  // ============================================================================
-  const totalPages = pdfDoc.getPageCount();
-  const allPages = pdfDoc.getPages();
-  allPages.forEach((p, idx) => {
-    p.drawText(`Seite ${idx + 1} von ${totalPages}`, {
-      x: 175 * MM,
-      y: 12 * MM,
-      size: 7.5,
-      font: fontRegular,
-      color: rgb(0.45, 0.45, 0.45),
-    });
-    p.drawText(`Sportschützen Muhen · Generalversammlung ${year}`, {
-      x: 20 * MM,
-      y: 12 * MM,
-      size: 7.5,
-      font: fontRegular,
-      color: rgb(0.45, 0.45, 0.45),
-    });
-  });
 
   return await pdfDoc.save();
 }
@@ -3150,8 +3324,8 @@ async function compileGvDossierPdf(
     const pageNum = idx + 1;
     const { width, height } = p.getSize();
 
-    // Dezente Kopfzeile (ab Seite 2)
-    if (pageNum > 1) {
+    // Dezente Kopfzeile nur auf externen Beilage-Seiten (nach den Basis-Seiten)
+    if (pageNum > basePageIndices.length) {
       p.drawLine({
         start: { x: 20 * MM, y: height - 12 * MM },
         end: { x: width - 20 * MM, y: height - 12 * MM },
@@ -3168,25 +3342,27 @@ async function compileGvDossierPdf(
       });
     }
 
-    // Fortlaufende Seitennummerierung unten zentriert
-    const pageStr = `Seite ${pageNum} von ${totalPages}`;
-    const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
-    const centerX = (width - pageStrW) / 2;
+    // Fortlaufende Seitennummerierung unten (nur auf Beilage-Seiten oder falls gewünscht)
+    if (pageNum > basePageIndices.length || gvData.include_footers === true) {
+      const pageStr = `Seite ${pageNum} von ${totalPages}`;
+      const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+      const centerX = (width - pageStrW) / 2;
 
-    p.drawLine({
-      start: { x: 20 * MM, y: 15 * MM },
-      end: { x: width - 20 * MM, y: 15 * MM },
-      thickness: 0.3,
-      color: rgb(0.75, 0.75, 0.75),
-    });
+      p.drawLine({
+        start: { x: 20 * MM, y: 15 * MM },
+        end: { x: width - 20 * MM, y: 15 * MM },
+        thickness: 0.3,
+        color: rgb(0.75, 0.75, 0.75),
+      });
 
-    p.drawText(pageStr, {
-      x: centerX,
-      y: 11 * MM,
-      size: 7.5,
-      font: fontRegular,
-      color: rgb(0.4, 0.4, 0.4),
-    });
+      p.drawText(pageStr, {
+        x: centerX,
+        y: 11 * MM,
+        size: 7.5,
+        font: fontRegular,
+        color: rgb(0.4, 0.4, 0.4),
+      });
+    }
   });
 
   const finalPdfBytes = await masterDoc.save();
