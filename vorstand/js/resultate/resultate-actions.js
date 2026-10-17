@@ -122,63 +122,153 @@ async function syncSetupToResultate() {
   const supa = getResultateSupabaseClient();
   const contestType = window._resultateContestType || "grenzland";
   const year = window._resultateYear || new Date().getFullYear();
+  const contestTitle = contestType === 'grenzland' ? 'Grenzland-Cup' : (contestType === 'mannschaft' ? 'Mannschaft' : 'Gruppe (SGM)');
 
   if (supa) {
     try {
+      // 1. Setups aus contest_setups abfragen
       const { data: setupData, error: sErr } = await supa
         .from('contest_setups')
         .select('*')
         .eq('contest_type', contestType)
         .eq('year', year);
 
-      if (!sErr && setupData && setupData.length > 0) {
-        const existingIds = new Set(resultateState.rows.map(r => String(r.id)));
-        const missing = setupData.filter(s => !existingIds.has(String(s.person_number)));
+      if (sErr) throw sErr;
 
-        if (missing.length > 0) {
-          const newSupaRows = missing.map(s => {
-            const team = (s.team || "").trim();
-            const row = {
-              id: `${contestType}_${year}_${s.person_number}`,
-              contest_type: contestType,
-              year: year,
-              person_number: String(s.person_number),
-              name: s.name,
-              stellung: s.stellung || "liegend",
-              is_auto_r2: true,
-              is_auto_r3: true
-            };
-            for (let i = 1; i <= 7; i++) {
-              row[`r${i}_team`] = team;
-              row[`r${i}_p1`] = null;
-              if (i <= 3) row[`r${i}_p2`] = null;
-            }
-            return row;
-          });
-
-          const { error: insErr } = await supa.from('contest_results').upsert(newSupaRows, {
-            onConflict: 'contest_type,year,person_number'
-          });
-
-          if (!insErr) {
-            alert(`✅ ${missing.length} Schütze${missing.length === 1 ? '' : 'n'} aus Setup übernommen (Supabase).`);
-            await loadResultateData(true);
-            return;
-          }
-        } else {
-          alert('Alle Setup-Schützen sind bereits in Resultate vorhanden – nichts hinzugefügt.');
-          return;
-        }
-      } else {
+      if (!setupData || setupData.length === 0) {
         // Keine Schützen im Setup erfasst -> Intelligenter Dialog mit Optionen
         await openEmptySetupModal(contestType, year);
+        return;
       }
+
+      // 2. Bestehende Resultate für diesen Contest & Jahr laden
+      const { data: existingRows, error: rErr } = await supa
+        .from('contest_results')
+        .select('*')
+        .eq('contest_type', contestType)
+        .eq('year', year);
+
+      if (rErr) throw rErr;
+
+      const setupShooterMap = new Map(setupData.map(s => [String(s.person_number), s]));
+      const existingShooterMap = new Map((existingRows || []).map(r => [String(r.person_number), r]));
+
+      // Sicherheitsbestätigung vor dem Ersetzen der Teams
+      const proceed = confirm(
+        `Möchtest du die Teams für ${contestTitle} (${year}) aus dem Team-Setup übernehmen?\n\n` +
+        `Die Teams werden durch die ${setupData.length} Schützen aus dem Team Manager ersetzt.\n` +
+        `• Schützen im Setup werden ihren Teams und Stellungen zugewiesen.\n` +
+        `• Bestehende Schützen mit Punkten, die nicht mehr im Team sind, werden in den Pool verschoben.\n` +
+        `• Bisherige Schützen ohne Punkte, die nicht im Setup sind, werden entfernt.`
+      );
+      if (!proceed) return;
+
+      setStatus(`Synchronisiere Team-Setup für ${contestTitle} (${year})…`, false);
+
+      const toUpsert = [];
+      const toDeletePersonNumbers = [];
+
+      // 3. Alle Schützen aus dem Setup übernehmen
+      for (const s of setupData) {
+        const pNum = String(s.person_number);
+        const team = (s.team || "").trim();
+        const stellung = s.stellung || "liegend";
+        const existing = existingShooterMap.get(pNum);
+
+        if (existing) {
+          // Bestehender Schütze: Team und Stellung aktualisieren, geschossene Punkte behalten
+          const updated = { ...existing };
+          updated.name = s.name || existing.name;
+          updated.stellung = stellung;
+          for (let i = 1; i <= 7; i++) {
+            updated[`r${i}_team`] = team;
+          }
+          toUpsert.push(updated);
+        } else {
+          // Neuer Schütze: In contest_results anlegen mit Team & Stellung, Punkte null
+          const newRow = {
+            id: `${contestType}_${year}_${pNum}`,
+            contest_type: contestType,
+            year: year,
+            person_number: pNum,
+            name: s.name,
+            stellung: stellung,
+            is_auto_r2: true,
+            is_auto_r3: true
+          };
+          for (let i = 1; i <= 7; i++) {
+            newRow[`r${i}_team`] = team;
+            newRow[`r${i}_p1`] = null;
+            if (i <= 3) newRow[`r${i}_p2`] = null;
+          }
+          toUpsert.push(newRow);
+        }
+      }
+
+      // 4. Bestehende Schützen prüfen, die NICHT im Team-Setup sind
+      let movedToPoolCount = 0;
+      for (const [pNum, existing] of existingShooterMap.entries()) {
+        if (!setupShooterMap.has(pNum)) {
+          // Hat dieser Schütze geschossene Punkte?
+          const hasPoints = [1, 2, 3, 4, 5, 6, 7].some(i => {
+            const p1 = existing[`r${i}_p1`];
+            const p2 = existing[`r${i}_p2`];
+            return (p1 !== null && p1 !== "" && p1 !== undefined) || (p2 !== null && p2 !== "" && p2 !== undefined);
+          });
+
+          if (hasPoints) {
+            // Hat Punkte: In den Pool verschieben (team = ""), damit keine Resultate verloren gehen, aber Teams sauber bleiben!
+            const inPool = { ...existing };
+            for (let i = 1; i <= 7; i++) {
+              inPool[`r${i}_team`] = "";
+            }
+            toUpsert.push(inPool);
+            movedToPoolCount++;
+          } else {
+            // Hat KEINE Punkte und ist nicht im Setup: Aus Resultaten entfernen (ersetzt)
+            toDeletePersonNumbers.push(pNum);
+          }
+        }
+      }
+
+      // 5. In Supabase ausführen
+      if (toDeletePersonNumbers.length > 0) {
+        const { error: delErr } = await supa
+          .from('contest_results')
+          .delete()
+          .eq('contest_type', contestType)
+          .eq('year', year)
+          .in('person_number', toDeletePersonNumbers);
+        if (delErr) throw delErr;
+      }
+
+      if (toUpsert.length > 0) {
+        const { error: upsErr } = await supa
+          .from('contest_results')
+          .upsert(toUpsert, { onConflict: 'contest_type,year,person_number' });
+        if (upsErr) throw upsErr;
+      }
+
+      let infoMsg = `✅ Erfolgreich: Teams für ${contestTitle} (${year}) wurden aus dem Team-Setup übernommen.\n\n` +
+        `• ${setupData.length} Schützen im Team-Setup synchronisiert.`;
+      if (movedToPoolCount > 0) {
+        infoMsg += `\n• ${movedToPoolCount} Schütze(n) mit Punkten in den Pool verschoben.`;
+      }
+      if (toDeletePersonNumbers.length > 0) {
+        infoMsg += `\n• ${toDeletePersonNumbers.length} ersetzte(r) Schütze(n) ohne Punkte entfernt.`;
+      }
+
+      alert(infoMsg);
+      await loadResultateData(true);
     } catch (err) {
       console.warn("Supabase Setup-Sync:", err);
       alert("Fehler beim Synchronisieren des Setups: " + (err.message || err));
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = origText; }
     }
+  } else {
+    alert("Fehler: Kein Supabase-Client verfügbar.");
+    if (btn) { btn.disabled = false; btn.innerHTML = origText; }
   }
 }
 
@@ -278,7 +368,7 @@ async function openEmptySetupModal(contestType, year) {
                 <div>
                   <div class="fw-bold text-dark mb-1"><i class="fas fa-file-pdf text-success me-2"></i>Teams leer lassen</div>
                   <div class="small text-muted mb-3">
-                    Empfohlen bei Grenzland: Die Teams bleiben vorerst leer. Sobald die erste offizielle PDF-Rangliste vorliegt, werden die Teams und Schützen beim Ranglisten-Import vollautomatisch gebildet.
+                    Empfohlen bei Grenzland: Die Teams bleiben vorerst leer. Vorhandene Schützen-Einträge für diese Saison werden entfernt. Sobald die erste offizielle PDF-Rangliste vorliegt, werden die Teams und Schützen beim Ranglisten-Import vollautomatisch gebildet.
                   </div>
                 </div>
                 <button class="btn btn-outline-success btn-sm fw-bold w-100 mt-2" onclick="leaveTeamsEmptyForPdfAction('${escapeHtml(contestType)}', ${year})">
@@ -332,6 +422,9 @@ async function syncResultsToSetupAction(contestType, year) {
         stellung: r.stellung || "liegend"
       };
     });
+
+    // Zuerst bestehende Setups für diesen Contest & Jahr löschen (verhindert alte Verwaiste)
+    await supa.from('contest_setups').delete().eq('contest_type', contestType).eq('year', year);
 
     const { error: sErr } = await supa.from('contest_setups').upsert(setupRows, {
       onConflict: 'contest_type,year,person_number'
@@ -426,6 +519,12 @@ async function importSetupFromPreviousYearAction(contestType, year, prevYear) {
       return row;
     });
 
+    // Sauberes Ersetzen für das neue Jahr (kein Überfüllen durch Altbestände)
+    await Promise.all([
+      supa.from('contest_setups').delete().eq('contest_type', contestType).eq('year', year),
+      supa.from('contest_results').delete().eq('contest_type', contestType).eq('year', year)
+    ]);
+
     const [insSetupsRes, insResultsRes] = await Promise.all([
       supa.from('contest_setups').upsert(newSetups, { onConflict: 'contest_type,year,person_number' }),
       supa.from('contest_results').upsert(newResults, { onConflict: 'contest_type,year,person_number' })
@@ -451,17 +550,69 @@ window.importSetupFromPreviousYearAction = importSetupFromPreviousYearAction;
 
 /**
  * Belässt Teams leer, damit diese beim ersten PDF-Ranglisten-Import gebildet werden.
+ * Bereinigt bestehende Daten in contest_results und contest_setups für diese Saison.
  */
-function leaveTeamsEmptyForPdfAction(contestType, year) {
+async function leaveTeamsEmptyForPdfAction(contestType, year) {
+  const supa = getResultateSupabaseClient();
+  const contestTitle = contestType === 'grenzland' ? 'Grenzland-Cup' : (contestType === 'mannschaft' ? 'Mannschaft' : 'Gruppe (SGM)');
+  const currentCount = (resultateState.rows && resultateState.rows.length) || 0;
+
+  if (currentCount > 0) {
+    const proceed = confirm(
+      `Möchtest du alle bestehenden Einträge (${currentCount} Schützen) für ${contestTitle} (${year}) wirklich entfernen?\n\n` +
+      `Die Einträge werden gelöscht, damit du mit leeren Teams auf den offiziellen PDF-Ranglisten-Import warten kannst.`
+    );
+    if (!proceed) return;
+  }
+
   const modalEl = document.getElementById('modal-empty-setup-dialog');
   if (modalEl) {
     const modal = bootstrap.Modal.getInstance(modalEl);
     if (modal) modal.hide();
   }
 
-  const contestTitle = contestType === 'grenzland' ? 'Grenzland-Cup' : contestType;
-  setStatus(`Teams für ${contestTitle} leer gelassen (bereit für PDF-Ranglisten-Import)`, false);
-  alert(`ℹ️ Teams bleiben vorerst leer.\n\nSobald die erste offizielle Rangliste (PDF) vorliegt, wähle im Menü «⚡ Aktionen -> Grenzland Rangliste importieren (PDF)». Die Teams und Schützen werden dabei vollautomatisch gebildet und ins System übertragen.`);
+  if (supa) {
+    try {
+      setStatus(`Bereinige Daten für ${contestTitle} (${year})…`, false);
+
+      // 1. contest_results für diese Saison löschen
+      const { error: delResErr } = await supa
+        .from('contest_results')
+        .delete()
+        .eq('contest_type', contestType)
+        .eq('year', year);
+      if (delResErr) throw delResErr;
+
+      // 2. contest_setups für diese Saison bereinigen
+      const { error: delSetupErr } = await supa
+        .from('contest_setups')
+        .delete()
+        .eq('contest_type', contestType)
+        .eq('year', year);
+      if (delSetupErr) console.warn("Hinweis beim Löschen von contest_setups:", delSetupErr);
+
+      // 3. Lokalen State leeren
+      resultateState.rows = [];
+      resultateState.isDirty = false;
+      window._resultateOriginalRows = [];
+
+      // 4. UI neu laden & synchronisieren
+      await loadResultateData(true);
+
+      setStatus(`Teams für ${contestTitle} geleert (bereit für PDF-Ranglisten-Import)`, false);
+      alert(`✅ Die bestehenden Daten für ${contestTitle} (${year}) wurden entfernt.\n\nDie Teams sind nun leer. Sobald die erste offizielle Rangliste (PDF) vorliegt, wähle im Menü «⚡ Aktionen -> Grenzland Rangliste importieren (PDF)». Die Teams und Schützen werden dabei vollautomatisch gebildet.`);
+    } catch (err) {
+      console.error("Fehler beim Bereinigen der Teams:", err);
+      alert("Fehler beim Entfernen der bestehenden Daten: " + (err.message || err));
+      setStatus("Fehler beim Bereinigen", true);
+    }
+  } else {
+    resultateState.rows = [];
+    resultateState.isDirty = false;
+    window._resultateOriginalRows = [];
+    renderUI();
+    setStatus(`Teams für ${contestTitle} lokal geleert`, false);
+  }
 }
 window.leaveTeamsEmptyForPdfAction = leaveTeamsEmptyForPdfAction;
 

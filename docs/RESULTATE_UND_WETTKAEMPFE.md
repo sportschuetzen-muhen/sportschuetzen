@@ -76,11 +76,17 @@ Zur schnellen und fehlerfreien Erfassung der offiziellen IKSV-Ranglisten (Intern
    - Setzt `isDirty = true` und aktiviert den Save-Button für den finalen Supabase-Upsert in `public.contest_results`.
    - **Automatische Team-Manager-Synchronisation (`contest_setups`):** Beim Speichern werden alle Schützen und ihre Team-Zuweisungen atomar auch in `public.contest_setups` geschrieben. Dadurch ist der Team Manager nach dem PDF-Import sofort synchron und einsatzbereit.
 
-### 2.4 Grenzland-Cup: Team-Setup-Initialisierung & Dialog bei leeren Teams
-Da beim Grenzland-Cup die Teameinteilung häufig erst mit dem Erscheinen der ersten offiziellen IKSV-Rangliste feststeht (oder aus der Vorsaison übernommen wird), bietet die Aktion **«👥 Aus Team-Setup laden»** bei noch leerem Team Manager (`public.contest_setups`) einen intelligenten modalen Auswahldialog (`openEmptySetupModal`):
-1. **Aus Vorjahr übernehmen:** Liest die Schützen und Team-Zuteilungen der Vorsaison (`year - 1`) aus `contest_setups` oder `contest_results` aus und übernimmt sie ohne Punkte für die neue Saison.
-2. **Teams leer lassen (Empfohlen bei Grenzland):** Belässt die Teams vorerst unbesetzt. Sobald die erste PDF-Rangliste eingelesen und gespeichert wird, werden die Teams und Schützen vollautomatisch gebildet und synchron in `contest_results` sowie `contest_setups` (Team Manager) abgelegt.
+### 2.4 Team-Setup-Synchronisation & Dialog bei leeren Teams (Grenzland, Gruppe, Mannschaft)
+Da beim Grenzland-Cup die Teameinteilung häufig erst mit dem Erscheinen der ersten offiziellen IKSV-Rangliste feststeht (oder aus der Vorsaison übernommen wird), bietet die Aktion **«👥 Aus Team-Setup übernehmen»** bei noch leerem Team Manager (`public.contest_setups`) einen intelligenten modalen Auswahldialog (`openEmptySetupModal`):
+1. **Aus Vorjahr übernehmen:** Liest die Schützen und Team-Zuteilungen der Vorsaison (`year - 1`) aus `contest_setups` oder `contest_results` aus und übernimmt sie ohne Punkte für die neue Saison. Altdaten der Zielsaison werden zuvor bereinigt, um Überfüllungen auszuschliessen.
+2. **Teams leer lassen (Empfohlen bei Grenzland):** Belässt die Teams vorerst unbesetzt und bereinigt vorhandene Vorab- oder Testdaten in `contest_results` und `contest_setups`. Sobald die erste PDF-Rangliste eingelesen und gespeichert wird, werden die Teams und Schützen vollautomatisch gebildet und synchron in `contest_results` sowie `contest_setups` (Team Manager) abgelegt.
 3. **Aus bestehenden Resultaten synchronisieren:** Falls bereits Resultate im aktuellen Jahr vorliegen, können diese mit einem Klick direkt in den Team Manager übertragen werden.
+
+### 2.5 Team-Ersetzungs- & Pool-Logik («Keine Überfüllung der Teams»)
+Beim Aufruf von **«👥 Aus Team-Setup übernehmen»** (`syncSetupToResultate`) gilt für alle Wettbewerbe (Grenzland, SGM Gruppe, SMM Mannschaft) das Single-Source-of-Truth-Prinzip des Team Managers:
+- **Verbindliche Team-Zuweisung:** Alle im Team Manager hinterlegten Schützen werden ihren Teams und Stellungen (`liegend`/`kniend`) zugewiesen. Bisherige Punkte bleiben erhalten, neue Schützen starten mit `null`.
+- **Schutz geschossener Punkte:** Schützen, die bisher in einem Team standen, aber im neuen Setup nicht mehr im Team sind, werden automatisch in den **Pool** (`team = ""`) verschoben. Ihre erzielten Resultate bleiben vollständig erhalten und das Team bleibt exakt auf der Soll-Stärke (z. B. 4/4 oder 5/5).
+- **Bereinigung ohne Punkte:** Schützen ohne geschossene Punkte, die nicht im Team-Setup enthalten sind, werden aus `contest_results` entfernt. Dadurch werden Teams niemals überfüllt.
 
 
 ---

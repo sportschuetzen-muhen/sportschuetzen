@@ -245,7 +245,7 @@ function ensureResultateShell(forceRebuild = false) {
                   <li><hr class="dropdown-divider"></li>
                 ` : ''}
                 <li><a class="dropdown-item" href="#" onclick="syncSetupToResultate(); return false;">
-                  <i class="fas fa-users-cog text-info me-2"></i>Aus Team-Setup laden (fehlende Schützen)
+                  <i class="fas fa-users-cog text-info me-2"></i>Aus Team-Setup übernehmen (Teams synchronisieren)
                 </a></li>
                 <li><a class="dropdown-item" href="#" onclick="openResultateOcrModal(); return false;">
                   <i class="fas fa-camera text-warning me-2"></i>KI-Standblattfoto einlesen (OCR)
