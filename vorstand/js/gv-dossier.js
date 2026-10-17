@@ -76,6 +76,17 @@
     }
 
     /**
+     * Ermittelt den aktuellen E-Mail-Inhalt (bevorzugt direkt aus ClubWysiwyg)
+     */
+    function getGVCampaignMailBody() {
+        const area = document.getElementById('gv-camp-body');
+        if (area?._clubWysiwygInstance && typeof area._clubWysiwygInstance.getCleanHtml === 'function') {
+            return area._clubWysiwygInstance.getCleanHtml();
+        }
+        return area?.value || window._gvDossierState?.campaign?.email_body || '';
+    }
+
+    /**
      * Haupt-Einstiegspunkt für das Rendern der GV-Schaltzentrale
      */
     window.renderGVDossierView = async function (targetContainer) {
@@ -267,7 +278,7 @@
         try {
             const [membersRes, responsesRes, praesenzRes] = await Promise.allSettled([
                 supa.from('members')
-                    .select('person_number, first_name, last_name, primary_email, is_active')
+                    .select('person_number, first_name, last_name, primary_email, is_active, address_number')
                     .eq('is_active', true)
                     .eq('deceased', false)
                     .is('club_exit_date', null)
@@ -285,21 +296,54 @@
                 const liz = String(r.lizenz || '').trim();
                 if (liz) {
                     respMap.set(liz, r);
-                    respMap.set(liz.length <= 6 ? liz.padStart(6, '0') : liz, r);
+                    const unp = liz.replace(/^0+/, '');
+                    if (unp) respMap.set(unp, r);
+                    if (liz.length <= 6) respMap.set(liz.padStart(6, '0'), r);
                 }
             });
 
             const praesenzMap = new Map();
             praesenzList.forEach(p => {
                 const pn = String(p.person_number || '').trim();
-                if (pn) praesenzMap.set(pn, p);
+                if (pn) {
+                    praesenzMap.set(pn, p);
+                    const unp = pn.replace(/^0+/, '');
+                    if (unp) praesenzMap.set(unp, p);
+                    if (pn.length <= 6) praesenzMap.set(pn.padStart(6, '0'), p);
+                }
+                const liz = String(p.lizenz || '').trim();
+                if (liz) {
+                    praesenzMap.set(liz, p);
+                    const unp = liz.replace(/^0+/, '');
+                    if (unp) praesenzMap.set(unp, p);
+                    if (liz.length <= 6) praesenzMap.set(liz.padStart(6, '0'), p);
+                }
             });
 
             state.participantsData = members.map(m => {
-                const pn = String(m.person_number || '');
-                const liz = pn.length <= 6 ? pn.padStart(6, '0') : pn;
-                const resp = respMap.get(liz) || respMap.get(pn);
-                const praesenz = praesenzMap.get(pn) || praesenzMap.get(liz);
+                const pn = String(m.person_number || '').trim();
+                const pnPadded = (pn.length <= 6 && pn) ? pn.padStart(6, '0') : pn;
+                const pnUnpadded = pn.replace(/^0+/, '');
+
+                const addr = String(m.address_number || '').trim();
+                const addrPadded = (addr.length <= 6 && addr) ? addr.padStart(6, '0') : addr;
+                const addrUnpadded = addr.replace(/^0+/, '');
+
+                const primaryLiz = addrPadded || addr || pnPadded || pn;
+
+                const resp = respMap.get(pn) || 
+                             respMap.get(pnPadded) || 
+                             respMap.get(pnUnpadded) ||
+                             (addr ? respMap.get(addr) : null) || 
+                             (addrPadded ? respMap.get(addrPadded) : null) || 
+                             (addrUnpadded ? respMap.get(addrUnpadded) : null);
+
+                const praesenz = praesenzMap.get(pn) || 
+                                 praesenzMap.get(pnPadded) || 
+                                 praesenzMap.get(pnUnpadded) ||
+                                 (addr ? praesenzMap.get(addr) : null) || 
+                                 (addrPadded ? praesenzMap.get(addrPadded) : null) || 
+                                 praesenzMap.get(primaryLiz);
 
                 let status = 'offen';
                 let essen = 0;
@@ -319,7 +363,9 @@
                 return {
                     id: pn,
                     person_number: pn,
-                    lizenz: liz,
+                    address_number: addr,
+                    lizenz: primaryLiz,
+                    responseRawLizenz: resp ? String(resp.lizenz) : primaryLiz,
                     name: `${m.last_name || ''} ${m.first_name || ''}`.trim(),
                     first_name: m.first_name || '',
                     last_name: m.last_name || '',
@@ -864,19 +910,38 @@
                     <input type="text" class="form-control form-control-sm fw-semibold" id="gv-camp-subj" value="${escapeHtml(camp.email_subject || '')}" oninput="gvDossierLiveUpdateMailText()">
                 </div>
 
-                <div class="mb-2">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <label class="form-label small fw-bold text-muted mb-0">E-Mail-Anschreiben</label>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-xs btn-outline-secondary py-0" onclick="gvDossierInsertVariable('{{mitglied.vorname}}')">+ Vorname</button>
-                            <button class="btn btn-xs btn-outline-secondary py-0" onclick="gvDossierInsertVariable('{{mitglied.nachname}}')">+ Nachname</button>
-                            <button class="btn btn-xs btn-outline-secondary py-0" onclick="gvDossierInsertVariable('{{event.datum_formatiert}}')">+ Datum</button>
-                            <button class="btn btn-xs btn-outline-secondary py-0" onclick="gvDossierInsertVariable('{{dossier.download_url}}')">+ Download-Link</button>
-                        </div>
+                <!-- PLATZHALTER LEISTE (GLOBALES MODELL) -->
+                <div class="bg-light p-3 rounded-3 mb-3 border shadow-sm">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label fw-bold small text-primary mb-0">
+                            <i class="fas fa-magic me-1"></i>Verfügbare Platzhalter (Klicken zum Einfügen)
+                        </label>
+                        <small class="text-muted" style="font-size: 11px;">Wird an der Cursor-Position im Text eingefügt</small>
                     </div>
-                    <textarea class="form-control form-control-sm" id="gv-camp-body" rows="9" oninput="gvDossierLiveUpdateMailText()">${escapeHtml(camp.email_body || '')}</textarea>
+                    <div class="d-flex gap-1.5 flex-wrap">
+                        <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 rounded-pill font-monospace" onclick="gvDossierInsertVariable('{{mitglied.vorname}}')">
+                            <i class="fas fa-plus-circle me-1" style="font-size: 9px;"></i>{{mitglied.vorname}} <span class="text-muted small">(Vorname)</span>
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 rounded-pill font-monospace" onclick="gvDossierInsertVariable('{{mitglied.nachname}}')">
+                            <i class="fas fa-plus-circle me-1" style="font-size: 9px;"></i>{{mitglied.nachname}} <span class="text-muted small">(Nachname)</span>
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 rounded-pill font-monospace" onclick="gvDossierInsertVariable('{{mitglied.anrede}}')">
+                            <i class="fas fa-plus-circle me-1" style="font-size: 9px;"></i>{{mitglied.anrede}} <span class="text-muted small">(Lieber/Liebe)</span>
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 rounded-pill font-monospace" onclick="gvDossierInsertVariable('{{event.datum_formatiert}}')">
+                            <i class="fas fa-plus-circle me-1" style="font-size: 9px;"></i>{{event.datum_formatiert}} <span class="text-muted small">(GV-Datum)</span>
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 rounded-pill font-monospace" onclick="gvDossierInsertVariable('{{dossier.download_url}}')">
+                            <i class="fas fa-plus-circle me-1" style="font-size: 9px;"></i>{{dossier.download_url}} <span class="text-muted small">(Download-Link)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted mb-1">E-Mail-Anschreiben (WYSIWYG-Editor)</label>
+                    <textarea class="form-control form-control-sm" id="gv-camp-body" rows="10" oninput="gvDossierLiveUpdateMailText()">${escapeHtml(camp.email_body || '')}</textarea>
                     <div class="form-text small text-muted">
-                        Platzhalter wie <code>{{mitglied.vorname}}</code> werden beim Versand und in der Live-Vorschau dynamisch ersetzt.
+                        Formatierungen, Absätze, Banner und Aktions-Buttons werden über die obige Toolbar gesteuert.
                     </div>
                 </div>
 
@@ -898,7 +963,7 @@
                 </div>
 
                 <div class="d-flex justify-content-end gap-2">
-                    <button class="btn btn-sm btn-outline-primary fw-bold" onclick="gvDossierSaveCampaignText()">
+                    <button class="btn btn-sm btn-primary fw-bold px-3 py-1.5 rounded-3 shadow-sm" onclick="gvDossierSaveCampaignText()">
                         <i class="fas fa-save me-1"></i> E-Mail-Text speichern
                     </button>
                 </div>
@@ -906,11 +971,13 @@
 
             if (typeof window.ClubWysiwyg !== 'undefined') {
                 window.ClubWysiwyg.init('gv-camp-body', {
-                    height: 200,
+                    mode: 'email',
+                    minHeight: '260px',
                     placeholder: 'E-Mail Text an die Mitglieder verfassen...',
-                    customVariables: [
+                    placeholders: [
                         { tag: 'mitglied.vorname', label: 'Vorname' },
                         { tag: 'mitglied.nachname', label: 'Nachname' },
+                        { tag: 'mitglied.anrede', label: 'Anrede (Lieber/Liebe...)' },
                         { tag: 'event.datum_formatiert', label: 'Datum der GV' },
                         { tag: 'dossier.download_url', label: 'Download-Link Master-Dossier' }
                     ],
@@ -1250,7 +1317,7 @@
                 .replace(/{{mitglied\.vorname}}/gi, curMember.first_name || 'Vorname')
                 .replace(/{{mitglied\.nachname}}/gi, curMember.last_name || 'Nachname');
 
-            let rawBody = (document.getElementById('gv-camp-body')?.value || state.campaign?.email_body || '')
+            let rawBody = getGVCampaignMailBody()
                 .replace(/{{mitglied\.vorname}}/gi, escapeHtml(curMember.first_name || 'Hans'))
                 .replace(/{{mitglied\.nachname}}/gi, escapeHtml(curMember.last_name || 'Muster'))
                 .replace(/{{mitglied\.anrede}}/gi, `Lieber ${escapeHtml(curMember.first_name || 'Hans')}`)
@@ -1258,7 +1325,9 @@
                 .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank" class="fw-bold text-primary">👉 GV-Dossier ${state.year} herunterladen (PDF)</a>`);
 
             let renderedBodyHtml = '';
-            if (/<[a-z][\s\S]*>/i.test(rawBody)) {
+            if (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function') {
+                renderedBodyHtml = window.ClubWysiwyg.cleanHtml(rawBody);
+            } else if (/<[a-z][\s\S]*>/i.test(rawBody)) {
                 renderedBodyHtml = rawBody;
             } else {
                 renderedBodyHtml = rawBody.split(/\n\s*\n/).map(p => `<p style="margin:0 0 12px 0;">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
@@ -2137,7 +2206,7 @@
         if (!supa || !state.campaign) return;
 
         const email_subject = document.getElementById('gv-camp-subj')?.value.trim();
-        const email_body = document.getElementById('gv-camp-body')?.value.trim();
+        const email_body = getGVCampaignMailBody().trim();
 
         try {
             await supa.from('communication_campaigns').update({
@@ -2150,6 +2219,7 @@
             state.campaign.email_body = email_body;
 
             if (typeof showSuccess === 'function') showSuccess("E-Mail-Konfiguration gespeichert!");
+            else if (typeof showToast === 'function') showToast("E-Mail-Konfiguration gespeichert!", 'success');
             if (state.activeRightTab === 'preview-mail') renderRightPanel();
         } catch (e) {
             alert("Speichern fehlgeschlagen: " + e.message);
@@ -2273,12 +2343,18 @@
                 .replace(/{{mitglied\.vorname}}/gi, curMember.first_name || 'Hans')
                 .replace(/{{mitglied\.nachname}}/gi, curMember.last_name || 'Muster');
 
-            const bodyHtml = (document.getElementById('gv-camp-body')?.value || state.campaign?.email_body || '')
+            let bodyHtml = getGVCampaignMailBody()
                 .replace(/{{mitglied\.vorname}}/gi, curMember.first_name || 'Hans')
                 .replace(/{{mitglied\.nachname}}/gi, curMember.last_name || 'Muster')
+                .replace(/{{mitglied\.anrede}}/gi, `Lieber ${curMember.first_name || 'Hans'}`)
                 .replace(/{{event\.datum_formatiert}}/gi, formatSwissDate(state.gvInstance?.datum) || `im März ${state.year}`)
-                .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank">GV-Dossier ${state.year} herunterladen (PDF)</a>`)
-                .replace(/\n/g, '<br>');
+                .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank">GV-Dossier ${state.year} herunterladen (PDF)</a>`);
+
+            if (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function') {
+                bodyHtml = window.ClubWysiwyg.cleanHtml(bodyHtml);
+            } else {
+                bodyHtml = bodyHtml.replace(/\n/g, '<br>');
+            }
 
             const attachments = [];
             if (state.compiledPdfUrl) {
@@ -2347,19 +2423,25 @@
             }
 
             const subjTpl = document.getElementById('gv-camp-subj')?.value || state.campaign?.email_subject || 'Einladung GV';
-            const bodyTpl = document.getElementById('gv-camp-body')?.value || state.campaign?.email_body || '';
+            const bodyTpl = getGVCampaignMailBody();
 
             for (const m of validMembers) {
                 const personalizedSubj = subjTpl
                     .replace(/{{mitglied\.vorname}}/gi, m.first_name || '')
                     .replace(/{{mitglied\.nachname}}/gi, m.last_name || '');
 
-                const personalizedBody = bodyTpl
+                let personalizedBody = bodyTpl
                     .replace(/{{mitglied\.vorname}}/gi, m.first_name || '')
                     .replace(/{{mitglied\.nachname}}/gi, m.last_name || '')
+                    .replace(/{{mitglied\.anrede}}/gi, `Lieber ${m.first_name || ''}`)
                     .replace(/{{event\.datum_formatiert}}/gi, formatSwissDate(state.gvInstance?.datum) || `im März ${state.year}`)
-                    .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank">GV-Dossier ${state.year} herunterladen (PDF)</a>`)
-                    .replace(/\n/g, '<br>');
+                    .replace(/{{dossier\.download_url}}/gi, `<a href="${state.compiledPdfUrl || '#'}" target="_blank">GV-Dossier ${state.year} herunterladen (PDF)</a>`);
+
+                if (window.ClubWysiwyg && typeof window.ClubWysiwyg.cleanHtml === 'function') {
+                    personalizedBody = window.ClubWysiwyg.cleanHtml(personalizedBody);
+                } else {
+                    personalizedBody = personalizedBody.replace(/\n/g, '<br>');
+                }
 
                 try {
                     await window.sendMailViaEngine({
@@ -2421,10 +2503,16 @@
 
     window.gvDossierInsertVariable = function (variableTag) {
         const area = document.getElementById('gv-camp-body');
+        const wysiwygInst = area?._clubWysiwygInstance;
+        if (wysiwygInst && typeof wysiwygInst.insertVariable === 'function') {
+            wysiwygInst.insertVariable(variableTag);
+            gvDossierLiveUpdateMailText();
+            return;
+        }
         if (!area) return;
-        const start = area.selectionStart;
-        const end = area.selectionEnd;
-        const text = area.value;
+        const start = area.selectionStart || 0;
+        const end = area.selectionEnd || 0;
+        const text = area.value || '';
         area.value = text.substring(0, start) + variableTag + text.substring(end);
         area.selectionStart = area.selectionEnd = start + variableTag.length;
         area.focus();
@@ -2491,9 +2579,11 @@
     };
 
     window.gvDossierReloadParticipants = async function () {
+        if (typeof showToast === 'function') showToast("Synchronisiere Teilnehmer & Rückmeldungen...", 'info');
         await loadGVParticipantsData(true);
         renderLeftPanel();
         if (window._gvDossierState.activeRightTab === 'preview-wirt') renderRightPanel();
+        if (typeof showToast === 'function') showToast("Teilnehmerdaten erfolgreich synchronisiert!", 'success');
     };
 
     window.gvDossierOnLinkedEventChange = async function (newEventId) {
@@ -2612,17 +2702,18 @@
         const grundVal = statusVal === 'nein' ? (document.getElementById('gv-modal-grund')?.value.trim() || 'Abmeldung') : '';
 
         try {
-            if (eventId && p.lizenz) {
+            const rLizenz = p.responseRawLizenz || p.lizenz;
+            if (eventId && rLizenz) {
                 if (statusVal === 'offen') {
                     await supa.from('poll_responses')
                         .delete()
                         .eq('event_id', String(eventId))
-                        .eq('lizenz', String(p.lizenz));
+                        .eq('lizenz', String(rLizenz));
                 } else {
                     const isAttending = (statusVal === 'ja');
                     await supa.from('poll_responses').upsert({
                         event_id: String(eventId),
-                        lizenz: String(p.lizenz),
+                        lizenz: String(rLizenz),
                         attending: isAttending,
                         count: countVal,
                         essen: essenVal,

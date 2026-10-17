@@ -197,3 +197,10 @@ Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templ
 | **Navigation** | Eigene Navigations-Kachel `🏛️ Generalversammlung` & eigener Sidebar-Link | Kachel `📄 Dokumenten-Vorlagen` & eigener Sidebar-Link |
 | **Berechtigung** | `gv.view` / `gv.manage` | `dokumente.view` / `dokumente.manage` |
 | **Fokus** | Operatives Event- und Dossier-Management | Textvorlagen, Klauseln und Standardtexte für das Gesamtsystem |
+
+---
+
+## 8. PDF-Rendering, E-Mail-Harmonisierung & RSVP-Matching (Oktober 2026)
+* **Vollvektorielle PDF-Generierung:** Das Rendering der Einladung (`generate-gv-invitation`) greift primär direkt auf `public.gv_traktanden` des aktuellen Durchführungsjahres zu. Die Variablenauflösung (`{gv_datum}`, `{gv_zeit}`, `{gv_ort}`) ist auf Funktionsebene entkoppelt und WinAnsi-sicher (inklusive `generate-gv-praesenzliste` mit `Anw.` statt Unicode-Sonderzeichen).
+* **ClubWysiwyg E-Mail-Editor:** Der E-Mail-Versand nutzt das zentrale Vereinsmodell `ClubWysiwyg` mit dynamischen Platzhalter-Pills (`{{mitglied.vorname}}`, `{{mitglied.nachname}}`, `{{event.datum_formatiert}}`, `{{dossier.download_url}}`), sauberem HTML-Sanitizing (`getCleanHtml()`) und WYSIWYG-Livevorschau im rechten Monitor.
+* **SSV-Adress- und Lizenznummer-Matching:** `loadGVParticipantsData` lädt zusätzlich `address_number` aus `public.members`. Rückmeldungen aus `public.poll_responses` werden redundant über Personennummer, 6-stellige SSV-Adressnummer und führende Nullen abgeglichen. Spontane Nachmeldungen oder Statusänderungen im RSVP-Modal synchronisieren bidirektional mit `poll_responses` und `gv_praesenz`.

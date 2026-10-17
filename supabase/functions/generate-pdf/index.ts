@@ -1841,7 +1841,41 @@ async function generateGVInvitationPdf(
   }
 
   // 2. Daten aus Supabase laden (Template, Traktanden/Klauseln, Termine)
-  let templateTitle = `Einladung zur ${gvData.gvNummer || ''}. ordentlichen Generalversammlung`;
+  const gvNummerStr = String(gvData.gvNummer || gvData.number || "100");
+  const rawDatum = gvData.datum || "";
+  let formattedDatum = rawDatum;
+  if (rawDatum && rawDatum.includes("-")) {
+    const dp = rawDatum.split("-");
+    if (dp.length === 3) {
+      const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+      const mIdx = parseInt(dp[1], 10) - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        formattedDatum = `${parseInt(dp[2], 10)}. ${months[mIdx]} ${dp[0]}`;
+      }
+    }
+  }
+  if (!formattedDatum) formattedDatum = `im März ${year}`;
+
+  const gvZeitClean = gvData.zeit ? (gvData.zeit.includes("Uhr") ? gvData.zeit : `${gvData.zeit} Uhr`) : "19:30 Uhr";
+  const gvOrtClean = gvData.ort || "Schützenstube Hard, Muhen";
+  const praesiName = gvData.praesidentName || gvData.praesident_name || "Andrea Rossi";
+  const vorjahrDatum = gvData.datumVorjahr || gvData.datum_vorjahr || `${year - 1}`;
+
+  const replacePlaceholders = (text: string) => {
+    if (!text) return "";
+    return text
+      .replace(/{jahr}/gi, String(year))
+      .replace(/{rechnungsjahr}/gi, String(year))
+      .replace(/{gv_nummer}/gi, gvNummerStr)
+      .replace(/{gv_datum}/gi, formattedDatum)
+      .replace(/{gv_zeit}/gi, gvZeitClean)
+      .replace(/{gv_ort}/gi, gvOrtClean)
+      .replace(/{praesident_name}/gi, praesiName)
+      .replace(/{{Datum_Vorjahr}}/gi, String(vorjahrDatum))
+      .replace(/{datum_vorjahr}/gi, String(vorjahrDatum));
+  };
+
+  let templateTitle = `Einladung zur ${gvNummerStr}. ordentlichen Generalversammlung`;
   let templateIntro = `Liebe Schützinnen, liebe Schützen, geschätzte Ehren- und Freimitglieder\n\nWir laden euch herzlich zu unserer ordentlichen Generalversammlung ein.`;
   let templateNotice = "Der Vorstand freut sich über eine zahlreiche und pünktliche Teilnahme!";
   let clauses: any[] = [];
@@ -1849,7 +1883,7 @@ async function generateGVInvitationPdf(
 
   if (supabaseClient) {
     try {
-      // Template laden
+      // 2a. Template aus document_templates laden falls vorhanden
       let tQuery = supabaseClient
         .from("document_templates")
         .select("*");
@@ -1866,89 +1900,60 @@ async function generateGVInvitationPdf(
         .maybeSingle();
 
       if (tData) {
-        const rawDatum = gvData.datum || "";
-        let formattedDatum = rawDatum;
-        if (rawDatum && rawDatum.includes("-")) {
-          const dp = rawDatum.split("-");
-          if (dp.length === 3) {
-            const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
-            const mIdx = parseInt(dp[1], 10) - 1;
-            if (mIdx >= 0 && mIdx < 12) {
-              formattedDatum = `${parseInt(dp[2], 10)}. ${months[mIdx]} ${dp[0]}`;
-            }
-          }
-        }
-        if (!formattedDatum) formattedDatum = `im März ${year}`;
-
-        const gvZeitClean = gvData.zeit ? (gvData.zeit.includes("Uhr") ? gvData.zeit : `${gvData.zeit} Uhr`) : "19:30 Uhr";
-        const gvOrtClean = gvData.ort || "Schützenstube Hard, Muhen";
-        const praesiName = gvData.praesidentName || gvData.praesident_name || "Andrea Rossi";
-        const vorjahrDatum = gvData.datumVorjahr || gvData.datum_vorjahr || `${year - 1}`;
-
-        const replacePlaceholders = (text: string) => {
-          if (!text) return "";
-          return text
-            .replace(/{jahr}/gi, String(year))
-            .replace(/{rechnungsjahr}/gi, String(year))
-            .replace(/{gv_nummer}/gi, String(gvData.gvNummer || gvData.number || "100"))
-            .replace(/{gv_datum}/gi, formattedDatum)
-            .replace(/{gv_zeit}/gi, gvZeitClean)
-            .replace(/{gv_ort}/gi, gvOrtClean)
-            .replace(/{praesident_name}/gi, praesiName)
-            .replace(/{{Datum_Vorjahr}}/gi, String(vorjahrDatum))
-            .replace(/{datum_vorjahr}/gi, String(vorjahrDatum));
-        };
-
         if (tData.title) templateTitle = replacePlaceholders(tData.title);
         if (tData.intro) templateIntro = replacePlaceholders(tData.intro);
         if (tData.notice) templateNotice = replacePlaceholders(tData.notice);
+      }
 
-        // Traktanden laden: Primär aus public.gv_traktanden für das spezifische GV-Jahr
-        const gvInstanceId = gvData.gvId || `gv_${year}`;
-        const { data: trData } = await supabaseClient
-          .from("gv_traktanden")
-          .select("*")
-          .eq("gv_id", gvInstanceId)
-          .order("sort_order", { ascending: true });
+      // 2b. Traktanden laden: Primär aus public.gv_traktanden für das spezifische GV-Jahr
+      const gvInstanceId = gvData.gvId || `gv_${year}`;
+      const { data: trData } = await supabaseClient
+        .from("gv_traktanden")
+        .select("*")
+        .eq("gv_id", gvInstanceId)
+        .order("sort_order", { ascending: true });
 
-        if (trData && trData.length > 0) {
-          const mainItems = trData.filter((t: any) => !t.parent_id);
-          const hierarchicalList: any[] = [];
-          mainItems.forEach((main: any, mIdx: number) => {
+      if (trData && trData.length > 0) {
+        const mainItems = trData.filter((t: any) => !t.parent_id);
+        const hierarchicalList: any[] = [];
+        mainItems.forEach((main: any, mIdx: number) => {
+          hierarchicalList.push({
+            id: main.id,
+            clause_number: main.nummer || String(mIdx + 1),
+            clause_title: replacePlaceholders(main.titel),
+            clause_text: replacePlaceholders(main.beschreibung || ""),
+            is_sub: false
+          });
+          const subs = trData.filter((t: any) => t.parent_id === main.id);
+          subs.forEach((sub: any) => {
             hierarchicalList.push({
-              id: main.id,
-              clause_number: main.nummer || String(mIdx + 1),
-              clause_title: main.titel,
-              clause_text: main.beschreibung || "",
-              is_sub: false
-            });
-            const subs = trData.filter((t: any) => t.parent_id === main.id);
-            subs.forEach((sub: any) => {
-              hierarchicalList.push({
-                id: sub.id,
-                clause_number: sub.nummer || "",
-                clause_title: sub.titel,
-                clause_text: sub.beschreibung || "",
-                is_sub: true
-              });
+              id: sub.id,
+              clause_number: sub.nummer || "",
+              clause_title: replacePlaceholders(sub.titel),
+              clause_text: replacePlaceholders(sub.beschreibung || ""),
+              is_sub: true
             });
           });
-          clauses = hierarchicalList;
-        } else {
-          // Fallback: Aus Vorlagen-Pool falls noch keine jahresspezifischen Traktanden existieren
-          const { data: cData } = await supabaseClient
-            .from("document_template_clauses")
-            .select("*")
-            .eq("template_id", tData.id)
-            .order("sort_order", { ascending: true });
+        });
+        clauses = hierarchicalList;
+      } else if (tData) {
+        // Fallback: Aus Vorlagen-Pool falls noch keine jahresspezifischen Traktanden existieren
+        const { data: cData } = await supabaseClient
+          .from("document_template_clauses")
+          .select("*")
+          .eq("template_id", tData.id)
+          .order("sort_order", { ascending: true });
 
-          if (cData && cData.length > 0) {
-            clauses = cData;
-          }
+        if (cData && cData.length > 0) {
+          clauses = cData.map((c: any) => ({
+            ...c,
+            clause_title: replacePlaceholders(c.clause_title),
+            clause_text: replacePlaceholders(c.clause_text || "")
+          }));
         }
       }
 
-      // Termine aus public.termine für das GV-Jahr laden
+      // 2c. Termine aus public.termine für das GV-Jahr laden
       const { data: termData } = await supabaseClient
         .from("termine")
         .select("*")
@@ -3309,7 +3314,7 @@ async function generateGvPraesenzlistePdf(
     });
 
     page.drawText("Nr.", { x: 20 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
-    page.drawText("✔", { x: 29 * MM, y: tableHeaderY + 1.8 * MM, size: 8.5, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText("Anw.", { x: 27.5 * MM, y: tableHeaderY + 1.8 * MM, size: 7.5, font: fontBold, color: rgb(1, 1, 1) });
     page.drawText("Nachname", { x: 38 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
     page.drawText("Vorname", { x: 82 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
     page.drawText("Unterschrift (bei Anwesenheit)", { x: 126 * MM, y: tableHeaderY + 1.8 * MM, size: 8, font: fontBold, color: rgb(1, 1, 1) });
