@@ -4,11 +4,45 @@
 // ============================================================
 
 let _jbMatrixSearch = '';
+let _jbMatrixCategoryFilter = ''; // '' = alle, 'aktiv', 'junior', 'veteran', 'ehren', 'passiv'
 let _jbMatrixStatusFilter = ''; // '' = alle, 'offen', 'bezahlt'
 let _jbMatrixSelected = new Set();
 let _jbMatrixInitializedYear = null;
 let _jbMatrixSortCol = 'name';
 let _jbMatrixSortAsc = true;
+
+// ============================================================
+// HILFSFUNKTION: KATEGORIE EINES MITGLIEDS ERMITTELN (FÜR FILTER & HOVER)
+// ============================================================
+function jbGetMemberCategoryLabel(m, r) {
+  const positions = (r && r.id && _jbPositionsCache[r.id]) || [];
+  const keys = new Set(positions.map(p => String(p.source_field || p.sourcefield || p.key || '').trim().toUpperCase()));
+  
+  if (keys.has('JB006') || keys.has('JB007') || keys.has('KOSTENUEBERNAHME_JUGEND')) return 'Junior';
+  if (keys.has('JB004')) return 'Vorstand';
+  if (keys.has('JB003') || keys.has('RA003')) return 'Ehrenmitglied';
+  if (keys.has('JB005')) return 'Passiv';
+  if (keys.has('JB001')) return 'Aktiv A';
+  if (keys.has('JB002')) return 'Aktiv B';
+
+  const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+  if (age > 0 && age <= 20) return 'Junior';
+
+  if (m && (m.IsHonoraryMember == 1 || m._istEhren)) return 'Ehrenmitglied';
+  if (m && (m.IsPassive == 1 || m._istPassiv)) return 'Passiv';
+
+  const str = `${m?._kategorie || ''} ${(m?._kategorien || []).join(' ')} ${r?._kategorie || ''}`.toLowerCase();
+  if (str.includes('junior') || str.includes('schüler') || str.includes('u21')) return 'Junior';
+  if (str.includes('vorstand')) return 'Vorstand';
+  if (str.includes('ehren')) return 'Ehrenmitglied';
+  if (str.includes('passiv')) return 'Passiv';
+  if (str.includes('aktiv-a') || str.includes('aktiv a')) return 'Aktiv A';
+  if (str.includes('aktiv-b') || str.includes('aktiv b')) return 'Aktiv B';
+  if (str.includes('aktiv')) return 'Aktiv';
+  if (age >= 60) return 'Veteran';
+
+  return (r && r._kategorie) ? r._kategorie.replace('Aktiv-', 'Aktiv ') : 'Aktiv';
+}
 
 // ============================================================
 // HAUPT-RENDERER DES MATRIX-TABS
@@ -101,16 +135,29 @@ function renderMatrixTab(canEdit, years) {
 
       <!-- Filter- & Picklisten-Toolbar -->
       <div class="row g-2 mb-3 align-items-center d-print-none">
-        <div class="col-md-4">
+        <div class="col-md-3">
           <div class="input-group input-group-sm">
             <span class="input-group-text bg-light"><i class="fas fa-search"></i></span>
             <input type="text" class="form-control" id="jbMatrixSearchInput" 
-                   placeholder="Schütze suchen (Name oder Personennummer)..." 
+                   placeholder="Schütze suchen (Name oder Nr.)..." 
                    value="${_jbMatrixSearch}" oninput="jbFilterMatrixTable()">
           </div>
         </div>
 
-        <div class="col-md-3">
+        <!-- Kategorie-Filter (Schnellauswahl) -->
+        <div class="col-md-2">
+          <select class="form-select form-select-sm" id="jbMatrixCategorySelect" onchange="jbFilterMatrixTable()" title="Tabelle nach Schützen-Kategorie filtern">
+            <option value="" ${_jbMatrixCategoryFilter === '' ? 'selected' : ''}>Alle Kategorien</option>
+            <option value="aktiv" ${_jbMatrixCategoryFilter === 'aktiv' ? 'selected' : ''}>Nur Aktive</option>
+            <option value="junior" ${_jbMatrixCategoryFilter === 'junior' ? 'selected' : ''}>Nur Junioren (U21)</option>
+            <option value="veteran" ${_jbMatrixCategoryFilter === 'veteran' ? 'selected' : ''}>Nur Veteranen (60+)</option>
+            <option value="ehren" ${_jbMatrixCategoryFilter === 'ehren' ? 'selected' : ''}>Nur Ehrenmitglieder</option>
+            <option value="passiv" ${_jbMatrixCategoryFilter === 'passiv' ? 'selected' : ''}>Nur Passive</option>
+          </select>
+        </div>
+
+        <!-- Beleg- / Rechnungs-Status Filter -->
+        <div class="col-md-2">
           <select class="form-select form-select-sm" id="jbMatrixStatusSelect" onchange="jbFilterMatrixTable()">
             <option value="" ${_jbMatrixStatusFilter === '' ? 'selected' : ''}>Alle Status</option>
             <option value="berechnet" ${_jbMatrixStatusFilter === 'berechnet' ? 'selected' : ''}>Berechnet (Noch keine RE)</option>
@@ -131,12 +178,24 @@ function renderMatrixTab(canEdit, years) {
             <button type="button" class="btn btn-outline-secondary" onclick="jbMatrixSelectAll(false)" title="Alle Schützen abwählen">
               <i class="far fa-square me-1"></i> Keine
             </button>
-            <button type="button" class="btn btn-outline-secondary" onclick="jbMatrixSelectStatus('offen')" title="Nur offene Rechnungen auswählen">
-              Nur Offene
-            </button>
-            <button type="button" class="btn btn-outline-secondary" onclick="jbMatrixSelectStatus('bezahlt')" title="Nur bezahlte Rechnungen auswählen">
-              Nur Bezahlt
-            </button>
+            <!-- Dropdown für gezielte Schnellauswahl nach Status & Kategorie -->
+            <div class="btn-group btn-group-sm" role="group">
+              <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Schnellauswahl nach Status oder Kategorie">
+                <i class="fas fa-check-double me-1 text-secondary"></i> Auswählen
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="font-size: 12px;">
+                <li><h6 class="dropdown-header text-uppercase" style="font-size: 10px;">Nach Belegstatus</h6></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectStatus('offen'); return false;"><i class="fas fa-clock text-danger me-2"></i>Nur Offene ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectStatus('bezahlt'); return false;"><i class="fas fa-check-circle text-success me-2"></i>Nur Bezahlt ankreuzen</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><h6 class="dropdown-header text-uppercase" style="font-size: 10px;">Nach Kategorie</h6></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('junior'); return false;"><i class="fas fa-user-graduate text-info me-2"></i>Nur Junioren ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('aktiv'); return false;"><i class="fas fa-bullseye text-primary me-2"></i>Nur Aktive ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('veteran'); return false;"><i class="fas fa-medal text-warning me-2"></i>Nur Veteranen ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('ehren'); return false;"><i class="fas fa-award text-secondary me-2"></i>Nur Ehrenmitglieder ankreuzen</a></li>
+                <li><a class="dropdown-item" href="#" onclick="jbMatrixSelectCategory('passiv'); return false;"><i class="fas fa-user-clock text-muted me-2"></i>Nur Passive ankreuzen</a></li>
+              </ul>
+            </div>
           </div>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="jbMatrixResetColumns()" title="Spaltenreihenfolge und Breiten auf Standard zurücksetzen">
             <i class="fas fa-undo me-1"></i> Standard-Spalten
@@ -173,16 +232,24 @@ function renderMatrixTab(canEdit, years) {
 
     <!-- Druck- & Matrix-Optimiertes Stylesheet -->
     <style>
+      .jb-matrix-table td {
+        padding: 3px 4px !important;
+        font-size: 11px !important;
+      }
       .jb-matrix-table thead th {
         vertical-align: top !important;
-        padding-top: 6px !important;
-        padding-bottom: 6px !important;
+        padding-top: 5px !important;
+        padding-bottom: 5px !important;
       }
       .jb-matrix-table th.tk-col-sticky-left,
       .jb-matrix-table td.tk-col-sticky-left {
         position: sticky;
         left: 0;
         z-index: 6;
+        width: 28px !important;
+        min-width: 28px !important;
+        max-width: 28px !important;
+        padding: 2px !important;
         background-color: #ffffff;
       }
       .jb-matrix-table tr:hover td.tk-col-sticky-left {
@@ -191,34 +258,23 @@ function renderMatrixTab(canEdit, years) {
       .jb-matrix-table th.tk-col-sticky-name,
       .jb-matrix-table td.tk-col-sticky-name {
         position: sticky;
-        left: 42px;
+        left: 28px;
         z-index: 6;
+        width: 130px;
+        min-width: 95px;
         background-color: #ffffff;
         box-shadow: 2px 0 4px rgba(0,0,0,0.04);
       }
       .jb-matrix-table tr:hover td.tk-col-sticky-name {
         background-color: #f8fafc;
       }
-      .jb-matrix-table th.tk-col-sticky-status,
-      .jb-matrix-table td.tk-col-sticky-status {
-        position: sticky;
-        left: 192px;
-        z-index: 6;
-        background-color: #ffffff;
-        box-shadow: 3px 0 5px rgba(0,0,0,0.05);
-      }
-      .jb-matrix-table tr:hover td.tk-col-sticky-status {
-        background-color: #f8fafc;
-      }
       .jb-matrix-table thead th.tk-col-sticky-left,
-      .jb-matrix-table thead th.tk-col-sticky-name,
-      .jb-matrix-table thead th.tk-col-sticky-status {
+      .jb-matrix-table thead th.tk-col-sticky-name {
         background-color: #f8fafc !important;
         z-index: 15 !important;
       }
       .jb-matrix-table tfoot td.tk-col-sticky-left,
-      .jb-matrix-table tfoot td.tk-col-sticky-name,
-      .jb-matrix-table tfoot td.tk-col-sticky-status {
+      .jb-matrix-table tfoot td.tk-col-sticky-name {
         background-color: #f1f5f9 !important;
         z-index: 15 !important;
       }
@@ -263,7 +319,7 @@ function renderMatrixTab(canEdit, years) {
           font-size: 8.5pt !important;
         }
         .jb-matrix-table th, .jb-matrix-table td {
-          padding: 3px 5px !important;
+          padding: 2px 4px !important;
           border-color: #cbd5e1 !important;
         }
         .jb-matrix-table th.tk-col-sticky-left,
@@ -404,6 +460,7 @@ function jbRenderMatrixTable() {
   const columns = jbGetMatrixColumns();
   const search = (_jbMatrixSearch || '').toLowerCase().trim();
   const statusFilter = _jbMatrixStatusFilter;
+  const categoryFilter = _jbMatrixCategoryFilter;
 
   // 1. Daten filtern
   const rowsData = (_jbData || []).filter(r => {
@@ -420,7 +477,27 @@ function jbRenderMatrixTable() {
       matchStatus = effStatus === statusFilter;
     }
 
-    return matchSearch && matchStatus;
+    const catLabel = jbGetMemberCategoryLabel(m, r);
+    let matchCategory = true;
+    if (categoryFilter) {
+      const catLower = catLabel.toLowerCase();
+      if (categoryFilter === 'junior') {
+        matchCategory = catLower.includes('junior') || catLower.includes('schüler');
+      } else if (categoryFilter === 'aktiv') {
+        matchCategory = catLower.includes('aktiv') || catLower.includes('vorstand');
+      } else if (categoryFilter === 'veteran') {
+        const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+        matchCategory = age >= 60;
+      } else if (categoryFilter === 'ehren') {
+        matchCategory = catLower.includes('ehren');
+      } else if (categoryFilter === 'passiv') {
+        matchCategory = catLower.includes('passiv');
+      } else {
+        matchCategory = catLower.includes(categoryFilter.toLowerCase());
+      }
+    }
+
+    return matchSearch && matchStatus && matchCategory;
   });
 
   // 2. Sortieren
@@ -462,36 +539,37 @@ function jbRenderMatrixTable() {
   const someSelected = rowsData.some(r => _jbMatrixSelected.has(String(r.PersonNumber).trim()));
 
   let thHtml = `
-    <th class="text-center tk-col-sticky-left" data-col-id="check" style="width: 42px;">
-      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
-        <div class="mb-1" style="height: 14px;"></div>
+    <th class="text-center tk-col-sticky-left" data-col-id="check" style="width: 28px; min-width: 28px; max-width: 28px; padding: 2px;">
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 70px;">
+        <div class="mb-1" style="height: 12px;"></div>
         <div class="my-auto">
           <input type="checkbox" class="form-check-input" id="jbMatrixMasterCheck" 
                  ${allSelected ? 'checked' : ''} 
                  onclick="jbMatrixMasterCheckToggle(this.checked)" 
-                 title="Alle Schützen auswählen / abwählen">
+                 title="Alle Schützen auswählen / abwählen"
+                 style="width: 12px; height: 12px; margin: 0; cursor: pointer;">
         </div>
         <div class="mt-auto" style="height: 12px;"></div>
       </div>
     </th>
-    <th class="tk-col-sticky-name" data-col-id="name" style="width: 150px; min-width: 110px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('name')">
-      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+    <th class="tk-col-sticky-name" data-col-id="name" style="width: 130px; min-width: 95px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('name')">
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 70px;">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <span class="badge px-1 py-0 text-muted bg-white border" style="font-size: 8px; font-weight: 700;">NAME</span>
           <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'name' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
         </div>
         <div class="my-auto py-1 fw-bold text-dark" style="font-size: 11px;">Schütze</div>
-        <div class="mt-auto text-muted" style="font-size: 8.5px; font-family: monospace;">Mitglied</div>
+        <div class="mt-auto text-muted" style="font-size: 8px; font-family: monospace;">Mitglied</div>
       </div>
     </th>
-    <th class="text-center tk-col-status tk-col-sticky-status" data-col-id="status" data-col-name="Status" style="width: 80px; min-width: 75px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('status')">
-      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+    <th class="text-center tk-col-status" data-col-id="status" data-col-name="Status" style="width: 65px; min-width: 55px; max-width: 70px; cursor: pointer; user-select: none;" onclick="jbMatrixSort('status')">
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 70px;">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <span class="badge px-1 py-0 text-muted bg-white border" style="font-size: 8px; font-weight: 700;">INFO</span>
           <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'status' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
         </div>
-        <div class="my-auto py-1 fw-bold text-dark" style="font-size: 11px;">Status</div>
-        <div class="mt-auto text-muted" style="font-size: 8.5px; font-family: monospace;">Beleg</div>
+        <div class="my-auto py-1 fw-bold text-dark" style="font-size: 10px;">Status</div>
+        <div class="mt-auto text-muted" style="font-size: 8px; font-family: monospace;">Beleg</div>
       </div>
     </th>
   `;
@@ -508,7 +586,7 @@ function jbRenderMatrixTable() {
           style="min-width: 58px; cursor: pointer; user-select: none; border-top: 4px solid ${cat.border} !important; background-color: ${cat.bg} !important; transition: background-color 0.15s ease;" 
           onclick="jbMatrixSort('${col.key}')" 
           title="${escHtml(cat.label)}: ${escHtml(col.bezeichnung)} (${col.key})">
-        <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+        <div class="d-flex flex-column justify-content-between h-100" style="min-height: 70px;">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <span class="badge px-1 py-0 shadow-xs" style="font-size: 8px; font-weight: 700; background-color: ${cat.color}; color: #ffffff; letter-spacing: 0.3px;">${cat.badge}</span>
             <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === col.key ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
@@ -524,13 +602,13 @@ function jbRenderMatrixTable() {
     <th class="text-end pe-3 tk-col-gesamt" data-col-id="gesamt" data-col-name="Total CHF" 
         style="min-width: 95px; cursor: pointer; user-select: none; border-top: 4px solid #0f3a5d !important; background-color: #f1f5f9 !important;" 
         onclick="jbMatrixSort('gesamt')">
-      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 75px;">
+      <div class="d-flex flex-column justify-content-between h-100" style="min-height: 70px;">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <span class="badge px-1 py-0" style="font-size: 8px; font-weight: 700; background-color: #0f3a5d; color: #ffffff;">TOTAL</span>
           <span class="tk-sort-ind text-muted" style="font-size: 9px;">${_jbMatrixSortCol === 'gesamt' ? (_jbMatrixSortAsc ? '▲' : '▼') : '↕'}</span>
         </div>
         <div class="my-auto py-1 fw-bold text-dark" style="font-size: 11px;">Total CHF</div>
-        <div class="mt-auto text-muted" style="font-size: 8.5px; font-family: monospace;">Saldo</div>
+        <div class="mt-auto text-muted" style="font-size: 8px; font-family: monospace;">Saldo</div>
       </div>
     </th>
   `;
@@ -559,6 +637,7 @@ function jbRenderMatrixTable() {
       const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : (r._name || pn);
       const isSelected = _jbMatrixSelected.has(pn);
       const effStatus = typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen');
+      const catLabel = jbGetMemberCategoryLabel(m, r);
 
       // Positionen dieses Mitglieds
       const positions = _jbPositionsCache[r.id] || [];
@@ -570,20 +649,20 @@ function jbRenderMatrixTable() {
         }
       });
 
-      // Status Badge
+      // Status Badge (kompakt)
       let statusBadge = '';
       if (effStatus === 'bezahlt') {
-        statusBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size: 10px;">Bezahlt</span>`;
+        statusBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle px-1 py-0.5" style="font-size: 9px;">Bezahlt</span>`;
       } else if (effStatus === 'teilbezahlt') {
-        statusBadge = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle px-1.5 py-0.5" style="font-size: 10px;">Teilbezahlt</span>`;
+        statusBadge = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle px-1 py-0.5" style="font-size: 9px;">Teilbezahlt</span>`;
       } else if (effStatus === 'versendet') {
-        statusBadge = `<span class="badge bg-info-subtle text-info border border-info-subtle px-1.5 py-0.5" style="font-size: 10px;">Versendet</span>`;
+        statusBadge = `<span class="badge bg-info-subtle text-info border border-info-subtle px-1 py-0.5" style="font-size: 9px;">Versendet</span>`;
       } else if (effStatus === 'entwurf') {
-        statusBadge = `<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-1.5 py-0.5" style="font-size: 10px;">Entwurf</span>`;
+        statusBadge = `<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-1 py-0.5" style="font-size: 9px;">Entwurf</span>`;
       } else if (effStatus === 'befreit') {
-        statusBadge = `<span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 10px;">Befreit</span>`;
+        statusBadge = `<span class="badge bg-light text-muted border px-1 py-0.5" style="font-size: 9px;">Befreit</span>`;
       } else {
-        statusBadge = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-1.5 py-0.5" style="font-size: 10px;">Berechnet</span>`;
+        statusBadge = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-1 py-0.5" style="font-size: 9px;">Berechnet</span>`;
       }
 
       // Zellen für jede Gebühr
@@ -594,7 +673,7 @@ function jbRenderMatrixTable() {
           const isCredit = val < 0;
           const displayVal = isCredit ? `-${fmtChf(Math.abs(val)).replace('CHF', '').trim()}` : fmtChf(val).replace('CHF', '').trim();
           const colorClass = isCredit ? 'text-success fw-bold' : 'text-dark font-monospace';
-          cellsHtml += `<td class="text-end tk-col-${col.key} ${colorClass}" data-col-id="${col.key}" style="font-size: 12px;">${displayVal}</td>`;
+          cellsHtml += `<td class="text-end tk-col-${col.key} ${colorClass}" data-col-id="${col.key}" style="font-size: 11px;">${displayVal}</td>`;
         } else {
           cellsHtml += `<td class="text-end text-muted opacity-25 tk-col-${col.key}" data-col-id="${col.key}" style="font-size: 11px;">–</td>`;
         }
@@ -604,19 +683,21 @@ function jbRenderMatrixTable() {
 
       return `
         <tr class="${rowClass}" id="jbMatrixRow_${pn}">
-          <td class="text-center tk-col-sticky-left py-2">
+          <td class="text-center tk-col-sticky-left" style="width: 28px; padding: 2px;">
             <input type="checkbox" class="form-check-input jb-matrix-row-check" 
                    value="${pn}" ${isSelected ? 'checked' : ''} 
-                   onchange="jbMatrixToggleMember('${pn}', this.checked)">
+                   onchange="jbMatrixToggleMember('${pn}', this.checked)"
+                   style="width: 12px; height: 12px; margin: 0; cursor: pointer;">
           </td>
-          <td class="tk-col-sticky-name py-2" data-col-id="name" style="max-width: 150px;">
+          <td class="tk-col-sticky-name" data-col-id="name" style="width: 130px; min-width: 95px; padding: 3px 6px;">
             <a href="#" class="text-decoration-none fw-semibold text-primary d-block text-truncate" 
-               onclick="jbShowPositionen('${r.id}'); return false;" title="${escHtml(name)}">${escHtml(name)}</a>
-            <div class="text-muted small text-truncate" style="font-size: 10px;" title="${pn}">${pn}</div>
+               onclick="jbShowPositionen('${r.id}'); return false;" 
+               style="font-size: 11px; line-height: 1.25;"
+               title="${escHtml(name)} (${escHtml(catLabel)})">${escHtml(name)}</a>
           </td>
-          <td class="text-center tk-col-status tk-col-sticky-status" data-col-id="status">${statusBadge}</td>
+          <td class="text-center tk-col-status" data-col-id="status" style="width: 65px; min-width: 55px; max-width: 70px; padding: 2px;">${statusBadge}</td>
           ${cellsHtml}
-          <td class="text-end pe-3 fw-bold bg-light font-monospace tk-col-gesamt" data-col-id="gesamt" style="font-size: 13px; color: #0f3a5d;">
+          <td class="text-end pe-3 fw-bold bg-light font-monospace tk-col-gesamt" data-col-id="gesamt" style="font-size: 11px; color: #0f3a5d; padding: 3px 6px;">
             ${fmtChf(r.Gesamt)}
           </td>
         </tr>
@@ -631,7 +712,7 @@ function jbRenderMatrixTable() {
   if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
     window._jbMatrixColReorder = window.TableKit.makeColumnReorderable('#jbMatrixTable', {
       storageKey: 'jb_matrix_col_order',
-      lockedColumns: ['check', 'name', 'status', 'gesamt']
+      lockedColumns: ['check', 'name', 'gesamt']
     });
     if (window._jbMatrixColReorder && typeof window._jbMatrixColReorder.apply === 'function') {
       window._jbMatrixColReorder.apply();
@@ -648,11 +729,10 @@ function jbRenderMatrixTable() {
       storageKey: 'jb_matrix_col_widths',
       minWidth: 40,
       columns: {
-        'name': { defaultWidth: 150, minWidth: 100 },
-        'status': { defaultWidth: 80, minWidth: 65 }
+        'name': { defaultWidth: 130, minWidth: 95 },
+        'status': { defaultWidth: 65, minWidth: 55 }
       },
       onResize: function() {
-        jbMatrixSyncStickyOffsets();
         jbMatrixSyncTopScroll();
       }
     });
@@ -671,6 +751,7 @@ function jbCalculateMatrixTotals(rowsData, columns) {
   if (!rowsData) {
     const search = (_jbMatrixSearch || '').toLowerCase().trim();
     const statusFilter = _jbMatrixStatusFilter;
+    const categoryFilter = _jbMatrixCategoryFilter;
     rowsData = (_jbData || []).filter(r => {
       const pn = String(r.PersonNumber).trim();
       const m = _jbMemberMap[pn] || {};
@@ -683,7 +764,28 @@ function jbCalculateMatrixTotals(rowsData, columns) {
       } else if (statusFilter) {
         matchStatus = effStatus === statusFilter;
       }
-      return matchSearch && matchStatus;
+
+      const catLabel = jbGetMemberCategoryLabel(m, r);
+      let matchCategory = true;
+      if (categoryFilter) {
+        const catLower = catLabel.toLowerCase();
+        if (categoryFilter === 'junior') {
+          matchCategory = catLower.includes('junior') || catLower.includes('schüler');
+        } else if (categoryFilter === 'aktiv') {
+          matchCategory = catLower.includes('aktiv') || catLower.includes('vorstand');
+        } else if (categoryFilter === 'veteran') {
+          const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+          matchCategory = age >= 60;
+        } else if (categoryFilter === 'ehren') {
+          matchCategory = catLower.includes('ehren');
+        } else if (categoryFilter === 'passiv') {
+          matchCategory = catLower.includes('passiv');
+        } else {
+          matchCategory = catLower.includes(categoryFilter.toLowerCase());
+        }
+      }
+
+      return matchSearch && matchStatus && matchCategory;
     });
   }
   if (!columns) {
@@ -725,14 +827,14 @@ function jbCalculateMatrixTotals(rowsData, columns) {
   const tfootRow = document.getElementById('jbMatrixFooterRow');
   if (tfootRow) {
     let ftHtml = `
-      <td class="text-center tk-col-sticky-left py-2">
-        <i class="fas fa-sigma text-primary"></i>
+      <td class="text-center tk-col-sticky-left" style="width: 28px; padding: 2px;">
+        <i class="fas fa-sigma text-primary" style="font-size: 11px;"></i>
       </td>
-      <td class="tk-col-sticky-name py-2">
-        <div class="fw-bold text-dark">SUMME (${selectedRows.length} Schützen)</div>
-        <div class="text-muted small" style="font-size: 10px;">von ${rowsData.length} gefiltert</div>
+      <td class="tk-col-sticky-name" style="width: 130px; min-width: 95px; padding: 3px 6px;">
+        <div class="fw-bold text-dark" style="font-size: 11px;">SUMME (${selectedRows.length})</div>
+        <div class="text-muted small" style="font-size: 9px;">von ${rowsData.length} gefiltert</div>
       </td>
-      <td class="text-center tk-col-status tk-col-sticky-status" data-col-id="status">–</td>
+      <td class="text-center tk-col-status" data-col-id="status" style="width: 65px;">–</td>
     `;
 
     columns.forEach(col => {
@@ -741,11 +843,11 @@ function jbCalculateMatrixTotals(rowsData, columns) {
         ? fmtChf(sumVal).replace('CHF', '').trim() 
         : '–';
       const colorStyle = sumVal < 0 ? 'text-success' : 'text-dark';
-      ftHtml += `<td class="text-end font-monospace tk-col-${col.key} ${colorStyle}" data-col-id="${col.key}" style="font-size: 12px; font-weight: 700;">${displayVal}</td>`;
+      ftHtml += `<td class="text-end font-monospace tk-col-${col.key} ${colorStyle}" data-col-id="${col.key}" style="font-size: 11px; font-weight: 700;">${displayVal}</td>`;
     });
 
     ftHtml += `
-      <td class="text-end pe-3 text-primary fw-extrabold font-monospace tk-col-gesamt" data-col-id="gesamt" style="font-size: 14px;">
+      <td class="text-end pe-3 text-primary fw-extrabold font-monospace tk-col-gesamt" data-col-id="gesamt" style="font-size: 12px; padding: 3px 6px;">
         ${fmtChf(grandTotal)}
       </td>
     `;
@@ -860,8 +962,42 @@ function jbMatrixSelectStatus(status) {
   jbRenderMatrixTable();
 }
 
+function jbMatrixSelectCategory(catKey) {
+  _jbMatrixSelected.clear();
+  (_jbData || []).forEach(r => {
+    const pn = String(r.PersonNumber).trim();
+    const m = _jbMemberMap[pn] || {};
+    const catLabel = jbGetMemberCategoryLabel(m, r);
+    const catLower = catLabel.toLowerCase();
+    
+    let match = false;
+    if (catKey === 'junior') {
+      match = catLower.includes('junior') || catLower.includes('schüler');
+    } else if (catKey === 'aktiv') {
+      match = catLower.includes('aktiv') || catLower.includes('vorstand');
+    } else if (catKey === 'veteran') {
+      const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+      match = age >= 60;
+    } else if (catKey === 'ehren') {
+      match = catLower.includes('ehren');
+    } else if (catKey === 'passiv') {
+      match = catLower.includes('passiv');
+    } else if (!catKey) {
+      match = true;
+    } else {
+      match = catLower.includes(catKey.toLowerCase());
+    }
+
+    if (match) {
+      _jbMatrixSelected.add(pn);
+    }
+  });
+  jbRenderMatrixTable();
+}
+
 function jbFilterMatrixTable() {
   _jbMatrixSearch = document.getElementById('jbMatrixSearchInput')?.value || '';
+  _jbMatrixCategoryFilter = document.getElementById('jbMatrixCategorySelect')?.value || '';
   _jbMatrixStatusFilter = document.getElementById('jbMatrixStatusSelect')?.value || '';
   jbRenderMatrixTable();
 }
@@ -888,6 +1024,7 @@ function jbExportMatrixExcel() {
   const columns = jbGetMatrixColumns();
   const search = (_jbMatrixSearch || '').toLowerCase().trim();
   const statusFilter = _jbMatrixStatusFilter;
+  const categoryFilter = _jbMatrixCategoryFilter;
 
   // Nur sichtbare/gefilterte Zeilen exportieren
   const rowsData = (_jbData || []).filter(r => {
@@ -902,7 +1039,28 @@ function jbExportMatrixExcel() {
     } else if (statusFilter) {
       matchStatus = effStatus === statusFilter;
     }
-    return matchSearch && matchStatus;
+
+    const catLabel = jbGetMemberCategoryLabel(m, r);
+    let matchCategory = true;
+    if (categoryFilter) {
+      const catLower = catLabel.toLowerCase();
+      if (categoryFilter === 'junior') {
+        matchCategory = catLower.includes('junior') || catLower.includes('schüler');
+      } else if (categoryFilter === 'aktiv') {
+        matchCategory = catLower.includes('aktiv') || catLower.includes('vorstand');
+      } else if (categoryFilter === 'veteran') {
+        const age = m && m.BirthDate ? (new Date().getFullYear() - new Date(m.BirthDate).getFullYear()) : 0;
+        matchCategory = age >= 60;
+      } else if (categoryFilter === 'ehren') {
+        matchCategory = catLower.includes('ehren');
+      } else if (categoryFilter === 'passiv') {
+        matchCategory = catLower.includes('passiv');
+      } else {
+        matchCategory = catLower.includes(categoryFilter.toLowerCase());
+      }
+    }
+
+    return matchSearch && matchStatus && matchCategory;
   });
 
   if (rowsData.length === 0) {
@@ -947,6 +1105,7 @@ function jbExportMatrixExcel() {
     const pn = String(r.PersonNumber).trim();
     const m = _jbMemberMap[pn] || {};
     const isSelected = _jbMatrixSelected.has(pn);
+    const catLabel = jbGetMemberCategoryLabel(m, r);
 
     const positions = _jbPositionsCache[r.id] || [];
     const feeMap = {};
@@ -960,7 +1119,7 @@ function jbExportMatrixExcel() {
       pn,
       m.LastName || r._name || '',
       m.FirstName || '',
-      m._kategorie || r._kategorie || 'Aktiv'
+      catLabel
     ];
     if (isStatusVisible) {
       row.push((typeof jbGetEffectiveStatus === 'function' ? jbGetEffectiveStatus(r) : (r.status || 'offen')).toUpperCase());
@@ -1042,13 +1201,8 @@ function jbPrintMatrix() {
 // STICKY OFFSETS, SYNCED SCROLLBAR & WHEEL HANDLER
 // ============================================================
 function jbMatrixSyncStickyOffsets() {
-  const checkTh = document.querySelector('#jbMatrixTable th.tk-col-sticky-left');
-  const nameTh = document.querySelector('#jbMatrixTable th.tk-col-sticky-name');
-  if (!nameTh) return;
-  const leftPos = (checkTh ? checkTh.offsetWidth : 42) + nameTh.offsetWidth;
-  document.querySelectorAll('#jbMatrixTable .tk-col-sticky-status').forEach(el => {
-    el.style.left = leftPos + 'px';
-  });
+  // Checkbox (left: 0) und Schütze (left: 28px) sind fix verankert.
+  // Status ist keine Sticky-Spalte mehr, um Überlagerungen zu verhindern.
 }
 
 function jbMatrixSyncTopScroll() {
@@ -1107,6 +1261,8 @@ window.jbMatrixToggleMember = jbMatrixToggleMember;
 window.jbMatrixMasterCheckToggle = jbMatrixMasterCheckToggle;
 window.jbMatrixSelectAll = jbMatrixSelectAll;
 window.jbMatrixSelectStatus = jbMatrixSelectStatus;
+window.jbMatrixSelectCategory = jbMatrixSelectCategory;
+window.jbGetMemberCategoryLabel = jbGetMemberCategoryLabel;
 window.jbFilterMatrixTable = jbFilterMatrixTable;
 window.jbMatrixSort = jbMatrixSort;
 window.jbExportMatrixExcel = jbExportMatrixExcel;
