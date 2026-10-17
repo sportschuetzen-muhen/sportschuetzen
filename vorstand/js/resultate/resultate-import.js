@@ -979,7 +979,7 @@ function applyGrenzlandImportData() {
   // UI aktualisieren
   if (typeof renderUI === 'function') renderUI();
 
-  alert(`✅ Erfolgreich: ${importedCount} Schütze${importedCount === 1 ? '' : 'n'} für Grenzland-Cup (Runde ${rnd}) übernommen.\n\nBitte prüfe die Tabelle und klicke auf "Speichern", um die Änderungen nach Supabase zu übertragen.`);
+  alert(`✅ Erfolgreich: ${importedCount} Schütze${importedCount === 1 ? '' : 'n'} für Grenzland-Cup (Runde ${rnd}) übernommen.\n\nBitte prüfe die Tabelle und klicke auf "Speichern", um die Resultate zu sichern (synchronisiert automatisch auch den Team Manager).`);
 }
 window.applyGrenzlandImportData = applyGrenzlandImportData;
 

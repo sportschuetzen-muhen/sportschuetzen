@@ -74,6 +74,13 @@ Zur schnellen und fehlerfreien Erfassung der offiziellen IKSV-Ranglisten (Intern
 5. **Übernahme & Speichern:**
    - Überträgt die Rundenpunkte (`r1_p1` etc.) und Teams atomar in `resultateState.rows`.
    - Setzt `isDirty = true` und aktiviert den Save-Button für den finalen Supabase-Upsert in `public.contest_results`.
+   - **Automatische Team-Manager-Synchronisation (`contest_setups`):** Beim Speichern werden alle Schützen und ihre Team-Zuweisungen atomar auch in `public.contest_setups` geschrieben. Dadurch ist der Team Manager nach dem PDF-Import sofort synchron und einsatzbereit.
+
+### 2.4 Grenzland-Cup: Team-Setup-Initialisierung & Dialog bei leeren Teams
+Da beim Grenzland-Cup die Teameinteilung häufig erst mit dem Erscheinen der ersten offiziellen IKSV-Rangliste feststeht (oder aus der Vorsaison übernommen wird), bietet die Aktion **«👥 Aus Team-Setup laden»** bei noch leerem Team Manager (`public.contest_setups`) einen intelligenten modalen Auswahldialog (`openEmptySetupModal`):
+1. **Aus Vorjahr übernehmen:** Liest die Schützen und Team-Zuteilungen der Vorsaison (`year - 1`) aus `contest_setups` oder `contest_results` aus und übernimmt sie ohne Punkte für die neue Saison.
+2. **Teams leer lassen (Empfohlen bei Grenzland):** Belässt die Teams vorerst unbesetzt. Sobald die erste PDF-Rangliste eingelesen und gespeichert wird, werden die Teams und Schützen vollautomatisch gebildet und synchron in `contest_results` sowie `contest_setups` (Team Manager) abgelegt.
+3. **Aus bestehenden Resultaten synchronisieren:** Falls bereits Resultate im aktuellen Jahr vorliegen, können diese mit einem Klick direkt in den Team Manager übertragen werden.
 
 
 ---

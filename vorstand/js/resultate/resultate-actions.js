@@ -70,6 +70,30 @@ async function saveResultateData() {
         throw error;
       }
 
+      // 4. Automatische Synchronisation der Team-Zuteilungen in contest_setups (Team Manager)
+      if (supaRows.length > 0) {
+        const setupRows = resultateState.rows.map(r => {
+          const team = (r.r1_team || r.r2_team || r.r3_team || "").trim();
+          return {
+            id: `setup_${contestType}_${year}_${r.id}`,
+            contest_type: contestType,
+            year: year,
+            person_number: String(r.id),
+            name: r.name,
+            team: team === POOL_LABEL ? "" : team,
+            stellung: r.stellung || "liegend"
+          };
+        });
+        const { error: sErr } = await supa.from('contest_setups').upsert(setupRows, {
+          onConflict: 'contest_type,year,person_number'
+        });
+        if (sErr) {
+          console.warn("⚠️ [Supabase] Hinweis bei contest_setups Sync:", sErr);
+        } else {
+          console.log(`✅ [Supabase] ${setupRows.length} Schützen automatisch in Team Manager (contest_setups) synchronisiert.`);
+        }
+      }
+
       window._resultateIsSupabase = true;
       if (typeof updateBackendBadge === 'function') updateBackendBadge();
       console.log("✅ [Supabase] Resultate erfolgreich gesichert.");
@@ -146,7 +170,8 @@ async function syncSetupToResultate() {
           return;
         }
       } else {
-        alert(`Keine Schützen im Setup für ${contestType} (${year}) gefunden.`);
+        // Keine Schützen im Setup erfasst -> Intelligenter Dialog mit Optionen
+        await openEmptySetupModal(contestType, year);
       }
     } catch (err) {
       console.warn("Supabase Setup-Sync:", err);
@@ -156,6 +181,289 @@ async function syncSetupToResultate() {
     }
   }
 }
+
+/**
+ * Öffnet einen Auswahldialog wenn im Team Manager (contest_setups) für diesen Wettbewerb
+ * noch keine Schützen erfasst sind (z. B. bei Grenzland vor dem ersten PDF-Import).
+ */
+async function openEmptySetupModal(contestType, year) {
+  const supa = getResultateSupabaseClient();
+  const prevYear = year - 1;
+  let prevCount = 0;
+  let currentResCount = 0;
+
+  if (supa) {
+    try {
+      const [prevSetupsRes, prevResultsRes, curResultsRes] = await Promise.allSettled([
+        supa.from('contest_setups').select('person_number', { count: 'exact', head: true }).eq('contest_type', contestType).eq('year', prevYear),
+        supa.from('contest_results').select('person_number', { count: 'exact', head: true }).eq('contest_type', contestType).eq('year', prevYear),
+        supa.from('contest_results').select('person_number', { count: 'exact', head: true }).eq('contest_type', contestType).eq('year', year)
+      ]);
+      const prevSetupsCnt = (prevSetupsRes.status === 'fulfilled' && prevSetupsRes.value.count) || 0;
+      const prevResCnt = (prevResultsRes.status === 'fulfilled' && prevResultsRes.value.count) || 0;
+      prevCount = prevSetupsCnt || prevResCnt;
+      currentResCount = (curResultsRes.status === 'fulfilled' && curResultsRes.value.count) || 0;
+    } catch (e) {
+      console.warn("Konnte Vorjahres-Zähler nicht ermitteln:", e);
+    }
+  }
+
+  let modalEl = document.getElementById('modal-empty-setup-dialog');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'modal-empty-setup-dialog';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  const contestTitle = contestType === 'grenzland' ? 'Grenzland-Cup' : (contestType === 'mannschaft' ? 'Mannschaft' : 'Gruppe (SGM)');
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+        <div class="modal-header bg-dark text-white border-0 py-3">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-users-cog text-info me-2"></i>Team-Setup für ${escapeHtml(contestTitle)} (${year})
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="alert alert-warning border-0 rounded-3 d-flex align-items-center mb-4">
+            <i class="fas fa-exclamation-circle fa-2x text-warning me-3"></i>
+            <div>
+              <div class="fw-bold">Keine Schützen im Team Manager erfasst</div>
+              <div class="small text-muted">
+                In <code>public.contest_setups</code> wurden für <strong>${escapeHtml(contestTitle)} (${year})</strong> bisher keine Schützen-Zuteilungen hinterlegt.
+              </div>
+            </div>
+          </div>
+
+          <p class="text-muted mb-3">Wie möchtest du das Team-Setup initialisieren?</p>
+
+          <div class="row g-3">
+            ${currentResCount > 0 ? `
+              <div class="col-12">
+                <div class="card border rounded-3 p-3 h-100 bg-light border-primary-subtle shadow-sm">
+                  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                      <div class="fw-bold text-dark"><i class="fas fa-database text-primary me-2"></i>Aus bestehenden Resultaten (${currentResCount} Schützen)</div>
+                      <div class="small text-muted">Für ${year} sind bereits Schützen in den Resultaten vorhanden. Diese jetzt ins Team-Setup (Team Manager) übernehmen.</div>
+                    </div>
+                    <button class="btn btn-primary fw-bold btn-sm px-3" onclick="syncResultsToSetupAction('${escapeHtml(contestType)}', ${year})">
+                      <i class="fas fa-sync-alt me-1"></i>Jetzt übernehmen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="col-12 col-md-6">
+              <div class="card border rounded-3 p-3 h-100 bg-light d-flex flex-column justify-content-between shadow-sm">
+                <div>
+                  <div class="fw-bold text-dark mb-1"><i class="fas fa-history text-info me-2"></i>Aus Vorjahr (${prevYear}) übernehmen</div>
+                  <div class="small text-muted mb-3">
+                    Übernimmt die Schützen und Team-Zuteilungen aus der Saison ${prevYear} (ohne Punkte).
+                    ${prevCount > 0 ? `<br><span class="badge bg-info-subtle text-info border border-info-subtle mt-1">${prevCount} Schützen verfügbar</span>` : ''}
+                  </div>
+                </div>
+                <button class="btn btn-outline-primary btn-sm fw-bold w-100 mt-2" onclick="importSetupFromPreviousYearAction('${escapeHtml(contestType)}', ${year}, ${prevYear})">
+                  <i class="fas fa-arrow-alt-circle-down me-1"></i>Aus Vorjahr (${prevYear}) laden
+                </button>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <div class="card border rounded-3 p-3 h-100 bg-light d-flex flex-column justify-content-between shadow-sm">
+                <div>
+                  <div class="fw-bold text-dark mb-1"><i class="fas fa-file-pdf text-success me-2"></i>Teams leer lassen</div>
+                  <div class="small text-muted mb-3">
+                    Empfohlen bei Grenzland: Die Teams bleiben vorerst leer. Sobald die erste offizielle PDF-Rangliste vorliegt, werden die Teams und Schützen beim Ranglisten-Import vollautomatisch gebildet.
+                  </div>
+                </div>
+                <button class="btn btn-outline-success btn-sm fw-bold w-100 mt-2" onclick="leaveTeamsEmptyForPdfAction('${escapeHtml(contestType)}', ${year})">
+                  <i class="fas fa-check me-1"></i>Teams leer lassen & auf PDF warten
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-0 bg-light p-3">
+          <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Abbrechen</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+window.openEmptySetupModal = openEmptySetupModal;
+
+/**
+ * Synchronisiert bestehende contest_results ins contest_setups (Team Manager).
+ */
+async function syncResultsToSetupAction(contestType, year) {
+  const supa = getResultateSupabaseClient();
+  if (!supa) return alert("Kein Supabase Client verfügbar.");
+
+  try {
+    const { data: resRows, error: rErr } = await supa
+      .from('contest_results')
+      .select('*')
+      .eq('contest_type', contestType)
+      .eq('year', year);
+
+    if (rErr) throw rErr;
+    if (!resRows || resRows.length === 0) {
+      alert(`Keine Resultate für ${contestType} (${year}) gefunden.`);
+      return;
+    }
+
+    const setupRows = resRows.map(r => {
+      const team = (r.r1_team || r.r2_team || r.r3_team || "").trim();
+      return {
+        id: `setup_${contestType}_${year}_${r.person_number}`,
+        contest_type: contestType,
+        year: year,
+        person_number: String(r.person_number),
+        name: r.name,
+        team: team === POOL_LABEL ? "" : team,
+        stellung: r.stellung || "liegend"
+      };
+    });
+
+    const { error: sErr } = await supa.from('contest_setups').upsert(setupRows, {
+      onConflict: 'contest_type,year,person_number'
+    });
+    if (sErr) throw sErr;
+
+    const modalEl = document.getElementById('modal-empty-setup-dialog');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+
+    alert(`✅ Erfolgreich: ${setupRows.length} Schützen aus den Resultaten ins Team-Setup (Team Manager) übernommen.`);
+    await loadResultateData(true);
+  } catch (err) {
+    console.error("Fehler beim Synchronisieren der Resultate ins Setup:", err);
+    alert("Fehler bei der Synchronisation: " + (err.message || err));
+  }
+}
+window.syncResultsToSetupAction = syncResultsToSetupAction;
+
+/**
+ * Übernimmt Schützen und Team-Zuweisungen aus dem Vorjahr (Punkte null).
+ */
+async function importSetupFromPreviousYearAction(contestType, year, prevYear) {
+  const supa = getResultateSupabaseClient();
+  if (!supa) return alert("Kein Supabase Client verfügbar.");
+
+  try {
+    let sourceShooters = [];
+    const { data: prevSetups, error: sErr } = await supa
+      .from('contest_setups')
+      .select('*')
+      .eq('contest_type', contestType)
+      .eq('year', prevYear);
+
+    if (!sErr && prevSetups && prevSetups.length > 0) {
+      sourceShooters = prevSetups.map(s => ({
+        person_number: String(s.person_number),
+        name: s.name,
+        team: (s.team || "").trim(),
+        stellung: s.stellung || "liegend"
+      }));
+    } else {
+      const { data: prevResults, error: rErr } = await supa
+        .from('contest_results')
+        .select('*')
+        .eq('contest_type', contestType)
+        .eq('year', prevYear);
+
+      if (!rErr && prevResults && prevResults.length > 0) {
+        sourceShooters = prevResults.map(r => ({
+          person_number: String(r.person_number),
+          name: r.name,
+          team: (r.r1_team || r.r2_team || r.r3_team || "").trim(),
+          stellung: r.stellung || "liegend"
+        }));
+      }
+    }
+
+    if (sourceShooters.length === 0) {
+      alert(`ℹ️ Im Vorjahr (${prevYear}) wurden für ${contestType} keine Schützen im Setup oder in den Resultaten gefunden.`);
+      return;
+    }
+
+    const newSetups = sourceShooters.map(s => ({
+      id: `setup_${contestType}_${year}_${s.person_number}`,
+      contest_type: contestType,
+      year: year,
+      person_number: s.person_number,
+      name: s.name,
+      team: s.team === POOL_LABEL ? "" : s.team,
+      stellung: s.stellung || "liegend"
+    }));
+
+    const newResults = sourceShooters.map(s => {
+      const row = {
+        id: `${contestType}_${year}_${s.person_number}`,
+        contest_type: contestType,
+        year: year,
+        person_number: s.person_number,
+        name: s.name,
+        stellung: s.stellung || "liegend",
+        is_auto_r2: true,
+        is_auto_r3: true
+      };
+      for (let i = 1; i <= 7; i++) {
+        row[`r${i}_team`] = s.team;
+        row[`r${i}_p1`] = null;
+        if (i <= 3) row[`r${i}_p2`] = null;
+      }
+      return row;
+    });
+
+    const [insSetupsRes, insResultsRes] = await Promise.all([
+      supa.from('contest_setups').upsert(newSetups, { onConflict: 'contest_type,year,person_number' }),
+      supa.from('contest_results').upsert(newResults, { onConflict: 'contest_type,year,person_number' })
+    ]);
+
+    if (insSetupsRes.error) throw insSetupsRes.error;
+    if (insResultsRes.error) throw insResultsRes.error;
+
+    const modalEl = document.getElementById('modal-empty-setup-dialog');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+
+    alert(`✅ Erfolgreich: ${sourceShooters.length} Schützen aus der Saison ${prevYear} für ${year} übernommen.`);
+    await loadResultateData(true);
+  } catch (err) {
+    console.error("Fehler beim Vorjahres-Import:", err);
+    alert("Fehler bei der Vorjahres-Übernahme: " + (err.message || err));
+  }
+}
+window.importSetupFromPreviousYearAction = importSetupFromPreviousYearAction;
+
+/**
+ * Belässt Teams leer, damit diese beim ersten PDF-Ranglisten-Import gebildet werden.
+ */
+function leaveTeamsEmptyForPdfAction(contestType, year) {
+  const modalEl = document.getElementById('modal-empty-setup-dialog');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  const contestTitle = contestType === 'grenzland' ? 'Grenzland-Cup' : contestType;
+  setStatus(`Teams für ${contestTitle} leer gelassen (bereit für PDF-Ranglisten-Import)`, false);
+  alert(`ℹ️ Teams bleiben vorerst leer.\n\nSobald die erste offizielle Rangliste (PDF) vorliegt, wähle im Menü «⚡ Aktionen -> Grenzland Rangliste importieren (PDF)». Die Teams und Schützen werden dabei vollautomatisch gebildet und ins System übertragen.`);
+}
+window.leaveTeamsEmptyForPdfAction = leaveTeamsEmptyForPdfAction;
 
 async function syncJmToContestMannschaftAction() {
   const supa = getResultateSupabaseClient();
