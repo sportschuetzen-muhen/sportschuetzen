@@ -254,9 +254,9 @@ function renderInventoryTable() {
 
     // Standard-Sortierung je nach Typ
     if (target === 'Personendaten') {
-        if (bestandSortCol === 'Status') bestandSortCol = 'Nachname';
+        if (!bestandSortCol || bestandSortCol === 'ID') bestandSortCol = 'Nachname';
     } else {
-        if (bestandSortCol === 'Nachname') bestandSortCol = 'Status';
+        if (!bestandSortCol || bestandSortCol === 'Nachname') bestandSortCol = 'ID';
     }
 
     const allHeaders     = Object.keys(rawData[0]);
@@ -365,6 +365,46 @@ function renderInventoryTable() {
                 return st === 'defekt' || st === 'ausgemustert' || st === 'verstorben';
             }
             return st === inventarFilterStatus.toLowerCase();
+        });
+    }
+
+    // 4. Sortierung anwenden (mit natürlicher alphanumerischer Sortierung)
+    if (bestandSortCol) {
+        sorted.sort((a, b) => {
+            let valA = a[bestandSortCol];
+            let valB = b[bestandSortCol];
+
+            if (valA === undefined || valA === null) valA = '';
+            if (valB === undefined || valB === null) valB = '';
+
+            // Besitzer-ID zu lesbarem Namen auflösen für Sortierung
+            if (bestandSortCol === 'Aktueller_Besitzer_ID' || (typeof bestandSortCol === 'string' && bestandSortCol.endsWith('_ID'))) {
+                valA = getInventarNameFromId(valA);
+                valB = getInventarNameFromId(valB);
+            }
+
+            // Datumsfelder prüfen
+            if (dateKeys.some(dk => (bestandSortCol || '').toLowerCase().includes(dk.toLowerCase()))) {
+                const dateA = valA ? new Date(valA).getTime() : 0;
+                const dateB = valB ? new Date(valB).getTime() : 0;
+                if (!isNaN(dateA) && !isNaN(dateB)) {
+                    return bestandSortDir === 'desc' ? dateB - dateA : dateA - dateB;
+                }
+            }
+
+            // Reine Zahlen / Geldbeträge prüfen
+            const numA = typeof valA === 'number' ? valA : (typeof valA === 'string' && /^-?\d+(\.\d+)?$/.test(valA.trim()) ? parseFloat(valA) : NaN);
+            const numB = typeof valB === 'number' ? valB : (typeof valB === 'string' && /^-?\d+(\.\d+)?$/.test(valB.trim()) ? parseFloat(valB) : NaN);
+
+            let res = 0;
+            if (!isNaN(numA) && !isNaN(numB)) {
+                res = numA - numB;
+            } else {
+                // Alphanumerische / Natürliche Sortierung (z.B. K-1 vor K-2 vor K-10)
+                res = String(valA).localeCompare(String(valB), 'de-CH', { numeric: true, sensitivity: 'base' });
+            }
+
+            return bestandSortDir === 'desc' ? -res : res;
         });
     }
 

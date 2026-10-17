@@ -404,16 +404,52 @@ function renderInventarUI(container) {
 
         <!-- SECTION: JOURNAL -->
         <div id="inv-section-journal" class="inv-section d-none">
-            <div class="card border-0 shadow-sm p-4 mb-4">
-                <h4>📖 Material-Bewegungen</h4>
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm" id="table-transaktionen"></table>
+            <div class="card border-0 shadow-sm p-3 p-md-4 mb-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                        <h4 class="fw-bold mb-0 text-slate-800 d-inline-flex align-items-center">
+                            <span class="me-2">📖</span> Material-Bewegungen
+                        </h4>
+                        <div class="small text-muted" id="journal-trans-stats">Lade Transaktionen...</div>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <div class="input-group input-group-sm" style="max-width: 250px;">
+                            <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search"></i></span>
+                            <input type="text" id="inv-search-transaktionen" class="form-control border-start-0" placeholder="Bewegungen suchen..." oninput="renderTransaktionenTable()">
+                        </div>
+                        <select id="inv-filter-trans-aktion" class="form-select form-select-sm w-auto rounded-2 bg-white" onchange="renderTransaktionenTable()">
+                            <option value="">Alle Aktionen</option>
+                            <option value="AUSGABE">Ausgabe</option>
+                            <option value="RÜCKGABE">Rückgabe</option>
+                            <option value="VERKAUF">Verkauf</option>
+                            <option value="STORNO">Storno</option>
+                        </select>
+                        <div id="tk-toggle-transaktionen"></div>
+                    </div>
+                </div>
+                <div class="table-responsive rounded-3 border">
+                    <table class="table table-hover table-sm align-middle mb-0" id="table-transaktionen"></table>
                 </div>
             </div>
-            <div class="card border-0 shadow-sm p-4">
-                <h4>🛡️ Admin-Protokoll</h4>
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm text-muted" id="table-protokoll"></table>
+
+            <div class="card border-0 shadow-sm p-3 p-md-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                        <h4 class="fw-bold mb-0 text-slate-800 d-inline-flex align-items-center">
+                            <span class="me-2">🛡️</span> Admin-Protokoll
+                        </h4>
+                        <div class="small text-muted" id="journal-protokoll-stats">Lade Protokoll...</div>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <div class="input-group input-group-sm" style="max-width: 250px;">
+                            <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search"></i></span>
+                            <input type="text" id="inv-search-protokoll" class="form-control border-start-0" placeholder="Protokoll durchsuchen..." oninput="renderProtokollTable()">
+                        </div>
+                        <div id="tk-toggle-protokoll"></div>
+                    </div>
+                </div>
+                <div class="table-responsive rounded-3 border">
+                    <table class="table table-hover table-sm align-middle mb-0" id="table-protokoll"></table>
                 </div>
             </div>
         </div>

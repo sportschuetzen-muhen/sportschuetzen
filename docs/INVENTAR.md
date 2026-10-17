@@ -260,6 +260,11 @@ vorstand/js/inventar/
 - **Echtzeit-Synchronisation mit dem Rechnungsmodul:** In der Tabelle «Finanzen & Pfand» wird zu jedem offenen Pfandposten die hinterlegte Zahlungsart bzw. QR-Rechnungsnummer (`DP-2026-XXXX`) inklusive aktuellem Debitoren-Status angezeigt (z. B. `Bezahlt 🟢` via Bank/Camt.054 oder `Rechnung offen 🟡`).
 - **Differenzierte Kassenkarten:** Die KPI-Übersicht im Pfand-Journal schlüsselt das offene Gesamtdepot transparent auf in tatsächlich erhaltene Mittel (`Bezahlt/Erhalten` via Bar/Twint/Bank) und noch `Ausstehende Rechnungen`. Dies ermöglicht dem Materialwart und Kassier den sofortigen Abgleich mit dem Passivkonto `2030 (Kautionen & Depots)` in der Buchhaltung.
 
+### 5.14 Echte Spaltensortierung (Natural Sort) & TableKit-Standard im Journal (Migration 74)
+- **Natürliche Alphanumerische Sortierung (Natural Sort):** In der Bestandsliste wurde die fehlende Sortierausführung nachgerüstet. Für IDs (z.B. `K-1, K-2, ..., K-10`) und Bezeichnungen greift eine konsistente natürliche Sortierung (`localeCompare(..., 'de-CH', { numeric: true, sensitivity: 'base' })`). Auch beim initialen Einlesen aus Supabase werden alle Artikelkategorien sofort nummerngerecht vorsortiert.
+- **Journal-Tabellen auf TableKit hochgestuft:** Die Tabellen «Offene Ausleihen», «Material-Bewegungen» und «Admin-Protokoll» wurden vollständig auf den globalen TableKit-Standard gehoben: Spalten ein-/ausblenden (`setupColumnToggle`), freie Spaltenbreiten (`makeResizable`), verschiebbare Spaltenköpfe (`makeColumnReorderable`), interaktive Live-Suche und Aufhebung der starren Zeilenbeschränkungen.
+- **Wiederherstellung K-27:** Der versehentlich gelöschte Vereinsbekleidungsartikel `K-27` (Erima Team Jacke m. abnehmb. Ärmeln, 2XL) wurde per Migration 74 mit allen Sponsoring- und Preisattributen verlustfrei restauriert.
+
 
 
 

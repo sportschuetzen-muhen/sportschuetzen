@@ -32,7 +32,7 @@ function renderOffeneAusleihen() {
         "kleidung":"kleidung","schiessbekleidung":"schiessbekleidung"
     };
 
-    let rows = [];
+    let allRows = [];
     Object.keys(keyMap).forEach(key => {
         (inventarState[key] || []).forEach(item => {
             const besitzer = item.Aktueller_Besitzer_ID;
@@ -44,7 +44,8 @@ function renderOffeneAusleihen() {
             const pfand     = (inventarState.pfand || []).find(p =>
                 p.Inventar_ID?.toString() === item.ID.toString() &&
                 (p.Status||"").toLowerCase() === "offen");
-            const pfandStr  = pfand ? `CHF ${parseFloat(pfand.Betrag).toFixed(2)}` : '-';
+            const pfandNum  = pfand ? parseFloat(pfand.Betrag || 0) : 0;
+            const pfandStr  = pfand ? `CHF ${pfandNum.toFixed(2)}` : '-';
 
             const trans = [...(inventarState.transaktionen||[])].reverse().find(t => {
                 const ak = (t.Aktion||"").toUpperCase();
@@ -57,49 +58,83 @@ function renderOffeneAusleihen() {
             });
             const seit     = trans?.Zeitstempel ? formatCH(trans.Zeitstempel) : '-';
             const seitDate = trans?.Zeitstempel ? new Date(trans.Zeitstempel) : new Date(0);
-            rows.push({ mitglied, kategorie:keyMap[key], itemLabel, seit, seitDate, pfandStr, besitzer, katKey: keyMap[key], itemId: item.ID });
+            allRows.push({ mitglied, kategorie:keyMap[key], itemLabel, seit, seitDate, pfandNum, pfandStr, besitzer, katKey: keyMap[key], itemId: item.ID });
         });
     });
 
+    const searchInput = document.getElementById('inv-search-ausleihen');
+    const search = (searchInput?.value || '').toLowerCase().trim();
+    let rows = [...allRows];
+    if (search) {
+        rows = rows.filter(r =>
+            r.mitglied.toLowerCase().includes(search) ||
+            r.kategorie.toLowerCase().includes(search) ||
+            r.itemLabel.toLowerCase().includes(search) ||
+            r.seit.toLowerCase().includes(search) ||
+            r.pfandStr.toLowerCase().includes(search)
+        );
+    }
+
     rows.sort((a, b) => {
-        let va, vb;
-        if      (ausleihenSortCol==='mitglied') { va=a.mitglied;  vb=b.mitglied; }
-        else if (ausleihenSortCol==='kat')      { va=a.kategorie; vb=b.kategorie; }
-        else if (ausleihenSortCol==='gegen')    { va=a.itemLabel; vb=b.itemLabel; }
-        else                                    { va=a.seitDate;  vb=b.seitDate; }
-        if (va<vb) return ausleihenSortDir==='asc'?-1:1;
-        if (va>vb) return ausleihenSortDir==='asc'?1:-1;
-        return 0;
+        let res = 0;
+        if (ausleihenSortCol === 'mitglied') {
+            res = a.mitglied.localeCompare(b.mitglied, 'de-CH', { sensitivity: 'base' });
+        } else if (ausleihenSortCol === 'kat') {
+            res = a.kategorie.localeCompare(b.kategorie, 'de-CH');
+        } else if (ausleihenSortCol === 'gegen') {
+            res = a.itemLabel.localeCompare(b.itemLabel, 'de-CH', { numeric: true });
+        } else if (ausleihenSortCol === 'pfand') {
+            res = a.pfandNum - b.pfandNum;
+        } else {
+            res = a.seitDate - b.seitDate;
+        }
+        return ausleihenSortDir === 'asc' ? res : -res;
     });
 
-    const sh = (l,c) => sortHeader(l,c,ausleihenSortCol,ausleihenSortDir,'sortAusleihen');
+    const sh = (l, c, id) => sortHeader(l, c, ausleihenSortCol, ausleihenSortDir, 'sortAusleihen', id);
 
     let html = `
-        <div class="card border-0 shadow-sm p-4 mb-4 offene-ausleihen-card">
-            <h4>📋 Offene Ausleihen</h4>
-            <div class="table-responsive">
-                <table class="table table-hover table-sm">
-                    <thead><tr class="table-info">
-                        ${sh('Mitglied','mitglied')}
-                        ${sh('Kategorie','kat')}
-                        ${sh('Gegenstand','gegen')}
-                        ${sh('Seit','seit')}
-                        <th>Pfand</th>
-                        <th class="text-center">Aktion</th>
+        <div class="card border-0 shadow-sm p-3 p-md-4 mb-4 offene-ausleihen-card">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <h4 class="fw-bold mb-0 text-slate-800 d-inline-flex align-items-center">
+                        <span class="me-2">📋</span> Offene Ausleihen
+                    </h4>
+                    <div class="small text-muted" id="journal-ausleihen-stats">
+                        ${search ? `<span class="text-primary fw-bold">Zeige ${rows.length}</span> von ${allRows.length} Ausleihen` : `${rows.length} Gegenstände aktuell ausgeliehen`}
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group input-group-sm" style="max-width: 250px;">
+                        <span class="input-group-text bg-white border-end-0 text-muted"><i class="fas fa-search"></i></span>
+                        <input type="text" id="inv-search-ausleihen" class="form-control border-start-0" placeholder="Ausleihen durchsuchen..." value="${search ? search.replace(/"/g, '&quot;') : ''}" oninput="renderOffeneAusleihen()">
+                    </div>
+                    <div id="tk-toggle-ausleihen"></div>
+                </div>
+            </div>
+            <div class="table-responsive rounded-3 border">
+                <table class="table table-hover table-sm align-middle mb-0" id="table-offene-ausleihen">
+                    <thead class="table-light border-bottom"><tr>
+                        ${sh('Mitglied', 'mitglied', 'col_mitglied')}
+                        ${sh('Kategorie', 'kat', 'col_kategorie')}
+                        ${sh('Gegenstand', 'gegen', 'col_gegenstand')}
+                        ${sh('Seit', 'seit', 'col_seit')}
+                        ${sh('Pfand', 'pfand', 'col_pfand')}
+                        <th class="text-center" data-col-id="col_aktionen" data-col-toggle="false">Aktion</th>
                     </tr></thead>
                     <tbody>`;
 
     if (rows.length === 0) {
-        html += `<tr><td colspan="6" class="text-muted text-center py-3">✅ Keine offenen Ausleihen</td></tr>`;
+        html += `<tr><td colspan="6" class="text-muted text-center py-3">${search ? 'Keine passenden Ausleihen gefunden' : '✅ Keine offenen Ausleihen'}</td></tr>`;
     } else {
         rows.forEach(r => {
             html += `<tr>
-                <td>${r.mitglied}</td>
-                <td><span class="badge bg-secondary">${r.kategorie}</span></td>
-                <td>${r.itemLabel}</td>
-                <td>${r.seit}</td>
-                <td class="fw-bold">${r.pfandStr}</td>
-                <td class="text-center">
+                <td data-col-id="col_mitglied"><span class="fw-semibold text-dark">${r.mitglied}</span></td>
+                <td data-col-id="col_kategorie"><span class="badge bg-secondary-subtle text-secondary border">${r.kategorie}</span></td>
+                <td data-col-id="col_gegenstand">${r.itemLabel}</td>
+                <td data-col-id="col_seit"><span class="font-monospace small text-muted">${r.seit}</span></td>
+                <td data-col-id="col_pfand"><span class="font-monospace fw-bold ${r.pfandNum > 0 ? 'text-primary' : 'text-muted'}">${r.pfandStr}</span></td>
+                <td data-col-id="col_aktionen" class="text-center">
                     <button class="btn btn-xs btn-outline-success fw-bold py-0.5 px-2"
                             onclick="startCheckinFromJournal('${r.besitzer}', '${r.katKey}', '${r.itemId}')"
                             title="Rückgabe erfassen">
@@ -111,6 +146,28 @@ function renderOffeneAusleihen() {
     }
     html += `</tbody></table></div></div>`;
     journalSection.insertAdjacentHTML('afterbegin', html);
+
+    // TableKit-Initialisierung für Offene Ausleihen
+    if (window.TableKit?.makeColumnReorderable) {
+        window.TableKit.makeColumnReorderable('#table-offene-ausleihen', {
+            storageKey: 'tk_inv_order_ausleihen',
+            lockedColumns: ['col_aktionen']
+        });
+    }
+    if (window.TableKit?.setupColumnToggle) {
+        window.TableKit.setupColumnToggle('#table-offene-ausleihen', {
+            container: '#tk-toggle-ausleihen',
+            storageKey: 'tk_inv_cols_ausleihen'
+        });
+    }
+    if (window.TableKit?.makeResizable) {
+        window.TableKit.makeResizable('#table-offene-ausleihen', {
+            storageKey: 'tk_inv_widths_ausleihen',
+            columns: {
+                'col_aktionen': { resizable: false, defaultWidth: 95 }
+            }
+        });
+    }
 }
 
 window.startCheckinFromJournal = function(mitgliedId, kat, itemId) {
@@ -136,21 +193,50 @@ function sortTransaktionen(col) {
 function renderTransaktionenTable() {
     const transTable = document.getElementById('table-transaktionen');
     if (!transTable) return;
-    const sh = (l,c) => sortHeader(l,c,journalSortCol,journalSortDir,'sortTransaktionen');
+    const sh = (l,c,id) => sortHeader(l,c,journalSortCol,journalSortDir,'sortTransaktionen',id);
 
-    if (!inventarState?.transaktionen?.length) {
-        transTable.innerHTML = `<thead><tr class="table-dark">
+    const rawTrans = inventarState?.transaktionen || [];
+    if (!rawTrans.length) {
+        transTable.innerHTML = `<thead class="table-light border-bottom"><tr>
             <th>Datum</th><th>Mitglied</th><th>Aktion</th>
             <th>Kategorie</th><th>Gegenstand</th><th>Bemerkung</th><th class="text-center">Aktionen</th>
         </tr></thead>
-        <tbody><tr><td colspan="7" class="text-center text-muted">Noch keine Transaktionen.</td></tr></tbody>`;
+        <tbody><tr><td colspan="7" class="text-center text-muted py-4">Noch keine Transaktionen.</td></tr></tbody>`;
+        const statsEl = document.getElementById('journal-trans-stats');
+        if (statsEl) statsEl.innerText = '0 Transaktionen';
         return;
+    }
+
+    const search = (document.getElementById('inv-search-transaktionen')?.value || '').toLowerCase().trim();
+    const filterAktion = (document.getElementById('inv-filter-trans-aktion')?.value || '').toUpperCase().trim();
+
+    let transList = rawTrans;
+    if (filterAktion) {
+        transList = transList.filter(t => {
+            const ak = (t.Aktion || '').toUpperCase();
+            if (filterAktion === 'RÜCKGABE') return ak === 'RÜCKGABE' || ak === 'CHECKIN';
+            if (filterAktion === 'AUSGABE') return ak === 'AUSGABE' || ak === 'CHECKOUT';
+            if (filterAktion === 'VERKAUF') return ak === 'VERKAUF';
+            if (filterAktion === 'STORNO') return ak === 'STORNO' || (t.Bemerkungen || '').includes('[STORNIERT]');
+            return ak === filterAktion;
+        });
+    }
+    if (search) {
+        transList = transList.filter(t => {
+            const mName = getInventarNameFromId(t.Aktueller_Besitzer_ID).toLowerCase();
+            const label = getItemLabelFromTrans(t).toLowerCase();
+            const invId = String(t.invoice_id || t.Invoice_ID || '').toLowerCase();
+            const itemCode = String(t.Inventar_ID || '').toLowerCase();
+            const notes = String(t.Bemerkungen || '').toLowerCase();
+            const ak = String(t.Aktion || '').toLowerCase();
+            return mName.includes(search) || label.includes(search) || invId.includes(search) || itemCode.includes(search) || notes.includes(search) || ak.includes(search);
+        });
     }
 
     // Gruppierung: gleicher Besitzer + Aktion + Zeitstempel ±10 Sek
     const groups = [];
     const used   = new Set();
-    const sorted = [...inventarState.transaktionen]
+    const sorted = [...transList]
         .sort((a, b) => new Date(b.Zeitstempel) - new Date(a.Zeitstempel));
 
     sorted.forEach((t, i) => {
@@ -173,97 +259,129 @@ function renderTransaktionenTable() {
 
     // Sortierung
     groups.sort((a, b) => {
-        const dA  = new Date(a[0].Zeitstempel);
-        const dB  = new Date(b[0].Zeitstempel);
+        const dA  = new Date(a[0].Zeitstempel).getTime();
+        const dB  = new Date(b[0].Zeitstempel).getTime();
         const mA  = getInventarNameFromId(a[0].Aktueller_Besitzer_ID);
         const mB  = getInventarNameFromId(b[0].Aktueller_Besitzer_ID);
         const akA = a[0].Aktion || '';
         const akB = b[0].Aktion || '';
-        let va, vb;
-        if      (journalSortCol==='datum') { va=dA;  vb=dB; }
-        else if (journalSortCol==='mitgl') { va=mA;  vb=mB; }
-        else if (journalSortCol==='aktion'){ va=akA; vb=akB; }
-        else                               { va=dA;  vb=dB; }
-        if (va<vb) return journalSortDir==='asc'?-1:1;
-        if (va>vb) return journalSortDir==='asc'?1:-1;
-        return 0;
+        let res = 0;
+        if      (journalSortCol==='mitgl') { res = mA.localeCompare(mB, 'de-CH', { sensitivity: 'base' }); }
+        else if (journalSortCol==='aktion'){ res = akA.localeCompare(akB, 'de-CH'); }
+        else if (journalSortCol==='kat')   { res = String(a[0].Kategorie||'').localeCompare(String(b[0].Kategorie||''), 'de-CH'); }
+        else if (journalSortCol==='gegen') { res = getItemLabelFromTrans(a[0]).localeCompare(getItemLabelFromTrans(b[0]), 'de-CH', { numeric: true }); }
+        else                               { res = dA - dB; }
+        return journalSortDir==='asc' ? res : -res;
     });
 
-    let html = `<thead><tr class="table-light border-bottom">
-        ${sh('Datum','datum')}
-        ${sh('Mitglied','mitgl')}
-        ${sh('Aktion','aktion')}
-        <th>Kategorie</th>
-        <th>Gegenstand</th>
-        <th>Bemerkung</th>
-        <th class="text-center">Aktionen</th>
+    const statsEl = document.getElementById('journal-trans-stats');
+    if (statsEl) {
+        statsEl.innerHTML = (search || filterAktion)
+            ? `<span class="text-primary fw-bold">Zeige ${groups.length}</span> Buchungsgruppen von ${rawTrans.length} Positionen`
+            : `${groups.length} Buchungsgruppen (${rawTrans.length} Positionen)`;
+    }
+
+    let html = `<thead class="table-light"><tr class="border-bottom">
+        ${sh('Datum','datum','col_datum')}
+        ${sh('Mitglied','mitgl','col_mitglied')}
+        ${sh('Aktion','aktion','col_aktion')}
+        ${sh('Kategorie','kat','col_kategorie')}
+        ${sh('Gegenstand','gegen','col_gegenstand')}
+        ${sh('Bemerkung','bem','col_bemerkung')}
+        <th class="text-center" data-col-id="col_aktionen" data-col-toggle="false">Aktionen</th>
     </tr></thead><tbody>`;
 
-    groups.slice(0, 50).forEach(group => {
-        const rowspan = group.length;
-        group.forEach((t, idx) => {
-            const date       = formatCH(t.Zeitstempel);
-            const mitglied   = getInventarNameFromId(t.Aktueller_Besitzer_ID);
-            const aktion     = (t.Aktion||"").toUpperCase();
-            const istStorno  = aktion === 'STORNO' || (t.Bemerkungen||'').includes('[STORNIERT]');
-            const istVerkauf = aktion === 'VERKAUF';
-            const istAusgabe = aktion === 'AUSGABE' || aktion === 'CHECKOUT';
-            const invBadge   = (t.invoice_id || t.Invoice_ID) ? ` <span class="badge bg-light text-primary border ms-1" title="Verknüpfte Rechnung: ${t.invoice_id || t.Invoice_ID}"><i class="fas fa-file-invoice me-1"></i>${t.invoice_id || t.Invoice_ID}</span>` : '';
-            let aktionBadge  = `<span class="badge bg-success">Rückgabe</span>${invBadge}`;
-            if (istStorno) {
-                aktionBadge  = `<span class="badge bg-danger text-white fw-bold"><i class="fas fa-ban me-1"></i>Storniert</span>${invBadge}`;
-            } else if (istVerkauf) {
-                const methodeStr = t.Zahlungsart ? ` <span class="badge bg-light text-dark border ms-1">${t.Zahlungsart}</span>` : '';
-                aktionBadge  = `<span class="badge bg-info text-dark fw-bold">Verkauf</span>${methodeStr}${invBadge}`;
-            } else if (istAusgabe) {
-                const pfandStr = parseFloat(t.Pfandbetrag) > 0 ? ` <span class="badge bg-warning text-dark border ms-1" title="Pfand: CHF ${parseFloat(t.Pfandbetrag).toFixed(2)} (${t.Zahlungsart || '-'})">Pfand CHF ${parseFloat(t.Pfandbetrag).toFixed(2)}</span>` : '';
-                aktionBadge  = `<span class="badge bg-primary">Ausgabe</span>${pfandStr}${invBadge}`;
-            } else if (parseFloat(t.Pfandbetrag) > 0) {
-                const retourStr = ` <span class="badge bg-light text-dark border ms-1">Pfand-Retour</span>`;
-                aktionBadge  = `<span class="badge bg-success">Rückgabe</span>${retourStr}${invBadge}`;
-            }
-            const kat        = t.Kategorie || '-';
-            const gegenstand = getItemLabelFromTrans(t);
+    if (groups.length === 0) {
+        html += `<tr><td colspan="7" class="text-muted text-center py-4">Keine passenden Buchungen gefunden.</td></tr>`;
+    } else {
+        groups.forEach(group => {
+            const rowspan = group.length;
+            group.forEach((t, idx) => {
+                const date       = formatCH(t.Zeitstempel);
+                const mitglied   = getInventarNameFromId(t.Aktueller_Besitzer_ID);
+                const aktion     = (t.Aktion||"").toUpperCase();
+                const istStorno  = aktion === 'STORNO' || (t.Bemerkungen||'').includes('[STORNIERT]');
+                const istVerkauf = aktion === 'VERKAUF';
+                const istAusgabe = aktion === 'AUSGABE' || aktion === 'CHECKOUT';
+                const invBadge   = (t.invoice_id || t.Invoice_ID) ? ` <span class="badge bg-light text-primary border ms-1" title="Verknüpfte Rechnung: ${t.invoice_id || t.Invoice_ID}"><i class="fas fa-file-invoice me-1"></i>${t.invoice_id || t.Invoice_ID}</span>` : '';
+                let aktionBadge  = `<span class="badge bg-success-subtle text-success border border-success-subtle">Rückgabe</span>${invBadge}`;
+                if (istStorno) {
+                    aktionBadge  = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold"><i class="fas fa-ban me-1"></i>Storniert</span>${invBadge}`;
+                } else if (istVerkauf) {
+                    const methodeStr = t.Zahlungsart ? ` <span class="badge bg-light text-dark border ms-1">${t.Zahlungsart}</span>` : '';
+                    aktionBadge  = `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-bold">Verkauf</span>${methodeStr}${invBadge}`;
+                } else if (istAusgabe) {
+                    const pfandStr = parseFloat(t.Pfandbetrag) > 0 ? ` <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" title="Pfand: CHF ${parseFloat(t.Pfandbetrag).toFixed(2)} (${t.Zahlungsart || '-'})">Pfand CHF ${parseFloat(t.Pfandbetrag).toFixed(2)}</span>` : '';
+                    aktionBadge  = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">Ausgabe</span>${pfandStr}${invBadge}`;
+                } else if (parseFloat(t.Pfandbetrag) > 0) {
+                    const retourStr = ` <span class="badge bg-light text-dark border ms-1">Pfand-Retour</span>`;
+                    aktionBadge  = `<span class="badge bg-success-subtle text-success border border-success-subtle">Rückgabe</span>${retourStr}${invBadge}`;
+                }
+                const kat        = t.Kategorie || '-';
+                const gegenstand = getItemLabelFromTrans(t);
 
-            let actionCell = '';
-            if (idx === 0) {
-                const safeGroup = encodeURIComponent(JSON.stringify(group));
-                const backendPdfUrl = group[0].PDF_URL || "";
-                const isGroupCancelled = group.some(gt => (gt.Aktion||'').toUpperCase() === 'STORNO' || (gt.Bemerkungen||'').includes('[STORNIERT]'));
-                const pdfBtn = backendPdfUrl
-                    ? `<a href="${backendPdfUrl}" target="_blank"
-                          class="btn btn-sm btn-success py-1 px-2" title="Quittungs-PDF öffnen">📄</a>`
-                    : `<button class="btn btn-sm btn-outline-secondary py-1 px-2"
-                               title="PDF lokal generieren"
-                               onclick="regeneratePDF('${safeGroup}')">📄</button>`;
+                let actionCell = '';
+                if (idx === 0) {
+                    const safeGroup = encodeURIComponent(JSON.stringify(group));
+                    const backendPdfUrl = group[0].PDF_URL || "";
+                    const isGroupCancelled = group.some(gt => (gt.Aktion||'').toUpperCase() === 'STORNO' || (gt.Bemerkungen||'').includes('[STORNIERT]'));
+                    const pdfBtn = backendPdfUrl
+                        ? `<a href="${backendPdfUrl}" target="_blank"
+                              class="btn btn-sm btn-outline-success py-1 px-2 rounded-2" title="Quittungs-PDF öffnen"><i class="fas fa-file-pdf"></i></a>`
+                        : `<button class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-2"
+                                   title="PDF lokal generieren"
+                                   onclick="regeneratePDF('${safeGroup}')"><i class="fas fa-file-pdf"></i></button>`;
 
-                const stornoBtn = isGroupCancelled
-                    ? `<span class="badge bg-secondary py-1 px-2" title="Buchung bereits storniert">Storniert</span>`
-                    : (canDelete() ? `<button class="btn btn-sm btn-outline-danger py-1 px-2"
-                                title="Buchung stornieren / rückgängig machen"
-                                onclick="storniereInventarBuchung('${safeGroup}')">
-                            <i class="fas fa-undo me-1"></i>Storno
-                        </button>` : '');
+                    const stornoBtn = isGroupCancelled
+                        ? `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2" title="Buchung bereits storniert">Storniert</span>`
+                        : (canDelete() ? `<button class="btn btn-sm btn-outline-danger py-1 px-2 rounded-2"
+                                    title="Buchung stornieren / rückgängig machen"
+                                    onclick="storniereInventarBuchung('${safeGroup}')">
+                                <i class="fas fa-undo me-1"></i>Storno
+                            </button>` : '');
 
-                actionCell = `<td rowspan="${rowspan}" class="text-center align-middle" style="white-space:nowrap;">
-                    <div class="d-inline-flex gap-1 align-items-center">
-                        ${pdfBtn}
-                        ${stornoBtn}
-                    </div>
-                </td>`;
-            }
-            html += `<tr>
-                <td>${date}</td>
-                <td>${mitglied}</td>
-                <td>${aktionBadge}</td>
-                <td><span class="badge bg-secondary">${kat}</span></td>
-                <td><small>${gegenstand}</small></td>
-                <td><small class="text-muted">${t.Bemerkungen||''}</small></td>
-                ${actionCell}
-            </tr>`;
+                    actionCell = `<td rowspan="${rowspan}" data-col-id="col_aktionen" class="text-center align-middle" style="white-space:nowrap;">
+                        <div class="d-inline-flex gap-1 align-items-center">
+                            ${pdfBtn}
+                            ${stornoBtn}
+                        </div>
+                    </td>`;
+                }
+                html += `<tr>
+                    <td data-col-id="col_datum"><span class="font-monospace small text-muted">${date}</span></td>
+                    <td data-col-id="col_mitglied"><span class="fw-semibold text-dark">${mitglied}</span></td>
+                    <td data-col-id="col_aktion">${aktionBadge}</td>
+                    <td data-col-id="col_kategorie"><span class="badge bg-secondary-subtle text-secondary border">${kat}</span></td>
+                    <td data-col-id="col_gegenstand">${gegenstand}</td>
+                    <td data-col-id="col_bemerkung"><small class="text-muted">${t.Bemerkungen||'-'}</small></td>
+                    ${actionCell}
+                </tr>`;
+            });
         });
-    });
+    }
     transTable.innerHTML = html + "</tbody>";
+
+    // TableKit-Initialisierung für Transaktionen
+    if (window.TableKit?.makeColumnReorderable) {
+        window.TableKit.makeColumnReorderable('#table-transaktionen', {
+            storageKey: 'tk_inv_order_transaktionen',
+            lockedColumns: ['col_aktionen']
+        });
+    }
+    if (window.TableKit?.setupColumnToggle) {
+        window.TableKit.setupColumnToggle('#table-transaktionen', {
+            container: '#tk-toggle-transaktionen',
+            storageKey: 'tk_inv_cols_transaktionen'
+        });
+    }
+    if (window.TableKit?.makeResizable) {
+        window.TableKit.makeResizable('#table-transaktionen', {
+            storageKey: 'tk_inv_widths_transaktionen',
+            columns: {
+                'col_aktionen': { resizable: false, defaultWidth: 105 }
+            }
+        });
+    }
 }
 
 // =========================================================
@@ -639,17 +757,22 @@ function sortProtokoll(col) {
 function renderProtokollTable() {
     const logTable = document.getElementById('table-protokoll');
     if (!logTable) return;
-    const sh = (l,c) => sortHeader(l,c,protokollSortCol,protokollSortDir,'sortProtokoll');
+    const sh = (l,c,id) => sortHeader(l,c,protokollSortCol,protokollSortDir,'sortProtokoll',id);
 
-    if (!inventarState?.protokoll?.length) {
-        logTable.innerHTML = `<thead><tr class="table-secondary">
+    const rawProt = inventarState?.protokoll || [];
+    if (!rawProt.length) {
+        logTable.innerHTML = `<thead class="table-light border-bottom"><tr>
             <th>Zeit</th><th>Nutzer</th><th>Aktion</th><th>Details</th>
         </tr></thead>
-        <tbody><tr><td colspan="4" class="text-center text-muted">Keine Admin-Aktionen.</td></tr></tbody>`;
+        <tbody><tr><td colspan="4" class="text-center text-muted py-4">Keine Admin-Aktionen protokolliert.</td></tr></tbody>`;
+        const statsEl = document.getElementById('journal-protokoll-stats');
+        if (statsEl) statsEl.innerText = '0 Einträge';
         return;
     }
 
-    let rows = inventarState.protokoll.map(p => ({
+    const search = (document.getElementById('inv-search-protokoll')?.value || '').toLowerCase().trim();
+
+    let rows = rawProt.map(p => ({
         ts:      p.Zeitstempel,
         tsDate:  new Date(p.Zeitstempel||0),
         nutzer:  p['Nutzer (Vorstand)'] || '-',
@@ -657,30 +780,76 @@ function renderProtokollTable() {
         details: [p.Details, p['']].filter(v=>v&&v!=='').join(' | ') || '-'
     }));
 
+    if (search) {
+        rows = rows.filter(r =>
+            r.nutzer.toLowerCase().includes(search) ||
+            r.aktion.toLowerCase().includes(search) ||
+            r.details.toLowerCase().includes(search) ||
+            formatCHDateTime(r.ts).toLowerCase().includes(search)
+        );
+    }
+
     rows.sort((a, b) => {
-        let va, vb;
-        if      (protokollSortCol==='nutzer') { va=a.nutzer; vb=b.nutzer; }
-        else if (protokollSortCol==='akt')    { va=a.aktion; vb=b.aktion; }
-        else                                  { va=a.tsDate; vb=b.tsDate; }
-        if (va<vb) return protokollSortDir==='asc'?-1:1;
-        if (va>vb) return protokollSortDir==='asc'?1:-1;
-        return 0;
+        let res = 0;
+        if      (protokollSortCol==='nutzer') { res = a.nutzer.localeCompare(b.nutzer, 'de-CH', { sensitivity: 'base' }); }
+        else if (protokollSortCol==='akt' || protokollSortCol==='aktion') { res = a.aktion.localeCompare(b.aktion, 'de-CH'); }
+        else if (protokollSortCol==='details') { res = a.details.localeCompare(b.details, 'de-CH'); }
+        else                                  { res = a.tsDate - b.tsDate; }
+        return protokollSortDir==='asc' ? res : -res;
     });
 
-    let html = `<thead><tr class="table-secondary">
-        ${sh('Zeit','zeit')}
-        ${sh('Nutzer','nutzer')}
-        ${sh('Aktion','akt')}
-        <th>Details</th>
+    const statsEl = document.getElementById('journal-protokoll-stats');
+    if (statsEl) {
+        statsEl.innerHTML = search
+            ? `<span class="text-primary fw-bold">Zeige ${rows.length}</span> von ${rawProt.length} Einträgen`
+            : `${rows.length} Protokoll-Einträge`;
+    }
+
+    let html = `<thead class="table-light"><tr class="border-bottom">
+        ${sh('Zeit','zeit','col_zeit')}
+        ${sh('Nutzer','nutzer','col_nutzer')}
+        ${sh('Aktion','akt','col_aktion')}
+        ${sh('Details','details','col_details')}
     </tr></thead><tbody>`;
 
-    rows.slice(0,30).forEach(r => {
-        html += `<tr>
-            <td><small>${formatCHDateTime(r.ts)}</small></td>
-            <td><small>${r.nutzer}</small></td>
-            <td><strong>${r.aktion}</strong></td>
-            <td><small>${r.details}</small></td>
-        </tr>`;
-    });
+    if (rows.length === 0) {
+        html += `<tr><td colspan="4" class="text-center text-muted py-4">Keine passenden Protokolleinträge gefunden.</td></tr>`;
+    } else {
+        rows.forEach(r => {
+            html += `<tr>
+                <td data-col-id="col_zeit"><small class="text-muted font-monospace">${formatCHDateTime(r.ts)}</small></td>
+                <td data-col-id="col_nutzer"><span class="fw-semibold text-dark">${r.nutzer}</span></td>
+                <td data-col-id="col_aktion"><span class="badge bg-light text-primary border">${r.aktion}</span></td>
+                <td data-col-id="col_details"><small class="text-secondary">${r.details}</small></td>
+            </tr>`;
+        });
+    }
     logTable.innerHTML = html + "</tbody>";
+
+    // TableKit-Initialisierung für Protokoll
+    if (window.TableKit?.makeColumnReorderable) {
+        window.TableKit.makeColumnReorderable('#table-protokoll', {
+            storageKey: 'tk_inv_order_protokoll'
+        });
+    }
+    if (window.TableKit?.setupColumnToggle) {
+        window.TableKit.setupColumnToggle('#table-protokoll', {
+            container: '#tk-toggle-protokoll',
+            storageKey: 'tk_inv_cols_protokoll'
+        });
+    }
+    if (window.TableKit?.makeResizable) {
+        window.TableKit.makeResizable('#table-protokoll', {
+            storageKey: 'tk_inv_widths_protokoll'
+        });
+    }
 }
+
+// Window-Exporte
+window.sortAusleihen = sortAusleihen;
+window.renderOffeneAusleihen = renderOffeneAusleihen;
+window.sortTransaktionen = sortTransaktionen;
+window.renderTransaktionenTable = renderTransaktionenTable;
+window.sortProtokoll = sortProtokoll;
+window.renderProtokollTable = renderProtokollTable;
+window.renderJournalTables = renderJournalTables;

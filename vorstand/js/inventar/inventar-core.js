@@ -11,7 +11,7 @@ let warenkorb        = [];
 let journalSortCol   = 'datum';   let journalSortDir   = 'desc';
 let protokollSortCol = 'zeit';    let protokollSortDir = 'desc';
 let ausleihenSortCol = 'seit';    let ausleihenSortDir = 'desc';
-let bestandSortCol   = 'Status';
+let bestandSortCol   = 'ID';
 let bestandSortDir   = 'asc';
 
 function canAdd() {
@@ -273,11 +273,12 @@ async function loadInventarData(force = false) {
                     }
                 }
 
+                const naturalSortById = (a, b) => String(a.ID || '').localeCompare(String(b.ID || ''), 'de-CH', { numeric: true, sensitivity: 'base' });
                 inventarState = {
-                    gewehre: items.filter(i => i.category === 'gewehr').map(mapGewehrFromSupabase),
-                    schluessel: items.filter(i => i.category === 'schluessel').map(mapSchluesselFromSupabase),
-                    kleidung: items.filter(i => i.category === 'kleidung').map(mapKleidungFromSupabase),
-                    schiessbekleidung: items.filter(i => i.category === 'schiessbekleidung').map(mapSchiessbekleidungFromSupabase),
+                    gewehre: items.filter(i => i.category === 'gewehr').map(mapGewehrFromSupabase).sort(naturalSortById),
+                    schluessel: items.filter(i => i.category === 'schluessel').map(mapSchluesselFromSupabase).sort(naturalSortById),
+                    kleidung: items.filter(i => i.category === 'kleidung').map(mapKleidungFromSupabase).sort(naturalSortById),
+                    schiessbekleidung: items.filter(i => i.category === 'schiessbekleidung').map(mapSchiessbekleidungFromSupabase).sort(naturalSortById),
                     transaktionen: (transRes.data || []).map(mapTransaktionFromSupabase),
                     pfand: rawPfand.map(p => mapPfandFromSupabase(p, pfandInvMap)),
                     protokoll: (logRes.data || []).map(mapLogFromSupabase),
@@ -397,12 +398,14 @@ function getItemLabelFromTrans(t) {
     return item ? getItemLabel(kat, item) : String(t.Inventar_ID);
 }
 
-function sortHeader(label, col, currentCol, currentDir, callbackFn) {
+function sortHeader(label, col, currentCol, currentDir, callbackFn, colId, extraAttrs = '') {
     const arrow = currentCol === col
         ? (currentDir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
-    return `<th style="cursor:pointer;user-select:none;white-space:nowrap"
+    const cid = colId || `col_${String(col).toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
+    return `<th style="cursor:pointer;user-select:none;white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:0.3px;color:#475569;"
+                data-col-id="${cid}" ${extraAttrs}
                 onclick="${callbackFn}('${col}')">
-                ${label}<span class="text-muted small">${arrow}</span>
+                ${label}<span class="text-muted small ms-1">${arrow}</span>
             </th>`;
 }
 
