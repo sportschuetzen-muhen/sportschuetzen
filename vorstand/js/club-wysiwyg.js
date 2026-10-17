@@ -66,7 +66,13 @@
 
     class ClubWysiwygEditor {
         constructor(targetEl, options = {}) {
-            this.targetEl = (typeof targetEl === 'string') ? document.querySelector(targetEl) : targetEl;
+            if (typeof targetEl === 'string') {
+                this.targetEl = document.querySelector(targetEl)
+                    || document.getElementById(targetEl)
+                    || document.getElementById(targetEl.replace(/^#/, ''));
+            } else {
+                this.targetEl = targetEl;
+            }
             if (!this.targetEl) {
                 console.warn('[ClubWysiwyg] Ziel-Element nicht gefunden:', targetEl);
                 return;

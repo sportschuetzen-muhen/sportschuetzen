@@ -646,29 +646,29 @@
 
                                     <!-- UNTERTRAKTANDEN (EINGERÜCKT & SORTIERBAR) -->
                                     ${subItems.length > 0 ? `
-                                        <div class="ms-4 mt-2 ps-2 border-start border-2 border-primary-subtle gv-subtraktanden-list" data-parent-id="${main.id}">
+                                        <div class="ms-4 mt-2 ps-3 border-start border-3 border-primary-subtle gv-subtraktanden-list" data-parent-id="${main.id}">
                                             ${subItems.map((sub, sIdx) => `
-                                                <div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1 bg-light rounded-2 border border-light-subtle gv-sub-row" data-tr-id="${sub.id}">
+                                                <div class="d-flex align-items-center justify-content-between py-1.5 px-2.5 mb-1.5 bg-light-subtle rounded-3 border border-secondary-subtle shadow-xs gv-sub-row" data-tr-id="${sub.id}">
                                                     <div class="d-flex align-items-center gap-2">
-                                                        <i class="fas fa-grip-vertical text-muted cursor-grab me-1 gv-sub-drag-handle" style="cursor: grab; font-size: 0.75rem;" title="Ziehen zum Verschieben"></i>
-                                                        <span class="badge bg-secondary-subtle text-dark rounded-pill px-1.5 py-0.5" style="font-size:0.7rem;">${escapeHtml(sub.nummer || (main.nummer + '.' + (sIdx + 1)))}</span>
+                                                        <i class="fas fa-grip-vertical text-muted cursor-grab gv-sub-drag-handle" style="cursor: grab; font-size: 0.8rem;" title="Ziehen zum Verschieben"></i>
+                                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0.5 fw-bold font-monospace" style="font-size:0.75rem;">${escapeHtml(sub.nummer || (main.nummer + '.' + (sIdx + 1)))}</span>
                                                         <div>
                                                             <span class="small fw-semibold text-dark">${escapeHtml(sub.titel)}</span>
-                                                            ${sub.beschreibung ? `<span class="text-muted ms-1" style="font-size:0.72rem;">– ${escapeHtml(sub.beschreibung)}</span>` : ''}
+                                                            ${sub.beschreibung ? `<span class="text-muted ms-1" style="font-size:0.75rem;">– ${escapeHtml(sub.beschreibung)}</span>` : ''}
                                                         </div>
                                                     </div>
                                                     <div class="d-flex align-items-center gap-1">
-                                                        ${sub.referent ? `<span class="badge bg-white text-muted border py-0 px-1 me-1" style="font-size:0.65rem;">${escapeHtml(sub.referent)}</span>` : ''}
-                                                        <button class="btn btn-xs btn-link text-secondary p-0 px-1" title="Nach oben" onclick="gvDossierMoveTraktandum('${sub.id}', 'up')" ${sIdx === 0 ? 'disabled' : ''}>
+                                                        ${sub.referent ? `<span class="badge bg-white text-secondary border py-0.5 px-2 me-1 shadow-xs" style="font-size:0.7rem;"><i class="fas fa-user-tie me-1 text-primary"></i>${escapeHtml(sub.referent)}</span>` : ''}
+                                                        <button class="btn btn-xs btn-outline-secondary py-0.5 px-1.5" title="Nach oben" onclick="gvDossierMoveTraktandum('${sub.id}', 'up')" ${sIdx === 0 ? 'disabled' : ''}>
                                                             <i class="fas fa-arrow-up" style="font-size:0.7rem;"></i>
                                                         </button>
-                                                        <button class="btn btn-xs btn-link text-secondary p-0 px-1" title="Nach unten" onclick="gvDossierMoveTraktandum('${sub.id}', 'down')" ${sIdx === subItems.length - 1 ? 'disabled' : ''}>
+                                                        <button class="btn btn-xs btn-outline-secondary py-0.5 px-1.5" title="Nach unten" onclick="gvDossierMoveTraktandum('${sub.id}', 'down')" ${sIdx === subItems.length - 1 ? 'disabled' : ''}>
                                                             <i class="fas fa-arrow-down" style="font-size:0.7rem;"></i>
                                                         </button>
-                                                        <button class="btn btn-xs btn-link text-secondary p-0 px-1" title="Bearbeiten" onclick="gvDossierEditTraktandumModal('${sub.id}')">
+                                                        <button class="btn btn-xs btn-outline-primary py-0.5 px-1.5" title="Bearbeiten" onclick="gvDossierEditTraktandumModal('${sub.id}')">
                                                             <i class="fas fa-pencil-alt" style="font-size:0.7rem;"></i>
                                                         </button>
-                                                        <button class="btn btn-xs btn-link text-danger p-0 px-1" title="Löschen" onclick="gvDossierDeleteTraktandum('${sub.id}')">
+                                                        <button class="btn btn-xs btn-outline-danger py-0.5 px-1.5" title="Löschen" onclick="gvDossierDeleteTraktandum('${sub.id}')">
                                                             <i class="fas fa-trash-alt" style="font-size:0.7rem;"></i>
                                                         </button>
                                                     </div>
@@ -771,6 +771,24 @@
                     <div class="mb-0">
                         <label class="form-label small fw-bold mb-1">Wort des Präsidenten (Begleittext)</label>
                         <textarea id="gv-stamm-praesident-wort" class="form-control form-control-sm" rows="3" placeholder="Grusswort des Präsidenten zur GV..." oninput="gvDossierOnStammdatenFieldChange()">${escapeHtml(gv.praesident_wort || '')}</textarea>
+                    </div>
+
+                    <!-- PDF-EINLADUNGSTEXTE (SEITE 1) -->
+                    <div class="card border rounded-3 p-3 bg-white mt-3 shadow-xs">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small fw-bold text-dark"><i class="fas fa-file-pdf text-danger me-1"></i> PDF-Einladungstexte (Seite 1)</span>
+                            <button type="button" class="btn btn-xs btn-outline-primary fw-semibold" onclick="gvDossierOpenTemplateTextModal()">
+                                <i class="fas fa-edit me-1"></i> Texte anpassen
+                            </button>
+                        </div>
+                        <div class="small text-muted mb-2" style="font-size: 0.8rem;">
+                            Passe Titel, Einladungstext, Antragsfristen und Schlusssatz für das gedruckte PDF an (gespeichert in den zentralen Dokumenten-Vorlagen).
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-xs btn-light border text-secondary" onclick="navTo('dokument-vorlagen'); docSelectCategory('gv');">
+                                <i class="fas fa-external-link-alt me-1"></i> In Dokumenten-Vorlagen öffnen
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -970,19 +988,22 @@
             `;
 
             if (typeof window.ClubWysiwyg !== 'undefined') {
-                window.ClubWysiwyg.init('gv-camp-body', {
-                    mode: 'email',
-                    minHeight: '260px',
-                    placeholder: 'E-Mail Text an die Mitglieder verfassen...',
-                    placeholders: [
-                        { tag: 'mitglied.vorname', label: 'Vorname' },
-                        { tag: 'mitglied.nachname', label: 'Nachname' },
-                        { tag: 'mitglied.anrede', label: 'Anrede (Lieber/Liebe...)' },
-                        { tag: 'event.datum_formatiert', label: 'Datum der GV' },
-                        { tag: 'dossier.download_url', label: 'Download-Link Master-Dossier' }
-                    ],
-                    onChange: () => gvDossierLiveUpdateMailText()
-                });
+                const mailArea = document.getElementById('gv-camp-body');
+                if (mailArea) {
+                    window.ClubWysiwyg.init(mailArea, {
+                        mode: 'email',
+                        minHeight: '260px',
+                        placeholder: 'E-Mail Text an die Mitglieder verfassen...',
+                        placeholders: [
+                            { tag: 'mitglied.vorname', label: 'Vorname' },
+                            { tag: 'mitglied.nachname', label: 'Nachname' },
+                            { tag: 'mitglied.anrede', label: 'Anrede (Lieber/Liebe...)' },
+                            { tag: 'event.datum_formatiert', label: 'Datum der GV' },
+                            { tag: 'dossier.download_url', label: 'Download-Link Master-Dossier' }
+                        ],
+                        onChange: () => gvDossierLiveUpdateMailText()
+                    });
+                }
             }
         }
 
@@ -2755,8 +2776,116 @@
     };
 
     // =========================================================================
-    // SYSTEM-MAILS: PRÄSENZLISTE & ZWISCHENSTAND
+    // SYSTEM-MAILS: PRÄSENZLISTE & ZWISCHENSTAND & PDF-TEXTE
     // =========================================================================
+
+    /**
+     * Modal zum Bearbeiten der PDF-Einladungstexte (aus public.document_templates)
+     */
+    window.gvDossierOpenTemplateTextModal = async function () {
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const isElection = Boolean(state.gvInstance?.is_election_year);
+        const tCode = isElection ? 'gv_wahljahr' : 'gv_normal';
+
+        if (typeof showLoadingOverlay === 'function') showLoadingOverlay("Lade PDF-Einladungstexte...");
+
+        let tData = null;
+        try {
+            const { data } = await supa.from('document_templates').select('*').eq('code', tCode).maybeSingle();
+            tData = data;
+        } catch (e) {
+            console.warn("Fehler beim Laden der Vorlage:", e);
+        } finally {
+            if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+        }
+
+        const title = tData?.title || `Einladung zur {gv_nummer}. Generalversammlung der Sportschützen Muhen`;
+        const intro = tData?.intro || `Sehr geehrte Vereinsmitglieder, geschätzte Ehrenmitglieder und Schützenkameraden,\n\nzur {gv_nummer}. ordentlichen Generalversammlung der Sportschützen Muhen vom {gv_datum} um {gv_zeit} Uhr im Schützenhaus Rüteli laden wir euch herzlich ein.\n\nIn dieser Einladung sind der Jahresbericht des Präsidenten sowie das Protokoll der letzten Generalversammlung enthalten. Ebenso finden sich der Bericht der Jungschützenleiterin, die Jahresrechnung und das Budget. Der Besuch der Generalversammlung ist für alle Wettkampfmitglieder obligatorisch. Entschuldigungen sind dem Präsidenten eine Woche vor der Generalversammlung mitzuteilen.`;
+        const notice = tData?.notice || `Hinweis: Anträge zuhanden der GV müssen gemäss Art. 15.2 der Vereinsstatuten mindestens 8 Tage vor der Versammlung schriftlich an den Präsidenten eingereicht werden.`;
+        const outro = tData?.outro || `Mit sportlichen Grüssen\nDer Vorstand der Sportschützen Muhen`;
+
+        const modalContainer = document.getElementById('gv-dossier-modal-container');
+        if (!modalContainer) return;
+
+        modalContainer.innerHTML = `
+            <div class="modal fade show" id="gvTemplateTextModal" tabindex="-1" style="display:block; background:rgba(0,0,0,0.5);" aria-modal="true" role="dialog">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                    <div class="modal-content border-0 rounded-4 shadow-lg">
+                        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+                            <h5 class="modal-title fw-bold">
+                                <i class="fas fa-file-pdf me-2"></i>PDF-Einladungstexte bearbeiten (${isElection ? 'Wahljahr' : 'Standardjahr'})
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" onclick="gvDossierCloseModal()"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            <form id="gvTemplateTextForm" onsubmit="event.preventDefault(); gvDossierSaveTemplateText('${tCode}');">
+                                <div class="alert alert-info py-2 px-3 small rounded-3 mb-3">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Diese Texte steuern die erste Seite des Einladungs-PDFs (ausserhalb der dynamischen Traktandenliste). Gespeichert in <code>public.document_templates</code>. Verfügbare Platzhalter: <code>{gv_nummer}</code>, <code>{gv_datum}</code>, <code>{gv_zeit}</code>, <code>{gv_ort}</code>, <code>{praesident_name}</code>, <code>{datum_vorjahr}</code>.
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold text-muted">Dokument-Titel</label>
+                                    <input type="text" id="gvTplTitle" class="form-control form-control-sm fw-bold" value="${escapeHtml(title)}" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold text-muted">Einleitungstext (vor den Traktanden)</label>
+                                    <textarea id="gvTplIntro" class="form-control form-control-sm" rows="6">${escapeHtml(intro)}</textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold text-muted">Antragsfristen / Wichtige Hinweise (nach den Traktanden)</label>
+                                    <textarea id="gvTplNotice" class="form-control form-control-sm" rows="3">${escapeHtml(notice)}</textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold text-muted">Schlussformel &amp; Unterschrift</label>
+                                    <textarea id="gvTplOutro" class="form-control form-control-sm" rows="3">${escapeHtml(outro)}</textarea>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="gvDossierCloseModal()">Abbrechen</button>
+                                    <button type="submit" class="btn btn-sm btn-primary fw-bold px-3">
+                                        <i class="fas fa-save me-1"></i> In Vorlagen speichern &amp; PDF aktualisieren
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    };
+
+    window.gvDossierSaveTemplateText = async function (tCode) {
+        const supa = getSupabase();
+        if (!supa) return;
+
+        const title = document.getElementById('gvTplTitle')?.value || '';
+        const intro = document.getElementById('gvTplIntro')?.value || '';
+        const notice = document.getElementById('gvTplNotice')?.value || '';
+        const outro = document.getElementById('gvTplOutro')?.value || '';
+
+        try {
+            const { error } = await supa.from('document_templates').update({
+                title: title,
+                intro: intro,
+                notice: notice,
+                outro: outro,
+                updated_at: new Date().toISOString()
+            }).eq('code', tCode);
+
+            if (error) throw error;
+
+            if (typeof showToast === 'function') showToast("PDF-Einladungstexte erfolgreich gespeichert!", 'success');
+            gvDossierCloseModal();
+            // PDF-Vorschau neu kompilieren
+            if (typeof gvDossierRefreshPreview === 'function') {
+                gvDossierRefreshPreview();
+            }
+        } catch (e) {
+            console.error("Fehler beim Speichern der Vorlage:", e);
+            alert("Fehler beim Speichern der Vorlage: " + e.message);
+        }
+    };
 
     /**
      * Druckfertige Präsenzliste als PDF öffnen
@@ -2776,7 +2905,10 @@
             ort: state.gvInstance?.ort || 'Schützenhaus Muhen'
         };
 
-        await window.gvGeneratePraesenzlistePdf(state.year, gvData, state.participantsData, {
+        // Nur angemeldete Mitglieder abbilden + Leerzeilen
+        const angemeldetList = (state.participantsData || []).filter(p => p.status === 'ja' || p.anwesend === true);
+
+        await window.gvGeneratePraesenzlistePdf(state.year, gvData, angemeldetList, {
             openInNewTab: true,
             forceRecreate: true
         });
@@ -2818,7 +2950,10 @@
                 ort: state.gvInstance?.ort || 'Schützenhaus Muhen'
             };
 
-            const pdfRes = await window.gvGeneratePraesenzlistePdf(curYear, gvData, state.participantsData, {
+            // Nur angemeldete Mitglieder abbilden + Leerzeilen
+            const angemeldetList = (state.participantsData || []).filter(p => p.status === 'ja' || p.anwesend === true);
+
+            const pdfRes = await window.gvGeneratePraesenzlistePdf(curYear, gvData, angemeldetList, {
                 openInNewTab: false,
                 forceRecreate: true
             });

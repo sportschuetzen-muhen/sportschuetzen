@@ -2090,36 +2090,36 @@ async function generateGVInvitationPdf(
     const num = c.clause_number || String(idx + 1);
 
     if (isSub) {
-      // Untertraktandum: eingerückt
-      const subX = 26 * MM;
-      const subTitleX = 33 * MM;
+      // Untertraktandum: sauber eingerückt, einheitliche 8.5pt Regular-Schrift in Dunkelgrau
+      const subX = 28 * MM;
+      const subTitleX = 37 * MM;
       if (num) {
-        page1.drawText(`${num}`, { x: subX, y: curY, size: 7.8, font: fontRegular, color: rgb(0.25, 0.35, 0.6) });
+        page1.drawText(`${num}`, { x: subX, y: curY, size: 8.5, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
       }
-      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: subTitleX, y: curY, size: 7.8, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
+      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: subTitleX, y: curY, size: 8.5, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
 
       if (c.clause_text && c.clause_text.trim()) {
         curY -= 3.2 * MM;
         page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
           x: subTitleX,
           y: curY,
-          size: 7.0,
+          size: 7.2,
           font: fontRegular,
           color: rgb(0.45, 0.45, 0.45),
         });
         curY -= 3.8 * MM;
       } else {
-        curY -= 3.5 * MM;
+        curY -= 3.8 * MM;
       }
     } else {
       // Haupttraktandum: fett
-      page1.drawText(`${num}.`, { x: 22 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
-      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: 30 * MM, y: curY, size: 8.5, font: fontBold });
+      page1.drawText(`${num}.`, { x: 20 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
+      page1.drawText(sanitizeWinAnsiText(c.clause_title || ""), { x: 28 * MM, y: curY, size: 8.5, font: fontBold, color: rgb(0.1, 0.1, 0.1) });
 
       if (c.clause_text && c.clause_text.trim()) {
         curY -= 3.5 * MM;
         page1.drawText(sanitizeWinAnsiText(c.clause_text.trim()), {
-          x: 30 * MM,
+          x: 28 * MM,
           y: curY,
           size: 7.5,
           font: fontRegular,
@@ -2148,98 +2148,156 @@ async function generateGVInvitationPdf(
   page1.drawText("Der Vorstand der Sportschützen Muhen", { x: 20 * MM, y: curY, size: 9, font: fontBold, color: rgb(0.12, 0.23, 0.54) });
 
   // ============================================================================
-  // SEITE 2+: JAHRESPROGRAMM / TERMINLISTE
+  // SEITE 2+: JAHRESPROGRAMM & SCHIESSTERMINE (GETRENNT GEMÄSS MUSTER)
   // ============================================================================
-  const drawProgHeader = (p: any, y: number) => {
-    p.drawText(`Sportschützen Muhen · Jahresprogramm ${year}`, {
-      x: 20 * MM,
-      y: y,
-      size: 12,
-      font: fontBold,
-      color: rgb(0.1, 0.15, 0.3),
-    });
-    p.drawText("Übersicht aller Termine, Schiessanlässe, Trainings und Meisterschaften", {
-      x: 20 * MM,
-      y: y - 4.5 * MM,
-      size: 8,
-      font: fontRegular,
-      color: rgb(0.4, 0.45, 0.55),
-    });
-    p.drawLine({
-      start: { x: 20 * MM, y: y - 6.5 * MM },
-      end: { x: 190 * MM, y: y - 6.5 * MM },
-      thickness: 0.5,
-      color: rgb(0.7, 0.7, 0.7),
-    });
-    return y - 12 * MM;
+  const formatZeitStr = (start?: string, end?: string) => {
+    const s = (start || "").replace(/:00$/, "").trim();
+    const e = (end || "").replace(/:00$/, "").trim();
+    if (s && e) return `${s} bis ${e} Uhr`;
+    if (s) return `${s} Uhr`;
+    return "–";
   };
 
-  const drawProgTableHeader = (p: any, y: number) => {
-    p.drawRectangle({
-      x: 20 * MM,
-      y: y - 2 * MM,
-      width: 170 * MM,
-      height: 6 * MM,
-      color: rgb(0.93, 0.95, 0.98),
-    });
-    p.drawText("Datum", { x: 22 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Tag", { x: 44 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Zeit", { x: 55 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Anlass / Schiessprogramm", { x: 74 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    p.drawText("Ort / Stand", { x: 150 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
-    return y - 6 * MM;
-  };
+  const renderTerminBlock = (
+    title: string,
+    subtitle: string,
+    items: any[]
+  ) => {
+    if (!items || items.length === 0) return;
 
-  if (termine && termine.length > 0) {
-    let curProgPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-    let progY = drawProgHeader(curProgPage, 275 * MM);
-    progY = drawProgTableHeader(curProgPage, progY);
-
-    termine.forEach((term, idx) => {
-      // Prüfen, ob noch Platz auf Seite
-      if (progY < 25 * MM) {
-        curProgPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-        progY = drawProgHeader(curProgPage, 275 * MM);
-        progY = drawProgTableHeader(curProgPage, progY);
+    const drawHeader = (p: any, y: number) => {
+      if (logoImage) {
+        const scaledLogo = logoImage.scaleToFit(20 * MM, 20 * MM);
+        p.drawImage(logoImage, {
+          x: 20 * MM,
+          y: y - scaledLogo.height + 4 * MM,
+          width: scaledLogo.width,
+          height: scaledLogo.height,
+        });
       }
 
-      const dObj = new Date(term.datum);
-      const dStr = !isNaN(dObj.getTime())
+      p.drawText(CLUB_NAME.toUpperCase(), {
+        x: 44 * MM,
+        y: y,
+        size: 13,
+        font: fontBold,
+        color: rgb(0.12, 0.23, 0.54),
+      });
+
+      p.drawText(title, {
+        x: 20 * MM,
+        y: y - 14 * MM,
+        size: 13,
+        font: fontBold,
+        color: rgb(0.1, 0.15, 0.3),
+      });
+      p.drawText(subtitle, {
+        x: 20 * MM,
+        y: y - 18.5 * MM,
+        size: 8,
+        font: fontRegular,
+        color: rgb(0.4, 0.45, 0.55),
+      });
+      p.drawLine({
+        start: { x: 20 * MM, y: y - 20.5 * MM },
+        end: { x: 190 * MM, y: y - 20.5 * MM },
+        thickness: 0.5,
+        color: rgb(0.7, 0.7, 0.7),
+      });
+      return y - 26 * MM;
+    };
+
+    const drawTableHeader = (p: any, y: number) => {
+      p.drawRectangle({
+        x: 20 * MM,
+        y: y - 2 * MM,
+        width: 170 * MM,
+        height: 6 * MM,
+        color: rgb(0.93, 0.95, 0.98),
+      });
+      p.drawText("Datum", { x: 22 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+      p.drawText("Tag", { x: 44 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+      p.drawText("Zeit", { x: 55 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+      p.drawText("Anlass / Programm", { x: 88 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+      p.drawText("Ort / Stand", { x: 155 * MM, y, size: 8, font: fontBold, color: rgb(0.1, 0.15, 0.3) });
+      return y - 6 * MM;
+    };
+
+    let curPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    let pageY = drawHeader(curPage, 275 * MM);
+    pageY = drawTableHeader(curPage, pageY);
+
+    items.forEach((term, idx) => {
+      if (pageY < 25 * MM) {
+        curPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+        pageY = drawHeader(curPage, 275 * MM);
+        pageY = drawTableHeader(curPage, pageY);
+      }
+
+      const dObj = term.datum ? new Date(term.datum) : null;
+      const dStr = dObj && !isNaN(dObj.getTime())
         ? dObj.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" })
-        : (term.datum || "–");
-      const weekdayStr = !isNaN(dObj.getTime())
+        : (term.datum || "Datum folgt");
+      const weekdayStr = dObj && !isNaN(dObj.getTime())
         ? dObj.toLocaleDateString("de-CH", { weekday: "short" })
         : "";
-      const zeitStr = term.zeit || "–";
-      const titleStr = term.titel || term.anlass || "–";
+      const zeitStr = formatZeitStr(term.startzeit, term.endzeit);
+      const titleStr = term.anlasstitel || term.titel || term.anlass || "–";
       const ortStr = term.ort || "Schiessanlage Hard";
 
       // Zebrastreifen
       if (idx % 2 === 1) {
-        curProgPage.drawRectangle({
+        curPage.drawRectangle({
           x: 20 * MM,
-          y: progY - 1.5 * MM,
+          y: pageY - 1.5 * MM,
           width: 170 * MM,
           height: 4.8 * MM,
           color: rgb(0.98, 0.98, 0.99),
         });
       }
 
-      curProgPage.drawText(sanitizeWinAnsiText(dStr), { x: 22 * MM, y: progY, size: 7.5, font: fontRegular });
-      curProgPage.drawText(sanitizeWinAnsiText(weekdayStr), { x: 44 * MM, y: progY, size: 7.5, font: fontRegular });
-      curProgPage.drawText(sanitizeWinAnsiText(zeitStr), { x: 55 * MM, y: progY, size: 7.5, font: fontRegular });
-      
+      curPage.drawText(sanitizeWinAnsiText(dStr), { x: 22 * MM, y: pageY, size: 7.5, font: fontRegular });
+      curPage.drawText(sanitizeWinAnsiText(weekdayStr), { x: 44 * MM, y: pageY, size: 7.5, font: fontRegular });
+      curPage.drawText(sanitizeWinAnsiText(zeitStr), { x: 55 * MM, y: pageY, size: 7.2, font: fontRegular });
+
       const titleClean = sanitizeWinAnsiText(titleStr);
-      const maxTitleLen = 42;
+      const maxTitleLen = 38;
       const displayTitle = titleClean.length > maxTitleLen ? titleClean.substring(0, maxTitleLen) + "..." : titleClean;
-      curProgPage.drawText(displayTitle, { x: 74 * MM, y: progY, size: 7.5, font: fontBold });
+      curPage.drawText(displayTitle, { x: 88 * MM, y: pageY, size: 7.5, font: fontBold });
 
       const ortClean = sanitizeWinAnsiText(ortStr);
-      const displayOrt = ortClean.length > 24 ? ortClean.substring(0, 24) + "..." : ortClean;
-      curProgPage.drawText(displayOrt, { x: 150 * MM, y: progY, size: 7.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+      const displayOrt = ortClean.length > 22 ? ortClean.substring(0, 22) + "..." : ortClean;
+      curPage.drawText(displayOrt, { x: 155 * MM, y: pageY, size: 7.5, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
 
-      progY -= 4.8 * MM;
+      pageY -= 4.8 * MM;
     });
+  };
+
+  if (termine && termine.length > 0) {
+    const progItems = termine.filter((t: any) => 
+      t.kategorie === "Jahresprogramm" || (!t.kategorie && !t.anlasstitel?.toLowerCase().includes("meisterschaft"))
+    );
+    const schiessItems = termine.filter((t: any) => 
+      t.kategorie === "Schiesstermine" || t.anlasstitel?.toLowerCase().includes("meisterschaft")
+    );
+
+    // 1. Block: Jahresprogramm
+    if (progItems.length > 0) {
+      renderTerminBlock(
+        `Jahresprogramm ${year}`,
+        "Übersicht der Vereinsanlässe, Trainings, Generalversammlung & Festivitäten",
+        progItems
+      );
+    }
+
+    // 2. Block: Schiesstermine
+    if (schiessItems.length > 0) {
+      renderTerminBlock(
+        `Schiesstermine ${year}`,
+        "Übersicht aller Meisterschaften, Rundenwettkämpfe, Gruppenmeisterschaften & Finals",
+        schiessItems
+      );
+    }
   }
 
   // ============================================================================
@@ -3168,8 +3226,12 @@ async function generateGvPraesenzlistePdf(
     }
   }
 
-  // Teilnehmerliste sortieren
-  let list = (participants || []).slice().sort((a: any, b: any) => {
+  // Teilnehmerliste filtern: Nur angemeldete Mitglieder abbilden
+  const registeredOnly = (participants || []).filter(
+    (p: any) => p.status === "ja" || p.anwesend === true || p.attending === true || p.anmeldung_status === "ja"
+  );
+
+  let list = (registeredOnly.length > 0 ? registeredOnly : (participants || [])).slice().sort((a: any, b: any) => {
     const na = (a.last_name || a.nachname || "").localeCompare(b.last_name || b.nachname || "");
     if (na !== 0) return na;
     return (a.first_name || a.vorname || "").localeCompare(b.first_name || b.vorname || "");
@@ -3212,13 +3274,15 @@ async function generateGvPraesenzlistePdf(
 
   const renderPraesenzHeader = (page: any, isFirst: boolean) => {
     let curY = A4_HEIGHT - 16 * MM;
+    const titleSize = 18;
+    const headerTopY = curY + 4.8 * MM; // Oberkante des 18pt Titels
 
-    // Logo oben links
+    // Logo oben links: Oberkante bündig mit oberem Rand des Titels "Präsenzliste"
     if (logoImage) {
       const dims = logoImage.scaleToFit(26 * MM, 26 * MM);
       page.drawImage(logoImage, {
         x: 18 * MM,
-        y: curY - dims.height + 2 * MM,
+        y: headerTopY - dims.height,
         width: dims.width,
         height: dims.height,
       });
@@ -3228,7 +3292,7 @@ async function generateGvPraesenzlistePdf(
     page.drawText("Präsenzliste", {
       x: A4_WIDTH - 85 * MM,
       y: curY,
-      size: 18,
+      size: titleSize,
       font: fontBold,
       color: rgb(0.08, 0.15, 0.35),
     });

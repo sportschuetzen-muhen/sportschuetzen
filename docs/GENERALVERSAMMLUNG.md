@@ -134,13 +134,13 @@ Das UI des Moduls (`vorstand/js/gv-dossier.js`) ist als übersichtlicher 2-Spalt
 * **SortableJS Beilagen-Sortierung:** Festlegung der genauen Reihenfolge der Dokumente im fertigen Heft.
 * **Button «Gesamtes GV-Dossier jetzt kompilieren & stempeln»:**
   * Ruft die Edge Function `generate-pdf` mit Action `compile-gv-dossier` auf.
-  * Erzeugt dynamisch Seite 1 (Einladung & Traktanden) und Seite 2 (Jahresprogramm aus Kalender).
+  * Erzeugt dynamisch Seite 1 (Einladung & Traktanden mit harmonisierten Untertraktanden) sowie Folgeseiten für **Jahresprogramm** (`kategorie = 'Jahresprogramm'`) und **Schiesstermine** (`kategorie = 'Schiesstermine'`) aus `public.termine` (`anlasstitel`, `startzeit`, `endzeit`, `ort`).
+  * Textinhalte ausserhalb der Traktanden (Titel, Intro, Antragsfristen, Outro) stammen aus `public.document_templates` (`gv_normal` / `gv_wahljahr`) und können direkt im GV-Cockpit («Stammdaten & Fristen») oder unter «Dokumenten-Vorlagen» bearbeitet werden.
   * Hängt alle hochgeladenen PDF-Beilagen nahtlos an (`copyPages`).
   * Prägt den einheitlichen **Corporate Stempel** (Vereinskopf oben, fortlaufende Seitennummerierung `Seite X von Y` unten) über das gesamte Dokument.
 
 ### Reiter 4: E-Mail-Text & Kampagne
-* Konfiguration von E-Mail-Betreff und Begleittext über `ClubWysiwyg`.
-* Unterstützung dynamischer Platzhalter: `{{mitglied.vorname}}`, `{{mitglied.nachname}}`, `{{gv.datum}}`, `{{dossier.download_url}}`.
+* Konfiguration von E-Mail-Betreff und Begleittext über den globalen Vereins-Editor `ClubWysiwyg` mit formatierungsreicher Toolbar, Alert-Bannern, Call-to-Actions und dynamischen Platzhaltern (`{{mitglied.vorname}}`, `{{mitglied.nachname}}`, `{{event.datum_formatiert}}`, `{{dossier.download_url}}`).
 * **Sicherheits-Features:**
   * Button «Test-Mail an mich senden»: Sendet ein reales Test-PDF direkt an die Adresse des eingeloggten Benutzers.
   * Massenversand mit Fortschrittsanzeige und Idempotenz (kein versehentlicher Doppelversand).
@@ -178,7 +178,8 @@ Das rechte Panel synchronisiert sich live mit den Eingaben im linken Bereich:
 Beim Laden oder Neuanlegen einer GV sucht das System in `public.poll_events` nach einem Event, dessen Titel das Schlüsselwort **«Generalversammlung»** (Case-Insensitive) und das aktuelle Jahreskürzel enthält (z. B. `100. Generalversammlung 2026`). Wird ein Treffer gefunden, wird `linked_event_id` automatisch gesetzt.
 
 ### 6.2 Druckfertige DIN A4 Präsenzliste & Mail an Aktuar
-* **Edge Function `generate-gv-praesenzliste`:** Generiert ein druckfertiges DIN A4 Dokument mit Quorum-Box, Stimmberechtigten-Tabelle (`Nr.`, `Nachname`, `Vorname`, `Unterschrift`) und Leerzeilen für spontane Nachmeldungen.
+* **Edge Function `generate-gv-praesenzliste`:** Generiert ein druckfertiges DIN A4 Dokument mit bündig am oberen Rand ausgerichtetem Vereinswappen, Quorum-Box, Stimmberechtigten-Tabelle (`Nr.`, `Nachname`, `Vorname`, `Unterschrift`) und Leerzeilen für spontane Nachmeldungen.
+* **Teilnehmerkreis:** Es werden ausschliesslich tatsächlich angemeldete Mitglieder (`status = 'ja'`) aufgeführt, ergänzt durch 15 nummerierte Leerzeilen für spontane Gäste und Nachmeldungen am Versammlungsabend.
 * **Automatischer Verteiler:** Versand als PDF-Anhang an den Aktuar über den Verteilerschlüssel `Info_Mail_Aktuar` in `public.system_mail_configs`.
 
 ### 6.3 Zwischenstand-Mail an Vorstand

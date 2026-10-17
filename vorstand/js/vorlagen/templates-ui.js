@@ -119,20 +119,17 @@
       await window.loadDocumentTemplatesData();
     }
 
-    // 3 HAUPT-REITER DES DOKUMENTEN- & VORLAGEN-POOLS
+    // 4 HAUPT-REITER DES DOKUMENTEN- & VORLAGEN-POOLS
     const mainCategories = [
       { key: 'rechnung', label: 'Rechnungen & Mahnwesen', icon: 'fa-file-invoice-dollar text-primary' },
       { key: 'vermietung', label: 'Vermietung Schützenstube', icon: 'fa-house-chimney text-warning' },
-      { key: 'brief', label: 'Vorstandsbriefe & Rundschreiben', icon: 'fa-envelope-open-text text-info' }
+      { key: 'brief', label: 'Vorstandsbriefe & Rundschreiben', icon: 'fa-envelope-open-text text-info' },
+      { key: 'gv', label: 'GV-Einladung (PDF-Texte)', icon: 'fa-landmark text-success' }
     ];
 
     let currentCat = window._selectedDocCategory || 'rechnung';
-    if (currentCat === 'gv') {
-      currentCat = 'rechnung';
-      window._selectedDocCategory = 'rechnung';
-    }
 
-    // HTML für die 3 Haupt-Reiter
+    // HTML für die Haupt-Reiter
     const mainTabsHtml = mainCategories.map(c => `
       <button class="btn ${currentCat === c.key ? 'btn-primary fw-bold shadow-sm' : 'btn-outline-secondary'} d-flex align-items-center gap-2 py-2 px-3 rounded-3" onclick="docSelectCategory('${c.key}')">
         <i class="fas ${c.icon}"></i>
@@ -213,6 +210,8 @@
       ];
     } else if (currentCat === 'brief') {
       categoryPlaceholders = ['{betreff}', '{datum}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
+    } else if (currentCat === 'gv') {
+      categoryPlaceholders = ['{gv_nummer}', '{gv_datum}', '{gv_zeit}', '{gv_ort}', '{praesident_name}', '{datum_vorjahr}', '{abmelde_datum}'];
     }
 
     const placeholdersHtml = categoryPlaceholders.map(ph => `
@@ -543,10 +542,6 @@
 
   // 3. NAVIGATION & INTERAKTIONEN
   window.docSelectCategory = function(cat) {
-    if (cat === 'gv') {
-      navTo('gv-dossier');
-      return;
-    }
     window._selectedDocCategory = cat;
     if (cat === 'rechnung') {
       window._selectedDocCode = 'jahresbeitrag';
@@ -554,6 +549,8 @@
       window._selectedDocCode = 'mietvertrag';
     } else if (cat === 'brief') {
       window._selectedDocCode = 'freier_brief';
+    } else if (cat === 'gv') {
+      window._selectedDocCode = 'gv_normal';
     }
     const container = document.getElementById('dokument-vorlagen-container');
     if (container) window.renderDokumentVorlagen(container);
