@@ -263,7 +263,9 @@
                 .select('*')
                 .eq('gv_id', gvId)
                 .order('sort_order', { ascending: true });
-            state.traktanden = trData || [];
+            const allTr = trData || [];
+            state.traktanden = allTr.filter(t => !t.is_in_pool);
+            state.traktandenPool = allTr.filter(t => Boolean(t.is_in_pool));
 
             // 7. Teilnehmer- & Anmeldedaten laden
             await loadGVParticipantsData();
@@ -587,18 +589,26 @@
         const gv = state.gvDraft || state.gvInstance || {};
 
         // ---------------------------------------------------------------------
-        // TAB 1: TRAKTANDEN-MANAGER MIT DRAG & DROP
+        // ---------------------------------------------------------------------
+        // TAB 1: TRAKTANDEN-MANAGER MIT DYNAMISCHER NUMMERIERUNG & POOL
         // ---------------------------------------------------------------------
         if (state.activeLeftTab === 'traktanden') {
             const allItems = state.traktanden || [];
+            const poolItems = (state.traktandenPool || []).filter(t => !t.parent_id);
             const mainItems = allItems.filter(t => !t.parent_id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
             panel.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <!-- AKTIVE TRAKTANDENLISTE HEADER -->
+                <div class="d-flex justify-content-between align-items-center mb-2.5 flex-wrap gap-2">
                     <div>
-                        <span class="small fw-bold text-muted text-uppercase">Traktandenliste ${curYear}:</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="small fw-bold text-dark text-uppercase" style="letter-spacing:0.5px;">
+                                <i class="fas fa-list-ol text-primary me-1"></i>Aktive Traktandenliste ${curYear}:
+                            </span>
+                            <span class="badge bg-primary text-white rounded-pill px-2 py-0.5" style="font-size:0.75rem;">${mainItems.length} aktiv</span>
+                        </div>
                         <div class="text-muted" style="font-size:0.75rem;">
-                            <i class="fas fa-arrows-alt text-primary me-1"></i>Traktanden per Drag &amp; Drop verschiebbar
+                            <i class="fas fa-magic text-secondary me-1"></i>Nummerierung erfolgt fortlaufend automatisch · Per Drag &amp; Drop sortierbar
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -611,26 +621,37 @@
                                 <i class="fas fa-vote-yea text-warning me-1"></i> Wahljahr (Erneuerungswahlen)
                             </label>
                         </div>
+                        <button class="btn btn-sm btn-outline-warning text-dark fw-semibold py-1 px-2.5 rounded-2 shadow-xs" onclick="gvDossierAddElectionTraktandumModal()" title="Neues Wahltraktandum erfassen">
+                            <i class="fas fa-vote-yea me-1"></i> Wahltraktandum
+                        </button>
                         <button class="btn btn-sm btn-primary py-1 px-2.5 rounded-2 fw-semibold shadow-sm" onclick="gvDossierAddTraktandumModal(null)">
-                            <i class="fas fa-plus me-1"></i> Traktandum hinzufügen
+                            <i class="fas fa-plus me-1"></i> Traktandum
                         </button>
                     </div>
                 </div>
 
+                <!-- STANDARTVORGABE-BANNER -->
+                <div class="alert alert-light border rounded-3 p-2.5 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2 shadow-xs" style="background:#f8fafc;">
+                    <div class="small text-muted" style="font-size:0.8rem; max-width: 520px;">
+                        <i class="fas fa-info-circle text-primary me-1"></i>
+                        <strong>Standardvorgabe für Generalversammlungen:</strong> Begrüssung · Stimmenzähler · Protokoll Vorjahr · Mutationen · Berichte · Jahresrechnung · Budget · Jahresprogramm · ${gv.is_election_year ? '<strong>Wahlen</strong> · ' : ''}Ehrungen · Anträge &amp; Varia.
+                    </div>
+                    <button class="btn btn-xs btn-outline-primary fw-semibold shadow-xs" onclick="gvDossierSeedDefaultTraktanden(${Boolean(gv.is_election_year)})">
+                        <i class="fas fa-magic me-1"></i> Standard-Vorgabe anwenden
+                    </button>
+                </div>
+
                 ${mainItems.length === 0 ? `
-                    <div class="alert alert-warning border-0 rounded-3 p-3 text-center my-4">
+                    <div class="alert alert-warning border-0 rounded-3 p-3 text-center my-3">
                         <i class="fas fa-exclamation-circle fa-2x mb-2 text-warning"></i>
-                        <h6 class="fw-bold text-dark">Noch keine Traktanden für die GV ${curYear} erfasst</h6>
-                        <p class="small text-muted mb-3">Du kannst die Traktanden aus dem Vorjahr übernehmen oder die Vorlage laden:</p>
+                        <h6 class="fw-bold text-dark">Noch keine aktiven Traktanden für die GV ${curYear}</h6>
+                        <p class="small text-muted mb-3">Wähle Standard-Traktanden, ziehe Punkte aus dem Pool nach oben oder übernimm das Vorjahr:</p>
                         <div class="d-flex justify-content-center gap-2 flex-wrap">
-                            <button class="btn btn-sm btn-primary fw-semibold" onclick="gvDossierCopyPreviousYearTraktanden()">
+                            <button class="btn btn-sm btn-primary fw-semibold shadow-xs" onclick="gvDossierSeedDefaultTraktanden(false)">
+                                <i class="fas fa-magic me-1"></i> Standard-Traktanden laden
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary fw-semibold" onclick="gvDossierCopyPreviousYearTraktanden()">
                                 <i class="fas fa-copy me-1"></i> Aus Vorjahr (${curYear - 1}) übernehmen
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary fw-semibold" onclick="gvDossierSeedDefaultTraktanden(false)">
-                                <i class="fas fa-magic me-1"></i> Standard (Normaljahr) laden
-                            </button>
-                            <button class="btn btn-sm btn-outline-info fw-semibold" onclick="gvDossierSeedDefaultTraktanden(true)">
-                                <i class="fas fa-users-cog me-1"></i> Standard (Wahljahr) laden
                             </button>
                         </div>
                     </div>
@@ -638,13 +659,14 @@
                     <div class="list-group rounded-3 shadow-none mb-3" id="gvTraktandenSortableList">
                         ${mainItems.map((main, mIdx) => {
                             const subItems = allItems.filter(t => t.parent_id === main.id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+                            const dynamicNum = String(mIdx + 1);
                             return `
                                 <div class="list-group-item p-2.5 border mb-2 rounded-2 shadow-xs bg-white gv-traktandum-main-row" data-tr-id="${main.id}">
                                     <!-- HAUPTTRAKTANDUM ZEILE -->
                                     <div class="d-flex align-items-center justify-content-between">
                                         <div class="d-flex align-items-center gap-2">
                                             <i class="fas fa-grip-vertical text-muted cursor-grab me-1 gv-main-drag-handle" style="cursor: grab;" title="Ziehen zum Verschieben"></i>
-                                            <span class="badge bg-primary text-white rounded-pill px-2 py-1 fs-7">${escapeHtml(main.nummer || String(mIdx + 1))}</span>
+                                            <span class="badge bg-primary text-white rounded-pill px-2.5 py-1 fs-7 fw-bold" title="Fortlaufende Nummer">${dynamicNum}</span>
                                             <div>
                                                 <div class="fw-bold small text-dark d-flex align-items-center flex-wrap gap-1">
                                                     <span>${escapeHtml(main.titel)}</span>
@@ -667,11 +689,15 @@
                                             <button class="btn btn-xs btn-outline-primary py-0.5 px-1.5 ms-1" title="Untertraktandum hinzufügen" onclick="gvDossierAddTraktandumModal('${main.id}')">
                                                 <i class="fas fa-plus"></i> <span style="font-size:0.7rem;">Unterpunkt</span>
                                             </button>
+                                            <!-- IN DEN POOL VERSCHIEBEN -->
+                                            <button class="btn btn-xs btn-outline-info p-1 ms-1" title="In den Traktanden-Pool verschieben" onclick="gvDossierMoveToPool('${main.id}')">
+                                                <i class="fas fa-box-archive"></i>
+                                            </button>
                                             <!-- BEARBEITEN & LÖSCHEN -->
-                                            <button class="btn btn-xs btn-outline-secondary p-1 ms-1" title="Bearbeiten" onclick="gvDossierEditTraktandumModal('${main.id}')">
+                                            <button class="btn btn-xs btn-outline-secondary p-1" title="Bearbeiten" onclick="gvDossierEditTraktandumModal('${main.id}')">
                                                 <i class="fas fa-pencil-alt"></i>
                                             </button>
-                                            <button class="btn btn-xs btn-outline-danger p-1" title="Löschen" onclick="gvDossierDeleteTraktandum('${main.id}')">
+                                            <button class="btn btn-xs btn-outline-danger p-1" title="Endgültig löschen" onclick="gvDossierDeleteTraktandum('${main.id}')">
                                                 <i class="fas fa-trash-alt"></i>
                                             </button>
                                         </div>
@@ -684,7 +710,7 @@
                                                 <div class="d-flex align-items-center justify-content-between py-1.5 px-2.5 mb-1.5 bg-light-subtle rounded-3 border border-secondary-subtle shadow-xs gv-sub-row" data-tr-id="${sub.id}">
                                                     <div class="d-flex align-items-center gap-2">
                                                         <i class="fas fa-grip-vertical text-muted cursor-grab gv-sub-drag-handle" style="cursor: grab; font-size: 0.8rem;" title="Ziehen zum Verschieben"></i>
-                                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0.5 fw-bold font-monospace" style="font-size:0.75rem;">${escapeHtml(sub.nummer || (main.nummer + '.' + (sIdx + 1)))}</span>
+                                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0.5 fw-bold font-monospace" style="font-size:0.75rem;">${dynamicNum}.${sIdx + 1}</span>
                                                         <div>
                                                             <div class="d-flex align-items-center flex-wrap gap-1">
                                                                 <span class="small fw-semibold text-dark">${escapeHtml(sub.titel)}</span>
@@ -702,6 +728,9 @@
                                                         <button class="btn btn-xs btn-outline-secondary py-0.5 px-1.5" title="Nach unten" onclick="gvDossierMoveTraktandum('${sub.id}', 'down')" ${sIdx === subItems.length - 1 ? 'disabled' : ''}>
                                                             <i class="fas fa-arrow-down" style="font-size:0.7rem;"></i>
                                                         </button>
+                                                        <button class="btn btn-xs btn-outline-info py-0.5 px-1.5" title="In den Traktanden-Pool verschieben" onclick="gvDossierMoveToPool('${sub.id}')">
+                                                            <i class="fas fa-box-archive" style="font-size:0.7rem;"></i>
+                                                        </button>
                                                         <button class="btn btn-xs btn-outline-primary py-0.5 px-1.5" title="Bearbeiten" onclick="gvDossierEditTraktandumModal('${sub.id}')">
                                                             <i class="fas fa-pencil-alt" style="font-size:0.7rem;"></i>
                                                         </button>
@@ -718,6 +747,74 @@
                         }).join('')}
                     </div>
                 `}
+
+                <!-- ========================================================= -->
+                <!-- TRAKTANDEN-POOL (VORRATSKAMMER & SPEZIAL-VORLAGEN)       -->
+                <!-- ========================================================= -->
+                <div class="card border rounded-4 p-3 bg-light shadow-xs mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="small fw-bold text-dark text-uppercase" style="letter-spacing:0.5px;">
+                                    <i class="fas fa-boxes text-info me-1"></i>Traktanden-Pool &amp; Vorratskammer:
+                                </span>
+                                <span class="badge bg-secondary text-white rounded-pill px-2 py-0.5" style="font-size:0.75rem;">${poolItems.length} im Pool</span>
+                            </div>
+                            <div class="text-muted" style="font-size:0.75rem;">
+                                Traktanden können per Drag &amp; Drop nach oben gezogen oder mit einem Klick zur GV hinzugefügt werden.
+                            </div>
+                        </div>
+                        <div class="d-flex gap-1.5">
+                            <button class="btn btn-xs btn-outline-secondary fw-semibold" onclick="gvDossierAddPoolSampleItems()" title="Häufige Vorlagen (Kleiderbeschaffung, Statuten, Scheiben) zum Pool hinzufügen">
+                                <i class="fas fa-plus-circle me-1"></i> Vorlagen ergänzen
+                            </button>
+                        </div>
+                    </div>
+
+                    ${poolItems.length === 0 ? `
+                        <div class="text-center py-3 text-muted border rounded-3 bg-white small">
+                            <i class="fas fa-box-open text-secondary mb-1 d-block opacity-50 fs-4"></i>
+                            Der Traktanden-Pool ist aktuell leer. Traktanden, die du mit <i class="fas fa-box-archive text-info"></i> ablegst, landen hier als wiederverwendbare Vorlage.
+                        </div>
+                    ` : `
+                        <div class="list-group rounded-3 shadow-none" id="gvTraktandenPoolSortableList">
+                            ${poolItems.map((pItem) => {
+                                const subPool = (state.traktandenPool || []).filter(s => s.parent_id === pItem.id);
+                                return `
+                                    <div class="list-group-item p-2.5 border mb-2 rounded-2 shadow-xs bg-white gv-traktandum-pool-row" data-tr-id="${pItem.id}">
+                                        <div class="d-flex align-items-center justify-content-between">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <i class="fas fa-grip-vertical text-muted cursor-grab me-1 gv-pool-drag-handle" style="cursor: grab;" title="Nach oben in die aktive Traktandenliste ziehen"></i>
+                                                <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2 py-0.5" style="font-size:0.7rem;"><i class="fas fa-box me-1"></i>Pool</span>
+                                                <div>
+                                                    <div class="fw-bold small text-dark d-flex align-items-center flex-wrap gap-1">
+                                                        <span>${escapeHtml(pItem.titel)}</span>
+                                                        ${pItem.is_election ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-0.5 px-1.5" style="font-size:0.65rem;"><i class="fas fa-vote-yea me-1"></i>Wahl</span>` : ''}
+                                                        ${subPool.length > 0 ? `<span class="badge bg-light text-muted border py-0.5 px-1.5" style="font-size:0.65rem;">${subPool.length} Unterpunkte</span>` : ''}
+                                                    </div>
+                                                    ${pItem.beschreibung ? `<div class="text-muted" style="font-size:0.75rem;">${escapeHtml(pItem.beschreibung)}</div>` : ''}
+                                                    ${pItem.candidate_names ? `<div class="text-primary mt-0.5" style="font-size:0.72rem;"><i class="fas fa-user-check me-1"></i>Kandidierende: <strong>${escapeHtml(pItem.candidate_names)}</strong></div>` : ''}
+                                                </div>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-1.5">
+                                                ${pItem.referent ? `<span class="badge bg-light text-secondary border me-1 py-1 px-1.5" style="font-size:0.7rem;"><i class="fas fa-user-tie me-1"></i>${escapeHtml(pItem.referent)}</span>` : ''}
+                                                <button class="btn btn-xs btn-primary py-1 px-2.5 fw-semibold shadow-xs" title="In die aktive Traktandenliste übernehmen" onclick="gvDossierMoveFromPool('${pItem.id}')">
+                                                    <i class="fas fa-arrow-up me-1"></i> Zur GV übernehmen
+                                                </button>
+                                                <button class="btn btn-xs btn-outline-secondary p-1" title="Bearbeiten" onclick="gvDossierEditTraktandumModal('${pItem.id}')">
+                                                    <i class="fas fa-pencil-alt"></i>
+                                                </button>
+                                                <button class="btn btn-xs btn-outline-danger p-1" title="Endgültig löschen" onclick="gvDossierDeleteTraktandum('${pItem.id}')">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `}
+                </div>
             `;
 
             initSortableTraktanden();
@@ -755,9 +852,20 @@
                     </div>
 
                     <div class="row g-2 mb-2">
-                        <div class="col-md-12">
+                        <div class="col-md-8">
                             <label class="form-label small fw-bold mb-1">Austragungsort</label>
                             <input type="text" id="gv-stamm-ort" class="form-control form-control-sm" value="${escapeHtml(gv.ort || 'Schützenhaus Muhen')}" oninput="gvDossierOnStammdatenFieldChange()">
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <div class="form-check form-switch mb-1 bg-white border rounded-2 p-2 px-3 shadow-xs w-100 d-flex align-items-center">
+                                <input class="form-check-input ms-0 me-2" type="checkbox" id="gv-stamm-wahljahr" 
+                                       ${gv.is_election_year ? 'checked' : ''} 
+                                       style="cursor: pointer;" 
+                                       onchange="gvDossierToggleWahljahr(this.checked)">
+                                <label class="form-check-label small fw-semibold cursor-pointer mb-0 text-dark" for="gv-stamm-wahljahr" style="cursor: pointer;">
+                                    <i class="fas fa-vote-yea text-warning me-1"></i> Wahljahr
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -1540,37 +1648,63 @@
     function initSortableTraktanden() {
         if (typeof Sortable === 'undefined') return;
 
-        // 1. Haupttraktanden Sortable
+        // 1. Aktive Traktanden Sortable (unterstützt Verschieben & Reorganisieren)
         const mainList = document.getElementById('gvTraktandenSortableList');
         if (mainList) {
             Sortable.create(mainList, {
+                group: 'gvTraktandenUnifiedGroup',
                 animation: 150,
-                handle: '.gv-main-drag-handle',
-                draggable: '.gv-traktandum-main-row',
-                onEnd: async function () {
+                handle: '.gv-main-drag-handle, .gv-pool-drag-handle',
+                draggable: '.gv-traktandum-main-row, .gv-traktandum-pool-row',
+                onAdd: async function (evt) {
                     const supa = getSupabase();
                     if (!supa) return;
-                    const rows = mainList.querySelectorAll('.gv-traktandum-main-row');
-                    const updates = [];
-                    rows.forEach((row, idx) => {
-                        const trId = row.dataset.trId;
-                        if (trId) {
-                            updates.push(supa.from('gv_traktanden').update({ sort_order: idx + 1 }).eq('id', trId));
-                        }
-                    });
-                    try {
-                        await Promise.all(updates);
-                        if (typeof showToast === 'function') showToast("Traktanden-Reihenfolge gespeichert!", 'success');
-                        await loadGVDossierData();
-                        renderLeftPanel();
-                    } catch (e) {
-                        console.error("Fehler beim Sortieren:", e);
+                    const trId = evt.item.dataset.trId;
+                    if (trId) {
+                        // Aus dem Pool in die aktive Liste gezogen
+                        await supa.from('gv_traktanden').update({ is_in_pool: false, updated_at: new Date().toISOString() }).eq('id', trId);
+                        await supa.from('gv_traktanden').update({ is_in_pool: false, updated_at: new Date().toISOString() }).eq('parent_id', trId);
                     }
+                    await gvDossierSyncActiveNumbering();
+                    await loadGVDossierData();
+                    renderLeftPanel();
+                    if (typeof showToast === 'function') showToast("Traktandum zur GV hinzugefügt!", 'success');
+                },
+                onUpdate: async function () {
+                    await gvDossierSyncActiveNumbering();
+                    await loadGVDossierData();
+                    renderLeftPanel();
+                    if (typeof showToast === 'function') showToast("Reihenfolge gespeichert!", 'success');
                 }
             });
         }
 
-        // 2. Untertraktanden Sortable
+        // 2. Traktanden-Pool Sortable (Vorratskammer)
+        const poolList = document.getElementById('gvTraktandenPoolSortableList');
+        if (poolList) {
+            Sortable.create(poolList, {
+                group: 'gvTraktandenUnifiedGroup',
+                animation: 150,
+                handle: '.gv-main-drag-handle, .gv-pool-drag-handle',
+                draggable: '.gv-traktandum-main-row, .gv-traktandum-pool-row',
+                onAdd: async function (evt) {
+                    const supa = getSupabase();
+                    if (!supa) return;
+                    const trId = evt.item.dataset.trId;
+                    if (trId) {
+                        // Aus aktiver Liste in den Pool abgelegt
+                        await supa.from('gv_traktanden').update({ is_in_pool: true, updated_at: new Date().toISOString() }).eq('id', trId);
+                        await supa.from('gv_traktanden').update({ is_in_pool: true, updated_at: new Date().toISOString() }).eq('parent_id', trId);
+                    }
+                    await gvDossierSyncActiveNumbering();
+                    await loadGVDossierData();
+                    renderLeftPanel();
+                    if (typeof showToast === 'function') showToast("Traktandum im Pool abgelegt.", 'info');
+                }
+            });
+        }
+
+        // 3. Untertraktanden Sortable
         const subLists = document.querySelectorAll('.gv-subtraktanden-list');
         subLists.forEach(subList => {
             Sortable.create(subList, {
@@ -1585,11 +1719,12 @@
                     rows.forEach((row, idx) => {
                         const trId = row.dataset.trId;
                         if (trId) {
-                            updates.push(supa.from('gv_traktanden').update({ sort_order: idx + 1 }).eq('id', trId));
+                            updates.push(supa.from('gv_traktanden').update({ sort_order: idx + 1, updated_at: new Date().toISOString() }).eq('id', trId));
                         }
                     });
                     try {
                         await Promise.all(updates);
+                        await gvDossierSyncActiveNumbering();
                         if (typeof showToast === 'function') showToast("Unterpunkt-Reihenfolge gespeichert!", 'success');
                         await loadGVDossierData();
                         renderLeftPanel();
@@ -1602,6 +1737,189 @@
     }
 
     /**
+     * Synchronisiert und aktualisiert die fortlaufende Nummerierung aller aktiven Traktanden in der Datenbank
+     */
+    window.gvDossierSyncActiveNumbering = async function () {
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const gvId = state.gvInstance?.id || `gv_${state.year}`;
+
+        // DOM-Reihenfolge abfragen falls vorhanden
+        const mainList = document.getElementById('gvTraktandenSortableList');
+        let orderedMainIds = [];
+        if (mainList) {
+            const rows = mainList.querySelectorAll('.gv-traktandum-main-row, .gv-traktandum-pool-row');
+            rows.forEach(r => {
+                if (r.dataset.trId) orderedMainIds.push(r.dataset.trId);
+            });
+        }
+
+        const { data: allActive, error } = await supa
+            .from('gv_traktanden')
+            .select('*')
+            .eq('gv_id', gvId)
+            .eq('is_in_pool', false);
+
+        if (error || !allActive || allActive.length === 0) return;
+
+        let mains = allActive.filter(t => !t.parent_id);
+        if (orderedMainIds.length > 0) {
+            mains.sort((a, b) => {
+                const idxA = orderedMainIds.indexOf(a.id);
+                const idxB = orderedMainIds.indexOf(b.id);
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+                return (a.sort_order || 0) - (b.sort_order || 0);
+            });
+        } else {
+            mains.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+        }
+
+        const updates = [];
+        mains.forEach((main, mIdx) => {
+            const dynamicNum = String(mIdx + 1);
+            updates.push(
+                supa.from('gv_traktanden').update({
+                    sort_order: mIdx + 1,
+                    nummer: dynamicNum,
+                    updated_at: new Date().toISOString()
+                }).eq('id', main.id)
+            );
+
+            // Untertraktanden fortlaufend nummerieren (z. B. 8.1, 8.2 ...)
+            const subs = allActive.filter(t => t.parent_id === main.id).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+            subs.forEach((sub, sIdx) => {
+                const subNum = `${dynamicNum}.${sIdx + 1}`;
+                updates.push(
+                    supa.from('gv_traktanden').update({
+                        sort_order: sIdx + 1,
+                        nummer: subNum,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', sub.id)
+                );
+            });
+        });
+
+        try {
+            await Promise.all(updates);
+        } catch (e) {
+            console.error("Fehler bei gvDossierSyncActiveNumbering:", e);
+        }
+    };
+
+    /**
+     * Verschiebt ein Traktandum (und seine Unterpunkte) in den Pool
+     */
+    window.gvDossierMoveToPool = async function (trId) {
+        const supa = getSupabase();
+        if (!supa) return;
+        try {
+            await Promise.all([
+                supa.from('gv_traktanden').update({ is_in_pool: true, updated_at: new Date().toISOString() }).eq('id', trId),
+                supa.from('gv_traktanden').update({ is_in_pool: true, updated_at: new Date().toISOString() }).eq('parent_id', trId)
+            ]);
+
+            if (typeof showToast === 'function') showToast("Traktandum in den Pool abgelegt.", 'info');
+            await gvDossierSyncActiveNumbering();
+            await loadGVDossierData();
+            renderLeftPanel();
+        } catch (err) {
+            console.error("Fehler beim Ablegen in den Pool:", err);
+            alert("Fehler: " + err.message);
+        }
+    };
+
+    /**
+     * Übernimmt ein Traktandum aus dem Pool in die aktive Traktandenliste
+     */
+    window.gvDossierMoveFromPool = async function (trId) {
+        const supa = getSupabase();
+        if (!supa) return;
+        try {
+            await Promise.all([
+                supa.from('gv_traktanden').update({ is_in_pool: false, updated_at: new Date().toISOString() }).eq('id', trId),
+                supa.from('gv_traktanden').update({ is_in_pool: false, updated_at: new Date().toISOString() }).eq('parent_id', trId)
+            ]);
+
+            if (typeof showToast === 'function') showToast("Traktandum zur GV übernommen!", 'success');
+            await gvDossierSyncActiveNumbering();
+            await loadGVDossierData();
+            renderLeftPanel();
+        } catch (err) {
+            console.error("Fehler beim Übernehmen aus dem Pool:", err);
+            alert("Fehler: " + err.message);
+        }
+    };
+
+    /**
+     * Fügt häufig verwendete Muster-Vorlagen in den Traktanden-Pool ein
+     */
+    window.gvDossierAddPoolSampleItems = async function () {
+        const supa = getSupabase();
+        if (!supa) return;
+        const state = window._gvDossierState;
+        const curYear = state.year;
+        const gvId = state.gvInstance?.id || `gv_${curYear}`;
+
+        const samples = [
+            {
+                titel: 'Beschaffung neue Vereinsbekleidung',
+                referent: 'Materialverwalter',
+                beschreibung: 'Präsentation Muster und Beschlussfassung über Kostenbeteiligung des Vereins.',
+                is_election: false
+            },
+            {
+                titel: 'Teilrevision der Vereinsstatuten',
+                referent: 'Präsident',
+                beschreibung: 'Anpassung von Art. 12 (Mitgliederkategorien) und Art. 25 (Stimmrecht).',
+                is_election: false
+            },
+            {
+                titel: 'Investition / Erneuerung Scheibenanlage (SIUS)',
+                referent: 'Schützenmeister',
+                beschreibung: 'Kreditantrag für den Ersatz von 2 Polytronic/SIUS-Lägern.',
+                is_election: false
+            },
+            {
+                titel: 'Ersatzwahl Vorstand',
+                referent: 'Präsident',
+                beschreibung: 'Ersatzwahl für ein vorzeitig zurücktretendes Vorstandsmitglied.',
+                is_election: true,
+                candidate_names: 'Vorschlag: Anna Muster'
+            }
+        ];
+
+        try {
+            for (let i = 0; i < samples.length; i++) {
+                const s = samples[i];
+                const sampleId = `tr_pool_${curYear}_${Date.now().toString(36)}_${i}`;
+                await supa.from('gv_traktanden').insert({
+                    id: sampleId,
+                    gv_id: gvId,
+                    parent_id: null,
+                    sort_order: 100 + i,
+                    nummer: 'P',
+                    titel: s.titel,
+                    referent: s.referent,
+                    beschreibung: s.beschreibung,
+                    is_election: s.is_election,
+                    candidate_names: s.candidate_names || null,
+                    is_in_pool: true,
+                    status: 'offen'
+                });
+            }
+            if (typeof showSuccess === 'function') showSuccess("Muster-Vorlagen zum Traktanden-Pool hinzugefügt!");
+            await loadGVDossierData();
+            renderLeftPanel();
+        } catch (err) {
+            console.error("Fehler beim Hinzufügen von Pool-Vorlagen:", err);
+            alert("Fehler: " + err.message);
+        }
+    };
+
+    /**
      * Modal zum Hinzufügen eines Wahltraktandums
      */
     window.gvDossierAddElectionTraktandumModal = function () {
@@ -1609,23 +1927,16 @@
     };
 
     /**
-     * Modal zum Hinzufügen eines neuen Haupt- oder Untertraktandums
+     * Modal zum Hinzufügen eines neuen Haupt- oder Untertraktandums (automatische fortlaufende Nummer)
      */
     window.gvDossierAddTraktandumModal = function (parentId, isElectionDefault = false) {
         const state = window._gvDossierState;
         const allItems = state.traktanden || [];
         const isSub = Boolean(parentId);
         let parentItem = null;
-        let defaultNummer = '1';
 
         if (isSub) {
             parentItem = allItems.find(t => t.id === parentId);
-            const siblings = allItems.filter(t => t.parent_id === parentId);
-            const parentNum = parentItem ? (parentItem.nummer || '1') : '1';
-            defaultNummer = `${parentNum}.${siblings.length + 1}`;
-        } else {
-            const mainItems = allItems.filter(t => !t.parent_id);
-            defaultNummer = String(mainItems.length + 1);
         }
 
         const modalHtml = `
@@ -1643,8 +1954,10 @@
                             <form id="gvTraktandumForm" onsubmit="event.preventDefault(); gvDossierSaveNewTraktandum('${parentId || ''}');">
                                 <div class="row g-2 mb-3">
                                     <div class="col-4">
-                                        <label class="form-label small fw-bold text-muted">Nummer</label>
-                                        <input type="text" id="trModalNummer" class="form-control form-control-sm fw-bold text-primary" value="${escapeHtml(defaultNummer)}" required>
+                                        <label class="form-label small fw-bold text-muted">Nummerierung</label>
+                                        <div class="form-control form-control-sm bg-light fw-bold text-primary border text-center" title="Nummerierung wird automatisch fortlaufend vergeben">
+                                            <i class="fas fa-magic me-1 text-muted"></i> Automatisch
+                                        </div>
                                     </div>
                                     <div class="col-8">
                                         <label class="form-label small fw-bold text-muted">Referent / Zuständig</label>
@@ -1713,7 +2026,6 @@
 
         const state = window._gvDossierState;
         const gvId = state.gvInstance?.id || `gv_${state.year}`;
-        const nummer = document.getElementById('trModalNummer')?.value.trim();
         const titel = document.getElementById('trModalTitel')?.value.trim();
         const referent = document.getElementById('trModalReferent')?.value.trim();
         const beschreibung = document.getElementById('trModalText')?.value.trim();
@@ -1735,12 +2047,13 @@
                 gv_id: gvId,
                 parent_id: parentId || null,
                 sort_order: nextSort,
-                nummer: nummer || '1',
+                nummer: String(nextSort),
                 titel: titel,
                 beschreibung: beschreibung || null,
                 referent: referent || null,
                 is_election: isElection,
                 candidate_names: candidates || null,
+                is_in_pool: false,
                 status: 'offen'
             });
 
@@ -1748,6 +2061,7 @@
 
             gvDossierCloseModal();
             if (typeof showToast === 'function') showToast("Traktandum erfolgreich erfasst!", 'success');
+            await gvDossierSyncActiveNumbering();
             await loadGVDossierData();
             renderLeftPanel();
         } catch (err) {
@@ -1761,7 +2075,8 @@
      */
     window.gvDossierEditTraktandumModal = function (trId) {
         const state = window._gvDossierState;
-        const item = (state.traktanden || []).find(t => t.id === trId);
+        const all = [...(state.traktanden || []), ...(state.traktandenPool || [])];
+        const item = all.find(t => t.id === trId);
         if (!item) return;
 
         const modalHtml = `
@@ -1778,8 +2093,10 @@
                             <form id="gvTraktandumEditForm" onsubmit="event.preventDefault(); gvDossierUpdateTraktandum('${trId}');">
                                 <div class="row g-2 mb-3">
                                     <div class="col-4">
-                                        <label class="form-label small fw-bold text-muted">Nummer</label>
-                                        <input type="text" id="trModalNummer" class="form-control form-control-sm fw-bold text-primary" value="${escapeHtml(item.nummer || '')}" required>
+                                        <label class="form-label small fw-bold text-muted">Nummerierung</label>
+                                        <div class="form-control form-control-sm bg-light fw-bold text-primary border text-center" title="Nummerierung wird automatisch fortlaufend vergeben">
+                                            <i class="fas fa-hashtag me-1 text-muted"></i> ${escapeHtml(item.nummer || 'Auto')}
+                                        </div>
                                     </div>
                                     <div class="col-8">
                                         <label class="form-label small fw-bold text-muted">Referent / Zuständig</label>
@@ -1838,7 +2155,6 @@
         const supa = getSupabase();
         if (!supa) return;
 
-        const nummer = document.getElementById('trModalNummer')?.value.trim();
         const titel = document.getElementById('trModalTitel')?.value.trim();
         const referent = document.getElementById('trModalReferent')?.value.trim();
         const beschreibung = document.getElementById('trModalText')?.value.trim();
@@ -1852,7 +2168,6 @@
 
         try {
             const { error } = await supa.from('gv_traktanden').update({
-                nummer: nummer || '1',
                 titel: titel,
                 beschreibung: beschreibung || null,
                 referent: referent || null,
@@ -1865,6 +2180,7 @@
 
             gvDossierCloseModal();
             if (typeof showToast === 'function') showToast("Traktandum aktualisiert!", 'success');
+            await gvDossierSyncActiveNumbering();
             await loadGVDossierData();
             renderLeftPanel();
         } catch (err) {
@@ -1901,10 +2217,11 @@
 
         try {
             await Promise.all([
-                supa.from('gv_traktanden').update({ sort_order: targetOrder }).eq('id', currentItem.id),
-                supa.from('gv_traktanden').update({ sort_order: currentOrder }).eq('id', targetItem.id)
+                supa.from('gv_traktanden').update({ sort_order: targetOrder, updated_at: new Date().toISOString() }).eq('id', currentItem.id),
+                supa.from('gv_traktanden').update({ sort_order: currentOrder, updated_at: new Date().toISOString() }).eq('id', targetItem.id)
             ]);
 
+            await gvDossierSyncActiveNumbering();
             await loadGVDossierData();
             renderLeftPanel();
         } catch (err) {
@@ -1918,10 +2235,11 @@
      */
     window.gvDossierDeleteTraktandum = async function (trId) {
         const state = window._gvDossierState;
-        const item = (state.traktanden || []).find(t => t.id === trId);
+        const all = [...(state.traktanden || []), ...(state.traktandenPool || [])];
+        const item = all.find(t => t.id === trId);
         if (!item) return;
 
-        const hasChildren = (state.traktanden || []).some(t => t.parent_id === trId);
+        const hasChildren = all.some(t => t.parent_id === trId);
         const msg = hasChildren
             ? `Möchtest du das Traktandum "${item.titel}" und ALLE dazugehörigen Untertraktanden wirklich löschen?`
             : `Möchtest du das Traktandum "${item.titel}" wirklich löschen?`;
@@ -1936,6 +2254,7 @@
             if (error) throw error;
 
             if (typeof showToast === 'function') showToast("Traktandum gelöscht.", 'info');
+            await gvDossierSyncActiveNumbering();
             await loadGVDossierData();
             renderLeftPanel();
         } catch (err) {
@@ -1989,6 +2308,7 @@
                     titel: titleClean,
                     beschreibung: main.beschreibung,
                     referent: main.referent,
+                    is_in_pool: false,
                     status: 'offen'
                 });
             }
@@ -2010,11 +2330,13 @@
                     titel: subTitleClean,
                     beschreibung: sub.beschreibung,
                     referent: sub.referent,
+                    is_in_pool: false,
                     status: 'offen'
                 });
             }
 
             if (typeof showSuccess === 'function') showSuccess(`Traktanden erfolgreich aus ${prevYear} übernommen!`);
+            await gvDossierSyncActiveNumbering();
             await loadGVDossierData();
             renderLeftPanel();
         } catch (err) {
@@ -2035,43 +2357,49 @@
         const gvId = state.gvInstance?.id || `gv_${curYear}`;
 
         const defaultNormal = [
-            { num: '1', title: 'Begrüssung und Appell', ref: 'Präsident', text: 'Eröffnung der Versammlung und Feststellung der Beschlussfähigkeit.' },
-            { num: '2', title: 'Wahl der Stimmenzähler', ref: 'Präsident', text: 'Bestimmung der Stimmenzähler für offene und geheime Wahlen.' },
-            { num: '3', title: `Protokoll der GV vom ${curYear - 1}`, ref: 'Aktuar', text: 'Genehmigung des Vorjahres-Protokolls.' },
-            { num: '4', title: 'Mutationen (Aufnahmen, Austritte, Ehrungen)', ref: 'Präsident', text: 'Aufnahme neuer Mitglieder und Totengedenken.' },
-            { num: '5', title: 'Jahresberichte (Präsident, Schützenmeister, Jungschützen)', ref: 'Vorstand', text: 'Berichte des Vorstands und der Spartenleiter.' },
-            { num: '6', title: `Jahresrechnung ${curYear - 1} und Revisorenbericht`, ref: 'Kassier / Revisoren', text: 'Abnahme der Jahresrechnung und Décharge-Erteilung.' },
-            { num: '7', title: `Budget ${curYear} und Festsetzung der Jahresbeiträge`, ref: 'Kassier', text: 'Genehmigung des Voranschlags und der Beiträge.' },
-            { num: '8', title: `Jahresprogramm ${curYear}`, ref: 'Schützenmeister', text: 'Vorstellung und Festlegung des Schiesskalenders.' },
-            { num: '9', title: 'Ehrungen und Auszeichnungen', ref: 'Präsident', text: 'Würdigung verdienter Schützen und Jubilare.' },
-            { num: '10', title: 'Erledigung von Anträgen & Varia', ref: 'Präsident', text: 'Behandlung statutengemäss eingereichter Anträge.' }
+            { title: 'Begrüssung und Appell', ref: 'Präsident', text: 'Eröffnung der Versammlung und Feststellung der Beschlussfähigkeit.' },
+            { title: 'Wahl der Stimmenzähler', ref: 'Präsident', text: 'Bestimmung der Stimmenzähler für offene und geheime Wahlen.' },
+            { title: `Protokoll der GV vom ${curYear - 1}`, ref: 'Aktuar', text: 'Genehmigung des Vorjahres-Protokolls.' },
+            { title: 'Mutationen (Aufnahmen, Austritte, Ehrungen)', ref: 'Präsident', text: 'Aufnahme neuer Mitglieder und Totengedenken.' },
+            { title: 'Jahresberichte (Präsident, Schützenmeister, Jungschützen)', ref: 'Vorstand', text: 'Berichte des Vorstands und der Spartenleiter.' },
+            { title: `Jahresrechnung ${curYear - 1} und Revisorenbericht`, ref: 'Kassier / Revisoren', text: 'Abnahme der Jahresrechnung und Décharge-Erteilung.' },
+            { title: `Budget ${curYear} und Festsetzung der Jahresbeiträge`, ref: 'Kassier', text: 'Genehmigung des Voranschlags und der Beiträge.' },
+            { title: `Jahresprogramm ${curYear}`, ref: 'Schützenmeister', text: 'Vorstellung und Festlegung des Schiesskalenders.' },
+            { title: 'Ehrungen und Auszeichnungen', ref: 'Präsident', text: 'Würdigung verdienter Schützen und Jubilare.' },
+            { title: 'Erledigung von Anträgen & Varia', ref: 'Präsident', text: 'Behandlung statutengemäss eingereichter Anträge.' }
         ];
 
         const defaultWahl = [
             ...defaultNormal.slice(0, 7),
-            { num: '8', title: 'Gesamterneuerungswahlen', ref: 'Tagespräsident', text: 'Wahl des Präsidenten, der Vorstandsmitglieder und Revisoren.' },
-            ...defaultNormal.slice(7).map((item, idx) => ({ ...item, num: String(idx + 9) }))
+            { title: 'Gesamterneuerungswahlen', ref: 'Tagespräsident', text: 'Wahl des Präsidenten, der Vorstandsmitglieder und Revisoren.', is_election: true },
+            ...defaultNormal.slice(7)
         ];
 
         const selectedList = isWahljahr ? defaultWahl : defaultNormal;
 
         try {
+            // Aktive Traktanden ersetzen (Pool bleibt erhalten!)
+            await supa.from('gv_traktanden').delete().eq('gv_id', gvId).eq('is_in_pool', false);
+
             const rows = selectedList.map((item, idx) => ({
-                id: `tr_${curYear}_${idx + 1}`,
+                id: `tr_${curYear}_std_${idx + 1}`,
                 gv_id: gvId,
                 parent_id: null,
                 sort_order: idx + 1,
-                nummer: item.num,
+                nummer: String(idx + 1),
                 titel: item.title,
                 referent: item.ref,
                 beschreibung: item.text,
+                is_election: Boolean(item.is_election),
+                is_in_pool: false,
                 status: 'offen'
             }));
 
-            const { error } = await supa.from('gv_traktanden').upsert(rows, { onConflict: 'id' });
+            const { error } = await supa.from('gv_traktanden').insert(rows);
             if (error) throw error;
 
             if (typeof showSuccess === 'function') showSuccess("Standard-Traktanden erfolgreich geladen!");
+            await gvDossierSyncActiveNumbering();
             await loadGVDossierData();
             renderLeftPanel();
         } catch (err) {
@@ -2081,10 +2409,9 @@
     };
 
     /**
-     * Schalter für Gesamterneuerungswahlen: Steuert Wahltraktanden dynamisch
+     * Schalter für Gesamterneuerungswahlen: Steuert Wahltraktanden dynamisch zwischen Pool & aktiver GV
      */
     window.gvDossierToggleWahljahr = async function (isChecked) {
-        gvDossierOnStammdatenFieldChange();
         const supa = getSupabase();
         if (!supa) return;
         const state = window._gvDossierState;
@@ -2094,36 +2421,63 @@
         if (state.gvInstance) state.gvInstance.is_election_year = isChecked;
         if (state.gvDraft) state.gvDraft.is_election_year = isChecked;
 
+        // 1. Direkt in public.gv_instances persistieren
         try {
             await supa.from('gv_instances').update({
                 is_election_year: isChecked,
                 updated_at: new Date().toISOString()
             }).eq('id', gvId);
-        } catch (_) {}
+        } catch (err) {
+            console.error("Fehler beim Aktualisieren von gv_instances:", err);
+        }
 
-        if (isChecked) {
-            const allItems = state.traktanden || [];
-            const hasWahl = allItems.some(t => !t.parent_id && (t.titel.toLowerCase().includes('wahl') || t.titel.toLowerCase().includes('gesamterneuerung')));
-            if (!hasWahl) {
-                if (confirm("Wahljahr aktiviert:\nMöchtest du das Traktandum «Gesamterneuerungswahlen» mit den 4 statutarischen Unterpunkten (Vorstand, Präsident, Revisoren, Fähnrich) jetzt automatisch hinzufügen?")) {
+        // 2. Traktanden Pool / Active Logik
+        try {
+            const { data: allItems } = await supa
+                .from('gv_traktanden')
+                .select('*')
+                .eq('gv_id', gvId)
+                .order('sort_order', { ascending: true });
+
+            const items = allItems || [];
+            const wahlPoolItems = items.filter(t => t.is_in_pool && (t.is_election || (t.titel && t.titel.toLowerCase().includes('wahl'))));
+            const wahlActiveItems = items.filter(t => !t.is_in_pool && (t.is_election || (t.titel && t.titel.toLowerCase().includes('wahl'))));
+
+            if (isChecked) {
+                if (wahlPoolItems.length > 0) {
+                    // Aus dem Pool nach oben in die aktive Liste holen
+                    for (const wp of wahlPoolItems) {
+                        await supa.from('gv_traktanden').update({ is_in_pool: false, is_election: true, updated_at: new Date().toISOString() }).eq('id', wp.id);
+                        await supa.from('gv_traktanden').update({ is_in_pool: false, updated_at: new Date().toISOString() }).eq('parent_id', wp.id);
+                    }
+                    if (typeof showToast === 'function') showToast("🗳️ Wahltraktanden aus dem Pool zur GV übernommen!", 'success');
+                } else if (wahlActiveItems.length === 0) {
+                    // Neu generieren falls noch überhaupt keine Wahltraktanden existieren
                     const wahlMainId = `tr_${curYear}_wahlen_${Date.now().toString(36)}`;
+                    const activeMains = items.filter(t => !t.is_in_pool && !t.parent_id);
+                    const nextSort = activeMains.length + 1;
+
                     await supa.from('gv_traktanden').insert({
                         id: wahlMainId,
                         gv_id: gvId,
                         parent_id: null,
-                        sort_order: 8,
-                        nummer: '8',
+                        sort_order: nextSort,
+                        nummer: String(nextSort),
                         titel: 'Gesamterneuerungswahlen',
                         referent: 'Tagespräsident',
                         beschreibung: 'Wahlen des Vorstands, des Präsidenten, der Revisoren und des Fähnrichs.',
+                        is_election: true,
+                        is_in_pool: false,
                         status: 'offen'
                     });
+
                     const subWahlen = [
-                        { nr: '8.1', titel: 'Wahl der Vorstandsmitglieder', ref: 'Tagespräsident' },
-                        { nr: '8.2', titel: 'Wahl des Präsidenten', ref: 'Tagespräsident' },
-                        { nr: '8.3', titel: 'Wahl der Rechnungsrevisoren', ref: 'Präsident' },
-                        { nr: '8.4', titel: 'Wahl des Fähnrichs', ref: 'Präsident' }
+                        { titel: 'Wahl der Vorstandsmitglieder', ref: 'Tagespräsident' },
+                        { titel: 'Wahl des Präsidenten', ref: 'Tagespräsident' },
+                        { titel: 'Wahl der Rechnungsrevisoren', ref: 'Präsident' },
+                        { titel: 'Wahl des Fähnrichs', ref: 'Präsident' }
                     ];
+
                     for (let sIdx = 0; sIdx < subWahlen.length; sIdx++) {
                         const sw = subWahlen[sIdx];
                         await supa.from('gv_traktanden').insert({
@@ -2131,32 +2485,35 @@
                             gv_id: gvId,
                             parent_id: wahlMainId,
                             sort_order: sIdx + 1,
-                            nummer: sw.nr,
+                            nummer: `${nextSort}.${sIdx + 1}`,
                             titel: sw.titel,
                             referent: sw.ref,
                             beschreibung: '',
+                            is_election: true,
+                            is_in_pool: false,
                             status: 'offen'
                         });
                     }
-                    if (typeof showSuccess === 'function') showSuccess("Wahltraktanden erfolgreich hinzugefügt!");
-                    await loadGVDossierData();
-                    renderLeftPanel();
+                    if (typeof showToast === 'function') showToast("🗳️ Wahltraktanden automatisch hinzugefügt!", 'success');
+                }
+            } else {
+                // Bei Deaktivierung: In den Pool ablegen (NICHT löschen!)
+                for (const wa of wahlActiveItems) {
+                    await supa.from('gv_traktanden').update({ is_in_pool: true, updated_at: new Date().toISOString() }).eq('id', wa.id);
+                    await supa.from('gv_traktanden').update({ is_in_pool: true, updated_at: new Date().toISOString() }).eq('parent_id', wa.id);
+                }
+                if (wahlActiveItems.length > 0 && typeof showToast === 'function') {
+                    showToast("📦 Wahltraktanden in den Pool verschoben (bleiben für spätere Wahljahre erhalten).", 'info');
                 }
             }
-        } else {
-            const allItems = state.traktanden || [];
-            const wahlItems = allItems.filter(t => !t.parent_id && (t.titel.toLowerCase().includes('wahl') || t.titel.toLowerCase().includes('gesamterneuerung')));
-            if (wahlItems.length > 0) {
-                if (confirm("Wahljahr deaktiviert:\nMöchtest du das Traktandum «Gesamterneuerungswahlen» jetzt aus der Traktandenliste entfernen?")) {
-                    for (const wi of wahlItems) {
-                        await supa.from('gv_traktanden').delete().eq('id', wi.id);
-                    }
-                    if (typeof showSuccess === 'function') showSuccess("Wahltraktanden entfernt.");
-                    await loadGVDossierData();
-                    renderLeftPanel();
-                }
-            }
+        } catch (err) {
+            console.error("Fehler bei gvDossierToggleWahljahr:", err);
         }
+
+        await gvDossierSyncActiveNumbering();
+        await loadGVDossierData();
+        renderLeftPanel();
+        gvDossierUpdateStammdatenDirtyState();
     };
 
     // =========================================================================
@@ -2217,6 +2574,12 @@
         const state = window._gvDossierState;
         const curDraft = state.gvDraft || state.gvInstance || {};
 
+        // Wahljahr-Schalter (kann in Tab 1 traktanden oder Tab 2 stammdaten aktiv sein):
+        const wahlSwitch = document.getElementById('gv-stamm-wahljahr') || document.getElementById('gv-trakt-wahljahr');
+        if (wahlSwitch) {
+            curDraft.is_election_year = Boolean(wahlSwitch.checked);
+        }
+
         // Falls die Stammdaten-DOM-Felder aktuell gemountet sind:
         const numEl = document.getElementById('gv-stamm-number');
         if (numEl) {
@@ -2224,7 +2587,7 @@
             curDraft.datum = document.getElementById('gv-stamm-datum')?.value || '';
             curDraft.zeit = document.getElementById('gv-stamm-zeit')?.value?.trim() || '19:30';
             curDraft.ort = document.getElementById('gv-stamm-ort')?.value?.trim() || 'Schützenhaus Muhen';
-            curDraft.is_election_year = Boolean(document.getElementById('gv-stamm-wahljahr')?.checked);
+            if (wahlSwitch) curDraft.is_election_year = Boolean(wahlSwitch.checked);
             curDraft.amtsdauer_text = document.getElementById('gv-stamm-amtsdauer')?.value?.trim() || curDraft.amtsdauer_text || '';
             curDraft.datum_vorjahr = document.getElementById('gv-stamm-vorjahr')?.value || '';
             curDraft.abmelde_datum = document.getElementById('gv-stamm-abmeldung')?.value || '';

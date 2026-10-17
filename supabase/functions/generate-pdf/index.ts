@@ -2033,22 +2033,33 @@ async function generateGVInvitationPdf(
         }
       }
 
-      if (rawTraktanden && rawTraktanden.length > 0) {
-        const mainItems = rawTraktanden.filter((t: any) => !t.parent_id);
+      // Traktanden filtern: Nur aktive Traktanden (is_in_pool !== true) berücksichtigen
+      const activeTraktanden = (rawTraktanden || []).filter((t: any) => !t.is_in_pool);
+
+      if (activeTraktanden && activeTraktanden.length > 0) {
+        const mainItems = activeTraktanden
+          .filter((t: any) => !t.parent_id)
+          .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
+
         const hierarchicalList: any[] = [];
         mainItems.forEach((main: any, mIdx: number) => {
+          const mainNum = String(mIdx + 1);
           hierarchicalList.push({
             id: main.id,
-            clause_number: main.nummer || String(mIdx + 1),
+            clause_number: mainNum,
             clause_title: replacePlaceholders(main.titel),
             clause_text: replacePlaceholders(main.beschreibung || ""),
             is_sub: false
           });
-          const subs = rawTraktanden.filter((t: any) => t.parent_id === main.id);
-          subs.forEach((sub: any) => {
+
+          const subs = activeTraktanden
+            .filter((t: any) => t.parent_id === main.id)
+            .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
+
+          subs.forEach((sub: any, sIdx: number) => {
             hierarchicalList.push({
               id: sub.id,
-              clause_number: sub.nummer || "",
+              clause_number: `${mainNum}.${sIdx + 1}`,
               clause_title: replacePlaceholders(sub.titel),
               clause_text: replacePlaceholders(sub.beschreibung || ""),
               is_sub: true

@@ -76,11 +76,11 @@ Das Modul stützt sich auf folgende relationale Tabellen in Supabase PostgreSQL:
                                 └──────────────────────────────┘
 ```
 
-### 2.1 Traktanden-Hierarchie (`parent_id`)
-Mit Migration `44_gv_traktanden_parent_and_hierarchy.sql` wurde die Spalte `parent_id` eingeführt:
-* **Haupttraktandum:** `parent_id IS NULL` (z. B. Traktandum 5: «Wahlen»).
-* **Untertraktandum:** `parent_id = 'traktandum_2026_5'` (z. B. 5.1 Präsident, 5.2 Vorstand, 5.3 Revisoren, 5.4 Fähnrich).
-* **Cascade Delete:** Beim Löschen eines Haupttraktandums werden dessen Untertraktanden automatisch kaskadierend entfernt.
+### 2.1 Traktanden-Hierarchie (`parent_id`), Pool (`is_in_pool`) & automatische Nummerierung
+* **Hierarchie:** Haupttraktanden (`parent_id IS NULL`) und Untertraktanden (`parent_id = '<parent_id>'`). Kaskadierendes Löschen bei Entfernen von Hauptpunkten.
+* **Traktanden-Pool (`is_in_pool = true`):** Vorratskammer für wiederverwendbare Anträge, Muster-Vorlagen und Wahltraktanden. Punkte können per Drag & Drop oder Klick («Zur GV übernehmen» / «In Pool ablegen») nahtlos zwischen aktiver GV und Pool transferiert werden.
+* **Dynamische fortlaufende Nummerierung:** Nummern werden in UI und PDF nicht mehr manuell gepflegt, sondern durch die Engine (`gvDossierSyncActiveNumbering` / Edge Function `generate-pdf`) positionsbasiert fortlaufend (1, 2, 3... und 1.1, 1.2...) synchronisiert.
+* **Wahljahr-Schalter:** Schaltet das Wahljahr in `gv_instances` um. Beim Aktivieren werden Wahltraktanden aus dem Pool nach oben geholt (oder Standardwahlen generiert); beim Deaktivieren werden sie zurück in den Pool verschoben, ohne gelöscht zu werden.
 
 ### 2.2 Storage-Infrastruktur
 * **Bucket `campaign-assets`:** Dient als Upload-Ziel für Berichte (PDFs der Vorstandsmitglieder) sowie als Zwischenspeicher für assembliertes Gesamt-Dossier (`gv-dossiers/{year}/GV_Dossier_{year}_Gesamt.pdf`).
