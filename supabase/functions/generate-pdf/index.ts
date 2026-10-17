@@ -140,6 +140,111 @@ function wrapText(text: string, font: any, fontSize: number, maxWidth: number): 
   return lines.length > 0 ? lines : [clean];
 }
 
+// Zeichnet mehrzeiligen Text mit Unterstützung für **fett** / <b>...</b> / <strong>...</strong> Tags
+function drawFormattedLines(
+  page: any,
+  rawText: string,
+  startX: number,
+  startY: number,
+  fontReg: any,
+  fontBld: any,
+  fontSize: number,
+  lineHeight: number,
+  maxWidth: number,
+  textColor: any
+): number {
+  if (!rawText) return startY;
+  let curY = startY;
+
+  const paragraphs = rawText.split("\n");
+
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (!trimmed) {
+      curY -= lineHeight * 0.65;
+      continue;
+    }
+
+    // Normalisiere HTML-Tags zu **
+    const normalized = trimmed
+      .replace(/<strong[^>]*>/gi, "**")
+      .replace(/<\/strong>/gi, "**")
+      .replace(/<b[^>]*>/gi, "**")
+      .replace(/<\/b>/gi, "**")
+      .replace(/<br\s*\/?>/gi, "\n");
+
+    const subLines = normalized.split("\n");
+    for (const subLine of subLines) {
+      const tokens: Array<{ text: string; bold: boolean }> = [];
+      const parts = subLine.split(/(\*\*.*?\*\*)/g);
+      for (const p of parts) {
+        if (!p) continue;
+        if (p.startsWith("**") && p.endsWith("**") && p.length >= 4) {
+          const inner = p.slice(2, -2);
+          const words = inner.split(/\s+/);
+          words.forEach((w, wIdx) => {
+            if (w) tokens.push({ text: (wIdx > 0 ? " " : "") + w, bold: true });
+          });
+        } else {
+          const words = p.split(/\s+/);
+          words.forEach((w, wIdx) => {
+            if (w) tokens.push({ text: (wIdx > 0 ? " " : "") + w, bold: false });
+          });
+        }
+      }
+
+      let currentLineTokens: Array<{ text: string; bold: boolean }> = [];
+      let currentLineWidth = 0;
+
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        const tokFont = tok.bold ? fontBld : fontReg;
+        const tokWidth = tokFont.widthOfTextAtSize(tok.text, fontSize);
+
+        if (currentLineWidth + tokWidth <= maxWidth || currentLineTokens.length === 0) {
+          currentLineTokens.push(tok);
+          currentLineWidth += tokWidth;
+        } else {
+          let drawX = startX;
+          for (const cTok of currentLineTokens) {
+            const f = cTok.bold ? fontBld : fontReg;
+            page.drawText(sanitizeWinAnsiText(cTok.text), {
+              x: drawX,
+              y: curY,
+              size: fontSize,
+              font: f,
+              color: textColor,
+            });
+            drawX += f.widthOfTextAtSize(cTok.text, fontSize);
+          }
+          curY -= lineHeight;
+          const cleanTokText = tok.text.trimStart();
+          currentLineTokens = [{ text: cleanTokText, bold: tok.bold }];
+          currentLineWidth = (tok.bold ? fontBld : fontReg).widthOfTextAtSize(cleanTokText, fontSize);
+        }
+      }
+
+      if (currentLineTokens.length > 0) {
+        let drawX = startX;
+        for (const cTok of currentLineTokens) {
+          const f = cTok.bold ? fontBld : fontReg;
+          page.drawText(sanitizeWinAnsiText(cTok.text), {
+            x: drawX,
+            y: curY,
+            size: fontSize,
+            font: f,
+            color: textColor,
+          });
+          drawX += f.widthOfTextAtSize(cTok.text, fontSize);
+        }
+        curY -= lineHeight;
+      }
+    }
+  }
+
+  return curY;
+}
+
 interface InvoicePosition {
   position_nr?: number;
   description: string;
@@ -1860,6 +1965,9 @@ async function generateGVInvitationPdf(
   const gvOrtClean = gvData.ort || "Schützenstube Hard, Muhen";
   const praesiName = gvData.praesidentName || gvData.praesident_name || "Andrea Rossi";
   const vorjahrDatum = gvData.datumVorjahr || gvData.datum_vorjahr || `${year - 1}`;
+  const vorname = gvData.vorname || gvData.first_name || "";
+  const nachname = gvData.nachname || gvData.last_name || "";
+  const anrede = gvData.anrede || (vorname ? `Lieber ${vorname}` : "Liebe Schützinnen und Schützen");
 
   const replacePlaceholders = (text: string) => {
     if (!text) return "";
@@ -1871,6 +1979,9 @@ async function generateGVInvitationPdf(
       .replace(/{gv_zeit}/gi, gvZeitClean)
       .replace(/{gv_ort}/gi, gvOrtClean)
       .replace(/{praesident_name}/gi, praesiName)
+      .replace(/{vorname}/gi, vorname)
+      .replace(/{nachname}/gi, nachname)
+      .replace(/{anrede}/gi, anrede)
       .replace(/{{Datum_Vorjahr}}/gi, String(vorjahrDatum))
       .replace(/{datum_vorjahr}/gi, String(vorjahrDatum));
   };
@@ -1904,15 +2015,26 @@ async function generateGVInvitationPdf(
       if (gvData.einladung_intro || gvData.intro) templateIntro = replacePlaceholders(gvData.einladung_intro || gvData.intro);
       if (gvData.antragsfrist_hinweis || gvData.notice) templateNotice = replacePlaceholders(gvData.antragsfrist_hinweis || gvData.notice);
 
-      // 2b. Traktanden laden: Primär aus public.gv_traktanden für das spezifische GV-Jahr
-      const { data: trData } = await supabaseClient
-        .from("gv_traktanden")
-        .select("*")
-        .eq("gv_id", gvInstanceId)
-        .order("sort_order", { ascending: true });
+      // 2b. Traktanden laden: Falls direkt im Payload übergeben (Live-Editor), sofort verwenden
+      let rawTraktanden: any[] = [];
+      if (Array.isArray(gvData.traktanden) && gvData.traktanden.length > 0) {
+        rawTraktanden = gvData.traktanden;
+      } else {
+        // Sonst primär aus public.gv_traktanden für das spezifische GV-Jahr
+        const instIdToQuery = instData?.id || gvInstanceId;
+        const { data: trData } = await supabaseClient
+          .from("gv_traktanden")
+          .select("*")
+          .or(`gv_id.eq.${instIdToQuery},gv_id.eq.gv_${year}`)
+          .order("sort_order", { ascending: true });
 
-      if (trData && trData.length > 0) {
-        const mainItems = trData.filter((t: any) => !t.parent_id);
+        if (trData && trData.length > 0) {
+          rawTraktanden = trData;
+        }
+      }
+
+      if (rawTraktanden && rawTraktanden.length > 0) {
+        const mainItems = rawTraktanden.filter((t: any) => !t.parent_id);
         const hierarchicalList: any[] = [];
         mainItems.forEach((main: any, mIdx: number) => {
           hierarchicalList.push({
@@ -1922,7 +2044,7 @@ async function generateGVInvitationPdf(
             clause_text: replacePlaceholders(main.beschreibung || ""),
             is_sub: false
           });
-          const subs = trData.filter((t: any) => t.parent_id === main.id);
+          const subs = rawTraktanden.filter((t: any) => t.parent_id === main.id);
           subs.forEach((sub: any) => {
             hierarchicalList.push({
               id: sub.id,
@@ -1995,7 +2117,7 @@ async function generateGVInvitationPdf(
     font: fontBold,
     color: rgb(0.12, 0.23, 0.54),
   });
-  page1.drawText("gegründet 1919 · Schiessanlage Rüteli", {
+  page1.drawText("gegründet 1919 · Schiessanlage Hard · 5037 Muhen", {
     x: textStartX,
     y: 275.5 * MM,
     size: 9,
@@ -2042,19 +2164,19 @@ async function generateGVInvitationPdf(
 
   let curY = 227 * MM;
 
-  // Einleitungstext
-  const introLines = templateIntro.split("\n");
-  for (const line of introLines) {
-    if (line.trim()) {
-      const wrapped = wrapText(line, fontRegular, 8.5, 170 * MM);
-      for (const w of wrapped) {
-        page1.drawText(sanitizeWinAnsiText(w), { x: 20 * MM, y: curY, size: 8.5, font: fontRegular, color: rgb(0.2, 0.2, 0.2) });
-        curY -= 3.8 * MM;
-      }
-    } else {
-      curY -= 2.5 * MM;
-    }
-  }
+  // Einleitungstext mit Unterstützung für **fett** / <b>...</b>
+  curY = drawFormattedLines(
+    page1,
+    templateIntro,
+    20 * MM,
+    curY,
+    fontRegular,
+    fontBold,
+    8.5,
+    3.8 * MM,
+    170 * MM,
+    rgb(0.2, 0.2, 0.2)
+  );
 
   curY -= 2 * MM;
 
@@ -2119,14 +2241,19 @@ async function generateGVInvitationPdf(
 
   // Gruss & Schluss
   if (templateNotice) {
-    page1.drawText(sanitizeWinAnsiText(templateNotice), {
-      x: 20 * MM,
-      y: curY,
-      size: 8.5,
-      font: fontRegular,
-      color: rgb(0.3, 0.3, 0.3),
-    });
-    curY -= 4.5 * MM;
+    curY = drawFormattedLines(
+      page1,
+      templateNotice,
+      20 * MM,
+      curY,
+      fontRegular,
+      fontBold,
+      8.5,
+      3.8 * MM,
+      170 * MM,
+      rgb(0.3, 0.3, 0.3)
+    );
+    curY -= 2 * MM;
   }
 
   const grussLines = (gvData.grussformel || (instData as any)?.grussformel || "Freundliche Schützengrüsse\nDer Vorstand der Sportschützen Muhen")
@@ -2136,7 +2263,8 @@ async function generateGVInvitationPdf(
 
   grussLines.forEach((gl: string, gIdx: number) => {
     const isLast = (gIdx === grussLines.length - 1);
-    page1.drawText(sanitizeWinAnsiText(replacePlaceholders(gl)), {
+    const replaced = replacePlaceholders(gl);
+    page1.drawText(sanitizeWinAnsiText(replaced), {
       x: 20 * MM,
       y: curY,
       size: isLast ? 9 : 8.5,
@@ -2400,9 +2528,9 @@ async function generateGVInvitationPdf(
         const requiredRows = isMultiRound ? (1 + grp.items.length) : Math.max(2, titleLines.length);
         const requiredHeight = requiredRows * 4.4 * MM + 6 * MM;
 
-        if (isMannschaft || schiessY - requiredHeight < 28 * MM) {
+        if (schiessY - requiredHeight < 24 * MM) {
           schiessPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-          schiessY = drawPageHeader(schiessPage, ""); // Folgeseite ohne Zwischentitel (gemäss Screenshot 3)
+          schiessY = drawPageHeader(schiessPage, ""); // Folgeseite ohne Zwischentitel falls Seitenumbruch nötig
         }
 
         const startBlockY = schiessY;
@@ -3250,119 +3378,189 @@ async function compileGvDossierPdf(
 ): Promise<{ pdfBytes: Uint8Array; pageCount: number; attachmentsCompiled: number }> {
   const masterDoc = await PDFDocument.create();
   const fontRegular = await masterDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await masterDoc.embedFont(StandardFonts.HelveticaBold);
 
   // 1. DYNAMISCHE BASIS-SEITEN GENERIEREN (Einladung S.1 + Jahresprogramm S.2ff)
   const baseBytes = await generateGVInvitationPdf(year, gvData, supabaseClient);
   const baseDoc = await PDFDocument.load(baseBytes);
-  const basePageIndices = baseDoc.getPageIndices();
-  const copiedBasePages = await masterDoc.copyPages(baseDoc, basePageIndices);
-  copiedBasePages.forEach((p) => masterDoc.addPage(p));
+  const totalBasePages = baseDoc.getPageCount();
 
-  // 2. BEILAGEN AUS campaign_attachments LADEN & ZUSAMMENFÜGEN
+  // Seite 0 von baseDoc ist immer Einladung & Traktandenliste (bleibt fix auf Platz 1)
+  const copiedInvitePages = await masterDoc.copyPages(baseDoc, [0]);
+  masterDoc.addPage(copiedInvitePages[0]);
+
+  // Seiten 1..end von baseDoc enthalten Jahresprogramm & Schiesstermine
+  let copiedCalendarPages: any[] = [];
+  if (totalBasePages > 1) {
+    const calIndices: number[] = [];
+    for (let i = 1; i < totalBasePages; i++) calIndices.push(i);
+    copiedCalendarPages = await masterDoc.copyPages(baseDoc, calIndices);
+  }
+
+  // 2. BEILAGEN AUS campaign_attachments LADEN
   let attachmentsCompiled = 0;
+  let attachments: any[] = [];
   if (campaignId && supabaseClient) {
-    const { data: attachments, error: attErr } = await supabaseClient
+    const { data: attList, error: attErr } = await supabaseClient
       .from("campaign_attachments")
       .select("*")
       .eq("campaign_id", campaignId)
       .order("sort_order", { ascending: true });
 
-    if (!attErr && attachments && attachments.length > 0) {
-      for (const att of attachments) {
-        if (!att.storage_path) continue;
+    if (!attErr && attList) {
+      attachments = attList;
+    }
+  }
 
-        try {
-          // Versuche Download aus campaign-assets oder operatives-storage
-          let fileBytes: Uint8Array | null = null;
-          const bucketCandidates = ["campaign-assets", "operatives-storage"];
-          for (const b of bucketCandidates) {
-            const { data: fileBlob } = await supabaseClient.storage.from(b).download(att.storage_path);
-            if (fileBlob) {
-              fileBytes = new Uint8Array(await fileBlob.arrayBuffer());
-              break;
-            }
-          }
+  // Ermitteln der Reihenfolge (entweder aus gvData.attachment_order oder default)
+  const attachmentOrder: string[] = gvData.attachment_order || [];
+  let calendarAdded = false;
 
-          if (fileBytes) {
-            const extDoc = await PDFDocument.load(fileBytes);
-            const extPageIndices = extDoc.getPageIndices();
-            const copiedExtPages = await masterDoc.copyPages(extDoc, extPageIndices);
-            copiedExtPages.forEach((p) => masterDoc.addPage(p));
+  const addCalendarPages = () => {
+    if (calendarAdded || gvData.include_calendar === false) return;
+    copiedCalendarPages.forEach((p) => masterDoc.addPage(p));
+    calendarAdded = true;
+  };
 
-            // Status in DB aktualisieren
-            await supabaseClient
-              .from("campaign_attachments")
-              .update({
-                page_count: extDoc.getPageCount(),
-                status: "compiled",
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", att.id);
+  const processAttachment = async (att: any) => {
+    if (!att || !att.storage_path) return;
+    try {
+      let fileBytes: Uint8Array | null = null;
+      const bucketCandidates = ["campaign-assets", "operatives-storage"];
+      for (const b of bucketCandidates) {
+        const { data: fileBlob } = await supabaseClient.storage.from(b).download(att.storage_path);
+        if (fileBlob) {
+          fileBytes = new Uint8Array(await fileBlob.arrayBuffer());
+          break;
+        }
+      }
 
-            attachmentsCompiled++;
-          }
-        } catch (attLoadErr) {
-          console.warn(`⚠️ [GV-Compiler] Fehler beim Laden von Beilage ${att.title}:`, attLoadErr);
+      if (fileBytes) {
+        const extDoc = await PDFDocument.load(fileBytes);
+        const extPageIndices = extDoc.getPageIndices();
+        const copiedExtPages = await masterDoc.copyPages(extDoc, extPageIndices);
+        copiedExtPages.forEach((p) => masterDoc.addPage(p));
+
+        if (supabaseClient) {
           await supabaseClient
             .from("campaign_attachments")
             .update({
-              status: "error",
-              error_message: String(attLoadErr),
+              page_count: extDoc.getPageCount(),
+              status: "compiled",
               updated_at: new Date().toISOString(),
             })
             .eq("id", att.id);
         }
+
+        attachmentsCompiled++;
+      }
+    } catch (attLoadErr) {
+      console.warn(`⚠️ [GV-Compiler] Fehler beim Laden von Beilage ${att.title}:`, attLoadErr);
+    }
+  };
+
+  if (attachmentOrder && attachmentOrder.length > 0) {
+    for (const itemId of attachmentOrder) {
+      if (itemId === "system_jahresprogramm" || itemId === "jahresprogramm") {
+        addCalendarPages();
+      } else {
+        const matchingAtt = attachments.find((a: any) => a.id === itemId);
+        if (matchingAtt) {
+          await processAttachment(matchingAtt);
+        }
       }
     }
+  } else {
+    // Default-Reihenfolge: Jahresprogramm an Position 2, dann alle Attachments nach sort_order
+    addCalendarPages();
+    for (const att of attachments) {
+      await processAttachment(att);
+    }
+  }
+
+  // Falls das Jahresprogramm noch nicht hinzugefügt wurde (z.B. nicht in attachmentOrder gelistet)
+  if (!calendarAdded && gvData.include_calendar !== false) {
+    addCalendarPages();
   }
 
   // 3. CORPORATE STEMPEL (2-Pass über ALLE Seiten des Master-Dossiers)
   const totalPages = masterDoc.getPageCount();
   const allPages = masterDoc.getPages();
 
+  // Logo für Stempel
+  let stampLogoImage: any = null;
+  const logoBytes = await getOrLoadLogoBytes(supabaseClient);
+  if (logoBytes) {
+    try {
+      stampLogoImage = await masterDoc.embedPng(logoBytes);
+    } catch (_) {
+      try {
+        stampLogoImage = await masterDoc.embedJpg(logoBytes);
+      } catch (_) {}
+    }
+  }
+
   allPages.forEach((p, idx) => {
     const pageNum = idx + 1;
     const { width, height } = p.getSize();
 
-    // Dezente Kopfzeile nur auf externen Beilage-Seiten (nach den Basis-Seiten)
-    if (pageNum > basePageIndices.length) {
-      p.drawLine({
-        start: { x: 20 * MM, y: height - 12 * MM },
-        end: { x: width - 20 * MM, y: height - 12 * MM },
-        thickness: 0.3,
-        color: rgb(0.75, 0.75, 0.75),
-      });
+    // Dezente Kopfzeile mit Wappen/Logo auf externen Beilage-Seiten
+    if (pageNum > totalBasePages) {
+      let topTextX = 20 * MM;
+      if (stampLogoImage) {
+        const scaled = stampLogoImage.scaleToFit(14 * MM, 14 * MM);
+        p.drawImage(stampLogoImage, {
+          x: 20 * MM,
+          y: height - 16 * MM,
+          width: scaled.width,
+          height: scaled.height,
+        });
+        topTextX = 20 * MM + scaled.width + 3 * MM;
+      }
 
-      p.drawText(`Sportschützen Muhen · Generalversammlung ${year}`, {
-        x: 20 * MM,
+      p.drawText("SPORTSCHÜTZEN MUHEN", {
+        x: topTextX,
         y: height - 10 * MM,
+        size: 9.5,
+        font: fontBold,
+        color: rgb(0.12, 0.23, 0.54),
+      });
+
+      p.drawText(`Generalversammlung ${year} · Dossier-Beilage`, {
+        x: topTextX,
+        y: height - 14.5 * MM,
         size: 7.5,
         font: fontRegular,
-        color: rgb(0.45, 0.45, 0.55),
+        color: rgb(0.4, 0.45, 0.55),
       });
-    }
-
-    // Fortlaufende Seitennummerierung unten (nur auf Beilage-Seiten oder falls gewünscht)
-    if (pageNum > basePageIndices.length || gvData.include_footers === true) {
-      const pageStr = `Seite ${pageNum} von ${totalPages}`;
-      const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
-      const centerX = (width - pageStrW) / 2;
 
       p.drawLine({
-        start: { x: 20 * MM, y: 15 * MM },
-        end: { x: width - 20 * MM, y: 15 * MM },
+        start: { x: 20 * MM, y: height - 17.5 * MM },
+        end: { x: width - 20 * MM, y: height - 17.5 * MM },
         thickness: 0.3,
-        color: rgb(0.75, 0.75, 0.75),
-      });
-
-      p.drawText(pageStr, {
-        x: centerX,
-        y: 11 * MM,
-        size: 7.5,
-        font: fontRegular,
-        color: rgb(0.4, 0.4, 0.4),
+        color: rgb(0.8, 0.82, 0.88),
       });
     }
+
+    // Fortlaufende Seitennummerierung unten auf ALLEN Seiten (Seite 1 von 10, Seite 2 von 10 ...)
+    const pageStr = `Seite ${pageNum} von ${totalPages}`;
+    const pageStrW = fontRegular.widthOfTextAtSize(pageStr, 7.5);
+    const centerX = (width - pageStrW) / 2;
+
+    p.drawLine({
+      start: { x: 20 * MM, y: 15 * MM },
+      end: { x: width - 20 * MM, y: 15 * MM },
+      thickness: 0.3,
+      color: rgb(0.82, 0.82, 0.85),
+    });
+
+    p.drawText(pageStr, {
+      x: centerX,
+      y: 11 * MM,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.35, 0.35, 0.4),
+    });
   });
 
   const finalPdfBytes = await masterDoc.save();

@@ -218,3 +218,21 @@ Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templ
 * **Dynamische Wahlen statt Template-Duplikate:** Wahlen werden nicht mehr über separate Vorlagensätze (`gv_wahljahr`) gesteuert, sondern durch feldbasierte Attribute:
   * `is_election: true` und `candidate_names` pro Traktandum in `public.gv_traktanden`.
   * `amtsdauer_text` (z. B. `Amtsdauer 2026–2028`) in `public.gv_instances`.
+
+---
+
+## 10. Dossier-Assembler, Corporate Stempel & PDF-Typografie (Update Oktober 2026)
+
+* **Echtzeit-Synchronisation der Traktandenliste:** Die PDF-Generierung (`generate-gv-invitation` & `compile-gv-dossier`) bezieht Traktanden direkt aus dem Live-Zustand des Frontend-Editors bzw. aus `public.gv_traktanden`. Veraltete statische Vorlagenklauseln werden nicht mehr verwendet.
+* **Typografie & Formatierungsunterstützung im PDF:**
+  * Eingabefelder im PDF-Bereich (Einleitung, Antragsfristen, Grussformel etc.) unterstützen Inline-Formatierungen wie `**fett**`, `<b>...</b>` und `<strong>...</strong>`. Die Edge Function parst diese Tokens und zeichnet formatierte Textsegmente mit `fontBold` bzw. `fontRegular`.
+  * Dynamische Platzhalter wie `{vorname}`, `{nachname}`, `{anrede}` sowie `{praesident_name}` stehen jetzt auch im PDF-Bereich vollständig zur Verfügung. Bei Auswahl eines Mitglieds im Vorschau-Dropdown aktualisiert sich die PDF-Vorschau unmittelbar.
+* **Erweiterter Dossier-Assembler & sortierbares Jahresprogramm:**
+  * Im Beilagen-Tab verbleibt ausschliesslich Seite 1 («Einladung & Traktandenliste») fix auf Position 1.
+  * Das Jahresprogramm (`system_jahresprogramm`) ist vollwertig in die Drag-and-Drop-Sortierliste integriert und kann beliebig nach unten verschoben werden (`custom_settings.attachment_order`).
+  * Schiesstermine und Mannschaftsmeisterschaft werden bei ausreichendem Platz kompakt auf derselben Seite gedruckt; ein Seitenumbruch erfolgt nur, wenn der vertikale Platz nicht ausreicht.
+* **Einheitlicher Corporate Stempel:**
+  * Alle hochgeladenen Dokumente erhalten beim Kompilieren den einheitlichen Vereins-Kopfbalken mit Wappen, `SPORTSCHÜTZEN MUHEN` in Vereinsblau (`rgb(0.12, 0.23, 0.54)`), Subtitel und Trennlinie.
+  * Über das gesamte Dossier hinweg wird eine globale, zentrierte Seitennummerierung (`Seite X von Y`) mit Trennlinie auf jeder Einzelseite eingeprägt.
+* **Wahljahr-Schalter im Traktanden-Header:** Der Toggle für das Wahljahr befindet sich direkt in der Toolbar des Traktanden-Reiters und erzeugt/entfernt die 4 Wahl-Untertraktanden unmittelbar in der Datenbank. Doppelte Unterzeichner- und Präsidentenfelder im PDF-Tab wurden bereinigt.
+

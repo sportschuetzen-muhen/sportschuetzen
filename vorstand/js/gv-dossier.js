@@ -601,10 +601,16 @@
                             <i class="fas fa-arrows-alt text-primary me-1"></i>Traktanden per Drag &amp; Drop verschiebbar
                         </div>
                     </div>
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-outline-warning py-1 px-2.5 rounded-2 fw-semibold" onclick="gvDossierAddElectionTraktandumModal()">
-                            <i class="fas fa-vote-yea me-1"></i> Wahltraktandum
-                        </button>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <div class="form-check form-switch mb-0 bg-light border rounded-2 px-2.5 py-1 d-flex align-items-center shadow-xs">
+                            <input class="form-check-input ms-0 me-2" type="checkbox" id="gv-trakt-wahljahr" 
+                                   ${gv.is_election_year ? 'checked' : ''} 
+                                   style="cursor: pointer;" 
+                                   onchange="gvDossierToggleWahljahr(this.checked)">
+                            <label class="form-check-label small fw-semibold cursor-pointer mb-0" for="gv-trakt-wahljahr" style="cursor: pointer;">
+                                <i class="fas fa-vote-yea text-warning me-1"></i> Wahljahr (Erneuerungswahlen)
+                            </label>
+                        </div>
                         <button class="btn btn-sm btn-primary py-1 px-2.5 rounded-2 fw-semibold shadow-sm" onclick="gvDossierAddTraktandumModal(null)">
                             <i class="fas fa-plus me-1"></i> Traktandum hinzufügen
                         </button>
@@ -749,39 +755,9 @@
                     </div>
 
                     <div class="row g-2 mb-2">
-                        <div class="col-md-8">
+                        <div class="col-md-12">
                             <label class="form-label small fw-bold mb-1">Austragungsort</label>
                             <input type="text" id="gv-stamm-ort" class="form-control form-control-sm" value="${escapeHtml(gv.ort || 'Schützenhaus Muhen')}" oninput="gvDossierOnStammdatenFieldChange()">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold mb-1">Wahljahr</label>
-                            <div class="form-check form-switch mt-1">
-                                <input class="form-check-input" type="checkbox" id="gv-stamm-wahljahr" ${gv.is_election_year ? 'checked' : ''} style="cursor: pointer;" onchange="gvDossierToggleWahljahr(this.checked)">
-                                <label class="form-check-label small fw-semibold" for="gv-stamm-wahljahr">Erneuerungswahlen</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- WAHLJAHR DETAILS & AMTSDAUER -->
-                    <div class="row g-2 mb-2" id="gv-wahljahr-details" style="${gv.is_election_year ? '' : 'display:none;'}">
-                        <div class="col-md-12">
-                            <div class="p-2.5 bg-warning-subtle rounded-3 border border-warning-subtle">
-                                <div class="d-flex align-items-center justify-content-between mb-1.5">
-                                    <span class="small fw-bold text-warning-emphasis"><i class="fas fa-vote-yea me-1"></i> Wahljahr aktiv</span>
-                                    <span class="badge bg-warning text-dark py-0.5 px-2">Erneuerungswahlen</span>
-                                </div>
-                                <div class="row g-2 align-items-center">
-                                    <div class="col-md-6">
-                                        <label class="form-label small fw-semibold mb-1">Amtsdauer-Bezeichnung</label>
-                                        <input type="text" id="gv-stamm-amtsdauer" class="form-control form-control-sm bg-white" placeholder="z. B. Amtsdauer ${curYear}–${curYear + 2}" value="${escapeHtml(gv.amtsdauer_text || `Amtsdauer ${curYear}–${curYear + 2}`)}" oninput="gvDossierOnStammdatenFieldChange()">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="small text-muted pt-3">
-                                            Unter dem Reiter <strong>«📋 Traktanden &amp; Wahlen»</strong> kannst du die Wahlgeschäfte und Kandidierenden direkt pflegen.
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
@@ -867,16 +843,19 @@
                     </div>
                 </div>
 
-                <!-- SHORTCODE PILLS -->
+                <!-- SHORTCODE PILLS & FORMATIERUNG -->
                 <div class="p-2.5 bg-light rounded-3 border mb-3">
-                    <div class="small fw-bold text-muted mb-1.5"><i class="fas fa-code me-1 text-primary"></i> Verfügbare Platzhalter (klicken zum Einfügen):</div>
-                    <div class="d-flex gap-1.5 flex-wrap">
+                    <div class="small fw-bold text-muted mb-1.5"><i class="fas fa-code me-1 text-primary"></i> Verfügbare Platzhalter &amp; Formatierung (klicken zum Einfügen):</div>
+                    <div class="d-flex gap-1.5 flex-wrap align-items-center">
                         <span class="badge bg-white text-dark border px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{gv_nummer}')" title="Nummer der GV">{gv_nummer}</span>
                         <span class="badge bg-white text-dark border px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{jahr}')" title="Jahr">{jahr}</span>
                         <span class="badge bg-white text-dark border px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{gv_datum}')" title="Formatiertes Datum">{gv_datum}</span>
                         <span class="badge bg-white text-dark border px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{gv_zeit}')" title="Uhrzeit">{gv_zeit}</span>
                         <span class="badge bg-white text-dark border px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{gv_ort}')" title="Austragungsort">{gv_ort}</span>
                         <span class="badge bg-white text-dark border px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{praesident_name}')" title="Präsident">{praesident_name}</span>
+                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{vorname}')" title="Vorname des Empfängers (aus Mitgliedstabelle)">{vorname}</span>
+                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1 cursor-pointer shadow-xs" style="cursor:pointer;" onclick="gvDossierInsertPlaceholder('{nachname}')" title="Nachname des Empfängers (aus Mitgliedstabelle)">{nachname}</span>
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis border px-2 py-1 cursor-pointer shadow-xs ms-1" style="cursor:pointer;" onclick="gvDossierInsertFormatting('**', '**')" title="Fettgedruckter Text in der PDF-Einleitung"><strong>**Fett**</strong></span>
                     </div>
                 </div>
 
@@ -886,6 +865,7 @@
                         <label class="form-label small fw-bold text-dark mb-1">Titel der Einladung</label>
                         <input type="text" id="gv-pdf-titel" class="form-control form-control-sm fw-bold" 
                                value="${escapeHtml(gv.einladung_titel || `Einladung zur ${gv.number || 100}. ordentlichen Generalversammlung`)}" 
+                               onfocus="window._gvLastFocusedPdfInput = this"
                                oninput="gvDossierOnStammdatenFieldChange()">
                     </div>
 
@@ -894,9 +874,10 @@
                         <label class="form-label small fw-bold text-dark mb-1">Einleitung &amp; Begrüssung</label>
                         <textarea id="gv-pdf-intro" class="form-control form-control-sm" rows="6" 
                                   placeholder="Liebe Schützinnen, liebe Schützen..." 
+                                  onfocus="window._gvLastFocusedPdfInput = this"
                                   oninput="gvDossierOnStammdatenFieldChange()">${escapeHtml(gv.einladung_intro || '')}</textarea>
                         <div class="form-text small text-muted">
-                            Wird auf Seite 1 oberhalb der Traktandenliste dargestellt. Zeilenumbrüche werden übernommen.
+                            Wird auf Seite 1 oberhalb der Traktandenliste dargestellt. Zeilenumbrüche und <strong>**fettgedruckte Abschnitte**</strong> werden direkt ins PDF übernommen.
                         </div>
                     </div>
 
@@ -905,21 +886,19 @@
                         <label class="form-label small fw-bold text-dark mb-1">Hinweis zu Anträgen &amp; Fristen</label>
                         <textarea id="gv-pdf-hinweis" class="form-control form-control-sm" rows="2" 
                                   placeholder="Anträge sind mindestens 8 Tage vor der GV schriftlich an den Präsidenten einzureichen..." 
+                                  onfocus="window._gvLastFocusedPdfInput = this"
                                   oninput="gvDossierOnStammdatenFieldChange()">${escapeHtml(gv.antragsfrist_hinweis || '')}</textarea>
                     </div>
 
-                    <div class="row g-2 mb-2">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Präsident / Unterzeichner</label>
-                            <input type="text" id="gv-pdf-praesi-name" class="form-control form-control-sm" 
-                                   value="${escapeHtml(gv.praesident_name || 'Andrea Rossi')}" 
-                                   oninput="gvDossierOnStammdatenFieldChange()">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Grussformel (Schlusszeilen)</label>
-                            <textarea id="gv-pdf-gruss" class="form-control form-control-sm" rows="2" 
-                                      placeholder="Freundliche Schützengrüsse\nDer Vorstand" 
-                                      oninput="gvDossierOnStammdatenFieldChange()">${escapeHtml(gv.grussformel || 'Freundliche Schützengrüsse\nDer Vorstand der Sportschützen Muhen')}</textarea>
+                    <!-- GRUSSFORMEL & UNTERZEICHNER -->
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold text-dark mb-1">Grussformel &amp; Unterzeichner (Schlusszeilen)</label>
+                        <textarea id="gv-pdf-gruss" class="form-control form-control-sm" rows="3" 
+                                  placeholder="Freundliche Schützengrüsse&#10;{praesident_name}&#10;Der Vorstand der Sportschützen Muhen" 
+                                  onfocus="window._gvLastFocusedPdfInput = this"
+                                  oninput="gvDossierOnStammdatenFieldChange()">${escapeHtml(gv.grussformel || 'Freundliche Schützengrüsse\nDer Vorstand der Sportschützen Muhen')}</textarea>
+                        <div class="form-text small text-muted">
+                            Erfasse hier deine Grussformel und den Unterzeichner. Der Platzhalter <code>{praesident_name}</code> wird automatisch mit dem Namen des Präsidenten ersetzt.
                         </div>
                     </div>
                 </div>
@@ -954,9 +933,9 @@
                     <input type="file" id="gvAttachmentFileInput" class="d-none" accept="application/pdf" multiple onchange="gvDossierHandleFileUpload(this.files)">
                 </div>
 
-                <!-- FIXE BASIS-DOKUMENTE -->
+                <!-- FIXES BASIS-DOKUMENT -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="small fw-bold text-muted text-uppercase" style="letter-spacing:0.5px;">Basis-Dokumente:</span>
+                    <span class="small fw-bold text-muted text-uppercase" style="letter-spacing:0.5px;">Basis-Dokument (Deckblatt):</span>
                 </div>
                 <div class="list-group rounded-3 shadow-none mb-3">
                     <div class="list-group-item p-2.5 d-flex align-items-center justify-content-between border mb-1.5 bg-light rounded-2">
@@ -964,64 +943,99 @@
                             <span class="badge bg-primary text-white rounded-pill px-2 py-1">1</span>
                             <div>
                                 <div class="fw-bold small mb-0">Einladung &amp; Traktandenliste</div>
-                                <div class="text-muted" style="font-size:0.75rem;">Seite 1 · Dynamisch aus Traktandenmanager generiert</div>
+                                <div class="text-muted" style="font-size:0.75rem;">Seite 1 · Fixes Deckblatt (dynamisch aus Traktandenmanager generiert)</div>
                             </div>
                         </div>
-                        <span class="badge bg-secondary-subtle text-secondary py-1 px-1.5">System</span>
-                    </div>
-
-                    <div class="list-group-item p-2.5 d-flex align-items-center justify-content-between border mb-1.5 bg-light rounded-2">
-                        <div class="d-flex align-items-center gap-2.5">
-                            <span class="badge bg-primary text-white rounded-pill px-2 py-1">2</span>
-                            <div>
-                                <div class="fw-bold small mb-0">Jahresprogramm ${curYear} (Beilage)</div>
-                                <div class="text-muted" style="font-size:0.75rem;">Seite 2 · Dynamisch aus Vereinsterminen generiert</div>
-                            </div>
-                        </div>
-                        <div class="form-check form-switch mb-0">
-                            <input class="form-check-input" type="checkbox" id="gvIncludeProgSwitch" 
-                                   ${state.campaign?.custom_settings?.include_calendar !== false ? 'checked' : ''}
-                                   onchange="gvDossierToggleCalendar(this.checked)">
-                        </div>
+                        <span class="badge bg-secondary-subtle text-secondary py-1 px-1.5">Fixiert auf 1</span>
                     </div>
                 </div>
 
-                <!-- LISTE DER DOKUMENTE IM DOSSIER (SORTIERBAR) -->
+                <!-- LISTE DER DOKUMENTE IM DOSSIER (FREI SORTIERBAR) -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="small fw-bold text-muted text-uppercase" style="letter-spacing:0.5px;">Beilagen-Berichte (sortierbar):</span>
+                    <span class="small fw-bold text-muted text-uppercase" style="letter-spacing:0.5px;">Dossier-Beilagen (frei sortierbar):</span>
                     <span class="small text-muted"><i class="fas fa-arrows-alt me-1"></i> Drag &amp; Drop zum Sortieren</span>
                 </div>
 
                 <div class="list-group rounded-3 shadow-none mb-3" id="gvAttachmentsSortableList">
-                    ${state.attachments.length === 0 ? `
-                        <div class="list-group-item p-3 text-center text-muted small bg-light rounded-2 border">
-                            Noch keine Berichte hochgeladen. Lade oben Protokolle und Jahresberichte als PDF hoch.
-                        </div>
-                    ` : state.attachments.map((att, idx) => `
-                        <div class="list-group-item p-2.5 d-flex align-items-center justify-content-between border mb-1.5 rounded-2 gv-sortable-item bg-white" data-att-id="${att.id}">
-                            <div class="d-flex align-items-center gap-2.5">
-                                <i class="fas fa-grip-vertical text-muted cursor-grab" title="Ziehen zum Sortieren" style="cursor: grab;"></i>
-                                <span class="badge bg-secondary text-white rounded-pill px-2 py-1">${idx + 3}</span>
-                                <div>
-                                    <div class="fw-bold small mb-0">${escapeHtml(att.title)}</div>
-                                    <div class="text-muted" style="font-size:0.75rem;">
-                                        ${att.page_count ? `${att.page_count} Seite(n)` : 'PDF'} 
-                                        · Status: <span class="badge ${att.status === 'compiled' ? 'bg-success' : 'bg-secondary'} py-0 px-1" style="font-size:0.65rem;">${att.status || 'uploaded'}</span>
+                    ${(() => {
+                        const customOrder = state.campaign?.custom_settings?.attachment_order || [];
+                        const calendarItem = {
+                            id: 'system_jahresprogramm',
+                            isCalendar: true,
+                            title: `Jahresprogramm & Schiesstermine ${curYear}`,
+                            sub: `Dynamisch aus Vereinsterminen generiert`
+                        };
+
+                        let allSortable = [];
+                        const attsById = {};
+                        (state.attachments || []).forEach(a => { attsById[a.id] = a; });
+
+                        if (customOrder.length > 0) {
+                            customOrder.forEach(id => {
+                                if (id === 'system_jahresprogramm') {
+                                    allSortable.push(calendarItem);
+                                } else if (attsById[id]) {
+                                    allSortable.push(attsById[id]);
+                                    delete attsById[id];
+                                }
+                            });
+                            Object.values(attsById).forEach(a => allSortable.push(a));
+                            if (!allSortable.some(x => x.id === 'system_jahresprogramm')) {
+                                allSortable.unshift(calendarItem);
+                            }
+                        } else {
+                            allSortable = [calendarItem, ...(state.attachments || [])];
+                        }
+
+                        return allSortable.map((item, idx) => {
+                            if (item.isCalendar) {
+                                return `
+                                    <div class="list-group-item p-2.5 d-flex align-items-center justify-content-between border mb-1.5 rounded-2 gv-sortable-item bg-white" data-att-id="system_jahresprogramm">
+                                        <div class="d-flex align-items-center gap-2.5">
+                                            <i class="fas fa-grip-vertical text-muted cursor-grab" title="Ziehen zum Sortieren" style="cursor: grab;"></i>
+                                            <span class="badge bg-primary text-white rounded-pill px-2 py-1 gv-order-badge">${idx + 2}</span>
+                                            <div>
+                                                <div class="fw-bold small mb-0"><i class="fas fa-calendar-alt text-primary me-1"></i>${escapeHtml(item.title)}</div>
+                                                <div class="text-muted" style="font-size:0.75rem;">
+                                                    ${escapeHtml(item.sub)} · <a href="#termine" onclick="if(typeof window.showSection==='function'){window.showSection('termine');} return false;" class="text-decoration-none fw-semibold">Jahresprogramm bearbeiten <i class="fas fa-external-link-alt" style="font-size:10px;"></i></a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" id="gvIncludeProgSwitch" 
+                                                   ${state.campaign?.custom_settings?.include_calendar !== false ? 'checked' : ''}
+                                                   onchange="gvDossierToggleCalendar(this.checked)" title="Im Gesamtdossier einbinden">
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                            return `
+                                <div class="list-group-item p-2.5 d-flex align-items-center justify-content-between border mb-1.5 rounded-2 gv-sortable-item bg-white" data-att-id="${item.id}">
+                                    <div class="d-flex align-items-center gap-2.5">
+                                        <i class="fas fa-grip-vertical text-muted cursor-grab" title="Ziehen zum Sortieren" style="cursor: grab;"></i>
+                                        <span class="badge bg-secondary text-white rounded-pill px-2 py-1 gv-order-badge">${idx + 2}</span>
+                                        <div>
+                                            <div class="fw-bold small mb-0">${escapeHtml(item.title)}</div>
+                                            <div class="text-muted" style="font-size:0.75rem;">
+                                                ${item.page_count ? `${item.page_count} Seite(n)` : 'PDF'} 
+                                                · Status: <span class="badge ${item.status === 'compiled' ? 'bg-success' : 'bg-secondary'} py-0 px-1" style="font-size:0.65rem;">${item.status || 'uploaded'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-1">
+                                        ${item.file_url ? `
+                                            <a href="${item.file_url}" target="_blank" class="btn btn-xs btn-outline-secondary p-1" title="Öffnen">
+                                                <i class="fas fa-external-link-alt"></i>
+                                            </a>
+                                        ` : ''}
+                                        <button class="btn btn-xs btn-outline-danger p-1" onclick="gvDossierDeleteAttachment('${item.id}')" title="Entfernen">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="d-flex align-items-center gap-1">
-                                ${att.file_url ? `
-                                    <a href="${att.file_url}" target="_blank" class="btn btn-xs btn-outline-secondary p-1" title="Öffnen">
-                                        <i class="fas fa-external-link-alt"></i>
-                                    </a>
-                                ` : ''}
-                                <button class="btn btn-xs btn-outline-danger p-1" onclick="gvDossierDeleteAttachment('${att.id}')" title="Entfernen">
-                                    <i class="fas fa-trash-alt"></i>
-                                </button>
-                            </div>
-                        </div>
-                    `).join('')}
+                            `;
+                        }).join('');
+                    })()}
                 </div>
 
                 <!-- KOMPILIEREN-BUTTON -->
@@ -2067,7 +2081,7 @@
     };
 
     /**
-     * Schalter für Gesamterneuerungswahlen: Fügt Wahltraktanden dynamisch ein
+     * Schalter für Gesamterneuerungswahlen: Steuert Wahltraktanden dynamisch
      */
     window.gvDossierToggleWahljahr = async function (isChecked) {
         gvDossierOnStammdatenFieldChange();
@@ -2077,11 +2091,21 @@
         const curYear = state.year;
         const gvId = state.gvInstance?.id || `gv_${curYear}`;
 
+        if (state.gvInstance) state.gvInstance.is_election_year = isChecked;
+        if (state.gvDraft) state.gvDraft.is_election_year = isChecked;
+
+        try {
+            await supa.from('gv_instances').update({
+                is_election_year: isChecked,
+                updated_at: new Date().toISOString()
+            }).eq('id', gvId);
+        } catch (_) {}
+
         if (isChecked) {
             const allItems = state.traktanden || [];
             const hasWahl = allItems.some(t => !t.parent_id && (t.titel.toLowerCase().includes('wahl') || t.titel.toLowerCase().includes('gesamterneuerung')));
             if (!hasWahl) {
-                if (confirm("Wahljahr aktiviert:\nMöchtest du das Traktandum «Gesamterneuerungswahlen» mit den 4 Unterpunkten (Vorstand, Präsident, Revisoren, Fähnrich) jetzt automatisch hinzufügen?")) {
+                if (confirm("Wahljahr aktiviert:\nMöchtest du das Traktandum «Gesamterneuerungswahlen» mit den 4 statutarischen Unterpunkten (Vorstand, Präsident, Revisoren, Fähnrich) jetzt automatisch hinzufügen?")) {
                     const wahlMainId = `tr_${curYear}_wahlen_${Date.now().toString(36)}`;
                     await supa.from('gv_traktanden').insert({
                         id: wahlMainId,
@@ -2119,6 +2143,19 @@
                     renderLeftPanel();
                 }
             }
+        } else {
+            const allItems = state.traktanden || [];
+            const wahlItems = allItems.filter(t => !t.parent_id && (t.titel.toLowerCase().includes('wahl') || t.titel.toLowerCase().includes('gesamterneuerung')));
+            if (wahlItems.length > 0) {
+                if (confirm("Wahljahr deaktiviert:\nMöchtest du das Traktandum «Gesamterneuerungswahlen» jetzt aus der Traktandenliste entfernen?")) {
+                    for (const wi of wahlItems) {
+                        await supa.from('gv_traktanden').delete().eq('id', wi.id);
+                    }
+                    if (typeof showSuccess === 'function') showSuccess("Wahltraktanden entfernt.");
+                    await loadGVDossierData();
+                    renderLeftPanel();
+                }
+            }
         }
     };
 
@@ -2127,7 +2164,7 @@
     // =========================================================================
 
     window.gvDossierInsertPlaceholder = function (ph) {
-        const active = document.activeElement;
+        const active = window._gvLastFocusedPdfInput || document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.id.startsWith('gv-pdf-')) {
             const start = active.selectionStart || 0;
             const end = active.selectionEnd || 0;
@@ -2139,6 +2176,27 @@
             const introEl = document.getElementById('gv-pdf-intro');
             if (introEl) {
                 introEl.value = (introEl.value || '') + ph;
+                introEl.focus();
+            }
+        }
+        gvDossierOnStammdatenFieldChange();
+    };
+
+    window.gvDossierInsertFormatting = function (before, after) {
+        const active = window._gvLastFocusedPdfInput || document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.id.startsWith('gv-pdf-')) {
+            const start = active.selectionStart || 0;
+            const end = active.selectionEnd || 0;
+            const val = active.value || '';
+            const selected = val.substring(start, end) || 'Fetter Text';
+            active.value = val.substring(0, start) + before + selected + after + val.substring(end);
+            active.selectionStart = start + before.length;
+            active.selectionEnd = start + before.length + selected.length;
+            active.focus();
+        } else {
+            const introEl = document.getElementById('gv-pdf-intro');
+            if (introEl) {
+                introEl.value = (introEl.value || '') + before + 'Fetter Text' + after;
                 introEl.focus();
             }
         }
@@ -2343,13 +2401,34 @@
                 const supa = getSupabase();
                 if (!supa) return;
 
+                const order = [];
                 const updates = [];
                 items.forEach((item, idx) => {
+                    const badge = item.querySelector('.gv-order-badge');
+                    if (badge) badge.textContent = String(idx + 2);
+
                     const attId = item.dataset.attId;
                     if (attId) {
-                        updates.push(supa.from('campaign_attachments').update({ sort_order: idx + 3 }).eq('id', attId));
+                        order.push(attId);
+                        if (attId !== 'system_jahresprogramm') {
+                            updates.push(supa.from('campaign_attachments').update({ sort_order: idx + 2 }).eq('id', attId));
+                        }
                     }
                 });
+
+                const state = window._gvDossierState;
+                const campId = state.campaign?.id;
+                if (campId) {
+                    const customSettings = state.campaign.custom_settings || {};
+                    customSettings.attachment_order = order;
+                    state.campaign.custom_settings = customSettings;
+                    try {
+                        await supa.from('communication_campaigns').update({
+                            custom_settings: customSettings,
+                            updated_at: new Date().toISOString()
+                        }).eq('id', campId);
+                    } catch (_) {}
+                }
 
                 try {
                     await Promise.all(updates);
@@ -2498,13 +2577,30 @@
                 throw new Error("Zentraler Dossier-Compiler (window.gvCompileDossierPdf) ist nicht verfügbar.");
             }
 
+            const customSettings = state.campaign?.custom_settings || {};
+            const attachmentOrder = customSettings.attachment_order || [];
+            const draft = state.gvDraft || {};
+            const inst = state.gvInstance || {};
+            const curMember = state.members.find(m => m.id === state.selectedMemberId) || state.members[0] || {};
+
             const gvData = {
-                gvId: state.gvInstance?.id || `gv_${year}`,
-                gvNummer: state.gvInstance?.number || 100,
-                datum: state.gvInstance?.datum || '',
-                zeit: state.gvInstance?.zeit || '19:30',
-                ort: state.gvInstance?.ort || 'Schützenhaus Muhen',
-                datumVorjahr: state.gvInstance?.datum_vorjahr || ''
+                gvId: inst.id || `gv_${year}`,
+                gvNummer: draft.number || inst.number || 100,
+                datum: draft.datum || inst.datum || '',
+                zeit: draft.zeit || inst.zeit || '19:30',
+                ort: draft.ort || inst.ort || 'Schützenhaus Muhen',
+                datumVorjahr: draft.datum_vorjahr || inst.datum_vorjahr || '',
+                einladung_titel: draft.einladung_titel || inst.einladung_titel || '',
+                einladung_intro: draft.einladung_intro || inst.einladung_intro || '',
+                antragsfrist_hinweis: draft.antragsfrist_hinweis || inst.antragsfrist_hinweis || '',
+                praesident_name: draft.praesident_name || inst.praesident_name || 'Andrea Rossi',
+                grussformel: draft.grussformel || inst.grussformel || '',
+                vorname: curMember.first_name || '',
+                nachname: curMember.last_name || '',
+                anrede: curMember.first_name ? `Lieber ${curMember.first_name}` : 'Liebe Schützinnen und Schützen',
+                traktanden: state.traktanden || [],
+                include_calendar: customSettings.include_calendar !== false,
+                attachment_order: attachmentOrder
             };
 
             const res = await window.gvCompileDossierPdf(campId, year, gvData, {
@@ -2558,6 +2654,7 @@
 
         const draft = state.gvDraft || {};
         const inst = state.gvInstance || {};
+        const curMember = state.members.find(m => m.id === state.selectedMemberId) || state.members[0] || {};
 
         const gvData = {
             gvId: inst.id || `gv_${year}`,
@@ -2570,7 +2667,11 @@
             einladung_intro: draft.einladung_intro || inst.einladung_intro || '',
             antragsfrist_hinweis: draft.antragsfrist_hinweis || inst.antragsfrist_hinweis || '',
             praesident_name: draft.praesident_name || inst.praesident_name || 'Andrea Rossi',
-            grussformel: draft.grussformel || inst.grussformel || ''
+            grussformel: draft.grussformel || inst.grussformel || '',
+            vorname: curMember.first_name || '',
+            nachname: curMember.last_name || '',
+            anrede: curMember.first_name ? `Lieber ${curMember.first_name}` : 'Liebe Schützinnen und Schützen',
+            traktanden: state.traktanden || []
         };
 
         const res = await window.gvGenerateInvitationPdf(year, gvData, {
@@ -2754,9 +2855,12 @@
         renderGVDossierWorkspace();
     };
 
-    window.gvDossierSelectMember = function (mId) {
+    window.gvDossierSelectMember = async function (mId) {
         window._gvDossierState.selectedMemberId = mId;
         renderRightPanel();
+        if (window._gvDossierState.activeRightTab === 'preview-pdf') {
+            await window.gvDossierRefreshPreview();
+        }
     };
 
     window.gvDossierLiveUpdateMailText = function () {
