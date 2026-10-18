@@ -236,3 +236,20 @@ Historisch war das GV-Cockpit teilweise als Tab 1 in `vorstand/js/vorlagen/templ
   * Über das gesamte Dossier hinweg wird eine globale, zentrierte Seitennummerierung (`Seite X von Y`) mit Trennlinie auf jeder Einzelseite eingeprägt.
 * **Wahljahr-Schalter im Traktanden-Header:** Der Toggle für das Wahljahr befindet sich direkt in der Toolbar des Traktanden-Reiters und erzeugt/entfernt die 4 Wahl-Untertraktanden unmittelbar in der Datenbank. Doppelte Unterzeichner- und Präsidentenfelder im PDF-Tab wurden bereinigt.
 
+---
+
+## 11. Automatische Ableitung von Jahreszahlen & Datumsbezügen in Traktanden (Update Oktober 2026)
+
+* **Dynamische Platzhalter:** In Traktandentiteln und -beschreibungen werden Datums- und Jahresbezüge nicht mehr statisch hardcodiert, sondern dynamisch und kontextsensitiv aufgelöst:
+  * `{{datum_vorjahr}}` / `{datum_vorjahr}`: Vollständiges formatiertes Schweizer Datum des Vorjahres (z. B. `19. März 2025` statt unformatiertem ISO-String `2025-03-19`).
+  * `{{jahr_vorjahr}}` / `{jahr_vorjahr}` / `{{rechnungsjahr}}`: Rechnungsjahr, abgeleitet direkt aus `datum_vorjahr` bzw. `year - 1` (z. B. für `Jahresrechnung {{jahr_vorjahr}} und Revisorenbericht`).
+  * `{{jahr}}` / `{jahr}` / `{{gv_jahr}}`: Aktuelles GV-Durchführungsjahr (z. B. für `Budget {{jahr}} und Festsetzung der Jahresbeiträge` sowie `Jahresprogramm {{jahr}}`).
+  * `{{gv_nummer_vorjahr}}`: Für dynamische Protokolltitel (z. B. `Protokoll der {{gv_nummer_vorjahr}}. Generalversammlung`).
+* **Live-Vorschau & UI-Unterstützung:**
+  * Im Traktanden-Manager (Tab 1), im Traktanden-Pool sowie in den Modals werden Platzhalter live und sauber formatiert dargestellt (`gvDossierResolveTraktandumText`).
+  * Das Modal zum Hinzufügen/Bearbeiten von Traktanden bietet 1-Klick-Pills zum schnellen Einfügen der Variablen sowie eine Live-Vorschau (`#trModalPreview`).
+  * Die Standard-Vorgabe (`gvDossierSeedDefaultTraktanden`) hinterlegt die Standardpunkte automatisch mit diesen Platzhaltern.
+  * Bei der Vorjahresübernahme (`gvDossierCopyPreviousYearTraktanden`) bleiben Platzhalter erhalten oder feste Vorjahreszahlen werden nahtlos in die dynamischen Variablen überführt.
+* **Synchronisation mit der PDF-Engine:** Die Edge Function `generate-pdf` (`replacePlaceholders`) löst diese Variablen für Titel und Beschreibung vollvektoriell, mit echtem Schweizer Monatsnamen und WinAnsi-sicher bei der Generierung der Einladung und beim Dossier-Assembler auf.
+
+

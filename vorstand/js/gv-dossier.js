@@ -76,6 +76,93 @@
     }
 
     /**
+     * Löst Datums-, Jahres- und Nummernplatzhalter in Traktanden dynamisch auf
+     */
+    function gvDossierResolveTraktandumText(text, customInstance = null) {
+        if (!text) return '';
+        const state = window._gvDossierState || {};
+        const gv = customInstance || state.gvDraft || state.gvInstance || {};
+        const curYear = gv.year || state.year || new Date().getFullYear();
+        const datumVorjahr = gv.datum_vorjahr || '';
+        
+        let vorjahrDateFormatted = formatSwissDate(datumVorjahr);
+        let vorjahrYear = curYear - 1;
+
+        if (datumVorjahr) {
+            if (datumVorjahr.includes('-')) {
+                const parts = datumVorjahr.split('-');
+                if (parts[0] && parts[0].length === 4) {
+                    vorjahrYear = parseInt(parts[0], 10);
+                }
+            } else if (datumVorjahr.includes('.')) {
+                const parts = datumVorjahr.split('.');
+                if (parts[2] && parts[2].length === 4) {
+                    vorjahrYear = parseInt(parts[2], 10);
+                }
+            } else {
+                const parsed = new Date(datumVorjahr);
+                if (!isNaN(parsed.getFullYear())) {
+                    vorjahrYear = parsed.getFullYear();
+                }
+            }
+        }
+        if (!vorjahrDateFormatted) {
+            vorjahrDateFormatted = `im März ${vorjahrYear}`;
+        }
+
+        const gvNummer = gv.number || 100;
+        const gvNummerVorjahr = gvNummer ? (parseInt(gvNummer, 10) - 1) : 99;
+        const amtsdauer = gv.amtsdauer_text || `Amtsdauer ${curYear}–${curYear + 2}`;
+
+        return String(text)
+            .replace(/\{\{\s*datum_vorjahr\s*\}\}/gi, vorjahrDateFormatted)
+            .replace(/\{\s*datum_vorjahr\s*\}/gi, vorjahrDateFormatted)
+            .replace(/\{\{\s*jahr_vorjahr\s*\}\}/gi, String(vorjahrYear))
+            .replace(/\{\s*jahr_vorjahr\s*\}/gi, String(vorjahrYear))
+            .replace(/\{\{\s*rechnungsjahr\s*\}\}/gi, String(vorjahrYear))
+            .replace(/\{\s*rechnungsjahr\s*\}/gi, String(vorjahrYear))
+            .replace(/\{\{\s*jahr\s*\}\}/gi, String(curYear))
+            .replace(/\{\s*jahr\s*\}/gi, String(curYear))
+            .replace(/\{\{\s*gv_jahr\s*\}\}/gi, String(curYear))
+            .replace(/\{\s*gv_jahr\s*\}/gi, String(curYear))
+            .replace(/\{\{\s*gv_nummer\s*\}\}/gi, String(gvNummer))
+            .replace(/\{\s*gv_nummer\s*\}/gi, String(gvNummer))
+            .replace(/\{\{\s*gv_nummer_vorjahr\s*\}\}/gi, String(gvNummerVorjahr))
+            .replace(/\{\s*gv_nummer_vorjahr\s*\}/gi, String(gvNummerVorjahr))
+            .replace(/\{\{\s*amtsdauer\s*\}\}/gi, String(amtsdauer))
+            .replace(/\{\s*amtsdauer\s*\}/gi, String(amtsdauer));
+    }
+    window.gvDossierResolveTraktandumText = gvDossierResolveTraktandumText;
+
+    /**
+     * Fügt einen Platzhalter in das Traktandum-Titelfeld ein
+     */
+    window.gvDossierInsertTraktandumVar = function (varName) {
+        const input = document.getElementById('trModalTitel');
+        if (!input) return;
+        const start = input.selectionStart || input.value.length;
+        const end = input.selectionEnd || input.value.length;
+        const val = input.value;
+        input.value = val.substring(0, start) + varName + val.substring(end);
+        input.focus();
+        const nextPos = start + varName.length;
+        if (typeof input.setSelectionRange === 'function') {
+            input.setSelectionRange(nextPos, nextPos);
+        }
+        gvDossierUpdateModalPreview(input.value);
+    };
+
+    /**
+     * Aktualisiert die Live-Vorschau im Traktandum-Modal
+     */
+    window.gvDossierUpdateModalPreview = function (val) {
+        const previewEl = document.getElementById('trModalPreview');
+        if (previewEl) {
+            previewEl.textContent = gvDossierResolveTraktandumText(val || '') || '(leer)';
+        }
+    };
+
+    /**
      * Ermittelt den aktuellen E-Mail-Inhalt (bevorzugt direkt aus ClubWysiwyg)
      */
     function getGVCampaignMailBody() {
@@ -669,10 +756,10 @@
                                             <span class="badge bg-primary text-white rounded-pill px-2.5 py-1 fs-7 fw-bold" title="Fortlaufende Nummer">${dynamicNum}</span>
                                             <div>
                                                 <div class="fw-bold small text-dark d-flex align-items-center flex-wrap gap-1">
-                                                    <span>${escapeHtml(main.titel)}</span>
+                                                    <span>${escapeHtml(gvDossierResolveTraktandumText(main.titel))}</span>
                                                     ${main.is_election ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-0.5 px-1.5" style="font-size:0.68rem;"><i class="fas fa-vote-yea me-1"></i>Wahl</span>` : ''}
                                                 </div>
-                                                ${main.beschreibung ? `<div class="text-muted" style="font-size:0.75rem;">${escapeHtml(main.beschreibung)}</div>` : ''}
+                                                ${main.beschreibung ? `<div class="text-muted" style="font-size:0.75rem;">${escapeHtml(gvDossierResolveTraktandumText(main.beschreibung))}</div>` : ''}
                                                 ${main.candidate_names ? `<div class="text-primary mt-0.5" style="font-size:0.73rem;"><i class="fas fa-user-check me-1"></i>Kandidierende: <strong>${escapeHtml(main.candidate_names)}</strong></div>` : ''}
                                             </div>
                                         </div>
@@ -713,10 +800,10 @@
                                                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0.5 fw-bold font-monospace" style="font-size:0.75rem;">${dynamicNum}.${sIdx + 1}</span>
                                                         <div>
                                                             <div class="d-flex align-items-center flex-wrap gap-1">
-                                                                <span class="small fw-semibold text-dark">${escapeHtml(sub.titel)}</span>
+                                                                <span class="small fw-semibold text-dark">${escapeHtml(gvDossierResolveTraktandumText(sub.titel))}</span>
                                                                 ${sub.is_election ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-0 px-1" style="font-size:0.62rem;">Wahl</span>` : ''}
                                                             </div>
-                                                            ${sub.beschreibung ? `<span class="text-muted" style="font-size:0.75rem;">${escapeHtml(sub.beschreibung)}</span>` : ''}
+                                                            ${sub.beschreibung ? `<span class="text-muted" style="font-size:0.75rem;">${escapeHtml(gvDossierResolveTraktandumText(sub.beschreibung))}</span>` : ''}
                                                             ${sub.candidate_names ? `<div class="text-primary" style="font-size:0.72rem;"><i class="fas fa-user-check me-1"></i>Kandidierende: <strong>${escapeHtml(sub.candidate_names)}</strong></div>` : ''}
                                                         </div>
                                                     </div>
@@ -788,11 +875,11 @@
                                                 <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2 py-0.5" style="font-size:0.7rem;"><i class="fas fa-box me-1"></i>Pool</span>
                                                 <div>
                                                     <div class="fw-bold small text-dark d-flex align-items-center flex-wrap gap-1">
-                                                        <span>${escapeHtml(pItem.titel)}</span>
+                                                        <span>${escapeHtml(gvDossierResolveTraktandumText(pItem.titel))}</span>
                                                         ${pItem.is_election ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-0.5 px-1.5" style="font-size:0.65rem;"><i class="fas fa-vote-yea me-1"></i>Wahl</span>` : ''}
                                                         ${subPool.length > 0 ? `<span class="badge bg-light text-muted border py-0.5 px-1.5" style="font-size:0.65rem;">${subPool.length} Unterpunkte</span>` : ''}
                                                     </div>
-                                                    ${pItem.beschreibung ? `<div class="text-muted" style="font-size:0.75rem;">${escapeHtml(pItem.beschreibung)}</div>` : ''}
+                                                    ${pItem.beschreibung ? `<div class="text-muted" style="font-size:0.75rem;">${escapeHtml(gvDossierResolveTraktandumText(pItem.beschreibung))}</div>` : ''}
                                                     ${pItem.candidate_names ? `<div class="text-primary mt-0.5" style="font-size:0.72rem;"><i class="fas fa-user-check me-1"></i>Kandidierende: <strong>${escapeHtml(pItem.candidate_names)}</strong></div>` : ''}
                                                 </div>
                                             </div>
@@ -1975,7 +2062,25 @@
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label small fw-bold text-muted">Titel des Traktandums</label>
-                                    <input type="text" id="trModalTitel" class="form-control" placeholder="z. B. Mutationen oder Wahlen" value="${isElectionDefault ? 'Gesamterneuerungswahlen' : ''}" required autofocus>
+                                    <input type="text" id="trModalTitel" class="form-control" placeholder="z. B. Mutationen oder Wahlen" value="${isElectionDefault ? 'Gesamterneuerungswahlen' : ''}" oninput="gvDossierUpdateModalPreview(this.value)" required autofocus>
+                                    <div class="d-flex align-items-center gap-1.5 flex-wrap mt-1.5">
+                                        <span class="text-muted small" style="font-size:0.75rem;"><i class="fas fa-magic me-1"></i>Auto-Jahreszahlen:</span>
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{jahr_vorjahr}}')">
+                                            {{jahr_vorjahr}} <span class="text-muted">(Vorjahr/Rechnung)</span>
+                                        </button>
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{datum_vorjahr}}')">
+                                            {{datum_vorjahr}} <span class="text-muted">(Datum Vorjahr)</span>
+                                        </button>
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{jahr}}')">
+                                            {{jahr}} <span class="text-muted">(GV-Jahr/Budget)</span>
+                                        </button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{gv_nummer_vorjahr}}')">
+                                            {{gv_nummer_vorjahr}} <span class="text-muted">(GV-Nr. Vorjahr)</span>
+                                        </button>
+                                    </div>
+                                    <div class="mt-1.5 small text-muted bg-light p-1.5 rounded border" id="trModalPreviewWrap" style="font-size:0.75rem;">
+                                        <i class="fas fa-eye me-1 text-primary"></i>Vorschau: <strong class="text-dark" id="trModalPreview">${escapeHtml(gvDossierResolveTraktandumText(isElectionDefault ? 'Gesamterneuerungswahlen' : '')) || '(leer)'}</strong>
+                                    </div>
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label small fw-bold text-muted">Beschreibung / Antrag (Optional)</label>
@@ -2114,7 +2219,25 @@
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label small fw-bold text-muted">Titel des Traktandums</label>
-                                    <input type="text" id="trModalTitel" class="form-control" value="${escapeHtml(item.titel || '')}" required>
+                                    <input type="text" id="trModalTitel" class="form-control" value="${escapeHtml(item.titel || '')}" oninput="gvDossierUpdateModalPreview(this.value)" required>
+                                    <div class="d-flex align-items-center gap-1.5 flex-wrap mt-1.5">
+                                        <span class="text-muted small" style="font-size:0.75rem;"><i class="fas fa-magic me-1"></i>Auto-Jahreszahlen:</span>
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{jahr_vorjahr}}')">
+                                            {{jahr_vorjahr}} <span class="text-muted">(Vorjahr/Rechnung)</span>
+                                        </button>
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{datum_vorjahr}}')">
+                                            {{datum_vorjahr}} <span class="text-muted">(Datum Vorjahr)</span>
+                                        </button>
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{jahr}}')">
+                                            {{jahr}} <span class="text-muted">(GV-Jahr/Budget)</span>
+                                        </button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1.5 rounded-pill font-monospace" style="font-size:0.7rem;" onclick="gvDossierInsertTraktandumVar('{{gv_nummer_vorjahr}}')">
+                                            {{gv_nummer_vorjahr}} <span class="text-muted">(GV-Nr. Vorjahr)</span>
+                                        </button>
+                                    </div>
+                                    <div class="mt-1.5 small text-muted bg-light p-1.5 rounded border" id="trModalPreviewWrap" style="font-size:0.75rem;">
+                                        <i class="fas fa-eye me-1 text-primary"></i>Vorschau: <strong class="text-dark" id="trModalPreview">${escapeHtml(gvDossierResolveTraktandumText(item.titel || '')) || '(leer)'}</strong>
+                                    </div>
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label small fw-bold text-muted">Beschreibung / Antrag (Optional)</label>
@@ -2295,9 +2418,12 @@
             for (const main of mainItems) {
                 const newId = `tr_${curYear}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
                 idMap.set(main.id, newId);
-                const titleClean = (main.titel || '')
-                    .replace(new RegExp(String(prevYear), 'g'), String(curYear))
-                    .replace(new RegExp(String(prevYear - 1), 'g'), String(curYear - 1));
+                let titleClean = main.titel || '';
+                if (!titleClean.includes('{{jahr') && !titleClean.includes('{jahr')) {
+                    titleClean = titleClean
+                        .replace(new RegExp(String(prevYear), 'g'), '{{jahr}}')
+                        .replace(new RegExp(String(prevYear - 1), 'g'), '{{jahr_vorjahr}}');
+                }
 
                 await supa.from('gv_traktanden').insert({
                     id: newId,
@@ -2317,9 +2443,12 @@
                 const newParentId = idMap.get(sub.parent_id);
                 if (!newParentId) continue;
                 const newSubId = `tr_${curYear}_sub_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-                const subTitleClean = (sub.titel || '')
-                    .replace(new RegExp(String(prevYear), 'g'), String(curYear))
-                    .replace(new RegExp(String(prevYear - 1), 'g'), String(curYear - 1));
+                let subTitleClean = sub.titel || '';
+                if (!subTitleClean.includes('{{jahr') && !subTitleClean.includes('{jahr')) {
+                    subTitleClean = subTitleClean
+                        .replace(new RegExp(String(prevYear), 'g'), '{{jahr}}')
+                        .replace(new RegExp(String(prevYear - 1), 'g'), '{{jahr_vorjahr}}');
+                }
 
                 await supa.from('gv_traktanden').insert({
                     id: newSubId,
@@ -2359,12 +2488,12 @@
         const defaultNormal = [
             { title: 'Begrüssung und Appell', ref: 'Präsident', text: 'Eröffnung der Versammlung und Feststellung der Beschlussfähigkeit.' },
             { title: 'Wahl der Stimmenzähler', ref: 'Präsident', text: 'Bestimmung der Stimmenzähler für offene und geheime Wahlen.' },
-            { title: `Protokoll der GV vom ${curYear - 1}`, ref: 'Aktuar', text: 'Genehmigung des Vorjahres-Protokolls.' },
+            { title: 'Protokoll der GV vom {{datum_vorjahr}}', ref: 'Aktuar', text: 'Genehmigung des Vorjahres-Protokolls.' },
             { title: 'Mutationen (Aufnahmen, Austritte, Ehrungen)', ref: 'Präsident', text: 'Aufnahme neuer Mitglieder und Totengedenken.' },
             { title: 'Jahresberichte (Präsident, Schützenmeister, Jungschützen)', ref: 'Vorstand', text: 'Berichte des Vorstands und der Spartenleiter.' },
-            { title: `Jahresrechnung ${curYear - 1} und Revisorenbericht`, ref: 'Kassier / Revisoren', text: 'Abnahme der Jahresrechnung und Décharge-Erteilung.' },
-            { title: `Budget ${curYear} und Festsetzung der Jahresbeiträge`, ref: 'Kassier', text: 'Genehmigung des Voranschlags und der Beiträge.' },
-            { title: `Jahresprogramm ${curYear}`, ref: 'Schützenmeister', text: 'Vorstellung und Festlegung des Schiesskalenders.' },
+            { title: 'Jahresrechnung {{jahr_vorjahr}} und Revisorenbericht', ref: 'Kassier / Revisoren', text: 'Abnahme der Jahresrechnung und Décharge-Erteilung.' },
+            { title: 'Budget {{jahr}} und Festsetzung der Jahresbeiträge', ref: 'Kassier', text: 'Genehmigung des Voranschlags und der Beiträge.' },
+            { title: 'Jahresprogramm {{jahr}}', ref: 'Schützenmeister', text: 'Vorstellung und Festlegung des Schiesskalenders.' },
             { title: 'Ehrungen und Auszeichnungen', ref: 'Präsident', text: 'Würdigung verdienter Schützen und Jubilare.' },
             { title: 'Erledigung von Anträgen & Varia', ref: 'Präsident', text: 'Behandlung statutengemäss eingereichter Anträge.' }
         ];

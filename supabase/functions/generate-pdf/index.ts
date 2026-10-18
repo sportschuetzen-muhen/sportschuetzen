@@ -1965,6 +1965,30 @@ async function generateGVInvitationPdf(
   const gvOrtClean = gvData.ort || "Schützenstube Hard, Muhen";
   const praesiName = gvData.praesidentName || gvData.praesident_name || "Andrea Rossi";
   const vorjahrDatum = gvData.datumVorjahr || gvData.datum_vorjahr || `${year - 1}`;
+  let vorjahrDatumFormatted = String(vorjahrDatum);
+  let vorjahrYear = String(year - 1);
+
+  if (String(vorjahrDatum).includes("-")) {
+    const p = String(vorjahrDatum).split("-");
+    if (p.length === 3) {
+      const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+      const mIdx = parseInt(p[1], 10) - 1;
+      if (mIdx >= 0 && mIdx < 12) {
+        vorjahrDatumFormatted = `${parseInt(p[2], 10)}. ${months[mIdx]} ${p[0]}`;
+        vorjahrYear = p[0];
+      }
+    }
+  } else if (String(vorjahrDatum).includes(".")) {
+    const p = String(vorjahrDatum).split(".");
+    if (p.length === 3 && p[2].length === 4) {
+      vorjahrYear = p[2];
+      vorjahrDatumFormatted = String(vorjahrDatum);
+    }
+  }
+
+  const gvNummerVorjahrStr = String(Math.max(1, parseInt(gvNummerStr, 10) - 1));
+  const amtsdauerText = gvData.amtsdauer_text || `Amtsdauer ${year}–${year + 2}`;
+
   const vorname = gvData.vorname || gvData.first_name || "";
   const nachname = gvData.nachname || gvData.last_name || "";
   const anrede = gvData.anrede || (vorname ? `Lieber ${vorname}` : "Liebe Schützinnen und Schützen");
@@ -1973,17 +1997,36 @@ async function generateGVInvitationPdf(
     if (!text) return "";
     return text
       .replace(/{jahr}/gi, String(year))
-      .replace(/{rechnungsjahr}/gi, String(year))
+      .replace(/{{jahr}}/gi, String(year))
+      .replace(/{gv_jahr}/gi, String(year))
+      .replace(/{{gv_jahr}}/gi, String(year))
+      .replace(/{jahr_vorjahr}/gi, vorjahrYear)
+      .replace(/{{jahr_vorjahr}}/gi, vorjahrYear)
+      .replace(/{rechnungsjahr}/gi, vorjahrYear)
+      .replace(/{{rechnungsjahr}}/gi, vorjahrYear)
       .replace(/{gv_nummer}/gi, gvNummerStr)
+      .replace(/{{gv_nummer}}/gi, gvNummerStr)
+      .replace(/{gv_nummer_vorjahr}/gi, gvNummerVorjahrStr)
+      .replace(/{{gv_nummer_vorjahr}}/gi, gvNummerVorjahrStr)
       .replace(/{gv_datum}/gi, formattedDatum)
+      .replace(/{{gv_datum}}/gi, formattedDatum)
       .replace(/{gv_zeit}/gi, gvZeitClean)
+      .replace(/{{gv_zeit}}/gi, gvZeitClean)
       .replace(/{gv_ort}/gi, gvOrtClean)
+      .replace(/{{gv_ort}}/gi, gvOrtClean)
       .replace(/{praesident_name}/gi, praesiName)
+      .replace(/{{praesident_name}}/gi, praesiName)
       .replace(/{vorname}/gi, vorname)
+      .replace(/{{vorname}}/gi, vorname)
       .replace(/{nachname}/gi, nachname)
+      .replace(/{{nachname}}/gi, nachname)
       .replace(/{anrede}/gi, anrede)
-      .replace(/{{Datum_Vorjahr}}/gi, String(vorjahrDatum))
-      .replace(/{datum_vorjahr}/gi, String(vorjahrDatum));
+      .replace(/{{anrede}}/gi, anrede)
+      .replace(/{amtsdauer}/gi, amtsdauerText)
+      .replace(/{{amtsdauer}}/gi, amtsdauerText)
+      .replace(/{{Datum_Vorjahr}}/gi, vorjahrDatumFormatted)
+      .replace(/{{datum_vorjahr}}/gi, vorjahrDatumFormatted)
+      .replace(/{datum_vorjahr}/gi, vorjahrDatumFormatted);
   };
 
   let templateTitle = `Einladung zur ${gvNummerStr}. ordentlichen Generalversammlung`;
