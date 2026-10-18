@@ -1010,6 +1010,7 @@ const MODULE_MANAGE_PERMS = {
     'meeting':                'meeting.manage',
     'news':                   'news.manage',
     'galerie':                'galerie.manage',
+    'endschiessen':           'endschiessen.manage',
     'logins':                 'logins.manage'
 };
 
@@ -1128,6 +1129,7 @@ function navTo(viewId, el) {
         else if (viewId === 'news'             && typeof initNewsView          === 'function') loadPromise = initNewsView();
         else if (viewId === 'meeting-recorder' && typeof initMeetingRecorder   === 'function') loadPromise = initMeetingRecorder();
         else if (viewId === 'archiv'           && typeof initArchiv            === 'function') loadPromise = initArchiv();
+        else if (viewId === 'endschiessen'     && typeof loadEndschiessenData  === 'function') loadPromise = loadEndschiessenData();
     } catch (err) {
         console.error(`Fehler beim Laden von Modul ${viewId}:`, err);
     }

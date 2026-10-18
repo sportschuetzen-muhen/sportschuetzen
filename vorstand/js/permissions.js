@@ -37,6 +37,7 @@
     'meeting-recorder':       ['meeting.view', 'meeting.manage'],
     'news':                   ['news.view', 'news.manage'],
     'galerie':                ['galerie.view', 'galerie.manage'],
+    'endschiessen':           ['endschiessen.view', 'endschiessen.manage'],
     'logins':                 ['logins.view', 'logins.manage']
   };
 

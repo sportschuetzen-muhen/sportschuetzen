@@ -154,3 +154,9 @@ Dieses Muster wurde konsistent über alle Grid- und Listen-Module ausgerollt: Ja
 ## 7. Schnittstelle zur Mannschaftsmeisterschaft (`sync_jm_to_contest_mannschaft`)
 Die in der Jahresmeisterschaft erfassten 7 Rohrunden der Schweizer Mannschaftsmeisterschaft (SMM, Spalten 33–39 bzw. `jm_shooters.details->'mannschaft'`) dienen als primäre Datenquelle für das Modul «Resultate Mannschaft & G & G» und die Vereins-Website. Über die PostgreSQL-Funktion `public.sync_jm_to_contest_mannschaft(p_year)` können die Punkte atomar nach `public.contest_results` synchronisiert werden, wodurch Doppelerfassungen vollständig eliminiert sind. Die Stored Procedure führt dabei automatisch einen Abgleich gegen `public.contest_setups` (Team Manager) durch: Nicht mehr im Team eingeteilte Schützen werden mit ihren Punkten in den Pool verschoben und Altbestände ohne Punkte bereinigt, sodass die Teams garantiert bei maximal 8 Schützen bleiben.
 
+---
+
+## 8. Schnittstelle zum Endschiessen (`syncEndschiessenToJM`)
+Das Endschiessen (Saisonabschluss KK 50m) bildet einen zählenden Wertungswettkampf der Jahresmeisterschaft. Über die im Modul Endschiessen integrierte 1-Klick-Schnittstelle (`syncEndschiessenToJM` in `vorstand/js/endschiessen/endschiessen-core.js`) werden die Endstich-Ganzpunkte (max. 200 Punkte) der lizenzierten Schützen atomar in die Meisterschaftsspalte *Endschiessen* / *Schlussmatch* von `public.jm_seasons.raw_grid` übertragen. Ein vorgängiger Vorher-Nachher-Abgleich verhindert Fehleingaben und manuelle Doppelerfassungen.
+
+

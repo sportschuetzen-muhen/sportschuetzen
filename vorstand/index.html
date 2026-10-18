@@ -829,6 +829,10 @@
                     <i class="fas fa-medal me-2"></i> <span class="nav-text flex-grow-1">Jahresmeisterschaft KK</span>
                     <span id="jm-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                     onclick="navTo('endschiessen', this)">
+                    <i class="fas fa-bullseye me-2"></i> <span class="nav-text flex-grow-1">Endschiessen</span>
+                </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('mail', this)">
                     <i class="fas fa-envelope"></i> <span class="nav-text">Mail</span>
@@ -977,6 +981,13 @@
                                 <span id="jm-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
                             </div>
                             <p class="small text-muted mb-0">Kleinkaliber Meisterschaft verwalten</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('endschiessen')" style="cursor:pointer">
+                            <h5 class="mb-1">🎯 Endschiessen</h5>
+                            <p class="small text-muted mb-0">Endstich 20 Schuss, Final Top 8, Gaben &amp; Differenzler</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
@@ -1138,6 +1149,11 @@
                     </div>
                 </div>
                 <div id="jahresmeisterschaft-container"></div>
+            </div>
+
+            <!-- NEU: ENDSCHIESSEN KK 50m -->
+            <div id="view-endschiessen" class="module-view">
+                <div id="endschiessen-container"></div>
             </div>
 <!-- MAIL -->
 <div id="view-mail" class="module-view">
@@ -2486,6 +2502,10 @@
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-import.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-inbox.js"></script>
+
+<!-- NEU: Skripte für Endschiessen KK 50m -->
+<script src="js/endschiessen/endschiessen-core.js"></script>
+<script src="js/endschiessen/endschiessen-ui.js"></script>
 
 <!-- NEU: Skript für Protokoll-Archiv KI -->
 <script src="js/archiv.js"></script>

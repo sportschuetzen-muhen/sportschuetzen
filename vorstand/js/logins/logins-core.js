@@ -185,6 +185,14 @@ const RBAC_MODULES = [
     ]
   },
   {
+    module: 'Endschiessen (KK 50m)',
+    icon: 'fa-bullseye',
+    permissions: [
+      { key: 'endschiessen.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Ranglisten & Stiche einsehen' },
+      { key: 'endschiessen.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Stiche erfassen, Resultate eingeben, Final leiten & in JM synchronisieren' }
+    ]
+  },
+  {
     module: 'Logins & Rollen',
     icon: 'fa-user-lock',
     permissions: [
