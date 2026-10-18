@@ -620,14 +620,29 @@ async function syncJmToContestMannschaftAction() {
   const supa = getResultateSupabaseClient();
   if (!supa) return alert("Kein Supabase-Client verfügbar.");
   const year = window._resultateYear || new Date().getFullYear();
-  const confirmed = confirm(`Möchtest du die Resultate der Runden 1–7 für die Mannschaftsmeisterschaft aus der Jahresmeisterschaft (${year}) synchronisieren?`);
+  const confirmed = confirm(
+    `Möchtest du die Resultate der Runden 1–7 für die Mannschaftsmeisterschaft aus der Jahresmeisterschaft (${year}) synchronisieren?\n\n` +
+    `Die Teams werden verbindlich mit dem Team Manager abgeglichen, damit keine Mannschaften überfüllt werden.`
+  );
   if (!confirmed) return;
 
   try {
     setStatus("Synchronisiere aus Jahresmeisterschaft…", false);
     const { data, error } = await supa.rpc('sync_jm_to_contest_mannschaft', { p_year: year });
     if (error) throw error;
-    alert(`✅ Synchronisation erfolgreich! ${data?.updated_count || 0} Schützen-Ergebnisse wurden aktualisiert.`);
+
+    let msg = `✅ Synchronisation erfolgreich!\n\n• ${data?.updated_count || 0} Schützen-Ergebnisse wurden aktualisiert.`;
+    if (data?.setups_checked > 0) {
+      msg += `\n• Teams mit ${data.setups_checked} Schützen aus dem Team Manager abgeglichen.`;
+    }
+    if (data?.moved_to_pool_count > 0) {
+      msg += `\n• ${data.moved_to_pool_count} Schütze(n) mit Punkten in den Pool verschoben.`;
+    }
+    if (data?.deleted_count > 0) {
+      msg += `\n• ${data.deleted_count} ersetzte(r) Schütze(n) ohne Punkte bereinigt.`;
+    }
+
+    alert(msg);
     await loadResultateData(true);
   } catch (err) {
     console.error("Fehler bei JM-Synchronisation:", err);

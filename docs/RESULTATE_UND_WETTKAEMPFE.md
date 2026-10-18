@@ -88,6 +88,12 @@ Beim Aufruf von **«👥 Aus Team-Setup übernehmen»** (`syncSetupToResultate`)
 - **Schutz geschossener Punkte:** Schützen, die bisher in einem Team standen, aber im neuen Setup nicht mehr im Team sind, werden automatisch in den **Pool** (`team = ""`) verschoben. Ihre erzielten Resultate bleiben vollständig erhalten und das Team bleibt exakt auf der Soll-Stärke (z. B. 4/4 oder 5/5).
 - **Bereinigung ohne Punkte:** Schützen ohne geschossene Punkte, die nicht im Team-Setup enthalten sind, werden aus `contest_results` entfernt. Dadurch werden Teams niemals überfüllt.
 
+### 2.6 Schnittstelle Jahresmeisterschaft (`sync_jm_to_contest_mannschaft`) mit Team-Manager-Abgleich
+Beim Auslösen von **«🔄 Aus Jahresmeisterschaft synchronisieren»** gleicht die Stored Procedure `public.sync_jm_to_contest_mannschaft(p_year)` die Daten verbindlich mit `public.contest_setups` (Team Manager) ab:
+- **Verbindliche Team-Zuweisung:** Alle im Team Manager für die Saison hinterlegten Schützen werden ihren Teams (`Muhen 1`, `Muhen 2`, `Muhen 3`) zugeordnet und in `contest_results` sichergestellt.
+- **Automatischer Überfüllungsschutz:** Schützen in `contest_results`, die im aktuellen Team Manager nicht mehr in einem Team eingeteilt sind («solche die nicht mehr drin sind»), werden automatisch in den **Pool** (`team = ""`) verschoben, sofern sie geschossene Punkte besitzen. Haben sie keine Punkte, werden sie bereinigt.
+- **Punkte-Übertrag:** Anschliessend werden die 7 SMM-Runden aus `jm_shooters.details->'mannschaft'` atomar übertragen. Dadurch bleibt jedes Team exakt bei den Soll-Stärken (max. 8 Schützen) und Altbestände können Teams niemals überfüllen.
+
 
 ---
 
