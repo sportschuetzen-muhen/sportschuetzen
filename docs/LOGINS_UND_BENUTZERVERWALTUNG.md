@@ -140,11 +140,12 @@ erDiagram
 4. Bei Erfolg ermittelt `applyAuthenticatedUser()` die Rollen aus `public.user_roles` und initialisiert den Session-State (`portal_user`, `portal_role`, `portal_roles`).
 5. `public.ping_login_session()` registriert die Sitzung in `public.login_sessions`.
 
-### 5.2 Mitglieder-PWA-Login (`app.js`)
-1. Mitglied wählt seinen Namen aus der Mitgliederliste aus oder gibt seine SSV-PersonNumber ein.
-2. Eingabe der 6-stelligen PIN (`address_number`).
-3. Client validiert die Kombination direkt gegen `public.members`.
-4. Nach erfolgreicher Prüfung wird die Sitzung lokal gespeichert und in `public.login_sessions` mit Präfix `pwa_` auditiert.
+### 5.2 Vereinheitlichtes Login & Freitext-Identifikation (PWA, Website & Vorstand)
+1. **Kein öffentliches Dropdown (Datenschutz & Privacy):** Zur Verhinderung von Adress-Scraping und zum Schutz der Privatsphäre existiert kein öffentliches Mitglieder-Dropdown mehr. Der Benutzer gibt seinen Namen (Vorname Nachname oder Nachname Vorname, Gross-/Kleinschreibung und Leerzeichen beliebig), seine E-Mail oder seine Lizenznummer in ein einziges universelles Eingabefeld ein.
+2. **Standard-Weg (Direkt-Login mit PIN / Passwort):** Eingabe von Name/E-Mail + PIN (für Mitglieder) bzw. Passwort (für Vorstand) -> 1 Klick auf «Anmelden».
+3. **Serverseitige Verifikation (`public.verify_member_pin` RPC):** Prüft die Kombination serverseitig in PostgreSQL ohne Klartext-Exposition von PINs im Browser-DOM. Erkennt Vorstandsmitglieder und schaltet automatisch auf die GoTrue-Passwort-Validierung um.
+4. **PIN vergessen? (E-Mail OTP Fallback):** Ist der PIN nicht bekannt, klickt das Mitglied auf «PIN vergessen? Code per Mail». Das System ermittelt über `public.resolve_login_identifier` die hinterlegte Mailadresse (mit maskierter Vorschau) und versendet einen 6-stelligen Bestätigungscode. Fehlt eine Mailadresse, erhält der Nutzer einen freundlichen Hinweis zur Kontaktaufnahme mit dem Vorstand.
+5. **Einheitliches Look & Feel:** Alle Einstiegspunkte (App, Website-SSO-Weiterleitung, Vorstandsportal) teilen dasselbe Kartendesign im Corporate Design der Sportschützen Muhen.
 
 ### 5.3 Passwort-Reset & Aktivierungs-Workflow
 * **Ausstehendes Konto:** Wurde ein Admin neu angelegt, aber noch kein Passwort gesetzt, steht der Status auf *«Ausstehend»*.

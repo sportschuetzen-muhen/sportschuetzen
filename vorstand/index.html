@@ -603,8 +603,8 @@
 
         <form onsubmit="event.preventDefault(); doLogin();" autocomplete="on">
             <div class="form-floating mb-3 text-start">
-                <input type="text" class="form-control" id="login-user" placeholder="Benutzername oder E-Mail" required autocomplete="username" oninput="document.getElementById('login-error')?.classList.add('d-none')" onkeydown="if(event.key==='Enter') document.getElementById('login-pw').focus()">
-                <label for="login-user"><i class="fas fa-user text-muted me-1"></i> Benutzername oder E-Mail</label>
+                <input type="text" class="form-control" id="login-user" placeholder="Benutzername, E-Mail oder Name" required autocomplete="username" oninput="document.getElementById('login-error')?.classList.add('d-none')" onkeydown="if(event.key==='Enter') document.getElementById('login-pw').focus()">
+                <label for="login-user"><i class="fas fa-user text-muted me-1"></i> Benutzername, E-Mail oder Name</label>
             </div>
 
             <div class="position-relative mb-3 text-start">
