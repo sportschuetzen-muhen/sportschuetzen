@@ -192,7 +192,10 @@ function renderStandardStichTableView(stich, canEdit) {
     const state = window.EndschiessenState;
     const scores = state.scoresByStich[stich.id] || [];
     const isEndstich = stich.code === 'endstich' || stich.modus === 'standard_20';
-    const isDifferenzler = stich.modus === 'diff    return `
+    const isDifferenzler = stich.modus === 'differenzler';
+    const isTiefschuss = stich.modus === 'tiefschuss';
+
+    return `
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <div class="card-header bg-white border-bottom p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
