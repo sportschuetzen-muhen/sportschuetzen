@@ -110,6 +110,16 @@ function initDashboard() {
         loadAllData(selectElement.value);
     });
 
+    // 5. URL-Hash / Parameter Support (z. B. #endschiessen oder ?tab=endschiessen)
+    const urlParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.replace(/^#/, '');
+    const tabParam = urlParams.get('tab') || (hash === 'endschiessen' ? 'tab-endschiessen' : hash);
+    if (tabParam) {
+        const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabParam}"]`) || 
+                          document.querySelector(`.tab-btn[data-tab="tab-${tabParam}"]`);
+        if (targetBtn) targetBtn.click();
+    }
+
     // Initial load
     loadAllData("aktuell");
 }
@@ -886,9 +896,6 @@ function escapeHtml(str) {
 
 // === TAB 4: ENDSCHIESSEN (SAISONABSCHLUSS KK 50M) ===
 async function loadEndschiessen(selectedYear) {
-    const currentYear = new Date().getFullYear().toString();
-    const targetYear = (selectedYear === "aktuell" || !selectedYear) ? currentYear : selectedYear;
-
     const loadingEl = document.getElementById('endschiessen-loading-state');
     const contentEl = document.getElementById('endschiessen-content-container');
     const emptyEl = document.getElementById('endschiessen-empty-state');
@@ -904,19 +911,58 @@ async function loadEndschiessen(selectedYear) {
     if (emptyEl) emptyEl.style.display = 'none';
 
     try {
-        // 1. Prüfen, ob Saison existiert und öffentlich freigegeben ist
-        const resSeason = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?jahr=eq.${encodeURIComponent(targetYear)}&is_published=eq.true&select=*`, {
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
-        });
-        if (!resSeason.ok) throw new Error("Fehler beim Prüfen der Saison.");
-        const seasons = await resSeason.json();
+        let targetYear = selectedYear;
+        let seasonObj = null;
 
-        if (!seasons || seasons.length === 0) {
+        // 1. Saison ermitteln (dynamisch die neueste freigegebene Saison bei "aktuell" oder leer)
+        if (selectedYear === "aktuell" || !selectedYear) {
+            try {
+                const resLatest = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&order=jahr.desc&limit=1`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                if (resLatest.ok) {
+                    const latestList = await resLatest.json();
+                    if (Array.isArray(latestList) && latestList.length > 0) {
+                        seasonObj = latestList[0];
+                        targetYear = seasonObj.jahr;
+                    }
+                }
+            } catch (e) {
+                console.warn("Fehler beim Abrufen der neuesten Endschiessen-Saison:", e);
+            }
+            if (!seasonObj) {
+                targetYear = new Date().getFullYear().toString();
+            }
+        }
+
+        // Falls noch nicht geladen: gezielte Saison abrufen
+        if (!seasonObj) {
+            const resSeason = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?jahr=eq.${encodeURIComponent(targetYear)}&is_published=eq.true&select=*`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            if (resSeason.ok) {
+                const seasons = await resSeason.json();
+                if (Array.isArray(seasons) && seasons.length > 0) {
+                    seasonObj = seasons[0];
+                }
+            }
+        }
+
+        if (!seasonObj) {
             if (loadingEl) loadingEl.style.display = 'none';
-            if (emptyEl) emptyEl.style.display = 'block';
+            if (emptyEl) {
+                emptyEl.style.display = 'block';
+                const emptyTitle = emptyEl.querySelector('h3');
+                const emptyText = emptyEl.querySelector('p');
+                if (emptyTitle) emptyTitle.textContent = `Endschiessen ${targetYear || ''} noch nicht freigegeben`;
+                if (emptyText) emptyText.textContent = 'Die Resultate für dieses Jahr sind noch nicht öffentlich freigegeben oder das Schiessen hat noch nicht stattgefunden.';
+            }
             return;
         }
 
@@ -930,7 +976,7 @@ async function loadEndschiessen(selectedYear) {
         const stiche = resStiche.ok ? await resStiche.json() : [];
 
         // 3. Scores laden inklusive Schützen-Stammdaten
-        const resScores = await fetch(`${SUPABASE_REST_URL}/endschiessen_scores?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name,birth_date)&order=rang_total.asc`, {
+        const resScores = await fetch(`${SUPABASE_REST_URL}/endschiessen_scores?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name,birth_date)&order=rang_total.asc,total_decimal.desc`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -960,15 +1006,21 @@ async function loadEndschiessen(selectedYear) {
                     const name = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
                     const jg = s.member?.birth_date ? ` (${new Date(s.member.birth_date).getFullYear()})` : '';
                     const rang = s.rang_total || (idx + 1);
-                    const rankClass = rang === 1 ? 'col-rang-1' : (rang === 2 ? 'col-rang-2' : (rang === 3 ? 'col-rang-3' : ''));
+                    const rankBadge = rang === 1 
+                        ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
+                        : (rang === 2 
+                            ? `<span class="col-rang-badge col-rang-2">🥈 2</span>` 
+                            : (rang === 3 
+                                ? `<span class="col-rang-badge col-rang-3">🥉 3</span>` 
+                                : `<strong>${rang}</strong>`));
                     return `
                         <tr>
-                            <td class="col-rang ${rankClass}"><strong>${rang}</strong></td>
-                            <td class="col-name">${escapeHtml(name)}<span style="font-size: 0.75rem; color: var(--text-muted);">${jg}</span></td>
+                            <td class="col-rang">${rankBadge}</td>
+                            <td class="col-name">${escapeHtml(name)}<span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-left: 4px;">${jg}</span></td>
                             <td style="text-align: center;">${s.passe_1_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_1_decimal || 0).toFixed(1)})</span></td>
                             <td style="text-align: center;">${s.passe_2_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_2_decimal || 0).toFixed(1)})</span></td>
-                            <td class="col-total"><strong>${s.total_score || 0}</strong></td>
-                            <td style="text-align: center; font-weight: 600; color: var(--color-primary, #0d6efd);">${Number(s.total_decimal || 0).toFixed(1)}</td>
+                            <td class="col-total"><b>${s.total_score || 0}</b></td>
+                            <td style="text-align: center; font-weight: 700; color: var(--primary-color);">${Number(s.total_decimal || 0).toFixed(1)}</td>
                             <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${s.rang_decimal || '-'}</td>
                         </tr>
                     `;
@@ -983,11 +1035,23 @@ async function loadEndschiessen(selectedYear) {
                 tbodyFinal.innerHTML = finals.map((f, idx) => {
                     const name = f.member ? `${f.member.last_name} ${f.member.first_name}` : `Schütze ${idx + 1}`;
                     const rang = f.final_rang || (idx + 1);
-                    const rankClass = rang === 1 ? 'col-rang-1' : (rang === 2 ? 'col-rang-2' : (rang === 3 ? 'col-rang-3' : ''));
-                    const badge = rang === 1 ? '🥇 Meister' : (rang === 2 ? '🥈 2. Rang' : (rang === 3 ? '🥉 3. Rang' : 'Finalist'));
+                    const rankBadge = rang === 1 
+                        ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
+                        : (rang === 2 
+                            ? `<span class="col-rang-badge col-rang-2">🥈 2</span>` 
+                            : (rang === 3 
+                                ? `<span class="col-rang-badge col-rang-3">🥉 3</span>` 
+                                : `<strong>${rang}</strong>`));
+                    const badge = rang === 1 
+                        ? '<span class="col-rang-badge col-rang-1">🥇 Meister</span>' 
+                        : (rang === 2 
+                            ? '<span class="col-rang-badge col-rang-2">🥈 2. Rang</span>' 
+                            : (rang === 3 
+                                ? '<span class="col-rang-badge col-rang-3">🥉 3. Rang</span>' 
+                                : '<span class="badge" style="background: rgba(15, 58, 93, 0.08); color: var(--primary-color); padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">Finalist</span>'));
                     return `
                         <tr>
-                            <td class="col-rang ${rankClass}"><strong>${rang}</strong></td>
+                            <td class="col-rang">${rankBadge}</td>
                             <td class="col-name">${escapeHtml(name)}</td>
                             <td style="text-align: center;">${f.serie_1 || '-'}</td>
                             <td style="text-align: center;">${f.serie_2 || '-'}</td>
@@ -996,8 +1060,8 @@ async function loadEndschiessen(selectedYear) {
                             <td style="text-align: center;">${f.serie_5 || '-'}</td>
                             <td style="text-align: center;">${f.serie_6 || '-'}</td>
                             <td style="text-align: center;">${f.serie_7 || '-'}</td>
-                            <td class="col-total"><strong>${f.total_score || 0}</strong></td>
-                            <td style="text-align: center;"><span class="badge" style="background: rgba(13, 110, 253, 0.1); color: var(--color-primary, #0d6efd); padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">${badge}</span></td>
+                            <td class="col-total"><b>${f.total_score || 0}</b></td>
+                            <td style="text-align: center;">${badge}</td>
                         </tr>
                     `;
                 }).join('');
@@ -1031,12 +1095,20 @@ async function loadEndschiessen(selectedYear) {
                                     <tbody>
                                         ${stScores.map((s, sIdx) => {
                                             const sName = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
+                                            const sRang = s.rang_total || (sIdx + 1);
+                                            const sRankBadge = sRang === 1 
+                                                ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
+                                                : (sRang === 2 
+                                                    ? `<span class="col-rang-badge col-rang-2">🥈 2</span>` 
+                                                    : (sRang === 3 
+                                                        ? `<span class="col-rang-badge col-rang-3">🥉 3</span>` 
+                                                        : `<strong>${sRang}</strong>`));
                                             return `
                                                 <tr>
-                                                    <td class="col-rang"><strong>${s.rang_total || (sIdx + 1)}</strong></td>
+                                                    <td class="col-rang">${sRankBadge}</td>
                                                     <td class="col-name">${escapeHtml(sName)}</td>
-                                                    ${st.modus === 'differenzler' ? `<td style="text-align: center;">${s.target_score || '-'}</td><td style="text-align: center;">${s.total_score || '-'}</td><td class="col-total" style="color: #ef4444;">${s.diff_score !== null ? s.diff_score : '-'}</td>` : ''}
-                                                    ${st.modus === 'tiefschuss' ? `<td class="col-total">${s.total_score || 0}</td><td style="text-align: center; color: var(--color-primary); font-weight: 600;">${s.tiefschuss || '-'}</td>` : ''}
+                                                    ${st.modus === 'differenzler' ? `<td style="text-align: center;">${s.target_score || '-'}</td><td style="text-align: center;">${s.total_score || '-'}</td><td class="col-total" style="color: #ef4444; font-weight: 800;">${s.diff_score !== null ? s.diff_score : '-'}</td>` : ''}
+                                                    ${st.modus === 'tiefschuss' ? `<td class="col-total">${s.total_score || 0}</td><td style="text-align: center; color: var(--primary-color); font-weight: 700;">${s.tiefschuss || '-'}</td>` : ''}
                                                     ${st.modus !== 'differenzler' && st.modus !== 'tiefschuss' ? `<td class="col-total">${s.total_score || 0}</td>` : ''}
                                                 </tr>
                                             `;

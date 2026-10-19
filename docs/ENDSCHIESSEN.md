@@ -445,7 +445,7 @@ $$;
 Das Frontend integriert sich nahtlos in das bestehende Design-System der Sportschützen Muhen:
 * **Typografie:** `Outfit` (Überschriften & KPI-Zahlen) und `Plus Jakarta Sans` (Tabellen & UI).
 * **Farbpalette:** Marineblau `#0f3a5d`, Akzentgrün `#10b981`, Warnorange `#f59e0b`.
-* **TableKit-Standard:** Heller Sticky-Header (`z-index: 10`), Inline-Edits, Tastaturnavigation mit Pfeiltasten/Tab, dynamischer Speichern-Button (`SaveButtonKit`).
+* **TableKit-Standard:** Heller Sticky-Header (`z-index: 10`), Inline-Edits, Tastaturnavigation mit Pfeiltasten/Tab, dynamischer Speichern-Button (`SaveButtonKit`). Vollständige `TableKit`-Konformität mit `th[data-col-id]`, `th[data-sort-key]`, `tr[data-id]`, `td[data-cell]`, numerischer Sortierung (Punkte, Zehntel, Differenz), Spaltenbreiten-Resizing (`TableKit.makeResizable`) und reaktivem Treffer-Zähler (`#endschiessen-count-badge`).
 
 ### 7.1 Cockpit-Layout (Wireframe)
 
@@ -484,8 +484,11 @@ Das Frontend integriert sich nahtlos in das bestehende Design-System der Sportsc
 ## 8. Veröffentlichung: Website, Mitglieder-PWA & Live-Schützenstuben-Display
 
 ### 8.1 Öffentliche Vereins-Website (`sportschuetzen-muhen.ch`)
-* Unter der Rubrik **Resultate** (`sportschuetzen-website/frontend/resultate.html`) wird ein neuer Reiter **«Endschiessen»** integriert.
+* Unter der Rubrik **Resultate** (`sportschuetzen-website/frontend/resultate.html`) ist der Reiter **«Endschiessen»** als eigenständiger Tab-Container (Geschwister-Element auf gleicher Hierarchieebene wie `#tab-mannschaft`) integriert.
+* **Hash- & Query-Navigation:** Direkter Aufruf via `resultate.html#endschiessen` oder `?tab=endschiessen`.
+* **Dynamische Saisonabfrage:** Standardmässig wird die neueste publizierte Saison (`is_published = true`) geladen, anstelle eines statisch codierten Kalenderjahres.
 * Besucher können das Jahr wählen (`2026`, `2025`...) und interaktiv zwischen den Stichen wechseln.
+* **Medaillen & Layout:** Ränge 1 bis 3 werden mit responsiven Podest-Badges (🥇, 🥈, 🥉) hervorgehoben; Tabellen folgen dem einheitlichen `.table-results`-Layout.
 * **1-Klick PDF-Download:** Generierung der Rangliste als A4-Druckansicht mit Vereinswappen und Datum.
 
 ### 8.2 Mitglieder-PWA (Mobile App)

@@ -1529,6 +1529,22 @@ textarea.form-control {
 .status-lbl.up { color: #10b981; }
 .status-lbl.down { color: #ef4444; }
 
+/* Endschiessen & Ranking Medals */
+.col-rang-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-weight: 800;
+    font-size: 0.85rem;
+    line-height: 1.2;
+}
+.col-rang-1 { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+.col-rang-2 { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+.col-rang-3 { background: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; }
+
 /* Expandable Detail rows */
 .detail-row {
     display: none;

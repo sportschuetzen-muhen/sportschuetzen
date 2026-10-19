@@ -192,19 +192,22 @@ function renderStandardStichTableView(stich, canEdit) {
     const state = window.EndschiessenState;
     const scores = state.scoresByStich[stich.id] || [];
     const isEndstich = stich.code === 'endstich' || stich.modus === 'standard_20';
-    const isDifferenzler = stich.modus === 'differenzler';
-    const isTiefschuss = stich.modus === 'tiefschuss';
-
-    return `
+    const isDifferenzler = stich.modus === 'diff    return `
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <div class="card-header bg-white border-bottom p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
                     <h5 class="mb-0 fw-bold text-dark">${escapeHtml(stich.title)}</h5>
                     <small class="text-muted">${escapeHtml(stich.description || '')} (Scheibe: ${escapeHtml(stich.scheibe)}, ${stich.schusszahl} Schuss)</small>
                 </div>
-                <div class="d-flex gap-2">
-                    <input type="text" class="form-control form-control-sm" placeholder="🔍 Schütze filtern..." 
-                           style="max-width: 200px;" oninput="filterEndschiessenTable(this.value)">
+                <div class="d-flex gap-2 align-items-center">
+                    <div class="input-group input-group-sm" style="max-width: 220px;">
+                        <span class="input-group-text bg-light text-muted border-end-0"><i class="fas fa-search"></i></span>
+                        <input type="text" class="form-control border-start-0" id="endschiessen-search-input" placeholder="Schütze filtern..." 
+                               oninput="filterEndschiessenTable(this.value)">
+                    </div>
+                    <span id="endschiessen-count-badge" class="badge bg-light text-dark border py-1.5 px-2">
+                        ${scores.length} Schütze(n)
+                    </span>
                     
                     ${canEdit ? `
                         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="preloadAllKKMembers('${stich.id}')" title="Alle lizenzierten G50m Schützen zur Tabelle hinzufügen">
@@ -221,34 +224,34 @@ function renderStandardStichTableView(stich, canEdit) {
                 <table class="table table-hover align-middle mb-0" id="endschiessen-main-table">
                     <thead class="table-light sticky-top small text-muted text-uppercase" style="z-index: 5;">
                         <tr>
-                            <th style="width: 50px;" class="text-center tk-sortable" data-sort="int">Rang</th>
-                            <th style="min-width: 180px;" class="tk-sortable" data-sort="text">Schütze</th>
+                            <th data-col-id="rang" data-col-name="Rang" data-sort-key="rang" style="width: 60px;" class="text-center tk-sortable">Rang</th>
+                            <th data-col-id="name" data-col-name="Schütze" data-sort-key="name" style="min-width: 180px;" class="tk-sortable">Schütze</th>
                             
                             ${isEndstich ? `
-                                <th style="min-width: 175px; width: 180px;" class="text-center">Passe 1 (Pkt / Zehntel)</th>
-                                <th style="min-width: 175px; width: 180px;" class="text-center">Passe 2 (Pkt / Zehntel)</th>
-                                <th style="width: 90px;" class="text-center fw-bold text-dark tk-sortable" data-sort="float">Total Pkt</th>
-                                <th style="width: 90px;" class="text-center text-primary tk-sortable" data-sort="float">Zehntel</th>
-                                <th style="width: 80px;" class="text-center text-muted tk-sortable" data-sort="int">Rang 10tel</th>
+                                <th data-col-id="p1" data-col-name="Passe 1" style="min-width: 175px; width: 180px;" class="text-center">Passe 1 (Pkt / Zehntel)</th>
+                                <th data-col-id="p2" data-col-name="Passe 2" style="min-width: 175px; width: 180px;" class="text-center">Passe 2 (Pkt / Zehntel)</th>
+                                <th data-col-id="total" data-col-name="Total Pkt" data-sort-key="total" style="width: 95px;" class="text-center fw-bold text-dark tk-sortable">Total Pkt</th>
+                                <th data-col-id="decimal" data-col-name="Zehntel" data-sort-key="decimal" style="width: 95px;" class="text-center text-primary tk-sortable">Zehntel</th>
+                                <th data-col-id="rang_decimal" data-col-name="Rang 10tel" data-sort-key="rang_decimal" style="width: 85px;" class="text-center text-muted tk-sortable">Rang 10tel</th>
                             ` : ''}
 
                             ${isDifferenzler ? `
-                                <th style="width: 100px;" class="text-center">Zielwert</th>
-                                <th style="width: 100px;" class="text-center">Ist-Punkte</th>
-                                <th style="width: 100px;" class="text-center fw-bold text-danger">Differenz</th>
+                                <th data-col-id="target" data-col-name="Zielwert" style="width: 100px;" class="text-center">Zielwert</th>
+                                <th data-col-id="total" data-col-name="Ist-Punkte" data-sort-key="total" style="width: 100px;" class="text-center tk-sortable">Ist-Punkte</th>
+                                <th data-col-id="diff" data-col-name="Differenz" data-sort-key="diff" style="width: 100px;" class="text-center fw-bold text-danger tk-sortable">Differenz</th>
                             ` : ''}
 
                             ${isTiefschuss ? `
-                                <th style="width: 100px;" class="text-center">Punkte Total</th>
-                                <th style="width: 110px;" class="text-center fw-bold text-primary">Bester Tiefschuss</th>
+                                <th data-col-id="total" data-col-name="Punkte Total" data-sort-key="total" style="width: 100px;" class="text-center tk-sortable">Punkte Total</th>
+                                <th data-col-id="tiefschuss" data-col-name="Bester Tiefschuss" data-sort-key="tiefschuss" style="width: 110px;" class="text-center fw-bold text-primary tk-sortable">Bester Tiefschuss</th>
                             ` : ''}
 
                             ${!isEndstich && !isDifferenzler && !isTiefschuss ? `
-                                <th style="width: 120px;" class="text-center fw-bold">Total Punkte</th>
+                                <th data-col-id="total" data-col-name="Total Punkte" data-sort-key="total" style="width: 120px;" class="text-center fw-bold tk-sortable">Total Punkte</th>
                             ` : ''}
 
-                            <th style="min-width: 120px;">Bemerkung</th>
-                            ${canEdit ? '<th style="width: 50px;" class="text-center"></th>' : ''}
+                            <th data-col-id="remark" data-col-name="Bemerkung" style="min-width: 120px;">Bemerkung</th>
+                            ${canEdit ? '<th data-col-id="actions" data-col-name="" style="width: 50px;" class="text-center"></th>' : ''}
                         </tr>
                     </thead>
                     <tbody id="endschiessen-tbody">
@@ -259,7 +262,7 @@ function renderStandardStichTableView(stich, canEdit) {
                                     <p class="mb-2">Noch keine Schützen für diesen Stich erfasst.</p>
                                     ${canEdit ? `
                                         <button class="btn btn-sm btn-primary" onclick="preloadAllKKMembers('${stich.id}')">
-                                            <i class="fas fa-users me-1"></i>Jetzt alle lizenzierten KK-Schützen laden
+                                             <i class="fas fa-users me-1"></i>Jetzt alle lizenzierten KK-Schützen laden
                                         </button>
                                     ` : ''}
                                 </td>
@@ -270,11 +273,11 @@ function renderStandardStichTableView(stich, canEdit) {
                             const badgeColor = s.rang_total === 1 ? 'bg-warning text-dark' : (s.rang_total === 2 ? 'bg-secondary' : (s.rang_total === 3 ? 'bg-danger-subtle text-danger' : 'bg-light text-muted'));
 
                             return `
-                                <tr data-score-id="${s.id}" class="${isTop3 ? 'table-warning-subtle' : ''}">
-                                    <td class="text-center fw-bold">
+                                <tr data-id="${s.id}" data-score-id="${s.id}" class="${isTop3 ? 'table-warning-subtle' : ''}">
+                                    <td class="text-center fw-bold" data-cell="rang">
                                         <span class="badge ${badgeColor} rounded-pill px-2 py-1">${s.rang_total || (idx + 1)}</span>
                                     </td>
-                                    <td>
+                                    <td data-cell="name">
                                         <div class="fw-semibold text-dark">${escapeHtml(name)}</div>
                                         ${s.member?.birth_date ? `<small class="text-muted" style="font-size: 0.75rem;">Jg. ${new Date(s.member.birth_date).getFullYear()}</small>` : ''}
                                     </td>
@@ -315,43 +318,43 @@ function renderStandardStichTableView(stich, canEdit) {
                                         </td>
 
                                         <!-- Totals -->
-                                        <td class="text-center fw-bold fs-6 text-dark" id="total-score-${s.id}">
+                                        <td class="text-center fw-bold fs-6 text-dark" id="total-score-${s.id}" data-cell="total">
                                             ${s.total_score || 0}
                                         </td>
-                                        <td class="text-center fw-semibold text-primary" id="total-decimal-${s.id}">
+                                        <td class="text-center fw-semibold text-primary" id="total-decimal-${s.id}" data-cell="decimal">
                                             ${(s.total_decimal || 0).toFixed(1)}
                                         </td>
-                                        <td class="text-center text-muted small" id="rang-decimal-${s.id}">
+                                        <td class="text-center text-muted small" id="rang-decimal-${s.id}" data-cell="rang_decimal">
                                             ${s.rang_decimal || '-'}
                                         </td>
                                     ` : ''}
 
                                     ${isDifferenzler ? `
-                                        <td class="text-center">
+                                        <td class="text-center" data-cell="target">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold" 
                                                    value="${s.target_score || ''}" placeholder="85"
                                                    ${!canEdit ? 'readonly disabled' : ''}
                                                    oninput="onScoreInputChange('${stich.id}', '${s.id}', 'target_score', this.value)">
                                         </td>
-                                        <td class="text-center">
+                                        <td class="text-center" data-cell="total">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold" 
                                                    value="${s.total_score || ''}" placeholder="83"
                                                    ${!canEdit ? 'readonly disabled' : ''}
                                                    oninput="onScoreInputChange('${stich.id}', '${s.id}', 'total_score', this.value)">
                                         </td>
-                                        <td class="text-center fw-bold text-danger fs-6" id="diff-score-${s.id}">
+                                        <td class="text-center fw-bold text-danger fs-6" id="diff-score-${s.id}" data-cell="diff">
                                             ${s.diff_score !== undefined && s.diff_score !== null ? s.diff_score : '-'}
                                         </td>
                                     ` : ''}
 
                                     ${isTiefschuss ? `
-                                        <td class="text-center">
+                                        <td class="text-center" data-cell="total">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold" 
                                                    value="${s.total_score || ''}" placeholder="58"
                                                    ${!canEdit ? 'readonly disabled' : ''}
                                                    oninput="onScoreInputChange('${stich.id}', '${s.id}', 'total_score', this.value)">
                                         </td>
-                                        <td class="text-center">
+                                        <td class="text-center" data-cell="tiefschuss">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold text-primary" 
                                                    value="${s.tiefschuss || ''}" placeholder="982"
                                                    ${!canEdit ? 'readonly disabled' : ''}
@@ -360,7 +363,7 @@ function renderStandardStichTableView(stich, canEdit) {
                                     ` : ''}
 
                                     ${!isEndstich && !isDifferenzler && !isTiefschuss ? `
-                                        <td class="text-center">
+                                        <td class="text-center" data-cell="total">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold fs-6" 
                                                    value="${s.total_score || ''}" placeholder="0"
                                                    ${!canEdit ? 'readonly disabled' : ''}
@@ -368,7 +371,7 @@ function renderStandardStichTableView(stich, canEdit) {
                                         </td>
                                     ` : ''}
 
-                                    <td>
+                                    <td data-cell="remark">
                                         <input type="text" class="form-control form-control-sm" 
                                                value="${escapeHtml(s.remark || '')}" placeholder="Optional..."
                                                ${!canEdit ? 'readonly disabled' : ''}
@@ -416,20 +419,20 @@ function renderFinalEliminationView(stich, canEdit) {
 
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0" id="endschiessen-final-table">
-                    <thead class="table-light sticky-top small text-muted text-uppercase">
+                    <thead class="table-light sticky-top small text-muted text-uppercase" style="z-index: 5;">
                         <tr>
-                            <th style="width: 50px;" class="text-center">Rang</th>
-                            <th style="min-width: 180px;">Schütze</th>
-                            <th style="width: 80px;" class="text-center">Serie 1</th>
-                            <th style="width: 80px;" class="text-center">Serie 2</th>
-                            <th style="width: 80px;" class="text-center">Serie 3</th>
-                            <th style="width: 80px;" class="text-center">Serie 4</th>
-                            <th style="width: 80px;" class="text-center">Serie 5</th>
-                            <th style="width: 80px;" class="text-center">Serie 6</th>
-                            <th style="width: 80px;" class="text-center">Serie 7</th>
-                            <th style="width: 80px;" class="text-center">Serie 8</th>
-                            <th style="width: 110px;" class="text-center fw-bold text-dark fs-6">Total</th>
-                            <th style="min-width: 120px;" class="text-center">Status</th>
+                            <th data-col-id="rang" data-col-name="Rang" data-sort-key="rang" style="width: 60px;" class="text-center tk-sortable">Rang</th>
+                            <th data-col-id="name" data-col-name="Schütze" data-sort-key="name" style="min-width: 180px;" class="tk-sortable">Schütze</th>
+                            <th data-col-id="s1" data-col-name="Serie 1" style="width: 80px;" class="text-center">Serie 1</th>
+                            <th data-col-id="s2" data-col-name="Serie 2" style="width: 80px;" class="text-center">Serie 2</th>
+                            <th data-col-id="s3" data-col-name="Serie 3" style="width: 80px;" class="text-center">Serie 3</th>
+                            <th data-col-id="s4" data-col-name="Serie 4" style="width: 80px;" class="text-center">Serie 4</th>
+                            <th data-col-id="s5" data-col-name="Serie 5" style="width: 80px;" class="text-center">Serie 5</th>
+                            <th data-col-id="s6" data-col-name="Serie 6" style="width: 80px;" class="text-center">Serie 6</th>
+                            <th data-col-id="s7" data-col-name="Serie 7" style="width: 80px;" class="text-center">Serie 7</th>
+                            <th data-col-id="s8" data-col-name="Serie 8" style="width: 80px;" class="text-center">Serie 8</th>
+                            <th data-col-id="total" data-col-name="Total" data-sort-key="total" style="width: 110px;" class="text-center fw-bold text-dark fs-6 tk-sortable">Total</th>
+                            <th data-col-id="status" data-col-name="Status" style="min-width: 120px;" class="text-center">Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -458,13 +461,13 @@ function renderFinalEliminationView(stich, canEdit) {
                             else if (isBronze) rowClass = 'table-danger-subtle';
 
                             return `
-                                <tr class="${rowClass}">
-                                    <td class="text-center">
+                                <tr data-id="${f.id}" class="${rowClass}">
+                                    <td class="text-center" data-cell="rang">
                                         <span class="badge ${isWinner ? 'bg-warning text-dark' : (isSilver ? 'bg-secondary' : (isBronze ? 'bg-danger-subtle text-danger' : 'bg-light text-muted'))} rounded-pill px-2 py-1">
                                             ${rang}
                                         </span>
                                     </td>
-                                    <td>
+                                    <td data-cell="name">
                                         <div class="fw-bold">${escapeHtml(name)}</div>
                                         <small class="text-muted" style="font-size: 0.72rem;">Start-Rang Endstich: ${f.start_rang}</small>
                                     </td>
@@ -479,11 +482,11 @@ function renderFinalEliminationView(stich, canEdit) {
                                         </td>
                                     `).join('')}
 
-                                    <td class="text-center fw-bold fs-6 text-dark" id="final-total-${f.id}">
+                                    <td class="text-center fw-bold fs-6 text-dark" id="final-total-${f.id}" data-cell="total">
                                         ${f.total_score || 0}
                                     </td>
 
-                                    <td class="text-center">
+                                    <td class="text-center" data-cell="status">
                                         ${isWinner ? '<span class="badge bg-warning text-dark"><i class="fas fa-crown me-1"></i>Endschiessen-Meister</span>' : 
                                           isSilver ? '<span class="badge bg-secondary"><i class="fas fa-medal me-1"></i>2. Rang</span>' : 
                                           isBronze ? '<span class="badge bg-danger-subtle text-danger"><i class="fas fa-medal me-1"></i>3. Rang</span>' : 
@@ -842,15 +845,22 @@ function confirmAddGuestToStich(stichId) {
 window.confirmAddGuestToStich = confirmAddGuestToStich;
 
 /**
- * Filter für die Schützentabelle
+ * Filter für die Schützentabelle mit Treffer-Zähler (TableKit Standard)
  */
 function filterEndschiessenTable(query) {
     const q = (query || '').toLowerCase().trim();
-    const rows = document.querySelectorAll('#endschiessen-tbody tr');
+    const rows = document.querySelectorAll('#endschiessen-tbody tr[data-id]');
+    let visibleCount = 0;
     rows.forEach(r => {
         const text = r.innerText.toLowerCase();
-        r.style.display = text.includes(q) ? '' : 'none';
+        const matches = !q || text.includes(q);
+        r.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
     });
+    const countBadge = document.getElementById('endschiessen-count-badge');
+    if (countBadge) {
+        countBadge.textContent = q ? `${visibleCount} von ${rows.length} Schützen` : `${rows.length} Schütze(n)`;
+    }
 }
 window.filterEndschiessenTable = filterEndschiessenTable;
 
@@ -934,13 +944,72 @@ async function executeJMSync() {
 window.executeJMSync = executeJMSync;
 
 /**
- * Initialisiert TableKit Spaltensortierung für das Endschiessen
+ * Initialisiert TableKit Spaltensortierung und Resizing für das Endschiessen
  */
 function initEndschiessenTableKit() {
     if (!window.TableKit) return;
-    const table = document.getElementById('endschiessen-main-table');
-    if (table && typeof window.TableKit.makeSortable === 'function') {
-        window.TableKit.makeSortable(table);
+
+    // 1. Haupttabelle (Endstich, Gaben, Differenzler etc.)
+    const mainTable = document.getElementById('endschiessen-main-table');
+    if (mainTable && typeof window.TableKit.makeSortable === 'function') {
+        window.TableKit.makeSortable(mainTable, {
+            getValue: (row, key) => {
+                const cell = row.querySelector(`[data-cell="${key}"]`);
+                if (!cell) return '';
+                if (key === 'rang' || key === 'rang_decimal') {
+                    const badge = cell.querySelector('.badge') || cell;
+                    const num = parseInt(badge.textContent.trim(), 10);
+                    return isNaN(num) ? 9999 : num;
+                }
+                if (key === 'total' || key === 'decimal' || key === 'diff' || key === 'tiefschuss') {
+                    const num = parseFloat(cell.textContent.trim());
+                    return isNaN(num) ? 0 : num;
+                }
+                return cell.textContent.trim();
+            }
+        });
+    }
+
+    if (mainTable && typeof window.TableKit.makeResizable === 'function') {
+        window.TableKit.makeResizable('#endschiessen-main-table', {
+            storageKey: 'endschiessen_main_table_widths',
+            minWidth: 50,
+            columns: {
+                rang: { minWidth: 55, defaultWidth: 60, resizable: false },
+                actions: { minWidth: 40, defaultWidth: 50, resizable: false }
+            }
+        });
+    }
+
+    // 2. Meister-Final Tabelle
+    const finalTable = document.getElementById('endschiessen-final-table');
+    if (finalTable && typeof window.TableKit.makeSortable === 'function') {
+        window.TableKit.makeSortable(finalTable, {
+            getValue: (row, key) => {
+                const cell = row.querySelector(`[data-cell="${key}"]`);
+                if (!cell) return '';
+                if (key === 'rang') {
+                    const badge = cell.querySelector('.badge') || cell;
+                    const num = parseInt(badge.textContent.trim(), 10);
+                    return isNaN(num) ? 9999 : num;
+                }
+                if (key === 'total') {
+                    const num = parseFloat(cell.textContent.trim());
+                    return isNaN(num) ? 0 : num;
+                }
+                return cell.textContent.trim();
+            }
+        });
+    }
+
+    if (finalTable && typeof window.TableKit.makeResizable === 'function') {
+        window.TableKit.makeResizable('#endschiessen-final-table', {
+            storageKey: 'endschiessen_final_table_widths',
+            minWidth: 50,
+            columns: {
+                rang: { minWidth: 55, defaultWidth: 60, resizable: false }
+            }
+        });
     }
 }
 window.initEndschiessenTableKit = initEndschiessenTableKit;
