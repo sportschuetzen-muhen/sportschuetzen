@@ -160,7 +160,7 @@ async function loadAvailableSeasons(selectElement) {
                 // Silently fallback to jm_seasons
             }
 
-            // Auch Jahre aus endschiessen_seasons nachladen & Tab-Button Sichtbarkeit steuern
+            // Auch Jahre aus endschiessen_seasons nachladen
             try {
                 const resEnd = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&select=jahr&t=${Date.now()}`, {
                     headers: {
@@ -170,10 +170,6 @@ async function loadAvailableSeasons(selectElement) {
                 });
                 if (resEnd.ok) {
                     const eYears = await resEnd.json();
-                    const tabBtn = document.getElementById('tab-btn-endschiessen');
-                    if (tabBtn) {
-                        tabBtn.style.display = (Array.isArray(eYears) && eYears.length > 0) ? 'inline-flex' : 'none';
-                    }
                     if (Array.isArray(eYears)) {
                         eYears.forEach(item => {
                             if (item.jahr && item.jahr !== 'current') {
@@ -961,7 +957,7 @@ async function loadEndschiessen(selectedYear) {
 
         if (!seasonObj) {
             if (loadingEl) loadingEl.style.display = 'none';
-            if (tabBtn) tabBtn.style.display = 'none';
+            if (contentEl) contentEl.style.display = 'none';
             if (emptyEl) {
                 emptyEl.style.display = 'block';
                 const emptyTitle = emptyEl.querySelector('h3');
@@ -972,8 +968,7 @@ async function loadEndschiessen(selectedYear) {
             return;
         }
 
-        // Saison ist freigegeben: Tab-Button sichtbar schalten
-        if (tabBtn) tabBtn.style.display = 'inline-flex';
+        if (emptyEl) emptyEl.style.display = 'none';
 
         // 2. Stiche laden
         const resStiche = await fetch(`${SUPABASE_REST_URL}/endschiessen_stiche?jahr=eq.${encodeURIComponent(targetYear)}&is_active=eq.true&order=sort_order.asc&select=*&t=${Date.now()}`, {
@@ -1184,6 +1179,7 @@ async function loadEndschiessen(selectedYear) {
         }
 
         if (loadingEl) loadingEl.style.display = 'none';
+        if (emptyEl) emptyEl.style.display = 'none';
         if (contentEl) contentEl.style.display = 'block';
 
     } catch (err) {

@@ -536,7 +536,7 @@ Das Frontend integriert sich nahtlos in das bestehende Design-System der Sportsc
 
 ### Phase D: Abschluss & Veröffentlichung
 1. **Jahresmeisterschaft aktualisieren:** Klicke im Endstich auf **«In Jahresmeisterschaft übertragen»**. Bestätige das Vorschau-Modal – die Punkte fliessen direkt in die Gesamtwertung.
-2. **Publizieren:** Aktiviere im Header den Schalter **«Öffentlich sichtbar»**. Die Ranglisten sind nun sofort auf der Website und in der Mitglieder-PWA für alle einsehbar.
+2. **Publizieren:** Aktiviere im Header den Schalter **«Öffentlich sichtbar»**. Die Ranglisten sind nun sofort auf der Website und in der Mitglieder-PWA für alle einsehbar. Der Endschiessen-Reiter auf der Website (`resultate.html`) bleibt permanent in der Tab-Leiste stabil verankert; bei noch nicht freigegebenen Saisons wird eine informative Hinweiskarte angezeigt, bei Freigabe unmittelbar die Live-Rangliste (gestützt durch Service-Worker-Cache-Busting `v6`).
 3. **Ranglisten drucken:** Klicke auf `📄 Rangliste drucken`, um die offiziellen Ranglisten für das Absenden im Schützenhaus auszudrucken.
 
 ---
