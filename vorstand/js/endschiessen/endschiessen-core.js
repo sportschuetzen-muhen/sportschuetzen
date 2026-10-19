@@ -311,6 +311,18 @@ async function saveEndschiessenData() {
     try {
         const year = EndschiessenState.currentYear;
 
+        // 0. Vor dem Speichern alle Ränge und Totals verbindlich neu berechnen
+        for (const stich of EndschiessenState.stiche) {
+            const rawScores = EndschiessenState.scoresByStich[stich.id] || [];
+            rawScores.forEach(entry => {
+                if (stich.code === 'endstich' || stich.modus === 'standard_20') {
+                    entry.total_score = (parseFloat(entry.passe_1_score) || 0) + (parseFloat(entry.passe_2_score) || 0);
+                    entry.total_decimal = (parseFloat(entry.passe_1_decimal) || 0) + (parseFloat(entry.passe_2_decimal) || 0);
+                }
+            });
+            EndschiessenState.scoresByStich[stich.id] = recalculateStichRankings(rawScores, stich.modus);
+        }
+
         // 1. Scores speichern (Trennung von Insert für neue und Upsert für bestehende Zeilen)
         const newScoresToInsert = [];
         const existingScoresToUpsert = [];

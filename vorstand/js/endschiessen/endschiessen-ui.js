@@ -54,7 +54,7 @@ function renderEndschiessenUI() {
                            ${season.is_published ? 'checked' : ''} 
                            ${!canManage || season.is_archived ? 'disabled' : ''}
                            onchange="toggleEndschiessenPublish(this.checked)">
-                    <label class="form-check-label small fw-semibold" for="endschiessen-pub-switch">
+                    <label class="form-check-label small fw-semibold" for="endschiessen-pub-switch" id="endschiessen-pub-label">
                         ${season.is_published ? '<span class="text-success">● Öffentlich</span>' : '<span class="text-muted">○ Intern</span>'}
                     </label>
                 </div>
@@ -1021,6 +1021,11 @@ window.initEndschiessenTableKit = initEndschiessenTableKit;
  * Veröffentlichungs-Status toggeln
  */
 async function toggleEndschiessenPublish(isPub) {
+    const label = document.getElementById('endschiessen-pub-label');
+    if (label) {
+        label.innerHTML = isPub ? '<span class="text-success">● Öffentlich</span>' : '<span class="text-muted">○ Intern</span>';
+    }
+
     try {
         const client = getEndschiessenClient();
         const year = window.EndschiessenState.currentYear;
@@ -1030,15 +1035,26 @@ async function toggleEndschiessenPublish(isPub) {
             .eq('jahr', year);
 
         if (error) throw error;
+
         if (window.EndschiessenState.currentSeason) {
             window.EndschiessenState.currentSeason.is_published = isPub;
+        }
+        const seasonItem = (window.EndschiessenState.seasons || []).find(s => s.jahr === year);
+        if (seasonItem) {
+            seasonItem.is_published = isPub;
         }
 
         if (typeof showToast === 'function') {
             showToast(isPub ? "Rangliste öffentlich freigegeben!" : "Rangliste wieder auf intern gesetzt.", "info");
         }
     } catch (e) {
-        alert("Fehler beim Umschalten: " + e.message);
+        // Rollback switch and label on error
+        const sw = document.getElementById('endschiessen-pub-switch');
+        if (sw) sw.checked = !isPub;
+        if (label) {
+            label.innerHTML = !isPub ? '<span class="text-success">● Öffentlich</span>' : '<span class="text-muted">○ Intern</span>';
+        }
+        alert("Fehler beim Umschalten der Freigabe: " + e.message);
     }
 }
 window.toggleEndschiessenPublish = toggleEndschiessenPublish;

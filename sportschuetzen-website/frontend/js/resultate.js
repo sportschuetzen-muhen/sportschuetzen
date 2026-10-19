@@ -160,9 +160,9 @@ async function loadAvailableSeasons(selectElement) {
                 // Silently fallback to jm_seasons
             }
 
-            // Auch Jahre aus endschiessen_seasons nachladen
+            // Auch Jahre aus endschiessen_seasons nachladen & Tab-Button Sichtbarkeit steuern
             try {
-                const resEnd = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&select=jahr`, {
+                const resEnd = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&select=jahr&t=${Date.now()}`, {
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -170,6 +170,10 @@ async function loadAvailableSeasons(selectElement) {
                 });
                 if (resEnd.ok) {
                     const eYears = await resEnd.json();
+                    const tabBtn = document.getElementById('tab-btn-endschiessen');
+                    if (tabBtn) {
+                        tabBtn.style.display = (Array.isArray(eYears) && eYears.length > 0) ? 'inline-flex' : 'none';
+                    }
                     if (Array.isArray(eYears)) {
                         eYears.forEach(item => {
                             if (item.jahr && item.jahr !== 'current') {
@@ -903,6 +907,7 @@ async function loadEndschiessen(selectedYear) {
     const tbodyFinal = document.getElementById('tbody-endschiessen-final');
     const finalCard = document.getElementById('endschiessen-final-card');
     const otherContainer = document.getElementById('endschiessen-other-stiche-container');
+    const tabBtn = document.getElementById('tab-btn-endschiessen');
 
     if (!contentEl) return;
 
@@ -917,7 +922,7 @@ async function loadEndschiessen(selectedYear) {
         // 1. Saison ermitteln (dynamisch die neueste freigegebene Saison bei "aktuell" oder leer)
         if (selectedYear === "aktuell" || !selectedYear) {
             try {
-                const resLatest = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&order=jahr.desc&limit=1`, {
+                const resLatest = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&order=jahr.desc&limit=1&t=${Date.now()}`, {
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -940,7 +945,7 @@ async function loadEndschiessen(selectedYear) {
 
         // Falls noch nicht geladen: gezielte Saison abrufen
         if (!seasonObj) {
-            const resSeason = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?jahr=eq.${encodeURIComponent(targetYear)}&is_published=eq.true&select=*`, {
+            const resSeason = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?jahr=eq.${encodeURIComponent(targetYear)}&is_published=eq.true&select=*&t=${Date.now()}`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -956,6 +961,7 @@ async function loadEndschiessen(selectedYear) {
 
         if (!seasonObj) {
             if (loadingEl) loadingEl.style.display = 'none';
+            if (tabBtn) tabBtn.style.display = 'none';
             if (emptyEl) {
                 emptyEl.style.display = 'block';
                 const emptyTitle = emptyEl.querySelector('h3');
@@ -966,8 +972,11 @@ async function loadEndschiessen(selectedYear) {
             return;
         }
 
+        // Saison ist freigegeben: Tab-Button sichtbar schalten
+        if (tabBtn) tabBtn.style.display = 'inline-flex';
+
         // 2. Stiche laden
-        const resStiche = await fetch(`${SUPABASE_REST_URL}/endschiessen_stiche?jahr=eq.${encodeURIComponent(targetYear)}&is_active=eq.true&order=sort_order.asc&select=*`, {
+        const resStiche = await fetch(`${SUPABASE_REST_URL}/endschiessen_stiche?jahr=eq.${encodeURIComponent(targetYear)}&is_active=eq.true&order=sort_order.asc&select=*&t=${Date.now()}`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -976,7 +985,7 @@ async function loadEndschiessen(selectedYear) {
         const stiche = resStiche.ok ? await resStiche.json() : [];
 
         // 3. Scores laden inklusive Schützen-Stammdaten
-        const resScores = await fetch(`${SUPABASE_REST_URL}/endschiessen_scores?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name,birth_date)&order=rang_total.asc,total_decimal.desc`, {
+        const resScores = await fetch(`${SUPABASE_REST_URL}/endschiessen_scores?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name,birth_date)&t=${Date.now()}`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -985,7 +994,7 @@ async function loadEndschiessen(selectedYear) {
         const scores = resScores.ok ? await resScores.json() : [];
 
         // 4. Final-Serien laden
-        const resFinal = await fetch(`${SUPABASE_REST_URL}/endschiessen_final_series?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name)&order=final_rang.asc`, {
+        const resFinal = await fetch(`${SUPABASE_REST_URL}/endschiessen_final_series?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name)&order=final_rang.asc&t=${Date.now()}`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
@@ -997,6 +1006,31 @@ async function loadEndschiessen(selectedYear) {
         const endstichDef = stiche.find(s => s.code === 'endstich') || stiche[0];
         const endstichScores = endstichDef ? scores.filter(s => s.stich_id === endstichDef.id) : [];
 
+        // Strikt reglementarisch sortieren (Single Source of Truth im Frontend):
+        // 1. Höhere Summe Ganzpunkte (total_score) absteigend
+        // 2. Bei Punktgleichheit: Höheres Zehnteltotal (total_decimal) absteigend als Tiebreaker
+        // 3. Bei weiterer Gleichheit: Bessere zweite Passe Ganzpunkte (passe_2_score) absteigend
+        // 4. Bessere zweite Passe Zehntel (passe_2_decimal) absteigend
+        endstichScores.sort((a, b) => {
+            const totA = parseFloat(a.total_score) || 0;
+            const totB = parseFloat(b.total_score) || 0;
+            if (totB !== totA) return totB - totA;
+            const decA = parseFloat(a.total_decimal) || 0;
+            const decB = parseFloat(b.total_decimal) || 0;
+            if (decB !== decA) return decB - decA;
+            const p2A = parseFloat(a.passe_2_score) || 0;
+            const p2B = parseFloat(b.passe_2_score) || 0;
+            if (p2B !== p2A) return p2B - p2A;
+            return (parseFloat(b.passe_2_decimal) || 0) - (parseFloat(a.passe_2_decimal) || 0);
+        });
+
+        // Separate Zehntel-Ränge für "Rang 10tel" exakt ermitteln (reine Zehntelwertung)
+        const decSorted = [...endstichScores].sort((a, b) => (parseFloat(b.total_decimal) || 0) - (parseFloat(a.total_decimal) || 0));
+        const decRankMap = new Map();
+        decSorted.forEach((item, idx) => {
+            decRankMap.set(item.id, idx + 1);
+        });
+
         // Endstich rendern
         if (tbodyEndstich) {
             if (endstichScores.length === 0) {
@@ -1005,7 +1039,8 @@ async function loadEndschiessen(selectedYear) {
                 tbodyEndstich.innerHTML = endstichScores.map((s, idx) => {
                     const name = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
                     const jg = s.member?.birth_date ? ` (${new Date(s.member.birth_date).getFullYear()})` : '';
-                    const rang = s.rang_total || (idx + 1);
+                    const rang = idx + 1; // Strikt 1, 2, 3... in der sortierten Rangliste
+                    const decRang = decRankMap.get(s.id) || s.rang_decimal || '-';
                     const rankBadge = rang === 1 
                         ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
                         : (rang === 2 
@@ -1021,7 +1056,7 @@ async function loadEndschiessen(selectedYear) {
                             <td style="text-align: center;">${s.passe_2_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_2_decimal || 0).toFixed(1)})</span></td>
                             <td class="col-total"><b>${s.total_score || 0}</b></td>
                             <td style="text-align: center; font-weight: 700; color: var(--primary-color);">${Number(s.total_decimal || 0).toFixed(1)}</td>
-                            <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${s.rang_decimal || '-'}</td>
+                            <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${decRang}</td>
                         </tr>
                     `;
                 }).join('');
@@ -1077,6 +1112,30 @@ async function loadEndschiessen(selectedYear) {
                 otherContainer.innerHTML = otherStiche.map(st => {
                     const stScores = scores.filter(s => s.stich_id === st.id);
                     if (!stScores.length) return '';
+
+                    if (st.modus === 'differenzler') {
+                        stScores.forEach(item => {
+                            const target = parseFloat(item.target_score) || 0;
+                            const actual = parseFloat(item.total_score) || 0;
+                            item.diff_score = Math.abs(actual - target);
+                        });
+                        stScores.sort((a, b) => {
+                            if ((a.diff_score || 0) !== (b.diff_score || 0)) {
+                                return (a.diff_score || 0) - (b.diff_score || 0);
+                            }
+                            return (parseFloat(b.total_score) || 0) - (parseFloat(a.total_score) || 0);
+                        });
+                    } else if (st.modus === 'tiefschuss') {
+                        stScores.sort((a, b) => {
+                            if (a.tiefschuss && b.tiefschuss) {
+                                return a.tiefschuss - b.tiefschuss;
+                            }
+                            return (parseFloat(b.total_score) || 0) - (parseFloat(a.total_score) || 0);
+                        });
+                    } else {
+                        stScores.sort((a, b) => (parseFloat(b.total_score) || 0) - (parseFloat(a.total_score) || 0));
+                    }
+
                     return `
                         <div class="results-card" style="margin-bottom: 1.5rem;">
                             <h3>${escapeHtml(st.title)}</h3>
@@ -1095,7 +1154,7 @@ async function loadEndschiessen(selectedYear) {
                                     <tbody>
                                         ${stScores.map((s, sIdx) => {
                                             const sName = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
-                                            const sRang = s.rang_total || (sIdx + 1);
+                                            const sRang = sIdx + 1;
                                             const sRankBadge = sRang === 1 
                                                 ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
                                                 : (sRang === 2 

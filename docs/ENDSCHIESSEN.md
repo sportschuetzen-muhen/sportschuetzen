@@ -434,9 +434,9 @@ $$;
 5. Nach Bestätigung wird die Übernahme ausgeführt und ein Erfolgs-Toast mit Revisionsvermerk ausgegeben.
 
 ### 6.3 Zentrales Speichern & TableKit
-* **SaveButtonKit Dirty Tracker:** Mutationen (Schützen hinzufügen, Punktänderungen) schalten den Speichern-Button dynamisch auf `Speichern (N)` um. Beim Speichern werden neue Schützen (`insert`) und bestehende Resultate (`upsert`) atomar gesichert.
+* **SaveButtonKit Dirty Tracker & Rang-Invariante:** Mutationen (Schützen hinzufügen, Punktänderungen) schalten den Speichern-Button dynamisch auf `Speichern (N)` um. Vor jedem DB-Schreibvorgang (`saveEndschiessenData`) wird für alle Stiche zwingend `recalculateStichRankings()` aufgerufen. Dies stellt sicher, dass neu hinzugefügte oder mutierte Schützen (z. B. Nachmeldungen) vor dem Persistieren sofort ihren mathematisch und reglementarisch korrekten Rang (`rang_total`, `rang_decimal`) erhalten.
 * **TableKit & Zehntel-Darstellung:** Volle Spaltensortierung via `TableKit.makeSortable`. Zehntelfelder besitzen eine garantierte Mindestbreite von 72px ohne Browser-Spin-Buttons, sodass Dezimalwerte (`104.8`) vollständig lesbar sind.
-* **Website-Integration (Tab 4):** Auf der öffentlichen Vereinswebsite (`resultate.html` & `resultate.js`) werden bei freigegebener Saison (`is_published: true`) die Ranglisten für Endstich, Meister-Final und Sonderstiche dynamisch angezeigt (autorisiert via `79_grant_anon_endschiessen_and_rbac.sql`).
+* **Website-Integration & Reaktive Freigabe (Tab 4):** Auf der öffentlichen Vereinswebsite (`resultate.html` & `resultate.js`) steuert der Kippschalter `is_published` dynamisch die Sichtbarkeit: Der Tab-Button `🏅 Endschiessen` wird nur dann gerendert, wenn mindestens eine Saison freigegeben ist. Bei der Datenabfrage verhindern Cache-Busting-Parameter (`?t=${Date.now()}`) veraltete CDN- oder Browser-Caches. Das Frontend validiert und sortiert die Rangliste strikt nach Reglement (1. Total Punkte absteigend, 2. Zehnteltotal absteigend als Tiebreaker, 3. zweite Passe absteigend).
 
 ---
 
