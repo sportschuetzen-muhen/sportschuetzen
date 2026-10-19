@@ -101,6 +101,7 @@ function initDashboard() {
                 subtitleEl.textContent = "Tippe auf ein Rundenresultat für detaillierte Mannschafts-Einzelwerte.";
             } else if (tabId === 'tab-endschiessen') {
                 subtitleEl.textContent = "Offizielle Ranglisten des Endschiessens (Saisonabschluss Kleinkaliber 50m).";
+                loadEndschiessen(selectElement ? selectElement.value : 'aktuell');
             }
         });
     });
@@ -162,11 +163,12 @@ async function loadAvailableSeasons(selectElement) {
 
             // Auch Jahre aus endschiessen_seasons nachladen
             try {
-                const resEnd = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&select=jahr&t=${Date.now()}`, {
+                const resEnd = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&select=jahr`, {
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
+                    },
+                    cache: 'no-store'
                 });
                 if (resEnd.ok) {
                     const eYears = await resEnd.json();
@@ -918,11 +920,12 @@ async function loadEndschiessen(selectedYear) {
         // 1. Saison ermitteln (dynamisch die neueste freigegebene Saison bei "aktuell" oder leer)
         if (selectedYear === "aktuell" || !selectedYear) {
             try {
-                const resLatest = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&order=jahr.desc&limit=1&t=${Date.now()}`, {
+                const resLatest = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&order=jahr.desc&limit=1`, {
                     headers: {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    }
+                    },
+                    cache: 'no-store'
                 });
                 if (resLatest.ok) {
                     const latestList = await resLatest.json();
@@ -941,11 +944,12 @@ async function loadEndschiessen(selectedYear) {
 
         // Falls noch nicht geladen: gezielte Saison abrufen
         if (!seasonObj) {
-            const resSeason = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?jahr=eq.${encodeURIComponent(targetYear)}&is_published=eq.true&select=*&t=${Date.now()}`, {
+            const resSeason = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?jahr=eq.${encodeURIComponent(targetYear)}&is_published=eq.true&select=*`, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
                     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
+                },
+                cache: 'no-store'
             });
             if (resSeason.ok) {
                 const seasons = await resSeason.json();
@@ -971,29 +975,32 @@ async function loadEndschiessen(selectedYear) {
         if (emptyEl) emptyEl.style.display = 'none';
 
         // 2. Stiche laden
-        const resStiche = await fetch(`${SUPABASE_REST_URL}/endschiessen_stiche?jahr=eq.${encodeURIComponent(targetYear)}&is_active=eq.true&order=sort_order.asc&select=*&t=${Date.now()}`, {
+        const resStiche = await fetch(`${SUPABASE_REST_URL}/endschiessen_stiche?jahr=eq.${encodeURIComponent(targetYear)}&is_active=eq.true&order=sort_order.asc&select=*`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
+            },
+            cache: 'no-store'
         });
         const stiche = resStiche.ok ? await resStiche.json() : [];
 
         // 3. Scores laden inklusive Schützen-Stammdaten
-        const resScores = await fetch(`${SUPABASE_REST_URL}/endschiessen_scores?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name,birth_date)&t=${Date.now()}`, {
+        const resScores = await fetch(`${SUPABASE_REST_URL}/endschiessen_scores?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name,birth_date)`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
+            },
+            cache: 'no-store'
         });
         const scores = resScores.ok ? await resScores.json() : [];
 
         // 4. Final-Serien laden
-        const resFinal = await fetch(`${SUPABASE_REST_URL}/endschiessen_final_series?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name)&order=final_rang.asc&t=${Date.now()}`, {
+        const resFinal = await fetch(`${SUPABASE_REST_URL}/endschiessen_final_series?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name)&order=final_rang.asc`, {
             headers: {
                 'apikey': SUPABASE_ANON_KEY,
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
+            },
+            cache: 'no-store'
         });
         const finals = resFinal.ok ? await resFinal.json() : [];
 
