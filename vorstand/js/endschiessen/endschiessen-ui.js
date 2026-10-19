@@ -426,14 +426,14 @@ function renderFinalEliminationView(stich, canEdit) {
                         <tr>
                             <th data-col-id="rang" data-col-name="Rang" data-sort-key="rang" style="width: 60px;" class="text-center tk-sortable">Rang</th>
                             <th data-col-id="name" data-col-name="Schütze" data-sort-key="name" style="min-width: 180px;" class="tk-sortable">Schütze</th>
-                            <th data-col-id="s1" data-col-name="Serie 1" style="width: 80px;" class="text-center">Serie 1</th>
-                            <th data-col-id="s2" data-col-name="Serie 2" style="width: 80px;" class="text-center">Serie 2</th>
-                            <th data-col-id="s3" data-col-name="Serie 3" style="width: 80px;" class="text-center">Serie 3</th>
-                            <th data-col-id="s4" data-col-name="Serie 4" style="width: 80px;" class="text-center">Serie 4</th>
-                            <th data-col-id="s5" data-col-name="Serie 5" style="width: 80px;" class="text-center">Serie 5</th>
-                            <th data-col-id="s6" data-col-name="Serie 6" style="width: 80px;" class="text-center">Serie 6</th>
-                            <th data-col-id="s7" data-col-name="Serie 7" style="width: 80px;" class="text-center">Serie 7</th>
-                            <th data-col-id="s8" data-col-name="Serie 8" style="width: 80px;" class="text-center">Serie 8</th>
+                            <th data-col-id="s1" data-col-name="Serie 1" data-sort-key="s1" style="width: 80px;" class="text-center tk-sortable">Serie 1</th>
+                            <th data-col-id="s2" data-col-name="Serie 2" data-sort-key="s2" style="width: 80px;" class="text-center tk-sortable">Serie 2</th>
+                            <th data-col-id="s3" data-col-name="Serie 3" data-sort-key="s3" style="width: 80px;" class="text-center tk-sortable">Serie 3</th>
+                            <th data-col-id="s4" data-col-name="Serie 4" data-sort-key="s4" style="width: 80px;" class="text-center tk-sortable">Serie 4</th>
+                            <th data-col-id="s5" data-col-name="Serie 5" data-sort-key="s5" style="width: 80px;" class="text-center tk-sortable">Serie 5</th>
+                            <th data-col-id="s6" data-col-name="Serie 6" data-sort-key="s6" style="width: 80px;" class="text-center tk-sortable">Serie 6</th>
+                            <th data-col-id="s7" data-col-name="Serie 7" data-sort-key="s7" style="width: 80px;" class="text-center tk-sortable">Serie 7</th>
+                            <th data-col-id="s8" data-col-name="Serie 8" data-sort-key="s8" style="width: 80px;" class="text-center tk-sortable">Serie 8</th>
                             <th data-col-id="total" data-col-name="Total" data-sort-key="total" style="width: 110px;" class="text-center fw-bold text-dark fs-6 tk-sortable">Total</th>
                             <th data-col-id="status" data-col-name="Status" style="min-width: 120px;" class="text-center">Status</th>
                         </tr>
@@ -476,9 +476,10 @@ function renderFinalEliminationView(stich, canEdit) {
                                     </td>
 
                                     ${[1, 2, 3, 4, 5, 6, 7, 8].map(sNum => `
-                                        <td class="text-center p-1">
+                                        <td class="text-center p-1" data-cell="s${sNum}">
                                             <input type="number" class="form-control form-control-sm text-center fw-semibold p-1" 
                                                    style="max-width: 75px; margin: auto;"
+                                                   data-field="s${sNum}"
                                                    value="${f['serie_' + sNum] || ''}" placeholder="-"
                                                    ${!canEdit ? 'readonly disabled' : ''}
                                                    oninput="onFinalSerieInputChange('${f.id}', 'serie_${sNum}', this.value)">
@@ -999,6 +1000,11 @@ function initEndschiessenTableKit() {
                 if (key === 'total') {
                     const num = parseFloat(cell.textContent.trim());
                     return isNaN(num) ? 0 : num;
+                }
+                if (/^s[1-8]$/.test(key)) {
+                    const inp = cell.querySelector('input');
+                    const val = parseFloat(inp ? inp.value : cell.textContent.trim());
+                    return isNaN(val) ? 0 : val;
                 }
                 return cell.textContent.trim();
             }

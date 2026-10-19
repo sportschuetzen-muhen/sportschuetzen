@@ -533,10 +533,11 @@ Das Frontend integriert sich nahtlos in das bestehende Design-System der Sportsc
    - Nach Serie 2 scheidet der 8. Rang aus; nach Serie 3 der 7. Rang usw.
    - Das System markiert ausscheidende Schützen automatisch rot.
    - Nach Serie 7 steht der Endschiessen-Meister fest!
+4. **Serien-Sortierung & Analyse:** Sowohl im Vorstand-Cockpit (`endschiessen-final-table` via `TableKit` mit numerischer Live-Input-Auswertung) als auch auf der Website (`table-endschiessen-final`) sind alle Spalten inklusive der Serien 1 bis 8 interaktiv auf- und absteigend sortierbar (inklusive Sortierpfeil-Indikator).
 
 ### Phase D: Abschluss & Veröffentlichung
 1. **Jahresmeisterschaft aktualisieren:** Klicke im Endstich auf **«In Jahresmeisterschaft übertragen»**. Bestätige das Vorschau-Modal – die Punkte fliessen direkt in die Gesamtwertung.
-2. **Publizieren:** Aktiviere im Header den Schalter **«Öffentlich sichtbar»**. Die Ranglisten sind nun sofort auf der Website und in der Mitglieder-PWA für alle einsehbar. Der Endschiessen-Reiter auf der Website (`resultate.html`) bleibt permanent in der Tab-Leiste stabil verankert; beim Klick auf den Tab wird die Saison unmittelbar dynamisch nachgeladen. PostgREST-Abfragen erfolgen ohne URL-Query-Cachebuster (welche PostgREST als Filter fehlinterpretieren würde), sondern strikt mit `cache: 'no-store'`. Der Service-Worker wird über `sportschuetzen-cache-v7` invalidiert.
+2. **Publizieren:** Aktiviere im Header den Schalter **«Öffentlich sichtbar»**. Die Ranglisten sind nun sofort auf der Website und in der Mitglieder-PWA für alle einsehbar. Der Endschiessen-Reiter auf der Website (`resultate.html`) bleibt permanent in der Tab-Leiste stabil verankert; beim Klick auf den Tab wird die Saison unmittelbar dynamisch nachgeladen. PostgREST-Abfragen erfolgen ohne URL-Query-Cachebuster (welche PostgREST als Filter fehlinterpretieren würde), sondern strikt mit `cache: 'no-store'`. Der Service-Worker wird über `sportschuetzen-cache-v8` invalidiert.
 3. **Ranglisten drucken:** Klicke auf `📄 Rangliste drucken`, um die offiziellen Ranglisten für das Absenden im Schützenhaus auszudrucken.
 
 ---

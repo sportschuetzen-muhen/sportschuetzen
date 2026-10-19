@@ -1033,75 +1033,206 @@ async function loadEndschiessen(selectedYear) {
             decRankMap.set(item.id, idx + 1);
         });
 
-        // Endstich rendern
-        if (tbodyEndstich) {
-            if (endstichScores.length === 0) {
+        // Offizielle Ränge sichern
+        endstichScores.forEach((s, idx) => {
+            s.official_rang = idx + 1;
+        });
+
+        // Endstich rendern mit Sortier-Unterstützung
+        let currentEndstich = [...endstichScores];
+        let endstichSortKey = 'rang';
+        let endstichSortDir = 'asc';
+
+        function renderEndstichRows(list) {
+            if (!tbodyEndstich) return;
+            if (list.length === 0) {
                 tbodyEndstich.innerHTML = `<tr><td colspan="7" class="text-center py-4" style="color: var(--text-muted);">Noch keine Endstich-Resultate vorhanden.</td></tr>`;
-            } else {
-                tbodyEndstich.innerHTML = endstichScores.map((s, idx) => {
-                    const name = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
-                    const jg = s.member?.birth_date ? ` (${new Date(s.member.birth_date).getFullYear()})` : '';
-                    const rang = idx + 1; // Strikt 1, 2, 3... in der sortierten Rangliste
-                    const decRang = decRankMap.get(s.id) || s.rang_decimal || '-';
-                    const rankBadge = rang === 1 
-                        ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
-                        : (rang === 2 
-                            ? `<span class="col-rang-badge col-rang-2">🥈 2</span>` 
-                            : (rang === 3 
-                                ? `<span class="col-rang-badge col-rang-3">🥉 3</span>` 
-                                : `<strong>${rang}</strong>`));
-                    return `
-                        <tr>
-                            <td class="col-rang">${rankBadge}</td>
-                            <td class="col-name">${escapeHtml(name)}<span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-left: 4px;">${jg}</span></td>
-                            <td style="text-align: center;">${s.passe_1_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_1_decimal || 0).toFixed(1)})</span></td>
-                            <td style="text-align: center;">${s.passe_2_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_2_decimal || 0).toFixed(1)})</span></td>
-                            <td class="col-total"><b>${s.total_score || 0}</b></td>
-                            <td style="text-align: center; font-weight: 700; color: var(--primary-color);">${Number(s.total_decimal || 0).toFixed(1)}</td>
-                            <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${decRang}</td>
-                        </tr>
-                    `;
-                }).join('');
+                return;
             }
+            tbodyEndstich.innerHTML = list.map((s, idx) => {
+                const name = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
+                const jg = s.member?.birth_date ? ` (${new Date(s.member.birth_date).getFullYear()})` : '';
+                const rang = s.official_rang || (idx + 1);
+                const decRang = decRankMap.get(s.id) || s.rang_decimal || '-';
+                const rankBadge = rang === 1 
+                    ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
+                    : (rang === 2 
+                        ? `<span class="col-rang-badge col-rang-2">🥈 2</span>` 
+                        : (rang === 3 
+                            ? `<span class="col-rang-badge col-rang-3">🥉 3</span>` 
+                            : `<strong>${rang}</strong>`));
+                return `
+                    <tr>
+                        <td class="col-rang">${rankBadge}</td>
+                        <td class="col-name">${escapeHtml(name)}<span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-left: 4px;">${jg}</span></td>
+                        <td style="text-align: center;">${s.passe_1_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_1_decimal || 0).toFixed(1)})</span></td>
+                        <td style="text-align: center;">${s.passe_2_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_2_decimal || 0).toFixed(1)})</span></td>
+                        <td class="col-total"><b>${s.total_score || 0}</b></td>
+                        <td style="text-align: center; font-weight: 700; color: var(--primary-color);">${Number(s.total_decimal || 0).toFixed(1)}</td>
+                        <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${decRang}</td>
+                    </tr>
+                `;
+            }).join('');
         }
 
-        // Meister-Final rendern
+        function sortEndstich(key) {
+            if (endstichSortKey === key) {
+                endstichSortDir = endstichSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                endstichSortKey = key;
+                endstichSortDir = (key === 'rang' || key === 'name' || key === 'rang_decimal') ? 'asc' : 'desc';
+            }
+            const mult = endstichSortDir === 'desc' ? -1 : 1;
+            currentEndstich.sort((a, b) => {
+                if (key === 'rang') return (a.official_rang - b.official_rang) * mult;
+                if (key === 'name') {
+                    const nameA = a.member ? `${a.member.last_name} ${a.member.first_name}` : (a.guest_name || '');
+                    const nameB = b.member ? `${b.member.last_name} ${b.member.first_name}` : (b.guest_name || '');
+                    return nameA.localeCompare(nameB, 'de-CH') * mult;
+                }
+                if (key === 'p1') return ((parseFloat(a.passe_1_score) || 0) - (parseFloat(b.passe_1_score) || 0)) * mult;
+                if (key === 'p2') return ((parseFloat(a.passe_2_score) || 0) - (parseFloat(b.passe_2_score) || 0)) * mult;
+                if (key === 'total') return ((parseFloat(a.total_score) || 0) - (parseFloat(b.total_score) || 0)) * mult;
+                if (key === 'decimal') return ((parseFloat(a.total_decimal) || 0) - (parseFloat(b.total_decimal) || 0)) * mult;
+                if (key === 'rang_decimal') {
+                    const rA = decRankMap.get(a.id) || 9999;
+                    const rB = decRankMap.get(b.id) || 9999;
+                    return (rA - rB) * mult;
+                }
+                return 0;
+            });
+            const table = document.getElementById('table-endschiessen-endstich');
+            if (table) {
+                table.querySelectorAll('th.sortable-col').forEach(th => {
+                    th.classList.remove('sort-asc', 'sort-desc');
+                    const ic = th.querySelector('.sort-icon');
+                    if (ic) ic.textContent = '↕';
+                    if (th.getAttribute('data-sort') === endstichSortKey) {
+                        th.classList.add(endstichSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+                        if (ic) ic.textContent = endstichSortDir === 'asc' ? '▲' : '▼';
+                    }
+                });
+            }
+            renderEndstichRows(currentEndstich);
+        }
+
+        const endstichTable = document.getElementById('table-endschiessen-endstich');
+        if (endstichTable) {
+            endstichTable.querySelectorAll('th.sortable-col').forEach(th => {
+                th.replaceWith(th.cloneNode(true));
+            });
+            endstichTable.querySelectorAll('th.sortable-col').forEach(th => {
+                th.addEventListener('click', () => {
+                    const key = th.getAttribute('data-sort');
+                    if (key) sortEndstich(key);
+                });
+            });
+        }
+        renderEndstichRows(currentEndstich);
+
+        // Meister-Final rendern mit interaktiver Sortierung (inkl. Serien 1-7)
         if (tbodyFinal && finalCard) {
             if (finals.length > 0) {
                 finalCard.style.display = 'block';
-                tbodyFinal.innerHTML = finals.map((f, idx) => {
-                    const name = f.member ? `${f.member.last_name} ${f.member.first_name}` : `Schütze ${idx + 1}`;
-                    const rang = f.final_rang || (idx + 1);
-                    const rankBadge = rang === 1 
-                        ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
-                        : (rang === 2 
-                            ? `<span class="col-rang-badge col-rang-2">🥈 2</span>` 
-                            : (rang === 3 
-                                ? `<span class="col-rang-badge col-rang-3">🥉 3</span>` 
-                                : `<strong>${rang}</strong>`));
-                    const badge = rang === 1 
-                        ? '<span class="col-rang-badge col-rang-1">🥇 Meister</span>' 
-                        : (rang === 2 
-                            ? '<span class="col-rang-badge col-rang-2">🥈 2. Rang</span>' 
-                            : (rang === 3 
-                                ? '<span class="col-rang-badge col-rang-3">🥉 3. Rang</span>' 
-                                : '<span class="badge" style="background: rgba(15, 58, 93, 0.08); color: var(--primary-color); padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">Finalist</span>'));
-                    return `
-                        <tr>
-                            <td class="col-rang">${rankBadge}</td>
-                            <td class="col-name">${escapeHtml(name)}</td>
-                            <td style="text-align: center;">${f.serie_1 || '-'}</td>
-                            <td style="text-align: center;">${f.serie_2 || '-'}</td>
-                            <td style="text-align: center;">${f.serie_3 || '-'}</td>
-                            <td style="text-align: center;">${f.serie_4 || '-'}</td>
-                            <td style="text-align: center;">${f.serie_5 || '-'}</td>
-                            <td style="text-align: center;">${f.serie_6 || '-'}</td>
-                            <td style="text-align: center;">${f.serie_7 || '-'}</td>
-                            <td class="col-total"><b>${f.total_score || 0}</b></td>
-                            <td style="text-align: center;">${badge}</td>
-                        </tr>
-                    `;
-                }).join('');
+                let currentFinals = [...finals];
+                let finalSortKey = 'rang';
+                let finalSortDir = 'asc';
+
+                function renderFinalRows(list) {
+                    tbodyFinal.innerHTML = list.map((f, idx) => {
+                        const name = f.member ? `${f.member.last_name} ${f.member.first_name}` : `Schütze ${idx + 1}`;
+                        const rang = f.final_rang || (idx + 1);
+                        const rankBadge = rang === 1 
+                            ? `<span class="col-rang-badge col-rang-1">🥇 1</span>` 
+                            : (rang === 2 
+                                ? `<span class="col-rang-badge col-rang-2">🥈 2</span>` 
+                                : (rang === 3 
+                                    ? `<span class="col-rang-badge col-rang-3">🥉 3</span>` 
+                                    : `<strong>${rang}</strong>`));
+                        const badge = rang === 1 
+                            ? '<span class="col-rang-badge col-rang-1">🥇 Meister</span>' 
+                            : (rang === 2 
+                                ? '<span class="col-rang-badge col-rang-2">🥈 2. Rang</span>' 
+                                : (rang === 3 
+                                    ? '<span class="col-rang-badge col-rang-3">🥉 3. Rang</span>' 
+                                    : '<span class="badge" style="background: rgba(15, 58, 93, 0.08); color: var(--primary-color); padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">Finalist</span>'));
+                        return `
+                            <tr>
+                                <td class="col-rang">${rankBadge}</td>
+                                <td class="col-name">${escapeHtml(name)}</td>
+                                <td style="text-align: center;">${f.serie_1 || '-'}</td>
+                                <td style="text-align: center;">${f.serie_2 || '-'}</td>
+                                <td style="text-align: center;">${f.serie_3 || '-'}</td>
+                                <td style="text-align: center;">${f.serie_4 || '-'}</td>
+                                <td style="text-align: center;">${f.serie_5 || '-'}</td>
+                                <td style="text-align: center;">${f.serie_6 || '-'}</td>
+                                <td style="text-align: center;">${f.serie_7 || '-'}</td>
+                                <td class="col-total"><b>${f.total_score || 0}</b></td>
+                                <td style="text-align: center;">${badge}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                function sortFinals(key) {
+                    if (finalSortKey === key) {
+                        finalSortDir = finalSortDir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        finalSortKey = key;
+                        // Serien und Total standardmässig absteigend (höchste Punktzahl oben), Rang/Name aufsteigend
+                        finalSortDir = (key === 'rang' || key === 'name') ? 'asc' : 'desc';
+                    }
+                    const mult = finalSortDir === 'desc' ? -1 : 1;
+                    currentFinals.sort((a, b) => {
+                        if (key === 'rang') {
+                            return ((a.final_rang || 99) - (b.final_rang || 99)) * mult;
+                        }
+                        if (key === 'name') {
+                            const nameA = a.member ? `${a.member.last_name} ${a.member.first_name}` : '';
+                            const nameB = b.member ? `${b.member.last_name} ${b.member.first_name}` : '';
+                            return nameA.localeCompare(nameB, 'de-CH') * mult;
+                        }
+                        if (key === 'total') {
+                            return ((parseFloat(a.total_score) || 0) - (parseFloat(b.total_score) || 0)) * mult;
+                        }
+                        if (/^s[1-8]$/.test(key)) {
+                            const sNum = key.substring(1);
+                            const valA = parseFloat(a['serie_' + sNum]) || 0;
+                            const valB = parseFloat(b['serie_' + sNum]) || 0;
+                            return (valA - valB) * mult;
+                        }
+                        return 0;
+                    });
+
+                    const finalTable = document.getElementById('table-endschiessen-final');
+                    if (finalTable) {
+                        finalTable.querySelectorAll('th.sortable-col').forEach(th => {
+                            th.classList.remove('sort-asc', 'sort-desc');
+                            const ic = th.querySelector('.sort-icon');
+                            if (ic) ic.textContent = '↕';
+                            if (th.getAttribute('data-sort') === finalSortKey) {
+                                th.classList.add(finalSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+                                if (ic) ic.textContent = finalSortDir === 'asc' ? '▲' : '▼';
+                            }
+                        });
+                    }
+                    renderFinalRows(currentFinals);
+                }
+
+                const finalTable = document.getElementById('table-endschiessen-final');
+                if (finalTable) {
+                    finalTable.querySelectorAll('th.sortable-col').forEach(th => {
+                        th.replaceWith(th.cloneNode(true));
+                    });
+                    finalTable.querySelectorAll('th.sortable-col').forEach(th => {
+                        th.addEventListener('click', () => {
+                            const key = th.getAttribute('data-sort');
+                            if (key) sortFinals(key);
+                        });
+                    });
+                }
+
+                renderFinalRows(currentFinals);
             } else {
                 finalCard.style.display = 'none';
             }

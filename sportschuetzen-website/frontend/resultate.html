@@ -218,13 +218,13 @@
                                 <table class="table-results" id="table-endschiessen-endstich">
                                     <thead>
                                         <tr>
-                                            <th scope="col" class="col-rang">Rang</th>
-                                            <th scope="col" class="col-name">Schütze</th>
-                                            <th scope="col" style="text-align: center;">Passe 1</th>
-                                            <th scope="col" style="text-align: center;">Passe 2</th>
-                                            <th scope="col" class="col-total">Total Pkt</th>
-                                            <th scope="col" style="text-align: center; color: var(--color-primary, #0d6efd);">Zehntel</th>
-                                            <th scope="col" style="text-align: center; color: var(--text-muted);">Rang 10tel</th>
+                                            <th scope="col" class="col-rang sortable-col" data-sort="rang" title="Nach Rang sortieren">Rang <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-name sortable-col" data-sort="name" title="Nach Schütze sortieren">Schütze <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="p1" style="text-align: center;" title="Nach Passe 1 sortieren">Passe 1 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="p2" style="text-align: center;" title="Nach Passe 2 sortieren">Passe 2 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-total sortable-col" data-sort="total" title="Nach Total sortieren">Total Pkt <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="decimal" style="text-align: center; color: var(--color-primary, #0d6efd);" title="Nach Zehntel sortieren">Zehntel <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="rang_decimal" style="text-align: center; color: var(--text-muted);" title="Nach Rang 10tel sortieren">Rang 10tel <span class="sort-icon">↕</span></th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbody-endschiessen-endstich">
@@ -246,16 +246,16 @@
                                 <table class="table-results" id="table-endschiessen-final">
                                     <thead>
                                         <tr>
-                                            <th scope="col" class="col-rang">Rang</th>
-                                            <th scope="col" class="col-name">Schütze</th>
-                                            <th scope="col" style="text-align: center;">S1</th>
-                                            <th scope="col" style="text-align: center;">S2</th>
-                                            <th scope="col" style="text-align: center;">S3</th>
-                                            <th scope="col" style="text-align: center;">S4</th>
-                                            <th scope="col" style="text-align: center;">S5</th>
-                                            <th scope="col" style="text-align: center;">S6</th>
-                                            <th scope="col" style="text-align: center;">S7</th>
-                                            <th scope="col" class="col-total">Total</th>
+                                            <th scope="col" class="col-rang sortable-col" data-sort="rang" title="Nach Rang sortieren">Rang <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-name sortable-col" data-sort="name" title="Nach Schütze sortieren">Schütze <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s1" style="text-align: center;" title="Nach Serie 1 sortieren">S1 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s2" style="text-align: center;" title="Nach Serie 2 sortieren">S2 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s3" style="text-align: center;" title="Nach Serie 3 sortieren">S3 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s4" style="text-align: center;" title="Nach Serie 4 sortieren">S4 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s5" style="text-align: center;" title="Nach Serie 5 sortieren">S5 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s6" style="text-align: center;" title="Nach Serie 6 sortieren">S6 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="sortable-col" data-sort="s7" style="text-align: center;" title="Nach Serie 7 sortieren">S7 <span class="sort-icon">↕</span></th>
+                                            <th scope="col" class="col-total sortable-col" data-sort="total" title="Nach Total sortieren">Total <span class="sort-icon">↕</span></th>
                                             <th scope="col" style="text-align: center;">Status</th>
                                         </tr>
                                     </thead>
@@ -290,6 +290,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/auth-session.js"></script>
     <script src="js/components.js"></script>
-    <script src="js/resultate.js?v=20261019_3"></script>
+    <script src="js/resultate.js?v=20261019_4"></script>
 </body>
 </html>

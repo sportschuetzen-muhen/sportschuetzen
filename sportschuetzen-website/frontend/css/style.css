@@ -1454,6 +1454,31 @@ textarea.form-control {
     text-align: center;
 }
 
+.table-results th.sortable-col {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.table-results th.sortable-col:hover {
+    background-color: rgba(15, 60, 92, 0.12);
+    color: var(--color-primary, #0d6efd);
+}
+
+.table-results th .sort-icon {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 0.75rem;
+    opacity: 0.45;
+    vertical-align: middle;
+}
+
+.table-results th.sort-asc .sort-icon,
+.table-results th.sort-desc .sort-icon {
+    opacity: 1;
+    color: var(--color-primary, #0d6efd);
+}
+
 .table-results td {
     padding: 0.85rem 0.75rem;
     border-bottom: 1px solid var(--glass-border);

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sportschuetzen-cache-v7';
+const CACHE_NAME = 'sportschuetzen-cache-v8';
 
 const STATIC_ASSETS = [
     './',
