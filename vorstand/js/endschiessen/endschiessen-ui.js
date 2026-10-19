@@ -19,6 +19,16 @@ function renderEndschiessenUI() {
     const canManage = typeof hasWriteAccess === 'function' ? hasWriteAccess('endschiessen') : true;
 
     container.innerHTML = `
+        <style>
+            .score-input::-webkit-outer-spin-button,
+            .score-input::-webkit-inner-spin-button {
+                -webkit-appearance: none;
+                margin: 0;
+            }
+            .score-input[type=number] {
+                -moz-appearance: textfield;
+            }
+        </style>
         <!-- HEADER & TOOLBAR -->
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div class="d-flex align-items-center gap-2">
@@ -132,6 +142,8 @@ function renderEndschiessenUI() {
     `;
 
     setupEndschiessenTableNavigation();
+    initEndschiessenTableKit();
+    updateEndschiessenSaveButton();
 }
 window.renderEndschiessenUI = renderEndschiessenUI;
 
@@ -209,15 +221,15 @@ function renderStandardStichTableView(stich, canEdit) {
                 <table class="table table-hover align-middle mb-0" id="endschiessen-main-table">
                     <thead class="table-light sticky-top small text-muted text-uppercase" style="z-index: 5;">
                         <tr>
-                            <th style="width: 50px;" class="text-center">Rang</th>
-                            <th style="min-width: 180px;">Schütze</th>
+                            <th style="width: 50px;" class="text-center tk-sortable" data-sort="int">Rang</th>
+                            <th style="min-width: 180px;" class="tk-sortable" data-sort="text">Schütze</th>
                             
                             ${isEndstich ? `
-                                <th style="width: 140px;" class="text-center">Passe 1 (Pkt / Zehntel)</th>
-                                <th style="width: 140px;" class="text-center">Passe 2 (Pkt / Zehntel)</th>
-                                <th style="width: 90px;" class="text-center fw-bold text-dark">Total Pkt</th>
-                                <th style="width: 90px;" class="text-center text-primary">Zehntel</th>
-                                <th style="width: 80px;" class="text-center text-muted">Rang 10tel</th>
+                                <th style="min-width: 175px; width: 180px;" class="text-center">Passe 1 (Pkt / Zehntel)</th>
+                                <th style="min-width: 175px; width: 180px;" class="text-center">Passe 2 (Pkt / Zehntel)</th>
+                                <th style="width: 90px;" class="text-center fw-bold text-dark tk-sortable" data-sort="float">Total Pkt</th>
+                                <th style="width: 90px;" class="text-center text-primary tk-sortable" data-sort="float">Zehntel</th>
+                                <th style="width: 80px;" class="text-center text-muted tk-sortable" data-sort="int">Rang 10tel</th>
                             ` : ''}
 
                             ${isDifferenzler ? `
@@ -270,13 +282,15 @@ function renderStandardStichTableView(stich, canEdit) {
                                     ${isEndstich ? `
                                         <!-- Passe 1 (Ganzpunkte / Zehntel) -->
                                         <td class="text-center">
-                                            <div class="input-group input-group-sm">
+                                            <div class="input-group input-group-sm flex-nowrap" style="max-width: 175px; margin: auto;">
                                                 <input type="number" step="1" min="0" max="100" class="form-control text-center fw-semibold score-input" 
+                                                       style="min-width: 50px; width: 50px; padding: 2px 4px;"
                                                        value="${s.passe_1_score || ''}" placeholder="98"
                                                        ${!canEdit ? 'readonly disabled' : ''}
                                                        oninput="onScoreInputChange('${stich.id}', '${s.id}', 'passe_1_score', this.value)">
-                                                <span class="input-group-text px-1 text-muted">/</span>
-                                                <input type="number" step="0.1" min="0" max="109.0" class="form-control text-center text-primary score-input" 
+                                                <span class="input-group-text px-1 text-muted" style="font-size: 0.8rem;">/</span>
+                                                <input type="number" step="0.1" min="0" max="109.0" class="form-control text-center text-primary fw-bold score-input" 
+                                                       style="min-width: 72px; width: 75px; padding: 2px 4px;"
                                                        value="${s.passe_1_decimal || ''}" placeholder="102.3"
                                                        ${!canEdit ? 'readonly disabled' : ''}
                                                        oninput="onScoreInputChange('${stich.id}', '${s.id}', 'passe_1_decimal', this.value)">
@@ -285,13 +299,15 @@ function renderStandardStichTableView(stich, canEdit) {
 
                                         <!-- Passe 2 (Ganzpunkte / Zehntel) -->
                                         <td class="text-center">
-                                            <div class="input-group input-group-sm">
+                                            <div class="input-group input-group-sm flex-nowrap" style="max-width: 175px; margin: auto;">
                                                 <input type="number" step="1" min="0" max="100" class="form-control text-center fw-semibold score-input" 
+                                                       style="min-width: 50px; width: 50px; padding: 2px 4px;"
                                                        value="${s.passe_2_score || ''}" placeholder="100"
                                                        ${!canEdit ? 'readonly disabled' : ''}
                                                        oninput="onScoreInputChange('${stich.id}', '${s.id}', 'passe_2_score', this.value)">
-                                                <span class="input-group-text px-1 text-muted">/</span>
-                                                <input type="number" step="0.1" min="0" max="109.0" class="form-control text-center text-primary score-input" 
+                                                <span class="input-group-text px-1 text-muted" style="font-size: 0.8rem;">/</span>
+                                                <input type="number" step="0.1" min="0" max="109.0" class="form-control text-center text-primary fw-bold score-input" 
+                                                       style="min-width: 72px; width: 75px; padding: 2px 4px;"
                                                        value="${s.passe_2_decimal || ''}" placeholder="104.8"
                                                        ${!canEdit ? 'readonly disabled' : ''}
                                                        oninput="onScoreInputChange('${stich.id}', '${s.id}', 'passe_2_decimal', this.value)">
@@ -537,14 +553,31 @@ function onFinalSerieInputChange(finalId, field, value) {
 window.onFinalSerieInputChange = onFinalSerieInputChange;
 
 /**
+ * Zentrale Aktualisierung des Speichern-Buttons (SaveButtonKit)
+ */
+function updateEndschiessenSaveButton() {
+    if (!window.SaveButtonKit) return;
+    const canManage = typeof hasWriteAccess === 'function' ? hasWriteAccess('endschiessen') : true;
+    const isArchived = window.EndschiessenState.currentSeason?.is_archived;
+    const count = window.EndschiessenState.unsavedCount || (window.EndschiessenState.hasUnsavedChanges ? 1 : 0);
+    window.SaveButtonKit.update('btn-save-endschiessen', {
+        count: count,
+        canWrite: canManage && !isArchived,
+        label: 'Speichern',
+        savedLabel: 'Gespeichert'
+    });
+}
+window.updateEndschiessenSaveButton = updateEndschiessenSaveButton;
+
+/**
  * Markiert ungespeicherte Änderungen
  */
 function markEndschiessenUnsaved() {
     window.EndschiessenState.hasUnsavedChanges = true;
-    if (window.SaveButtonKit) {
-        window.SaveButtonKit.update('btn-save-endschiessen', 1);
-    }
+    window.EndschiessenState.unsavedCount = (window.EndschiessenState.unsavedCount || 0) + 1;
+    updateEndschiessenSaveButton();
 }
+window.markEndschiessenUnsaved = markEndschiessenUnsaved;
 
 /**
  * Übernimmt die Top 8 aus dem Endstich in den Final
@@ -766,6 +799,10 @@ function confirmAddMemberToStich(stichId) {
 
     const modalEl = document.getElementById('endschiessen-add-shooter-modal');
     if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+
+    if (typeof showToast === 'function') {
+        showToast("Schütze hinzugefügt. Klicke oben auf «Speichern», um die Daten zu sichern.", "info");
+    }
 }
 window.confirmAddMemberToStich = confirmAddMemberToStich;
 
@@ -797,6 +834,10 @@ function confirmAddGuestToStich(stichId) {
 
     const modalEl = document.getElementById('endschiessen-add-shooter-modal');
     if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+
+    if (typeof showToast === 'function') {
+        showToast("Gastschütze hinzugefügt. Klicke oben auf «Speichern», um die Daten zu sichern.", "info");
+    }
 }
 window.confirmAddGuestToStich = confirmAddGuestToStich;
 
@@ -831,7 +872,7 @@ function openEndschiessenJMSyncModal() {
     }
 
     modal.innerHTML = `
-        <div class="modal-dialog modal-dialog-centered" style="max-width: 500px;">
+        <div class="modal-dialog modal-dialog-centered" style="max-width: 520px;">
             <div class="modal-content rounded-4 border-0 shadow-lg">
                 <div class="modal-header bg-primary text-white py-3 px-4">
                     <h5 class="modal-title fw-bold"><i class="fas fa-medal me-2"></i>In Jahresmeisterschaft übertragen</h5>
@@ -839,16 +880,24 @@ function openEndschiessenJMSyncModal() {
                 </div>
                 <div class="modal-body p-4">
                     <p class="text-muted small mb-3">
-                        Möchtest du die Resultate des <strong>Endstichs (20 Schuss)</strong> für das Jahr <strong>${escapeHtml(state.currentYear)}</strong> direkt in die entsprechende Spalte der Kleinkaliber-Jahresmeisterschaft übertragen?
+                        Möchtest du die Resultate des <strong>Endstichs (20 Schuss)</strong> für das Jahr <strong>${escapeHtml(state.currentYear)}</strong> direkt in die Spalte <em>«Endschiessen»</em> der aktiven Jahresmeisterschaft übertragen?
                     </p>
                     <div class="bg-light p-3 rounded-3 border mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small text-muted">Zielsaison:</span>
+                            <span class="badge bg-primary-subtle text-primary fw-bold">Jahresmeisterschaft (aktuell)</span>
+                        </div>
                         <div class="d-flex justify-content-between mb-1">
                             <span class="small text-muted">Zu übertragende Schützen:</span>
                             <span class="fw-bold text-dark">${scores.length} Schützen</span>
                         </div>
-                        <div class="d-flex justify-content-between">
+                        <div class="d-flex justify-content-between mb-1">
                             <span class="small text-muted">Bester Schütze:</span>
                             <span class="fw-bold text-primary">${scores[0]?.member ? scores[0].member.last_name + ' ' + scores[0].member.first_name : '-'} (${scores[0]?.total_score || 0} Pkt.)</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="small text-muted">Abgleichs-Modus:</span>
+                            <span class="text-muted small">Exakt nach Vorname & Nachname</span>
                         </div>
                     </div>
                     <div class="d-grid gap-2">
@@ -872,7 +921,7 @@ async function executeJMSync() {
         if (typeof showLoadingOverlay === 'function') showLoadingOverlay("Übertrage in Jahresmeisterschaft...");
         const res = await syncEndschiessenToJM();
         if (typeof showToast === 'function') {
-            showToast(`Erfolgreich übertragen: ${res.updatedCount} Schützen in Spalte «${res.columnTitle}» aktualisiert! ✓`, "success");
+            showToast(`Erfolgreich übertragen: ${res.updatedCount} Schützen in «${res.targetSeason}» (Spalte: ${res.columnTitle}) aktualisiert! ✓`, "success");
         }
         const modalEl = document.getElementById('endschiessen-jm-sync-modal');
         if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
@@ -883,6 +932,18 @@ async function executeJMSync() {
     }
 }
 window.executeJMSync = executeJMSync;
+
+/**
+ * Initialisiert TableKit Spaltensortierung für das Endschiessen
+ */
+function initEndschiessenTableKit() {
+    if (!window.TableKit) return;
+    const table = document.getElementById('endschiessen-main-table');
+    if (table && typeof window.TableKit.makeSortable === 'function') {
+        window.TableKit.makeSortable(table);
+    }
+}
+window.initEndschiessenTableKit = initEndschiessenTableKit;
 
 /**
  * Veröffentlichungs-Status toggeln

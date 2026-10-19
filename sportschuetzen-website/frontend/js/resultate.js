@@ -99,6 +99,8 @@ function initDashboard() {
                 subtitleEl.textContent = "Tippe auf ein Rundenresultat für Einzelschützen-Details.";
             } else if (tabId === 'tab-mannschaft') {
                 subtitleEl.textContent = "Tippe auf ein Rundenresultat für detaillierte Mannschafts-Einzelwerte.";
+            } else if (tabId === 'tab-endschiessen') {
+                subtitleEl.textContent = "Offizielle Ranglisten des Endschiessens (Saisonabschluss Kleinkaliber 50m).";
             }
         });
     });
@@ -148,6 +150,28 @@ async function loadAvailableSeasons(selectElement) {
                 // Silently fallback to jm_seasons
             }
 
+            // Auch Jahre aus endschiessen_seasons nachladen
+            try {
+                const resEnd = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?is_published=eq.true&select=jahr`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+                if (resEnd.ok) {
+                    const eYears = await resEnd.json();
+                    if (Array.isArray(eYears)) {
+                        eYears.forEach(item => {
+                            if (item.jahr && item.jahr !== 'current') {
+                                yearsSet.add(String(item.jahr));
+                            }
+                        });
+                    }
+                }
+            } catch (e) {
+                // Ignore
+            }
+
             const archivedYears = Array.from(yearsSet)
                 .sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
 
@@ -195,10 +219,11 @@ function loadAllData(selectedYear) {
     const jmYear = selectedYear === "aktuell" ? "current" : selectedYear;
     loadJahresmeisterschaft(jmYear);
 
-    // Load Group & Grenzland & Mannschaft
+    // Load Group & Grenzland & Mannschaft & Endschiessen
     const groupYear = selectedYear === "aktuell" ? "aktuell" : selectedYear;
     loadGruppeGrenzland(groupYear);
     loadMannschaft(groupYear);
+    loadEndschiessen(selectedYear);
 }
 
 // === TAB 1: JAHRESMEISTERSCHAFT ===
@@ -847,6 +872,197 @@ function getTrend(curr, prev) {
     if (curr > prev) return '<span class="trend-ind up" title="Verbesserung gegenüber Vorrunde">▲</span>';
     if (curr < prev) return '<span class="trend-ind down" title="Verschlechterung gegenüber Vorrunde">▼</span>';
     return '<span class="trend-ind steady" title="Konstante Leistung">▶</span>';
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// === TAB 4: ENDSCHIESSEN (SAISONABSCHLUSS KK 50M) ===
+async function loadEndschiessen(selectedYear) {
+    const currentYear = new Date().getFullYear().toString();
+    const targetYear = (selectedYear === "aktuell" || !selectedYear) ? currentYear : selectedYear;
+
+    const loadingEl = document.getElementById('endschiessen-loading-state');
+    const contentEl = document.getElementById('endschiessen-content-container');
+    const emptyEl = document.getElementById('endschiessen-empty-state');
+    const tbodyEndstich = document.getElementById('tbody-endschiessen-endstich');
+    const tbodyFinal = document.getElementById('tbody-endschiessen-final');
+    const finalCard = document.getElementById('endschiessen-final-card');
+    const otherContainer = document.getElementById('endschiessen-other-stiche-container');
+
+    if (!contentEl) return;
+
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (contentEl) contentEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    try {
+        // 1. Prüfen, ob Saison existiert und öffentlich freigegeben ist
+        const resSeason = await fetch(`${SUPABASE_REST_URL}/endschiessen_seasons?jahr=eq.${encodeURIComponent(targetYear)}&is_published=eq.true&select=*`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        if (!resSeason.ok) throw new Error("Fehler beim Prüfen der Saison.");
+        const seasons = await resSeason.json();
+
+        if (!seasons || seasons.length === 0) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'block';
+            return;
+        }
+
+        // 2. Stiche laden
+        const resStiche = await fetch(`${SUPABASE_REST_URL}/endschiessen_stiche?jahr=eq.${encodeURIComponent(targetYear)}&is_active=eq.true&order=sort_order.asc&select=*`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        const stiche = resStiche.ok ? await resStiche.json() : [];
+
+        // 3. Scores laden inklusive Schützen-Stammdaten
+        const resScores = await fetch(`${SUPABASE_REST_URL}/endschiessen_scores?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name,birth_date)&order=rang_total.asc`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        const scores = resScores.ok ? await resScores.json() : [];
+
+        // 4. Final-Serien laden
+        const resFinal = await fetch(`${SUPABASE_REST_URL}/endschiessen_final_series?jahr=eq.${encodeURIComponent(targetYear)}&select=*,member:members(first_name,last_name)&order=final_rang.asc`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        const finals = resFinal.ok ? await resFinal.json() : [];
+
+        // Endstich herausfiltern
+        const endstichDef = stiche.find(s => s.code === 'endstich') || stiche[0];
+        const endstichScores = endstichDef ? scores.filter(s => s.stich_id === endstichDef.id) : [];
+
+        // Endstich rendern
+        if (tbodyEndstich) {
+            if (endstichScores.length === 0) {
+                tbodyEndstich.innerHTML = `<tr><td colspan="7" class="text-center py-4" style="color: var(--text-muted);">Noch keine Endstich-Resultate vorhanden.</td></tr>`;
+            } else {
+                tbodyEndstich.innerHTML = endstichScores.map((s, idx) => {
+                    const name = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
+                    const jg = s.member?.birth_date ? ` (${new Date(s.member.birth_date).getFullYear()})` : '';
+                    const rang = s.rang_total || (idx + 1);
+                    const rankClass = rang === 1 ? 'col-rang-1' : (rang === 2 ? 'col-rang-2' : (rang === 3 ? 'col-rang-3' : ''));
+                    return `
+                        <tr>
+                            <td class="col-rang ${rankClass}"><strong>${rang}</strong></td>
+                            <td class="col-name">${escapeHtml(name)}<span style="font-size: 0.75rem; color: var(--text-muted);">${jg}</span></td>
+                            <td style="text-align: center;">${s.passe_1_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_1_decimal || 0).toFixed(1)})</span></td>
+                            <td style="text-align: center;">${s.passe_2_score || 0} <span style="font-size: 0.8rem; color: var(--text-muted);">(${Number(s.passe_2_decimal || 0).toFixed(1)})</span></td>
+                            <td class="col-total"><strong>${s.total_score || 0}</strong></td>
+                            <td style="text-align: center; font-weight: 600; color: var(--color-primary, #0d6efd);">${Number(s.total_decimal || 0).toFixed(1)}</td>
+                            <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${s.rang_decimal || '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+
+        // Meister-Final rendern
+        if (tbodyFinal && finalCard) {
+            if (finals.length > 0) {
+                finalCard.style.display = 'block';
+                tbodyFinal.innerHTML = finals.map((f, idx) => {
+                    const name = f.member ? `${f.member.last_name} ${f.member.first_name}` : `Schütze ${idx + 1}`;
+                    const rang = f.final_rang || (idx + 1);
+                    const rankClass = rang === 1 ? 'col-rang-1' : (rang === 2 ? 'col-rang-2' : (rang === 3 ? 'col-rang-3' : ''));
+                    const badge = rang === 1 ? '🥇 Meister' : (rang === 2 ? '🥈 2. Rang' : (rang === 3 ? '🥉 3. Rang' : 'Finalist'));
+                    return `
+                        <tr>
+                            <td class="col-rang ${rankClass}"><strong>${rang}</strong></td>
+                            <td class="col-name">${escapeHtml(name)}</td>
+                            <td style="text-align: center;">${f.serie_1 || '-'}</td>
+                            <td style="text-align: center;">${f.serie_2 || '-'}</td>
+                            <td style="text-align: center;">${f.serie_3 || '-'}</td>
+                            <td style="text-align: center;">${f.serie_4 || '-'}</td>
+                            <td style="text-align: center;">${f.serie_5 || '-'}</td>
+                            <td style="text-align: center;">${f.serie_6 || '-'}</td>
+                            <td style="text-align: center;">${f.serie_7 || '-'}</td>
+                            <td class="col-total"><strong>${f.total_score || 0}</strong></td>
+                            <td style="text-align: center;"><span class="badge" style="background: rgba(13, 110, 253, 0.1); color: var(--color-primary, #0d6efd); padding: 4px 8px; border-radius: 12px; font-size: 0.75rem;">${badge}</span></td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                finalCard.style.display = 'none';
+            }
+        }
+
+        // Weitere Stiche (Gaben, Differenzler etc.) rendern falls vorhanden
+        if (otherContainer) {
+            const otherStiche = stiche.filter(s => s.code !== 'endstich' && s.code !== 'final');
+            if (otherStiche.length > 0) {
+                otherContainer.innerHTML = otherStiche.map(st => {
+                    const stScores = scores.filter(s => s.stich_id === st.id);
+                    if (!stScores.length) return '';
+                    return `
+                        <div class="results-card" style="margin-bottom: 1.5rem;">
+                            <h3>${escapeHtml(st.title)}</h3>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">${escapeHtml(st.description || '')}</p>
+                            <div class="table-responsive">
+                                <table class="table-results">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="col-rang">Rang</th>
+                                            <th scope="col" class="col-name">Schütze</th>
+                                            ${st.modus === 'differenzler' ? '<th scope="col" style="text-align: center;">Ziel</th><th scope="col" style="text-align: center;">Ist</th><th scope="col" class="col-total">Diff</th>' : ''}
+                                            ${st.modus === 'tiefschuss' ? '<th scope="col" class="col-total">Total</th><th scope="col" style="text-align: center;">Tiefschuss</th>' : ''}
+                                            ${st.modus !== 'differenzler' && st.modus !== 'tiefschuss' ? '<th scope="col" class="col-total">Total</th>' : ''}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${stScores.map((s, sIdx) => {
+                                            const sName = s.member ? `${s.member.last_name} ${s.member.first_name}` : (s.guest_name || 'Unbekannt');
+                                            return `
+                                                <tr>
+                                                    <td class="col-rang"><strong>${s.rang_total || (sIdx + 1)}</strong></td>
+                                                    <td class="col-name">${escapeHtml(sName)}</td>
+                                                    ${st.modus === 'differenzler' ? `<td style="text-align: center;">${s.target_score || '-'}</td><td style="text-align: center;">${s.total_score || '-'}</td><td class="col-total" style="color: #ef4444;">${s.diff_score !== null ? s.diff_score : '-'}</td>` : ''}
+                                                    ${st.modus === 'tiefschuss' ? `<td class="col-total">${s.total_score || 0}</td><td style="text-align: center; color: var(--color-primary); font-weight: 600;">${s.tiefschuss || '-'}</td>` : ''}
+                                                    ${st.modus !== 'differenzler' && st.modus !== 'tiefschuss' ? `<td class="col-total">${s.total_score || 0}</td>` : ''}
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                otherContainer.innerHTML = '';
+            }
+        }
+
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (contentEl) contentEl.style.display = 'block';
+
+    } catch (err) {
+        console.warn("Fehler beim Laden des Endschiessens:", err);
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.querySelector('p').textContent = "Fehler beim Laden der Endschiessen-Daten: " + err.message;
+        }
+    }
 }
 
 })();

@@ -50,6 +50,7 @@
                     <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-jm" id="tab-btn-jm" data-tab="tab-jm">🏆 Jahresmeisterschaft</button>
                     <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-gruppe" id="tab-btn-gruppe" data-tab="tab-gruppe">👥 Gruppe & Grenzland</button>
                     <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-mannschaft" id="tab-btn-mannschaft" data-tab="tab-mannschaft">🎯 Mannschaft</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-endschiessen" id="tab-btn-endschiessen" data-tab="tab-endschiessen">🏅 Endschiessen</button>
                 </div>
 
                 <p class="dashboard-subtitle fade-in-up delay-2" id="info-subtitle">Tippe auf einen Schützen oder ein Feld für detaillierte Einzelresultate.</p>
@@ -194,7 +195,88 @@
                         <!-- Adaptive Mobile Cards View (Kein horizontales Scrollen mehr!) -->
                         <div id="mobile-mannschaft-container" class="mobile-mannschaft-cards" style="display: none;">
                             <!-- Dynamisch befüllt für kleine Bildschirme -->
+                    </div>
+                </div>
+
+                <!-- TAB CONTENT D: ENDSCHIESSEN -->
+                <div id="tab-endschiessen" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-endschiessen">
+                    <div id="endschiessen-loading-state" class="results-loading py-5 text-center">
+                        <div class="spinner"></div>Endschiessen-Resultate werden geladen...
+                    </div>
+                    
+                    <div id="endschiessen-content-container" style="display: none;">
+                        <!-- Endstich 20 Schuss -->
+                        <div class="results-card" style="margin-bottom: 2rem;">
+                            <div style="margin-bottom: 1.25rem;">
+                                <h3 style="margin-bottom: 0.25rem;">🏅 Endstich (20 Schuss A10)</h3>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+                                    Hauptwettkampf mit 2 Passen à 10 Schuss (Ganz- und Zehntelwertung). Zählt zur Jahresmeisterschaft.
+                                </p>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table-results" id="table-endschiessen-endstich">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="col-rang">Rang</th>
+                                            <th scope="col" class="col-name">Schütze</th>
+                                            <th scope="col" style="text-align: center;">Passe 1</th>
+                                            <th scope="col" style="text-align: center;">Passe 2</th>
+                                            <th scope="col" class="col-total">Total Pkt</th>
+                                            <th scope="col" style="text-align: center; color: var(--color-primary, #0d6efd);">Zehntel</th>
+                                            <th scope="col" style="text-align: center; color: var(--text-muted);">Rang 10tel</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-endschiessen-endstich">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
+
+                        <!-- Meister-Final Top 8 -->
+                        <div class="results-card" id="endschiessen-final-card" style="display: none; margin-bottom: 2rem;">
+                            <div style="margin-bottom: 1.25rem;">
+                                <h3 style="margin-bottom: 0.25rem;">🏆 Meister-Final (Top 8 Ausscheidung)</h3>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+                                    Die besten 8 Schützen des Endstichs im direkten Ausscheidungs-Wettkampf.
+                                </p>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table-results" id="table-endschiessen-final">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" class="col-rang">Rang</th>
+                                            <th scope="col" class="col-name">Schütze</th>
+                                            <th scope="col" style="text-align: center;">S1</th>
+                                            <th scope="col" style="text-align: center;">S2</th>
+                                            <th scope="col" style="text-align: center;">S3</th>
+                                            <th scope="col" style="text-align: center;">S4</th>
+                                            <th scope="col" style="text-align: center;">S5</th>
+                                            <th scope="col" style="text-align: center;">S6</th>
+                                            <th scope="col" style="text-align: center;">S7</th>
+                                            <th scope="col" class="col-total">Total</th>
+                                            <th scope="col" style="text-align: center;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-endschiessen-final">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Weitere Stiche Container (Gaben, Differenzler, Sie & Er) -->
+                        <div id="endschiessen-other-stiche-container" class="results-grid-2">
+                            <!-- Loaded dynamically if present -->
+                        </div>
+                    </div>
+
+                    <div id="endschiessen-empty-state" style="display: none;" class="results-card text-center py-5">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🎯</div>
+                        <h3>Endschiessen noch nicht freigegeben</h3>
+                        <p style="color: var(--text-muted); max-width: 500px; margin: 0 auto;">
+                            Die Resultate für diese Saison sind noch nicht öffentlich freigegeben oder das Schiessen hat noch nicht stattgefunden.
+                        </p>
                     </div>
                 </div>
 

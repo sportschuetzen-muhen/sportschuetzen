@@ -14,6 +14,7 @@ const EndschiessenState = {
     finalParticipants: [],      // [ { person_number, start_rang, serie_1..8, total, ... } ]
     kkMembersPool: [],          // Aktive Mitglieder mit Kleinkaliber/50m-Lizenz
     hasUnsavedChanges: false,
+    unsavedCount: 0,
     isLoading: false,
     isSyncing: false
 };
@@ -107,10 +108,13 @@ async function loadEndschiessenData(forceYear = null) {
             renderEndschiessenUI();
         }
 
-        if (window.SaveButtonKit) {
-            window.SaveButtonKit.update('btn-save-endschiessen', 0);
-        }
         EndschiessenState.hasUnsavedChanges = false;
+        EndschiessenState.unsavedCount = 0;
+        if (typeof updateEndschiessenSaveButton === 'function') {
+            updateEndschiessenSaveButton();
+        } else if (window.SaveButtonKit) {
+            window.SaveButtonKit.update('btn-save-endschiessen', { count: 0 });
+        }
 
     } catch (err) {
         console.error("❌ Fehler beim Laden von Endschiessen:", err);
@@ -297,7 +301,9 @@ function recalculateFinalRankings(participants) {
 async function saveEndschiessenData() {
     const client = getEndschiessenClient();
     const btn = document.getElementById('btn-save-endschiessen');
-    if (btn) {
+    if (window.SaveButtonKit) {
+        window.SaveButtonKit.update('btn-save-endschiessen', { isSaving: true });
+    } else if (btn) {
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Speichern...`;
     }
@@ -305,13 +311,15 @@ async function saveEndschiessenData() {
     try {
         const year = EndschiessenState.currentYear;
 
-        // 1. Scores speichern (Upsert aller geladenen Stiche)
-        const allScoresToSave = [];
+        // 1. Scores speichern (Trennung von Insert für neue und Upsert für bestehende Zeilen)
+        const newScoresToInsert = [];
+        const existingScoresToUpsert = [];
+
         for (const stichId in EndschiessenState.scoresByStich) {
             const scores = EndschiessenState.scoresByStich[stichId] || [];
             for (const s of scores) {
-                allScoresToSave.push({
-                    id: s.id.startsWith('temp_') ? undefined : s.id,
+                const isTemp = !s.id || String(s.id).startsWith('temp_');
+                const row = {
                     jahr: year,
                     stich_id: s.stich_id,
                     person_number: s.person_number || null,
@@ -329,50 +337,89 @@ async function saveEndschiessenData() {
                     rang_decimal: s.rang_decimal || null,
                     remark: s.remark || null,
                     updated_at: new Date().toISOString()
-                });
+                };
+
+                if (isTemp) {
+                    newScoresToInsert.push(row);
+                } else {
+                    row.id = s.id;
+                    existingScoresToUpsert.push(row);
+                }
             }
         }
 
-        if (allScoresToSave.length > 0) {
+        if (newScoresToInsert.length > 0) {
+            const { error: insErr } = await client
+                .from('endschiessen_scores')
+                .insert(newScoresToInsert);
+            if (insErr) throw insErr;
+        }
+
+        if (existingScoresToUpsert.length > 0) {
             const { error: scoreSaveErr } = await client
                 .from('endschiessen_scores')
-                .upsert(allScoresToSave);
+                .upsert(existingScoresToUpsert);
             if (scoreSaveErr) throw scoreSaveErr;
         }
 
         // 2. Final-Serien speichern
         if (EndschiessenState.finalParticipants && EndschiessenState.finalParticipants.length > 0) {
-            const finalToSave = EndschiessenState.finalParticipants.map(f => ({
-                id: f.id && !f.id.startsWith('temp_') ? f.id : undefined,
-                jahr: year,
-                person_number: f.person_number,
-                start_rang: f.start_rang,
-                serie_1: parseFloat(f.serie_1) || 0,
-                serie_2: parseFloat(f.serie_2) || 0,
-                serie_3: parseFloat(f.serie_3) || 0,
-                serie_4: parseFloat(f.serie_4) || 0,
-                serie_5: parseFloat(f.serie_5) || 0,
-                serie_6: parseFloat(f.serie_6) || 0,
-                serie_7: parseFloat(f.serie_7) || 0,
-                serie_8: parseFloat(f.serie_8) || 0,
-                total_score: parseFloat(f.total_score) || 0,
-                final_rang: f.final_rang || null,
-                is_eliminated: f.is_eliminated || false,
-                eliminated_in_serie: f.eliminated_in_serie || null,
-                updated_at: new Date().toISOString()
-            }));
+            const newFinals = [];
+            const existingFinals = [];
 
-            const { error: finalSaveErr } = await client
-                .from('endschiessen_final_series')
-                .upsert(finalToSave);
-            if (finalSaveErr) throw finalSaveErr;
+            for (const f of EndschiessenState.finalParticipants) {
+                const isTemp = !f.id || String(f.id).startsWith('temp_');
+                const row = {
+                    jahr: year,
+                    person_number: f.person_number,
+                    start_rang: f.start_rang,
+                    serie_1: parseFloat(f.serie_1) || 0,
+                    serie_2: parseFloat(f.serie_2) || 0,
+                    serie_3: parseFloat(f.serie_3) || 0,
+                    serie_4: parseFloat(f.serie_4) || 0,
+                    serie_5: parseFloat(f.serie_5) || 0,
+                    serie_6: parseFloat(f.serie_6) || 0,
+                    serie_7: parseFloat(f.serie_7) || 0,
+                    serie_8: parseFloat(f.serie_8) || 0,
+                    total_score: parseFloat(f.total_score) || 0,
+                    final_rang: f.final_rang || null,
+                    is_eliminated: f.is_eliminated || false,
+                    eliminated_in_serie: f.eliminated_in_serie || null,
+                    updated_at: new Date().toISOString()
+                };
+
+                if (isTemp) {
+                    newFinals.push(row);
+                } else {
+                    row.id = f.id;
+                    existingFinals.push(row);
+                }
+            }
+
+            if (newFinals.length > 0) {
+                const { error: insFErr } = await client
+                    .from('endschiessen_final_series')
+                    .insert(newFinals);
+                if (insFErr) throw insFErr;
+            }
+
+            if (existingFinals.length > 0) {
+                const { error: finalSaveErr } = await client
+                    .from('endschiessen_final_series')
+                    .upsert(existingFinals);
+                if (finalSaveErr) throw finalSaveErr;
+            }
         }
 
         // Erfolgs-Feedback
         EndschiessenState.hasUnsavedChanges = false;
-        if (window.SaveButtonKit) {
-            window.SaveButtonKit.update('btn-save-endschiessen', 0);
+        EndschiessenState.unsavedCount = 0;
+        if (typeof updateEndschiessenSaveButton === 'function') {
+            updateEndschiessenSaveButton();
+        } else if (window.SaveButtonKit) {
+            window.SaveButtonKit.update('btn-save-endschiessen', { count: 0 });
         }
+
         if (typeof showToast === 'function') {
             showToast("Resultate des Endschiessens erfolgreich gespeichert! ✓", "success");
         }
@@ -385,7 +432,11 @@ async function saveEndschiessenData() {
         if (typeof showError === 'function') {
             showError("Fehler beim Speichern: " + err.message);
         }
-        if (btn) btn.disabled = false;
+        if (typeof updateEndschiessenSaveButton === 'function') {
+            updateEndschiessenSaveButton();
+        } else if (btn) {
+            btn.disabled = false;
+        }
     }
 }
 window.saveEndschiessenData = saveEndschiessenData;
@@ -408,11 +459,14 @@ async function syncEndschiessenToJM() {
         throw new Error("Keine Endstich-Resultate vorhanden, die übertragen werden könnten.");
     }
 
-    // 1. Jahresmeisterschaft Season laden
+    // 1. Jahresmeisterschaft Zielsaison ermitteln:
+    // Priorisiere die aktive, nicht-archivierte Saison ('current'), da das Portal diese standardmässig anzeigt.
     let { data: jmSeason, error: jmErr } = await client
         .from('jm_seasons')
         .select('*')
-        .eq('jahr', year)
+        .eq('is_archived', false)
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
     if (!jmSeason) {
@@ -424,8 +478,17 @@ async function syncEndschiessenToJM() {
         jmSeason = curSeason;
     }
 
+    if (!jmSeason) {
+        const { data: byYear } = await client
+            .from('jm_seasons')
+            .select('*')
+            .eq('jahr', year)
+            .maybeSingle();
+        jmSeason = byYear;
+    }
+
     if (!jmSeason || !jmSeason.raw_grid || !Array.isArray(jmSeason.raw_grid)) {
-        throw new Error(`Keine passende Jahresmeisterschaft für das Jahr ${year} gefunden.`);
+        throw new Error(`Keine Jahresmeisterschaft zum Aktualisieren gefunden.`);
     }
 
     const grid = JSON.parse(JSON.stringify(jmSeason.raw_grid));
@@ -433,11 +496,14 @@ async function syncEndschiessenToJM() {
     // Endschiessen-Spalte suchen (Zeile 3, Index 2 ist Header)
     const headerRow = grid[2] || [];
     let endschiessenColIdx = -1;
+    let endschiessenColIdxPct = -1;
+
     for (let c = 0; c < headerRow.length; c++) {
-        const title = String(headerRow[c] || '').toLowerCase();
-        if (title.includes('endschiessen') || title.includes('schlussmatch')) {
+        const title = String(headerRow[c] || '').trim().toLowerCase();
+        if ((title.includes('endschiessen') || title.includes('schlussmatch')) && !title.includes('%')) {
             endschiessenColIdx = c;
-            break;
+        } else if ((title.includes('endschiessen') || title.includes('schlussmatch')) && title.includes('%')) {
+            endschiessenColIdxPct = c;
         }
     }
 
@@ -446,26 +512,32 @@ async function syncEndschiessenToJM() {
     }
 
     // Schützenzeilen abgleichen (ab Zeile 5, Index 4)
+    // Grid: col 1 = Nachname, col 2 = Vorname, col 4 = Lizenz/Personen-Nr.
     let updatedCount = 0;
     const nameColIdx = 1;
+    const vornameColIdx = 2;
+    const licenseColIdx = 4;
 
     for (let r = 4; r < grid.length; r++) {
         const row = grid[r];
-        if (!row || !row[nameColIdx]) continue;
+        if (!row || (!row[nameColIdx] && !row[vornameColIdx])) continue;
 
-        const shooterName = String(row[nameColIdx]).trim().toLowerCase();
-        
-        // Passenden Schützen im Endstich suchen
+        const rowLast = String(row[nameColIdx] || '').trim().toLowerCase();
+        const rowFirst = String(row[vornameColIdx] || '').trim().toLowerCase();
+        const rowLicense = String(row[licenseColIdx] || '').trim();
+
+        // Passenden Schützen im Endstich suchen:
+        // Exakter Abgleich von Nachname UND Vorname (verhindert Fehlzuordnungen bei gleichem Nachnamen!)
         const match = scores.find(s => {
             if (s.member) {
-                const fullName = `${s.member.last_name} ${s.member.first_name}`.trim().toLowerCase();
-                const reverseName = `${s.member.first_name} ${s.member.last_name}`.trim().toLowerCase();
-                return shooterName.includes(s.member.last_name.toLowerCase()) || 
-                       shooterName === fullName || 
-                       shooterName === reverseName;
+                const mLast = String(s.member.last_name || '').trim().toLowerCase();
+                const mFirst = String(s.member.first_name || '').trim().toLowerCase();
+                if (rowLast === mLast && rowFirst === mFirst) return true;
+                if (s.person_number && rowLicense && rowLicense === String(s.person_number).trim()) return true;
             }
             if (s.guest_name) {
-                return shooterName === s.guest_name.trim().toLowerCase();
+                const g = s.guest_name.trim().toLowerCase();
+                if (g === `${rowLast} ${rowFirst}` || g === `${rowFirst} ${rowLast}`) return true;
             }
             return false;
         });
@@ -473,11 +545,23 @@ async function syncEndschiessenToJM() {
         if (match && match.total_score > 0) {
             // Endstich Total (max 200) eintragen
             row[endschiessenColIdx] = match.total_score;
+            if (endschiessenColIdxPct !== -1) {
+                row[endschiessenColIdxPct] = Number(((match.total_score / 200) * 100).toFixed(2));
+            }
             updatedCount++;
         }
     }
 
-    // Grid zurückschreiben
+    // Optional: Gesamte Jahresmeisterschaft inklusive Streichresultat & Totals neu berechnen
+    if (typeof recalculateJMRawGrid === 'function') {
+        try {
+            recalculateJMRawGrid(grid);
+        } catch (calcErr) {
+            console.warn("⚠️ recalculateJMRawGrid Warnung:", calcErr);
+        }
+    }
+
+    // Grid zurückschreiben in aktive Zielsaison
     const { error: updateErr } = await client
         .from('jm_seasons')
         .update({
@@ -488,10 +572,35 @@ async function syncEndschiessenToJM() {
 
     if (updateErr) throw updateErr;
 
+    // Falls ein separates Jahr-Archiv für das gleiche Jahr existiert (z. B. '2026'), dieses ebenfalls synchron halten
+    if (jmSeason.jahr !== year) {
+        try {
+            await client
+                .from('jm_seasons')
+                .update({
+                    raw_grid: grid,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('jahr', year);
+        } catch (syncYearErr) {
+            console.warn("⚠️ Zusätzliche Jahres-Aktualisierung übersprungen:", syncYearErr);
+        }
+    }
+
+    // Strukturierte Schützenliste (public.jm_shooters) für Website und App aktualisieren
+    if (typeof syncJMShootersToSupabase === 'function') {
+        try {
+            await syncJMShootersToSupabase(client, jmSeason.jahr, grid);
+        } catch (shootersErr) {
+            console.warn("⚠️ syncJMShootersToSupabase Warnung:", shootersErr);
+        }
+    }
+
     return {
         success: true,
         updatedCount: updatedCount,
-        columnTitle: headerRow[endschiessenColIdx]
+        columnTitle: headerRow[endschiessenColIdx],
+        targetSeason: jmSeason.jahr === 'current' ? 'Jahresmeisterschaft (aktuell)' : jmSeason.jahr
     };
 }
 window.syncEndschiessenToJM = syncEndschiessenToJM;

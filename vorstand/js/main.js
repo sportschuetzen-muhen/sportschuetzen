@@ -148,14 +148,16 @@ const SaveButtonKit = {
      * @param {string} [options.savedLabel='Gespeichert'] - Text für inaktiven/gespeicherten Zustand
      * @param {string} [options.icon='fas fa-save'] - FontAwesome Icon
      */
-    update(btnOrId, {
-        count = 0,
-        canWrite = true,
-        isSaving = false,
-        label = 'Speichern',
-        savedLabel = 'Gespeichert',
-        icon = 'fas fa-save'
-    } = {}) {
+    update(btnOrId, options = {}) {
+        const opts = (typeof options === 'number') ? { count: options } : (options || {});
+        const {
+            count = 0,
+            canWrite = true,
+            isSaving = false,
+            label = 'Speichern',
+            savedLabel = 'Gespeichert',
+            icon = 'fas fa-save'
+        } = opts;
         const btn = (typeof btnOrId === 'string')
             ? (document.getElementById(btnOrId.replace(/^#/, '')) || document.querySelector(btnOrId))
             : btnOrId;

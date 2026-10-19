@@ -426,10 +426,17 @@ END;
 $$;
 ```
 
-### 6.2 Frontend-Ablauf (Human-in-the-Loop)
+### 6.2 Frontend-Ablauf & Robuste Synchronisation (Human-in-the-Loop)
 1. Im Header des Endstichs erscheint der Button **«In Jahresmeisterschaft übertragen»** (aktiviert, sobald Resultate vorliegen).
-2. Ein Vorschau-Modal zeigt den Vorher/Nachher-Abgleich pro Schütze (z. B. *Olivia Rossi: 197 Punkte / 98.50 %*).
-3. Nach Bestätigung wird die Übernahme ausgeführt und ein Erfolgs-Toast mit Revisionsvermerk ausgegeben.
+2. Ein Vorschau-Modal zeigt den Abgleich für die aktive Jahresmeisterschaft (`current`).
+3. **Exakter Personenabgleich:** Der Abgleich im Grid erfolgt strikt nach Vorname UND Nachname (bzw. Lizenznummer), um Fehlzuordnungen bei Namensgleichheit (z. B. Rossi Andrea vs. Rossi Olivia) auszuschliessen.
+4. **Automatische Nachberechnung & Schützen-Sync:** Nach Übertrag der Punkte (max. 200) und der Prozente in die dynamisch ermittelten Spalten (`Endschiessen` und `Endschiessen %`) wird die Gesamtwertung via `recalculateJMRawGrid` neu berechnet und die normalisierte Tabelle `public.jm_shooters` (`syncJMShootersToSupabase`) unmittelbar aktualisiert.
+5. Nach Bestätigung wird die Übernahme ausgeführt und ein Erfolgs-Toast mit Revisionsvermerk ausgegeben.
+
+### 6.3 Zentrales Speichern & TableKit
+* **SaveButtonKit Dirty Tracker:** Mutationen (Schützen hinzufügen, Punktänderungen) schalten den Speichern-Button dynamisch auf `Speichern (N)` um. Beim Speichern werden neue Schützen (`insert`) und bestehende Resultate (`upsert`) atomar gesichert.
+* **TableKit & Zehntel-Darstellung:** Volle Spaltensortierung via `TableKit.makeSortable`. Zehntelfelder besitzen eine garantierte Mindestbreite von 72px ohne Browser-Spin-Buttons, sodass Dezimalwerte (`104.8`) vollständig lesbar sind.
+* **Website-Integration (Tab 4):** Auf der öffentlichen Vereinswebsite (`resultate.html` & `resultate.js`) werden bei freigegebener Saison (`is_published: true`) die Ranglisten für Endstich, Meister-Final und Sonderstiche dynamisch angezeigt (autorisiert via `79_grant_anon_endschiessen_and_rbac.sql`).
 
 ---
 
