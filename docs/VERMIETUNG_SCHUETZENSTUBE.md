@@ -101,6 +101,8 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 
 ## 4. Berechtigungen & RLS
 
-* **Mietanfrage erstellen (Public):** Jeder Webseitenbesucher darf Anfragen anlegen (`status = 'inquiry'`).
-* **Eigene Anfrage einsehen:** Authentifizierte Kunden über E-Mail-Matching.
-* **Verwalten (`vermietung.edit`, `vermietung.approve`):** Rollen `vermieter`, `vorstand` und `admin`.
+* **Online-Reservation & Mietanfrage erstellen (Public / `anon`):** Jeder Webseitenbesucher darf Reservationen und Anfragen über `schuetzenhaus_vermietung.html` anlegen (`rental_requests` INSERT-Policy für `anon`).
+* **Audit-Log-Integrität via `SECURITY DEFINER`:** Die Triggerfunktion `public.log_rental_status_change()` ist als `SECURITY DEFINER` deklariert. Dadurch wird der initiale Statuseintrag (`Reservation erstellt`) bei öffentlichen Website-Buchungen zuverlässig in `rental_status_logs` persistiert, während die Tabelle selbst durch RLS (`vermietung.manage`) vor unberechtigtem Direktzugriff geschützt bleibt.
+* **Storno-Feedback (Public / `anon`):** Mieter dürfen über `storno_feedback.html` Stornorückmeldungen ohne vorherigen Login einreichen (`rental_cancellation_feedbacks` INSERT-Policy für `anon`).
+* **Verwalten («View & Manage» Modell):** Einsicht (`vermietung.view`) und Bearbeitung/Freigabe (`vermietung.manage`) sind für autorisierte Rollen (`vermieter`, `vorstand`, `admin`) reserviert.
+
