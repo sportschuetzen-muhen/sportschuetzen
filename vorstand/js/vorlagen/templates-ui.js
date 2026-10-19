@@ -27,10 +27,18 @@
     }
 
     try {
-      const [tRes, cRes] = await Promise.all([
+      const [tRes, cRes, sRes] = await Promise.all([
         sb.from('document_templates').select('*').order('category').order('code'),
-        sb.from('document_template_clauses').select('*').order('sort_order', { ascending: true })
+        sb.from('document_template_clauses').select('*').order('sort_order', { ascending: true }),
+        sb.from('rental_settings').select('setting_key, setting_value')
       ]);
+
+      if (sRes.data && sRes.data.length > 0) {
+        if (!window._rentalSettings) window._rentalSettings = {};
+        sRes.data.forEach(s => {
+          window._rentalSettings[s.setting_key] = s.setting_value;
+        });
+      }
 
       if (tRes.data && tRes.data.length > 0) {
         // GV-Vorlagen werden vollständig und autonom im Fachmodul Generalversammlung verwaltet
@@ -194,15 +202,17 @@
         '{mieter_strasse}', '{mieter_plz}', '{mieter_ort}', '{mieter_adresse}',
         '{vermieter_name}', '{vermieter_vorname}', '{vermieter_nachname}', '{vermieter_telefon}', '{vermieter_email}',
         '{wirtschaft_name}', '{wirtschaft_phone}', '{wirtschaft_email}',
-        '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{bemerkung}', '{cockpit_url}', '{feedback_url}'
+        '{vertragsnr}', '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{bemerkung}', '{cockpit_url}', '{feedback_url}',
+        '{zahlungsfrist_tage}', '{mietobjekt}', '{gebuehr_holz}', '{gebuehr_abfallsack}', '{gebuehr_reinigung}', '{gebuehr_storno}', '{gebuehr_glas}', '{gebuehr_teller}'
       ];
     } else if (isMietvertragPdf) {
       categoryPlaceholders = [
         '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{buchungsnummer}', '{vertragsnr}',
         '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}',
         '{vermieter_name}', '{vermieter_telefon}', '{vermieter_email}',
+        '{wirtschaft_name}', '{wirtschaft_phone}', '{wirtschaft_email}',
         '{gebuehr_holz}', '{gebuehr_abfallsack}', '{gebuehr_reinigung}', '{gebuehr_storno}',
-        '{gebuehr_glas}', '{gebuehr_teller}', '{zahlungsfrist_tage}'
+        '{gebuehr_glas}', '{gebuehr_teller}', '{zahlungsfrist_tage}', '{mietobjekt}'
       ];
     } else if (currentCat === 'rechnung') {
       categoryPlaceholders = [
@@ -587,6 +597,13 @@
   };
 
   function buildInvoiceEmailPreviewHtml(subject, bodyText, templateCode) {
+    const curUser = window.currentUser || {};
+    const uFirst = curUser.vorname || curUser.first_name || 'Daniel';
+    const uLast = curUser.nachname || curUser.last_name || 'Hunziker';
+    const uRole = curUser.rolle || curUser.role || 'Kassier';
+    const uEmail = curUser.email || curUser.mail || 'sportschuetzen.muhen@gmail.com';
+    const uPhone = curUser.phone || curUser.mobile || '079 755 18 87';
+
     const sample = {
       rechnungsnummer: 'RE-2026-0042',
       rechnungsjahr: new Date().getFullYear().toString(),
@@ -598,11 +615,11 @@
       strasse: 'Hauptstrasse 42',
       plz: '5037',
       ort: 'Muhen',
-      absender_vorname: 'Daniel',
-      absender_nachname: 'Hunziker',
-      absender_funktion: 'Kassier',
-      absender_email: 'sportschuetzen.muhen@gmail.com',
-      absender_mobil: '079 123 45 67'
+      absender_vorname: uFirst,
+      absender_nachname: uLast,
+      absender_funktion: uRole,
+      absender_email: uEmail,
+      absender_mobil: uPhone
     };
 
     let bannerColor = '#1a3a5a';
@@ -658,6 +675,17 @@
   }
 
   function buildRentalEmailPreviewHtml(subject, bodyText, templateCode) {
+    const s = window._rentalSettings || {};
+    const vermieterFirst = s.sender_first_name || 'Simon';
+    const vermieterLast = s.sender_last_name || 'Hediger';
+    const vermieterName = [vermieterFirst, vermieterLast].filter(Boolean).join(' ').trim() || 'Sportschützen Muhen';
+    const vermieterPhone = s.sender_phone || '+41 79 722 65 00';
+    const clubEmail = s.club_email || 'sportschuetzen.muhen@gmail.com';
+
+    const wName = s.wirtschaft_name || 'Wirtschaftsteam';
+    const wPhone = s.wirtschaft_phone || '079 123 45 67';
+    const wEmail = s.wirtschaft_email || 'wirtschaft@sportschuetzen-muhen.ch';
+
     const sample = {
       mieter_anrede: 'Frau',
       mieter_vorname: 'Daniela',
@@ -671,23 +699,33 @@
       vorname: 'Daniela',
       nachname: 'Hunziker',
       anrede: 'Frau',
-      vermieter_vorname: 'Daniel',
-      vermieter_nachname: 'Hunziker',
-      vermieter_name: 'Daniel Hunziker',
-      vermieter_telefon: '+41 79 123 45 67',
-      vermieter_email: 'sportschuetzen.muhen@gmail.com',
+      vermieter_vorname: vermieterFirst,
+      vermieter_nachname: vermieterLast,
+      vermieter_name: vermieterName,
+      vermieter_telefon: vermieterPhone,
+      vermieter_email: clubEmail,
       mietdatum: '15. August 2026',
       festbeginn: '13:00 Uhr',
       vertragsnr: 'V-2026-0102',
       buchungsnummer: 'V-2026-0102',
       mietbetrag: '300.00',
+      kaution: '0.00',
       bemerkung: 'Geburtstagsfest mit ca. 30 Gästen',
-      wirtschaft_name: 'Wirtschaftsteam (Uschi Künzli)',
-      wirtschaft_phone: '079 888 50 37',
-      wirtschaft_email: 'wirtschaft@sportschuetzen-muhen.ch',
+      wirtschaft_name: wName,
+      wirtschaft_phone: wPhone,
+      wirtschaft_email: wEmail,
+      zahlungsfrist_tage: String(s.payment_due_days || 14),
+      zahlungsfrist: String(s.payment_due_days || 14),
+      gebuehr_holz: Number(s.wood_fee || 20).toFixed(2),
+      gebuehr_abfallsack: Number(s.garbage_bag_fee || 4).toFixed(2),
+      gebuehr_reinigung: Number(s.cleaning_fee_per_hour || 35).toFixed(2),
+      gebuehr_storno: Number(s.storno_fee || 100).toFixed(2),
+      gebuehr_glas: Number(s.glass_fee || 2).toFixed(2),
+      gebuehr_teller: Number(s.plate_fee || 5).toFixed(2),
+      mietobjekt: s.rental_object || 'Schützenstube Rüteli',
       feedback_url: 'https://sportschuetzen-muhen.ch/storno_feedback.html?vnr=V-2026-0102',
       cockpit_url: 'https://sportschuetzen-muhen.ch/vorstand/#vermietung',
-      club_email: 'sportschuetzen.muhen@gmail.com'
+      club_email: clubEmail
     };
 
     let bannerColor = '#0f3c5c';
@@ -932,9 +970,10 @@
     const isMietvertrag = (template.code === 'mietvertrag' || template.category === 'vertrag');
     const clausePlaceholders = isMietvertrag ? [
       '{vermieter_name}', '{vermieter_telefon}', '{vermieter_email}',
+      '{wirtschaft_name}', '{wirtschaft_phone}', '{wirtschaft_email}',
       '{mietdatum}', '{festbeginn}', '{mietbetrag}', '{buchungsnummer}', '{vertragsnr}',
       '{gebuehr_holz}', '{gebuehr_abfallsack}', '{gebuehr_reinigung}', '{gebuehr_storno}',
-      '{gebuehr_glas}', '{gebuehr_teller}', '{zahlungsfrist_tage}'
+      '{gebuehr_glas}', '{gebuehr_teller}', '{zahlungsfrist_tage}', '{mietobjekt}'
     ] : [
       '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'
     ];
@@ -1164,7 +1203,7 @@
           subject: formTitle || 'Wichtige Mitteilung des Vorstands',
           bodyText: formIntro || 'Wir freuen uns, Ihnen mitteilen zu können, dass die Vorbereitungen für die kommende Saison planmässig verlaufen.',
           signers: [
-            { name: 'Andrea Rossi', role: 'Präsident' },
+            { name: 'Simon Hediger', role: 'Präsident' },
             { name: 'Daniel Humbel', role: 'Aktuar' }
           ],
           letterDate: new Date().toLocaleDateString('de-CH', { day: 'numeric', month: 'long', year: 'numeric' })

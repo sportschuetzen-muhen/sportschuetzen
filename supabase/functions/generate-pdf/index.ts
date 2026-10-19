@@ -1535,6 +1535,10 @@ async function generateRentalContractPdf(
   const vermieterTelefon = (rs.sender_phone || sender.mobil || "").trim() || "–";
   const vermieterEmail = (rs.club_email || sender.email || CLUB_EMAIL).trim();
 
+  const wirtschaftName = (rs.wirtschaft_name || "").trim() || "Wirtschaftsteam";
+  const wirtschaftTelefon = (rs.wirtschaft_phone || "").trim() || "–";
+  const wirtschaftEmail = (rs.wirtschaft_email || "").trim();
+
   // Mietobjekt: Primär aus Dokumentenvorlage (Modul Dokumente: layoutData.rental_object oder templateDescription/description)
   const mietobjekt = (layoutData?.rental_object || (templateData as any)?.rental_object || (templateData as any)?.description || rs.rental_object || "").trim() || "Schützenstube Muhen";
 
@@ -1544,6 +1548,10 @@ async function generateRentalContractPdf(
     vermieter_nachname: rs.sender_last_name || "",
     vermieter_telefon: vermieterTelefon,
     vermieter_email: vermieterEmail,
+    wirtschaft_name: wirtschaftName,
+    wirtschaft_phone: wirtschaftTelefon,
+    wirtschaft_email: wirtschaftEmail,
+    mietobjekt: mietobjekt,
     gebuehr_holz: fmtFee(rs.wood_fee),
     gebuehr_abfallsack: fmtFee(rs.garbage_bag_fee),
     gebuehr_reinigung: fmtFee(rs.cleaning_fee_per_hour),

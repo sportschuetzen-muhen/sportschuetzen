@@ -1793,6 +1793,7 @@
     let calendarEventsMap = {};
     let selectedDateISO = null;
     window.currentBookingMode = { is_inquiry: false, inquiry_type: '', inquiry_note: '' };
+    let currentStandardRentalPrice = 300.00;
 
     function formatDateKey(d) {
       const year = d.getFullYear();
@@ -1817,11 +1818,20 @@
       };
 
       try {
-        const [resRentals, resTermine, resGoogle] = await Promise.all([
+        const [resRentals, resTermine, resGoogle, resPricing] = await Promise.all([
           fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, { headers }).catch(() => null),
           fetch(`${SUPABASE_REST_URL}/termine?select=anlasstitel,datum,startzeit,endzeit,status&status=neq.abgesagt&order=datum.asc`, { headers }).catch(() => null),
-          fetch('https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender').then(r => r.ok ? r.json() : []).catch(() => [])
+          fetch('https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender').then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch(`${SUPABASE_REST_URL}/rental_pricing?tariff_code=eq.standard_tag&select=base_price_chf&is_active=eq.true`, { headers }).catch(() => null)
         ]);
+
+        if (resPricing && resPricing.ok) {
+          const pData = await resPricing.json();
+          if (Array.isArray(pData) && pData[0] && pData[0].base_price_chf) {
+            const pNum = Number(pData[0].base_price_chf);
+            if (pNum > 0) currentStandardRentalPrice = pNum;
+          }
+        }
 
         calendarEventsMap = {};
 
@@ -1981,7 +1991,7 @@
         type: 'free',
         isSelectable: true,
         label: 'Frei verfügbar (Ganzer Tag)',
-        desc: 'Pauschaltarif CHF 300.- inkl. Nebenkosten. Trage nun deinen Festbeginn und deine Kontaktdaten ein.'
+        desc: `Pauschaltarif CHF ${currentStandardRentalPrice.toFixed(0)}.- inkl. Nebenkosten. Trage nun deinen Festbeginn und deine Kontaktdaten ein.`
       };
     }
 
@@ -2079,10 +2089,10 @@
         card.className = 'booking-status-card status-free';
         icon.className = 'fa-solid fa-circle-check';
         title.textContent = `${formattedDate} – Frei verfügbar (Ganzer Tag)`;
-        subtitle.textContent = 'Pauschaltarif CHF 300.- inkl. Nebenkosten. Trage nun deinen Festbeginn und deine Kontaktdaten ein.';
+        subtitle.textContent = `Pauschaltarif CHF ${currentStandardRentalPrice.toFixed(0)}.- inkl. Nebenkosten. Trage nun deinen Festbeginn und deine Kontaktdaten ein.`;
         formHeading.textContent = 'Online-Reservation einreichen';
         btnSubmit.classList.remove('inquiry-mode');
-        btnSubmit.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Jetzt verbindlich reservieren (CHF 300.-)';
+        btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Jetzt verbindlich reservieren (CHF ${currentStandardRentalPrice.toFixed(0)}.-)`;
         if (mietdatumHint) {
           mietdatumHint.innerHTML = `<i class="fa-solid fa-circle-check" style="color:#16a34a;"></i> ${formattedDate} im Kalender ausgewählt`;
           mietdatumHint.style.color = '#166534';
@@ -2222,7 +2232,7 @@
           start_date: isoDate,
           end_date: isoDate,
           festbeginn: payload.festbeginn,
-          total_amount_chf: 300.00,
+          total_amount_chf: currentStandardRentalPrice,
           status: isCurrentlyInquiry ? 'inquiry' : 'contract_sent',
           datum_vertrag: new Date().toISOString().split('T')[0]
         };
@@ -2449,7 +2459,7 @@
                 },
                 mietdatum: payload.mietdatum,
                 festbeginn: payload.festbeginn,
-                mietbetrag: 300,
+                mietbetrag: currentStandardRentalPrice,
                 kaution: 0,
                 type: 'Vermietung'
               })
@@ -2482,7 +2492,7 @@
           // 3. Mietvertrags-Mail (vm_vertrag) an den Mieter senden
           try {
             let tplSubject = `Mietvertrag Schützenstube am ${payload.mietdatum} – ${vnr}`;
-            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine Reservation der Schützenstube Muhen am {mietdatum}.\nAnbei erhältst du den offiziellen Mietvertrag inklusive Schweizer QR-Rechnung.\n\nVertragsnummer: {vertragsnr}\nMietdatum: {mietdatum} (Festbeginn: {festbeginn})\nMietbetrag: CHF 300.00\n\nBitte überweise den Mietbetrag innert 14 Tagen mit dem im Vertrag enthaltenen QR-Zahlschein, um die Reservation definitiv zu bestätigen.\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
+            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine Reservation der Schützenstube Muhen am {mietdatum}.\nAnbei erhältst du den offiziellen Mietvertrag inklusive Schweizer QR-Rechnung.\n\nVertragsnummer: {vertragsnr}\nMietdatum: {mietdatum} (Festbeginn: {festbeginn})\nMietbetrag: CHF ${currentStandardRentalPrice.toFixed(2)}\n\nBitte überweise den Mietbetrag innert 14 Tagen mit dem im Vertrag enthaltenen QR-Zahlschein, um die Reservation definitiv zu bestätigen.\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
 
             try {
               const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.vm_vertrag&select=mail_subject,mail_body`, {
@@ -2531,13 +2541,19 @@
               'anrede': payload.anrede || '',
               'vorname': payload.vorname || '',
               'nachname': payload.nachname || '',
-              'mietbetrag': '300.00',
+              'mietbetrag': currentStandardRentalPrice.toFixed(2),
               'kaution': '0.00',
               'vermieter_name': vermieterName,
               'vermieter_vorname': vermieterFirst,
               'vermieter_nachname': vermieterLast,
               'vermieter_telefon': vermieterPhone,
-              'vermieter_email': vermieterEmail
+              'vermieter_email': vermieterEmail,
+              'wirtschaft_name': setMap.wirtschaft_name || 'Wirtschaftsteam',
+              'wirtschaft_phone': setMap.wirtschaft_phone || '',
+              'wirtschaft_email': setMap.wirtschaft_email || '',
+              'zahlungsfrist_tage': String(setMap.payment_due_days || '14'),
+              'zahlungsfrist': String(setMap.payment_due_days || '14'),
+              'mietobjekt': setMap.rental_object || 'Schützenstube Rüteli'
             };
 
             let finalSubject = tplSubject;
