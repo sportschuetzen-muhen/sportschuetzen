@@ -84,10 +84,30 @@ function onInventarCategoryChange() {
 }
 window.onInventarCategoryChange = onInventarCategoryChange;
 
+function resetInventarFilterCategory() {
+    lastFilterTargetCategory = null;
+}
+window.resetInventarFilterCategory = resetInventarFilterCategory;
+
 function updateInventarFilterDropdowns(force = false) {
     if (!inventarState) return;
     const target = document.getElementById('filter-liste')?.value || 'Inventar_Kleidung';
-    if (!force && lastFilterTargetCategory === target) {
+
+    const typSelect = document.getElementById('inv-filter-typ');
+    const modellSelect = document.getElementById('inv-filter-modell');
+    const herstellerSelect = document.getElementById('inv-filter-hersteller');
+    const groesseSelect = document.getElementById('inv-filter-groesse');
+    const besitzerSelect = document.getElementById('inv-filter-besitzer');
+    const distanzSelect = document.getElementById('inv-filter-distanz');
+    const bezeichnungSelect = document.getElementById('inv-filter-bezeichnung');
+    const sponsorSelect = document.getElementById('inv-filter-sponsor');
+    const filterRow = document.getElementById('inv-filter-dropdowns-row');
+
+    // Prüfen, ob sichtbare Dropdowns noch unbefüllt sind (z. B. nach Neuladen / UI-Init nur Platzhalter vorhanden)
+    const activeSelects = [typSelect, modellSelect, herstellerSelect, groesseSelect, besitzerSelect, distanzSelect, bezeichnungSelect, sponsorSelect].filter(Boolean);
+    const hasUnpopulatedDropdowns = activeSelects.length > 0 && activeSelects.some(el => !el.classList.contains('d-none') && el.options.length <= 1);
+
+    if (!force && !hasUnpopulatedDropdowns && lastFilterTargetCategory === target) {
         return;
     }
     lastFilterTargetCategory = target;
@@ -100,16 +120,6 @@ function updateInventarFilterDropdowns(force = false) {
         "Personendaten":              "mitglieder"
     };
     const rawData = inventarState[keyMap[target]] || [];
-
-    const typSelect = document.getElementById('inv-filter-typ');
-    const modellSelect = document.getElementById('inv-filter-modell');
-    const herstellerSelect = document.getElementById('inv-filter-hersteller');
-    const groesseSelect = document.getElementById('inv-filter-groesse');
-    const besitzerSelect = document.getElementById('inv-filter-besitzer');
-    const distanzSelect = document.getElementById('inv-filter-distanz');
-    const bezeichnungSelect = document.getElementById('inv-filter-bezeichnung');
-    const sponsorSelect = document.getElementById('inv-filter-sponsor');
-    const filterRow = document.getElementById('inv-filter-dropdowns-row');
 
     if (target === 'Inventar_Kleidung' || target === 'Inventar_Schiessbekleidung') {
         if (filterRow) filterRow.classList.remove('d-none');
@@ -963,3 +973,4 @@ window.setInventarStatusFilter = setInventarStatusFilter;
 window.resetInventarFilters = resetInventarFilters;
 window.onInventarCategoryChange = onInventarCategoryChange;
 window.updateInventarFilterDropdowns = updateInventarFilterDropdowns;
+window.resetInventarFilterCategory = resetInventarFilterCategory;

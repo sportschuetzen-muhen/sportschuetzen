@@ -60,6 +60,10 @@ Das Modul **Inventar-Verwaltung** bildet das operative Herzstück für den Mater
 * **Keine manuellen Adressabgleiche mehr:** Früher musste das Inventar-Adressbuch manuell synchronisiert werden (`syncInventarMembers`).  
 * **Lösung:** Das Inventar-Modul verknüpft Fremdschlüssel (`current_owner_id`, `owner_person_id`, `donor_person_id`, `seller_person_id`) direkt mit `public.members(person_number)`. Scheidet ein Mitglied aus oder ändert seine Kontaktdaten, ist das Inventar augenblicklich aktuell.
 
+### 2.5 In-Place UI-Aktualisierung & Filter-Lifecycle
+* **Zustandserhaltung bei CRUD-Mutationen:** Beim Hinzufügen, Bearbeiten oder Löschen von Gegenständen wird bei bereits initialisierter Benutzeroberfläche nicht mehr der gesamte DOM-Baum zerstört (`loadInventarData`), sondern der Supabase-Datenbestand in-place synchronisiert.
+* **Filter-Integrität & Dropdown-Sicherheit:** Gesetzte Filterkriterien (Suche, Status-Pills, Typ-, Modell-, Hersteller- und Grössen-Dropdowns) bleiben nach Lösch- und Speicheraktionen stabil erhalten. Die Filter-Dropdowns werden mit den verbleibenden Datensätzen aktualisiert, leere Optionen zuverlässig verhindert und der Filter-Reset («Filter zurücksetzen») bleibt ohne Seiten-Reload (F5) jederzeit uneingeschränkt funktionsfähig.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen & Relationen)

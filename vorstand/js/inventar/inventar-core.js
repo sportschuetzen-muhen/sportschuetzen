@@ -198,11 +198,14 @@ async function loadInventarData(force = false) {
         return;
     }
 
-    container.innerHTML = `
-        <div class="text-center p-5">
-            <div class="spinner-border text-primary"></div>
-            <p class="mt-2 text-muted">Lade Inventar...</p>
-        </div>`;
+    const hasNav = Boolean(container.querySelector('.nav-btn'));
+    if (!hasNav) {
+        container.innerHTML = `
+            <div class="text-center p-5">
+                <div class="spinner-border text-primary"></div>
+                <p class="mt-2 text-muted">Lade Inventar...</p>
+            </div>`;
+    }
 
     // 1. SUPABASE FIRST: Schneller relationaler Abruf
     const supa = getInventarSupabaseClient();
@@ -288,6 +291,27 @@ async function loadInventarData(force = false) {
                     _isSupabase: true
                 };
 
+                if (hasNav) {
+                    fillInventarDropdowns();
+                    renderJournalTables();
+                    if (typeof updateInventarFilterDropdowns === 'function') {
+                        updateInventarFilterDropdowns(true);
+                    }
+                    if (typeof updateStatusPillButtons === 'function') {
+                        updateStatusPillButtons();
+                    }
+                    if (typeof renderInventoryTable === 'function') {
+                        renderInventoryTable();
+                    }
+                    if (typeof renderFinanzen === 'function') {
+                        const finSection = document.getElementById('inv-section-finanzen');
+                        if (finSection && !finSection.classList.contains('d-none')) {
+                            renderFinanzen();
+                        }
+                    }
+                    return;
+                }
+
                 initInventarUI(container);
                 return;
             } else if (itemsErr) {
@@ -304,6 +328,9 @@ async function loadInventarData(force = false) {
 }
 
 function initInventarUI(container) {
+    if (typeof window.resetInventarFilterCategory === 'function') {
+        window.resetInventarFilterCategory();
+    }
     renderInventarUI(container);
 
     const curUser = window.currentUser || localStorage.getItem('portal_user') || 'Vorstand';
@@ -347,6 +374,9 @@ function teardownInventar() {
     sigPadMitglied = null;
     sigPadVorstand = null;
     warenkorb      = [];
+    if (typeof window.resetInventarFilterCategory === 'function') {
+        window.resetInventarFilterCategory();
+    }
 }
 
 // =========================================================
