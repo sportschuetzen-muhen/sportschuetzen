@@ -411,6 +411,8 @@ function nav(id, title, btn) {
     // --- NEU: User Badge & Vorstands-Badge nur auf Home ---
     const badge = document.getElementById('user-badge');
     const vorstandBadge = document.getElementById('vorstand-badge-link');
+    const userDropdown = document.getElementById('app-user-dropdown');
+    if (userDropdown) userDropdown.style.display = 'none';
     if (badge && localStorage.getItem('sportschuetzen_user')) {
         badge.style.display = (id === 'page-home') ? 'flex' : 'none';
         if (vorstandBadge) {
@@ -1807,6 +1809,43 @@ window.closeLoginHelp = function() {
     if (helpModal) helpModal.style.display = 'none';
 };
 
+function getAppUrls() {
+    const loc = window.location;
+    const hostname = loc.hostname;
+    let root = '';
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        const path = loc.pathname;
+        if (path.includes('/sportschuetzen-website/frontend/')) {
+            root = loc.origin + path.replace(/\/sportschuetzen-website\/frontend\/.*$/, '/');
+        } else if (path.includes('/vorstand/')) {
+            root = loc.origin + path.replace(/\/vorstand\/.*$/, '/');
+        } else {
+            root = loc.origin + path.replace(/\/[^/]*$/, '/');
+        }
+    } else if (hostname.includes('pages.dev')) {
+        root = loc.origin + '/';
+    } else if (hostname.includes('github.io')) {
+        const match = loc.pathname.match(/^(\/[^/]+\/)/);
+        root = loc.origin + (match ? match[1] : '/');
+    } else if (hostname.includes('sportschuetzen-muhen.ch')) {
+        root = 'https://sportschuetzen-muhen.ch/';
+    } else {
+        root = loc.origin + '/';
+    }
+
+    if (!root.endsWith('/')) root += '/';
+
+    return {
+        root: root,
+        webApp: root + 'index.html',
+        portal: root + 'vorstand/index.html',
+        website: root + 'sportschuetzen-website/frontend/index.html',
+        intern: root + 'sportschuetzen-website/frontend/intern.html'
+    };
+}
+window.getAppUrls = getAppUrls;
+
 function showApp(user) {
     const wrapper = document.getElementById('app-wrapper');
     if (wrapper) wrapper.style.display = 'block';
@@ -1814,8 +1853,33 @@ function showApp(user) {
     const badge = document.getElementById('user-badge');
     const nameSpan = document.getElementById('display-firstname');
     const vorstandBadge = document.getElementById('vorstand-badge-link');
+    const userDropdown = document.getElementById('app-user-dropdown');
+    const dropdownFullName = document.getElementById('dropdown-user-fullname');
+    const dropdownVorstandLink = document.getElementById('dropdown-link-vorstand');
+    const dropdownWebsiteLink = document.getElementById('dropdown-link-website');
+    const dropdownInternLink = document.getElementById('dropdown-link-intern');
+    const homeWebsiteLink = document.getElementById('home-link-website');
+    const homeInternLink = document.getElementById('home-link-intern');
+    const dropdownLogoutBtn = document.getElementById('dropdown-logout-btn');
+
+    const urls = getAppUrls();
+
+    // Dynamische URLs zuweisen
+    if (vorstandBadge) vorstandBadge.href = urls.portal;
+    if (dropdownVorstandLink) dropdownVorstandLink.href = urls.portal;
+    if (dropdownWebsiteLink) dropdownWebsiteLink.href = urls.website;
+    if (dropdownInternLink) dropdownInternLink.href = urls.intern;
+    if (homeWebsiteLink) homeWebsiteLink.href = urls.website;
+    if (homeInternLink) homeInternLink.href = urls.intern;
+
     if (badge && nameSpan && user) {
         nameSpan.textContent = user.vorname;
+        if (dropdownFullName) {
+            dropdownFullName.textContent = user.name || (user.vorname + ' ' + (user.nachname || '')) || 'Mitglied';
+        }
+        if (dropdownVorstandLink) {
+            dropdownVorstandLink.style.display = user.is_board ? 'flex' : 'none';
+        }
         
         const homePage = document.getElementById('page-home');
         const isHome = homePage && homePage.classList.contains('active-page');
@@ -1823,16 +1887,43 @@ function showApp(user) {
         if (vorstandBadge) {
             vorstandBadge.style.display = (isHome && user.is_board) ? 'block' : 'none';
         }
+
+        // Dropdown Toggle
+        if (userDropdown) {
+            badge.onclick = (e) => {
+                e.stopPropagation();
+                const isClosed = (userDropdown.style.display === 'none' || !userDropdown.style.display);
+                userDropdown.style.display = isClosed ? 'block' : 'none';
+            };
+
+            if (!window._appDropdownListenerAdded) {
+                window._appDropdownListenerAdded = true;
+                document.addEventListener('click', (e) => {
+                    if (userDropdown && !badge.contains(e.target) && !userDropdown.contains(e.target)) {
+                        userDropdown.style.display = 'none';
+                    }
+                });
+            }
+        }
+    }
+
+    if (dropdownLogoutBtn) {
+        dropdownLogoutBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (userDropdown) userDropdown.style.display = 'none';
+            window.logout();
+        };
     }
     
     loadTermine();
     handleDeepLink();
     syncOneSignal(user);
 
-    // Event Listener für Logout Button (sicherer als onclick)
+    // Event Listener für optionalen Header-Logout Button
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
-        logoutBtn.onclick = null; // Entferne inline handler falls vorhanden
+        logoutBtn.onclick = null;
         logoutBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();

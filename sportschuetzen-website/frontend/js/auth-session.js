@@ -212,6 +212,45 @@
         }
 
         /**
+         * Löst die Basis-URLs für die drei Frontends (Website, Web-App, Vorstandsportal) dynamisch auf.
+         */
+        getAppUrls() {
+            const loc = window.location;
+            const hostname = loc.hostname;
+            let root = '';
+
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                const path = loc.pathname;
+                if (path.includes('/sportschuetzen-website/frontend/')) {
+                    root = loc.origin + path.replace(/\/sportschuetzen-website\/frontend\/.*$/, '/');
+                } else if (path.includes('/vorstand/')) {
+                    root = loc.origin + path.replace(/\/vorstand\/.*$/, '/');
+                } else {
+                    root = loc.origin + path.replace(/\/[^/]*$/, '/');
+                }
+            } else if (hostname.includes('pages.dev')) {
+                root = loc.origin + '/';
+            } else if (hostname.includes('github.io')) {
+                const match = loc.pathname.match(/^(\/[^/]+\/)/);
+                root = loc.origin + (match ? match[1] : '/');
+            } else if (hostname.includes('sportschuetzen-muhen.ch')) {
+                root = 'https://sportschuetzen-muhen.ch/';
+            } else {
+                root = loc.origin + '/';
+            }
+
+            if (!root.endsWith('/')) root += '/';
+
+            return {
+                root: root,
+                webApp: root + 'index.html',
+                portal: root + 'vorstand/index.html',
+                website: root + 'sportschuetzen-website/frontend/index.html',
+                intern: root + 'sportschuetzen-website/frontend/intern.html'
+            };
+        }
+
+        /**
          * Generiert die Ziel-URL zur Schützen-Web-App mit automatischem Rücksprung.
          */
         getLoginUrl(returnTarget) {
@@ -219,20 +258,8 @@
                 ? (returnTarget.startsWith('http') ? returnTarget : `${window.location.origin}${window.location.pathname.replace(/[^/]+$/, '')}${returnTarget.replace(/^\//, '')}`)
                 : window.location.href;
 
-            const hostname = window.location.hostname;
-            let webAppBase = '';
-
-            if (hostname === 'localhost' || hostname === '127.0.0.1') {
-                webAppBase = window.location.pathname.includes('/sportschuetzen-website/') 
-                    ? '../../index.html' 
-                    : '/index.html';
-            } else if (hostname.includes('pages.dev')) {
-                webAppBase = window.location.origin + '/index.html';
-            } else if (hostname.includes('sportschuetzen-muhen.ch')) {
-                webAppBase = 'https://sportschuetzen-muhen.ch/app/';
-            } else {
-                webAppBase = 'https://sps-b55.pages.dev/';
-            }
+            const urls = this.getAppUrls();
+            const webAppBase = urls.webApp;
 
             const sep = webAppBase.includes('?') ? '&' : '?';
             return `${webAppBase}${sep}redirect=${encodeURIComponent(currentFullUrl)}`;

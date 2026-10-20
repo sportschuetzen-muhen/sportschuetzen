@@ -613,10 +613,65 @@ window.onload = () => {
     }
 };
 
+// =========================================================
+//  APP ROUTING & ENVIRONMENT RESOLVER
+// =========================================================
+function getAppUrls() {
+    const loc = window.location;
+    const hostname = loc.hostname;
+    let root = '';
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        const path = loc.pathname;
+        if (path.includes('/sportschuetzen-website/frontend/')) {
+            root = loc.origin + path.replace(/\/sportschuetzen-website\/frontend\/.*$/, '/');
+        } else if (path.includes('/vorstand/')) {
+            root = loc.origin + path.replace(/\/vorstand\/.*$/, '/');
+        } else {
+            root = loc.origin + path.replace(/\/[^/]*$/, '/');
+        }
+    } else if (hostname.includes('pages.dev')) {
+        root = loc.origin + '/';
+    } else if (hostname.includes('github.io')) {
+        const match = loc.pathname.match(/^(\/[^/]+\/)/);
+        root = loc.origin + (match ? match[1] : '/');
+    } else if (hostname.includes('sportschuetzen-muhen.ch')) {
+        root = 'https://sportschuetzen-muhen.ch/';
+    } else {
+        root = loc.origin + '/';
+    }
+
+    if (!root.endsWith('/')) root += '/';
+
+    return {
+        root: root,
+        webApp: root + 'index.html',
+        portal: root + 'vorstand/index.html',
+        website: root + 'sportschuetzen-website/frontend/index.html',
+        intern: root + 'sportschuetzen-website/frontend/intern.html'
+    };
+}
+window.getAppUrls = getAppUrls;
+
 function showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app-screen').classList.remove('d-none');
     document.getElementById('app-screen').style.display = 'flex'; 
+
+    // App-Switcher Links dynamisch setzen
+    try {
+        const appUrls = getAppUrls();
+        const pWebapp = document.getElementById('portal-link-webapp');
+        if (pWebapp) pWebapp.href = appUrls.webApp;
+        const pWebsite = document.getElementById('portal-link-website');
+        if (pWebsite) pWebsite.href = appUrls.website;
+        const mWebapp = document.getElementById('mobile-link-webapp');
+        if (mWebapp) mWebapp.href = appUrls.webApp;
+        const mWebsite = document.getElementById('mobile-link-website');
+        if (mWebsite) mWebsite.href = appUrls.website;
+    } catch (urlEx) {
+        console.warn("App-Urls Initialisierung Hinweis:", urlEx);
+    }
     
     const roles = Array.from(new Set(
         (currentRoles || [])

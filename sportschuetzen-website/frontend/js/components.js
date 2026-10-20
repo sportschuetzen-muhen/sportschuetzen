@@ -131,6 +131,14 @@ class SiteHeader extends HTMLElement {
                 const displayName = user.vorname || (user.name ? user.name.split(' ')[0] : 'Mitglied');
                 const isVorstand = window.AuthSession.isVorstand();
                 const roleText = isVorstand ? 'Vorstand' : 'Mitglied';
+                const urls = (window.AuthSession && typeof window.AuthSession.getAppUrls === 'function')
+                    ? window.AuthSession.getAppUrls()
+                    : {
+                        intern: 'intern.html',
+                        webApp: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? '../../index.html' : '/index.html',
+                        portal: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? '../../vorstand/index.html' : '/vorstand/index.html'
+                    };
+
                 badge.innerHTML = `
                     <div class="nav-user-menu" id="nav-user-menu" style="position: relative;">
                         <button class="nav-user-chip" id="nav-user-chip-btn" type="button" aria-expanded="false" aria-haspopup="true" style="display: flex; align-items: center; gap: 0.4rem; background: rgba(15, 60, 92, 0.08); border: 1px solid rgba(15, 60, 92, 0.15); padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--text-color); font-family: inherit;">
@@ -142,14 +150,14 @@ class SiteHeader extends HTMLElement {
                             <div style="padding: 0.5rem 1rem; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.78rem; color: var(--text-muted);">
                                 Angemeldet als <b style="color: var(--primary-color); display: block;">${user.name || displayName}</b>
                             </div>
-                            <a href="intern.html" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
-                                <span>📂</span> <span>Mitgliederbereich</span>
+                            <a href="${urls.intern}" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
+                                <span>📂</span> <span>Mitgliederbereich &amp; Archiv</span>
                             </a>
-                            <a href="https://sps-b55.pages.dev/" target="_blank" rel="noopener" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
+                            <a href="${urls.webApp}" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--text-color); text-decoration: none; font-size: 0.88rem; font-weight: 600;">
                                 <span>🎯</span> <span>Schützen-App (PWA)</span>
                             </a>
                             ${isVorstand ? `
-                            <a href="vorstand/index.html" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--accent-color); text-decoration: none; font-size: 0.88rem; font-weight: 700; background: rgba(220, 38, 38, 0.04);">
+                            <a href="${urls.portal}" class="dropdown-link" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; color: var(--accent-color); text-decoration: none; font-size: 0.88rem; font-weight: 700; background: rgba(220, 38, 38, 0.04);">
                                 <span>👑</span> <span>Vorstandsportal</span>
                             </a>` : ''}
                             <div style="height: 1px; background: rgba(0,0,0,0.06); margin: 0.4rem 0;"></div>

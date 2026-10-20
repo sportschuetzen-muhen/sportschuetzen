@@ -50,16 +50,20 @@ Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte
   * In der Menüleiste erscheint der geschützte Punkt **`🔐 Intern`** (`#nav-intern-link` verweist auf `intern.html`).
   * Das Profil-Element (`.nav-user-chip`) zeigt den Vornamen und die Rolle (`👤 Daniel [Mitglied] ▾`).
   * Ein Klick öffnet ein barrierefreies Dropdown-Menü:
-    1. 📂 **Mitgliederbereich** (`intern.html`)
+    1. 📂 **Mitgliederbereich & Archiv** (`intern.html`)
     2. 🎯 **Schützen-App (PWA)**
     3. 👑 **Vorstandsportal** *(nur für Benutzer mit Rolle `vorstand` oder `admin`)*
     4. 🚪 **Abmelden**
+* **Tri-Direktionaler App-Switcher (Website ↔ Schützen-App ↔ Vorstandsportal):**
+  * Nahtloser Wechsel zwischen allen 3 Frontends ohne manuelle URL-Eingabe.
+  * In der **Schützen-App (PWA)** öffnet ein Klick auf das `#user-badge` (`👤 Vorname ▾`) ein Dropdown mit Absprüngen zu Website, Archiv (`intern.html`), Vorstandsportal (falls berechtigt) und Abmelden; auf `page-home` bieten zudem zwei Schnellwahltasten direkten Zugriff.
+  * Im **Vorstandsportal** stehen sowohl in der Desktop-Sidebar direkt unter dem Header als auch im Mobile-Header zwei Schnellwahl-Buttons (`🎯 Schützen-App` und `🌐 Website`) zur Verfügung.
 * **iPad- & Mobile-Optimierung:**
   * Das Desktop-Grid (`.desktop-nav`) schrumpft zwischen `1024px` und `1250px` dynamisch auf `gap: 0.85rem` und `font-size: 0.92rem`. Dadurch passt die Menüleiste auf allen iPad-Modellen im Querformat ohne störenden Zeilenumbruch.
 
 ---
 
-### 2.2 Entkoppeltes Universal-SSO & Supabase GoTrue Auth (`auth-session.js`)
+### 2.2 Entkoppeltes Universal-SSO & Dynamischer URL-Resolver (`auth-session.js` & `getAppUrls`)
 * **Native Supabase-Anbindung:** Auf allen HTML-Seiten (`index.html`, `verein.html`, `schuetzenhaus_vermietung.html`, `resultate.html`) ist `@supabase/supabase-js@2` eingebunden.
 * **Intelligente Sitzungs-Erkennung:**
   1. `_initSupabase()`: Bindet an `https://supabase-muhen.danfamily.uk` und registriert `supabase.auth.onAuthStateChange()`.
@@ -67,11 +71,9 @@ Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte
   3. `_syncFromSupabaseUser()`: Ruft die RPC `sync_member_auth_session` auf und synchronisiert Profil, Rollen (`member`, `vorstand`, `admin`) und Vorstandsstatus (`is_board`).
   4. Tab-übergreifende Synchronisation via `storage`-Event über die Keys `sm_member_session` und `sportschuetzen_user`.
   5. 60-Tage Sitzungsvalidität gemäss Vorgabe aus [LOGINS_UND_BENUTZERVERWALTUNG.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/LOGINS_UND_BENUTZERVERWALTUNG.md).
-* **Dynamisches Host-Routing (`getLoginUrl`):**
-  * `localhost` / `127.0.0.1`: Löst relative Pfade (`../../index.html`) auf – sofortige Testbarkeit ohne Internet-Fallback.
-  * `*.pages.dev`: Verweist dynamisch auf `origin + '/index.html'`.
-  * `sportschuetzen-muhen.ch`: Verweist auf `https://sportschuetzen-muhen.ch/app/`.
-  * `github.io`: Verweist auf `https://sportschuetzen-muhen.github.io/sportschuetzen/`.
+* **Universeller Host- & Pfad-Resolver (`getAppUrls()`):**
+  * Erkennt die Umgebung (`localhost`, `127.0.0.1`, `*.pages.dev`, `github.io`, `sportschuetzen-muhen.ch`) und löst unabhängig von der aktuellen Ordnertiefe stets die korrekten Ziel-URLs für Website, Archiv, PWA und Vorstandsportal auf. Keine statischen Domain-Verdrahtungen mehr.
+  * Dynamisches Login-Routing (`getLoginUrl`): Leitet mit `redirect`-Parameter zur Web-App weiter und kehrt nach Authentifizierung zur Ausgangsseite zurück.
 
 ---
 

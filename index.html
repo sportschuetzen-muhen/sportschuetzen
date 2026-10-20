@@ -284,9 +284,29 @@ OneSignalDeferred.push(async function (OneSignal) {
 <header>
     <a id="vorstand-badge-link" href="vorstand/index.html" title="Zum Vorstandsportal" style="display:none; position:absolute; left:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.75rem; font-weight:600; background:rgba(255,255,255,0.22); color:#ffffff; text-decoration:none; padding:4px 10px; border-radius:12px; z-index:1100; backdrop-filter:blur(4px);">👑 Vorstand</a>
     <h1 id="main-title">Termine</h1>
-    <div id="user-badge" style="display:none; position:absolute; right:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.78rem; font-weight:600; background:rgba(255,255,255,0.18); padding:3px 8px; border-radius:12px; align-items: center; gap: 5px; z-index: 1100;">
+    <div id="user-badge" style="display:none; position:absolute; right:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.78rem; font-weight:600; background:rgba(255,255,255,0.18); padding:3px 8px; border-radius:12px; align-items: center; gap: 4px; z-index: 1100; cursor: pointer; user-select: none;">
         <span style="white-space:nowrap;">👤 <span id="display-firstname"></span></span>
-        <button id="logout-btn" title="Abmelden" style="background:none; border:none; color:white; cursor:pointer; opacity:0.55; font-size:0.7rem; padding: 0 0 0 5px; margin-left:2px; font-family:inherit; font-weight:700; line-height:1;">✕</button>
+        <span style="font-size:0.65rem; opacity:0.75;">▾</span>
+    </div>
+
+    <!-- APP-SWITCHER & PROFIL DROPDOWN -->
+    <div id="app-user-dropdown" style="display:none; position:fixed; right:12px; top:calc(50px + env(safe-area-inset-top)); background:#ffffff; color:#0f3a5d; border-radius:14px; box-shadow:0 12px 30px rgba(0,0,0,0.25); border:1px solid rgba(15,60,92,0.12); min-width:220px; z-index:2200; overflow:hidden; text-align:left;">
+        <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9; font-size:0.75rem; color:#64748b;">
+            Angemeldet als <b id="dropdown-user-fullname" style="display:block; color:#0f3a5d; font-size:0.85rem;">Mitglied</b>
+        </div>
+        <a id="dropdown-link-website" href="#" style="display:flex; align-items:center; gap:10px; padding:10px 14px; color:#1e293b; text-decoration:none; font-size:0.85rem; font-weight:600;">
+            <span>🌐</span> <span>Vereins-Website</span>
+        </a>
+        <a id="dropdown-link-intern" href="#" style="display:flex; align-items:center; gap:10px; padding:10px 14px; color:#1e293b; text-decoration:none; font-size:0.85rem; font-weight:600;">
+            <span>📂</span> <span>Dokumente &amp; Archiv</span>
+        </a>
+        <a id="dropdown-link-vorstand" href="#" style="display:none; align-items:center; gap:10px; padding:10px 14px; color:#b91c1c; text-decoration:none; font-size:0.85rem; font-weight:700; background:rgba(220,38,38,0.05);">
+            <span>👑</span> <span>Vorstandsportal</span>
+        </a>
+        <div style="height:1px; background:#f1f5f9; margin:2px 0;"></div>
+        <button type="button" id="dropdown-logout-btn" style="width:100%; border:none; background:none; display:flex; align-items:center; gap:10px; padding:10px 14px; color:#dc2626; font-size:0.85rem; font-weight:600; cursor:pointer; text-align:left; font-family:inherit;">
+            <span>🚪</span> <span>Abmelden</span>
+        </button>
     </div>
 </header>
 
@@ -296,6 +316,16 @@ OneSignalDeferred.push(async function (OneSignal) {
         <img src="icons/logo.png" style="height:100px; margin-bottom:10px;" alt="Logo">
         <h2>Sportschützen Muhen</h2>
         <p>Willkommen</p>
+    </div>
+
+    <!-- QUICK-LINKS ZU WEBSITE & ARCHIV -->
+    <div class="home-quick-nav" style="display:flex; justify-content:center; gap:10px; margin:-5px auto 16px auto; max-width:420px; padding:0 8px;">
+        <a id="home-link-website" href="#" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; background:#ffffff; border:1px solid #e2e8f0; padding:8px 12px; border-radius:12px; font-size:0.82rem; font-weight:600; color:#0f3a5d; text-decoration:none; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+            <span>🌐</span> <span>Vereins-Website</span>
+        </a>
+        <a id="home-link-intern" href="#" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; background:#ffffff; border:1px solid #e2e8f0; padding:8px 12px; border-radius:12px; font-size:0.82rem; font-weight:600; color:#0f3a5d; text-decoration:none; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+            <span>📂</span> <span>Dokumente &amp; Archiv</span>
+        </a>
     </div>
     
     <div id="hero-rsvps"></div>
