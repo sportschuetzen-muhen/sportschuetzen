@@ -75,9 +75,11 @@ Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeister
 * Ein Streichresultat wird nur abgezogen, wenn ein Schütze mindestens alle aktiven Meisterschaftswettkämpfe absolviert hat.
 * Wurde das identische Tiefstresultat mehrfach erzielt, wird sowohl rechnerisch als auch visuell exakt **ein einziges Resultat** gestrichen (`streichMarked`).
 
-### 3.4 Auswärtsschiessen (Rohwerte & Top 2, PDF- & KI-Erkennung)
+### 3.4 Auswärtsschiessen (Rohwerte & Top 2, PDF- & KI-Erkennung & Löschfunktion)
 * Sämtliche Auswärtsschiessen (Spalten ab Index 41 bzw. 42, z. B. Bärenmoos, Stumpenland) werden als reine Rohpunktzahlen (z. B. `95`) erfasst und dargestellt.
 * Die beiden prozentual besten Auswärtsschiessen werden automatisch in die Meisterschaftsspalten 14 und 15 (`Auswärtiges 1` und `Auswärtiges 2`) übernommen.
+* **Löschen & Mutieren von Auswärtsschiessen:** Auswärtsschiessen können im Vorstandscockpit direkt in den Allgemeinen Einstellungen über das Mülleimer-Symbol `🗑️` in Zeile 3 oder über den Button «Auswärtiges Schiessen löschen» unwiderruflich gelöscht werden (`deleteAuswaertigesSchiessen`). Dabei wird die Spalte im Grid bereinigt, das Gesamttotal inklusive Top 2 automatisch nachrückend neu berechnet und atomar nach `jm_seasons` und `jm_shooters` synchronisiert.
+* **Strikter Checkbox-Kontrakt für Meisterschafts-Export:** In `syncJMShootersToSupabase` werden ausschliesslich Wettkämpfe mit aktiver Checkbox in Zeile 0 (`grid[0][c]`) in das Array `details.schiessen` übernommen. Inaktive Wettkämpfe (z.B. Auswärtiges 2 oder Eidgenössisches) werden nicht exportiert und erscheinen nicht mehr in den Detail-Akkordeons von Website und Web-App. Sowohl im Tabellenkopf als auch in der Akkordeon-Summenzeile wird das dynamisch erreichbare Maximum (z. B. `max. 800%`) transparent ausgewiesen.
 * **Intelligente PDF- & KI-Erkennung zweistelliger Jahrgänge:** Beim Einlesen von Auswärts-Ranglisten als digitales PDF (`jmProcessAuswaertigFromText`) oder per Vision-KI (`action=ocr_standblatt` / `action=ocr`) werden zweistellige Jahrgänge (`Jg.` wie `65`, `86`, `04`) direkt nach dem Schützennamen zuverlässig maskiert und ignoriert. Dadurch wird ausgeschlossen, dass der Jahrgang fälschlicherweise als Punktzahl gewertet wird; das tatsächliche Schiessresultat (Hauptstich/Kranzstich) wird exakt extrahiert.
 
 ### 3.5 Junioren-Wertung (U21)

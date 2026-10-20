@@ -187,13 +187,18 @@
 
             let used=false, streich=Number(t.streichresultat_prz)||0;
             html+=`<div class="detail-box"><h4><span>Meisterschaft</span><span>Pkt (%)</span></h4><ul class="two-col">`;
-            arr(t.schiessen).forEach(s=>{
+            const validSchiessen = arr(t.schiessen).filter(s => {
+                if (!s || !s.name || s.name.toLowerCase() === 'leer') return false;
+                if (s.name.toLowerCase() === 'auswärtiges 2' && (Number(s.punkte) || 0) === 0 && (Number(s.prozent) || 0) === 0) return false;
+                return true;
+            });
+            validSchiessen.forEach(s=>{
                 const p=Number(s.prozent);
                 const isStreich=!used && streich>0 && Math.abs(p-streich)<0.0001;
                 if(isStreich) used=true;
                 html+=`<li class="${isStreich?"is-streich":""}"><span>${s.name}</span><span>${s.punkte} (${fmt(p)}%)</span></li>`;
             });
-            html+=`</ul></div><div class="detail-box"><h4><span>Mannschaft</span><span>Pkt</span></h4><ul class="two-col">`;
+            html+=`</ul><div style="border-top:1px solid #cbd5e1; margin-top:6px; padding-top:6px; font-weight:bold; display:flex; justify-content:space-between; font-size:0.85rem;"><span>Gesamttotal:</span><span style="color:#0f3c5c;">${fmt(t.total)} % <small style="font-weight:normal; opacity:0.75;">(max. ${maxPercent || 800}%)</small></span></div></div><div class="detail-box"><h4><span>Mannschaft</span><span>Pkt</span></h4><ul class="two-col">`;
             arr(t.mannschaft).forEach((m,j)=>{ html+=`<li><span>Runde ${j+1}</span><span>${m.punkte||"-"}</span></li>`; });
             html+=`</ul></div><div class="detail-box"><h4><span>Auswärts</span><span>Pkt</span></h4><ul class="two-col">`;
             const au=arr(t.auswaerts);

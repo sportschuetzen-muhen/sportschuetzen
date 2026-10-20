@@ -155,9 +155,14 @@ function renderJahresmeisterschaft(grid) {
 
     let settingsHtml = `
         <div class="card rounded-4 border-0 shadow-sm mb-4">
-            <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center">
+            <div class="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="mb-0 fw-bold text-primary"><i class="fas fa-sliders-h text-primary me-2"></i>Allgemeine Einstellungen (Kopfzeilen)</h5>
-                ${canWrite ? `<button class="btn btn-sm btn-primary rounded-pill fw-semibold shadow-xs" onclick="addNewAuswaertigesSchiessen()"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schiessen</button>` : ''}
+                ${canWrite ? `
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-primary rounded-pill fw-semibold shadow-xs" onclick="addNewAuswaertigesSchiessen()"><i class="fas fa-plus me-1"></i>Neues Auswärtiges Schiessen</button>
+                        <button class="btn btn-sm btn-outline-danger rounded-pill fw-semibold shadow-xs" onclick="openDeleteAuswaertigesModal()"><i class="fas fa-trash-alt me-1"></i>Auswärtiges Schiessen löschen</button>
+                    </div>
+                ` : ''}
             </div>
             <div class="card-body p-0 overflow-auto">
                 <table class="table table-bordered table-sm align-middle mb-0" style="min-width: 800px; font-size: 0.85rem; table-layout: fixed;">
@@ -168,7 +173,8 @@ function renderJahresmeisterschaft(grid) {
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #eef2f6;' : '';
                                 let titleStr = grid[2][c] || ('Spalte '+(c+1));
                                 if (c === colTotal) titleStr = `Total (max. ${maxPercent}%)`;
-                                return `<th style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(titleStr)}">${escapeHtml(titleStr)}</th>`;
+                                const colWidth = (c >= limitIndex) ? '125px' : '90px';
+                                return `<th style="width: ${colWidth}; min-width: ${colWidth}; max-width: ${colWidth}; ${bgStyle}" class="text-center text-truncate" title="${escapeHtml(titleStr)}">${escapeHtml(titleStr)}</th>`;
                             }).join('')}
                         </tr>
                     </thead>
@@ -179,12 +185,13 @@ function renderJahresmeisterschaft(grid) {
                             ${filteredHeaderCols.map((c, colIndex) => {
                                 const limit = hasStatusCol ? 18 : 17;
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
+                                const colWidth = (c >= limitIndex) ? '125px' : '90px';
                                 if (c <= limit) {
                                     const val = grid[0][c] || '';
                                     const isChecked = ['ja','j','x','1','true','yes','✓','✔','☑'].includes(val.toString().trim().toLowerCase());
-                                    return `<td class="text-center" style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="checkbox" class="form-check-input write-protected" ${canWrite ? '' : 'disabled'} ${isChecked ? 'checked' : ''} onchange="handleCellEdit(0, ${c}, this.checked ? 'TRUE' : 'FALSE')"></td>`;
+                                    return `<td class="text-center" style="width: ${colWidth}; min-width: ${colWidth}; max-width: ${colWidth}; ${bgStyle}"><input type="checkbox" class="form-check-input write-protected" ${canWrite ? '' : 'disabled'} ${isChecked ? 'checked' : ''} onchange="handleCellEdit(0, ${c}, this.checked ? 'TRUE' : 'FALSE')"></td>`;
                                 }
-                                return `<td class="bg-light" style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"></td>`;
+                                return `<td class="bg-light" style="width: ${colWidth}; min-width: ${colWidth}; max-width: ${colWidth}; ${bgStyle}"></td>`;
                             }).join('')}
                         </tr>
                         <!-- Titel (Zeile 3) -->
@@ -194,7 +201,18 @@ function renderJahresmeisterschaft(grid) {
                                 const val = grid[2][c] || '';
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
                                 const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
-                                return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(2, ${c}, this.value)"></td>`;
+                                const colWidth = (c >= limitIndex) ? '125px' : '90px';
+                                if (c >= limitIndex && canWrite) {
+                                    return `
+                                        <td style="width: ${colWidth}; min-width: ${colWidth}; max-width: ${colWidth}; ${bgStyle}" class="p-1">
+                                            <div class="input-group input-group-sm">
+                                                <input type="text" class="form-control form-control-sm write-protected text-center px-1" style="${inputStyle}" value="${escapeHtml(val)}" onchange="handleCellEdit(2, ${c}, this.value)">
+                                                <button type="button" class="btn btn-outline-danger btn-sm px-2 write-protected" title="Auswärtiges Schiessen «${escapeHtml(val)}» löschen" onclick="deleteAuswaertigesSchiessen(${c})"><i class="fas fa-trash-alt"></i></button>
+                                            </div>
+                                        </td>
+                                    `;
+                                }
+                                return `<td style="width: ${colWidth}; min-width: ${colWidth}; max-width: ${colWidth}; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(2, ${c}, this.value)"></td>`;
                             }).join('')}
                         </tr>
                         <!-- Max Werte (Zeile 4) -->
@@ -204,7 +222,8 @@ function renderJahresmeisterschaft(grid) {
                                 const val = grid[3][c] || '';
                                 const bgStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
                                 const inputStyle = (colIndex % 2 === 1) ? 'background-color: #f7f9fc;' : '';
-                                return `<td style="width: 90px; min-width: 90px; max-width: 90px; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(3, ${c}, this.value)"></td>`;
+                                const colWidth = (c >= limitIndex) ? '125px' : '90px';
+                                return `<td style="width: ${colWidth}; min-width: ${colWidth}; max-width: ${colWidth}; ${bgStyle}"><input type="text" class="form-control form-control-sm write-protected text-center" style="width: 100%; ${inputStyle}" ${canWrite ? '' : 'disabled readonly'} value="${escapeHtml(val)}" onchange="handleCellEdit(3, ${c}, this.value)"></td>`;
                             }).join('')}
                         </tr>
                     </tbody>

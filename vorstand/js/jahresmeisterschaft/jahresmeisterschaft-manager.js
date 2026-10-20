@@ -509,3 +509,151 @@ async function addNewAuswaertigesSchiessen() {
     }
 }
 window.addNewAuswaertigesSchiessen = addNewAuswaertigesSchiessen;
+
+async function deleteAuswaertigesSchiessen(colIndex) {
+    const sb = getJMSupabaseClient();
+    if (!sb || !jmRawGrid || jmRawGrid.length < 5) {
+        showError("Supabase-Client oder Grid nicht verfügbar.");
+        return;
+    }
+
+    const compName = (jmRawGrid[2] && jmRawGrid[2][colIndex]) || `Spalte ${colIndex + 1}`;
+    const confirmed = confirm(`Möchtest du das Auswärtsschießen «${compName}» (Spalte ${colIndex + 1}) inklusive aller eingetragenen Punkte unwiderruflich löschen?`);
+    if (!confirmed) return;
+
+    try {
+        showLoadingOverlay(`Lösche Auswärtsschießen «${compName}»...`);
+
+        // 1. Spaltendaten im Grid bereinigen
+        if (jmRawGrid[0]) jmRawGrid[0][colIndex] = '';
+        if (jmRawGrid[2]) jmRawGrid[2][colIndex] = '';
+        if (jmRawGrid[3]) jmRawGrid[3][colIndex] = '';
+
+        for (let r = 5; r < jmRawGrid.length; r++) {
+            if (jmRawGrid[r]) {
+                jmRawGrid[r][colIndex] = '';
+            }
+        }
+
+        // 2. Gesamte Jahresmeisterschaft inklusive Top 2 Auswärtige & Totals live neu berechnen
+        if (typeof recalculateJMRawGrid === 'function') {
+            recalculateJMRawGrid(jmRawGrid);
+        }
+
+        // 3. Atomar nach Supabase speichern
+        const juniorList = (typeof jmJuniorExclusions !== 'undefined')
+            ? Object.keys(jmJuniorExclusions).filter(k => jmJuniorExclusions[k] === true)
+            : [];
+
+        const { error: errSb } = await sb
+            .from('jm_seasons')
+            .upsert({
+                jahr: jmCurrentJahr || 'current',
+                raw_grid: jmRawGrid,
+                junior_exclusions: juniorList,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'jahr' });
+
+        if (errSb) throw errSb;
+
+        if (typeof syncJMShootersToSupabase === 'function') {
+            await syncJMShootersToSupabase(sb, jmCurrentJahr || 'current', jmRawGrid);
+        }
+
+        showSuccess(`Auswärtsschießen «${compName}» wurde erfolgreich gelöscht.`);
+        renderJahresmeisterschaft(jmRawGrid);
+
+    } catch (err) {
+        showError("Fehler beim Löschen: " + err.message);
+    } finally {
+        hideLoadingOverlay();
+    }
+}
+window.deleteAuswaertigesSchiessen = deleteAuswaertigesSchiessen;
+
+function openDeleteAuswaertigesModal() {
+    if (!jmRawGrid || !jmRawGrid[2]) {
+        showError("Grid-Daten nicht geladen.");
+        return;
+    }
+
+    let hasStatusCol = false;
+    if (jmRawGrid[4]) {
+        hasStatusCol = jmRawGrid[4].some(cell => String(cell || '').trim().toLowerCase() === 'status');
+    }
+    const limitIndex = hasStatusCol ? 42 : 41;
+    const compRow = jmRawGrid[2];
+
+    const available = [];
+    for (let c = limitIndex; c < compRow.length; c++) {
+        const title = String(compRow[c] || '').trim();
+        if (title && !title.toLowerCase().startsWith('spalte') && title.toLowerCase() !== 'leer') {
+            available.push({ col: c, title });
+        }
+    }
+
+    if (available.length === 0) {
+        showInfo("Es sind aktuell keine Auswärtsschießen zum Löschen vorhanden.");
+        return;
+    }
+
+    // Modal dynamisch im DOM erzeugen oder aktualisieren
+    let modalEl = document.getElementById('modal-delete-auswaertig');
+    if (!modalEl) {
+        modalEl = document.createElement('div');
+        modalEl.id = 'modal-delete-auswaertig';
+        modalEl.className = 'modal fade';
+        modalEl.tabIndex = -1;
+        modalEl.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(modalEl);
+    }
+
+    modalEl.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4">
+                <div class="modal-header bg-danger text-white py-3 px-4">
+                    <h5 class="modal-title fw-bold">
+                        <i class="fas fa-trash-alt me-2"></i>Auswärtiges Schießen löschen
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="text-muted small mb-3">
+                        Wähle das Auswärtsschießen aus, das du inklusive aller Punkte unwiderruflich aus der aktuellen Saison löschen möchtest.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Auswärtiges Schießen</label>
+                        <select id="select-delete-auswaertig" class="form-select">
+                            ${available.map(a => `<option value="${a.col}">${escapeHtml(a.title)} (Spalte ${a.col + 1})</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="alert alert-warning py-2 px-3 small mb-0">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        <strong>Hinweis:</strong> Nach dem Löschen rückt automatisch das nächstbeste Auswärtsschießen für alle Schützen nach.
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-4 border-top">
+                    <button type="button" class="btn btn-secondary rounded-pill px-3" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="button" class="btn btn-danger rounded-pill px-4 fw-bold" id="btn-confirm-delete-ausw">
+                        <i class="fas fa-trash-alt me-1"></i>Unwiderruflich löschen
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const bsModal = new bootstrap.Modal(modalEl);
+    const confirmBtn = modalEl.querySelector('#btn-confirm-delete-ausw');
+    confirmBtn.onclick = async () => {
+        const sel = modalEl.querySelector('#select-delete-auswaertig');
+        const colToDel = parseInt(sel.value, 10);
+        bsModal.hide();
+        if (!isNaN(colToDel)) {
+            await deleteAuswaertigesSchiessen(colToDel);
+        }
+    };
+
+    bsModal.show();
+}
+window.openDeleteAuswaertigesModal = openDeleteAuswaertigesModal;
+

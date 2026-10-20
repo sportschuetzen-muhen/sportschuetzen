@@ -266,14 +266,20 @@ async function syncJMShootersToSupabase(sb, jahr, grid) {
         const colTotal = compRow.findIndex(t => String(t || '').toLowerCase().includes('total'));
         const colStreich = compRow.findIndex(t => String(t || '').toLowerCase().includes('streich'));
 
-        // Meisterschafts-Wettkämpfe ermitteln
+        // Meisterschafts-Wettkämpfe ermitteln (nur aktive Spalten mit gesetzter Checkbox in Zeile 0)
         const firstCompCol = (colStatus !== -1 ? colStatus : headerRow.findIndex(t => String(t || '').trim().toLowerCase().includes('kombination'))) + 1;
         const competitions = [];
         for (let c = firstCompCol; c < colTotal; c++) {
             const name = String(compRow[c] || '').trim();
             if (name && name.toLowerCase() !== 'leer') {
-                const pctCol = compRow.findIndex((t, idx) => idx > colTotal && String(t || '').trim().toLowerCase() === (name.toLowerCase() + ' %'));
-                competitions.push({ col: c, name, pctCol });
+                const checkVal = grid[0] ? grid[0][c] : null;
+                const isChecked = ['ja', 'j', 'x', '1', 'true', true, 'yes', '✓', '✔', '☑'].includes(
+                    typeof checkVal === 'string' ? checkVal.trim().toLowerCase() : checkVal
+                );
+                if (isChecked) {
+                    const pctCol = compRow.findIndex((t, idx) => idx > colTotal && String(t || '').trim().toLowerCase() === (name.toLowerCase() + ' %'));
+                    competitions.push({ col: c, name, pctCol });
+                }
             }
         }
 

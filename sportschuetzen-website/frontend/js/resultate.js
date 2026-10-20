@@ -280,11 +280,11 @@ async function loadJahresmeisterschaft(yearParam) {
                     .map((s, idx) => ({ ...s, rang: idx + 1, status: 'neutral' }));
             }
             const allShooters = [...liga1, ...liga2];
-            const maxPercent = allShooters[0]?.details?.max_total_prz || 900;
+            const maxPercent = allShooters[0]?.details?.max_total_prz || 800;
 
-            renderLiga(1, liga1, 'tbody-liga1', fmt, arr);
-            renderLiga(2, liga2, 'tbody-liga2', fmt, arr);
-            renderLiga("u21", junioren, 'tbody-u21', fmt, arr);
+            renderLiga(1, liga1, 'tbody-liga1', fmt, arr, maxPercent);
+            renderLiga(2, liga2, 'tbody-liga2', fmt, arr, maxPercent);
+            renderLiga("u21", junioren, 'tbody-u21', fmt, arr, maxPercent);
 
             // Spaltenkopf mit dynamischem Maximum aktualisieren
             document.querySelectorAll('#table-liga1 .col-total, #table-liga2 .col-total, #table-u21 .col-total').forEach(el => {
@@ -304,7 +304,7 @@ async function loadJahresmeisterschaft(yearParam) {
     );
 }
 
-function renderLiga(ligaNr, listData, tbodyId, fmt, arr) {
+function renderLiga(ligaNr, listData, tbodyId, fmt, arr, maxPercent) {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) return;
 
@@ -354,7 +354,14 @@ function renderLiga(ligaNr, listData, tbodyId, fmt, arr) {
         let used = false;
         const streich = Number(t.streichresultat_prz) || 0;
         
-        arr(t.schiessen).forEach(s => {
+        const validSchiessen = arr(t.schiessen).filter(s => {
+            if (!s || !s.name || s.name.toLowerCase() === 'leer') return false;
+            // Ausgeschlossene Spalten ohne Checkbox (z.B. Auswärtiges 2 mit 0 Punkten) nicht anzeigen
+            if (s.name.toLowerCase() === 'auswärtiges 2' && (Number(s.punkte) || 0) === 0 && (Number(s.prozent) || 0) === 0) return false;
+            return true;
+        });
+
+        validSchiessen.forEach(s => {
             const p = Number(s.prozent);
             const isStreich = !used && streich > 0 && Math.abs(p - streich) < 0.0001;
             if (isStreich) used = true;
@@ -369,6 +376,10 @@ function renderLiga(ligaNr, listData, tbodyId, fmt, arr) {
 
         html += `
                                 </ul>
+                                <div class="detail-box-footer" style="border-top: 1px solid #e2e8f0; margin-top: 8px; padding-top: 6px; font-weight: 700; display: flex; justify-content: space-between; font-size: 0.85rem;">
+                                    <span>Gesamttotal:</span>
+                                    <span style="color: var(--primary-color);">${fmt(t.total)} % <small style="font-weight: normal; opacity: 0.75;">(max. ${maxPercent || 800}%)</small></span>
+                                </div>
                             </div>
                             <!-- Mannschaft -->
                             <div class="detail-box">
