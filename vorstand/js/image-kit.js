@@ -24,7 +24,9 @@
         name.endsWith('.heic') ||
         name.endsWith('.heif') ||
         type === 'image/heic' ||
-        type === 'image/heif'
+        type === 'image/heif' ||
+        type.includes('heic') ||
+        type.includes('heif')
       );
     },
 

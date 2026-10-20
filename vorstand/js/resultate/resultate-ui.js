@@ -400,7 +400,7 @@ function ensureResultateShell(forceRebuild = false) {
                       <img id="ocr-image-preview" src="" class="img-fluid rounded border shadow-sm" style="max-height: 250px; max-width: 100%;">
                     </div>
                   </div>
-                  <input type="file" id="ocr-file-input" accept="image/*,.pdf,application/pdf" style="display:none" onchange="onOcrFileSelected(event)">
+                  <input type="file" id="ocr-file-input" accept="image/*,.heic,.heif,.pdf,application/pdf" style="display:none" onchange="onOcrFileSelected(event)">
                 </div>
                 <div class="d-grid">
                   <button type="button" class="btn btn-primary py-2.5 fw-bold rounded-3 shadow-sm" id="btn-start-ocr" onclick="startOcrAnalysis()" disabled>

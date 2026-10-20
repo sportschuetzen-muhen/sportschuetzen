@@ -249,7 +249,7 @@ function showOcrStep(step) {
   });
 }
 
-function onOcrFileSelected(e) {
+async function onOcrFileSelected(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
 
@@ -266,7 +266,30 @@ function onOcrFileSelected(e) {
     return;
   }
 
-  _selectedOcrFile = file;
+  let processedFile = file;
+  const isHeic = window.ImageKit ? window.ImageKit.isHeic(file) : ((file.name || '').toLowerCase().match(/\.(heic|heif)$/i) || (file.type || '').toLowerCase().includes('heic'));
+  if (isHeic) {
+    if (typeof showToast === 'function') {
+      showToast("🍎 Apple HEIC Standblatt wird für Erkennung konvertiert...", "info");
+    }
+    try {
+      if (window.ImageKit && typeof window.ImageKit.normalizeFile === 'function') {
+        processedFile = await window.ImageKit.normalizeFile(file, { quality: 0.90 });
+      } else if (typeof window.heic2any !== 'undefined') {
+        const converted = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.90 });
+        const blobObj = Array.isArray(converted) ? converted[0] : converted;
+        processedFile = new File([blobObj], (file.name || 'standblatt').replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+      }
+    } catch(err) {
+      console.error("HEIC Konvertierung fehlgeschlagen:", err);
+      if (typeof showToast === 'function') {
+        showToast("Apple HEIC Foto konnte nicht konvertiert werden: " + (err.message || err), "danger");
+      }
+      return;
+    }
+  }
+
+  _selectedOcrFile = processedFile;
 
   const prevImg = document.getElementById("ocr-image-preview");
   const prevCont = document.getElementById("ocr-preview-container");
@@ -278,7 +301,7 @@ function onOcrFileSelected(e) {
     if (prevCont) prevCont.classList.remove("d-none");
     if (btnStart) btnStart.disabled = false;
   };
-  reader.readAsDataURL(file);
+  reader.readAsDataURL(processedFile);
 }
 
 async function startOcrAnalysis() {

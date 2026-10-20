@@ -22,14 +22,14 @@ async function initGalerieManager() {
                 <div class="card p-4 text-center shadow-sm" id="galerie-dropzone" style="border: 2px dashed #3b82f6; cursor: pointer; background: #f8fafc;">
                     <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-2"></i>
                     <h5>Bilder hochladen & für Vereins-Immich taggen</h5>
-                    <p class="text-muted small mb-3">Klicke hier oder ziehe mehrere JPEG-Bilder hinein</p>
+                    <p class="text-muted small mb-3">Klicke hier oder ziehe mehrere Bilder (JPG, PNG, HEIC) hinein</p>
                     <div class="d-flex justify-content-center gap-2">
                         <a href="https://immich-muhen.danfamily.uk" target="_blank" rel="noopener noreferrer" 
                            class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-xs" onclick="event.stopPropagation()">
                             <i class="fas fa-images me-1"></i> Direkt zu Immich Alben & Personen ↗
                         </a>
                     </div>
-                    <input type="file" id="galerie-file-input" class="d-none" accept="image/jpeg, image/jpg" multiple>
+                    <input type="file" id="galerie-file-input" class="d-none" accept="image/*,.heic,.heif" multiple>
                 </div>
             </div>
             
@@ -379,16 +379,45 @@ function setupGalerieEvents() {
     });
 }
 
-function handleMultipleUploads(files) {
+async function handleMultipleUploads(filesList) {
+    const files = Array.from(filesList || []);
+    if (!files || files.length === 0) return;
+
+    const hasHeic = files.some(f => window.ImageKit ? window.ImageKit.isHeic(f) : (f.name || '').toLowerCase().match(/\.(heic|heif)$/i));
+    if (hasHeic) {
+        showToast(`${files.length} Bild(er) werden verarbeitet (inkl. Apple HEIC Konvertierung)...`, "info");
+    }
+
     let newFiles = [];
     for (let i = 0; i < files.length; i++) {
-        if (files[i].type.match('image/jpeg')) {
-            newFiles.push({ file: files[i], base64: null, tags: [] });
+        let f = files[i];
+        try {
+            if (window.ImageKit && window.ImageKit.isHeic(f)) {
+                f = await window.ImageKit.normalizeFile(f, { quality: 0.90 });
+            } else if ((f.name || '').toLowerCase().match(/\.(heic|heif)$/i) && typeof window.heic2any !== 'undefined') {
+                const converted = await window.heic2any({ blob: f, toType: 'image/jpeg', quality: 0.90 });
+                const blobObj = Array.isArray(converted) ? converted[0] : converted;
+                f = new File([blobObj], (f.name || 'image').replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+            }
+            // Für EXIF-Kompatibilität zu piexif stellen wir sicher, dass es ein JPEG ist
+            if (f.type === 'image/jpeg' || f.name.toLowerCase().endsWith('.jpg') || f.name.toLowerCase().endsWith('.jpeg')) {
+                newFiles.push({ file: f, base64: null, tags: [] });
+            } else if (window.ImageKit && typeof window.ImageKit.resize === 'function') {
+                // Beliebiges Bildformat (z.B. PNG, WebP) via Canvas in JPEG File umwandeln
+                const res = await window.ImageKit.resize(f, { maxDim: 2400, format: 'image/jpeg', quality: 0.90 });
+                const jpegFile = new File([res.blob], f.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+                newFiles.push({ file: jpegFile, base64: res.dataUrl, tags: [] });
+            } else {
+                newFiles.push({ file: f, base64: null, tags: [] });
+            }
+        } catch(err) {
+            console.error("Fehler beim Normalisieren des Galerie-Bildes:", err);
+            showToast(`Bild "${f.name}" konnte nicht verarbeitet werden: ${err.message || err}`, "danger");
         }
     }
     
     if (newFiles.length === 0) {
-        showToast("Bitte lade JPEG-Bilder hoch.", "warning");
+        showToast("Keine gültigen Bilder gefunden.", "warning");
         return;
     }
 

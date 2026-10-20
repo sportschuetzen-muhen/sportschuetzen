@@ -186,6 +186,9 @@ CREATE TABLE public.documents (
 * **Sicheres Löschen fehlpublizierter Berichte:**
   * Im Vorstandsportal (`news.js`) steht unter dem Reiter **«📋 Publizierte Berichte»** eine Echtzeit-Verwaltung zur Verfügung.
   * Das Löschen erfolgt granular über die eindeutige Berichts-ID (`id: "report_..."`) über beide Repositories hinweg, inklusive Sicherheitsdialog und Hinweis auf allfällige manuelle Social-Media-Entfernungen.
+* **Modulübergreifende Apple HEIC/HEIF Bildverarbeitung (`ImageKit`):**
+  * Fotos zum Bericht im Modul KI-News (`news.js`) unterstützen durch Integration mit dem zentralen `ImageKit` und `heic2any` die vollautomatische Client-seitige Konvertierung von Apple HEIC/HEIF-Dateien direkt beim Upload oder Fotografieren mit dem iPhone.
+  * Neben KI-News greifen auch Resultate OCR (`resultate-events.js`), der Standblatt-Upload (`upload.js`), die Vereins-Galerie (`galerie.js`) und die Mitgliederverwaltung auf denselben Normalisierungs-Standard zurück.
 
 ---
 

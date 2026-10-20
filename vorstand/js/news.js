@@ -10,7 +10,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const files = Array.from(filesList || []);
         if (!files || files.length === 0) return;
 
-        showToast(`${files.length} Foto(s) werden verarbeitet...`, "info");
+        const hasHeic = files.some(f => window.ImageKit ? window.ImageKit.isHeic(f) : (f.name || '').toLowerCase().match(/\.(heic|heif)$/i));
+        if (hasHeic) {
+            showToast(`${files.length} Foto(s) werden verarbeitet (inkl. Apple HEIC Konvertierung)...`, "info");
+        } else {
+            showToast(`${files.length} Foto(s) werden verarbeitet...`, "info");
+        }
+
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             try {
@@ -18,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 base64Images.push(base64);
             } catch(err) {
                 console.error("Fehler beim Verarbeiten des Bildes:", err);
+                showToast(`Foto "${file.name || (i + 1)}" konnte nicht verarbeitet werden: ${err.message || err}`, "danger");
             }
         }
         renderNewsPhotoPreviews();
@@ -34,6 +41,31 @@ document.addEventListener('DOMContentLoaded', () => {
         cameraInput.addEventListener('change', (e) => {
             handleFilesSelected(e.target.files);
             cameraInput.value = '';
+        });
+    }
+
+    const dropzone = document.getElementById('news-foto-dropzone');
+    if (dropzone) {
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('border-primary', 'bg-white');
+            dropzone.style.borderColor = 'var(--primary, #0f3a5d)';
+        });
+        dropzone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('border-primary', 'bg-white');
+            dropzone.style.borderColor = '';
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('border-primary', 'bg-white');
+            dropzone.style.borderColor = '';
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFilesSelected(e.dataTransfer.files);
+            }
         });
     }
 
@@ -91,65 +123,90 @@ document.addEventListener('DOMContentLoaded', () => {
         renderNewsPhotoPreviews();
     };
 
-    function resizeAndEncodeImage(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const img = new Image();
-                img.onload = function() {
-                    const canvas = document.createElement('canvas');
-                    const MAX_DIM = 1200;
-                    let width = img.width;
-                    let height = img.height;
+    async function resizeAndEncodeImage(file) {
+        let loaded = null;
+        if (window.ImageKit && typeof window.ImageKit.loadImage === 'function') {
+            loaded = await window.ImageKit.loadImage(file);
+        } else {
+            // Robuster Fallback falls ImageKit nicht verfügbar sein sollte
+            let normalizedFile = file;
+            const isHeic = (file.name || '').toLowerCase().match(/\.(heic|heif)$/i) || (file.type || '').toLowerCase().includes('heic');
+            if (isHeic && typeof window.heic2any !== 'undefined') {
+                const converted = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.90 });
+                const blobObj = Array.isArray(converted) ? converted[0] : converted;
+                normalizedFile = new File([blobObj], (file.name || 'image').replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+            }
 
-                    if (width > height) {
-                        if (width > MAX_DIM) {
-                            height = Math.round(height * (MAX_DIM / width));
-                            width = MAX_DIM;
-                        }
-                    } else {
-                        if (height > MAX_DIM) {
-                            width = Math.round(width * (MAX_DIM / height));
-                            height = MAX_DIM;
-                        }
-                    }
-
-                    // Instagram-Kompatibilität für Seitenverhältnis (Min: 4:5 = 0.8, Max: 1.91:1)
-                    // Smartphone-Fotos (z. B. 9:16) werden seitlich zentriert aufgefüllt
-                    const currentRatio = width / height;
-                    if (currentRatio < 0.8) {
-                        const targetWidth = Math.round(height * 0.8);
-                        canvas.width = targetWidth;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(0, 0, targetWidth, height);
-                        const offsetX = Math.round((targetWidth - width) / 2);
-                        ctx.drawImage(img, offsetX, 0, width, height);
-                    } else if (currentRatio > 1.91) {
-                        const targetHeight = Math.round(width / 1.91);
-                        canvas.width = width;
-                        canvas.height = targetHeight;
-                        const ctx = canvas.getContext('2d');
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(0, 0, width, targetHeight);
-                        const offsetY = Math.round((targetHeight - height) / 2);
-                        ctx.drawImage(img, 0, offsetY, width, height);
-                    } else {
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-                    }
-                    
-                    resolve(canvas.toDataURL('image/jpeg', 0.85));
+            loaded = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const img = new Image();
+                    img.onload = () => resolve({
+                        source: img,
+                        width: img.naturalWidth || img.width,
+                        height: img.naturalHeight || img.height,
+                        close: () => {}
+                    });
+                    img.onerror = () => reject(new Error("Bild konnte nicht geladen werden."));
+                    img.src = event.target.result;
                 };
-                img.onerror = reject;
-                img.src = event.target.result;
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
+                reader.onerror = reject;
+                reader.readAsDataURL(normalizedFile);
+            });
+        }
+
+        try {
+            const canvas = document.createElement('canvas');
+            const MAX_DIM = 1200;
+            let width = loaded.width;
+            let height = loaded.height;
+
+            if (width > height) {
+                if (width > MAX_DIM) {
+                    height = Math.round(height * (MAX_DIM / width));
+                    width = MAX_DIM;
+                }
+            } else {
+                if (height > MAX_DIM) {
+                    width = Math.round(width * (MAX_DIM / height));
+                    height = MAX_DIM;
+                }
+            }
+
+            // Instagram-Kompatibilität für Seitenverhältnis (Min: 4:5 = 0.8, Max: 1.91:1)
+            // Smartphone-Fotos (z. B. 9:16) werden seitlich zentriert aufgefüllt
+            const currentRatio = width / height;
+            if (currentRatio < 0.8) {
+                const targetWidth = Math.round(height * 0.8);
+                canvas.width = targetWidth;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, targetWidth, height);
+                const offsetX = Math.round((targetWidth - width) / 2);
+                ctx.drawImage(loaded.source, offsetX, 0, width, height);
+            } else if (currentRatio > 1.91) {
+                const targetHeight = Math.round(width / 1.91);
+                canvas.width = width;
+                canvas.height = targetHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, targetHeight);
+                const offsetY = Math.round((targetHeight - height) / 2);
+                ctx.drawImage(loaded.source, 0, offsetY, width, height);
+            } else {
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(loaded.source, 0, 0, width, height);
+            }
+            
+            return canvas.toDataURL('image/jpeg', 0.85);
+        } finally {
+            if (loaded && typeof loaded.close === 'function') {
+                loaded.close();
+            }
+        }
     }
 
     // --- KI-MODELL AUSWAHL & ERKLÄRUNG ---
