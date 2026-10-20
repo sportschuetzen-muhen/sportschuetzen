@@ -77,7 +77,7 @@ Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte
 
 ---
 
-### 2.3 Medientrennung: Öffentliche vs. Geschützte Fotos (`galerie.js` & `galerie.json`)
+### 2.3 Medientrennung & Mitglieder-Upload: Öffentliche vs. Geschützte Fotos (`galerie.js`, `intern.html` & Immich)
 * **Klassifizierung mit `visibility`:**
   * Jedes Foto in `data/galerie.json` besitzt das Attribut `"visibility": "public"` oder `"visibility": "members"`.
   * `public` (69 Medien): Historischer Bau des Schützenhauses Rüteli 1996/1997, Empfang Eidgenössisches Schützenfest, Schützenhaus & Schützenstube.
@@ -88,6 +88,14 @@ Das Web-Ökosystem der Sportschützen Muhen gliedert sich in drei spezialisierte
     *«🔒 22 weitere Vereinsfotos & Alben im geschützten Mitgliederbereich verfügbar.»*
   * Tag-Cloud (`generateTagCloud`): Zeigt Personennamen und interne Schlagworte erst nach Anmeldung.
   * Echtzeit-Freischaltung: Ein Login über `window.AuthSession.onChange()` schaltet die geschützten Alben sofort frei, ohne dass die Seite neu geladen werden muss.
+* **Mitglieder-Upload ins Vereinsarchiv (Migration 55):**
+  * Angemeldete Vereinsmitglieder können im geschützten Bereich (`intern.html` unter «📷 Vereinsfotos») Schnappschüsse und Fotos von Anlässen direkt per Drag & Drop oder Smartphone-Kamera einreichen.
+  * Automatische Client-seitige Konvertierung von Apple HEIC/HEIF-Bildern (`heic2any`) zu kompaktem JPEG vor dem Transfer.
+  * Authentifizierter Transfer über die Supabase Edge Function `immich-upload` (`https://supabase-muhen.danfamily.uk/functions/v1/immich-upload`) mit Weiterleitung über das lokale Gigabit-Netzwerk an den Immich-Server auf Proxmox CT 116 (`192.168.68.120:2283`).
+  * Automatisches Ablegen im Sammelalbum `📥 Mitglieder-Uploads` (`6184f06d-be38-426b-8737-1bec29ab045e`) und serverseitige KI-Gesichtserkennung.
+* **Entflechtung & Verschlankung im Vorstandsportal (`vorstand/js/galerie.js`):**
+  * Die veraltete, 15 MB schwere clientseitige `face-api.js`-Bibliothek wurde vollständig entfernt.
+  * Das Modul dient neu als übersichtliches Administrations- und Kuratierungs-Cockpit mit Live-Server-Status, Anzeige des Sammelalbums und Direkt-Absprung zur nativen Immich Web-App (`https://immich-muhen.danfamily.uk`).
 * **Touch-Swipe Lightbox:**
   * In `DOMContentLoaded` wurden Wischgesten (`touchstart`, `touchend`) integriert.
   * Horizontale Wischbewegungen (> 50px) blättern auf iPads und Mobilgeräten flüssig zum nächsten bzw. vorherigen Bild.

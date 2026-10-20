@@ -186,10 +186,76 @@
                                     Fotos von Wettkämpfen, Absenden, Vereinsreisen und gesellschaftlichen Anlässen direkt aus unserem privaten Fotoarchiv.
                                 </p>
                             </div>
-                            <a href="verein.html#galerie" class="btn btn-outline" style="font-size: 0.88rem; padding: 0.45rem 1.2rem; border-radius: 20px;">
-                                🖼️ Vollständige Fotogalerie öffnen
-                            </a>
+                            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                                <span id="immich-status-pill" class="badge" style="background: rgba(16, 185, 129, 0.1); color: #059669; font-weight: 700; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
+                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+                                    <span>Fotoarchiv verbunden</span>
+                                </span>
+                                <a href="verein.html#galerie" class="btn btn-outline" style="font-size: 0.88rem; padding: 0.45rem 1.2rem; border-radius: 20px;">
+                                    🖼️ Vollständige Fotogalerie öffnen
+                                </a>
+                            </div>
                         </div>
+                    </div>
+
+                    <!-- UPLOAD-CONTAINER FÜR MITGLIEDER -->
+                    <div class="glass-card mb-4" id="member-upload-box" style="background: #ffffff; border: 2px dashed rgba(15, 60, 92, 0.25); border-radius: 16px; padding: 2rem; transition: var(--transition);">
+                        <div style="text-align: center; max-width: 580px; margin: 0 auto;">
+                            <div style="font-size: 3rem; margin-bottom: 0.5rem; line-height: 1;">📸</div>
+                            <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color); font-size: 1.35rem;">Fotos vom Anlass oder Training hochladen</h3>
+                            <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; margin: 0 0 1.25rem 0;">
+                                Ziehe Fotos hierher oder wähle sie aus deiner Fotogalerie. iPhone-Aufnahmen (HEIC) werden automatisch umgewandelt und sicher im Vereinsarchiv gespeichert.
+                            </p>
+                            
+                            <input type="file" id="member-upload-file-input" accept="image/*,.heic,.heif,video/*" multiple style="display: none;">
+                            <input type="file" id="member-upload-camera-input" accept="image/*" capture="environment" style="display: none;">
+
+                            <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+                                <button type="button" class="btn btn-primary" onclick="document.getElementById('member-upload-file-input').click()" style="padding: 0.65rem 1.6rem; border-radius: 25px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 15px rgba(15, 60, 92, 0.15);">
+                                    <span>📁</span> <span>Fotos auswählen</span>
+                                </button>
+                                <button type="button" class="btn btn-outline" onclick="document.getElementById('member-upload-camera-input').click()" style="padding: 0.65rem 1.3rem; border-radius: 25px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;">
+                                    <span>📷</span> <span>Foto aufnehmen</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Upload Queue / Progress -->
+                        <div id="member-upload-queue" style="display: none; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(15, 60, 92, 0.08);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+                                <div>
+                                    <h4 style="margin: 0; font-size: 1rem; color: var(--primary-color);">
+                                        Warteschlange (<span id="queue-count-badge">0</span> Dateien)
+                                    </h4>
+                                    <span id="queue-size-info" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button type="button" id="btn-do-upload" class="btn btn-primary" style="padding: 0.45rem 1.2rem; font-size: 0.88rem; border-radius: 20px; font-weight: 700;">
+                                        🚀 Hochladen starten
+                                    </button>
+                                    <button type="button" id="btn-cancel-queue" class="btn btn-outline" style="padding: 0.45rem 0.9rem; font-size: 0.88rem; border-radius: 20px;">
+                                        Leeren
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Progress Bar -->
+                            <div id="upload-progress-container" style="display: none; margin-bottom: 1.25rem;">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.35rem; font-weight: 600;">
+                                    <span id="upload-current-file-text">Bereite Upload vor...</span>
+                                    <span id="upload-pct-text">0%</span>
+                                </div>
+                                <div style="height: 7px; width: 100%; background: rgba(15, 60, 92, 0.08); border-radius: 4px; overflow: hidden;">
+                                    <div id="upload-progress-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary-color), var(--accent-color)); transition: width 0.2s ease;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Preview Grid -->
+                            <div id="member-upload-previews" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem; max-height: 320px; overflow-y: auto; padding-right: 4px;"></div>
+                        </div>
+
+                        <!-- Alert Box -->
+                        <div id="upload-message-box" style="display: none; margin-top: 1.25rem; padding: 0.9rem 1.2rem; border-radius: 12px; font-size: 0.92rem; text-align: center;"></div>
                     </div>
 
                     <div class="grid-3" id="immich-albums-grid">
@@ -251,9 +317,6 @@
                                 <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 1.25rem;">
                                     Das Rechnungsmodul, Beitragscontrolling, Bankabgleich und die Mitgliederverwaltung werden über das zentrale Supabase-Vorstandsportal gesteuert.
                                 </p>
-                                <a href="vorstand/index.html" class="btn btn-primary" style="font-size: 0.85rem; width: 100%; text-align: center; text-decoration: none;">
-                                    👑 Vorstandsportal öffnen
-                                </a>
                             </div>
                         </div>
                     </div>
@@ -265,6 +328,7 @@
     <site-footer></site-footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <script src="js/auth-session.js"></script>
     <script src="js/components.js"></script>
     <script src="js/main.js"></script>
@@ -339,6 +403,293 @@
             }
 
             // ============================================================
+            // Mitglieder Foto-Uploader (Immich Integration)
+            // ============================================================
+            function initPhotoUploader() {
+                const uploadBox = document.getElementById('member-upload-box');
+                const fileInput = document.getElementById('member-upload-file-input');
+                const cameraInput = document.getElementById('member-upload-camera-input');
+                const queueContainer = document.getElementById('member-upload-queue');
+                const queueCountBadge = document.getElementById('queue-count-badge');
+                const queueSizeInfo = document.getElementById('queue-size-info');
+                const previewGrid = document.getElementById('member-upload-previews');
+                const btnDoUpload = document.getElementById('btn-do-upload');
+                const btnCancelQueue = document.getElementById('btn-cancel-queue');
+                const progressContainer = document.getElementById('upload-progress-container');
+                const progressBar = document.getElementById('upload-progress-fill');
+                const progressText = document.getElementById('upload-current-file-text');
+                const progressPct = document.getElementById('upload-pct-text');
+                const messageBox = document.getElementById('upload-message-box');
+                const statusPill = document.getElementById('immich-status-pill');
+
+                if (!uploadBox || !fileInput) return;
+
+                let uploadQueue = [];
+
+                // 1. Healthcheck gegen Immich Edge Function
+                const checkImmichHealth = async () => {
+                    try {
+                        const res = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/immich-upload');
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data && data.status === 'online' && statusPill) {
+                                const count = data.album?.count || 0;
+                                statusPill.innerHTML = `
+                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+                                    <span>Fotoarchiv verbunden (${count} Fotos)</span>
+                                `;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Immich-Status konnte nicht geladen werden:', e);
+                    }
+                };
+                checkImmichHealth();
+
+                // 2. Drag & Drop Listener
+                ['dragenter', 'dragover'].forEach(evtName => {
+                    uploadBox.addEventListener(evtName, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        uploadBox.style.borderColor = 'var(--primary-color)';
+                        uploadBox.style.background = 'rgba(15, 60, 92, 0.04)';
+                    });
+                });
+
+                ['dragleave', 'drop'].forEach(evtName => {
+                    uploadBox.addEventListener(evtName, (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        uploadBox.style.borderColor = 'rgba(15, 60, 92, 0.25)';
+                        uploadBox.style.background = '#ffffff';
+                    });
+                });
+
+                uploadBox.addEventListener('drop', (e) => {
+                    const dt = e.dataTransfer;
+                    if (dt && dt.files && dt.files.length > 0) {
+                        addFilesToQueue(Array.from(dt.files));
+                    }
+                });
+
+                fileInput.addEventListener('change', () => {
+                    if (fileInput.files && fileInput.files.length > 0) {
+                        addFilesToQueue(Array.from(fileInput.files));
+                        fileInput.value = '';
+                    }
+                });
+
+                if (cameraInput) {
+                    cameraInput.addEventListener('change', () => {
+                        if (cameraInput.files && cameraInput.files.length > 0) {
+                            addFilesToQueue(Array.from(cameraInput.files));
+                            cameraInput.value = '';
+                        }
+                    });
+                }
+
+                function formatBytes(bytes) {
+                    if (bytes < 1024) return bytes + ' B';
+                    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+                }
+
+                function addFilesToQueue(newFiles) {
+                    messageBox.style.display = 'none';
+                    newFiles.forEach(file => {
+                        const isImage = file.type.startsWith('image/') || file.name.match(/\.(heic|heif|jpg|jpeg|png|webp)$/i);
+                        const isVideo = file.type.startsWith('video/') || file.name.match(/\.(mp4|mov|quicktime)$/i);
+                        if (isImage || isVideo) {
+                            uploadQueue.push({
+                                file: file,
+                                id: 'upload_' + Math.random().toString(36).substring(2, 9),
+                                status: 'ready',
+                                previewUrl: isImage ? URL.createObjectURL(file) : null
+                            });
+                        }
+                    });
+                    renderQueue();
+                }
+
+                function renderQueue() {
+                    if (uploadQueue.length === 0) {
+                        queueContainer.style.display = 'none';
+                        return;
+                    }
+                    queueContainer.style.display = 'block';
+                    queueCountBadge.textContent = uploadQueue.length;
+
+                    const totalBytes = uploadQueue.reduce((sum, item) => sum + item.file.size, 0);
+                    queueSizeInfo.textContent = `Gesamtgrösse: ${formatBytes(totalBytes)}`;
+
+                    previewGrid.innerHTML = uploadQueue.map((item, idx) => {
+                        const isHeic = (item.file.name || '').match(/\.(heic|heif)$/i);
+                        const isVideo = (item.file.type || '').startsWith('video/');
+                        let thumbHtml = '';
+
+                        if (isVideo) {
+                            thumbHtml = `<div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0f3c5c; color: white; font-size: 1.5rem;">▶<span style="font-size: 0.65rem; margin-top: 4px; font-weight: 700;">VIDEO</span></div>`;
+                        } else if (isHeic) {
+                            thumbHtml = `<div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #e2e8f0; color: #475569; font-size: 1.5rem;">📱<span style="font-size: 0.65rem; margin-top: 4px; font-weight: 700;">APPLE HEIC</span></div>`;
+                        } else if (item.previewUrl) {
+                            thumbHtml = `<img src="${item.previewUrl}" alt="Preview" style="width: 100%; height: 100%; object-fit: cover;">`;
+                        } else {
+                            thumbHtml = `<div style="height: 100%; display: flex; align-items: center; justify-content: center; background: #f1f5f9; font-size: 1.5rem;">🖼️</div>`;
+                        }
+
+                        let statusBadge = '';
+                        if (item.status === 'converting') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #f59e0b; color: white; font-size: 0.65rem;">HEIC...</span>';
+                        else if (item.status === 'uploading') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #3b82f6; color: white; font-size: 0.65rem;">Lade...</span>';
+                        else if (item.status === 'done') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #10b981; color: white; font-size: 0.65rem;">✔ OK</span>';
+                        else if (item.status === 'error') statusBadge = '<span class="badge" style="position: absolute; bottom: 6px; left: 6px; background: #ef4444; color: white; font-size: 0.65rem;">Fehler</span>';
+
+                        return `
+                            <div style="position: relative; height: 110px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(15, 60, 92, 0.12); background: #f8fafc;" title="${item.file.name}">
+                                ${thumbHtml}
+                                ${statusBadge}
+                                ${item.status === 'ready' ? `<button type="button" onclick="window.removeUploadItem(${idx})" style="position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1;">&times;</button>` : ''}
+                                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.65); color: white; font-size: 0.68rem; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    ${item.file.name}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                window.removeUploadItem = function(idx) {
+                    if (uploadQueue[idx]) {
+                        if (uploadQueue[idx].previewUrl) URL.revokeObjectURL(uploadQueue[idx].previewUrl);
+                        uploadQueue.splice(idx, 1);
+                        renderQueue();
+                    }
+                };
+
+                btnCancelQueue.addEventListener('click', () => {
+                    uploadQueue.forEach(item => { if (item.previewUrl) URL.revokeObjectURL(item.previewUrl); });
+                    uploadQueue = [];
+                    renderQueue();
+                });
+
+                // 3. Upload-Vorgang starten
+                btnDoUpload.addEventListener('click', async () => {
+                    if (uploadQueue.length === 0) return;
+
+                    btnDoUpload.disabled = true;
+                    btnCancelQueue.disabled = true;
+                    progressContainer.style.display = 'block';
+
+                    let successCount = 0;
+                    let errorCount = 0;
+                    const totalFiles = uploadQueue.length;
+
+                    // Auth-Token ermitteln
+                    let authToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+                    if (window.AuthSession && window.AuthSession._supabase) {
+                        try {
+                            const { data: sess } = await window.AuthSession._supabase.auth.getSession();
+                            if (sess?.session?.access_token) authToken = sess.session.access_token;
+                        } catch(e) {}
+                    }
+
+                    const memberUser = window.AuthSession ? window.AuthSession.getUser() : null;
+                    const memberName = memberUser ? (memberUser.name || memberUser.vorname || 'Vereinsmitglied') : 'Vereinsmitglied';
+
+                    for (let i = 0; i < uploadQueue.length; i++) {
+                        const item = uploadQueue[i];
+                        const pct = Math.round(((i) / totalFiles) * 100);
+                        progressBar.style.width = pct + '%';
+                        progressPct.textContent = pct + '%';
+                        progressText.textContent = `Verarbeite ${i + 1}/${totalFiles}: ${item.file.name}...`;
+
+                        let fileToUpload = item.file;
+                        let fileName = item.file.name;
+
+                        // Apple HEIC Client-Konvertierung falls nötig
+                        const isHeic = (fileName || '').match(/\.(heic|heif)$/i);
+                        if (isHeic && typeof window.heic2any !== 'undefined') {
+                            item.status = 'converting';
+                            renderQueue();
+                            progressText.textContent = `Konvertiere iPhone HEIC ${i + 1}/${totalFiles}: ${fileName}...`;
+                            try {
+                                const converted = await window.heic2any({ blob: item.file, toType: 'image/jpeg', quality: 0.90 });
+                                fileToUpload = Array.isArray(converted) ? converted[0] : converted;
+                                fileName = fileName.replace(/\.(heic|heif)$/i, '.jpg');
+                            } catch (heicErr) {
+                                console.warn('HEIC Konvertierung fehlgeschlagen, lade Original hoch:', heicErr);
+                            }
+                        }
+
+                        item.status = 'uploading';
+                        renderQueue();
+
+                        const formData = new FormData();
+                        formData.append('file', fileToUpload, fileName);
+                        formData.append('memberName', memberName);
+
+                        try {
+                            const uploadRes = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/immich-upload', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': 'Bearer ' + authToken
+                                },
+                                body: formData
+                            });
+
+                            if (uploadRes.ok) {
+                                const data = await uploadRes.json();
+                                if (data && data.success) {
+                                    item.status = 'done';
+                                    successCount++;
+                                } else {
+                                    item.status = 'error';
+                                    errorCount++;
+                                }
+                            } else {
+                                item.status = 'error';
+                                errorCount++;
+                            }
+                        } catch (err) {
+                            console.error('Upload-Fehler bei ' + fileName, err);
+                            item.status = 'error';
+                            errorCount++;
+                        }
+
+                        renderQueue();
+                    }
+
+                    // Fertigstellung
+                    progressBar.style.width = '100%';
+                    progressPct.textContent = '100%';
+                    progressText.textContent = 'Upload abgeschlossen!';
+
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                        btnDoUpload.disabled = false;
+                        btnCancelQueue.disabled = false;
+
+                        messageBox.style.display = 'block';
+                        if (errorCount === 0) {
+                            messageBox.style.background = 'rgba(16, 185, 129, 0.1)';
+                            messageBox.style.border = '1px solid #10b981';
+                            messageBox.style.color = '#065f46';
+                            messageBox.innerHTML = `<strong>🎉 ${successCount} Foto${successCount === 1 ? '' : 's'} erfolgreich ins Vereinsarchiv hochgeladen!</strong><br><span style="font-size: 0.85rem;">Vielen Dank für deinen Beitrag. Deine Bilder stehen dem Verein ab sofort zur Verfügung.</span>`;
+                            // Warteschlange nach Erfolg leeren
+                            setTimeout(() => {
+                                uploadQueue = [];
+                                renderQueue();
+                                checkImmichHealth();
+                            }, 3000);
+                        } else {
+                            messageBox.style.background = 'rgba(239, 68, 68, 0.1)';
+                            messageBox.style.border = '1px solid #ef4444';
+                            messageBox.style.color = '#991b1b';
+                            messageBox.innerHTML = `<strong>⚠️ ${successCount} von ${totalFiles} Fotos hochgeladen.</strong> Bei ${errorCount} Datei(en) ist ein Fehler aufgetreten.`;
+                        }
+                    }, 800);
+                });
+            }
+
+            // ============================================================
             // Dokumentenarchiv: Laden, Ordner-Filter & Suche
             // ============================================================
             let clubDocuments = [];
@@ -398,6 +749,7 @@
                         const matchContent = (doc.content_text || '').toLowerCase().includes(query);
                         if (!matchTitle && !matchDesc && !matchYear && !matchContent) return false;
                     }
+
                     return true;
                 });
 
@@ -445,7 +797,6 @@
                     const yearBadge = doc.year ? `${doc.year}` : '';
                     const catLabel = catLabels[doc.category] || doc.category;
 
-                    // Textauszug anzeigen, falls Suchbegriff im transkribierten Volltext vorkommt
                     let snippetHtml = '';
                     if (query && doc.content_text && doc.content_text.toLowerCase().includes(query)) {
                         const lowText = doc.content_text.toLowerCase();
@@ -527,8 +878,9 @@
                 });
             }
 
-            // Dokumente initial laden
+            // Initialisierung
             loadClubDocuments();
+            initPhotoUploader();
         });
     </script>
 </body>
