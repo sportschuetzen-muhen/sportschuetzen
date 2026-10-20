@@ -343,6 +343,14 @@ Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatis
 * **Reihenfolge & UX-Standard:** In der Berechtigungsmatrix sowie im Rollen-Container des Admin-Modals folgt `jungschuetzenleiter` direkt auf `schuetzenmeister`. Die Vermietungs-Rolle `vermieter` schliesst die Liste ganz rechts ab.
 * **DB-Schema & Migration:** Der PostgreSQL-Enum `public.app_role` wurde um `jungschuetzenleiter` erweitert. Sämtliche Berechtigungen (`public.role_permissions`) und bestehenden Benutzerzuordnungen (`public.user_roles`) wurden nahtlos migriert.
 
+---
+
+## 16. Harmonisierung der RLS-Policies auf `user_roles` (Migration 87)
+
+* **Entkopplung vom starren `auth.has_role('vorstand')`:** Zuvor konnten Vorstandsmitglieder mit Fachrollen (z.B. `aktuar` ohne zusätzliche Zuweisung von `vorstand`) die Rollen anderer Portal-Benutzer nicht abfragen, da die alte Policy `user_roles_read_own` nur `admin` und `vorstand` berechtigte.
+* **RBAC «View & Manage»-Standard (Projekt-Richtlinie 7):** Die Lese-Policy `user_roles_read_policy` autorisiert nun transparent alle Benutzer mit `logins.view` oder `logins.manage` via `public.rbac_allows(...)`. Dadurch sehen alle zur Logins-Einsicht berechtigten Vorstandsmitglieder konsistent die tatsächlichen Rollen aller Benutzer.
+
+
 
 
 
