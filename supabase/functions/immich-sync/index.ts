@@ -146,9 +146,80 @@ Deno.serve(async (req: Request) => {
   const action = url.searchParams.get("action") || "";
 
   // =========================================================
-  //  GET: VERFÜGBARE & PUBLIZIERTE ALBEN LADEN
+  //  GET: VERFÜGBARE & PUBLIZIERTE ALBEN ODER INBOX-FOTOS LADEN
   // =========================================================
   if (req.method === "GET") {
+    // -------------------------------------------------------
+    // A. INBOX ASSETS LADEN (FÜR KURATIERUNGS-COCKPIT)
+    // -------------------------------------------------------
+    if (action === "get_inbox_assets") {
+      try {
+        const inboxRes = await fetch(`${IMMICH_API_URL}/api/albums/${INBOX_ALBUM_ID}`, {
+          headers: { "x-api-key": IMMICH_API_KEY }
+        });
+        if (!inboxRes.ok) throw new Error(`HTTP ${inboxRes.status}`);
+        const inboxData = await inboxRes.json();
+        const rawAssets = inboxData.assets || [];
+
+        // Share-Key für Worker-Proxy ermitteln oder erstellen
+        const sharesRes = await fetch(`${IMMICH_API_URL}/api/shared-links`, {
+          headers: { "x-api-key": IMMICH_API_KEY }
+        });
+        let shareKey = "";
+        if (sharesRes.ok) {
+          const shares = await sharesRes.json();
+          const existingShare = shares.find((s: any) => s.album?.id === INBOX_ALBUM_ID || s.albumId === INBOX_ALBUM_ID);
+          if (existingShare && existingShare.key) {
+            shareKey = existingShare.key;
+          }
+        }
+
+        if (!shareKey) {
+          const createShareRes = await fetch(`${IMMICH_API_URL}/api/shared-links`, {
+            method: "POST",
+            headers: {
+              "x-api-key": IMMICH_API_KEY,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              albumId: INBOX_ALBUM_ID,
+              type: "ALBUM",
+              allowDownload: true,
+              showMetadata: true
+            })
+          });
+          if (createShareRes.ok) {
+            const newShare = await createShareRes.json();
+            shareKey = newShare.key;
+          }
+        }
+
+        const assets = rawAssets.map((a: any) => ({
+          id: a.id,
+          originalFileName: a.originalFileName || "Foto",
+          type: a.type,
+          fileCreatedAt: a.fileCreatedAt || a.createdAt,
+          thumbnailUrl: `${WORKER_BASE}?module=immich&action=image&host=${encodeURIComponent(IMMICH_PUBLIC_HOST)}&key=${encodeURIComponent(shareKey)}&id=${encodeURIComponent(a.id)}&size=thumbnail`,
+          previewUrl: `${WORKER_BASE}?module=immich&action=image&host=${encodeURIComponent(IMMICH_PUBLIC_HOST)}&key=${encodeURIComponent(shareKey)}&id=${encodeURIComponent(a.id)}&size=preview`
+        }));
+
+        return new Response(JSON.stringify({
+          success: true,
+          count: assets.length,
+          albumId: INBOX_ALBUM_ID,
+          assets
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } catch (err: any) {
+        console.error("Fehler beim Laden der Inbox-Fotos:", err);
+        return new Response(JSON.stringify({ success: false, error: err.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
     try {
       // 1. Immich Alben abrufen
       const immichRes = await fetch(`${IMMICH_API_URL}/api/albums`, {
@@ -197,12 +268,104 @@ Deno.serve(async (req: Request) => {
   }
 
   // =========================================================
-  //  POST: SYNCHRONISATION ODER ENTFERNEN VON ALBEN
+  //  POST: SYNCHRONISATION, ALBUM-ERSTELLUNG & KURATIERUNG
   // =========================================================
   if (req.method === "POST") {
     try {
       const body = await req.json();
       const postAction = body.action || action || "sync";
+
+      // -------------------------------------------------------
+      // A0. INBOX KURATIEREN (1-KLICK BEREINIGUNG & VERSCHIEBEN)
+      // -------------------------------------------------------
+      if (postAction === "curate_inbox") {
+        const { selectedIds = [], targetAlbumId, unselectedIds = [], unselectedAction = 'keep', archiveAlbumId } = body;
+
+        let movedToTarget = 0;
+        let movedToArchive = 0;
+        let deletedCount = 0;
+
+        // 1. Ausgewählte Fotos ins Zielalbum schieben
+        if (selectedIds.length > 0 && targetAlbumId) {
+          const addRes = await fetch(`${IMMICH_API_URL}/api/albums/${targetAlbumId}/assets`, {
+            method: "PUT",
+            headers: {
+              "x-api-key": IMMICH_API_KEY,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ ids: selectedIds })
+          });
+          if (!addRes.ok) {
+            const errTxt = await addRes.text();
+            throw new Error(`Konnte Fotos nicht zu Zielalbum hinzufügen: ${errTxt}`);
+          }
+
+          // Aus Sammelalbum austragen
+          const remRes = await fetch(`${IMMICH_API_URL}/api/albums/${INBOX_ALBUM_ID}/assets`, {
+            method: "DELETE",
+            headers: {
+              "x-api-key": IMMICH_API_KEY,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ ids: selectedIds })
+          });
+          if (!remRes.ok) {
+            console.warn("Warnung beim Austragen aus Sammelalbum:", await remRes.text());
+          }
+          movedToTarget = selectedIds.length;
+        }
+
+        // 2. Nicht ausgewählte Fotos behandeln
+        if (unselectedIds.length > 0) {
+          if (unselectedAction === 'archive' && archiveAlbumId) {
+            await fetch(`${IMMICH_API_URL}/api/albums/${archiveAlbumId}/assets`, {
+              method: "PUT",
+              headers: {
+                "x-api-key": IMMICH_API_KEY,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ ids: unselectedIds })
+            });
+
+            await fetch(`${IMMICH_API_URL}/api/albums/${INBOX_ALBUM_ID}/assets`, {
+              method: "DELETE",
+              headers: {
+                "x-api-key": IMMICH_API_KEY,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ ids: unselectedIds })
+            });
+            movedToArchive = unselectedIds.length;
+          } else if (unselectedAction === 'delete') {
+            await fetch(`${IMMICH_API_URL}/api/assets`, {
+              method: "DELETE",
+              headers: {
+                "x-api-key": IMMICH_API_KEY,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ ids: unselectedIds })
+            });
+            deletedCount = unselectedIds.length;
+          }
+        }
+
+        // Aktuellen Stand der Inbox abfragen
+        const inboxCheck = await fetch(`${IMMICH_API_URL}/api/albums/${INBOX_ALBUM_ID}`, {
+          headers: { "x-api-key": IMMICH_API_KEY }
+        });
+        const inboxData = inboxCheck.ok ? await inboxCheck.json() : null;
+        const remainingCount = inboxData?.assetCount || 0;
+
+        return new Response(JSON.stringify({
+          success: true,
+          movedToTarget,
+          movedToArchive,
+          deletedCount,
+          remainingCount
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
 
       // -------------------------------------------------------
       // A1. NEUES IMMICH-ALBUM ERSTELLEN

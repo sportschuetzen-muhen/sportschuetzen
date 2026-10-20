@@ -80,9 +80,14 @@ async function initGalerieManager() {
                                             Wird geladen...
                                         </div>
                                     </div>
-                                    <a href="https://immich-muhen.danfamily.uk/albums/6184f06d-be38-426b-8737-1bec29ab045e" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm w-100 fw-bold shadow-xs">
-                                        📥 Sammelalbum öffnen ↗
-                                    </a>
+                                    <div class="d-flex flex-column gap-2">
+                                        <button type="button" class="btn btn-primary btn-sm w-100 fw-bold shadow-xs py-1.5" onclick="openCurateInboxModal()" id="btn-open-curate-modal">
+                                            <i class="fas fa-magic me-1"></i> Fotos sichten &amp; einsortieren
+                                        </button>
+                                        <a href="https://immich-muhen.danfamily.uk/albums/6184f06d-be38-426b-8737-1bec29ab045e" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary btn-xs w-100 text-truncate" style="font-size: 0.75rem;">
+                                            📥 In Immich Web-App öffnen ↗
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-sm-6">
@@ -439,6 +444,10 @@ async function submitCreateImmichAlbum() {
     }
 }
 
+// State für Foto-Kuratierungs-Cockpit
+let currentInboxAssets = [];
+let selectedInboxAssetIds = new Set();
+
 // =========================================================
 //  ANLEITUNGS-MODAL FÜR VORSTANDSMITGLIEDER
 // =========================================================
@@ -450,16 +459,398 @@ function openGalerieWorkflowGuideModal() {
 }
 
 // =========================================================
+//  FOTO-KURATIERUNGS-COCKPIT (1-KLICK BEREINIGUNG)
+// =========================================================
+async function openCurateInboxModal() {
+    ensureGalerieModals();
+    const modalEl = document.getElementById('modalCurateInbox');
+    if (!modalEl) return;
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+
+    const gridContainer = document.getElementById('curate-grid-container');
+    if (gridContainer) {
+        gridContainer.innerHTML = `
+            <div class="text-center py-5 text-muted">
+                <div class="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
+                Lade Fotos aus dem Sammelalbum «Mitglieder-Uploads»...
+            </div>
+        `;
+    }
+
+    try {
+        // Dropdown-Optionen vorbereiten
+        populateCurateAlbumDropdowns();
+
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync?action=get_inbox_assets`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.assets)) {
+            currentInboxAssets = data.assets;
+            // Alle Fotos standardmässig vorselektieren
+            selectedInboxAssetIds = new Set(currentInboxAssets.map(a => a.id));
+            renderCurateGrid();
+            return;
+        }
+        throw new Error(data.error || 'Konnte Fotos nicht laden');
+    } catch (err) {
+        console.error('Fehler beim Laden der Inbox-Fotos:', err);
+        if (gridContainer) {
+            gridContainer.innerHTML = `
+                <div class="alert alert-warning m-3 small">
+                    <i class="fas fa-exclamation-triangle me-1"></i> Konnte Fotos aus dem Sammelalbum nicht laden: ${escapeHtml(err.message)}
+                </div>
+            `;
+        }
+    }
+}
+
+function populateCurateAlbumDropdowns() {
+    const targetSelect = document.getElementById('curate-target-album-select');
+    const archiveSelect = document.getElementById('curate-archive-album-select');
+    if (!targetSelect || !archiveSelect) return;
+
+    if (!availableImmichAlbums || availableImmichAlbums.length === 0) {
+        targetSelect.innerHTML = '<option value="">Keine Alben vorhanden (bitte erstellen)</option>';
+        archiveSelect.innerHTML = '<option value="">Keine Alben vorhanden</option>';
+        return;
+    }
+
+    targetSelect.innerHTML = `
+        <option value="">-- Zielalbum wählen (${availableImmichAlbums.length}) --</option>
+        ${availableImmichAlbums.map(alb => `
+            <option value="${escapeHtml(alb.id)}">
+                📁 ${escapeHtml(alb.name)} (${alb.assetCount} Medien)
+            </option>
+        `).join('')}
+    `;
+
+    archiveSelect.innerHTML = `
+        ${availableImmichAlbums.map(alb => `
+            <option value="${escapeHtml(alb.id)}">
+                📁 ${escapeHtml(alb.name)}
+            </option>
+        `).join('')}
+    `;
+
+    // Sinnvolle Standardauswahl für Zielalbum (z.B. "Endschiessen")
+    const endschiessenAlbum = availableImmichAlbums.find(a => (a.name || '').toLowerCase().includes('endschiessen'));
+    if (endschiessenAlbum) {
+        targetSelect.value = endschiessenAlbum.id;
+    } else if (availableImmichAlbums.length > 0) {
+        targetSelect.value = availableImmichAlbums[0].id;
+    }
+
+    // Sinnvolle Standardauswahl für Sammelbecken (z.B. "Archiv")
+    const archiveAlbum = availableImmichAlbums.find(a => (a.name || '').toLowerCase().includes('archiv'));
+    if (archiveAlbum) {
+        archiveSelect.value = archiveAlbum.id;
+    } else if (availableImmichAlbums.length > 0) {
+        archiveSelect.value = availableImmichAlbums[availableImmichAlbums.length - 1].id;
+    }
+}
+
+function renderCurateGrid() {
+    const gridContainer = document.getElementById('curate-grid-container');
+    const summaryEl = document.getElementById('curate-selection-summary');
+    const countBadge = document.getElementById('curate-modal-count-badge');
+    const submitBtn = document.getElementById('btn-submit-curate');
+    if (!gridContainer) return;
+
+    if (!currentInboxAssets || currentInboxAssets.length === 0) {
+        gridContainer.innerHTML = `
+            <div class="text-center py-5">
+                <div class="fs-1 text-success mb-2">🎉</div>
+                <h6 class="fw-bold text-dark">Keine offenen Uploads!</h6>
+                <p class="text-muted small mb-0">Das Sammelalbum «Mitglieder-Uploads» ist bereits vollständig aufgeräumt.</p>
+            </div>
+        `;
+        if (summaryEl) summaryEl.innerText = '0 Fotos vorhanden';
+        if (countBadge) countBadge.innerText = '0 Fotos';
+        if (submitBtn) submitBtn.disabled = true;
+        return;
+    }
+
+    if (countBadge) countBadge.innerText = `${currentInboxAssets.length} Fotos`;
+    if (summaryEl) summaryEl.innerText = `${selectedInboxAssetIds.size} von ${currentInboxAssets.length} für Zielalbum ausgewählt`;
+    if (submitBtn) submitBtn.disabled = false;
+
+    const html = `
+        <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-2">
+            ${currentInboxAssets.map(asset => {
+                const isSelected = selectedInboxAssetIds.has(asset.id);
+                const dateStr = asset.fileCreatedAt ? new Date(asset.fileCreatedAt).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+                return `
+                    <div class="col">
+                        <div class="card h-100 border ${isSelected ? 'border-primary border-2 shadow-sm' : 'border-light-subtle'} curate-photo-card position-relative overflow-hidden" 
+                             onclick="toggleCurateItem('${asset.id}')"
+                             style="cursor: pointer; transition: all 0.15s ease;">
+                            
+                            <!-- SELECTION CHECK BADGE -->
+                            <div class="position-absolute top-0 end-0 m-1.5 z-2">
+                                <span class="badge ${isSelected ? 'bg-primary' : 'bg-light text-muted border'} rounded-circle p-1.5 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;">
+                                    <i class="fas ${isSelected ? 'fa-check text-white' : 'fa-minus small'}"></i>
+                                </span>
+                            </div>
+
+                            <!-- THUMBNAIL -->
+                            <div class="ratio ratio-4x3 bg-dark-subtle">
+                                <img src="${asset.thumbnailUrl}" 
+                                     alt="${escapeHtml(asset.originalFileName)}" 
+                                     loading="lazy" 
+                                     class="object-fit-cover w-100 h-100"
+                                     onerror="this.onerror=null; this.src='https://placehold.co/300x225?text=Foto';">
+                            </div>
+
+                            <!-- INFO -->
+                            <div class="p-1.5 bg-white small">
+                                <div class="text-truncate fw-semibold text-dark" style="font-size: 0.76rem;" title="${escapeHtml(asset.originalFileName)}">
+                                    ${escapeHtml(asset.originalFileName)}
+                                </div>
+                                <div class="text-muted" style="font-size: 0.68rem;">
+                                    ${dateStr || 'Foto'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+
+    gridContainer.innerHTML = html;
+}
+
+function toggleCurateItem(id) {
+    if (selectedInboxAssetIds.has(id)) {
+        selectedInboxAssetIds.delete(id);
+    } else {
+        selectedInboxAssetIds.add(id);
+    }
+    renderCurateGrid();
+}
+
+function curateSelectAll(selectAll) {
+    if (selectAll) {
+        selectedInboxAssetIds = new Set(currentInboxAssets.map(a => a.id));
+    } else {
+        selectedInboxAssetIds.clear();
+    }
+    renderCurateGrid();
+}
+
+function onCurateUnselectedActionChanged() {
+    const actionSelect = document.getElementById('curate-unselected-action');
+    const wrapper = document.getElementById('curate-archive-select-wrapper');
+    if (!actionSelect || !wrapper) return;
+    if (actionSelect.value === 'archive') {
+        wrapper.classList.remove('d-none');
+    } else {
+        wrapper.classList.add('d-none');
+    }
+}
+
+async function submitCurateInbox() {
+    const targetSelect = document.getElementById('curate-target-album-select');
+    const actionSelect = document.getElementById('curate-unselected-action');
+    const archiveSelect = document.getElementById('curate-archive-album-select');
+    const submitBtn = document.getElementById('btn-submit-curate');
+    const modalEl = document.getElementById('modalCurateInbox');
+
+    const targetAlbumId = targetSelect?.value;
+    const unselectedAction = actionSelect?.value || 'keep';
+    const archiveAlbumId = archiveSelect?.value;
+
+    const selectedIds = Array.from(selectedInboxAssetIds);
+    const unselectedIds = currentInboxAssets.filter(a => !selectedInboxAssetIds.has(a.id)).map(a => a.id);
+
+    if (selectedIds.length === 0 && unselectedIds.length === 0) {
+        if (typeof showToast === 'function') showToast('Keine Fotos zum Einsortieren vorhanden.', 'info');
+        return;
+    }
+
+    if (selectedIds.length > 0 && !targetAlbumId) {
+        if (typeof showToast === 'function') showToast('Bitte wähle ein Zielalbum für die ausgewählten Fotos aus.', 'warning');
+        targetSelect?.focus();
+        return;
+    }
+
+    if (unselectedAction === 'archive' && unselectedIds.length > 0 && !archiveAlbumId) {
+        if (typeof showToast === 'function') showToast('Bitte wähle ein Sammelbecken für die nicht ausgewählten Fotos aus.', 'warning');
+        archiveSelect?.focus();
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span> Einsortieren &amp; Bereinigen...`;
+    }
+
+    try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+                action: 'curate_inbox',
+                selectedIds,
+                targetAlbumId,
+                unselectedIds,
+                unselectedAction,
+                archiveAlbumId
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Serverfehler beim Einsortieren der Fotos');
+        }
+
+        // Modal schliessen
+        if (modalEl) {
+            bootstrap.Modal.getInstance(modalEl)?.hide();
+        }
+
+        const msg = `🎉 ${data.movedToTarget} Fotos erfolgreich einsortiert! Das Sammelalbum wurde bereinigt.`;
+        if (typeof showToast === 'function') {
+            showToast(msg, 'success');
+        } else {
+            alert(msg);
+        }
+
+        // Badges & Dropdown live aktualisieren
+        updateGalerieBadge(data.remainingCount || 0);
+        await Promise.all([
+            loadImmichDashboardData(),
+            loadImmichAlbumsForDropdown({ silent: true, preferredAlbumId: targetAlbumId })
+        ]);
+
+    } catch (err) {
+        console.error('Fehler beim Einsortieren:', err);
+        if (typeof showToast === 'function') {
+            showToast(`Einsortieren fehlgeschlagen: ${err.message}`, 'error');
+        } else {
+            alert(`Einsortieren fehlgeschlagen: ${err.message}`);
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `<i class="fas fa-paper-plane me-1.5"></i> Fotos jetzt einsortieren &amp; Bereinigen`;
+        }
+    }
+}
+
+// =========================================================
 //  MODALS DYNAMISCH IN DEN DOM INJIZIEREN
 // =========================================================
 function ensureGalerieModals() {
-    if (document.getElementById('modalCreateImmichAlbum') && document.getElementById('modalGalerieWorkflowGuide')) {
+    if (document.getElementById('modalCreateImmichAlbum') && document.getElementById('modalGalerieWorkflowGuide') && document.getElementById('modalCurateInbox')) {
         return;
     }
 
     const modalWrapper = document.createElement('div');
     modalWrapper.id = 'galerie-modals-container';
     modalWrapper.innerHTML = `
+        <!-- MODAL: INBOX KURATIERUNGS-COCKPIT -->
+        <div class="modal fade" id="modalCurateInbox" tabindex="-1" aria-labelledby="modalCurateInboxLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+                <div class="modal-content border-0 shadow">
+                    <div class="modal-header bg-primary text-white py-2.5 px-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-5">✨</span>
+                            <h6 class="modal-title fw-bold mb-0" id="modalCurateInboxLabel">
+                                Foto-Eingangskorb: Uploads sichten &amp; einsortieren
+                            </h6>
+                            <span id="curate-modal-count-badge" class="badge bg-light text-primary fw-bold ms-2">Lade...</span>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                    </div>
+                    
+                    <div class="modal-body p-3 bg-light">
+                        <!-- SCHNELL-STEUERUNG & AUSWAHL -->
+                        <div class="card border-0 shadow-xs mb-3">
+                            <div class="card-body p-2.5 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="small fw-semibold text-muted">Auswahl:</span>
+                                    <button type="button" class="btn btn-outline-primary btn-xs py-1 px-2.5 fw-semibold" onclick="curateSelectAll(true)">
+                                        <i class="fas fa-check-double me-1"></i>Alle auswählen
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-xs py-1 px-2.5" onclick="curateSelectAll(false)">
+                                        <i class="fas fa-times me-1"></i>Keine
+                                    </button>
+                                </div>
+                                <div class="small fw-bold text-dark" id="curate-selection-summary">
+                                    0 von 0 ausgewählt
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- FOTO-GRID -->
+                        <div id="curate-grid-container" style="min-height: 260px; max-height: 50vh; overflow-y: auto;">
+                            <div class="text-center py-5 text-muted">
+                                <div class="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
+                                Lade Fotos aus dem Sammelalbum...
+                            </div>
+                        </div>
+
+                        <!-- AKTIONEN & ZIELALBEN -->
+                        <div class="card border-0 shadow-xs mt-3">
+                            <div class="card-body p-3 bg-white rounded">
+                                <div class="row g-3 align-items-end">
+                                    <div class="col-md-5">
+                                        <label class="form-label small fw-bold mb-1" for="curate-target-album-select">
+                                            <i class="fas fa-folder-open text-primary me-1"></i> 1. Zielalbum für ausgewählte Fotos:
+                                        </label>
+                                        <div class="d-flex gap-1">
+                                            <select id="curate-target-album-select" class="form-select form-select-sm">
+                                                <option value="">Lade Alben...</option>
+                                            </select>
+                                            <button type="button" class="btn btn-outline-primary btn-sm px-2" onclick="openCreateImmichAlbumModal()" title="Neues Album anlegen">
+                                                <i class="fas fa-plus"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-md-4">
+                                        <label class="form-label small fw-bold mb-1" for="curate-unselected-action">
+                                            <i class="fas fa-inbox text-muted me-1"></i> 2. Nicht ausgewählte Fotos:
+                                        </label>
+                                        <select id="curate-unselected-action" class="form-select form-select-sm" onchange="onCurateUnselectedActionChanged()">
+                                            <option value="archive" selected>📦 In Sammelbecken verschieben</option>
+                                            <option value="keep">⏳ Im Eingangskorb belassen</option>
+                                            <option value="delete">🗑️ Ablehnen &amp; Löschen</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-3" id="curate-archive-select-wrapper">
+                                        <label class="form-label small fw-semibold text-muted mb-1" for="curate-archive-album-select">
+                                            Sammelbecken:
+                                        </label>
+                                        <select id="curate-archive-album-select" class="form-select form-select-sm">
+                                            <option value="">Lade Sammelbecken...</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="alert alert-light border mt-3 mb-0 py-2.5 px-3 small d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                    <span class="text-muted" style="font-size: 0.82rem;">
+                                        <i class="fas fa-check-circle text-success me-1"></i> Gewählte Fotos werden dem Zielalbum zugewiesen und automatisch aus «Mitglieder-Uploads» ausgetragen.
+                                    </span>
+                                    <button type="button" class="btn btn-success btn-sm fw-bold px-3 py-2 shadow-xs" id="btn-submit-curate" onclick="submitCurateInbox()">
+                                        <i class="fas fa-paper-plane me-1.5"></i> Fotos jetzt einsortieren &amp; Bereinigen
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- MODAL: NEUES ALBUM ERSTELLEN -->
         <div class="modal fade" id="modalCreateImmichAlbum" tabindex="-1" aria-labelledby="modalCreateImmichAlbumLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
@@ -525,29 +916,17 @@ function ensureGalerieModals() {
                         <div class="card border mb-3 shadow-none">
                             <div class="card-header bg-primary-subtle py-2 d-flex justify-content-between align-items-center">
                                 <span class="fw-bold text-primary small">
-                                    <i class="fas fa-mouse-pointer me-1"></i> Variante 1: Direkt in Immich beim Fotos sichten (Empfohlen)
+                                    <i class="fas fa-magic me-1"></i> Variante 1: Direkt im Portal mit dem Kuratierungs-Cockpit (Empfohlen)
                                 </span>
-                                <span class="badge bg-primary">Sehr schnell</span>
+                                <span class="badge bg-primary">1-Klick</span>
                             </div>
                             <div class="card-body p-3 small">
-                                <ol class="mb-3 ps-3">
-                                    <li class="mb-1.5">Klicke im Galerie Manager auf <strong>«📥 Sammelalbum öffnen ↗»</strong>.</li>
-                                    <li class="mb-1.5">Fahre mit der Maus über die gewünschten Bilder und setze das <strong>blaue Häkchen</strong> (z. B. «3 ausgewählt»).</li>
-                                    <li class="mb-1.5">Klicke oben rechts auf das <strong><code>+</code> (Plus-Symbol)</strong>:
-                                        <ul class="mt-1 ps-3 text-muted">
-                                            <li>Wähle entweder ein bestehendes Album aus der Liste ODER</li>
-                                            <li>Klicke ganz oben auf <strong>«Neues Album erstellen»</strong>, gib den Namen ein (z. B. <em>Endschiessen 2026</em>) und bestätige.</li>
-                                        </ul>
-                                    </li>
-                                    <li class="mb-1.5">Die Bilder sind nun im Zielalbum! Um sie aus dem Sammelalbum zu entfernen: Klicke oben rechts auf das <strong>Drei-Punkte-Menü (<code>⋮</code>)</strong> und wähle <strong>«Aus Album entfernen»</strong>.</li>
+                                <ol class="mb-0 ps-3">
+                                    <li class="mb-1.5">Klicke auf <strong>«✨ Fotos sichten &amp; einsortieren»</strong>.</li>
+                                    <li class="mb-1.5">Wähle die gewünschten Bilder per Klick auf die Bildkacheln aus.</li>
+                                    <li class="mb-1.5">Wähle dein <strong>Zielalbum</strong> (z. B. <em>2026 Endschiessen</em>) und das Sammelbecken für die restlichen Bilder.</li>
+                                    <li class="mb-0">Klicke auf <strong>«Fotos jetzt einsortieren &amp; Bereinigen»</strong>. Das System ordnet die Bilder per API zu und leert das Sammelalbum automatisch!</li>
                                 </ol>
-                                <div class="alert alert-danger py-2 px-3 mb-0 border-0 small d-flex align-items-start gap-2">
-                                    <i class="fas fa-exclamation-triangle mt-0.5 fs-6"></i>
-                                    <div>
-                                        <strong>⚠️ ACHTUNG – Niemals «Löschen» / Papierkorb wählen:</strong><br>
-                                        «In den Papierkorb verschieben / Löschen» vernichtet das Foto vom gesamten Server. Wähle beim Einsortieren <strong>immer «Aus Album entfernen»</strong>! So bleibt das Bild im Zielalbum sicher erhalten und nur das Sammelalbum wird geleert.
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
@@ -555,18 +934,23 @@ function ensureGalerieModals() {
                         <div class="card border mb-3 shadow-none">
                             <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
                                 <span class="fw-bold text-dark small">
-                                    <i class="fas fa-folder-plus me-1 text-primary"></i> Variante 2: Neues Album vorab hier im Portal vorbereiten
+                                    <i class="fas fa-external-link-alt me-1 text-secondary"></i> Variante 2: Manuell in der Immich Web-App
                                 </span>
-                                <span class="badge bg-secondary">Bequem</span>
+                                <span class="badge bg-secondary">Erweitert</span>
                             </div>
                             <div class="card-body p-3 small">
-                                <ol class="mb-0 ps-3">
-                                    <li class="mb-1.5">Klicke hier im Galerie Manager neben dem Dropdown auf <strong>«➕ Neues Album»</strong>.</li>
-                                    <li class="mb-1.5">Gib den Albumnamen ein (z. B. <em>Generalversammlung 2026</em>). Unser Portal prüft live, ob der Name bereits vergeben ist, um Doppelungen zu verhindern.</li>
-                                    <li class="mb-1.5">Das Album wird per API direkt auf Proxmox CT 116 angelegt und steht sofort in Immich und im Dropdown zur Verfügung.</li>
-                                    <li class="mb-1.5">Öffne anschliessend das Sammelalbum in Immich, markiere die Bilder, klicke auf <strong><code>+</code></strong> und wähle dieses neu erstellte Album aus.</li>
-                                    <li class="mb-0">Entferne die Bilder abschliessend mit <strong><code>⋮</code> &rarr; «Aus Album entfernen»</strong> aus dem Sammelalbum.</li>
+                                <ol class="mb-3 ps-3">
+                                    <li class="mb-1.5">Klicke auf <strong>«📥 In Immich öffnen ↗»</strong>.</li>
+                                    <li class="mb-1.5">Fahre mit der Maus über die gewünschten Bilder und setze das <strong>blaue Häkchen</strong>.</li>
+                                    <li class="mb-1.5">Klicke oben rechts auf <strong><code>+</code></strong> und wähle das Zielalbum.</li>
+                                    <li class="mb-0">Klicke anschliessend oben rechts auf <strong><code>⋮</code> &rarr; «Aus Album entfernen»</strong>.</li>
                                 </ol>
+                                <div class="alert alert-danger py-2 px-3 mb-0 border-0 small d-flex align-items-start gap-2">
+                                    <i class="fas fa-exclamation-triangle mt-0.5 fs-6"></i>
+                                    <div>
+                                        <strong>⚠️ ACHTUNG:</strong> Niemals auf «Löschen» oder den Papierkorb klicken! Wähle beim manuellen Sortieren in Immich immer «Aus Album entfernen».
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -599,6 +983,11 @@ window.submitCreateImmichAlbum = submitCreateImmichAlbum;
 window.refreshImmichAlbumsDropdown = refreshImmichAlbumsDropdown;
 window.openGalerieWorkflowGuideModal = openGalerieWorkflowGuideModal;
 window.loadImmichAlbumsForDropdown = loadImmichAlbumsForDropdown;
+window.openCurateInboxModal = openCurateInboxModal;
+window.toggleCurateItem = toggleCurateItem;
+window.curateSelectAll = curateSelectAll;
+window.onCurateUnselectedActionChanged = onCurateUnselectedActionChanged;
+window.submitCurateInbox = submitCurateInbox;
 
 // Auto-Refresh beim Tab-Wechsel zurück ins Portal (z.B. nach Erstellen in Immich)
 window.addEventListener('focus', () => {

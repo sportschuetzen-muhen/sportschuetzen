@@ -106,11 +106,12 @@ Aus Datenschutz- und Persönlichkeitsrechtsgründen wird jedes synchronisierte M
 
 Die Übernahme von Alben aus Immich in das Web-Frontend erfolgt vollautomatisch über die Supabase Edge Function `immich-sync` direkt im Vorstandsportal:
 
-### 6.1 Album-Erstellung & Kuratierungs-Workflow
-Für das Anlegen von Zielalben und das Einsortieren existieren zwei harmonisierte Wege:
-* **Variante 1 (Direkt in Immich beim Sichten):** Fotos im Sammelalbum «Mitglieder-Uploads» markieren, auf `+` klicken und Zielalbum wählen bzw. direkt «Neues Album erstellen». Anschliessend im Drei-Punkte-Menü `⋮` zwingend **«Aus Album entfernen»** wählen (niemals auf den Papierkorb/Löschen klicken, da dies das Foto vom gesamten Server löscht).
-* **Variante 2 (Direkt im Vorstandsportal anlegen):** Über den Button **«➕ Neues Album»** neben dem Dropdown wird das Album via Edge Function `immich-sync` (`action: 'create_album'`) direkt per Immich API (`POST /api/albums`) auf Proxmox CT 116 erstellt.
-* **Duplikat-Schutz & Auto-Refresh:** Die Eingabe prüft live gegen vorhandene Alben, um versehentliche Doppelungen zu verhindern. Zudem aktualisiert ein Window-Focus-Listener die Albenliste automatisch im Hintergrund, sobald der Benutzer aus Immich zurück in das Vorstandsportal wechselt.
+### 6.1 Integriertes Foto-Kuratierungs-Cockpit & Album-Erstellung
+Für das Sichten und Einsortieren von Mitglieder-Fotos steht im Vorstandsportal ein nahtloses Cockpit bereit:
+* **In-Browser Kuratierungs-Cockpit (`✨ Fotos sichten & einsortieren`):** Öffnet ein visuelles Modal mit allen offenen Uploads aus «Mitglieder-Uploads» via Edge Function `immich-sync?action=get_inbox_assets` (inklusive hochperformanten Cloudflare-Worker Thumbnails). Der Benutzer wählt per Klick die gewünschten Fotos aus, bestimmt das Zielalbum und entscheidet, was mit nicht gewählten Fotos geschehen soll (z. B. Verschieben in ein Sammelbecken wie «Vereinsarchiv» oder im Posteingang belassen).
+* **1-Klick-Bereinigung (`curate_inbox`):** Die Edge Function schiebt die ausgewählten Fotos per API in das Zielalbum (`PUT /api/albums/:id/assets`), optionale Reste in das Sammelbecken und trägt alle verarbeiteten Fotos **vollautomatisch** aus dem Sammelalbum «Mitglieder-Uploads» aus (`DELETE /api/albums/:inboxId/assets`). Das Sammelalbum ist sofort leer und der rote Pendenzen-Badge erlischt automatisch. Kein manuelles Austragen oder Löschen in Immich nötig.
+* **Neues Album anlegen (`➕ Neues Album`):** Legt neue Alben via `action: 'create_album'` direkt per Immich API (`POST /api/albums`) auf Proxmox CT 116 an.
+* **Duplikat-Schutz & Auto-Refresh:** Die Eingabe prüft live gegen vorhandene Alben, um versehentliche Doppelungen zu verhindern. Ein Window-Focus-Listener aktualisiert die Albenliste automatisch im Hintergrund bei Tab-Wechsel.
 
 ### 6.2 Benutzer-Workflow zur Publikation (Browser)
 1. **Album-Auswahl:** Aus einem Dropdown werden alle auf dem Immich-Server (CT 116) vorhandenen Alben geladen. Über das Aktualisieren-Icon `[🔄]` kann die Liste jederzeit manuell neu geladen werden.
