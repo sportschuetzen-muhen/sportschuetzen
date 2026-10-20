@@ -766,8 +766,9 @@
 
     <!-- MOBILE HEADER -->
     <div class="mobile-header">
-        <button class="btn btn-link text-dark p-0" onclick="toggleSidebar()">
+        <button class="btn btn-link text-dark p-0 position-relative" onclick="toggleSidebar()" aria-label="Menü öffnen">
             <i class="fas fa-bars fa-lg"></i>
+            <span id="mobile-global-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" style="font-size: 0.65rem; padding: 0.25em 0.45em; border: 1.5px solid #fff;">0</span>
         </button>
         <div class="d-flex flex-column align-items-center text-center">
             <span class="fw-bold text-primary" style="font-size: 0.9rem; line-height: 1.2;">SPORTSCHÜTZEN MUHEN</span>
@@ -886,9 +887,10 @@
                      onclick="navTo('news', this)">
                     <i class="fas fa-newspaper"></i> <span class="nav-text">News KI</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('galerie', this)">
-                    <i class="fas fa-images"></i> <span class="nav-text">Galerie Manager</span>
+                    <i class="fas fa-images me-2"></i> <span class="nav-text flex-grow-1">Galerie Manager</span>
+                    <span id="galerie-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin"
                      onclick="navTo('logins', this)">
@@ -1074,10 +1076,13 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
                              onclick="navTo('galerie')" style="cursor:pointer">
-                            <h5>🖼️ Galerie Manager</h5>
-                            <p class="small text-muted">Gesichter erkennen & EXIF-Tagging</p>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🖼️ Galerie Manager</h5>
+                                <span id="galerie-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                            </div>
+                            <p class="small text-muted mb-0">Gesichter erkennen, Tagging & Website-Sync</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin">

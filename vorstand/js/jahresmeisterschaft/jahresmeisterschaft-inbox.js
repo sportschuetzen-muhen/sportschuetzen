@@ -59,6 +59,10 @@ function updateJMInboxBadge(count) {
             el.classList.add('d-none');
         }
     });
+
+    if (typeof window.updateMobileGlobalBadge === 'function') {
+        window.updateMobileGlobalBadge();
+    }
 }
 window.updateJMInboxBadge = updateJMInboxBadge;
 

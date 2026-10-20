@@ -180,24 +180,28 @@ async function run() {
   console.log('1. Abrufen der Freigabelink-Metadaten für Key:', key);
   const meData = await getJson(`/api/shared-links/me?key=${key}`);
   const albumId = meData.album?.id;
-  const albumName = meData.album?.albumName || 'Vereinsarchiv';
-  const albumDescription = meData.album?.description || '';
-  console.log(`2. Gefundenes Album: "${albumName}" (ID: ${albumId})`);
+  const customFolderArg = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3].trim() : null;
+  const visibilityArg = (process.argv[4] || (customFolderArg && ['public', 'members'].includes(customFolderArg.toLowerCase()) ? customFolderArg : '') || 'members').toLowerCase();
+  const categoryArg = (process.argv[5] || '').toLowerCase();
+
+  const effectiveAlbumName = (customFolderArg && !['public', 'members'].includes(customFolderArg.toLowerCase())) ? customFolderArg : albumName;
+  const effectiveVisibility = ['public', 'members'].includes(visibilityArg) ? visibilityArg : 'members';
+  const effectiveCategory = ['events', 'nachwuchs', 'geschichte'].includes(categoryArg) ? categoryArg : determineCategory(effectiveAlbumName);
+  const baseAlbumTags = generateBaseTags(effectiveAlbumName);
+
+  console.log(`2. Ziel-Ordnername auf Website: "${effectiveAlbumName}" (Sichtbarkeit: ${effectiveVisibility}, Rubrik: ${effectiveCategory})`);
 
   console.log('3. Lade Fotos und Videos aus dem Album...');
   const albumData = await getJson(`/api/albums/${albumId}?key=${key}`);
   const rawAssets = albumData.assets || [];
   console.log(`4. Medien insgesamt im Album: ${rawAssets.length}`);
 
-  const category = determineCategory(albumName);
-  const baseAlbumTags = generateBaseTags(albumName);
-
   let mediaIndex = 1;
   const formattedPhotos = rawAssets
     .filter(a => a.type === 'IMAGE' || a.type === 'VIDEO')
     .map((asset) => {
       const isVideo = asset.type === 'VIDEO';
-      const { title, detectedPersons } = cleanTitleAndExtractPersons(asset.originalFileName || '', albumName, mediaIndex++);
+      const { title, detectedPersons } = cleanTitleAndExtractPersons(asset.originalFileName || '', effectiveAlbumName, mediaIndex++);
 
       const createdDate = asset.fileCreatedAt || asset.createdAt;
       const dateFormatted = createdDate 
@@ -218,9 +222,9 @@ async function run() {
       if (albumDescription) {
         desc = albumDescription;
       } else if (detectedPersons.length > 0) {
-        desc = `Aufnahme: ${title} aus dem Album «${albumName}».`;
+        desc = `Aufnahme: ${title} aus dem Album «${effectiveAlbumName}».`;
       } else {
-        desc = `Impressionen zum Anlass «${albumName}» (${dateFormatted}).`;
+        desc = `Impressionen zum Anlass «${effectiveAlbumName}» (${dateFormatted}).`;
       }
 
       const directThumb = `https://${host}/api/assets/${asset.id}/thumbnail?key=${key}`;
@@ -230,11 +234,11 @@ async function run() {
 
       const photoObj = {
         id: asset.id,
-        album: albumName,
+        album: effectiveAlbumName,
         albumId: albumId,
         albumKey: key,
         title: title,
-        category: category,
+        category: effectiveCategory,
         date: dateFormatted,
         description: desc,
         mediaType: isVideo ? 'video' : 'image',
@@ -243,7 +247,8 @@ async function run() {
         tags: tags,
         detectedPersons: detectedPersons,
         _directThumbnailUrl: directThumb,
-        _directImageUrl: directPreview
+        _directImageUrl: directPreview,
+        visibility: effectiveVisibility
       };
 
       if (isVideo) {
@@ -337,7 +342,7 @@ async function run() {
   // Neues Album sauber mergen:
   // Vorhandene Bilder dieses Albums oder dieser Asset-IDs ersetzen/hinzufügen
   const newAssetIds = new Set(formattedPhotos.map(p => p.id));
-  const mergedGallery = existingGallery.filter(p => !newAssetIds.has(p.id) && p.album !== albumName);
+  const mergedGallery = existingGallery.filter(p => !newAssetIds.has(p.id) && p.album !== effectiveAlbumName);
   
   // Neue Bilder an den Anfang oder sortiert einfügen
   mergedGallery.unshift(...formattedPhotos);
