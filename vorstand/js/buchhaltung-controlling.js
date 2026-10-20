@@ -667,10 +667,37 @@ window.renderTabCockpit = function(container) {
   if (!container) return;
   
   container.innerHTML = `
-    <!-- Top-Reihe: Controlling-Kennzahlen (B & C) -->
+    <!-- Top-Reihe: Zuteilungsquoten & Gemeinkostenschlüssel (Interaktiv & Variabel) -->
     <div class="row g-4 mb-4">
-      <!-- Card B: Mitglieder-Entwicklung & Verbandskosten-Quote -->
-      <div class="col-lg-6">
+      <div class="col-12" id="bh-allocations-panel-container">
+        <!-- Dynamisch gerendert durch bhRenderAllocationsPanel() -->
+      </div>
+    </div>
+
+    <!-- 3 getrennte Controlling-Auswertungen (Vermietung, Wirtschaft & Anlässe, Mitglieder & Verband) -->
+    <div class="row g-4 mb-4">
+      <!-- Card 1: Schützenhaus-Vermietung: Ist die Vermietung rentabel? -->
+      <div class="col-lg-4 col-md-6">
+        <div class="bh-report-section shadow-sm border border-light h-100" id="bh-facility-roi-container">
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+            <span class="ms-2 small text-muted">Lade Vermietungsrechnung...</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Card 2: Wirtschaft & Vereinsanlässe -->
+      <div class="col-lg-4 col-md-6">
+        <div class="bh-report-section shadow-sm border border-light h-100" id="bh-hospitality-container">
+          <div class="text-center py-4">
+            <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+            <span class="ms-2 small text-muted">Lade Wirtschaft & Anlässe...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Mitglieder- & Verbandskostenquote -->
+      <div class="col-lg-4 col-md-12">
         <div class="bh-report-section shadow-sm border border-light h-100" id="bh-membership-quote-container">
           <div class="text-center py-4">
             <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
@@ -678,19 +705,21 @@ window.renderTabCockpit = function(container) {
           </div>
         </div>
       </div>
-      
-      <!-- Card C: Schützenhaus Erfolgsrechnung / Facility ROI (exkl. Wasserschaden 6011) -->
-      <div class="col-lg-6">
-        <div class="bh-report-section shadow-sm border border-light h-100" id="bh-facility-roi-container">
+    </div>
+    
+    <!-- Sparten-Erfolgsrechnung (Tätigkeitsbereiche) -->
+    <div class="row g-4 mb-4">
+      <div class="col-12">
+        <div class="bh-report-section shadow-sm border border-light" id="bh-sparten-container">
           <div class="text-center py-4">
             <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
-            <span class="ms-2 small text-muted">Lade Facility ROI...</span>
+            <span class="ms-2 small text-muted">Lade Sparten-Erfolgsrechnung...</span>
           </div>
         </div>
       </div>
     </div>
-    
-    <!-- Mittlere Reihe: E – Mehrjahres-Kostenstruktur-Trend (2000-2026) -->
+
+    <!-- Mehrjahres-Kostenstruktur-Trend (2000-2026) -->
     <div class="row g-4 mb-4">
       <div class="col-12">
         <div class="bh-report-section shadow-sm border border-light">
@@ -741,10 +770,13 @@ window.renderTabCockpit = function(container) {
   
   // Rendern der Charts & KPIs verzögert ausführen
   setTimeout(() => {
+    bhRenderAllocationsPanel();
+    bhRenderFacilityROI();
+    bhRenderHospitalityCard();
+    bhRenderMembershipQuote();
+    bhRenderSpartenErfolgsrechnung();
     bhRenderRevenueStructureChart();
     bhRenderExpenseStructureChart();
-    bhRenderMembershipQuote();
-    bhRenderFacilityROI();
     bhRenderYoYCostChart();
   }, 100);
 };
@@ -1205,178 +1237,653 @@ function renderGVAuswertungReport(journal) {
   `;
 }
 
-function bhRenderMembershipQuote() {
-  const container = document.getElementById('bh-membership-quote-container');
+// =====================================================================
+// INTERAKTIVES PANEL: ZUTEILUNGSQUOTEN & GEMEINKOSTENSCHLÜSSEL
+// =====================================================================
+window.bhRenderAllocationsPanel = function() {
+  const container = document.getElementById('bh-allocations-panel-container');
   if (!container) return;
 
-  let totalMembersRevenue = 0;
-  let revenue3410 = 0;
-  let revenue3411 = 0;
-  let revenue3412 = 0;
-  let totalVerbandExpense = 0;
+  const allocations = (window._bhCostAllocations && window._bhCostAllocations.length)
+    ? window._bhCostAllocations 
+    : window._bhDefaultAllocations;
+
+  const hasWrite = typeof hasWriteAccess === 'function' ? hasWriteAccess('buchhaltung') : true;
+
+  let html = `
+    <div class="card shadow-sm border border-light rounded-3 overflow-hidden" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%);">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap" style="gap: 12px;">
+        <div>
+          <h6 class="fw-bold text-primary mb-0 d-flex align-items-center">
+            <i class="fas fa-sliders-h me-2 text-primary"></i>
+            Zuteilungsquoten & Gemeinkostenschlüssel (Konfigurierbar)
+          </h6>
+          <p class="text-muted small mb-0 mt-0.5">
+            Passe die Prozentsätze (%) an; alle 3 Auswertungen berechnen sich sofort live neu.
+          </p>
+        </div>
+        <div class="d-flex align-items-center" style="gap: 8px;">
+          ${hasWrite ? `
+            <button class="btn btn-sm btn-primary fw-bold shadow-sm px-3" onclick="bhSaveCostAllocations()">
+              <i class="fas fa-save me-1.5"></i>In DB speichern
+            </button>
+          ` : ''}
+          <button class="btn btn-sm btn-outline-secondary px-2.5" onclick="bhResetCostAllocations()" title="Standardwerte wiederherstellen">
+            <i class="fas fa-undo me-1"></i>Standard
+          </button>
+          <button class="btn btn-sm btn-light border px-2.5" type="button" data-bs-toggle="collapse" data-bs-target="#bh-alloc-collapse" aria-expanded="true" title="Ein-/Ausklappen">
+            <i class="fas fa-chevron-down"></i>
+          </button>
+        </div>
+      </div>
+      
+      <div class="collapse show" id="bh-alloc-collapse">
+        <div class="card-body p-3">
+          <div class="row g-3">
+  `;
+
+  allocations.forEach(alloc => {
+    const quote = Number(alloc.quote_percent ?? 0);
+    const badgeColor = quote >= 50 ? 'primary' : quote > 0 ? 'info' : 'secondary';
+    
+    html += `
+      <div class="col-md-6 col-lg-4">
+        <div class="p-2.5 rounded-3 border bg-white h-100 shadow-2xs">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <span class="fw-bold small text-dark">${alloc.label}</span>
+            <span class="badge bg-${badgeColor} rounded-pill font-monospace ms-2" id="bh-quote-badge-${alloc.key}">${quote.toFixed(0)}%</span>
+          </div>
+          <div class="small text-muted font-monospace mb-2" style="font-size: 11px;">
+            <i class="fas fa-receipt me-1 text-secondary"></i>Konto: ${alloc.konten}
+          </div>
+          <div class="d-flex align-items-center" style="gap: 10px;">
+            <input type="range" class="form-range flex-grow-1" min="0" max="100" step="5" value="${quote}" 
+                   id="bh-slider-${alloc.key}" 
+                   oninput="bhOnAllocationInput('${alloc.key}', this.value)" 
+                   style="cursor: pointer;">
+            <input type="number" class="form-control form-control-sm text-end font-monospace" min="0" max="100" step="5" value="${quote}" 
+                   id="bh-num-${alloc.key}" 
+                   onchange="bhOnAllocationInput('${alloc.key}', this.value)" 
+                   style="width: 65px; font-weight: 600;">
+          </div>
+          <div class="small text-muted mt-1" style="font-size: 11px; line-height: 1.2;">
+            ${alloc.beschreibung || ''}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += `
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+};
+
+window.bhOnAllocationInput = function(key, val) {
+  const num = Math.max(0, Math.min(100, parseFloat(val) || 0));
+  window.bhSetAllocationQuote(key, num);
+
+  const slider = document.getElementById('bh-slider-' + key);
+  const numInput = document.getElementById('bh-num-' + key);
+  const badge = document.getElementById('bh-quote-badge-' + key);
+
+  if (slider && Number(slider.value) !== num) slider.value = num;
+  if (numInput && Number(numInput.value) !== num) numInput.value = num;
+  if (badge) {
+    badge.textContent = num.toFixed(0) + '%';
+    badge.className = `badge bg-${num >= 50 ? 'primary' : num > 0 ? 'info' : 'secondary'} rounded-pill font-monospace ms-2`;
+  }
+
+  // Live Neuberechnung aller 3 Fachkarten + Spartenrechnung
+  bhRenderFacilityROI();
+  bhRenderHospitalityCard();
+  bhRenderMembershipQuote();
+  bhRenderSpartenErfolgsrechnung();
+};
+
+// =====================================================================
+// AUSWERTUNG 1: SCHÜTZENHAUS-VERMIETUNG (Rentabilität & Deckungsbeitrag)
+// =====================================================================
+function bhRenderFacilityROI() {
+  const container = document.getElementById('bh-facility-roi-container');
+  if (!container) return;
+
+  const currentYear = Number(window._bhYear);
+  const currentJournal = (window._bhJournal || []).filter(j => Number(j.jahr) === currentYear);
+
+  const qEntschaedigung = bhGetAllocationQuote('vermietung_entschaedigung_4011', 100);
+  const qReinigung = bhGetAllocationQuote('vermietung_reinigung_4010', 70);
+  const qEnergie = bhGetAllocationQuote('vermietung_energie_6400', 30);
+  const qUnterhalt = bhGetAllocationQuote('vermietung_unterhalt_6000', 10);
+  const qVersicherung = bhGetAllocationQuote('vermietung_versicherung_6301', 10);
+
+  let rev3650 = 0;
+  let exp4011 = 0;
+  let exp4010 = 0;
+  let exp4002 = 0;
+  let exp6400 = 0;
+  let exp6000 = 0;
+  let exp6301 = 0;
+  let exp6302 = 0;
 
   window._bhKontenrahmen.forEach(acc => {
     const code = String(acc.konto).trim();
     const balance = Number(acc._endsaldo || 0);
 
-    if (code === '3410') {
-      revenue3410 = balance;
-      totalMembersRevenue += balance;
-    } else if (code === '3411') {
-      revenue3411 = balance;
-      totalMembersRevenue += balance;
-    } else if (code === '3412') {
-      revenue3412 = balance;
-      totalMembersRevenue += balance;
-    } else if (code === '4410') {
-      totalVerbandExpense += balance;
-    }
+    if (code === '3650') rev3650 += balance;
+    else if (code === '4011') exp4011 += balance;
+    else if (code === '4010') exp4010 += balance;
+    else if (code === '4002') exp4002 += balance;
+    else if (code === '6400') exp6400 += balance;
+    else if (code === '6000' || code === '6010') exp6000 += balance;
+    else if (code === '6301') exp6301 += balance;
+    else if (code === '6302') exp6302 += balance;
   });
 
-  const retainedRevenue = totalMembersRevenue - totalVerbandExpense;
-  const quotePercent = totalMembersRevenue > 0 ? (retainedRevenue / totalMembersRevenue) * 100 : 0;
+  const costEntschaedigung = exp4011 * (qEntschaedigung / 100);
+  const costReinigung = (exp4010 + exp4002) * (qReinigung / 100);
+  const costEnergie = exp6400 * (qEnergie / 100);
+  const costUnterhalt = exp6000 * (qUnterhalt / 100);
+  const costVersicherung = (exp6301 + exp6302) * (qVersicherung / 100);
+
+  const totalCost = costEntschaedigung + costReinigung + costEnergie + costUnterhalt + costVersicherung;
+  const netContribution = rev3650 - totalCost;
+  const marginPercent = rev3650 > 0 ? (netContribution / rev3650) * 100 : 0;
+
+  // Zähle Anzahl Miet-Gutschriften im Journal
+  const rentalEntries = currentJournal.filter(j => String(j.konto_haben).trim() === '3650');
+  const rentalCount = rentalEntries.length;
+  const avgContributionPerRental = rentalCount > 0 ? (netContribution / rentalCount) : 0;
 
   container.innerHTML = `
-    <h5 class="fw-bold text-primary mb-3">
-      <i class="fas fa-users-cog me-2"></i>Mitglieder & Verbandskosten-Quote (${window._bhYear})
-    </h5>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-bold text-primary mb-0 d-flex align-items-center">
+        <i class="fas fa-hotel me-2"></i>1. Schützenhaus-Vermietung
+      </h6>
+      <span class="badge bg-primary px-2 py-1" style="font-size: 10px;">Jahr ${currentYear}</span>
+    </div>
     
     <div class="row g-2 mb-3">
       <div class="col-6">
         <div class="p-2.5 rounded-3 bg-light border border-light text-center">
-          <div class="small text-muted fw-semibold" style="font-size: 10px;">Einnahmen Beiträge</div>
-          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(totalMembersRevenue)}</div>
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Mietertrag (3650)</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(rev3650)}</div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 border text-center" style="background-color: ${netContribution >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${netContribution >= 0 ? '#198754' : '#dc3545'} !important;">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Vermietungsbeitrag</div>
+          <div class="fw-bold mt-0.5 ${netContribution >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(netContribution)}</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="small mb-3">
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Vermietungsentschädigung (4011 <span class="badge bg-light text-secondary border py-0">${qEntschaedigung}%</span>):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(costEntschaedigung)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Reinigung & Verbrauch (4010/02 <span class="badge bg-light text-secondary border py-0">${qReinigung}%</span>):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(costReinigung)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Energie & Wasser (6400 <span class="badge bg-light text-secondary border py-0">${qEnergie}%</span>):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(costEnergie)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Gebäudeunterhalt (6000 <span class="badge bg-light text-secondary border py-0">${qUnterhalt}%</span>):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(costUnterhalt)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Versicherungen (6301/02 <span class="badge bg-light text-secondary border py-0">${qVersicherung}%</span>):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(costVersicherung)}</span>
+      </div>
+      <div class="d-flex justify-content-between pt-1 border-top fw-bold">
+        <span>Zugeordnete Gesamtkosten:</span>
+        <span class="text-danger">-${fmtChf(totalCost)}</span>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between mb-2 pt-2 border-top small fw-bold">
+      <span class="text-muted">Vermietungsmarge:</span>
+      <span class="${marginPercent >= 40 ? 'text-success' : marginPercent >= 20 ? 'text-primary' : 'text-danger'}">${marginPercent.toFixed(1)}%</span>
+    </div>
+    
+    <div class="progress mb-2" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
+      <div class="progress-bar ${marginPercent >= 40 ? 'bg-success' : marginPercent >= 20 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, marginPercent))}%;" aria-valuenow="${marginPercent}" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <div class="d-flex justify-content-between small text-muted pt-1" style="font-size: 11px;">
+      <span>Anzahl Buchungen: <strong>${rentalCount}</strong></span>
+      <span>Ø Netto / Event: <strong>${fmtChf(avgContributionPerRental)}</strong></span>
+    </div>
+  `;
+}
+
+// =====================================================================
+// AUSWERTUNG 2: FESTWIRTSCHAFT & VEREINSANLÄSSE
+// =====================================================================
+function bhRenderHospitalityCard() {
+  const container = document.getElementById('bh-hospitality-container');
+  if (!container) return;
+
+  const currentYear = Number(window._bhYear);
+
+  const qWirtReinigung = bhGetAllocationQuote('wirtschaft_reinigung_4010', 30);
+  const qAnlaesseAbzug = bhGetAllocationQuote('wirtschaft_anlaesse_abzug', 15);
+
+  let rev3651 = 0;
+  let exp4000 = 0;
+  let exp4001 = 0;
+  let exp4002 = 0;
+  let exp4010 = 0;
+
+  // Vereinsanlässe
+  let rev3631 = 0;
+  let rev3632 = 0;
+  let exp4020 = 0;
+
+  window._bhKontenrahmen.forEach(acc => {
+    const code = String(acc.konto).trim();
+    const balance = Number(acc._endsaldo || 0);
+
+    if (code === '3651') rev3651 += balance;
+    else if (code === '4000') exp4000 += balance;
+    else if (code === '4001') exp4001 += balance;
+    else if (code === '4002') exp4002 += balance;
+    else if (code === '4010') exp4010 += balance;
+    else if (code === '3631') rev3631 += balance;
+    else if (code === '3632') rev3632 += balance;
+    else if (code === '4020') exp4020 += balance;
+  });
+
+  const wareneinsatzBrutto = exp4000 + exp4001 + exp4002;
+  const anlaesseAbzug = wareneinsatzBrutto * (qAnlaesseAbzug / 100);
+  const wareneinsatzNetto = Math.max(0, wareneinsatzBrutto - anlaesseAbzug);
+  const costReinigung = (exp4010 + exp4002) * (qWirtReinigung / 100);
+
+  const totalWirtExpense = wareneinsatzNetto + costReinigung;
+  const wirtErgebnis = rev3651 - totalWirtExpense;
+  const wirtMarge = rev3651 > 0 ? ((rev3651 - wareneinsatzNetto) / rev3651) * 100 : 0;
+
+  // Vereinsanlässe
+  const revAnlaesse = rev3631 + rev3632;
+  const expAnlaesse = exp4020 + anlaesseAbzug;
+  const anlaesseErgebnis = revAnlaesse - expAnlaesse;
+
+  container.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-bold text-primary mb-0 d-flex align-items-center">
+        <i class="fas fa-beer me-2"></i>2. Wirtschaft & Anlässe
+      </h6>
+      <span class="badge bg-primary px-2 py-1" style="font-size: 10px;">Jahr ${currentYear}</span>
+    </div>
+    
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 bg-light border border-light text-center">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Wirtschaftsertrag (3651)</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(rev3651)}</div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 border text-center" style="background-color: ${wirtErgebnis >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${wirtErgebnis >= 0 ? '#198754' : '#dc3545'} !important;">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Wirtschaftsergebnis</div>
+          <div class="fw-bold mt-0.5 ${wirtErgebnis >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(wirtErgebnis)}</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="small mb-3">
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Wareneinsatz brutto (4000/01/02):</span>
+        <span class="text-dark fw-semibold">${fmtChf(wareneinsatzBrutto)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Abzug Vereinsanlässe (<span class="badge bg-light text-secondary border py-0">${qAnlaesseAbzug}%</span>):</span>
+        <span class="text-success fw-semibold">-${fmtChf(anlaesseAbzug)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Wareneinsatz bereinigt netto:</span>
+        <span class="text-danger fw-semibold">-${fmtChf(wareneinsatzNetto)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Reinigung Wirtschaft (4010 <span class="badge bg-light text-secondary border py-0">${qWirtReinigung}%</span>):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(costReinigung)}</span>
+      </div>
+      <div class="d-flex justify-content-between pt-1 border-top fw-bold">
+        <span>Wirtschaftsaufwand total:</span>
+        <span class="text-danger">-${fmtChf(totalWirtExpense)}</span>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between mb-2 pt-2 border-top small fw-bold">
+      <span class="text-muted">Wirtschaftsmarge:</span>
+      <span class="${wirtMarge >= 40 ? 'text-success' : wirtMarge >= 15 ? 'text-primary' : 'text-danger'}">${wirtMarge.toFixed(1)}%</span>
+    </div>
+    
+    <div class="progress mb-2" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
+      <div class="progress-bar ${wirtMarge >= 40 ? 'bg-success' : wirtMarge >= 15 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, wirtMarge))}%;" aria-valuenow="${wirtMarge}" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+
+    <div class="p-2 rounded-2 bg-light border mt-2 small" style="font-size: 11px;">
+      <div class="d-flex justify-content-between fw-semibold">
+        <span class="text-muted"><i class="fas fa-bullhorn me-1 text-primary"></i>Vereinsanlässe (3631/32 vs 4020):</span>
+        <span class="${anlaesseErgebnis >= 0 ? 'text-success' : 'text-danger'} fw-bold">${fmtChf(anlaesseErgebnis)}</span>
+      </div>
+      <div class="text-muted mt-0.5">Ertrag: ${fmtChf(revAnlaesse)} | Aufwand (inkl. Anteil Ware): ${fmtChf(expAnlaesse)}</div>
+    </div>
+  `;
+}
+
+// =====================================================================
+// AUSWERTUNG 3: MITGLIEDER- UND VERBANDSKOSTENQUOTE
+// =====================================================================
+function bhRenderMembershipQuote() {
+  const container = document.getElementById('bh-membership-quote-container');
+  if (!container) return;
+
+  const activeMembers = window._bhActiveMembersCount || 53;
+
+  let rev3410 = 0;
+  let rev3411 = 0;
+  let rev3412 = 0;
+  let exp4400 = 0;
+  let exp4401 = 0;
+
+  // Erweiterte Sportbetriebskosten
+  let exp4410 = 0;
+  let exp4420 = 0;
+  let exp4421 = 0;
+  let exp4430 = 0;
+  let exp4431 = 0;
+  let exp4210 = 0;
+  let exp4211 = 0;
+
+  window._bhKontenrahmen.forEach(acc => {
+    const code = String(acc.konto).trim();
+    const balance = Number(acc._endsaldo || 0);
+
+    if (code === '3410') rev3410 += balance;
+    else if (code === '3411') rev3411 += balance;
+    else if (code === '3412') rev3412 += balance;
+    else if (code === '4400') exp4400 += balance;
+    else if (code === '4401') exp4401 += balance;
+    else if (code === '4410') exp4410 += balance;
+    else if (code === '4420') exp4420 += balance;
+    else if (code === '4421') exp4421 += balance;
+    else if (code === '4430') exp4430 += balance;
+    else if (code === '4431') exp4431 += balance;
+    else if (code === '4210') exp4210 += balance;
+    else if (code === '4211') exp4211 += balance;
+  });
+
+  const totalMembersRev = rev3410 + rev3411;
+  const totalVerbandExp = exp4400 + exp4401;
+
+  const costPerMember = activeMembers > 0 ? (totalVerbandExp / activeMembers) : 0;
+  const deckungPerMember = activeMembers > 0 ? ((totalMembersRev - totalVerbandExp) / activeMembers) : 0;
+  const quotePercent = totalMembersRev > 0 ? (totalVerbandExp / totalMembersRev) * 100 : 0;
+  const deckungQuote = Math.max(0, 100 - quotePercent);
+
+  const retainedRevenue = totalMembersRev - totalVerbandExp;
+  const totalSportExpense = totalVerbandExp + exp4410 + exp4420 + exp4421 + exp4430 + exp4431 + exp4210 + exp4211;
+
+  container.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-bold text-primary mb-0 d-flex align-items-center">
+        <i class="fas fa-users-cog me-2"></i>3. Mitglieder & Verbandskosten
+      </h6>
+      <span class="badge bg-primary px-2 py-1" style="font-size: 10px;">${activeMembers} Aktive Schützen</span>
+    </div>
+    
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <div class="p-2.5 rounded-3 bg-light border border-light text-center">
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Beiträge Aktive (3410/11)</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(totalMembersRev)}</div>
         </div>
       </div>
       <div class="col-6">
         <div class="p-2.5 rounded-3 border text-center" style="background-color: ${retainedRevenue >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${retainedRevenue >= 0 ? '#198754' : '#dc3545'} !important;">
-          <div class="small text-muted fw-semibold" style="font-size: 10px;">Einbehaltener Betrag</div>
+          <div class="small text-muted fw-semibold" style="font-size: 10px;">Deckungsbeitrag Verein</div>
           <div class="fw-bold mt-0.5 ${retainedRevenue >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(retainedRevenue)}</div>
         </div>
       </div>
     </div>
     
-    <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Mitgliederbeiträge Aktive (3410):</span>
-      <span class="text-dark">${fmtChf(revenue3410)}</span>
+    <div class="small mb-3">
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Mitgliederbeiträge Aktive (3410):</span>
+        <span class="text-dark fw-semibold">${fmtChf(rev3410)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Lizenzgebühren Aktive (3411):</span>
+        <span class="text-dark fw-semibold">${fmtChf(rev3411)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Verbandsabgaben SSV/AGSV (4400):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(exp4400)}</span>
+      </div>
+      <div class="d-flex justify-content-between mb-1.5">
+        <span class="text-muted">Lizenzgebühren bezahlt (4401):</span>
+        <span class="text-danger fw-semibold">-${fmtChf(exp4401)}</span>
+      </div>
+      <div class="d-flex justify-content-between pt-1 border-top fw-bold">
+        <span>Verbandsabgaben total:</span>
+        <span class="text-danger">-${fmtChf(totalVerbandExp)}</span>
+      </div>
     </div>
-    <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Lizenzgebühren Aktive (3411):</span>
-      <span class="text-dark">${fmtChf(revenue3411)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Mitgliederbeiträge Passive (3412):</span>
-      <span class="text-dark">${fmtChf(revenue3412)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-2 small fw-semibold pt-1 border-top">
-      <span class="text-muted">Verbandsabgaben SSV/AGSV (4410):</span>
-      <span class="text-danger">${fmtChf(totalVerbandExpense)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-3 pt-2 border-top small fw-bold">
-      <span class="text-muted">Einbehaltungsquote (Netto):</span>
-      <span class="${quotePercent >= 60 ? 'text-success' : quotePercent >= 30 ? 'text-primary' : 'text-danger'}">${quotePercent.toFixed(1)}%</span>
+
+    <div class="d-flex justify-content-between mb-2 pt-2 border-top small fw-bold">
+      <span class="text-muted">Kostenquote Verband / Einnahmen:</span>
+      <span class="${quotePercent <= 40 ? 'text-success' : quotePercent <= 60 ? 'text-primary' : 'text-danger'}">${quotePercent.toFixed(1)}%</span>
     </div>
     
-    <div class="progress" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
-      <div class="progress-bar ${quotePercent >= 60 ? 'bg-success' : quotePercent >= 30 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, quotePercent))}%;" aria-valuenow="${quotePercent}" aria-valuemin="0" aria-valuemax="100"></div>
+    <div class="progress mb-2" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
+      <div class="progress-bar ${quotePercent <= 40 ? 'bg-success' : quotePercent <= 60 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, quotePercent))}%;" aria-valuenow="${quotePercent}" aria-valuemin="0" aria-valuemax="100"></div>
     </div>
-    <div class="small text-muted mt-2 text-center" style="font-size: 11px;">
-      ${quotePercent >= 60 ? '🎉 Sehr gute Einbehaltungsquote!' : quotePercent >= 30 ? '👍 Ausgewogenes Verhältnis der Verbandskosten.' : '⚠️ Hohe Verbandskosten im Verhältnis zu den Beiträgen!'}
+
+    <div class="p-2 rounded-2 bg-light border mt-2 small" style="font-size: 11px;">
+      <div class="d-flex justify-content-between">
+        <span>Verbandskosten / Kopf: <strong>${fmtChf(costPerMember)}</strong></span>
+        <span>Deckung / Kopf: <strong class="text-success">${fmtChf(deckungPerMember)}</strong></span>
+      </div>
+      <div class="d-flex justify-content-between text-muted mt-1 pt-1 border-top">
+        <span>Sportbetriebsaufwand gesamt (inkl. Meisterschaften/Munition):</span>
+        <span class="fw-bold text-dark">${fmtChf(totalSportExpense)}</span>
+      </div>
     </div>
   `;
 }
 
-function bhRenderFacilityROI() {
-  const container = document.getElementById('bh-facility-roi-container');
+// =====================================================================
+// AUSWERTUNG 4: SPARTEN-ERFOLGSRECHNUNG (Tätigkeitsbereiche)
+// =====================================================================
+function bhRenderSpartenErfolgsrechnung() {
+  const container = document.getElementById('bh-sparten-container');
   if (!container) return;
 
-  let revenue3650 = 0;
-  let revenue3651 = 0;
-  let totalRevenue = 0;
-  
-  let expenseCleaning = 0;
-  let expenseMaintenance = 0;
-  let expenseUtilities = 0;
-  let totalExpense = 0;
+  const currentYear = Number(window._bhYear);
 
-  window._bhKontenrahmen.forEach(acc => {
-    const code = String(acc.konto).trim();
-    const balance = Number(acc._endsaldo || 0);
+  // Quoten
+  const qEntschaedigung = bhGetAllocationQuote('vermietung_entschaedigung_4011', 100);
+  const qReinigung = bhGetAllocationQuote('vermietung_reinigung_4010', 70);
+  const qEnergie = bhGetAllocationQuote('vermietung_energie_6400', 30);
+  const qUnterhalt = bhGetAllocationQuote('vermietung_unterhalt_6000', 10);
+  const qVersicherung = bhGetAllocationQuote('vermietung_versicherung_6301', 10);
+  const qWirtReinigung = bhGetAllocationQuote('wirtschaft_reinigung_4010', 30);
+  const qAnlaesseAbzug = bhGetAllocationQuote('wirtschaft_anlaesse_abzug', 15);
 
-    if (code === '3650') {
-      revenue3650 = balance;
-      totalRevenue += balance;
-    } else if (code === '3651') {
-      revenue3651 = balance;
-      totalRevenue += balance;
-    } else if (code === '4010' || code === '4011') {
-      expenseCleaning += balance;
-      totalExpense += balance;
-    } else if (code.startsWith('60') && code !== '6011') {
-      expenseMaintenance += balance;
-      totalExpense += balance;
-    } else if (code === '6400') {
-      expenseUtilities += balance;
-      totalExpense += balance;
-    }
+  const getBal = (code) => {
+    const acc = window._bhKontenrahmen.find(a => String(a.konto).trim() === String(code).trim());
+    return acc ? Number(acc._endsaldo || 0) : 0;
+  };
+
+  // 1. Wirtschaft
+  const wirtErtrag = getBal('3651');
+  const wareneinsatzBrutto = getBal('4000') + getBal('4001') + getBal('4002');
+  const anlaesseAbzug = wareneinsatzBrutto * (qAnlaesseAbzug / 100);
+  const wirtAufwand = (wareneinsatzBrutto - anlaesseAbzug) + ((getBal('4010') + getBal('4002')) * (qWirtReinigung / 100));
+
+  // 2. Vermietung
+  const vermietungErtrag = getBal('3650');
+  const vermietungAufwand = (getBal('4011') * (qEntschaedigung / 100)) +
+                           ((getBal('4010') + getBal('4002')) * (qReinigung / 100)) +
+                           (getBal('6400') * (qEnergie / 100)) +
+                           (getBal('6000') * (qUnterhalt / 100)) +
+                           ((getBal('6301') + getBal('6302')) * (qVersicherung / 100));
+
+  // 3. Schiessbetrieb 50m
+  const s50Ertrag = getBal('3630');
+  const s50Aufwand = getBal('4100') + getBal('4211') + getBal('4420') + getBal('4421') + (getBal('6001') * 0.7);
+
+  // 4. Schiessbetrieb 10m
+  const s10Ertrag = 0;
+  const s10Aufwand = getBal('4101') + getBal('4430') + getBal('4431') + (getBal('6001') * 0.3);
+
+  // 5. Vereinsanlässe
+  const anlassErtrag = getBal('3631') + getBal('3632');
+  const anlassAufwand = getBal('4020') + anlaesseAbzug;
+
+  // 6. Mitgliederbeiträge
+  const mitgliederErtrag = getBal('3410') + getBal('3412') + getBal('3413');
+  const mitgliederAufwand = 0;
+
+  // 7. Verbands- und Lizenzwesen
+  const verbandErtrag = getBal('3411') + getBal('3421');
+  const verbandAufwand = getBal('4400') + getBal('4401') + getBal('4410');
+
+  // 8. Jugendförderung
+  const jugendErtrag = getBal('3423') + getBal('3424');
+  const jugendAufwand = getBal('4210');
+
+  // 9. Allgemeiner Gebäudebetrieb (verbleibende Gemeinkosten)
+  const restReinigungQuote = Math.max(0, 100 - qReinigung - qWirtReinigung);
+  const restEnergieQuote = Math.max(0, 100 - qEnergie);
+  const restUnterhaltQuote = Math.max(0, 100 - qUnterhalt);
+  const restVersicherungQuote = Math.max(0, 100 - qVersicherung);
+
+  const gebaeudeErtrag = 0;
+  const gebaeudeAufwand = (getBal('6000') * (restUnterhaltQuote / 100)) +
+                          getBal('6002') + getBal('6003') + getBal('6006') + getBal('6010') +
+                          (getBal('6400') * (restEnergieQuote / 100)) +
+                          ((getBal('6301') + getBal('6302')) * (restVersicherungQuote / 100)) +
+                          ((getBal('4010') + getBal('4002')) * (restReinigungQuote / 100));
+
+  // 10. Administration & IT
+  const adminErtrag = 0;
+  const adminAufwand = getBal('6500') + getBal('6510') + getBal('6520') + getBal('6700') + getBal('6702');
+
+  // 11. Finanzergebnis
+  const finanzErtrag = getBal('8110');
+  const finanzAufwand = getBal('6940');
+
+  // 12. Kleidergeschäft Netto
+  const kleiderErtrag = getBal('8121');
+  const kleiderAufwand = getBal('8501');
+
+  // 13. Sponsoring & Spenden
+  const sponsorErtrag = getBal('3710') + getBal('3800');
+  const sponsorAufwand = 0;
+
+  const sparten = [
+    { name: 'Wirtschaft (Stubenbetrieb)', ertragKonti: '3651', ertrag: wirtErtrag, aufwandKonti: '4000-02, 4010 anteilig', aufwand: wirtAufwand },
+    { name: 'Schützenhaus-Vermietung', ertragKonti: '3650', ertrag: vermietungErtrag, aufwandKonti: '4011, 4010, 6000, 63xx, 6400 anteilig', aufwand: vermietungAufwand },
+    { name: 'Schiessbetrieb 50m (KK)', ertragKonti: '3630', ertrag: s50Ertrag, aufwandKonti: '4100, 4211, 4420/21, 6001', aufwand: s50Aufwand },
+    { name: 'Schiessbetrieb 10m (LG)', ertragKonti: '–', ertrag: s10Ertrag, aufwandKonti: '4101, 4430/31, 6001', aufwand: s10Aufwand },
+    { name: 'Vereinsanlässe & Feste', ertragKonti: '3631, 3632', ertrag: anlassErtrag, aufwandKonti: '4020, Anteil Wareneinsatz', aufwand: anlassAufwand },
+    { name: 'Mitgliederbeiträge', ertragKonti: '3410, 3412, 3413', ertrag: mitgliederErtrag, aufwandKonti: '–', aufwand: mitgliederAufwand },
+    { name: 'Verbands- & Lizenzwesen', ertragKonti: '3411, 3421', ertrag: verbandErtrag, aufwandKonti: '4400, 4401, 4410', aufwand: verbandAufwand },
+    { name: 'Jugendförderung & J&S', ertragKonti: '3423, 3424', ertrag: jugendErtrag, aufwandKonti: '4210', aufwand: jugendAufwand },
+    { name: 'Sponsoring, Gönner & Spenden', ertragKonti: '3710, 3800', ertrag: sponsorErtrag, aufwandKonti: '–', aufwand: sponsorAufwand },
+    { name: 'Allgemeiner Gebäudebetrieb', ertragKonti: '–', ertrag: gebaeudeErtrag, aufwandKonti: '60xx, 63xx, 6400 (Restanteil)', aufwand: gebaeudeAufwand },
+    { name: 'Administration, IT & Verein', ertragKonti: '–', ertrag: adminErtrag, aufwandKonti: '6500-20, 6700-02', aufwand: adminAufwand },
+    { name: 'Finanzergebnis', ertragKonti: '8110', ertrag: finanzErtrag, aufwandKonti: '6940 Bankspesen', aufwand: finanzAufwand },
+    { name: 'Kleidergeschäft (Netto)', ertragKonti: '8121', ertrag: kleiderErtrag, aufwandKonti: '8501', aufwand: kleiderAufwand }
+  ];
+
+  let totalErtrag = 0;
+  let totalAufwand = 0;
+
+  let tbodyHtml = '';
+  sparten.forEach(s => {
+    totalErtrag += s.ertrag;
+    totalAufwand += s.aufwand;
+    const diff = s.ertrag - s.aufwand;
+    const isPositive = diff >= 0;
+
+    tbodyHtml += `
+      <tr>
+        <td class="fw-bold ps-3">${s.name}</td>
+        <td class="small text-muted font-monospace">${s.ertragKonti}</td>
+        <td class="text-end fw-semibold text-dark">${s.ertrag > 0 ? fmtChf(s.ertrag) : '<span class="text-muted">–</span>'}</td>
+        <td class="small text-muted font-monospace">${s.aufwandKonti}</td>
+        <td class="text-end fw-semibold text-danger">${s.aufwand > 0 ? '-' + fmtChf(s.aufwand) : '<span class="text-muted">–</span>'}</td>
+        <td class="text-end fw-bold ${isPositive ? 'text-success' : 'text-danger'}">${fmtChf(diff)}</td>
+        <td class="text-center">
+          <span class="badge ${isPositive ? 'bg-success' : 'bg-danger'} rounded-pill px-2.5 py-1">
+            ${isPositive ? '+ Deckung' : '- Verlust'}
+          </span>
+        </td>
+      </tr>
+    `;
   });
 
-  const netIncome = totalRevenue - totalExpense;
-  const marginPercent = totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
+  const gesamtergebnis = totalErtrag - totalAufwand;
 
   container.innerHTML = `
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h5 class="fw-bold text-primary mb-0">
-        <i class="fas fa-hotel me-2"></i>Schützenhaus Erfolgsrechnung / Facility ROI (${window._bhYear})
-      </h5>
-      <span class="badge bg-secondary small px-2 py-1" style="font-size: 9px; cursor: help;" title="Einmaliger Wasserschaden (Konto 6011) ist explizit ausgeblendet">exkl. Wasserschaden</span>
-    </div>
-    
-    <div class="row g-2 mb-3">
-      <div class="col-6">
-        <div class="p-2.5 rounded-3 bg-light border border-light text-center">
-          <div class="small text-muted fw-semibold" style="font-size: 10px;">Einnahmen Schützenhaus</div>
-          <div class="fw-bold text-dark mt-0.5" style="font-size: 15px;">${fmtChf(totalRevenue)}</div>
-        </div>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap" style="gap: 12px;">
+      <div>
+        <h5 class="fw-bold text-primary mb-1">
+          <i class="fas fa-layer-group me-2"></i>Sparten-Erfolgsrechnung (Tätigkeitsbereiche ${currentYear})
+        </h5>
+        <p class="text-muted small mb-0">
+          Gegenüberstellung von Erträgen und Aufwänden nach operativen Verantwortungsbereichen unter Berücksichtigung der Zuteilungsquoten.
+        </p>
       </div>
-      <div class="col-6">
-        <div class="p-2.5 rounded-3 border text-center" style="background-color: ${netIncome >= 0 ? 'rgba(25,135,84,0.06)' : 'rgba(220,53,69,0.06)'}; border-color: ${netIncome >= 0 ? '#198754' : '#dc3545'} !important;">
-          <div class="small text-muted fw-semibold" style="font-size: 10px;">Netto-Ergebnis</div>
-          <div class="fw-bold mt-0.5 ${netIncome >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 15px;">${fmtChf(netIncome)}</div>
-        </div>
+      <div class="text-end">
+        <span class="small text-muted d-block">Operatives Vereinsergebnis:</span>
+        <span class="fw-bold fs-5 ${gesamtergebnis >= 0 ? 'text-success' : 'text-danger'}">${fmtChf(gesamtergebnis)}</span>
       </div>
     </div>
-    
-    <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Mieteinnahmen Schützenhaus (3650):</span>
-      <span class="text-dark">${fmtChf(revenue3650)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Festwirtschaftsertrag (3651):</span>
-      <span class="text-dark">${fmtChf(revenue3651)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-2 small fw-semibold pt-1 border-top">
-      <span class="text-muted">Unterhalt Gebäude (60xx exkl. 6011):</span>
-      <span class="text-danger">${fmtChf(expenseMaintenance)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Reinigungsaufwand (4010/4011):</span>
-      <span class="text-danger">${fmtChf(expenseCleaning)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-2 small fw-semibold">
-      <span class="text-muted">Nebenkosten Strom/Wasser/Gas (6400):</span>
-      <span class="text-danger">${fmtChf(expenseUtilities)}</span>
-    </div>
-    <div class="d-flex justify-content-between mb-3 pt-2 border-top small fw-bold">
-      <span class="text-muted">Facility ROI / Marge:</span>
-      <span class="${marginPercent >= 40 ? 'text-success' : marginPercent >= 20 ? 'text-primary' : 'text-danger'}">${marginPercent.toFixed(1)}%</span>
-    </div>
-    
-    <div class="progress" style="height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden;">
-      <div class="progress-bar ${marginPercent >= 40 ? 'bg-success' : marginPercent >= 20 ? 'bg-primary' : 'bg-danger'}" role="progressbar" style="width: ${Math.max(0, Math.min(100, marginPercent))}%;" aria-valuenow="${marginPercent}" aria-valuemin="0" aria-valuemax="100"></div>
-    </div>
-    <div class="small text-muted mt-2 text-center" style="font-size: 11px;">
-      ${marginPercent >= 40 ? '🎉 Exzellenter Facility ROI!' : marginPercent >= 20 ? '👍 Gesunder Schützenhaus-Erfolg.' : '⚠️ Niedrige Marge: Bitte Kosten oder Auslastung prüfen.'}
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle bh-table mb-0">
+        <thead>
+          <tr>
+            <th class="ps-3">Tätigkeitsbereich</th>
+            <th>Ertragskonti</th>
+            <th class="text-end">Ertrag</th>
+            <th>Aufwandskonti</th>
+            <th class="text-end">Aufwand</th>
+            <th class="text-end">Netto-Ergebnis</th>
+            <th class="text-center" style="width: 120px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tbodyHtml}
+        </tbody>
+        <tfoot>
+          <tr class="bh-total-line fs-6">
+            <td colspan="2" class="ps-3 fw-bold">Gesamttotal Verein (${currentYear})</td>
+            <td class="text-end fw-bold text-dark">${fmtChf(totalErtrag)}</td>
+            <td></td>
+            <td class="text-end fw-bold text-danger">-${fmtChf(totalAufwand)}</td>
+            <td class="text-end fw-bold ${gesamtergebnis >= 0 ? 'text-success' : 'text-danger'}">${fmtChf(gesamtergebnis)}</td>
+            <td class="text-center">
+              <span class="badge ${gesamtergebnis >= 0 ? 'bg-success' : 'bg-danger'} px-3 py-1.5 fs-7">
+                ${gesamtergebnis >= 0 ? 'Gewinn' : 'Verlust'}
+              </span>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   `;
 }

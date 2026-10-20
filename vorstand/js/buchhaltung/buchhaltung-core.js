@@ -14,6 +14,101 @@ window._bhBudget = [];
 window._bhYear = new Date().getFullYear();
 window._bhActiveTab = 'berichte'; // 'berichte' | 'journal' | 'konten'
 
+// Vorgeschlagene Standard-Zuteilungsquoten (Backend-Fallback)
+window._bhDefaultAllocations = [
+  { key: 'vermietung_entschaedigung_4011', bereich: 'vermietung', label: 'Vermietungsentschädigung (Künzlis)', konten: '4011', quote_percent: 100.00, beschreibung: 'Direkte Entschädigung für Wohnungs-/Schlüsselübergabe und Abnahme (100% direkt)', sort_order: 10 },
+  { key: 'vermietung_reinigung_4010', bereich: 'vermietung', label: 'Reinigung & Verbrauch (Vermietungsanteil)', konten: '4010,4002', quote_percent: 70.00, beschreibung: 'Anteil der vermietungsbedingten Reinigung und Verbrauchsmaterial', sort_order: 20 },
+  { key: 'vermietung_energie_6400', bereich: 'vermietung', label: 'Energie & Wasser (Vermietungsanteil)', konten: '6400', quote_percent: 30.00, beschreibung: 'Strom- und Wasserverbrauch für Ganztages-Vermietungsanlässe (Heizung, Küche)', sort_order: 30 },
+  { key: 'vermietung_unterhalt_6000', bereich: 'vermietung', label: 'Gebäudeunterhalt (Gemeinkostenanteil)', konten: '6000,6010', quote_percent: 10.00, beschreibung: 'Laufender Schützenstuben-Unterhalt (ohne vereinsbezogene Grossinvestitionen)', sort_order: 40 },
+  { key: 'vermietung_versicherung_6301', bereich: 'vermietung', label: 'Sach- & Haftpflichtversicherung', konten: '6301,6302', quote_percent: 10.00, beschreibung: 'Zugeordneter Versicherungsanteil für externe Raumnutzung', sort_order: 50 },
+  { key: 'wirtschaft_reinigung_4010', bereich: 'wirtschaft', label: 'Reinigung Wirtschaft (Stubenbetrieb)', konten: '4010,4002', quote_percent: 30.00, beschreibung: 'Reinigungsanteil für den laufenden Schiess- und Festwirtschaftsbetrieb', sort_order: 60 },
+  { key: 'wirtschaft_anlaesse_abzug', bereich: 'wirtschaft', label: 'Pauschalabzug Vereinsanlässe vom Wareneinsatz', konten: '4000,4001', quote_percent: 15.00, beschreibung: 'Pauschale Auslagerung von Getränken/Lebensmitteln für GV, Putztag, Endschiessen', sort_order: 70 }
+];
+
+window._bhCostAllocations = [];
+try {
+  const cachedAlloc = localStorage.getItem('bh_cost_allocations');
+  window._bhCostAllocations = cachedAlloc ? JSON.parse(cachedAlloc) : JSON.parse(JSON.stringify(window._bhDefaultAllocations));
+} catch(_) {
+  window._bhCostAllocations = JSON.parse(JSON.stringify(window._bhDefaultAllocations));
+}
+
+window._bhActiveMembersCount = 53; // Fallback basierend auf aktiven Schützen
+
+window.bhGetAllocationQuote = function(key, defaultVal = 0) {
+  if (!window._bhCostAllocations || !window._bhCostAllocations.length) {
+    const def = (window._bhDefaultAllocations || []).find(d => d.key === key);
+    return def ? Number(def.quote_percent) : defaultVal;
+  }
+  const item = window._bhCostAllocations.find(a => a.key === key);
+  if (item && item.quote_percent !== undefined && item.quote_percent !== null) {
+    return Number(item.quote_percent);
+  }
+  const def = (window._bhDefaultAllocations || []).find(d => d.key === key);
+  return def ? Number(def.quote_percent) : defaultVal;
+};
+
+window.bhSetAllocationQuote = function(key, percent) {
+  const num = Math.max(0, Math.min(100, Math.round((parseFloat(percent) || 0) * 10) / 10));
+  let found = window._bhCostAllocations.find(a => a.key === key);
+  if (found) {
+    found.quote_percent = num;
+  } else {
+    const def = (window._bhDefaultAllocations || []).find(d => d.key === key);
+    if (def) {
+      window._bhCostAllocations.push({ ...def, quote_percent: num });
+    }
+  }
+  try {
+    localStorage.setItem('bh_cost_allocations', JSON.stringify(window._bhCostAllocations));
+  } catch(_) {}
+};
+
+window.bhSaveCostAllocations = async function() {
+  const supa = getBuchhaltungSupabaseClient();
+  if (!supa) {
+    alert("Supabase Verbindung nicht verfügbar.");
+    return false;
+  }
+  try {
+    const updates = window._bhCostAllocations.map(a => ({
+      key: a.key,
+      bereich: a.bereich,
+      label: a.label,
+      konten: a.konten,
+      quote_percent: Number(a.quote_percent),
+      beschreibung: a.beschreibung || '',
+      updated_at: new Date().toISOString()
+    }));
+    const { error } = await supa.from('accounting_cost_allocations').upsert(updates, { onConflict: 'key' });
+    if (error) throw error;
+    try {
+      localStorage.setItem('bh_cost_allocations', JSON.stringify(window._bhCostAllocations));
+    } catch(_) {}
+    if (typeof showToast === 'function') {
+      showToast("Zuteilungsquoten erfolgreich in der Datenbank gespeichert!", "success");
+    } else {
+      alert("Zuteilungsquoten erfolgreich in der Datenbank gespeichert!");
+    }
+    return true;
+  } catch (err) {
+    console.error("Fehler beim Speichern der Zuteilungsquoten:", err);
+    alert("Fehler beim Speichern der Quoten: " + (err.message || err));
+    return false;
+  }
+};
+
+window.bhResetCostAllocations = function() {
+  window._bhCostAllocations = JSON.parse(JSON.stringify(window._bhDefaultAllocations));
+  try {
+    localStorage.setItem('bh_cost_allocations', JSON.stringify(window._bhCostAllocations));
+  } catch(_) {}
+  if (typeof renderTabCockpit === 'function') {
+    const c = document.getElementById('bh-tab-content-container');
+    if (c && window._bhActiveTab === 'cockpit') renderTabCockpit(c);
+  }
+};
+
 // Sortier-Zustände
 window._bhJournalSortCol = 'id';
 window._bhJournalSortAsc = false;
@@ -248,11 +343,13 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
   if (supa) {
     try {
       console.log("🚀 Lade Buchhaltungsdaten aus Supabase...");
-      const [accRes, jnlRes, budRes, ruleRes] = await Promise.all([
+      const [accRes, jnlRes, budRes, ruleRes, allocRes, activeMemRes] = await Promise.all([
         supa.from('accounting_accounts').select('*').order('sort_order', { ascending: true }),
         supa.from('accounting_journal').select('*').order('id', { ascending: false }),
         supa.from('accounting_budgets').select('*'),
         supa.from('accounting_bank_rules').select('*').order('sort_order', { ascending: true }),
+        supa.from('accounting_cost_allocations').select('*').order('sort_order', { ascending: true }),
+        supa.from('members').select('person_number').eq('is_active', true).eq('is_passive', false).eq('deceased', false),
         (async () => {
           try {
             // Pro Memoria Gewehre aus inventar_items falls vorhanden
@@ -273,6 +370,19 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
           jahr: Number(j.jahr),
           betrag: Number(j.betrag)
         }));
+
+        // Zuteilungsquoten aus DB übernehmen
+        if (allocRes && !allocRes.error && Array.isArray(allocRes.data) && allocRes.data.length > 0) {
+          window._bhCostAllocations = allocRes.data;
+          try {
+            localStorage.setItem('bh_cost_allocations', JSON.stringify(allocRes.data));
+          } catch(_) {}
+        }
+
+        // Aktive Mitglieder für Verbandskostenquote übernehmen
+        if (activeMemRes && !activeMemRes.error && Array.isArray(activeMemRes.data)) {
+          window._bhActiveMembersCount = activeMemRes.data.length || 53;
+        }
 
         // Budgets in Matrix/Map-Format überführen für Abwärtskompatibilität
         const rawBudgets = budRes.data || [];
@@ -300,7 +410,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
 
         window._bhIsSupabase = true;
         loadedFromSupabase = true;
-        console.log(`✅ Buchhaltung erfolgreich aus Supabase geladen: ${window._bhKontenrahmen.length} Konten, ${window._bhJournal.length} Journal-Einträge.`);
+        console.log(`✅ Buchhaltung erfolgreich aus Supabase geladen: ${window._bhKontenrahmen.length} Konten, ${window._bhJournal.length} Journal-Einträge, ${window._bhCostAllocations.length} Zuteilungsquoten, ${window._bhActiveMembersCount} Aktive.`);
       } else {
         console.error("❌ Fehler bei Supabase Buchhaltung Abfrage:", accRes.error || jnlRes.error);
       }
@@ -618,10 +728,10 @@ window.bhGetAccountCategory = function(account) {
     if (codeStr.startsWith('60')) {
       sub = 'Sonstiger betrieblicher Aufwand';
       detail = 'Unterhalt Gebäude & Umgebung';
-    } else if (codeStr.startsWith('61')) {
+    } else if (codeStr.startsWith('61') || codeStr.startsWith('63')) {
       sub = 'Sonstiger betrieblicher Aufwand';
       detail = 'Versicherungen';
-    } else if (codeStr.startsWith('62')) {
+    } else if (codeStr.startsWith('62') || codeStr.startsWith('64')) {
       sub = 'Sonstiger betrieblicher Aufwand';
       detail = 'Energie- und Entsorgungsaufwand';
     } else if (codeStr.startsWith('65')) {

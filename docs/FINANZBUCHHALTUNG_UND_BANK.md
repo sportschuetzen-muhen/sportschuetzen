@@ -50,16 +50,21 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Revisionssichere Belegnummerierung:** Revisoren verlangen in der Buchführung fortlaufende, lückenlose Belegnummern (1, 2, 3...).
 * **Entscheidung:** Statt unübersichtlicher UUIDs nutzt `accounting_journal` eine PostgreSQL `BIGSERIAL` Sequenz. Das garantiert automatische Chronologie und performante Sortierung.
 
+### 2.5 Warum variable Zuteilungsquoten für das Controlling?
+* **Problemstellung:** Gemeinsame Kosten wie Schützenhaus-Reinigung (4010), Energie & Wasser (6400) oder Liegenschaftsunterhalt (6000) fallen für das gesamte Schützenhaus an, das sowohl dem Schiessbetrieb als auch externen Vermietungen dient. Eine pauschale 100%-Belastung verfälschte die Rentabilitätsrechnungen.
+* **Lösung:** In `public.accounting_cost_allocations` werden prozentuale Zuteilungsschlüssel (z.B. 70% Reinigung, 30% Energie, 10% Gebäude/Versicherung für Vermietung) persistent gespeichert und im Cockpit (`vorstand/js/buchhaltung-controlling.js`) interaktiv mit Sofortberechnung visualisiert und verwaltet.
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
 
 | Tabelle | Primärschlüssel | Zweck & Invarianten |
 | :--- | :--- | :--- |
-| `public.accounting_accounts` | `account_number` (INT) | Kontenplan (z.B. 1000, 1020, 1100) mit Typ (Aktive, Passive, Aufwand, Ertrag). |
+| `public.accounting_accounts` | `konto` (VARCHAR) | KMU-Kontenrahmen mit Klassifizierung und Salden. |
 | `public.accounting_journal` | `id` (BIGSERIAL) | Das lückenlose Hauptbuch (Datum, Beleg-Nr, Soll, Haben, Betrag, Buchungstext). |
 | `public.accounting_budgets` | `id` (UUID) | Jahresbudgets je Konto für den Soll/Ist-Vergleich im Controlling. |
 | `public.accounting_bank_rules` | `id` (UUID) | Automatische Kontierungsregeln für wiederkehrende Banktexte (z.B. Zinsen, Spesen). |
+| `public.accounting_cost_allocations` | `id` (UUID) | Konfigurierbare Zuteilungsquoten (%) für Vermietung, Wirtschaft und Sportbetrieb. |
 
 ---
 
