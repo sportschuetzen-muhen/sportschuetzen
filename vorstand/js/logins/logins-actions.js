@@ -236,6 +236,8 @@ async function loginsSave() {
         throw new Error("Das Passwort muss mindestens 6 Zeichen lang sein.");
       }
 
+      const editAdminId = (mode === 'edit' && record?.id) ? record.id : null;
+
       const { data, error } = await supa.rpc('save_admin_profile', {
         p_username: username,
         p_display_name: anzeigename || username,
@@ -243,7 +245,8 @@ async function loginsSave() {
         p_role_external: null,
         p_person_number: personnumber,
         p_roles: rolesArr,
-        p_password: passwort || null
+        p_password: passwort || null,
+        p_admin_id: editAdminId
       });
       if (error) throw error;
 

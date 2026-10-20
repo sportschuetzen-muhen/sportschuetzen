@@ -350,6 +350,17 @@ Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatis
 * **Entkopplung vom starren `auth.has_role('vorstand')`:** Zuvor konnten Vorstandsmitglieder mit Fachrollen (z.B. `aktuar` ohne zusätzliche Zuweisung von `vorstand`) die Rollen anderer Portal-Benutzer nicht abfragen, da die alte Policy `user_roles_read_own` nur `admin` und `vorstand` berechtigte.
 * **RBAC «View & Manage»-Standard (Projekt-Richtlinie 7):** Die Lese-Policy `user_roles_read_policy` autorisiert nun transparent alle Benutzer mit `logins.view` oder `logins.manage` via `public.rbac_allows(...)`. Dadurch sehen alle zur Logins-Einsicht berechtigten Vorstandsmitglieder konsistent die tatsächlichen Rollen aller Benutzer.
 
+---
+
+## 17. Härtung: Umbenennung von Benutzernamen & Unique-Constraint-Schutz (Migration 88)
+
+* **Problem (`admin_profiles_auth_user_id_key`):** Wurde ein bestehendes Admin-Profil umbenannt (z.B. Benutzername von `danhu` auf `d.hunziker`), griff die alte `ON CONFLICT (username)`-Klausel der RPC `public.save_admin_profile` nicht, da der neue Benutzername noch nicht existierte. PostgreSQL versuchte einen `INSERT` mit der bestehenden `auth_user_id`, was eine `duplicate key value violates unique constraint "admin_profiles_auth_user_id_key"` auslöste.
+* **Architektonische Lösung:** 
+  1. `public.save_admin_profile` nimmt neu den optionalen Parameter `p_admin_id UUID DEFAULT NULL` entgegen und unterscheidet strikt zwischen UPDATE (bestehendes Profil mutieren / umbenennen) und INSERT (Neuanlage).
+  2. Im Frontend übergibt [`vorstand/js/logins/logins-actions.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/logins/logins-actions.js) im Bearbeiten-Modus (`mode === 'edit'`) verbindlich `p_admin_id: record.id`.
+  3. Bei Umbenennung wird vorab geprüft, ob der gewünschte Benutzername bereits durch ein anderes Konto belegt ist (`id <> v_admin_id`). Falls ja, wird ein sauberer, benutzerfreundlicher Fehler geworfen.
+
+
 
 
 
