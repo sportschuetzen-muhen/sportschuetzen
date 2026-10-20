@@ -328,4 +328,12 @@ Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatis
 * **Öffentliche RLS-Lese-Policy für `anon`:** Nach der RBAC-Harmonisierung (Migration 49) war `public.members` ausschliesslich für authentifizierte Vorstandsmitglieder lesbar. Nicht angemeldete Besucher der Mitglieder-App (PWA) erhielten bei leerem Browser-Cache (`localStorage`) ein leeres Resultat, wodurch das Dropdown auf «Lade Teilnehmer...» verharrte. Migration 70 gewährt der Rolle `anon` gezieltes SELECT auf aktive Mitglieder (`is_active = true`).
 * **Manueller Eingabe-Leitfaden & Flexibilität:** Das Direkteingabefeld im Login-Modal führt Benutzer mit klaren Platzhaltern und Hinweisen («z.B. Max Muster oder Muster Max, E-Mail, Lizenz-Nr...»). Die serverseitige Auflösung via `public.resolve_login_identifier()` akzeptiert Vorname Nachname oder Nachname Vorname ohne Rücksicht auf Gross-/Kleinschreibung.
 
+---
+
+## 14. Härtung: Admin-Provisioning & `auth.identities` (Migration 85)
+
+* **`provider_id` Not-Null-Constraint in `auth.identities`:** Beim Anlegen neuer Benutzer über `public.save_admin_profile()` verlangt die aktuelle GoTrue-Schema-Definition der Tabelle `auth.identities` zwingend den Primärschlüssel des Identitäts-Providers (`provider_id text NOT NULL`). Migration 85 übergibt `provider_id = v_auth_uid::text` und fängt bestehende Datensätze über `ON CONFLICT (provider_id, provider) DO UPDATE` transparent ab.
+* **Bereinigung von Funktions-Überladungen:** Die veraltete 6-Parameter-Funktion ohne Passwort-Provisioning wurde bereinigt (`DROP FUNCTION`), sodass Aufrufe im PostgreSQL-Katalog eindeutig signiert sind.
+
+
 
