@@ -149,3 +149,13 @@ Das bisherige CLI-Skript `sportschuetzen-website/sync-immich-album.js` bleibt au
 Da moderne Browser Anfragen blockieren, wenn externe Foto-Server restriktive Header (`Cross-Origin-Resource-Policy: same-origin`) senden, laufen alle Bild- und Video-Abrufe auf der Website über den Cloudflare-Worker-Proxy:
 * **Worker-URL:** `https://sportschuetzen-website-worker.dan-hunziker73.workers.dev`
 * **Funktion:** Anreicherung mit `Cross-Origin-Resource-Policy: cross-origin` und sicheres Caching zur Entlastung des Proxmox-Servers.
+
+---
+
+## 8. Pendenzen & Künftige Ausbaustufen (Roadmap)
+
+* **Automatische Szenen- & Inhaltserkennung für Fotos ohne Personen (Sachmotive):**
+  * **Status:** PENDENZ (Evaluiert)
+  * **Ziel:** Fotos ohne Gesichter (z. B. *«Kaffee & Dessert»*, *«Scheibenstand / Trefferbild»*, *«Standblatt / Schiessresultate»*, *«Vereinsfahne»*) sollen künftig über Immich CLIP Zero-Shot-Klassifizierung automatische, sprechende deutsche Titel erhalten, statt nur den nummerierten Ordnernamen (z. B. `2026 Endschiessen (3)`).
+  * **Erkenntnis aus Tests:** Lokale Vision-LLMs (wie `moondream` auf Ollama) sind englischsprachig und rechenintensiv (~28s/Bild). Ein schnelles Abgleichen typischer Vereinsmotive gegen Immichs CLIP-Engine (`smartSearch`) ist für den produktiven Workflow die performantere Lösung und wird bei Bedarf in einer späteren Iteration scharfgeschaltet.
+
