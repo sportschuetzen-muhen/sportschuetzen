@@ -976,7 +976,8 @@ function ensureGalerieModals() {
             </div>
         </div>
     `;
-    document.body.appendChild(modalWrapper);
+        document.body.appendChild(modalWrapper);
+    }
 
     // Globalen UIModalKit / TableKit Standard für alle Modale aktivieren (Verschieben, Vergrössern, Verkleinern, Maximieren)
     ['modalCurateInbox', 'modalCreateImmichAlbum', 'modalGalerieWorkflowGuide'].forEach(id => {
