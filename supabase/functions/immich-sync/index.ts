@@ -368,6 +368,46 @@ Deno.serve(async (req: Request) => {
       }
 
       // -------------------------------------------------------
+      // A0.1 KI-JOBS AUF IMMICH SERVER ANSTOSSEN (FACIAL RECOGNITION & SMART SEARCH)
+      // -------------------------------------------------------
+      if (postAction === "trigger_ml_jobs") {
+        try {
+          const [faceRes, searchRes] = await Promise.all([
+            fetch(`${IMMICH_API_URL}/api/jobs/facialRecognition`, {
+              method: "PUT",
+              headers: {
+                "x-api-key": IMMICH_API_KEY,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ command: "start" })
+            }),
+            fetch(`${IMMICH_API_URL}/api/jobs/smartSearch`, {
+              method: "PUT",
+              headers: {
+                "x-api-key": IMMICH_API_KEY,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ command: "start" })
+            })
+          ]);
+
+          return new Response(JSON.stringify({
+            success: true,
+            message: "KI-Erkennung auf Proxmox CT 116 erfolgreich gestartet",
+            facialRecognition: faceRes.ok,
+            smartSearch: searchRes.ok
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        } catch (err: any) {
+          return new Response(JSON.stringify({ success: false, error: err.message }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+      }
+
+      // -------------------------------------------------------
       // A1. NEUES IMMICH-ALBUM ERSTELLEN
       // -------------------------------------------------------
       if (postAction === "create_album") {
@@ -510,7 +550,31 @@ Deno.serve(async (req: Request) => {
         .filter((a: any) => a.type === 'IMAGE' || a.type === 'VIDEO')
         .map((asset: any) => {
           const isVideo = asset.type === 'VIDEO';
-          const { title, detectedPersons } = cleanTitleAndExtractPersons(asset.originalFileName || '', effectiveAlbumName, mediaIndex++);
+          let { title, detectedPersons } = cleanTitleAndExtractPersons(asset.originalFileName || '', effectiveAlbumName, mediaIndex++);
+
+          // 1. Personen aus Immich ML-Erkennung übernehmen falls auf Server getaggt
+          if (Array.isArray(asset.people) && asset.people.length > 0) {
+            for (const p of asset.people) {
+              const pName = (p.name || '').trim();
+              if (pName && !detectedPersons.includes(pName)) {
+                detectedPersons.push(pName);
+              }
+            }
+          }
+
+          // 2. Falls Personen erkannt wurden und der Titel nur generisch war, Namen als Titel setzen
+          let finalPhotoTitle = title;
+          if (detectedPersons.length > 0 && finalPhotoTitle.startsWith(effectiveAlbumName)) {
+            if (detectedPersons.length === 1) {
+              finalPhotoTitle = detectedPersons[0];
+            } else if (detectedPersons.length === 2) {
+              finalPhotoTitle = `${detectedPersons[0]} & ${detectedPersons[1]}`;
+            } else {
+              finalPhotoTitle = `${detectedPersons.slice(0, -1).join(', ')} & ${detectedPersons[detectedPersons.length - 1]}`;
+            }
+          } else if (detectedPersons.length === 0 && asset.exifInfo?.description) {
+            finalPhotoTitle = asset.exifInfo.description.trim();
+          }
 
           const createdDate = asset.fileCreatedAt || asset.createdAt;
           const dateFormatted = createdDate 
@@ -527,7 +591,9 @@ Deno.serve(async (req: Request) => {
 
           let desc = '';
           if (detectedPersons.length > 0) {
-            desc = `Aufnahme: ${title} aus dem Album «${effectiveAlbumName}».`;
+            desc = `Aufnahme: ${finalPhotoTitle} aus dem Album «${effectiveAlbumName}».`;
+          } else if (asset.exifInfo?.description) {
+            desc = asset.exifInfo.description;
           } else {
             desc = `Impressionen zum Anlass «${effectiveAlbumName}» (${dateFormatted}).`;
           }
@@ -540,7 +606,7 @@ Deno.serve(async (req: Request) => {
             album_id: albumId,
             album: effectiveAlbumName,
             album_key: shareKey,
-            title: title,
+            title: finalPhotoTitle,
             category: effectiveCategory,
             visibility: effectiveVisibility,
             date: dateFormatted,

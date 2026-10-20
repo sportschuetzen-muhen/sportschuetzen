@@ -57,11 +57,16 @@ async function initGalerieManager() {
             <!-- HAUPT-AKTION: KURATIERUNG IN IMMICH -->
             <div class="col-lg-7">
                 <div class="card shadow-sm border-0 h-100">
-                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="mb-0 fw-bold text-dark">
                             <i class="fas fa-tools text-primary me-2"></i>Foto-Kuratierung & KI-Gesichtserkennung
                         </h6>
-                        <span class="badge bg-light text-muted border">Server-KI aktiv</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-outline-primary btn-xs py-1 px-2.5 fw-semibold" id="btn-trigger-immich-ml" onclick="triggerImmichMlJobs()" title="KI-Gesichtserkennung & Smart Search auf Proxmox CT 116 jetzt starten">
+                                <i class="fas fa-brain me-1" id="icon-trigger-immich-ml"></i> KI-Erkennung anstossen
+                            </button>
+                            <span class="badge bg-light text-muted border">Server-KI aktiv</span>
+                        </div>
                     </div>
                     <div class="card-body p-4">
                         <p class="text-muted mb-4">
@@ -427,8 +432,9 @@ async function submitCreateImmichAlbum() {
             showToast(`Album «${data.album?.name || albumName}» erfolgreich in Immich erstellt!`, 'success');
         }
 
-        // Dropdown neu laden und neues Album direkt auswählen
+        // Dropdown neu laden und neues Album direkt auswählen (sowohl Hauptseite als auch Kuratierungs-Modal)
         await loadImmichAlbumsForDropdown({ silent: false, preferredAlbumId: data.album?.id });
+        populateCurateAlbumDropdowns(data.album?.id);
 
     } catch (err) {
         console.error('Fehler beim Erstellen des Albums:', err);
@@ -483,7 +489,8 @@ async function openCurateInboxModal() {
     }
 
     try {
-        // Dropdown-Optionen vorbereiten
+        // Alben immer frisch von CT 116 nachladen & Dropdowns vorbereiten
+        await loadImmichAlbumsForDropdown({ silent: true });
         populateCurateAlbumDropdowns();
 
         const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync?action=get_inbox_assets`);
@@ -510,7 +517,7 @@ async function openCurateInboxModal() {
     }
 }
 
-function populateCurateAlbumDropdowns() {
+function populateCurateAlbumDropdowns(preferredTargetId = null) {
     const targetSelect = document.getElementById('curate-target-album-select');
     const archiveSelect = document.getElementById('curate-archive-album-select');
     if (!targetSelect || !archiveSelect) return;
@@ -538,12 +545,16 @@ function populateCurateAlbumDropdowns() {
         `).join('')}
     `;
 
-    // Sinnvolle Standardauswahl für Zielalbum (z.B. "Endschiessen")
-    const endschiessenAlbum = availableImmichAlbums.find(a => (a.name || '').toLowerCase().includes('endschiessen'));
-    if (endschiessenAlbum) {
-        targetSelect.value = endschiessenAlbum.id;
-    } else if (availableImmichAlbums.length > 0) {
-        targetSelect.value = availableImmichAlbums[0].id;
+    // Sinnvolle Standardauswahl für Zielalbum: Bevorzugtes Album > "Endschiessen" > erstes Album
+    if (preferredTargetId && availableImmichAlbums.some(a => a.id === preferredTargetId)) {
+        targetSelect.value = preferredTargetId;
+    } else {
+        const endschiessenAlbum = availableImmichAlbums.find(a => (a.name || '').toLowerCase().includes('endschiessen'));
+        if (endschiessenAlbum) {
+            targetSelect.value = endschiessenAlbum.id;
+        } else if (availableImmichAlbums.length > 0) {
+            targetSelect.value = availableImmichAlbums[0].id;
+        }
     }
 
     // Sinnvolle Standardauswahl für Sammelbecken (z.B. "Archiv")
@@ -554,6 +565,68 @@ function populateCurateAlbumDropdowns() {
         archiveSelect.value = availableImmichAlbums[availableImmichAlbums.length - 1].id;
     }
 }
+
+async function refreshCurateAlbumsDropdown() {
+    const btn = document.getElementById('btn-refresh-curate-albums');
+    const icon = document.getElementById('icon-refresh-curate-albums');
+    if (btn) btn.disabled = true;
+    if (icon) icon.classList.add('fa-spin');
+
+    try {
+        const targetSelect = document.getElementById('curate-target-album-select');
+        const currentVal = targetSelect?.value;
+        await loadImmichAlbumsForDropdown({ silent: false });
+        populateCurateAlbumDropdowns(currentVal);
+        if (typeof showToast === 'function') {
+            showToast(`Albenliste aktualisiert (${availableImmichAlbums.length} Alben gefunden).`, 'info');
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('fa-spin');
+    }
+}
+window.refreshCurateAlbumsDropdown = refreshCurateAlbumsDropdown;
+
+async function triggerImmichMlJobs() {
+    const btn = document.getElementById('btn-trigger-immich-ml');
+    const icon = document.getElementById('icon-trigger-immich-ml');
+    if (btn) btn.disabled = true;
+    if (icon) icon.classList.add('fa-spin');
+
+    try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({ action: 'trigger_ml_jobs' })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            const msg = '⚡ KI-Gesichtserkennung & Smart Search auf CT 116 erfolgreich gestartet!';
+            if (typeof showToast === 'function') {
+                showToast(msg, 'success');
+            } else {
+                alert(msg);
+            }
+        } else {
+            throw new Error(data.error || 'Serverfehler');
+        }
+    } catch (err) {
+        console.error('Fehler beim Starten der KI-Jobs:', err);
+        if (typeof showToast === 'function') {
+            showToast(`Konnte KI-Jobs nicht starten: ${err.message}`, 'error');
+        } else {
+            alert(`Konnte KI-Jobs nicht starten: ${err.message}`);
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('fa-spin');
+    }
+}
+window.triggerImmichMlJobs = triggerImmichMlJobs;
 
 function renderCurateGrid() {
     const gridContainer = document.getElementById('curate-grid-container');
@@ -815,6 +888,9 @@ function ensureGalerieModals() {
                                             <button type="button" class="btn btn-outline-primary btn-sm px-2" onclick="openCreateImmichAlbumModal()" title="Neues Album anlegen">
                                                 <i class="fas fa-plus"></i>
                                             </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm px-2" id="btn-refresh-curate-albums" onclick="refreshCurateAlbumsDropdown()" title="Albenliste aus Immich neu laden (CT 116)">
+                                                <i class="fas fa-sync-alt" id="icon-refresh-curate-albums"></i>
+                                            </button>
                                         </div>
                                     </div>
                                     
@@ -1019,6 +1095,13 @@ window.addEventListener('focus', () => {
     if (selectEl && selectEl.offsetParent !== null) {
         loadImmichAlbumsForDropdown({ silent: true });
         loadImmichDashboardData();
+    }
+    const curateSelect = document.getElementById('curate-target-album-select');
+    if (curateSelect && curateSelect.offsetParent !== null) {
+        const curVal = curateSelect.value;
+        loadImmichAlbumsForDropdown({ silent: true }).then(() => {
+            populateCurateAlbumDropdowns(curVal);
+        });
     }
 });
 
