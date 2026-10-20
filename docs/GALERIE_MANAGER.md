@@ -127,11 +127,20 @@ Für das Sichten und Einsortieren von Mitglieder-Fotos steht im Vorstandsportal 
    * Schreibt die Daten unmittelbar in `public.gallery_albums` und `public.gallery_photos` (Single Source of Truth).
    * Das Album ist sofort auf der Website und im Mitgliederbereich live.
 
-### 6.3 Depublizieren & Löschen
+### 6.3 Automatische Titulierung & Personenerkennung (Namens-Mapping)
+Sobald Gesichter durch das ausgelagerte Machine Learning (`buffalo_l`) erkannt und in Immich einer Person zugeordnet sind (z. B. «Daniel Berchtold»), greift beim Synchronisieren der automatische Namens-Workflow:
+* **Automatische Betitelung (`finalPhotoTitle`):** Anstelle generischer Kameranamen (`IMG_4821.jpg`) oder rein nummerierter Albenbezeichnungen wird das Foto vollautomatisch mit den Namen der erkannten Personen betitelt:
+  * **1 Person:** `Vorname Nachname` (z. B. `Daniel Berchtold`)
+  * **2 Personen:** `Vorname1 Nachname1 & Vorname2 Nachname2` (z. B. `Daniel Berchtold & Fritz Suter`)
+  * **3+ Personen:** `Person 1, Person 2 & Person 3` (z. B. `Daniel Berchtold, Fritz Suter & Hans Bäni`)
+* **Automatische Beschreibung & Tags:** Die Namen fliessen automatisch in das Feld `description` («Aufnahme: [Namen] aus dem Album «[Albumname]».»), in das Array `detected_persons` sowie in die Such-Schlagworte (`tags`).
+* **Non-Destructive Prinzip:** Die physische Originaldatei auf dem Speicher bleibt unangetastet (Schutz vor Dateisystem-Konflikten), während das Bild in der Datenbank, im Web-Portal und in der Volltextsuche sauber mit den Echtnamen geführt und gefiltert werden kann.
+
+### 6.4 Depublizieren & Löschen
 Publizierte Alben können direkt in der Liste «Aktuell publizierte Alben» über das Mülleimer-Icon `[🗑️]` wieder von der Website entfernt werden. Die Original-Fotos auf Immich bleiben dabei unberührt.
 *Hinweis zur RLS-Architektur:* Auf `public.gallery_albums` gilt SELECT für alle publizierten Albentitel (`USING (true)`), damit das Vorstands-Cockpit sowohl öffentliche als auch geschützte Mitglieder-Alben konsistent darstellt. Der eigentliche Zugriffsschutz auf Bilder und Medien verbleibt auf `public.gallery_photos`, wo `anon` ausschliesslich `visibility = 'public'` abfragen kann.
 
-### 6.4 Entwickler-Fallback (CLI)
+### 6.5 Entwickler-Fallback (CLI)
 Das bisherige CLI-Skript `sportschuetzen-website/sync-immich-album.js` bleibt ausschliesslich für Offline-Wartungsarbeiten und lokale Batch-Tests erhalten.
 
 ---
