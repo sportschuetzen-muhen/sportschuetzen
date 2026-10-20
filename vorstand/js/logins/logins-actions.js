@@ -219,6 +219,7 @@ async function loginsSave() {
         personnumber = rawPn;
       }
 
+      const email = document.getElementById('lf-mailadresse')?.value?.trim() || '';
       const rolleRaw = document.getElementById('lf-rolle-val')?.value?.trim() 
                     || document.getElementById('lf-rolle-custom')?.value?.trim() 
                     || document.getElementById('lf-rolle')?.value 
