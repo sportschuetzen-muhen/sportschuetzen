@@ -316,6 +316,7 @@ function openCreateImmichAlbumModal() {
     ensureGalerieModals();
     const modalEl = document.getElementById('modalCreateImmichAlbum');
     if (!modalEl) return;
+    applyGlobalModalStandard('modalCreateImmichAlbum');
 
     // Felder zurücksetzen
     const nameInput = document.getElementById('new-immich-album-name');
@@ -455,6 +456,7 @@ function openGalerieWorkflowGuideModal() {
     ensureGalerieModals();
     const modalEl = document.getElementById('modalGalerieWorkflowGuide');
     if (!modalEl) return;
+    applyGlobalModalStandard('modalGalerieWorkflowGuide');
     bootstrap.Modal.getOrCreateInstance(modalEl).show();
 }
 
@@ -465,6 +467,7 @@ async function openCurateInboxModal() {
     ensureGalerieModals();
     const modalEl = document.getElementById('modalCurateInbox');
     if (!modalEl) return;
+    applyGlobalModalStandard('modalCurateInbox');
 
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
@@ -748,13 +751,13 @@ async function submitCurateInbox() {
 //  MODALS DYNAMISCH IN DEN DOM INJIZIEREN
 // =========================================================
 function ensureGalerieModals() {
-    if (document.getElementById('modalCreateImmichAlbum') && document.getElementById('modalGalerieWorkflowGuide') && document.getElementById('modalCurateInbox')) {
-        return;
-    }
+    if (!document.getElementById('modalCreateImmichAlbum') || !document.getElementById('modalGalerieWorkflowGuide') || !document.getElementById('modalCurateInbox')) {
+        const existing = document.getElementById('galerie-modals-container');
+        if (existing) existing.remove();
 
-    const modalWrapper = document.createElement('div');
-    modalWrapper.id = 'galerie-modals-container';
-    modalWrapper.innerHTML = `
+        const modalWrapper = document.createElement('div');
+        modalWrapper.id = 'galerie-modals-container';
+        modalWrapper.innerHTML = `
         <!-- MODAL: INBOX KURATIERUNGS-COCKPIT -->
         <div class="modal fade" id="modalCurateInbox" tabindex="-1" aria-labelledby="modalCurateInboxLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
@@ -770,9 +773,9 @@ function ensureGalerieModals() {
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
                     </div>
                     
-                    <div class="modal-body p-3 bg-light">
+                    <div class="modal-body p-3 bg-light d-flex flex-column" style="min-height: 420px; overflow-y: auto;">
                         <!-- SCHNELL-STEUERUNG & AUSWAHL -->
-                        <div class="card border-0 shadow-xs mb-3">
+                        <div class="card border-0 shadow-xs mb-3 flex-shrink-0">
                             <div class="card-body p-2.5 d-flex justify-content-between align-items-center flex-wrap gap-2">
                                 <div class="d-flex align-items-center gap-2">
                                     <span class="small fw-semibold text-muted">Auswahl:</span>
@@ -790,7 +793,7 @@ function ensureGalerieModals() {
                         </div>
 
                         <!-- FOTO-GRID -->
-                        <div id="curate-grid-container" style="min-height: 260px; max-height: 50vh; overflow-y: auto;">
+                        <div id="curate-grid-container" class="flex-grow-1 overflow-y-auto mb-3" style="min-height: 240px;">
                             <div class="text-center py-5 text-muted">
                                 <div class="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
                                 Lade Fotos aus dem Sammelalbum...
@@ -798,7 +801,7 @@ function ensureGalerieModals() {
                         </div>
 
                         <!-- AKTIONEN & ZIELALBEN -->
-                        <div class="card border-0 shadow-xs mt-3">
+                        <div class="card border-0 shadow-xs flex-shrink-0 mt-auto">
                             <div class="card-body p-3 bg-white rounded">
                                 <div class="row g-3 align-items-end">
                                     <div class="col-md-5">
@@ -974,7 +977,27 @@ function ensureGalerieModals() {
         </div>
     `;
     document.body.appendChild(modalWrapper);
+
+    // Globalen UIModalKit / TableKit Standard für alle Modale aktivieren (Verschieben, Vergrössern, Verkleinern, Maximieren)
+    ['modalCurateInbox', 'modalCreateImmichAlbum', 'modalGalerieWorkflowGuide'].forEach(id => {
+        applyGlobalModalStandard(id);
+    });
 }
+
+// =========================================================
+//  GLOBALER MODAL-STANDARD (UIModalKit: Drag, Resize, Maximize)
+// =========================================================
+function applyGlobalModalStandard(modalId) {
+    const modalEl = (typeof modalId === 'string') ? document.getElementById(modalId) : modalId;
+    if (!modalEl) return;
+
+    if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+        window.UIModalKit.makeMovableAndResizable(modalEl);
+    } else if (window.TableKit && typeof window.TableKit.setupDraggableModal === 'function') {
+        window.TableKit.setupDraggableModal(modalEl);
+    }
+}
+window.applyGlobalModalStandard = applyGlobalModalStandard;
 
 // Globale Bereitstellung
 window.openCreateImmichAlbumModal = openCreateImmichAlbumModal;
