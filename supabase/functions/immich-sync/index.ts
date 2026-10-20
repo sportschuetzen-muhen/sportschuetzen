@@ -506,6 +506,23 @@ Deno.serve(async (req: Request) => {
         ? category 
         : determineCategory(effectiveAlbumName);
 
+      // Detail-Metadaten für alle Assets parallel laden (enthält people, exifInfo, tags)
+      const enrichedAssets = await Promise.all(
+        rawAssets.map(async (basicAsset: any) => {
+          try {
+            const detailRes = await fetch(`${IMMICH_API_URL}/api/assets/${basicAsset.id}`, {
+              headers: { "x-api-key": IMMICH_API_KEY }
+            });
+            if (detailRes.ok) {
+              return await detailRes.json();
+            }
+          } catch (e) {
+            console.warn(`[immich-sync] Details für Asset ${basicAsset.id} konnten nicht geladen werden:`, e);
+          }
+          return basicAsset;
+        })
+      );
+
       // 2. Prüfen, ob für dieses Album ein Immich Share-Link existiert
       const sharesRes = await fetch(`${IMMICH_API_URL}/api/shared-links`, {
         headers: { "x-api-key": IMMICH_API_KEY }
@@ -546,7 +563,7 @@ Deno.serve(async (req: Request) => {
       const baseAlbumTags = generateBaseTags(effectiveAlbumName);
       let mediaIndex = 1;
 
-      const formattedPhotos = rawAssets
+      const formattedPhotos = enrichedAssets
         .filter((a: any) => a.type === 'IMAGE' || a.type === 'VIDEO')
         .map((asset: any) => {
           const isVideo = asset.type === 'VIDEO';
@@ -564,13 +581,20 @@ Deno.serve(async (req: Request) => {
 
           // 2. Falls Personen erkannt wurden und der Titel nur generisch war, Namen als Titel setzen
           let finalPhotoTitle = title;
-          if (detectedPersons.length > 0 && finalPhotoTitle.startsWith(effectiveAlbumName)) {
+          if (detectedPersons.length > 0) {
+            let namesTitle = '';
             if (detectedPersons.length === 1) {
-              finalPhotoTitle = detectedPersons[0];
+              namesTitle = detectedPersons[0];
             } else if (detectedPersons.length === 2) {
-              finalPhotoTitle = `${detectedPersons[0]} & ${detectedPersons[1]}`;
+              namesTitle = `${detectedPersons[0]} & ${detectedPersons[1]}`;
             } else {
-              finalPhotoTitle = `${detectedPersons.slice(0, -1).join(', ')} & ${detectedPersons[detectedPersons.length - 1]}`;
+              namesTitle = `${detectedPersons.slice(0, -1).join(', ')} & ${detectedPersons[detectedPersons.length - 1]}`;
+            }
+
+            if (finalPhotoTitle.startsWith(effectiveAlbumName) || /^img[_\s-]?\d+/i.test(finalPhotoTitle)) {
+              finalPhotoTitle = namesTitle;
+            } else {
+              finalPhotoTitle = `${finalPhotoTitle} (${namesTitle})`;
             }
           } else if (detectedPersons.length === 0 && asset.exifInfo?.description) {
             finalPhotoTitle = asset.exifInfo.description.trim();
@@ -588,6 +612,14 @@ Deno.serve(async (req: Request) => {
               tags.push(lastName);
             }
           });
+          if (Array.isArray(asset.tags) && asset.tags.length > 0) {
+            asset.tags.forEach((t: any) => {
+              const tVal = (t.name || t.value || t).toString().trim();
+              if (tVal && !tags.includes(tVal)) {
+                tags.push(tVal);
+              }
+            });
+          }
 
           let desc = '';
           if (detectedPersons.length > 0) {
