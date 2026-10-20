@@ -129,6 +129,7 @@ Für das Sichten und Einsortieren von Mitglieder-Fotos steht im Vorstandsportal 
 
 ### 6.3 Depublizieren & Löschen
 Publizierte Alben können direkt in der Liste «Aktuell publizierte Alben» über das Mülleimer-Icon `[🗑️]` wieder von der Website entfernt werden. Die Original-Fotos auf Immich bleiben dabei unberührt.
+*Hinweis zur RLS-Architektur:* Auf `public.gallery_albums` gilt SELECT für alle publizierten Albentitel (`USING (true)`), damit das Vorstands-Cockpit sowohl öffentliche als auch geschützte Mitglieder-Alben konsistent darstellt. Der eigentliche Zugriffsschutz auf Bilder und Medien verbleibt auf `public.gallery_photos`, wo `anon` ausschliesslich `visibility = 'public'` abfragen kann.
 
 ### 6.4 Entwickler-Fallback (CLI)
 Das bisherige CLI-Skript `sportschuetzen-website/sync-immich-album.js` bleibt ausschliesslich für Offline-Wartungsarbeiten und lokale Batch-Tests erhalten.

@@ -1277,19 +1277,32 @@ async function loadPublishedWebsiteAlbums() {
         if (res.ok) {
             albums = await res.json();
         } else {
-            // Fallback auf statische JSON
-            const fallbackRes = await fetch('../sportschuetzen-website/frontend/data/galerie.json?v=' + Date.now());
-            if (fallbackRes.ok) {
-                const photos = await fallbackRes.json();
-                const map = {};
-                photos.forEach(p => {
-                    const a = p.album || 'Vereinsarchiv';
-                    if (!map[a]) {
-                        map[a] = { id: p.albumId || a, website_title: a, media_count: 0, visibility: p.visibility || 'public' };
+            // Fallback auf Edge Function (nutzt Service Role)
+            try {
+                const fnRes = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`);
+                if (fnRes.ok) {
+                    const fnData = await fnRes.json();
+                    if (Array.isArray(fnData.publishedAlbums)) {
+                        albums = fnData.publishedAlbums;
                     }
-                    map[a].media_count++;
-                });
-                albums = Object.values(map);
+                }
+            } catch(e) {}
+            
+            // Sekundaerer Fallback auf statische JSON
+            if (!albums || albums.length === 0) {
+                const fallbackRes = await fetch('../sportschuetzen-website/frontend/data/galerie.json?v=' + Date.now());
+                if (fallbackRes.ok) {
+                    const photos = await fallbackRes.json();
+                    const map = {};
+                    photos.forEach(p => {
+                        const a = p.album || 'Vereinsarchiv';
+                        if (!map[a]) {
+                            map[a] = { id: p.albumId || a, website_title: a, media_count: 0, visibility: p.visibility || 'public' };
+                        }
+                        map[a].media_count++;
+                    });
+                    albums = Object.values(map);
+                }
             }
         }
 
