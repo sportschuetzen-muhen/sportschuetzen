@@ -399,14 +399,23 @@
                             const name = `${m.first_name || ''} ${m.last_name || ''}`.trim();
                             const initials = `${(m.first_name || '').charAt(0)}${(m.last_name || '').charAt(0)}`.toUpperCase() || '??';
                             const grad = gradients[idx % gradients.length];
-                            const avatarHtml = m.avatar_url 
+                            const hasPhoto = !!m.avatar_url;
+                            const avatarHtml = hasPhoto 
                                 ? `<img src="${m.avatar_url}" alt="${name}" class="board-photo" loading="lazy">`
                                 : initials;
-                            const avatarStyle = m.avatar_url ? '' : `style="background: ${grad};"`;
+                            const avatarStyle = hasPhoto ? '' : `style="background: ${grad};"`;
+                            const cardClass = hasPhoto ? 'board-card glass-card has-photo' : 'board-card glass-card';
+                            const avatarClass = hasPhoto ? 'board-avatar has-photo' : 'board-avatar';
+                            const safeUrl = hasPhoto ? encodeURI(m.avatar_url) : '';
+                            const safeName = name.replace(/'/g, "\\'");
+                            const safeRole = (m.role_title || 'Vorstandsmitglied').replace(/'/g, "\\'");
+                            const clickAttr = hasPhoto 
+                                ? `onclick="window.openBoardPhotoModal('${safeUrl}', '${safeName}', '${safeRole}')" title="Porträt vergrössern"` 
+                                : '';
 
                             return `
-                                <div class="board-card glass-card">
-                                    <div class="board-avatar" ${avatarStyle}>${avatarHtml}</div>
+                                <div class="${cardClass}" ${clickAttr}>
+                                    <div class="${avatarClass}" ${avatarStyle}>${avatarHtml}</div>
                                     <div class="board-info">
                                         <h3>${name}</h3>
                                         <span class="board-role">${m.role_title || 'Vorstandsmitglied'}</span>
@@ -420,8 +429,58 @@
                 console.warn('Vorstandsmitglieder konnten nicht dynamisch geladen werden (Fallback bleibt aktiv):', err);
             }
         })();
+
+        // Vorstand Porträt-Modal Steuerung
+        window.openBoardPhotoModal = function(url, name, role) {
+            const modal = document.getElementById('board-photo-modal');
+            const img = document.getElementById('board-modal-img');
+            const nameEl = document.getElementById('board-modal-name');
+            const roleEl = document.getElementById('board-modal-role');
+            if (!modal || !img) return;
+
+            img.src = url;
+            img.alt = name || 'Vorstandsmitglied Porträt';
+            if (nameEl) nameEl.textContent = name || '';
+            if (roleEl) roleEl.textContent = role || '';
+
+            modal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        };
+
+        window.closeBoardPhotoModal = function(e) {
+            if (e && e.target && e.target !== e.currentTarget && !e.target.classList.contains('board-modal-close')) {
+                return;
+            }
+            const modal = document.getElementById('board-photo-modal');
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+        };
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('board-photo-modal');
+                if (modal && modal.style.display !== 'none') {
+                    window.closeBoardPhotoModal();
+                }
+            }
+        });
     </script>
 
+    <!-- Board Member Portrait Modal (Zoom) -->
+    <div id="board-photo-modal" class="board-modal-overlay" style="display: none;" onclick="window.closeBoardPhotoModal(event)">
+        <div class="board-modal-dialog" onclick="event.stopPropagation()">
+            <button class="board-modal-close" onclick="window.closeBoardPhotoModal()" aria-label="Schliessen">&times;</button>
+            <div class="board-modal-media">
+                <img id="board-modal-img" src="" alt="Vorstandsmitglied Porträt">
+            </div>
+            <div class="board-modal-footer">
+                <h3 id="board-modal-name"></h3>
+                <span id="board-modal-role" class="board-role"></span>
+            </div>
+        </div>
+    </div>
 
     <!-- Fullscreen Lightbox Modal (Flickr details) -->
     <div id="galerie-lightbox" class="lightbox-modal" style="display: none;">

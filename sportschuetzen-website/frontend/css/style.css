@@ -1825,6 +1825,142 @@ textarea.form-control {
 .grad-olivia { background: linear-gradient(135deg, #581c87 0%, #ec4899 100%); }
 .grad-beat { background: linear-gradient(135deg, #1e3a8a 0%, #6366f1 100%); }
 
+/* Board Photo Zoom Interaction */
+.board-card.has-photo {
+    cursor: pointer;
+}
+
+.board-card.has-photo:hover .board-avatar {
+    transform: scale(1.08);
+    box-shadow: 0 8px 24px rgba(15, 60, 92, 0.22);
+}
+
+.board-avatar {
+    position: relative;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.board-avatar.has-photo::after {
+    content: '🔍';
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 22px;
+    height: 22px;
+    background: #ffffff;
+    color: #0f3c5c;
+    border-radius: 50%;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    opacity: 0;
+    transform: scale(0.6);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    pointer-events: none;
+}
+
+.board-card.has-photo:hover .board-avatar.has-photo::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* Board Photo Modal */
+.board-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(10, 25, 47, 0.78);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.board-modal-dialog {
+    background: #ffffff;
+    border-radius: 20px;
+    overflow: hidden;
+    max-width: 440px;
+    width: 100%;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    animation: modalFadeIn 0.25s ease-out;
+}
+
+.board-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: rgba(15, 60, 92, 0.65);
+    border: none;
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 1.4rem;
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: var(--transition);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.board-modal-close:hover {
+    background: var(--accent-color);
+    transform: scale(1.08);
+}
+
+.board-modal-media {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #0f3c5c;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.board-modal-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.board-modal-footer {
+    padding: 1.25rem 1.5rem 1.5rem;
+    text-align: center;
+    background: #ffffff;
+}
+
+.board-modal-footer h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--primary-color);
+}
+
+.board-modal-footer .board-role {
+    font-size: 0.95rem;
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
 
 /* ==========================================================================
    DYNAMIC GALLERY SECTION

@@ -178,9 +178,10 @@ CREATE TABLE public.documents (
   * Im Mitglieder-Modal können Porträtfotos per Drag & Drop hochgeladen werden.
   * Fotos werden browser-nativ auf 600×600 px (quadratischer Center-Crop) als WebP komprimiert und in den Supabase Storage Bucket `operatives-storage/avatars/member_${pn}.webp` hochgeladen.
   * Die URL wird direkt in `public.members.avatar_url` persistiert.
-* **Dynamisches Frontend (`verein.html`):**
+* **Dynamisches Frontend & Porträt-Zoom (`verein.html`):**
   * Das Raster `#board-grid-container` lädt die Vorstandsdaten live via Supabase REST.
   * Liegt ein Porträt vor, wird `.board-photo` angezeigt; andernfalls greift der Initialen-Farbverlauf als Fallback. Das statische HTML bleibt als unzerstörbare Offline-Ausfallsicherung erhalten.
+  * **Interaktive Porträt-Vergrösserung:** Vorstandsmitglieder mit hinterlegtem Foto erhalten die Klasse `.has-photo`, `cursor: pointer` sowie einen animierten Zoom-Indikator (🔍). Ein Klick öffnet das zentrierte Porträt-Modal `#board-photo-modal` im edlen Dark-Glassmorphism-Look mit voller 600×600 px Auflösung, Name und Amtsbezeichnung. Das Schliessen erfolgt intuitiv per Button, Klick in den Hintergrund oder `Escape`-Taste.
 
 ---
 
