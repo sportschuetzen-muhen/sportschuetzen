@@ -199,7 +199,7 @@ async function applyAuthenticatedUser(authUser, loginIdentifier, profData, resol
     // =========================================================
     //  STRIKTER VORSTAND-GATEKEEPER (SSO-Absicherung)
     // =========================================================
-    const BOARD_ROLES = ['admin', 'vorstand', 'kassier', 'aktuar', 'schuetzenmeister', 'vermieter', 'materialwart'];
+    const BOARD_ROLES = ['admin', 'vorstand', 'kassier', 'aktuar', 'schuetzenmeister', 'jungschuetzenleiter', 'vermieter', 'materialwart'];
     
     // Rollen zusammenführen aus JWT, user_roles UND admin_profiles.role_external
     const combinedRoles = [...roles];

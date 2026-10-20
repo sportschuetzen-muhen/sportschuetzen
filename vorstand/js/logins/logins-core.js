@@ -19,8 +19,8 @@ const RBAC_ROLES = [
   { key: 'kassier', label: 'Kassier', badge: 'bg-success' },
   { key: 'aktuar', label: 'Aktuar', badge: 'bg-info text-dark' },
   { key: 'schuetzenmeister', label: 'Schützenmeister', badge: 'bg-warning text-dark' },
-  { key: 'vermieter', label: 'Vermieter', badge: 'bg-secondary' },
-  { key: 'materialwart', label: 'Materialwart', badge: 'bg-dark' }
+  { key: 'jungschuetzenleiter', label: 'Jungschützenleiter', badge: 'bg-dark' },
+  { key: 'vermieter', label: 'Vermieter', badge: 'bg-secondary' }
 ];
 
 const RBAC_MODULES = [
@@ -209,8 +209,9 @@ function roleBadgeColor(rolle) {
     kassier:       'bg-success',
     aktuar:        'bg-info text-dark',
     schuetzenmeister: 'bg-warning text-dark',
-    vermieter:     'bg-secondary',
-    materialwart:  'bg-dark'
+    jungschuetzenleiter: 'bg-dark',
+    materialwart:  'bg-dark',
+    vermieter:     'bg-secondary'
   };
   const r = String(rolle || '').split(',')[0].trim().toLowerCase();
   return map[r] || 'bg-secondary';

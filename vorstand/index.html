@@ -805,7 +805,7 @@
                 <div class="nav-link active" onclick="navTo('dashboard', this)">
                     <i class="fas fa-home"></i> <span class="nav-text">Übersicht</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter"
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,jungschuetzenleiter,materialwart,aktuar,kassier,vermieter"
                      onclick="navTo('inventar', this)">
                     <i class="fas fa-boxes"></i> <span class="nav-text">Inventar</span>
                 </div>
@@ -931,7 +931,7 @@
                     <p class="text-muted mb-0 fw-medium">Wähle einen Bereich im Menü aus:</p>
                 </div>
                 <div class="row g-3 mt-1">
-                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,materialwart,schuetzenmeister,aktuar,kassier,vermieter">
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,jungschuetzenleiter,materialwart,aktuar,kassier,vermieter">
                         <div class="card p-3 shadow-sm border-0 h-100"
                              onclick="navTo('inventar')" style="cursor:pointer">
                             <h5 class="mb-1">🔫 Inventar</h5>
@@ -2188,6 +2188,8 @@
                                     <option value="Mitgliederverwalter">
                                     <option value="Schützenmeister 10m">
                                     <option value="Schützenmeister 50m">
+                                    <option value="Jungschützenleiter">
+                                    <option value="Jungschützenleiterin">
                                     <option value="Vermieter">
                                     <option value="Materialwart">
                                     <option value="Beisitzer">

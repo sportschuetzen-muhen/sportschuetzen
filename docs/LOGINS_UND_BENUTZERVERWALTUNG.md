@@ -335,5 +335,14 @@ Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatis
 * **`provider_id` Not-Null-Constraint in `auth.identities`:** Beim Anlegen neuer Benutzer über `public.save_admin_profile()` verlangt die aktuelle GoTrue-Schema-Definition der Tabelle `auth.identities` zwingend den Primärschlüssel des Identitäts-Providers (`provider_id text NOT NULL`). Migration 85 übergibt `provider_id = v_auth_uid::text` und fängt bestehende Datensätze über `ON CONFLICT (provider_id, provider) DO UPDATE` transparent ab.
 * **Bereinigung von Funktions-Überladungen:** Die veraltete 6-Parameter-Funktion ohne Passwort-Provisioning wurde bereinigt (`DROP FUNCTION`), sodass Aufrufe im PostgreSQL-Katalog eindeutig signiert sind.
 
+---
+
+## 15. Harmonisierung der Vorstandsrollen: Jungschützenleiter (Migration 86)
+
+* **Rollenwechsel Materialwart -> Jungschützenleiter:** Die Rolle `materialwart` wurde im RBAC-System und der Benutzeroberfläche zur offiziellen Vorstandsfunktion `jungschuetzenleiter` harmonisiert.
+* **Reihenfolge & UX-Standard:** In der Berechtigungsmatrix sowie im Rollen-Container des Admin-Modals folgt `jungschuetzenleiter` direkt auf `schuetzenmeister`. Die Vermietungs-Rolle `vermieter` schliesst die Liste ganz rechts ab.
+* **DB-Schema & Migration:** Der PostgreSQL-Enum `public.app_role` wurde um `jungschuetzenleiter` erweitert. Sämtliche Berechtigungen (`public.role_permissions`) und bestehenden Benutzerzuordnungen (`public.user_roles`) wurden nahtlos migriert.
+
+
 
 

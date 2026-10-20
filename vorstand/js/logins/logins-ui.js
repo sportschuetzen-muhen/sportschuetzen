@@ -579,8 +579,8 @@ function renderRoleChips(currentRolesStr) {
     { key: 'kassier', label: 'Kassier', color: 'success' },
     { key: 'aktuar', label: 'Aktuar', color: 'info' },
     { key: 'schuetzenmeister', label: 'Schützenmeister', color: 'warning' },
-    { key: 'vermieter', label: 'Vermieter', color: 'secondary' },
-    { key: 'materialwart', label: 'Materialwart', color: 'dark' }
+    { key: 'jungschuetzenleiter', label: 'Jungschützenleiter', color: 'dark' },
+    { key: 'vermieter', label: 'Vermieter', color: 'secondary' }
   ];
 
   return ROLES.map(r => {
