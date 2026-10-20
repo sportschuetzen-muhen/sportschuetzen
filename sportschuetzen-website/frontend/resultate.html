@@ -6,7 +6,7 @@
     <title>Resultate - Sportschützen Muhen</title>
     <meta name="description" content="Aktuelle und historische Wettkampfresultate, Gruppenmeisterschaft, Mannschaftsmeisterschaft und Jahresmeisterschaft der Sportschützen Muhen.">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=20261020_2">
     <style>
         .hero-mini {
             min-height: 35vh;
@@ -57,49 +57,63 @@
 
                 <!-- TAB CONTENT A: JAHRESMEISTERSCHAFT -->
                 <div id="tab-jm" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-jm">
-                    <div class="results-grid-2">
-                        <!-- Liga 1 -->
-                        <div class="results-card">
-                            <h3>Liga 1</h3>
-                            <div class="table-responsive">
-                                <table class="table-results" id="table-liga1">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col" class="col-rang">Rang</th>
-                                            <th scope="col" class="col-name">Name</th>
-                                            <th scope="col" class="col-total">Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. 800%)</span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbody-liga1">
-                                        <!-- Loaded dynamically -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                    <!-- Schnellauswahl Ligen -->
+                    <div class="jm-league-pills fade-in-up delay-2" style="display: flex; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+                        <a href="#card-liga1" class="jm-pill-btn" style="background: rgba(15, 60, 92, 0.06); color: var(--primary-color); padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; text-decoration: none; transition: background 0.2s;">🏆 Liga 1</a>
+                        <a href="#card-liga2" class="jm-pill-btn" style="background: rgba(15, 60, 92, 0.06); color: var(--primary-color); padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; text-decoration: none; transition: background 0.2s;">🥈 Liga 2</a>
+                        <a href="#card-u21" class="jm-pill-btn" style="background: rgba(15, 60, 92, 0.06); color: var(--primary-color); padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; text-decoration: none; transition: background 0.2s;">🎯 Junioren (U21)</a>
+                    </div>
 
-                        <!-- Liga 2 -->
-                        <div class="results-card">
-                            <h3>Liga 2</h3>
-                            <div class="table-responsive">
-                                <table class="table-results" id="table-liga2">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col" class="col-rang">Rang</th>
-                                            <th scope="col" class="col-name">Name</th>
-                                            <th scope="col" class="col-total">Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. 800%)</span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbody-liga2">
-                                        <!-- Loaded dynamically -->
-                                    </tbody>
-                                </table>
-                            </div>
+                    <!-- Liga 1 -->
+                    <div class="results-card" id="card-liga1" style="margin-bottom: 2rem;">
+                        <div style="margin-bottom: 1rem;">
+                            <h3 style="margin-bottom: 0.25rem;">🏆 Liga 1</h3>
+                            <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Die 8 Schützen der obersten Liga. Rang 7 & 8 steigen am Saisonende in Liga 2 ab.</p>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table-results" id="table-liga1">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="col-rang">Rang</th>
+                                        <th scope="col" class="col-name">Name</th>
+                                        <th scope="col" class="col-total">Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. 800%)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-liga1">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Liga 2 -->
+                    <div class="results-card" id="card-liga2" style="margin-bottom: 2rem;">
+                        <div style="margin-bottom: 1rem;">
+                            <h3 style="margin-bottom: 0.25rem;">🥈 Liga 2</h3>
+                            <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Rang 1 & 2 steigen am Saisonende in Liga 1 auf. <span style="display: inline-block; margin-left: 0.5rem; color: #0284c7;">💡 Schützinnen und Schützen erscheinen in der Rangliste, sobald ihr erstes Wertungsresultat vorliegt.</span></p>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table-results" id="table-liga2">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="col-rang">Rang</th>
+                                        <th scope="col" class="col-name">Name</th>
+                                        <th scope="col" class="col-total">Total <span class="max-badge" style="font-size:0.75rem; font-weight:normal; opacity:0.85;">(max. 800%)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-liga2">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 
                     <!-- Junioren U21 -->
-                    <div class="results-card" style="margin-top: 2rem;">
-                        <h3>Junioren (U21)</h3>
+                    <div class="results-card" id="card-u21">
+                        <div style="margin-bottom: 1rem;">
+                            <h3 style="margin-bottom: 0.25rem;">🎯 Junioren (U21)</h3>
+                            <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Nachwuchswertung Kleinkaliber mit reduzierten Streichresultaten.</p>
+                        </div>
                         <div class="table-responsive">
                             <table class="table-results" id="table-u21">
                                 <thead>
@@ -290,6 +304,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/auth-session.js"></script>
     <script src="js/components.js"></script>
-    <script src="js/resultate.js?v=20261020_1"></script>
+    <script src="js/resultate.js?v=20261020_2"></script>
 </body>
 </html>

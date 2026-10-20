@@ -205,6 +205,7 @@ CREATE TABLE public.documents (
 | :--- | :--- | :--- |
 | **iPad Landscape (1024px–1180px)** | Dynamische Reduktion des Abstands `.desktop-nav` von `2rem` auf `0.85rem`–`1.25rem`. | Kein Header-Umbruch; Logo und Navigation bleiben einzeilig. |
 | **Smartphones & iPad Portrait (<=1024px)** | Hamburger-Menü (`.mobile-toggle`) mit `100dvh` und `env(safe-area-inset-top)` / `bottom`. | Keine Überdeckung durch Notch oder Safari-Leisten; 44×44px Touch-Targets. |
+| **Desktop-Browser (Resultate & Jahresmeisterschaft)** | Vollbreiten-Karten (`results-card`) für Liga 1, Liga 2 und U21 mit Schnellauswahl-Pills; `repeat(auto-fit, minmax(280px, 1fr))` für das 3-Spalten-Detailraster. In Liga 2 und U21 werden Schützen ohne gewertete Resultate ausgeblendet (`total > 0`). | Grosszügige Darstellung (>350px je Detailspalte) ohne Abschneiden oder Textüberlappung; schlanke Rangliste mit motivierendem Info-Hinweis. |
 | **Touch-Bedienung in der Lightbox** | Wischgesten-Listener (`touchstart` / `touchend`) mit Schwelle von 50px. | Intuitives horizontales Wischen auf Touchscreens für Bildwechsel. |
 | **PDF-Betrachtung auf iOS Safari** | Öffnen aller Dokumente im neuen Tab (`target="_blank"`). | Nativer iOS PDF-Reader statt fehlerhafter iFrame-Skalierung. |
 

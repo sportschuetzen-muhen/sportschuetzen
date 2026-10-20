@@ -255,8 +255,8 @@ async function loadJahresmeisterschaft(yearParam) {
             let junioren = [];
             if (data && (data.liga1 || data.liga2)) {
                 liga1 = data.liga1 || [];
-                liga2 = data.liga2 || [];
-                junioren = data.junioren || [];
+                liga2 = (data.liga2 || []).filter(s => (Number(s.total) || 0) > 0);
+                junioren = (data.junioren || []).filter(s => (Number(s.total) || 0) > 0);
             } else if (Array.isArray(data)) {
                 const parsedList = data.map(s => ({
                     ...s,
@@ -270,12 +270,12 @@ async function loadJahresmeisterschaft(yearParam) {
                     .map((s, idx) => ({ ...s, rang: idx + 1, status: idx >= 6 ? 'abstieg' : 'neutral' }));
 
                 liga2 = parsedList
-                    .filter(s => Number(s.liga) === 2)
+                    .filter(s => Number(s.liga) === 2 && (Number(s.total) || 0) > 0)
                     .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
                     .map((s, idx) => ({ ...s, rang: idx + 1, status: idx < 2 ? 'aufstieg' : 'neutral' }));
 
                 junioren = parsedList
-                    .filter(s => s.is_junior)
+                    .filter(s => s.is_junior && (Number(s.total) || 0) > 0)
                     .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
                     .map((s, idx) => ({ ...s, rang: idx + 1, status: 'neutral' }));
             }

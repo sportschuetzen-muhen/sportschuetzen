@@ -99,7 +99,8 @@
         
         .detail-box h4 { display: flex; justify-content: space-between; margin: 0 0 8px; border-bottom: 1px solid #ddd; color: var(--primary); font-size: 14px; }
         .two-col { list-style: none; padding: 0; margin: 0; }
-        .two-col li { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #eee; }
+        .two-col li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #eee; }
+        .two-col li span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
         .is-streich { color: #e74c3c; text-decoration: line-through; opacity: 0.7; }
 
         .max-hint { font-size: 0.6em; vertical-align: super; color: rgba(255,255,255,0.7); cursor: pointer; }
@@ -163,12 +164,19 @@
     function renderLiga(ligaNr, data, maxPercent){
         const isNumeric = isFinite(ligaNr);
         const title = isNumeric ? `Liga ${ligaNr}` : ligaNr;
-        let html=`<div class="liga"><h2>${title}</h2>
+        const subHint = (Number(ligaNr) === 2) 
+            ? `<div style="font-size: 12px; color: #64748b; margin: -4px 0 10px 0;">💡 Schützinnen und Schützen erscheinen in der Rangliste, sobald ihr erstes Wertungsresultat vorliegt.</div>` 
+            : '';
+        let html=`<div class="liga"><h2>${title}</h2>${subHint}
         <table><thead><tr>
         <th class="col-rang">Rang</th>
         <th class="col-name">Name</th>
         <th class="col-total">Total <span class="max-hint" title="Maximal erreichbar">(max. ${maxPercent || 900}%)</span></th>
         </tr></thead><tbody>`;
+
+        if (!data || data.length === 0) {
+            html += `<tr><td colspan="3" style="text-align:center; color:#94a3b8; padding:20px;">Keine Resultate vorhanden.</td></tr>`;
+        }
 
         arr(data).forEach((t, i)=>{
             const id=`l${ligaNr.toString().replace(/[^a-zA-Z0-9]/g, '_')}_${i}`;
@@ -232,12 +240,12 @@
                 .map((s, i) => ({ ...s, rang: i + 1 }));
 
             const liga2 = parsedList
-                .filter(s => Number(s.liga) === 2)
+                .filter(s => Number(s.liga) === 2 && (Number(s.total) || 0) > 0)
                 .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
                 .map((s, i) => ({ ...s, rang: i + 1 }));
 
             const junioren = parsedList
-                .filter(s => s.is_junior)
+                .filter(s => s.is_junior && (Number(s.total) || 0) > 0)
                 .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
                 .map((s, i) => ({ ...s, rang: i + 1 }));
 
