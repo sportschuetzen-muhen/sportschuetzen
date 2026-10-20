@@ -20,6 +20,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5v
 //  INITIALISIERUNG & RENDERING
 // =========================================================
 async function initGalerieManager() {
+    ensureGalerieModals();
     const container = document.getElementById('galerie-container');
     if (!container) return;
 
@@ -99,11 +100,21 @@ async function initGalerieManager() {
                             </div>
                         </div>
 
-                        <div class="alert alert-info border-0 mt-4 mb-0 small d-flex align-items-start gap-2">
-                            <i class="fas fa-info-circle mt-0.5 text-primary"></i>
-                            <div>
-                                <strong>Workflow für Vorstandsmitglieder:</strong><br>
-                                Neue Fotos im Sammelalbum «Mitglieder-Uploads» prüfen, gewünschte Bilder in ein Zielalbum (z. B. «Endschiessen 2026») verschieben und anschliessend aus dem Sammelalbum entfernen. Sobald das Sammelalbum leer ist, erlischt der rote Pendenzen-Punkt automatisch.
+                        <div class="alert alert-info border-0 mt-4 mb-0 small">
+                            <div class="d-flex align-items-start gap-2 mb-2">
+                                <i class="fas fa-info-circle mt-0.5 text-primary fs-6"></i>
+                                <div>
+                                    <strong>Workflow für Vorstandsmitglieder:</strong><br>
+                                    Neue Fotos im Sammelalbum «Mitglieder-Uploads» prüfen, gewünschte Bilder in ein Zielalbum (z. B. «Endschiessen 2026») verschieben und anschliessend aus dem Sammelalbum entfernen. Sobald das Sammelalbum leer ist, erlischt der rote Pendenzen-Punkt automatisch.
+                                </div>
+                            </div>
+                            <div class="pt-2 border-top border-info-subtle d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <span class="text-muted" style="font-size: 0.8rem;">
+                                    <i class="fas fa-exclamation-triangle text-warning me-1"></i> Wichtig: Beim Einsortieren <strong>nicht löschen</strong>, sondern <strong>«Aus Album entfernen»</strong> wählen!
+                                </span>
+                                <button type="button" class="btn btn-primary btn-sm py-1 px-2.5 fw-bold" onclick="openGalerieWorkflowGuideModal()" style="font-size: 0.78rem;">
+                                    <i class="fas fa-book-open me-1"></i> Anleitung für Vorstandsmitglieder
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -115,7 +126,7 @@ async function initGalerieManager() {
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-header bg-white border-bottom py-3">
                         <h6 class="mb-0 fw-bold text-dark">
-                            <i class="fas fa-folder-plus text-primary me-2"></i>Website-Alben & Synchronisation
+                            <i class="fas fa-folder-plus text-primary me-2"></i>Website-Alben &amp; Synchronisation
                         </h6>
                     </div>
                     <div class="card-body p-3">
@@ -131,10 +142,23 @@ async function initGalerieManager() {
                             
                             <!-- ALBUM-AUSWAHL DIREKT AUS IMMICH -->
                             <div class="mb-2">
-                                <label class="form-label small fw-semibold mb-1" for="gal-sync-album-select">Immich-Album auswählen:</label>
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label small fw-semibold mb-0" for="gal-sync-album-select">Immich-Album auswählen:</label>
+                                    <div class="d-flex gap-1">
+                                        <button type="button" class="btn btn-outline-primary btn-xs py-0 px-2 fw-semibold" onclick="openCreateImmichAlbumModal()" title="Neues Album direkt auf Immich erstellen" style="font-size: 0.75rem; line-height: 1.6;">
+                                            <i class="fas fa-plus me-1"></i>Neues Album
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-2" id="btn-refresh-immich-albums" onclick="refreshImmichAlbumsDropdown()" title="Albenliste aus Immich neu laden (CT 116)" style="font-size: 0.75rem; line-height: 1.6;">
+                                            <i class="fas fa-sync-alt" id="icon-refresh-immich-albums"></i>
+                                        </button>
+                                    </div>
+                                </div>
                                 <select id="gal-sync-album-select" class="form-select form-select-sm" onchange="onImmichAlbumSelected()">
                                     <option value="">Lade verfügbare Immich-Alben...</option>
                                 </select>
+                                <div id="gal-album-live-info" class="text-muted mt-1" style="font-size: 0.72rem;">
+                                    Wird live mit Proxmox CT 116 synchron gehalten.
+                                </div>
                             </div>
 
                             <!-- ORDNERNAME AUF DER WEBSITE -->
@@ -209,9 +233,13 @@ async function initGalerieManager() {
 // =========================================================
 //  LADEN DER VERFÜGBAREN IMMICH-ALBEN FÜR DAS DROPDOWN
 // =========================================================
-async function loadImmichAlbumsForDropdown() {
+async function loadImmichAlbumsForDropdown(options = {}) {
+    const { silent = false, preferredAlbumId = null } = options;
     const selectEl = document.getElementById('gal-sync-album-select');
+    const liveInfoEl = document.getElementById('gal-album-live-info');
     if (!selectEl) return;
+
+    const previousValue = preferredAlbumId || selectEl.value;
 
     try {
         const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`);
@@ -223,6 +251,7 @@ async function loadImmichAlbumsForDropdown() {
 
             if (availableImmichAlbums.length === 0) {
                 selectEl.innerHTML = '<option value="">Keine Alben auf Immich gefunden</option>';
+                if (liveInfoEl) liveInfoEl.innerText = 'Keine Alben auf CT 116 gefunden.';
                 return;
             }
 
@@ -234,12 +263,351 @@ async function loadImmichAlbumsForDropdown() {
                     </option>
                 `).join('')}
             `;
+
+            // Vorherige Auswahl wiederherstellen oder neues Album selektieren
+            if (previousValue) {
+                selectEl.value = previousValue;
+                if (selectEl.value === previousValue) {
+                    onImmichAlbumSelected();
+                }
+            }
+
+            if (liveInfoEl) {
+                const timeStr = new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+                liveInfoEl.innerHTML = `<i class="fas fa-check text-success me-1"></i>${availableImmichAlbums.length} Alben auf CT 116 (Stand: ${timeStr})`;
+            }
         }
     } catch (err) {
-        console.warn('Konnte Immich-Alben für Dropdown nicht laden:', err);
-        selectEl.innerHTML = '<option value="">Fehler beim Laden der Immich-Alben</option>';
+        if (!silent) console.warn('Konnte Immich-Alben für Dropdown nicht laden:', err);
+        if (!availableImmichAlbums || availableImmichAlbums.length === 0) {
+            selectEl.innerHTML = '<option value="">Fehler beim Laden der Immich-Alben</option>';
+        }
     }
 }
+
+// Manuelles Neuladen via Refresh-Button
+async function refreshImmichAlbumsDropdown() {
+    const btn = document.getElementById('btn-refresh-immich-albums');
+    const icon = document.getElementById('icon-refresh-immich-albums');
+    if (btn) btn.disabled = true;
+    if (icon) icon.classList.add('fa-spin');
+
+    try {
+        await loadImmichAlbumsForDropdown({ silent: false });
+        await loadImmichDashboardData();
+        if (typeof showToast === 'function') {
+            showToast(`Immich-Alben aktualisiert (${availableImmichAlbums.length} Alben gefunden).`, 'info');
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('fa-spin');
+    }
+}
+
+// =========================================================
+//  NEUES ALBUM DIREKT AUF IMMICH ERSTELLEN
+// =========================================================
+function openCreateImmichAlbumModal() {
+    ensureGalerieModals();
+    const modalEl = document.getElementById('modalCreateImmichAlbum');
+    if (!modalEl) return;
+
+    // Felder zurücksetzen
+    const nameInput = document.getElementById('new-immich-album-name');
+    const descInput = document.getElementById('new-immich-album-desc');
+    const feedbackEl = document.getElementById('new-immich-album-feedback');
+    const submitBtn = document.getElementById('btn-submit-create-album');
+
+    if (nameInput) nameInput.value = '';
+    if (descInput) descInput.value = '';
+    if (feedbackEl) {
+        feedbackEl.className = 'small mt-1 text-muted';
+        feedbackEl.innerHTML = '<i class="fas fa-info-circle me-1"></i>Verwende einen prägnanten Namen, z. B. «Endschiessen 2026».';
+    }
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-check me-1"></i> Album jetzt anlegen';
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+
+    setTimeout(() => {
+        if (nameInput) nameInput.focus();
+    }, 300);
+}
+
+function checkAlbumNameDuplicate(val) {
+    const clean = (val || '').trim();
+    const feedbackEl = document.getElementById('new-immich-album-feedback');
+    const submitBtn = document.getElementById('btn-submit-create-album');
+
+    if (!clean) {
+        if (feedbackEl) {
+            feedbackEl.className = 'small mt-1 text-muted';
+            feedbackEl.innerHTML = '<i class="fas fa-info-circle me-1"></i>Gib einen Albumnamen ein.';
+        }
+        if (submitBtn) submitBtn.disabled = true;
+        return false;
+    }
+
+    // Prüfe Duplikat (case-insensitive) gegen vorhandene Immich-Alben
+    const duplicate = availableImmichAlbums.find(a => (a.name || '').toLowerCase() === clean.toLowerCase());
+    if (duplicate) {
+        if (feedbackEl) {
+            feedbackEl.className = 'small mt-1 text-danger fw-semibold';
+            feedbackEl.innerHTML = `<i class="fas fa-exclamation-triangle me-1"></i>Ein Album mit dem Namen «${escapeHtml(duplicate.name)}» existiert bereits in Immich! Bitte wähle einen anderen Namen.`;
+        }
+        if (submitBtn) submitBtn.disabled = true;
+        return false;
+    }
+
+    if (feedbackEl) {
+        feedbackEl.className = 'small mt-1 text-success';
+        feedbackEl.innerHTML = `<i class="fas fa-check-circle me-1"></i>Name «${escapeHtml(clean)}» ist frei verfügbar.`;
+    }
+    if (submitBtn) submitBtn.disabled = false;
+    return true;
+}
+
+async function submitCreateImmichAlbum() {
+    const nameInput = document.getElementById('new-immich-album-name');
+    const descInput = document.getElementById('new-immich-album-desc');
+    const submitBtn = document.getElementById('btn-submit-create-album');
+    const modalEl = document.getElementById('modalCreateImmichAlbum');
+
+    const albumName = (nameInput?.value || '').trim();
+    const description = (descInput?.value || '').trim();
+
+    if (!albumName) {
+        checkAlbumNameDuplicate('');
+        return;
+    }
+
+    if (!checkAlbumNameDuplicate(albumName)) {
+        return;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Lege Album in Immich an...';
+    }
+
+    try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+                action: 'create_album',
+                albumName,
+                description
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Fehler beim Anlegen des Albums auf Immich');
+        }
+
+        // Modal schliessen
+        if (modalEl) {
+            bootstrap.Modal.getInstance(modalEl)?.hide();
+        }
+
+        if (typeof showToast === 'function') {
+            showToast(`Album «${data.album?.name || albumName}» erfolgreich in Immich erstellt!`, 'success');
+        }
+
+        // Dropdown neu laden und neues Album direkt auswählen
+        await loadImmichAlbumsForDropdown({ silent: false, preferredAlbumId: data.album?.id });
+
+    } catch (err) {
+        console.error('Fehler beim Erstellen des Albums:', err);
+        if (typeof showToast === 'function') {
+            showToast(`Konnte Album nicht anlegen: ${err.message}`, 'error');
+        } else {
+            alert(`Konnte Album nicht anlegen: ${err.message}`);
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-check me-1"></i> Album jetzt anlegen';
+        }
+    }
+}
+
+// =========================================================
+//  ANLEITUNGS-MODAL FÜR VORSTANDSMITGLIEDER
+// =========================================================
+function openGalerieWorkflowGuideModal() {
+    ensureGalerieModals();
+    const modalEl = document.getElementById('modalGalerieWorkflowGuide');
+    if (!modalEl) return;
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
+// =========================================================
+//  MODALS DYNAMISCH IN DEN DOM INJIZIEREN
+// =========================================================
+function ensureGalerieModals() {
+    if (document.getElementById('modalCreateImmichAlbum') && document.getElementById('modalGalerieWorkflowGuide')) {
+        return;
+    }
+
+    const modalWrapper = document.createElement('div');
+    modalWrapper.id = 'galerie-modals-container';
+    modalWrapper.innerHTML = `
+        <!-- MODAL: NEUES ALBUM ERSTELLEN -->
+        <div class="modal fade" id="modalCreateImmichAlbum" tabindex="-1" aria-labelledby="modalCreateImmichAlbumLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow">
+                    <div class="modal-header bg-primary text-white py-2 px-3">
+                        <h6 class="modal-title fw-bold" id="modalCreateImmichAlbumLabel">
+                            <i class="fas fa-folder-plus me-1.5"></i> Neues Immich-Album erstellen
+                        </h6>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                    </div>
+                    <div class="modal-body p-3">
+                        <p class="small text-muted mb-3">
+                            Erstelle direkt auf unserem Proxmox-Server (CT 116) ein neues Album. Es steht sofort in Immich und hier im Portal zur Verfügung.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold mb-1" for="new-immich-album-name">Name des Albums / Anlasses:</label>
+                            <input type="text" id="new-immich-album-name" class="form-control form-control-sm" placeholder="z. B. Endschiessen 2026" oninput="checkAlbumNameDuplicate(this.value)">
+                            <div id="new-immich-album-feedback" class="small mt-1 text-muted">
+                                <i class="fas fa-info-circle me-1"></i>Verwende einen prägnanten Namen, z. B. «Endschiessen 2026».
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-semibold mb-1" for="new-immich-album-desc">Optionale Beschreibung (Notiz):</label>
+                            <input type="text" id="new-immich-album-desc" class="form-control form-control-sm" placeholder="z. B. Vereinsanlass Herbst 2026">
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-2 px-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+                        <button type="button" class="btn btn-primary btn-sm fw-bold" id="btn-submit-create-album" onclick="submitCreateImmichAlbum()" disabled>
+                            <i class="fas fa-check me-1"></i> Album jetzt anlegen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL: DETAILLIERTE WORKFLOW-ANLEITUNG -->
+        <div class="modal fade" id="modalGalerieWorkflowGuide" tabindex="-1" aria-labelledby="modalGalerieWorkflowGuideLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+                <div class="modal-content border-0 shadow">
+                    <div class="modal-header bg-dark text-white py-2.5 px-3">
+                        <h6 class="modal-title fw-bold" id="modalGalerieWorkflowGuideLabel">
+                            <i class="fas fa-book-open text-primary me-2"></i>Anleitung: Fotos sichten, ordnen &amp; publizieren
+                        </h6>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schliessen"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <!-- ÜBERSICHT -->
+                        <div class="d-flex align-items-center gap-3 p-3 bg-light rounded border mb-3">
+                            <div class="fs-1 text-primary">🔄</div>
+                            <div class="small">
+                                <strong>Der Foto-Kreislauf bei den Sportschützen Muhen:</strong><br>
+                                Vereinsmitglieder laden Schnappschüsse via <a href="../sportschuetzen-website/frontend/intern.html" target="_blank">intern.html</a> hoch. Diese landen automatisch im zentralen Sammelalbum <strong>«Mitglieder-Uploads»</strong> auf unserem Immich-Server (CT 116). Der rote Pendenzen-Badge signalisiert dir offene Uploads.
+                            </div>
+                        </div>
+
+                        <!-- ZWEI VARIANTEN -->
+                        <h6 class="fw-bold text-dark border-bottom pb-2 mb-3">
+                            Wie sortiere ich Bilder in ein Zielalbum ein? (2 Varianten)
+                        </h6>
+
+                        <!-- VARIANTE 1 -->
+                        <div class="card border mb-3 shadow-none">
+                            <div class="card-header bg-primary-subtle py-2 d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-primary small">
+                                    <i class="fas fa-mouse-pointer me-1"></i> Variante 1: Direkt in Immich beim Fotos sichten (Empfohlen)
+                                </span>
+                                <span class="badge bg-primary">Sehr schnell</span>
+                            </div>
+                            <div class="card-body p-3 small">
+                                <ol class="mb-3 ps-3">
+                                    <li class="mb-1.5">Klicke im Galerie Manager auf <strong>«📥 Sammelalbum öffnen ↗»</strong>.</li>
+                                    <li class="mb-1.5">Fahre mit der Maus über die gewünschten Bilder und setze das <strong>blaue Häkchen</strong> (z. B. «3 ausgewählt»).</li>
+                                    <li class="mb-1.5">Klicke oben rechts auf das <strong><code>+</code> (Plus-Symbol)</strong>:
+                                        <ul class="mt-1 ps-3 text-muted">
+                                            <li>Wähle entweder ein bestehendes Album aus der Liste ODER</li>
+                                            <li>Klicke ganz oben auf <strong>«Neues Album erstellen»</strong>, gib den Namen ein (z. B. <em>Endschiessen 2026</em>) und bestätige.</li>
+                                        </ul>
+                                    </li>
+                                    <li class="mb-1.5">Die Bilder sind nun im Zielalbum! Um sie aus dem Sammelalbum zu entfernen: Klicke oben rechts auf das <strong>Drei-Punkte-Menü (<code>⋮</code>)</strong> und wähle <strong>«Aus Album entfernen»</strong>.</li>
+                                </ol>
+                                <div class="alert alert-danger py-2 px-3 mb-0 border-0 small d-flex align-items-start gap-2">
+                                    <i class="fas fa-exclamation-triangle mt-0.5 fs-6"></i>
+                                    <div>
+                                        <strong>⚠️ ACHTUNG – Niemals «Löschen» / Papierkorb wählen:</strong><br>
+                                        «In den Papierkorb verschieben / Löschen» vernichtet das Foto vom gesamten Server. Wähle beim Einsortieren <strong>immer «Aus Album entfernen»</strong>! So bleibt das Bild im Zielalbum sicher erhalten und nur das Sammelalbum wird geleert.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- VARIANTE 2 -->
+                        <div class="card border mb-3 shadow-none">
+                            <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-dark small">
+                                    <i class="fas fa-folder-plus me-1 text-primary"></i> Variante 2: Neues Album vorab hier im Portal vorbereiten
+                                </span>
+                                <span class="badge bg-secondary">Bequem</span>
+                            </div>
+                            <div class="card-body p-3 small">
+                                <ol class="mb-0 ps-3">
+                                    <li class="mb-1.5">Klicke hier im Galerie Manager neben dem Dropdown auf <strong>«➕ Neues Album»</strong>.</li>
+                                    <li class="mb-1.5">Gib den Albumnamen ein (z. B. <em>Generalversammlung 2026</em>). Unser Portal prüft live, ob der Name bereits vergeben ist, um Doppelungen zu verhindern.</li>
+                                    <li class="mb-1.5">Das Album wird per API direkt auf Proxmox CT 116 angelegt und steht sofort in Immich und im Dropdown zur Verfügung.</li>
+                                    <li class="mb-1.5">Öffne anschliessend das Sammelalbum in Immich, markiere die Bilder, klicke auf <strong><code>+</code></strong> und wähle dieses neu erstellte Album aus.</li>
+                                    <li class="mb-0">Entferne die Bilder abschliessend mit <strong><code>⋮</code> &rarr; «Aus Album entfernen»</strong> aus dem Sammelalbum.</li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <!-- SCHRITT 3: PUBLIKATION -->
+                        <div class="card border-0 bg-light p-3 small">
+                            <div class="fw-bold text-dark mb-1">
+                                <i class="fas fa-cloud-arrow-down text-primary me-1"></i> Schritt 3: Album auf der Website publizieren
+                            </div>
+                            <p class="text-muted mb-0">
+                                Sobald die Fotos im Zielalbum liegen, wählst du das Album rechts im Dropdown aus, wählst die Sichtbarkeit (<strong>🔒 Nur Mitglieder</strong> für intern oder <strong>🌐 Öffentlich &amp; Mitglieder</strong> für die Homepage) und klickst auf <strong>«Album jetzt synchronisieren &amp; publizieren»</strong>. Das Album ist sofort live!
+                            </p>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-2 px-3">
+                        <button type="button" class="btn btn-primary btn-sm fw-bold px-3" data-bs-dismiss="modal">
+                            <i class="fas fa-check me-1"></i> Alles klar, verstanden!
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modalWrapper);
+}
+
+// Globale Bereitstellung
+window.openCreateImmichAlbumModal = openCreateImmichAlbumModal;
+window.checkAlbumNameDuplicate = checkAlbumNameDuplicate;
+window.submitCreateImmichAlbum = submitCreateImmichAlbum;
+window.refreshImmichAlbumsDropdown = refreshImmichAlbumsDropdown;
+window.openGalerieWorkflowGuideModal = openGalerieWorkflowGuideModal;
+window.loadImmichAlbumsForDropdown = loadImmichAlbumsForDropdown;
+
+// Auto-Refresh beim Tab-Wechsel zurück ins Portal (z.B. nach Erstellen in Immich)
+window.addEventListener('focus', () => {
+    const selectEl = document.getElementById('gal-sync-album-select');
+    if (selectEl && selectEl.offsetParent !== null) {
+        loadImmichAlbumsForDropdown({ silent: true });
+        loadImmichDashboardData();
+    }
+});
 
 function onImmichAlbumSelected() {
     const selectEl = document.getElementById('gal-sync-album-select');

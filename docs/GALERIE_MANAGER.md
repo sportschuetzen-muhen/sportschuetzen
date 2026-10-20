@@ -106,8 +106,14 @@ Aus Datenschutz- und Persönlichkeitsrechtsgründen wird jedes synchronisierte M
 
 Die Übernahme von Alben aus Immich in das Web-Frontend erfolgt vollautomatisch über die Supabase Edge Function `immich-sync` direkt im Vorstandsportal:
 
-### 6.1 Benutzer-Workflow (Browser)
-1. **Album-Auswahl:** Aus einem Dropdown werden alle auf dem Immich-Server (CT 116) vorhandenen Alben geladen.
+### 6.1 Album-Erstellung & Kuratierungs-Workflow
+Für das Anlegen von Zielalben und das Einsortieren existieren zwei harmonisierte Wege:
+* **Variante 1 (Direkt in Immich beim Sichten):** Fotos im Sammelalbum «Mitglieder-Uploads» markieren, auf `+` klicken und Zielalbum wählen bzw. direkt «Neues Album erstellen». Anschliessend im Drei-Punkte-Menü `⋮` zwingend **«Aus Album entfernen»** wählen (niemals auf den Papierkorb/Löschen klicken, da dies das Foto vom gesamten Server löscht).
+* **Variante 2 (Direkt im Vorstandsportal anlegen):** Über den Button **«➕ Neues Album»** neben dem Dropdown wird das Album via Edge Function `immich-sync` (`action: 'create_album'`) direkt per Immich API (`POST /api/albums`) auf Proxmox CT 116 erstellt.
+* **Duplikat-Schutz & Auto-Refresh:** Die Eingabe prüft live gegen vorhandene Alben, um versehentliche Doppelungen zu verhindern. Zudem aktualisiert ein Window-Focus-Listener die Albenliste automatisch im Hintergrund, sobald der Benutzer aus Immich zurück in das Vorstandsportal wechselt.
+
+### 6.2 Benutzer-Workflow zur Publikation (Browser)
+1. **Album-Auswahl:** Aus einem Dropdown werden alle auf dem Immich-Server (CT 116) vorhandenen Alben geladen. Über das Aktualisieren-Icon `[🔄]` kann die Liste jederzeit manuell neu geladen werden.
 2. **Ordner- / Albumname:** Wird automatisch mit dem Immich-Namen vorausgefüllt und kann frei angepasst werden.
 3. **Sichtbarkeit:**
    * `members`: **🔒 Nur Mitglieder (geschützter Bereich)** – Nur für angemeldete Vereinsmitglieder in `intern.html` sichtbar.
@@ -118,10 +124,10 @@ Die Übernahme von Alben aus Immich in das Web-Frontend erfolgt vollautomatisch 
    * Schreibt die Daten unmittelbar in `public.gallery_albums` und `public.gallery_photos` (Single Source of Truth).
    * Das Album ist sofort auf der Website und im Mitgliederbereich live.
 
-### 6.2 Depublizieren & Löschen
+### 6.3 Depublizieren & Löschen
 Publizierte Alben können direkt in der Liste «Aktuell publizierte Alben» über das Mülleimer-Icon `[🗑️]` wieder von der Website entfernt werden. Die Original-Fotos auf Immich bleiben dabei unberührt.
 
-### 6.3 Entwickler-Fallback (CLI)
+### 6.4 Entwickler-Fallback (CLI)
 Das bisherige CLI-Skript `sportschuetzen-website/sync-immich-album.js` bleibt ausschliesslich für Offline-Wartungsarbeiten und lokale Batch-Tests erhalten.
 
 ---

@@ -205,6 +205,55 @@ Deno.serve(async (req: Request) => {
       const postAction = body.action || action || "sync";
 
       // -------------------------------------------------------
+      // A1. NEUES IMMICH-ALBUM ERSTELLEN
+      // -------------------------------------------------------
+      if (postAction === "create_album") {
+        const { albumName, description } = body;
+        const cleanName = (albumName || "").trim();
+        if (!cleanName) {
+          return new Response(JSON.stringify({ error: "albumName ist erforderlich" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+
+        // Immich API: Neues Album anlegen
+        const createRes = await fetch(`${IMMICH_API_URL}/api/albums`, {
+          method: "POST",
+          headers: {
+            "x-api-key": IMMICH_API_KEY,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            albumName: cleanName,
+            description: description || ""
+          })
+        });
+
+        if (!createRes.ok) {
+          const errText = await createRes.text();
+          console.error("Immich Create Album Error:", errText);
+          return new Response(JSON.stringify({ error: `Immich Fehler: ${createRes.status}`, details: errText }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+
+        const createdAlbum = await createRes.json();
+        return new Response(JSON.stringify({
+          success: true,
+          album: {
+            id: createdAlbum.id,
+            name: createdAlbum.albumName,
+            assetCount: 0,
+            createdAt: createdAlbum.createdAt
+          }
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // -------------------------------------------------------
       // A. ALBUM ENTFERNEN (UNPUBLISH)
       // -------------------------------------------------------
       if (postAction === "unpublish") {
