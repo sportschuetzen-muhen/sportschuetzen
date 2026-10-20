@@ -155,3 +155,7 @@ In Supabase existiert kein physisches «Blatt-Kopieren» mehr. Jeder Datensatz i
 - **Grosszügiges 2-Spalten-Layout:** Da in der SGM 6 Spalten (Name, Stellung, Team, P1, P2, Total) erfasst werden, nutzen die Gruppen-Karten `col-12 col-lg-6` und `overflow-x: auto`. Dies verhindert das Abschneiden von Passe 2 (P2) und Namenskürzungen.
 - **Kopfzeile & Team-Rundentotal:** Jede Karte besitzt eine dezente Tabellenkopfzeile (`Schütze | Stellung | Team | P1 | P2 | Total`) sowie eine dynamische Live-Anzeige der Rundensumme im Header (z. B. `968 Pkt`).
 - **Verbindliche Sortierung nach Stellung:** Sowohl im Vorstandscockpit (`resultate-ui.js`, `renderRoundSection`, `renderMatrixView`) als auch in den Runden-Details der Vereins-Homepage (`resultate.js`, `toggleGroupDetail`) werden Schützen strikt nach Stellung sortiert: zuerst alle liegenden Schützen (1–3), danach die knienden Schützen (4–5), jeweils alphabetisch nach Name.
+
+### 4.4 Kompakt-Matrix Excel-Export (Grenzland, Gruppe, Mannschaft)
+- Ein nativer Excel-Export (`exportResultateMatrixToExcel`) via SheetJS (`XLSX`) steht direkt in der Navigationsleiste sowie in der Matrix-Ansicht bereit.
+- Exportiert alle Runden, Schützen, Stellungen, Lizenzen, Runden-Punkte/Passen, Gesamttotale und Durchschnitte sowie eine automatisierte Summen- und Schnittzeile in eine sauber formatierte `.xlsx`-Arbeitsmappe (`Sportschuetzen_Muhen_<contest>_Matrix_<jahr>_<datum>.xlsx`).

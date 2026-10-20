@@ -624,8 +624,23 @@ function jmProcessAuswaertigFromText(linesOrText, fileName) {
                 let cleanLine = line;
                 if (s.jg) {
                     cleanLine = cleanLine.replace(new RegExp('\\b' + s.jg + '\\b', 'g'), ' ');
+                    const shortJg = String(s.jg).slice(-2);
+                    cleanLine = cleanLine.replace(new RegExp('\\b' + shortJg + '\\b', 'g'), ' ');
+                    const shortJgNum = String(parseInt(shortJg, 10));
+                    if (shortJgNum !== shortJg) {
+                        cleanLine = cleanLine.replace(new RegExp('\\b' + shortJgNum + '\\b', 'g'), ' ');
+                    }
                 }
                 cleanLine = cleanLine.replace(/\b(19\d{2}|20\d{2})\b/g, ' ');
+
+                // Erkennt 1- oder 2-stelligen Jahrgang direkt nach dem Schützennamen (z.B. "Augsburger Beat 65", "Lars 04", "Simon 7")
+                const nameRegex = new RegExp('\\b(?:' + escapeReg(s.fullName) + '|' + escapeReg(s.vorname + ' ' + s.nachname) + ')\\s+(\\d{1,2})\\b', 'i');
+                const mJg = line.match(nameRegex);
+                if (mJg) {
+                    const detectedShortJg = mJg[1];
+                    cleanLine = cleanLine.replace(new RegExp('\\b' + detectedShortJg + '\\b', 'g'), ' ');
+                }
+
                 if (s.lizenz && s.lizenz !== '000000') {
                     cleanLine = cleanLine.replace(new RegExp('\\b' + s.lizenz + '\\b', 'g'), ' ');
                 }
@@ -633,25 +648,21 @@ function jmProcessAuswaertigFromText(linesOrText, fileName) {
                     cleanLine = cleanLine.replace(new RegExp('\\b' + s.shortLiz + '\\b', 'g'), ' ');
                 }
 
+                // Nur den Text NACH dem Schützennamen nach Resultaten durchsuchen,
+                // damit Rangnummern vor dem Namen (z.B. "45 Meier Hans 98") niemals als Punkte gewertet werden!
+                const nMatch = cleanLine.match(new RegExp('\\b' + escapeReg(s.nachname) + '\\b', 'i'));
+                let searchLine = cleanLine;
+                if (nMatch && nMatch.index !== undefined) {
+                    searchLine = cleanLine.substring(nMatch.index);
+                }
+
                 // Suche Punktzahlen im Schiessbereich (40..600 oder 10..600)
-                const allNums = cleanLine.match(/\b([4-9][0-9]|100|1[0-9]{2}|200|300|5[0-9]{2}|600)\b/g);
+                const allNums = searchLine.match(/\b([4-9][0-9]|100|1[0-9]{2}|200|300|5[0-9]{2}|600)\b/g);
 
                 let pts = null;
                 if (allNums && allNums.length > 0) {
-                    if (allNums.length === 1) {
-                        pts = parseFloat(allNums[0]);
-                    } else {
-                        // Bei mehreren Zahlen (z.B. Rang oder Tiefschuss): Bevorzuge Zahl nahe am Namen
-                        const tokens = cleanLine.split(/\s+/);
-                        const nIdx = tokens.findIndex(t => t.toLowerCase().includes(s.nachname.toLowerCase()));
-                        if (nIdx > 0 && !isNaN(parseFloat(tokens[nIdx - 1]))) {
-                            pts = parseFloat(tokens[nIdx - 1]);
-                        } else if (nIdx !== -1 && nIdx < tokens.length - 1 && !isNaN(parseFloat(tokens[nIdx + 1]))) {
-                            pts = parseFloat(tokens[nIdx + 1]);
-                        } else {
-                            pts = parseFloat(allNums[0]);
-                        }
-                    }
+                    // Der erste Wert nach Name/Jahrgang/Gruppe ist in Schweizer Ranglisten der Haupt-/Kranzstich
+                    pts = parseFloat(allNums[0]);
                 }
 
                 if (pts !== null && !isNaN(pts) && pts > 0) {

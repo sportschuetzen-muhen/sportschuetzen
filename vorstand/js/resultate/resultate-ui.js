@@ -678,11 +678,14 @@ function renderRoundNavigation() {
   `;
 
   container.innerHTML = `
-    <div class="d-flex align-items-center gap-1.5 flex-wrap">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
       <span class="small text-muted fw-semibold me-1"><i class="fas fa-filter me-1"></i>Ansicht:</span>
       <div class="btn-group btn-group-sm" role="group">
         ${pillsHtml}
       </div>
+      <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center ms-1" onclick="exportResultateMatrixToExcel()" title="Kompakt-Matrix als Excel-Datei (.xlsx) herunterladen">
+        <i class="fas fa-file-excel me-1.5"></i>Excel Export
+      </button>
     </div>
     <div class="small text-muted">
       <strong>${resultateState.rows.length}</strong> Schützen | Team-Limit: <strong>${limit}</strong> / Team
@@ -845,6 +848,14 @@ function renderMatrixView(wrap) {
   });
 
   wrap.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-2 px-1 flex-wrap gap-2">
+      <div class="small text-muted">
+        <i class="fas fa-info-circle me-1"></i><strong>Kompakt-Matrix:</strong> Alle Runden und Teams auf einen Blick. Änderungen werden direkt übernommen.
+      </div>
+      <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center" onclick="exportResultateMatrixToExcel()" title="Kompakt-Matrix aller Runden nach Excel (.xlsx) exportieren">
+        <i class="fas fa-file-excel me-1.5"></i>Excel (.xlsx)
+      </button>
+    </div>
     <div class="table-responsive rounded-3 border">
       <table class="table table-sm table-hover align-middle mb-0">
         <thead class="table-light sticky-top">
@@ -1106,3 +1117,159 @@ function updateResultateSaveButtonState(isSaving = false) {
   }
 }
 window.updateResultateSaveButtonState = updateResultateSaveButtonState;
+
+/**
+ * Exportiert die aktuelle Kompakt-Matrix (Grenzland, Gruppe, Mannschaft) nach Excel (.xlsx).
+ */
+function exportResultateMatrixToExcel() {
+  if (typeof XLSX === 'undefined') {
+    alert("Fehler: Excel-Bibliothek (SheetJS) ist nicht geladen.");
+    return;
+  }
+
+  if (!resultateState.rows || resultateState.rows.length === 0) {
+    alert("Keine Resultate zum Exportieren vorhanden.");
+    return;
+  }
+
+  const contestType = window._resultateContestType || "mannschaft";
+  const year = window._resultateYear || new Date().getFullYear();
+  const roundCount = getContestRoundCount(contestType);
+
+  let contestTitle = "Resultate";
+  if (contestType === "gruppe") contestTitle = "SGM Gruppenmeisterschaft";
+  else if (contestType === "mannschaft") contestTitle = "SMM Mannschaftsmeisterschaft";
+  else if (contestType === "grenzland") contestTitle = "Grenzland-Cup";
+
+  // Sortierung analog Matrix-View
+  const sortedRows = [...resultateState.rows];
+  if (contestType === "gruppe") {
+    sortedRows.sort((a, b) => {
+      const stA = (a.stellung || 'liegend').toLowerCase();
+      const stB = (b.stellung || 'liegend').toLowerCase();
+      if (stA !== stB) {
+        return stA === 'liegend' ? -1 : 1;
+      }
+      return (a.name || '').localeCompare(b.name || '', 'de');
+    });
+  } else {
+    sortedRows.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de'));
+  }
+
+  const headerRow = ['Schütze', 'Lizenz', 'Stellung'];
+  if (contestType === "gruppe") {
+    for (let r = 1; r <= roundCount; r++) {
+      headerRow.push(`R${r} Team`, `R${r} P1`, `R${r} P2`, `R${r} Total`);
+    }
+  } else {
+    for (let r = 1; r <= roundCount; r++) {
+      headerRow.push(`R${r} Team`, `R${r} Punkte`);
+    }
+  }
+  headerRow.push('Gesamttotal', 'Schnitt (Ø)');
+
+  const dataRows = [];
+  const colTotals = {};
+  const colCounts = {};
+
+  sortedRows.forEach(row => {
+    const mem = (resultateState.members || []).find(m => String(m.id) === String(row.id));
+    const lizenz = mem?.address_number || '';
+    const stellung = (row.stellung || 'liegend').charAt(0).toUpperCase() + (row.stellung || 'liegend').slice(1);
+
+    const rowData = [row.name || 'Unbekannt', lizenz, stellung];
+    let shooterTotal = 0;
+    let shooterRoundsCount = 0;
+
+    for (let r = 1; r <= roundCount; r++) {
+      const team = row[`r${r}_team`] || 'Pool';
+      const p1Raw = row[`r${r}_p1`];
+      const p2Raw = row[`r${r}_p2`];
+      const p1 = (p1Raw !== "" && p1Raw != null) ? parseInt(p1Raw, 10) : null;
+      const p2 = (p2Raw !== "" && p2Raw != null) ? parseInt(p2Raw, 10) : null;
+
+      if (contestType === "gruppe") {
+        const rSum = (p1 !== null || p2 !== null) ? ((p1 || 0) + (p2 || 0)) : null;
+        rowData.push(team, p1 !== null ? p1 : '', p2 !== null ? p2 : '', rSum !== null ? rSum : '');
+
+        if (p1 !== null) {
+          colTotals[`r${r}_p1`] = (colTotals[`r${r}_p1`] || 0) + p1;
+          colCounts[`r${r}_p1`] = (colCounts[`r${r}_p1`] || 0) + 1;
+        }
+        if (p2 !== null) {
+          colTotals[`r${r}_p2`] = (colTotals[`r${r}_p2`] || 0) + p2;
+          colCounts[`r${r}_p2`] = (colCounts[`r${r}_p2`] || 0) + 1;
+        }
+        if (rSum !== null) {
+          colTotals[`r${r}_tot`] = (colTotals[`r${r}_tot`] || 0) + rSum;
+          colCounts[`r${r}_tot`] = (colCounts[`r${r}_tot`] || 0) + 1;
+          shooterTotal += rSum;
+          shooterRoundsCount++;
+        }
+      } else {
+        rowData.push(team, p1 !== null ? p1 : '');
+        if (p1 !== null) {
+          colTotals[`r${r}_p1`] = (colTotals[`r${r}_p1`] || 0) + p1;
+          colCounts[`r${r}_p1`] = (colCounts[`r${r}_p1`] || 0) + 1;
+          shooterTotal += p1;
+          shooterRoundsCount++;
+        }
+      }
+    }
+
+    const schnitt = shooterRoundsCount > 0 ? (shooterTotal / shooterRoundsCount).toFixed(1) : '';
+    rowData.push(shooterTotal > 0 ? shooterTotal : '', schnitt);
+    dataRows.push(rowData);
+  });
+
+  // Durchschnittszeile
+  const avgRow = ['DURCHSCHNITT (Ø)', '', ''];
+  for (let r = 1; r <= roundCount; r++) {
+    if (contestType === "gruppe") {
+      const avgP1 = colCounts[`r${r}_p1`] ? (colTotals[`r${r}_p1`] / colCounts[`r${r}_p1`]).toFixed(1) : '';
+      const avgP2 = colCounts[`r${r}_p2`] ? (colTotals[`r${r}_p2`] / colCounts[`r${r}_p2`]).toFixed(1) : '';
+      const avgTot = colCounts[`r${r}_tot`] ? (colTotals[`r${r}_tot`] / colCounts[`r${r}_tot`]).toFixed(1) : '';
+      avgRow.push('', avgP1, avgP2, avgTot);
+    } else {
+      const avgP1 = colCounts[`r${r}_p1`] ? (colTotals[`r${r}_p1`] / colCounts[`r${r}_p1`]).toFixed(1) : '';
+      avgRow.push('', avgP1);
+    }
+  }
+  avgRow.push('', '');
+
+  const wsData = [
+    [`Sportschützen Muhen - Resultate Matrix: ${contestTitle} (${year})`],
+    [`Erstellt am: ${new Date().toLocaleDateString('de-CH')} ${new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })} | ${sortedRows.length} Schützen`],
+    [],
+    headerRow,
+    ...dataRows,
+    [],
+    avgRow
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Spaltenbreiten anpassen
+  const colWidths = [{ wch: 22 }, { wch: 12 }, { wch: 12 }];
+  if (contestType === "gruppe") {
+    for (let r = 1; r <= roundCount; r++) {
+      colWidths.push({ wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 });
+    }
+  } else {
+    for (let r = 1; r <= roundCount; r++) {
+      colWidths.push({ wch: 12 }, { wch: 10 });
+    }
+  }
+  colWidths.push({ wch: 12 }, { wch: 12 });
+  ws['!cols'] = colWidths;
+
+  const wb = XLSX.utils.book_new();
+  const sheetName = `${contestType.charAt(0).toUpperCase() + contestType.slice(1)}_${year}`.substring(0, 31);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+  const todayIso = new Date().toISOString().split('T')[0];
+  const fileName = `Sportschuetzen_Muhen_${contestType}_Matrix_${year}_${todayIso}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+window.exportResultateMatrixToExcel = exportResultateMatrixToExcel;
+

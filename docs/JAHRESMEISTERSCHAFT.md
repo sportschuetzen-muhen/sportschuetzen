@@ -75,9 +75,10 @@ Die Auswertung der Jahresmeisterschaft erfolgt im Frontend über [`jahresmeister
 * Ein Streichresultat wird nur abgezogen, wenn ein Schütze mindestens alle aktiven Meisterschaftswettkämpfe absolviert hat.
 * Wurde das identische Tiefstresultat mehrfach erzielt, wird sowohl rechnerisch als auch visuell exakt **ein einziges Resultat** gestrichen (`streichMarked`).
 
-### 3.4 Auswärtsschiessen (Rohwerte & Top 2)
+### 3.4 Auswärtsschiessen (Rohwerte & Top 2, PDF- & KI-Erkennung)
 * Sämtliche Auswärtsschiessen (Spalten ab Index 41 bzw. 42, z. B. Bärenmoos, Stumpenland) werden als reine Rohpunktzahlen (z. B. `95`) erfasst und dargestellt.
 * Die beiden prozentual besten Auswärtsschiessen werden automatisch in die Meisterschaftsspalten 14 und 15 (`Auswärtiges 1` und `Auswärtiges 2`) übernommen.
+* **Intelligente PDF- & KI-Erkennung zweistelliger Jahrgänge:** Beim Einlesen von Auswärts-Ranglisten als digitales PDF (`jmProcessAuswaertigFromText`) oder per Vision-KI (`action=ocr_standblatt` / `action=ocr`) werden zweistellige Jahrgänge (`Jg.` wie `65`, `86`, `04`) direkt nach dem Schützennamen zuverlässig maskiert und ignoriert. Dadurch wird ausgeschlossen, dass der Jahrgang fälschlicherweise als Punktzahl gewertet wird; das tatsächliche Schiessresultat (Hauptstich/Kranzstich) wird exakt extrahiert.
 
 ### 3.5 Junioren-Wertung (U21)
 * Berechnet dynamisch ein virtuelles Total für Nachwuchsschützen im Tab *Junioren-Wertung*.
