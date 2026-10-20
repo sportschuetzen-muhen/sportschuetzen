@@ -63,7 +63,60 @@ async function initGallery() {
         }
     }
 
-    // 2. Lokales Laden der galerie.json
+    // 2. Primär: Supabase Single Source of Truth abfragen
+    if (!loaded) {
+        try {
+            const SUPABASE_REST_URL = window.SUPABASE_REST_URL || "https://supabase-muhen.danfamily.uk/rest/v1";
+            const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
+            
+            let authHeader = `Bearer ${SUPABASE_ANON_KEY}`;
+            if (window.AuthSession && typeof window.AuthSession.getAuthHeader === 'function') {
+                authHeader = window.AuthSession.getAuthHeader() || authHeader;
+            } else if (window.AuthSession && window.AuthSession._supabase) {
+                try {
+                    const { data: sess } = await window.AuthSession._supabase.auth.getSession();
+                    if (sess?.session?.access_token) {
+                        authHeader = `Bearer ${sess.session.access_token}`;
+                    }
+                } catch(e) {}
+            }
+
+            const response = await fetch(`${SUPABASE_REST_URL}/gallery_photos?select=*&order=created_at.desc`, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': authHeader
+                }
+            });
+
+            if (response.ok) {
+                const photos = await response.json();
+                if (Array.isArray(photos) && photos.length > 0) {
+                    galleryData = photos.map(item => ({
+                        id: item.id,
+                        album: item.album,
+                        albumId: item.album_id,
+                        albumKey: item.album_key,
+                        title: item.title,
+                        category: item.category,
+                        visibility: item.visibility,
+                        date: item.date,
+                        description: item.description,
+                        mediaType: item.media_type || 'image',
+                        thumbnailUrl: item.thumbnail_url,
+                        imageUrl: item.image_url,
+                        videoUrl: item.video_url,
+                        tags: item.tags || [],
+                        detectedPersons: item.detected_persons || []
+                    }));
+                    loaded = true;
+                }
+            }
+        } catch (supaErr) {
+            console.warn("Supabase Galerie REST nicht erreichbar, weiche auf lokales Archiv aus:", supaErr);
+        }
+    }
+
+    // 3. Fallback: Lokales Laden der galerie.json
     if (!loaded) {
         try {
             const response = await fetch("data/galerie.json?v=" + new Date().getTime());

@@ -5,11 +5,16 @@
  * - Anbindung an den nativen Immich Server (Proxmox CT 116 auf Medion Node)
  * - Überwachung des Sammelalbums «Mitglieder-Uploads» & Zähler-Badges
  * - Kuratierung & Freigabe via Immich Web-App
- * - Synchronisation zur Vereins-Website & intern.html mit Ordnernamen & Sichtbarkeit
+ * - 1-Klick-Synchronisation zur Vereins-Website & intern.html via Supabase
  */
 
 let immichServerStatus = null;
 let currentWebsiteAlbums = [];
+let availableImmichAlbums = [];
+
+const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
+const SUPABASE_FUNCTIONS_URL = "https://supabase-muhen.danfamily.uk/functions/v1";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
 
 // =========================================================
 //  INITIALISIERUNG & RENDERING
@@ -105,7 +110,7 @@ async function initGalerieManager() {
                 </div>
             </div>
 
-            <!-- SEITENLEISTE: SYNCHRONISATION, ORDNERNAME & WEBSITE-STATUS -->
+            <!-- SEITENLEISTE: SYNCHRONISATION & PUBLIZIERTE WEBSITE-ALBEN -->
             <div class="col-lg-5">
                 <div class="card shadow-sm border-0 mb-3">
                     <div class="card-header bg-white border-bottom py-3">
@@ -115,39 +120,43 @@ async function initGalerieManager() {
                     </div>
                     <div class="card-body p-3">
                         <p class="small text-muted mb-3">
-                            Hier steuerst du, welche Alben auf der öffentlichen Homepage (<a href="../sportschuetzen-website/frontend/verein.html#galerie" target="_blank">verein.html</a>) oder im geschützten Mitgliederbereich (<a href="../sportschuetzen-website/frontend/intern.html" target="_blank">intern.html</a>) publiziert werden.
+                            Hier synchronisierst du Alben mit 1 Klick direkt aus Immich für die Homepage (<a href="../sportschuetzen-website/frontend/verein.html#galerie" target="_blank">verein.html</a>) oder den geschützten Mitgliederbereich (<a href="../sportschuetzen-website/frontend/intern.html" target="_blank">intern.html</a>).
                         </p>
 
-                        <!-- FORMULAR ZUR ALBUM-SYNCHRONISATION -->
+                        <!-- FORMULAR ZUR ALBUM-SYNCHRONISATION (1-KLICK) -->
                         <div class="p-3 rounded border bg-light mb-3">
                             <div class="fw-bold small text-dark mb-2">
-                                <i class="fas fa-cloud-arrow-down text-primary me-1"></i> Neues Album aufnehmen
+                                <i class="fas fa-cloud-arrow-down text-primary me-1"></i> Album synchronisieren &amp; publizieren
                             </div>
                             
+                            <!-- ALBUM-AUSWAHL DIREKT AUS IMMICH -->
                             <div class="mb-2">
-                                <label class="form-label small fw-semibold mb-1" for="gal-sync-share-url">Immich Freigabelink (Share URL):</label>
-                                <input type="url" id="gal-sync-share-url" class="form-control form-control-sm" 
-                                       placeholder="https://immich-muhen.danfamily.uk/share/..." oninput="updateSyncCommandPreview()">
+                                <label class="form-label small fw-semibold mb-1" for="gal-sync-album-select">Immich-Album auswählen:</label>
+                                <select id="gal-sync-album-select" class="form-select form-select-sm" onchange="onImmichAlbumSelected()">
+                                    <option value="">Lade verfügbare Immich-Alben...</option>
+                                </select>
                             </div>
 
+                            <!-- ORDNERNAME AUF DER WEBSITE -->
                             <div class="mb-2">
                                 <label class="form-label small fw-semibold mb-1" for="gal-sync-folder-name">Ordner- / Albumname auf der Website:</label>
                                 <input type="text" id="gal-sync-folder-name" class="form-control form-control-sm" 
-                                       placeholder="z. B. Endschiessen 2026" oninput="updateSyncCommandPreview()">
+                                       placeholder="z. B. Endschiessen 2026">
                                 <div class="text-muted" style="font-size: 0.72rem;">Unter diesem Namen wird das Album auf der Website dargestellt.</div>
                             </div>
 
-                            <div class="row g-2 mb-2">
-                                <div class="col-sm-6">
+                            <!-- SICHTBARKEIT & RUBRIK -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-12">
                                     <label class="form-label small fw-semibold mb-1" for="gal-sync-visibility">Sichtbarkeit:</label>
-                                    <select id="gal-sync-visibility" class="form-select form-select-sm" onchange="updateSyncCommandPreview()">
-                                        <option value="members" selected>🔒 Nur Mitglieder (intern.html)</option>
-                                        <option value="public">🌐 Öffentlich (Homepage verein.html)</option>
+                                    <select id="gal-sync-visibility" class="form-select form-select-sm">
+                                        <option value="members" selected>🔒 Nur Mitglieder (geschützter Bereich)</option>
+                                        <option value="public">🌐 Öffentlich und Mitglieder (Homepage &amp; geschützter Bereich)</option>
                                     </select>
                                 </div>
-                                <div class="col-sm-6">
+                                <div class="col-12">
                                     <label class="form-label small fw-semibold mb-1" for="gal-sync-category">Rubrik:</label>
-                                    <select id="gal-sync-category" class="form-select form-select-sm" onchange="updateSyncCommandPreview()">
+                                    <select id="gal-sync-category" class="form-select form-select-sm">
                                         <option value="events" selected>🎉 Anlässe &amp; Events</option>
                                         <option value="nachwuchs">🎯 Nachwuchs &amp; Jugend</option>
                                         <option value="geschichte">🏛️ Vereinsgeschichte</option>
@@ -155,16 +164,11 @@ async function initGalerieManager() {
                                 </div>
                             </div>
 
-                            <div class="mt-3">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <span class="text-muted fw-semibold" style="font-size: 0.74rem;">Vorbereiteter Sync-Befehl:</span>
-                                    <button class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size: 0.7rem;" onclick="copySyncCommand()">
-                                        <i class="fas fa-copy me-1"></i> Kopieren
-                                    </button>
-                                </div>
-                                <code id="gal-sync-cmd-preview" class="d-block p-1.5 bg-white border rounded text-dark font-monospace" style="font-size: 0.72rem; word-break: break-all; user-select: all;">
-                                    node sportschuetzen-website/sync-immich-album.js "&lt;SHARE_URL&gt;" "&lt;ORDNERNAME&gt;" members events
-                                </code>
+                            <!-- 1-KLICK SYNC BUTTON -->
+                            <div>
+                                <button id="btn-sync-gallery" class="btn btn-primary btn-sm w-100 fw-bold shadow-xs py-2" onclick="triggerAlbumSync()">
+                                    <i class="fas fa-cloud-arrow-down me-1"></i> Album jetzt synchronisieren &amp; publizieren
+                                </button>
                             </div>
                         </div>
 
@@ -176,7 +180,7 @@ async function initGalerieManager() {
                                 </span>
                                 <span id="gal-total-media-badge" class="badge bg-light text-muted border">Lade...</span>
                             </div>
-                            <div id="gal-published-albums-list" class="list-group list-group-flush border rounded small" style="max-height: 200px; overflow-y: auto;">
+                            <div id="gal-published-albums-list" class="list-group list-group-flush border rounded small" style="max-height: 220px; overflow-y: auto;">
                                 <div class="p-2 text-center text-muted">Lade publizierte Alben...</div>
                             </div>
                         </div>
@@ -195,56 +199,201 @@ async function initGalerieManager() {
         </div>
     `;
 
-    updateSyncCommandPreview();
     await Promise.all([
         loadImmichDashboardData(),
+        loadImmichAlbumsForDropdown(),
         loadPublishedWebsiteAlbums()
     ]);
 }
 
 // =========================================================
-//  SYNC-COMMAND PREVIEW & HELPER
+//  LADEN DER VERFÜGBAREN IMMICH-ALBEN FÜR DAS DROPDOWN
 // =========================================================
-function updateSyncCommandPreview() {
-    const urlInput = document.getElementById('gal-sync-share-url');
+async function loadImmichAlbumsForDropdown() {
+    const selectEl = document.getElementById('gal-sync-album-select');
+    if (!selectEl) return;
+
+    try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.immichAlbums)) {
+            availableImmichAlbums = data.immichAlbums;
+
+            if (availableImmichAlbums.length === 0) {
+                selectEl.innerHTML = '<option value="">Keine Alben auf Immich gefunden</option>';
+                return;
+            }
+
+            selectEl.innerHTML = `
+                <option value="">-- Album aus Immich wählen (${availableImmichAlbums.length}) --</option>
+                ${availableImmichAlbums.map(alb => `
+                    <option value="${escapeHtml(alb.id)}" data-name="${escapeHtml(alb.name)}" data-count="${alb.assetCount}">
+                        📁 ${escapeHtml(alb.name)} (${alb.assetCount} Medien)
+                    </option>
+                `).join('')}
+            `;
+        }
+    } catch (err) {
+        console.warn('Konnte Immich-Alben für Dropdown nicht laden:', err);
+        selectEl.innerHTML = '<option value="">Fehler beim Laden der Immich-Alben</option>';
+    }
+}
+
+function onImmichAlbumSelected() {
+    const selectEl = document.getElementById('gal-sync-album-select');
     const folderInput = document.getElementById('gal-sync-folder-name');
-    const visInput = document.getElementById('gal-sync-visibility');
-    const catInput = document.getElementById('gal-sync-category');
-    const previewEl = document.getElementById('gal-sync-cmd-preview');
-    if (!previewEl) return;
+    const catSelect = document.getElementById('gal-sync-category');
+    if (!selectEl || !folderInput) return;
 
-    const url = (urlInput?.value || '').trim() || '<SHARE_URL>';
-    const folder = (folderInput?.value || '').trim();
-    const vis = visInput?.value || 'members';
-    const cat = catInput?.value || 'events';
+    const opt = selectEl.options[selectEl.selectedIndex];
+    if (opt && opt.value) {
+        const albumName = opt.getAttribute('data-name') || '';
+        folderInput.value = albumName;
 
-    let cmd = `node sportschuetzen-website/sync-immich-album.js "${url}"`;
-    if (folder) {
-        cmd += ` "${folder}" ${vis} ${cat}`;
-    } else {
-        cmd += ` "" ${vis} ${cat}`;
+        // Automatische Kategorie-Vorauswahl
+        const lower = albumName.toLowerCase();
+        if (catSelect) {
+            if (lower.includes('bau') || lower.includes('erstellung') || lower.includes('geschichte') || lower.includes('199') || lower.includes('198')) {
+                catSelect.value = 'geschichte';
+            } else if (lower.includes('nachwuchs') || lower.includes('junioren') || lower.includes('jugend') || lower.includes('kurs')) {
+                catSelect.value = 'nachwuchs';
+            } else {
+                catSelect.value = 'events';
+            }
+        }
+    }
+}
+
+// =========================================================
+//  1-KLICK SYNCHRONISATION AUSLÖSEN
+// =========================================================
+async function triggerAlbumSync() {
+    const selectEl = document.getElementById('gal-sync-album-select');
+    const folderInput = document.getElementById('gal-sync-folder-name');
+    const visSelect = document.getElementById('gal-sync-visibility');
+    const catSelect = document.getElementById('gal-sync-category');
+    const syncBtn = document.getElementById('btn-sync-gallery');
+
+    const albumId = selectEl?.value;
+    const websiteTitle = (folderInput?.value || '').trim();
+    const visibility = visSelect?.value || 'members';
+    const category = catSelect?.value || 'events';
+
+    if (!albumId) {
+        if (typeof showToast === 'function') {
+            showToast('Bitte wähle zuerst ein Album aus Immich aus.', 'warning');
+        } else {
+            alert('Bitte wähle zuerst ein Album aus Immich aus.');
+        }
+        return;
     }
 
-    previewEl.textContent = cmd;
-}
-
-function copySyncCommand() {
-    const previewEl = document.getElementById('gal-sync-cmd-preview');
-    if (!previewEl) return;
-    const text = previewEl.textContent.trim();
-    navigator.clipboard.writeText(text).then(() => {
+    if (!websiteTitle) {
         if (typeof showToast === 'function') {
-            showToast('Sync-Befehl in Zwischenablage kopiert!', 'success');
+            showToast('Bitte gib einen Ordner-/Albumnamen für die Website ein.', 'warning');
         } else {
-            alert('Befehl kopiert: ' + text);
+            alert('Bitte gib einen Ordner-/Albumnamen für die Website ein.');
         }
-    }).catch(() => {
-        prompt('Befehl kopieren:', text);
-    });
+        return;
+    }
+
+    // Button in Lade-Zustand versetzen
+    if (syncBtn) {
+        syncBtn.disabled = true;
+        syncBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span> Synchronisiere Album mit Immich...`;
+    }
+
+    try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+                albumId,
+                websiteTitle,
+                visibility,
+                category
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Serverfehler beim Synchronisieren');
+        }
+
+        const visLabel = (visibility === 'public') ? 'Öffentlich und Mitglieder' : 'Nur Mitglieder';
+        if (typeof showToast === 'function') {
+            showToast(`Album «${data.album}» (${data.count} Medien) erfolgreich synchronisiert! (${visLabel})`, 'success');
+        } else {
+            alert(`Album «${data.album}» (${data.count} Medien) erfolgreich synchronisiert!`);
+        }
+
+        // Aktualisiere die publizierten Alben
+        await loadPublishedWebsiteAlbums();
+
+    } catch (err) {
+        console.error('Sync Fehler:', err);
+        if (typeof showToast === 'function') {
+            showToast(`Synchronisation fehlgeschlagen: ${err.message}`, 'error');
+        } else {
+            alert(`Synchronisation fehlgeschlagen: ${err.message}`);
+        }
+    } finally {
+        if (syncBtn) {
+            syncBtn.disabled = false;
+            syncBtn.innerHTML = `<i class="fas fa-cloud-arrow-down me-1"></i> Album jetzt synchronisieren &amp; publizieren`;
+        }
+    }
 }
 
 // =========================================================
-//  LADEN DER PUBLIZIERTEN ALBEN (galerie.json)
+//  ALBUM DEPUBLIZIEREN (VON WEBSITE ENTFERNEN)
+// =========================================================
+async function unpublishAlbum(albumId, albumTitle) {
+    if (!confirm(`Möchtest du das Album «${albumTitle}» wirklich von der Website entfernen?\n\nDie Original-Fotos auf Immich bleiben unverändert erhalten.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+                action: 'unpublish',
+                albumId
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Fehler beim Entfernen des Albums');
+        }
+
+        if (typeof showToast === 'function') {
+            showToast(`Album «${albumTitle}» erfolgreich von der Website entfernt.`, 'success');
+        }
+
+        await loadPublishedWebsiteAlbums();
+
+    } catch (err) {
+        console.error('Fehler beim Depublizieren:', err);
+        if (typeof showToast === 'function') {
+            showToast(`Konnte Album nicht entfernen: ${err.message}`, 'error');
+        } else {
+            alert(`Konnte Album nicht entfernen: ${err.message}`);
+        }
+    }
+}
+
+// =========================================================
+//  LADEN DER PUBLIZIERTEN ALBEN (SUPABASE SINGLE SOURCE)
 // =========================================================
 async function loadPublishedWebsiteAlbums() {
     const listEl = document.getElementById('gal-published-albums-list');
@@ -252,50 +401,63 @@ async function loadPublishedWebsiteAlbums() {
     if (!listEl) return;
 
     try {
-        const res = await fetch('../sportschuetzen-website/frontend/data/galerie.json?v=' + Date.now());
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        currentWebsiteAlbums = data;
-
-        if (badgeEl) {
-            badgeEl.innerText = `${data.length} Medien`;
+        // Primär: Direkt aus Supabase REST laden
+        const res = await fetch(`${SUPABASE_REST_URL}/gallery_albums?select=*&order=created_at.desc`, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        
+        let albums = [];
+        if (res.ok) {
+            albums = await res.json();
+        } else {
+            // Fallback auf statische JSON
+            const fallbackRes = await fetch('../sportschuetzen-website/frontend/data/galerie.json?v=' + Date.now());
+            if (fallbackRes.ok) {
+                const photos = await fallbackRes.json();
+                const map = {};
+                photos.forEach(p => {
+                    const a = p.album || 'Vereinsarchiv';
+                    if (!map[a]) {
+                        map[a] = { id: p.albumId || a, website_title: a, media_count: 0, visibility: p.visibility || 'public' };
+                    }
+                    map[a].media_count++;
+                });
+                albums = Object.values(map);
+            }
         }
 
-        // Gruppierung nach Album
-        const albumMap = {};
-        data.forEach(item => {
-            const alb = item.album || 'Vereinsarchiv';
-            if (!albumMap[alb]) {
-                albumMap[alb] = {
-                    count: 0,
-                    visibility: item.visibility || 'public',
-                    category: item.category || 'events'
-                };
-            }
-            albumMap[alb].count++;
-        });
+        currentWebsiteAlbums = albums;
 
-        const albumNames = Object.keys(albumMap);
-        if (albumNames.length === 0) {
+        const totalMedia = albums.reduce((sum, a) => sum + (parseInt(a.media_count) || 0), 0);
+        if (badgeEl) {
+            badgeEl.innerText = `${totalMedia} Medien`;
+        }
+
+        if (!albums || albums.length === 0) {
             listEl.innerHTML = '<div class="p-2 text-center text-muted">Noch keine Alben publiziert.</div>';
             return;
         }
 
-        listEl.innerHTML = albumNames.map(name => {
-            const alb = albumMap[name];
+        listEl.innerHTML = albums.map(alb => {
             const isPublic = alb.visibility === 'public';
             const visBadge = isPublic
-                ? `<span class="badge bg-success-subtle text-success border border-success-subtle">🌐 Öffentlich</span>`
-                : `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">🔒 Nur Mitglieder</span>`;
+                ? `<span class="badge bg-success-subtle text-success border border-success-subtle" title="Auf Homepage und im Mitgliederbereich sichtbar">🌐 Öffentlich &amp; Mitglieder</span>`
+                : `<span class="badge bg-primary-subtle text-primary border border-primary-subtle" title="Nur für angemeldete Vereinsmitglieder sichtbar">🔒 Nur Mitglieder</span>`;
 
             return `
                 <div class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
                     <div>
-                        <div class="fw-semibold text-dark">${escapeHtml(name)}</div>
-                        <div class="text-muted small">${alb.count} Fotos/Medien</div>
+                        <div class="fw-semibold text-dark">${escapeHtml(alb.website_title || alb.album_name)}</div>
+                        <div class="text-muted small">${alb.media_count || 0} Fotos/Medien</div>
                     </div>
-                    <div>
+                    <div class="d-flex align-items-center gap-2">
                         ${visBadge}
+                        <button class="btn btn-outline-danger btn-sm py-0 px-1.5" title="Von Website entfernen" onclick="unpublishAlbum('${alb.id}', '${escapeHtml(alb.website_title || alb.album_name)}')">
+                            <i class="fas fa-trash-alt small"></i>
+                        </button>
                     </div>
                 </div>
             `;
@@ -366,8 +528,11 @@ async function refreshImmichStatus() {
     if (typeof showToast === 'function') {
         showToast('Prüfe Verbindung zu Immich Server...', 'info');
     }
-    await loadImmichDashboardData();
-    await loadPublishedWebsiteAlbums();
+    await Promise.all([
+        loadImmichDashboardData(),
+        loadImmichAlbumsForDropdown(),
+        loadPublishedWebsiteAlbums()
+    ]);
     if (typeof showToast === 'function') {
         showToast('Immich-Status erfolgreich aktualisiert.', 'success');
     }

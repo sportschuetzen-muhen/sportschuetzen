@@ -2,9 +2,9 @@
 
 > **Status:** PRODUKTIV  
 > **Stand:** Oktober 2026  
-> **Komponenten:** `vorstand/js/galerie.js`, `vorstand/index.html`, `supabase/functions/immich-upload/index.ts`, `sportschuetzen-website/sync-immich-album.js`, `sportschuetzen-website/frontend/js/galerie.js`, `sportschuetzen-website/frontend/data/galerie.json`  
-> **Infrastruktur & Server:** Immich Media Server auf Proxmox CT 116 (`http://192.168.68.120:2283`, Medion Node), Supabase Edge Functions auf Proxmox CT 117 (`192.168.68.117`), Cloudflare Worker Proxy  
-> **Relevanz für KI:** Verbindliche Referenz für das Vereins-Fotoarchiv, die Immich-Integration, das Kuratierungs-Cockpit, die Medientrennung (öffentlich vs. intern), das rollenbasierte Benachrichtigungs-Badge-System und den Synchronisations-Workflow.
+> **Komponenten:** `vorstand/js/galerie.js`, `vorstand/index.html`, `supabase/functions/immich-sync/index.ts`, `supabase/functions/immich-upload/index.ts`, `public.gallery_albums`, `public.gallery_photos`, `sportschuetzen-website/frontend/js/galerie.js`  
+> **Infrastruktur & Server:** Immich Media Server auf Proxmox CT 116 (`http://192.168.68.120:2283`, Medion Node), Supabase Edge Functions & PostgreSQL auf Proxmox CT 117 (`192.168.68.117`), Cloudflare Worker Proxy  
+> **Relevanz für KI:** Verbindliche Referenz für das Vereins-Fotoarchiv, die Immich-Integration, das Kuratierungs-Cockpit, die Medientrennung (öffentlich vs. intern), das rollenbasierte Benachrichtigungs-Badge-System und den 1-Klick-Synchronisations-Workflow.
 
 ---
 
@@ -27,12 +27,12 @@ Der **Galerie Manager** im Vorstandsportal dient als zentrales Kontrollzentrum f
 ├────────────────────────────────┬───────────────────────────────┬───────────────────────┤
 │ 1. UPLOAD (Mitglieder)         │ 2. KURATIERUNG (Vorstand)     │ 3. PUBLIKATION        │
 ├────────────────────────────────┼───────────────────────────────┼───────────────────────┤
-│ • Smartphone / Browser         │ • Vorstandsportal & Immich    │ • sync-immich-album.js│
-│   (intern.html «Vereinsfotos») │ • Pendenzen-Badge zeigt offene│ • Zuordnung Ordnername│
-│ • Client-Konvertierung (HEIC)  │   Uploads im Sammelalbum      │ • Klassifizierung:    │
-│ • Edge Function immich-upload  │ • Gesichter zuweisen & taggen │   - 🌐 Öffentlich     │
-│ • Ablage in Sammelalbum        │ • Sortierung in Event-Alben   │   - 🔒 Nur Mitglieder │
-│   «Mitglieder-Uploads»         │   (z.B. «Endschiessen 2026»)  │ • galerie.json Update │
+│ • Smartphone / Browser         │ • Vorstandsportal & Immich    │ • 1-Klick-Sync Button │
+│   (intern.html «Vereinsfotos») │ • Pendenzen-Badge zeigt offene│ • Edge Function       │
+│ • Client-Konvertierung (HEIC)  │   Uploads im Sammelalbum      │   immich-sync         │
+│ • Edge Function immich-upload  │ • Gesichter zuweisen & taggen │ • Single Source:      │
+│ • Ablage in Sammelalbum        │ • Sortierung in Event-Alben   │   - gallery_albums    │
+│   «Mitglieder-Uploads»         │   (z.B. «Endschiessen 2026»)  │   - gallery_photos    │
 └────────────────────────────────┴───────────────────────────────┴───────────────────────┘
                                                 │
                                                 ▼
@@ -102,25 +102,27 @@ Aus Datenschutz- und Persönlichkeitsrechtsgründen wird jedes synchronisierte M
 
 ---
 
-## 6. Synchronisations-Workflow mit Ordnernamen
+## 6. Synchronisations-Workflow (1-Klick im Vorstandsportal)
 
-Die Übernahme von Alben aus Immich in das Web-Frontend erfolgt über das Skript `sportschuetzen-website/sync-immich-album.js`.
+Die Übernahme von Alben aus Immich in das Web-Frontend erfolgt vollautomatisch über die Supabase Edge Function `immich-sync` direkt im Vorstandsportal:
 
-### 6.1 Parameter-Kontrakt
-```bash
-node sportschuetzen-website/sync-immich-album.js <SHARE_URL> [ORDNERNAME] [SICHTBARKEIT] [KATEGORIE]
-```
+### 6.1 Benutzer-Workflow (Browser)
+1. **Album-Auswahl:** Aus einem Dropdown werden alle auf dem Immich-Server (CT 116) vorhandenen Alben geladen.
+2. **Ordner- / Albumname:** Wird automatisch mit dem Immich-Namen vorausgefüllt und kann frei angepasst werden.
+3. **Sichtbarkeit:**
+   * `members`: **🔒 Nur Mitglieder (geschützter Bereich)** – Nur für angemeldete Vereinsmitglieder in `intern.html` sichtbar.
+   * `public`: **🌐 Öffentlich und Mitglieder (Homepage & geschützter Bereich)** – Sowohl auf der öffentlichen Homepage `verein.html` als auch für angemeldete Mitglieder in `intern.html` sichtbar.
+4. **1-Klick-Auslösung:** Ein Klick auf **«Album jetzt synchronisieren & publizieren»** startet den automatischen API-Prozess:
+   * Edge Function generiert bei Bedarf vollautomatisch den Immich Share-Link per API.
+   * Sämtliche Assets werden bereinigt (Titel, EXIF, Personenerkennung, Tags).
+   * Schreibt die Daten unmittelbar in `public.gallery_albums` und `public.gallery_photos` (Single Source of Truth).
+   * Das Album ist sofort auf der Website und im Mitgliederbereich live.
 
-* `<SHARE_URL>`: Der in Immich erzeugte Freigabelink (z. B. `https://immich-muhen.danfamily.uk/share/...`).
-* `[ORDNERNAME]`: Der gewünschte Zielname für den Ordner/das Album auf der Website (z. B. `Endschiessen 2026`). Wird er weggelassen, wird der Name aus Immich übernommen.
-* `[SICHTBARKEIT]`: `public` (Öffentlich) oder `members` (Nur Mitglieder). Standard: `members`.
-* `[KATEGORIE]`: `events` (Anlässe), `nachwuchs` (Jugend & Nachwuchs) oder `geschichte` (Chronik). Standard: Automatische Erkennung anhand des Namens.
+### 6.2 Depublizieren & Löschen
+Publizierte Alben können direkt in der Liste «Aktuell publizierte Alben» über das Mülleimer-Icon `[🗑️]` wieder von der Website entfernt werden. Die Original-Fotos auf Immich bleiben dabei unberührt.
 
-### 6.2 Bereinigungs-Modus (Prune)
-Um gelöschte oder abgelaufene Immich-Alben aus der Web-Galerie zu entfernen:
-```bash
-node sportschuetzen-website/sync-immich-album.js --prune
-```
+### 6.3 Entwickler-Fallback (CLI)
+Das bisherige CLI-Skript `sportschuetzen-website/sync-immich-album.js` bleibt ausschliesslich für Offline-Wartungsarbeiten und lokale Batch-Tests erhalten.
 
 ---
 
