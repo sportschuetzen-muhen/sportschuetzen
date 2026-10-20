@@ -1255,6 +1255,53 @@ async function unpublishAlbum(albumId, albumTitle) {
         }
     }
 }
+window.unpublishAlbum = unpublishAlbum;
+
+// =========================================================
+//  SICHTBARKEIT UMSCHALTEN (ÖFFENTLICH <-> NUR MITGLIEDER)
+// =========================================================
+async function toggleAlbumVisibility(albumId, newVisibility, albumTitle, btnEl) {
+    if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" style="width: 0.65rem; height: 0.65rem;"></span> Ändere...`;
+    }
+
+    try {
+        const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/immich-sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+                action: 'set_visibility',
+                albumId,
+                visibility: newVisibility
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Fehler beim Ändern der Sichtbarkeit');
+        }
+
+        const visLabel = (newVisibility === 'public') ? '🌐 Öffentlich & Mitglieder' : '🔒 Nur Mitglieder';
+        if (typeof showToast === 'function') {
+            showToast(`Sichtbarkeit für «${albumTitle}» geändert: ${visLabel}`, 'success');
+        }
+
+        await loadPublishedWebsiteAlbums();
+    } catch (err) {
+        console.error('Fehler beim Ändern der Sichtbarkeit:', err);
+        if (typeof showToast === 'function') {
+            showToast(`Konnte Sichtbarkeit nicht ändern: ${err.message}`, 'error');
+        } else {
+            alert(`Konnte Sichtbarkeit nicht ändern: ${err.message}`);
+        }
+        await loadPublishedWebsiteAlbums();
+    }
+}
+window.toggleAlbumVisibility = toggleAlbumVisibility;
 
 // =========================================================
 //  LADEN DER PUBLIZIERTEN ALBEN (SUPABASE SINGLE SOURCE)
@@ -1320,19 +1367,32 @@ async function loadPublishedWebsiteAlbums() {
 
         listEl.innerHTML = albums.map(alb => {
             const isPublic = alb.visibility === 'public';
+            const safeTitle = escapeHtml(alb.website_title || alb.album_name);
             const visBadge = isPublic
-                ? `<span class="badge bg-success-subtle text-success border border-success-subtle" title="Auf Homepage und im Mitgliederbereich sichtbar">🌐 Öffentlich &amp; Mitglieder</span>`
-                : `<span class="badge bg-primary-subtle text-primary border border-primary-subtle" title="Nur für angemeldete Vereinsmitglieder sichtbar">🔒 Nur Mitglieder</span>`;
+                ? `<button type="button" class="btn btn-xs py-0.5 px-2 rounded-pill bg-success-subtle text-success border border-success-subtle fw-semibold d-inline-flex align-items-center gap-1 shadow-none" 
+                        title="Aktuell: Öffentlich &amp; Mitglieder (Homepage &amp; intern). Klicke hier, um auf «Nur Mitglieder» umzustellen." 
+                        onclick="toggleAlbumVisibility('${alb.id}', 'members', '${safeTitle}', this)" 
+                        style="font-size: 0.72rem; cursor: pointer; transition: all 0.15s ease;">
+                        <span>🌐 Öffentlich &amp; Mitglieder</span>
+                        <i class="fas fa-exchange-alt small opacity-50 ms-0.5"></i>
+                   </button>`
+                : `<button type="button" class="btn btn-xs py-0.5 px-2 rounded-pill bg-primary-subtle text-primary border border-primary-subtle fw-semibold d-inline-flex align-items-center gap-1 shadow-none" 
+                        title="Aktuell: Nur Mitglieder (geschützt). Klicke hier, um auf «Öffentlich &amp; Mitglieder» umzustellen." 
+                        onclick="toggleAlbumVisibility('${alb.id}', 'public', '${safeTitle}', this)" 
+                        style="font-size: 0.72rem; cursor: pointer; transition: all 0.15s ease;">
+                        <span>🔒 Nur Mitglieder</span>
+                        <i class="fas fa-exchange-alt small opacity-50 ms-0.5"></i>
+                   </button>`;
 
             return `
                 <div class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
                     <div>
-                        <div class="fw-semibold text-dark">${escapeHtml(alb.website_title || alb.album_name)}</div>
+                        <div class="fw-semibold text-dark">${safeTitle}</div>
                         <div class="text-muted small">${alb.media_count || 0} Fotos/Medien</div>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         ${visBadge}
-                        <button class="btn btn-outline-danger btn-sm py-0 px-1.5" title="Von Website entfernen" onclick="unpublishAlbum('${alb.id}', '${escapeHtml(alb.website_title || alb.album_name)}')">
+                        <button class="btn btn-outline-danger btn-sm py-0 px-1.5" title="Von Website entfernen" onclick="unpublishAlbum('${alb.id}', '${safeTitle}')">
                             <i class="fas fa-trash-alt small"></i>
                         </button>
                     </div>

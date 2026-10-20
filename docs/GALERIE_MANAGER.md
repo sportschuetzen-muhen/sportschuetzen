@@ -136,11 +136,16 @@ Sobald Gesichter durch das ausgelagerte Machine Learning (`buffalo_l`) erkannt u
 * **Automatische Beschreibung & Tags:** Die Namen fliessen automatisch in das Feld `description` («Aufnahme: [Namen] aus dem Album «[Albumname]».»), in das Array `detected_persons` sowie in die Such-Schlagworte (`tags`).
 * **Non-Destructive Prinzip:** Die physische Originaldatei auf dem Speicher bleibt unangetastet (Schutz vor Dateisystem-Konflikten), während das Bild in der Datenbank, im Web-Portal und in der Volltextsuche sauber mit den Echtnamen geführt und gefiltert werden kann.
 
-### 6.4 Depublizieren & Löschen
+### 6.4 Nachträgliche Sichtbarkeits-Umschaltung (1-Klick Toggle)
+Publizierte Alben können in der Liste «Aktuell publizierte Alben» jederzeit mit einem einzigen Klick auf das Sichtbarkeits-Badge zwischen **`🔒 Nur Mitglieder`** und **`🌐 Öffentlich & Mitglieder`** umgeschaltet werden:
+* **Atomare Supabase-Mutation:** Die Edge Function `immich-sync` (`action: 'set_visibility'`) aktualisiert zeitgleich die Tabelle `public.gallery_albums` sowie alle zugehörigen Datensätze in `public.gallery_photos`.
+* **Sofortige Website-Wirkung:** Bei Umstellung auf `public` erscheint das Album unmittelbar auf der öffentlichen Homepage (`verein.html#galerie`); bei Umstellung auf `members` verschwindet es sofort für externe Gäste und bleibt geschützt nur für angemeldete Mitglieder (`intern.html`) abrufbar. Ein zeitraubendes Neusynchronisieren der Fotos entfällt komplett.
+
+### 6.5 Depublizieren & Löschen
 Publizierte Alben können direkt in der Liste «Aktuell publizierte Alben» über das Mülleimer-Icon `[🗑️]` wieder von der Website entfernt werden. Die Original-Fotos auf Immich bleiben dabei unberührt.
 *Hinweis zur RLS-Architektur:* Auf `public.gallery_albums` gilt SELECT für alle publizierten Albentitel (`USING (true)`), damit das Vorstands-Cockpit sowohl öffentliche als auch geschützte Mitglieder-Alben konsistent darstellt. Der eigentliche Zugriffsschutz auf Bilder und Medien verbleibt auf `public.gallery_photos`, wo `anon` ausschliesslich `visibility = 'public'` abfragen kann.
 
-### 6.5 Entwickler-Fallback (CLI)
+### 6.6 Entwickler-Fallback (CLI)
 Das bisherige CLI-Skript `sportschuetzen-website/sync-immich-album.js` bleibt ausschliesslich für Offline-Wartungsarbeiten und lokale Batch-Tests erhalten.
 
 ---

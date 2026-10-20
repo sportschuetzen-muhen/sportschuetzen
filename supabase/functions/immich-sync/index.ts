@@ -457,6 +457,46 @@ Deno.serve(async (req: Request) => {
       }
 
       // -------------------------------------------------------
+      // A1.5 SICHTBARKEIT ÄNDERN (MEMBERS <-> PUBLIC)
+      // -------------------------------------------------------
+      if (postAction === "set_visibility") {
+        const { albumId, visibility } = body;
+        if (!albumId || !visibility) {
+          return new Response(JSON.stringify({ error: "albumId und visibility erforderlich" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+
+        const effectiveVisibility = (visibility === 'public') ? 'public' : 'members';
+
+        // 1. Album-Sichtbarkeit in Supabase aktualisieren
+        const { error: albErr } = await supabase
+          .from("gallery_albums")
+          .update({ visibility: effectiveVisibility })
+          .eq("id", albumId);
+
+        if (albErr) throw albErr;
+
+        // 2. Alle zugehörigen Einzelfotos des Albums synchronisieren
+        const { error: photoErr } = await supabase
+          .from("gallery_photos")
+          .update({ visibility: effectiveVisibility })
+          .eq("album_id", albumId);
+
+        if (photoErr) throw photoErr;
+
+        return new Response(JSON.stringify({
+          success: true,
+          albumId,
+          visibility: effectiveVisibility,
+          message: `Sichtbarkeit erfolgreich auf ${effectiveVisibility === 'public' ? 'Öffentlich & Mitglieder' : 'Nur Mitglieder'} gesetzt`
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // -------------------------------------------------------
       // A. ALBUM ENTFERNEN (UNPUBLISH)
       // -------------------------------------------------------
       if (postAction === "unpublish") {
