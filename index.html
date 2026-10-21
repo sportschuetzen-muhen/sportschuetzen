@@ -282,7 +282,10 @@ OneSignalDeferred.push(async function (OneSignal) {
 <div id="app-wrapper" style="display:none;">
 <div id="pull-spinner"><div class="spinner-icon"></div></div>
 <header>
-    <a id="vorstand-badge-link" href="vorstand/index.html" title="Zum Vorstandsportal" style="display:none; position:absolute; left:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.75rem; font-weight:600; background:rgba(255,255,255,0.22); color:#ffffff; text-decoration:none; padding:4px 10px; border-radius:12px; z-index:1100; backdrop-filter:blur(4px);">👑 Vorstand</a>
+    <a id="vorstand-badge-link" href="vorstand/index.html" title="Zum Vorstandsportal" style="display:none; position:absolute; left:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.75rem; font-weight:600; background:rgba(255,255,255,0.22); color:#ffffff; text-decoration:none; padding:4px 10px; border-radius:12px; z-index:1100; backdrop-filter:blur(4px);">
+        <span>👑 Vorstand</span>
+        <span id="vorstand-pendenzen-badge" style="display:none; position:absolute; top:-6px; right:-6px; background:#ef4444; color:#ffffff; font-size:0.65rem; font-weight:700; padding:1px 5px; border-radius:999px; border:1.5px solid #ffffff; min-width:18px; text-align:center; box-shadow:0 2px 4px rgba(0,0,0,0.25); line-height:1.2;">0</span>
+    </a>
     <h1 id="main-title">Termine</h1>
     <div id="user-badge" style="display:none; position:absolute; right:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.78rem; font-weight:600; background:rgba(255,255,255,0.18); padding:3px 8px; border-radius:12px; align-items: center; gap: 4px; z-index: 1100; cursor: pointer; user-select: none;">
         <span style="white-space:nowrap;">👤 <span id="display-firstname"></span></span>
@@ -302,6 +305,7 @@ OneSignalDeferred.push(async function (OneSignal) {
         </a>
         <a id="dropdown-link-vorstand" href="#" style="display:none; align-items:center; gap:10px; padding:10px 14px; color:#b91c1c; text-decoration:none; font-size:0.85rem; font-weight:700; background:rgba(220,38,38,0.05);">
             <span>👑</span> <span>Vorstandsportal</span>
+            <span id="dropdown-vorstand-badge" style="display:none; margin-left:auto; background:#ef4444; color:#ffffff; font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:999px;">0</span>
         </a>
         <div style="height:1px; background:#f1f5f9; margin:2px 0;"></div>
         <button type="button" id="dropdown-logout-btn" style="width:100%; border:none; background:none; display:flex; align-items:center; gap:10px; padding:10px 14px; color:#dc2626; font-size:0.85rem; font-weight:600; cursor:pointer; text-align:left; font-family:inherit;">
@@ -362,7 +366,7 @@ OneSignalDeferred.push(async function (OneSignal) {
 
 </div>
 
-<script src="app.js?v=18" defer></script>
+<script src="app.js?v=19" defer></script>
 
 <!-- Participant Modal -->
 <div id="participant-modal" class="modal-overlay">

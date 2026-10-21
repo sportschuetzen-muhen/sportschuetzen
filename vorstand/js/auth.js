@@ -811,6 +811,9 @@ async function doLogout() {
     csrfToken = null;
     currentRoles = [];
     if (window.Perms) window.Perms.reset();
+    if ('clearAppBadge' in navigator) {
+        try { navigator.clearAppBadge().catch(() => {}); } catch(_) {}
+    }
     location.reload();
 }
 

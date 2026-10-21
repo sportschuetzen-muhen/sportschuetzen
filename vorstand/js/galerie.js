@@ -1517,7 +1517,6 @@ window.checkGalerieInboxBadge = checkGalerieInboxBadge;
 // =========================================================
 function updateMobileGlobalBadge() {
     const mobileBadge = document.getElementById('mobile-global-badge');
-    if (!mobileBadge) return;
 
     const jmBadge = document.getElementById('jm-nav-badge');
     const galBadge = document.getElementById('galerie-nav-badge');
@@ -1526,11 +1525,22 @@ function updateMobileGlobalBadge() {
     const galCount = (galBadge && !galBadge.classList.contains('d-none')) ? (parseInt(galBadge.innerText) || 0) : 0;
 
     const total = jmCount + galCount;
-    if (total > 0) {
-        mobileBadge.innerText = total > 99 ? '99+' : total;
-        mobileBadge.classList.remove('d-none');
-    } else {
-        mobileBadge.classList.add('d-none');
+    if (mobileBadge) {
+        if (total > 0) {
+            mobileBadge.innerText = total > 99 ? '99+' : total;
+            mobileBadge.classList.remove('d-none');
+        } else {
+            mobileBadge.classList.add('d-none');
+        }
+    }
+
+    // Native iOS 16.4+ / Android PWA App Badge auf dem Homescreen
+    if ('setAppBadge' in navigator) {
+        if (total > 0) {
+            navigator.setAppBadge(total).catch(() => {});
+        } else {
+            navigator.clearAppBadge().catch(() => {});
+        }
     }
 }
 window.updateMobileGlobalBadge = updateMobileGlobalBadge;

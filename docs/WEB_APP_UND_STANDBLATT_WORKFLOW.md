@@ -123,3 +123,8 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
 10. **Scope- & Fehlerbehebungs-Bereinigung bei Stellvertretungs-Submit:**
    - Behebung eines Laufzeitfehlers (`ReferenceError: targetFullName is not defined`) in `app/upload.js`, der bei aktivierter Stellvertretung fälschlicherweise als «Netzwerkfehler beim Übermitteln» gemeldet wurde.
    - Präzisierung der Fehlerbehandlung zur Ausgabe echter Fehlermeldungen sowie Cache-Busting (`upload.html?v=7`, `upload.js?v=9`).
+
+11. **PWA Homescreen Badges & Vorstands-Pendenzen in der Web-App:**
+   - Eingeloggte Vorstandsmitglieder (`is_board`) erhalten in der Web-App (`index.html` & `app.js`) am Schnellzugriff «👑 Vorstand» sowie im Profil-Dropdown ein rotes Zahlen-Badge mit der Summe aller offenen Pendenzen (Standblätter + Galerie-Uploads).
+   - Über die native Web Badging API (`navigator.setAppBadge`) wird die Anzahl offener Pendenzen auf iOS (ab iOS 16.4) und Android direkt auf das App-Icon auf dem Homescreen synchronisiert.
+   - Das Vorstandsportal verfügt über ein dediziertes Manifest (`vorstand/manifest.json`) und Apple Touch Icons für eine native Vollbild-Installation mit Vereins-Logo.

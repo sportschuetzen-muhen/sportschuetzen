@@ -1919,6 +1919,9 @@ function showApp(user) {
     loadTermine();
     handleDeepLink();
     syncOneSignal(user);
+    if (user && user.is_board) {
+        checkBoardPendenzenBadge();
+    }
 
     // Event Listener für optionalen Header-Logout Button
     const logoutBtn = document.getElementById('logout-btn');
@@ -1932,6 +1935,89 @@ function showApp(user) {
     }
 }
 
+// ==============================================================================
+//  PENDENZEN-BADGE & NATIVE APP-BADGING (iOS 16.4+ / ANDROID / WEB-APP)
+// ==============================================================================
+
+function updateAppIconBadge(count) {
+    if ('setAppBadge' in navigator) {
+        if (count > 0) {
+            navigator.setAppBadge(count).catch(() => {});
+        } else {
+            navigator.clearAppBadge().catch(() => {});
+        }
+    }
+}
+window.updateAppIconBadge = updateAppIconBadge;
+
+async function checkBoardPendenzenBadge() {
+    let user = null;
+    try {
+        user = JSON.parse(localStorage.getItem('sportschuetzen_user') || 'null');
+    } catch (_) {}
+
+    // Nur für Vorstandsmitglieder relevant
+    if (!user || !user.is_board) {
+        updateAppIconBadge(0);
+        return;
+    }
+
+    const vorstandBadge = document.getElementById('vorstand-pendenzen-badge');
+    const dropdownBadge = document.getElementById('dropdown-vorstand-badge');
+
+    let galCount = 0;
+    let jmCount = 0;
+
+    try {
+        const results = await Promise.allSettled([
+            // 1. Offene Mitglieder-Uploads in Immich
+            fetch('https://supabase-muhen.danfamily.uk/functions/v1/immich-upload')
+                .then(r => r.ok ? r.json() : null)
+                .then(d => d?.album?.count || 0),
+            // 2. Offene Standblätter aus contest_ocr_logs
+            fetch(`${SUPABASE_REST_URL}/contest_ocr_logs?select=id,raw_response&contest_type=eq.standblatt`, {
+                headers: getSupabaseHeaders()
+            })
+                .then(r => r.ok ? r.json() : [])
+                .then(items => Array.isArray(items) ? items.filter(i => {
+                    const st = i?.raw_response?.status;
+                    return st !== 'imported' && st !== 'rejected';
+                }).length : 0)
+        ]);
+
+        if (results[0].status === 'fulfilled') {
+            galCount = parseInt(results[0].value) || 0;
+        }
+        if (results[1].status === 'fulfilled') {
+            jmCount = parseInt(results[1].value) || 0;
+        }
+    } catch (e) {
+        // Stille Unterdrückung bei Netzwerkproblemen
+    }
+
+    const total = galCount + jmCount;
+
+    // UI Badges in der Web-App aktualisieren
+    const badgeText = total > 99 ? '99+' : String(total);
+    [vorstandBadge, dropdownBadge].forEach(el => {
+        if (!el) return;
+        if (total > 0) {
+            el.textContent = badgeText;
+            el.style.display = 'inline-block';
+        } else {
+            el.style.display = 'none';
+        }
+    });
+
+    // Native iOS / Android PWA App-Badge auf dem Home-Screen setzen
+    updateAppIconBadge(total);
+}
+window.checkBoardPendenzenBadge = checkBoardPendenzenBadge;
+
+document.addEventListener('app:resume', () => {
+    checkBoardPendenzenBadge();
+});
+
 window.logout = async function() {
     console.log("Logout Button geklickt");
     const confirmLogout = confirm("Möchtest du dich wirklich abmelden?");
@@ -1942,6 +2028,7 @@ window.logout = async function() {
             try { await supa.auth.signOut(); } catch (_) {}
         }
         syncOneSignal(null); // OneSignal abmelden
+        updateAppIconBadge(0);
         localStorage.removeItem('sportschuetzen_user');
         localStorage.removeItem('sm_member_session');
         localStorage.removeItem('sportschuetzen_pid');

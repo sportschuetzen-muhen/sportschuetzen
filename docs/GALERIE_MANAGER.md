@@ -66,7 +66,7 @@ Um dem Vorstand sofort zu signalisieren, dass neue Fotos von Mitgliedern eingega
   ```
 * Liefert `count > 0`, sind neue, ungesichtete Bilder vorhanden.
 
-### 3.2 Badge-Elemente im Vorstandsportal
+### 3.2 Badge-Elemente im Vorstandsportal & PWA
 1. **Sidebar-Menü (`#galerie-nav-badge`):** Roter Pill-Badge neben «Galerie Manager».
 2. **Dashboard-Kachel (`#galerie-tile-badge`):** Roter Zähler auf der Kachel «Galerie Manager» auf der Übersichtsseite.
 3. **Mobile- & iPad-Header (`#mobile-global-badge`):**
@@ -74,6 +74,10 @@ Um dem Vorstand sofort zu signalisieren, dass neue Fotos von Mitgliedern eingega
    * Am Hamburger-Icon (`fa-bars`) im `.mobile-header` wird ein **aggregiertes Sammel-Badge** angezeigt:
      $$\text{Total Pendenzen} = \text{Standblätter Jahresmeisterschaft} + \text{Offene Galerie-Uploads}$$
    * Sobald der Benutzer das Menü öffnet, sieht er die genaue Aufteilung pro Fachbereich.
+4. **Schützen Web-App (`index.html` / `#vorstand-pendenzen-badge`):**
+   * Eingeloggte Vorstandsmitglieder sehen direkt auf dem Button «👑 Vorstand» sowie im Profil-Menü (`#dropdown-vorstand-badge`) den roten Pendenzen-Zähler.
+5. **Native iOS & Android PWA Homescreen Badges (`navigator.setAppBadge`):**
+   * Sowohl die Web-App als auch das Vorstandsportal (über `vorstand/manifest.json` und Apple Touch Icons vollwertig als Home-Bildschirm-App installierbar) synchronisieren `Total Pendenzen` atomar mit der Browser Badging API. Bei offenen Pendenzen erscheint das rote Zahlen-Badge direkt am App-Icon auf dem Homescreen des Smartphones/Tablets.
 
 ---
 
