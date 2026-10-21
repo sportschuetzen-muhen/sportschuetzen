@@ -45,8 +45,9 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 * **Wiedervermietungs-Chance:** Storniert ein Mieter kurzfristig (Termin innerhalb der nächsten 14 Tage), wird der Datensatz in `rental_cancellation_feedbacks` mit `is_urgent = true` markiert.
 * **Nutzen:** Der Vermieter sieht den Fall sofort im Cockpit ganz oben und kann die Schützenstube aktiv an Interessenten auf der Warteliste weitervermitteln.
 
-### 2.5 Modernes Vorstands-Cockpit (TableKit Standard & Tarife-Verwaltung)
-* **3-Register-Struktur:** Das Cockpit bündelt alle Fachaspekte in drei Reitern: `Reservationen`, `Stornorückmeldungen` und `Tarife & Einstellungen`.
+### 2.5 Modernes Vorstands-Cockpit (TableKit Standard & 4-Register-Struktur)
+* **4-Register-Struktur:** Das Cockpit bündelt alle Fachaspekte in vier Reitern: `Reservationen`, `Stornorückmeldungen`, `Tarife & Einstellungen` sowie **`Bank-Automation`** (mit Schreibschutz-Schloss bei reinem Lesezugriff).
+* **Bank-Automation Register:** Bietet einen Ein-/Ausschalter für den automatischen `pg_cron`-Hintergrundscan, ein variables Intervall (alle 15 Min. bis täglich), einen Sofort-Scan-Button («Jetzt Postfach scannen») sowie eine Live-Übersicht der OAuth-Verbindung zu `sportschuetzen.muhen@gmail.com` und der Historie aller verarbeiteten Gutschriften aus `public.bank_mail_ingest_logs`.
 * **TableKit Spalten-Steuerung:** Die Reservationstabelle ist an den globalen Vereinsstandard `TableKit.setupColumnToggle` angebunden. Spalten (Datum, Mieter Name, Vertrags-Nr., Festbeginn, Kontakt, Mietbetrag, Status, Aktionen) lassen sich beliebig ein-/ausblenden und werden persistent im `localStorage` (`tk_cols_vermietung`) gesichert.
 * **Zentralisierte Tarife:** Mietpreise (`rental_pricing`) und Konfigurationswerte (`rental_settings`) werden in einer einheitlichen Maske gepflegt und atomar synchronisiert.
 

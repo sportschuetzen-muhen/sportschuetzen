@@ -329,8 +329,13 @@ function renderVermietungCockpit(daten) {
               </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link fw-bold btn-sm text-secondary" id="rental-settings-tab" data-bs-toggle="pill" data-bs-target="#tab-rental-settings" type="button" role="tab" aria-controls="tab-rental-settings" aria-selected="false" onclick="renderRentalSettingsForm()">
+              <button class="nav-link fw-bold btn-sm text-secondary me-2" id="rental-settings-tab" data-bs-toggle="pill" data-bs-target="#tab-rental-settings" type="button" role="tab" aria-controls="tab-rental-settings" aria-selected="false" onclick="renderRentalSettingsForm()">
                 <i class="fas fa-cog me-1"></i> Tarife & Einstellungen
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link fw-bold btn-sm text-secondary" id="bank-automation-tab" data-bs-toggle="pill" data-bs-target="#tab-bank-automation" type="button" role="tab" aria-controls="tab-bank-automation" aria-selected="false" onclick="if(typeof renderBankAutomationTab==='function')renderBankAutomationTab();">
+                <i class="fas fa-robot text-primary me-1"></i> Bank-Automation ${!canWrite ? '<i class="fas fa-lock text-warning ms-1" title="Schreibgeschützt (nur Lesezugriff)"></i>' : ''}
               </button>
             </li>
           </ul>
@@ -416,6 +421,11 @@ function renderVermietungCockpit(daten) {
               <div id="rental-settings-container" class="p-1">
                 <!-- Dynamisch durch renderRentalSettingsForm gerendert -->
               </div>
+            </div>
+
+            <!-- TAB 4: BANK-AUTOMATION (GMAIL & CRON) -->
+            <div class="tab-pane fade" id="tab-bank-automation" role="tabpanel" aria-labelledby="bank-automation-tab">
+              <!-- Dynamisch durch renderBankAutomationTab gerendert -->
             </div>
           </div>
         </div>
