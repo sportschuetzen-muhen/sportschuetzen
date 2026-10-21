@@ -42,9 +42,20 @@
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
-          appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
-        });
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
+        try {
+          await OneSignal.init({
+            appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
+            autoRegister: false,
+            notifyButton: { enable: false }
+          });
+          const permission = OneSignal.Notifications ? OneSignal.Notifications.permission : null;
+          if (permission === "default") {
+            await OneSignal.Notifications.requestPermission();
+          }
+        } catch (err) {
+          console.warn("OneSignal Init Hinweis:", err);
+        }
       });
     </script>
 
@@ -777,9 +788,9 @@
 
     <!-- MOBILE HEADER -->
     <div class="mobile-header">
-        <button class="btn btn-link text-dark p-0 position-relative" onclick="toggleSidebar()" aria-label="Menü öffnen">
+        <button class="btn btn-link text-dark p-0 position-relative" onclick="toggleSidebar()" aria-label="Menü öffnen" style="overflow: visible;">
             <i class="fas fa-bars fa-lg"></i>
-            <span id="mobile-global-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" style="font-size: 0.65rem; padding: 0.25em 0.45em; border: 1.5px solid #fff;">0</span>
+            <span id="mobile-global-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" style="font-size: 0.65rem; padding: 0.25em 0.45em; border: 1.5px solid #fff; z-index: 10;">0</span>
         </button>
         <div class="d-flex flex-column align-items-center text-center">
             <span class="fw-bold text-primary" style="font-size: 0.9rem; line-height: 1.2;">SPORTSCHÜTZEN MUHEN</span>

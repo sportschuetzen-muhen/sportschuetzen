@@ -1479,6 +1479,7 @@ async function refreshImmichStatus() {
 //  BADGE-SYNCHRONISATION (NAV, DASHBOARD & MOBILE HEADER)
 // =========================================================
 function updateGalerieBadge(count) {
+    window._galInboxCount = parseInt(count) || 0;
     const navBadge = document.getElementById('galerie-nav-badge');
     const tileBadge = document.getElementById('galerie-tile-badge');
 
@@ -1521,13 +1522,17 @@ function updateMobileGlobalBadge() {
     const jmBadge = document.getElementById('jm-nav-badge');
     const galBadge = document.getElementById('galerie-nav-badge');
 
-    const jmCount = (jmBadge && !jmBadge.classList.contains('d-none')) ? (parseInt(jmBadge.innerText) || 0) : 0;
-    const galCount = (galBadge && !galBadge.classList.contains('d-none')) ? (parseInt(galBadge.innerText) || 0) : 0;
+    const jmCount = (typeof window._jmInboxCount === 'number')
+        ? window._jmInboxCount
+        : ((jmBadge && !jmBadge.classList.contains('d-none')) ? (parseInt(jmBadge.innerText) || 0) : 0);
+    const galCount = (typeof window._galInboxCount === 'number')
+        ? window._galInboxCount
+        : ((galBadge && !galBadge.classList.contains('d-none')) ? (parseInt(galBadge.innerText) || 0) : 0);
 
     const total = jmCount + galCount;
     if (mobileBadge) {
         if (total > 0) {
-            mobileBadge.innerText = total > 99 ? '99+' : total;
+            mobileBadge.innerText = total > 99 ? '99+' : String(total);
             mobileBadge.classList.remove('d-none');
         } else {
             mobileBadge.classList.add('d-none');

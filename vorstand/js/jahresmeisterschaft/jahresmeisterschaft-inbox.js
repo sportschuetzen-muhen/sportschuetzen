@@ -45,6 +45,7 @@ window.loadPendingStandblaetter = loadPendingStandblaetter;
  * Aktualisiert die Benachrichtigungs-Badges synchron (Header, Sidebar & Dashboard-Kachel)
  */
 function updateJMInboxBadge(count) {
+    window._jmInboxCount = parseInt(count) || 0;
     const badge = document.getElementById('jm-inbox-badge');
     const navBadge = document.getElementById('jm-nav-badge');
     const tileBadge = document.getElementById('jm-tile-badge');

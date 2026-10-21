@@ -778,7 +778,28 @@ function showApp() {
             if (typeof window.updateAiStatusBadges === 'function') window.updateAiStatusBadges(r);
         });
     }
+    // 4. Pendenzen-Badges laden & synchronisieren (Galerie & Standblätter)
+    if (typeof window.checkGalerieInboxBadge === 'function') {
+        window.checkGalerieInboxBadge();
+    }
+    if (typeof window.loadPendingStandblaetter === 'function') {
+        window.loadPendingStandblaetter(true);
+    }
 }
+
+// Pendenzen-Refresh beim Reaktivieren der App (App-Resume / Tab-Wechsel)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        if (typeof window.checkGalerieInboxBadge === 'function') window.checkGalerieInboxBadge();
+        if (typeof window.loadPendingStandblaetter === 'function') window.loadPendingStandblaetter(true);
+    }
+});
+window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+        if (typeof window.checkGalerieInboxBadge === 'function') window.checkGalerieInboxBadge();
+        if (typeof window.loadPendingStandblaetter === 'function') window.loadPendingStandblaetter(true);
+    }
+});
 
 // =========================================================
 //  PRELOAD STATUS INDIKATOREN (Visuelle Indikatoren entfernt)
