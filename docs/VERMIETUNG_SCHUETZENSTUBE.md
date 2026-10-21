@@ -83,6 +83,13 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 * **Zwei-stufiger Zahlungsvermerk:**
   * **Stufe 1 («Info-Mail Bank»):** Wird manuell im Vermietungs-Cockpit über *«Info-Mail Bank vermerken»* oder **vollautomatisch alle 2 Stunden** durch die Supabase Edge Function `process-bank-mails` via `pg_cron` gesetzt (`status_raiffeisen = 'bank_notified'`). Die Edge Function scannt das Postfach `sportschuetzen.muhen@gmail.com` nach Gutschriftsmails von `noreply@ebanking.raiffeisen.ch` (Label `Raiffeisen`), parst die Buchungsnummer (`V-YYYY-NNNN`) sowie den Betrag, setzt atomar via RPC `confirm_rental_payment` den Status `paid`, verbucht die Zahlung im `RechnungsCore`, versendet die Zahlungsbestätigung (`vm_bestaetigung`) an den Mieter, informiert das Wirtschaftsteam (`vm_info_wirtschaft`), erstattet Rapport an den Verteiler `Info_Mail_Bank_Eingang` (`vm_bank_report`) und verschiebt das Gmail-Label auf `Raiffeisen/Verarbeitet` bzw. `Raiffeisen/Fehler`. Visuelle Kennzeichnung im Cockpit und in der Tabelle: **hellgrün** (`#dcfce7`, Text `#15803d`, Rand `#86efac`).
   * **Stufe 2 («FIBU gebucht»):** Wird vollautomatisch durch den CAMT-Bankabgleich bei der Buchung im FIBU-Journal gesetzt (`status_raiffeisen = 'fibu_gebucht'`, `datum_raiffeisen = bookingDate`). Visuelle Kennzeichnung: **dunkelgrün** (`#166534`, Text weiss).
+* **Intelligentes Kaskaden- & 3-Punkte-Matching für Bank-Gutschriften:**
+  * **Stufe 1 (Primär nach Buchungsnummer):** Die Edge Function `process-bank-mails` sucht im Mailtext nach `V-YYYY-NNNN` oder `##YYYY-NNN##`. Existiert die Buchungsnummer in `rental_requests`, wird die Zahlung direkt zugeordnet.
+  * **Stufe 2 (Fallback: 3-Punkte Smart-Matching):** Fehlt die Buchungsnummer im Mailtext oder stimmt sie nicht mit dem Datenbestand überein, greift das intelligente Smart-Matching. Eine automatische Zuordnung erfolgt **nur dann**, wenn alle drei folgenden Kriterien **gleichzeitig erfüllt** sind:
+    1. **Mietdatum (`rent_date`):** Stimmt exakt mit dem Mietdatum (`start_date`) einer aktiven Buchung überein (z. B. aus «Miete vom 14.11.2026»).
+    2. **Nachname des Zahlers (`payer_name`):** Das letzte Wort des extrahierten Zahlernamens (aus «Bezahlt für: ...» oder «Gutschrift ...») stimmt mit dem Nachnamen (`last_name`) der Reservation überein (`ILIKE`).
+    3. **Exakter Betrag von CHF 300.00:** Der bezahlte Betrag muss zwingend und exakt dem geforderten Mietbetrag von CHF 300.00 entsprechen (`p_amount = total_amount_chf = 300.00`).
+  * **Sicherheitsnetz bei Abweichung:** Stimmt mindestens eines der drei Kriterien nicht überein, wird **keine** automatische Buchung ausgelöst und keine Rechnung verändert. Das System verschiebt das Mail in Gmail nach `Raiffeisen/Fehler`, erfasst den Vorfall als `unknown_contract` in `public.bank_mail_ingest_logs` und sendet einen detaillierten Rapport (`vm_bank_report`) an den konfigurierten Admin-Verteiler (`Info_Mail_Bank_Eingang`), damit der Vermieter den Fall manuell prüfen kann.
 * **Mahnwesen-Abgrenzung:** Vermietungsrechnungen sind im kaufmännischen Mahnwesen des Rechnungsmoduls strikt gesperrt. Das Mahnwesen für Mietverträge erfolgt ausschliesslich über das Vermietungsmodul zur Terminsicherung.
 * **Empfänger- und CC-Verteiler:** Mietvertrags-Mails werden an den Mieter adressiert; eine CC-Kopie geht gezielt an den System-Mail-Verteiler (`public.system_mail_configs`, Schlüssel `Info_Mail_an_Wirtschaftsverantwortliche`). Die Absenderadresse des Vereins wird nicht in CC genommen.
 
@@ -97,6 +104,7 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 | `public.rental_settings` | `key` (TEXT) | Dynamische Einstellungen (Standard-Mietzeiten, Kautionstarif, Bankverbindung). |
 | `public.rental_status_logs` | `id` (UUID) | Revisionssicherer Audit-Trail aller Statusänderungen. |
 | `public.rental_cancellation_feedbacks` | `id` (UUID) | Stornierungsgründe und Mieter-Feedback. |
+| `public.bank_mail_ingest_logs` | `id` (UUID) | Revisionssicherer Audit-Trail aller eingegangenen Raiffeisen-Mails (Gmail-ID, Betrag, Mietername, Mietdatum, Match-Methode, Verbuchungs-Ergebnis). |
 
 ---
 

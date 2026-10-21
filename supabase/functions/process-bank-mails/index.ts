@@ -32,6 +32,9 @@ interface ParsedPaymentInfo {
   contractNumber: string | null;
   amount: number | null;
   bookingDate: string | null;
+  payerName: string | null;
+  payerAddress: string | null;
+  rentDate: string | null;
   rawSender: string;
   subject: string;
   dateStr: string;
@@ -157,12 +160,10 @@ function parseRaiffeisenMail(msg: any): ParsedPaymentInfo {
 
   // Betrag suchen
   let amount: number | null = null;
-  // Format 1: Betrag: 300.00 CHF oder 300.00 CHF
   const matchAmt1 = fullText.match(/Betrag:\s*([\d']+[.,]\d{2})\s*CHF/i);
   if (matchAmt1) {
     amount = parseFloat(matchAmt1[1].replace(/'/g, "").replace(",", "."));
   } else {
-    // Format 2: Gutschrift ... welche die gesetzte Limite von 290.00 ... Details: ... Betrag: ...
     const matchAmt2 = fullText.match(/([\d']+[.,]\d{2})\s*CHF/i);
     if (matchAmt2) {
       amount = parseFloat(matchAmt2[1].replace(/'/g, "").replace(",", "."));
@@ -176,10 +177,39 @@ function parseRaiffeisenMail(msg: any): ParsedPaymentInfo {
     bookingDate = `${matchDate[3]}-${matchDate[2]}-${matchDate[1]}`;
   }
 
+  // Mieter-Name suchen (z.B. "Bezahlt für: Lenka Habenicht" oder "Gutschrift Lenka Habenicht")
+  let payerName: string | null = null;
+  const matchName1 = fullText.match(/Bezahlt für:\s*([^\n\r,;/]+)/i);
+  if (matchName1) {
+    payerName = matchName1[1].trim();
+  } else {
+    const matchName2 = fullText.match(/Gutschrift\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)+)/);
+    if (matchName2) {
+      payerName = matchName2[1].trim();
+    }
+  }
+
+  // Adresse suchen (z.B. "- Feldweg 11, 5040 Schoeftland")
+  let payerAddress: string | null = null;
+  const matchAddr = fullText.match(/-\s*([^,\n\r]+,\s*\d{4}\s+[^,\n\r]+)/);
+  if (matchAddr) {
+    payerAddress = matchAddr[1].trim();
+  }
+
+  // Mietdatum suchen (z.B. "Miete vom 14.11.2026")
+  let rentDate: string | null = null;
+  const matchRentDate = fullText.match(/Miete(?:\s+vom|\s+am)?\s*(\d{2})\.(\d{2})\.(\d{4})/i);
+  if (matchRentDate) {
+    rentDate = `${matchRentDate[3]}-${matchRentDate[2]}-${matchRentDate[1]}`;
+  }
+
   return {
     contractNumber,
     amount,
     bookingDate,
+    payerName,
+    payerAddress,
+    rentDate,
     rawSender,
     subject,
     dateStr,
@@ -293,7 +323,7 @@ Deno.serve(async (req) => {
       const msgData = await msgRes.json();
 
       const parsed = parseRaiffeisenMail(msgData);
-      const { contractNumber, amount, bookingDate, rawSender, subject, dateStr } = parsed;
+      const { contractNumber, amount, bookingDate, payerName, payerAddress, rentDate, rawSender, subject, dateStr } = parsed;
 
       // Log-Eintrag initial anlegen (Idempotenz)
       const { data: existingLog } = await supabase
@@ -320,6 +350,9 @@ Deno.serve(async (req) => {
             contract_nr: contractNumber,
             amount_chf: amount,
             booking_date: bookingDate || new Date().toISOString().split("T")[0],
+            payer_name: payerName,
+            payer_address: payerAddress,
+            rent_date: rentDate,
             result: "processing",
             raw_excerpt: msgData.snippet,
           })
@@ -332,9 +365,11 @@ Deno.serve(async (req) => {
         logId = newLog.id;
       }
 
-      // Prüfungen
-      if (!contractNumber || amount === null || amount <= 0) {
-        const errMsg = !contractNumber ? "Keine gültige Vertragsnummer (V-YYYY-NNNN) im Mailtext gefunden." : "Kein gültiger Zahlungsbetrag gefunden.";
+      // Prüfungen: Wenn weder Vertragsnummer noch (Name + Mietdatum) vorhanden sind, oder Betrag fehlt
+      if ((!contractNumber && (!payerName || !rentDate)) || amount === null || amount <= 0) {
+        const errMsg = !contractNumber && (!payerName || !rentDate)
+          ? "Weder Vertragsnummer noch Mietername & Mietdatum im Mailtext gefunden."
+          : "Kein gültiger Zahlungsbetrag gefunden.";
         
         await supabase
           .from("bank_mail_ingest_logs")
@@ -361,13 +396,16 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Buchung in Supabase via RPC verbuchen
+      // Buchung in Supabase via RPC verbuchen (mit Fallback-Matching über Name + Datum + Betrag)
       const payDate = bookingDate || new Date().toISOString().split("T")[0];
       const { data: rpcRes, error: rpcErr } = await supabase.rpc("confirm_rental_payment", {
         p_booking_number: contractNumber,
         p_amount: amount,
         p_payment_date: payDate,
         p_source: "Bank-Mail Raiffeisen",
+        p_payer_name: payerName,
+        p_payer_address: payerAddress,
+        p_rent_date: rentDate,
       });
 
       if (rpcErr || !rpcRes) {
@@ -383,8 +421,8 @@ Deno.serve(async (req) => {
         await moveMessageLabels(googleToken, m.id, [errorLabelId], [inboxLabelId]);
 
         await sendBankReport(supabase, settings, {
-          ergebnis: `🚨 Systemfehler bei ${contractNumber}`,
-          vertragsnr: contractNumber,
+          ergebnis: `🚨 Systemfehler bei ${contractNumber || payerName || 'Zahlung'}`,
+          vertragsnr: contractNumber || "–",
           betrag: amount.toFixed(2),
           sollbetrag: "–",
           hinweis: `Bei der Verbuchung trat ein Datenbankfehler auf:<br><code>${errDetail}</code>`,
@@ -395,12 +433,16 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Lade vollständigen Buchungsdatensatz für Mails & Logs
-      const { data: rentalData } = await supabase
-        .from("rental_requests")
-        .select("*")
-        .eq("booking_number", contractNumber)
-        .maybeSingle();
+      // Den tatsächlich gematchten Buchungsdatensatz laden
+      const matchedVnr = rpcRes.booking_number || contractNumber;
+      let rentalData: any = null;
+      if (rpcRes.rental_id) {
+        const { data: rData } = await supabase.from("rental_requests").select("*").eq("id", rpcRes.rental_id).maybeSingle();
+        rentalData = rData;
+      } else if (matchedVnr) {
+        const { data: rData } = await supabase.from("rental_requests").select("*").eq("booking_number", matchedVnr).maybeSingle();
+        rentalData = rData;
+      }
 
       const sollAmount = rentalData?.total_amount_chf ? Number(rentalData.total_amount_chf).toFixed(2) : (rpcRes.soll_amount ? Number(rpcRes.soll_amount).toFixed(2) : "300.00");
 
@@ -415,12 +457,21 @@ Deno.serve(async (req) => {
 
         await moveMessageLabels(googleToken, m.id, [errorLabelId], [inboxLabelId]);
 
+        const detailHinweis = [
+          `<b>Vertrag im Mail:</b> ${contractNumber || '–'}`,
+          payerName ? `<b>Mieter:</b> ${payerName}` : null,
+          payerAddress ? `<b>Adresse:</b> ${payerAddress}` : null,
+          rentDate ? `<b>Mietdatum im Mail:</b> ${new Date(rentDate).toLocaleDateString('de-CH')}` : null,
+          `<b>Betrag:</b> CHF ${amount.toFixed(2)}`,
+          `<b>Grund:</b> ${rpcRes.message || 'Keine passende Reservation gefunden.'}`
+        ].filter(Boolean).join('<br>');
+
         await sendBankReport(supabase, settings, {
-          ergebnis: `❓ Vertrag unbekannt: ${contractNumber}`,
-          vertragsnr: contractNumber,
+          ergebnis: `❓ Keine passende Reservation: ${contractNumber || payerName || 'Unbekannt'}`,
+          vertragsnr: contractNumber || "–",
           betrag: amount.toFixed(2),
           sollbetrag: "–",
-          hinweis: `Vertrag <b>${contractNumber}</b> existiert nicht im Vereinsportal. Bitte Zahlung manuell prüfen.`,
+          hinweis: `Das System konnte die Zahlung keinem offenen Vertrag zuordnen:<br>${detailHinweis}`,
           rental: null,
         });
 
@@ -484,7 +535,9 @@ Deno.serve(async (req) => {
         .from("bank_mail_ingest_logs")
         .update({
           result: isAlready ? "already_paid" : "success",
+          contract_nr: matchedVnr || contractNumber,
           rental_request_id: rentalData?.id || null,
+          match_method: rpcRes.match_method || 'contract_nr',
           error_message: null,
         })
         .eq("id", logId);
