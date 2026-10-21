@@ -1,6 +1,6 @@
-import http from "node:http";
-import https from "node:https";
-import readline from "node:readline";
+const http = require("node:http");
+const https = require("node:https");
+const readline = require("node:readline");
 
 console.log("=== Gmail OAuth Setup Helper ===");
 console.log("Dieses Skript holt den Refresh-Token für sportschuetzen.muhen@gmail.com\n");
@@ -55,7 +55,7 @@ rl.question("Client-ID eingeben: ", (clientId) => {
           console.log("=======================================================");
           if (!tokenData.refresh_token) {
             console.log("⚠️ Hinweis: Kein refresh_token erhalten (evtl. war der Account bereits autorisiert).");
-            console.log("Setze prompt=consent oder entziehe der App im Google-Konto die Berechtigung.");
+            console.log("Stelle sicher, dass prompt=consent verwendet wird.");
           }
         }
       } catch (err) {
