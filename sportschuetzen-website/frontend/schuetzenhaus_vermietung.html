@@ -2267,7 +2267,7 @@
           // E-Mail-Benachrichtigungen für Vorab-Anfrage (Vorlage vm_anfrage)
           try {
             let tplSubject = `Bestätigung deiner Terminanfrage für die Schützenstube Muhen (${payload.mietdatum})`;
-            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine unverbindliche Terminanfrage für die Schützenstube Muhen am {mietdatum} (geplanter Festbeginn: {festbeginn}).\n\nDa an oder um diesen Termin bereits andere Vereinsaktivitäten oder Reinigungspuffer anstehen, prüfen wir derzeit die zeitliche Machbarkeit mit unserem Team.\n\nWir melden uns in Kürze direkt bei dir.\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
+            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine unverbindliche Terminanfrage für die Schützenstube Muhen am {mietdatum} (geplanter Festbeginn: {festbeginn}).\n\nDa an oder um diesen Termin bereits andere Vereinsaktivitäten oder Reinigungspuffer anstehen, prüfen wir derzeit die zeitliche Machbarkeit mit unserem Team.\n\nWir melden uns in Kürze direkt bei dir.\n\nFreundliche Grüsse\n\nSportschützen Muhen\n\n{vermieter_name}\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
 
             try {
               const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.vm_anfrage&select=mail_subject,mail_body`, {
@@ -2335,18 +2335,35 @@
                 ).join('');
 
             const finalHtml = `
-              <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
-                <div style="background-color:#d97706; color:#ffffff; padding:18px 25px; text-align:left;">
-                  <span style="font-size:18px; font-weight:600; color:#ffffff;">${finalSubject}</span>
-                  <div style="font-size:12px; color:rgba(255,255,255,0.9); margin-top:2px;">Sportschützen Muhen – Schützenstube</div>
-                </div>
-                <div style="padding:25px; color:#333333; line-height:1.6; font-size:14.5px;">
-                  ${paragraphs}
-                </div>
-                <div style="background:#f8f9fa; padding:12px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center;">
-                  Sportschützen Muhen &bull; Schiessanlage Rüteli &bull; 5037 Muhen &bull; Telefon: ${vermieterPhone}
-                </div>
-              </div>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;">
+                <tr>
+                  <td style="background-color:#d97706; padding:18px 25px; text-align:left; vertical-align:middle;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                      <tr>
+                        <td style="vertical-align:middle; padding-right:15px; width:44px;">
+                          <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:2px solid rgba(255,255,255,0.2);" border="0" alt="Logo">
+                        </td>
+                        <td style="vertical-align:middle;">
+                          <div style="font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:600; color:#ffffff; line-height:1.2;">${finalSubject}</div>
+                          <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:3px;">Sportschützen Muhen – Schützenstube Muhen</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:26px 25px 22px 25px; color:#333333; line-height:1.6; font-size:15px;">
+                    ${paragraphs}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#f8f9fa; padding:15px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center; line-height:1.6;">
+                    <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+                    Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color:#0284c7; text-decoration:none;">sportschuetzen.muhen@gmail.com</a><br>
+                    <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Facebook</a>
+                  </td>
+                </tr>
+              </table>
             `;
 
             // 1. Empfangsbestätigung an Interessenten senden
@@ -2492,7 +2509,7 @@
           // 3. Mietvertrags-Mail (vm_vertrag) an den Mieter senden
           try {
             let tplSubject = `Mietvertrag Schützenstube am ${payload.mietdatum} – ${vnr}`;
-            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine Reservation der Schützenstube Muhen am {mietdatum}.\nAnbei erhältst du den offiziellen Mietvertrag inklusive Schweizer QR-Rechnung.\n\nVertragsnummer: {vertragsnr}\nMietdatum: {mietdatum} (Festbeginn: {festbeginn})\nMietbetrag: CHF ${currentStandardRentalPrice.toFixed(2)}\n\nBitte überweise den Mietbetrag innert 14 Tagen mit dem im Vertrag enthaltenen QR-Zahlschein, um die Reservation definitiv zu bestätigen.\n\nFreundliche Grüsse\n{vermieter_name}\nSportschützen Muhen\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
+            let tplBody = `Guten Tag {mieter_vorname} {mieter_nachname},\n\nVielen Dank für deine Reservation der Schützenstube Muhen am {mietdatum}.\nAnbei erhältst du den offiziellen Mietvertrag inklusive Schweizer QR-Rechnung.\n\nVertragsnummer: {vertragsnr}\nMietdatum: {mietdatum} (Festbeginn: {festbeginn})\nMietbetrag: CHF ${currentStandardRentalPrice.toFixed(2)}\n\nBitte überweise den Mietbetrag innert 14 Tagen mit dem im Vertrag enthaltenen QR-Zahlschein, um die Reservation definitiv zu bestätigen.\n\nFreundliche Grüsse\n\nSportschützen Muhen\n\n{vermieter_name}\nTelefon: {vermieter_telefon}\nE-Mail: {vermieter_email}`;
 
             try {
               const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.vm_vertrag&select=mail_subject,mail_body`, {
@@ -2571,18 +2588,35 @@
                 ).join('');
 
             const finalHtml = `
-              <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
-                <div style="background-color:#0f3c5c; color:#ffffff; padding:18px 25px; text-align:left;">
-                  <span style="font-size:18px; font-weight:600; color:#ffffff;">${finalSubject}</span>
-                  <div style="font-size:12px; color:rgba(255,255,255,0.9); margin-top:2px;">Sportschützen Muhen – Schützenstube</div>
-                </div>
-                <div style="padding:25px; color:#333333; line-height:1.6; font-size:14.5px;">
-                  ${paragraphs}
-                </div>
-                <div style="background:#f8f9fa; padding:12px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center;">
-                  Sportschützen Muhen &bull; Schiessanlage Rüteli &bull; 5037 Muhen &bull; E-Mail: ${vermieterEmail}
-                </div>
-              </div>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;">
+                <tr>
+                  <td style="background-color:#0f3c5c; padding:18px 25px; text-align:left; vertical-align:middle;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                      <tr>
+                        <td style="vertical-align:middle; padding-right:15px; width:44px;">
+                          <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:2px solid rgba(255,255,255,0.2);" border="0" alt="Logo">
+                        </td>
+                        <td style="vertical-align:middle;">
+                          <div style="font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:600; color:#ffffff; line-height:1.2;">${finalSubject}</div>
+                          <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:3px;">Sportschützen Muhen – Schützenstube Muhen</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:26px 25px 22px 25px; color:#333333; line-height:1.6; font-size:15px;">
+                    ${paragraphs}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#f8f9fa; padding:15px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center; line-height:1.6;">
+                    <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+                    Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color:#0284c7; text-decoration:none;">sportschuetzen.muhen@gmail.com</a><br>
+                    <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Facebook</a>
+                  </td>
+                </tr>
+              </table>
             `;
 
             const mailAttachments = [];

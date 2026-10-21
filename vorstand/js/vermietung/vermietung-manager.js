@@ -181,33 +181,35 @@ function buildRentalEmailHtml(title, bannerColor, bodyHtml, settings) {
   const clubEmail = settings?.club_email || "sportschuetzen.muhen@gmail.com";
 
   return `
-    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;">
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${bannerColor}; width:100%; border-collapse:collapse;">
-        <tr>
-          <td style="padding:18px 25px; text-align:left; vertical-align:middle;">
-            <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; display:inline-block;">
-              <tr>
-                <td style="vertical-align:middle; padding-right:15px;">
-                  <img src="${logoUrl}" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px;" border="0" alt="Logo">
-                </td>
-                <td style="vertical-align:middle;">
-                  <span style="font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:600; color:#ffffff; line-height:1.2;">${title}</span>
-                  <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:2px;">${clubName} – Schützenstube Muhen</div>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-      <div style="padding:28px 25px; color:#333333; line-height:1.6; font-size:15px;">
-        ${bodyHtml}
-      </div>
-      <div style="background:#f8f9fa; padding:15px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center; line-height:1.6;">
-        <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
-        Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color:#0284c7; text-decoration:none;">sportschuetzen.muhen@gmail.com</a><br>
-        <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Facebook</a>
-      </div>
-    </div>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:650px;margin:0 auto;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;background-color:#ffffff;border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;">
+      <tr>
+        <td style="background-color:${bannerColor}; padding:18px 25px; text-align:left; vertical-align:middle;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+            <tr>
+              <td style="vertical-align:middle; padding-right:15px; width:44px;">
+                <img src="${logoUrl}" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:2px solid rgba(255,255,255,0.2);" border="0" alt="Logo">
+              </td>
+              <td style="vertical-align:middle;">
+                <div style="font-family:'Segoe UI',Arial,sans-serif; font-size:19px; font-weight:600; color:#ffffff; line-height:1.2;">${title}</div>
+                <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:3px;">${clubName} – Schützenstube Muhen</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:26px 25px 22px 25px; color:#333333; line-height:1.6; font-size:15px;">
+          ${bodyHtml}
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f8f9fa; padding:15px 25px; border-top:1px solid #eeeeee; font-size:11px; color:#64748b; text-align:center; line-height:1.6;">
+          <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+          Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color:#0284c7; text-decoration:none;">sportschuetzen.muhen@gmail.com</a><br>
+          <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color:#0284c7; text-decoration:none; font-weight:500;">Facebook</a>
+        </td>
+      </tr>
+    </table>
   `;
 }
 

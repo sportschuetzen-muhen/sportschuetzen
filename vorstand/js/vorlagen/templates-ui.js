@@ -221,7 +221,17 @@
         '{absender_vorname}', '{absender_nachname}', '{absender_funktion}', '{absender_email}', '{absender_mobil}'
       ];
     } else if (currentCat === 'brief') {
-      categoryPlaceholders = ['{betreff}', '{datum}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
+      if (currentTemplate.code === 'tm_aufgebot') {
+        categoryPlaceholders = ['{wettkaempfe}', '{wettkaempfe_liste}', '{pdf_liste}', '{absender_name}'];
+      } else if (currentTemplate.code === 'gruppenanmeldung') {
+        categoryPlaceholders = ['{anlass}', '{gruppen_tabellen}', '{absender_name}'];
+      } else if (currentTemplate.code === 'jm_standblatt_eingereicht') {
+        categoryPlaceholders = ['{vorname}', '{anlass}', '{punkte}', '{max_punkte}', '{prozent}', '{proxy_info}', '{info_banner}', '{detail_tabelle}', '{beleg_button}'];
+      } else if (currentTemplate.code === 'jm_standblatt_freigegeben') {
+        categoryPlaceholders = ['{vorname}', '{anlass}', '{punkte}', '{max_punkte}', '{prozent}'];
+      } else {
+        categoryPlaceholders = ['{betreff}', '{datum}', '{vorname}', '{nachname}', '{strasse}', '{plz}', '{ort}'];
+      }
     }
 
     const placeholdersHtml = categoryPlaceholders.map(ph => `
@@ -756,26 +766,31 @@
 
     return `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background:#ffffff;">
-        <!-- Header Banner -->
-        <div style="background-color: ${bannerColor}; color: #ffffff; padding: 18px 20px; text-align: center;">
-          <h4 style="margin: 0 0 3px 0; font-size: 17px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;">SPORTSCHÜTZEN MUHEN</h4>
-          <p style="margin: 0; font-size: 11.5px; opacity: 0.9; color: #e2e8f0;">Schiessanlage Rüteli · Vermietung Schützenstube</p>
-        </div>
-
-        <!-- Betreffzeile -->
-        <div style="background: #f8fafc; padding: 10px 18px; border-bottom: 1px solid #e2e8f0; font-size: 12.5px; color: #334155;">
-          <strong>Betreff:</strong> <span class="text-primary fw-bold">${escapeHtml(renderedSubject)}</span>
+        <!-- Header Banner mit Vereinslogo -->
+        <div style="background-color: ${bannerColor}; padding: 18px 22px; color: #ffffff;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; width:100%;">
+            <tr>
+              <td style="vertical-align:middle; padding-right:15px; width:44px;">
+                <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png" width="38" height="38" style="width:38px; height:38px; display:block; border-radius:6px; border:2px solid rgba(255,255,255,0.2);" border="0" alt="Logo">
+              </td>
+              <td style="vertical-align:middle; text-align:left;">
+                <div style="font-family:'Segoe UI',Arial,sans-serif; font-size:18px; font-weight:600; color:#ffffff; line-height:1.2;">${escapeHtml(renderedSubject)}</div>
+                <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:3px;">Sportschützen Muhen – Schützenstube Muhen</div>
+              </td>
+            </tr>
+          </table>
         </div>
 
         <!-- Body Content -->
-        <div style="padding: 20px 22px; color: #1e293b; font-size: 13.5px; line-height: 1.6;">
+        <div style="padding: 24px 22px 20px 22px; color: #1e293b; font-size: 14px; line-height: 1.6;">
           ${finalBodyHtml}
         </div>
 
         <!-- Club Footer -->
-        <div style="background-color: #f1f5f9; padding: 12px 18px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5;">
-          <strong>Sportschützen Muhen</strong> (gegründet 1919) · Schiessanlage Rüteli, 5037 Muhen<br>
-          Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" style="color: #0284c7; text-decoration: none;">www.sportschuetzen-muhen.ch</a> · E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color: #0284c7; text-decoration: none;">sportschuetzen.muhen@gmail.com</a>
+        <div style="background-color: #f8fafc; padding: 15px 22px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b; line-height: 1.6;">
+          <strong>Sportschützen Muhen</strong> (gegründet 1919) &bull; Schiessanlage Rüteli &bull; 5037 Muhen<br>
+          Web: <a href="https://sportschuetzen-muhen.ch" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none;">www.sportschuetzen-muhen.ch</a> &bull; E-Mail: <a href="mailto:sportschuetzen.muhen@gmail.com" style="color: #0284c7; text-decoration: none;">sportschuetzen.muhen@gmail.com</a><br>
+          <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none; font-weight: 500;">Instagram</a> &bull; <a href="https://www.facebook.com/SportschuetzenMuhen/?locale=de_DE" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none; font-weight: 500;">Facebook</a>
         </div>
       </div>
     `;

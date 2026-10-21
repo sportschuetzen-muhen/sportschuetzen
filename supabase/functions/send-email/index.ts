@@ -53,6 +53,14 @@ function encodeSubject(str: string): string {
   return `=?UTF-8?B?${btoa(binary)}?=`;
 }
 
+// Hilfsfunktion: RFC 2047 MIME Encoding für Header-Phrasen (Display-Names in From/To/Cc)
+function encodeHeaderPhrase(str: string): string {
+  if (/^[\x20-\x7E]+$/.test(str) && !/[<>\"]/.test(str)) {
+    return `"${str}"`;
+  }
+  return encodeSubject(str);
+}
+
 // SMTP Client mittels Deno TCP / TLS
 class SmtpClient {
   private conn: Deno.TlsConn | Deno.TcpConn | null = null;
@@ -204,7 +212,7 @@ Deno.serve(async (req) => {
 
   const senderEmail = payload.senderEmail || smtpUser;
   const senderName = payload.senderName || "Sportschützen Muhen";
-  const fromHeader = `"${senderName}" <${senderEmail}>`;
+  const fromHeader = `${encodeHeaderPhrase(senderName)} <${senderEmail}>`;
 
   // CC bereinigen: Duplikate entfernen, niemals Absender in CC setzen, und Adressen ausschliessen, die bereits in 'recipients' stehen
   const recipientSet = new Set(recipients.map(r => r.toLowerCase()));

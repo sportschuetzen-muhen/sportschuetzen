@@ -1222,7 +1222,7 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
 
             const isVerified = _currentOcrAnalysis && _currentOcrAnalysis.verified;
             const perf = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(1) : '100.0';
-            const subject = isVerified
+            const defaultSubject = isVerified
                 ? `Bestätigung: Eingang Standblatt – ${anlass || 'Auswärtiges Schiessen'} (${erzielt} Pkt)`
                 : `Eingang bestätigt: Meldung (${erzielt} Pkt) – ${anlass || 'Auswärtiges Schiessen'}`;
 
@@ -1236,54 +1236,87 @@ document.getElementById("uploadForm").onsubmit = async (e) => {
                      <strong>ℹ️ Hinweis zur Verarbeitung:</strong> Dein Standblatt-Foto konnte automatisch noch nicht vollständig zweifelsfrei zugeordnet werden. Dein Schützenmeister wird das Resultat <strong>manuell prüfen und in die Jahresmeisterschaft übernehmen</strong>. Du musst nichts weiter unternehmen.
                    </div>`;
 
+            const detailTabelle = `
+                <table style="width:100%; border-collapse:collapse; margin:20px 0; background:#f9fafb; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;">
+                    <tr>
+                        <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; width:35%; color:#4b5563;">Schütze</td>
+                        <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${targetFullName} ${shooterToSubmit.lizenz ? `(Lizenz: ${shooterToSubmit.lizenz})` : ''}${shooterToSubmit.isProxy ? `<br><small style="color:#6b7280;">(Eingereicht via ${user.vorname} ${user.nachname || ''})</small>` : ''}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; color:#4b5563;">Schiessanlass</td>
+                        <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${anlass || 'Auswärtiges Schiessen'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:12px 16px; font-weight:600; color:#4b5563;">Resultat</td>
+                        <td style="padding:12px 16px; color:#111827;">
+                            <span style="font-size:18px; font-weight:bold; color:${headerColor};">${erzielt}</span> / ${maximal} Pkt.
+                            <span style="color:#6b7280; font-size:13px; margin-left:6px;">(${perf}%)</span>
+                        </td>
+                    </tr>
+                </table>
+            `;
+
+            const belegButton = fileUrl ? `
+                <div style="margin:20px 0; text-align:center;">
+                    <a href="${fileUrl}" target="_blank" style="display:inline-block; background:#0284c7; color:#ffffff; font-weight:600; padding:10px 20px; border-radius:6px; text-decoration:none; font-size:14px;">
+                        📄 Standblatt-Beleg anzeigen
+                    </a>
+                </div>` : '';
+
+            // Vorlage jm_standblatt_eingereicht aus Supabase laden
+            let tplSubject = defaultSubject;
+            let tplBody = '';
+            try {
+                const tplRes = await fetch(`${SUPABASE_REST_URL}/document_templates?code=eq.jm_standblatt_eingereicht&select=mail_subject,mail_body`, {
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+                });
+                if (tplRes.ok) {
+                    const tplData = await tplRes.json();
+                    if (tplData && tplData[0]) {
+                        if (tplData[0].mail_subject) tplSubject = tplData[0].mail_subject;
+                        if (tplData[0].mail_body) tplBody = tplData[0].mail_body;
+                    }
+                }
+            } catch (_) {}
+
+            let finalSubject = tplSubject
+                .replace(/\{anlass\}/gi, anlass || 'Auswärtiges Schiessen')
+                .replace(/\{punkte\}/gi, String(erzielt));
+
+            let bodyContent = tplBody || `
+                <p>Hallo <strong>{vorname}</strong>,</p>
+                <p>vielen Dank für deine Meldung über <strong>{punkte} Punkte</strong> für das <strong>{anlass}</strong>{proxy_info}.</p>
+                {info_banner}
+                {detail_tabelle}
+                {beleg_button}
+                <p style="font-size:13px; color:#6b7280; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:16px;">
+                    Sobald die Freigabe durch den Schützenmeister erfolgt ist, erscheint das Resultat offiziell in der Jahresmeisterschaft.<br>
+                    <a href="https://www.sportschuetzen-muhen.ch/resultate/aktuelles_Jahr/jahresmeisterschaft" style="color:#0284c7; text-decoration:none;">Zur Online-Rangliste</a>
+                </p>
+                <p style="font-size:14px; margin-top:20px; color:#374151;">
+                    Guet Schuss!<br>
+                    <strong>Sportschützen Muhen</strong>
+                </p>
+            `;
+
+            bodyContent = bodyContent
+                .replace(/\{vorname\}/gi, user.vorname || 'Schütze')
+                .replace(/\{punkte\}/gi, String(erzielt))
+                .replace(/\{max_punkte\}/gi, String(maximal))
+                .replace(/\{prozent\}/gi, String(perf))
+                .replace(/\{anlass\}/gi, anlass || 'Auswärtiges Schiessen')
+                .replace(/\{proxy_info\}/gi, shooterToSubmit.isProxy ? ` (eingereicht für <strong>${targetFullName}</strong>)` : '')
+                .replace(/\{info_banner\}/gi, infoBanner)
+                .replace(/\{detail_tabelle\}/gi, detailTabelle)
+                .replace(/\{beleg_button\}/gi, belegButton);
+
             const htmlBody = `
                 <div style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width:620px; margin:0 auto; padding:24px; color:#1f2937; line-height:1.5;">
                     <div style="border-bottom:2px solid ${headerColor}; padding-bottom:12px; margin-bottom:20px;">
                         <h2 style="color:${headerColor}; margin:0; font-size:20px;">${headerTitle}</h2>
                         <div style="font-size:13px; color:#6b7280; margin-top:4px;">Sportschützen Muhen · Jahresmeisterschaft</div>
                     </div>
-
-                    <p style="font-size:15px; margin-bottom:16px;">
-                        Hallo <strong>${user.vorname || 'Schütze'}</strong>,<br>
-                        vielen Dank für deine Meldung über <strong>${erzielt} Punkte</strong> für das <strong>${anlass || 'Auswärtiges Schiessen'}</strong>${shooterToSubmit.isProxy ? ` (eingereicht für <strong>${targetFullName}</strong>)` : ''}.
-                    </p>
-
-                    ${infoBanner}
-
-                    <table style="width:100%; border-collapse:collapse; margin:20px 0; background:#f9fafb; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;">
-                        <tr>
-                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; width:35%; color:#4b5563;">Schütze</td>
-                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${targetFullName} ${shooterToSubmit.lizenz ? `(Lizenz: ${shooterToSubmit.lizenz})` : ''}${shooterToSubmit.isProxy ? `<br><small style="color:#6b7280;">(Eingereicht via ${user.vorname} ${user.nachname || ''})</small>` : ''}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; font-weight:600; color:#4b5563;">Schiessanlass</td>
-                            <td style="padding:12px 16px; border-bottom:1px solid #e5e7eb; color:#111827;">${anlass || 'Auswärtiges Schiessen'}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding:12px 16px; font-weight:600; color:#4b5563;">Resultat</td>
-                            <td style="padding:12px 16px; color:#111827;">
-                                <span style="font-size:18px; font-weight:bold; color:${headerColor};">${erzielt}</span> / ${maximal} Pkt.
-                                <span style="color:#6b7280; font-size:13px; margin-left:6px;">(${perf}%)</span>
-                            </td>
-                        </tr>
-                    </table>
-
-                    ${fileUrl ? `
-                    <div style="margin:20px 0; text-align:center;">
-                        <a href="${fileUrl}" target="_blank" style="display:inline-block; background:#0284c7; color:#ffffff; font-weight:600; padding:10px 20px; border-radius:6px; text-decoration:none; font-size:14px;">
-                            📄 Standblatt-Beleg anzeigen
-                        </a>
-                    </div>` : ''}
-
-                    <p style="font-size:13px; color:#6b7280; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:16px;">
-                        Sobald die Freigabe durch den Schützenmeister erfolgt ist, erscheint das Resultat offiziell in der Jahresmeisterschaft.<br>
-                        <a href="https://www.sportschuetzen-muhen.ch/resultate/aktuelles_Jahr/jahresmeisterschaft" style="color:#0284c7; text-decoration:none;">Zur Online-Rangliste</a>
-                    </p>
-
-                    <p style="font-size:14px; margin-top:20px; color:#374151;">
-                        Guet Schuss!<br>
-                        <strong>Sportschützen Muhen</strong>
-                    </p>
+                    ${bodyContent}
                 </div>
             `;
 

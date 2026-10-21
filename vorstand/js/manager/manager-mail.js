@@ -277,7 +277,18 @@ async function executeMailSend() {
             .filter(([k, v]) => v && k !== 'allMembers')
             .map(([k]) => moduleNames[k] || k);
 
-        const subject = `Aufgebot ${selectedModules.join(' & ')}`;
+        // 1. Vorlage tm_aufgebot aus Supabase / Cache laden
+        let tpl = (window._docTemplatesData || []).find(t => t.code === 'tm_aufgebot' || t.id === 'tm_aufgebot');
+        if (!tpl) {
+            const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
+            if (supa) {
+                const { data } = await supa.from('document_templates').select('*').eq('code', 'tm_aufgebot').maybeSingle();
+                if (data) tpl = data;
+            }
+        }
+
+        const wettkaempfeStr = selectedModules.join(' & ');
+        const wettkaempfeListe = selectedModules.map(n => `<li style="margin-bottom:4px;"><strong>${n}</strong></li>`).join('');
 
         const pdfsToAttach = Object.entries(mailWizard.pdfAttachments)
             .filter(([k, v]) => v && k !== 'none')
@@ -299,10 +310,23 @@ async function executeMailSend() {
             }
         }
 
-        const pdfList = pdfsToAttach.map(k => `• ${moduleNames[k]}`).join('\n');
-        const bodyText = `Hallo\n\nIm Anhang findest du das Aufgebot für:\n${selectedModules.map(n => `• ${n}`).join('\n')}\n\n`
-            + (pdfList ? `Angehängte PDFs:\n${pdfList}\n\n` : '')
-            + `Freundliche Grüsse\nSportschützen Muhen`;
+        const pdfListHtml = pdfsToAttach.length 
+            ? `<div style="margin:12px 0; background-color:#f8fafc; border-left:3px solid #0284c7; padding:10px 14px; border-radius:4px;"><span style="font-size:12.5px; color:#475569; font-weight:600;">Angehängte PDF-Aufgebote:</span><ul style="margin:4px 0 0 0; padding-left:18px; font-size:13px; color:#334155;">${pdfsToAttach.map(k => `<li>${moduleNames[k]}</li>`).join('')}</ul></div>`
+            : '';
+
+        const absenderName = (window._currentLoggedInUser && (window._currentLoggedInUser.name || window._currentLoggedInUser.vorname))
+            ? `${window._currentLoggedInUser.vorname || ''} ${window._currentLoggedInUser.nachname || ''}`.trim()
+            : 'Team Manager';
+
+        let subject = tpl?.mail_subject || `Aufgebot {wettkaempfe}`;
+        let bodyContent = tpl?.mail_body || `<p>Hallo</p><p>Im Anhang findest du das offizielle Aufgebot für:</p>{wettkaempfe_liste}{pdf_liste}<p>Wir wünschen allen Schützinnen und Schützen «Guet Schuss» und viel Erfolg!</p><p>Freundliche Grüsse</p><p>Sportschützen Muhen</p><p>{absender_name}<br>Team Manager</p>`;
+
+        subject = subject.replace(/\{wettkaempfe\}/gi, wettkaempfeStr);
+        bodyContent = bodyContent
+            .replace(/\{wettkaempfe\}/gi, wettkaempfeStr)
+            .replace(/\{wettkaempfe_liste\}/gi, `<ul style="margin:6px 0 12px 0; padding-left:20px; font-size:14px; line-height:1.6;">${wettkaempfeListe}</ul>`)
+            .replace(/\{pdf_liste\}/gi, pdfListHtml)
+            .replace(/\{absender_name\}/gi, absenderName);
 
         const engineAttachments = attachments.map(a => ({
             filename: a.fileName,
@@ -314,10 +338,10 @@ async function executeMailSend() {
             ? window.renderClubEmailHtml({
                 title: subject,
                 subtitle: 'Team Manager / Aufgebot',
-                contentHtml: `<p>${bodyText.replace(/\n/g, '<br>')}</p>`,
-                senderInfo: 'Team Manager\nSportschützen Muhen'
+                contentHtml: bodyContent,
+                senderInfo: ''
             })
-            : `<div style="font-family: sans-serif; font-size: 14px;">${bodyText.replace(/\n/g, '<br>')}</div>`;
+            : `<div style="font-family: sans-serif; font-size: 14px; line-height:1.6;">${bodyContent}</div>`;
 
         if (typeof window.sendMailViaEngine !== 'function') {
             throw new Error("Zentrale Mail-Engine (sendMailViaEngine) ist nicht verfügbar.");

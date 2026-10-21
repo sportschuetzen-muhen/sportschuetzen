@@ -106,3 +106,11 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 * **Storno-Feedback (Public / `anon`):** Mieter dürfen über `storno_feedback.html` Stornorückmeldungen ohne vorherigen Login einreichen (`rental_cancellation_feedbacks` INSERT-Policy für `anon`).
 * **Verwalten («View & Manage» Modell):** Einsicht (`vermietung.view`) und Bearbeitung/Freigabe (`vermietung.manage`) sind für autorisierte Rollen (`vermieter`, `vorstand`, `admin`) reserviert.
 
+---
+
+## 5. E-Mail-Layout, MSO-Kompatibilität & Vorlagen (Oktober 2026)
+
+* **Einheitliches Tabellen-Layout & MSO-Fix:** Alle Vermietungs-Mails (`vm_anfrage`, `vm_vertrag`, `vm_bestaetigung`, `vm_mahnung`, `vm_storno`, `vm_storno_verzug`) nutzen eine 100 % Outlook-kompatible Tabellenstruktur mit Vereinslogo im Farb-Banner und standardisiertem Vereins-Footer. Der Textinhalt liegt in `<td style="padding:26px 25px 22px 25px;">`, um das Kollabieren von DIV-Paddings im Microsoft Word Rendering Engine von Outlook zu verhindern.
+* **RFC 2047 Display-Name Encoding:** Der Absender-Header wird standardkonform kodiert (`=?UTF-8?B?...?=`), womit Sonderzeichen in `Sportschützen Muhen` in Microsoft Outlook ohne Zeichensatzfehler (`Ã¼`) dargestellt werden.
+* **Signatur-Hierarchie:** In allen Vorlagen steht der Vereinsname **«Sportschützen Muhen»** in der Signatur konsistent oben, gefolgt vom Namen und den Kontaktdaten des zuständigen Vermieters (`{vermieter_name}`).
+

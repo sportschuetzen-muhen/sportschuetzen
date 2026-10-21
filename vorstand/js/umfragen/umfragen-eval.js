@@ -461,40 +461,23 @@ async function generateGroupMail() {
         }
     }
 
-    // HTML generieren – modernes Layout mit Logo links
-    let html = `
-    <div style="font-family: Arial, sans-serif; font-size:14px; color:#333; max-width:700px;">
-
-        <!-- HEADER: Logo links -->
-        <div style="display:flex; align-items:center; margin-bottom:24px; padding-bottom:14px; border-bottom:2px solid #e9ecef;">
-            <img src="https://sportschuetzen-muhen.github.io/sportschuetzen/icons/icon-512.png"
-                 width="48" height="48"
-                 style="border-radius:8px; margin-right:16px; flex-shrink:0;" />
-            <div style="font-size:13px; color:#6c757d; line-height:1.4;">
-                <span style="font-size:12px;">Gruppenanmeldung – ${eventTitle}</span>
-            </div>
-        </div>
-
-        <p>Guten Tag</p>
-        <p>Wir nehmen gerne teil an eurem Anlass <b>${eventTitle}</b>.</p>
-        <p style="color:#555;">Ein allfälliger Gruppengewinn ist bitte mittels beiliegendem Einzahlungsschein zu begleichen.</p>
-    `;
-
+    // 1. Gruppentabellen generieren
+    let groupsTablesHtml = '';
     groups.forEach((group, idx) => {
         const isFull = group.length === 5;
         const tnChar = isFull ? 'G' : 'E';
         
-        html += `
+        groupsTablesHtml += `
         <div style="margin-top:25px;">
-            ${isFull ? `<h3 style="margin-bottom:8px; color:#0d6efd;">Muhen ${idx + 1}</h3>` : `<h3 style="margin-bottom:8px; color:#6c757d;">Einzelschützen</h3>`}
+            ${isFull ? `<h3 style="margin-bottom:8px; color:#0d6efd; font-size:16px;">Muhen ${idx + 1}</h3>` : `<h3 style="margin-bottom:8px; color:#6c757d; font-size:16px;">Einzelschützen</h3>`}
 
             <table style="width:100%; border-collapse:collapse; font-size:13px;">
                 <thead>
                     <tr style="background:#f1f3f5;">
-                        <th style="border:1px solid #ddd; padding:6px;">TN</th>
+                        <th style="border:1px solid #ddd; padding:6px; text-align:center;">TN</th>
                         <th style="border:1px solid #ddd; padding:6px;">Lizenz</th>
                         <th style="border:1px solid #ddd; padding:6px;">Name Vorname</th>
-                        <th style="border:1px solid #ddd; padding:6px;">Jg</th>
+                        <th style="border:1px solid #ddd; padding:6px; text-align:center;">Jg</th>
                         <th style="border:1px solid #ddd; padding:6px;">Strasse</th>
                         <th style="border:1px solid #ddd; padding:6px;">PLZ Ort</th>
                     </tr>
@@ -503,12 +486,12 @@ async function generateGroupMail() {
         `;
 
         group.forEach(p => {
-            html += `
+            groupsTablesHtml += `
                 <tr>
                     <td style="border:1px solid #ddd; padding:6px; text-align:center; font-weight:bold;">${tnChar}</td>
                     <td style="border:1px solid #ddd; padding:6px;">${p.lizenz}</td>
                     <td style="border:1px solid #ddd; padding:6px;">${p.nachname} ${p.vorname}</td>
-                    <td style="border:1px solid #ddd; padding:6px;">${p.jahrgang}</td>
+                    <td style="border:1px solid #ddd; padding:6px; text-align:center;">${p.jahrgang}</td>
                     <td style="border:1px solid #ddd; padding:6px;">${p.strasse}</td>
                     <td style="border:1px solid #ddd; padding:6px;">${p.plz} ${p.ort}</td>
                 </tr>
@@ -517,7 +500,7 @@ async function generateGroupMail() {
 
         // leere Zeilen auffüllen → wichtig für saubere Tabelle
         for (let i = group.length; i < 5; i++) {
-            html += `
+            groupsTablesHtml += `
                 <tr>
                     <td style="border:1px solid #ddd; padding:6px;">&nbsp;</td>
                     <td style="border:1px solid #ddd; padding:6px;">&nbsp;</td>
@@ -529,7 +512,7 @@ async function generateGroupMail() {
             `;
         }
 
-        html += `
+        groupsTablesHtml += `
                 </tbody>
             </table>
 
@@ -540,17 +523,34 @@ async function generateGroupMail() {
         `;
     });
 
-    html += `
-        <p style="margin-top:30px;">Besten Dank.</p>
+    // 2. Vorlage gruppenanmeldung aus Supabase / Cache laden
+    let tpl = (window._docTemplatesData || []).find(t => t.code === 'gruppenanmeldung' || t.id === 'gruppenanmeldung');
+    if (!tpl) {
+        const supa = (typeof getGVSupabaseClient === 'function') ? getGVSupabaseClient() : (window.supabaseClient || null);
+        if (supa) {
+            const { data } = await supa.from('document_templates').select('*').eq('code', 'gruppenanmeldung').maybeSingle();
+            if (data) tpl = data;
+        }
+    }
 
-        <p>
-        Freundliche Grüsse<br><br>
-        Sportschützen Muhen<br><br>
-        ${senderName}
-        ${rolleExtern ? `<br>${rolleExtern}` : ''}
-        </p>
-    </div>
-    `;
+    let subject = tpl?.mail_subject || `Gruppenanmeldung Sportschützen Muhen für {anlass}`;
+    let bodyContent = tpl?.mail_body || `<p>Guten Tag</p><p>Wir nehmen gerne teil an eurem Anlass <strong>{anlass}</strong>.</p><p style="color:#555;">Ein allfälliger Gruppengewinn ist bitte mittels beiliegendem Einzahlungsschein zu begleichen.</p>{gruppen_tabellen}<p style="margin-top:25px;">Besten Dank für die Organisation und «Guet Schuss»!</p><p>Freundliche Grüsse</p><p>Sportschützen Muhen</p><p>{absender_name}</p>`;
+
+    const senderFull = `${senderName}${rolleExtern ? `<br>${rolleExtern}` : ''}`;
+    subject = subject.replace(/\{anlass\}/gi, eventTitle);
+    bodyContent = bodyContent
+        .replace(/\{anlass\}/gi, eventTitle)
+        .replace(/\{gruppen_tabellen\}/gi, groupsTablesHtml)
+        .replace(/\{absender_name\}/gi, senderFull);
+
+    const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+        ? window.renderClubEmailHtml({
+            title: subject,
+            subtitle: `Gruppenanmeldung – ${eventTitle}`,
+            contentHtml: bodyContent,
+            senderInfo: ''
+        })
+        : `<div style="font-family: Arial, sans-serif; font-size:14px; color:#333; max-width:700px;">${bodyContent}</div>`;
 
     try {
         const recipient = prompt("Empfänger E-Mail-Adresse für die Gruppenanmeldung:", "info@sportschuetzen-muhen.ch");
@@ -559,8 +559,8 @@ async function generateGroupMail() {
         if (typeof window.sendMailViaEngine === 'function') {
             const mailRes = await window.sendMailViaEngine({
                 to: [recipient.trim()],
-                subject: `Gruppenanmeldung Sportschützen Muhen für ${eventTitle}`,
-                html: html,
+                subject: subject,
+                html: emailHtml,
                 module: 'umfragen'
             });
             if (!mailRes.success) {

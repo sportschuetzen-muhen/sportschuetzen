@@ -962,45 +962,47 @@ async function jmImportStandblatt(logId) {
                 if (mems && mems.length > 0 && mems[0].primary_email) shooterEmail = mems[0].primary_email;
             }
             const perf = maximal > 0 ? ((erzielt / maximal) * 100).toFixed(1) : '100.0';
-            const htmlBody = `
-                <div style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width:620px; margin:0 auto; padding:24px; color:#1f2937; line-height:1.5;">
-                    <div style="border-bottom:2px solid #2e7d32; padding-bottom:12px; margin-bottom:20px;">
-                        <h2 style="color:#2e7d32; margin:0; font-size:20px;">Resultat freigegeben: Jahresmeisterschaft</h2>
-                        <div style="font-size:13px; color:#6b7280; margin-top:4px;">Sportschützen Muhen</div>
-                    </div>
-                    <p style="font-size:15px;">Hallo <strong>${escapeHtml(finalVorname)}</strong>,</p>
-                    <p>dein Standblatt für das <strong>${escapeHtml(anlass)}</strong> wurde soeben vom Schützenmeister geprüft und erfolgreich in die Jahresmeisterschaft übernommen.</p>
-                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; margin:20px 0; text-align:center;">
-                        <div style="font-size:26px; font-weight:bold; color:#15803d;">${erzielt} Punkte</div>
-                        <div style="color:#4b5563; font-size:14px; margin-top:4px;">Max. ${maximal} Pkt · Leistung: <strong>${perf}%</strong></div>
-                    </div>
-                    <p style="font-size:14px;">
-                        <a href="https://www.sportschuetzen-muhen.ch/resultate/aktuelles_Jahr/jahresmeisterschaft" style="color:#0284c7; font-weight:600; text-decoration:none;">
-                            Zur Online-Rangliste der Jahresmeisterschaft →
-                        </a>
-                    </p>
-                    <p style="font-size:13px; color:#6b7280; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:16px;">
-                        Guet Schuss!<br>
-                        <strong>Sportschützen Muhen</strong>
-                    </p>
-                </div>
-            `;
-            fetch("https://supabase-muhen.danfamily.uk/functions/v1/send-email", {
-                method: "POST",
-                headers: {
-                    "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M",
-                    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M",
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
+
+            // Vorlage jm_standblatt_freigegeben aus Supabase laden
+            let tpl = (window._docTemplatesData || []).find(t => t.code === 'jm_standblatt_freigegeben' || t.id === 'jm_standblatt_freigegeben');
+            if (!tpl) {
+                const { data } = await sb.from('document_templates').select('*').eq('code', 'jm_standblatt_freigegeben').maybeSingle();
+                if (data) tpl = data;
+            }
+
+            let subject = tpl?.mail_subject || `Jahresmeisterschaft: Resultat freigegeben – {anlass} ({punkte} Pkt)`;
+            let bodyContent = tpl?.mail_body || `<p>Hallo <strong>{vorname}</strong>,</p><p>dein Standblatt für das <strong>{anlass}</strong> wurde soeben vom Schützenmeister geprüft und erfolgreich in die Jahresmeisterschaft übernommen.</p><div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; margin:20px 0; text-align:center;"><div style="font-size:26px; font-weight:bold; color:#15803d;">{punkte} Punkte</div><div style="color:#4b5563; font-size:14px; margin-top:4px;">Max. {max_punkte} Pkt · Leistung: <strong>{prozent}%</strong></div></div><p style="font-size:14px;"><a href="https://www.sportschuetzen-muhen.ch/resultate/aktuelles_Jahr/jahresmeisterschaft" style="color:#0284c7; font-weight:600; text-decoration:none;">Zur Online-Rangliste der Jahresmeisterschaft →</a></p><p style="font-size:13px; color:#6b7280; margin-top:24px; border-top:1px solid #e5e7eb; padding-top:16px;">Guet Schuss!<br><strong>Sportschützen Muhen</strong></p>`;
+
+            subject = subject
+                .replace(/\{anlass\}/gi, anlass || 'Auswärtiges Schiessen')
+                .replace(/\{punkte\}/gi, String(erzielt));
+
+            bodyContent = bodyContent
+                .replace(/\{vorname\}/gi, escapeHtml(finalVorname) || 'Schütze')
+                .replace(/\{anlass\}/gi, escapeHtml(anlass) || 'Auswärtiges Schiessen')
+                .replace(/\{punkte\}/gi, String(erzielt))
+                .replace(/\{max_punkte\}/gi, String(maximal))
+                .replace(/\{prozent\}/gi, String(perf));
+
+            const emailHtml = (typeof window.renderClubEmailHtml === 'function')
+                ? window.renderClubEmailHtml({
+                    title: subject,
+                    subtitle: 'Jahresmeisterschaft / Resultat freigegeben',
+                    contentHtml: bodyContent,
+                    senderInfo: ''
+                })
+                : `<div style="font-family: sans-serif; font-size: 14px; line-height:1.6;">${bodyContent}</div>`;
+
+            if (typeof window.sendMailViaEngine === 'function') {
+                await window.sendMailViaEngine({
                     to: shooterEmail || undefined,
                     ccSystemMailKey: "Info_Mail_Standblatt_Upload",
-                    subject: `Jahresmeisterschaft: Resultat freigegeben – ${anlass} (${erzielt} Pkt)`,
-                    html: htmlBody,
-                    module: "jahresmeisterschaft",
+                    subject: subject,
+                    html: emailHtml,
+                    moduleRef: "jahresmeisterschaft",
                     recordId: logId
-                })
-            }).catch(e => console.warn("Mail-Versand nach Freigabe Warnung:", e));
+                });
+            }
         } catch (mailErr) {
             console.warn("Mail-Versand nach Freigabe fehlgeschlagen:", mailErr);
         }

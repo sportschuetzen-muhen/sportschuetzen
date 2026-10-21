@@ -458,5 +458,21 @@ ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
   - Versand des aktuellen Zwischenstands der Anmeldungen an den Vorstand via Schlüssel `Info_Mail_Vorstand` (inkl. Quote, Zusagen/Absagen-Listen und Menü-Zusammenfassung).
   - Beide Verteiler unterstützen Semikolon-getrennte Mehrfachempfänger und werden vollautomatisch über die Mail-Engine versendet.
 
-
-
+### 11.4 Vollständige Vorlagen-Konsolidierung & Outlook-Kompatibilität (Oktober 2026)
+- **RFC 2047 MIME-Header-Phrase-Encoding (`send-email/index.ts`):**
+  - Implementierung von `encodeHeaderPhrase()` in der Deno Edge Function `send-email`.
+  - Display-Namen in `From:`, `To:` und `Cc:` mit Nicht-ASCII-Zeichen (wie z. B. `Sportschützen Muhen`) werden standardkonform nach RFC 2047 Base64-enkodiert (`=?UTF-8?B?...?=`).
+  - Verhindert die fehlerhafte Dekodierung durch Microsoft Outlook Desktop als Latin-1 / ANSI (`SportschÃ¼tzen Muhen`).
+- **MSO / Word-Engine konforme Tabellen-Architektur:**
+  - In allen System- und Vermietungs-Mails (`vermietung-manager.js`, `schuetzenhaus_vermietung.html`, `templates-ui.js`) wurde die HTML-Struktur auf ein 100 % Outlook-kompatibles verschachteltes Tabellen-Layout umgestellt.
+  - Der Mail-Body ist in einer Tabellenzelle `<td style="padding:26px 25px 22px 25px;">` gekapselt, wodurch das bekannte MSO-Problem (Kollabieren von DIV-Margins/Paddings direkt unterhalb von Headern) behoben ist. Die Anrede ("Guten Tag ...") schliesst nun in allen Clients mit sauberem 26px Weissraum an das Header-Banner an.
+- **Konsolidierung externer Mails in `public.document_templates` (Single Source of Truth):**
+  - Vollständige Eliminierung von Hardcoded-E-Mail-Texten im Quellcode. Alle Fachmodule beziehen ihre Vorlagen zentral aus `document_templates`:
+    - `tm_aufgebot` (Team Manager): Dynamische Wettkampf- und PDF-Listen (`{wettkaempfe}`, `{wettkaempfe_liste}`, `{pdf_liste}`, `{absender_name}`).
+    - `gruppenanmeldung` (Umfragen/Events): Anmeldeschreiben an externe Veranstalter mit generierten Gruppentabellen (`{anlass}`, `{gruppen_tabellen}`, `{absender_name}`).
+    - `jm_standblatt_eingereicht` (Web-App Standblatt-Upload): Eingangsbestätigung an Schützen bei mobilem Upload mit Detailtabelle und Beleg-Link.
+    - `jm_standblatt_freigegeben` (Schützenmeister Inbox): Freigabe-Benachrichtigung mit Leistungsberechnung (`{punkte}`, `{max_punkte}`, `{prozent}`).
+  - **Harmonisierung der Signaturen:**
+    - In allen Vorlagen (`vm_anfrage`, `vm_vertrag`, `vm_storno`, `vm_storno_verzug` etc.) steht `Sportschützen Muhen` einheitlich in Zeile 1 über der Ansprechperson (`{vermieter_name}`).
+  - **Vorlagen-Cockpit:**
+    - `templates-ui.js` stellt für die neuen Vorlagen dynamische Platzhalter-Chips und eine 1:1 Live-Vorschau mit offiziellem Logo-Banner und Corporate Footer bereit.
