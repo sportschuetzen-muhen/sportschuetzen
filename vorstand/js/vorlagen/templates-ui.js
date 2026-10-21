@@ -94,6 +94,7 @@
       'vm_storno_verzug': 'Mail: Stornierung Zahlungsverzug',
       'vm_anfrage': 'Mail: Bestätigung Vorab-Terminanfrage',
       'vm_info_wirtschaft': 'Mail: Info Wirtschaft (Intern)',
+      'vm_bank_report': 'Mail: Rapport Bank-Mail-Eingang (Intern)',
       'freier_brief': 'Freier Vorstandsbrief'
     };
     if (friendlyMap[t.code?.toLowerCase()]) return friendlyMap[t.code.toLowerCase()];
@@ -745,6 +746,7 @@
     else if (templateCode === 'vm_storno') bannerColor = '#742a2a';
     else if (templateCode === 'vm_storno_verzug') bannerColor = '#7f1d1d';
     else if (templateCode === 'vm_info_wirtschaft') bannerColor = '#d97706';
+    else if (templateCode === 'vm_bank_report') bannerColor = '#1e40af';
 
     let renderedSubject = subject || '';
     let renderedBody = bodyText || '';
