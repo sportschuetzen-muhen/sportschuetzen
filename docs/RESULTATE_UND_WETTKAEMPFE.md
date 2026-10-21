@@ -160,8 +160,15 @@ In Supabase existiert kein physisches «Blatt-Kopieren» mehr. Jeder Datensatz i
 - Ein nativer Excel-Export (`exportResultateMatrixToExcel`) via SheetJS (`XLSX`) steht direkt in der Navigationsleiste sowie in der Matrix-Ansicht bereit.
 - Exportiert alle Runden, Schützen, Stellungen, Lizenzen, Runden-Punkte/Passen, Gesamttotale und Durchschnitte sowie eine automatisierte Summen- und Schnittzeile in eine sauber formatierte `.xlsx`-Arbeitsmappe (`Sportschuetzen_Muhen_<contest>_Matrix_<jahr>_<datum>.xlsx`).
 
-### 4.5 2-Blatt Excel-Export mit dynamischen Formeln (ExcelJS & Supabase Edge Function)
-- **Architektur:** Supabase Edge Function `export-results-excel` generiert ein professionelles 2-Blatt `.xlsx`-Arbeitsbuch direkt aus `public.contest_results` und `public.members`.
-- **Blatt 1 («Rohdaten»):** Flache normalisierte Datenbasis (`Schütze`, `Lizenz`, `Stellung`, `Runde`, `Mannschaft`, `Punkte`) mit dunkelblauem Header (`#1F4E79`), zentriertem Layout, Autofilter und definierten Spaltenbreiten.
-- **Blatt 2 («Auswertung»):** Dynamisches Dashboard mit nativen Excel-Formeln (`SUMIFS`, `AVERAGE`, `SUM`) für die Einzelschützen-Matrix (R1–R7, Total, Schnitt) sowie für die separate Mannschaftswertung (Muhen 1–3). Enthält formatierte Zahlen (`#,##0` bzw. `0.0`), Summen- und Schnittzeilen mit doppelter Rahmenlinie (`double border`) und explizit aktivierten Gitterlinien.
-- **Frontend-Integration:** Über den Testbutton `📊 Excel v2 (2-Blatt)` in der Runden-Subnavigation sowie in der Kompakt-Matrix wird die Edge Function aufgerufen und die Binärdatei direkt im Browser heruntergeladen.
+### 4.5 Konsolidierter 6-Reiter Excel-Export mit dynamischen Formeln (ExcelJS & Supabase Edge Function)
+- **Architektur:** Supabase Edge Function `export-results-excel` generiert ein konsolidiertes 6-Reiter `.xlsx`-Arbeitsbuch direkt aus `public.contest_results` und `public.members`.
+- **Reiter-Aufbau (3 Auswertungen zuerst, danach 3 Rohdaten-Blätter):**
+  1. `Auswertung_Mannschaft`: SMM Runden 1–7 mit dynamischen Formeln (`SUMIFS`, `SUM`, `AVERAGE`), absteigend sortiert nach `Schnitt (Ø)` (Spalte L).
+  2. `Auswertung_Gruppe`: SGM Runden 1–3 mit dynamischen Formeln, absteigend sortiert nach `Schnitt (Ø)` (Spalte H).
+  3. `Auswertung_Grenzland`: Grenzland-Cup Runden 1–3 mit dynamischen Formeln, absteigend sortiert nach `Schnitt (Ø)` (Spalte H).
+  4. `Rohdaten_Mannschaft`: Flache normalisierte Datenbasis (`Schütze`, `Lizenz`, `Stellung`, `Runde`, `Mannschaft`, `Punkte`).
+  5. `Rohdaten_Gruppe`: Flache normalisierte Datenbasis inkl. `Passe 1` und `Passe 2`.
+  6. `Rohdaten_Grenzland`: Flache normalisierte Datenbasis für Grenzland.
+- **Design & Formeln:** Dunkelblauer Header (`#1F4E79`) auf allen Rohdaten, Akzent-Header (`#D9E1F2`) auf Auswertungen, Ganzzahlen `#,##0`, Schnitte `0.0`, Doppelrahmen (`double border`) an Summen- und Schnittzeilen sowie aktivierte Gitterlinien auf allen 6 Blättern.
+- **Frontend-Integration:** Über den Button `📊 Excel (3-in-1 Mappe)` im Resultate-Cockpit wird die Gesamtauswertung mit einem Klick generiert und heruntergeladen.
+

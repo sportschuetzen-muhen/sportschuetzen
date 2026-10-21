@@ -686,8 +686,8 @@ function renderRoundNavigation() {
       <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center ms-1" onclick="exportResultateMatrixToExcel()" title="Kompakt-Matrix als Excel-Datei (.xlsx) herunterladen">
         <i class="fas fa-file-excel me-1.5"></i>Excel Export
       </button>
-      <button type="button" class="btn btn-sm btn-outline-success fw-bold shadow-sm d-inline-flex align-items-center ms-1 btn-export-excel-v2" onclick="exportResultateExcelV2()" title="Testbutton: 2-Blatt Excel-Auswertung (Rohdaten & Dashboard-Formeln via ExcelJS)">
-        <i class="fas fa-file-excel me-1.5 text-success"></i>📊 Excel v2 (2-Blatt)
+      <button type="button" class="btn btn-sm btn-outline-success fw-bold shadow-sm d-inline-flex align-items-center ms-1 btn-export-excel-v2" onclick="exportResultateExcelV2()" title="Konsolidierte 6-Reiter Excel-Arbeitsmappe (Mannschaft, Gruppe, Grenzland – 3x Auswertung sortiert nach Schnitt, 3x Rohdaten)">
+        <i class="fas fa-file-excel me-1.5 text-success"></i>📊 Excel (3-in-1 Mappe)
       </button>
     </div>
     <div class="small text-muted">
@@ -859,8 +859,8 @@ function renderMatrixView(wrap) {
         <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center" onclick="exportResultateMatrixToExcel()" title="Kompakt-Matrix aller Runden nach Excel (.xlsx) exportieren">
           <i class="fas fa-file-excel me-1.5"></i>Excel (.xlsx)
         </button>
-        <button type="button" class="btn btn-sm btn-outline-success fw-bold shadow-sm d-inline-flex align-items-center btn-export-excel-v2" onclick="exportResultateExcelV2()" title="Testbutton: 2-Blatt Excel-Auswertung (Rohdaten & Dashboard-Formeln via ExcelJS)">
-          <i class="fas fa-file-excel me-1.5 text-success"></i>Excel v2 (2-Blatt)
+        <button type="button" class="btn btn-sm btn-outline-success fw-bold shadow-sm d-inline-flex align-items-center btn-export-excel-v2" onclick="exportResultateExcelV2()" title="Konsolidierte 6-Reiter Excel-Arbeitsmappe (Mannschaft, Gruppe, Grenzland – 3x Auswertung sortiert nach Schnitt, 3x Rohdaten)">
+          <i class="fas fa-file-excel me-1.5 text-success"></i>Excel (3-in-1)
         </button>
       </div>
     </div>
@@ -1282,18 +1282,17 @@ function exportResultateMatrixToExcel() {
 window.exportResultateMatrixToExcel = exportResultateMatrixToExcel;
 
 /**
- * Neuer 2-Blatt Excel-Export mit ExcelJS via Supabase Edge Function:
- * Blatt 1: "Rohdaten" (Flache tabellarische Liste / Normalform)
- * Blatt 2: "Auswertung" (Dashboard mit dynamischen Formeln SUMIFS, AVERAGE, SUM)
+ * Konsolidierter 6-Reiter Excel-Export mit ExcelJS via Supabase Edge Function:
+ * - 3 Auswertungs-Reiter zuerst: Auswertung_Mannschaft, Auswertung_Gruppe, Auswertung_Grenzland (absteigend nach Schnitt)
+ * - 3 Rohdaten-Reiter danach: Rohdaten_Mannschaft, Rohdaten_Gruppe, Rohdaten_Grenzland
  */
 async function exportResultateExcelV2() {
-  const contestType = window._resultateContestType || "mannschaft";
   const year = window._resultateYear || new Date().getFullYear();
 
   const buttons = document.querySelectorAll('.btn-export-excel-v2');
   buttons.forEach(btn => {
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>Generiere 2-Blatt Excel...';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>Generiere 3-in-1 Excel...';
   });
 
   try {
@@ -1303,7 +1302,7 @@ async function exportResultateExcelV2() {
     const session = window.authModule?.getSession?.() || null;
     const token = session?.access_token || anonKey;
 
-    const endpoint = `${supabaseUrl}/functions/v1/export-results-excel?year=${encodeURIComponent(year)}&contest_type=${encodeURIComponent(contestType)}`;
+    const endpoint = `${supabaseUrl}/functions/v1/export-results-excel?year=${encodeURIComponent(year)}`;
 
     const response = await fetch(endpoint, {
       method: "GET",
@@ -1327,7 +1326,7 @@ async function exportResultateExcelV2() {
     const a = document.createElement("a");
     a.href = downloadUrl;
     const todayIso = new Date().toISOString().split("T")[0];
-    a.download = `Sportschuetzen_Muhen_${contestType.toUpperCase()}_Auswertung_${year}_${todayIso}.xlsx`;
+    a.download = `Sportschuetzen_Muhen_Wettkaempfe_Gesamtauswertung_${year}_${todayIso}.xlsx`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -1336,17 +1335,18 @@ async function exportResultateExcelV2() {
     }, 150);
 
     if (typeof showToast === 'function') {
-      showToast("Excel-Auswertung (2-Blatt) erfolgreich generiert!", "success");
+      showToast("3-in-1 Excel-Gesamtauswertung erfolgreich generiert!", "success");
     }
   } catch (err) {
-    console.error("❌ Fehler beim Excel-Export v2:", err);
-    alert("Fehler beim Erstellen der Excel-Auswertung: " + (err.message || String(err)));
+    console.error("❌ Fehler beim konsolidierten Excel-Export:", err);
+    alert("Fehler beim Erstellen der Excel-Gesamtauswertung: " + (err.message || String(err)));
   } finally {
     buttons.forEach(btn => {
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-file-excel me-1.5 text-success"></i>📊 Excel v2 (2-Blatt)';
+      btn.innerHTML = '<i class="fas fa-file-excel me-1.5 text-success"></i>📊 Excel (3-in-1 Mappe)';
     });
   }
 }
 window.exportResultateExcelV2 = exportResultateExcelV2;
+
 
