@@ -159,3 +159,9 @@ In Supabase existiert kein physisches «Blatt-Kopieren» mehr. Jeder Datensatz i
 ### 4.4 Kompakt-Matrix Excel-Export (Grenzland, Gruppe, Mannschaft)
 - Ein nativer Excel-Export (`exportResultateMatrixToExcel`) via SheetJS (`XLSX`) steht direkt in der Navigationsleiste sowie in der Matrix-Ansicht bereit.
 - Exportiert alle Runden, Schützen, Stellungen, Lizenzen, Runden-Punkte/Passen, Gesamttotale und Durchschnitte sowie eine automatisierte Summen- und Schnittzeile in eine sauber formatierte `.xlsx`-Arbeitsmappe (`Sportschuetzen_Muhen_<contest>_Matrix_<jahr>_<datum>.xlsx`).
+
+### 4.5 2-Blatt Excel-Export mit dynamischen Formeln (ExcelJS & Supabase Edge Function)
+- **Architektur:** Supabase Edge Function `export-results-excel` generiert ein professionelles 2-Blatt `.xlsx`-Arbeitsbuch direkt aus `public.contest_results` und `public.members`.
+- **Blatt 1 («Rohdaten»):** Flache normalisierte Datenbasis (`Schütze`, `Lizenz`, `Stellung`, `Runde`, `Mannschaft`, `Punkte`) mit dunkelblauem Header (`#1F4E79`), zentriertem Layout, Autofilter und definierten Spaltenbreiten.
+- **Blatt 2 («Auswertung»):** Dynamisches Dashboard mit nativen Excel-Formeln (`SUMIFS`, `AVERAGE`, `SUM`) für die Einzelschützen-Matrix (R1–R7, Total, Schnitt) sowie für die separate Mannschaftswertung (Muhen 1–3). Enthält formatierte Zahlen (`#,##0` bzw. `0.0`), Summen- und Schnittzeilen mit doppelter Rahmenlinie (`double border`) und explizit aktivierten Gitterlinien.
+- **Frontend-Integration:** Über den Testbutton `📊 Excel v2 (2-Blatt)` in der Runden-Subnavigation sowie in der Kompakt-Matrix wird die Edge Function aufgerufen und die Binärdatei direkt im Browser heruntergeladen.

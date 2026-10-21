@@ -686,6 +686,9 @@ function renderRoundNavigation() {
       <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center ms-1" onclick="exportResultateMatrixToExcel()" title="Kompakt-Matrix als Excel-Datei (.xlsx) herunterladen">
         <i class="fas fa-file-excel me-1.5"></i>Excel Export
       </button>
+      <button type="button" class="btn btn-sm btn-outline-success fw-bold shadow-sm d-inline-flex align-items-center ms-1 btn-export-excel-v2" onclick="exportResultateExcelV2()" title="Testbutton: 2-Blatt Excel-Auswertung (Rohdaten & Dashboard-Formeln via ExcelJS)">
+        <i class="fas fa-file-excel me-1.5 text-success"></i>📊 Excel v2 (2-Blatt)
+      </button>
     </div>
     <div class="small text-muted">
       <strong>${resultateState.rows.length}</strong> Schützen | Team-Limit: <strong>${limit}</strong> / Team
@@ -852,9 +855,14 @@ function renderMatrixView(wrap) {
       <div class="small text-muted">
         <i class="fas fa-info-circle me-1"></i><strong>Kompakt-Matrix:</strong> Alle Runden und Teams auf einen Blick. Änderungen werden direkt übernommen.
       </div>
-      <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center" onclick="exportResultateMatrixToExcel()" title="Kompakt-Matrix aller Runden nach Excel (.xlsx) exportieren">
-        <i class="fas fa-file-excel me-1.5"></i>Excel (.xlsx)
-      </button>
+      <div class="d-inline-flex align-items-center gap-1">
+        <button type="button" class="btn btn-sm btn-success fw-bold shadow-sm d-inline-flex align-items-center" onclick="exportResultateMatrixToExcel()" title="Kompakt-Matrix aller Runden nach Excel (.xlsx) exportieren">
+          <i class="fas fa-file-excel me-1.5"></i>Excel (.xlsx)
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-success fw-bold shadow-sm d-inline-flex align-items-center btn-export-excel-v2" onclick="exportResultateExcelV2()" title="Testbutton: 2-Blatt Excel-Auswertung (Rohdaten & Dashboard-Formeln via ExcelJS)">
+          <i class="fas fa-file-excel me-1.5 text-success"></i>Excel v2 (2-Blatt)
+        </button>
+      </div>
     </div>
     <div class="table-responsive rounded-3 border">
       <table class="table table-sm table-hover align-middle mb-0">
@@ -1272,4 +1280,73 @@ function exportResultateMatrixToExcel() {
   XLSX.writeFile(wb, fileName);
 }
 window.exportResultateMatrixToExcel = exportResultateMatrixToExcel;
+
+/**
+ * Neuer 2-Blatt Excel-Export mit ExcelJS via Supabase Edge Function:
+ * Blatt 1: "Rohdaten" (Flache tabellarische Liste / Normalform)
+ * Blatt 2: "Auswertung" (Dashboard mit dynamischen Formeln SUMIFS, AVERAGE, SUM)
+ */
+async function exportResultateExcelV2() {
+  const contestType = window._resultateContestType || "mannschaft";
+  const year = window._resultateYear || new Date().getFullYear();
+
+  const buttons = document.querySelectorAll('.btn-export-excel-v2');
+  buttons.forEach(btn => {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>Generiere 2-Blatt Excel...';
+  });
+
+  try {
+    const supabaseUrl = window.SUPABASE_CONFIG?.url || "https://supabase-muhen.danfamily.uk";
+    const defaultAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+    const anonKey = window.SUPABASE_CONFIG?.anonKey || defaultAnonKey;
+    const session = window.authModule?.getSession?.() || null;
+    const token = session?.access_token || anonKey;
+
+    const endpoint = `${supabaseUrl}/functions/v1/export-results-excel?year=${encodeURIComponent(year)}&contest_type=${encodeURIComponent(contestType)}`;
+
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        "apikey": anonKey,
+        "Authorization": `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP ${response.status}: ${response.statusText}`;
+      try {
+        const errJson = await response.json();
+        if (errJson && errJson.error) errMsg = errJson.error;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    const todayIso = new Date().toISOString().split("T")[0];
+    a.download = `Sportschuetzen_Muhen_${contestType.toUpperCase()}_Auswertung_${year}_${todayIso}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+    }, 150);
+
+    if (typeof showToast === 'function') {
+      showToast("Excel-Auswertung (2-Blatt) erfolgreich generiert!", "success");
+    }
+  } catch (err) {
+    console.error("❌ Fehler beim Excel-Export v2:", err);
+    alert("Fehler beim Erstellen der Excel-Auswertung: " + (err.message || String(err)));
+  } finally {
+    buttons.forEach(btn => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-file-excel me-1.5 text-success"></i>📊 Excel v2 (2-Blatt)';
+    });
+  }
+}
+window.exportResultateExcelV2 = exportResultateExcelV2;
 
