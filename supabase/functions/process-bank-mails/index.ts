@@ -254,22 +254,21 @@ Deno.serve(async (req) => {
     const labelMap = await getLabelMap(googleToken);
 
     const inboxLabelId = labelMap.get("raiffeisen");
-    if (!inboxLabelId) {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          processed: 0,
-          message: "Label 'Raiffeisen' existiert in Gmail noch nicht. Keine Mails zu verarbeiten.",
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const successLabelId = await ensureLabel(googleToken, "Raiffeisen/Verarbeitet", labelMap);
     const errorLabelId = await ensureLabel(googleToken, "Raiffeisen/Fehler", labelMap);
 
-    // Mails mit dem Label 'Raiffeisen' abfragen
-    const listRes = await fetch(`${GMAIL_API_BASE}/messages?labelIds=${inboxLabelId}&maxResults=20`, {
+    // Mails abfragen:
+    // 1. Mails mit Label "Raiffeisen" ODER
+    // 2. Gutschrifts-Benachrichtigungen von noreply@ebanking.raiffeisen.ch
+    // 3. Ausschluss bereits verarbeiteter oder fehlerhafter Mails
+    const queryParts = [
+      "(label:Raiffeisen OR (from:noreply@ebanking.raiffeisen.ch AND subject:Gutschrift))",
+      "-label:Raiffeisen/Verarbeitet",
+      "-label:Raiffeisen/Fehler"
+    ];
+    const gmailQuery = encodeURIComponent(queryParts.join(" "));
+
+    const listRes = await fetch(`${GMAIL_API_BASE}/messages?q=${gmailQuery}&maxResults=20`, {
       headers: { Authorization: `Bearer ${googleToken}` },
     });
     if (!listRes.ok) throw new Error("Fehler beim Abrufen der Nachrichtenliste");
@@ -557,8 +556,9 @@ Deno.serve(async (req) => {
   }
 });
 
-// Hilfsfunktion: Gmail Label-Wechsel
-async function moveMessageLabels(token: string, msgId: string, addLabelIds: string[], removeLabelIds: string[]) {
+async function moveMessageLabels(token: string, msgId: string, addLabelIds: (string | undefined)[], removeLabelIds: (string | undefined)[]) {
+  const cleanAdd = addLabelIds.filter(Boolean) as string[];
+  const cleanRemove = removeLabelIds.filter(Boolean) as string[];
   const res = await fetch(`${GMAIL_API_BASE}/messages/${msgId}/modify`, {
     method: "POST",
     headers: {
@@ -566,8 +566,8 @@ async function moveMessageLabels(token: string, msgId: string, addLabelIds: stri
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      addLabelIds,
-      removeLabelIds,
+      addLabelIds: cleanAdd,
+      removeLabelIds: cleanRemove,
     }),
   });
   if (!res.ok) {
