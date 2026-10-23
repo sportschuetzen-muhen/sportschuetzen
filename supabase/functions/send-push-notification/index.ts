@@ -43,7 +43,7 @@ Deno.serve(async (req: Request) => {
       .select("key, value")
       .in("key", ["onesignal_app_id", "onesignal_rest_api_key"]);
 
-    let appId = "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815";
+    let appId = "1a084ef4-4d8e-4be1-9df5-115f6168cdb4";
     let restApiKey = Deno.env.get("ONESIGNAL_REST_API_KEY") || "";
 
     if (configs) {
@@ -116,10 +116,11 @@ Deno.serve(async (req: Request) => {
     console.log("Sende OneSignal Push:", JSON.stringify(oneSignalPayload));
 
     // 4. API Request an OneSignal senden
-    const osResponse = await fetch("https://onesignal.com/api/v1/notifications", {
+    const authHeader = restApiKey.startsWith("os_v2_app_") ? `Bearer ${restApiKey}` : `Key ${restApiKey}`;
+    const osResponse = await fetch("https://api.onesignal.com/notifications", {
       method: "POST",
       headers: {
-        "Authorization": `Key ${restApiKey}`,
+        "Authorization": authHeader,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(oneSignalPayload)

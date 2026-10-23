@@ -106,7 +106,7 @@ const PushCore = {
       .select('key, value')
       .in('key', ['onesignal_app_id', 'onesignal_rest_api_key']);
 
-    let appId = 'fe30b2b7-1dcb-43e9-8e39-b1870d1a6815';
+    let appId = '1a084ef4-4d8e-4be1-9df5-115f6168cdb4';
     let restApiKey = '';
 
     (data || []).forEach(c => {
