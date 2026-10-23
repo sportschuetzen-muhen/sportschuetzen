@@ -466,16 +466,37 @@
                             const data = await res.json();
                             if (data && data.status === 'online' && statusPill) {
                                 const count = data.album?.count || 0;
+                                statusPill.style.background = 'rgba(16, 185, 129, 0.08)';
+                                statusPill.style.color = '#059669';
+                                statusPill.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+                                statusPill.title = 'Immich-Fotoarchiv auf CT 116 ist online und betriebsbereit';
                                 statusPill.innerHTML = `
-                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
                                     <span>Fotoarchiv verbunden (${count} Fotos)</span>
                                 `;
+                            } else if (statusPill) {
+                                setStatusPillOffline();
                             }
+                        } else if (statusPill) {
+                            setStatusPillOffline();
                         }
                     } catch (e) {
                         console.warn('Immich-Status konnte nicht geladen werden:', e);
+                        if (statusPill) setStatusPillOffline();
                     }
                 };
+
+                function setStatusPillOffline() {
+                    if (!statusPill) return;
+                    statusPill.style.background = 'rgba(239, 68, 68, 0.08)';
+                    statusPill.style.color = '#dc2626';
+                    statusPill.style.borderColor = 'rgba(239, 68, 68, 0.25)';
+                    statusPill.title = 'Fotoarchiv ist vorübergehend offline';
+                    statusPill.innerHTML = `
+                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span>
+                        <span>Fotoarchiv vorübergehend offline</span>
+                    `;
+                }
                 checkImmichHealth();
 
                 // 2. Drag & Drop Listener
@@ -929,7 +950,7 @@
                         fetch(`${SUPABASE_REST_URL}/gallery_albums?select=*&order=created_at.desc`, {
                             headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': authHeader }
                         }),
-                        fetch(`${SUPABASE_REST_URL}/gallery_photos?select=album,thumbnail_url,image_url&order=created_at.desc&limit=100`, {
+                        fetch(`${SUPABASE_REST_URL}/gallery_photos?select=album,thumbnail_url,image_url&order=created_at.desc&limit=500`, {
                             headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': authHeader }
                         })
                     ]);
@@ -962,15 +983,26 @@
 
                     grid.innerHTML = albums.map(alb => {
                         const title = alb.website_title || alb.album_name;
-                        const cover = coverMap[alb.album_name] || 'images/banner.jpg';
+                        const cover = alb.cover_url || coverMap[alb.album_name] || '';
                         const icon = categoryIcons[alb.category] || '📷';
                         const mediaCount = alb.media_count || 0;
 
                         return `
                             <div class="glass-card" style="padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; border-radius: 14px; overflow: hidden;">
                                 <div>
-                                    <div style="position: relative; width: 100%; height: 150px; border-radius: 10px; overflow: hidden; margin-bottom: 0.85rem; background: rgba(15,60,92,0.06);">
-                                        <img src="${cover}" alt="${title}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='images/banner.jpg';">
+                                    <div style="position: relative; width: 100%; height: 150px; border-radius: 10px; overflow: hidden; margin-bottom: 0.85rem; background: #0f3c5c; display: flex; align-items: center; justify-content: center;">
+                                        ${cover ? `
+                                            <img src="${cover}" alt="${title}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+                                            <div style="display: none; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f3c5c, #1a5276); color: white;">
+                                                <img src="assets/logo.png" alt="Sportschützen Muhen" style="height: 48px; opacity: 0.9; margin-bottom: 6px;">
+                                                <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.85; letter-spacing: 0.5px;">SPORTSCHÜTZEN MUHEN</span>
+                                            </div>
+                                        ` : `
+                                            <div style="display: flex; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f3c5c, #1a5276); color: white;">
+                                                <img src="assets/logo.png" alt="Sportschützen Muhen" style="height: 48px; opacity: 0.9; margin-bottom: 6px;">
+                                                <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.85; letter-spacing: 0.5px;">SPORTSCHÜTZEN MUHEN</span>
+                                            </div>
+                                        `}
                                         <span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.72); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
                                             ${mediaCount} Medien
                                         </span>

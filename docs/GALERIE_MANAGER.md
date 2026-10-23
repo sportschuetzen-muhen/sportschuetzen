@@ -148,6 +148,7 @@ Publizierte Alben können in der Liste «Aktuell publizierte Alben» jederzeit m
 ### 6.5 Depublizieren & Löschen
 Publizierte Alben können direkt in der Liste «Aktuell publizierte Alben» über das Mülleimer-Icon `[🗑️]` wieder von der Website entfernt werden. Die Original-Fotos auf Immich bleiben dabei unberührt.
 *Hinweis zur RLS-Architektur:* Auf `public.gallery_albums` gilt SELECT für alle publizierten Albentitel (`USING (true)`), damit das Vorstands-Cockpit sowohl öffentliche als auch geschützte Mitglieder-Alben konsistent darstellt. Der eigentliche Zugriffsschutz auf Bilder und Medien verbleibt auf `public.gallery_photos`, wo `anon` ausschliesslich `visibility = 'public'` abfragen kann.
+*Titelbild-Optimierung (`cover_url`):* Jedes Album in `public.gallery_albums` führt neu direkt das Attribut `cover_url` (Worker-Thumbnail des ersten Bildes). Dadurch kann das Web-Frontend (`intern.html`) Albumkarten sofort in einem einzigen Abruf mit passendem Cover rendern, ohne sekundäre Abfragen auf `public.gallery_photos` ausführen zu müssen. Sollte der Immich-Server vorübergehend offline sein, greift im Frontend ein eleganter Vereins-Fallback mit dem offiziellen Logo (`assets/logo.png`) anstelle kaputter Bildsymbole.
 
 ### 6.6 Entwickler-Fallback (CLI)
 Das bisherige CLI-Skript `sportschuetzen-website/sync-immich-album.js` bleibt ausschliesslich für Offline-Wartungsarbeiten und lokale Batch-Tests erhalten.

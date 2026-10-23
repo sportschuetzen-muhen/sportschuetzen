@@ -699,7 +699,8 @@ Deno.serve(async (req: Request) => {
         });
 
       // 4. In Supabase speichern (Transaktional)
-      // a) Album upserten
+      // a) Album upserten (inkl. cover_url fuer Direkt-Darstellung)
+      const firstPhotoThumb = formattedPhotos.length > 0 ? formattedPhotos[0].thumbnail_url : null;
       const { error: albUpsertErr } = await supabase
         .from("gallery_albums")
         .upsert({
@@ -709,6 +710,7 @@ Deno.serve(async (req: Request) => {
           visibility: effectiveVisibility,
           category: effectiveCategory,
           share_key: shareKey,
+          cover_url: firstPhotoThumb,
           media_count: formattedPhotos.length,
           last_synced_at: new Date().toISOString()
         });
