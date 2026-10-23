@@ -357,8 +357,22 @@ Wird ein neues Fachmodul zum Vereinsportal hinzugefügt, wird dieses **automatis
 * **Problem (`admin_profiles_auth_user_id_key`):** Wurde ein bestehendes Admin-Profil umbenannt (z.B. Benutzername von `danhu` auf `d.hunziker`), griff die alte `ON CONFLICT (username)`-Klausel der RPC `public.save_admin_profile` nicht, da der neue Benutzername noch nicht existierte. PostgreSQL versuchte einen `INSERT` mit der bestehenden `auth_user_id`, was eine `duplicate key value violates unique constraint "admin_profiles_auth_user_id_key"` auslöste.
 * **Architektonische Lösung:** 
   1. `public.save_admin_profile` nimmt neu den optionalen Parameter `p_admin_id UUID DEFAULT NULL` entgegen und unterscheidet strikt zwischen UPDATE (bestehendes Profil mutieren / umbenennen) und INSERT (Neuanlage).
-  2. Im Frontend übergibt [`vorstand/js/logins/logins-actions.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/logins/logins-actions.js) im Bearbeiten-Modus (`mode === 'edit'`) verbindlich `p_admin_id: record.id`.
-  3. Bei Umbenennung wird vorab geprüft, ob der gewünschte Benutzername bereits durch ein anderes Konto belegt ist (`id <> v_admin_id`). Falls ja, wird ein sauberer, benutzerfreundlicher Fehler geworfen.
+---
+
+## 18. Modul Push-Mitteilungen & RBAC-Integration (Migration 95)
+
+* **Eigenständiges Cockpit & «View & Manage» Kontrakt (Richtlinie 7):**
+  * `push.view`: Kachel auf dem Dashboard und Menüpunkt in der Seitenleiste freischalten, Abonnenten-Statistik, Reichweite und Versand-Historie einsehen.
+  * `push.manage`: Push-Mitteilungen verfassen, sofort versenden und OneSignal REST API-Einstellungen mutieren.
+  * Rollenberechtigungen sind in `public.role_permissions`, `RBAC_MODULES` (`logins-core.js`), `Perms.VIEW_ACCESS` (`permissions.js`) und `MODULE_MANAGE_PERMS` (`main.js`) registriert.
+* **OneSignal Edge Function (`send-push-notification`):**
+  * Der Versand erfolgt serverseitig über die Edge Function auf Proxmox CT 117. Der OneSignal REST API Key wird sicher aus `public.system_app_configs` bezogen (kein Secret im Client).
+  * Zielgruppen-Filterung erfolgt anhand der 6 kostenlosen OneSignal-Tags (`personenkreis` = `aktiv` | `passiv`, `is_board` = `true`, `lizenz` für Einzelmitglieder, oder `Total Subscriptions` für alle).
+  * Ist noch kein API Key hinterlegt, greift automatisch ein sicherer Simulationsmodus mit Audit-Eintrag in `public.push_notifications`.
+* **Geräte- & Abonnenten-Tracking (`public.push_subscriptions`):**
+  * Bei Aktivierung oder Start der App synchronisieren Mitglieder und Vorstandsmitglieder ihren Berechtigungsstatus und Gerätetyp (iOS, Android, Desktop) atomar in die Datenbank.
+  * Die RPC `public.get_push_audience_stats()` aggregiert die Reichweite in Echtzeit nach Personenkreis für das Vorstandscockpit.
+
 
 
 

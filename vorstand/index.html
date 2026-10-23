@@ -841,6 +841,10 @@
                      onclick="navTo('system-mails', this)">
                     <i class="fas fa-envelope-open-text"></i> <span class="nav-text">System-Mails</span>
                 </div>
+                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter,jungschuetzenleiter"
+                     onclick="navTo('push', this)">
+                    <i class="fas fa-paper-plane"></i> <span class="nav-text">Push-Mitteilungen</span>
+                </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter"
                      onclick="navTo('anlaesse', this)">
                     <i class="fas fa-calendar-star"></i> <span class="nav-text">Anlässe & Controlling</span>
@@ -993,6 +997,13 @@
                              onclick="navTo('system-mails')" style="cursor:pointer">
                             <h5 class="mb-1">✉️ System-Mails</h5>
                             <p class="small text-muted mb-0">Abo-Verteiler & App Info</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter,jungschuetzenleiter">
+                        <div class="card p-3 shadow-sm border-0 h-100"
+                             onclick="navTo('push')" style="cursor:pointer">
+                            <h5 class="mb-1">📲 Push-Mitteilungen</h5>
+                            <p class="small text-muted mb-0">Sofort-Push, Zielgruppen (Aktiv/Passiv) &amp; Abonnenten</p>
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier,vermieter">
@@ -1761,6 +1772,9 @@
     <div id="system-mails-container"></div>
 </div>
 
+<!-- PUSH-MITTEILUNGEN -->
+<div id="view-push" class="module-view"></div>
+
 <!-- UMFRAGEN -->
 <div id="view-umfragen" class="module-view">
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -2488,13 +2502,16 @@
 <script src="js/termine/termine-ui.js"></script>
 <script src="js/termine.js"></script>
 <script src="js/system-mails.js"></script>
+<!-- Modul PUSH-MITTEILUNGEN (OneSignal Cockpit) -->
+<script src="js/push/push-core.js?v=20261023_1"></script>
+<script src="js/push/push-ui.js?v=20261023_1"></script>
 <script src="js/umfragen/umfragen-core.js"></script>
 <script src="js/umfragen/umfragen-ui.js"></script>
 <script src="js/umfragen/umfragen-events.js"></script>
 <script src="js/umfragen/umfragen-eval.js"></script>
 <script src="js/umfragen/umfragen-controlling.js"></script>
 <script src="js/umfragen/umfragen-tracking.js"></script>
-<script src="js/logins/logins-core.js?v=20261007_2"></script>
+<script src="js/logins/logins-core.js?v=20261023_1"></script>
 <script src="js/logins/logins-ui.js?v=20261007_1"></script>
 <script src="js/logins/logins-events.js?v=20261007_1"></script>
 <!-- Globaler Vereins-WYSIWYG-Editor -->
@@ -2577,7 +2594,7 @@
 <script src="js/meeting-recorder.js"></script>
 
 <!-- NEU: Skript für Galerie Manager -->
-<script src="js/galerie.js?v=20261023_1"></script>
+<script src="js/galerie.js?v=20261023_2"></script>
 
 <!-- Modul ANLÄSSE (Native Supabase Migration) -->
 <script src="js/anlaesse.js"></script>

@@ -49,6 +49,14 @@ const RBAC_MODULES = [
     ]
   },
   {
+    module: 'Push-Mitteilungen',
+    icon: 'fa-paper-plane',
+    permissions: [
+      { key: 'push.view', label: '👁️ Einsehen (Read-Only)', desc: 'Kachel & Navigation freischalten, Abonnenten & Push-Historie einsehen' },
+      { key: 'push.manage', label: '✏️ Verwalten (Schreiben)', desc: 'Push-Mitteilungen verfassen, sofort versenden & API-Einstellungen verwalten' }
+    ]
+  },
+  {
     module: 'Anlässe & Controlling',
     icon: 'fa-calendar-check',
     permissions: [

@@ -1585,16 +1585,39 @@ async function requestPortalPushPermission() {
     } catch (_) {}
 
     updatePortalBadgePermissionUi();
+    recordPortalPushSubscription();
     if (typeof window.updateMobileGlobalBadge === 'function') {
         window.updateMobileGlobalBadge();
     }
 }
 window.requestPortalPushPermission = requestPortalPushPermission;
 
+function recordPortalPushSubscription() {
+    const isGranted = ('Notification' in window) && Notification.permission === 'granted';
+    const user = (typeof window.getCurrentUser === 'function') ? window.getCurrentUser() : null;
+    const pn = user?.person_number || parseInt(user?.username, 10);
+    if (!pn || isNaN(pn)) return;
+    const devType = /iPad|iPhone|iPod/.test(navigator.userAgent) ? 'ios' : (/Android/.test(navigator.userAgent) ? 'android' : 'desktop');
+    try {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (supa) {
+            supa.from('push_subscriptions').upsert({
+                person_number: pn,
+                device_type: devType,
+                permission_status: isGranted ? 'granted' : 'default',
+                last_active_at: new Date().toISOString()
+            }, { onConflict: 'person_number,device_type' }).then(() => {});
+        }
+    } catch (_) {}
+}
+window.recordPortalPushSubscription = recordPortalPushSubscription;
+
 // Initialer Check beim Start des Vorstands-Portals
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         checkGalerieInboxBadge();
         updatePortalBadgePermissionUi();
+        recordPortalPushSubscription();
     }, 1400);
 });
+

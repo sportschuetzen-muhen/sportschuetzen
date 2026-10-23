@@ -19,6 +19,7 @@
     'inventar':               ['inventar.view', 'inventar.manage'],
     'termine':                ['termine.view', 'termine.manage'],
     'system-mails':           ['system-mails.view', 'system-mails.manage'],
+    'push':                   ['push.view', 'push.manage'],
     'anlaesse':               ['anlaesse.view', 'anlaesse.manage'],
     'umfragen':               ['umfragen.view', 'umfragen.manage'],
     'manager':                ['manager.view', 'manager.manage'],

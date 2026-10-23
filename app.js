@@ -2077,11 +2077,33 @@ async function requestPushNotificationPermission() {
     }
 
     updateBadgePermissionUi();
+    const curUser = JSON.parse(localStorage.getItem('sportschuetzen_user') || 'null');
+    recordPushSubscription(curUser);
     if (window.checkUserPendenzenBadge) {
         window.checkUserPendenzenBadge();
     }
 }
 window.requestPushNotificationPermission = requestPushNotificationPermission;
+
+function recordPushSubscription(user) {
+    if (!user || !user.lizenz) return;
+    const pn = parseInt(user.lizenz, 10);
+    if (isNaN(pn) || pn <= 0) return;
+    const isGranted = ('Notification' in window) && Notification.permission === 'granted';
+    const devType = /iPad|iPhone|iPod/.test(navigator.userAgent) ? 'ios' : (/Android/.test(navigator.userAgent) ? 'android' : 'desktop');
+    try {
+        const supa = getAppSupabase();
+        if (supa) {
+            supa.from('push_subscriptions').upsert({
+                person_number: pn,
+                device_type: devType,
+                permission_status: isGranted ? 'granted' : 'default',
+                last_active_at: new Date().toISOString()
+            }, { onConflict: 'person_number,device_type' }).then(() => {});
+        }
+    } catch (_) {}
+}
+window.recordPushSubscription = recordPushSubscription;
 
 document.addEventListener('app:resume', () => {
     updateBadgePermissionUi();
@@ -2150,6 +2172,9 @@ function syncOneSignal(user) {
                 if (OneSignal.Notifications && OneSignal.Notifications.permission === "default") {
                     await OneSignal.Notifications.requestPermission();
                 }
+
+                // In public.push_subscriptions für die Vorstands-Reichweite protokollieren
+                recordPushSubscription(user);
             } else {
                 if (OneSignal.User.externalId) {
                     await OneSignal.logout();

@@ -1068,6 +1068,7 @@ const MODULE_MANAGE_PERMS = {
     'inventar':               'inventar.manage',
     'termine':                'termine.manage',
     'system-mails':           'system-mails.manage',
+    'push':                   'push.manage',
     'anlaesse':               'anlaesse.manage',
     'umfragen':               'umfragen.manage',
     'manager':                'manager.manage',
@@ -1191,6 +1192,7 @@ function navTo(viewId, el) {
         else if (viewId === 'manager'   && typeof loadContestData   === 'function') loadPromise = loadContestData();
         else if (viewId === 'vermietung' && typeof loadVermietungData === 'function') loadPromise = loadVermietungData();
         else if (viewId === 'system-mails' && typeof loadSystemMailsData === 'function') loadPromise = loadSystemMailsData();
+        else if (viewId === 'push' && typeof window.PushUI?.init === 'function') loadPromise = window.PushUI.init();
         else if (viewId === 'umfragen' && typeof loadUmfragenData === 'function') loadPromise = loadUmfragenData();
         else if (viewId === 'anlaesse' && typeof loadAnlaesseData === 'function') loadPromise = loadAnlaesseData();
         else if (viewId === 'logins' && typeof loadLoginsData === 'function') loadPromise = loadLoginsData();
