@@ -693,6 +693,7 @@ async function loadTermine() {
         } catch(e) {}
 
         renderTermine(allTermine, activeLizenz);
+        checkUserPendenzenBadge();
 
     } catch (e) { 
         if (!allTermine || allTermine.length === 0) {
@@ -1919,8 +1920,8 @@ function showApp(user) {
     loadTermine();
     handleDeepLink();
     syncOneSignal(user);
-    if (user && user.is_board) {
-        checkBoardPendenzenBadge();
+    if (user) {
+        checkUserPendenzenBadge();
     }
 
     // Event Listener für optionalen Header-Logout Button
@@ -1950,72 +1951,91 @@ function updateAppIconBadge(count) {
 }
 window.updateAppIconBadge = updateAppIconBadge;
 
-async function checkBoardPendenzenBadge() {
+async function checkUserPendenzenBadge() {
     let user = null;
     try {
         user = JSON.parse(localStorage.getItem('sportschuetzen_user') || 'null');
     } catch (_) {}
 
-    // Nur für Vorstandsmitglieder relevant
-    if (!user || !user.is_board) {
+    if (!user) {
         updateAppIconBadge(0);
         return;
     }
+
+    const lizenz = user.lizenz ? String(user.lizenz).trim() : (user.person_number ? String(user.person_number).trim() : '');
+    const isBoard = Boolean(user.is_board);
 
     const vorstandBadge = document.getElementById('vorstand-pendenzen-badge');
     const dropdownBadge = document.getElementById('dropdown-vorstand-badge');
 
     let galCount = 0;
-    let jmCount = 0;
+    let rpcData = { total: 0, member_rsvps: 0, member_invoices: 0, board_ocr: 0, board_rentals: 0, board_total: 0 };
 
     try {
-        const results = await Promise.allSettled([
-            // 1. Offene Mitglieder-Uploads in Immich
-            fetch('https://supabase-muhen.danfamily.uk/functions/v1/immich-upload')
-                .then(r => r.ok ? r.json() : null)
-                .then(d => d?.album?.count || 0),
-            // 2. Offene Standblätter aus contest_ocr_logs
-            fetch(`${SUPABASE_REST_URL}/contest_ocr_logs?select=id,raw_response&contest_type=eq.standblatt`, {
-                headers: getSupabaseHeaders()
-            })
-                .then(r => r.ok ? r.json() : [])
-                .then(items => Array.isArray(items) ? items.filter(i => {
-                    const st = i?.raw_response?.status;
-                    return st !== 'imported' && st !== 'rejected';
-                }).length : 0)
-        ]);
+        // Parallel: 1. Supabase RPC für Pendenzen & 2. (falls Vorstand) Immich Album-Uploads
+        const promises = [
+            fetch(`${SUPABASE_REST_URL}/rpc/get_member_pendenzen_count`, {
+                method: 'POST',
+                headers: {
+                    ...getSupabaseHeaders(),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    p_lizenz: lizenz,
+                    p_is_board: isBoard
+                })
+            }).then(r => r.ok ? r.json() : null)
+        ];
 
-        if (results[0].status === 'fulfilled') {
-            galCount = parseInt(results[0].value) || 0;
+        if (isBoard) {
+            promises.push(
+                fetch('https://supabase-muhen.danfamily.uk/functions/v1/immich-upload')
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => d?.album?.count || 0)
+                    .catch(() => 0)
+            );
         }
-        if (results[1].status === 'fulfilled') {
-            jmCount = parseInt(results[1].value) || 0;
+
+        const results = await Promise.allSettled(promises);
+        if (results[0].status === 'fulfilled' && results[0].value) {
+            rpcData = results[0].value;
+        }
+        if (isBoard && results[1] && results[1].status === 'fulfilled') {
+            galCount = parseInt(results[1].value) || 0;
         }
     } catch (e) {
         // Stille Unterdrückung bei Netzwerkproblemen
     }
 
-    const total = galCount + jmCount;
+    // Für Vorstandsmitglieder: UI-Badges im Portal aktualisieren (Galerie + OCR + Mietanfragen)
+    if (isBoard) {
+        const boardTotal = (rpcData.board_total || 0) + galCount;
+        const badgeText = boardTotal > 99 ? '99+' : String(boardTotal);
+        [vorstandBadge, dropdownBadge].forEach(el => {
+            if (!el) return;
+            if (boardTotal > 0) {
+                el.textContent = badgeText;
+                el.style.display = 'inline-block';
+            } else {
+                el.style.display = 'none';
+            }
+        });
+    } else {
+        [vorstandBadge, dropdownBadge].forEach(el => {
+            if (el) el.style.display = 'none';
+        });
+    }
 
-    // UI Badges in der Web-App aktualisieren
-    const badgeText = total > 99 ? '99+' : String(total);
-    [vorstandBadge, dropdownBadge].forEach(el => {
-        if (!el) return;
-        if (total > 0) {
-            el.textContent = badgeText;
-            el.style.display = 'inline-block';
-        } else {
-            el.style.display = 'none';
-        }
-    });
-
-    // Native iOS / Android PWA App-Badge auf dem Home-Screen setzen
-    updateAppIconBadge(total);
+    // Gesamter App-Badge auf dem iOS/Android Homescreen
+    // Setzt sich aus allen persönlichen Pendenzen (RSVPs + Rechnungen) plus allfälligen Vorstands-Pendenzen zusammen
+    const totalAppBadge = (rpcData.total || 0) + (isBoard ? galCount : 0);
+    updateAppIconBadge(totalAppBadge);
 }
-window.checkBoardPendenzenBadge = checkBoardPendenzenBadge;
+window.checkUserPendenzenBadge = checkUserPendenzenBadge;
+window.checkBoardPendenzenBadge = checkUserPendenzenBadge; // Rückwärtskompatibilität
 
 document.addEventListener('app:resume', () => {
-    checkBoardPendenzenBadge();
+    checkUserPendenzenBadge();
 });
 
 window.logout = async function() {
