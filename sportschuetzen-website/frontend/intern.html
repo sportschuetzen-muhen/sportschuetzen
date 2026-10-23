@@ -187,9 +187,9 @@
                                 </p>
                             </div>
                             <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                                <span id="immich-status-pill" class="badge" style="background: rgba(16, 185, 129, 0.1); color: #059669; font-weight: 700; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;">
-                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
-                                    <span>Fotoarchiv verbunden</span>
+                                <span id="immich-status-pill" style="background: rgba(16, 185, 129, 0.08); color: #059669; font-weight: 600; padding: 5px 12px; border-radius: 20px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(16, 185, 129, 0.25); cursor: default; user-select: none;" title="Immich-Fotoarchiv auf CT 116 ist online und betriebsbereit">
+                                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+                                    <span>Fotoarchiv online</span>
                                 </span>
                                 <a href="verein.html#galerie" class="btn btn-outline" style="font-size: 0.88rem; padding: 0.45rem 1.2rem; border-radius: 20px;">
                                     🖼️ Vollständige Fotogalerie öffnen
@@ -258,24 +258,51 @@
                         <div id="upload-message-box" style="display: none; margin-top: 1.25rem; padding: 0.9rem 1.2rem; border-radius: 12px; font-size: 0.92rem; text-align: center;"></div>
                     </div>
 
-                    <div class="grid-3" id="immich-albums-grid">
-                        <div class="glass-card" style="padding: 1.75rem; text-align: center;">
-                            <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🏆</div>
-                            <h4>Absenden &amp; Jahresabschluss</h4>
-                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Siegerehrungen, gemütliches Beisammensein und Impressionen des Saisonabschlusses.</p>
-                            <a href="verein.html#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                    <!-- DIE 3 VEREINHEITLICHTEN RUBRIKEN -->
+                    <div class="grid-3" id="immich-rubriken-grid" style="margin-bottom: 2rem;">
+                        <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🎉</div>
+                                <h4 style="margin-bottom: 0.5rem; color: var(--primary-color);">Anlässe &amp; Events</h4>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Wettkämpfe, Feste, Vereinsreisen und gesellige Momente im Schützenhaus.</p>
+                            </div>
+                            <a href="verein.html?kategorie=events#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
                         </div>
-                        <div class="glass-card" style="padding: 1.75rem; text-align: center;">
-                            <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🎯</div>
-                            <h4>Strohhausschiessen &amp; Wettkämpfe</h4>
-                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Wettkampftage 50m und 10m, Gruppenmeisterschaften und Schützenfeste.</p>
-                            <a href="verein.html#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🎯</div>
+                                <h4 style="margin-bottom: 0.5rem; color: var(--primary-color);">Nachwuchs &amp; Jugend</h4>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Nachwuchskurse, Jugendtage, Juniorentrainings und Schützen-Nachwuchs.</p>
+                            </div>
+                            <a href="verein.html?kategorie=nachwuchs#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
                         </div>
-                        <div class="glass-card" style="padding: 1.75rem; text-align: center;">
-                            <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🍻</div>
-                            <h4>Vereinsausflug &amp; Grillabende</h4>
-                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Kameradschaft abseits des Schiesstandes, Vereinsreisen und Anlässe im Schützenhaus.</p>
-                            <a href="verein.html#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="font-size: 2.8rem; margin-bottom: 0.5rem;">🏛️</div>
+                                <h4 style="margin-bottom: 0.5rem; color: var(--primary-color);">Vereinsgeschichte</h4>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">Historische Aufnahmen, Bau des Schützenhauses Rüteli und Chronik ab 1919.</p>
+                            </div>
+                            <a href="verein.html?kategorie=geschichte#galerie" class="btn btn-outline" style="font-size: 0.85rem; width: 100%;">In Galerie öffnen</a>
+                        </div>
+                    </div>
+
+                    <!-- DYNAMISCH PUBLIZIERTE ALBEN AUS SUPABASE -->
+                    <div style="margin-top: 1.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                            <div>
+                                <h4 style="margin: 0; font-size: 1.15rem; color: var(--primary-color); display: flex; align-items: center; gap: 0.5rem;">
+                                    <span>📁</span> <span>Publizierte Fotoalben</span>
+                                </h4>
+                                <p style="margin: 0.2rem 0 0 0; font-size: 0.85rem; color: var(--text-muted);">
+                                    Kuratierte Alben direkt aus unserem privaten Fotoarchiv.
+                                </p>
+                            </div>
+                            <span id="member-albums-count" class="badge" style="background: rgba(15, 60, 92, 0.08); color: var(--primary-color); font-size: 0.8rem; font-weight: 700; padding: 4px 10px; border-radius: 12px;">Lade Alben...</span>
+                        </div>
+                        <div class="grid-3" id="immich-published-albums-grid">
+                            <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: var(--text-muted);">
+                                <div class="loading-spinner">Lade publizierte Alben...</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -371,7 +398,12 @@
                         pane.style.display = 'none';
                     });
                     const activePane = document.getElementById(`tab-content-${targetTab}`);
-                    if (activePane) activePane.style.display = 'block';
+                    if (activePane) {
+                        activePane.style.display = 'block';
+                        if (targetTab === 'fotos') {
+                            loadMemberAlbums();
+                        }
+                    }
                 });
             });
 
@@ -878,9 +910,96 @@
                 });
             }
 
+            // Publizierte Alben aus Supabase laden & darstellen
+            async function loadMemberAlbums() {
+                const grid = document.getElementById('immich-published-albums-grid');
+                const countBadge = document.getElementById('member-albums-count');
+                if (!grid) return;
+
+                try {
+                    const SUPABASE_REST_URL = 'https://supabase-muhen.danfamily.uk/rest/v1';
+                    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M';
+
+                    let authHeader = `Bearer ${SUPABASE_ANON_KEY}`;
+                    if (window.AuthSession && typeof window.AuthSession.getAuthHeader === 'function') {
+                        authHeader = window.AuthSession.getAuthHeader() || authHeader;
+                    }
+
+                    const [albumsRes, photosRes] = await Promise.all([
+                        fetch(`${SUPABASE_REST_URL}/gallery_albums?select=*&order=created_at.desc`, {
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': authHeader }
+                        }),
+                        fetch(`${SUPABASE_REST_URL}/gallery_photos?select=album,thumbnail_url,image_url&order=created_at.desc&limit=100`, {
+                            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': authHeader }
+                        })
+                    ]);
+
+                    if (!albumsRes.ok) throw new Error('Alben konnten nicht geladen werden');
+                    const albums = await albumsRes.json();
+                    const photos = photosRes.ok ? await photosRes.json() : [];
+
+                    const coverMap = {};
+                    photos.forEach(p => {
+                        if (p.album && !coverMap[p.album]) {
+                            coverMap[p.album] = p.thumbnail_url || p.image_url;
+                        }
+                    });
+
+                    if (countBadge) {
+                        countBadge.textContent = `${albums.length} Alben verfügbar`;
+                    }
+
+                    if (!albums || albums.length === 0) {
+                        grid.innerHTML = '<p class="text-center text-muted" style="grid-column: 1 / -1; padding: 2rem;">Noch keine Alben publiziert.</p>';
+                        return;
+                    }
+
+                    const categoryIcons = {
+                        'events': '🎉',
+                        'nachwuchs': '🎯',
+                        'geschichte': '🏛️'
+                    };
+
+                    grid.innerHTML = albums.map(alb => {
+                        const title = alb.website_title || alb.album_name;
+                        const cover = coverMap[alb.album_name] || 'images/banner.jpg';
+                        const icon = categoryIcons[alb.category] || '📷';
+                        const mediaCount = alb.media_count || 0;
+
+                        return `
+                            <div class="glass-card" style="padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; border-radius: 14px; overflow: hidden;">
+                                <div>
+                                    <div style="position: relative; width: 100%; height: 150px; border-radius: 10px; overflow: hidden; margin-bottom: 0.85rem; background: rgba(15,60,92,0.06);">
+                                        <img src="${cover}" alt="${title}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='images/banner.jpg';">
+                                        <span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.72); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                                            ${mediaCount} Medien
+                                        </span>
+                                        <span style="position: absolute; top: 8px; left: 8px; background: rgba(255,255,255,0.92); font-size: 0.75rem; font-weight: 700; padding: 2px 7px; border-radius: 6px;">
+                                            ${icon}
+                                        </span>
+                                    </div>
+                                    <h4 style="margin: 0 0 0.4rem 0; font-size: 1rem; color: var(--primary-color);">${title}</h4>
+                                    <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0 0 1rem 0;">Aus unserem privaten Fotoarchiv.</p>
+                                </div>
+                                <a href="verein.html?album_name=${encodeURIComponent(alb.album_name)}#galerie" class="btn btn-outline" style="font-size: 0.82rem; width: 100%; padding: 0.45rem; text-align: center; border-radius: 20px;">
+                                    In Galerie öffnen
+                                </a>
+                            </div>
+                        `;
+                    }).join('');
+
+                } catch (e) {
+                    console.warn('Fehler beim Laden der Mitglieder-Alben:', e);
+                    if (grid) {
+                        grid.innerHTML = '<p class="text-center text-muted" style="grid-column: 1 / -1; padding: 1.5rem;">Alben konnten nicht geladen werden.</p>';
+                    }
+                }
+            }
+
             // Initialisierung
             loadClubDocuments();
             initPhotoUploader();
+            loadMemberAlbums();
         });
     </script>
 </body>

@@ -165,9 +165,45 @@ async function initGallery() {
     // 3. Komponenten rendern
     generateAlbumFilters();
     generateTagCloud();
-    renderGallery("all");
+
+    // URL-Parameter für Kategorie oder Album auswerten
+    const urlCategory = urlParams.get("kategorie") || urlParams.get("category");
+    if (urlCategory && ["events", "nachwuchs", "geschichte"].includes(urlCategory.toLowerCase())) {
+        activeCategory = urlCategory.toLowerCase();
+        document.querySelectorAll(".gallery-filters:not(#gallery-album-filters) .gallery-filter-btn").forEach(b => {
+            if (b.getAttribute("data-category") === activeCategory) {
+                b.classList.add("active");
+            } else {
+                b.classList.remove("active");
+            }
+        });
+    }
+
+    const urlAlbumName = urlParams.get("album_name");
+    if (urlAlbumName) {
+        activeAlbum = decodeURIComponent(urlAlbumName);
+        const albumContainer = document.getElementById("gallery-album-filters");
+        if (albumContainer) {
+            albumContainer.querySelectorAll(".gallery-filter-btn").forEach(btn => {
+                if (btn.getAttribute("data-album") === encodeURIComponent(activeAlbum)) {
+                    btn.classList.add("active");
+                } else {
+                    btn.classList.remove("active");
+                }
+            });
+        }
+    }
+
+    renderGallery(activeCategory);
     setupGalleryListeners();
     renderMitgliederAlbums();
+
+    if (window.location.hash === '#galerie') {
+        setTimeout(() => {
+            const el = document.getElementById('galerie');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }, 200);
+    }
 }
 
 // Liefert sichtbare Bilder basierend auf dem Anmeldestatus
