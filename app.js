@@ -2050,16 +2050,24 @@ function updateBadgePermissionUi() {
 window.updateBadgePermissionUi = updateBadgePermissionUi;
 
 async function requestPushNotificationPermission() {
+    let perm = null;
     try {
-        let perm = null;
-        if (window.OneSignal && window.OneSignal.Notifications && typeof window.OneSignal.Notifications.requestPermission === 'function') {
-            perm = await window.OneSignal.Notifications.requestPermission();
-        } else if ('Notification' in window && typeof Notification.requestPermission === 'function') {
+        // 1. ZUERST NATIVE BROWSER-API AUFRUFEN (funktioniert sofort & nativ auf iOS / Safari)
+        if ('Notification' in window && typeof Notification.requestPermission === 'function') {
             perm = await Notification.requestPermission();
+            console.log("Native Notification permission result:", perm);
         }
-        console.log("Notification permission result:", perm);
     } catch (e) {
-        console.warn("Permission request error:", e);
+        console.warn("Native Notification request error:", e);
+    }
+
+    // 2. Falls OneSignal geladen und betriebsbereit ist, OneSignal ebenfalls synchronisieren
+    try {
+        if (window.OneSignal && window.OneSignal.Notifications && typeof window.OneSignal.Notifications.requestPermission === 'function') {
+            await window.OneSignal.Notifications.requestPermission();
+        }
+    } catch (_) {
+        // Stille Unterdrückung von OneSignal-Fehlern
     }
 
     updateBadgePermissionUi();
@@ -2103,6 +2111,9 @@ function syncOneSignal(user) {
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
 
         try {
+            // Sicherstellen dass OneSignal erfolgreich initialisiert wurde
+            if (!OneSignal || !OneSignal.User || typeof OneSignal.login !== 'function') return;
+
             if (user && user.lizenz) {
                 const pid = String(user.lizenz).padStart(6, '0');
                 
@@ -2118,7 +2129,7 @@ function syncOneSignal(user) {
                 }
 
                 // Benachrichtigungs-Berechtigung abfragen falls noch Standard
-                if (OneSignal.Notifications.permission === "default") {
+                if (OneSignal.Notifications && OneSignal.Notifications.permission === "default") {
                     await OneSignal.Notifications.requestPermission();
                 }
             } else {
@@ -2128,7 +2139,7 @@ function syncOneSignal(user) {
                 }
             }
         } catch (err) {
-            console.error("OneSignal Sync Fehler:", err);
+            console.warn("OneSignal Sync Hinweis:", err.message || err);
         }
     });
 }

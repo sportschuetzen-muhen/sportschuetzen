@@ -72,20 +72,20 @@ OneSignalDeferred.push(async function (OneSignal) {
 
         localStorage.setItem("sportschuetzen_pid", pid);
 
-        if (OneSignal.User.externalId !== pid) {
+        if (OneSignal.User && typeof OneSignal.login === 'function' && OneSignal.User.externalId !== pid) {
             const paddedPid = String(pid).padStart(6, '0');
             await OneSignal.login(paddedPid);
             console.log("Login mit PID:", paddedPid);
         }
 
-        const permission = OneSignal.Notifications.permission;
+        const permission = OneSignal.Notifications ? OneSignal.Notifications.permission : null;
 
-        if (permission === "default") {
+        if (permission === "default" && typeof OneSignal.Notifications?.requestPermission === 'function') {
             await OneSignal.Notifications.requestPermission();
         }
 
     } catch (err) {
-        console.error("OneSignal Fehler:", err);
+        console.warn("OneSignal Hinweis (Domain-Sync aktiv):", err.message || err);
     }
 });
 
@@ -383,7 +383,7 @@ OneSignalDeferred.push(async function (OneSignal) {
 
 </div>
 
-<script src="app.js?v=21" defer></script>
+<script src="app.js?v=22" defer></script>
 
 <!-- Participant Modal -->
 <div id="participant-modal" class="modal-overlay">

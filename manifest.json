@@ -4,7 +4,7 @@
   "name": "Sportschützen Muhen",
   "short_name": "Muhen",
   "description": "Resultate und Termine der Sportschützen Muhen",
-  "start_url": "index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
