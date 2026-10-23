@@ -1550,9 +1550,51 @@ function updateMobileGlobalBadge() {
 }
 window.updateMobileGlobalBadge = updateMobileGlobalBadge;
 
+// =========================================================
+//  iOS/ANDROID PWA BERECHTIGUNGEN & HOMESCREEN-BADGES
+// =========================================================
+function updatePortalBadgePermissionUi() {
+    const banner = document.getElementById('portal-badge-perm-banner');
+    const sidebarBtn = document.getElementById('portal-badge-perm-btn');
+    const isGranted = ('Notification' in window) && Notification.permission === 'granted';
+
+    if (banner) {
+        banner.classList.toggle('d-none', isGranted);
+    }
+    if (sidebarBtn) {
+        sidebarBtn.classList.toggle('d-none', isGranted);
+    }
+}
+window.updatePortalBadgePermissionUi = updatePortalBadgePermissionUi;
+
+async function requestPortalPushPermission() {
+    let perm = null;
+    try {
+        if ('Notification' in window && typeof Notification.requestPermission === 'function') {
+            perm = await Notification.requestPermission();
+            console.log("Portal native notification permission:", perm);
+        }
+    } catch (e) {
+        console.warn("Portal Notification request error:", e);
+    }
+
+    try {
+        if (window.OneSignal && window.OneSignal.Notifications && typeof window.OneSignal.Notifications.requestPermission === 'function') {
+            await window.OneSignal.Notifications.requestPermission();
+        }
+    } catch (_) {}
+
+    updatePortalBadgePermissionUi();
+    if (typeof window.updateMobileGlobalBadge === 'function') {
+        window.updateMobileGlobalBadge();
+    }
+}
+window.requestPortalPushPermission = requestPortalPushPermission;
+
 // Initialer Check beim Start des Vorstands-Portals
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         checkGalerieInboxBadge();
+        updatePortalBadgePermissionUi();
     }, 1400);
 });

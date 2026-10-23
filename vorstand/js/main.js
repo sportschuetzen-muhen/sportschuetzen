@@ -792,12 +792,14 @@ document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         if (typeof window.checkGalerieInboxBadge === 'function') window.checkGalerieInboxBadge();
         if (typeof window.loadPendingStandblaetter === 'function') window.loadPendingStandblaetter(true);
+        if (typeof window.updatePortalBadgePermissionUi === 'function') window.updatePortalBadgePermissionUi();
     }
 });
 window.addEventListener('pageshow', (e) => {
     if (e.persisted) {
         if (typeof window.checkGalerieInboxBadge === 'function') window.checkGalerieInboxBadge();
         if (typeof window.loadPendingStandblaetter === 'function') window.loadPendingStandblaetter(true);
+        if (typeof window.updatePortalBadgePermissionUi === 'function') window.updatePortalBadgePermissionUi();
     }
 });
 

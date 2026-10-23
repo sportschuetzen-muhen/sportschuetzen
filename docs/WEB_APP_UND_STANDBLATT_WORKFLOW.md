@@ -124,8 +124,10 @@ Die vormalige Diskrepanz in `public.jm_shooters` wurde vollständig behoben:
    - Behebung eines Laufzeitfehlers (`ReferenceError: targetFullName is not defined`) in `app/upload.js`, der bei aktivierter Stellvertretung fälschlicherweise als «Netzwerkfehler beim Übermitteln» gemeldet wurde.
    - Präzisierung der Fehlerbehandlung zur Ausgabe echter Fehlermeldungen sowie Cache-Busting (`upload.html?v=7`, `upload.js?v=9`).
 
-11. **PWA Homescreen Badges & Persönliche Pendenzen in der Web-App:**
+11. **PWA Homescreen Badges & Persönliche Pendenzen in der Web-App und im Vorstand:**
    - Jedes eingeloggte Vereinsmitglied sieht auf seinem iOS/Android Home-Screen direkt am App-Icon via native Web Badging API (`navigator.setAppBadge`), ob persönliche Pendenzen (offene Umfragen/RSVPs und unbezahlte Rechnungen) anstehen.
-   - Vorstandsmitglieder (`is_board`) erhalten zusätzlich Vorstands-Pendenzen (offene Standblätter, Immich-Galerie-Uploads und Miet-Vorabanfragen), visualisiert an den roten Badges am Schnellzugriff «👑 Vorstand» sowie im Profil-Dropdown.
-   - Die Aggregation erfolgt atomar über die PostgreSQL-Funktion `public.get_member_pendenzen_count(p_lizenz, p_is_board)` (Migration 93) und wird bei jedem App-Resume (`visibilitychange`, `pageshow`, `focus`) sowie nach Beantwortung von Umfragen in `app.js` automatisch synchronisiert.
-   - Sowohl die Mitglieder-App als auch das Vorstandsportal verfügen über dedizierte Manifeste (`manifest.json` und `vorstand/manifest.json`) und Apple Touch Icons für eine native Vollbild-Installation.
+   - Vorstandsmitglieder (`is_board`) erhalten im Mitglieder-Portal die aggregierten Pendenzen; im Vorstandsportal (`vorstand/`) werden die offenen Pendenzen aus Jahresmeisterschaft-Inbox (Standblatt-OCR) und Galerie-Inbox summiert und ebenfalls direkt auf das App-Icon am Home-Screen synchronisiert (`updateMobileGlobalBadge`).
+   - Die Aggregation erfolgt atomar über die PostgreSQL-Funktion `public.get_member_and_board_pendenzen_count` (Migration 93) und wird bei jedem App-Resume (`visibilitychange`, `pageshow`, `focus`) sowie nach Aktionen in `app.js` bzw. `vorstand/js/main.js` automatisch synchronisiert.
+   - **Cloudflare Pages 308-Fix & Manifest:** In beiden Manifesten (`manifest.json` und `vorstand/manifest.json`) ist `start_url: "./"` gesetzt, um Endlosschleifen durch HTTP 308 Redirects im iOS Standalone-Modus zu verhindern.
+   - **Unabhängige Native Berechtigungs-Aktivierung:** Da iOS 16.4+ die Anzeige des roten App-Badges am Homescreen strikt an erteilte Mitteilungs-Berechtigungen knüpft, bieten sowohl die Web-App als auch das Vorstandsportal einen direkten Aktivierungs-Banner und Button (`requestPushPermission` / `requestPortalPushPermission`). Diese rufen zuerst prioritär `Notification.requestPermission()` via Direkt-Geste auf, wodurch die Badging-Funktionalität auch bei Domain-Sync-Verzögerungen von Drittanbietern wie OneSignal zuverlässig aktiv ist.
+

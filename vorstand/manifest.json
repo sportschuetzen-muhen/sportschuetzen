@@ -2,7 +2,7 @@
   "name": "Sportschützen Muhen - Portal",
   "short_name": "Portal",
   "description": "Vorstands- und Verwaltungsportal der Sportschützen Muhen",
-  "start_url": "index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",

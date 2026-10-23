@@ -44,17 +44,18 @@
       OneSignalDeferred.push(async function(OneSignal) {
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
         try {
+          const isGitHubPages = window.location.pathname.startsWith('/sportschuetzen/');
+          const baseScope = isGitHubPages ? "/sportschuetzen/" : "/";
+          const swPath = isGitHubPages ? "/sportschuetzen/OneSignalSDKWorker.js" : "/OneSignalSDKWorker.js";
           await OneSignal.init({
             appId: "fe30b2b7-1dcb-43e9-8e39-b1870d1a6815",
+            serviceWorkerParam: { scope: baseScope },
+            serviceWorkerPath: swPath,
             autoRegister: false,
             notifyButton: { enable: false }
           });
-          const permission = OneSignal.Notifications ? OneSignal.Notifications.permission : null;
-          if (permission === "default") {
-            await OneSignal.Notifications.requestPermission();
-          }
         } catch (err) {
-          console.warn("OneSignal Init Hinweis:", err);
+          console.warn("OneSignal Init Hinweis (Domain-Sync aktiv):", err.message || err);
         }
       });
     </script>
@@ -923,6 +924,9 @@
                         <span><i class="fas fa-microchip me-1 text-primary"></i> <span class="nav-text">KI-Status</span></span>
                         <span id="sidebar-ai-indicator" class="badge rounded-pill bg-success-subtle text-success border border-success-subtle" style="font-size: 0.68rem;"><i class="fas fa-circle fa-2xs me-1"></i>Online</span>
                     </button>
+                    <button id="portal-badge-perm-btn" class="btn btn-outline-success w-100 btn-sm mb-2 d-none" onclick="requestPortalPushPermission()" title="iOS/iPadOS App-Badges aktivieren">
+                        <i class="fas fa-bell me-1"></i> <span class="nav-text">Badges aktivieren</span>
+                    </button>
                     <button class="btn btn-outline-secondary w-100 btn-sm mb-2" onclick="openMyProfileModal()">
                         <i class="fas fa-user-gear me-1"></i> <span class="nav-text">Mein Profil &amp; Absender</span>
                     </button>
@@ -941,6 +945,22 @@
 
             <!-- DASHBOARD -->
             <div id="view-dashboard" class="module-view active">
+                <!-- BANNER: BADGES AM HOMESCREEN AKTIVIEREN -->
+                <div id="portal-badge-perm-banner" class="alert alert-info border-primary border-opacity-25 shadow-sm d-none mb-4 p-3 rounded-3" style="background: #eff6ff; color: #1e40af;">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">🔔</span>
+                            <div>
+                                <strong class="d-block">App-Badges am Homescreen aktivieren</strong>
+                                <span class="small" style="color: #1e3a8a;">Damit dein iPad oder iPhone die rote Zahl mit offenen Vorstands-Pendenzen direkt am App-Symbol anzeigt, aktiviere bitte kurz die Mitteilungs-Berechtigung auf diesem Gerät.</span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm px-3 py-2 fw-bold rounded-2 text-nowrap" onclick="requestPortalPushPermission()">
+                            ✅ Jetzt aktivieren
+                        </button>
+                    </div>
+                </div>
+
                 <div class="d-flex justify-content-between align-items-md-center flex-column flex-md-row mb-4 p-4 rounded-4 shadow-sm border border-light position-relative overflow-hidden" style="background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(240,244,248,0.9) 100%); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
                     <div class="position-absolute" style="top:-50px; right:-50px; width:150px; height:150px; background:radial-gradient(circle, rgba(15,58,93,0.05) 0%, rgba(255,255,255,0) 70%); border-radius:50%; z-index:0; pointer-events:none;"></div>
                     <div class="position-relative" style="z-index: 1;">
@@ -2453,7 +2473,7 @@
 <!-- SCRIPTS – Reihenfolge wichtig! -->
 <script src="js/auth.js?v=20261007_2"></script>
 <script src="js/permissions.js?v=20261007_2"></script>
-<script src="js/main.js?v=20261007_2"></script>
+<script src="js/main.js?v=20261023_1"></script>
 <!-- RechnungsCore: Zentraler Service für Faktura & Forderungs-Lifecycle -->
 <script src="js/rechnungen/rechnungen-core.js"></script>
 <script src="js/inventar/inventar-core.js"></script>
@@ -2557,7 +2577,7 @@
 <script src="js/meeting-recorder.js"></script>
 
 <!-- NEU: Skript für Galerie Manager -->
-<script src="js/galerie.js?v=20261020_3"></script>
+<script src="js/galerie.js?v=20261023_1"></script>
 
 <!-- Modul ANLÄSSE (Native Supabase Migration) -->
 <script src="js/anlaesse.js"></script>
