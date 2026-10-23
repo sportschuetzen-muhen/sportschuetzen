@@ -1922,6 +1922,7 @@ function showApp(user) {
     syncOneSignal(user);
     if (user) {
         checkUserPendenzenBadge();
+        updateBadgePermissionUi();
     }
 
     // Event Listener für optionalen Header-Logout Button
@@ -2034,7 +2035,42 @@ async function checkUserPendenzenBadge() {
 window.checkUserPendenzenBadge = checkUserPendenzenBadge;
 window.checkBoardPendenzenBadge = checkUserPendenzenBadge; // Rückwärtskompatibilität
 
+function updateBadgePermissionUi() {
+    const banner = document.getElementById('badge-permission-banner');
+    const dropdownBtn = document.getElementById('dropdown-push-btn');
+    const isGranted = ('Notification' in window) && Notification.permission === 'granted';
+
+    if (banner) {
+        banner.style.display = isGranted ? 'none' : 'block';
+    }
+    if (dropdownBtn) {
+        dropdownBtn.style.display = isGranted ? 'none' : 'flex';
+    }
+}
+window.updateBadgePermissionUi = updateBadgePermissionUi;
+
+async function requestPushNotificationPermission() {
+    try {
+        let perm = null;
+        if (window.OneSignal && window.OneSignal.Notifications && typeof window.OneSignal.Notifications.requestPermission === 'function') {
+            perm = await window.OneSignal.Notifications.requestPermission();
+        } else if ('Notification' in window && typeof Notification.requestPermission === 'function') {
+            perm = await Notification.requestPermission();
+        }
+        console.log("Notification permission result:", perm);
+    } catch (e) {
+        console.warn("Permission request error:", e);
+    }
+
+    updateBadgePermissionUi();
+    if (window.checkUserPendenzenBadge) {
+        window.checkUserPendenzenBadge();
+    }
+}
+window.requestPushNotificationPermission = requestPushNotificationPermission;
+
 document.addEventListener('app:resume', () => {
+    updateBadgePermissionUi();
     checkUserPendenzenBadge();
 });
 
