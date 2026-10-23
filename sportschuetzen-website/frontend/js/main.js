@@ -638,7 +638,7 @@ function initContactForm() {
             status.style.backgroundColor = "rgba(16, 185, 129, 0.1)";
             status.style.color = "#10b981";
             status.style.border = "1px solid rgba(16, 185, 129, 0.2)";
-            status.innerText = "Vielen Dank! Ihre Nachricht wurde erfolgreich übermittelt.";
+            status.innerText = "Vielen Dank! Deine Nachricht wurde erfolgreich übermittelt.";
             form.reset();
             return;
         }
@@ -658,7 +658,7 @@ function initContactForm() {
             status.style.backgroundColor = "rgba(239, 68, 68, 0.1)";
             status.style.color = "#ef4444";
             status.style.border = "1px solid rgba(239, 68, 68, 0.2)";
-            status.innerText = "Bitte füllen Sie alle erforderlichen Felder aus.";
+            status.innerText = "Bitte fülle alle erforderlichen Felder aus.";
             return;
         }
 
@@ -728,7 +728,7 @@ function initContactForm() {
                       </div>
                     </div>
                     <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5;">
-                      💡 <strong>Hinweis:</strong> Sie können direkt auf diese E-Mail antworten, um mit <strong>${safeName}</strong> in Kontakt zu treten (Reply-To ist auf <em>${safeEmail}</em> hinterlegt).
+                      💡 <strong>Hinweis:</strong> Du kannst direkt auf diese E-Mail antworten, um mit <strong>${safeName}</strong> in Kontakt zu treten (Reply-To ist auf <em>${safeEmail}</em> hinterlegt).
                     </div>
                   </div>
                 </div>
@@ -768,7 +768,7 @@ function initContactForm() {
             status.style.backgroundColor = "rgba(16, 185, 129, 0.1)";
             status.style.color = "#10b981";
             status.style.border = "1px solid rgba(16, 185, 129, 0.2)";
-            status.innerText = "Vielen Dank! Ihre Nachricht wurde erfolgreich an uns übermittelt. Wir setzen uns bald mit Ihnen in Verbindung.";
+            status.innerText = "Vielen Dank! Deine Nachricht wurde erfolgreich an uns übermittelt. Wir setzen uns bald mit dir in Verbindung.";
             form.reset();
 
         } catch (error) {
@@ -777,7 +777,7 @@ function initContactForm() {
             status.style.backgroundColor = "rgba(239, 68, 68, 0.1)";
             status.style.color = "#ef4444";
             status.style.border = "1px solid rgba(239, 68, 68, 0.2)";
-            status.innerText = "Fehler: " + (error.message || "Die Nachricht konnte nicht gesendet werden. Bitte versuchen Sie es später erneut oder kontaktieren Sie uns direkt per E-Mail.");
+            status.innerText = "Fehler: " + (error.message || "Die Nachricht konnte nicht gesendet werden. Bitte versuche es später erneut oder kontaktiere uns direkt per E-Mail.");
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = originalBtnText;

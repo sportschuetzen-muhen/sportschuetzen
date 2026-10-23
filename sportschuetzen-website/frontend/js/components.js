@@ -255,7 +255,7 @@ class SiteFooter extends HTMLElement {
                     </div>
                     <div class="footer-social">
                         <h4>Social Media</h4>
-                        <p style="margin-bottom: 0.75rem;">Folgen Sie uns für Impressionen, Resultate und Vereinsleben:</p>
+                        <p style="margin-bottom: 0.75rem;">Folge uns für Impressionen, Resultate und Vereinsleben:</p>
                         <div class="footer-social-links">
                             <a href="https://www.instagram.com/sportschuetzen.muhen/" target="_blank" rel="noopener noreferrer" class="social-btn social-btn-instagram" title="Sportschützen Muhen auf Instagram">
                                 <svg class="social-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
