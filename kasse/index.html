@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Festkasse & Aplano Schichtplaner – Sportschützen Muhen</title>
+  
+  <!-- PWA & Apple Meta Tags -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b1120">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Festkasse">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  
+  <!-- Styling -->
+  <link rel="stylesheet" href="kasse.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- ─────────────────────────────────────────────────────────────
+         TOP NAVIGATION & HEADER
+         ───────────────────────────────────────────────────────────── -->
+    <header class="top-header">
+      <div class="header-left">
+        <div class="brand-badge">
+          <span>🎯</span>
+          <span>SPORTSCHÜTZEN MUHEN</span>
+        </div>
+        <div class="event-title">Festwirtschaft</div>
+      </div>
+
+      <!-- ZENTRALE MODUS-TABS -->
+      <nav class="header-nav">
+        <button id="tab-btn-kasse" class="nav-tab-btn active" onclick="KasseModule.switchView('kasse')">
+          <span>🛒</span>
+          <span>Kasse</span>
+        </button>
+        <button id="tab-btn-schichtplan" class="nav-tab-btn" onclick="KasseModule.switchView('schichtplan')">
+          <span>📅</span>
+          <span>Schichtplan (Aplano)</span>
+        </button>
+        <button id="tab-btn-abschluss" class="nav-tab-btn" onclick="KasseModule.switchView('abschluss')">
+          <span>📊</span>
+          <span>Kassensturz & Z-Bericht</span>
+        </button>
+        <button id="tab-btn-kellner" class="nav-tab-btn" onclick="KasseModule.switchView('kellner')">
+          <span>📱</span>
+          <span>Kellner (iPhone)</span>
+        </button>
+      </nav>
+
+      <div class="header-right">
+        <!-- AKTIVER BEDIENER (APLANO-KOPPLUNG) -->
+        <div class="active-operator-badge" onclick="KasseModule.switchView('schichtplan')" title="Klicke hier, um zum Aplano-Schichtplaner zu wechseln">
+          <div class="operator-avatar" id="active-operator-avatar">BM</div>
+          <div class="operator-info">
+            <span class="operator-name" id="active-cashier-name">Beat Müller</span>
+            <span class="operator-station" id="active-cashier-station">Kasse 1</span>
+          </div>
+        </div>
+
+        <div class="offline-pill" title="App ist 100% offline-fähig">
+          <div class="offline-dot"></div>
+          <span>Offline Bereit</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ─────────────────────────────────────────────────────────────
+         HAUPTANSICHTEN (VIEW CONTAINER)
+         ───────────────────────────────────────────────────────────── -->
+    <main class="view-container">
+
+      <!-- ── VIEW 1: KASSE / POS (WAITERONE LAYOUT) ─────────────── -->
+      <section id="view-kasse" class="view-section active">
+        <div class="pos-layout">
+          <!-- LINKE & MITTLERE SPALTE: ARTIKELKATALOG -->
+          <div class="pos-catalog">
+            <!-- KATEGORIEN-LEISTE -->
+            <div class="category-bar" id="category-bar"></div>
+
+            <!-- SUCHE -->
+            <div class="catalog-toolbar">
+              <div class="search-input-wrap">
+                <span class="search-icon">🔍</span>
+                <input 
+                  type="text" 
+                  class="search-input" 
+                  placeholder="Artikel suchen (z.B. Bier, Pommes, Bratwurst)..." 
+                  oninput="KasseModule.setSearch(this.value)"
+                >
+              </div>
+            </div>
+
+            <!-- PRODUKTKACHELN GRID -->
+            <div class="products-grid" id="products-grid"></div>
+          </div>
+
+          <!-- RECHTE SPALTE: BON & WARENKORB -->
+          <div class="pos-ticket-panel">
+            <div class="ticket-header">
+              <div class="ticket-title">
+                <span>🧾</span>
+                <span>Aktueller Bon</span>
+              </div>
+              <div class="ticket-actions">
+                <button class="btn-icon-clear" onclick="KasseModule.clearCart()">
+                  <span>✕</span>
+                  <span>Leeren</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- EINGEHENDE IPHONE-BESTELLUNG BANNER -->
+            <div id="incoming-order-banner" style="display: none; padding: 10px 10px 0 10px;"></div>
+
+            <!-- POSITIONENLISTE -->
+            <div class="ticket-items-list" id="ticket-items-list"></div>
+
+            <!-- TICKET FOOTER: TOTAL & CHECKOUT -->
+            <div class="ticket-footer">
+              <div class="ticket-summary-row">
+                <span class="summary-total-label">Gesamttotal:</span>
+                <span class="summary-total-amount" id="ticket-total-display">CHF 0.00</span>
+              </div>
+
+              <!-- SCHWEIZER NOTEN SCHNELLTASTEN -->
+              <div class="cash-quick-buttons" id="cash-quick-buttons"></div>
+
+              <!-- RÜCKGELD RECHNER -->
+              <div class="change-display-box" id="change-display-box" style="display: none;">
+                <span class="change-label">💵 Rückgeld an Kunden:</span>
+                <span class="change-amount" id="ticket-change-amount">CHF 0.00</span>
+              </div>
+
+              <!-- ZAHLUNGSAKTIONEN -->
+              <div class="payment-actions-grid">
+                <button class="btn-pay-cash" onclick="KasseModule.completePayment('bar')">
+                  <span>💵</span>
+                  <span>BAR BEZAHLEN</span>
+                </button>
+                <button class="btn-pay-twint" onclick="KasseModule.completePayment('twint')">
+                  <span>📱</span>
+                  <span>TWINT</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── VIEW 2: SCHICHTPLANER (APLANO-STYLE) ────────────────── -->
+      <section id="view-schichtplan" class="view-section">
+        <div class="aplano-layout">
+          <div class="aplano-toolbar">
+            <div class="aplano-title-group">
+              <span style="font-size: 24px;">📅</span>
+              <div>
+                <div class="aplano-title">Aplano Schicht- & Helferplaner</div>
+                <div class="aplano-subtitle">Visuelle Schichteinteilung für Grill, Kasse, Ausschank, Bar & Service</div>
+              </div>
+            </div>
+
+            <div class="aplano-actions">
+              <button class="btn-aplano-add" onclick="AplanoSchichtplan.openCreateShiftModal('st_kasse1', '10:00', '14:00', 'Neue Schicht')">
+                <span>➕</span>
+                <span>Schicht anlegen</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="aplano-grid-wrapper" id="aplano-grid-container"></div>
+        </div>
+      </section>
+
+      <!-- ── VIEW 3: KASSENSTURZ & Z-ABSCHLUSS (PHASE 2) ─────────── -->
+      <section id="view-abschluss" class="view-section">
+        <div style="width: 100%; height: 100%;" id="abschluss-view-content"></div>
+      </section>
+
+      <!-- ── VIEW 4: IPHONE KELLNER HANDHELD (PHASE 3) ──────────── -->
+      <section id="view-kellner" class="view-section">
+        <div style="width: 100%; height: 100%;" id="kellner-view-content"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       MODALE & DIALOGE
+       ───────────────────────────────────────────────────────────── -->
+
+  <!-- QUITTUNGS-MODAL (80mm BON) -->
+  <div id="receipt-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 360px;">
+      <div class="modal-header">
+        <div class="modal-title">Quittung</div>
+        <button class="modal-close-btn" onclick="document.getElementById('receipt-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="print-receipt-area"></div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button class="btn-secondary" onclick="document.getElementById('receipt-modal').classList.remove('active')">Schließen</button>
+        <button class="btn-primary" onclick="KasseModule.printReceipt()">🖨️ Bon drucken</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Z-BERICHT QUITTUNGS-MODAL -->
+  <div id="z-report-receipt-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 400px;">
+      <div class="modal-header">
+        <div class="modal-title">Z-Kassenabschluss</div>
+        <button class="modal-close-btn" onclick="document.getElementById('z-report-receipt-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="z-report-receipt-body"></div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button class="btn-secondary" onclick="document.getElementById('z-report-receipt-modal').classList.remove('active')">Schließen</button>
+        <button class="btn-primary" onclick="KassenAbschluss.printZReport()">🖨️ Z-Bericht drucken</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BARAUSLAGE / WECHSELGELD MODAL -->
+  <div id="cash-movement-modal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="movement-title">Barauslage erfassen</div>
+        <button class="modal-close-btn" onclick="document.getElementById('cash-movement-modal').classList.remove('active')">✕</button>
+      </div>
+      <input type="hidden" id="movement-type" value="ausgabe">
+      <div class="d-flex flex-column gap-3">
+        <div>
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Betrag in CHF:</label>
+          <input type="number" step="0.05" id="movement-amount" class="search-input" style="padding: 0 12px; font-size: 18px; font-weight: bold;" placeholder="z.B. 25.00">
+        </div>
+        <div style="margin-top: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Grund / Belegtext:</label>
+          <input type="text" id="movement-reason" class="search-input" style="padding: 0 12px;" placeholder="z.B. Not-Einkauf Brot Coop, Senf, etc.">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('cash-movement-modal').classList.remove('active')">Abbrechen</button>
+        <button class="btn-primary" onclick="KassenAbschluss.saveCashMovement()">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APLANO: HELFER ZUTEILEN MODAL -->
+  <div id="aplano-assign-modal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Helfer zur Schicht zuteilen</div>
+        <button class="modal-close-btn" onclick="AplanoSchichtplan.closeModal('aplano-assign-modal')">✕</button>
+      </div>
+      <input type="hidden" id="assign-shift-id">
+      <div class="d-flex flex-column gap-3">
+        <div>
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Name des Helfers (Vorname Nachname):</label>
+          <input type="text" id="assign-helper-name" class="search-input" style="padding: 0 12px;" placeholder="z.B. Lukas Burkhalter">
+        </div>
+        <div style="margin-top: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Telefon / Handy (optional):</label>
+          <input type="tel" id="assign-helper-phone" class="search-input" style="padding: 0 12px;" placeholder="z.B. 079 123 45 67">
+        </div>
+        <div style="margin-top: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Funktion / Rolle:</label>
+          <input type="text" id="assign-helper-role" class="search-input" style="padding: 0 12px;" placeholder="z.B. Kassier, Grillmeister, Service">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="AplanoSchichtplan.closeModal('aplano-assign-modal')">Abbrechen</button>
+        <button class="btn-primary" onclick="AplanoSchichtplan.saveAssignHelper()">Zuteilen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APLANO: NEUE SCHICHT MODAL -->
+  <div id="aplano-create-shift-modal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Neue Schicht anlegen</div>
+        <button class="modal-close-btn" onclick="AplanoSchichtplan.closeModal('aplano-create-shift-modal')">✕</button>
+      </div>
+      <div class="d-flex flex-column gap-3">
+        <div>
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Bereich / Station:</label>
+          <select id="create-shift-station" class="search-input" style="padding: 0 12px;">
+            <option value="st_kasse1">💵 Kasse 1 (Haupteingang)</option>
+            <option value="st_kasse2">💵 Kasse 2 (Zelt / Schnell)</option>
+            <option value="st_grill">🥩 Grill & Warme Küche</option>
+            <option value="st_ausschank">🍺 Ausschank & Bier</option>
+            <option value="st_bar">🍸 Fest-Bar / Drinks</option>
+            <option value="st_service">🍽️ Service & Tische</option>
+            <option value="st_springer">🧹 Springer & Abwasch</option>
+          </select>
+        </div>
+        <div style="margin-top: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Bezeichnung / Titel:</label>
+          <input type="text" id="create-shift-title" class="search-input" style="padding: 0 12px;" placeholder="z.B. Frühschicht, Abendschicht">
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+          <div style="flex: 1;">
+            <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Von:</label>
+            <input type="time" id="create-shift-start" class="search-input" style="padding: 0 12px;" value="10:00">
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Bis:</label>
+            <input type="time" id="create-shift-end" class="search-input" style="padding: 0 12px;" value="14:00">
+          </div>
+        </div>
+        <div style="margin-top: 10px;">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Benötigte Anzahl Helfer:</label>
+          <input type="number" id="create-shift-count" class="search-input" style="padding: 0 12px;" value="1" min="1" max="10">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="AplanoSchichtplan.closeModal('aplano-create-shift-modal')">Abbrechen</button>
+        <button class="btn-primary" onclick="AplanoSchichtplan.saveCreateShift()">Schicht erstellen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KELLNER: TISCH AUSWAHL MODAL -->
+  <div id="kellner-table-modal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Tisch auswählen</div>
+        <button class="modal-close-btn" onclick="document.getElementById('kellner-table-modal').classList.remove('active')">✕</button>
+      </div>
+      <div id="kellner-table-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;"></div>
+    </div>
+  </div>
+
+  <!-- GLOBAL TOAST NOTIFICATION -->
+  <div id="global-toast" class="toast-box"></div>
+
+  <!-- SCRIPTS -->
+  <script src="db.js"></script>
+  <script src="schichtplan.js"></script>
+  <script src="abschluss.js"></script>
+  <script src="kellner.js"></script>
+  <script src="kasse.js"></script>
+</body>
+</html>
