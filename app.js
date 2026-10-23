@@ -1377,7 +1377,9 @@ async function initLogin() {
                             name: syncRes.display_name,
                             email: syncRes.email,
                             role: syncRes.primary_role || 'member',
-                            is_board: Boolean(syncRes.is_board)
+                            is_board: Boolean(syncRes.is_board),
+                            is_passive: Boolean(syncRes.is_passive),
+                            personenkreis: syncRes.personenkreis || (syncRes.is_passive ? 'passiv' : 'aktiv')
                         };
                     }
                 } catch (sErr) {
@@ -1711,7 +1713,9 @@ window.verifySsoOtpCode = async function() {
                     email: window._ssoPendingEmail,
                     role: rData.type || 'member',
                     person_number: rData.person_number,
-                    is_board: rData.type === 'admin'
+                    is_board: rData.type === 'admin',
+                    is_passive: Boolean(rData.is_passive),
+                    personenkreis: rData.personenkreis || (rData.is_passive ? 'passiv' : 'aktiv')
                 };
             }
         }
@@ -1727,7 +1731,9 @@ window.verifySsoOtpCode = async function() {
                 name: rData.name || 'Mitglied',
                 email: window._ssoPendingEmail,
                 role: rData.type || 'member',
-                is_board: rData.type === 'admin'
+                is_board: rData.type === 'admin',
+                is_passive: Boolean(rData.is_passive),
+                personenkreis: rData.personenkreis || (rData.is_passive ? 'passiv' : 'aktiv')
             };
         }
 
@@ -2123,9 +2129,21 @@ function syncOneSignal(user) {
                     console.log("OneSignal: Identität synchronisiert für PID", pid);
                 }
 
-                // Namen als Tag hinzufügen, damit er im Dashboard sichtbar ist
-                if (user.name) {
-                    await OneSignal.User.addTag("name", user.name);
+                // Die 6 kostenlosen Tags (Vorname, Nachname, Name, Lizenz, Personenkreis, Vorstand)
+                const tagsToSet = {
+                    vorname: user.vorname || '',
+                    nachname: user.nachname || '',
+                    name: user.name || '',
+                    lizenz: pid,
+                    personenkreis: user.personenkreis || (user.is_passive ? 'passiv' : 'aktiv'),
+                    is_board: user.is_board ? 'true' : 'false'
+                };
+                if (typeof OneSignal.User.addTags === 'function') {
+                    await OneSignal.User.addTags(tagsToSet);
+                } else if (typeof OneSignal.User.addTag === 'function') {
+                    for (const [k, v] of Object.entries(tagsToSet)) {
+                        await OneSignal.User.addTag(k, v);
+                    }
                 }
 
                 // Benachrichtigungs-Berechtigung abfragen falls noch Standard
