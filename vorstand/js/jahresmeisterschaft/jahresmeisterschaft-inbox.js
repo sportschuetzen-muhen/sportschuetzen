@@ -51,13 +51,17 @@ function updateJMInboxBadge(count) {
     const tileBadge = document.getElementById('jm-tile-badge');
     const tabBadge = document.getElementById('jm-tab-badge-pending');
 
+    const tip = window._jmInboxCount === 1 ? '1 Standblatt zur OCR-Prüfung' : `${window._jmInboxCount} Standblätter zur OCR-Prüfung`;
+
     [badge, navBadge, tileBadge, tabBadge].forEach(el => {
         if (!el) return;
         if (count > 0) {
             el.innerText = count;
+            el.title = tip;
             el.classList.remove('d-none');
         } else {
             el.classList.add('d-none');
+            el.removeAttribute('title');
         }
     });
 

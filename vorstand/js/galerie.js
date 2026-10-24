@@ -1482,20 +1482,24 @@ function updateGalerieBadge(count) {
     window._galInboxCount = parseInt(count) || 0;
     const navBadge = document.getElementById('galerie-nav-badge');
     const tileBadge = document.getElementById('galerie-tile-badge');
+    const tip = window._galInboxCount === 1
+        ? '1 Foto im Sammelalbum «Mitglieder-Uploads»'
+        : `${window._galInboxCount} Fotos im Sammelalbum «Mitglieder-Uploads»`;
 
     [navBadge, tileBadge].forEach(el => {
         if (!el) return;
-        if (count > 0) {
-            el.innerText = count;
+        if (window._galInboxCount > 0) {
+            el.innerText = window._galInboxCount;
+            el.title = tip;
             el.classList.remove('d-none');
         } else {
             el.classList.add('d-none');
+            el.removeAttribute('title');
         }
     });
 
-    if (typeof window.updateMobileGlobalBadge === 'function') {
-        window.updateMobileGlobalBadge();
-    }
+    if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+    if (typeof window.renderDashboardPendenzenWidget === 'function') window.renderDashboardPendenzenWidget();
 }
 window.updateGalerieBadge = updateGalerieBadge;
 
@@ -1517,16 +1521,23 @@ function updateRentalBadge(count) {
     window._rentalInboxCount = parseInt(count) || 0;
     const navBadge = document.getElementById('vermietung-nav-badge');
     const tileBadge = document.getElementById('vermietung-tile-badge');
+    const tip = window._rentalInboxCount === 1
+        ? '1 neue Vorab-Terminanfrage zur Prüfung'
+        : `${window._rentalInboxCount} neue Vorab-Terminanfragen zur Prüfung`;
+
     [navBadge, tileBadge].forEach(el => {
         if (!el) return;
         if (window._rentalInboxCount > 0) {
             el.innerText = window._rentalInboxCount;
+            el.title = tip;
             el.classList.remove('d-none');
         } else {
             el.classList.add('d-none');
+            el.removeAttribute('title');
         }
     });
     if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+    if (typeof window.renderDashboardPendenzenWidget === 'function') window.renderDashboardPendenzenWidget();
 }
 window.updateRentalBadge = updateRentalBadge;
 
@@ -1534,16 +1545,23 @@ function updateInvoiceBadge(count) {
     window._invoiceInboxCount = parseInt(count) || 0;
     const navBadge = document.getElementById('rechnungen-nav-badge');
     const tileBadge = document.getElementById('rechnungen-tile-badge');
+    const tip = window._invoiceInboxCount === 1
+        ? '1 Rechnungs-Entwurf zum Prüfen & Versenden'
+        : `${window._invoiceInboxCount} Rechnungs-Pendenzen (Entwürfe / überfällig)`;
+
     [navBadge, tileBadge].forEach(el => {
         if (!el) return;
         if (window._invoiceInboxCount > 0) {
             el.innerText = window._invoiceInboxCount;
+            el.title = tip;
             el.classList.remove('d-none');
         } else {
             el.classList.add('d-none');
+            el.removeAttribute('title');
         }
     });
     if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+    if (typeof window.renderDashboardPendenzenWidget === 'function') window.renderDashboardPendenzenWidget();
 }
 window.updateInvoiceBadge = updateInvoiceBadge;
 
@@ -1551,16 +1569,23 @@ function updateUmfragenBadge(count) {
     window._umfragenInboxCount = parseInt(count) || 0;
     const navBadge = document.getElementById('umfragen-nav-badge');
     const tileBadge = document.getElementById('umfragen-tile-badge');
+    const tip = window._umfragenInboxCount === 1
+        ? '1 vergangener Anlass wartet auf Abschluss / Auswertung'
+        : `${window._umfragenInboxCount} vergangene Anlässe warten auf Abschluss / Auswertung`;
+
     [navBadge, tileBadge].forEach(el => {
         if (!el) return;
         if (window._umfragenInboxCount > 0) {
             el.innerText = window._umfragenInboxCount;
+            el.title = tip;
             el.classList.remove('d-none');
         } else {
             el.classList.add('d-none');
+            el.removeAttribute('title');
         }
     });
     if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+    if (typeof window.renderDashboardPendenzenWidget === 'function') window.renderDashboardPendenzenWidget();
 }
 window.updateUmfragenBadge = updateUmfragenBadge;
 
@@ -1568,16 +1593,23 @@ function updateMailBadge(count) {
     window._mailInboxCount = parseInt(count) || 0;
     const navBadge = document.getElementById('mail-nav-badge');
     const tileBadge = document.getElementById('mail-tile-badge');
+    const tip = window._mailInboxCount === 1
+        ? '1 fehlgeschlagene E-Mail im System'
+        : `${window._mailInboxCount} fehlgeschlagene E-Mails im System`;
+
     [navBadge, tileBadge].forEach(el => {
         if (!el) return;
         if (window._mailInboxCount > 0) {
             el.innerText = window._mailInboxCount;
+            el.title = tip;
             el.classList.remove('d-none');
         } else {
             el.classList.add('d-none');
+            el.removeAttribute('title');
         }
     });
     if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+    if (typeof window.renderDashboardPendenzenWidget === 'function') window.renderDashboardPendenzenWidget();
 }
 window.updateMailBadge = updateMailBadge;
 
@@ -1619,6 +1651,125 @@ async function refreshAllPortalPendenzenBadges() {
 window.refreshAllPortalPendenzenBadges = refreshAllPortalPendenzenBadges;
 
 // =========================================================
+//  DASHBOARD PENDENZEN-WIDGET (Kompakte visuelle Übersicht)
+// =========================================================
+function renderDashboardPendenzenWidget() {
+    const widget = document.getElementById('dashboard-pendenzen-widget');
+    const totalEl = document.getElementById('pendenzen-total-count');
+    const listEl = document.getElementById('pendenzen-items-list');
+    if (!widget || !listEl) return;
+
+    const items = [];
+
+    const rentalCount = window._rentalInboxCount || 0;
+    if (rentalCount > 0) {
+        items.push({
+            icon: '🏠',
+            title: 'Vermietung',
+            count: rentalCount,
+            desc: rentalCount === 1 ? '1 neue Vorab-Terminanfrage zur Prüfung' : `${rentalCount} neue Vorab-Terminanfragen zur Prüfung`,
+            action: "navTo('vermietung')",
+            actionLabel: 'Prüfen'
+        });
+    }
+
+    const galCount = window._galInboxCount || 0;
+    if (galCount > 0) {
+        items.push({
+            icon: '🖼️',
+            title: 'Galerie Manager',
+            count: galCount,
+            desc: galCount === 1 ? '1 Foto im Album «Mitglieder-Uploads»' : `${galCount} Fotos im Album «Mitglieder-Uploads»`,
+            action: "navTo('galerie')",
+            actionLabel: 'Kuratieren'
+        });
+    }
+
+    const invCount = window._invoiceInboxCount || 0;
+    if (invCount > 0) {
+        items.push({
+            icon: '🧾',
+            title: 'Rechnungswesen',
+            count: invCount,
+            desc: invCount === 1 ? '1 Entwurf bereit zum Versenden' : `${invCount} Rechnungs-Pendenzen (Entwürfe / überfällig)`,
+            action: "navTo('rechnungen')",
+            actionLabel: 'Öffnen'
+        });
+    }
+
+    const umfCount = window._umfragenInboxCount || 0;
+    if (umfCount > 0) {
+        items.push({
+            icon: '🗓️',
+            title: 'Anlässe & Umfragen',
+            count: umfCount,
+            desc: umfCount === 1 ? '1 vergangener Anlass wartet auf Abschluss' : `${umfCount} vergangene Anlässe warten auf Abschluss / Auswertung`,
+            action: "navTo('umfragen')",
+            actionLabel: 'Auswerten'
+        });
+    }
+
+    const jmCount = window._jmInboxCount || 0;
+    if (jmCount > 0) {
+        items.push({
+            icon: '🏅',
+            title: 'Jahresmeisterschaft',
+            count: jmCount,
+            desc: jmCount === 1 ? '1 Standblatt zur OCR-Validierung' : `${jmCount} Standblätter zur OCR-Validierung`,
+            action: "navTo('jahresmeisterschaft')",
+            actionLabel: 'Validieren'
+        });
+    }
+
+    const mailCount = window._mailInboxCount || 0;
+    if (mailCount > 0) {
+        items.push({
+            icon: '📧',
+            title: 'System-Mails',
+            count: mailCount,
+            desc: mailCount === 1 ? '1 fehlgeschlagene E-Mail im System' : `${mailCount} fehlgeschlagene E-Mails im System`,
+            action: "navTo('mail')",
+            actionLabel: 'Mail-Log'
+        });
+    }
+
+    const total = items.reduce((sum, it) => sum + it.count, 0);
+
+    if (totalEl) totalEl.innerText = total;
+
+    if (total === 0) {
+        widget.classList.add('d-none');
+        listEl.innerHTML = '';
+        return;
+    }
+
+    listEl.innerHTML = items.map(it => `
+        <div class="col-md-6 col-xl-4">
+            <div class="p-3 rounded-3 bg-white border shadow-sm d-flex align-items-center justify-content-between gap-2 h-100" style="border-left: 4px solid #f97316 !important;">
+                <div class="d-flex align-items-start gap-2 overflow-hidden">
+                    <span class="fs-4 flex-shrink-0">${it.icon}</span>
+                    <div style="min-width: 0;">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <strong class="text-dark" style="font-size: 0.88rem;">${it.title}</strong>
+                            <span class="badge rounded-pill bg-danger" style="font-size: 0.68rem;">${it.count}</span>
+                        </div>
+                        <span class="small text-muted d-block text-truncate" title="${it.desc}" style="font-size: 0.8rem;">
+                            ${it.desc}
+                        </span>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger text-nowrap fw-semibold px-2 py-1 flex-shrink-0" onclick="${it.action}" style="font-size: 0.78rem;">
+                    ${it.actionLabel} ➔
+                </button>
+            </div>
+        </div>
+    `).join('');
+
+    widget.classList.remove('d-none');
+}
+window.renderDashboardPendenzenWidget = renderDashboardPendenzenWidget;
+
+// =========================================================
 //  ZENTRALER SAMMEL-BADGE FÜR MOBIL & IPAD
 // =========================================================
 function updateMobileGlobalBadge() {
@@ -1654,9 +1805,18 @@ function updateMobileGlobalBadge() {
     if (mobileBadge) {
         if (total > 0) {
             mobileBadge.innerText = total > 99 ? '99+' : String(total);
+            mobileBadge.title = `${total} offene Vorstands-Pendenzen (Tippen für Dashboard-Übersicht)`;
+            mobileBadge.style.cursor = 'pointer';
+            mobileBadge.onclick = (e) => {
+                e.stopPropagation();
+                if (typeof navTo === 'function') navTo('dashboard');
+                const w = document.getElementById('dashboard-pendenzen-widget');
+                if (w) w.scrollIntoView({ behavior: 'smooth' });
+            };
             mobileBadge.classList.remove('d-none');
         } else {
             mobileBadge.classList.add('d-none');
+            mobileBadge.removeAttribute('title');
         }
     }
 
@@ -1667,6 +1827,10 @@ function updateMobileGlobalBadge() {
         } else {
             navigator.clearAppBadge().catch(() => {});
         }
+    }
+
+    if (typeof window.renderDashboardPendenzenWidget === 'function') {
+        window.renderDashboardPendenzenWidget();
     }
 }
 window.updateMobileGlobalBadge = updateMobileGlobalBadge;

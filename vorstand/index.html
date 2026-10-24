@@ -977,6 +977,32 @@
                     </div>
                     <div id="last-login-banner" class="mt-2 mt-md-0 position-relative" style="z-index: 1;"></div>
                 </div>
+
+                <!-- DASHBOARD PENDENZEN-WIDGET -->
+                <div id="dashboard-pendenzen-widget" class="d-none mb-4 animate__animated animate__fadeIn">
+                    <div class="card border-0 shadow-sm rounded-4 overflow-hidden" style="background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%); border-left: 5px solid #f59e0b !important;">
+                        <div class="p-3 p-md-4">
+                            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2 border-bottom pb-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="fs-4">📋</span>
+                                    <div>
+                                        <h5 class="mb-0 fw-bold text-dark" style="letter-spacing: -0.3px;">
+                                            Offene Vorstands-Pendenzen (<span id="pendenzen-total-count">0</span>)
+                                        </h5>
+                                        <span class="small text-muted">Folgende Aufgaben warten auf deine Bearbeitung oder Freigabe:</span>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" onclick="refreshAllPortalPendenzenBadges()" title="Pendenzen neu laden">
+                                    <i class="fas fa-sync-alt me-1"></i> Aktualisieren
+                                </button>
+                            </div>
+                            <div id="pendenzen-items-list" class="row g-2">
+                                <!-- Dynamische Pendenzen-Karten -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <p class="text-muted mb-0 fw-medium">Wähle einen Bereich im Menü aus:</p>
                 </div>
@@ -2597,7 +2623,7 @@
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-input.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-manager.js"></script>
 <script src="js/jahresmeisterschaft/jahresmeisterschaft-import.js"></script>
-<script src="js/jahresmeisterschaft/jahresmeisterschaft-inbox.js"></script>
+<script src="js/jahresmeisterschaft/jahresmeisterschaft-inbox.js?v=20261024_1"></script>
 
 <!-- NEU: Skripte für Endschiessen KK 50m -->
 <script src="js/endschiessen/endschiessen-core.js"></script>
@@ -2610,7 +2636,7 @@
 <script src="js/meeting-recorder.js"></script>
 
 <!-- NEU: Skript für Galerie Manager -->
-<script src="js/galerie.js?v=20261024_1"></script>
+<script src="js/galerie.js?v=20261024_2"></script>
 
 <!-- Modul ANLÄSSE (Native Supabase Migration) -->
 <script src="js/anlaesse.js"></script>
