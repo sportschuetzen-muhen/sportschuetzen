@@ -92,12 +92,34 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
   * **Sicherheitsnetz bei Abweichung:** Stimmt mindestens eines der drei Kriterien nicht überein, wird **keine** automatische Buchung ausgelöst und keine Rechnung verändert. Das System verschiebt das Mail in Gmail nach `Raiffeisen/Fehler`, erfasst den Vorfall als `unknown_contract` in `public.bank_mail_ingest_logs` und sendet einen detaillierten Rapport (`vm_bank_report`) an den konfigurierten Admin-Verteiler (`Info_Mail_Bank_Eingang`), damit der Vermieter den Fall manuell prüfen kann.
 * **Empfänger- und CC-Verteiler:** Sämtliche Vermietungs-Mails (Mietvertrag, Anfrage, Bestätigung, Mahnung, Schlüsselübergabe, Storno) nutzen den zentralen E-Mail-Verteiler `rental_settings.rental_cc_emails` (standardmässig inklusive `sportschuetzen.muhen@gmail.com`), sodass der Verein und das zuständige Team ausnahmslos bei jedem Vorgang eine automatische Kopie erhalten.
 
-### 2.10 Notfall-Ausfallschutz via Google Apps Script & Zentraler E-Mail-Verteiler (Migration 96)
-* **Disaster Recovery bei Server-Ausfall (Zero-Lost-Leads):** Fällt der primäre Heimserver (Proxmox CT 117 / Supabase) vorübergehend aus (Timeout > 4 Sekunden oder Netzwerkfehler), schaltet das Buchungsformular auf `schuetzenhaus_vermietung.html` nahtlos auf den Notfall-Ausfallschutz um.
-* **Sicherer Cloudflare-Worker-Proxy:** Zur Wahrung der Systemsicherheit wird die Google-Apps-Script-URL nicht öffentlich im Frontend exponiert, sondern über den bestehenden Cloudflare Worker (`?action=notfallVermietung`) geschützt und serverseitig weitergeleitet.
-* **Autonomer Notfall-Ablauf:** Das Notfall-GAS blockiert sofort den Google Kalender (`Vermietet an XX` + Folgetag `Gesperrt für Reinigung`), generiert den Mietvertrag mit Schweizer QR-Rechnung (SIX SPC 0200 1 Standard), versendet das PDF per Gmail an den Mieter, informiert den Verein per Alarm-Mail und speichert den Fall im separaten Google Sheet *Notfall_Reservationen* (Nummernkreis `V-YYYY-N...`).
-* **Wöchentlicher Re-Sync in Supabase:** Über den Button *«Notfall-Sync»* im Vorstands-Cockpit (oder automatisiert per Job) werden offene Notfall-Buchungen über die Proxy-Aktionen `getUnsyncedRentals` und `markSyncedRentals` direkt in `public.rental_requests` (`source = 'google_fallback'`) importiert und Proforma-Rechnungen im `RechnungsCore` erzeugt.
-* **Keine harten Verdrahtungen:** Beträge (`rental_pricing`), Zahlungsfristen und der zentrale E-Mail-Verteiler (`rental_cc_emails`) werden dynamisch vom Frontend an das Notfall-Script übergeben bzw. im Sheet-Tab *Einstellungen* gepflegt.
+### 2.10 Notfall-Ausfallschutz via Cloudflare Worker Proxy & Google Apps Script (Migration 96)
+
+* **Disaster Recovery bei Server-Ausfall (Zero-Lost-Leads):** Fällt der primäre Heimserver (Proxmox CT 117 / Supabase `https://supabase-muhen.danfamily.uk`) vorübergehend aus (Netzwerkausfall, Wartung oder Timeout > 4 Sekunden), schaltet das Buchungsformular auf [`schuetzenhaus_vermietung.html`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/sportschuetzen-website/frontend/schuetzenhaus_vermietung.html) nahtlos und für den Kunden transparent auf den Notfall-Ausfallschutz um.
+* **Sicherer Cloudflare-Worker-Proxy (`github-dropdown-refresh`):** 
+  * Zur Wahrung der Systemsicherheit und zum Schutz vor Spam/Scraping wird die Google-Apps-Script-URL **niemals öffentlich im Frontend exponiert**, sondern liegt geschützt im Cloudflare Worker [`WORKER/worker_github-dropdown-refresh.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/WORKER/worker_github-dropdown-refresh.js) (`https://github-dropdown-refresh.dan-hunziker73.workers.dev`).
+  * Drei dedizierte Endpunkte steuern den Notfallbetrieb und die Re-Synchronisation:
+    1. `POST ?action=notfallVermietung`: Leitet Buchungs- und Terminanfrage-Payloads serverseitig an das Notfall-GAS weiter.
+    2. `GET ?action=getUnsyncedRentals`: Liest alle noch nicht synchronisierten Notfall-Buchungen für das Vorstandsportal aus.
+    3. `POST ?action=markSyncedRentals`: Quittiert erfolgreich übernommene Buchungen im Google Sheet.
+* **Autonomer Notfall-Ablauf (Google Apps Script `Code.js`):**
+  * **Doppelbuchungs-Schutz & Google Kalender:** Blockiert sofort den Miettag (`Vermietet an XX`) und den Folgetag (`Gesperrt für Reinigung`) im Vereinskalender.
+  * **Nummernkreis:** Vergibt autarke Notfall-Buchungsnummern mit Präfix `N` (z. B. `V-2026-N001` für Mieten, `A-2026-N001` für Vorab-Anfragen), wodurch Kollisionen mit der regulären Supabase-Sequenz (`V-YYYY-####`) ausgeschlossen sind.
+  * **PDF-Mietvertrag & SIX Swiss QR-Rechnung:** Generiert das Dokument via Google Drive Vorlage und platziert den Schweizer QR-Zahlteil nach SIX SPC 0200 1 Standard mit dynamischer Referenz und IBAN.
+  * **E-Mail-Zustellung & Alarmierung:** Versendet das PDF an den Mieter und stellt sofort eine Notfall-Alarm-Mail (`⚠️ NOTFALL-SYSTEM AKTIV`) an den zentralen E-Mail-Verteiler zu.
+* **Struktur des Notfall-Google-Sheets:**
+  * **Arbeitsmappe (Google Drive):** `Schützenstube_Vermietungen_Notfall` (separat und unabhängig von der alten Homepage/Alt-GAS).
+  * **Tabellenblatt 1 (`Notfall_Reservationen`):** Auto-Erstellung mit Spalten A–R:
+    `Zeitstempel` (A), `Status` (B), `Buchungsnummer` (C), `Mietdatum` (D), `Festbeginn` (E), `Anrede` (F), `Vorname` (G), `Nachname` (H), `E-Mail` (I), `Telefon` (J), `Strasse` (K), `PLZ` (L), `Wohnort` (M), `Betrag CHF` (N), `Typ` (O), `Bemerkung` (P), `PDF_Link` (Q), `Supabase_Sync_Status` (R).
+  * **Tabellenblatt 2 (`Einstellungen`):** Key-Value-Tabelle als sekundäres Fallback-Netz für Tarife, Fristen und Bankverbindung.
+* **Wöchentlicher Re-Sync in Supabase (Single Source of Truth):**
+  * Über den Button **«Notfall-Sync»** im Vorstands-Cockpit ([`vorstand/js/vermietung/vermietung-ui.js`](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/vorstand/js/vermietung/vermietung-ui.js)) ruft der Vermieter die Funktion `syncNotfallBuchungen()` auf.
+  * Gefundene Notfall-Buchungen werden mit `source = 'google_fallback'` in `public.rental_requests` importiert.
+  * Über die RPC `ensure_rental_proforma_invoice` wird atomar die Proforma-Rechnung im `RechnungsCore` (`invoices`) angelegt.
+  * Nach erfolgreichem Import setzt das System den Status im Google Sheet atomar auf `synchronisiert (dd.MM.yyyy HH:mm)`.
+* **Zentraler E-Mail-Verteiler (`rental_settings.rental_cc_emails`):**
+  * Einstellbar im Vorstands-Cockpit unter *Tarife & Einstellungen* (Register 3).
+  * Steuert einheitlich alle E-Mail-Kopien (Vertrag, Anfrage, Bestätigung, Mahnung, Schlüsselübergabe, Storno, Notfall-Alarm) an den Verein (`sportschuetzen.muhen@gmail.com`) und das Wirtschaftsteam.
+  * Die Supabase Edge Function `send-email` filtert die Vereinsadresse im CC niemals heraus, solange sie nicht bereits der direkte Hauptempfänger (`to`) ist.
 
 ---
 

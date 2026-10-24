@@ -213,6 +213,17 @@ CREATE TABLE public.documents (
 
 ---
 
+### 2.10 Schützenhaus-Vermietung & Disaster Recovery Ausfallschutz (Migration 96)
+* **Öffentliche Buchungsstrecke (`schuetzenhaus_vermietung.html`):** Erlaubt Webseitenbesuchern das Buchen der Schützenstube Rüteli sowie das Einreichen von Vorab-Terminanfragen direkt gegen die Supabase-REST-API (`public.rental_requests`).
+* **Zero-Lost-Leads Ausfallschutz (Cloudflare Proxy):**
+  * Bei Nichterreichbarkeit des primären Heimservers (Timeout > 4 Sekunden) schaltet das Frontend vollautomatisch auf den Cloudflare Worker `github-dropdown-refresh` (`https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=notfallVermietung`) um.
+  * Der Worker leitet den Buchungs-Payload serverseitig und ohne Offenlegung der Google-Apps-Script-URL an das Google Notfall-Backend weiter.
+  * Das Notfall-GAS blockiert den Google Kalender, erstellt den Schweizer QR-Mietvertrag als PDF auf Google Drive, versendet die Bestätigungsmail und speichert den Fall im Google Sheet `Notfall_Reservationen`.
+* **Zentraler Mail-Verteiler (`rental_cc_emails`):** Sowohl im regulären Supabase-Betrieb als auch im Notfall-Fallback erhalten alle konfigurierten Vereins- und Team-Adressen lückenlose E-Mail-Kopien (CC).
+* **Wöchentlicher Re-Sync ins Vereinsportal:** Über den Button *«Notfall-Sync»* im Vorstands-Cockpit werden Notfall-Buchungen mit Kennzeichen `V-YYYY-N...` atomar in Supabase importiert und Proforma-Rechnungen im `RechnungsCore` erzeugt. Details siehe [VERMIETUNG_SCHUETZENSTUBE.md](file:///c:/Users/danhu/.gemini/antigravity/scratch/migration%20supabase/docs/VERMIETUNG_SCHUETZENSTUBE.md#L95-L125).
+
+---
+
 ## 3. Responsive Kompatibilität & Geräte-Standards
 
 | Gerät / Browser | Getroffene Massnahme | Ergebnis |
@@ -233,7 +244,7 @@ CREATE TABLE public.documents (
    Im Immich-Manager dem Album den Status-Tag zuweisen. Das Sync-Skript `sync-immich-album.js` übernimmt `visibility: 'public'` für historische Aufnahmen und Hausbilder, ansonsten automatisch `visibility: 'members'`.
 3. **Keine Drittanbieter-Formulare:**  
    Kontakt- und Buchungsformulare kommunizieren ausschliesslich über Supabase REST und die Edge Function `send-email` mit Empfänger-Steuerung via `system_mail_configs`.
-4. **Keine Google-Sheets-Fallbacks:**  
-   Die Website fragt Daten direkt via Supabase REST (`/rest/v1/...`) oder den Cloudflare Worker ab.
+4. **Keine stillen Google-Sheets-Fallbacks:**  
+   Die Website fragt Daten im Normalbetrieb direkt via Supabase REST (`/rest/v1/...`) oder den Cloudflare Worker ab. Der Notfall-Ausfallschutz bei Server-Ausfall greift nur als explizites Disaster-Recovery-Netz mit Re-Sync-Pflicht.
 5. **Entkoppelte Skript-Scopes & Resultate-Dashboard (`resultate.js`):**  
    Modulspezifische Frontend-Skripte werden in IIFEs gekapselt, um globale Namensraum-Kollisionen mit `main.js` auszuschliessen. `resultate.html` bindet ausschliesslich die benötigten Komponenten (`components.js`, `auth-session.js`, `resultate.js`) ein und lädt Schützendaten (`jm_shooters`) performant und rangiert direkt aus Supabase.
