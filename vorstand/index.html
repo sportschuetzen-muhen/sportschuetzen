@@ -849,9 +849,10 @@
                      onclick="navTo('anlaesse', this)">
                     <i class="fas fa-calendar-star"></i> <span class="nav-text">Anlässe & Controlling</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('umfragen', this)">
-                    <i class="fas fa-calendar-check"></i> <span class="nav-text">Anlässe & Umfragen</span>
+                    <i class="fas fa-calendar-check me-2"></i> <span class="nav-text flex-grow-1">Anlässe & Umfragen</span>
+                    <span id="umfragen-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister"
                      onclick="navTo('manager', this)">
@@ -861,9 +862,10 @@
                      onclick="navTo('resultate', this)">
                     <i class="fas fa-trophy"></i> <span class="nav-text">Resultate Mannschaft & G & G</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,vermieter,kassier"
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,vermieter,kassier"
                      onclick="navTo('vermietung', this)">
-                    <i class="fas fa-home"></i> <span class="nav-text">Vermietung</span>
+                    <i class="fas fa-home me-2"></i> <span class="nav-text flex-grow-1">Vermietung</span>
+                    <span id="vermietung-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
                 <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('jahresmeisterschaft', this)">
@@ -874,17 +876,19 @@
                      onclick="navTo('endschiessen', this)">
                     <i class="fas fa-bullseye me-2"></i> <span class="nav-text flex-grow-1">Endschiessen</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier"
                      onclick="navTo('mail', this)">
-                    <i class="fas fa-envelope"></i> <span class="nav-text">Mail</span>
+                    <i class="fas fa-envelope me-2"></i> <span class="nav-text flex-grow-1">Mail</span>
+                    <span id="mail-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
                      onclick="navTo('jahresbeitrag', this)">
                     <i class="fas fa-coins"></i> <span class="nav-text">Jahresbeitrag</span>
                 </div>
-                <div class="nav-link role-protected" data-roles="admin,vorstand,kassier"
+                <div class="nav-link role-protected d-flex align-items-center" data-roles="admin,vorstand,kassier"
                      onclick="navTo('rechnungen', this)">
-                    <i class="fas fa-file-invoice"></i> <span class="nav-text">Rechnungen</span>
+                    <i class="fas fa-file-invoice me-2"></i> <span class="nav-text flex-grow-1">Rechnungen</span>
+                    <span id="rechnungen-nav-badge" class="badge rounded-pill bg-danger d-none">0</span>
                 </div>
                 <div class="nav-link role-protected" data-roles="admin,vorstand,kassier,aktuar,vermieter"
                      onclick="navTo('dokument-vorlagen', this)">
@@ -1014,9 +1018,12 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
                              onclick="navTo('umfragen')" style="cursor:pointer">
-                            <h5 class="mb-1">🗓️ Anlässe & Umfragen</h5>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🗓️ Anlässe & Umfragen</h5>
+                                <span id="umfragen-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                            </div>
                             <p class="small text-muted mb-0">Umfragen, RSVPs & Mails</p>
                         </div>
                     </div>
@@ -1035,9 +1042,12 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,vermieter,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
                              onclick="navTo('vermietung')" style="cursor:pointer">
-                            <h5 class="mb-1">🏠 Vermietung</h5>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🏠 Vermietung</h5>
+                                <span id="vermietung-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                            </div>
                             <p class="small text-muted mb-0">Schützenhaus Vermietung verwalten</p>
                         </div>
                     </div>
@@ -1059,9 +1069,12 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,schuetzenmeister,aktuar,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
                              onclick="navTo('mail')" style="cursor:pointer">
-                            <h5 class="mb-1">📧 Mail</h5>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">📧 Mail</h5>
+                                <span id="mail-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                            </div>
                             <p class="small text-muted mb-0">Verteiler & Versandprotokoll</p>
                         </div>
                     </div>
@@ -1073,9 +1086,12 @@
                         </div>
                     </div>
                     <div class="col-md-4 role-protected" data-roles="admin,vorstand,kassier">
-                        <div class="card p-3 shadow-sm border-0 h-100"
+                        <div class="card p-3 shadow-sm border-0 h-100 position-relative"
                              onclick="navTo('rechnungen')" style="cursor:pointer">
-                            <h5 class="mb-1">🧾 Rechnungen</h5>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h5 class="mb-0">🧾 Rechnungen</h5>
+                                <span id="rechnungen-tile-badge" class="badge rounded-pill bg-danger d-none">0</span>
+                            </div>
                             <p class="small text-muted mb-0">Zentrales Rechnungs-Management & QR-PDF</p>
                         </div>
                     </div>
@@ -2487,7 +2503,7 @@
 <!-- SCRIPTS – Reihenfolge wichtig! -->
 <script src="js/auth.js?v=20261007_2"></script>
 <script src="js/permissions.js?v=20261007_2"></script>
-<script src="js/main.js?v=20261023_1"></script>
+<script src="js/main.js?v=20261024_1"></script>
 <!-- RechnungsCore: Zentraler Service für Faktura & Forderungs-Lifecycle -->
 <script src="js/rechnungen/rechnungen-core.js"></script>
 <script src="js/inventar/inventar-core.js"></script>
@@ -2594,7 +2610,7 @@
 <script src="js/meeting-recorder.js"></script>
 
 <!-- NEU: Skript für Galerie Manager -->
-<script src="js/galerie.js?v=20261023_2"></script>
+<script src="js/galerie.js?v=20261024_1"></script>
 
 <!-- Modul ANLÄSSE (Native Supabase Migration) -->
 <script src="js/anlaesse.js"></script>

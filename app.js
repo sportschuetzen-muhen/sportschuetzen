@@ -2014,7 +2014,7 @@ async function checkUserPendenzenBadge() {
         // Stille Unterdrückung bei Netzwerkproblemen
     }
 
-    // Für Vorstandsmitglieder: UI-Badges im Portal aktualisieren (Galerie + OCR + Mietanfragen)
+    // Für Vorstandsmitglieder: UI-Badges im Portal aktualisieren (Galerie + OCR + Mietanfragen + Rechnungen + Umfragen + Mail)
     if (isBoard) {
         const boardTotal = (rpcData.board_total || 0) + galCount;
         const badgeText = boardTotal > 99 ? '99+' : String(boardTotal);
@@ -2031,6 +2031,18 @@ async function checkUserPendenzenBadge() {
         [vorstandBadge, dropdownBadge].forEach(el => {
             if (el) el.style.display = 'none';
         });
+    }
+
+    // Für reguläre Mitglieder: Persönliche Pendenzen (RSVPs + offene Rechnungen)
+    const memberBadge = document.getElementById('member-pendenzen-badge');
+    const memberTotal = (rpcData.member_rsvps || 0) + (rpcData.member_invoices || 0);
+    if (memberBadge) {
+        if (!isBoard && memberTotal > 0) {
+            memberBadge.textContent = memberTotal > 99 ? '99+' : String(memberTotal);
+            memberBadge.style.display = 'inline-block';
+        } else {
+            memberBadge.style.display = 'none';
+        }
     }
 
     // Gesamter App-Badge auf dem iOS/Android Homescreen

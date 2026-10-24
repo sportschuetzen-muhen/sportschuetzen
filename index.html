@@ -290,6 +290,7 @@ OneSignalDeferred.push(async function (OneSignal) {
     <h1 id="main-title">Termine</h1>
     <div id="user-badge" style="display:none; position:absolute; right:12px; top:calc(14px + env(safe-area-inset-top)); font-size:0.78rem; font-weight:600; background:rgba(255,255,255,0.18); padding:3px 8px; border-radius:12px; align-items: center; gap: 4px; z-index: 1100; cursor: pointer; user-select: none;">
         <span style="white-space:nowrap;">👤 <span id="display-firstname"></span></span>
+        <span id="member-pendenzen-badge" style="display:none; background:#ef4444; color:#ffffff; font-size:0.65rem; font-weight:700; padding:1px 5px; border-radius:999px; border:1px solid #ffffff; min-width:16px; text-align:center; line-height:1.2;">0</span>
         <span style="font-size:0.65rem; opacity:0.75;">▾</span>
     </div>
 
@@ -383,7 +384,7 @@ OneSignalDeferred.push(async function (OneSignal) {
 
 </div>
 
-<script src="app.js?v=24" defer></script>
+<script src="app.js?v=25" defer></script>
 
 <!-- Participant Modal -->
 <div id="participant-modal" class="modal-overlay">

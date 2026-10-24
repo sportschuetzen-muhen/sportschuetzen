@@ -1513,6 +1513,111 @@ async function checkGalerieInboxBadge() {
 }
 window.checkGalerieInboxBadge = checkGalerieInboxBadge;
 
+function updateRentalBadge(count) {
+    window._rentalInboxCount = parseInt(count) || 0;
+    const navBadge = document.getElementById('vermietung-nav-badge');
+    const tileBadge = document.getElementById('vermietung-tile-badge');
+    [navBadge, tileBadge].forEach(el => {
+        if (!el) return;
+        if (window._rentalInboxCount > 0) {
+            el.innerText = window._rentalInboxCount;
+            el.classList.remove('d-none');
+        } else {
+            el.classList.add('d-none');
+        }
+    });
+    if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+}
+window.updateRentalBadge = updateRentalBadge;
+
+function updateInvoiceBadge(count) {
+    window._invoiceInboxCount = parseInt(count) || 0;
+    const navBadge = document.getElementById('rechnungen-nav-badge');
+    const tileBadge = document.getElementById('rechnungen-tile-badge');
+    [navBadge, tileBadge].forEach(el => {
+        if (!el) return;
+        if (window._invoiceInboxCount > 0) {
+            el.innerText = window._invoiceInboxCount;
+            el.classList.remove('d-none');
+        } else {
+            el.classList.add('d-none');
+        }
+    });
+    if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+}
+window.updateInvoiceBadge = updateInvoiceBadge;
+
+function updateUmfragenBadge(count) {
+    window._umfragenInboxCount = parseInt(count) || 0;
+    const navBadge = document.getElementById('umfragen-nav-badge');
+    const tileBadge = document.getElementById('umfragen-tile-badge');
+    [navBadge, tileBadge].forEach(el => {
+        if (!el) return;
+        if (window._umfragenInboxCount > 0) {
+            el.innerText = window._umfragenInboxCount;
+            el.classList.remove('d-none');
+        } else {
+            el.classList.add('d-none');
+        }
+    });
+    if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+}
+window.updateUmfragenBadge = updateUmfragenBadge;
+
+function updateMailBadge(count) {
+    window._mailInboxCount = parseInt(count) || 0;
+    const navBadge = document.getElementById('mail-nav-badge');
+    const tileBadge = document.getElementById('mail-tile-badge');
+    [navBadge, tileBadge].forEach(el => {
+        if (!el) return;
+        if (window._mailInboxCount > 0) {
+            el.innerText = window._mailInboxCount;
+            el.classList.remove('d-none');
+        } else {
+            el.classList.add('d-none');
+        }
+    });
+    if (typeof window.updateMobileGlobalBadge === 'function') window.updateMobileGlobalBadge();
+}
+window.updateMailBadge = updateMailBadge;
+
+async function refreshAllPortalPendenzenBadges() {
+    try {
+        const supa = typeof window.getSupabaseClient === 'function' ? window.getSupabaseClient() : null;
+        if (supa && supa.rpc) {
+            const { data, error } = await supa.rpc('get_member_pendenzen_count', {
+                p_lizenz: null,
+                p_is_board: true
+            });
+            if (!error && data) {
+                if (typeof window.updateRentalBadge === 'function') {
+                    window.updateRentalBadge(data.board_rentals || 0);
+                }
+                if (typeof window.updateInvoiceBadge === 'function') {
+                    window.updateInvoiceBadge(data.board_invoices_total || 0);
+                }
+                if (typeof window.updateUmfragenBadge === 'function') {
+                    window.updateUmfragenBadge(data.board_polls_past || 0);
+                }
+                if (typeof window.updateMailBadge === 'function') {
+                    window.updateMailBadge(data.board_mails_failed || 0);
+                }
+                if (typeof window.updateJMInboxBadge === 'function') {
+                    window.updateJMInboxBadge(data.board_ocr || 0);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Fehler beim Laden der Pendenzen-Badges via RPC:", e);
+    }
+
+    // Galerie (Immich) parallel abfragen
+    if (typeof window.checkGalerieInboxBadge === 'function') {
+        window.checkGalerieInboxBadge();
+    }
+}
+window.refreshAllPortalPendenzenBadges = refreshAllPortalPendenzenBadges;
+
 // =========================================================
 //  ZENTRALER SAMMEL-BADGE FÜR MOBIL & IPAD
 // =========================================================
@@ -1521,6 +1626,10 @@ function updateMobileGlobalBadge() {
 
     const jmBadge = document.getElementById('jm-nav-badge');
     const galBadge = document.getElementById('galerie-nav-badge');
+    const rentalBadge = document.getElementById('vermietung-nav-badge');
+    const invBadge = document.getElementById('rechnungen-nav-badge');
+    const umfBadge = document.getElementById('umfragen-nav-badge');
+    const mailBadge = document.getElementById('mail-nav-badge');
 
     const jmCount = (typeof window._jmInboxCount === 'number')
         ? window._jmInboxCount
@@ -1528,8 +1637,20 @@ function updateMobileGlobalBadge() {
     const galCount = (typeof window._galInboxCount === 'number')
         ? window._galInboxCount
         : ((galBadge && !galBadge.classList.contains('d-none')) ? (parseInt(galBadge.innerText) || 0) : 0);
+    const rentalCount = (typeof window._rentalInboxCount === 'number')
+        ? window._rentalInboxCount
+        : ((rentalBadge && !rentalBadge.classList.contains('d-none')) ? (parseInt(rentalBadge.innerText) || 0) : 0);
+    const invCount = (typeof window._invoiceInboxCount === 'number')
+        ? window._invoiceInboxCount
+        : ((invBadge && !invBadge.classList.contains('d-none')) ? (parseInt(invBadge.innerText) || 0) : 0);
+    const umfCount = (typeof window._umfragenInboxCount === 'number')
+        ? window._umfragenInboxCount
+        : ((umfBadge && !umfBadge.classList.contains('d-none')) ? (parseInt(umfBadge.innerText) || 0) : 0);
+    const mailCount = (typeof window._mailInboxCount === 'number')
+        ? window._mailInboxCount
+        : ((mailBadge && !mailBadge.classList.contains('d-none')) ? (parseInt(mailBadge.innerText) || 0) : 0);
 
-    const total = jmCount + galCount;
+    const total = jmCount + galCount + rentalCount + invCount + umfCount + mailCount;
     if (mobileBadge) {
         if (total > 0) {
             mobileBadge.innerText = total > 99 ? '99+' : String(total);

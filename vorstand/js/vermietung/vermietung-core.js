@@ -91,6 +91,8 @@ async function loadVermietungData(force = false) {
 
         loadedFromSupa = true;
         console.log(`✅ ${vermietungDaten.length} Vermietungen aus Supabase geladen.`);
+        const inqCount = vermietungDaten.filter(d => d.is_inquiry === true || d.status === 'inquiry').length;
+        if (typeof window.updateRentalBadge === 'function') window.updateRentalBadge(inqCount);
       } else if (resReqs.error) {
         throw resReqs.error;
       }
