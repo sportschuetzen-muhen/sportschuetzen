@@ -56,7 +56,6 @@ const KasseModule = (function () {
     renderCart();
 
     // 7. Sub-Module initialisieren
-    AplanoSchichtplan.init();
     KassenAbschluss.init();
     KellnerHandheld.init();
   }
@@ -73,23 +72,32 @@ const KasseModule = (function () {
     }
   }
 
+  // Map für eingehende Tisch-Bestellungen (Verhindert DOM-XSS)
+  const pendingOrders = new Map();
+
   // Reagiert auf eingehende iPhone-Bestellung
   function handleIncomingOrder(order) {
+    if (!order) return;
     playNotificationSound();
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
-    showToast(`🔔 Neue Bestellung von ${order.tableNumber}: ${order.items.length} Artikel (${formatCHF(order.totalAmount)})`);
+    showToast(`🔔 Neue Bestellung von ${escapeHtml(order.tableNumber)}: ${order.items ? order.items.length : 0} Artikel (${formatCHF(order.totalAmount)})`);
+
+    const orderId = order.id || ('ord_' + Date.now());
+    order.id = orderId;
+    pendingOrders.set(orderId, order);
 
     // Banner im Bon anzeigen
     const banner = document.getElementById('incoming-order-banner');
     if (banner) {
       banner.style.display = 'block';
+      const itemsText = (order.items || []).map(i => `${i.qty}× ${escapeHtml(i.name)}`).join(', ');
       banner.innerHTML = `
         <div style="background: rgba(2, 132, 199, 0.2); border: 1px solid #0284c7; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
           <div style="font-weight: 800; color: #38bdf8; font-size: 13px;">📲 EINGANG: ${escapeHtml(order.tableNumber)}</div>
-          <div style="font-size: 12px; margin: 4px 0;">${order.items.map(i => `${i.qty}× ${escapeHtml(i.name)}`).join(', ')}</div>
+          <div style="font-size: 12px; margin: 4px 0;">${itemsText}</div>
           <div style="display: flex; gap: 8px; margin-top: 6px;">
-            <button class="btn-primary" style="padding: 4px 10px; font-size: 12px;" onclick="KasseModule.loadIncomingOrderToCart(${JSON.stringify(order).replace(/"/g, '&quot;')})">
+            <button class="btn-primary" style="padding: 4px 10px; font-size: 12px;" onclick="KasseModule.loadIncomingOrderToCart('${escapeHtml(orderId)}')">
               In Bon übernehmen
             </button>
             <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="this.parentElement.parentElement.parentElement.style.display='none'">
@@ -101,7 +109,10 @@ const KasseModule = (function () {
     }
   }
 
-  function loadIncomingOrderToCart(order) {
+  function loadIncomingOrderToCart(orderId) {
+    const order = typeof orderId === 'object' ? orderId : pendingOrders.get(orderId);
+    if (!order || !order.items) return;
+
     cart = [];
     order.items.forEach(it => {
       cart.push({
@@ -118,7 +129,7 @@ const KasseModule = (function () {
 
     cashGiven = 0;
     renderCart();
-    showToast(`Bestellung von ${order.tableNumber} in Kasse geladen`);
+    showToast(`Bestellung von ${escapeHtml(order.tableNumber)} in Kasse geladen`);
   }
 
   // Rendert die Kategorie-Pills
@@ -461,13 +472,52 @@ const KasseModule = (function () {
     if (targetView) targetView.classList.add('active');
     if (targetBtn) targetBtn.classList.add('active');
 
-    if (viewName === 'schichtplan') {
-      AplanoSchichtplan.renderTimelineGrid();
-    } else if (viewName === 'abschluss') {
+    if (viewName === 'abschluss') {
       KassenAbschluss.init();
     } else if (viewName === 'kellner') {
       KellnerHandheld.init();
     }
+  }
+
+  // Bediener Modal & Wechsel
+  function openCashierModal() {
+    const modal = document.getElementById('cashier-modal');
+    const inputName = document.getElementById('input-cashier-name');
+    const inputStation = document.getElementById('input-station-name');
+    if (inputName) inputName.value = activeCashierName;
+    if (inputStation) inputStation.value = activeStationName;
+    if (modal) modal.classList.add('active');
+  }
+
+  async function saveCashier() {
+    const inputName = document.getElementById('input-cashier-name');
+    const inputStation = document.getElementById('input-station-name');
+    const newName = inputName ? inputName.value.trim() : '';
+    const newStation = inputStation ? inputStation.value.trim() : '';
+
+    if (!newName) {
+      alert('Bitte gib deinen Namen ein.');
+      return;
+    }
+
+    activeCashierName = newName;
+    if (newStation) activeStationName = newStation;
+
+    await FestkasseDB.put('settings', { key: 'cashierName', value: activeCashierName });
+    await FestkasseDB.put('settings', { key: 'stationName', value: activeStationName });
+
+    const nameEl = document.getElementById('active-cashier-name');
+    const stationEl = document.getElementById('active-cashier-station');
+    if (nameEl) nameEl.textContent = activeCashierName;
+    if (stationEl) stationEl.textContent = activeStationName;
+
+    const avatarEl = document.getElementById('active-operator-avatar');
+    if (avatarEl) avatarEl.textContent = getInitials(activeCashierName);
+
+    const modal = document.getElementById('cashier-modal');
+    if (modal) modal.classList.remove('active');
+
+    showToast(`Bediener aktualisiert: ${activeCashierName} (${activeStationName})`);
   }
 
   // Toast Nachrichten
@@ -542,6 +592,8 @@ const KasseModule = (function () {
     completePayment,
     printReceipt,
     switchView,
+    openCashierModal,
+    saveCashier,
     showToast,
     loadIncomingOrderToCart
   };

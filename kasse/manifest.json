@@ -1,7 +1,7 @@
 {
   "name": "Festkasse & POS Sportschützen Muhen",
   "short_name": "Festkasse",
-  "description": "Offline-fähige Kassen-PWA mit WaiterOne-Bedienkonzept, Aplano-Schichtplaner, Depot & Z-Abschluss",
+  "description": "Offline-fähige Kassen-PWA mit WaiterOne-Bedienkonzept, Schweizer Notenrechner, Depot & Z-Abschluss",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",

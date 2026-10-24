@@ -24,6 +24,7 @@ window.AnlaesseModule = (function () {
         shiftAssignments: [],
         controlling: null,
         activeTab: 'events',       // 'events', 'items', 'orders', 'checklists', 'shifts', 'controlling'
+        shiftViewMode: 'aplano',   // 'aplano' (Matrix Timeline) oder 'cards' (Karten-Liste)
         filterCategory: 'all',
         filterStatus: 'all',
         filterPhase: 'all',
@@ -927,27 +928,77 @@ window.AnlaesseModule = (function () {
     // ─────────────────────────────────────────────────────────────
     // TAB 5: 👥 HELFER & STÄNDE / SCHICHTEN
     // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // TAB 5: 👥 HELFER & STÄNDE / SCHICHTEN (APLANO-MATRIX)
+    // ─────────────────────────────────────────────────────────────
+    function getStationMeta(areaName) {
+        const name = (areaName || '').toLowerCase();
+        if (name.includes('kasse')) return { icon: '💵', color: '#10b981' };
+        if (name.includes('grill') || name.includes('küche') || name.includes('essen')) return { icon: '🥩', color: '#ef4444' };
+        if (name.includes('ausschank') || name.includes('bier') || name.includes('getränk')) return { icon: '🍺', color: '#f59e0b' };
+        if (name.includes('bar') || name.includes('drink')) return { icon: '🍸', color: '#8b5cf6' };
+        if (name.includes('service') || name.includes('tisch')) return { icon: '🍽️', color: '#3b82f6' };
+        if (name.includes('springer') || name.includes('abwasch') || name.includes('reinigung')) return { icon: '🧹', color: '#64748b' };
+        if (name.includes('standblatt') || name.includes('schiess') || name.includes('büro')) return { icon: '🎯', color: '#0ea5e9' };
+        return { icon: '📍', color: '#0284c7' };
+    }
+
+    function getInitials(name) {
+        if (!name) return '??';
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
     function renderShiftsTab() {
         const totalHelpersNeeded = state.shifts.reduce((acc, s) => acc + (parseInt(s.required_helpers) || 1), 0);
         const totalHelpersAssigned = state.shiftAssignments.length;
+        const fillPercentage = totalHelpersNeeded > 0 ? Math.round((totalHelpersAssigned / totalHelpersNeeded) * 100) : 0;
+        const isManager = (typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true);
 
         return `
             <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                <!-- KOPFZEILE MIT STATS & AKTIONEN -->
+                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3 pb-3 border-bottom">
                     <div>
-                        <h5 class="fw-bold mb-1 text-primary">
-                            <i class="fas fa-users-gear me-2"></i>Helfer, Stände & Schichtplan
-                        </h5>
-                        <p class="text-muted small mb-0">Einsatzplanung für Grill, Ausschank, Kasse, Standblattbüro und Helfer-Bestätigungen</p>
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <span class="badge bg-primary text-white px-2.5 py-1 rounded-pill fw-bold" style="font-size: 0.75rem;">
+                                <i class="fas fa-calendar-check me-1"></i>Aplano Schichtplaner
+                            </span>
+                            <h5 class="fw-bold mb-0 text-dark">Helfer, Stände & Einsatzplanung</h5>
+                        </div>
+                        <p class="text-muted small mb-0">Einsatzplanung für Grill, Ausschank, Kasse, Service & Helfer-Zuteilungen</p>
                     </div>
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="text-end">
-                            <div class="small text-muted">Helfer-Besetzung:</div>
-                            <div class="fw-bold ${totalHelpersAssigned >= totalHelpersNeeded ? 'text-success' : 'text-warning'} fs-6">
-                                ${totalHelpersAssigned} von ${totalHelpersNeeded} Plätzen besetzt
+
+                    <!-- RECHTE AKTIONEN: VIEW-TOGGLE, PRINT, ADD -->
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <!-- BESETZUNGS-FORTSCHRITT -->
+                        <div class="bg-light px-3 py-1.5 rounded-pill border d-flex align-items-center gap-2">
+                            <span class="small text-muted fw-semibold">Besetzung:</span>
+                            <span class="fw-bold ${totalHelpersAssigned >= totalHelpersNeeded ? 'text-success' : 'text-warning'}">
+                                ${totalHelpersAssigned}/${totalHelpersNeeded} (${fillPercentage}%)
+                            </span>
+                            <div class="progress" style="width: 60px; height: 6px;">
+                                <div class="progress-bar ${totalHelpersAssigned >= totalHelpersNeeded ? 'bg-success' : 'bg-warning'}" style="width: ${Math.min(fillPercentage, 100)}%;"></div>
                             </div>
                         </div>
-                        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
+
+                        <!-- ANSICHT-UMSCHALTER (APLANO MATRIX VS. KARTEN) -->
+                        <div class="btn-group btn-group-sm rounded-pill shadow-sm" role="group">
+                            <button type="button" class="btn ${state.shiftViewMode === 'aplano' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="AnlaesseModule.setShiftViewMode('aplano')" title="Aplano Timeline Matrix">
+                                <i class="fas fa-table-cells me-1"></i>Aplano Matrix
+                            </button>
+                            <button type="button" class="btn ${state.shiftViewMode === 'cards' ? 'btn-primary fw-bold' : 'btn-outline-secondary'}" onclick="AnlaesseModule.setShiftViewMode('cards')" title="Karten-Liste">
+                                <i class="fas fa-id-card me-1"></i>Karten
+                            </button>
+                        </div>
+
+                        <!-- DRUCK-BUTTON -->
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="AnlaesseModule.printShiftSchedule()" title="Schichtplan für Aushang im Festzelt drucken">
+                            <i class="fas fa-print me-1"></i>Drucken (A4)
+                        </button>
+
+                        ${isManager ? `
                         <button class="btn btn-primary btn-sm rounded-pill px-3 fw-bold shadow-sm" onclick="AnlaesseModule.openAddShiftModal()">
                             <i class="fas fa-plus me-1"></i>Schicht hinzufügen
                         </button>
@@ -955,91 +1006,353 @@ window.AnlaesseModule = (function () {
                     </div>
                 </div>
 
-                <div class="row g-3">
-                    ${state.shifts.length === 0 ? `
-                        <div class="col-12 text-center py-5 text-muted">
-                            <i class="fas fa-person-circle-question fa-3x mb-3 text-secondary opacity-50"></i>
-                            <p>Noch keine Schichten oder Stände für diesen Anlass definiert.</p>
+                ${state.shifts.length === 0 ? `
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-person-circle-question fa-3x mb-3 text-secondary opacity-50"></i>
+                        <h6 class="fw-bold text-dark">Noch keine Schichten oder Stände definiert</h6>
+                        <p class="small text-muted mb-3">Erstelle jetzt die Schichten für Grill, Kasse, Ausschank und Service.</p>
+                        ${isManager ? `
+                        <button class="btn btn-primary btn-sm rounded-pill px-4 fw-bold shadow-sm" onclick="AnlaesseModule.openAddShiftModal()">
+                            <i class="fas fa-plus me-1"></i>Erste Schicht anlegen
+                        </button>
+                        ` : ''}
+                    </div>
+                ` : (state.shiftViewMode === 'aplano' ? renderAplanoMatrix(isManager) : renderShiftCards(isManager))}
+            </div>
+        `;
+    }
+
+    // APLANO TIMELINE MATRIX LAYOUT
+    function renderAplanoMatrix(isManager) {
+        // 1. Alle eindeutigen Bereiche / Stände ermitteln
+        const distinctAreas = Array.from(new Set(state.shifts.map(s => s.area))).filter(Boolean);
+        if (distinctAreas.length === 0) distinctAreas.push('Allgemein');
+
+        // 2. Alle eindeutigen Zeitslots ermitteln
+        const slotsMap = new Map();
+        state.shifts.forEach(s => {
+            const startClean = s.start_time.substring(0, 5);
+            const endClean = s.end_time.substring(0, 5);
+            const key = `${startClean} - ${endClean}`;
+            if (!slotsMap.has(key)) {
+                slotsMap.set(key, { key, startClean, endClean });
+            }
+        });
+
+        const sortedSlots = Array.from(slotsMap.values()).sort((a, b) => a.startClean.localeCompare(b.startClean));
+
+        return `
+            <div class="aplano-matrix-container table-responsive rounded-4 border shadow-sm" style="overflow-x: auto; background: #ffffff;">
+                <table class="table table-bordered mb-0 align-middle" style="min-width: 800px; border-collapse: separate; border-spacing: 0;">
+                    <thead style="background: #f8fafc;">
+                        <tr>
+                            <th style="width: 240px; padding: 14px 18px; border-bottom: 2px solid #e2e8f0; font-size: 0.85rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">
+                                Bereich / Stand
+                            </th>
+                            ${sortedSlots.map(slot => `
+                                <th style="padding: 14px 18px; border-bottom: 2px solid #e2e8f0; min-width: 220px; font-size: 0.9rem; font-weight: 800; color: #1e293b;">
+                                    <div><i class="fas fa-clock text-primary me-1.5 opacity-75"></i>${slot.startClean} – ${slot.endClean} Uhr</div>
+                                </th>
+                            `).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${distinctAreas.map(area => {
+                            const meta = getStationMeta(area);
+                            return `
+                                <tr>
+                                    <!-- STAND-HEADER SPALTE -->
+                                    <td style="background: #fafafa; border-right: 2px solid #e2e8f0; border-left: 5px solid ${meta.color}; padding: 16px;">
+                                        <div class="d-flex align-items-center gap-2.5">
+                                            <span style="font-size: 1.5rem; line-height: 1;">${meta.icon}</span>
+                                            <div>
+                                                <div class="fw-bold text-dark" style="font-size: 0.98rem;">${escapeHtml(area)}</div>
+                                                <span class="small text-muted" style="font-size: 0.75rem;">Standort & Station</span>
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <!-- ZEITSLOT ZELLEN -->
+                                    ${sortedSlots.map(slot => {
+                                        const matchingShifts = state.shifts.filter(s => 
+                                            s.area === area && 
+                                            s.start_time.substring(0, 5) === slot.startClean && 
+                                            s.end_time.substring(0, 5) === slot.endClean
+                                        );
+
+                                        if (matchingShifts.length === 0) {
+                                            return `
+                                                <td style="background: #ffffff; padding: 12px; vertical-align: top; text-align: center;">
+                                                    ${isManager ? `
+                                                    <button class="btn btn-sm btn-outline-dashed text-muted w-100 py-3 rounded-3" style="border: 1px dashed #cbd5e1; font-size: 0.8rem;" onclick="AnlaesseModule.openAddShiftModal('${escapeHtml(area)}', '${slot.startClean}', '${slot.endClean}')">
+                                                        <i class="fas fa-plus me-1 text-primary"></i>Schicht anlegen
+                                                    </button>
+                                                    ` : '<span class="text-muted small opacity-50">–</span>'}
+                                                </td>
+                                            `;
+                                        }
+
+                                        return `
+                                            <td style="background: #ffffff; padding: 12px; vertical-align: top;">
+                                                <div class="d-flex flex-column gap-2">
+                                                    ${matchingShifts.map(sh => renderAplanoShiftCard(sh, meta, isManager)).join('')}
+                                                </div>
+                                            </td>
+                                        `;
+                                    }).join('')}
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    // EINZELNE APLANO SCHICHT-KARTE IN DER MATRIX
+    function renderAplanoShiftCard(shift, meta, isManager) {
+        const assignments = state.shiftAssignments.filter(a => a.shift_id === shift.id);
+        const req = shift.required_helpers || 1;
+        const count = assignments.length;
+
+        let statusClass = 'bg-success-subtle text-success border-success-subtle';
+        let statusText = `● ${count}/${req} Voll`;
+        if (count === 0) {
+            statusClass = 'bg-danger-subtle text-danger border-danger-subtle';
+            statusText = `● 0/${req} Offen`;
+        } else if (count < req) {
+            statusClass = 'bg-warning-subtle text-warning border-warning-subtle';
+            statusText = `● ${count}/${req} Teilweise`;
+        }
+
+        return `
+            <div class="card border rounded-3 p-2.5 shadow-sm" style="background: #ffffff; border-top: 3px solid ${meta.color} !important;">
+                <div class="d-flex justify-content-between align-items-center mb-1.5">
+                    <span class="badge ${statusClass} border rounded-pill px-2 py-0.5" style="font-size: 0.72rem; font-weight: 700;">
+                        ${statusText}
+                    </span>
+                    <span class="small fw-bold text-dark" style="font-size: 0.8rem;">
+                        ${escapeHtml(shift.role_name)}
+                    </span>
+                </div>
+
+                ${shift.description ? `
+                    <div class="text-muted small mb-2 text-truncate" style="font-size: 0.75rem;" title="${escapeHtml(shift.description)}">
+                        ${escapeHtml(shift.description)}
+                    </div>
+                ` : ''}
+
+                <!-- HELFER-LISTE -->
+                <div class="d-flex flex-column gap-1 mb-2">
+                    ${assignments.map(a => `
+                        <div class="d-flex justify-content-between align-items-center p-1.5 rounded-2 bg-light border" style="font-size: 0.78rem;">
+                            <div class="d-flex align-items-center gap-1.5 text-truncate" style="max-width: 80%;">
+                                <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 20px; height: 20px; font-size: 0.65rem; flex-shrink: 0;">
+                                    ${getInitials(a.helper_name)}
+                                </div>
+                                <span class="fw-semibold text-dark text-truncate" title="${escapeHtml(a.helper_name)}">
+                                    ${escapeHtml(a.helper_name)}
+                                </span>
+                            </div>
+                            <div class="d-flex align-items-center gap-1">
+                                ${isManager ? `
+                                <button class="btn btn-sm text-danger p-0 border-0 bg-transparent" onclick="AnlaesseModule.removeHelperAssignment('${a.id}')" title="Zuteilung aufheben">
+                                    <i class="fas fa-times" style="font-size: 0.75rem;"></i>
+                                </button>
+                                ` : ''}
+                            </div>
                         </div>
-                    ` : state.shifts.map(shift => {
-                        const assignments = state.shiftAssignments.filter(a => a.shift_id === shift.id);
-                        const isFilled = assignments.length >= shift.required_helpers;
+                    `).join('')}
+                </div>
 
-                        return `
-                            <div class="col-lg-6">
-                                <div class="card h-100 border rounded-4 p-3.5 shadow-sm ${isFilled ? 'border-success-subtle' : 'border-warning-subtle'}" style="background: #ffffff;">
-                                    <div class="d-flex justify-content-between align-items-start mb-2">
-                                        <div>
-                                            <span class="badge bg-light text-primary border fw-bold px-2.5 py-1 mb-1">
-                                                <i class="fas fa-store me-1"></i>${escapeHtml(shift.area)}
-                                            </span>
-                                            <h5 class="fw-bold text-dark mb-0">${escapeHtml(shift.role_name)}</h5>
-                                        </div>
-                                        <div>
-                                            <span class="badge ${isFilled ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-warning-subtle text-warning border border-warning-subtle'} rounded-pill px-2.5 py-1">
-                                                ${assignments.length} / ${shift.required_helpers} Helfer
-                                            </span>
-                                        </div>
+                <!-- AKTIONEN -->
+                <div class="d-flex justify-content-between align-items-center mt-auto pt-1.5 border-top">
+                    ${(isManager && count < req) ? `
+                    <button class="btn btn-sm btn-outline-primary rounded-pill py-0.5 px-2" style="font-size: 0.72rem; font-weight: 600;" onclick="AnlaesseModule.openAssignHelperModal('${shift.id}')">
+                        <i class="fas fa-user-plus me-1"></i>Helfer zuweisen
+                    </button>
+                    ` : '<div></div>'}
+
+                    ${isManager ? `
+                    <button class="btn btn-sm text-muted p-0 border-0 bg-transparent ms-auto" onclick="AnlaesseModule.deleteShift('${shift.id}')" title="Schicht löschen">
+                        <i class="fas fa-trash-can" style="font-size: 0.75rem;"></i>
+                    </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    // ALTERNATIVE DETAIL-KARTEN ANSICHT
+    function renderShiftCards(isManager) {
+        return `
+            <div class="row g-3">
+                ${state.shifts.map(shift => {
+                    const assignments = state.shiftAssignments.filter(a => a.shift_id === shift.id);
+                    const isFilled = assignments.length >= shift.required_helpers;
+                    const meta = getStationMeta(shift.area);
+
+                    return `
+                        <div class="col-lg-6">
+                            <div class="card h-100 border rounded-4 p-3.5 shadow-sm ${isFilled ? 'border-success-subtle' : 'border-warning-subtle'}" style="background: #ffffff; border-left: 5px solid ${meta.color} !important;">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <div>
+                                        <span class="badge bg-light text-primary border fw-bold px-2.5 py-1 mb-1">
+                                            ${meta.icon} ${escapeHtml(shift.area)}
+                                        </span>
+                                        <h5 class="fw-bold text-dark mb-0">${escapeHtml(shift.role_name)}</h5>
+                                    </div>
+                                    <div>
+                                        <span class="badge ${isFilled ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-warning-subtle text-warning border border-warning-subtle'} rounded-pill px-2.5 py-1">
+                                            ${assignments.length} / ${shift.required_helpers} Helfer
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="small text-muted mb-3">
+                                    <i class="fas fa-clock text-primary me-1"></i>${formatTime(shift.start_time)} – ${formatTime(shift.end_time)} Uhr
+                                    ${shift.description ? `<div class="mt-1 text-secondary">${escapeHtml(shift.description)}</div>` : ''}
+                                </div>
+
+                                <!-- EINGETEILTE HELFER -->
+                                <div class="border-top pt-2.5 mb-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="small fw-bold text-muted text-uppercase">Eingeteilte Helfer:</span>
+                                        ${isManager ? `
+                                        <button class="btn btn-sm btn-outline-primary rounded-pill py-0 px-2" style="font-size: 0.75rem;" onclick="AnlaesseModule.openAssignHelperModal('${shift.id}')">
+                                            <i class="fas fa-user-plus me-1"></i>Helfer zuweisen
+                                        </button>
+                                        ` : ''}
                                     </div>
 
-                                    <div class="small text-muted mb-3">
-                                        <i class="fas fa-clock text-primary me-1"></i>${formatTime(shift.start_time)} – ${formatTime(shift.end_time)} Uhr
-                                        ${shift.description ? `<div class="mt-1 text-secondary">${escapeHtml(shift.description)}</div>` : ''}
-                                    </div>
-
-                                    <!-- EINGETEILTE HELFER -->
-                                    <div class="border-top pt-2.5 mb-3">
-                                        <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <span class="small fw-bold text-muted text-uppercase">Eingeteilte Helfer:</span>
-                                            ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
-                                            <button class="btn btn-sm btn-outline-primary rounded-pill py-0 px-2" style="font-size: 0.75rem;" onclick="AnlaesseModule.openAssignHelperModal('${shift.id}')">
-                                                <i class="fas fa-user-plus me-1"></i>Helfer zuweisen
-                                            </button>
-                                            ` : ''}
-                                        </div>
-
-                                        <div class="d-flex flex-column gap-1.5">
-                                            ${assignments.length === 0 ? `
-                                                <div class="text-muted small fst-italic py-1">Noch kein Helfer eingeteilt.</div>
-                                            ` : assignments.map(a => `
-                                                <div class="d-flex justify-content-between align-items-center p-2 rounded-3 bg-light">
+                                    <div class="d-flex flex-column gap-1.5">
+                                        ${assignments.length === 0 ? `
+                                            <div class="text-muted small fst-italic py-1">Noch kein Helfer eingeteilt.</div>
+                                        ` : assignments.map(a => `
+                                            <div class="d-flex justify-content-between align-items-center p-2 rounded-3 bg-light border">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 24px; height: 24px; font-size: 0.7rem;">
+                                                        ${getInitials(a.helper_name)}
+                                                    </div>
                                                     <div>
                                                         <div class="fw-semibold text-dark small">${escapeHtml(a.helper_name)}</div>
                                                         <div class="text-muted" style="font-size: 0.72rem;">${escapeHtml(a.helper_phone || a.helper_email || '')}</div>
                                                     </div>
-                                                    <div class="d-flex align-items-center gap-1">
-                                                        ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
-                                                        <button class="btn btn-sm ${a.confirmed_by_helper ? 'btn-success' : 'btn-outline-secondary'} py-0 px-2 rounded-pill" style="font-size: 0.72rem;" onclick="AnlaesseModule.toggleHelperConfirmation('${a.id}', ${!a.confirmed_by_helper})" title="Bestätigungsstatus umschalten">
-                                                            <i class="fas ${a.confirmed_by_helper ? 'fa-check-circle' : 'fa-clock'} me-1"></i>${a.confirmed_by_helper ? 'Bestätigt' : 'Offen'}
-                                                        </button>
-                                                        <button class="btn btn-sm btn-link text-danger p-0 ms-1" onclick="AnlaesseModule.removeHelperAssignment('${a.id}')" title="Helfer entfernen">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>
-                                                        ` : `
-                                                        <span class="badge ${a.confirmed_by_helper ? 'bg-success' : 'bg-secondary'} small">
-                                                            ${a.confirmed_by_helper ? 'Bestätigt' : 'Offen'}
-                                                        </span>
-                                                        `}
-                                                    </div>
                                                 </div>
-                                            `).join('')}
-                                        </div>
+                                                <div class="d-flex align-items-center gap-1">
+                                                    ${isManager ? `
+                                                    <button class="btn btn-sm ${a.confirmed_by_helper ? 'btn-success' : 'btn-outline-secondary'} py-0 px-2 rounded-pill" style="font-size: 0.72rem;" onclick="AnlaesseModule.toggleHelperConfirmation('${a.id}', ${!a.confirmed_by_helper})" title="Bestätigungsstatus umschalten">
+                                                        <i class="fas ${a.confirmed_by_helper ? 'fa-check-circle' : 'fa-clock'} me-1"></i>${a.confirmed_by_helper ? 'Bestätigt' : 'Offen'}
+                                                    </button>
+                                                    <button class="btn btn-sm btn-link text-danger p-0 ms-1" onclick="AnlaesseModule.removeHelperAssignment('${a.id}')" title="Helfer entfernen">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                    ` : `
+                                                    <span class="badge ${a.confirmed_by_helper ? 'bg-success' : 'bg-secondary'} small">
+                                                        ${a.confirmed_by_helper ? 'Bestätigt' : 'Offen'}
+                                                    </span>
+                                                    `}
+                                                </div>
+                                            </div>
+                                        `).join('')}
                                     </div>
-
-                                    ${(typeof hasWriteAccess === 'function' ? hasWriteAccess('anlaesse') : true) ? `
-                                    <div class="d-flex justify-content-end mt-auto pt-2 border-top">
-                                        <button class="btn btn-sm btn-outline-danger rounded-pill px-2.5 py-0.5" style="font-size: 0.75rem;" onclick="AnlaesseModule.deleteShift('${shift.id}')">
-                                            <i class="fas fa-trash me-1"></i>Schicht löschen
-                                        </button>
-                                    </div>
-                                    ` : ''}
                                 </div>
+
+                                ${isManager ? `
+                                <div class="d-flex justify-content-end mt-auto pt-2 border-top">
+                                    <button class="btn btn-sm btn-outline-danger rounded-pill px-2.5 py-0.5" style="font-size: 0.75rem;" onclick="AnlaesseModule.deleteShift('${shift.id}')">
+                                        <i class="fas fa-trash me-1"></i>Schicht löschen
+                                    </button>
+                                </div>
+                                ` : ''}
                             </div>
-                        `;
-                    }).join('')}
-                </div>
+                        </div>
+                    `;
+                }).join('')}
             </div>
         `;
+    }
+
+    function setShiftViewMode(mode) {
+        state.shiftViewMode = mode;
+        switchTab('shifts');
+    }
+
+    function printShiftSchedule() {
+        const activeEvent = state.events.find(e => e.id === state.activeEventId);
+        const eventTitle = activeEvent ? activeEvent.name : 'Vereinsanlass';
+        const eventDate = activeEvent ? formatDate(activeEvent.event_date) : '';
+
+        const printWin = window.open('', '_blank');
+        if (!printWin) {
+            alert('Popup-Blocker verhindert das Druckfenster. Bitte Popups erlauben.');
+            return;
+        }
+
+        const distinctAreas = Array.from(new Set(state.shifts.map(s => s.area))).filter(Boolean);
+
+        const rowsHtml = distinctAreas.map(area => {
+            const areaShifts = state.shifts.filter(s => s.area === area).sort((a, b) => a.start_time.localeCompare(b.start_time));
+            return `
+                <tr>
+                    <td style="font-weight: bold; background: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; width: 200px;">
+                        ${escapeHtml(area)}
+                    </td>
+                    <td style="padding: 10px; border: 1px solid #cbd5e1;">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            ${areaShifts.map(sh => {
+                                const assignments = state.shiftAssignments.filter(a => a.shift_id === sh.id);
+                                return `
+                                    <div style="border-bottom: 1px dotted #ccc; padding-bottom: 4px;">
+                                        <strong>${formatTime(sh.start_time)} – ${formatTime(sh.end_time)} Uhr:</strong> ${escapeHtml(sh.role_name)} 
+                                        (${assignments.length}/${sh.required_helpers} Helfer)<br>
+                                        <span style="color: #333;">Helfer: ${assignments.length > 0 ? assignments.map(a => `${escapeHtml(a.helper_name)}${a.helper_phone ? ` (${escapeHtml(a.helper_phone)})` : ''}`).join(', ') : '<em>Noch niemand eingeteilt</em>'}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        printWin.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Schichtplan – ${escapeHtml(eventTitle)}</title>
+                <style>
+                    body { font-family: -apple-system, Arial, sans-serif; margin: 20px; color: #111; }
+                    h2 { margin: 0 0 4px 0; color: #0f3a5d; }
+                    .meta { color: #666; margin-bottom: 20px; font-size: 14px; }
+                    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                    @media print {
+                        @page { size: landscape; margin: 15mm; }
+                        body { margin: 0; }
+                    }
+                </style>
+            </head>
+            <body>
+                <h2>🎯 Sportschützen Muhen – Helfer- &amp; Schichtplan</h2>
+                <div class="meta"><strong>Anlass:</strong> ${escapeHtml(eventTitle)} | <strong>Datum:</strong> ${eventDate} | Stand: ${new Date().toLocaleDateString('de-CH')}</div>
+                <table>
+                    <thead>
+                        <tr style="background: #0f3a5d; color: white;">
+                            <th style="padding: 8px; border: 1px solid #0f3a5d; text-align: left;">Stand / Bereich</th>
+                            <th style="padding: 8px; border: 1px solid #0f3a5d; text-align: left;">Schichten &amp; eingeteilte Helfer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+                <script>
+                    window.onload = function() { window.print(); }
+                </script>
+            </body>
+            </html>
+        `);
+        printWin.document.close();
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -1992,7 +2305,7 @@ window.AnlaesseModule = (function () {
         }
     }
 
-    function openAddShiftModal() {
+    function openAddShiftModal(prefilledArea = '', prefilledStart = '', prefilledEnd = '') {
         if (typeof hasWriteAccess === 'function' && !hasWriteAccess('anlaesse')) {
             alert("Keine Berechtigung zum Erfassen von Schichten.");
             return;
@@ -2017,11 +2330,11 @@ window.AnlaesseModule = (function () {
                                 <div class="row g-2 mb-3">
                                     <div class="col-6">
                                         <label class="form-label small fw-bold">Bereich / Stand *</label>
-                                        <input type="text" class="form-control" id="sh-area" required placeholder="z.B. Grill / Kasse">
+                                        <input type="text" class="form-control" id="sh-area" required placeholder="z.B. Grill / Kasse" value="${escapeHtml(prefilledArea)}">
                                     </div>
                                     <div class="col-6">
                                         <label class="form-label small fw-bold">Funktion / Rolle *</label>
-                                        <input type="text" class="form-control" id="sh-role" required placeholder="z.B. Grillmeister">
+                                        <input type="text" class="form-control" id="sh-role" required placeholder="z.B. Grillmeister / Kassier">
                                     </div>
                                 </div>
                                 <div class="row g-2 mb-3">
@@ -2031,11 +2344,11 @@ window.AnlaesseModule = (function () {
                                     </div>
                                     <div class="col-4">
                                         <label class="form-label small fw-bold">Startzeit *</label>
-                                        <input type="time" class="form-control" id="sh-start" required value="17:00">
+                                        <input type="time" class="form-control" id="sh-start" required value="${prefilledStart || '17:00'}">
                                     </div>
                                     <div class="col-4">
                                         <label class="form-label small fw-bold">Endzeit *</label>
-                                        <input type="time" class="form-control" id="sh-end" required value="21:00">
+                                        <input type="time" class="form-control" id="sh-end" required value="${prefilledEnd || '21:00'}">
                                     </div>
                                 </div>
                                 <div class="mb-3">
@@ -2252,6 +2565,8 @@ window.AnlaesseModule = (function () {
         openAddShiftModal: openAddShiftModal,
         submitShift: submitShift,
         deleteShift: deleteShift,
+        setShiftViewMode: setShiftViewMode,
+        printShiftSchedule: printShiftSchedule,
         openAssignHelperModal: openAssignHelperModal,
         submitAssignHelper: submitAssignHelper,
         removeHelperAssignment: removeHelperAssignment

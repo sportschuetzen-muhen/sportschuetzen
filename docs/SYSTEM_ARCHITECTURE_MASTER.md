@@ -169,6 +169,8 @@ Das Modul Rechnungswesen wurde entlastet: Der Artikelstamm verbleibt im Rechnung
 * **Mitglieder & SSV-Verbandsimport:** [`docs/MITGLIEDER_UND_SSV.md`](MITGLIEDER_UND_SSV.md) – Browser-native SSV-Diff-Engine, Quellschutz für Ehrenmitglieder, `member_history` Audit.
 * **Finanzbuchhaltung & Bankabgleich:** [`docs/FINANZBUCHHALTUNG_UND_BANK.md`](FINANZBUCHHALTUNG_UND_BANK.md) – KMU-Kontenrahmen, doppelter Buchungssatz bei Rechnungen, CAMT.054 XML-Abgleich via QRR, `BIGSERIAL` Journal.
 * **Vermietung Schützenstube Rüteli:** [`docs/VERMIETUNG_SCHUETZENSTUBE.md`](VERMIETUNG_SCHUETZENSTUBE.md) – Workflow-Maschine, dynamische Mietvertragsklauseln, Google Calendar iCal-Proxy.
+* **Festkasse (WaiterOne POS):** [`docs/FESTKASSE.md`](FESTKASSE.md) – Offline-First Kassen-PWA für Schützenstube und Feste, 100% lokale IndexedDB-Sandbox (`FestkasseDB`), WaiterOne-Bedienkonzept, Z-Abschlag & CSV-Export.
+* **Helfer- & Schichtplaner (Aplano):** [`docs/SCHICHTPLANER.md`](SCHICHTPLANER.md) – Aplano Timeline-Matrix im Vorstandsportal (`vorstand/js/anlaesse.js`), Mitglieder-Self-Service im geschützten Website-Bereich (`intern.html`), RLS-Policies und atomare RPC-Zuweisung.
 * **Umfragen & Anlässe:** [`docs/UMFRAGEN_UND_ANLAESSE.md`](UMFRAGEN_UND_ANLAESSE.md) – Eventplaner, RSVP Hero-Cards, 5er-Gruppenschiessen, dynamischer Formularbaukasten mit hybridem JSONB-Schema.
 
 ### 6.3 Historische Archive

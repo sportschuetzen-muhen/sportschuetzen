@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Festkasse & Aplano Schichtplaner – Sportschützen Muhen</title>
+  <title>Festkasse (WaiterOne POS) – Sportschützen Muhen</title>
   
   <!-- PWA & Apple Meta Tags -->
   <link rel="manifest" href="manifest.json">
@@ -36,10 +36,6 @@
           <span>🛒</span>
           <span>Kasse</span>
         </button>
-        <button id="tab-btn-schichtplan" class="nav-tab-btn" onclick="KasseModule.switchView('schichtplan')">
-          <span>📅</span>
-          <span>Schichtplan (Aplano)</span>
-        </button>
         <button id="tab-btn-abschluss" class="nav-tab-btn" onclick="KasseModule.switchView('abschluss')">
           <span>📊</span>
           <span>Kassensturz & Z-Bericht</span>
@@ -51,8 +47,8 @@
       </nav>
 
       <div class="header-right">
-        <!-- AKTIVER BEDIENER (APLANO-KOPPLUNG) -->
-        <div class="active-operator-badge" onclick="KasseModule.switchView('schichtplan')" title="Klicke hier, um zum Aplano-Schichtplaner zu wechseln">
+        <!-- AKTIVER BEDIENER -->
+        <div class="active-operator-badge" onclick="KasseModule.openCashierModal()" title="Klicke hier, um den Bediener zu wechseln">
           <div class="operator-avatar" id="active-operator-avatar">BM</div>
           <div class="operator-info">
             <span class="operator-name" id="active-cashier-name">Beat Müller</span>
@@ -150,29 +146,6 @@
         </div>
       </section>
 
-      <!-- ── VIEW 2: SCHICHTPLANER (APLANO-STYLE) ────────────────── -->
-      <section id="view-schichtplan" class="view-section">
-        <div class="aplano-layout">
-          <div class="aplano-toolbar">
-            <div class="aplano-title-group">
-              <span style="font-size: 24px;">📅</span>
-              <div>
-                <div class="aplano-title">Aplano Schicht- & Helferplaner</div>
-                <div class="aplano-subtitle">Visuelle Schichteinteilung für Grill, Kasse, Ausschank, Bar & Service</div>
-              </div>
-            </div>
-
-            <div class="aplano-actions">
-              <button class="btn-aplano-add" onclick="AplanoSchichtplan.openCreateShiftModal('st_kasse1', '10:00', '14:00', 'Neue Schicht')">
-                <span>➕</span>
-                <span>Schicht anlegen</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="aplano-grid-wrapper" id="aplano-grid-container"></div>
-        </div>
-      </section>
 
       <!-- ── VIEW 3: KASSENSTURZ & Z-ABSCHLUSS (PHASE 2) ─────────── -->
       <section id="view-abschluss" class="view-section">
@@ -246,77 +219,26 @@
     </div>
   </div>
 
-  <!-- APLANO: HELFER ZUTEILEN MODAL -->
-  <div id="aplano-assign-modal" class="modal-overlay">
-    <div class="modal-dialog">
+  <!-- BEDIENER WECHSELN MODAL -->
+  <div id="cashier-modal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 400px;">
       <div class="modal-header">
-        <div class="modal-title">Helfer zur Schicht zuteilen</div>
-        <button class="modal-close-btn" onclick="AplanoSchichtplan.closeModal('aplano-assign-modal')">✕</button>
+        <div class="modal-title">Bediener wechseln</div>
+        <button class="modal-close-btn" onclick="document.getElementById('cashier-modal').classList.remove('active')">✕</button>
       </div>
-      <input type="hidden" id="assign-shift-id">
-      <div class="d-flex flex-column gap-3">
+      <div class="d-flex flex-column gap-3" style="margin-top: 10px;">
         <div>
-          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Name des Helfers (Vorname Nachname):</label>
-          <input type="text" id="assign-helper-name" class="search-input" style="padding: 0 12px;" placeholder="z.B. Lukas Burkhalter">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Name des Bedieners:</label>
+          <input type="text" id="input-cashier-name" class="search-input" style="padding: 0 12px; font-size: 16px;" placeholder="z.B. Beat Müller">
         </div>
         <div style="margin-top: 10px;">
-          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Telefon / Handy (optional):</label>
-          <input type="tel" id="assign-helper-phone" class="search-input" style="padding: 0 12px;" placeholder="z.B. 079 123 45 67">
-        </div>
-        <div style="margin-top: 10px;">
-          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Funktion / Rolle:</label>
-          <input type="text" id="assign-helper-role" class="search-input" style="padding: 0 12px;" placeholder="z.B. Kassier, Grillmeister, Service">
+          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Station / Kasse:</label>
+          <input type="text" id="input-station-name" class="search-input" style="padding: 0 12px; font-size: 16px;" placeholder="z.B. Kasse 1">
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="AplanoSchichtplan.closeModal('aplano-assign-modal')">Abbrechen</button>
-        <button class="btn-primary" onclick="AplanoSchichtplan.saveAssignHelper()">Zuteilen</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- APLANO: NEUE SCHICHT MODAL -->
-  <div id="aplano-create-shift-modal" class="modal-overlay">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <div class="modal-title">Neue Schicht anlegen</div>
-        <button class="modal-close-btn" onclick="AplanoSchichtplan.closeModal('aplano-create-shift-modal')">✕</button>
-      </div>
-      <div class="d-flex flex-column gap-3">
-        <div>
-          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Bereich / Station:</label>
-          <select id="create-shift-station" class="search-input" style="padding: 0 12px;">
-            <option value="st_kasse1">💵 Kasse 1 (Haupteingang)</option>
-            <option value="st_kasse2">💵 Kasse 2 (Zelt / Schnell)</option>
-            <option value="st_grill">🥩 Grill & Warme Küche</option>
-            <option value="st_ausschank">🍺 Ausschank & Bier</option>
-            <option value="st_bar">🍸 Fest-Bar / Drinks</option>
-            <option value="st_service">🍽️ Service & Tische</option>
-            <option value="st_springer">🧹 Springer & Abwasch</option>
-          </select>
-        </div>
-        <div style="margin-top: 10px;">
-          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Bezeichnung / Titel:</label>
-          <input type="text" id="create-shift-title" class="search-input" style="padding: 0 12px;" placeholder="z.B. Frühschicht, Abendschicht">
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
-          <div style="flex: 1;">
-            <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Von:</label>
-            <input type="time" id="create-shift-start" class="search-input" style="padding: 0 12px;" value="10:00">
-          </div>
-          <div style="flex: 1;">
-            <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Bis:</label>
-            <input type="time" id="create-shift-end" class="search-input" style="padding: 0 12px;" value="14:00">
-          </div>
-        </div>
-        <div style="margin-top: 10px;">
-          <label style="font-size: 13px; font-weight: 700; color: var(--text-muted);">Benötigte Anzahl Helfer:</label>
-          <input type="number" id="create-shift-count" class="search-input" style="padding: 0 12px;" value="1" min="1" max="10">
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="AplanoSchichtplan.closeModal('aplano-create-shift-modal')">Abbrechen</button>
-        <button class="btn-primary" onclick="AplanoSchichtplan.saveCreateShift()">Schicht erstellen</button>
+      <div class="modal-footer" style="justify-content: space-between; margin-top: 20px;">
+        <button class="btn-secondary" onclick="document.getElementById('cashier-modal').classList.remove('active')">Abbrechen</button>
+        <button class="btn-primary" onclick="KasseModule.saveCashier()">Speichern</button>
       </div>
     </div>
   </div>
@@ -337,7 +259,6 @@
 
   <!-- SCRIPTS -->
   <script src="db.js"></script>
-  <script src="schichtplan.js"></script>
   <script src="abschluss.js"></script>
   <script src="kellner.js"></script>
   <script src="kasse.js"></script>
