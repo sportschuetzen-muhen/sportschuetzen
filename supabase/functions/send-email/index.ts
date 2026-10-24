@@ -214,11 +214,11 @@ Deno.serve(async (req) => {
   const senderName = payload.senderName || "Sportschützen Muhen";
   const fromHeader = `${encodeHeaderPhrase(senderName)} <${senderEmail}>`;
 
-  // CC bereinigen: Duplikate entfernen, niemals Absender in CC setzen, und Adressen ausschliessen, die bereits in 'recipients' stehen
+  // CC bereinigen: Duplikate entfernen und Adressen ausschliessen, die bereits in 'recipients' stehen
   const recipientSet = new Set(recipients.map(r => r.toLowerCase()));
   const ccList: string[] = Array.from(new Set(rawCcList))
     .map((s) => s.trim())
-    .filter((s) => s && s.toLowerCase() !== senderEmail.toLowerCase() && s.toLowerCase() !== smtpUser.toLowerCase() && !recipientSet.has(s.toLowerCase()));
+    .filter((s) => s && !recipientSet.has(s.toLowerCase()));
 
   const bccList: string[] = Array.isArray(payload.bcc)
     ? payload.bcc

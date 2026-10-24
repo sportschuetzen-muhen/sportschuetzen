@@ -385,8 +385,11 @@ async function sendRentalWorkflowEmail(action, d, settings) {
 
   const fullHtml = buildRentalEmailHtml(renderedSubject, bannerColor, bodyContentHtml, s);
 
+  const unifiedCc = s.rental_cc_emails || s.club_email || 'sportschuetzen.muhen@gmail.com';
+
   if (tplCode === 'vm_info_wirtschaft') {
     return await window.sendMailViaEngine({
+      to: unifiedCc,
       systemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
       subject: renderedSubject,
       html: fullHtml,
@@ -398,6 +401,7 @@ async function sendRentalWorkflowEmail(action, d, settings) {
 
   return await window.sendMailViaEngine({
     to: d.email,
+    cc: unifiedCc,
     ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
     subject: renderedSubject,
     html: fullHtml,
@@ -875,6 +879,7 @@ async function saveRentalSettings() {
     const sLast = document.getElementById('cfg-sender-lastname')?.value.trim() || '';
     const sPhone = document.getElementById('cfg-sender-phone')?.value.trim() || '';
     const clubEmail = document.getElementById('cfg-club-email')?.value.trim() || '';
+    const ccEmails = document.getElementById('cfg-cc-emails')?.value.trim() || clubEmail;
 
     const wName = document.getElementById('cfg-wirtschaft-name')?.value.trim() || '';
     const wPhone = document.getElementById('cfg-wirtschaft-phone')?.value.trim() || '';
@@ -889,7 +894,8 @@ async function saveRentalSettings() {
       { setting_key: 'sender_first_name', setting_value: sFirst, description: 'Vorname des Vermieters / Absenders' },
       { setting_key: 'sender_last_name', setting_value: sLast, description: 'Nachname des Vermieters / Absenders' },
       { setting_key: 'sender_phone', setting_value: sPhone, description: 'Telefonnummer des Vermieters' },
-      { setting_key: 'club_email', setting_value: clubEmail, description: 'Hauptkontakt / CC für Vermietungen' },
+      { setting_key: 'club_email', setting_value: clubEmail, description: 'Hauptkontakt / Absender für Vermietungen' },
+      { setting_key: 'rental_cc_emails', setting_value: ccEmails, description: 'Zentraler E-Mail-Verteiler für alle Vermietungs-Mails (Kopien an Verein & Team, kommagetrennt)' },
       { setting_key: 'wirtschaft_name', setting_value: wName, description: 'Name / Kontakt Schlüsselübergabe' },
       { setting_key: 'wirtschaft_phone', setting_value: wPhone, description: 'Telefon Schlüsselübergabe' },
       { setting_key: 'wirtschaft_email', setting_value: wEmail, description: 'E-Mail Schlüsselübergabe' },
@@ -956,6 +962,127 @@ async function saveRentalSettings() {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = origBtnText;
+    }
+  }
+}
+
+// ==============================================================================
+// NOTFALL-BUCHUNGEN SYNCHRONISATION (GOOGLE APPS SCRIPT -> SUPABASE)
+// ==============================================================================
+async function syncNotfallBuchungen() {
+  const btn = document.getElementById('btn-sync-notfall');
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Prüfe Notfall-Sheet...';
+  }
+
+  try {
+    const supa = getSupabaseClient();
+    const proxyUrl = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getUnsyncedRentals";
+    const resp = await fetch(proxyUrl);
+    if (!resp.ok) throw new Error("Fehler beim Abrufen der Notfall-Buchungen: HTTP " + resp.status);
+
+    const data = await resp.json();
+    const unsynced = data.bookings || [];
+
+    if (unsynced.length === 0) {
+      if (typeof showToast === 'function') {
+        showToast("ℹ️ Keine offenen Notfall-Buchungen im Google Sheet vorhanden. Alles auf aktuellem Stand!");
+      } else {
+        alert("ℹ️ Keine offenen Notfall-Buchungen im Google Sheet vorhanden. Alles auf aktuellem Stand!");
+      }
+      return;
+    }
+
+    if (!confirm(`Es wurden ${unsynced.length} neue Notfall-Buchung(en) im Google Sheet gefunden:\n\n` +
+      unsynced.map(b => `• ${b.booking_number}: ${b.vorname} ${b.nachname} (${b.mietdatum})`).join('\n') +
+      `\n\nJetzt in die Supabase-Datenbank importieren?`)) {
+      return;
+    }
+
+    let importedCount = 0;
+    const syncedBookingNumbers = [];
+
+    for (const b of unsynced) {
+      const parts = (b.mietdatum || '').split('.');
+      const isoDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : null;
+      if (!isoDate) continue;
+
+      const isInq = String(b.typ || '').toLowerCase().includes('anfrage') || String(b.status || '').toLowerCase().includes('anfrage');
+
+      const payload = {
+        booking_number: b.booking_number,
+        is_inquiry: isInq,
+        inquiry_type: isInq ? (b.bemerkung || 'Vorab-Prüfung') : null,
+        inquiry_note: b.bemerkung || null,
+        salutation: b.anrede || null,
+        first_name: b.vorname || 'Unbekannt',
+        last_name: b.nachname || 'Unbekannt',
+        email: b.email || '',
+        phone: b.telefon || '',
+        street: b.strasse || '',
+        post_code: b.plz || '',
+        city: b.wohnort || '',
+        start_date: isoDate,
+        end_date: isoDate,
+        festbeginn: b.festbeginn || null,
+        total_amount_chf: Number(b.mietbetrag) || 300.00,
+        status: isInq ? 'inquiry' : 'contract_sent',
+        datum_vertrag: new Date().toISOString().split('T')[0],
+        source: 'google_fallback',
+        contract_file_url: b.pdf_url || null
+      };
+
+      const { data: inserted, error: insertErr } = await supa
+        .from('rental_requests')
+        .upsert(payload, { onConflict: 'booking_number' })
+        .select('id, booking_number');
+
+      if (insertErr) {
+        console.warn("Fehler beim Import von " + b.booking_number, insertErr);
+        continue;
+      }
+
+      // Proforma-Rechnung im RechnungsCore anlegen falls feste Buchung
+      if (!isInq && inserted && inserted[0]) {
+        try {
+          await supa.rpc('ensure_rental_proforma_invoice', { p_rental_id: inserted[0].id });
+        } catch (invErr) {
+          console.warn("Proforma-Rechnung Hinweis:", invErr);
+        }
+      }
+
+      importedCount++;
+      syncedBookingNumbers.push(b.booking_number);
+    }
+
+    // Google Sheet über Cloudflare Proxy aktualisieren: Status auf 'synchronisiert' setzen
+    if (syncedBookingNumbers.length > 0) {
+      await fetch("https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=markSyncedRentals", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_numbers: syncedBookingNumbers })
+      }).catch(e => console.warn("Sync-Markierung Hinweis:", e));
+    }
+
+    if (typeof showToast === 'function') {
+      showToast(`✅ ${importedCount} Notfall-Buchung(en) nach Supabase importiert!`);
+    } else {
+      alert(`✅ Erfolgreich ${importedCount} Notfall-Buchung(en) nach Supabase importiert und im Google Sheet als synchronisiert markiert.`);
+    }
+    
+    // Daten im Cockpit neu laden
+    if (typeof loadVermietungDaten === 'function') {
+      await loadVermietungDaten();
+    }
+  } catch (err) {
+    console.error("Notfall-Sync Fehler:", err);
+    alert("❌ Fehler beim Synchronisieren: " + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
     }
   }
 }

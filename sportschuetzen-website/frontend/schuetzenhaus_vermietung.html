@@ -1741,6 +1741,10 @@
     // Config: Supabase Single Source of Truth
     const SUPABASE_REST_URL = "https://supabase-muhen.danfamily.uk/rest/v1";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg5ODI0MTM4LCJleHAiOjE5NDc1MDQxMzh9.N6UO60NvNYVRcYc4gcDzwNGp676PNM5SkqGcbayzY3M";
+    
+    // Sicherer Notfall-Ausfallschutz über Cloudflare Worker (Google Apps Script URL bleibt 100% verborgen)
+    const NOTFALL_FALLBACK_URL = "https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=notfallVermietung";
+    let currentRentalCcEmails = "sportschuetzen.muhen@gmail.com";
 
     // Bilderliste für Galerie
     const galleryImages = [
@@ -1818,11 +1822,12 @@
       };
 
       try {
-        const [resRentals, resTermine, resGoogle, resPricing] = await Promise.all([
+        const [resRentals, resTermine, resGoogle, resPricing, resSettings] = await Promise.all([
           fetch(`${SUPABASE_REST_URL}/rental_requests?select=booking_number,start_date,end_date,festbeginn,status,is_inquiry&status=neq.cancelled&order=start_date.asc`, { headers }).catch(() => null),
           fetch(`${SUPABASE_REST_URL}/termine?select=anlasstitel,datum,startzeit,endzeit,status&status=neq.abgesagt&order=datum.asc`, { headers }).catch(() => null),
           fetch('https://github-dropdown-refresh.dan-hunziker73.workers.dev?action=getHausKalender').then(r => r.ok ? r.json() : []).catch(() => []),
-          fetch(`${SUPABASE_REST_URL}/rental_pricing?tariff_code=eq.standard_tag&select=base_price_chf&is_active=eq.true`, { headers }).catch(() => null)
+          fetch(`${SUPABASE_REST_URL}/rental_pricing?tariff_code=eq.standard_tag&select=base_price_chf&is_active=eq.true`, { headers }).catch(() => null),
+          fetch(`${SUPABASE_REST_URL}/rental_settings?select=setting_key,setting_value`, { headers }).catch(() => null)
         ]);
 
         if (resPricing && resPricing.ok) {
@@ -1830,6 +1835,14 @@
           if (Array.isArray(pData) && pData[0] && pData[0].base_price_chf) {
             const pNum = Number(pData[0].base_price_chf);
             if (pNum > 0) currentStandardRentalPrice = pNum;
+          }
+        }
+
+        if (resSettings && resSettings.ok) {
+          const sData = await resSettings.json();
+          if (Array.isArray(sData)) {
+            const ccRow = sData.find(x => x.setting_key === 'rental_cc_emails');
+            if (ccRow && ccRow.setting_value) currentRentalCcEmails = ccRow.setting_value;
           }
         }
 
@@ -2237,6 +2250,10 @@
           datum_vertrag: new Date().toISOString().split('T')[0]
         };
 
+        // 4-Sekunden-Timeout für Supabase-Server
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
         const response = await fetch(`${SUPABASE_REST_URL}/rental_requests`, {
           method: 'POST',
           headers: {
@@ -2245,8 +2262,10 @@
             'Content-Type': 'application/json',
             'Prefer': 'return=representation'
           },
-          body: JSON.stringify(supaPayload)
+          body: JSON.stringify(supaPayload),
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errText = await response.text();
@@ -2290,6 +2309,7 @@
               if (setRes.ok) {
                 const setRows = await setRes.json();
                 (setRows || []).forEach(r => { setMap[r.setting_key] = r.setting_value; });
+                if (setMap.rental_cc_emails) currentRentalCcEmails = setMap.rental_cc_emails;
               }
             } catch (_) {}
 
@@ -2298,6 +2318,7 @@
             const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
             const vermieterPhone = setMap.sender_phone || '';
             const vermieterEmail = setMap.club_email || 'sportschuetzen.muhen@gmail.com';
+            const ccEmailsToUse = currentRentalCcEmails || setMap.rental_cc_emails || vermieterEmail;
 
             const map = {
               'vertragsnr': vnr,
@@ -2366,7 +2387,7 @@
               </table>
             `;
 
-            // 1. Empfangsbestätigung an Interessenten senden
+            // 1. Empfangsbestätigung an Interessenten senden (mit CC an zentralen Vermietungs-Verteiler)
             fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
               method: 'POST',
               headers: {
@@ -2376,6 +2397,8 @@
               },
               body: JSON.stringify({
                 to: payload.email,
+                cc: ccEmailsToUse,
+                ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
                 subject: finalSubject,
                 html: finalHtml,
                 moduleRef: 'vermietung',
@@ -2392,7 +2415,7 @@
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                to: vermieterEmail,
+                to: ccEmailsToUse,
                 subject: `📅 Neue Vorab-Terminanfrage: ${vnr} (${payload.mietdatum})`,
                 html: `
                   <div style="font-family:sans-serif; max-width:600px; padding:20px; border:1px solid #f59e0b; border-radius:8px;">
@@ -2532,6 +2555,7 @@
               if (setRes.ok) {
                 const setRows = await setRes.json();
                 (setRows || []).forEach(r => { setMap[r.setting_key] = r.setting_value; });
+                if (setMap.rental_cc_emails) currentRentalCcEmails = setMap.rental_cc_emails;
               }
             } catch (_) {}
 
@@ -2540,6 +2564,7 @@
             const vermieterName = `${vermieterFirst} ${vermieterLast}`.trim() || 'Sportschützen Muhen';
             const vermieterPhone = setMap.sender_phone || '';
             const vermieterEmail = setMap.club_email || 'sportschuetzen.muhen@gmail.com';
+            const ccEmailsToUse = currentRentalCcEmails || setMap.rental_cc_emails || vermieterEmail;
 
             const map = {
               'vertragsnr': vnr,
@@ -2633,7 +2658,7 @@
               });
             }
 
-            // Vollautomatischer Mailversand an den Mieter (mit CC an Wirtschaftsverantwortliche aus System-Mail-Verteiler)
+            // Vollautomatischer Mailversand an den Mieter (mit CC an zentralen Vermietungs-Verteiler)
             try {
               const mailResp = await fetch('https://supabase-muhen.danfamily.uk/functions/v1/send-email', {
                 method: 'POST',
@@ -2644,6 +2669,7 @@
                 },
                 body: JSON.stringify({
                   to: payload.email,
+                  cc: ccEmailsToUse,
                   ccSystemMailKey: 'Info_Mail_an_Wirtschaftsverantwortliche',
                   subject: finalSubject,
                   html: finalHtml,
@@ -2675,12 +2701,76 @@
         loadCalendarEvents();
 
       } catch (error) {
-        console.error("Fehler beim Senden der Buchung:", error);
-        showCustomToast("error", "Verbindungsfehler", "Die Buchung/Anfrage konnte nicht gespeichert werden: " + error.message);
+        console.warn("⚠️ Primärer Supabase-Server offline oder nicht erreichbar:", error.message);
+        console.info("🛡️ Starte Notfall-Ausfallschutz über Cloudflare-Proxy...");
+
+        try {
+          await executeNotfallFallback(payload, isCurrentlyInquiry);
+        } catch (fallbackErr) {
+          console.error("Fehler beim Notfall-Fallback:", fallbackErr);
+          showCustomToast("error", "Verbindungsfehler", "Die Buchung/Anfrage konnte nicht gespeichert werden: " + fallbackErr.message);
+        }
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
       }
+    }
+
+    // Notfall-Ausfallschutz via Cloudflare Worker Proxy (100% geschützt, Google URL verborgen)
+    async function executeNotfallFallback(payload, isCurrentlyInquiry) {
+      const fallbackPayload = {
+        action: isCurrentlyInquiry ? "inquiry" : "booking",
+        is_inquiry: isCurrentlyInquiry,
+        inquiry_type: payload.inquiry_type || '',
+        inquiry_note: payload.inquiry_note || '',
+        anrede: payload.anrede,
+        vorname: payload.vorname,
+        nachname: payload.nachname,
+        email: payload.email,
+        telefon: payload.telefon,
+        strasse: payload.strasse,
+        plz: payload.plz,
+        wohnort: payload.wohnort,
+        festbeginn: payload.festbeginn,
+        mietdatum: payload.mietdatum,
+        mietbetrag: currentStandardRentalPrice || 300.00,
+        cc_emails: currentRentalCcEmails || 'sportschuetzen.muhen@gmail.com'
+      };
+
+      const resp = await fetch(NOTFALL_FALLBACK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fallbackPayload)
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Cloudflare Notfall-Dienst HTTP ${resp.status}`);
+      }
+
+      const result = await resp.json();
+      if (!result || !result.success) {
+        throw new Error(result?.error || "Fehler beim Notfall-Ausfallschutz");
+      }
+
+      const vnr = result.booking_number || '';
+      if (isCurrentlyInquiry) {
+        showCustomToast(
+          "success",
+          "Terminanfrage übermittelt",
+          `Vielen Dank! Deine Terminanfrage ${vnr ? '(' + vnr + ') ' : ''}für den ${payload.mietdatum} wurde erfolgreich eingereicht. Wir prüfen die zeitliche Machbarkeit und melden uns in Kürze bei dir.`
+        );
+      } else {
+        showCustomToast(
+          "success",
+          "Reservierung erfolgreich",
+          `Deine Reservierung (${vnr}) wurde erfolgreich verbucht! Der Mietvertrag mit QR-Einzahlungsschein wurde soeben per E-Mail an dich gesendet.`
+        );
+      }
+
+      document.getElementById('res-form').reset();
+      selectedDateISO = null;
+      updateBookingStatusCard(null, null);
+      loadCalendarEvents();
     }
 
     // Custom Toast Notification System
