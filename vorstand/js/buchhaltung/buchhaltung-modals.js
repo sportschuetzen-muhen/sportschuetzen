@@ -767,7 +767,7 @@ window.bhToggleMemberSection = function(prefix) {
   }
 };
 
-window.bhDownloadFile = function(filename, content, mimeType = 'application/xml') {
+window.bhDownloadFile = function(filename, content, mimeType = 'application/xml;charset=utf-8') {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -808,10 +808,17 @@ window.bhGeneratePain001Xml = function(params) {
       .replace(/'/g, '&apos;');
   }
 
+  // SWIFT-Zeichensatz für Identifier (Max35Text-Swift): nur [A-Za-z0-9/\-?:().,'+ ] erlaubt, kein Unterstrich!
+  function sanitizeSwiftId(str, fallback = 'PAY') {
+    const clean = String(str || fallback).replace(/[^A-Za-z0-9\-\+\?\/\:\(\)\.\,\']/g, '-').slice(0, 35);
+    return clean || fallback;
+  }
+
   const now = new Date();
   const createdIso = now.toISOString().replace(/\.\d{3}Z$/, '');
-  const msgId = `SPM-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-6)}`;
-  const pmtInfId = `PMT-${endToEndId || Date.now()}`;
+  const msgId = sanitizeSwiftId(`SPM-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-6)}`);
+  const safeEndToEndId = sanitizeSwiftId(endToEndId || `PAY-${Date.now()}`);
+  const pmtInfId = sanitizeSwiftId(`PMT-${safeEndToEndId}`);
   const amtFormatted = Number(amount || 0).toFixed(2);
   const cleanDebtorIban = String(debtorIban || 'CH0680808003633131892').replace(/\s+/g, '').toUpperCase();
   const cleanCreditorIban = String(creditorIban || '').replace(/\s+/g, '').toUpperCase();
@@ -836,7 +843,7 @@ window.bhGeneratePain001Xml = function(params) {
   const cleanRemittance = String(remittanceInfo || 'Rückvergütung Sportschützen Muhen').slice(0, 140);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<Document xmlns="http://www.six-interbank-clearing.com/de/pain.001.001.03.ch.02.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pain.001.001.03.ch.02.xsd pain.001.001.03.ch.02.xsd">
   <CstmrCdtTrfInitn>
     <GrpHdr>
       <MsgId>${escapeXml(msgId)}</MsgId>
@@ -850,7 +857,7 @@ window.bhGeneratePain001Xml = function(params) {
     <PmtInf>
       <PmtInfId>${escapeXml(pmtInfId)}</PmtInfId>
       <PmtMtd>TRF</PmtMtd>
-      <BchBookg>true</BchBookg>
+      <BtchBookg>true</BtchBookg>
       <NbOfTxs>1</NbOfTxs>
       <CtrlSum>${amtFormatted}</CtrlSum>
       <PmtTpInf>
@@ -873,28 +880,16 @@ window.bhGeneratePain001Xml = function(params) {
       </DbtrAcct>
       <DbtrAgt>
         <FinInstnId>
-          <ClrSysMmbId>
-            <ClrSysId>
-              <Cd>CHBCC</Cd>
-            </ClrSysId>
-            <MmbId>80808</MmbId>
-          </ClrSysMmbId>
+          <BIC>RAIFCH22</BIC>
         </FinInstnId>
       </DbtrAgt>
       <CdtTrfTxInf>
         <PmtId>
-          <EndToEndId>${escapeXml(endToEndId || pmtInfId)}</EndToEndId>
+          <EndToEndId>${escapeXml(safeEndToEndId)}</EndToEndId>
         </PmtId>
         <Amt>
           <InstdAmt Ccy="CHF">${amtFormatted}</InstdAmt>
         </Amt>
-        <CdtrAgt>
-          <FinInstnId>
-            <Othr>
-              <Id>NOTPROVIDED</Id>
-            </Othr>
-          </FinInstnId>
-        </CdtrAgt>
         <Cdtr>
           <Nm>${escapeXml(creditorName || 'Mitglied')}</Nm>
           ${creditorAddressXml}
@@ -972,8 +967,8 @@ window.bhDownloadPain001Xml = function(entries, recipientData) {
     remittanceInfo: remittance
   });
 
-  const filename = `pain001_${baseBeleg || 'Zahlungsauftrag'}_${Date.now()}.xml`;
-  window.bhDownloadFile(filename, xmlContent, 'application/xml');
+  const filename = `pain001_${(baseBeleg || 'Zahlungsauftrag').replace(/[^A-Za-z0-9\-]/g, '-')}_${Date.now()}.xml`;
+  window.bhDownloadFile(filename, xmlContent, 'application/xml;charset=utf-8');
 
   if (typeof showSuccess === 'function') {
     showSuccess(`📥 Bank-Datei ${filename} (pain.001) heruntergeladen! Kann direkt im E-Banking hochgeladen werden.`);
