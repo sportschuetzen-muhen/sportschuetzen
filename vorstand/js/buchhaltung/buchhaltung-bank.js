@@ -3968,12 +3968,20 @@ window.bhBankOpenSplitModal = async function(txIdx) {
     modalEl.id = 'bhBankSplitModal';
     modalEl.className = 'modal fade';
     modalEl.tabIndex = -1;
+    modalEl.setAttribute('aria-hidden', 'true');
     document.body.appendChild(modalEl);
   }
 
   bhBankRenderSplitModalContent(tx);
   const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
   bsModal.show();
+
+  setTimeout(() => {
+    if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+      modalEl._uiModalKitInitialized = false;
+      window.UIModalKit.makeMovableAndResizable(modalEl);
+    }
+  }, 50);
 };
 
 function bhBankCleanKonto(val) {
@@ -4038,7 +4046,6 @@ function bhBankRenderSplitModalContent(tx) {
   const totalAmount = Number(tx.amount || 0);
   const splitRows = window._bhSplitCurrentRows || [];
   const bal = bhBankCalcSplitBalance(tx, splitRows);
-
   const kontenrahmen = window._bhKontenrahmen || [];
 
   function makeKontoSelectHTML(id, selectedVal) {
@@ -4047,25 +4054,31 @@ function bhBankRenderSplitModalContent(tx) {
     return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Konto..." value="${escHtml(displayVal)}" autocomplete="off" oninput="bhBankUpdateSplitLiveBalance()" onchange="bhBankUpdateSplitLiveBalance()">`;
   }
 
-  let tableRowsHtml = splitRows.map((r, i) => {
+  const tableRowsHtml = splitRows.map((r, i) => {
     const amtVal = (r.betrag !== undefined && r.betrag !== null) ? r.betrag : '';
     return `
       <tr>
-        <td class="text-center font-monospace fw-bold small" style="width:30px;">#${i + 1}</td>
+        <td class="text-center font-monospace fw-bold text-muted small" style="width:38px;">#${i + 1}</td>
         <td>
           <input type="text" class="form-control form-control-sm" id="bh-split-desc-${i}" value="${escHtml(r.beschreibung)}" placeholder="Beschreibung..." oninput="bhBankUpdateSplitLiveBalance()">
         </td>
         <td style="width: 140px;">
-          <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end fw-bold" id="bh-split-amt-${i}" value="${amtVal}" placeholder="0.00" oninput="bhBankUpdateSplitLiveBalance()">
+          <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end fw-bold font-monospace" id="bh-split-amt-${i}" value="${amtVal}" placeholder="0.00" oninput="bhBankUpdateSplitLiveBalance()">
         </td>
-        <td style="width: 170px;">
+        <td style="width: 240px;">
           ${makeKontoSelectHTML(`bh-split-soll-${i}`, r.kontoSoll)}
         </td>
-        <td style="width: 170px;">
+        <td style="width: 240px;">
           ${makeKontoSelectHTML(`bh-split-haben-${i}`, r.kontoHaben)}
         </td>
-        <td class="text-center" style="width:40px;">
-          ${splitRows.length > 1 ? `<button class="btn btn-sm btn-outline-danger py-0 px-1.5" onclick="bhBankRemoveSplitRow(${i})"><i class="fas fa-times"></i></button>` : ''}
+        <td class="text-center" style="width:45px;">
+          ${splitRows.length > 1 ? `
+            <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-2" onclick="bhBankRemoveSplitRow(${i})" title="Position entfernen">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          ` : `
+            <span class="text-muted small" title="Mindestens 1 Position verbleibt">-</span>
+          `}
         </td>
       </tr>
     `;
@@ -4082,21 +4095,30 @@ function bhBankRenderSplitModalContent(tx) {
   if (bal.hasNegative) {
     diffStatusHtml = '<span class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>Nur positive Beträge erlaubt (Soll/Haben anpassen)</span>';
   } else if (bal.isBalanced) {
-    diffStatusHtml = '<span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Betrag exakt aufgeteilt</span>';
+    diffStatusHtml = '<span class="badge bg-success fs-6 px-3 py-1.5"><i class="fas fa-check-circle me-1.5"></i>Betrag exakt aufgeteilt</span>';
   } else {
-    diffStatusHtml = `<span class="text-danger"><i class="fas fa-times-circle me-1"></i>Rest unverteilt: CHF ${bal.diff.toFixed(2)}</span>`;
+    diffStatusHtml = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle fs-6 px-3 py-1.5"><i class="fas fa-times-circle me-1.5"></i>Rest unverteilt: CHF ${bal.diff.toFixed(2)}</span>`;
   }
+
+  const isSingle = (splitRows.length === 1);
+  const saveBtnText = isSingle ? 'Als Einzelbuchung übernehmen' : `Split-Aufteilung übernehmen (${splitRows.length} Zeilen)`;
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-xl modal-dialog-centered">
-      <div class="modal-content shadow-lg border-0 rounded-4">
-        <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title fw-bold">
-            <i class="fas fa-columns me-2"></i>Split-Buchung aufteilen
+      <div class="modal-content shadow-lg border-0 rounded-4 position-relative">
+        <div class="modal-header bg-primary text-white d-flex align-items-center justify-content-between" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0">
+            <i class="fas fa-columns"></i>
+            <span>Split-Buchung aufteilen</span>
           </h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          <div class="d-flex align-items-center">
+            <button type="button" class="btn btn-sm btn-link text-white p-0 rn-modal-maximize-btn me-2" title="Maximieren / Wiederherstellen" style="text-decoration:none; font-size:0.95rem;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" title="Schliessen"></button>
+          </div>
         </div>
-        <div class="modal-body p-4">
+        <div class="modal-body p-4" style="overflow-y: auto; max-height: calc(85vh - 65px);">
           <div class="alert alert-info border-start border-4 border-info shadow-sm py-2 px-3 mb-3 d-flex align-items-center gap-2 small">
             <i class="fas fa-info-circle fs-5 text-info flex-shrink-0"></i>
             <div><strong>Workflow-Hinweis:</strong> Die Split-Aufteilung wird für diese Zeile vorgemerkt. Verbucht wird alles gemeinsam mit allen anderen Bankbuchungen beim Klick auf <strong>«Alle Buchungen ausführen»</strong>.</div>
@@ -4117,26 +4139,26 @@ function bhBankRenderSplitModalContent(tx) {
             </div>
           </div>
 
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0 text-primary"><i class="fas fa-list me-1"></i>Split-Positionen (Kontoaufteilung)</h6>
-            <button class="btn btn-sm btn-outline-primary" onclick="bhBankAddSplitRow()">
-              <i class="fas fa-plus me-1"></i>Zeile hinzufügen
+          <div class="d-flex justify-content-between align-items-center mb-2.5">
+            <h6 class="fw-bold mb-0 text-primary"><i class="fas fa-list me-1.5"></i>Split-Positionen (Kontoaufteilung)</h6>
+            <button type="button" class="btn btn-sm btn-primary py-1 px-3 fw-semibold shadow-sm" onclick="bhBankAddSplitRow()">
+              <i class="fas fa-plus me-1.5"></i>Position hinzufügen
             </button>
           </div>
 
-          <div class="table-responsive mb-3">
-            <table class="table table-sm align-middle table-bordered">
-              <thead class="table-light small">
+          <div class="table-responsive border rounded-3 mb-3 bg-white" style="min-height: 120px;">
+            <table class="table table-bordered table-striped table-hover align-middle mb-0" id="bh-split-table" style="font-size: 13.5px;">
+              <thead class="table-light">
                 <tr>
-                  <th style="width:30px;">#</th>
+                  <th style="width:38px;" class="text-center">#</th>
                   <th>Buchungstext / Beschreibung</th>
                   <th style="width:140px;" class="text-end">Betrag (CHF)</th>
-                  <th style="width:170px;">Soll-Konto</th>
-                  <th style="width:170px;">Haben-Konto</th>
-                  <th style="width:40px;"></th>
+                  <th style="width:240px;">Soll-Konto</th>
+                  <th style="width:240px;">Haben-Konto</th>
+                  <th style="width:45px;" class="text-center">Aktion</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="bh-split-tbody">
                 ${tableRowsHtml}
               </tbody>
             </table>
@@ -4159,14 +4181,21 @@ function bhBankRenderSplitModalContent(tx) {
 
         <div class="modal-footer bg-light d-flex justify-content-between">
           <div>
-            ${tx.isSplit ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="bhBankClearSplit(${window._bhSplitCurrentTxIndex})"><i class="fas fa-undo me-1"></i>Split aufheben (Einzelbuchung)</button>` : ''}
-          </div>
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-            <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
-              <i class="fas fa-check me-1"></i>Split-Aufteilung übernehmen (${splitRows.length} Zeilen)
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bhBankClearSplit(${window._bhSplitCurrentTxIndex})" title="Aufteilung verwerfen und als normale Einzelbuchung führen">
+              <i class="fas fa-undo me-1.5"></i>Split aufheben (Einzelbuchung)
             </button>
           </div>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">Abbrechen</button>
+            <button type="button" id="bh-split-save-btn" class="btn btn-success fw-bold px-4 shadow-sm" ${!bal.isBalanced ? 'disabled' : ''} onclick="bhBankSaveSplitBooking(${window._bhSplitCurrentTxIndex})">
+              <i class="fas fa-check me-1.5"></i>${saveBtnText}
+            </button>
+          </div>
+        </div>
+
+        <!-- Resize-Grip Ecke unten rechts für UIModalKit -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
         </div>
       </div>
     </div>
@@ -4220,7 +4249,9 @@ window.bhBankUpdateSplitLiveBalance = function() {
 
   const saveBtn = document.getElementById('bh-split-save-btn');
   if (saveBtn) {
+    const isSingle = (rows.length === 1);
     saveBtn.disabled = !bal.isBalanced;
+    saveBtn.innerHTML = `<i class="fas fa-check me-1.5"></i>${isSingle ? 'Als Einzelbuchung übernehmen' : `Split-Aufteilung übernehmen (${rows.length} Zeilen)`}`;
   }
 };
 
@@ -4253,7 +4284,14 @@ window.bhBankAddSplitRow = function() {
     kontoHaben: isCredit ? '' : txBankKonto
   });
 
-  if (tx) bhBankRenderSplitModalContent(tx);
+  if (tx) {
+    bhBankRenderSplitModalContent(tx);
+    const mEl = document.getElementById('bhBankSplitModal');
+    if (mEl && window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+      mEl._uiModalKitInitialized = false;
+      window.UIModalKit.makeMovableAndResizable(mEl);
+    }
+  }
 };
 
 window.bhBankRemoveSplitRow = function(idx) {
@@ -4263,7 +4301,14 @@ window.bhBankRemoveSplitRow = function(idx) {
   }
   const txs = window._bhBankMatchResults || [];
   const tx = txs[window._bhSplitCurrentTxIndex];
-  if (tx) bhBankRenderSplitModalContent(tx);
+  if (tx) {
+    bhBankRenderSplitModalContent(tx);
+    const mEl = document.getElementById('bhBankSplitModal');
+    if (mEl && window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+      mEl._uiModalKitInitialized = false;
+      window.UIModalKit.makeMovableAndResizable(mEl);
+    }
+  }
 };
 
 window.bhBankSaveSplitBooking = function(txIdx) {
@@ -4280,8 +4325,8 @@ window.bhBankSaveSplitBooking = function(txIdx) {
     return;
   }
 
-  if (splitRows.length < 2) {
-    alert('⚠️ Eine Split-Buchung erfordert mindestens 2 Teilpositionen mit Betrag > 0.');
+  if (splitRows.length === 0) {
+    alert('⚠️ Bitte mindestens eine Position mit Betrag > 0 erfassen.');
     return;
   }
 
@@ -4290,7 +4335,60 @@ window.bhBankSaveSplitBooking = function(txIdx) {
     return;
   }
 
-  // Validierung der einzelnen Zeilen
+  // FALL 1: Genau 1 Zeile -> Saubere Übernahme als vollständige Einzelbuchung!
+  if (splitRows.length === 1) {
+    const single = splitRows[0];
+    if (!single.kontoSoll || !single.kontoHaben) {
+      alert('Bitte Soll- und Haben-Konto für die Position angeben.');
+      return;
+    }
+    if (single.kontoSoll === single.kontoHaben) {
+      alert('Soll- und Haben-Konto dürfen nicht identisch sein.');
+      return;
+    }
+    if (Number(single.betrag) <= 0) {
+      alert('Bitte einen Betrag grösser als 0 eingeben.');
+      return;
+    }
+
+    // Split aufheben & direkt als Einzelbuchung auf der Transaktion hinterlegen
+    tx.isSplit = false;
+    delete tx.splitRows;
+    tx._customSplitEdited = false;
+    tx._customSollEdited = true;
+    tx._customHabenEdited = true;
+    tx.suggestedSoll = single.kontoSoll;
+    tx.suggestedHaben = single.kontoHaben;
+    if (single.beschreibung && single.beschreibung.trim()) {
+      tx.remittanceInfo = single.beschreibung.trim();
+    }
+
+    if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
+      window._bhBankTransactions[txIdx].isSplit = false;
+      delete window._bhBankTransactions[txIdx].splitRows;
+      window._bhBankTransactions[txIdx]._customSplitEdited = false;
+      window._bhBankTransactions[txIdx]._customSollEdited = true;
+      window._bhBankTransactions[txIdx]._customHabenEdited = true;
+      window._bhBankTransactions[txIdx].suggestedSoll = single.kontoSoll;
+      window._bhBankTransactions[txIdx].suggestedHaben = single.kontoHaben;
+      if (single.beschreibung && single.beschreibung.trim()) {
+        window._bhBankTransactions[txIdx].remittanceInfo = single.beschreibung.trim();
+      }
+    }
+
+    const modalEl = document.getElementById('bhBankSplitModal');
+    if (modalEl) {
+      const bsModal = bootstrap.Modal.getInstance(modalEl);
+      if (bsModal) bsModal.hide();
+    }
+
+    showToast(`✅ Transaktion als Einzelbuchung (${single.kontoSoll} / ${single.kontoHaben}) übernommen!`, 'success', 'top-end', 3500);
+    bhBankRenderResults(window._bhBankActiveFilter);
+    if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
+    return;
+  }
+
+  // FALL 2: Mindestens 2 Zeilen -> Split-Buchung
   for (let i = 0; i < splitRows.length; i++) {
     const r = splitRows[i];
     if (!r.beschreibung.trim()) {
