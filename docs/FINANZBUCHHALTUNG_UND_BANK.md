@@ -59,6 +59,7 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Problemstellung & Anwendungsfall:** Vorfinanzierte Auslagen von Mitgliedern (z.B. Gruppendoppel für Schiessanlässe, Munition oder Materialspesen) müssen mit detailliertem Nachweis vergütet werden.
 * **Ablauf & Belegdruck:** Bei Erfassung von Einzel- oder Sammelauszahlungen (Konto `1020 Bank` oder `1000 Kasse`) kann ein Mitglied aus dem Mitgliederstamm ausgewählt werden. Das System generiert auf Knopfdruck einen revisionssicheren A4-Vergütungsbeleg mit Begünstigtem, Adresse, IBAN, Positionsaufstellung und Freigabevisum.
 * **ISO 20022 pain.001 XML-Export:** Für Banküberweisungen via `1020 Bank` wird direkt beim Buchen eine normierte XML-Zahlungsdatei nach Schweizer Standard (`pain.001.001.03.ch.02`) erzeugt und heruntergeladen. Diese kann ohne manuelle Datenerfassung direkt im E-Banking (z.B. PostFinance, Raiffeisen) zur Ausführung hochgeladen werden. IBAN-Änderungen können auf Wunsch direkt in `public.members` synchronisiert werden.
+* **UI/UX & DB-Integrität:** Das Buchungs-Modal folgt dem globalen Standard (`UIModalKit` mit Drag & Resize, Maximize, `modal-xl` und getrennten 50/50-Buttons für *Nur buchen* und *Buchen & Beleg drucken*). Aufwandskonten-Dropdowns nutzen freie Viewport-Positionierung, und die DB-Sequenz `accounting_journal_id_seq` ist lückenlos mit `MAX(id)` synchronisiert.
 
 
 ---

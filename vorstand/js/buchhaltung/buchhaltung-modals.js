@@ -316,12 +316,12 @@ window.bhGetSplitBaseBeleg = function(belegNr) {
   const style = document.createElement('style');
   style.id = 'bh-konto-ac-styles';
   style.textContent = `
-    .bh-konto-ac-wrap { position: relative; }
+    .bh-konto-ac-wrap { position: relative; width: 100%; }
     .bh-konto-ac-dropdown {
-      position: absolute; z-index: 1060; width: 100%; max-height: 280px;
-      overflow-y: auto; background: #fff; border: 1px solid rgba(0,0,0,.15);
-      border-radius: 0.5rem; box-shadow: 0 8px 24px rgba(0,0,0,.12);
-      display: none; margin-top: 2px;
+      position: fixed; z-index: 99999; min-width: 340px; max-width: 460px; max-height: 290px;
+      overflow-y: auto; background: #fff; border: 1px solid rgba(0,0,0,.18);
+      border-radius: 0.6rem; box-shadow: 0 12px 32px rgba(0,0,0,.22);
+      display: none;
     }
     .bh-konto-ac-dropdown.show { display: block; }
     .bh-konto-ac-item {
@@ -381,15 +381,39 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
   const inputs = container.querySelectorAll('input.bh-konto-ac-input');
   inputs.forEach(input => {
     // Dropdown-Container erstellen falls nicht vorhanden
-    let dropdown = input.parentElement.querySelector('.bh-konto-ac-dropdown');
+    let dropdown = input.dataset.dropdownId ? document.getElementById(input.dataset.dropdownId) : null;
     if (!dropdown) {
+      const dropId = 'bh-drop-' + Math.random().toString(36).substring(2, 9);
+      input.dataset.dropdownId = dropId;
       dropdown = document.createElement('div');
+      dropdown.id = dropId;
       dropdown.className = 'bh-konto-ac-dropdown';
-      input.parentElement.appendChild(dropdown);
+      document.body.appendChild(dropdown);
     }
 
     let activeIdx = -1;
     let currentMatches = [];
+
+    const isAufwandField = (input.id.includes('konto') || (input.placeholder || '').toLowerCase().includes('aufwand'));
+    const isErtragField = ((input.placeholder || '').toLowerCase().includes('ertrag'));
+
+    const updatePos = () => {
+      if (!dropdown || !dropdown.classList.contains('show')) return;
+      const rect = input.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const dropdownHeight = 290;
+      dropdown.style.left = Math.max(5, rect.left) + 'px';
+      dropdown.style.minWidth = Math.max(rect.width, 340) + 'px';
+      dropdown.style.zIndex = '99999';
+
+      if (spaceBelow < dropdownHeight && rect.top > dropdownHeight) {
+        // Nach oben öffnen wenn unten zu wenig Platz
+        dropdown.style.top = Math.max(5, rect.top - dropdownHeight - 3) + 'px';
+      } else {
+        dropdown.style.top = (rect.bottom + 3) + 'px';
+      }
+    };
 
     const getCatClass = (acc) => {
       const cat = window.bhGetAccountCategory ? window.bhGetAccountCategory(acc) : { main: acc.klasse || '' };
@@ -408,13 +432,32 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
     };
 
     const renderDropdown = (query) => {
-      const q = String(query || '').trim();
+      let q = String(query || '').trim();
+      if (q.includes('|')) {
+        q = q.split('|')[0].trim();
+      }
+
+      let allKonten = window._bhKontenrahmen || [];
+      if (isAufwandField) {
+        allKonten = [...allKonten].sort((a, b) => {
+          const aIs = (a.klasse || '').toLowerCase().includes('aufwand') || String(a.konto).startsWith('4') || String(a.konto).startsWith('6');
+          const bIs = (b.klasse || '').toLowerCase().includes('aufwand') || String(b.konto).startsWith('4') || String(b.konto).startsWith('6');
+          if (aIs && !bIs) return -1;
+          if (!aIs && bIs) return 1;
+          return String(a.konto).localeCompare(String(b.konto));
+        });
+      } else if (isErtragField) {
+        allKonten = [...allKonten].sort((a, b) => {
+          const aIs = (a.klasse || '').toLowerCase().includes('ertrag') || String(a.konto).startsWith('3');
+          const bIs = (b.klasse || '').toLowerCase().includes('ertrag') || String(b.konto).startsWith('3');
+          if (aIs && !bIs) return -1;
+          if (!aIs && bIs) return 1;
+          return String(a.konto).localeCompare(String(b.konto));
+        });
+      }
+
       if (!q) {
-        // Zeige alle Konten wenn kein Query (z.B. bei Fokus)
-        currentMatches = (window._bhKontenrahmen || []).slice(0, 50);
-      } else if (q.includes('|')) {
-        dropdown.classList.remove('show');
-        return;
+        currentMatches = allKonten.slice(0, 60);
       } else {
         currentMatches = typeof bhFindMatchingKonten === 'function' ? bhFindMatchingKonten(q) : [];
       }
@@ -423,6 +466,7 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
       if (currentMatches.length === 0 && q) {
         dropdown.innerHTML = '<div class="bh-konto-ac-empty"><i class="fas fa-search me-1"></i>Kein Konto gefunden für «' + (typeof escapeHtml === 'function' ? escapeHtml(q) : q) + '»</div>';
         dropdown.classList.add('show');
+        updatePos();
         return;
       }
 
@@ -436,6 +480,7 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
         </div>`;
       }).join('');
       dropdown.classList.add('show');
+      updatePos();
     };
 
     const selectItem = (acc) => {
@@ -454,21 +499,23 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
       }
     };
 
-    // Input event
     input.addEventListener('input', () => {
       input.classList.remove('is-resolved');
       renderDropdown(input.value);
     });
 
-    // Focus event – show all accounts
     input.addEventListener('focus', () => {
-      const val = input.value.trim();
-      if (!val || !val.includes('|')) {
-        renderDropdown(val);
+      input.select();
+      renderDropdown('');
+    });
+
+    input.addEventListener('click', () => {
+      if (!dropdown.classList.contains('show')) {
+        input.select();
+        renderDropdown('');
       }
     });
 
-    // Keyboard navigation
     input.addEventListener('keydown', (e) => {
       const items = dropdown.querySelectorAll('.bh-konto-ac-item');
       if (!dropdown.classList.contains('show') || items.length === 0) {
@@ -495,7 +542,6 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
           selectItem(currentMatches[0]);
         }
       } else if (e.key === 'Tab') {
-        // Resolve on Tab
         if (!input.value.includes('|') && currentMatches.length > 0) {
           const target = activeIdx >= 0 ? currentMatches[activeIdx] : currentMatches[0];
           selectItem(target);
@@ -506,9 +552,8 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
       }
     });
 
-    // Click on dropdown item
     dropdown.addEventListener('mousedown', (e) => {
-      e.preventDefault(); // Prevent blur
+      e.preventDefault();
       const item = e.target.closest('.bh-konto-ac-item');
       if (item) {
         const idx = Number(item.dataset.idx);
@@ -518,10 +563,17 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
       }
     });
 
-    // Blur – close dropdown and auto-resolve
+    document.addEventListener('mousedown', (e) => {
+      if (!input.contains(e.target) && !dropdown.contains(e.target) && !e.target.closest?.('.bh-konto-ac-dropdown')) {
+        dropdown.classList.remove('show');
+      }
+    });
+
+    window.addEventListener('scroll', updatePos, true);
+    window.addEventListener('resize', updatePos);
+
     input.addEventListener('blur', () => {
       setTimeout(() => {
-        dropdown.classList.remove('show');
         const val = input.value.trim();
         if (val && !val.includes('|')) {
           const matches = typeof bhFindMatchingKonten === 'function' ? bhFindMatchingKonten(val) : [];
@@ -531,10 +583,9 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
             input.dispatchEvent(new Event('change', { bubbles: true }));
           }
         }
-      }, 150);
+      }, 200);
     });
 
-    // Mark as resolved if already filled
     if (input.value && input.value.includes('|')) {
       input.classList.add('is-resolved');
     }
@@ -548,13 +599,26 @@ window.bhInitMemberAutocompleteForContainer = function(container) {
   if (!container) return;
   const inputs = container.querySelectorAll('input.bh-member-ac-input');
   inputs.forEach(input => {
-    let dropdown = input.parentElement.querySelector('.bh-member-ac-dropdown');
+    let dropdown = input.dataset.dropdownId ? document.getElementById(input.dataset.dropdownId) : null;
     if (!dropdown) {
+      const dropId = 'bh-mdrop-' + Math.random().toString(36).substring(2, 9);
+      input.dataset.dropdownId = dropId;
       dropdown = document.createElement('div');
+      dropdown.id = dropId;
       dropdown.className = 'bh-konto-ac-dropdown bh-member-ac-dropdown';
-      input.parentElement.appendChild(dropdown);
+      document.body.appendChild(dropdown);
     }
     const prefix = input.id.startsWith('bh-ks') ? 'bh-ks' : 'bhe';
+
+    const updatePos = () => {
+      if (!dropdown || !dropdown.classList.contains('show')) return;
+      const rect = input.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+      dropdown.style.left = Math.max(5, rect.left) + 'px';
+      dropdown.style.minWidth = Math.max(rect.width, 380) + 'px';
+      dropdown.style.zIndex = '99999';
+      dropdown.style.top = (rect.bottom + 3) + 'px';
+    };
 
     const renderDropdown = (query) => {
       const q = String(query || '').trim().toLowerCase();
@@ -571,6 +635,7 @@ window.bhInitMemberAutocompleteForContainer = function(container) {
       if (matches.length === 0) {
         dropdown.innerHTML = '<div class="bh-konto-ac-empty"><i class="fas fa-user-slash me-1"></i>Kein Mitglied gefunden</div>';
         dropdown.classList.add('show');
+        updatePos();
         return;
       }
 
@@ -591,7 +656,8 @@ window.bhInitMemberAutocompleteForContainer = function(container) {
       }).join('');
 
       dropdown.querySelectorAll('.bh-member-item').forEach(item => {
-        item.onclick = () => {
+        item.onmousedown = (e) => {
+          e.preventDefault();
           const pn = item.dataset.pn;
           const member = (window._bhMembers || []).find(x => String(x.person_number) === String(pn));
           if (member) window.bhSelectMember(prefix, member);
@@ -599,15 +665,18 @@ window.bhInitMemberAutocompleteForContainer = function(container) {
         };
       });
       dropdown.classList.add('show');
+      updatePos();
     };
 
-    input.addEventListener('focus', () => renderDropdown(input.value));
+    input.addEventListener('focus', () => { input.select(); renderDropdown(input.value); });
     input.addEventListener('input', () => renderDropdown(input.value));
-    document.addEventListener('click', (e) => {
+    document.addEventListener('mousedown', (e) => {
       if (!input.contains(e.target) && !dropdown.contains(e.target)) {
         dropdown.classList.remove('show');
       }
     });
+    window.addEventListener('scroll', updatePos, true);
+    window.addEventListener('resize', updatePos);
   });
 };
 
@@ -931,13 +1000,18 @@ window.bhOpenEntryModal = function(entryId) {
   const isEdit = Boolean(entryId);
 
   modalEl.innerHTML = `
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-      <div class="modal-content border-0 rounded-4 shadow" style="background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(245,248,252,0.98) 100%); backdrop-filter: blur(15px);">
-        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
-          <h5 class="modal-title fw-bold" id="bhe-modal-title">
+    <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 1100px;">
+      <div class="modal-content border-0 rounded-4 shadow" style="position: relative;">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
+          <h5 class="modal-title fw-bold mb-0" id="bhe-modal-title">
             <i class="fas fa-receipt me-2"></i>${isEdit ? `Buchungssatz bearbeiten (ID: ${entryId})` : 'Journalbuchung erfassen'}
           </h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm text-white p-1 border-0 shadow-none rn-modal-maximize-btn" title="Maximieren / Verkleinern" style="opacity: 0.85; line-height: 1;">
+              <i class="fas fa-expand"></i>
+            </button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
         </div>
         <div class="modal-body p-4">
           <!-- Split-Warnung / Verbund-Hinweis Container -->
@@ -1024,14 +1098,20 @@ window.bhOpenEntryModal = function(entryId) {
                 <div class="row g-3 mb-3">
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted text-primary"><i class="fas fa-long-arrow-alt-right me-1"></i> Soll-Konto (Empfänger)</label>
-                    <div class="bh-konto-ac-wrap">
+                    <div class="input-group">
                       <input type="text" class="form-control bh-konto-ac-input" id="bhe-soll" placeholder="Konto suchen (Nr. oder Name)..." autocomplete="off">
+                      <button type="button" class="btn btn-outline-secondary px-2.5" tabindex="-1" onclick="const inp=this.previousElementSibling; inp.focus(); inp.click();" title="Kontenliste anzeigen">
+                        <i class="fas fa-chevron-down" style="font-size: 11px;"></i>
+                      </button>
                     </div>
                   </div>
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted text-success"><i class="fas fa-long-arrow-alt-left me-1"></i> Haben-Konto (Quelle)</label>
-                    <div class="bh-konto-ac-wrap">
+                    <div class="input-group">
                       <input type="text" class="form-control bh-konto-ac-input" id="bhe-haben" placeholder="Konto suchen (Nr. oder Name)..." autocomplete="off">
+                      <button type="button" class="btn btn-outline-secondary px-2.5" tabindex="-1" onclick="const inp=this.previousElementSibling; inp.focus(); inp.click();" title="Kontenliste anzeigen">
+                        <i class="fas fa-chevron-down" style="font-size: 11px;"></i>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1057,16 +1137,22 @@ window.bhOpenEntryModal = function(entryId) {
                   </div>
                 </div>
                 
-                <div class="d-flex gap-2 flex-wrap">
-                  <button type="submit" class="btn btn-success flex-grow-1 py-2.5 fw-bold rounded-3 shadow-sm" id="bhe-submit-btn">
-                    <i class="fas fa-check-circle me-1"></i> ${isEdit ? 'Änderungen speichern' : 'Buchung speichern'}
-                  </button>
-                  <button type="button" class="btn btn-outline-primary py-2.5 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event, false)" title="Buchung speichern und direkt Beleg drucken">
-                    <i class="fas fa-print me-1"></i> Speichern & Beleg drucken
-                  </button>
-                  <button type="button" class="btn btn-primary py-2.5 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event, true)" id="bhe-save-xml-btn" title="Buchung speichern, Beleg drucken und ISO 20022 XML für E-Banking herunterladen">
-                    <i class="fas fa-file-code me-1"></i> Speichern & Bank-XML
-                  </button>
+                <div class="row g-2 pt-2">
+                  <div class="col-md-6 col-12">
+                    <button type="submit" class="btn btn-success w-100 py-2.5 fw-bold rounded-3 shadow-sm" id="bhe-submit-btn">
+                      <i class="fas fa-check-circle me-1.5"></i> ${isEdit ? 'Änderungen speichern' : 'Buchung speichern'}
+                    </button>
+                  </div>
+                  <div class="col-md-6 col-12">
+                    <button type="button" class="btn btn-outline-primary w-100 py-2.5 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event, false)" id="bhe-save-print-btn" title="Buchung speichern und direkt Beleg drucken">
+                      <i class="fas fa-print me-1.5"></i> Speichern & Beleg drucken
+                    </button>
+                  </div>
+                  <div class="col-12" id="bhe-xml-btn-wrap">
+                    <button type="button" class="btn btn-primary w-100 py-2.5 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event, true)" id="bhe-save-xml-btn" title="Buchung speichern, Beleg drucken und ISO 20022 XML für E-Banking herunterladen">
+                      <i class="fas fa-file-code me-1.5"></i> Speichern & Bank-XML
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -1147,15 +1233,15 @@ window.bhOpenEntryModal = function(entryId) {
                   </button>
                 </div>
 
-                <div class="table-responsive border rounded-3 mb-3 bg-white" style="max-height: 280px;">
-                  <table class="table table-sm table-hover align-middle mb-0" id="bh-ks-table">
-                    <thead class="table-light small">
+                <div class="table-responsive border rounded-3 mb-3 bg-white" style="min-height: 180px;">
+                  <table class="table table-bordered table-striped table-hover align-middle mb-0" id="bh-ks-table" style="font-size: 13.5px;">
+                    <thead class="table-light">
                       <tr id="bh-ks-thead-tr">
-                        <th style="width: 30px;" class="text-center">#</th>
+                        <th style="width: 38px;" class="text-center">#</th>
                         <th>Beschreibung / Positionstext</th>
-                        <th style="width: 260px;">Aufwandskonto (Soll)</th>
-                        <th style="width: 120px;" class="text-end">Betrag (CHF)</th>
-                        <th style="width: 35px;"></th>
+                        <th style="width: 340px;">Aufwandskonto (Soll)</th>
+                        <th style="width: 140px;" class="text-end">Betrag (CHF)</th>
+                        <th style="width: 45px;" class="text-center">Aktion</th>
                       </tr>
                     </thead>
                     <tbody id="bh-ks-tbody">
@@ -1171,26 +1257,37 @@ window.bhOpenEntryModal = function(entryId) {
                       <span id="bh-ks-pos-count">0</span> Position(en) erfasst &middot; <strong class="text-dark" id="bh-ks-account-info">Geldkonto: 1020 Bank (Vereinskonto)</strong>
                     </span>
                     <span class="fs-6 fw-bold text-primary">
-                      Total Beleg: CHF <span id="bh-ks-total-sum">0.00</span>
+                      Total Beleg: <span class="font-monospace" id="bh-ks-total-sum">CHF 0.00</span>
                     </span>
                   </div>
                 </div>
 
-                <div class="d-flex gap-2 flex-wrap">
-                  <button type="submit" class="btn btn-success flex-grow-1 py-2 fw-bold rounded-3 shadow-sm" id="bh-ks-save-btn">
-                    <i class="fas fa-save me-1"></i> Sammelbeleg buchen
-                  </button>
-                  <button type="button" class="btn btn-outline-primary py-2 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true, false)" id="bh-ks-save-print-btn">
-                    <i class="fas fa-print me-1"></i> Buchen & Beleg drucken
-                  </button>
-                  <button type="button" class="btn btn-primary py-2 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true, true)" id="bh-ks-save-xml-btn" title="Buchen, Beleg drucken und ISO 20022 XML für E-Banking herunterladen">
-                    <i class="fas fa-file-code me-1"></i> Buchen & Bank-XML (pain.001)
-                  </button>
+                <div class="row g-2 pt-2">
+                  <div class="col-md-6 col-12">
+                    <button type="submit" class="btn btn-success w-100 py-2.5 fw-bold rounded-3 shadow-sm" id="bh-ks-save-btn">
+                      <i class="fas fa-check-circle me-1.5"></i> Nur Sammelbeleg buchen
+                    </button>
+                  </div>
+                  <div class="col-md-6 col-12">
+                    <button type="button" class="btn btn-outline-primary w-100 py-2.5 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true, false)" id="bh-ks-save-print-btn">
+                      <i class="fas fa-print me-1.5"></i> Buchen & Beleg drucken
+                    </button>
+                  </div>
+                  <div class="col-12" id="bh-ks-xml-btn-wrap">
+                    <button type="button" class="btn btn-primary w-100 py-2.5 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true, true)" id="bh-ks-save-xml-btn" title="Buchen, Beleg drucken und ISO 20022 XML für E-Banking herunterladen">
+                      <i class="fas fa-file-code me-1.5"></i> Buchen & Bank-XML (pain.001)
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
             ` : ''}
           </div>
+        </div>
+
+        <!-- Resize-Grip Ecke unten rechts für UIModalKit -->
+        <div class="rn-modal-resizer" style="position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;" title="Grösse durch Ziehen verändern">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 1v10H1V11h10z M11 5v6H5V11h6z M11 9v2H9V11h2z"/></svg>
         </div>
       </div>
     </div>
@@ -1306,6 +1403,9 @@ window.bhOpenEntryModal = function(entryId) {
   
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  }
 };
 
 // =====================================================================
@@ -1341,28 +1441,40 @@ window.bhUpdateKassaSammelArt = function() {
     belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
   }
 
-  const accountInfo = (art === 'bank') ? 'Geldkonto: 1020 Bank (Vereinskonto)' : (art === 'einnahme' || art === 'ausgabe' ? 'Kassenkonto: 1000 Kasse' : 'Freie Kontierung');
+  const xmlWrap = document.getElementById('bh-ks-xml-btn-wrap');
+  if (xmlWrap) {
+    xmlWrap.style.display = (art === 'bank') ? 'block' : 'none';
+  }
+
+  const accountInfo = (art === 'bank') 
+    ? 'Geldkonto: 1020 Bank (Vereinskonto)' 
+    : (art === 'ausgabe') 
+      ? 'Kassenkonto: 1000 Kasse (Bargeldausgabe)' 
+      : (art === 'einnahme') 
+        ? 'Kassenkonto: 1000 Kasse (Bargeldeinnahme)' 
+        : 'Freie Kontierung (individuelle Soll- & Haben-Konten)';
+
   const infoEl = document.getElementById('bh-ks-account-info');
   if (infoEl) infoEl.innerText = accountInfo;
 
   if (tr) {
     if (art === 'frei') {
       tr.innerHTML = `
-        <th style="width: 30px;" class="text-center">#</th>
+        <th style="width: 38px;" class="text-center">#</th>
         <th>Beschreibung / Positionstext</th>
-        <th style="width: 190px;">Soll-Konto</th>
-        <th style="width: 190px;">Haben-Konto</th>
-        <th style="width: 120px;" class="text-end">Betrag (CHF)</th>
-        <th style="width: 35px;"></th>
+        <th style="width: 250px;">Soll-Konto</th>
+        <th style="width: 250px;">Haben-Konto</th>
+        <th style="width: 140px;" class="text-end">Betrag (CHF)</th>
+        <th style="width: 45px;" class="text-center">Aktion</th>
       `;
     } else {
       const thLabel = (art === 'einnahme') ? 'Ertragskonto (Haben)' : 'Aufwandskonto (Soll)';
       tr.innerHTML = `
-        <th style="width: 30px;" class="text-center">#</th>
+        <th style="width: 38px;" class="text-center">#</th>
         <th>Beschreibung / Positionstext</th>
-        <th style="width: 260px;">${thLabel}</th>
-        <th style="width: 120px;" class="text-end">Betrag (CHF)</th>
-        <th style="width: 35px;"></th>
+        <th style="width: 340px;">${thLabel}</th>
+        <th style="width: 140px;" class="text-end">Betrag (CHF)</th>
+        <th style="width: 45px;" class="text-center">Aktion</th>
       `;
     }
   }
@@ -1425,13 +1537,19 @@ window.bhRenderKassaSammelRows = function() {
     if (isFrei) {
       kontoCells = `
         <td>
-          <div class="bh-konto-ac-wrap">
+          <div class="input-group input-group-sm">
             <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-ks-soll-${i}" value="${r.kontoSoll ? window.bhKontoFormatDisplay(r.kontoSoll) : ''}" placeholder="Soll-Konto..." autocomplete="off">
+            <button type="button" class="btn btn-outline-secondary px-2" tabindex="-1" onclick="const inp=this.previousElementSibling; inp.focus(); inp.click();" title="Soll-Konto auswählen">
+              <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+            </button>
           </div>
         </td>
         <td>
-          <div class="bh-konto-ac-wrap">
+          <div class="input-group input-group-sm">
             <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-ks-haben-${i}" value="${r.kontoHaben ? window.bhKontoFormatDisplay(r.kontoHaben) : ''}" placeholder="Haben-Konto..." autocomplete="off">
+            <button type="button" class="btn btn-outline-secondary px-2" tabindex="-1" onclick="const inp=this.previousElementSibling; inp.focus(); inp.click();" title="Haben-Konto auswählen">
+              <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+            </button>
           </div>
         </td>
       `;
@@ -1439,8 +1557,11 @@ window.bhRenderKassaSammelRows = function() {
       const labelPlaceholder = (art === 'einnahme') ? 'Ertragskonto suchen...' : 'Aufwandskonto suchen (z.B. 4000)...';
       kontoCells = `
         <td>
-          <div class="bh-konto-ac-wrap">
+          <div class="input-group input-group-sm">
             <input type="text" class="form-control form-control-sm bh-konto-ac-input" id="bh-ks-konto-${i}" value="${r.konto ? window.bhKontoFormatDisplay(r.konto) : ''}" placeholder="${labelPlaceholder}" autocomplete="off">
+            <button type="button" class="btn btn-outline-secondary px-2" tabindex="-1" onclick="const inp=this.previousElementSibling; inp.focus(); inp.click();" title="Aufwandskonto auswählen">
+              <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+            </button>
           </div>
         </td>
       `;
@@ -1484,7 +1605,7 @@ window.bhUpdateKassaSammelLiveTotal = function() {
   });
 
   const sumEl = document.getElementById('bh-ks-total-sum');
-  if (sumEl) sumEl.textContent = (typeof fmtChf === 'function') ? fmtChf(total) : total.toFixed(2);
+  if (sumEl) sumEl.textContent = (typeof fmtChf === 'function') ? fmtChf(total) : ('CHF ' + total.toFixed(2));
 
   const countEl = document.getElementById('bh-ks-pos-count');
   if (countEl) countEl.textContent = rows.length;
@@ -1707,15 +1828,15 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, export
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.innerHTML = '<i class="fas fa-save me-1"></i> Sammelbeleg buchen';
+      saveBtn.innerHTML = '<i class="fas fa-check-circle me-1.5"></i> Nur Sammelbeleg buchen';
     }
     if (printBtn) {
       printBtn.disabled = false;
-      printBtn.innerHTML = '<i class="fas fa-print me-1"></i> Buchen & Beleg drucken';
+      printBtn.innerHTML = '<i class="fas fa-print me-1.5"></i> Buchen & Beleg drucken';
     }
     if (xmlBtn) {
       xmlBtn.disabled = false;
-      xmlBtn.innerHTML = '<i class="fas fa-file-code me-1"></i> Buchen & Bank-XML (pain.001)';
+      xmlBtn.innerHTML = '<i class="fas fa-file-code me-1.5"></i> Buchen & Bank-XML (pain.001)';
     }
   }
 };
