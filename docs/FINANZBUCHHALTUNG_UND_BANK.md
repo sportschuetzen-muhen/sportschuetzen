@@ -49,7 +49,8 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 
 ### 2.4 Warum `accounting_journal.id` als `BIGSERIAL` (Integer)?
 * **Revisionssichere Belegnummerierung:** Revisoren verlangen in der Buchführung fortlaufende, lückenlose Belegnummern (1, 2, 3...).
-* **Entscheidung:** Statt unübersichtlicher UUIDs nutzt `accounting_journal` eine PostgreSQL `BIGSERIAL` Sequenz. Das garantiert automatische Chronologie und performante Sortierung.
+* **Entscheidung:** Statt unübersichtlicher UUIDs nutzt `accounting_journal` eine PostgreSQL `BIGSERIAL` Sequenz. Das garantiert automatische Chronologie und performante Sortierung. Client-Payloads übergeben kein manuelles String-`id`-Feld, damit PostgreSQL die Sequenz lückenlos selbst hochzählt.
+* **Integrität bei Batch-Buchungen:** Jede Transaktion muss zwingend über gültige Soll- und Haben-Konten verfügen (Fremdschlüssel auf `accounting_accounts`). Unvollständige Bankbuchungen ohne Gegenkonto verbleiben als unklar in der Vormerkliste und werden nicht an die DB übermittelt, um Foreign-Key-Abbrüche zu verhindern. Obsolete Hilfsfelder wie `split_group_id` werden clientseitig nicht übergeben.
 
 ### 2.5 Warum variable Zuteilungsquoten für das Controlling?
 * **Problemstellung:** Gemeinsame Kosten wie Schützenhaus-Reinigung (4010), Energie & Wasser (6400) oder Liegenschaftsunterhalt (6000) fallen für das gesamte Schützenhaus an, das sowohl dem Schiessbetrieb als auch externen Vermietungen dient. Eine pauschale 100%-Belastung verfälschte die Rentabilitätsrechnungen.

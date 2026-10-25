@@ -1023,19 +1023,21 @@ async function jbSaveZahlung() {
         });
         if (splits && splits.length > 0) {
           if (supa) {
-            const rowsToInsert = splits.map((s, sIdx) => ({
-              id: `bh_jb_${id}_${Date.now()}_${sIdx}`,
-              jahr: Number(r?.year || new Date().getFullYear()),
-              datum: datum,
-              beleg_nr: beleg || `PAY-${id}`,
-              beschreibung: s.beschreibung,
-              konto_soll: String(s.konto_soll).trim(),
-              konto_haben: String(s.konto_haben).trim(),
-              betrag: Number(s.betrag || 0),
-              typ: isBar ? 'Kassa' : 'Bank',
-              split_group_id: splits.length > 1 ? `grp_${beleg || 'PAY-' + id}_${Date.now()}` : null,
-              created_at: new Date().toISOString()
-            }));
+            const rowsToInsert = splits.map((s, sIdx) => {
+              const row = {
+                jahr: Number(r?.year || new Date().getFullYear()),
+                datum: datum,
+                beleg_nr: beleg || `PAY-${id}`,
+                beschreibung: s.beschreibung,
+                konto_soll: String(s.konto_soll).trim(),
+                konto_haben: String(s.konto_haben).trim(),
+                betrag: Number(s.betrag || 0),
+                typ: isBar ? 'Kassa' : 'Bank',
+                created_at: new Date().toISOString()
+              };
+              if (typeof s.id === 'number') row.id = s.id;
+              return row;
+            });
             supa.from('accounting_journal').insert(rowsToInsert)
               .then(({ error }) => {
                 if (error) console.warn('[Jahresbeitrag -> FiBu] Supabase journal insert error:', error);

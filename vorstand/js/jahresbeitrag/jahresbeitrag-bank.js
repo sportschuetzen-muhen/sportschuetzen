@@ -877,19 +877,21 @@ async function jbBankSyncToBuchhaltung(headerId, member, amount, dateStr, belegN
     if (splits && splits.length > 0) {
       const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
       if (supa) {
-        const rowsToInsert = splits.map((s, sIdx) => ({
-          id: `bh_jb_bank_${headerId}_${Date.now()}_${sIdx}`,
-          jahr: new Date(dateStr).getFullYear(),
-          datum: dateStr,
-          beleg_nr: belegNr || 'CAMT053',
-          beschreibung: s.beschreibung,
-          konto_soll: String(s.konto_soll).trim(),
-          konto_haben: String(s.konto_haben).trim(),
-          betrag: Number(s.betrag || 0),
-          typ: 'Bank',
-          split_group_id: splits.length > 1 ? `grp_${belegNr || 'CAMT053'}_${headerId}_${Date.now()}` : null,
-          created_at: new Date().toISOString()
-        }));
+        const rowsToInsert = splits.map((s, sIdx) => {
+          const row = {
+            jahr: new Date(dateStr).getFullYear(),
+            datum: dateStr,
+            beleg_nr: belegNr || 'CAMT053',
+            beschreibung: s.beschreibung,
+            konto_soll: String(s.konto_soll).trim(),
+            konto_haben: String(s.konto_haben).trim(),
+            betrag: Number(s.betrag || 0),
+            typ: 'Bank',
+            created_at: new Date().toISOString()
+          };
+          if (typeof s.id === 'number') row.id = s.id;
+          return row;
+        });
         await supa.from('accounting_journal').insert(rowsToInsert);
         console.log(`✅ [Supabase FiBu] Bank-Zahlung für ${headerId} ins Journal gebucht.`);
       }

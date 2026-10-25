@@ -2693,7 +2693,6 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
             konto_haben: String(e.konto_haben).trim(),
             betrag: Number(e.betrag || 0),
             typ: 'Bank',
-            split_group_id: isSplit ? (e.split_group_id || `grp_${belegNr}_${Date.now()}`) : null,
             created_at: new Date().toISOString()
           };
           if (typeof e.id === 'number') row.id = e.id;
@@ -2880,21 +2879,36 @@ window.bhBankBookAll = async function() {
   const results = window._bhBankMatchResults || [];
   const activeYear = Number(window._bhYear || new Date().getFullYear());
   
-  // Zusammengelegter Buchungs-Pool: Alle ungebuchten Transaktionen des aktiven Jahres,
-  // bei denen mindestens das Bankkonto vorhanden ist (Sichere + unvollständige manuelle Posten).
-  const toBook = results
+  // Zusammengelegter Buchungs-Pool: Alle ungebuchten Transaktionen des aktiven Jahres
+  const unbookedRows = results
     .map((r, i) => ({ r, i }))
     .filter(({ r }) => !r.alreadyBooked && !r._isBooking && !r.isWrongYear && Number(r.amount || 0) > 0);
 
-  if (!toBook.length) {
+  if (!unbookedRows.length) {
     showToast(`Keine ungebuchten Transaktionen für das Buchungsjahr ${activeYear} vorhanden.`, 'warning', 'top-end');
     return;
   }
 
-  const unvollstaendigCount = toBook.filter(({ r }) => !r.isSplit && (!r.suggestedSoll || !r.suggestedHaben)).length;
+  // Vollständigkeit prüfen: Jede Buchung benötigt zwingend Soll- und Haben-Konto (OR 957ff / DB-Integrität)
+  const isRowComplete = (r) => {
+    if (r.isSplit) {
+      return Array.isArray(r.splitRows) && r.splitRows.length > 0 && r.splitRows.every(sr => sr.kontoSoll && sr.kontoHaben && Number(sr.betrag) > 0);
+    }
+    return Boolean(r.suggestedSoll && String(r.suggestedSoll).trim() && r.suggestedHaben && String(r.suggestedHaben).trim());
+  };
+
+  const toBook = unbookedRows.filter(({ r }) => isRowComplete(r));
+  const unvollstaendigList = unbookedRows.filter(({ r }) => !isRowComplete(r));
+  const unvollstaendigCount = unvollstaendigList.length;
+
+  if (toBook.length === 0) {
+    showToast(`⚠️ Keine vollständig kontierten Buchungen vorhanden. Bitte weise den ${unvollstaendigCount} unklaren Posten zuerst ein Gegenkonto zu.`, 'warning', 'top-end', 4500);
+    return;
+  }
+
   let confirmMsg = `${toBook.length} Bank-Buchungen jetzt in streng chronologischer Reihenfolge ins Journal eintragen?`;
   if (unvollstaendigCount > 0) {
-    confirmMsg += `\n\nℹ️ Hinweis: ${unvollstaendigCount} Buchung(en) haben noch kein Gegenkonto und werden im Journal als unvollständig markiert, damit die Belegnummerierung und Datums-Chronologie sauber bleibt.`;
+    confirmMsg = `${toBook.length} von ${unbookedRows.length} Bank-Buchungen jetzt in streng chronologischer Reihenfolge ins Journal eintragen?\n\nℹ️ Hinweis: ${unvollstaendigCount} Buchung(en) haben noch kein Gegenkonto und verbleiben als unklar/offen in der Liste zur manuellen Kontierung.`;
   }
   confirmMsg += '\n\nZugeordnete Rechnungen und Jahresbeiträge werden parallel als bezahlt markiert.';
 
@@ -2965,19 +2979,21 @@ window.bhBankBookAll = async function() {
       }
 
       try {
-        const rowsToInsert = allJournalEntries.map((e, eIdx) => ({
-          id: e.id || `bh_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${eIdx}`,
-          jahr: parseInt(e.jahr || activeYear, 10),
-          datum: e.datum,
-          beleg_nr: e.beleg_nr,
-          beschreibung: e.beschreibung,
-          konto_soll: String(e.konto_soll).trim(),
-          konto_haben: String(e.konto_haben).trim(),
-          betrag: Number(e.betrag || 0),
-          typ: 'Bank',
-          split_group_id: e.split_group_id || null,
-          created_at: new Date().toISOString()
-        }));
+        const rowsToInsert = allJournalEntries.map((e, eIdx) => {
+          const row = {
+            jahr: parseInt(e.jahr || activeYear, 10),
+            datum: e.datum,
+            beleg_nr: e.beleg_nr,
+            beschreibung: e.beschreibung,
+            konto_soll: String(e.konto_soll).trim(),
+            konto_haben: String(e.konto_haben).trim(),
+            betrag: Number(e.betrag || 0),
+            typ: 'Bank',
+            created_at: new Date().toISOString()
+          };
+          if (typeof e.id === 'number') row.id = e.id;
+          return row;
+        });
 
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
@@ -3241,19 +3257,21 @@ window.bhBankBookSelected = async function() {
       }
 
       try {
-        const rowsToInsert = allJournalEntries.map((e, eIdx) => ({
-          id: e.id || `bh_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${eIdx}`,
-          jahr: parseInt(e.jahr || activeYear, 10),
-          datum: e.datum,
-          beleg_nr: e.beleg_nr,
-          beschreibung: e.beschreibung,
-          konto_soll: String(e.konto_soll).trim(),
-          konto_haben: String(e.konto_haben).trim(),
-          betrag: Number(e.betrag || 0),
-          typ: 'Bank',
-          split_group_id: e.split_group_id || null,
-          created_at: new Date().toISOString()
-        }));
+        const rowsToInsert = allJournalEntries.map((e, eIdx) => {
+          const row = {
+            jahr: parseInt(e.jahr || activeYear, 10),
+            datum: e.datum,
+            beleg_nr: e.beleg_nr,
+            beschreibung: e.beschreibung,
+            konto_soll: String(e.konto_soll).trim(),
+            konto_haben: String(e.konto_haben).trim(),
+            betrag: Number(e.betrag || 0),
+            typ: 'Bank',
+            created_at: new Date().toISOString()
+          };
+          if (typeof e.id === 'number') row.id = e.id;
+          return row;
+        });
 
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
