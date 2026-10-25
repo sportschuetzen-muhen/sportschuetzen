@@ -349,7 +349,7 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
         supa.from('accounting_budgets').select('*'),
         supa.from('accounting_bank_rules').select('*').order('sort_order', { ascending: true }),
         supa.from('accounting_cost_allocations').select('*').order('sort_order', { ascending: true }),
-        supa.from('members').select('person_number').eq('is_active', true).eq('is_passive', false).eq('deceased', false),
+        supa.from('members').select('person_number, salutation, first_name, last_name, street, post_code, city, iban, is_passive').eq('is_active', true).eq('deceased', false).order('last_name', { ascending: true }),
         (async () => {
           try {
             // Pro Memoria Gewehre aus inventar_items falls vorhanden
@@ -379,9 +379,10 @@ window.loadBuchhaltungData = async function(silent = false, forceReload = false)
           } catch(_) {}
         }
 
-        // Aktive Mitglieder für Verbandskostenquote übernehmen
+        // Aktive Mitglieder für Verbandskostenquote und Vergütungen übernehmen
         if (activeMemRes && !activeMemRes.error && Array.isArray(activeMemRes.data)) {
-          window._bhActiveMembersCount = activeMemRes.data.length || 53;
+          window._bhMembers = activeMemRes.data;
+          window._bhActiveMembersCount = activeMemRes.data.filter(m => !m.is_passive).length || activeMemRes.data.length || 53;
         }
 
         // Budgets in Matrix/Map-Format überführen für Abwärtskompatibilität

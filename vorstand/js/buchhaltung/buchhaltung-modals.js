@@ -541,6 +541,376 @@ window.bhInitKontoAutocompleteForContainer = function(container) {
   });
 };
 
+// =====================================================================
+// MITGLIEDER-AUTOCOMPLETE & ISO 20022 PAIN.001 GENERATOR
+// =====================================================================
+window.bhInitMemberAutocompleteForContainer = function(container) {
+  if (!container) return;
+  const inputs = container.querySelectorAll('input.bh-member-ac-input');
+  inputs.forEach(input => {
+    let dropdown = input.parentElement.querySelector('.bh-member-ac-dropdown');
+    if (!dropdown) {
+      dropdown = document.createElement('div');
+      dropdown.className = 'bh-konto-ac-dropdown bh-member-ac-dropdown';
+      input.parentElement.appendChild(dropdown);
+    }
+    const prefix = input.id.startsWith('bh-ks') ? 'bh-ks' : 'bhe';
+
+    const renderDropdown = (query) => {
+      const q = String(query || '').trim().toLowerCase();
+      const members = window._bhMembers || [];
+      const matches = members.filter(m => {
+        if (!q) return true;
+        const fn = String(m.first_name || '').toLowerCase();
+        const ln = String(m.last_name || '').toLowerCase();
+        const full = `${fn} ${ln}`;
+        const pn = String(m.person_number || '');
+        return fn.includes(q) || ln.includes(q) || full.includes(q) || pn.includes(q);
+      }).slice(0, 30);
+
+      if (matches.length === 0) {
+        dropdown.innerHTML = '<div class="bh-konto-ac-empty"><i class="fas fa-user-slash me-1"></i>Kein Mitglied gefunden</div>';
+        dropdown.classList.add('show');
+        return;
+      }
+
+      dropdown.innerHTML = matches.map(m => {
+        const hasIban = Boolean(m.iban && m.iban.trim());
+        const addr = [m.street, `${m.post_code || ''} ${m.city || ''}`.trim()].filter(Boolean).join(', ');
+        return `
+          <div class="bh-konto-ac-item bh-member-item" data-pn="${m.person_number}">
+            <div style="flex: 1;">
+              <div class="fw-bold">${typeof escapeHtml === 'function' ? escapeHtml(m.first_name) : m.first_name} ${typeof escapeHtml === 'function' ? escapeHtml(m.last_name) : m.last_name} <span class="text-muted small fw-normal font-monospace">#${m.person_number}</span></div>
+              ${addr ? `<div class="small text-muted" style="font-size: 11px;">${typeof escapeHtml === 'function' ? escapeHtml(addr) : addr}</div>` : ''}
+            </div>
+            <span class="badge ${hasIban ? 'bg-success-subtle text-success border border-success' : 'bg-warning-subtle text-dark border border-warning'}" style="font-size: 10px;">
+              ${hasIban ? 'IBAN hinterlegt' : 'Keine IBAN'}
+            </span>
+          </div>
+        `;
+      }).join('');
+
+      dropdown.querySelectorAll('.bh-member-item').forEach(item => {
+        item.onclick = () => {
+          const pn = item.dataset.pn;
+          const member = (window._bhMembers || []).find(x => String(x.person_number) === String(pn));
+          if (member) window.bhSelectMember(prefix, member);
+          dropdown.classList.remove('show');
+        };
+      });
+      dropdown.classList.add('show');
+    };
+
+    input.addEventListener('focus', () => renderDropdown(input.value));
+    input.addEventListener('input', () => renderDropdown(input.value));
+    document.addEventListener('click', (e) => {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('show');
+      }
+    });
+  });
+};
+
+window.bhSelectMember = function(prefix, member) {
+  const searchEl = document.getElementById(`${prefix}-member-search`);
+  const ibanEl = document.getElementById(`${prefix}-member-iban`);
+  const pnEl = document.getElementById(`${prefix}-member-pn`);
+  const nameEl = document.getElementById(`${prefix}-member-name`);
+  const addrEl = document.getElementById(`${prefix}-member-address`);
+  const streetEl = document.getElementById(`${prefix}-member-street`);
+  const zipEl = document.getElementById(`${prefix}-member-zip`);
+  const cityEl = document.getElementById(`${prefix}-member-city`);
+  const addrDisplayEl = document.getElementById(`${prefix}-member-address-display`);
+
+  const cleanName = `${member.first_name} ${member.last_name}`.trim();
+  if (searchEl) searchEl.value = cleanName;
+  if (ibanEl) ibanEl.value = member.iban ? member.iban.trim() : '';
+  if (pnEl) pnEl.value = member.person_number;
+  if (nameEl) nameEl.value = cleanName;
+  if (streetEl) streetEl.value = member.street || '';
+  if (zipEl) zipEl.value = member.post_code || '';
+  if (cityEl) cityEl.value = member.city || '';
+  
+  const addr = [member.street, `${member.post_code || ''} ${member.city || ''}`.trim()].filter(Boolean).join(', ');
+  if (addrEl) addrEl.value = addr;
+  if (addrDisplayEl) {
+    addrDisplayEl.innerHTML = `<strong>${typeof escapeHtml === 'function' ? escapeHtml(cleanName) : cleanName}</strong> &middot; ${typeof escapeHtml === 'function' ? escapeHtml(addr || 'Keine Adresse hinterlegt') : addr} &middot; Lizenz: #${member.person_number}`;
+  }
+
+  // Falls Einzelbuchung: Wenn Aktionstyp noch 'Kassa', auf 'Überweisung' wechseln
+  if (prefix === 'bhe') {
+    const typEl = document.getElementById('bhe-typ');
+    const habenEl = document.getElementById('bhe-haben');
+    if (typEl && typEl.value === 'Kassa') {
+      typEl.value = 'Überweisung';
+    }
+    if (habenEl && (!habenEl.value || habenEl.value.includes('1000'))) {
+      habenEl.value = window.bhKontoFormatDisplay ? window.bhKontoFormatDisplay('1020') : '1020 | Zahlungskonto';
+      habenEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    const descEl = document.getElementById('bhe-beschreibung');
+    if (descEl && !descEl.value) {
+      descEl.value = `Vergütung ${cleanName}: `;
+    }
+  } else if (prefix === 'bh-ks') {
+    const artEl = document.getElementById('bh-ks-art');
+    if (artEl && artEl.value !== 'bank') {
+      artEl.value = 'bank';
+      if (typeof window.bhUpdateKassaSammelArt === 'function') window.bhUpdateKassaSammelArt();
+    }
+    const titelEl = document.getElementById('bh-ks-titel');
+    if (titelEl && !titelEl.value) {
+      titelEl.value = `Rückvergütung Vorfinanzierung ${cleanName}`;
+    }
+  }
+};
+
+window.bhClearMember = function(prefix) {
+  const searchEl = document.getElementById(`${prefix}-member-search`);
+  const ibanEl = document.getElementById(`${prefix}-member-iban`);
+  const pnEl = document.getElementById(`${prefix}-member-pn`);
+  const nameEl = document.getElementById(`${prefix}-member-name`);
+  const addrEl = document.getElementById(`${prefix}-member-address`);
+  const streetEl = document.getElementById(`${prefix}-member-street`);
+  const zipEl = document.getElementById(`${prefix}-member-zip`);
+  const cityEl = document.getElementById(`${prefix}-member-city`);
+  const addrDisplayEl = document.getElementById(`${prefix}-member-address-display`);
+
+  if (searchEl) searchEl.value = '';
+  if (ibanEl) ibanEl.value = '';
+  if (pnEl) pnEl.value = '';
+  if (nameEl) nameEl.value = '';
+  if (addrEl) addrEl.value = '';
+  if (streetEl) streetEl.value = '';
+  if (zipEl) zipEl.value = '';
+  if (cityEl) cityEl.value = '';
+  if (addrDisplayEl) addrDisplayEl.innerText = 'Kein Mitglied ausgewählt (Freitext oder Vereinsmitglied)';
+};
+
+window.bhToggleMemberSection = function(prefix) {
+  const details = document.getElementById(`${prefix}-member-details`);
+  const indicator = document.getElementById(`${prefix}-member-toggle-indicator`);
+  if (!details) return;
+  const isHidden = details.style.display === 'none';
+  details.style.display = isHidden ? 'block' : 'none';
+  if (indicator) {
+    indicator.innerHTML = isHidden ? 'Ausblenden <i class="fas fa-chevron-up ms-1"></i>' : 'Anzeigen <i class="fas fa-chevron-down ms-1"></i>';
+  }
+};
+
+window.bhDownloadFile = function(filename, content, mimeType = 'application/xml') {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+};
+
+window.bhGeneratePain001Xml = function(params) {
+  const {
+    executionDate,
+    debtorIban,
+    debtorName,
+    debtorStreet,
+    debtorZip,
+    debtorCity,
+    creditorName,
+    creditorStreet,
+    creditorZip,
+    creditorCity,
+    creditorIban,
+    amount,
+    endToEndId,
+    remittanceInfo
+  } = params;
+
+  function escapeXml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  const now = new Date();
+  const createdIso = now.toISOString().replace(/\.\d{3}Z$/, '');
+  const msgId = `SPM-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Date.now().toString().slice(-6)}`;
+  const pmtInfId = `PMT-${endToEndId || Date.now()}`;
+  const amtFormatted = Number(amount || 0).toFixed(2);
+  const cleanDebtorIban = String(debtorIban || 'CH0680808003633131892').replace(/\s+/g, '').toUpperCase();
+  const cleanCreditorIban = String(creditorIban || '').replace(/\s+/g, '').toUpperCase();
+  const execDate = executionDate || now.toISOString().split('T')[0];
+
+  let creditorAddressXml = '';
+  if (creditorStreet || creditorZip || creditorCity) {
+    creditorAddressXml = `
+          <PstlAdr>
+            ${creditorStreet ? `<StrtNm>${escapeXml(creditorStreet.slice(0, 70))}</StrtNm>` : ''}
+            ${creditorZip ? `<PstCd>${escapeXml(creditorZip.slice(0, 16))}</PstCd>` : ''}
+            ${creditorCity ? `<TwnNm>${escapeXml(creditorCity.slice(0, 35))}</TwnNm>` : ''}
+            <Ctry>CH</Ctry>
+          </PstlAdr>`;
+  } else {
+    creditorAddressXml = `
+          <PstlAdr>
+            <Ctry>CH</Ctry>
+          </PstlAdr>`;
+  }
+
+  const cleanRemittance = String(remittanceInfo || 'Rückvergütung Sportschützen Muhen').slice(0, 140);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>${escapeXml(msgId)}</MsgId>
+      <CreDtTm>${createdIso}</CreDtTm>
+      <NbOfTxs>1</NbOfTxs>
+      <CtrlSum>${amtFormatted}</CtrlSum>
+      <InitgPty>
+        <Nm>${escapeXml(debtorName || 'Sportschützen Muhen')}</Nm>
+      </InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>${escapeXml(pmtInfId)}</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <BchBookg>true</BchBookg>
+      <NbOfTxs>1</NbOfTxs>
+      <CtrlSum>${amtFormatted}</CtrlSum>
+      <PmtTpInf>
+        <InstrPrty>NORM</InstrPrty>
+      </PmtTpInf>
+      <ReqdExctnDt>${execDate}</ReqdExctnDt>
+      <Dbtr>
+        <Nm>${escapeXml(debtorName || 'Sportschützen Muhen')}</Nm>
+        <PstlAdr>
+          <StrtNm>${escapeXml(debtorStreet || 'Schiessanlage Hard')}</StrtNm>
+          <PstCd>${escapeXml(debtorZip || '5037')}</PstCd>
+          <TwnNm>${escapeXml(debtorCity || 'Muhen')}</TwnNm>
+          <Ctry>CH</Ctry>
+        </PstlAdr>
+      </Dbtr>
+      <DbtrAcct>
+        <Id>
+          <IBAN>${cleanDebtorIban}</IBAN>
+        </Id>
+      </DbtrAcct>
+      <DbtrAgt>
+        <FinInstnId>
+          <ClrSysMmbId>
+            <ClrSysId>
+              <Cd>CHBCC</Cd>
+            </ClrSysId>
+            <MmbId>80808</MmbId>
+          </ClrSysMmbId>
+        </FinInstnId>
+      </DbtrAgt>
+      <CdtTrfTxInf>
+        <PmtId>
+          <EndToEndId>${escapeXml(endToEndId || pmtInfId)}</EndToEndId>
+        </PmtId>
+        <Amt>
+          <InstdAmt Ccy="CHF">${amtFormatted}</InstdAmt>
+        </Amt>
+        <CdtrAgt>
+          <FinInstnId>
+            <Othr>
+              <Id>NOTPROVIDED</Id>
+            </Othr>
+          </FinInstnId>
+        </CdtrAgt>
+        <Cdtr>
+          <Nm>${escapeXml(creditorName || 'Mitglied')}</Nm>
+          ${creditorAddressXml}
+        </Cdtr>
+        <CdtrAcct>
+          <Id>
+            <IBAN>${cleanCreditorIban}</IBAN>
+          </Id>
+        </CdtrAcct>
+        <RmtInf>
+          <Ustrd>${escapeXml(cleanRemittance)}</Ustrd>
+        </RmtInf>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>`;
+};
+
+window.bhDownloadPain001Xml = function(entries, recipientData) {
+  if (!entries || entries.length === 0) return;
+  const single = entries[0];
+  const totalAmount = entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
+  const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(single.beleg_nr) : single.beleg_nr;
+
+  const rec = recipientData || {};
+  const iban = String(rec.iban || '').replace(/\s+/g, '').toUpperCase();
+  if (!iban || !/^CH\d{2}[0-9A-Z]{17}$/.test(iban)) {
+    alert("⚠️ Für den Export als Bank-XML (pain.001) wird eine gültige Schweizer IBAN benötigt.\n\nBitte trage die IBAN des Mitglieds ein.");
+    return;
+  }
+
+  // Remittance-Zwecktext aus Buchungstexten
+  let remittance = '';
+  if (entries.length === 1) {
+    remittance = entries[0].beschreibung || 'Auszahlung';
+  } else {
+    const posSnippets = entries.map(e => {
+      const cleanDesc = (e.beschreibung || '').replace(/^.+?\(|\)$/g, '').trim();
+      return `${cleanDesc} (CHF ${Number(e.betrag || 0).toFixed(2)})`;
+    });
+    remittance = `Abrechnung ${baseBeleg}: ${posSnippets.join(', ')}`;
+  }
+
+  let street = rec.street || '';
+  let zip = rec.zip || rec.post_code || '';
+  let city = rec.city || '';
+  if (!street && rec.address && rec.address.includes(',')) {
+    const parts = rec.address.split(',').map(p => p.trim());
+    street = parts[0] || '';
+    if (parts[1]) {
+      const m = parts[1].match(/^(\d{4,5})\s+(.+)$/);
+      if (m) {
+        zip = m[1];
+        city = m[2];
+      } else {
+        city = parts[1];
+      }
+    }
+  }
+
+  const xmlContent = window.bhGeneratePain001Xml({
+    executionDate: single.datum || new Date().toISOString().split('T')[0],
+    debtorIban: 'CH0680808003633131892',
+    debtorName: 'Sportschützen Muhen',
+    debtorStreet: 'Schiessanlage Hard',
+    debtorZip: '5037',
+    debtorCity: 'Muhen',
+    creditorName: rec.name || 'Mitglied',
+    creditorStreet: street,
+    creditorZip: zip,
+    creditorCity: city,
+    creditorIban: iban,
+    amount: totalAmount,
+    endToEndId: baseBeleg || `PAY-${Date.now()}`,
+    remittanceInfo: remittance
+  });
+
+  const filename = `pain001_${baseBeleg || 'Zahlungsauftrag'}_${Date.now()}.xml`;
+  window.bhDownloadFile(filename, xmlContent, 'application/xml');
+
+  if (typeof showSuccess === 'function') {
+    showSuccess(`📥 Bank-Datei ${filename} (pain.001) heruntergeladen! Kann direkt im E-Banking hochgeladen werden.`);
+  }
+};
+
 // POPUP-MODAL: MANUELLE BUCHUNG ERFASSEN ODER BEARBEITEN
 window.bhOpenEntryModal = function(entryId) {
   if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) {
@@ -574,7 +944,7 @@ window.bhOpenEntryModal = function(entryId) {
           <div id="bhe-split-warning-container"></div>
 
           ${!isEdit ? `
-            <!-- Tab-Auswahl: Einzelbuchung vs. Kassen-Sammelbeleg -->
+            <!-- Tab-Auswahl: Einzelbuchung vs. Sammelbeleg & Auszahlungen -->
             <ul class="nav nav-pills nav-fill mb-3 p-1 bg-light rounded-3 border" id="bhe-entry-tabs" role="tablist">
               <li class="nav-item" role="presentation">
                 <button class="nav-link active fw-bold py-1.5" id="bhe-tab-single-btn" data-bs-toggle="pill" data-bs-target="#bhe-tab-single" type="button" role="tab">
@@ -583,7 +953,7 @@ window.bhOpenEntryModal = function(entryId) {
               </li>
               <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold py-1.5" id="bhe-tab-sammel-btn" data-bs-toggle="pill" data-bs-target="#bhe-tab-sammel" type="button" role="tab" onclick="bhInitKassaSammelbeleg()">
-                  <i class="fas fa-layer-group me-1.5"></i>Kassen-Sammelbeleg (Mehrere Positionen)
+                  <i class="fas fa-layer-group me-1.5"></i>Sammelbeleg & Auszahlungen (Mehrere Positionen)
                 </button>
               </li>
             </ul>
@@ -592,7 +962,7 @@ window.bhOpenEntryModal = function(entryId) {
           <div class="tab-content" id="bhe-tab-content">
             <!-- TAB 1: EINZELBUCHUNG -->
             <div class="tab-pane fade show active" id="bhe-tab-single" role="tabpanel">
-              <form id="bh-new-entry-form" onsubmit="bhSaveJournalEntry(event, false)">
+              <form id="bh-new-entry-form" onsubmit="bhSaveJournalEntry(event, false, false)">
                 <input type="hidden" id="bhe-id" value="">
                 
                 <div class="row g-3 mb-3">
@@ -603,6 +973,46 @@ window.bhOpenEntryModal = function(entryId) {
                   <div class="col-6">
                     <label class="form-label fw-bold small text-muted">Belegnummer</label>
                     <input type="text" class="form-control fw-bold font-monospace" id="bhe-beleg" required placeholder="z.B. Kasse_2026-001">
+                  </div>
+                </div>
+
+                <!-- OPTIONAL: BEGÜNSTIGTER / MITGLIED (FÜR VERGÜTUNGEN & BANK-XML) -->
+                <div class="card p-2.5 mb-3 bg-light border rounded-3" id="bhe-member-card">
+                  <div class="d-flex justify-content-between align-items-center cursor-pointer" onclick="bhToggleMemberSection('bhe')" style="cursor: pointer;">
+                    <label class="form-label fw-bold small text-primary mb-0" style="cursor: pointer;">
+                      <i class="fas fa-user-check me-1"></i>Begünstigtes Mitglied / Auszahlungsempfänger <span class="text-muted fw-normal">(optional für Beleg & Bank-XML)</span>
+                    </label>
+                    <span class="badge bg-white text-secondary border small" id="bhe-member-toggle-indicator">Anzeigen <i class="fas fa-chevron-down ms-1"></i></span>
+                  </div>
+                  <div id="bhe-member-details" style="display: none;" class="mt-2 pt-2 border-top">
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <label class="form-label small text-muted fw-bold mb-1">Mitglied suchen</label>
+                        <div class="bh-member-ac-wrap position-relative">
+                          <input type="text" class="form-control form-control-sm bh-member-ac-input" id="bhe-member-search" placeholder="Name oder Nr. tippen (z.B. Marco Fischer)..." autocomplete="off">
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small text-muted fw-bold mb-1">Zahlungsverbindung (IBAN)</label>
+                        <div class="input-group input-group-sm">
+                          <input type="text" class="form-control font-monospace fw-bold" id="bhe-member-iban" placeholder="CH.. .... .... .... .">
+                          <button type="button" class="btn btn-outline-secondary" onclick="bhClearMember('bhe')" title="Auswahl zurücksetzen"><i class="fas fa-times"></i></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2 small">
+                      <span class="text-muted" id="bhe-member-address-display">Kein Mitglied ausgewählt</span>
+                      <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="bhe-save-iban-to-member" checked>
+                        <label class="form-check-label text-muted" for="bhe-save-iban-to-member" style="font-size: 11px;">IBAN bei Mitglied speichern falls neu</label>
+                      </div>
+                    </div>
+                    <input type="hidden" id="bhe-member-pn" value="">
+                    <input type="hidden" id="bhe-member-name" value="">
+                    <input type="hidden" id="bhe-member-address" value="">
+                    <input type="hidden" id="bhe-member-street" value="">
+                    <input type="hidden" id="bhe-member-zip" value="">
+                    <input type="hidden" id="bhe-member-city" value="">
                   </div>
                 </div>
                 
@@ -647,43 +1057,87 @@ window.bhOpenEntryModal = function(entryId) {
                   </div>
                 </div>
                 
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap">
                   <button type="submit" class="btn btn-success flex-grow-1 py-2.5 fw-bold rounded-3 shadow-sm" id="bhe-submit-btn">
                     <i class="fas fa-check-circle me-1"></i> ${isEdit ? 'Änderungen speichern' : 'Buchung speichern'}
                   </button>
-                  <button type="button" class="btn btn-outline-primary py-2.5 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event)" title="Buchung speichern und direkt Kassenbeleg drucken">
+                  <button type="button" class="btn btn-outline-primary py-2.5 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event, false)" title="Buchung speichern und direkt Beleg drucken">
                     <i class="fas fa-print me-1"></i> Speichern & Beleg drucken
+                  </button>
+                  <button type="button" class="btn btn-primary py-2.5 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveAndPrintSingleJournalEntry(event, true)" id="bhe-save-xml-btn" title="Buchung speichern, Beleg drucken und ISO 20022 XML für E-Banking herunterladen">
+                    <i class="fas fa-file-code me-1"></i> Speichern & Bank-XML
                   </button>
                 </div>
               </form>
             </div>
 
             ${!isEdit ? `
-            <!-- TAB 2: KASSEN-SAMMELBELEG (MEHRERE POSITIONEN) -->
+            <!-- TAB 2: SAMMELBELEG & AUSZAHLUNGEN -->
             <div class="tab-pane fade" id="bhe-tab-sammel" role="tabpanel">
-              <form id="bh-sammel-form" onsubmit="bhSaveKassaSammelbeleg(event, false)">
+              <form id="bh-sammel-form" onsubmit="bhSaveKassaSammelbeleg(event, false, false)">
                 <div class="row g-2 mb-3">
-                  <div class="col-md-4">
+                  <div class="col-md-3">
                     <label class="form-label fw-bold small text-muted">Belegdatum</label>
                     <input type="date" class="form-control form-control-sm" id="bh-ks-datum" required value="${new Date().toISOString().split('T')[0]}">
                   </div>
                   <div class="col-md-4">
                     <label class="form-label fw-bold small text-muted">Stamm-Belegnummer</label>
-                    <input type="text" class="form-control form-control-sm fw-bold font-monospace" id="bh-ks-beleg" required placeholder="z.B. Kasse_2026-001">
+                    <input type="text" class="form-control form-control-sm fw-bold font-monospace" id="bh-ks-beleg" required placeholder="z.B. B_Zahl_2026-001">
                   </div>
-                  <div class="col-md-4">
-                    <label class="form-label fw-bold small text-muted">Art der Kassenbewegung</label>
+                  <div class="col-md-5">
+                    <label class="form-label fw-bold small text-muted">Art / Zahlweg</label>
                     <select class="form-select form-select-sm fw-semibold" id="bh-ks-art" onchange="bhUpdateKassaSammelArt()">
-                      <option value="ausgabe" selected>Barausgabe (Geld aus Kasse)</option>
-                      <option value="einnahme">Bareinnahme (Geld in Kasse)</option>
+                      <option value="bank" selected>Banküberweisung (Ausgang via Bank 1020)</option>
+                      <option value="ausgabe">Barausgabe (Geld aus Kasse 1000)</option>
+                      <option value="einnahme">Bareinnahme (Geld in Kasse 1000)</option>
                       <option value="frei">Freie Kontierung (Soll & Haben)</option>
                     </select>
                   </div>
                 </div>
 
+                <!-- BEGÜNSTIGTER / MITGLIEDER-AUSWAHL -->
+                <div class="card p-2.5 mb-3 bg-light border rounded-3" id="bh-ks-member-card">
+                  <div class="d-flex justify-content-between align-items-center cursor-pointer" onclick="bhToggleMemberSection('bh-ks')" style="cursor: pointer;">
+                    <label class="form-label fw-bold small text-primary mb-0" style="cursor: pointer;">
+                      <i class="fas fa-user-check me-1"></i>Begünstigtes Mitglied / Auszahlungsempfänger <span class="text-muted fw-normal">(für Beleg & Bank-XML)</span>
+                    </label>
+                    <span class="badge bg-white text-secondary border small" id="bh-ks-member-toggle-indicator">Ausblenden <i class="fas fa-chevron-up ms-1"></i></span>
+                  </div>
+                  <div id="bh-ks-member-details" class="mt-2 pt-2 border-top">
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <label class="form-label small text-muted fw-bold mb-1">Mitglied suchen</label>
+                        <div class="bh-member-ac-wrap position-relative">
+                          <input type="text" class="form-control form-control-sm bh-member-ac-input" id="bh-ks-member-search" placeholder="Name oder Nr. tippen (z.B. Marco Fischer)..." autocomplete="off">
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label small text-muted fw-bold mb-1">Zahlungsverbindung (IBAN)</label>
+                        <div class="input-group input-group-sm">
+                          <input type="text" class="form-control font-monospace fw-bold" id="bh-ks-member-iban" placeholder="CH.. .... .... .... .">
+                          <button type="button" class="btn btn-outline-secondary" onclick="bhClearMember('bh-ks')" title="Auswahl zurücksetzen"><i class="fas fa-times"></i></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2 small">
+                      <span class="text-muted" id="bh-ks-member-address-display">Kein Mitglied ausgewählt (Freitext oder Vereinsmitglied)</span>
+                      <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="bh-ks-save-iban-to-member" checked>
+                        <label class="form-check-label text-muted" for="bh-ks-save-iban-to-member" style="font-size: 11px;">IBAN bei Mitglied speichern falls neu</label>
+                      </div>
+                    </div>
+                    <input type="hidden" id="bh-ks-member-pn" value="">
+                    <input type="hidden" id="bh-ks-member-name" value="">
+                    <input type="hidden" id="bh-ks-member-address" value="">
+                    <input type="hidden" id="bh-ks-member-street" value="">
+                    <input type="hidden" id="bh-ks-member-zip" value="">
+                    <input type="hidden" id="bh-ks-member-city" value="">
+                  </div>
+                </div>
+
                 <div class="mb-3">
                   <label class="form-label fw-bold small text-muted">Gesamttitel / Anlass (Belegkopf)</label>
-                  <input type="text" class="form-control form-control-sm" id="bh-ks-titel" required placeholder="z.B. Abrechnung Eröffnungsschiessen 2026 oder Materialeinkauf">
+                  <input type="text" class="form-control form-control-sm" id="bh-ks-titel" required placeholder="z.B. Vorfinanzierung Gruppendoppel oder Spesenabrechnung">
                 </div>
 
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -714,7 +1168,7 @@ window.bhOpenEntryModal = function(entryId) {
                 <div class="card p-2.5 mb-3 bg-light border-0 rounded-3">
                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <span class="small fw-semibold text-muted">
-                      <span id="bh-ks-pos-count">0</span> Position(en) erfasst &middot; Kassenkonto: <strong class="text-dark">1000 Kasse</strong>
+                      <span id="bh-ks-pos-count">0</span> Position(en) erfasst &middot; <strong class="text-dark" id="bh-ks-account-info">Geldkonto: 1020 Bank (Vereinskonto)</strong>
                     </span>
                     <span class="fs-6 fw-bold text-primary">
                       Total Beleg: CHF <span id="bh-ks-total-sum">0.00</span>
@@ -722,12 +1176,15 @@ window.bhOpenEntryModal = function(entryId) {
                   </div>
                 </div>
 
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap">
                   <button type="submit" class="btn btn-success flex-grow-1 py-2 fw-bold rounded-3 shadow-sm" id="bh-ks-save-btn">
                     <i class="fas fa-save me-1"></i> Sammelbeleg buchen
                   </button>
-                  <button type="button" class="btn btn-primary py-2 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true)" id="bh-ks-save-print-btn">
+                  <button type="button" class="btn btn-outline-primary py-2 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true, false)" id="bh-ks-save-print-btn">
                     <i class="fas fa-print me-1"></i> Buchen & Beleg drucken
+                  </button>
+                  <button type="button" class="btn btn-primary py-2 px-3 fw-bold rounded-3 shadow-sm" onclick="bhSaveKassaSammelbeleg(event, true, true)" id="bh-ks-save-xml-btn" title="Buchen, Beleg drucken und ISO 20022 XML für E-Banking herunterladen">
+                    <i class="fas fa-file-code me-1"></i> Buchen & Bank-XML (pain.001)
                   </button>
                 </div>
               </form>
@@ -739,8 +1196,11 @@ window.bhOpenEntryModal = function(entryId) {
     </div>
   `;
 
-  // Autocomplete initialisieren für Soll/Haben
-  setTimeout(() => bhInitKontoAutocompleteForContainer(modalEl), 50);
+  // Autocomplete initialisieren für Soll/Haben und Mitglieder
+  setTimeout(() => {
+    bhInitKontoAutocompleteForContainer(modalEl);
+    bhInitMemberAutocompleteForContainer(modalEl);
+  }, 50);
   
   const titleEl = document.getElementById('bhe-modal-title');
   const idEl = document.getElementById('bhe-id');
@@ -854,22 +1314,37 @@ window.bhOpenEntryModal = function(entryId) {
 window.bhInitKassaSammelbeleg = function() {
   const y = Number(window._bhYear || new Date().getFullYear());
   const belegEl = document.getElementById('bh-ks-beleg');
-  if (belegEl && !belegEl.value) {
-    belegEl.value = window.bhGetNextJournalBelegNr(y, 'Kasse_');
+  const artEl = document.getElementById('bh-ks-art');
+  const art = artEl ? artEl.value : 'bank';
+  if (belegEl && (!belegEl.value || belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_'))) {
+    const pfx = (art === 'bank') ? 'B_Zahl_' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
+    belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
   }
   if (!window._bhKassaSammelRows || window._bhKassaSammelRows.length === 0) {
     window._bhKassaSammelRows = [
-      { text: '', konto: '', kontoSoll: '', kontoHaben: '', betrag: '' },
-      { text: '', konto: '', kontoSoll: '', kontoHaben: '', betrag: '' }
+      { text: '', konto: '4000', kontoSoll: '', kontoHaben: '', betrag: '' },
+      { text: '', konto: '4000', kontoSoll: '', kontoHaben: '', betrag: '' }
     ];
   }
-  bhRenderKassaSammelRows();
+  window.bhUpdateKassaSammelArt();
 };
 
 window.bhUpdateKassaSammelArt = function() {
   bhSyncKassaSammelFromInputs();
-  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'ausgabe';
+  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'bank';
   const tr = document.getElementById('bh-ks-thead-tr');
+  const belegEl = document.getElementById('bh-ks-beleg');
+  const y = Number(window._bhYear || new Date().getFullYear());
+
+  if (belegEl && (belegEl.value.startsWith('Kasse_') || belegEl.value.startsWith('B_Zahl_') || !belegEl.value)) {
+    const pfx = (art === 'bank') ? 'B_Zahl_' : (art === 'ausgabe' || art === 'einnahme' ? 'Kasse_' : 'BEL-');
+    belegEl.value = window.bhGetNextJournalBelegNr(y, pfx);
+  }
+
+  const accountInfo = (art === 'bank') ? 'Geldkonto: 1020 Bank (Vereinskonto)' : (art === 'einnahme' || art === 'ausgabe' ? 'Kassenkonto: 1000 Kasse' : 'Freie Kontierung');
+  const infoEl = document.getElementById('bh-ks-account-info');
+  if (infoEl) infoEl.innerText = accountInfo;
+
   if (tr) {
     if (art === 'frei') {
       tr.innerHTML = `
@@ -881,7 +1356,7 @@ window.bhUpdateKassaSammelArt = function() {
         <th style="width: 35px;"></th>
       `;
     } else {
-      const thLabel = art === 'einnahme' ? 'Ertragskonto (Haben)' : 'Aufwandskonto (Soll)';
+      const thLabel = (art === 'einnahme') ? 'Ertragskonto (Haben)' : 'Aufwandskonto (Soll)';
       tr.innerHTML = `
         <th style="width: 30px;" class="text-center">#</th>
         <th>Beschreibung / Positionstext</th>
@@ -895,7 +1370,7 @@ window.bhUpdateKassaSammelArt = function() {
 };
 
 window.bhSyncKassaSammelFromInputs = function() {
-  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'ausgabe';
+  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'bank';
   const isFrei = (art === 'frei');
   const rows = window._bhKassaSammelRows || [];
 
@@ -921,7 +1396,7 @@ window.bhAddKassaSammelRow = function() {
   bhSyncKassaSammelFromInputs();
   (window._bhKassaSammelRows = window._bhKassaSammelRows || []).push({
     text: '',
-    konto: '',
+    konto: '4000',
     kontoSoll: '',
     kontoHaben: '',
     betrag: ''
@@ -941,7 +1416,7 @@ window.bhRenderKassaSammelRows = function() {
   const tbody = document.getElementById('bh-ks-tbody');
   if (!tbody) return;
 
-  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'ausgabe';
+  const art = document.getElementById('bh-ks-art') ? document.getElementById('bh-ks-art').value : 'bank';
   const isFrei = (art === 'frei');
   const rows = window._bhKassaSammelRows || [];
 
@@ -961,7 +1436,7 @@ window.bhRenderKassaSammelRows = function() {
         </td>
       `;
     } else {
-      const labelPlaceholder = art === 'einnahme' ? 'Ertragskonto suchen...' : 'Aufwandskonto suchen...';
+      const labelPlaceholder = (art === 'einnahme') ? 'Ertragskonto suchen...' : 'Aufwandskonto suchen (z.B. 4000)...';
       kontoCells = `
         <td>
           <div class="bh-konto-ac-wrap">
@@ -1015,7 +1490,7 @@ window.bhUpdateKassaSammelLiveTotal = function() {
   if (countEl) countEl.textContent = rows.length;
 };
 
-window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
+window.bhSaveKassaSammelbeleg = async function(event, printAfter = false, exportXml = false) {
   if (event) event.preventDefault();
   bhSyncKassaSammelFromInputs();
 
@@ -1027,7 +1502,7 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
   const datum = datumEl ? datumEl.value : new Date().toISOString().split('T')[0];
   const baseBeleg = belegEl ? belegEl.value.trim() : '';
   const titel = titelEl ? titelEl.value.trim() : '';
-  const art = artEl ? artEl.value : 'ausgabe';
+  const art = artEl ? artEl.value : 'bank';
 
   if (!baseBeleg) {
     alert('Bitte Belegnummer angeben.');
@@ -1037,6 +1512,27 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
   if (!titel) {
     alert('Bitte Gesamttitel / Anlass angeben.');
     if (titelEl) titelEl.focus();
+    return;
+  }
+
+  // Mitgliedsdaten auslesen
+  const memberPn = document.getElementById('bh-ks-member-pn')?.value;
+  const memberName = document.getElementById('bh-ks-member-name')?.value;
+  const memberIban = (document.getElementById('bh-ks-member-iban')?.value || '').replace(/\s+/g, '').toUpperCase();
+  const memberAddr = document.getElementById('bh-ks-member-address')?.value;
+  const memberStreet = document.getElementById('bh-ks-member-street')?.value;
+  const memberZip = document.getElementById('bh-ks-member-zip')?.value;
+  const memberCity = document.getElementById('bh-ks-member-city')?.value;
+  const saveIban = document.getElementById('bh-ks-save-iban-to-member')?.checked;
+
+  if (exportXml && (!memberIban || !/^CH\d{2}[0-9A-Z]{17}$/.test(memberIban))) {
+    alert("⚠️ Für die Erstellung der Bank-XML (pain.001) wird eine gültige Schweizer IBAN benötigt.\n\nBitte trage die IBAN des Mitglieds ein.");
+    const ibanInp = document.getElementById('bh-ks-member-iban');
+    if (ibanInp) {
+      const details = document.getElementById('bh-ks-member-details');
+      if (details) details.style.display = 'block';
+      ibanInp.focus();
+    }
     return;
   }
 
@@ -1077,14 +1573,22 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
         alert(`Bitte Gegenkonto für Position #${i + 1} auswählen.`);
         return;
       }
-      if (r.konto === '1000') {
-        alert(`Gegenkonto für Position #${i + 1} darf nicht das Kassenkonto 1000 sein.`);
+      if (art === 'bank' && (r.konto === '1020' || r.konto === '1021' || r.konto === '1022')) {
+        alert(`Aufwandskonto für Position #${i + 1} darf nicht das Bankkonto selbst sein.`);
+        return;
+      }
+      if (art === 'ausgabe' && r.konto === '1000') {
+        alert(`Aufwandskonto für Position #${i + 1} darf nicht das Kassenkonto 1000 sein.`);
+        return;
+      }
+      if (art === 'einnahme' && r.konto === '1000') {
+        alert(`Ertragskonto für Position #${i + 1} darf nicht das Kassenkonto 1000 sein.`);
         return;
       }
       validRows.push({
         text: r.text.trim(),
-        soll: (art === 'ausgabe') ? r.konto : '1000',
-        haben: (art === 'ausgabe') ? '1000' : r.konto,
+        soll: (art === 'einnahme') ? ((art === 'bank') ? '1020' : '1000') : r.konto,
+        haben: (art === 'einnahme') ? r.konto : ((art === 'bank') ? '1020' : '1000'),
         betrag: amt
       });
     }
@@ -1097,9 +1601,35 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
 
   const saveBtn = document.getElementById('bh-ks-save-btn');
   const printBtn = document.getElementById('bh-ks-save-print-btn');
+  const xmlBtn = document.getElementById('bh-ks-save-xml-btn');
   if (saveBtn) saveBtn.disabled = true;
   if (printBtn) printBtn.disabled = true;
+  if (xmlBtn) xmlBtn.disabled = true;
   if (saveBtn) saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Speichere Sammelbeleg...';
+
+  // IBAN bei Mitglied in Supabase speichern falls angehakt
+  if (saveIban && memberPn && memberIban && /^CH\d{2}[0-9A-Z]{17}$/.test(memberIban)) {
+    try {
+      const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+      if (supa) {
+        await supa.from('members').update({ iban: memberIban }).eq('person_number', parseInt(memberPn, 10));
+        const cachedM = (window._bhMembers || []).find(x => String(x.person_number) === String(memberPn));
+        if (cachedM) cachedM.iban = memberIban;
+      }
+    } catch (mErr) {
+      console.warn("⚠️ Fehler beim Aktualisieren der IBAN in members:", mErr);
+    }
+  }
+
+  const recipientData = memberName ? {
+    name: memberName,
+    iban: memberIban,
+    address: memberAddr,
+    street: memberStreet,
+    zip: memberZip,
+    city: memberCity,
+    personNumber: memberPn
+  } : null;
 
   const year = Number(window._bhYear || new Date().getFullYear());
   const savedEntries = [];
@@ -1122,7 +1652,8 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
         konto_soll: vr.soll,
         konto_haben: vr.haben,
         betrag: vr.betrag,
-        typ: 'Kassa'
+        typ: (art === 'bank') ? 'Überweisung' : (art === 'einnahme' ? 'Einnahme' : 'Kassa'),
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(vr.soll, vr.haben) : 'TRANSIT'
       };
 
       const { data: supaData, error: supaErr } = await supa.from('accounting_journal').insert(insertPayload).select().single();
@@ -1146,7 +1677,7 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
     }
 
     if (typeof showSuccess === 'function') {
-      showSuccess(`🎉 Kassen-Sammelbeleg mit ${savedEntries.length} Positionen erfolgreich gebucht!`);
+      showSuccess(`🎉 Sammelbeleg mit ${savedEntries.length} Positionen erfolgreich gebucht!`);
     }
 
     const modalEl = document.getElementById('bhModalNewEntry');
@@ -1160,7 +1691,11 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
     if (typeof renderActiveAccountingTab === 'function') renderActiveAccountingTab();
 
     if (printAfter && savedEntries.length > 0) {
-      bhPrintJournalBeleg(savedEntries, titel);
+      bhPrintJournalBeleg(savedEntries, titel, recipientData);
+    }
+
+    if (exportXml && savedEntries.length > 0 && recipientData && recipientData.iban) {
+      bhDownloadPain001Xml(savedEntries, recipientData);
     }
 
     setTimeout(async () => {
@@ -1178,17 +1713,21 @@ window.bhSaveKassaSammelbeleg = async function(event, printAfter = false) {
       printBtn.disabled = false;
       printBtn.innerHTML = '<i class="fas fa-print me-1"></i> Buchen & Beleg drucken';
     }
+    if (xmlBtn) {
+      xmlBtn.disabled = false;
+      xmlBtn.innerHTML = '<i class="fas fa-file-code me-1"></i> Buchen & Bank-XML (pain.001)';
+    }
   }
 };
 
-window.bhSaveAndPrintSingleJournalEntry = function(event) {
-  bhSaveJournalEntry(event, true);
+window.bhSaveAndPrintSingleJournalEntry = function(event, exportXml = false) {
+  bhSaveJournalEntry(event, true, exportXml);
 };
 
 // =====================================================================
-// DRUCKFUNKTION FÜR KASSEN- UND SAMMELBELEGE (A4 PRINT-TEMPLATE)
+// DRUCKFUNKTION FÜR KASSEN-, BANK- UND SAMMELBELEGE (A4 PRINT-TEMPLATE)
 // =====================================================================
-window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
+window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) {
   let entries = [];
   if (!entriesOrIds) return;
   if (Array.isArray(entriesOrIds)) {
@@ -1229,30 +1768,74 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
   
   const belegDatum = entries[0].datum ? (typeof isoToDisplay === 'function' ? isoToDisplay(entries[0].datum) : entries[0].datum) : new Date().toLocaleDateString('de-CH');
   const totalAmount = entries.reduce((s, e) => s + (Number(e.betrag) || 0), 0);
-  const title = customTitle || (entries.length === 1 ? entries[0].beschreibung : `Kassenabrechnung (${entries.length} Positionen)`);
+  const title = customTitle || (entries.length === 1 ? entries[0].beschreibung : `Abrechnung (${entries.length} Positionen)`);
   
-  // Situative Erkennung: Kassen-Einnahme vs. Kassen-Auszahlung
+  // Situative Erkennung: Banküberweisung vs. Kassa vs. Umbuchung
+  let isBank = false;
+  let isCash = false;
   let cashInflow = 0;
   let cashOutflow = 0;
   entries.forEach(e => {
     const soll = String(e.konto_soll || '').trim();
     const haben = String(e.konto_haben || '').trim();
+    const typ = String(e.typ || '').trim();
     const amt = Math.abs(Number(e.betrag) || 0);
-    if (soll === '1000' || soll.startsWith('1000')) {
-      cashInflow += amt;
-    } else if (haben === '1000' || haben.startsWith('1000')) {
-      cashOutflow += amt;
-    } else if (soll.startsWith('1020') || haben.startsWith('1020')) {
-      if (soll.startsWith('1020')) cashInflow += amt;
-      if (haben.startsWith('1020')) cashOutflow += amt;
+
+    if (soll === '1000' || haben === '1000' || typ === 'Kassa') {
+      isCash = true;
+      if (soll === '1000') cashInflow += amt;
+      if (haben === '1000') cashOutflow += amt;
+    } else if (soll.startsWith('102') || haben.startsWith('102') || typ === 'Bank' || typ === 'Überweisung') {
+      isBank = true;
+      if (soll.startsWith('102')) cashInflow += amt;
+      if (haben.startsWith('102')) cashOutflow += amt;
     } else {
       if (haben.startsWith('3')) cashInflow += amt;
       else if (soll.startsWith('4') || soll.startsWith('5') || soll.startsWith('6') || soll.startsWith('7') || soll.startsWith('8')) cashOutflow += amt;
     }
   });
+
   const isEinnahme = cashInflow >= cashOutflow;
-  const belegType = isEinnahme ? 'Kassen-Einnahme' : 'Kassen-Auszahlung';
-  const belegTypeRowLabel = isEinnahme ? 'Kassen-Einnahme:' : 'Kassen-Auszahlung:';
+  let belegType = '';
+  let belegSubTitle = 'Finanzbuchhaltung &middot; Belegwesen Vereinsrechnung';
+  let paymentMethodLabel = '';
+
+  if (isBank) {
+    belegType = isEinnahme ? 'Bank-Gutschrift / Einnahme' : 'Bank-Auszahlung / Vergütungsbeleg';
+    paymentMethodLabel = 'Banküberweisung (Konto 1020 Vereinskonto)';
+  } else if (isCash) {
+    belegType = isEinnahme ? 'Kassen-Einnahme' : 'Kassen-Auszahlung';
+    belegSubTitle = 'Kassabuch &middot; Belegwesen Vereinsrechnung';
+    paymentMethodLabel = 'Barauszahlung / Kasse (1000)';
+  } else {
+    belegType = isEinnahme ? 'Ertragsbeleg' : 'Aufwands- / Umbuchungsbeleg';
+    paymentMethodLabel = 'Umbuchung / Verrechnung';
+  }
+  const belegTypeRowLabel = `${belegType}:`;
+
+  // Auto-Detect Mitglied falls kein recipientData explizit übergeben wurde
+  if (!recipientData) {
+    const allTexts = entries.map(e => `${e.beschreibung || ''} ${customTitle || ''}`).join(' ');
+    const foundMember = (window._bhMembers || []).find(m => {
+      const full = `${m.first_name} ${m.last_name}`.toLowerCase();
+      const fn = String(m.first_name || '').toLowerCase();
+      const ln = String(m.last_name || '').toLowerCase();
+      return (fn.length > 2 && ln.length > 2 && allTexts.toLowerCase().includes(full)) ||
+             (m.person_number && allTexts.includes(String(m.person_number)));
+    });
+    if (foundMember) {
+      const addr = [foundMember.street, `${foundMember.post_code || ''} ${foundMember.city || ''}`.trim()].filter(Boolean).join(', ');
+      recipientData = {
+        name: `${foundMember.first_name} ${foundMember.last_name}`,
+        iban: foundMember.iban || '',
+        address: addr,
+        street: foundMember.street || '',
+        zip: foundMember.post_code || '',
+        city: foundMember.city || '',
+        personNumber: foundMember.person_number
+      };
+    }
+  }
 
   function formatMoney(val) {
     if (typeof fmtChf === 'function') {
@@ -1343,6 +1926,18 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
           font-size: 13px;
           border: 1px solid #b6d4fe;
         }
+        .recipient-box {
+          margin-bottom: 20px;
+          background: #f8faff;
+          border: 1px solid #b6d4fe;
+          border-left: 4px solid #0d6efd;
+          border-radius: 6px;
+          padding: 12px 16px;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 15px;
+        }
         .meta-box {
           display: flex;
           gap: 20px;
@@ -1390,22 +1985,62 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
           font-weight: 800;
         }
         @media print {
-          body { padding: 10px; font-size: 12px; }
+          .no-print { display: none !important; }
+          body { padding: 5px; font-size: 12px; }
           @page { size: A4 portrait; margin: 15mm; }
         }
       </style>
     </head>
     <body>
+      <!-- Aktionen im Browserfenster (wird beim Ausdrucken ausgeblendet) -->
+      <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; justify-content: space-between; background: #e7f1ff; border: 1px solid #b6d4fe; padding: 10px 16px; border-radius: 8px;">
+        <div style="font-size: 13px; font-weight: 600; color: #0b5ed7;">
+          <i class="fas fa-file-invoice me-1"></i> Beleganzeige: <strong>${escapeHtml(belegType)}</strong> (${escapeHtml(belegNrDisplay)})
+        </div>
+        <div style="display: flex; gap: 8px;">
+          ${(isBank && recipientData && recipientData.iban) ? `
+            <button type="button" onclick="downloadPain001Xml()" style="background: #198754; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">
+              📥 ISO 20022 XML (pain.001) herunterladen
+            </button>
+          ` : ''}
+          <button type="button" onclick="window.print()" style="background: #0d6efd; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">
+            🖨️ Beleg drucken
+          </button>
+        </div>
+      </div>
+
       <div class="header-container">
         <div>
           <h1 class="club-title">Sportschützen Muhen</h1>
-          <p class="club-sub">Kassabuch &middot; Belegwesen Vereinsrechnung</p>
+          <p class="club-sub">${belegSubTitle}</p>
         </div>
         <div class="doc-title-badge">
           <div class="doc-title">${escapeHtml(belegType)}</div>
           <div class="beleg-badge">${escapeHtml(belegNrDisplay)}</div>
         </div>
       </div>
+
+      ${recipientData && recipientData.name ? `
+      <div class="recipient-box">
+        <div>
+          <div style="font-size: 10px; text-transform: uppercase; color: #0d6efd; font-weight: bold; margin-bottom: 3px;">Begünstigte Person / Empfänger</div>
+          <div style="font-size: 15px; font-weight: 800; color: #212529;">
+            ${escapeHtml(recipientData.name)}
+            ${recipientData.personNumber ? `<span style="font-size: 11px; font-weight: normal; color: #6c757d; font-family: monospace;">(#${escapeHtml(recipientData.personNumber)})</span>` : ''}
+          </div>
+          ${recipientData.address ? `<div style="font-size: 12px; color: #495057; margin-top: 2px;">${escapeHtml(recipientData.address)}</div>` : ''}
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 3px;">Zahlungsweg & Verbindung</div>
+          ${recipientData.iban ? `
+            <div style="font-family: monospace; font-size: 13px; font-weight: bold; color: #0b5ed7;">${escapeHtml(recipientData.iban)}</div>
+            <div style="font-size: 11px; color: #6c757d; margin-top: 1px;">${escapeHtml(paymentMethodLabel)}</div>
+          ` : `
+            <div style="font-size: 12px; font-weight: bold; color: #212529;">${escapeHtml(paymentMethodLabel)}</div>
+          `}
+        </div>
+      </div>
+      ` : ''}
 
       <div class="meta-box">
         <div class="meta-item">
@@ -1442,7 +2077,34 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
         </tbody>
       </table>
 
+      <!-- Visum- und Freigabebereich für Revisionssicherheit -->
+      <div style="display: flex; justify-content: space-between; margin-top: 35px; padding-top: 15px; border-top: 1px dashed #ced4da;">
+        <div style="width: 45%;">
+          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 25px;">Erstellt & gebucht durch</div>
+          <div style="border-bottom: 1px solid #495057; width: 100%; height: 1px;"></div>
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6c757d; margin-top: 4px;">
+            <span>Kassier / Sportschützen Muhen</span>
+            <span>Datum: ${belegDatum}</span>
+          </div>
+        </div>
+        <div style="width: 45%;">
+          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 25px;">Visum / Freigabe zur Auszahlung</div>
+          <div style="border-bottom: 1px solid #495057; width: 100%; height: 1px;"></div>
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6c757d; margin-top: 4px;">
+            <span>Unterschrift Vorstand / Visum</span>
+            <span>Überwiesen / Ausbezahlt am:</span>
+          </div>
+        </div>
+      </div>
+
       <script>
+        function downloadPain001Xml() {
+          if (window.opener && typeof window.opener.bhDownloadPain001Xml === 'function') {
+            window.opener.bhDownloadPain001Xml(${JSON.stringify(entries)}, ${JSON.stringify(recipientData)});
+          } else {
+            alert('Das Hauptfenster ist nicht mehr geöffnet.');
+          }
+        }
         window.onload = function() {
           setTimeout(function() {
             window.print();
@@ -1456,14 +2118,18 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle) {
 };
 
 // POST-Request zum Speichern/Aktualisieren des Buchungssatzes
-window.bhSaveJournalEntry = async function(event, printAfter = false) {
+window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml = false) {
   if (event) event.preventDefault();
   
   const submitBtn = document.getElementById('bhe-submit-btn');
+  const printBtn = document.getElementById('bhe-save-print-btn');
+  const xmlBtn = document.getElementById('bhe-save-xml-btn');
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Übermittle an Hauptbuch...';
   }
+  if (printBtn) printBtn.disabled = true;
+  if (xmlBtn) xmlBtn.disabled = true;
   
   const payload = {
     action:       'saveJournalEntry',
@@ -1484,6 +2150,8 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
     }
+    if (printBtn) printBtn.disabled = false;
+    if (xmlBtn) xmlBtn.disabled = false;
     return;
   }
   if (payload.konto_soll && payload.konto_haben && payload.konto_soll === payload.konto_haben) {
@@ -1492,6 +2160,35 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
     }
+    if (printBtn) printBtn.disabled = false;
+    if (xmlBtn) xmlBtn.disabled = false;
+    return;
+  }
+
+  // Mitgliedsdaten auslesen
+  const memberPn = document.getElementById('bhe-member-pn')?.value;
+  const memberName = document.getElementById('bhe-member-name')?.value;
+  const memberIban = (document.getElementById('bhe-member-iban')?.value || '').replace(/\s+/g, '').toUpperCase();
+  const memberAddr = document.getElementById('bhe-member-address')?.value;
+  const memberStreet = document.getElementById('bhe-member-street')?.value;
+  const memberZip = document.getElementById('bhe-member-zip')?.value;
+  const memberCity = document.getElementById('bhe-member-city')?.value;
+  const saveIban = document.getElementById('bhe-save-iban-to-member')?.checked;
+
+  if (exportXml && (!memberIban || !/^CH\d{2}[0-9A-Z]{17}$/.test(memberIban))) {
+    alert("⚠️ Für die Erstellung der Bank-XML (pain.001) wird eine gültige Schweizer IBAN benötigt.\n\nBitte trage die IBAN des Mitglieds ein.");
+    const ibanInp = document.getElementById('bhe-member-iban');
+    if (ibanInp) {
+      const details = document.getElementById('bhe-member-details');
+      if (details) details.style.display = 'block';
+      ibanInp.focus();
+    }
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
+    }
+    if (printBtn) printBtn.disabled = false;
+    if (xmlBtn) xmlBtn.disabled = false;
     return;
   }
   
@@ -1505,9 +2202,35 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
       }
+      if (printBtn) printBtn.disabled = false;
+      if (xmlBtn) xmlBtn.disabled = false;
       return;
     }
   }
+
+  // IBAN bei Mitglied in Supabase speichern falls angehakt
+  if (saveIban && memberPn && memberIban && /^CH\d{2}[0-9A-Z]{17}$/.test(memberIban)) {
+    try {
+      const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+      if (supa) {
+        await supa.from('members').update({ iban: memberIban }).eq('person_number', parseInt(memberPn, 10));
+        const cachedM = (window._bhMembers || []).find(x => String(x.person_number) === String(memberPn));
+        if (cachedM) cachedM.iban = memberIban;
+      }
+    } catch (mErr) {
+      console.warn("⚠️ Fehler beim Aktualisieren der IBAN in members:", mErr);
+    }
+  }
+
+  const recipientData = memberName ? {
+    name: memberName,
+    iban: memberIban,
+    address: memberAddr,
+    street: memberStreet,
+    zip: memberZip,
+    city: memberCity,
+    personNumber: memberPn
+  } : null;
   
   try {
     let savedEntry = null;
@@ -1573,7 +2296,11 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
     renderActiveAccountingTab();
     
     if (printAfter) {
-      bhPrintJournalBeleg([savedEntry]);
+      bhPrintJournalBeleg([savedEntry], payload.beschreibung, recipientData);
+    }
+
+    if (exportXml && recipientData && recipientData.iban) {
+      bhDownloadPain001Xml([savedEntry], recipientData);
     }
 
     setTimeout(async () => {
@@ -1586,6 +2313,8 @@ window.bhSaveJournalEntry = async function(event, printAfter = false) {
       submitBtn.disabled = false;
       submitBtn.innerHTML = payload.id ? '<i class="fas fa-save me-1"></i> Änderungen im Journal speichern' : '<i class="fas fa-check-circle me-1"></i> Buchung speichern';
     }
+    if (printBtn) printBtn.disabled = false;
+    if (xmlBtn) xmlBtn.disabled = false;
   }
 };
 

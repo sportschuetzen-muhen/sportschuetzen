@@ -55,6 +55,12 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Problemstellung:** Gemeinsame Kosten wie Schützenhaus-Reinigung (4010), Energie & Wasser (6400) oder Liegenschaftsunterhalt (6000) fallen für das gesamte Schützenhaus an, das sowohl dem Schiessbetrieb als auch externen Vermietungen dient. Eine pauschale 100%-Belastung verfälschte die Rentabilitätsrechnungen.
 * **Lösung:** In `public.accounting_cost_allocations` werden prozentuale Zuteilungsschlüssel (z.B. 70% Reinigung, 30% Energie, 10% Gebäude/Versicherung für Vermietung) persistent gespeichert und im Cockpit (`vorstand/js/buchhaltung-controlling.js`) interaktiv mit Sofortberechnung visualisiert und verwaltet.
 
+### 2.6 Auszahlungsbelege & ISO 20022 pain.001 Zahlungsdatei-Export (Bank 1020 & Kasse 1000)
+* **Problemstellung & Anwendungsfall:** Vorfinanzierte Auslagen von Mitgliedern (z.B. Gruppendoppel für Schiessanlässe, Munition oder Materialspesen) müssen mit detailliertem Nachweis vergütet werden.
+* **Ablauf & Belegdruck:** Bei Erfassung von Einzel- oder Sammelauszahlungen (Konto `1020 Bank` oder `1000 Kasse`) kann ein Mitglied aus dem Mitgliederstamm ausgewählt werden. Das System generiert auf Knopfdruck einen revisionssicheren A4-Vergütungsbeleg mit Begünstigtem, Adresse, IBAN, Positionsaufstellung und Freigabevisum.
+* **ISO 20022 pain.001 XML-Export:** Für Banküberweisungen via `1020 Bank` wird direkt beim Buchen eine normierte XML-Zahlungsdatei nach Schweizer Standard (`pain.001.001.03.ch.02`) erzeugt und heruntergeladen. Diese kann ohne manuelle Datenerfassung direkt im E-Banking (z.B. PostFinance, Raiffeisen) zur Ausführung hochgeladen werden. IBAN-Änderungen können auf Wunsch direkt in `public.members` synchronisiert werden.
+
+
 ---
 
 ## 3. Datenmodell (Kern-Tabellen)
