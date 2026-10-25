@@ -1972,6 +1972,19 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
     return matched ? `${matched.konto} ${matched.bezeichnung}` : String(code || '–');
   }
 
+  const isSingle = (entries.length === 1);
+
+  // Kassier Name und aktuelles Datum ermitteln
+  const rawUser = window.currentUser || localStorage.getItem('portal_user');
+  let userName = 'Daniel Hunziker';
+  if (typeof rawUser === 'string' && rawUser.trim()) {
+    userName = rawUser.trim();
+  } else if (typeof rawUser === 'object' && rawUser !== null) {
+    userName = rawUser.display_name || rawUser.name || rawUser.full_name || rawUser.email || 'Daniel Hunziker';
+  }
+  const todayDate = new Date();
+  const todayFormatted = `${String(todayDate.getDate()).padStart(2, '0')}.${String(todayDate.getMonth() + 1).padStart(2, '0')}.${todayDate.getFullYear()}`;
+
   const tableRowsHtml = entries.map((e, idx) => `
     <tr>
       <td style="text-align: center; font-weight: bold; width: 35px;">${idx + 1}</td>
@@ -2178,6 +2191,17 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
         </div>
       </div>
 
+      ${isSingle ? `
+      <!-- Bestätigungsbereich für Einzelbuchung -->
+      <div style="margin-top: 50px; padding-top: 25px; border-top: 1px dashed #ced4da;">
+        <div style="font-size: 11px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 30px; letter-spacing: 0.5px;">Erstellt &amp; gebucht durch</div>
+        <div style="border-bottom: 1px solid #495057; width: 100%; height: 1px;"></div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #212529; margin-top: 8px;">
+          <span>Kassier: <strong>${escapeHtml(userName)}</strong></span>
+          <span>Datum: <strong>${todayFormatted}</strong></span>
+        </div>
+      </div>
+      ` : `
       <table class="beleg-table">
         <thead>
           <tr>
@@ -2198,14 +2222,14 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
         </tbody>
       </table>
 
-      <!-- Visum- und Freigabebereich für Revisionssicherheit -->
+      <!-- Visum- und Freigabebereich für Sammelbeleg -->
       <div style="display: flex; justify-content: space-between; margin-top: 35px; padding-top: 15px; border-top: 1px dashed #ced4da;">
         <div style="width: 45%;">
-          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 25px;">Erstellt & gebucht durch</div>
+          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 25px;">Erstellt &amp; gebucht durch</div>
           <div style="border-bottom: 1px solid #495057; width: 100%; height: 1px;"></div>
           <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6c757d; margin-top: 4px;">
-            <span>Kassier / Sportschützen Muhen</span>
-            <span>Datum: ${belegDatum}</span>
+            <span>Kassier: <strong>${escapeHtml(userName)}</strong></span>
+            <span>Datum: ${todayFormatted}</span>
           </div>
         </div>
         <div style="width: 45%;">
@@ -2217,6 +2241,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
           </div>
         </div>
       </div>
+      `}
 
       <script>
         function downloadPain001Xml() {
