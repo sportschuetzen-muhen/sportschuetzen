@@ -1515,7 +1515,7 @@ function bhBankApplyInvoicePositionsToTx(tx, inv, positions) {
   }
 
   // Mehrere Positionen -> Automatische Split-Konfiguration (sofern nicht manuell vom Nutzer editiert)
-  if (validPositions.length > 1 && (!tx._customSplitEdited || !Array.isArray(tx.splitRows) || tx.splitRows.length === 0)) {
+  if (validPositions.length > 1 && !tx._customSplitEdited && (!Array.isArray(tx.splitRows) || tx.splitRows.length === 0)) {
     let netSum = 0;
     const splitRows = validPositions.map((p, idx) => {
       const pAmt = Number(p.amount !== undefined ? p.amount : (p.betrag !== undefined ? p.betrag : 0));
@@ -4354,7 +4354,7 @@ window.bhBankSaveSplitBooking = function(txIdx) {
     // Split aufheben & direkt als Einzelbuchung auf der Transaktion hinterlegen
     tx.isSplit = false;
     delete tx.splitRows;
-    tx._customSplitEdited = false;
+    tx._customSplitEdited = true;
     tx._customSollEdited = true;
     tx._customHabenEdited = true;
     tx.suggestedSoll = single.kontoSoll;
@@ -4366,7 +4366,7 @@ window.bhBankSaveSplitBooking = function(txIdx) {
     if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
       window._bhBankTransactions[txIdx].isSplit = false;
       delete window._bhBankTransactions[txIdx].splitRows;
-      window._bhBankTransactions[txIdx]._customSplitEdited = false;
+      window._bhBankTransactions[txIdx]._customSplitEdited = true;
       window._bhBankTransactions[txIdx]._customSollEdited = true;
       window._bhBankTransactions[txIdx]._customHabenEdited = true;
       window._bhBankTransactions[txIdx].suggestedSoll = single.kontoSoll;
@@ -4453,10 +4453,39 @@ window.bhBankClearSplit = function(txIdx) {
   tx._customSplitEdited = true;
   delete tx.splitRows;
 
+  // Bei Aufhebung: Gegenkonto aus Rechnungspositionen oder Standard ableiten falls bisher leer
+  if (tx.isCredit && !tx.suggestedHaben) {
+    const cachedPos = (window._invoicePositionsCache && window._invoicePositionsCache[String(tx.matchedInvoice?.id).trim()]) || tx.matchedInvoice?.positions;
+    const firstPosKonto = cachedPos && cachedPos.length > 0 ? bhBankCleanKonto(cachedPos[0].konto) : '';
+    if (firstPosKonto) {
+      tx.suggestedHaben = firstPosKonto;
+    } else if (tx.matchedInvoice) {
+      const invIdUpper = String(tx.matchedInvoice.id || '').toUpperCase();
+      const invType = String(tx.matchedInvoice.type || '').toLowerCase();
+      if (invIdUpper.startsWith('MV-') || invType.includes('material')) tx.suggestedHaben = '3800';
+      else if (invIdUpper.startsWith('VT-') || invType.includes('vermietung')) tx.suggestedHaben = '3650';
+      else if (invIdUpper.startsWith('JB-') || invType.includes('jahresbeitrag')) tx.suggestedHaben = '3410';
+      else tx.suggestedHaben = '3800';
+    }
+  } else if (!tx.isCredit && !tx.suggestedSoll) {
+    const cachedPos = (window._invoicePositionsCache && window._invoicePositionsCache[String(tx.matchedInvoice?.id).trim()]) || tx.matchedInvoice?.positions;
+    const firstPosKonto = cachedPos && cachedPos.length > 0 ? bhBankCleanKonto(cachedPos[0].konto) : '';
+    if (firstPosKonto) {
+      tx.suggestedSoll = firstPosKonto;
+    }
+  }
+
+  tx._customSollEdited = true;
+  tx._customHabenEdited = true;
+
   if (window._bhBankTransactions && window._bhBankTransactions[txIdx]) {
     window._bhBankTransactions[txIdx].isSplit = false;
     window._bhBankTransactions[txIdx]._customSplitEdited = true;
     delete window._bhBankTransactions[txIdx].splitRows;
+    window._bhBankTransactions[txIdx]._customSollEdited = true;
+    window._bhBankTransactions[txIdx]._customHabenEdited = true;
+    window._bhBankTransactions[txIdx].suggestedSoll = tx.suggestedSoll;
+    window._bhBankTransactions[txIdx].suggestedHaben = tx.suggestedHaben;
   }
 
   const modalEl = document.getElementById('bhBankSplitModal');
