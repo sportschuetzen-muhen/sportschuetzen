@@ -232,15 +232,17 @@ Fehler beim Speichern: insert or update on table "admin_profiles" violates forei
 * **Dropdown- & PIN-Härtung (`app.js`):** Das Login-Dropdown hinterlegt als Options-Wert primär die numerische `person_number`. Die PIN-Prüfung validiert zuerst direkt im speicherresidenten Cache `allUsers` und trennt bei Live-REST-Abfragen strikt zwischen rein numerischen Identifikatoren (`person_number`/`address_number`) und Text-Namen (`first_name`/`last_name`), um PostgreSQL-Syntaxfehler (`invalid input syntax for type integer`) zu verhindern. Zudem gleicht die SSO-Verifikation die Sitzung vorrangig mit dem selektierten Mitglied ab, falls mehrere Testkonten dieselbe E-Mail teilen.
 * **PWA & Hosting Harmonisierung:** Veraltete statische GitHub-Pages-Pfade (`/sportschuetzen/manifest.json`, ServiceWorker Scope) wurden für Cloudflare Pages (`sps-b55.pages.dev`) dynamisiert und Querverweise in der Vereins-Website auf die aktive PWA-URL aktualisiert.
 
-### 9.5 Test-Personas & Berechtigungs-Härtung (Migration 47)
-* **Vier Test-Personen für End-to-End Testing:**
-  1. `1073722` (Daniel Hunziker, `dan.hunziker@hotmail.ch`): Reines Vereinsmitglied (`member`), PIN `125638`. Wird im Vorstandsportal vom Gatekeeper abgewiesen.
-  2. `9999999` (Dan Admin, `dan.hunziker@me.com`): Administrator (`admin`, `vorstand`), PIN `999999`. Voller Zugriff auf alle Module inklusive «Logins».
-  3. `8888888` (Dan Vorstand, `dan.hunziker@bluewin.ch`): Reguläres Vorstandsmitglied (`vorstand`), PIN `888888`. Zugriff auf Vorstandsbereiche, jedoch kein «Logins»-Menü und keine Buchhaltung.
-  4. `7777777` (Dan Kassier, `dan.hunziker@outlook.com`): Kassier (`kassier`, `vorstand`), PIN `777777`. Vollzugriff auf Finanzen, Rechnungen, Buchhaltung und Jahresbeitrag.
-* **Einheitliches Test-Passwort:** Für alle Test-Accounts ist das Initialpasswort `Muhen2026!` in `auth.users` hinterlegt; alternativ funktioniert passwortloser Magic-Link / OTP-Code.
+### 9.5 Test-Personas & Bereinigungs-Abschluss (Migrationen 47 & 99)
+* **Historische Test-Personen für End-to-End Testing (Migration 47):**
+  * `1073722` (Daniel Hunziker): Reales Vereinsmitglied (`member`).
+  * `9999999` (Dan Admin), `8888888` (Dan Vorstand), `7777777` (Dan Kassier): Dienten als dedizierte Rollen-Testkonten während der SSO- und RBAC-Härtung.
+* **Bereinigung & Produktiv-Standard (Migration 99):**
+  * Die Test-Personen `7777777` (Dan Kassier) und `8888888` (Dan Vorstand) sowie deren Auth-Konten (`dan.hunziker@outlook.com`, `dan.hunziker@bluewin.ch`) wurden restlos aus der Datenbank entfernt.
+  * Das Schein-Mitglied `9999999` (Dan Admin) wurde aus `public.members` und allen Fachmodulen gelöscht.
+  * Das Konto `admin` (`dan.hunziker@me.com`) in `public.admin_profiles` wird als reiner technischer System-Administrator ohne Vereinsmitglieder-Referenz geführt (`person_number = NULL`). Es verfügt über uneingeschränkte Superuser-Rechte (`admin`, `vorstand`) und bleibt für Vorstands-Logins verbindlich aktiv.
+* **Einheitliches Test-Passwort:** Für bestehende Accounts ist das Standard-Passwort `Muhen2026!` in `auth.users` hinterlegt; alternativ funktioniert passwortloser Magic-Link / OTP-Code.
 * **Rollen-Merge & Admin-Priorisierung (`vorstand/js/auth.js`):** `applyAuthenticatedUser()` führt Rollen aus `user_roles`, JWT und `admin_profiles.role_external` zusammen. Besitzt ein Benutzer die Rolle `admin`, wird diese zwingend an Position 1 gesetzt, sodass administrative Schutzprüfungen (`data-roles="admin"`) stets positiv ausfallen.
-* **Erweiterte Identifikator-Auflösung (`resolve_login_identifier`):** Prüft in `admin_profiles` neben `username` und `email` auch `display_name` und `person_number`, sodass auch Eingaben von Namen («Dan Admin») sofort korrekt als Admin aufgelöst werden.
+* **Erweiterte Identifikator-Auflösung (`resolve_login_identifier`):** Prüft in `admin_profiles` neben `username` und `email` auch `display_name` und `person_number`. Ist `person_number IS NULL`, wird der System-Admin direkt ohne Mitgliederverknüpfung authentifiziert.
 
 ### 9.6 Vorstands-Routing bei E-Mail-Bestätigung (Magic Link & Passwort-Reset)
 * **Zielgerichteter Redirect-Kontrakt:** Bei Anforderung eines Magic Links (`signInWithOtp`) oder Passwort-Resets (`resetPasswordForEmail`) aus dem Vorstandsportal wird `redirectTo` explizit auf `.../vorstand/index.html?portal=vorstand` gesetzt, um unkontrollierte Redirects auf das Web-App-Stammverzeichnis zu verhindern.

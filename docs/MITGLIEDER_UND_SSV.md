@@ -94,6 +94,10 @@ Die Mitgliederverwaltung ist das zentrale personelle Stammdaten-Rückgrat des ge
      - **Rot:** Personen, die im SSV nicht mehr als aktiv geführt werden (Quellschutz beachten: manuelle Ehren- und Passivmitglieder werden nicht gelöscht).
   3. Beim Anwenden werden Mutationen in `members` und via `ON CONFLICT` in `member_licenses` bzw. `member_functions` eingepflegt und sekundengenau in `member_history` archiviert.
 
+### 5.3 Bereinigung synthetischer Test-Personas (Migration 99)
+* **Reiner Verbandsbestand:** Nach Abschluss der Entwicklungs- und RBAC-Testphase wurden sämtliche synthetischen Testkonten (`7777777` Dan Kassier, `8888888` Dan Vorstand, `9999999` Dan Admin) restlos aus `public.members` und allen Fachmodulen bereinigt.
+* **Invariant:** Die Tabelle `public.members` enthält ausschliesslich reale Vereins- und Verbandsmitglieder (Stand: 84 Personen). Das Login-Konto `admin` wird als rein technischer Administrator in `public.admin_profiles` geführt (`person_number = NULL`) und erzeugt keinen Geister-Eintrag mehr im Mitgliederstamm.
+
 ---
 
 ## 6. Erkenntnisse aus dem SSV-Verbandsdatenbestand & Datenschutz
