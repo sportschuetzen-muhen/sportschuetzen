@@ -2459,7 +2459,336 @@ window.bhSaveJournalEntry = async function(event, printAfter = false, exportXml 
   }
 };
 
-// POST-Request zum Löschen eines Buchungssatzes
+// =====================================================================
+// MODUL-ERKENNUNG & STATUS-RÜCKSETZUNG BEIM LÖSCHEN VON JOURNALZEILEN
+// =====================================================================
+
+/**
+ * Erkennt automatisch verknüpfte Module (Rechnungen, Jahresbeitrag, Vermietung, Inventar),
+ * die mit einer oder mehreren Journalzeilen in Verbindung stehen und als bezahlt markiert sind.
+ * @param {Object|Array} entries Einzelne Journalzeile oder Liste von Split-Zeilen
+ * @returns {Promise<Object>} Erkannte Entitäten und Flag hasLinkedPaid
+ */
+window.bhDetectLinkedModulesForJournal = async function(entries) {
+  const list = Array.isArray(entries) ? entries : [entries];
+  const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+
+  const result = {
+    hasLinkedPaid: false,
+    invoices: [],
+    contributions: [],
+    rentals: [],
+    deposits: [],
+    allBelegs: []
+  };
+
+  if (!list.length || !supa) return result;
+
+  const entryIds = list.map(e => Number(e.id)).filter(id => !isNaN(id) && id > 0);
+  const belegs = new Set();
+  list.forEach(e => {
+    const b = String(e.beleg_nr || '').trim();
+    if (b) {
+      belegs.add(b);
+      const base = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(b) : b.replace(/[a-z]$/i, '');
+      if (base) belegs.add(base);
+    }
+  });
+  result.allBelegs = Array.from(belegs);
+
+  // Rechnungsnummern & Vermietungsnummern aus Buchungstexten parsen (z.B. MV-26-0396, VM-2026-001, RE-2026-0005, V-2026-001)
+  const invIdRegex = /\b((?:MV|VM|RE|INV|DEP|DP|VT|V|JB|RE-JB)-\d{2,4}-[\w-]+)\b/gi;
+  const parsedInvIds = new Set();
+  const rentalNrRegex = /\b(V-\d{4}-\d{3,4})\b/gi;
+  const parsedRentalNrs = new Set();
+
+  list.forEach(e => {
+    const text = String(e.beschreibung || '');
+    let m;
+    while ((m = invIdRegex.exec(text)) !== null) {
+      parsedInvIds.add(m[1].trim());
+    }
+    while ((m = rentalNrRegex.exec(text)) !== null) {
+      parsedRentalNrs.add(m[1].trim());
+    }
+  });
+
+  // 1. invoice_payments nach journal_entry_id oder document_ref durchsuchen
+  const foundInvoiceIds = new Set(parsedInvIds);
+
+  try {
+    const filters = [];
+    if (entryIds.length > 0) {
+      filters.push(`journal_entry_id.in.(${entryIds.join(',')})`);
+    }
+    if (result.allBelegs.length > 0) {
+      filters.push(`document_ref.in.(${result.allBelegs.join(',')})`);
+    }
+    if (filters.length > 0) {
+      const { data: payRows } = await supa.from('invoice_payments')
+        .select('id, invoice_id, journal_entry_id, document_ref')
+        .or(filters.join(','));
+      if (payRows && payRows.length > 0) {
+        payRows.forEach(p => {
+          if (p.invoice_id) foundInvoiceIds.add(String(p.invoice_id));
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [bhDetectLinked] Hinweis bei invoice_payments Abfrage:", err);
+  }
+
+  // 2. Invoices abfragen (nach gefundenen IDs oder Beleg-Referenz)
+  try {
+    const invFilters = [];
+    if (foundInvoiceIds.size > 0) {
+      invFilters.push(`id.in.(${Array.from(foundInvoiceIds).join(',')})`);
+    }
+    if (result.allBelegs.length > 0) {
+      invFilters.push(`document_ref.in.(${result.allBelegs.join(',')})`);
+    }
+    if (invFilters.length > 0) {
+      const { data: invRows } = await supa.from('invoices')
+        .select('id, recipient_name, total_amount, open_amount, status, type, source_module, source_id, document_ref')
+        .or(invFilters.join(','));
+      if (invRows && invRows.length > 0) {
+        invRows.forEach(inv => {
+          result.invoices.push(inv);
+          if (inv.status === 'bezahlt' || inv.status === 'teilbezahlt') {
+            result.hasLinkedPaid = true;
+          }
+          if (inv.source_module === 'vermietung' || String(inv.id).startsWith('VM-') || String(inv.source_id).startsWith('V-')) {
+            parsedRentalNrs.add(inv.source_id || inv.id);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [bhDetectLinked] Hinweis bei invoices Abfrage:", err);
+  }
+
+  // In-Memory Ergänzung falls Rechnungen bereits im Client geladen sind
+  if (window._invoices && Array.isArray(window._invoices)) {
+    window._invoices.forEach(inv => {
+      const matchesId = foundInvoiceIds.has(String(inv.id));
+      const matchesBeleg = inv.document_ref && result.allBelegs.includes(String(inv.document_ref));
+      if ((matchesId || matchesBeleg) && !result.invoices.some(i => String(i.id) === String(inv.id))) {
+        result.invoices.push(inv);
+        if (inv.status === 'bezahlt' || inv.status === 'teilbezahlt') {
+          result.hasLinkedPaid = true;
+        }
+      }
+    });
+  }
+
+  // 3. Jahresbeiträge (contributions_header) prüfen
+  const invIdsForContrib = result.invoices.map(i => i.id);
+  try {
+    const cFilters = [];
+    if (invIdsForContrib.length > 0) {
+      cFilters.push(`invoice_id.in.(${invIdsForContrib.join(',')})`);
+    }
+    if (result.allBelegs.length > 0) {
+      cFilters.push(`document_ref.in.(${result.allBelegs.join(',')})`);
+    }
+    if (cFilters.length > 0) {
+      const { data: cRows } = await supa.from('contributions_header')
+        .select('id, person_number, year, status, gesamt, invoice_id, document_ref')
+        .or(cFilters.join(','));
+      if (cRows && cRows.length > 0) {
+        cRows.forEach(c => {
+          result.contributions.push(c);
+          if (c.status === 'bezahlt') {
+            result.hasLinkedPaid = true;
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [bhDetectLinked] Hinweis bei contributions_header Abfrage:", err);
+  }
+
+  // 4. Vermietungen (rental_requests) prüfen
+  try {
+    const rFilters = [];
+    if (invIdsForContrib.length > 0) {
+      rFilters.push(`invoice_id.in.(${invIdsForContrib.join(',')})`);
+    }
+    if (parsedRentalNrs.size > 0) {
+      rFilters.push(`booking_number.in.(${Array.from(parsedRentalNrs).join(',')})`);
+    }
+    if (rFilters.length > 0) {
+      const { data: rentRows } = await supa.from('rental_requests')
+        .select('id, booking_number, first_name, last_name, status, is_paid, status_raiffeisen, invoice_id')
+        .or(rFilters.join(','));
+      if (rentRows && rentRows.length > 0) {
+        rentRows.forEach(r => {
+          result.rentals.push(r);
+          if (r.status === 'paid' || r.is_paid || r.status_raiffeisen === 'fibu_gebucht') {
+            result.hasLinkedPaid = true;
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [bhDetectLinked] Hinweis bei rental_requests Abfrage:", err);
+  }
+
+  // 5. Inventar-Depots (inventory_deposits) prüfen
+  if (invIdsForContrib.length > 0) {
+    try {
+      const { data: depRows } = await supa.from('inventory_deposits')
+        .select('id, member_id, item_id, category, amount, status, invoice_id')
+        .in('invoice_id', invIdsForContrib);
+      if (depRows && depRows.length > 0) {
+        depRows.forEach(d => {
+          result.deposits.push(d);
+          if (d.status === 'Hinterlegt' || d.status === 'Bezahlt') {
+            result.hasLinkedPaid = true;
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("⚠️ [bhDetectLinked] Hinweis bei inventory_deposits Abfrage:", err);
+    }
+  }
+
+  return result;
+};
+
+/**
+ * Setzt den Status in verknüpften Modulen kaskadierend auf «offen» zurück
+ * @param {Object} linkedInfo Von bhDetectLinkedModulesForJournal ermittelte Verknüpfungen
+ */
+window.bhCascadeResetLinkedModules = async function(linkedInfo) {
+  if (!linkedInfo) return;
+  const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+  if (!supa) return;
+
+  const nowIso = new Date().toISOString();
+
+  // 1. Invoices zurücksetzen
+  if (linkedInfo.invoices && linkedInfo.invoices.length > 0) {
+    for (const inv of linkedInfo.invoices) {
+      try {
+        await supa.from('invoices').update({
+          status: 'offen',
+          open_amount: inv.total_amount || 0,
+          payment_date: null,
+          payment_method: null,
+          document_ref: null,
+          updated_at: nowIso
+        }).eq('id', inv.id);
+
+        // Zahlungen entfernen
+        await supa.from('invoice_payments').delete().eq('invoice_id', inv.id);
+
+        // Lokalen Cache aktualisieren
+        const cachedInv = (window._invoices || []).find(i => String(i.id) === String(inv.id));
+        if (cachedInv) {
+          cachedInv.status = 'offen';
+          cachedInv.open_amount = inv.total_amount || 0;
+          cachedInv.payment_date = null;
+          cachedInv.payment_method = null;
+          cachedInv.document_ref = null;
+        }
+      } catch (e) {
+        console.warn(`⚠️ Fehler beim Zurücksetzen der Rechnung ${inv.id}:`, e);
+      }
+    }
+    if (typeof window.renderRechnungen === 'function') {
+      window.renderRechnungen();
+    }
+  }
+
+  // 2. Jahresbeiträge (contributions_header) zurücksetzen
+  if (linkedInfo.contributions && linkedInfo.contributions.length > 0) {
+    for (const jb of linkedInfo.contributions) {
+      try {
+        await supa.from('contributions_header').update({
+          status: 'offen',
+          payment_date: null,
+          payment_method: null,
+          document_ref: null,
+          updated_at: nowIso
+        }).eq('id', jb.id);
+
+        const cachedJb = (window._jbAllBeitraege || []).find(h => String(h.id) === String(jb.id));
+        if (cachedJb) {
+          cachedJb.status = 'offen';
+          cachedJb.payment_date = null;
+          cachedJb.payment_method = null;
+          cachedJb.document_ref = null;
+        }
+      } catch (e) {
+        console.warn(`⚠️ Fehler beim Zurücksetzen von Jahresbeitrag ${jb.id}:`, e);
+      }
+    }
+  }
+
+  // 3. Vermietung (rental_requests) zurücksetzen
+  if (linkedInfo.rentals && linkedInfo.rentals.length > 0) {
+    for (const r of linkedInfo.rentals) {
+      try {
+        await supa.from('rental_requests').update({
+          status: 'confirmed',
+          is_paid: false,
+          status_raiffeisen: 'offen',
+          datum_raiffeisen: null,
+          kommentar_raiffeisen: 'Zahlungsbuchung im Journal gelöscht, Status auf bestätigt zurückgesetzt',
+          updated_at: nowIso
+        }).eq('id', r.id);
+
+        await supa.from('rental_status_logs').insert([{
+          rental_request_id: r.id,
+          previous_status: r.status,
+          new_status: 'confirmed',
+          comment: 'Zahlung im Journal gelöscht, Status zurückgesetzt',
+          changed_by: 'FIBU Journal'
+        }]);
+      } catch (e) {
+        console.warn(`⚠️ Fehler beim Zurücksetzen der Vermietung ${r.id}:`, e);
+      }
+    }
+  }
+
+  // 4. Inventar-Depots (inventory_deposits) zurücksetzen
+  if (linkedInfo.deposits && linkedInfo.deposits.length > 0) {
+    for (const dep of linkedInfo.deposits) {
+      try {
+        await supa.from('inventory_deposits').update({
+          status: 'Offen',
+          updated_at: nowIso
+        }).eq('id', dep.id);
+      } catch (e) {
+        console.warn(`⚠️ Fehler beim Zurücksetzen von Depot ${dep.id}:`, e);
+      }
+    }
+  }
+
+  // 5. CAMT-Transaktionen im Bankabgleich wieder freigeben (alreadyBooked = false)
+  if (window._bhBankMatchResults && window._bhBankMatchResults.length > 0) {
+    const invIds = (linkedInfo.invoices || []).map(i => String(i.id));
+    const belegs = (linkedInfo.allBelegs || []);
+    window._bhBankMatchResults.forEach(tx => {
+      const matchInvId = tx.matchedInvoice ? String(tx.matchedInvoice.id) : null;
+      const matchBeleg = tx.matchedBeleg ? String(tx.matchedBeleg) : null;
+      if ((matchInvId && invIds.includes(matchInvId)) || (matchBeleg && belegs.includes(matchBeleg))) {
+        tx.alreadyBooked = false;
+        delete tx.bookedDate;
+      }
+    });
+    if (typeof bhBankRenderResults === 'function' && window._bhBankActiveFilter) {
+      bhBankRenderResults(window._bhBankActiveFilter);
+    }
+  }
+};
+
+// =====================================================================
+// LÖSCH-WORKFLOW & ENTSCHEIDUNGS-MODAL
+// =====================================================================
+
+// Einstiegspunkt beim Klick auf den Lösch-Button einer Journalzeile
 window.bhDeleteJournalEntry = async function(entryId) {
   const entry = (window._bhJournal || []).find(j => Number(j.id) === Number(entryId));
   if (!entry) return;
@@ -2471,49 +2800,242 @@ window.bhDeleteJournalEntry = async function(entryId) {
   }) : [];
 
   if (splitSiblings.length > 1) {
-    bhOpenDeleteSplitModal(entry, splitSiblings);
+    await bhOpenDeleteSplitModal(entry, splitSiblings);
     return;
   }
 
-  const conf = confirm(`⚠️ Buchungssatz löschen?\n\nMöchtest du den Buchungssatz (ID: ${entryId}) wirklich unwiderruflich aus dem Journal löschen?\n\nBeleg: ${entry.beleg_nr}\nBetrag: ${typeof fmtChf === 'function' ? fmtChf(entry.betrag) : 'CHF ' + Number(entry.betrag).toFixed(2)}\nText: ${entry.beschreibung}`);
-  if (!conf) return;
-
-  await bhExecuteDeleteJournalDirect(entryId);
+  // Modulverknüpfungen für Einzelbuchung ermitteln
+  const linkedInfo = await bhDetectLinkedModulesForJournal(entry);
+  bhOpenDeleteJournalModal(entry, linkedInfo);
 };
 
-window.bhExecuteDeleteJournalDirect = async function(entryId) {
+/**
+ * Zeigt das Lösch- und Entscheidungsmodal für einen Buchungssatz an
+ */
+window.bhOpenDeleteJournalModal = function(entry, linkedInfo) {
+  let modalEl = document.getElementById('bhModalDeleteJournalEntry');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'bhModalDeleteJournalEntry';
+    modalEl.className = 'modal fade';
+    modalEl.tabIndex = -1;
+    document.body.appendChild(modalEl);
+  }
+
+  window._activeDeleteLinkedInfo = linkedInfo;
+  const hasLinked = linkedInfo && linkedInfo.hasLinkedPaid;
+
+  let linkedModulesHtml = '';
+  if (hasLinked) {
+    const items = [];
+
+    // Rechnungen
+    (linkedInfo.invoices || []).forEach(inv => {
+      const isPaid = inv.status === 'bezahlt' || inv.status === 'teilbezahlt';
+      const badgeCls = isPaid ? 'bg-success' : 'bg-secondary';
+      items.push(`
+        <div class="d-flex align-items-center justify-content-between bg-white p-2.5 rounded-2 border mb-2 shadow-sm">
+          <div>
+            <span class="badge bg-primary me-2"><i class="fas fa-file-invoice me-1"></i>Rechnung</span>
+            <strong>${escapeHtml(inv.id)}</strong> &ndash; ${escapeHtml(inv.recipient_name || '')}
+            <div class="text-muted small">Betrag: ${typeof fmtChf === 'function' ? fmtChf(inv.total_amount) : 'CHF ' + Number(inv.total_amount).toFixed(2)} &bull; Typ: ${escapeHtml(inv.type || inv.source_module || 'Standard')}</div>
+          </div>
+          <span class="badge ${badgeCls} font-monospace px-2.5 py-1.5 fs-7"><i class="fas fa-check-circle me-1"></i>${escapeHtml(inv.status.toUpperCase())}</span>
+        </div>
+      `);
+    });
+
+    // Jahresbeiträge
+    (linkedInfo.contributions || []).forEach(c => {
+      if (c.status === 'bezahlt') {
+        items.push(`
+          <div class="d-flex align-items-center justify-content-between bg-white p-2.5 rounded-2 border mb-2 shadow-sm">
+            <div>
+              <span class="badge bg-warning text-dark me-2"><i class="fas fa-id-card me-1"></i>Jahresbeitrag</span>
+              <strong>Saison ${c.year}</strong> (Mitglied-Nr: ${escapeHtml(c.person_number)})
+              <div class="text-muted small">Beitrag: ${typeof fmtChf === 'function' ? fmtChf(c.gesamt) : 'CHF ' + Number(c.gesamt).toFixed(2)}</div>
+            </div>
+            <span class="badge bg-success font-monospace px-2.5 py-1.5 fs-7"><i class="fas fa-check-circle me-1"></i>BEZAHLT</span>
+          </div>
+        `);
+      }
+    });
+
+    // Vermietungen
+    (linkedInfo.rentals || []).forEach(r => {
+      items.push(`
+        <div class="d-flex align-items-center justify-content-between bg-white p-2.5 rounded-2 border mb-2 shadow-sm">
+          <div>
+            <span class="badge bg-info text-dark me-2"><i class="fas fa-home me-1"></i>Vermietung</span>
+            <strong>${escapeHtml(r.booking_number)}</strong> (${escapeHtml(r.first_name || '')} ${escapeHtml(r.last_name || '')})
+            <div class="text-muted small">Status: ${escapeHtml(r.status)} &bull; Raiffeisen: ${escapeHtml(r.status_raiffeisen || '-')}</div>
+          </div>
+          <span class="badge bg-success font-monospace px-2.5 py-1.5 fs-7"><i class="fas fa-check-circle me-1"></i>GEBUCHT</span>
+        </div>
+      `);
+    });
+
+    // Depots
+    (linkedInfo.deposits || []).forEach(d => {
+      items.push(`
+        <div class="d-flex align-items-center justify-content-between bg-white p-2.5 rounded-2 border mb-2 shadow-sm">
+          <div>
+            <span class="badge bg-secondary me-2"><i class="fas fa-box me-1"></i>Inventar-Depot</span>
+            <strong>${escapeHtml(d.category || d.item_id || 'Depot')}</strong> (Mitglied: ${escapeHtml(d.member_id)})
+            <div class="text-muted small">Hinterlegter Betrag: ${typeof fmtChf === 'function' ? fmtChf(d.amount) : 'CHF ' + Number(d.amount).toFixed(2)}</div>
+          </div>
+          <span class="badge bg-success font-monospace px-2.5 py-1.5 fs-7">${escapeHtml(d.status)}</span>
+        </div>
+      `);
+    });
+
+    linkedModulesHtml = `
+      <div class="alert alert-warning border-2 rounded-3 mb-3 p-3">
+        <div class="d-flex align-items-center mb-2">
+          <i class="fas fa-exclamation-triangle text-warning fs-4 me-2"></i>
+          <div>
+            <strong class="text-dark">Verknüpfte Zahlungen erkannt</strong>
+            <div class="small text-muted">Dieser Buchungssatz steht in direkter Verbindung mit folgenden als bezahlt markierten Datensätzen:</div>
+          </div>
+        </div>
+        <div class="mt-2 mb-2">
+          ${items.join('')}
+        </div>
+        <div class="small text-dark fw-bold mt-2">
+          <i class="fas fa-question-circle me-1 text-primary"></i>Wie möchtest du mit dem Status in den verknüpften Modulen verfahren?
+        </div>
+      </div>
+    `;
+  }
+
+  modalEl.innerHTML = `
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content shadow-lg border-0 rounded-4">
+        <div class="modal-header bg-danger text-white py-3 rounded-top-4 border-0">
+          <h5 class="modal-title fw-bold">
+            <i class="fas fa-trash-alt me-2"></i>Buchungssatz löschen
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <!-- Buchungsdetails -->
+          <div class="card bg-light border-0 rounded-3 mb-3 p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <span class="badge bg-dark font-monospace fs-7 me-1">${escapeHtml(entry.beleg_nr)}</span>
+                <span class="text-muted small ms-1">${escapeHtml(entry.datum)}</span>
+              </div>
+              <span class="fs-5 fw-bold text-danger">${typeof fmtChf === 'function' ? fmtChf(entry.betrag) : 'CHF ' + Number(entry.betrag).toFixed(2)}</span>
+            </div>
+            <div class="fw-semibold text-dark mb-1">${escapeHtml(entry.beschreibung)}</div>
+            <div class="text-muted small font-monospace">
+              Konto Soll: <strong>${escapeHtml(entry.konto_soll)}</strong> &rarr; Haben: <strong>${escapeHtml(entry.konto_haben)}</strong>
+            </div>
+          </div>
+
+          <!-- Verknüpfte Module -->
+          ${linkedModulesHtml}
+
+          ${!hasLinked ? `
+            <p class="text-dark mb-0">
+              Möchtest du diesen Buchungssatz wirklich unwiderruflich aus dem Journal löschen?
+            </p>
+          ` : ''}
+        </div>
+        <div class="modal-footer bg-light flex-wrap gap-2 justify-content-end p-3">
+          <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">
+            Abbrechen
+          </button>
+          ${hasLinked ? `
+            <button type="button" class="btn btn-outline-danger" onclick="bhExecuteDeleteJournalConfirmed(${entry.id}, false)">
+              <i class="fas fa-trash me-1"></i>Nur Journalzeile löschen
+              <div class="text-muted" style="font-size:10px;">Status bleibt «bezahlt»</div>
+            </button>
+            <button type="button" class="btn btn-danger fw-bold shadow-sm" onclick="bhExecuteDeleteJournalConfirmed(${entry.id}, true)">
+              <i class="fas fa-undo-alt me-1.5"></i>Löschen & Status auf «offen» zurücksetzen
+              <span class="badge bg-light text-danger ms-1.5">Empfohlen</span>
+            </button>
+          ` : `
+            <button type="button" class="btn btn-danger fw-bold px-3 shadow-sm" onclick="bhExecuteDeleteJournalConfirmed(${entry.id}, false)">
+              <i class="fas fa-trash-alt me-1.5"></i>Buchungssatz löschen
+            </button>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+};
+
+/**
+ * Führt das Löschen einer Journalzeile mit optionaler Status-Rücksetzung aus
+ */
+window.bhExecuteDeleteJournalConfirmed = async function(entryId, resetStatus) {
+  const modalEl = document.getElementById('bhModalDeleteJournalEntry');
+  if (modalEl) {
+    const bsModal = bootstrap.Modal.getInstance(modalEl);
+    if (bsModal) bsModal.hide();
+  }
+
+  const entry = (window._bhJournal || []).find(j => Number(j.id) === Number(entryId));
+  const linkedInfo = window._activeDeleteLinkedInfo;
+
   try {
-    // 1. Supabase-First Delete
     const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+
+    // 1. Kaskadierende Statusrücksetzung falls gewünscht
+    if (resetStatus && linkedInfo) {
+      await bhCascadeResetLinkedModules(linkedInfo);
+    }
+
+    // 2. Buchung im Journal löschen
     if (supa) {
-      try {
-        await supa.from('accounting_journal').delete().eq('id', Number(entryId));
-      } catch (supaErr) {
-        console.warn("⚠️ Supabase deleteJournalEntry Warning:", supaErr);
+      await supa.from('accounting_journal').delete().eq('id', Number(entryId));
+    }
+
+    // 3. CAMT-Transaktionen freigeben falls Bankbuchung
+    if (entry && window._bhBankMatchResults && window._bhBankMatchResults.length > 0) {
+      const bNr = entry.beleg_nr;
+      window._bhBankMatchResults.forEach(tx => {
+        if (tx.matchedBeleg === bNr) {
+          tx.alreadyBooked = false;
+          delete tx.bookedDate;
+        }
+      });
+      if (typeof bhBankRenderResults === 'function' && window._bhBankActiveFilter) {
+        bhBankRenderResults(window._bhBankActiveFilter);
       }
     }
 
-    // Supabase ist Single Source of Truth
-
-    showSuccess("🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!");
-    
+    // 4. Lokalen State aktualisieren
     window._bhJournal = (window._bhJournal || []).filter(j => Number(j.id) !== Number(entryId));
     recalculateLiveAccountBalances();
     updateAccountingKPIs();
     renderActiveAccountingTab();
-    
+
+    const successMsg = resetStatus 
+      ? '🎉 Buchungssatz gelöscht und Status der verknüpften Rechnungen/Module auf «offen» zurückgesetzt!' 
+      : '🎉 Buchungssatz erfolgreich aus dem Journal gelöscht!';
+    showSuccess(successMsg);
+
     setTimeout(async () => {
-      await loadBuchhaltungData(true, true);
+      if (typeof loadBuchhaltungData === 'function') await loadBuchhaltungData(true, true);
     }, 1500);
   } catch (err) {
-    alert("❌ Fehler beim Löschen der Buchung: " + err.message);
+    alert('❌ Fehler beim Löschen der Buchung: ' + err.message);
   }
 };
 
+window.bhExecuteDeleteJournalDirect = async function(entryId) {
+  await bhExecuteDeleteJournalConfirmed(entryId, false);
+};
+
 // =====================================================================
-// SPLIT-VERBUND: LÖSCH-MODAL & SAMMEL-LÖSCHUNG
+// SPLIT-VERBUND: LÖSCH-MODAL & SAMMEL-LÖSCHUNG MIT STATUS-RÜCKSETZUNG
 // =====================================================================
-window.bhOpenDeleteSplitModal = function(entry, splitSiblings) {
+window.bhOpenDeleteSplitModal = async function(entry, splitSiblings) {
   let modalEl = document.getElementById('bhModalDeleteSplit');
   if (!modalEl) {
     modalEl = document.createElement('div');
@@ -2524,17 +3046,38 @@ window.bhOpenDeleteSplitModal = function(entry, splitSiblings) {
   }
 
   const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(entry.beleg_nr) : entry.beleg_nr;
-  const totalSum = splitSiblings.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
+  const linkedInfo = await bhDetectLinkedModulesForJournal(splitSiblings);
+  window._activeDeleteSplitLinkedInfo = linkedInfo;
 
   const rowsHtml = splitSiblings.map((s, idx) => `
     <tr class="${s.id === entry.id ? 'table-warning fw-bold' : ''}">
       <td class="font-monospace small">${escapeHtml(s.beleg_nr)}</td>
       <td class="small">${escapeHtml(s.beschreibung)}</td>
-      <td class="small text-muted">${s.konto_soll} &rarr; ${s.konto_haben}</td>
+      <td class="small text-muted">${escapeHtml(s.konto_soll)} &rarr; ${escapeHtml(s.konto_haben)}</td>
       <td class="text-end small fw-bold">${typeof fmtChf === 'function' ? fmtChf(s.betrag) : 'CHF ' + Number(s.betrag).toFixed(2)}</td>
       <td class="text-center small">${s.id === entry.id ? '<span class="badge bg-warning text-dark">Ausgewählt</span>' : ''}</td>
     </tr>
   `).join('');
+
+  let linkedNoticeHtml = '';
+  if (linkedInfo.hasLinkedPaid) {
+    const invNames = linkedInfo.invoices.map(i => `${i.id} (${i.recipient_name})`).join(', ');
+    linkedNoticeHtml = `
+      <div class="alert alert-warning py-2.5 px-3 small rounded-3 mb-3 border-2">
+        <div class="d-flex align-items-center mb-1">
+          <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+          <strong>Verknüpfte bezahlte Rechnungen/Module gefunden:</strong>
+        </div>
+        <div class="small mb-2">${escapeHtml(invNames || 'Rechnung verknüpft')}</div>
+        <div class="form-check form-switch p-0 ms-4">
+          <input class="form-check-input" type="checkbox" id="bhSplitResetStatusCheck" checked>
+          <label class="form-check-label fw-bold text-dark small" for="bhSplitResetStatusCheck">
+            Status verknüpfter Rechnungen/Module wieder auf «offen» zurücksetzen (Empfohlen)
+          </label>
+        </div>
+      </div>
+    `;
+  }
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -2568,9 +3111,11 @@ window.bhOpenDeleteSplitModal = function(entry, splitSiblings) {
             </table>
           </div>
 
+          ${linkedNoticeHtml}
+
           <div class="alert alert-warning py-2.5 px-3 small rounded-3 mb-0">
             <i class="fas fa-info-circle me-1"></i>
-            <strong>Empfehlung:</strong> Löschen Sie in der Regel den <strong>gesamten Beleg-Verbund</strong>, um verwaiste Buchungssätze zu vermeiden. Bei Bank-Splits wird die Banktransaktion danach im Bankabgleich wieder zur erneuten Buchung freigegeben.
+            <strong>Empfehlung:</strong> Lösche in der Regel den <strong>gesamten Beleg-Verbund</strong>, um verwaiste Buchungssätze zu vermeiden. Bei Bank-Splits wird die Banktransaktion danach im Bankabgleich wieder zur erneuten Buchung freigegeben.
           </div>
         </div>
         <div class="modal-footer bg-light flex-wrap gap-2">
@@ -2596,11 +3141,18 @@ window.bhExecuteDeleteJournalSingleDirect = async function(entryId) {
     const bsModal = bootstrap.Modal.getInstance(modalEl);
     if (bsModal) bsModal.hide();
   }
-  await bhExecuteDeleteJournalDirect(entryId);
+
+  const resetCheck = document.getElementById('bhSplitResetStatusCheck');
+  const resetStatus = resetCheck ? resetCheck.checked : false;
+
+  await bhExecuteDeleteJournalConfirmed(entryId, resetStatus);
 };
 
 window.bhExecuteDeleteSplitGroup = async function(baseBeleg, year) {
   const modalEl = document.getElementById('bhModalDeleteSplit');
+  const resetCheck = document.getElementById('bhSplitResetStatusCheck');
+  const resetStatus = resetCheck ? resetCheck.checked : false;
+
   if (modalEl) {
     const bsModal = bootstrap.Modal.getInstance(modalEl);
     if (bsModal) bsModal.hide();
@@ -2613,8 +3165,14 @@ window.bhExecuteDeleteSplitGroup = async function(baseBeleg, year) {
   if (siblings.length === 0) return;
 
   try {
-    // 1. Supabase Delete
     const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+
+    // 1. Kaskadierendes Zurücksetzen verknüpfter Module
+    if (resetStatus && window._activeDeleteSplitLinkedInfo) {
+      await bhCascadeResetLinkedModules(window._activeDeleteSplitLinkedInfo);
+    }
+
+    // 2. Supabase Delete aller Siblings
     if (supa) {
       try {
         await supa.from('accounting_journal').delete().in('id', siblings.map(s => Number(s.id)));
@@ -2639,8 +3197,11 @@ window.bhExecuteDeleteSplitGroup = async function(baseBeleg, year) {
       }
     }
 
+    const successMsg = resetStatus
+      ? `🎉 Alle ${siblings.length} Positionen des Belegs ${baseBeleg} gelöscht und Status verknüpfter Rechnungen/Module auf «offen» zurückgesetzt!`
+      : `🎉 Alle ${siblings.length} Positionen des Belegs ${baseBeleg} wurden gelöscht!`;
     if (typeof showSuccess === 'function') {
-      showSuccess(`🎉 Alle ${siblings.length} Positionen des Belegs ${baseBeleg} wurden gelöscht!`);
+      showSuccess(successMsg);
     }
 
     recalculateLiveAccountBalances();
@@ -3031,9 +3592,9 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
 };
 
 // POPUP-MODAL: SICHERHEITSBESTÄTIGUNG FÜR MEHRFACH-LÖSCHUNG IM KASSABUCH-JOURNAL
-window.bhConfirmDeleteSelectedJournalEntries = function() {
+window.bhConfirmDeleteSelectedJournalEntries = async function() {
   if (!window._bhSelectedJournalIds || window._bhSelectedJournalIds.size === 0) {
-    alert("Bitte markieren Sie mindestens einen Buchungssatz zum Löschen.");
+    alert("Bitte markiere mindestens einen Buchungssatz zum Löschen.");
     return;
   }
 
@@ -3042,6 +3603,9 @@ window.bhConfirmDeleteSelectedJournalEntries = function() {
     alert("Keine gültigen Buchungssätze für die ausgewählten IDs gefunden.");
     return;
   }
+
+  const linkedInfo = await bhDetectLinkedModulesForJournal(selectedEntries);
+  window._activeDeleteBatchLinkedInfo = linkedInfo;
 
   let totalAmount = 0;
   selectedEntries.forEach(e => {
@@ -3064,10 +3628,30 @@ window.bhConfirmDeleteSelectedJournalEntries = function() {
       <td class="small" style="white-space: nowrap;">${isoToDisplay(e.datum)}</td>
       <td class="fw-bold small" style="white-space: nowrap;">${escapeHtml(e.beleg_nr)}</td>
       <td class="small text-truncate" style="max-width: 200px;" title="${escapeHtml(e.beschreibung)}">${escapeHtml(e.beschreibung)}</td>
-      <td class="small font-monospace">${e.konto_soll} → ${e.konto_haben}</td>
+      <td class="small font-monospace">${escapeHtml(e.konto_soll)} → ${escapeHtml(e.konto_haben)}</td>
       <td class="text-end fw-bold font-monospace small" style="white-space: nowrap;">${fmtChf(e.betrag)}</td>
     </tr>
   `).join('');
+
+  let batchLinkedNoticeHtml = '';
+  if (linkedInfo.hasLinkedPaid) {
+    const invNames = linkedInfo.invoices.map(i => `${i.id} (${i.recipient_name})`).join(', ');
+    batchLinkedNoticeHtml = `
+      <div class="alert alert-warning py-2.5 px-3 small rounded-3 mb-3 border-2">
+        <div class="d-flex align-items-center mb-1">
+          <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+          <strong>Verknüpfte bezahlte Rechnungen/Module gefunden:</strong>
+        </div>
+        <div class="small mb-2">${escapeHtml(invNames || 'Verknüpfte Datensätze gefunden')}</div>
+        <div class="form-check form-switch p-0 ms-4">
+          <input class="form-check-input" type="checkbox" id="bhBatchResetStatusCheck" checked>
+          <label class="form-check-label fw-bold text-dark small" for="bhBatchResetStatusCheck">
+            Status verknüpfter Rechnungen/Module wieder auf «offen» zurücksetzen (Empfohlen)
+          </label>
+        </div>
+      </div>
+    `;
+  }
 
   modalEl.innerHTML = `
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -3089,6 +3673,8 @@ window.bhConfirmDeleteSelectedJournalEntries = function() {
               </div>
             </div>
           </div>
+
+          ${batchLinkedNoticeHtml}
 
           <div class="card border rounded-3 mb-3">
             <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
@@ -3144,22 +3730,27 @@ window.bhExecuteBatchDeleteJournalEntries = async function() {
   
   if (ids.length === 0) return;
 
+  const resetCheck = document.getElementById('bhBatchResetStatusCheck');
+  const resetStatus = resetCheck ? resetCheck.checked : false;
+
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1.5" role="status" aria-hidden="true"></span>Wird gelöscht...';
   }
 
   try {
-    let success = false;
-    let errorMessage = '';
-
-    // 1. Supabase-First Batch Delete
     const supa = (typeof getBuchhaltungSupabaseClient === 'function') ? getBuchhaltungSupabaseClient() : window.supabaseClient;
+
+    // 1. Kaskadierendes Zurücksetzen verknüpfter Module falls gewünscht
+    if (resetStatus && window._activeDeleteBatchLinkedInfo) {
+      await bhCascadeResetLinkedModules(window._activeDeleteBatchLinkedInfo);
+    }
+
+    // 2. Supabase-First Batch Delete
     if (supa) {
       try {
         const { error: supaDelErr } = await supa.from('accounting_journal').delete().in('id', ids);
         if (supaDelErr) console.warn("⚠️ Supabase batch delete Warning:", supaDelErr.message);
-        else success = true;
       } catch (sErr) {
         console.warn("⚠️ Supabase batch delete Exception:", sErr);
       }
@@ -3184,7 +3775,10 @@ window.bhExecuteBatchDeleteJournalEntries = async function() {
     updateAccountingKPIs();
     renderActiveAccountingTab();
 
-    showSuccess(`🎉 ${ids.length} Buchungssatz/-sätze erfolgreich aus dem Journal gelöscht!`);
+    const successMsg = resetStatus
+      ? `🎉 ${ids.length} Buchungssatz/-sätze gelöscht und Status verknüpfter Rechnungen/Module auf «offen» zurückgesetzt!`
+      : `🎉 ${ids.length} Buchungssatz/-sätze erfolgreich aus dem Journal gelöscht!`;
+    showSuccess(successMsg);
 
     // Im Hintergrund Daten neu synchronisieren
     setTimeout(async () => {
