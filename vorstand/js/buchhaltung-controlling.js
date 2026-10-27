@@ -1741,11 +1741,11 @@ function bhRenderSpartenErfolgsrechnung() {
 
   // 3. Schiessbetrieb 50m
   const s50Ertrag = getBal('3630');
-  const s50Aufwand = getBal('4100') + getBal('4211') + getBal('4420') + getBal('4421') + (getBal('6001') * 0.7);
+  const s50Aufwand = getBal('4100') + getBal('4211') + getBal('4420') + getBal('4421');
 
   // 4. Schiessbetrieb 10m
   const s10Ertrag = 0;
-  const s10Aufwand = getBal('4101') + getBal('4430') + getBal('4431') + (getBal('6001') * 0.3);
+  const s10Aufwand = getBal('4101') + getBal('4430') + getBal('4431');
 
   // 5. Vereinsanlässe
   const anlassErtrag = getBal('3631') + getBal('3632');
@@ -1795,8 +1795,8 @@ function bhRenderSpartenErfolgsrechnung() {
   const sparten = [
     { name: 'Wirtschaft (Stubenbetrieb)', ertragKonti: '3651', ertrag: wirtErtrag, aufwandKonti: '4000-02, 4010 anteilig', aufwand: wirtAufwand },
     { name: 'Schützenhaus-Vermietung', ertragKonti: '3650', ertrag: vermietungErtrag, aufwandKonti: '4011, 4010, 6000, 63xx, 6400 anteilig', aufwand: vermietungAufwand },
-    { name: 'Schiessbetrieb 50m (KK)', ertragKonti: '3630', ertrag: s50Ertrag, aufwandKonti: '4100, 4211, 4420/21, 6001', aufwand: s50Aufwand },
-    { name: 'Schiessbetrieb 10m (LG)', ertragKonti: '–', ertrag: s10Ertrag, aufwandKonti: '4101, 4430/31, 6001', aufwand: s10Aufwand },
+    { name: 'Schiessbetrieb 50m (KK)', ertragKonti: '3630', ertrag: s50Ertrag, aufwandKonti: '4100, 4211, 4420/21', aufwand: s50Aufwand },
+    { name: 'Schiessbetrieb 10m (LG)', ertragKonti: '–', ertrag: s10Ertrag, aufwandKonti: '4101, 4430/31', aufwand: s10Aufwand },
     { name: 'Vereinsanlässe & Feste', ertragKonti: '3631, 3632', ertrag: anlassErtrag, aufwandKonti: '4020, Anteil Wareneinsatz', aufwand: anlassAufwand },
     { name: 'Mitgliederbeiträge', ertragKonti: '3410, 3412, 3413', ertrag: mitgliederErtrag, aufwandKonti: '–', aufwand: mitgliederAufwand },
     { name: 'Verbands- & Lizenzwesen', ertragKonti: '3411, 3421', ertrag: verbandErtrag, aufwandKonti: '4400, 4401, 4410', aufwand: verbandAufwand },
