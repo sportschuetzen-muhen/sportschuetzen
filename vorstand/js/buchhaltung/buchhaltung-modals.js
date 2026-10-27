@@ -1941,11 +1941,11 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
 
   if (isBank) {
     belegType = isEinnahme ? 'Bank-Gutschrift / Einnahme' : 'Bank-Auszahlung / Vergütungsbeleg';
-    paymentMethodLabel = 'Banküberweisung (Konto 1020 Vereinskonto)';
+    paymentMethodLabel = isEinnahme ? 'Bank-Zahlungseingang (Gutschrift auf 1020 Vereinskonto)' : 'Banküberweisung (Auszahlung via 1020 Vereinskonto)';
   } else if (isCash) {
     belegType = isEinnahme ? 'Kassen-Einnahme' : 'Kassen-Auszahlung';
     belegSubTitle = 'Kassabuch &middot; Belegwesen Vereinsrechnung';
-    paymentMethodLabel = 'Barauszahlung / Kasse (1000)';
+    paymentMethodLabel = isEinnahme ? 'Bareinzahlung (Eingang in Kasse 1000)' : 'Barauszahlung (Geld aus Kasse 1000)';
   } else {
     belegType = isEinnahme ? 'Ertragsbeleg' : 'Aufwands- / Umbuchungsbeleg';
     paymentMethodLabel = 'Umbuchung / Verrechnung';
@@ -2150,7 +2150,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
           <i class="fas fa-file-invoice me-1"></i> Beleganzeige: <strong>${escapeHtml(belegType)}</strong> (${escapeHtml(belegNrDisplay)})
         </div>
         <div style="display: flex; gap: 8px;">
-          ${(isBank && recipientData && recipientData.iban) ? `
+          ${(isBank && !isEinnahme && recipientData && recipientData.iban) ? `
             <button type="button" onclick="downloadPain001Xml()" style="background: #198754; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">
               📥 ISO 20022 XML (pain.001) herunterladen
             </button>
@@ -2172,7 +2172,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
         </div>
       </div>
 
-      ${recipientData && recipientData.name ? `
+      ${(!isEinnahme && recipientData && recipientData.name) ? `
       <div class="recipient-box">
         <div>
           <div style="font-size: 10px; text-transform: uppercase; color: #0d6efd; font-weight: bold; margin-bottom: 3px;">Begünstigte Person / Empfänger</div>
@@ -2183,7 +2183,7 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
           ${recipientData.address ? `<div style="font-size: 12px; color: #495057; margin-top: 2px;">${escapeHtml(recipientData.address)}</div>` : ''}
         </div>
         <div style="text-align: right;">
-          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 3px;">Zahlungsweg & Verbindung</div>
+          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 3px;">Zahlungsweg &amp; Verbindung</div>
           ${recipientData.iban ? `
             <div style="font-family: monospace; font-size: 13px; font-weight: bold; color: #0b5ed7;">${escapeHtml(recipientData.iban)}</div>
             <div style="font-size: 11px; color: #6c757d; margin-top: 1px;">${escapeHtml(paymentMethodLabel)}</div>
@@ -2199,6 +2199,12 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
           <div class="meta-label">Belegdatum</div>
           <div class="meta-value">${belegDatum}</div>
         </div>
+        ${(isEinnahme && recipientData && recipientData.name) ? `
+        <div class="meta-item">
+          <div class="meta-label">Zahler / Mitglied</div>
+          <div class="meta-value">${escapeHtml(recipientData.name)}${recipientData.personNumber ? ` <span style="font-size: 11px; font-weight: normal; color: #6c757d; font-family: monospace;">(#${escapeHtml(recipientData.personNumber)})</span>` : ''}</div>
+        </div>
+        ` : ''}
         <div class="meta-item" style="flex: 2;">
           <div class="meta-label">Betreff / Verwendungszweck</div>
           <div class="meta-value">${escapeHtml(title)}</div>
