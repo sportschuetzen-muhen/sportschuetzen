@@ -2684,6 +2684,7 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
     const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
     let sbSuccess = false;
     let createdEntries = [];
+    let lastSbErr = null;
 
     if (sb) {
       try {
@@ -2706,17 +2707,19 @@ async function _bhBankBookOneInternal(txIdx, customBelegNr, isBatch = false) {
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
           console.warn('[Buchhaltung Supabase] Insert failed:', sbErr);
+          lastSbErr = sbErr;
         } else {
           sbSuccess = true;
           createdEntries = sbData || rowsToInsert;
         }
       } catch (err) {
         console.warn('[Buchhaltung Supabase] Insert exception:', err);
+        lastSbErr = err;
       }
     }
 
     if (!sbSuccess) {
-      throw new Error('Fehler beim Buchen im Supabase Journal: Keine Buchung erstellt');
+      throw new Error(lastSbErr?.message || lastSbErr?.details || 'Fehler beim Buchen im Supabase Journal: Keine Buchung erstellt');
     }
 
     // 2. Falls eine Rechnung erkannt wurde: über RechnungsCore als bezahlt verbuchen
@@ -2972,6 +2975,7 @@ window.bhBankBookAll = async function() {
     const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
     let sbBatchSuccess = false;
     let createdBatchEntries = [];
+    let lastSbBatchErr = null;
 
     if (sb) {
       if (allBtn) {
@@ -3002,12 +3006,14 @@ window.bhBankBookAll = async function() {
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
           console.error('[Buchhaltung Supabase] Batch insert error:', sbErr);
+          lastSbBatchErr = sbErr;
         } else {
           sbBatchSuccess = true;
           createdBatchEntries = sbData || rowsToInsert;
         }
       } catch (sbEx) {
         console.error('[Buchhaltung Supabase] Batch insert exception:', sbEx);
+        lastSbBatchErr = sbEx;
       }
     }
 
@@ -3020,7 +3026,7 @@ window.bhBankBookAll = async function() {
     }
 
     if (!sbBatchSuccess) {
-      throw new Error('Fehler beim Sammel-Buchen im Supabase Journal');
+      throw new Error(lastSbBatchErr?.message || lastSbBatchErr?.details || 'Fehler beim Sammel-Buchen im Supabase Journal');
     }
     window._bhJournal = window._bhJournal || [];
     createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
@@ -3140,6 +3146,7 @@ window.bhBankBookAll = async function() {
     (window._bhBankMatchResults || []).forEach(r => {
       if (!r.alreadyBooked) r._isBooking = false;
     });
+    if (typeof bhBankRenderResults === 'function') bhBankRenderResults(window._bhBankActiveFilter);
     if (typeof bhBankUpdateSafeBookingsBtn === 'function') bhBankUpdateSafeBookingsBtn();
     if (typeof bhBankUpdateSelectedBtn === 'function') bhBankUpdateSelectedBtn();
   }
@@ -3250,6 +3257,7 @@ window.bhBankBookSelected = async function() {
     const sb = window.getBuchhaltungSupabaseClient ? window.getBuchhaltungSupabaseClient() : null;
     let sbBatchSuccess = false;
     let createdBatchEntries = [];
+    let lastSbSelErr = null;
 
     if (sb) {
       if (selBtn) {
@@ -3280,12 +3288,14 @@ window.bhBankBookSelected = async function() {
         const { data: sbData, error: sbErr } = await sb.from('accounting_journal').insert(rowsToInsert).select();
         if (sbErr) {
           console.error('[Buchhaltung Supabase] Batch selected insert error:', sbErr);
+          lastSbSelErr = sbErr;
         } else {
           sbBatchSuccess = true;
           createdBatchEntries = sbData || rowsToInsert;
         }
       } catch (sbEx) {
         console.error('[Buchhaltung Supabase] Batch selected insert exception:', sbEx);
+        lastSbSelErr = sbEx;
       }
     }
 
@@ -3298,7 +3308,7 @@ window.bhBankBookSelected = async function() {
     }
 
     if (!sbBatchSuccess) {
-      throw new Error('Fehler beim Sammel-Buchen im Supabase Journal');
+      throw new Error(lastSbSelErr?.message || lastSbSelErr?.details || 'Fehler beim Sammel-Buchen im Supabase Journal');
     }
     window._bhJournal = window._bhJournal || [];
     createdBatchEntries.forEach(entry => window._bhJournal.push(entry));
@@ -3425,6 +3435,7 @@ window.bhBankBookSelected = async function() {
     (window._bhBankMatchResults || []).forEach(r => {
       if (!r.alreadyBooked) r._isBooking = false;
     });
+    if (typeof bhBankRenderResults === 'function') bhBankRenderResults(window._bhBankActiveFilter);
     window.bhBankUpdateSelectedBtn();
     window.bhBankUpdateSafeBookingsBtn();
   }
