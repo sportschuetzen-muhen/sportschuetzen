@@ -96,6 +96,19 @@ Statuswerte folgen systemweit einer strikten Farbsemantik:
 ### 2.4 Einheitliche Du-Kultur (Projekt-Richtlinie 8)
 Im gesamten Vereinsportal (Hilfetexte, Modale, Bestätigungs- und Löschdialoge, Tooltips) werden Benutzer grundsätzlich und ausnahmslos in der **Du-Form** angesprochen («du», «dein», «wähle aus», «trage ein»).
 
+### 2.5 Asynchroner Bestätigungsstandard (`UIConfirmKit` & `window.confirmAsync`)
+Native, blockierende Browser-Popups (`window.confirm`, `window.alert`) sind durch den asynchronen Service `UIConfirmKit` (`vorstand/js/ui-table-kit.js`) abgelöst:
+* **Bestätigungsdialoge:** `const ok = await UIConfirmKit.confirm({ title, message, type: 'danger'|'warning'|'primary', confirmText, cancelText })` liefert ein sauberes `Promise<boolean>`.
+* **Hinweisdialoge:** `await UIConfirmKit.alert({ title, message, type: 'info'|'warning', confirmText })` liefert `Promise<void>`.
+* **Semantik & Barrierefreiheit:** Farbliche Akzente für Gefahrenzonen (Rot/Danger bei Stornierungen oder Löschungen), automatische Tastatursteuerung (`Enter` = Bestätigen, `Escape` = Abbrechen/Schliessen) und dynamisches `#ui-confirm-modal` Singleton.
+* **Globale Schnittstellen:** `window.UIConfirmKit`, `window.confirmAsync`, `window.alertAsync` und `TableKit.Confirm`.
+
+### 2.6 Schweizer Standard-Formatierungen (`UIFormatKit` & `window.UIFormat`)
+Die Formatierung sensibler Finanz- und Personaldaten erfolgt zentral über `UIFormat` (`vorstand/js/ui-table-kit.js`):
+* **Währung (`UIFormat.money`):** `CHF 1'234.50` bzw. `- CHF 50.00` nach Schweizer Norm mit Apostroph als Tausendertrennzeichen (auch rein numerisch ohne Währungskürzel konfigurierbar: `1'234.50`).
+* **Datum & Zeit (`UIFormat.date`, `dateTime`, `time`):** Schweizer Datumsformat `DD.MM.YYYY` (verhindert bei reinen `YYYY-MM-DD`-Werten Zeitzonenverschiebungen) mit optionalem Wochentag (`Di, 27.10.2026`).
+* **Strukturierte Daten (`UIFormat.iban`, `phone`):** IBAN-Gruppierung in 4er-Blöcke (`CH93 0076 ...`) und Schweizer Rufnummern-Normalisierung (`+41 79 123 45 67` oder national `079 123 45 67`).
+
 ---
 
 ## 3. Entkopplung & Zero-Trust Sicherheitsmodell

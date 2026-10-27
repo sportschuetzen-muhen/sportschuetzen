@@ -1,9 +1,9 @@
 # Implementierungsplan: Globale UI-Toolkits & System-Harmonisierung
 
-> **Status:** GEPLANT / IN UMSETZUNG  
-> **Stand:** Oktober 2026  
+> **Status:** IN UMSETZUNG (Phase 1 & 2 produktiv verifiziert)  
+> **Stand:** 27. Oktober 2026  
 > **Gültigkeit:** Verbindlicher Leitfaden für die schrittweise Einführung der globalen Toolkits im Vorstandscockpit (`vorstand/js/`)  
-> **Referenz:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md)
+> **Referenz:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md)  
 
 ---
 
@@ -164,9 +164,11 @@ Ziel ist es:
 
 Zur Einhaltung von Stabilität, Reviewbarkeit und Projekt-Richtlinien wird die Umsetzung in **drei überschaubare Pakete** unterteilt:
 
-1. **Paket A (Fundament & Dialoge):**
+1. **Paket A (Fundament & Dialoge):** ✅ **ABGESCHLOSSEN & VERIFIZIERT**
    - Implementierung von `UIConfirmKit` & `UIFormatKit` in `vorstand/js/ui-table-kit.js`.
-   - Pilot-Anbindung in Rechnungswesen, Jahresbeitrag und Vermietung.
+   - Asynchroner Modal-Confirm (`Promise<boolean>`) und Alert (`Promise<void>`) mit Danger/Warning/Primary/Success Semantik.
+   - Schweizer Währungs-, Datums- (ohne UTC-Shift), Zeit-, IBAN- und Telefonformatierung inklusive Browser- und Node-E2E-Tests.
+   - Globale Verfügbarkeit über `window.UIConfirmKit`, `window.confirmAsync`, `window.alertAsync`, `window.UIFormat` und `TableKit.Format`.
 2. **Paket B (Interaktion & Export):**
    - Implementierung von `UIButtonKit` & `UIExportKit`.
    - Migration der 7 redundant vorliegenden SheetJS-Exporte.

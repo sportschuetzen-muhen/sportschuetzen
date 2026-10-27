@@ -1362,6 +1362,7 @@
   function makeModalMovableAndResizable(modalEl, options = {}) {
     if (typeof modalEl === 'string') modalEl = document.querySelector(modalEl);
     if (!modalEl) return;
+    if (modalEl.id === 'ui-confirm-modal' || modalEl.dataset.noMovable === 'true') return;
     const dialog = modalEl.querySelector('.modal-dialog');
     const content = modalEl.querySelector('.modal-content');
     const header = modalEl.querySelector('.modal-header');
@@ -1609,6 +1610,502 @@
     });
   }
 
+  // ===========================================================================
+  // 9. ASYNCHRONES MODAL-BESTÄTIGUNGS- & ALERT-KIT (UIConfirmKit)
+  // ===========================================================================
+  let confirmModalInstance = null;
+  let confirmModalEl = null;
+
+  function ensureConfirmModalDOM() {
+    if (confirmModalEl && document.body.contains(confirmModalEl)) {
+      return confirmModalEl;
+    }
+    let el = document.getElementById('ui-confirm-modal');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'ui-confirm-modal';
+      el.className = 'modal fade';
+      el.tabIndex = -1;
+      el.setAttribute('aria-hidden', 'true');
+      el.setAttribute('data-bs-backdrop', 'static');
+      el.setAttribute('data-bs-keyboard', 'true');
+      el.dataset.noMovable = 'true';
+      el.style.zIndex = '1095';
+
+      el.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered" style="max-width: 440px;">
+          <div class="modal-content shadow-lg border-0" style="border-radius: 12px; overflow: hidden;">
+            <div class="modal-header border-0 pb-1 pt-3 px-3">
+              <div class="d-flex align-items-center gap-2">
+                <div id="uiConfirmIconWrapper" class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style="width: 36px; height: 36px;">
+                  <i id="uiConfirmIcon" class="fas"></i>
+                </div>
+                <h5 class="modal-title fs-6 fw-bold mb-0 text-dark" id="uiConfirmTitle">Bestätigung</h5>
+              </div>
+              <button type="button" class="btn-close shadow-none" id="uiConfirmCloseBtn" aria-label="Schliessen" style="font-size: 0.8rem;"></button>
+            </div>
+            <div class="modal-body py-2 px-3 text-secondary" id="uiConfirmBody" style="font-size: 0.92rem; line-height: 1.5; padding-left: 56px !important;">
+            </div>
+            <div class="modal-footer border-0 pt-2 pb-3 px-3 gap-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary px-3" id="uiConfirmCancelBtn" style="border-radius: 6px;">Abbrechen</button>
+              <button type="button" class="btn btn-sm px-3 fw-semibold shadow-xs" id="uiConfirmOkBtn" style="border-radius: 6px;">Bestätigen</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(el);
+    }
+    confirmModalEl = el;
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+      confirmModalInstance = bootstrap.Modal.getOrCreateInstance(el, { backdrop: 'static', keyboard: true });
+    }
+    return el;
+  }
+
+  const UIConfirmKit = {
+    /**
+     * Öffnet einen asynchronen Bestätigungsdialog (liefert Promise<boolean>).
+     * @param {Object|string} options
+     * @returns {Promise<boolean>}
+     */
+    confirm(options = {}) {
+      if (typeof options === 'string') {
+        options = { message: options };
+      }
+      return new Promise((resolve) => {
+        const modalEl = ensureConfirmModalDOM();
+        const bsModal = confirmModalInstance || (typeof bootstrap !== 'undefined' && bootstrap.Modal ? bootstrap.Modal.getOrCreateInstance(modalEl) : null);
+
+        const titleEl = modalEl.querySelector('#uiConfirmTitle');
+        const bodyEl = modalEl.querySelector('#uiConfirmBody');
+        const iconWrapper = modalEl.querySelector('#uiConfirmIconWrapper');
+        const iconEl = modalEl.querySelector('#uiConfirmIcon');
+        const cancelBtn = modalEl.querySelector('#uiConfirmCancelBtn');
+        const okBtn = modalEl.querySelector('#uiConfirmOkBtn');
+        const closeBtn = modalEl.querySelector('#uiConfirmCloseBtn');
+
+        const type = options.type || 'primary'; // 'danger' | 'warning' | 'primary' | 'success' | 'info'
+        const title = options.title || (type === 'danger' ? 'Achtung' : 'Bestätigung erforderlich');
+        const message = options.message || options.text || 'Möchtest du diese Aktion wirklich ausführen?';
+        const cancelText = options.cancelText || 'Abbrechen';
+        let defaultOkText = 'Bestätigen';
+        if (type === 'danger') defaultOkText = 'Löschen';
+        if (type === 'success') defaultOkText = 'OK';
+        const confirmText = options.confirmText || options.okText || defaultOkText;
+
+        titleEl.textContent = title;
+        bodyEl.innerHTML = message;
+        cancelBtn.textContent = cancelText;
+        cancelBtn.style.display = '';
+        okBtn.textContent = confirmText;
+
+        // Semantisches Styling
+        okBtn.className = 'btn btn-sm px-3 fw-semibold shadow-xs';
+        if (type === 'danger') {
+          iconWrapper.style.backgroundColor = '#fee2e2';
+          iconWrapper.style.color = '#dc2626';
+          iconEl.className = 'fas fa-exclamation-triangle';
+          okBtn.classList.add('btn-danger', 'text-white');
+        } else if (type === 'warning') {
+          iconWrapper.style.backgroundColor = '#fef3c7';
+          iconWrapper.style.color = '#d97706';
+          iconEl.className = 'fas fa-exclamation-circle';
+          okBtn.classList.add('btn-warning', 'text-dark');
+        } else if (type === 'success') {
+          iconWrapper.style.backgroundColor = '#dcfce7';
+          iconWrapper.style.color = '#16a34a';
+          iconEl.className = 'fas fa-check-circle';
+          okBtn.classList.add('btn-success', 'text-white');
+        } else if (type === 'info') {
+          iconWrapper.style.backgroundColor = '#e0f2fe';
+          iconWrapper.style.color = '#0284c7';
+          iconEl.className = 'fas fa-info-circle';
+          okBtn.classList.add('btn-primary', 'text-white');
+        } else {
+          // 'primary'
+          iconWrapper.style.backgroundColor = '#dbeafe';
+          iconWrapper.style.color = '#2563eb';
+          iconEl.className = 'fas fa-question-circle';
+          okBtn.classList.add('btn-primary', 'text-white');
+        }
+
+        if (options.confirmBtnClass) {
+          okBtn.className = options.confirmBtnClass;
+        }
+
+        let resolved = false;
+
+        function cleanup() {
+          okBtn.removeEventListener('click', onOk);
+          cancelBtn.removeEventListener('click', onCancel);
+          closeBtn.removeEventListener('click', onCancel);
+          modalEl.removeEventListener('hidden.bs.modal', onHidden);
+          modalEl.removeEventListener('shown.bs.modal', onShown);
+        }
+
+        function onOk() {
+          resolved = true;
+          cleanup();
+          if (bsModal) bsModal.hide();
+          resolve(true);
+        }
+
+        function onCancel() {
+          resolved = true;
+          cleanup();
+          if (bsModal) bsModal.hide();
+          resolve(false);
+        }
+
+        function onHidden() {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve(false);
+          }
+        }
+
+        function onShown() {
+          if (options.focusCancel) {
+            cancelBtn.focus();
+          } else {
+            okBtn.focus();
+          }
+        }
+
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        closeBtn.addEventListener('click', onCancel);
+        modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
+        modalEl.addEventListener('shown.bs.modal', onShown, { once: true });
+
+        if (bsModal) {
+          bsModal.show();
+        } else {
+          const ok = window.confirm(message.replace(/<[^>]*>?/gm, ''));
+          resolve(ok);
+        }
+      });
+    },
+
+    /**
+     * Öffnet einen asynchronen Hinweisdialog (liefert Promise<void>).
+     * @param {Object|string} options
+     * @returns {Promise<void>}
+     */
+    alert(options = {}) {
+      if (typeof options === 'string') {
+        options = { message: options };
+      }
+      return new Promise((resolve) => {
+        const modalEl = ensureConfirmModalDOM();
+        const bsModal = confirmModalInstance || (typeof bootstrap !== 'undefined' && bootstrap.Modal ? bootstrap.Modal.getOrCreateInstance(modalEl) : null);
+
+        const titleEl = modalEl.querySelector('#uiConfirmTitle');
+        const bodyEl = modalEl.querySelector('#uiConfirmBody');
+        const iconWrapper = modalEl.querySelector('#uiConfirmIconWrapper');
+        const iconEl = modalEl.querySelector('#uiConfirmIcon');
+        const cancelBtn = modalEl.querySelector('#uiConfirmCancelBtn');
+        const okBtn = modalEl.querySelector('#uiConfirmOkBtn');
+        const closeBtn = modalEl.querySelector('#uiConfirmCloseBtn');
+
+        const type = options.type || 'info';
+        const title = options.title || (type === 'danger' ? 'Fehler' : (type === 'warning' ? 'Hinweis' : 'Information'));
+        const message = options.message || options.text || '';
+        const confirmText = options.confirmText || options.okText || 'Verstanden';
+
+        titleEl.textContent = title;
+        bodyEl.innerHTML = message;
+        cancelBtn.style.display = 'none';
+        okBtn.textContent = confirmText;
+
+        okBtn.className = 'btn btn-sm px-3 fw-semibold shadow-xs';
+        if (type === 'danger') {
+          iconWrapper.style.backgroundColor = '#fee2e2';
+          iconWrapper.style.color = '#dc2626';
+          iconEl.className = 'fas fa-exclamation-triangle';
+          okBtn.classList.add('btn-danger', 'text-white');
+        } else if (type === 'warning') {
+          iconWrapper.style.backgroundColor = '#fef3c7';
+          iconWrapper.style.color = '#d97706';
+          iconEl.className = 'fas fa-exclamation-circle';
+          okBtn.classList.add('btn-warning', 'text-dark');
+        } else if (type === 'success') {
+          iconWrapper.style.backgroundColor = '#dcfce7';
+          iconWrapper.style.color = '#16a34a';
+          iconEl.className = 'fas fa-check-circle';
+          okBtn.classList.add('btn-success', 'text-white');
+        } else {
+          iconWrapper.style.backgroundColor = '#e0f2fe';
+          iconWrapper.style.color = '#0284c7';
+          iconEl.className = 'fas fa-info-circle';
+          okBtn.classList.add('btn-primary', 'text-white');
+        }
+
+        if (options.confirmBtnClass) {
+          okBtn.className = options.confirmBtnClass;
+        }
+
+        let resolved = false;
+
+        function cleanup() {
+          okBtn.removeEventListener('click', onDismiss);
+          closeBtn.removeEventListener('click', onDismiss);
+          modalEl.removeEventListener('hidden.bs.modal', onHidden);
+          modalEl.removeEventListener('shown.bs.modal', onShown);
+        }
+
+        function onDismiss() {
+          resolved = true;
+          cleanup();
+          if (bsModal) bsModal.hide();
+          resolve();
+        }
+
+        function onHidden() {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve();
+          }
+        }
+
+        function onShown() {
+          okBtn.focus();
+        }
+
+        okBtn.addEventListener('click', onDismiss);
+        closeBtn.addEventListener('click', onDismiss);
+        modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
+        modalEl.addEventListener('shown.bs.modal', onShown, { once: true });
+
+        if (bsModal) {
+          bsModal.show();
+        } else {
+          window.alert(message.replace(/<[^>]*>?/gm, ''));
+          resolve();
+        }
+      });
+    }
+  };
+
+  // ===========================================================================
+  // 10. SCHWEIZER STANDARD-FORMATIERUNGEN (UIFormatKit)
+  // ===========================================================================
+  const UIFormat = {
+    /**
+     * Formatiert Währungsbeträge nach Schweizer Standard:
+     * - "CHF 1'234.50" (Standard)
+     * - "1'234.50" (symbol: false)
+     * - "- CHF 50.00" bzw. "-50.00"
+     * @param {number|string} val
+     * @param {Object} options
+     * @returns {string}
+     */
+    money(val, options = {}) {
+      const fallback = (options.fallback !== undefined) ? options.fallback : '-';
+      if (val === null || val === undefined || val === '') return fallback;
+
+      const num = Number(val);
+      if (isNaN(num)) return fallback;
+
+      const decimals = (options.decimals !== undefined) ? options.decimals : 2;
+      const showSymbol = options.symbol !== false;
+      const currency = options.currency || 'CHF';
+      const isNeg = num < 0;
+
+      const absVal = Math.abs(num);
+      const fixed = absVal.toFixed(decimals);
+      const parts = fixed.split('.');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+      const numStr = parts.join('.');
+
+      if (isNeg) {
+        return showSymbol ? `- ${currency} ${numStr}` : `-${numStr}`;
+      }
+      return showSymbol ? `${currency} ${numStr}` : numStr;
+    },
+
+    /**
+     * Formatiert Datum nach Schweizer Norm: DD.MM.YYYY
+     * Verhindert bei reinen Datumswerten (YYYY-MM-DD) Zeitzonenverschiebungen.
+     * @param {string|Date} val
+     * @param {Object} options
+     * @returns {string}
+     */
+    date(val, options = {}) {
+      const fallback = (options.fallback !== undefined) ? options.fallback : '-';
+      if (!val) return fallback;
+
+      const str = String(val).trim();
+      if (!str) return fallback;
+
+      // 1. Reines Datum (YYYY-MM-DD) ohne Zeitzone splitten (verhindert Verschiebung durch UTC)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [y, m, d] = str.split('-');
+        if (options.weekday) {
+          const dt = new Date(Number(y), Number(m) - 1, Number(d));
+          const wd = dt.toLocaleDateString('de-CH', { weekday: options.weekdayFormat || 'short' });
+          return `${wd}, ${d}.${m}.${y}`;
+        }
+        return `${d}.${m}.${y}`;
+      }
+
+      // 2. Schweizer Format (bereits DD.MM.YYYY oder D.M.YYYY)
+      const dmy = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+      if (dmy) {
+        const d = dmy[1].padStart(2, '0');
+        const m = dmy[2].padStart(2, '0');
+        const y = dmy[3];
+        if (options.weekday) {
+          const dt = new Date(Number(y), Number(m) - 1, Number(d));
+          const wd = dt.toLocaleDateString('de-CH', { weekday: options.weekdayFormat || 'short' });
+          return `${wd}, ${d}.${m}.${y}`;
+        }
+        return `${d}.${m}.${y}`;
+      }
+
+      // 3. ISO-String oder Date
+      const d = (val instanceof Date) ? val : new Date(str);
+      if (isNaN(d.getTime())) return fallback;
+
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+
+      if (options.weekday) {
+        const wd = d.toLocaleDateString('de-CH', { weekday: options.weekdayFormat || 'short' });
+        return `${wd}, ${day}.${month}.${year}`;
+      }
+      return `${day}.${month}.${year}`;
+    },
+
+    /**
+     * Formatiert Datum und Uhrzeit: DD.MM.YYYY, HH:mm (bzw. :ss)
+     * @param {string|Date} val
+     * @param {Object} options
+     * @returns {string}
+     */
+    dateTime(val, options = {}) {
+      const fallback = (options.fallback !== undefined) ? options.fallback : '-';
+      if (!val) return fallback;
+
+      const d = (val instanceof Date) ? val : new Date(String(val).trim());
+      if (isNaN(d.getTime())) return fallback;
+
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+
+      if (options.seconds) {
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        return `${day}.${month}.${year}, ${hours}:${minutes}:${seconds}`;
+      }
+      return `${day}.${month}.${year}, ${hours}:${minutes}`;
+    },
+
+    /**
+     * Formatiert eine Uhrzeit: HH:mm (bzw. :ss)
+     * @param {string|Date} val
+     * @param {Object} options
+     * @returns {string}
+     */
+    time(val, options = {}) {
+      const fallback = (options.fallback !== undefined) ? options.fallback : '-';
+      if (!val) return fallback;
+
+      const str = String(val).trim();
+      const timeMatch = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (timeMatch) {
+        const hh = timeMatch[1].padStart(2, '0');
+        const mm = timeMatch[2];
+        if (options.seconds && timeMatch[3]) {
+          return `${hh}:${mm}:${timeMatch[3]}`;
+        }
+        return `${hh}:${mm}`;
+      }
+
+      const d = (val instanceof Date) ? val : new Date(str);
+      if (!isNaN(d.getTime())) {
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        if (options.seconds) {
+          const seconds = String(d.getSeconds()).padStart(2, '0');
+          return `${hours}:${minutes}:${seconds}`;
+        }
+        return `${hours}:${minutes}`;
+      }
+
+      return fallback;
+    },
+
+    /**
+     * Formatiert IBAN in 4-stellige Blöcke: CH93 0076 2011 6238 5295 7
+     * @param {string} val
+     * @param {Object} options
+     * @returns {string}
+     */
+    iban(val, options = {}) {
+      const fallback = (options.fallback !== undefined) ? options.fallback : '-';
+      if (!val) return fallback;
+
+      const clean = String(val).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (!clean) return fallback;
+
+      return clean.replace(/(.{4})/g, '$1 ').trim();
+    },
+
+    /**
+     * Formatiert Telefonnummern nach Schweizer Standard (+41 79 123 45 67 oder 079 123 45 67)
+     * @param {string} val
+     * @param {Object} options
+     * @returns {string}
+     */
+    phone(val, options = {}) {
+      const fallback = (options.fallback !== undefined) ? options.fallback : '-';
+      if (!val) return fallback;
+
+      const raw = String(val).trim();
+      if (!raw) return fallback;
+
+      const isIntl = options.format !== 'national'; // Default: international
+      const hasPlus = raw.startsWith('+');
+      let digits = raw.replace(/\D/g, '');
+      if (!digits) return fallback;
+
+      // Vorwahlen normalisieren
+      if (digits.startsWith('0041')) {
+        digits = '41' + digits.slice(4);
+      } else if (digits.startsWith('0') && !hasPlus) {
+        digits = '41' + digits.slice(1);
+      } else if (!hasPlus && !digits.startsWith('41') && digits.length === 9) {
+        digits = '41' + digits;
+      }
+
+      // Schweizer Mobil- oder Festnetznummer (41 + 9 Ziffern = 11 Stellen)
+      if (digits.startsWith('41') && digits.length === 11) {
+        const area = digits.slice(2, 4);
+        const p1 = digits.slice(4, 7);
+        const p2 = digits.slice(7, 9);
+        const p3 = digits.slice(9, 11);
+
+        if (isIntl) {
+          return `+41 ${area} ${p1} ${p2} ${p3}`;
+        } else {
+          return `0${area} ${p1} ${p2} ${p3}`;
+        }
+      }
+
+      // Fallback für andere Längen / Auslandsnummern
+      if (hasPlus) {
+        return '+' + digits.replace(/(\d{3})(?=\d)/g, '$1 ');
+      }
+      return raw;
+    }
+  };
+
   // Globale Registrierung
   window.TableKit = {
     makeSortable,
@@ -1625,6 +2122,8 @@
     formatKontoSearch: (konto, bezeichnung) => cleanKontoDisplay(konto, bezeichnung).display,
     setupDraggableModal: makeModalMovableAndResizable,
     SaveButton: window.SaveButtonKit || null,
+    Confirm: UIConfirmKit,
+    Format: UIFormat,
     ensureStyles
   };
 
@@ -1634,5 +2133,17 @@
     makeMovableAndResizable: makeModalMovableAndResizable
   };
 
-  console.log('✅ TableKit & UIModalKit Standard geladen (Sportschützen Muhen UI Toolkit)');
+  window.UIConfirmKit = UIConfirmKit;
+  window.confirmAsync = UIConfirmKit.confirm;
+  window.alertAsync = UIConfirmKit.alert;
+
+  window.UIFormat = UIFormat;
+  window.UIFormatKit = UIFormat;
+  window.formatSwissMoney = UIFormat.money;
+  if (!window.formatSwissDate) {
+    window.formatSwissDate = UIFormat.date;
+  }
+
+  console.log('✅ TableKit, UIModalKit, UIConfirmKit & UIFormatKit Standard geladen (Sportschützen Muhen UI Toolkit)');
 })();
+
