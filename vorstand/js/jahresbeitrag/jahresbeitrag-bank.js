@@ -204,15 +204,15 @@ function jbBankRenderResults(filter) {
 
     return `
       <tr class="${rowBg}"${opacity}>
-        <td class="text-muted small">${r.bookingDate || ''}</td>
-        <td><span class="fw-semibold">${escHtml(r.debtorName || '')}</span><br>
+        <td class="text-muted small" data-col-id="date">${r.bookingDate || ''}</td>
+        <td data-col-id="debtor"><span class="fw-semibold">${escHtml(r.debtorName || '')}</span><br>
             <small class="text-muted">${escHtml(r.debtorCity || '')} · ${escHtml(r.debtorPostCode || '')}</small>
         </td>
-        <td class="text-end fw-bold">CHF ${Number(r.amount || 0).toFixed(2)}</td>
-        <td><small class="text-muted" style="font-size:11px;">${escHtml((r.remittanceInfo || '').substring(0, 60))}${r.remittanceInfo && r.remittanceInfo.length > 60 ? '…' : ''}</small></td>
-        <td>${badge}</td>
-        <td>${memberInfo}</td>
-        ${canEdit ? `<td>${actionBtn}</td>` : ''}
+        <td class="text-end fw-bold" data-col-id="amount">CHF ${Number(r.amount || 0).toFixed(2)}</td>
+        <td data-col-id="purpose"><small class="text-muted" style="font-size:11px;">${escHtml((r.remittanceInfo || '').substring(0, 60))}${r.remittanceInfo && r.remittanceInfo.length > 60 ? '…' : ''}</small></td>
+        <td data-col-id="status">${badge}</td>
+        <td data-col-id="matched">${memberInfo}</td>
+        ${canEdit ? `<td class="text-end" data-col-id="actions">${actionBtn}</td>` : ''}
       </tr>
     `;
   }).join('');
@@ -237,9 +237,11 @@ function jbBankRenderResults(filter) {
     <div class="text-muted small mt-2 px-1">${filtered.length} von ${rows.length} Buchungen angezeigt</div>
   `;
 
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#jbBankTransactionsTable', {
-      storageKey: 'jb_bank_tx_col_widths',
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window.TableKit.initTable('#jbBankTransactionsTable', {
+      id: 'jb_bank_tx',
+      storageKeyWidths: 'jb_bank_tx_col_widths',
+      reorderable: false,
       minWidth: 50
     });
   }

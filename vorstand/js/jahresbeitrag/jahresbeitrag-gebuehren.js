@@ -461,26 +461,26 @@ function jbRenderGebuehrenTable() {
 
     return `
       <tr class="${isAktiv ? '' : 'table-light opacity-75'}">
-        <td class="tk-col-key"><strong class="font-monospace text-primary">${k}</strong></td>
-        <td class="tk-col-kategorie"><span class="badge bg-light text-secondary border">${f.kategorie || '–'}</span></td>
-        <td class="tk-col-zielgruppe">${zgBadge}</td>
-        <td class="tk-col-bezeichnung">
+        <td class="tk-col-key" data-col-id="key"><strong class="font-monospace text-primary">${k}</strong></td>
+        <td class="tk-col-kategorie" data-col-id="kategorie"><span class="badge bg-light text-secondary border">${f.kategorie || '–'}</span></td>
+        <td class="tk-col-zielgruppe" data-col-id="zielgruppe">${zgBadge}</td>
+        <td class="tk-col-bezeichnung" data-col-id="bezeichnung">
           <div class="fw-semibold text-dark">${f.bezeichnungfrontend || f.bezeichnung || '–'}</div>
           ${f.bezeichnung && f.bezeichnung !== f.bezeichnungfrontend ? `<div class="text-muted small" style="font-size:10px;">${f.bezeichnung}</div>` : ''}
         </td>
-        <td class="tk-col-betrag text-end fw-bold text-dark">CHF ${Number(f.betrag || 0).toFixed(2)}</td>
-        <td class="tk-col-konto">
+        <td class="tk-col-betrag text-end fw-bold text-dark" data-col-id="betrag">CHF ${Number(f.betrag || 0).toFixed(2)}</td>
+        <td class="tk-col-konto" data-col-id="konto">
           <span class="badge bg-light text-dark border font-monospace">${konto}</span>
           ${kontoBezeichnung ? `<div class="text-muted small" style="font-size:10px;">${escHtml(kontoBezeichnung)}</div>` : ''}
         </td>
-        <td class="tk-col-ui_gruppe"><small class="text-secondary">${f.ui_gruppe || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
-        <td class="tk-col-ui_feld"><small class="text-dark">${f.ui_feld || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
-        <td class="tk-col-ui_typ">${typBadge}</td>
-        <td class="tk-col-sort text-center small">${f.ui_sort !== undefined && f.ui_sort !== '' ? f.ui_sort : '–'}</td>
-        <td class="tk-col-aktiv text-center">
+        <td class="tk-col-ui_gruppe" data-col-id="ui_gruppe"><small class="text-secondary">${f.ui_gruppe || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
+        <td class="tk-col-ui_feld" data-col-id="ui_feld"><small class="text-dark">${f.ui_feld || '<span class="text-muted fst-italic">Auto</span>'}</small></td>
+        <td class="tk-col-ui_typ" data-col-id="ui_typ">${typBadge}</td>
+        <td class="tk-col-sort text-center small" data-col-id="sort">${f.ui_sort !== undefined && f.ui_sort !== '' ? f.ui_sort : '–'}</td>
+        <td class="tk-col-aktiv text-center" data-col-id="aktiv">
           <i class="fas ${isAktiv ? 'fa-check-circle text-success' : 'fa-times-circle text-danger'}"></i>
         </td>
-        <td class="tk-col-actions text-end">
+        <td class="tk-col-actions text-end" data-col-id="actions">
           <button class="btn btn-xs btn-outline-primary py-1 px-2 rounded" onclick="jbOpenEditGebuehrModal('${k}')" title="Gebühr bearbeiten">
             <i class="fas fa-edit"></i>
           </button>
@@ -489,16 +489,14 @@ function jbRenderGebuehrenTable() {
     `;
   }).join('');
 
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#jbGebuehrenTable', {
-      storageKey: 'jb_gebuehren_table_col_widths',
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window.TableKit.initTable('#jbGebuehrenTable', {
+      id: 'jb_gebuehren',
+      storageKeyWidths: 'jb_gebuehren_table_col_widths',
+      storageKeyCols: 'jb_gebuehren_table_cols',
+      reorderable: false,
+      columnToggle: document.getElementById('jbGebuehrenColToggleContainer') ? '#jbGebuehrenColToggleContainer' : null,
       minWidth: 40
-    });
-  }
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbGebuehrenColToggleContainer')) {
-    window.TableKit.setupColumnToggle('#jbGebuehrenTable', {
-      container: '#jbGebuehrenColToggleContainer',
-      storageKey: 'jb_gebuehren_table_cols'
     });
   }
 }

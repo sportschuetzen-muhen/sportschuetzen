@@ -198,40 +198,24 @@ function initTableKitForLogins(tab) {
   const tableEl = document.querySelector(tableSelector);
   if (!tableEl) return;
 
-  // 1. Spalten-Reihenfolge per Drag & Drop
-  if (typeof window.TableKit.makeColumnReorderable === 'function') {
-    const colReorder = window.TableKit.makeColumnReorderable(tableSelector, {
-      storageKey: `tk_order_${tab}`,
-      lockedColumns: ['actions']
-    });
-    if (colReorder && typeof colReorder.apply === 'function') {
-      colReorder.apply();
-    }
-  }
-
-  // 2. Spalten-Sichtbarkeit per Dropdown
-  if (typeof window.TableKit.setupColumnToggle === 'function') {
-    window.TableKit.setupColumnToggle(tableSelector, {
-      container: '#logins-col-toggle-container',
-      storageKey: `tk_cols_${tab}`
-    });
-  }
-
-  // 3. Spaltenbreiten verändern
-  if (typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable(tableSelector, {
-      storageKey: `tk_widths_${tab}`
-    });
-  }
-
-  // 3. Spalten-Sortierung
-  if (typeof window.TableKit.makeSortable === 'function') {
-    window.TableKit.makeSortable(tableEl, {
-      onSort: (colId, dir) => {
-        if (LoginsState.sortKey[tab] === colId) {
-          LoginsState.sortDir[tab] = dir === 'desc' ? -1 : 1;
+  if (typeof window.TableKit.initTable === 'function') {
+    window.TableKit.initTable(tableSelector, {
+      id: tab,
+      storageKeyWidths: `tk_widths_${tab}`,
+      storageKeyOrder: `tk_order_${tab}`,
+      storageKeyCols: `tk_cols_${tab}`,
+      resizable: true,
+      reorderable: {
+        lockedColumns: ['actions']
+      },
+      sortable: {
+        onSort: (colId, dir) => {
+          if (LoginsState.sortKey[tab] === colId) {
+            LoginsState.sortDir[tab] = dir === 'desc' ? -1 : 1;
+          }
         }
-      }
+      },
+      columnToggle: '#logins-col-toggle-container'
     });
   }
 }

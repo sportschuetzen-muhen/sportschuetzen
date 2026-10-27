@@ -549,7 +549,7 @@ function jbRenderRows(data) {
     const isSent = effStatus === 'versendet';
 
     return `<tr class="${rowBg}" ${rowStyle}>
-      <td class="align-middle py-2 tk-col-name">
+      <td class="align-middle py-2 tk-col-name" data-col-id="name">
         <a href="#" class="text-decoration-none fw-semibold ${isOffen ? 'text-primary' : 'text-secondary'}"
            onclick="jbShowPositionen('${r.id}'); return false;">${name}</a>
         <div class="text-muted small" style="font-size: 11px;">
@@ -557,14 +557,14 @@ function jbRenderRows(data) {
           ${r.invoiceId ? `· <span class="font-monospace text-primary">${r.invoiceId}</span>` : ''}
         </div>
       </td>
-      <td class="align-middle tk-col-kat">${katHtml}</td>
-      <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'} tk-col-gesamt" style="font-size: 14px;">${fmtChf(r.Gesamt)}</td>
-      <td class="align-middle tk-col-status">${statusHtml}</td>
-      <td class="small align-middle tk-col-date">${fmtDate(r.payment_date)}</td>
-      <td class="align-middle tk-col-method">${methodHtml}</td>
-      <td class="small align-middle text-muted tk-col-beleg">${r.document_ref || '–'}</td>
+      <td class="align-middle tk-col-kat" data-col-id="kat">${katHtml}</td>
+      <td class="text-end fw-bold align-middle pe-4 ${isOffen ? 'text-danger' : 'text-muted'} tk-col-gesamt" data-col-id="gesamt" style="font-size: 14px;">${fmtChf(r.Gesamt)}</td>
+      <td class="align-middle tk-col-status" data-col-id="status">${statusHtml}</td>
+      <td class="small align-middle tk-col-date" data-col-id="date">${fmtDate(r.payment_date)}</td>
+      <td class="align-middle tk-col-method" data-col-id="method">${methodHtml}</td>
+      <td class="small align-middle text-muted tk-col-beleg" data-col-id="beleg">${r.document_ref || '–'}</td>
       ${canEdit ? `
-      <td class="align-middle text-end tk-col-actions">
+      <td class="align-middle text-end tk-col-actions" data-col-id="actions">
         <div class="d-inline-flex gap-1">
           <!-- 0. IN SCHNELLERFASSUNG BEARBEITEN -->
           <button class="btn btn-xs btn-outline-primary btn-sm py-1 px-2.5 rounded-2 d-flex align-items-center justify-content-center"
@@ -611,29 +611,20 @@ function jbRenderRows(data) {
   document.getElementById('jbCount').textContent =
     `${data.length} Einträge · ${openCount} offen`;
 
-  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
-    window._jbOverviewColReorder = window.TableKit.makeColumnReorderable('#jbTable', {
-      storageKey: 'jb_overview_col_order',
-      lockedColumns: ['actions']
-    });
-    if (window._jbOverviewColReorder && typeof window._jbOverviewColReorder.apply === 'function') {
-      window._jbOverviewColReorder.apply();
-    }
-  }
-
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#jbTable', {
-      storageKey: 'jb_overview_col_widths',
-      minWidth: 50,
-      columns: {
-        actions: { minWidth: 100, defaultWidth: 140 }
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._jbOverviewTableCtrl = window.TableKit.initTable('#jbTable', {
+      id: 'jb_overview',
+      storageKeyOrder: 'jb_overview_col_order',
+      storageKeyWidths: 'jb_overview_col_widths',
+      storageKeyCols: 'portal_jb_overview_cols',
+      lockedColumns: ['actions'],
+      columnToggle: document.getElementById('jbTableColToggleContainer') ? '#jbTableColToggleContainer' : null,
+      resizable: {
+        minWidth: 50,
+        columns: {
+          actions: { minWidth: 100, defaultWidth: 140 }
+        }
       }
-    });
-  }
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbTableColToggleContainer')) {
-    window._jbOverviewColToggle = window.TableKit.setupColumnToggle('#jbTable', {
-      container: '#jbTableColToggleContainer',
-      storageKey: 'portal_jb_overview_cols'
     });
   }
 }

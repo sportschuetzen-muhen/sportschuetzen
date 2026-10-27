@@ -277,17 +277,17 @@ function renderStandardStichTableView(stich, canEdit) {
 
                             return `
                                 <tr data-id="${s.id}" data-score-id="${s.id}" class="${isTop3 ? 'table-warning-subtle' : ''}">
-                                    <td class="text-center fw-bold" data-cell="rang">
+                                    <td class="text-center fw-bold" data-col-id="rang" data-cell="rang">
                                         <span class="badge ${badgeColor} rounded-pill px-2 py-1">${s.rang_total || (idx + 1)}</span>
                                     </td>
-                                    <td data-cell="name">
+                                    <td data-col-id="name" data-cell="name">
                                         <div class="fw-semibold text-dark">${escapeHtml(name)}</div>
                                         ${s.member?.birth_date ? `<small class="text-muted" style="font-size: 0.75rem;">Jg. ${new Date(s.member.birth_date).getFullYear()}</small>` : ''}
                                     </td>
 
                                     ${isEndstich ? `
                                         <!-- Passe 1 (Ganzpunkte / Zehntel) -->
-                                        <td class="text-center">
+                                        <td class="text-center" data-col-id="p1" data-cell="p1">
                                             <div class="input-group input-group-sm flex-nowrap" style="max-width: 175px; margin: auto;">
                                                 <input type="number" step="1" min="0" max="100" class="form-control text-center fw-semibold score-input" 
                                                        style="min-width: 50px; width: 50px; padding: 2px 4px;"
@@ -304,7 +304,7 @@ function renderStandardStichTableView(stich, canEdit) {
                                         </td>
 
                                         <!-- Passe 2 (Ganzpunkte / Zehntel) -->
-                                        <td class="text-center">
+                                        <td class="text-center" data-col-id="p2" data-cell="p2">
                                             <div class="input-group input-group-sm flex-nowrap" style="max-width: 175px; margin: auto;">
                                                 <input type="number" step="1" min="0" max="100" class="form-control text-center fw-semibold score-input" 
                                                        style="min-width: 50px; width: 50px; padding: 2px 4px;"
@@ -321,43 +321,43 @@ function renderStandardStichTableView(stich, canEdit) {
                                         </td>
 
                                         <!-- Totals -->
-                                        <td class="text-center fw-bold fs-6 text-dark" id="total-score-${s.id}" data-cell="total">
+                                        <td class="text-center fw-bold fs-6 text-dark" id="total-score-${s.id}" data-col-id="total" data-cell="total">
                                             ${s.total_score || 0}
                                         </td>
-                                        <td class="text-center fw-semibold text-primary" id="total-decimal-${s.id}" data-cell="decimal">
+                                        <td class="text-center fw-semibold text-primary" id="total-decimal-${s.id}" data-col-id="decimal" data-cell="decimal">
                                             ${(s.total_decimal || 0).toFixed(1)}
                                         </td>
-                                        <td class="text-center text-muted small" id="rang-decimal-${s.id}" data-cell="rang_decimal">
+                                        <td class="text-center text-muted small" id="rang-decimal-${s.id}" data-col-id="rang_decimal" data-cell="rang_decimal">
                                             ${s.rang_decimal || '-'}
                                         </td>
                                     ` : ''}
 
                                     ${isDifferenzler ? `
-                                        <td class="text-center" data-cell="target">
+                                        <td class="text-center" data-col-id="target" data-cell="target">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold" 
                                                    value="${s.target_score || ''}" placeholder="85"
                                                    ${!canEdit ? 'readonly disabled' : ''}
                                                    oninput="onScoreInputChange('${stich.id}', '${s.id}', 'target_score', this.value)">
                                         </td>
-                                        <td class="text-center" data-cell="total">
+                                        <td class="text-center" data-col-id="total" data-cell="total">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold" 
                                                    value="${s.total_score || ''}" placeholder="83"
                                                    ${!canEdit ? 'readonly disabled' : ''}
                                                    oninput="onScoreInputChange('${stich.id}', '${s.id}', 'total_score', this.value)">
                                         </td>
-                                        <td class="text-center fw-bold text-danger fs-6" id="diff-score-${s.id}" data-cell="diff">
+                                        <td class="text-center fw-bold text-danger fs-6" id="diff-score-${s.id}" data-col-id="diff" data-cell="diff">
                                             ${s.diff_score !== undefined && s.diff_score !== null ? s.diff_score : '-'}
                                         </td>
                                     ` : ''}
 
                                     ${isTiefschuss ? `
-                                        <td class="text-center" data-cell="total">
+                                        <td class="text-center" data-col-id="total" data-cell="total">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold" 
                                                    value="${s.total_score || ''}" placeholder="58"
                                                    ${!canEdit ? 'readonly disabled' : ''}
                                                    oninput="onScoreInputChange('${stich.id}', '${s.id}', 'total_score', this.value)">
                                         </td>
-                                        <td class="text-center" data-cell="tiefschuss">
+                                        <td class="text-center" data-col-id="tiefschuss" data-cell="tiefschuss">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold text-primary" 
                                                    value="${s.tiefschuss || ''}" placeholder="982"
                                                    ${!canEdit ? 'readonly disabled' : ''}
@@ -366,7 +366,7 @@ function renderStandardStichTableView(stich, canEdit) {
                                     ` : ''}
 
                                     ${!isEndstich && !isDifferenzler && !isTiefschuss ? `
-                                        <td class="text-center" data-cell="total">
+                                        <td class="text-center" data-col-id="total" data-cell="total">
                                             <input type="number" class="form-control form-control-sm text-center fw-bold fs-6" 
                                                    value="${s.total_score || ''}" placeholder="0"
                                                    ${!canEdit ? 'readonly disabled' : ''}
@@ -374,7 +374,7 @@ function renderStandardStichTableView(stich, canEdit) {
                                         </td>
                                     ` : ''}
 
-                                    <td data-cell="remark">
+                                    <td data-col-id="remark" data-cell="remark">
                                         <input type="text" class="form-control form-control-sm" 
                                                value="${escapeHtml(s.remark || '')}" placeholder="Optional..."
                                                ${!canEdit ? 'readonly disabled' : ''}
@@ -382,7 +382,7 @@ function renderStandardStichTableView(stich, canEdit) {
                                     </td>
 
                                     ${canEdit ? `
-                                        <td class="text-center">
+                                        <td class="text-center" data-col-id="actions" data-cell="actions">
                                             <button type="button" class="btn btn-link text-danger p-0 opacity-50 hover-opacity-100" 
                                                     onclick="removeShooterFromStich('${stich.id}', '${s.id}')" title="Schütze entfernen">
                                                 <i class="fas fa-trash-alt"></i>
@@ -465,18 +465,18 @@ function renderFinalEliminationView(stich, canEdit) {
 
                             return `
                                 <tr data-id="${f.id}" class="${rowClass}">
-                                    <td class="text-center" data-cell="rang">
+                                    <td class="text-center" data-col-id="rang" data-cell="rang">
                                         <span class="badge ${isWinner ? 'bg-warning text-dark' : (isSilver ? 'bg-secondary' : (isBronze ? 'bg-danger-subtle text-danger' : 'bg-light text-muted'))} rounded-pill px-2 py-1">
                                             ${rang}
                                         </span>
                                     </td>
-                                    <td data-cell="name">
+                                    <td data-col-id="name" data-cell="name">
                                         <div class="fw-bold">${escapeHtml(name)}</div>
                                         <small class="text-muted" style="font-size: 0.72rem;">Start-Rang Endstich: ${f.start_rang}</small>
                                     </td>
 
                                     ${[1, 2, 3, 4, 5, 6, 7, 8].map(sNum => `
-                                        <td class="text-center p-1" data-cell="s${sNum}">
+                                        <td class="text-center p-1" data-col-id="s${sNum}" data-cell="s${sNum}">
                                             <input type="number" class="form-control form-control-sm text-center fw-semibold p-1" 
                                                    style="max-width: 75px; margin: auto;"
                                                    data-field="s${sNum}"
@@ -486,11 +486,11 @@ function renderFinalEliminationView(stich, canEdit) {
                                         </td>
                                     `).join('')}
 
-                                    <td class="text-center fw-bold fs-6 text-dark" id="final-total-${f.id}" data-cell="total">
+                                    <td class="text-center fw-bold fs-6 text-dark" id="final-total-${f.id}" data-col-id="total" data-cell="total">
                                         ${f.total_score || 0}
                                     </td>
 
-                                    <td class="text-center" data-cell="status">
+                                    <td class="text-center" data-col-id="status" data-cell="status">
                                         ${isWinner ? '<span class="badge bg-warning text-dark"><i class="fas fa-crown me-1"></i>Endschiessen-Meister</span>' : 
                                           isSilver ? '<span class="badge bg-secondary"><i class="fas fa-medal me-1"></i>2. Rang</span>' : 
                                           isBronze ? '<span class="badge bg-danger-subtle text-danger"><i class="fas fa-medal me-1"></i>3. Rang</span>' : 
@@ -955,68 +955,70 @@ function initEndschiessenTableKit() {
 
     // 1. Haupttabelle (Endstich, Gaben, Differenzler etc.)
     const mainTable = document.getElementById('endschiessen-main-table');
-    if (mainTable && typeof window.TableKit.makeSortable === 'function') {
-        window.TableKit.makeSortable(mainTable, {
-            getValue: (row, key) => {
-                const cell = row.querySelector(`[data-cell="${key}"]`);
-                if (!cell) return '';
-                if (key === 'rang' || key === 'rang_decimal') {
-                    const badge = cell.querySelector('.badge') || cell;
-                    const num = parseInt(badge.textContent.trim(), 10);
-                    return isNaN(num) ? 9999 : num;
+    if (mainTable && typeof window.TableKit.initTable === 'function') {
+        window.TableKit.initTable(mainTable, {
+            id: 'endschiessen_main',
+            storageKeyWidths: 'endschiessen_main_table_widths',
+            reorderable: false,
+            resizable: {
+                minWidth: 50,
+                columns: {
+                    rang: { minWidth: 55, defaultWidth: 60, resizable: false },
+                    actions: { minWidth: 40, defaultWidth: 50, resizable: false }
                 }
-                if (key === 'total' || key === 'decimal' || key === 'diff' || key === 'tiefschuss') {
-                    const num = parseFloat(cell.textContent.trim());
-                    return isNaN(num) ? 0 : num;
+            },
+            sortable: {
+                getValue: (row, key) => {
+                    const cell = row.querySelector(`[data-cell="${key}"], [data-col-id="${key}"]`);
+                    if (!cell) return '';
+                    if (key === 'rang' || key === 'rang_decimal') {
+                        const badge = cell.querySelector('.badge') || cell;
+                        const num = parseInt(badge.textContent.trim(), 10);
+                        return isNaN(num) ? 9999 : num;
+                    }
+                    if (key === 'total' || key === 'decimal' || key === 'diff' || key === 'tiefschuss') {
+                        const num = parseFloat(cell.textContent.trim());
+                        return isNaN(num) ? 0 : num;
+                    }
+                    return cell.textContent.trim();
                 }
-                return cell.textContent.trim();
-            }
-        });
-    }
-
-    if (mainTable && typeof window.TableKit.makeResizable === 'function') {
-        window.TableKit.makeResizable('#endschiessen-main-table', {
-            storageKey: 'endschiessen_main_table_widths',
-            minWidth: 50,
-            columns: {
-                rang: { minWidth: 55, defaultWidth: 60, resizable: false },
-                actions: { minWidth: 40, defaultWidth: 50, resizable: false }
             }
         });
     }
 
     // 2. Meister-Final Tabelle
     const finalTable = document.getElementById('endschiessen-final-table');
-    if (finalTable && typeof window.TableKit.makeSortable === 'function') {
-        window.TableKit.makeSortable(finalTable, {
-            getValue: (row, key) => {
-                const cell = row.querySelector(`[data-cell="${key}"]`);
-                if (!cell) return '';
-                if (key === 'rang') {
-                    const badge = cell.querySelector('.badge') || cell;
-                    const num = parseInt(badge.textContent.trim(), 10);
-                    return isNaN(num) ? 9999 : num;
+    if (finalTable && typeof window.TableKit.initTable === 'function') {
+        window.TableKit.initTable(finalTable, {
+            id: 'endschiessen_final',
+            storageKeyWidths: 'endschiessen_final_table_widths',
+            reorderable: false,
+            resizable: {
+                minWidth: 50,
+                columns: {
+                    rang: { minWidth: 55, defaultWidth: 60, resizable: false }
                 }
-                if (key === 'total') {
-                    const num = parseFloat(cell.textContent.trim());
-                    return isNaN(num) ? 0 : num;
+            },
+            sortable: {
+                getValue: (row, key) => {
+                    const cell = row.querySelector(`[data-cell="${key}"], [data-col-id="${key}"]`);
+                    if (!cell) return '';
+                    if (key === 'rang') {
+                        const badge = cell.querySelector('.badge') || cell;
+                        const num = parseInt(badge.textContent.trim(), 10);
+                        return isNaN(num) ? 9999 : num;
+                    }
+                    if (key === 'total') {
+                        const num = parseFloat(cell.textContent.trim());
+                        return isNaN(num) ? 0 : num;
+                    }
+                    if (/^s[1-8]$/.test(key)) {
+                        const inp = cell.querySelector('input');
+                        const val = parseFloat(inp ? inp.value : cell.textContent.trim());
+                        return isNaN(val) ? 0 : val;
+                    }
+                    return cell.textContent.trim();
                 }
-                if (/^s[1-8]$/.test(key)) {
-                    const inp = cell.querySelector('input');
-                    const val = parseFloat(inp ? inp.value : cell.textContent.trim());
-                    return isNaN(val) ? 0 : val;
-                }
-                return cell.textContent.trim();
-            }
-        });
-    }
-
-    if (finalTable && typeof window.TableKit.makeResizable === 'function') {
-        window.TableKit.makeResizable('#endschiessen-final-table', {
-            storageKey: 'endschiessen_final_table_widths',
-            minWidth: 50,
-            columns: {
-                rang: { minWidth: 55, defaultWidth: 60, resizable: false }
             }
         });
     }

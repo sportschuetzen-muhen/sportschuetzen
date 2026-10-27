@@ -1240,16 +1240,16 @@ window.renderTabKontenrahmen = function(container) {
     
     return `
       <tr class="bh-account-row" ${canWrite ? `onclick="bhHandleAccountRowClick(event, '${acc.konto}', ${acc._rowIndex || 'null'})" title="Klicken zum Bearbeiten von Konto ${acc.konto}"` : ''}>
-        <td class="tk-col-konto"><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
-        <td class="fw-bold text-dark tk-col-bezeichnung">${acc.bezeichnung}</td>
-        <td class="tk-col-klasse"><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
-        <td class="text-end text-muted tk-col-eroeffnungssaldo">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>
-        <td class="text-end ${acc._veraenderung >= 0 ? 'text-success' : 'text-danger'} tk-col-veraenderung">
+        <td data-col-id="konto" class="tk-col-konto"><a href="#" onclick="event.stopPropagation(); bhOpenKontoauszugModal('${acc.konto}'); return false;" class="bh-konto-badge text-primary text-decoration-none" title="Kontoauszug anzeigen">${acc.konto}</a></td>
+        <td data-col-id="bezeichnung" class="fw-bold text-dark tk-col-bezeichnung">${acc.bezeichnung}</td>
+        <td data-col-id="klasse" class="tk-col-klasse"><span class="badge ${classColor} opacity-75">${classLabel}</span></td>
+        <td data-col-id="eroeffnungssaldo" class="text-end text-muted tk-col-eroeffnungssaldo">${fmtChf(acc._dynamicEroeffnungssaldo)}</td>
+        <td data-col-id="veraenderung" class="text-end ${acc._veraenderung >= 0 ? 'text-success' : 'text-danger'} tk-col-veraenderung">
           ${acc._veraenderung >= 0 ? '+' : ''}${fmtChf(acc._veraenderung)}
         </td>
-        <td class="text-end fw-bold text-primary tk-col-endsaldo">${fmtChf(acc._endsaldo)}</td>
-        <td class="text-end fw-semibold text-secondary tk-col-budget">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
-        <td class="text-end tk-col-aktionen" style="white-space: nowrap;">
+        <td data-col-id="endsaldo" class="text-end fw-bold text-primary tk-col-endsaldo">${fmtChf(acc._endsaldo)}</td>
+        <td data-col-id="budget" class="text-end fw-semibold text-secondary tk-col-budget">${budgetVal > 0 ? fmtChf(budgetVal) : '–'}</td>
+        <td data-col-id="aktionen" class="text-end tk-col-aktionen" style="white-space: nowrap;">
           ${canWrite ? `
           <button class="bh-edit-btn" onclick="event.stopPropagation(); bhOpenKontoModal('${acc.konto}', ${acc._rowIndex || 'null'})" title="Konto bearbeiten">
             <i class="fas fa-edit"></i>
@@ -1303,10 +1303,23 @@ window.renderTabKontenrahmen = function(container) {
     </div>
   `;
 
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-    window.TableKit.setupColumnToggle('#bh-konten-table', {
-      container: '#bh-konten-column-toggle',
-      storageKey: 'bh_konten_cols'
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._bhKontenTableController = window.TableKit.initTable('#bh-konten-table', {
+      id: 'bh_konten',
+      storageKeyWidths: 'bh_konten_widths',
+      storageKeyOrder: 'bh_konten_order',
+      storageKeyCols: 'bh_konten_cols',
+      resizable: {
+        minWidth: 50,
+        columns: {
+          konto: { minWidth: 60, defaultWidth: 80 },
+          aktionen: { minWidth: 70, defaultWidth: 80, resizable: false }
+        }
+      },
+      reorderable: {
+        lockedColumns: ['konto', 'aktionen']
+      },
+      columnToggle: '#bh-konten-column-toggle'
     });
   }
 };

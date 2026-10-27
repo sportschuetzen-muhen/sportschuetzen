@@ -147,25 +147,22 @@ function renderOffeneAusleihen() {
     html += `</tbody></table></div></div>`;
     journalSection.insertAdjacentHTML('afterbegin', html);
 
-    // TableKit-Initialisierung für Offene Ausleihen
-    if (window.TableKit?.makeColumnReorderable) {
-        window.TableKit.makeColumnReorderable('#table-offene-ausleihen', {
-            storageKey: 'tk_inv_order_ausleihen',
-            lockedColumns: ['col_aktionen']
-        });
-    }
-    if (window.TableKit?.setupColumnToggle) {
-        window.TableKit.setupColumnToggle('#table-offene-ausleihen', {
-            container: '#tk-toggle-ausleihen',
-            storageKey: 'tk_inv_cols_ausleihen'
-        });
-    }
-    if (window.TableKit?.makeResizable) {
-        window.TableKit.makeResizable('#table-offene-ausleihen', {
-            storageKey: 'tk_inv_widths_ausleihen',
-            columns: {
-                'col_aktionen': { resizable: false, defaultWidth: 95 }
-            }
+    // TableKit All-in-One Initialisierung für Offene Ausleihen
+    if (window.TableKit?.initTable) {
+        window.TableKit.initTable('#table-offene-ausleihen', {
+            id: 'inv_ausleihen',
+            storageKeyWidths: 'tk_inv_widths_ausleihen',
+            storageKeyOrder: 'tk_inv_order_ausleihen',
+            storageKeyCols: 'tk_inv_cols_ausleihen',
+            resizable: {
+                columns: {
+                    'col_aktionen': { resizable: false, defaultWidth: 95 }
+                }
+            },
+            reorderable: {
+                lockedColumns: ['col_aktionen']
+            },
+            columnToggle: '#tk-toggle-ausleihen'
         });
     }
 }
@@ -361,25 +358,22 @@ function renderTransaktionenTable() {
     }
     transTable.innerHTML = html + "</tbody>";
 
-    // TableKit-Initialisierung für Transaktionen
-    if (window.TableKit?.makeColumnReorderable) {
-        window.TableKit.makeColumnReorderable('#table-transaktionen', {
-            storageKey: 'tk_inv_order_transaktionen',
-            lockedColumns: ['col_aktionen']
-        });
-    }
-    if (window.TableKit?.setupColumnToggle) {
-        window.TableKit.setupColumnToggle('#table-transaktionen', {
-            container: '#tk-toggle-transaktionen',
-            storageKey: 'tk_inv_cols_transaktionen'
-        });
-    }
-    if (window.TableKit?.makeResizable) {
-        window.TableKit.makeResizable('#table-transaktionen', {
-            storageKey: 'tk_inv_widths_transaktionen',
-            columns: {
-                'col_aktionen': { resizable: false, defaultWidth: 105 }
-            }
+    // TableKit All-in-One Initialisierung für Transaktionen
+    if (window.TableKit?.initTable) {
+        window.TableKit.initTable('#table-transaktionen', {
+            id: 'inv_transaktionen',
+            storageKeyWidths: 'tk_inv_widths_transaktionen',
+            storageKeyOrder: 'tk_inv_order_transaktionen',
+            storageKeyCols: 'tk_inv_cols_transaktionen',
+            resizable: {
+                columns: {
+                    'col_aktionen': { resizable: false, defaultWidth: 105 }
+                }
+            },
+            reorderable: {
+                lockedColumns: ['col_aktionen']
+            },
+            columnToggle: '#tk-toggle-transaktionen'
         });
     }
 }
@@ -826,21 +820,16 @@ function renderProtokollTable() {
     }
     logTable.innerHTML = html + "</tbody>";
 
-    // TableKit-Initialisierung für Protokoll
-    if (window.TableKit?.makeColumnReorderable) {
-        window.TableKit.makeColumnReorderable('#table-protokoll', {
-            storageKey: 'tk_inv_order_protokoll'
-        });
-    }
-    if (window.TableKit?.setupColumnToggle) {
-        window.TableKit.setupColumnToggle('#table-protokoll', {
-            container: '#tk-toggle-protokoll',
-            storageKey: 'tk_inv_cols_protokoll'
-        });
-    }
-    if (window.TableKit?.makeResizable) {
-        window.TableKit.makeResizable('#table-protokoll', {
-            storageKey: 'tk_inv_widths_protokoll'
+    // TableKit All-in-One Initialisierung für Protokoll
+    if (window.TableKit?.initTable) {
+        window.TableKit.initTable('#table-protokoll', {
+            id: 'inv_protokoll',
+            storageKeyWidths: 'tk_inv_widths_protokoll',
+            storageKeyOrder: 'tk_inv_order_protokoll',
+            storageKeyCols: 'tk_inv_cols_protokoll',
+            resizable: true,
+            reorderable: true,
+            columnToggle: '#tk-toggle-protokoll'
         });
     }
 }

@@ -64,7 +64,16 @@ Sämtliche tabellarischen Listen in allen Fachmodulen (`mitglieder-list.js`, `ve
 * **Standard für Konten- und Suchfilterung (`TableKit.cleanKontoDisplay`):**
   In Kontenauswahlfeldern (z.B. Bankabgleich, Journal, Buchungsmodal) wird die Kontobezeichnung von rohen IBAN-Blöcken (`CH...`) bereinigt (`cleanKontoDisplay`). Dadurch wird verhindert, dass Zifferneingaben (z.B. «8») versehentlich alle Bankkonten aufrufen, weil Schweizer IBANs die Ziffer 8 enthalten.
 * **Flächendeckender Rollout (`initTable` & `data-col-id` Synchronisation):**
-  Die operativen Haupttabellen (Mitglieder `#mgl-table`, Rechnungen `#rn-invoices-table`, Externe Kontakte `#rn-contacts-table`, Vorlagen `#rn-templates-table`, Vermietung `#vermietung-table`, Journal `#bh-journal-table` und Bankabgleich `#bhBankTable`) sind vollständig auf `TableKit.initTable` migriert. Alle Zeilenzellen (`<td>`) tragen explizite `data-col-id`-Attribute, um Spaltenverschiebungen verlustfrei abzubilden. Vorherige Controller-Instanzen werden bei Re-Initialisierungen automatisch über `destroy()` bereinigt.
+  Alle operativen Tabellen des Vorstands- und Vereinsportals sind vollständig und einheitlich auf `TableKit.initTable` migriert:
+  - **Mitglieder:** `#mgl-table`
+  - **Rechnungswesen:** `#rn-invoices-table`, `#rn-contacts-table`, `#rn-templates-table`
+  - **Vermietung:** `#vermietung-table`
+  - **Finanzbuchhaltung:** `#bh-journal-table`, `#bhBankTable`, `#bh-konten-table` (Kontenplan & Budget)
+  - **Inventar:** `#inventory-table`, `#table-offene-ausleihen`, `#table-transaktionen`, `#table-protokoll`
+  - **Logins & RBAC:** `#logins-table-admin`, `#logins-table-members`, `#logins-table-sessions`
+  - **Resultate & Endschiessen:** `#endschiessen-main-table`, `#endschiessen-final-table`
+  - **Jahresbeitrag:** `#jbTable` (Beitrags-Übersicht), `#jbMatrixTable` (Beitrags-Matrix), `#jbGebuehrenTable` (Gebühren-Konfiguration), `#jbBankTransactionsTable` (Zahlungsabgleich)
+  Alle Zeilenzellen (`<td>`) besitzen explizite `data-col-id`-Attribute für 100%ige Synchronisation zwischen Header und Datenzeilen beim Drag & Drop. Bestehende Filter und Konfigurationen (`localStorage`) bleiben rückwärtskompatibel erhalten. Bei Neu-Rendern werden bestehende Controller über `table._tkController.destroy()` idempotent und leckfrei aufgeräumt.
 
 ### 2.2 Standardisiertes Modal- & Drawer-Framework
 * Modale Dialoge (Rechnungserfassung, Zählerstand, Buchungsdetails) nutzen einheitliche Header mit Close-Button (`&times;`).

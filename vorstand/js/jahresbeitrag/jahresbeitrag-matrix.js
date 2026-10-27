@@ -967,7 +967,7 @@ function jbRenderMatrixTable() {
 
       return `
         <tr class="${rowClass}" id="jbMatrixRow_${pn}">
-          <td class="text-center tk-col-sticky-left" style="width: 28px; padding: 2px;">
+          <td class="text-center tk-col-sticky-left" data-col-id="check" style="width: 28px; padding: 2px;">
             <input type="checkbox" class="form-check-input jb-matrix-row-check" 
                    value="${pn}" ${isSelected ? 'checked' : ''} 
                    onchange="jbMatrixToggleMember('${pn}', this.checked)"
@@ -992,32 +992,24 @@ function jbRenderMatrixTable() {
   // 5. Footer & KPIs berechnen
   jbCalculateMatrixTotals(rowsData, columns);
 
-  // 6. Spaltenauswahl, Resizing & Drag & Drop Verschieben initialisieren
-  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
-    window._jbMatrixColReorder = window.TableKit.makeColumnReorderable('#jbMatrixTable', {
-      storageKey: 'jb_matrix_col_order',
-      lockedColumns: ['check', 'name', 'gesamt']
-    });
-    if (window._jbMatrixColReorder && typeof window._jbMatrixColReorder.apply === 'function') {
-      window._jbMatrixColReorder.apply();
-    }
-  }
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('jbMatrixColToggleDropdown')) {
-    window._jbMatrixColToggle = window.TableKit.setupColumnToggle('#jbMatrixTable', {
-      container: '#jbMatrixColToggleDropdown',
-      storageKey: 'portal_jb_matrix_cols'
-    });
-  }
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#jbMatrixTable', {
-      storageKey: 'jb_matrix_col_widths',
-      minWidth: 40,
-      columns: {
-        'name': { defaultWidth: 130, minWidth: 95 },
-        'status': { defaultWidth: 65, minWidth: 55 }
-      },
-      onResize: function() {
-        jbMatrixSyncTopScroll();
+  // 6. Spaltenauswahl, Resizing & Drag & Drop Verschieben initialisieren (TableKit Standard)
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._jbMatrixTableController = window.TableKit.initTable('#jbMatrixTable', {
+      id: 'jb_matrix',
+      storageKeyOrder: 'jb_matrix_col_order',
+      storageKeyWidths: 'jb_matrix_col_widths',
+      storageKeyCols: 'portal_jb_matrix_cols',
+      lockedColumns: ['check', 'name', 'gesamt'],
+      columnToggle: document.getElementById('jbMatrixColToggleDropdown') ? '#jbMatrixColToggleDropdown' : null,
+      resizable: {
+        minWidth: 40,
+        columns: {
+          'name': { defaultWidth: 130, minWidth: 95 },
+          'status': { defaultWidth: 65, minWidth: 55 }
+        },
+        onResize: function() {
+          jbMatrixSyncTopScroll();
+        }
       }
     });
   }

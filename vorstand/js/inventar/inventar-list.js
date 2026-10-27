@@ -540,26 +540,23 @@ function renderInventoryTable() {
 
     table.innerHTML = html + "</tbody>";
 
-    // TableKit-Features initialisieren
-    if (window.TableKit?.makeColumnReorderable) {
-        window.TableKit.makeColumnReorderable('#inventory-table', {
-            storageKey: `tk_inv_col_order_${target}`,
-            lockedColumns: ['col_id', 'col_aktionen']
-        });
-    }
-    if (window.TableKit?.setupColumnToggle) {
-        window.TableKit.setupColumnToggle('#inventory-table', {
-            container: '#inv-col-toggle-container',
-            storageKey: `tk_inv_cols_${target}`
-        });
-    }
-    if (window.TableKit?.makeResizable) {
-        window.TableKit.makeResizable('#inventory-table', {
-            storageKey: `tk_inv_widths_${target}`,
-            columns: {
-                'col_id': { resizable: false, defaultWidth: 80 },
-                'col_aktionen': { resizable: false, defaultWidth: 95 }
-            }
+    // TableKit-Features All-in-One initialisieren
+    if (window.TableKit?.initTable) {
+        window._invTableController = window.TableKit.initTable('#inventory-table', {
+            id: `inv_${target}`,
+            storageKeyWidths: `tk_inv_widths_${target}`,
+            storageKeyOrder: `tk_inv_col_order_${target}`,
+            storageKeyCols: `tk_inv_cols_${target}`,
+            resizable: {
+                columns: {
+                    'col_id': { resizable: false, defaultWidth: 80 },
+                    'col_aktionen': { resizable: false, defaultWidth: 95 }
+                }
+            },
+            reorderable: {
+                lockedColumns: ['col_id', 'col_aktionen']
+            },
+            columnToggle: '#inv-col-toggle-container'
         });
     }
 }
