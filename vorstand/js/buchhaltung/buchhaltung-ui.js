@@ -476,6 +476,20 @@ window._bhJournalFocusId = null;
 
 window.bhToggleJournalIncompleteFilter = function() {
   window._bhJournalFilterIncomplete = !window._bhJournalFilterIncomplete;
+  if (window._bhJournalFilterIncomplete) {
+    window._bhJournalFilterTransit = false;
+  }
+  const container = document.getElementById('bh-tab-content-container');
+  if (container && typeof window.renderTabJournal === 'function') {
+    window.renderTabJournal(container);
+  }
+};
+
+window.bhToggleJournalTransitFilter = function() {
+  window._bhJournalFilterTransit = !window._bhJournalFilterTransit;
+  if (window._bhJournalFilterTransit) {
+    window._bhJournalFilterIncomplete = false;
+  }
   const container = document.getElementById('bh-tab-content-container');
   if (container && typeof window.renderTabJournal === 'function') {
     window.renderTabJournal(container);
@@ -493,9 +507,15 @@ window.renderTabJournal = function(container) {
   // Zähle unvollständige Buchungen (fehlendes Soll- oder Haben-Konto)
   const incompleteCount = filteredJournal.filter(j => !String(j.konto_soll || '').trim() || !String(j.konto_haben || '').trim()).length;
 
+  // Zähle noch abzuklärende Buchungen auf Klärungskonto 1090 (Transit)
+  const isTransitItem = (j) => String(j.konto_soll || '').trim() === '1090' || String(j.konto_haben || '').trim() === '1090';
+  const transitKlaerungCount = filteredJournal.filter(isTransitItem).length;
+
   // Filter nach unvollständigen Buchungen anwenden (falls aktiviert)
   if (window._bhJournalFilterIncomplete) {
     filteredJournal = filteredJournal.filter(j => !String(j.konto_soll || '').trim() || !String(j.konto_haben || '').trim());
+  } else if (window._bhJournalFilterTransit) {
+    filteredJournal = filteredJournal.filter(isTransitItem);
   }
 
   // Bereinige Selektion von nicht mehr existierenden IDs
@@ -548,8 +568,21 @@ window.renderTabJournal = function(container) {
     const cleanSoll = String(item.konto_soll || '').trim();
     const cleanHaben = String(item.konto_haben || '').trim();
     const isIncomplete = !cleanSoll || !cleanHaben;
-    const incompleteClass = isIncomplete ? 'bh-row-incomplete table-warning' : '';
-    const incompleteStyle = isIncomplete ? 'background-color: #fff9e6 !important; border-left: 4px solid #fd7e14;' : '';
+    const isTransitKlaerung = cleanSoll === '1090' || cleanHaben === '1090';
+
+    let rowClass = isSelected ? 'bh-row-selected' : '';
+    let rowStyle = '';
+    let rowTitle = 'Klicken zum Auswählen (Shift/Ctrl + Pfeiltasten für Mehrfachauswahl)';
+
+    if (isIncomplete) {
+      rowClass += ' bh-row-incomplete table-warning';
+      rowStyle = 'background-color: #fff9e6 !important; border-left: 4px solid #fd7e14;';
+      rowTitle = '⚠️ Unvollständige Buchung: Gegenkonto fehlt! Klicken zum Auswählen / Stift-Icon zum Nachführen';
+    } else if (isTransitKlaerung) {
+      rowClass += ' bh-row-transit-klaerung';
+      rowStyle = 'background-color: #f0faff !important; border-left: 4px solid #0dcaf0;';
+      rowTitle = '⏳ Klärungskonto 1090: Gegenkonto muss noch final zugeordnet werden! Stift-Icon zum Umkontieren anklicken.';
+    }
 
     let amountClass = 'text-secondary';
     let amountSign  = '';
@@ -564,12 +597,12 @@ window.renderTabJournal = function(container) {
       amountSign  = '+ ';
       badgeClass  = 'bg-success text-white';
     } else if (bTyp === 'TRANSIT') {
-      amountClass = 'text-muted';
-      badgeClass  = 'bg-secondary text-white';
+      amountClass = isTransitKlaerung ? 'text-info fw-bold' : 'text-muted';
+      badgeClass  = isTransitKlaerung ? 'bg-info text-dark' : 'bg-secondary text-white';
     }
 
     return `
-    <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''} ${incompleteClass}" style="${incompleteStyle}" data-journal-id="${item.id}" tabindex="0" onclick="bhHandleJournalRowClick(event, ${item.id})" title="${isIncomplete ? '⚠️ Unvollständige Buchung: Gegenkonto fehlt! Klicken zum Auswählen / Stift-Icon zum Nachführen' : 'Klicken zum Auswählen (Shift/Ctrl + Pfeiltasten für Mehrfachauswahl)'}">
+    <tr class="bh-account-row ${rowClass}" style="${rowStyle}" data-journal-id="${item.id}" tabindex="0" onclick="bhHandleJournalRowClick(event, ${item.id})" title="${rowTitle}">
       <td data-col-id="select" class="text-center tk-col-select" style="width: 40px;" onclick="event.stopPropagation()">
         <input type="checkbox" class="form-check-input cursor-pointer bh-journal-check" data-id="${item.id}" ${isSelected ? 'checked' : ''} onchange="bhToggleJournalRow(${item.id}, this.checked, event)" title="Zeile auswählen">
       </td>
@@ -579,7 +612,8 @@ window.renderTabJournal = function(container) {
       <td data-col-id="beschreibung" class="small fw-semibold tk-col-beschreibung">${escapeHtml(item.beschreibung)}</td>
       <td data-col-id="konto_soll" class="tk-col-konto_soll">
         ${cleanSoll ? `
-          <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span> 
+          <span class="bh-konto-badge bh-konto-soll-badge ${cleanSoll === '1090' ? 'bg-info text-dark fw-bold' : ''}">${item.konto_soll}</span> 
+          ${cleanSoll === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
         ` : `
           <span class="badge bg-warning text-dark border border-warning" title="Soll-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">
@@ -589,7 +623,8 @@ window.renderTabJournal = function(container) {
       </td>
       <td data-col-id="konto_haben" class="tk-col-konto_haben">
         ${cleanHaben ? `
-          <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span> 
+          <span class="bh-konto-badge bh-konto-haben-badge ${cleanHaben === '1090' ? 'bg-info text-dark fw-bold' : ''}">${item.konto_haben}</span> 
+          ${cleanHaben === '1090' ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:10px;"><i class="fas fa-clock me-1"></i>Klärung</span>' : ''}
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
         ` : `
           <span class="badge bg-warning text-dark border border-warning" title="Haben-Konto fehlt (Klicken auf Bearbeiten zum Nacherfassen)">
@@ -599,7 +634,7 @@ window.renderTabJournal = function(container) {
       </td>
       <td data-col-id="betrag" class="text-end fw-bold ${amountClass} tk-col-betrag" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
       <td data-col-id="buchungstyp" class="tk-col-buchungstyp">
-        <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${bTyp || 'BUCHUNG'}</span>
+        <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${isTransitKlaerung ? 'KLÄRUNG 1090' : (bTyp || 'BUCHUNG')}</span>
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
       <td data-col-id="aktionen" class="text-end tk-col-aktionen" style="white-space: nowrap;" onclick="event.stopPropagation()">
@@ -607,7 +642,7 @@ window.renderTabJournal = function(container) {
           <i class="fas fa-print"></i>
         </button>
         ${canWrite ? `
-        <button class="bh-edit-btn ms-1" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten (z. B. Gegenkonto nachführen)">
+        <button class="bh-edit-btn ms-1 ${isTransitKlaerung ? 'text-info fw-bold' : ''}" onclick="bhOpenEntryModal(${item.id})" title="${isTransitKlaerung ? 'Klärungskonto 1090 umkontieren (Gegenkonto final zuweisen)' : 'Buchung bearbeiten (z. B. Gegenkonto nachführen)'}">
           <i class="fas fa-edit"></i>
         </button>
         <button class="bh-edit-btn ms-1 text-primary" onclick="bhConvertEntryToSplit(${item.id})" title="In Split-Buchung aufteilen (oder Split-Verbund bearbeiten)">
@@ -628,6 +663,13 @@ window.renderTabJournal = function(container) {
         <h4 class="fw-bold text-primary mb-0"><i class="fas fa-receipt me-2"></i>Kassabuch-Journal (${window._bhYear})</h4>
         <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
           <input type="text" class="form-control form-control-sm" id="bh-journal-search" placeholder="🔎 Beleg suchen..." oninput="bhFilterJournal(this.value)" style="max-width: 180px;">
+          ${transitKlaerungCount > 0 ? `
+            <button type="button" class="btn btn-sm ${window._bhJournalFilterTransit ? 'btn-info fw-bold text-dark shadow-sm' : 'btn-outline-info text-dark'}" 
+                    onclick="bhToggleJournalTransitFilter()" 
+                    title="Nur Buchungssätze anzeigen, die über das Klärungskonto 1090 gebucht wurden und noch final zugeordnet werden müssen">
+              <i class="fas fa-clock text-info me-1"></i>Klärung 1090 (${transitKlaerungCount})
+            </button>
+          ` : ''}
           <button type="button" class="btn btn-sm ${window._bhJournalFilterIncomplete ? 'btn-warning fw-bold text-dark shadow-sm' : 'btn-outline-warning text-dark'}" 
                   onclick="bhToggleJournalIncompleteFilter()" 
                   title="Nur Buchungssätze anzeigen, bei denen Soll- oder Haben-Konto fehlt">

@@ -23,6 +23,7 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
 * **Gesetzliche Konformität (OR 957ff):** Der Schweizer Standard-Kontenrahmen für Vereine garantiert eine saubere Trennung von Aktiven, Passiven, Ertrag und Aufwand:
   - `1000`: Kasse (Bargeld Munition, Kiosk)
   - `1020`: Bank / Postfinance (Vereinskonto)
+  - `1090`: Noch abzuklärende Bankzahlungen (Transit / Klärungskonto)
   - `1100`: Debitoren / Offene Forderungen (Schnittstelle zu `public.invoices`)
   - `2000`: Kreditoren (Offene Verbindlichkeiten)
   - `3000`: Ertrag Jahresbeiträge (Schnittstelle zu `contributions_header`)
@@ -47,10 +48,11 @@ Die Finanzbuchhaltung verwaltet das Rechnungswesen, die doppelte Buchführung un
   4. Manuelle Tippfehler oder falsche Buchungsbeträge sind dadurch rechnerisch ausgeschlossen.
 * **E-Banking Gutschrifts-Automation (Vermietung):** Ergänzend zum periodischen CAMT-Sammelimport werden eingehende Mietzahlungen über die Edge Function `process-bank-mails` via Gmail-Schnittstelle und Kaskaden-Matching (Vertrags-Nr. oder Mietdatum + Nachname + exakter Betrag CHF 300.00) atomar über den `RechnungsCore` erfasst und direkt als Zahlungseingang verbucht.
 
-### 2.4 Warum `accounting_journal.id` als `BIGSERIAL` (Integer)?
+### 2.4 Warum `accounting_journal.id` als `BIGSERIAL` (Integer) & Belegnummern-Chronologie?
 * **Revisionssichere Belegnummerierung:** Revisoren verlangen in der Buchführung fortlaufende, lückenlose Belegnummern (1, 2, 3...).
 * **Entscheidung:** Statt unübersichtlicher UUIDs nutzt `accounting_journal` eine PostgreSQL `BIGSERIAL` Sequenz. Das garantiert automatische Chronologie und performante Sortierung. Client-Payloads übergeben kein manuelles String-`id`-Feld, damit PostgreSQL die Sequenz lückenlos selbst hochzählt.
 * **Integrität bei Batch-Buchungen:** Jede Transaktion muss zwingend über gültige Soll- und Haben-Konten verfügen (Fremdschlüssel auf `accounting_accounts`). Unvollständige Bankbuchungen ohne Gegenkonto verbleiben als unklar in der Vormerkliste und werden nicht an die DB übermittelt, um Foreign-Key-Abbrüche zu verhindern. Obsolete Hilfsfelder wie `split_group_id` werden clientseitig nicht übergeben. Die PostgreSQL-Sequenz `accounting_journal_id_seq` wird strikt synchron auf `MAX(id)` gehalten (`98_fix_accounting_journal_sequence.sql`), um Primärschlüssel-Kollisionen (HTTP 409) auszuschliessen. DB-Fehlermeldungen werden transparent bis in die UI-Toasts durchgereicht und gesperrte Aktionsbuttons bei Fehlern via `bhBankRenderResults` automatisch zurückgesetzt.
+* **Klärungskonto 1090 für lückenlos synchrone Bank-Belegnummern:** Um sicherzustellen, dass alle Banktransaktionen aus CAMT-Auszügen streng chronologisch nach Valutadatum mit aufsteigenden Belegnummern (`B_Zahl_YYYY-xxx`) im Journal verankert werden, schlägt das System für noch unklare Posten standardmässig das Konto `1090 Noch abzuklärende Bankzahlungen (Transit)` vor. Dadurch kann der gesamte Bankauszug ohne Nummern-Lücken oder spätere Versatzbuchungen in einem Durchlauf verbucht werden. Im Journal signalisiert ein dedizierter Filter-Badge (`Klärung 1090`) offene Abklärungen, die jederzeit per Klick auf das Bearbeiten-Icon auf das endgültige Konto umkontiert werden können, wobei die ursprüngliche Belegnummer unverändert erhalten bleibt.
 
 ### 2.5 Warum variable Zuteilungsquoten für das Controlling?
 * **Problemstellung:** Gemeinsame Kosten wie Schützenhaus-Reinigung (4010), Energie & Wasser (6400) oder Liegenschaftsunterhalt (6000) fallen für das gesamte Schützenhaus an, das sowohl dem Schiessbetrieb als auch externen Vermietungen dient. Eine pauschale 100%-Belastung verfälschte die Rentabilitätsrechnungen.

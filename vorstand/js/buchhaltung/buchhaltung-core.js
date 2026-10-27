@@ -803,7 +803,7 @@ window.getBuchungstyp = function(soll, haben) {
   const s = String(soll || '').trim();
   const h = String(haben || '').trim();
   
-  if (s.startsWith('13') || h.startsWith('13') || s.startsWith('119') || h.startsWith('119')) {
+  if (s.startsWith('13') || h.startsWith('13') || s.startsWith('119') || h.startsWith('119') || s.startsWith('109') || h.startsWith('109')) {
     return 'TRANSIT';
   }
 

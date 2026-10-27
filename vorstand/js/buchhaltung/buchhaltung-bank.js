@@ -908,6 +908,8 @@ function bhBankRenderResults(filter) {
       statusBadge = `<span class="badge bg-primary text-white" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="💡 HISTORIE-TREFFER: Noch NICHT gebucht! Klicken zum Ändern oder Zuordnen."><i class="fas fa-history me-1"></i>Historie <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else if (r.matchType === 'heuristic') {
       statusBadge = `<span class="badge bg-light text-dark border" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="💡 SMART VORSCHLAG: Noch NICHT gebucht. Klicken zum Zuordnen."><i class="fas fa-lightbulb me-1"></i>Vorschlag <i class="fas fa-pen ms-1 opacity-75" style="font-size:9px;"></i></span>`;
+    } else if (r.matchType === 'transit' || (!r.isSplit && (String(r.suggestedSoll).trim() === '1090' || String(r.suggestedHaben).trim() === '1090'))) {
+      statusBadge = `<span class="badge bg-info text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="⏳ KLÄRUNG 1090: Keine automatische Zuordnung. Wird über Klärungskonto 1090 (Transit) gebucht, damit Belegnummern aufsteigend bleiben. Klicken zum Zuordnen."><i class="fas fa-clock me-1"></i>Transit 1090 <i class="fas fa-link ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     } else {
       statusBadge = `<span class="badge bg-warning text-dark" role="button" tabindex="0" onclick="bhBankOpenAssignModal(${realI})" style="cursor:pointer;" title="❓ OFFEN: Keine automatische Zuordnung. Klicken zum Zuordnen."><i class="fas fa-question-circle me-1"></i>Offen <i class="fas fa-link ms-1 opacity-75" style="font-size:9px;"></i></span>`;
     }
@@ -975,11 +977,17 @@ function bhBankRenderResults(filter) {
         : `<i class="fas fa-columns me-1"></i>Split`;
 
       const isComplete = isSplitConfigured ? true : Boolean(r.suggestedSoll && r.suggestedHaben);
-      const statusBadge = isComplete
-        ? (isSplitConfigured
-            ? `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Splitbuchung (${r.splitRows.length} Positionen) vorkontiert und bereit zur Ausführung"><i class="fas fa-columns text-primary me-1"></i>Bereit (Split ${r.splitRows.length})</span>`
-            : `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Vollständig kontiert und bereit zur Ausführung"><i class="fas fa-check me-1"></i>Bereit</span>`)
-        : `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(255, 193, 7, 0.15); color: #664d03; border: 1px solid rgba(255, 193, 7, 0.35);" title="Gegenkonto fehlt noch. Kann manuell ergänzt werden oder wird als unvollständig gebucht."><i class="fas fa-exclamation-circle text-warning me-1"></i>Konto fehlt</span>`;
+      const isTransitKlaerung = !isSplitConfigured && (String(r.suggestedSoll).trim() === '1090' || String(r.suggestedHaben).trim() === '1090');
+      let statusBadge = '';
+      if (isSplitConfigured) {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Splitbuchung (${r.splitRows.length} Positionen) vorkontiert und bereit zur Ausführung"><i class="fas fa-columns text-primary me-1"></i>Bereit (Split ${r.splitRows.length})</span>`;
+      } else if (isTransitKlaerung) {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(13, 202, 240, 0.15); color: #055160; border: 1px solid rgba(13, 202, 240, 0.35);" title="Noch unklar. Wird automatisch über das Klärungskonto 1090 (Transit) verbucht, damit die Belegnummern synchron und lückenlos bleiben. Kann im Journal später umkontiert werden."><i class="fas fa-clock text-info me-1"></i>1090 Transit</span>`;
+      } else if (isComplete) {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(25, 135, 84, 0.12); color: #0f5132; border: 1px solid rgba(25, 135, 84, 0.25);" title="Vollständig kontiert und bereit zur Ausführung"><i class="fas fa-check me-1"></i>Bereit</span>`;
+      } else {
+        statusBadge = `<span id="bh-status-badge-${realI}" class="badge px-2 py-1.5 fw-semibold" style="background-color: rgba(255, 193, 7, 0.15); color: #664d03; border: 1px solid rgba(255, 193, 7, 0.35);" title="Gegenkonto fehlt noch. Kann manuell ergänzt werden oder wird als unvollständig gebucht."><i class="fas fa-exclamation-circle text-warning me-1"></i>Konto fehlt</span>`;
+      }
 
       actionButtons = `
         ${statusBadge}
@@ -2241,6 +2249,25 @@ function bhBankMatchAll(transactions) {
       else suggestedSoll = '';
     }
 
+    // LÖSUNG 1: Falls kein Gegenkonto ermittelt werden konnte (unklare Bankzahlung),
+    // automatisch das Klärungskonto 1090 (Noch abzuklärende Bankzahlungen / Transit) vorschlagen!
+    // Dadurch kann jede Zahlung in streng chronologischer Reihenfolge mit aufsteigender Beleg-Nr. verbucht werden.
+    if (!alreadyBooked) {
+      if (tx.isCredit && !suggestedHaben && !tx._customHabenEdited) {
+        suggestedHaben = '1090';
+        if (matchType === 'unknown') {
+          matchType = 'transit';
+          matchLabel = '1090 Noch abzuklärende Bankzahlungen (Transit)';
+        }
+      } else if (!tx.isCredit && !suggestedSoll && !tx._customSollEdited) {
+        suggestedSoll = '1090';
+        if (matchType === 'unknown') {
+          matchType = 'transit';
+          matchLabel = '1090 Noch abzuklärende Bankzahlungen (Transit)';
+        }
+      }
+    }
+
     const txYear = tx.bookingDate ? new Date(tx.bookingDate).getFullYear() : Number(window._bhYear || new Date().getFullYear());
     const activeYear = Number(window._bhYear || new Date().getFullYear());
     const isWrongYear = txYear !== activeYear;
@@ -2926,13 +2953,29 @@ window.bhBankBookAll = async function() {
     return;
   }
 
+  const transitCount = toBook.filter(({ r }) => !r.isSplit && (String(r.suggestedSoll).trim() === '1090' || String(r.suggestedHaben).trim() === '1090')).length;
+
   let confirmMsg = `${toBook.length} Bank-Buchungen jetzt in streng chronologischer Reihenfolge ins Journal eintragen?`;
+  if (transitCount > 0) {
+    confirmMsg += `\n\nℹ️ Hinweis: ${transitCount} Zahlung(en) sind als unklar eingestuft und werden über das Klärungskonto 1090 (Transit) gebucht, damit alle Bankbelege lückenlos aufsteigend nummeriert bleiben. Du kannst sie jederzeit im Journal umkontieren.`;
+  }
   if (unvollstaendigCount > 0) {
-    confirmMsg = `${toBook.length} von ${unbookedRows.length} Bank-Buchungen jetzt in streng chronologischer Reihenfolge ins Journal eintragen?\n\nℹ️ Hinweis: ${unvollstaendigCount} Buchung(en) haben noch kein Gegenkonto und verbleiben als unklar/offen in der Liste zur manuellen Kontierung.`;
+    confirmMsg += `\n\n⚠️ Hinweis: ${unvollstaendigCount} Buchung(en) haben noch kein Gegenkonto und verbleiben als unklar/offen in der Liste zur manuellen Kontierung.`;
   }
   confirmMsg += '\n\nZugeordnete Rechnungen und Jahresbeiträge werden parallel als bezahlt markiert.';
 
-  const ok = confirm(confirmMsg);
+  let ok = false;
+  if (window.UIConfirmKit && typeof window.UIConfirmKit.confirm === 'function') {
+    ok = await window.UIConfirmKit.confirm({
+      title: 'Bank-Buchungen ausführen',
+      message: confirmMsg,
+      type: 'primary',
+      confirmText: `${toBook.length} Buchungen jetzt eintragen`,
+      cancelText: 'Abbrechen'
+    });
+  } else {
+    ok = confirm(confirmMsg);
+  }
   if (!ok) return;
 
   window._bhIsBookingAll = true;
