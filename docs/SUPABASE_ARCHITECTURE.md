@@ -119,8 +119,8 @@ Die Migration von Google Sheets / Google Apps Script (GAS) auf Supabase folgt f�
 > Direkte Zugriffe über lokale IP-Adressen (`192.168.x.x`) sind in Produktions-Builds und Frontends untersagt, um Mixed-Content-Sicherheitsblockaden moderner Browser zu verhindern und weltweite Verfügbarkeit zu garantieren.
 
 ```text
-  [ Browser / Frontends ]          [ Cloudflare Edge ]          [ Proxmox VE Host "Medion" ]
-(sps-b55.pages.dev / App / Web)     (SSL/TLS Edge ZRH)            (192.168.68.61)
+  [ Browser / Frontends ]          [ Cloudflare Edge ]          [ Proxmox VE Host "Asus" ]
+(sps-b55.pages.dev / App / Web)     (SSL/TLS Edge ZRH)            (192.168.68.58)
            │                                │                                │
            │ HTTPS                          │ Encrypted Tunnel               │
            └───────────────────────────────►│ (48417d69-...)                 │
@@ -132,8 +132,8 @@ Die Migration von Google Sheets / Google Apps Script (GAS) auf Supabase folgt f�
 ```
 
 * **Öffentliche HTTPS-URL:** `https://supabase-muhen.danfamily.uk` (SSL über Cloudflare Edge Zürich/Amsterdam).
-* **Interner Proxmox-Host:** Medion (`192.168.68.61`).
-* **Supabase-Container:** LXC `117` (`supabase-verein`), interner Port `8000`, automatischer Start (`onboot: 1`).
+* **Interner Proxmox-Host:** Asus (`192.168.68.58`). Der vormalige Container auf Medion (`192.168.68.61`) ist dauerhaft mit `lock: migrate` und `onboot: 0` verriegelt.
+* **Supabase-Container:** LXC `117` (`supabase-verein`) auf Asus, interner Port `8000`, IP `192.168.68.117`, automatischer Start (`onboot: 1`).
 * **Tunnel-Container:** LXC `112` (`cloudfared`), Tunnel-Name `proxmox`.
 * **Zero-Downtime:** Bestehende Tunnel-Verbindungen (PVE, Home Assistant, Immich, Jellyfin etc.) bleiben vollständig isoliert und unberührt.
 
