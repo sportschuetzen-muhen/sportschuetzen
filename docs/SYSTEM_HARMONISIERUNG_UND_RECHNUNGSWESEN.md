@@ -75,8 +75,14 @@ Sämtliche tabellarischen Listen in allen Fachmodulen (`mitglieder-list.js`, `ve
   - **Jahresbeitrag:** `#jbTable` (Beitrags-Übersicht), `#jbMatrixTable` (Beitrags-Matrix), `#jbGebuehrenTable` (Gebühren-Konfiguration), `#jbBankTransactionsTable` (Zahlungsabgleich)
   Alle Zeilenzellen (`<td>`) besitzen explizite `data-col-id`-Attribute für 100%ige Synchronisation zwischen Header und Datenzeilen beim Drag & Drop. Bestehende Filter und Konfigurationen (`localStorage`) bleiben rückwärtskompatibel erhalten. Bei Neu-Rendern werden bestehende Controller über `table._tkController.destroy()` idempotent und leckfrei aufgeräumt.
 
-### 2.2 Standardisiertes Modal- & Drawer-Framework
-* Modale Dialoge (Rechnungserfassung, Zählerstand, Buchungsdetails) nutzen einheitliche Header mit Close-Button (`&times;`).
+### 2.2 Standardisiertes Modal- & Drawer-Framework (`UIModalKit`)
+* **Flächendeckender `UIModalKit`-Standard:** Sämtliche 80 Modaldialoge im gesamten Vereinsportal (Rechnungswesen, FiBu, Inventar, Vermietung, Mitglieder, Anlässe etc.) sind über den globalen Bootstrap-Hook (`shown.bs.modal`) in `vorstand/js/ui-table-kit.js` automatisch mit interaktiven Fensterfunktionen ausgestattet:
+  - **Freies Verschieben (Header-Drag):** Durch Klick & Ziehen auf den `.modal-header` lässt sich jedes Dialogfenster stufenlos auf dem Bildschirm verschieben. Ein Viewport-Kollisionsschutz verhindert das Herausschieben aus dem Sichtbereich.
+  - **Maximieren / Vollbild (Toggle):** Per Klick auf den Maximieren-Button (`.rn-modal-maximize-btn`) oder per **Doppelklick** auf die Titelleiste skaliert das Modal auf Fast-Vollbild (`calc(100vw - 24px)` / `calc(100vh - 24px)`). Beim Schliessen wird der Zustand automatisch auf Normalgrösse zurückgesetzt (`hidden.bs.modal`).
+  - **Stufenloses Resizing:** Ein diskreter SVG-Resizer-Grip unten rechts (`.rn-modal-resizer`) erlaubt horizontales und vertikales Ziehen bei dynamischer Anpassung von `modalBody.style.maxHeight` und automatischem Scrollen.
+  - **Auto-Injection:** Maximize-Button und Resizer-Grip werden bei Bedarf automatisch in den DOM injiziert, ohne dass statische HTML-Definitionen manuell überarbeitet werden müssen.
+  - **Mobile-Schutz:** Auf Touchscreens und Mobilgeräten (`window.innerWidth < 768px`) bleibt das freie Verschieben und Resizen zugunsten der nativen Touch-Ergonomie deaktiviert.
+* Modale Dialoge nutzen einheitliche Header mit Close-Button (`&times;`).
 * Aktionen sind stets rechtsbündig angeordnet: `[ Abbrechen (Secondary) ]` und `[ Speichern / Bestätigen (Primary) ]`.
 * Formulareingaben in Schnellerfassungen (`jahresbeitrag-schnellerfassung.js`, `resultate-input.js`) puffern Zwischenstände im `sessionStorage`, um Datenverlust bei unbeabsichtigtem Tab-Wechsel zu verhindern.
 

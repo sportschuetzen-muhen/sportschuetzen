@@ -1380,8 +1380,14 @@
       if (closeBtn) {
         maxBtn = document.createElement('button');
         maxBtn.type = 'button';
-        const isHeaderWhite = header.classList.contains('text-white') || header.classList.contains('bg-primary') || header.classList.contains('bg-dark');
-        maxBtn.className = `btn btn-sm btn-link ${isHeaderWhite ? 'text-white' : 'text-secondary'} p-0 rn-modal-maximize-btn me-2`;
+        const isHeaderDarkBg = header.classList.contains('text-white') || 
+                               header.classList.contains('bg-primary') || 
+                               header.classList.contains('bg-dark') ||
+                               header.classList.contains('bg-danger') ||
+                               header.classList.contains('bg-success') ||
+                               header.classList.contains('bg-secondary') ||
+                               header.classList.contains('bg-info');
+        maxBtn.className = `btn btn-sm btn-link ${isHeaderDarkBg ? 'text-white' : 'text-secondary'} p-0 rn-modal-maximize-btn me-2`;
         maxBtn.title = 'Maximieren / Wiederherstellen';
         maxBtn.style.textDecoration = 'none';
         maxBtn.style.fontSize = '0.95rem';
@@ -1396,7 +1402,7 @@
       resizer.className = 'rn-modal-resizer';
       resizer.title = 'Grösse durch Ziehen verändern';
       resizer.style.cssText = 'position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 1060; display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px; color: #94a3b8; user-select: none;';
-      resizer.innerHTML = '<i class="fas fa-arrows-alt-diagonal" style="font-size: 10px; opacity: 0.5;"></i>';
+      resizer.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="opacity: 0.5;"><line x1="8" y1="2" x2="2" y2="8"></line><line x1="8" y1="5" x2="5" y2="8"></line><line x1="8" y1="8" x2="8" y2="8"></line></svg>';
       content.style.position = 'relative';
       content.appendChild(resizer);
     }
@@ -1584,6 +1590,23 @@
         }
       };
     }
+
+    // Beim Schliessen: Falls maximiert geschlossen wurde, auf Normalgrösse für das nächste Öffnen zurücksetzen
+    modalEl.addEventListener('hidden.bs.modal', function() {
+      if (isMaximized && maxBtn) {
+        maxBtn.click();
+      }
+    });
+  }
+
+  // 8.1 Automatischer globaler Hook für alle Bootstrap 5 Modale im gesamten Vereinsportal
+  if (typeof document !== 'undefined') {
+    document.addEventListener('shown.bs.modal', function(e) {
+      // Nur auf Bildschirmen >= 768px (Desktop / Tablet) aktivieren, um Mobilgeräte nicht zu beeinträchtigen
+      if (window.innerWidth >= 768 && e.target && e.target.classList && e.target.classList.contains('modal')) {
+        makeModalMovableAndResizable(e.target);
+      }
+    });
   }
 
   // Globale Registrierung
