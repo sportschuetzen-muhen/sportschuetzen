@@ -1789,7 +1789,7 @@ function bhRenderSpartenErfolgsrechnung() {
   const kleiderAufwand = getBal('8501');
 
   // 13. Sponsoring & Spenden
-  const sponsorErtrag = getBal('3710') + getBal('3800');
+  const sponsorErtrag = getBal('3800');
   const sponsorAufwand = 0;
 
   const sparten = [
@@ -1801,7 +1801,7 @@ function bhRenderSpartenErfolgsrechnung() {
     { name: 'Mitgliederbeiträge', ertragKonti: '3410, 3412, 3413', ertrag: mitgliederErtrag, aufwandKonti: '–', aufwand: mitgliederAufwand },
     { name: 'Verbands- & Lizenzwesen', ertragKonti: '3411, 3421', ertrag: verbandErtrag, aufwandKonti: '4400, 4401, 4410', aufwand: verbandAufwand },
     { name: 'Jugendförderung & J&S', ertragKonti: '3423, 3424', ertrag: jugendErtrag, aufwandKonti: '4210', aufwand: jugendAufwand },
-    { name: 'Sponsoring, Gönner & Spenden', ertragKonti: '3710, 3800', ertrag: sponsorErtrag, aufwandKonti: '–', aufwand: sponsorAufwand },
+    { name: 'Sponsoring, Gönner & Spenden', ertragKonti: '3800', ertrag: sponsorErtrag, aufwandKonti: '–', aufwand: sponsorAufwand },
     { name: 'Allgemeiner Gebäudebetrieb', ertragKonti: '–', ertrag: gebaeudeErtrag, aufwandKonti: '60xx, 63xx, 6400 (Restanteil)', aufwand: gebaeudeAufwand },
     { name: 'Administration, IT & Verein', ertragKonti: '–', ertrag: adminErtrag, aufwandKonti: '6500-20, 6700-02', aufwand: adminAufwand },
     { name: 'Finanzergebnis', ertragKonti: '8110', ertrag: finanzErtrag, aufwandKonti: '6940 Bankspesen', aufwand: finanzAufwand },
