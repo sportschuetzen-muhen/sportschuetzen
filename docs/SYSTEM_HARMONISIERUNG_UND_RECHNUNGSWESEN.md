@@ -121,6 +121,17 @@ Der Service `UIExportKit` (`vorstand/js/ui-table-kit.js`) bündelt alle Tabellen
 * **Data-to-Excel (`UIExportKit.dataToExcel`):** Exportiert Rohdaten-Arrays mit anpassbarem Spalten-Mapping und automatischem Tagesdatum-Dateisuffix (`_YYYY-MM-DD.xlsx`).
 * **Data-to-CSV (`UIExportKit.dataToCsv`):** Erzeugt UTF-8 BOM CSV-Dateien mit Semikolon-Trennzeichen für Schweizer Microsoft Excel.
 
+### 2.9 Globale Tastatur-Ergonomie (`UIHotkeyKit`)
+Standardisierte Tastenkombinationen für effizientes Arbeiten am Desktop:
+* **`Strg + S` / `Cmd + S` (Speichern):** Fängt das Standard-Browser-Popup ab und löst gezielt den Speichern-Button des aktuellen Modals bzw. der aktiven Arbeitskachel aus (inkl. diskretem Toast-Feedback).
+* **`Escape` (Hierarchie-Schliessen):** Schliesst der Reihe nach oberste Modale, offene Dropdown-Menüs oder leert das aktive Suchfeld bei gesetztem Fokus.
+* **`Strg + K` oder `/` (Suche):** Setzt den Fokus unmittelbar in das primäre Filter- und Suchfeld der aktuell angezeigten Tabelle.
+
+### 2.10 Verbindungs- & Session-Guard (`UIConnectivityKit`)
+Schutz vor Datenverlust bei Verbindungsabbruch oder Session-Timeout:
+* **Offline-Banner:** Ein fest verankertes Banner am oberen Bildschirmrand (`#ui-connectivity-banner`) warnt bei Verbindungsunterbruch («⚠️ Du bist offline»), um versehentliches Neuladen mit Formularverlust zu verhindern, und quittiert die Wiederverbindung («✅ Wieder online»).
+* **Auth-Token Heartbeat:** Prüft alle 10 Minuten im Hintergrund die Gültigkeit des Supabase-JWTs und erneuert diesen bei verbleibender Restzeit von < 15 Minuten transparent via `supabase.auth.refreshSession()`.
+
 ---
 
 ## 3. Entkopplung & Zero-Trust Sicherheitsmodell

@@ -2440,6 +2440,320 @@
     }
   };
 
+  // ===========================================================================
+  // 13. GLOBALE TASTATUR-ERGONOMIE (UIHotkeyKit)
+  // ===========================================================================
+  const UIHotkeyKit = {
+    _customHotkeys: {},
+    _initialized: false,
+
+    init() {
+      if (this._initialized || typeof window === 'undefined') return;
+      this._initialized = true;
+
+      window.addEventListener('keydown', (e) => {
+        const isCtrl = e.ctrlKey || e.metaKey;
+        const key = e.key.toLowerCase();
+        const activeEl = document.activeElement;
+        const isInputFocused = activeEl && (
+          activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.tagName === 'SELECT' ||
+          activeEl.isContentEditable
+        );
+
+        // 1. Custom Hotkeys prüfen (z.B. 'ctrl+s', 'escape', 'ctrl+k')
+        const combo = (isCtrl ? 'ctrl+' : '') + (e.shiftKey ? 'shift+' : '') + (e.altKey ? 'alt+' : '') + key;
+        if (this._customHotkeys[combo]) {
+          const res = this._customHotkeys[combo](e);
+          if (res === false) {
+            e.preventDefault();
+            return;
+          }
+        }
+
+        // 2. Strg + S / Cmd + S (Speichern-Guard)
+        if (isCtrl && key === 's') {
+          e.preventDefault();
+          this._handleSave();
+          return;
+        }
+
+        // 3. Escape (Hierarchisches Schliessen)
+        if (key === 'escape') {
+          this._handleEscape(e);
+          return;
+        }
+
+        // 4. Strg + K oder '/' (Schnellsuche)
+        if ((isCtrl && key === 'k') || (key === '/' && !isInputFocused && !isCtrl)) {
+          e.preventDefault();
+          this._handleSearchFocus();
+          return;
+        }
+      });
+    },
+
+    register(shortcut, handler) {
+      if (!shortcut || typeof handler !== 'function') return;
+      this._customHotkeys[shortcut.toLowerCase().trim()] = handler;
+      if (!this._initialized) this.init();
+    },
+
+    unregister(shortcut) {
+      delete this._customHotkeys[shortcut.toLowerCase().trim()];
+    },
+
+    _handleSave() {
+      // Priorität 1: Modal geöffnet?
+      const openModal = document.querySelector('.modal.show');
+      if (openModal) {
+        const modalBtn = openModal.querySelector(
+          '.modal-footer button.btn-primary:not([disabled]):not([style*="display: none"]), ' +
+          '.modal-footer button.btn-success:not([disabled]):not([style*="display: none"]), ' +
+          'button[type="submit"]:not([disabled]):not([style*="display: none"]), ' +
+          '.btn-save:not([disabled]):not([style*="display: none"])'
+        );
+        if (modalBtn) {
+          modalBtn.click();
+          this._showToast('💾 Speichern ausgelöst');
+          return;
+        }
+      }
+
+      // Priorität 2: Aktiver Speichern-Button der aktuellen Sektion / Kachel
+      const activeContainer = document.querySelector('.tab-pane.active, .card:not([style*="display: none"]), main') || document.body;
+      const saveBtn = activeContainer.querySelector(
+        'button.btn-primary.btn-save:not([disabled]), ' +
+        '#btnSave:not([disabled]), ' +
+        '.btn-save:not([disabled]), ' +
+        'button[type="submit"]:not([disabled])'
+      );
+      if (saveBtn) {
+        saveBtn.click();
+        this._showToast('💾 Speichern ausgelöst');
+        return;
+      }
+
+      // Fallback: SaveButtonKit falls vorhanden
+      if (window.SaveButtonKit && typeof window.SaveButtonKit.trigger === 'function') {
+        window.SaveButtonKit.trigger();
+        this._showToast('💾 Speichern ausgelöst');
+      }
+    },
+
+    _handleEscape(e) {
+      // Priorität 1: Oberstes Modal schliessen
+      const openModals = Array.from(document.querySelectorAll('.modal.show'));
+      if (openModals.length > 0) {
+        const topModal = openModals[openModals.length - 1];
+        if (topModal.dataset.bsKeyboard !== 'false') {
+          if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const inst = bootstrap.Modal.getInstance(topModal);
+            if (inst) {
+              inst.hide();
+              return;
+            }
+          }
+          const closeBtn = topModal.querySelector('.btn-close, [data-bs-dismiss="modal"]');
+          if (closeBtn) {
+            closeBtn.click();
+            return;
+          }
+        }
+      }
+
+      // Priorität 2: Offene Dropdown-Menüs schliessen
+      const openDropdowns = Array.from(document.querySelectorAll('.dropdown-menu.show'));
+      if (openDropdowns.length > 0) {
+        openDropdowns.forEach(d => {
+          const toggle = d.closest('.dropdown')?.querySelector('[data-bs-toggle="dropdown"]');
+          if (toggle && typeof bootstrap !== 'undefined' && bootstrap.Dropdown) {
+            const inst = bootstrap.Dropdown.getInstance(toggle);
+            if (inst) inst.hide();
+          } else {
+            d.classList.remove('show');
+          }
+        });
+        return;
+      }
+
+      // Priorität 3: Wenn Suchfeld aktiv, leeren und Filter resetten
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.type === 'search' || activeEl.classList.contains('tk-search-input') || (activeEl.id && activeEl.id.includes('Search')))) {
+        if (activeEl.value) {
+          activeEl.value = '';
+          activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+          activeEl.blur();
+        }
+      }
+    },
+
+    _handleSearchFocus() {
+      const activeContainer = document.querySelector('.tab-pane.active') || document.body;
+      const searchInput = activeContainer.querySelector(
+        'input[type="search"], ' +
+        'input.tk-search-input, ' +
+        '#mglSearchInput, ' +
+        '#rnSearchInput, ' +
+        '#jbSearchInput, ' +
+        'input[id*="search" i], ' +
+        'input[placeholder*="Suchen" i]'
+      );
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+    },
+
+    _showToast(msg) {
+      let toastEl = document.getElementById('ui-hotkey-toast');
+      if (!toastEl) {
+        toastEl = document.createElement('div');
+        toastEl.id = 'ui-hotkey-toast';
+        toastEl.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 1099; background: rgba(15, 23, 42, 0.85); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.15); backdrop-filter: blur(4px);';
+        document.body.appendChild(toastEl);
+      }
+      toastEl.textContent = msg;
+      toastEl.style.opacity = '1';
+      if (this._toastTimer) clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => {
+        toastEl.style.opacity = '0';
+      }, 1500);
+    }
+  };
+
+  // ===========================================================================
+  // 14. OFFLINE-BANNER & AUTH-TOKEN HEARTBEAT (UIConnectivityKit)
+  // ===========================================================================
+  const UIConnectivityKit = {
+    _bannerEl: null,
+    _heartbeatTimer: null,
+    _isOnline: true,
+    _initialized: false,
+
+    init(options = {}) {
+      if (this._initialized || typeof window === 'undefined') return;
+      this._initialized = true;
+
+      this._isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
+        ? navigator.onLine
+        : true;
+
+      window.addEventListener('online', () => this._handleConnectivityChange(true));
+      window.addEventListener('offline', () => this._handleConnectivityChange(false));
+
+      if (!this._isOnline) {
+        this._showBanner(false);
+      }
+
+      // Heartbeat: alle 10 Minuten
+      const intervalMs = options.heartbeatIntervalMs || (10 * 60 * 1000);
+      this._heartbeatTimer = setInterval(() => this.checkSession(), intervalMs);
+      if (this._heartbeatTimer && typeof this._heartbeatTimer.unref === 'function') {
+        this._heartbeatTimer.unref();
+      }
+
+      // Bei Rückkehr zum Browser-Tab
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            this.checkSession();
+          }
+        });
+      }
+    },
+
+    isOnline() {
+      return (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
+        ? navigator.onLine
+        : this._isOnline;
+    },
+
+    _ensureBanner() {
+      if (this._bannerEl && document.body.contains(this._bannerEl)) return this._bannerEl;
+      let el = document.getElementById('ui-connectivity-banner');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'ui-connectivity-banner';
+        el.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; z-index: 2000; text-align: center; padding: 7px 16px; font-size: 0.85rem; font-weight: 600; display: none; transition: transform 0.25s ease, opacity 0.25s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.15);';
+        document.body.prepend(el);
+      }
+      this._bannerEl = el;
+      return el;
+    },
+
+    _handleConnectivityChange(isOnline) {
+      this._isOnline = isOnline;
+      this._showBanner(isOnline);
+      if (isOnline) {
+        this.checkSession();
+      }
+    },
+
+    _showBanner(isOnline) {
+      const banner = this._ensureBanner();
+      if (this._bannerHideTimeout) clearTimeout(this._bannerHideTimeout);
+
+      if (!isOnline) {
+        banner.style.backgroundColor = '#dc2626';
+        banner.style.color = '#ffffff';
+        banner.innerHTML = '<i class="fas fa-wifi-slash me-2"></i>⚠️ <strong>Du bist offline:</strong> Keine Internetverbindung. Bitte Seiten nicht neu laden, damit deine Eingaben erhalten bleiben.';
+        banner.style.display = 'block';
+      } else {
+        if (banner.style.display !== 'none') {
+          banner.style.backgroundColor = '#16a34a';
+          banner.style.color = '#ffffff';
+          banner.innerHTML = '<i class="fas fa-check-circle me-2"></i>✅ <strong>Wieder online:</strong> Verbindung zum Server hergestellt.';
+          this._bannerHideTimeout = setTimeout(() => {
+            banner.style.display = 'none';
+          }, 2500);
+        }
+      }
+    },
+
+    async checkSession() {
+      try {
+        const client = window.sb || (typeof supabase !== 'undefined' ? supabase : null);
+        if (!client || !client.auth) return;
+
+        const { data, error } = await client.auth.getSession();
+        if (error || !data || !data.session) return;
+
+        const session = data.session;
+        if (!session.expires_at) return;
+
+        const nowSec = Math.floor(Date.now() / 1000);
+        const remainingSec = session.expires_at - nowSec;
+
+        if (remainingSec < 900) {
+          console.log('🔄 UIConnectivityKit: Auth-Token läuft in <15 Min ab. Erneuere Session transparent...');
+          const { error: refreshErr } = await client.auth.refreshSession();
+          if (refreshErr) {
+            console.warn('⚠️ UIConnectivityKit: Token-Refresh fehlgeschlagen:', refreshErr);
+          } else {
+            console.log('✅ UIConnectivityKit: Session erfolgreich verlängert.');
+          }
+        }
+      } catch (err) {
+        console.warn('UIConnectivityKit checkSession Fehler:', err);
+      }
+    }
+  };
+
+  // 14.1 Automatische Initialisierung bei Skript-Ausführung
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        UIHotkeyKit.init();
+        UIConnectivityKit.init();
+      });
+    } else {
+      UIHotkeyKit.init();
+      UIConnectivityKit.init();
+    }
+  }
+
   // Globale Registrierung
   window.TableKit = {
     makeSortable,
@@ -2460,6 +2774,8 @@
     Format: UIFormat,
     Button: UIButtonKit,
     Export: UIExportKit,
+    Hotkey: UIHotkeyKit,
+    Connectivity: UIConnectivityKit,
     ensureStyles
   };
 
@@ -2485,7 +2801,11 @@
 
   window.UIExportKit = UIExportKit;
 
-  console.log('✅ TableKit, UIModalKit, UIConfirmKit, UIFormatKit, UIButtonKit & UIExportKit Standard geladen (Sportschützen Muhen UI Toolkit)');
+  window.UIHotkeyKit = UIHotkeyKit;
+  window.UIConnectivityKit = UIConnectivityKit;
+
+  console.log('✅ TableKit, UIModalKit, UIConfirmKit, UIFormatKit, UIButtonKit, UIExportKit, UIHotkeyKit & UIConnectivityKit Standard geladen (Sportschützen Muhen UI Toolkit)');
 })();
+
 
 

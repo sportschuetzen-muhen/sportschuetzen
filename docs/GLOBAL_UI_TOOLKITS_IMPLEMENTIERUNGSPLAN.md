@@ -1,8 +1,8 @@
 # Implementierungsplan: Globale UI-Toolkits & System-Harmonisierung
 
-> **Status:** IN UMSETZUNG (Phasen 1–4 produktiv verifiziert)  
+> **Status:** PRODUKTIV VOLLSTÄNDIG UMGESETZT (Alle 6 Phasen verifiziert)  
 > **Stand:** 27. Oktober 2026  
-> **Gültigkeit:** Verbindlicher Leitfaden für die schrittweise Einführung der globalen Toolkits im Vorstandscockpit (`vorstand/js/`)  
+> **Gültigkeit:** Verbindlicher Leitfaden für die globalen Toolkits im Vorstandscockpit (`vorstand/js/`)  
 > **Referenz:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md)  
 
 ---
@@ -174,9 +174,11 @@ Zur Einhaltung von Stabilität, Reviewbarkeit und Projekt-Richtlinien wird die U
    - `UIButtonKit.withLoading`: Double-Submit Schutz, Spinner-Injektion und garantierter Originalzustand-Reset im `finally`-Block.
    - `UIExportKit`: Zentraler SheetJS Excel- (`tableToExcel`, `dataToExcel`) und CSV-Export (`dataToCsv`) mit Auto-Breiten (`!cols`), Datumssuffix und TableKit-Filterung.
    - Unit- und E2E-Tests im Browser erfolgreich bestanden.
-3. **Paket C (Ergonomie & Stabilität):**
-   - Implementierung von `UIHotkeyKit` & `UIConnectivityKit`.
-   - Globaler Testlauf und Dokumentationsabschluss.
+3. **Paket C (Ergonomie & Stabilität):** ✅ **ABGESCHLOSSEN & VERIFIZIERT**
+   - Implementierung von `UIHotkeyKit` & `UIConnectivityKit` in `vorstand/js/ui-table-kit.js`.
+   - `UIHotkeyKit`: `Strg+S` Speichern-Guard (Modal-Submit oder Sektions-Speichern mit dezentem Feedback), `Escape` Hierarchie-Schliessen (Modal, Dropdown, Suchfilter-Reset), `/` oder `Strg+K` Direktfokus ins Suchfeld.
+   - `UIConnectivityKit`: Fixes Offline-Warnbanner am oberen Bildschirmrand (`#ui-connectivity-banner`), sanftes Online-Feedback und automatischer transparenter Auth-Token Heartbeat für Supabase-Sessions.
+   - Unit- und E2E-Tests im Browser erfolgreich bestanden.
 
 ---
 
