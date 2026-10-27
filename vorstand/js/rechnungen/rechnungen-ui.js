@@ -580,38 +580,38 @@ window.rnRenderTable = function() {
 
     return `
       <tr class="bh-account-row" id="rn-row-${item.id}">
-        <td class="text-center tk-col-check" onclick="event.stopPropagation()">
+        <td data-col-id="check" class="text-center tk-col-check" onclick="event.stopPropagation()">
           <input type="checkbox" class="form-check-input rn-table-row-check" data-id="${item.id}" value="${item.id}" onchange="rnOnTableRowSelectChange()">
         </td>
-        <td class="tk-col-id">
+        <td data-col-id="id" class="tk-col-id">
           <span class="bh-konto-badge bh-konto-soll-badge rn-id-badge" style="cursor: pointer;" onclick="rnOpenDetailsModal('${item.id}')" title="Klicken für Rechnungsdetails">
             ${item.id}
           </span>
         </td>
-        <td class="tk-col-name">
+        <td data-col-id="name" class="tk-col-name">
           <div class="fw-bold text-dark mb-0 rn-recipient-name">
             ${escapeHtml(item.name)}
             ${mailSentBadge}
           </div>
           ${numberLabel}
         </td>
-        <td class="text-muted font-monospace tk-col-created_at" style="font-size: 13px;" title="Rechnungsdatum: ${createdDisplay}">${createdDisplay}</td>
-        <td class="text-muted font-monospace tk-col-send_date" style="font-size: 13px;" title="${item.send_date ? 'Versandt am: ' + escapeHtml(item.send_date) : (item.mail_status === 'gesendet' ? 'Rechnung wurde versendet' : 'Noch nicht versendet')}">
+        <td data-col-id="created_at" class="text-muted font-monospace tk-col-created_at" style="font-size: 13px;" title="Rechnungsdatum: ${createdDisplay}">${createdDisplay}</td>
+        <td data-col-id="send_date" class="text-muted font-monospace tk-col-send_date" style="font-size: 13px;" title="${item.send_date ? 'Versandt am: ' + escapeHtml(item.send_date) : (item.mail_status === 'gesendet' ? 'Rechnung wurde versendet' : 'Noch nicht versendet')}">
           ${item.send_date ? `<span class="text-dark"><i class="fas fa-paper-plane text-success me-1" style="font-size:11px;"></i>${sendDisplay}</span>` : sendDisplay}
         </td>
-        <td class="text-muted font-monospace tk-col-year" style="font-size: 14px; font-weight: 500;">${item.year}</td>
-        <td class="tk-col-type">
+        <td data-col-id="year" class="text-muted font-monospace tk-col-year" style="font-size: 14px; font-weight: 500;">${item.year}</td>
+        <td data-col-id="type" class="tk-col-type">
           <span class="badge bg-light text-dark border" style="font-size: 12.5px; padding: 5px 10px;">
             ${item.type}
             ${item.type === 'Jahresbeitrag' ? '<i class="fas fa-lock text-warning ms-1" title="Jahresbeitrag – synchronisiert über Schnellerfassung"></i>' : ''}
           </span>
         </td>
-        <td class="text-center tk-col-status">
+        <td data-col-id="status" class="text-center tk-col-status">
           ${statusBadge}
           ${extraBadge}
         </td>
-        <td class="text-end fw-bold text-primary font-monospace rn-amount-cell tk-col-amount">${fmtChf(item.total_amount)}</td>
-        <td class="text-end tk-col-actions" style="white-space: nowrap; width: 160px;">
+        <td data-col-id="amount" class="text-end fw-bold text-primary font-monospace rn-amount-cell tk-col-amount">${fmtChf(item.total_amount)}</td>
+        <td data-col-id="actions" class="text-end tk-col-actions" style="white-space: nowrap; width: 160px;">
           <div class="d-inline-flex align-items-center gap-1.5 justify-content-end">
             ${item.pdf_url ? `
               <a href="${item.pdf_url}" onclick="rnOpenInvoicePdf('${item.id}', '${escapeJs(item.pdf_url)}', '${escapeJs(item.name)}', event)" target="_blank" class="btn btn-sm btn-outline-danger shadow-xs fw-semibold px-2 py-1" title="PDF QR-Rechnung herunterladen / im Browser ansehen">
@@ -704,28 +704,23 @@ window.rnRenderTable = function() {
     rnOnTableRowSelectChange();
   }
 
-  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
-    window._rnInvoicesColReorder = window.TableKit.makeColumnReorderable('#rn-invoices-table', {
-      storageKey: 'rn_invoices_table_col_order',
-      lockedColumns: ['check', 'actions']
-    });
-  }
-
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-    window.TableKit.setupColumnToggle('#rn-invoices-table', {
-      container: '#rn-column-toggle',
-      storageKey: 'rn_invoices_table_cols'
-    });
-  }
-
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#rn-invoices-table', {
-      storageKey: 'rn_invoices_table_col_widths',
-      minWidth: 45,
-      columns: {
-        check: { resizable: false, minWidth: 44, defaultWidth: 44 },
-        actions: { minWidth: 100, defaultWidth: 150 }
-      }
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._rnInvoicesTableController = window.TableKit.initTable('#rn-invoices-table', {
+      id: 'rn_invoices_table',
+      storageKeyWidths: 'rn_invoices_table_col_widths',
+      storageKeyOrder: 'rn_invoices_table_col_order',
+      storageKeyCols: 'rn_invoices_table_cols',
+      resizable: {
+        minWidth: 45,
+        columns: {
+          check: { resizable: false, minWidth: 44, defaultWidth: 44 },
+          actions: { minWidth: 100, defaultWidth: 150 }
+        }
+      },
+      reorderable: {
+        lockedColumns: ['check', 'actions']
+      },
+      columnToggle: '#rn-column-toggle'
     });
   }
 };
@@ -1367,31 +1362,31 @@ window.rnRenderContactsRows = function() {
 
     return `
       <tr>
-        <td class="text-center fw-bold text-muted small tk-col-idx" style="width: 40px;">${idx + 1}</td>
-        <td class="tk-col-id" style="width: 90px;">
+        <td data-col-id="idx" class="text-center fw-bold text-muted small tk-col-idx" style="width: 40px;">${idx + 1}</td>
+        <td data-col-id="id" class="tk-col-id" style="width: 90px;">
           <span class="badge bg-light text-primary border font-monospace px-2 py-1">EXT-${escapeHtml(c.id)}</span>
         </td>
-        <td class="tk-col-type" style="width: 120px;">
+        <td data-col-id="type" class="tk-col-type" style="width: 120px;">
           <span class="badge ${isFirma ? 'bg-indigo text-white bg-opacity-75' : 'bg-light text-dark border'} me-1">
             <i class="fas ${isFirma ? 'fa-building' : 'fa-user'} me-1"></i>${isFirma ? 'Firma' : 'Privat'}
           </span>
           <span class="badge ${catBadgeClass} small">${escapeHtml(category)}</span>
         </td>
-        <td class="tk-col-name">
+        <td data-col-id="name" class="tk-col-name">
           <div class="fw-bold text-dark">${mainTitle}</div>
           ${subTitle ? `<div class="small mt-0.5">${subTitle}</div>` : ''}
           ${c.bemerkungen ? `<div class="small text-muted fst-italic mt-0.5"><i class="fas fa-sticky-note me-1 text-warning"></i>${escapeHtml(c.bemerkungen)}</div>` : ''}
         </td>
-        <td class="tk-col-email">
+        <td data-col-id="email" class="tk-col-email">
           ${c.email ? `<a href="mailto:${escapeHtml(c.email)}" class="text-decoration-none text-primary fw-medium"><i class="fas fa-envelope me-1 small"></i>${escapeHtml(c.email)}</a>` : '<span class="text-muted">–</span>'}
         </td>
-        <td class="tk-col-address">
+        <td data-col-id="address" class="tk-col-address">
           ${fullAddress ? `<small class="text-secondary"><i class="fas fa-map-marker-alt me-1 text-muted"></i>${escapeHtml(fullAddress)}</small>` : '<span class="text-muted">–</span>'}
         </td>
-        <td class="tk-col-phone">
+        <td data-col-id="phone" class="tk-col-phone">
           ${c.telefon ? `<small class="text-secondary"><i class="fas fa-phone me-1 text-muted"></i>${escapeHtml(c.telefon)}</small>` : '<span class="text-muted">–</span>'}
         </td>
-        <td class="text-end tk-col-actions" style="width: 150px;">
+        <td data-col-id="actions" class="text-end tk-col-actions" style="width: 150px;">
           <div class="btn-group btn-group-sm shadow-sm">
             <button class="btn btn-outline-primary" onclick="rnOpenCreateModal(); setTimeout(() => { const sel = document.getElementById('rnc-member-select'); if(sel) { sel.value = 'EXT:${c.id}'; rnHandleMemberSelect(sel.value); } }, 200);" title="Rechnung an diesen Kontakt erstellen">
               <i class="fas fa-file-invoice-dollar"></i>
@@ -1470,32 +1465,24 @@ window.renderTabContacts = function(content) {
     </div>
   `;
 
-  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
-    window._rnContactsColReorder = window.TableKit.makeColumnReorderable('#rn-contacts-table', {
-      storageKey: 'rn_contacts_table_col_order',
-      lockedColumns: ['idx', 'actions']
-    });
-    if (window._rnContactsColReorder && typeof window._rnContactsColReorder.apply === 'function') {
-      window._rnContactsColReorder.apply();
-    }
-  }
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-    window.TableKit.setupColumnToggle('#rn-contacts-table', {
-      container: '#rn-contacts-col-toggle',
-      storageKey: 'rn_contacts_table_cols'
-    });
-  }
-  if (window.TableKit && typeof window.TableKit.makeSortable === 'function') {
-    window.TableKit.makeSortable(document.getElementById('rn-contacts-table'));
-  }
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#rn-contacts-table', {
-      storageKey: 'rn_contacts_table_col_widths',
-      minWidth: 40,
-      columns: {
-        idx: { minWidth: 40, defaultWidth: 40, resizable: false },
-        actions: { minWidth: 100, defaultWidth: 150 }
-      }
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._rnContactsTableController = window.TableKit.initTable('#rn-contacts-table', {
+      id: 'rn_contacts_table',
+      storageKeyWidths: 'rn_contacts_table_col_widths',
+      storageKeyOrder: 'rn_contacts_table_col_order',
+      storageKeyCols: 'rn_contacts_table_cols',
+      sortable: true,
+      resizable: {
+        minWidth: 40,
+        columns: {
+          idx: { minWidth: 40, defaultWidth: 40, resizable: false },
+          actions: { minWidth: 100, defaultWidth: 150 }
+        }
+      },
+      reorderable: {
+        lockedColumns: ['idx', 'actions']
+      },
+      columnToggle: '#rn-contacts-col-toggle'
     });
   }
 };

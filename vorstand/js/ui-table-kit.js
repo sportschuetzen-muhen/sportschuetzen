@@ -1206,6 +1206,11 @@
     const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
     if (!table) return null;
 
+    // Vorherigen Controller/Observer sauber abkoppeln falls vorhanden
+    if (table._tkController && typeof table._tkController.destroy === 'function') {
+      table._tkController.destroy();
+    }
+
     const baseId = options.id || table.id || 'table';
     const storageKeyPrefix = options.storagePrefix || 'tk_';
     const keyWidths = options.storageKeyWidths || `${storageKeyPrefix}widths_${baseId}`;

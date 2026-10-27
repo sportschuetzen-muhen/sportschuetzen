@@ -240,8 +240,8 @@ function mglRenderRows(data) {
                     : '<span class="text-muted small">–</span>';
 
                   return `<tr>
-                    <td class="small text-muted text-center tk-col-idx font-monospace" style="font-size:0.8rem">${idx + 1}</td>
-                    <td class="small tk-col-nr">
+                    <td data-col-id="idx" class="small text-muted text-center tk-col-idx font-monospace" style="font-size:0.8rem">${idx + 1}</td>
+                    <td data-col-id="nr" class="small tk-col-nr">
                       <div class="d-flex align-items-center">
                         <span class="fw-bold text-dark font-monospace" style="font-size:0.88rem">${addrNum}</span>
                         ${copyIconLiz}
@@ -250,7 +250,7 @@ function mglRenderRows(data) {
                         <span>SSV: ${pn}</span>
                       </div>
                     </td>
-                    <td class="tk-col-name">
+                    <td data-col-id="name" class="tk-col-name">
                       <a href="#" class="text-decoration-none fw-semibold text-dark"
                          onclick="mglOpenDetail('${pn}'); return false;">
                         ${name}
@@ -259,20 +259,20 @@ function mglRenderRows(data) {
                       ${(m.Vereinsaustritt && window._mglFilterType === 'inaktiv') ? `<div class="text-danger small mt-1" style="font-size:0.75rem;"><i class="fas fa-sign-out-alt me-1"></i>Austritt: ${mglFmtDate(m.Vereinsaustritt)}</div>` : ''}
                       ${(m.Todesdatum && window._mglFilterType === 'verstorben') ? `<div class="text-secondary small mt-1" style="font-size:0.75rem;"><i class="fas fa-cross me-1"></i>Verstorben: ${mglFmtDate(m.Todesdatum)}</div>` : ''}
                     </td>
-                    <td class="small text-nowrap tk-col-geburt">
+                    <td data-col-id="geburt" class="small text-nowrap tk-col-geburt">
                       <div>${birthDateStr}</div>
                       ${altersBadge ? `<div class="mt-1">${altersBadge}</div>` : ''}
                     </td>
-                    <td class="small tk-col-email">${email}</td>
-                    <td class="small tk-col-telefon">${phone}</td>
-                    <td class="tk-col-lizenzen">
+                    <td data-col-id="email" class="small tk-col-email">${email}</td>
+                    <td data-col-id="telefon" class="small tk-col-telefon">${phone}</td>
+                    <td data-col-id="lizenzen" class="tk-col-lizenzen">
                       <div class="d-flex flex-wrap gap-1">${licBadgesHtml}</div>
                     </td>
-                    <td class="tk-col-funktionen">
+                    <td data-col-id="funktionen" class="tk-col-funktionen">
                       <div class="d-flex flex-wrap gap-1">${fnBadgesHtml}</div>
                     </td>
-                    <td class="tk-col-status">${statusBadge}</td>
-                    <td class="text-nowrap text-end tk-col-actions">
+                    <td data-col-id="status" class="tk-col-status">${statusBadge}</td>
+                    <td data-col-id="actions" class="text-nowrap text-end tk-col-actions">
                       <button class="btn btn-outline-primary btn-sm py-0 px-2"
                               onclick="mglOpenDetail('${pn}')" title="Details öffnen">
                         <i class="fas fa-eye"></i>
@@ -293,28 +293,23 @@ function mglRenderRows(data) {
       </div>
     `;
 
-    if (typeof window.TableKit?.makeResizable === 'function') {
-      window.TableKit.makeResizable('#mgl-table', {
-        storageKey: 'portal_mgl_col_widths',
-        minWidth: 50,
-        columns: {
-          idx: { minWidth: 35, defaultWidth: 44, resizable: false },
-          actions: { minWidth: 75, defaultWidth: 85, resizable: false }
-        }
-      });
-    }
-
-    if (typeof window.TableKit?.makeColumnReorderable === 'function') {
-      window._mglColReorder = window.TableKit.makeColumnReorderable('#mgl-table', {
-        storageKey: 'portal_mgl_col_order',
-        lockedColumns: ['idx', 'actions']
-      });
-    }
-
-    if (typeof window.TableKit?.setupColumnToggle === 'function') {
-      window._mglColToggle = window.TableKit.setupColumnToggle('#mgl-table', {
-        container: '#mgl-column-toggle',
-        storageKey: 'portal_mgl_columns_visibility'
+    if (typeof window.TableKit?.initTable === 'function') {
+      window._mglTableController = window.TableKit.initTable('#mgl-table', {
+        id: 'portal_mgl',
+        storageKeyWidths: 'portal_mgl_col_widths',
+        storageKeyOrder: 'portal_mgl_col_order',
+        storageKeyCols: 'portal_mgl_columns_visibility',
+        resizable: {
+          minWidth: 50,
+          columns: {
+            idx: { minWidth: 35, defaultWidth: 44, resizable: false },
+            actions: { minWidth: 75, defaultWidth: 85, resizable: false }
+          }
+        },
+        reorderable: {
+          lockedColumns: ['idx', 'actions']
+        },
+        columnToggle: '#mgl-column-toggle'
       });
     }
   } else {

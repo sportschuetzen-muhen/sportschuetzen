@@ -570,14 +570,14 @@ window.renderTabJournal = function(container) {
 
     return `
     <tr class="bh-account-row ${isSelected ? 'bh-row-selected' : ''} ${incompleteClass}" style="${incompleteStyle}" data-journal-id="${item.id}" tabindex="0" onclick="bhHandleJournalRowClick(event, ${item.id})" title="${isIncomplete ? '⚠️ Unvollständige Buchung: Gegenkonto fehlt! Klicken zum Auswählen / Stift-Icon zum Nachführen' : 'Klicken zum Auswählen (Shift/Ctrl + Pfeiltasten für Mehrfachauswahl)'}">
-      <td class="text-center tk-col-select" style="width: 40px;" onclick="event.stopPropagation()">
+      <td data-col-id="select" class="text-center tk-col-select" style="width: 40px;" onclick="event.stopPropagation()">
         <input type="checkbox" class="form-check-input cursor-pointer bh-journal-check" data-id="${item.id}" ${isSelected ? 'checked' : ''} onchange="bhToggleJournalRow(${item.id}, this.checked, event)" title="Zeile auswählen">
       </td>
-      <td class="fw-semibold text-muted small tk-col-id">${item.id}</td>
-      <td class="tk-col-datum">${isoToDisplay(item.datum)}</td>
-      <td class="fw-bold text-dark small tk-col-beleg_nr">${item.beleg_nr}</td>
-      <td class="small fw-semibold tk-col-beschreibung">${escapeHtml(item.beschreibung)}</td>
-      <td class="tk-col-konto_soll">
+      <td data-col-id="id" class="fw-semibold text-muted small tk-col-id">${item.id}</td>
+      <td data-col-id="datum" class="tk-col-datum">${isoToDisplay(item.datum)}</td>
+      <td data-col-id="beleg_nr" class="fw-bold text-dark small tk-col-beleg_nr">${item.beleg_nr}</td>
+      <td data-col-id="beschreibung" class="small fw-semibold tk-col-beschreibung">${escapeHtml(item.beschreibung)}</td>
+      <td data-col-id="konto_soll" class="tk-col-konto_soll">
         ${cleanSoll ? `
           <span class="bh-konto-badge bh-konto-soll-badge">${item.konto_soll}</span> 
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_soll)}</span>
@@ -587,7 +587,7 @@ window.renderTabJournal = function(container) {
           </span>
         `}
       </td>
-      <td class="tk-col-konto_haben">
+      <td data-col-id="konto_haben" class="tk-col-konto_haben">
         ${cleanHaben ? `
           <span class="bh-konto-badge bh-konto-haben-badge">${item.konto_haben}</span> 
           <span class="text-muted ms-1 small">${getAccountNameByCode(item.konto_haben)}</span>
@@ -597,12 +597,12 @@ window.renderTabJournal = function(container) {
           </span>
         `}
       </td>
-      <td class="text-end fw-bold ${amountClass} tk-col-betrag" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
-      <td class="tk-col-buchungstyp">
+      <td data-col-id="betrag" class="text-end fw-bold ${amountClass} tk-col-betrag" style="white-space: nowrap;">${amountSign}${fmtChf(item.betrag)}</td>
+      <td data-col-id="buchungstyp" class="tk-col-buchungstyp">
         <span class="badge ${badgeClass} border-0 small me-1 mb-1 mb-sm-0">${bTyp || 'BUCHUNG'}</span>
         <span class="badge bg-light text-dark border small">${item.typ || 'Rechnung'}</span>
       </td>
-      <td class="text-end tk-col-aktionen" style="white-space: nowrap;" onclick="event.stopPropagation()">
+      <td data-col-id="aktionen" class="text-end tk-col-aktionen" style="white-space: nowrap;" onclick="event.stopPropagation()">
         <button class="bh-edit-btn text-primary" onclick="bhPrintJournalBeleg(${item.id})" title="Kassenbeleg drucken / als PDF ablegen">
           <i class="fas fa-print"></i>
         </button>
@@ -705,10 +705,23 @@ window.renderTabJournal = function(container) {
   window.scrollTo(0, windowScrollTop);
   bhUpdateJournalMasterCheckbox();
 
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-    window.TableKit.setupColumnToggle('#bh-journal-table', {
-      container: '#bh-journal-column-toggle',
-      storageKey: 'bh_journal_cols'
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._bhJournalTableController = window.TableKit.initTable('#bh-journal-table', {
+      id: 'bh_journal',
+      storageKeyWidths: 'bh_journal_widths',
+      storageKeyOrder: 'bh_journal_order',
+      storageKeyCols: 'bh_journal_cols',
+      resizable: {
+        minWidth: 40,
+        columns: {
+          select: { minWidth: 40, defaultWidth: 40, resizable: false },
+          aktionen: { minWidth: 90, defaultWidth: 105 }
+        }
+      },
+      reorderable: {
+        lockedColumns: ['select', 'aktionen']
+      },
+      columnToggle: '#bh-journal-column-toggle'
     });
   }
 };

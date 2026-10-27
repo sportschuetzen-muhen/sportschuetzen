@@ -36,11 +36,11 @@ window.renderTabTemplates = function(content) {
       
       return `
         <tr class="bh-account-row">
-          <td class="tk-col-cat"><span class="badge ${catBadge} px-2.5 py-1.5">${escapeHtml(t.category)}</span></td>
-          <td class="fw-bold text-dark tk-col-desc">${escapeHtml(t.desc)}</td>
-          <td class="text-end font-monospace fw-bold tk-col-price">${priceLabel}</td>
-          <td class="text-center tk-col-konto">${kontoBadge}</td>
-          <td class="text-end tk-col-actions">
+          <td data-col-id="cat" class="tk-col-cat"><span class="badge ${catBadge} px-2.5 py-1.5">${escapeHtml(t.category)}</span></td>
+          <td data-col-id="desc" class="fw-bold text-dark tk-col-desc">${escapeHtml(t.desc)}</td>
+          <td data-col-id="price" class="text-end font-monospace fw-bold tk-col-price">${priceLabel}</td>
+          <td data-col-id="konto" class="text-center tk-col-konto">${kontoBadge}</td>
+          <td data-col-id="actions" class="text-end tk-col-actions">
             <button class="btn btn-xs btn-outline-warning me-1 write-protected" onclick="rnOpenTemplateModal(${tIdStr}, '${escapedCategory}', '${escapedDesc}', '${t.price || ''}', '${escapedKonto}')" title="Vorlage bearbeiten">
               <i class="fas fa-edit"></i>
             </button>
@@ -88,31 +88,23 @@ window.renderTabTemplates = function(content) {
     </div>
   `;
 
-  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
-    const colReorder = window.TableKit.makeColumnReorderable('#rn-templates-table', {
-      storageKey: 'rn_templates_table_col_order',
-      lockedColumns: ['actions']
-    });
-    if (colReorder && typeof colReorder.apply === 'function') {
-      colReorder.apply();
-    }
-  }
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-    window.TableKit.setupColumnToggle('#rn-templates-table', {
-      container: '#rn-templates-col-toggle',
-      storageKey: 'rn_templates_table_cols'
-    });
-  }
-  if (window.TableKit && typeof window.TableKit.makeSortable === 'function') {
-    window.TableKit.makeSortable(document.getElementById('rn-templates-table'));
-  }
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#rn-templates-table', {
-      storageKey: 'rn_templates_table_col_widths',
-      minWidth: 50,
-      columns: {
-        actions: { minWidth: 90, defaultWidth: 110 }
-      }
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._rnTemplatesTableController = window.TableKit.initTable('#rn-templates-table', {
+      id: 'rn_templates_table',
+      storageKeyWidths: 'rn_templates_table_col_widths',
+      storageKeyOrder: 'rn_templates_table_col_order',
+      storageKeyCols: 'rn_templates_table_cols',
+      sortable: true,
+      resizable: {
+        minWidth: 50,
+        columns: {
+          actions: { minWidth: 90, defaultWidth: 110 }
+        }
+      },
+      reorderable: {
+        lockedColumns: ['actions']
+      },
+      columnToggle: '#rn-templates-col-toggle'
     });
   }
 };

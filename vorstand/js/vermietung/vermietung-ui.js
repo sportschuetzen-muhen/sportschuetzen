@@ -475,37 +475,34 @@ function renderVermietungCockpit(daten) {
 
 // Initialisiert TableKit Column Features für die Vermietungstabelle
 function initVermietungColToggle() {
-  if (window.TableKit && typeof window.TableKit.makeColumnReorderable === 'function') {
-    window._vmColReorder = window.TableKit.makeColumnReorderable('#vermietung-table', {
-      storageKey: 'tk_cols_vermietung_order',
-      lockedColumns: ['aktionen']
-    });
-  }
-
-  if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function' && document.getElementById('vermietungColToggleContainer')) {
-    window._vmColToggle = window.TableKit.setupColumnToggle('#vermietung-table', {
-      container: '#vermietungColToggleContainer',
-      storageKey: 'tk_cols_vermietung',
-      columns: [
-        { id: 'mietdatum', name: 'Datum', defaultVisible: true },
-        { id: 'name', name: 'Mieter Name', defaultVisible: true },
-        { id: 'vertragsnr', name: 'Vertragsnummer', defaultVisible: true },
-        { id: 'festbeginn', name: 'Festbeginn', defaultVisible: false },
-        { id: 'kontakt', name: 'Kontakt (Mail/Tel)', defaultVisible: false },
-        { id: 'mietbetrag', name: 'Mietbetrag', defaultVisible: true },
-        { id: 'status', name: 'Status', defaultVisible: true },
-        { id: 'aktionen', name: 'Aktionen', defaultVisible: true }
-      ]
-    });
-  }
-
-  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
-    window.TableKit.makeResizable('#vermietung-table', {
-      storageKey: 'tk_cols_vermietung_widths',
-      minWidth: 45,
-      columns: {
-        'aktionen': { resizable: false, defaultWidth: 60 }
-      }
+  if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+    window._vmTableController = window.TableKit.initTable('#vermietung-table', {
+      id: 'vermietung',
+      storageKeyWidths: 'tk_cols_vermietung_widths',
+      storageKeyOrder: 'tk_cols_vermietung_order',
+      storageKeyCols: 'tk_cols_vermietung',
+      resizable: {
+        minWidth: 45,
+        columns: {
+          'aktionen': { resizable: false, defaultWidth: 60 }
+        }
+      },
+      reorderable: {
+        lockedColumns: ['aktionen']
+      },
+      columnToggle: document.getElementById('vermietungColToggleContainer') ? {
+        container: '#vermietungColToggleContainer',
+        columns: [
+          { id: 'mietdatum', name: 'Datum', defaultVisible: true },
+          { id: 'name', name: 'Mieter Name', defaultVisible: true },
+          { id: 'vertragsnr', name: 'Vertragsnummer', defaultVisible: true },
+          { id: 'festbeginn', name: 'Festbeginn', defaultVisible: false },
+          { id: 'kontakt', name: 'Kontakt (Mail/Tel)', defaultVisible: false },
+          { id: 'mietbetrag', name: 'Mietbetrag', defaultVisible: true },
+          { id: 'status', name: 'Status', defaultVisible: true },
+          { id: 'aktionen', name: 'Aktionen', defaultVisible: true }
+        ]
+      } : null
     });
   }
 }

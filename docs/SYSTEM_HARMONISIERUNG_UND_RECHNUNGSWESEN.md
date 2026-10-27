@@ -63,6 +63,8 @@ Sämtliche tabellarischen Listen in allen Fachmodulen (`mitglieder-list.js`, `ve
   Werden Tabellenzeilen durch Filterung, Live-Updates aus Supabase oder Sortierung neu aufgebaut (`tbody.innerHTML = ...`), sorgt die automatische DOM-Beobachtung (`MutationObserver`) dafür, dass gezogene Spaltenreihenfolgen und Breiten verlustfrei und ohne Flimmern auf die neuen Datenzeilen angewendet werden.
 * **Standard für Konten- und Suchfilterung (`TableKit.cleanKontoDisplay`):**
   In Kontenauswahlfeldern (z.B. Bankabgleich, Journal, Buchungsmodal) wird die Kontobezeichnung von rohen IBAN-Blöcken (`CH...`) bereinigt (`cleanKontoDisplay`). Dadurch wird verhindert, dass Zifferneingaben (z.B. «8») versehentlich alle Bankkonten aufrufen, weil Schweizer IBANs die Ziffer 8 enthalten.
+* **Flächendeckender Rollout (`initTable` & `data-col-id` Synchronisation):**
+  Die operativen Haupttabellen (Mitglieder `#mgl-table`, Rechnungen `#rn-invoices-table`, Externe Kontakte `#rn-contacts-table`, Vorlagen `#rn-templates-table`, Vermietung `#vermietung-table`, Journal `#bh-journal-table` und Bankabgleich `#bhBankTable`) sind vollständig auf `TableKit.initTable` migriert. Alle Zeilenzellen (`<td>`) tragen explizite `data-col-id`-Attribute, um Spaltenverschiebungen verlustfrei abzubilden. Vorherige Controller-Instanzen werden bei Re-Initialisierungen automatisch über `destroy()` bereinigt.
 
 ### 2.2 Standardisiertes Modal- & Drawer-Framework
 * Modale Dialoge (Rechnungserfassung, Zählerstand, Buchungsdetails) nutzen einheitliche Header mit Close-Button (`&times;`).
