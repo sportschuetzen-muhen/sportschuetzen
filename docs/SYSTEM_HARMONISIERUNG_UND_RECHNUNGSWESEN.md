@@ -40,11 +40,29 @@ Das Vereinsportal der Sportschützen Muhen basiert auf einer harmonisierten Serv
 ## 2. Verbindliche UI/UX-Standards
 
 ### 2.1 Flächendeckender TableKit-Standard (`ui-table-kit.js`)
-Sämtliche tabellarischen Listen in allen Fachmodulen (`mitglieder-list.js`, `vermietung-list.js`, `buchhaltung-ui.js`, `jahresbeitrag-matrix.js`, `rechnungen-ui.js`) implementieren den zentralen Vereinsstandard:
-* **Heller Sticky-Header:** Tabellenköpfe bleiben beim vertikalen Scrollen dauerhaft sichtbar.
-* **Spaltenauswahl (`TableKit.setupColumnToggle`):** Spalten lassen sich per Klick ein- und ausblenden; Präferenzen werden pro Benutzer im `localStorage` persistiert.
-* **Interaktive Sortierung:** Spaltenköpfe mit `data-sort-key` und Sortierindikatoren (`▲`/`▼`).
-* **Spaltenbreiten (`TableKit.makeResizable`):** Horizontales Resizing per Drag & Drop.
+Sämtliche tabellarischen Listen in allen Fachmodulen (`mitglieder-list.js`, `vermietung-list.js`, `buchhaltung-ui.js`, `buchhaltung-bank.js`, `jahresbeitrag-matrix.js`, `rechnungen-ui.js`, `termine-ui.js`) implementieren den zentralen Vereinsstandard über das globale `TableKit`:
+
+* **All-in-One Initialisierer (`TableKit.initTable`):**
+  Zentraler Einstiegspunkt für jede Tabelle im Portal mit einem einzigen Aufruf und automatischer `localStorage`-Persistenz:
+  ```javascript
+  TableKit.initTable('#myTable', {
+    id: 'modul_name',                  // Erzeugt automatisch tk_widths_*, tk_order_*, tk_cols_*
+    resizable: true,                   // Stufenloses Breiten-Resizing mit Doppelklick-Reset
+    reorderable: true,                 // Spalten per Header Drag & Drop tauschen
+    columnToggle: '#toggle-container', // Dropdown mit Spalten-Checkboxes & Reset
+    lockedColumns: ['actions', 'check']// Feste Randspalten (können nicht verschoben werden)
+  });
+  ```
+* **Spalten-Verschieben per Drag & Drop (`TableKit.makeColumnReorderable`):**
+  Spaltenköpfe können horizontal gegriffen und an die gewünschte Position gezogen werden. Visuelle Einfügemarkierungen (`th.tk-col-drop-target-left` / `right`) heben das Ziel hervor. Geschützte Randspalten (`actions`, `check`) bleiben fest verankert. Die Reihenfolge wird im `localStorage` persistiert.
+* **Flüssiges Resizing ohne Breitenblockaden (`TableKit.makeResizable` & `.tk-table-resizable`):**
+  Horizontales Ziehen der Spaltenbreiten an der rechten Spaltenkante (`.tk-col-resizer`). Durch fluid-responsive CSS-Klassen (`.tk-table-resizable`) sperren innere Eingabefelder oder Texte nicht mehr das Verkleinern von Spalten. Ein **Doppelklick** auf die Trennlinie setzt die Spalte sofort auf die Standardbreite zurück.
+* **Spalten-Auswahl mit Reset (`TableKit.setupColumnToggle`):**
+  Dropdown mit Checkboxen zur individuellen Anzeige/Ausblendung von Spalten. Beinhaltet die Schnellwahltasten *«Alle an»*, *«Alle aus»* sowie den Button *«Standard wiederherstellen»*, um versehentlich verstellte Tabellenansichten auf Werkseinstellung zurückzusetzen.
+* **Re-Render-Stabilität & Synchronisation (`TableKit.syncTable` & `MutationObserver`):**
+  Werden Tabellenzeilen durch Filterung, Live-Updates aus Supabase oder Sortierung neu aufgebaut (`tbody.innerHTML = ...`), sorgt die automatische DOM-Beobachtung (`MutationObserver`) dafür, dass gezogene Spaltenreihenfolgen und Breiten verlustfrei und ohne Flimmern auf die neuen Datenzeilen angewendet werden.
+* **Standard für Konten- und Suchfilterung (`TableKit.cleanKontoDisplay`):**
+  In Kontenauswahlfeldern (z.B. Bankabgleich, Journal, Buchungsmodal) wird die Kontobezeichnung von rohen IBAN-Blöcken (`CH...`) bereinigt (`cleanKontoDisplay`). Dadurch wird verhindert, dass Zifferneingaben (z.B. «8») versehentlich alle Bankkonten aufrufen, weil Schweizer IBANs die Ziffer 8 enthalten.
 
 ### 2.2 Standardisiertes Modal- & Drawer-Framework
 * Modale Dialoge (Rechnungserfassung, Zählerstand, Buchungsdetails) nutzen einheitliche Header mit Close-Button (`&times;`).

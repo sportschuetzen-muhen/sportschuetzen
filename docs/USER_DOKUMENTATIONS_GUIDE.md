@@ -28,6 +28,7 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 │          - Jahresmeisterschaft ──► docs/JAHRESMEISTERSCHAFT.md              │
 │          - Mitglieder & SSV    ──► docs/MITGLIEDER_UND_SSV.md               │
 │          - Buchhaltung & Bank  ──► docs/FINANZBUCHHALTUNG_UND_BANK.md       │
+│          - UI/UX & TableKit    ──► docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md│
 │          - Vermietung          ──► docs/VERMIETUNG_SCHUETZENSTUBE.md        │
 │          - Inventar            ──► docs/INVENTAR.md                         │
 │          - Mail-Verteiler      ──► docs/MAIL_VERTEILER.md                   │
@@ -78,6 +79,7 @@ Nach jeder vorgenommenen Code- oder Schemaänderung gilt:
 | **Jahresmeisterschaft**| [`docs/JAHRESMEISTERSCHAFT.md`](JAHRESMEISTERSCHAFT.md) | 2D-Grid im JSONB `raw_grid`, virtuelle U21-Berechnung, Streichresultate, Gemini Vision OCR. |
 | **Mitglieder & SSV** | [`docs/MITGLIEDER_UND_SSV.md`](MITGLIEDER_UND_SSV.md) | Browser-native SheetJS Diff-Engine, Quellschutz für Ehrenmitglieder, `member_history` Audit. |
 | **Finanzbuchhaltung** | [`docs/FINANZBUCHHALTUNG_UND_BANK.md`](FINANZBUCHHALTUNG_UND_BANK.md) | Schweizer KMU-Kontenrahmen, doppelter Buchungssatz bei Rechnungen, CAMT.054 XML-Matching, `BIGSERIAL` Belegnummern. |
+| **UI/UX & TableKit** | [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md) | Globaler Standard für Tabellen (`TableKit.initTable`), Spaltentausch, stufenloses Resizing, Modale (`UIModalKit`) und Du-Kultur. |
 | **Vermietung** | [`docs/VERMIETUNG_SCHUETZENSTUBE.md`](VERMIETUNG_SCHUETZENSTUBE.md) | Status-Maschine mit `rental_status_logs`, dynamische Klauseln 1–8, Google Calendar als reine Leseanzeige. |
 | **Inventar** | [`docs/INVENTAR.md`](INVENTAR.md) | Sportwaffen, Schlüssel & Bekleidung; Ausleihe mit digitaler Signatur; Kautions-/Pfandkasse; Materialverkauf via `RechnungsCore`. |
 | **Mail-Verteiler** | [`docs/MAIL_VERTEILER.md`](MAIL_VERTEILER.md) | Ad-hoc Empfängerauswahl, Adresskaskade (`primary`/`additional`), BCC-Datenschutz, Abgrenzung zur Mail-Engine. |
