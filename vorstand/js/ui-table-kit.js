@@ -175,9 +175,27 @@
       }
       th.tk-col-drop-target-left {
         border-left: 3px solid #0d6efd !important;
+        background-color: rgba(13, 110, 253, 0.08) !important;
       }
       th.tk-col-drop-target-right {
         border-right: 3px solid #0d6efd !important;
+        background-color: rgba(13, 110, 253, 0.08) !important;
+      }
+
+      /* TableKit: Flüssiges Resizing & Tabellen-Layout */
+      table.tk-table-resizable {
+        width: 100%;
+      }
+      table.tk-table-resizable th.tk-col-resizable {
+        position: relative !important;
+        overflow: visible !important;
+      }
+      table.tk-table-resizable td {
+        overflow: hidden;
+      }
+      table.tk-table-resizable td input.form-control,
+      table.tk-table-resizable td select.form-select {
+        min-width: 0 !important;
       }
     `;
     document.head.appendChild(style);
@@ -710,6 +728,11 @@
             <div class="tk-col-dropdown-list d-flex flex-column gap-1" style="max-height: 420px; overflow-y: auto;">
               ${listItemsHtml}
             </div>
+            <div class="border-top pt-1 mt-2 text-center">
+              <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-danger small tk-col-reset-all" style="font-size: 0.72rem;" title="Spaltenansicht und Breiten auf Standard zurücksetzen">
+                <i class="fas fa-undo me-1"></i>Standard wiederherstellen
+              </button>
+            </div>
           </div>
         </div>
       `;
@@ -737,6 +760,21 @@
           e.preventDefault();
           cols.forEach(c => { colState[c.id] = false; });
           applyColumnVisibility();
+        });
+      }
+
+      const resetAllBtn = container.querySelector('.tk-col-reset-all');
+      if (resetAllBtn) {
+        resetAllBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (storageKey) {
+            try { localStorage.removeItem(storageKey); } catch (_) {}
+          }
+          cols.forEach(c => { colState[c.id] = true; });
+          applyColumnVisibility();
+          if (typeof options.onResetAll === 'function') {
+            options.onResetAll();
+          }
         });
       }
     }
@@ -1161,6 +1199,159 @@
   }
 
   // ===========================================================================
+  // 7b. ALL-IN-ONE TABELLEN-INITIALISIERER (TableKit.initTable & TableKit.syncTable)
+  // ===========================================================================
+  function initTable(tableOrSelector, options = {}) {
+    ensureStyles();
+    const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+    if (!table) return null;
+
+    const baseId = options.id || table.id || 'table';
+    const storageKeyPrefix = options.storagePrefix || 'tk_';
+    const keyWidths = options.storageKeyWidths || `${storageKeyPrefix}widths_${baseId}`;
+    const keyOrder = options.storageKeyOrder || `${storageKeyPrefix}order_${baseId}`;
+    const keyCols = options.storageKeyCols || `${storageKeyPrefix}cols_${baseId}`;
+
+    let resizerInstance = null;
+    let reorderInstance = null;
+    let toggleInstance = null;
+
+    table.classList.add('tk-table-enhanced');
+
+    // 1. Spaltenreihenfolge per Drag & Drop
+    if (options.reorderable !== false) {
+      const reorderOpts = typeof options.reorderable === 'object' ? options.reorderable : {};
+      reorderInstance = makeColumnReorderable(table, {
+        storageKey: keyOrder,
+        lockedColumns: options.lockedColumns || ['check', 'actions', 'col_check', 'col_actions'],
+        ...reorderOpts
+      });
+    }
+
+    // 2. Spaltenbreiten ziehen (Resize)
+    if (options.resizable !== false) {
+      const resizeOpts = typeof options.resizable === 'object' ? options.resizable : {};
+      table.classList.add('tk-table-resizable');
+      resizerInstance = makeResizable(table, {
+        storageKey: keyWidths,
+        minWidth: options.minWidth || 45,
+        columns: options.columns || (resizeOpts.columns || {}),
+        ...resizeOpts
+      });
+    }
+
+    // 3. Spalten Toggle (Ein- / Ausblenden)
+    if (options.columnToggle) {
+      const toggleContainer = (typeof options.columnToggle === 'string' || options.columnToggle instanceof Element)
+        ? options.columnToggle
+        : options.columnToggle.container;
+      const toggleOpts = typeof options.columnToggle === 'object' ? options.columnToggle : {};
+      toggleInstance = setupColumnToggle(table, {
+        container: toggleContainer,
+        storageKey: keyCols,
+        ...toggleOpts,
+        onResetAll: () => {
+          if (resizerInstance && typeof resizerInstance.reset === 'function') resizerInstance.reset();
+          if (reorderInstance && typeof reorderInstance.reset === 'function') reorderInstance.reset();
+          try {
+            localStorage.removeItem(keyWidths);
+            localStorage.removeItem(keyOrder);
+            localStorage.removeItem(keyCols);
+          } catch (_) {}
+          if (typeof options.onReset === 'function') options.onReset();
+          sync();
+        }
+      });
+    }
+
+    // 4. Sortable
+    if (options.sortable) {
+      const sortOpts = typeof options.sortable === 'object' ? options.sortable : {};
+      makeSortable(table, sortOpts);
+    }
+
+    function sync() {
+      if (reorderInstance && typeof reorderInstance.apply === 'function') {
+        reorderInstance.apply();
+      }
+      if (resizerInstance && typeof resizerInstance.apply === 'function') {
+        resizerInstance.apply();
+      }
+      if (toggleInstance && typeof toggleInstance.apply === 'function') {
+        toggleInstance.apply();
+      }
+    }
+
+    // Automatische Re-Synchronisation bei tbody-Mutations
+    let observer = null;
+    if (options.autoSync !== false) {
+      const tbody = table.querySelector('tbody');
+      if (tbody && window.MutationObserver) {
+        observer = new MutationObserver((mutations) => {
+          let hasChild = false;
+          for (const m of mutations) {
+            if (m.type === 'childList') { hasChild = true; break; }
+          }
+          if (hasChild) {
+            if (table._tkSyncTimeout) clearTimeout(table._tkSyncTimeout);
+            table._tkSyncTimeout = setTimeout(sync, 15);
+          }
+        });
+        observer.observe(tbody, { childList: true });
+      }
+    }
+
+    const controller = {
+      table,
+      id: baseId,
+      resizer: resizerInstance,
+      reorder: reorderInstance,
+      toggle: toggleInstance,
+      sync,
+      reset: () => {
+        if (resizerInstance && typeof resizerInstance.reset === 'function') resizerInstance.reset();
+        if (reorderInstance && typeof reorderInstance.reset === 'function') reorderInstance.reset();
+        try {
+          localStorage.removeItem(keyWidths);
+          localStorage.removeItem(keyOrder);
+          localStorage.removeItem(keyCols);
+        } catch (_) {}
+        sync();
+      },
+      destroy: () => {
+        if (observer) observer.disconnect();
+      }
+    };
+
+    table._tkController = controller;
+    return controller;
+  }
+
+  function syncTable(tableOrSelector) {
+    const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+    if (!table) return;
+    if (table._tkController && typeof table._tkController.sync === 'function') {
+      table._tkController.sync();
+    } else {
+      applyColumnOrder(table, null);
+    }
+  }
+
+  // Bereinigt Kontonummer und Bezeichnung von rohen IBAN-Blöcken (z.B. CH06 8080...)
+  function cleanKontoDisplay(konto, bezeichnung = '') {
+    const cleanKonto = String(konto || '').trim();
+    const cleanBezeichnung = String(bezeichnung || '')
+      .replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return {
+      konto: cleanKonto,
+      bezeichnung: cleanBezeichnung,
+      display: cleanBezeichnung ? `${cleanKonto} | ${cleanBezeichnung}` : cleanKonto
+    };
+  }
+
+  // ===========================================================================
   // 8. MODAL DRAG & RESIZE STANDARD (UIModalKit)
   // ===========================================================================
   function makeModalMovableAndResizable(modalEl, options = {}) {
@@ -1400,10 +1591,16 @@
     makeResizable,
     makeColumnReorderable,
     applyColumnOrder,
+    initTable,
+    syncTable,
+    cleanKontoDisplay,
+    formatKontoSearch: (konto, bezeichnung) => cleanKontoDisplay(konto, bezeichnung).display,
     setupDraggableModal: makeModalMovableAndResizable,
     SaveButton: window.SaveButtonKit || null,
     ensureStyles
   };
+
+  window.bhCleanKontoDisplay = cleanKontoDisplay;
 
   window.UIModalKit = {
     makeMovableAndResizable: makeModalMovableAndResizable

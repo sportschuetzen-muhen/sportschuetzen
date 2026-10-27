@@ -549,22 +549,30 @@ function bhFindMatchingKonten(query) {
   const exactCode = konten.find(k => String(k.konto).trim() === q);
   if (exactCode) return [exactCode];
 
+  // Hilfsfunktion: Bereinigte Bezeichnung ohne rohe IBAN (z.B. ohne CH06 8080...)
+  function getCleanName(k) {
+    if (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function') {
+      return window.TableKit.cleanKontoDisplay(k.konto, k.bezeichnung).bezeichnung.toLowerCase();
+    }
+    return String(k.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim().toLowerCase();
+  }
+
   // 2. Kontonummer beginnt mit q (z.B. "67" -> 6700, 6701...)
   const codeStarts = konten.filter(k => String(k.konto).trim().startsWith(q));
   
   // 3. Bezeichnung beginnt mit q (z.B. "gesc" -> Geschenke...)
-  const nameStarts = konten.filter(k => (k.bezeichnung || '').toLowerCase().startsWith(q));
+  const nameStarts = konten.filter(k => getCleanName(k).startsWith(q));
   
   // 4. Wort in Bezeichnung beginnt mit q (z.B. "helfer" -> ... & Helfer-Essen)
   const wordStarts = konten.filter(k => {
     if (nameStarts.includes(k)) return false;
-    const words = (k.bezeichnung || '').toLowerCase().split(/[\s,./\-&]+/);
+    const words = getCleanName(k).split(/[\s,./\-&]+/);
     return words.some(w => w.startsWith(q));
   });
 
-  // 5. Bezeichnung enthält q
+  // 5. Bezeichnung enthält q (ohne den IBAN-Teil zu durchsuchen)
   const nameContains = konten.filter(k => 
-    !nameStarts.includes(k) && !wordStarts.includes(k) && (k.bezeichnung || '').toLowerCase().includes(q)
+    !nameStarts.includes(k) && !wordStarts.includes(k) && getCleanName(k).includes(q)
   );
   
   // 6. Code enthält q
@@ -852,7 +860,12 @@ function bhBankRenderResults(filter) {
   function makeKontoSelectHTML(id, selectedVal, type, isLocked = false) {
     const cleanCode = String(selectedVal || '').split('|')[0].trim();
     const matchedKonto = kontenrahmen.find(k => String(k.konto).trim() === cleanCode);
-    const displayVal = matchedKonto ? `${matchedKonto.konto} | ${matchedKonto.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
+    const cleanObj = matchedKonto
+      ? (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function'
+          ? window.TableKit.cleanKontoDisplay(matchedKonto.konto, matchedKonto.bezeichnung)
+          : { konto: matchedKonto.konto, bezeichnung: String(matchedKonto.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim(), display: `${matchedKonto.konto} | ${String(matchedKonto.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim()}` })
+      : null;
+    const displayVal = cleanObj ? cleanObj.display : (selectedVal ? String(selectedVal) : '');
 
     if (isLocked) {
       return `<div class="font-monospace small px-2 py-1 rounded bg-light border text-truncate text-secondary" style="max-width:180px;" title="${escHtml(displayVal || '–')}">${escHtml(displayVal || '–')}</div>`;
@@ -865,7 +878,7 @@ function bhBankRenderResults(filter) {
       : '';
     const placeholderText = isEmpty ? '⚠️ Gegenkonto wählen...' : 'Ziffern/Name...';
 
-    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input ${isEmpty ? 'bh-konto-empty' : ''}" placeholder="${placeholderText}" value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:140px; ${highlightStyle}" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Kein Gegenkonto zugeordnet (kann leer gebucht oder manuell gewählt werden)')}">`;
+    return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm bh-konto-input ${isEmpty ? 'bh-konto-empty' : ''}" placeholder="${placeholderText}" value="${escHtml(displayVal)}" style="font-size:12px; width:100%; min-width:80px; ${highlightStyle}" autocomplete="off" oninput="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" onchange="window._bhUpdateTxKonto(${realIdx}, '${type}', this.value)" title="${escHtml(displayVal || 'Kein Gegenkonto zugeordnet (kann leer gebucht oder manuell gewählt werden)')}">`;
   }
 
   const realIdxMap = filtered.map(r => rows.indexOf(r));
@@ -1003,7 +1016,7 @@ function bhBankRenderResults(filter) {
         <td data-col-id="amount" class="text-end fw-bold ${amountClass} tk-col-amount" style="white-space:nowrap;">
           ${amountSign} CHF ${Number(r.amount || 0).toFixed(2)}
         </td>
-        <td data-col-id="remittance" class="tk-col-remittance" style="min-width: 200px; max-width: 320px;">
+        <td data-col-id="remittance" class="tk-col-remittance" style="min-width: 110px;">
           ${(r.alreadyBooked || r.isWrongYear) ? `
             <div class="small text-muted" style="white-space: normal; word-break: break-word;" title="${escHtml(r.remittanceInfo || '–')}">
               ${escHtml(r.remittanceInfo || '–')}
@@ -1013,7 +1026,7 @@ function bhBankRenderResults(filter) {
               value="${escHtml(r.remittanceInfo || '')}"
               placeholder="Verwendungszweck / Buchungstext..."
               title="${escHtml(r.remittanceInfo || 'Klicken zum Anpassen')}"
-              style="font-size: 12px; width: 100%; min-width: 180px;"
+              style="font-size: 12px; width: 100%; min-width: 90px;"
               oninput="window._bhUpdateTxRemittance(${realI}, this.value)">
             <div id="bh-rmt-orig-${realI}" class="text-muted mt-1 ${r._customRemittanceEdited && r._originalRemittanceInfo && r.remittanceInfo.trim() !== r._originalRemittanceInfo.trim() ? '' : 'd-none'}"
                  style="font-size: 10px; line-height: 1.25; white-space: normal; word-break: break-word;"
@@ -1024,7 +1037,7 @@ function bhBankRenderResults(filter) {
         </td>
         <td data-col-id="status" class="tk-col-status">${statusBadge}</td>
         <td data-col-id="type" class="tk-col-type">${matchInfo}</td>
-        <td data-col-id="soll" class="tk-col-soll" style="min-width: 140px;">
+        <td data-col-id="soll" class="tk-col-soll" style="min-width: 85px;">
           ${(r.isSplit && !isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
             <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Soll): Klicken zum Ansehen/Bearbeiten">
               <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Soll)</div>
@@ -1032,7 +1045,7 @@ function bhBankRenderResults(filter) {
             </div>
           ` : makeKontoSelectHTML(sollSelectId, r.suggestedSoll, 'soll', r.alreadyBooked || r.isWrongYear)}
         </td>
-        <td data-col-id="haben" class="tk-col-haben" style="min-width: 140px;">
+        <td data-col-id="haben" class="tk-col-haben" style="min-width: 85px;">
           ${(r.isSplit && isCredit && Array.isArray(r.splitRows) && r.splitRows.length > 0 && !r.alreadyBooked && !r.isWrongYear) ? `
             <div class="badge bg-primary-subtle text-primary border border-primary-subtle p-1.5 w-100 text-start" style="font-size:11px; cursor:pointer;" onclick="bhBankOpenSplitModal(${realI})" title="Split-Positionen (Haben): Klicken zum Ansehen/Bearbeiten">
               <div class="fw-bold"><i class="fas fa-layer-group me-1"></i>Split (${r.splitRows.length} Haben)</div>
@@ -1071,7 +1084,10 @@ function bhBankRenderResults(filter) {
   }
 
   let datalistOptions = kontenrahmen.map(k => {
-    return `<option value="${String(k.konto).trim()} | ${escHtml(k.bezeichnung)}"></option>`;
+    const clean = window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function'
+      ? window.TableKit.cleanKontoDisplay(k.konto, k.bezeichnung)
+      : { konto: String(k.konto).trim(), bezeichnung: String(k.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim() };
+    return `<option value="${clean.konto} | ${escHtml(clean.bezeichnung)}"></option>`;
   }).join('');
 
   // Aktiven Fokus, Position und Eingabewert merken
@@ -1128,13 +1144,38 @@ function bhBankRenderResults(filter) {
   }
 
   setTimeout(() => {
-    bhMakeTableResizable(document.getElementById('bhBankTable'));
-
-    if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
-      window.TableKit.setupColumnToggle('#bhBankTable', {
-        container: document.getElementById('bh-bank-column-toggle'),
-        storageKey: 'tk_cols_bh_bank'
+    if (window.TableKit && typeof window.TableKit.initTable === 'function') {
+      window._bhBankTableCtrl = window.TableKit.initTable('#bhBankTable', {
+        id: 'bh_bank',
+        resizable: {
+          minWidth: 45,
+          columns: {
+            date: { minWidth: 70, defaultWidth: 95 },
+            party: { minWidth: 90, defaultWidth: 160 },
+            amount: { minWidth: 75, defaultWidth: 110 },
+            remittance: { minWidth: 95, defaultWidth: 220 },
+            status: { minWidth: 65, defaultWidth: 90 },
+            type: { minWidth: 80, defaultWidth: 130 },
+            soll: { minWidth: 80, defaultWidth: 130 },
+            haben: { minWidth: 80, defaultWidth: 130 },
+            actions: { minWidth: 135, defaultWidth: 155, resizable: false }
+          }
+        },
+        reorderable: {
+          lockedColumns: ['actions']
+        },
+        columnToggle: {
+          container: document.getElementById('bh-bank-column-toggle')
+        }
       });
+    } else {
+      bhMakeTableResizable(document.getElementById('bhBankTable'));
+      if (window.TableKit && typeof window.TableKit.setupColumnToggle === 'function') {
+        window.TableKit.setupColumnToggle('#bhBankTable', {
+          container: document.getElementById('bh-bank-column-toggle'),
+          storageKey: 'tk_cols_bh_bank'
+        });
+      }
     }
     
     // 1. Falls der Nutzer vor dem Re-Render in einem Feld war: Fokus und Cursor nahtlos wiederherstellen OHNE Scroll-Sprung!
@@ -1171,49 +1212,12 @@ function bhBankRenderResults(filter) {
 // ---------------------------------------------------------------------
 function bhMakeTableResizable(table) {
   if (!table) return;
-  const ths = table.querySelectorAll('thead th');
-  ths.forEach(th => {
-    if (th.classList.contains('bh-col-sticky-action')) return;
-    if (th.querySelector('.bh-col-resizer')) return;
-
-    th.style.position = 'relative';
-    const resizer = document.createElement('div');
-    resizer.className = 'bh-col-resizer';
-    resizer.style.cssText = 'position:absolute; top:0; right:0; width:7px; cursor:col-resize; height:100%; user-select:none; z-index:5;';
-
-    resizer.addEventListener('mouseenter', () => { resizer.style.backgroundColor = '#0d6efd'; });
-    resizer.addEventListener('mouseleave', () => { resizer.style.backgroundColor = 'transparent'; });
-
-    let startX = 0;
-    let startWidth = 0;
-
-    const onMouseDown = (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      startX = e.pageX;
-      startWidth = th.offsetWidth;
-      resizer.style.backgroundColor = '#0d6efd';
-
-      const onMouseMove = (ev) => {
-        const diff = ev.pageX - startX;
-        const newWidth = Math.max(60, startWidth + diff);
-        th.style.width = newWidth + 'px';
-        th.style.minWidth = newWidth + 'px';
-      };
-
-      const onMouseUp = () => {
-        resizer.style.backgroundColor = 'transparent';
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      };
-
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
-    };
-
-    resizer.addEventListener('mousedown', onMouseDown);
-    th.appendChild(resizer);
-  });
+  if (window.TableKit && typeof window.TableKit.makeResizable === 'function') {
+    return window.TableKit.makeResizable(table, {
+      storageKey: 'tk_widths_bh_bank',
+      minWidth: 45
+    });
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -4050,7 +4054,12 @@ function bhBankRenderSplitModalContent(tx) {
 
   function makeKontoSelectHTML(id, selectedVal) {
     const matched = kontenrahmen.find(k => String(k.konto).trim() === String(selectedVal).trim());
-    const displayVal = matched ? `${matched.konto} | ${matched.bezeichnung}` : (selectedVal ? String(selectedVal) : '');
+    const cleanObj = matched
+      ? (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function'
+          ? window.TableKit.cleanKontoDisplay(matched.konto, matched.bezeichnung)
+          : { konto: matched.konto, bezeichnung: String(matched.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim(), display: `${matched.konto} | ${String(matched.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim()}` })
+      : null;
+    const displayVal = cleanObj ? cleanObj.display : (selectedVal ? String(selectedVal) : '');
     return `<input type="text" id="${id}" list="bh-konten-datalist" class="form-control form-control-sm" placeholder="Konto..." value="${escHtml(displayVal)}" autocomplete="off" oninput="bhBankUpdateSplitLiveBalance()" onchange="bhBankUpdateSplitLiveBalance()">`;
   }
 

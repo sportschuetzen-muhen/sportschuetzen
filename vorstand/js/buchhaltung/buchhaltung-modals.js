@@ -372,7 +372,12 @@ window.bhKontoFormatDisplay = function(code) {
   if (!code) return '';
   const c = String(code).trim();
   const acc = (window._bhKontenrahmen || []).find(a => String(a.konto).trim() === c);
-  return acc ? `${acc.konto} | ${acc.bezeichnung}` : c;
+  if (!acc) return c;
+  if (window.TableKit && typeof window.TableKit.cleanKontoDisplay === 'function') {
+    return window.TableKit.cleanKontoDisplay(acc.konto, acc.bezeichnung).display;
+  }
+  const cleanBezeichnung = String(acc.bezeichnung || '').replace(/\s*\bCH\d{2}[\s0-9A-Z]{12,}\b/gi, '').trim();
+  return cleanBezeichnung ? `${acc.konto} | ${cleanBezeichnung}` : String(acc.konto);
 };
 
 // Initialisiert Autocomplete für alle .bh-konto-ac-input Felder innerhalb eines Containers
