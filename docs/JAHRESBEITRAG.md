@@ -352,6 +352,13 @@ Wird eine Jahresbeitrags-Rechnung (`JB-26-XXXX`) im Rechnungsmodul gelöscht –
   - Spaltenbreiten anpassbar via `TableKit.makeResizable`.
   - Spaltenauswahl via `TableKit.setupColumnToggle`.
 
+---
+
+### 8.8 Globale UI-Harmonisierung (`UIConfirmKit` & `UIButtonKit`)
+* **Asynchrone Modale:** Sämtliche Bestätigungs- und Gefahrendialoge (Beitragsberechnung `jbBerechnen`, Beitragsjahr-Reset `jbResetYear`, Bereitstellung `jbRechnungenBereitstellenBatch`, E-Mail-Einzelversand `jbSendInvoiceEmailRemote`, Schützenhausbeitrag-Override und Bankabgleich `jbBankBookAll` / `jbBankBookOne`) wurden vollständig auf asynchrone Vereins-Modale (`UIConfirmKit.confirm` / `UIConfirmKit.alert`) umgestellt.
+* **Doppelklick-Schutz & Spinner:** Schreibvorgänge wie Beitragsberechnung, manuelle Zahlungsverbuchung und automatischer Bankabgleich sind über `UIButtonKit.withLoading` mit sichtbarem Spinner und ausnahmslosem `finally`-Reset gegen Double-Submits gehärtet.
+* **Tonalität:** Alle Dialogtexte und Benachrichtigungen sprechen Anwender einheitlich in der vereinsnahen Du-Form an.
+
 
 
 

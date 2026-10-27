@@ -896,11 +896,20 @@ function jbRenderEntryForm(m) {
   }
 }
 
-function jbConfirmEntrySchuetzenhaus(chk, pn) {
+async function jbConfirmEntrySchuetzenhaus(chk, pn) {
   const currentVal = chk.checked;
   const prevVal = !currentVal;
   
-  if (confirm("Möchtest du den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?")) {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Infrastrukturbeitrag anpassen?',
+        message: 'Möchtest du den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?',
+        type: 'warning',
+        confirmText: 'Ändern'
+      })
+    : confirm("Möchtest du den Infrastrukturbeitrag Schützenhaus für dieses Mitglied wirklich manuell ändern?");
+
+  if (ok) {
     jbUpdateState('schuetzenhaus', currentVal, pn);
   } else {
     chk.checked = prevVal;
@@ -1300,7 +1309,11 @@ async function jbEntrySaveAndNext(pn) {
     showToast(`✅ Änderungen für ${pnClean} gespeichert (CHF ${(calc?.total || 0).toFixed(2)})!`);
   } catch (err) {
     console.error("Fehler beim Speichern:", err);
-    alert("Fehler beim Speichern: " + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler beim Speichern', err.message, 'danger');
+    } else {
+      alert("Fehler beim Speichern: " + err.message);
+    }
   }
 
   jbEntrySelectNext();
@@ -1510,7 +1523,11 @@ async function jbSaveAllBulkLocalChanges() {
     _jbActiveTab = 'overview';
     renderJahresbeitragView();
   } catch(e) {
-    alert("Fehler beim Bulk-Speichern: " + e.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler beim Speichern', 'Fehler beim Bulk-Speichern: ' + e.message, 'danger');
+    } else {
+      alert("Fehler beim Bulk-Speichern: " + e.message);
+    }
   } finally {
     hideLoadingOverlay();
     if (btn) {
@@ -1815,7 +1832,7 @@ window.jbToggleKontoLock = function(key, pn) {
   window.jbToggleExtraKontoLock(cleanKey, pn);
 };
 
-window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {
+window.jbToggleAllAktiveZusatz = async function(activateState, currentPn) {
   // Nimmt die erste aktive Zusatzposition aus gebuehren_config (z.B. Z001)
   const zFee = (window._jbGebuehren || []).find(f => {
     const uiTyp = String(f.ui_typ || '').toLowerCase();
@@ -1830,7 +1847,15 @@ window.jbToggleAllAktiveZusatz = function(activateState, currentPn) {
   const feeKonto = zFee ? (zFee.konto_haben || zFee.konto || '8500') : '8500';
 
   const textMsg = activateState ? `für ALLE aktiven Schützen aktivieren` : `für ALLE Schützen abwählen`;
-  const ok = confirm(`Möchtest du die Zusatzposition ${feeKey} (${feeName}) ${textMsg}?`);
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Zusatzposition anpassen?',
+        message: `Möchtest du die Zusatzposition <strong>${feeKey} (${feeName})</strong> ${textMsg}?`,
+        type: 'warning',
+        confirmText: activateState ? 'Aktivieren' : 'Abwählen'
+      })
+    : confirm(`Möchtest du die Zusatzposition ${feeKey} (${feeName}) ${textMsg}?`);
+
   if (!ok) return;
 
   _jbMembers.forEach(m => {

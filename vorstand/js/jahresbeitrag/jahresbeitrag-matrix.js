@@ -1257,7 +1257,11 @@ function jbMatrixSort(col) {
 // ============================================================
 function jbExportMatrixExcel() {
   if (typeof XLSX === 'undefined') {
-    alert("Fehler: SheetJS (XLSX) Bibliothek ist nicht geladen.");
+    if (window.UIConfirmKit) {
+      UIConfirmKit.alert('Bibliothek fehlt', 'Die SheetJS (XLSX) Export-Bibliothek ist noch nicht geladen.', 'warning');
+    } else {
+      alert("Fehler: SheetJS (XLSX) Bibliothek ist nicht geladen.");
+    }
     return;
   }
 
@@ -1291,7 +1295,11 @@ function jbExportMatrixExcel() {
   });
 
   if (rowsData.length === 0) {
-    alert("Keine Daten für den Excel-Export vorhanden.");
+    if (window.UIConfirmKit) {
+      UIConfirmKit.alert('Keine Daten', 'Es sind keine passenden Daten für den Excel-Export vorhanden.', 'warning');
+    } else {
+      alert("Keine Daten für den Excel-Export vorhanden.");
+    }
     return;
   }
 

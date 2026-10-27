@@ -427,9 +427,24 @@ function jbBankShowReassignModal(txIdx) {
 }
 
 async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {
-  if (!headerId || !dateStr) { alert('Fehlende Daten.'); return; }
+  if (!headerId || !dateStr) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehlende Daten', 'Fehlende Daten zum Zuweisen der Zahlung.', 'warning');
+    } else {
+      alert('Fehlende Daten.');
+    }
+    return;
+  }
 
-  const confirmed = confirm(`Zahlung vom ${dateStr}\nan "${memberName}" buchen?\nZahlungsmethode: Überweisung (Bank)`);
+  const esc = (window.UIFormatKit?.escapeHtml || window.escapeHtml || (s => s));
+  const confirmed = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Zahlungseingang zuweisen?',
+        message: `Möchtest du die Zahlung vom <strong>${esc(dateStr)}</strong> an <strong>${esc(memberName)}</strong> buchen?<br><br>Zahlungsmethode: Überweisung (Bank)`,
+        type: 'primary',
+        confirmText: 'Zahlung buchen'
+      })
+    : confirm(`Zahlung vom ${dateStr}\nan "${memberName}" buchen?\nZahlungsmethode: Überweisung (Bank)`);
   if (!confirmed) return;
 
   const modal = document.getElementById('bankReassignModal');
@@ -488,7 +503,11 @@ async function jbBankBookAlternative(txIdx, headerId, memberName, dateStr) {
     if (banner) banner.innerHTML = jbBankStatsBannerHTML();
 
   } catch(err) {
-    alert('Fehler: ' + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler beim Buchen', err.message, 'danger');
+    } else {
+      alert('Fehler: ' + err.message);
+    }
   }
 }
 
@@ -502,10 +521,14 @@ function jbBankFilter(filter) {
 
 var BANK_IBAN = 'ch0680808003633131892';
 
-function jbBankHandleFile(file) {
+async function jbBankHandleFile(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.xml')) {
-    alert('Bitte eine XML-Datei (CAMT.053) auswählen.');
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Ungültiges Format', 'Bitte wähle eine XML-Datei (CAMT.053) aus.', 'warning');
+    } else {
+      alert('Bitte eine XML-Datei (CAMT.053) auswählen.');
+    }
     return;
   }
 
@@ -513,14 +536,23 @@ function jbBankHandleFile(file) {
     const nameClean = file.name.toLowerCase().replace(/[-_]/g, '');
     const ibanClean = BANK_IBAN.replace(/[-_]/g, '');
     if (!nameClean.includes(ibanClean)) {
-      const proceed = confirm(
-        '⚠️ Kontofilter-Warnung\n\n' +
-        'Die gewählte Datei enthält die IBAN\n' +
-        'CH0680808003633131892\nnicht im Dateinamen.\n\n' +
-        'Datei: ' + file.name + '\n\n' +
-        'Möglicherweise handelt es sich um den falschen Kontoauszug.\n\n' +
-        'Trotzdem laden?'
-      );
+      const esc = (window.UIFormatKit?.escapeHtml || window.escapeHtml || (s => s));
+      const msg = `Die gewählte Datei enthält die Vereins-IBAN (CH06 8080 8003 6331 3189 2) nicht im Dateinamen.<br><br>Datei: <code>${esc(file.name)}</code><br><br>Möglicherweise handelt es sich um den Auszug eines anderen Vereinskontos.<br>Möchtest du die Datei trotzdem laden?`;
+      const proceed = window.UIConfirmKit
+        ? await UIConfirmKit.confirm({
+            title: 'Kontofilter-Warnung',
+            message: msg,
+            type: 'warning',
+            confirmText: 'Trotzdem laden'
+          })
+        : confirm(
+            '⚠️ Kontofilter-Warnung\n\n' +
+            'Die gewählte Datei enthält die IBAN\n' +
+            'CH0680808003633131892\nnicht im Dateinamen.\n\n' +
+            'Datei: ' + file.name + '\n\n' +
+            'Möglicherweise handelt es sich um den falschen Kontoauszug.\n\n' +
+            'Trotzdem laden?'
+          );
       if (!proceed) {
         const inp = document.getElementById('bankXmlInput');
         if (inp) inp.value = '';
@@ -530,7 +562,7 @@ function jbBankHandleFile(file) {
   }
 
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async function(e) {
     try {
       const xmlText = e.target.result;
       const transactions = jbBankParseCAMT053(xmlText);
@@ -539,7 +571,11 @@ function jbBankHandleFile(file) {
       window._jbBankActiveFilter = 'all';
       renderJahresbeitragView();
     } catch(err) {
-      alert('Fehler beim Lesen der XML-Datei: ' + err.message);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Fehler beim Einlesen', 'Fehler beim Lesen der XML-Datei: ' + err.message, 'danger');
+      } else {
+        alert('Fehler beim Lesen der XML-Datei: ' + err.message);
+      }
     } finally {
       const inp = document.getElementById('bankXmlInput');
       if (inp) inp.value = '';
@@ -737,9 +773,23 @@ function escHtml(s) {
 }
 
 async function jbBankBookOne(headerId, dateStr, resultIdx) {
-  if (!headerId || !dateStr) { alert('Fehlende Daten zum Buchen.'); return; }
+  if (!headerId || !dateStr) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehlende Daten', 'Fehlende Daten zum Buchen der Zahlung.', 'warning');
+    } else {
+      alert('Fehlende Daten zum Buchen.');
+    }
+    return;
+  }
 
-  const confirmed = confirm(`Zahlung vom ${dateStr} buchen?\nZahlungsmethode: Überweisung (Bank)`);
+  const confirmed = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Zahlungseingang buchen?',
+        message: `Möchtest du die Zahlung vom <strong>${dateStr}</strong> jetzt verbuchen?<br><br>Zahlungsmethode: Überweisung (Bank)`,
+        type: 'primary',
+        confirmText: 'Zahlung buchen'
+      })
+    : confirm(`Zahlung vom ${dateStr} buchen?\nZahlungsmethode: Überweisung (Bank)`);
   if (!confirmed) return;
 
   try {
@@ -791,7 +841,11 @@ async function jbBankBookOne(headerId, dateStr, resultIdx) {
     if (banner) banner.innerHTML = jbBankStatsBannerHTML();
 
   } catch(err) {
-    alert('Fehler: ' + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler beim Buchen', err.message, 'danger');
+    } else {
+      alert('Fehler: ' + err.message);
+    }
   }
 }
 
@@ -805,8 +859,23 @@ async function jbBankBookAll() {
     return;
   }
 
-  const ok = confirm(`${toBook.length} eindeutige Zahlungen jetzt buchen?`);
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Sammelverbuchung starten?',
+        message: `Möchtest du wirklich <strong>${toBook.length}</strong> eindeutig zugewiesene Zahlungen jetzt automatisch buchen?`,
+        type: 'warning',
+        confirmText: 'Alle verbuchen'
+      })
+    : confirm(`${toBook.length} eindeutige Zahlungen jetzt buchen?`);
   if (!ok) return;
+
+  const btn = document.querySelector('button[onclick="jbBankBookAll()"]');
+  let oldBtnHtml = '';
+  if (btn) {
+    oldBtnHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Buche...';
+  }
 
   let booked = 0;
   const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
@@ -861,6 +930,10 @@ async function jbBankBookAll() {
   jbBankRenderResults(window._jbBankActiveFilter);
   const banner = document.getElementById('bankStatsBanner');
   if (banner) banner.innerHTML = jbBankStatsBannerHTML();
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = oldBtnHtml;
+  }
 }
 
 // Hilfsfunktion zum Synchronisieren der Splitbuchung in die Buchhaltung (Supabase Single Source of Truth)

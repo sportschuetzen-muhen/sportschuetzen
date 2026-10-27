@@ -946,7 +946,14 @@ async function jbSaveZahlung() {
   const methode= document.getElementById('jbZahlungMethode').value;
   const beleg  = document.getElementById('jbZahlungBeleg').value;
 
-  if (!datum) { alert('Bitte Datum angeben'); return; }
+  if (!datum) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehlendes Datum', 'Bitte gib ein gültiges Zahlungsdatum an.', 'warning');
+    } else {
+      alert('Bitte Datum angeben');
+    }
+    return;
+  }
 
   const btn = document.querySelector('#jbModalZahlung .btn-success');
   btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
@@ -1058,7 +1065,11 @@ async function jbSaveZahlung() {
 
     await loadJahresbeitragData(true, false); // showSpinner = false
   } catch(e) {
-    alert('Fehler: ' + e.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler bei der Zahlung', 'Fehler: ' + e.message, 'danger');
+    } else {
+      alert('Fehler: ' + e.message);
+    }
   } finally {
     btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Zahlung speichern';
   }
@@ -1358,7 +1369,11 @@ async function jbTransferSingleInvoice(rId, pn) {
     }
   } catch (err) {
     console.error("Fehler bei Rechnungs-Übertrag:", err);
-    alert("Fehler bei Rechnungs-Übertrag: " + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler beim Rechnungs-Übertrag', err.message, 'danger');
+    } else {
+      alert("Fehler bei Rechnungs-Übertrag: " + err.message);
+    }
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -1458,7 +1473,11 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
       throw new Error(engineRes?.error || "Fehler bei PDF-Generierung");
     }
   } catch (err) {
-    alert("Fehler bei PDF-Erstellung: " + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler bei PDF-Erstellung', err.message, 'danger');
+    } else {
+      alert("Fehler bei PDF-Erstellung: " + err.message);
+    }
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -1470,11 +1489,28 @@ async function jbGenerateInvoicePdfRemote(rId, pn) {
 // Rechnung per E-Mail versenden
 async function jbSendInvoiceEmailRemote(rId, pn, email) {
   const r = _jbData.find(x => String(x.id) === String(rId));
-  if (!r) { alert("Eintrag nicht gefunden."); return; }
+  if (!r) {
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Eintrag nicht gefunden', 'Der Beitragseintrag wurde nicht gefunden.', 'danger');
+    } else {
+      alert("Eintrag nicht gefunden.");
+    }
+    return;
+  }
   const m = _jbMemberMap[String(pn)] || {};
   const name = m.FirstName ? `${m.FirstName} ${m.LastName}` : pn;
-  
-  if (!confirm(`Möchtest du die Jahresbeitrag-Rechnung für ${name} an die E-Mail-Adresse "${email}" senden?`)) {
+  const esc = (window.UIFormatKit?.escapeHtml || window.escapeHtml || (s => s));
+
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Jahresbeitrag per E-Mail versenden?',
+        message: `Möchtest du die Jahresbeitrag-Rechnung für <strong>${esc(name)}</strong> an die E-Mail-Adresse <strong>${esc(email)}</strong> versenden?`,
+        type: 'primary',
+        confirmText: 'Rechnung senden'
+      })
+    : confirm(`Möchtest du die Jahresbeitrag-Rechnung für ${name} an die E-Mail-Adresse "${email}" senden?`);
+
+  if (!ok) {
     return;
   }
   
@@ -1621,7 +1657,11 @@ async function jbSendInvoiceEmailRemote(rId, pn, email) {
     }
   } catch (err) {
     jbCleanupModals();
-    alert("Fehler bei E-Mail-Versand: " + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler beim E-Mail-Versand', err.message, 'danger');
+    } else {
+      alert("Fehler bei E-Mail-Versand: " + err.message);
+    }
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = oldHtml;
@@ -1640,13 +1680,26 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
 
   if (toProcess.length === 0) {
     if (!silent) {
-      alert(`Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert('Rechnungen bereits bereitgestellt', `Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`, 'info');
+      } else {
+        alert(`Alle beitragspflichtigen Mitglieder für das Jahr ${_jbYear} besitzen bereits einen Rechnungsentwurf im RechnungsCore!`);
+      }
     }
     return 0;
   }
 
   if (!silent) {
-    if (!confirm(`Möchtest du für ${toProcess.length} berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?\n\nDie Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status 'Entwurf' (noch nicht an Mitglieder versendet).`)) {
+    const ok = window.UIConfirmKit
+      ? await UIConfirmKit.confirm({
+          title: 'Rechnungsentwürfe anlegen?',
+          message: `Möchtest du für <strong>${toProcess.length}</strong> berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?<br><br>Die Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status <em>Entwurf</em> (noch nicht versendet).`,
+          type: 'primary',
+          confirmText: 'Entwürfe anlegen'
+        })
+      : confirm(`Möchtest du für ${toProcess.length} berechnete Mitglieder offizielle Rechnungsentwürfe im RechnungsCore anlegen?\n\nDie Rechnungen erhalten eine fortlaufende JB-Nummer und Schweizer QR-Referenz, verbleiben aber im Status 'Entwurf' (noch nicht an Mitglieder versendet).`);
+
+    if (!ok) {
       return 0;
     }
   }
@@ -1688,6 +1741,8 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
   if (!silent) {
     if (typeof showToast === 'function') {
       showToast(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!${failCount > 0 ? ` (${failCount} Fehler)` : ''}`);
+    } else if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Rechnungsentwürfe bereitgestellt', `🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`, 'success');
     } else {
       alert(`🎉 ${createdCount} Rechnungsentwürfe erfolgreich im RechnungsCore bereitgestellt!`);
     }
@@ -1698,7 +1753,11 @@ window.jbRechnungenBereitstellenBatch = async function(silent = false) {
 // Sammelversand für Jahresbeiträge: Öffnet das Massenversand-Modal vorselektiert mit allen Rechnungen des aktiven Jahres
 window.jbOpenSammelversandModal = async function() {
   if (typeof rnOpenMassSendModal !== 'function') {
-    alert("Das Massenversand-Modul steht momentan nicht zur Verfügung.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Modul nicht verfügbar', 'Das Massenversand-Modul steht momentan nicht zur Verfügung.', 'warning');
+    } else {
+      alert("Das Massenversand-Modul steht momentan nicht zur Verfügung.");
+    }
     return;
   }
   
@@ -1715,10 +1774,17 @@ window.jbOpenSammelversandModal = async function() {
   });
 
   if (uncreated.length > 0) {
-    const doCreate = confirm(
-      `Es gibt noch ${uncreated.length} berechnete Mitglieder ohne Rechnungsentwurf im RechnungsCore.\n\n` +
-      `Sollen diese jetzt automatisch als Entwurf angelegt werden, damit sie für den Sammelversand verfügbar sind?`
-    );
+    const doCreate = window.UIConfirmKit
+      ? await UIConfirmKit.confirm({
+          title: 'Fehlende Rechnungsentwürfe anlegen?',
+          message: `Es gibt noch <strong>${uncreated.length}</strong> berechnete Mitglieder ohne Rechnungsentwurf im RechnungsCore.<br><br>Sollen diese jetzt automatisch als Entwurf angelegt werden, damit sie für den Sammelversand verfügbar sind?`,
+          type: 'warning',
+          confirmText: 'Jetzt anlegen'
+        })
+      : confirm(
+          `Es gibt noch ${uncreated.length} berechnete Mitglieder ohne Rechnungsentwurf im RechnungsCore.\n\n` +
+          `Sollen diese jetzt automatisch als Entwurf angelegt werden, damit sie für den Sammelversand verfügbar sind?`
+        );
     if (doCreate) {
       await window.jbRechnungenBereitstellenBatch(true);
       if (typeof loadRechnungenData === 'function') {
@@ -1738,7 +1804,12 @@ window.jbOpenSammelversandModal = async function() {
   
   const jbIds = jbInvs.map(i => i.id);
   if (jbIds.length === 0) {
-    alert(`Keine Rechnungen für das Jahr ${_jbYear} gefunden. Bitte zuerst «Beiträge berechnen» und «Rechnungen bereitstellen».`);
+    const msg = `Keine Rechnungen für das Jahr ${_jbYear} gefunden. Bitte zuerst «Beiträge berechnen» und «Rechnungen bereitstellen».`;
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Keine Rechnungen gefunden', msg, 'warning');
+    } else {
+      alert(msg);
+    }
     return;
   }
   window.rnOpenMassSendModal(jbIds.length > 0 ? jbIds : []);
@@ -1746,12 +1817,19 @@ window.jbOpenSammelversandModal = async function() {
 
 
 async function jbBerechnen() {
-  if (!confirm(`Beiträge für ${_jbYear} berechnen? Bereits berechnete werden übersprungen.`)) return;
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: 'Beiträge berechnen?',
+        message: `Möchtest du die Jahresbeiträge für <strong>${_jbYear}</strong> berechnen?<br><br>Bereits berechnete Mitglieder werden übersprungen.`,
+        type: 'primary',
+        confirmText: 'Beiträge berechnen'
+      })
+    : confirm(`Beiträge für ${_jbYear} berechnen? Bereits berechnete werden übersprungen.`);
+
+  if (!ok) return;
+
   const btn = document.querySelector('button[onclick="jbBerechnen()"]');
-  if (btn) {
-    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Berechne…';
-  }
-  try {
+  const runCalc = async () => {
     // 1. Supabase atomare Backend-Berechnung (RPC)
     const supa = (typeof getJahresbeitragSupabaseClient === 'function') ? getJahresbeitragSupabaseClient() : null;
     if (!supa) throw new Error("Supabase Client nicht verfügbar");
@@ -1773,12 +1851,33 @@ async function jbBerechnen() {
     const msg = rpcRes?.message || `Beiträge für ${yr} erfolgreich berechnet (${calcCount} Mitglieder).`;
     console.log(`✅ [Supabase RPC] ${msg}`);
 
-    alert(`✅ ${msg}`);
+    if (typeof showToast === 'function') {
+      showToast(`✅ ${msg}`, 'success');
+    } else if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Berechnung abgeschlossen', msg, 'success');
+    } else {
+      alert(`✅ ${msg}`);
+    }
     await loadJahresbeitragData(true, false);
+  };
+
+  try {
+    if (window.UIButtonKit && btn) {
+      await UIButtonKit.withLoading(btn, runCalc);
+    } else {
+      if (btn) {
+        btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Berechne…';
+      }
+      await runCalc();
+    }
   } catch(e) {
-    alert('Fehler: ' + e.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler bei der Beitragsberechnung', e.message, 'danger');
+    } else {
+      alert('Fehler: ' + e.message);
+    }
   } finally {
-    if (btn) {
+    if (!window.UIButtonKit && btn) {
       btn.disabled = false; btn.innerHTML = '<i class="fas fa-calculator"></i> Alle Beiträge berechnen';
     }
   }
@@ -1789,12 +1888,16 @@ async function jbResetYear(mode) {
     ? 'alle Rechnungen, Posten SOWIE ALLE Turnierteilnahmen und manuellen Gebührenüberschreibungen' 
     : 'alle Beitragsrechnungen und Posten (Turnierteilnahmen bleiben erhalten)';
   
-  if (!confirm(`⚠️ ACHTUNG: Möchtest du wirklich ${modeText} für das Beitragsjahr ${_jbYear} zurücksetzen?\n\nVorjahre bleiben unberührt. Diese Aktion kann nicht rückgängig gemacht werden!`)) {
-    return;
-  }
-  
-  // Zweite Bestätigung zur Sicherheit
-  if (!confirm(`Bist du absolut sicher?`)) {
+  const ok = window.UIConfirmKit
+    ? await UIConfirmKit.confirm({
+        title: `Beitragsjahr ${_jbYear} zurücksetzen?`,
+        message: `Möchtest du wirklich <strong>${modeText}</strong> für das Beitragsjahr ${_jbYear} unwiderruflich zurücksetzen?<br><br>Vorjahre bleiben unberührt. Diese Aktion kann <strong>nicht</strong> rückgängig gemacht werden!`,
+        type: 'danger',
+        confirmText: 'Unwiderruflich zurücksetzen'
+      })
+    : (confirm(`⚠️ ACHTUNG: Möchtest du wirklich ${modeText} für das Beitragsjahr ${_jbYear} zurücksetzen?\n\nVorjahre bleiben unberührt. Diese Aktion kann nicht rückgängig gemacht werden!`) && confirm(`Bist du absolut sicher?`));
+
+  if (!ok) {
     return;
   }
   
@@ -1821,7 +1924,11 @@ async function jbResetYear(mode) {
     showToast(`🎉 Zurücksetzen des Jahres ${_jbYear} in Supabase erfolgreich abgeschlossen!`);
     await loadJahresbeitragData(true, false);
   } catch (e) {
-    alert("Fehler beim Zurücksetzen: " + e.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert('Fehler beim Zurücksetzen', e.message, 'danger');
+    } else {
+      alert("Fehler beim Zurücksetzen: " + e.message);
+    }
   } finally {
     hideLoadingOverlay();
   }
