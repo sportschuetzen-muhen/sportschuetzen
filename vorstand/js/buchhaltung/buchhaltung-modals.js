@@ -2209,17 +2209,6 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
         </div>
       </div>
 
-      ${isSingle ? `
-      <!-- Bestätigungsbereich für Einzelbuchung -->
-      <div style="margin-top: 50px; padding-top: 25px; border-top: 1px dashed #ced4da;">
-        <div style="font-size: 11px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 30px; letter-spacing: 0.5px;">Erstellt &amp; gebucht durch</div>
-        <div style="border-bottom: 1px solid #495057; width: 100%; height: 1px;"></div>
-        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #212529; margin-top: 8px;">
-          <span>Kassier: <strong>${escapeHtml(userName)}</strong></span>
-          <span>Datum: <strong>${todayFormatted}</strong></span>
-        </div>
-      </div>
-      ` : `
       <table class="beleg-table">
         <thead>
           <tr>
@@ -2239,27 +2228,6 @@ window.bhPrintJournalBeleg = function(entriesOrIds, customTitle, recipientData) 
           </tr>
         </tbody>
       </table>
-
-      <!-- Visum- und Freigabebereich für Sammelbeleg -->
-      <div style="display: flex; justify-content: space-between; margin-top: 35px; padding-top: 15px; border-top: 1px dashed #ced4da;">
-        <div style="width: 45%;">
-          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 25px;">Erstellt &amp; gebucht durch</div>
-          <div style="border-bottom: 1px solid #495057; width: 100%; height: 1px;"></div>
-          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6c757d; margin-top: 4px;">
-            <span>Kassier: <strong>${escapeHtml(userName)}</strong></span>
-            <span>Datum: ${todayFormatted}</span>
-          </div>
-        </div>
-        <div style="width: 45%;">
-          <div style="font-size: 10px; text-transform: uppercase; color: #6c757d; font-weight: bold; margin-bottom: 25px;">Visum / Freigabe zur Auszahlung</div>
-          <div style="border-bottom: 1px solid #495057; width: 100%; height: 1px;"></div>
-          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #6c757d; margin-top: 4px;">
-            <span>Unterschrift Vorstand / Visum</span>
-            <span>Überwiesen / Ausbezahlt am:</span>
-          </div>
-        </div>
-      </div>
-      `}
 
       <script>
         function downloadPain001Xml() {
