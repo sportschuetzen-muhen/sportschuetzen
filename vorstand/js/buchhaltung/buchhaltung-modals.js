@@ -3646,12 +3646,13 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
     }
 
     // Supabase ist Single Source of Truth
+    const updatedEntries = [];
     for (let i = 0; i < validRows.length; i++) {
       const vr = validRows[i];
       const subSuffix = validRows.length > 1 ? String.fromCharCode(97 + i) : '';
       const belegNr = `${baseBeleg}${subSuffix}`;
       const savedItem = {
-        id: vr.id || Date.now() + i,
+        id: vr.id || (Date.now() + i),
         jahr: Number(year || new Date().getFullYear()),
         datum: vr.datum || new Date().toISOString().split('T')[0],
         beleg_nr: belegNr,
@@ -3659,7 +3660,8 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
         konto_soll: vr.konto_soll,
         konto_haben: vr.konto_haben,
         betrag: Number(vr.betrag || 0),
-        typ: vr.typ || 'Kassa'
+        typ: vr.typ || 'Kassa',
+        buchungstyp: (typeof getBuchungstyp === 'function') ? getBuchungstyp(vr.konto_soll, vr.konto_haben) : 'TRANSIT'
       };
       
       if (vr.id) {
@@ -3695,7 +3697,16 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
     }, 1500);
 
   } catch (err) {
-    alert('❌ Fehler beim Speichern des Split-Verbunds: ' + err.message);
+    console.error("Fehler beim Speichern des Split-Verbunds:", err);
+    if (window.UIConfirmKit && typeof window.UIConfirmKit.alert === 'function') {
+      await window.UIConfirmKit.alert({
+        title: 'Fehler beim Speichern',
+        message: 'Der Split-Verbund konnte nicht gespeichert werden: ' + (err.message || err),
+        type: 'danger'
+      });
+    } else {
+      alert('❌ Fehler beim Speichern des Split-Verbunds: ' + err.message);
+    }
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
