@@ -187,3 +187,24 @@ Nach jedem Paket:
 1. Smoke-Test im Browser.
 2. Dokumentations-Aktualisierung in [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md).
 3. Commit & Push auf GitHub (`git push origin migration-supabase`).
+
+---
+
+## 6. Fachmodul-Rollout (Oktober 2026)
+
+* **Step 1: Rechnungswesen (`vorstand/js/rechnungen/`):** ✅ **ABGESCHLOSSEN & VERIFIZIERT**
+  - Alle nativen `confirm` / `alert`-Dialoge (Löschen, Storno, Mahnen, Zahlung erfassen) durch `UIConfirmKit.confirm` / `UIConfirmKit.alert` ersetzt.
+  - Double-Submit Schutz bei Zahlungserfassung via `UIButtonKit.withLoading('#rnp-submit-btn', ...)`.
+  - Dokumentiert in [`docs/RECHNUNGSWESEN.md`](RECHNUNGSWESEN.md).
+* **Step 2: Jahresbeitrag (`vorstand/js/jahresbeitrag/`):** ✅ **ABGESCHLOSSEN & VERIFIZIERT**
+  - Übersicht (`jahresbeitrag-overview.js`): `jbBerechnen` (mit `UIButtonKit`), `jbSaveZahlung`, `jbTransferSingleInvoice`, `jbGenerateInvoicePdfRemote`, `jbSendInvoiceEmailRemote`, `jbRechnungenBereitstellenBatch`, `jbOpenSammelversandModal`, `jbResetYear`.
+  - Bankabstimmung (`jahresbeitrag-bank.js`): `jbBankBookAlternative`, CAMT.053 IBAN Check, `jbBankBookOne`, `jbBankBookAll` (mit Klick-Schutz).
+  - Schnellerfassung & Matrix (`jahresbeitrag-schnellerfassung.js`, `jahresbeitrag-matrix.js`): `jbConfirmEntrySchuetzenhaus`, `jbEntrySaveAndNext`, `jbBulkSaveDirect`, `jbToggleAllAktiveZusatz`, Matrix-Export.
+  - Dokumentiert in [`docs/JAHRESBEITRAG.md`](JAHRESBEITRAG.md).
+* **Step 3: Vermietung (`vorstand/js/vermietung/`):** ✅ **ABGESCHLOSSEN & VERIFIZIERT**
+  - Vermietungsaktionen (`vermietung-manager.js`): Mahnung, Schlüsselübergabe, Bestätigung, FIBU manuell, Stornierung (mit `danger`), Notfall-Sync mit `UIConfirmKit.confirm` / `UIConfirmKit.alert`.
+  - Double-Submit Schutz bei Schnellerfassung (`#btn-save-new-reservation`), Notfall-Sync (`#btn-sync-notfall`) und Einstellungen (`#cfg-save-btn`).
+  - Vermietungs-Automation (`vermietung-automation.js`): Fehlermeldungen bei Cron- und Sofort-Scan durch `UIConfirmKit.alert` ersetzt.
+  - Schweizer Währungsformatierung (`UIFormatKit.formatCurrency`) in `vermietung-core.js` und Excel-Export (`UIExportKit.exportTableToExcel`) im Toolbar von `#vermietung-table`.
+  - Dokumentiert in [`docs/VERMIETUNG_SCHUETZENSTUBE.md`](VERMIETUNG_SCHUETZENSTUBE.md).
+

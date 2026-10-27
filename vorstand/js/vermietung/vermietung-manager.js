@@ -22,7 +22,11 @@ Status:         ${getStatusLabel(d.status)}
     showToast("📋 Details in die Zwischenablage kopiert!");
   }).catch(err => {
     console.error("Kopieren fehlgeschlagen:", err);
-    alert("Kopieren fehlgeschlagen.");
+    if (window.UIConfirmKit) {
+      UIConfirmKit.alert({ title: "Zwischenablage", message: "Kopieren in die Zwischenablage ist fehlgeschlagen.", type: "warning" });
+    } else {
+      alert("Kopieren fehlgeschlagen.");
+    }
   });
 }
 
@@ -419,30 +423,94 @@ async function vermietungAktion(action, idOrRow) {
   // Schutz vor versehentlichem Doppelversand:
   if (action === 'mahnung') {
     let warnung = "Mahnung an " + d.email + " senden?";
+    let isWarning = false;
     if (d.datum_mahnung && d.datum_mahnung !== '–') {
       warnung = `⚠️ HINWEIS: Eine Mahnung wurde bereits am ${d.datum_mahnung} versandt.\n\nMöchtest du wirklich eine ERNEUTE Mahnung senden?`;
+      isWarning = true;
     }
-    if (!confirm(warnung)) return;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Mahnung versenden",
+        message: warnung,
+        confirmText: "Mahnung senden",
+        type: isWarning ? "warning" : "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(warnung)) return;
   } else if (action === 'schluessel') {
     let warnung = "Schlüsselübergabe-Mail an " + d.email + " senden?";
+    let isWarning = false;
     if (d.datum_schluessel && d.datum_schluessel !== '–') {
       warnung = `⚠️ HINWEIS: Schlüsselübergabe-Mail wurde bereits am ${d.datum_schluessel} versandt.\n\nTrotzdem erneut senden?`;
+      isWarning = true;
     }
-    if (!confirm(warnung)) return;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Schlüsselübergabe senden",
+        message: warnung,
+        confirmText: "Senden",
+        type: isWarning ? "warning" : "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(warnung)) return;
   } else if (action === 'bestaetigen') {
-    if (!confirm(`Zahlungseingang (Info-Mail Bank) für Vertrag ${d.vertragsnr} vermerken?\n\nDies setzt Zahlungsstufe 1 (Info-Mail Bank) und informiert den Mieter sowie das Wirtschaftsteam.`)) return;
+    const msg = `Zahlungseingang (Info-Mail Bank) für Vertrag ${d.vertragsnr} vermerken?\n\nDies setzt Zahlungsstufe 1 (Info-Mail Bank) und informiert den Mieter sowie das Wirtschaftsteam.`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Zahlungseingang vermerken",
+        message: msg,
+        confirmText: "Zahlungseingang vermerken",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
   } else if (action === 'fibu_manuell') {
-    if (!confirm(`Zahlung für Vertrag ${d.vertragsnr} als in FIBU gebucht markieren?\n\nDies setzt Zahlungsstufe 2 (FIBU gebucht).`)) return;
+    const msg = `Zahlung für Vertrag ${d.vertragsnr} als in FIBU gebucht markieren?\n\nDies setzt Zahlungsstufe 2 (FIBU gebucht).`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "FIBU-Status aktualisieren",
+        message: msg,
+        confirmText: "Als gebucht markieren",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
   } else if (action === 'stornieren') {
     const isVerzug = Boolean(d.datum_mahnung && d.datum_mahnung !== '–');
     const msg = isVerzug 
-      ? `⚠️ Reservation ${d.vertragsnr} wirklich stornieren?\n\nDa eine Mahnung versandt wurde, wird die Vorlage 'Stornierung wegen Zahlungsverzug' an ${d.email} gesendet.`
-      : `⚠️ Reservation ${d.vertragsnr} wirklich stornieren?\n\nDadurch wird die Reservation freigegeben und dem Mieter ein Stornomail mit Feedbacklink gesendet.`;
-    if (!confirm(msg)) return;
+      ? `Reservation ${d.vertragsnr} wirklich stornieren?\n\nDa eine Mahnung versandt wurde, wird die Vorlage 'Stornierung wegen Zahlungsverzug' an ${d.email} gesendet.`
+      : `Reservation ${d.vertragsnr} wirklich stornieren?\n\nDadurch wird die Reservation freigegeben und dem Mieter ein Stornomail mit Feedbacklink gesendet.`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Reservation stornieren",
+        message: msg,
+        confirmText: "Ja, stornieren",
+        type: "danger"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
   } else if (action === 'info_wirtschaft') {
-    if (!confirm(`Info-Mail über Vertrag ${d.vertragsnr} an die Wirtschaftsverantwortlichen senden?`)) return;
+    const msg = `Info-Mail über Vertrag ${d.vertragsnr} an die Wirtschaftsverantwortlichen senden?`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Info-Mail versenden",
+        message: msg,
+        confirmText: "Info-Mail senden",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
   } else if (action === 'vertrag_mail') {
-    if (!confirm(`Mietvertrag per E-Mail an ${d.email} senden?`)) return;
+    const msg = `Mietvertrag per E-Mail an ${d.email} senden?`;
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Mietvertrag versenden",
+        message: msg,
+        confirmText: "Vertrag senden",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(msg)) return;
   }
 
   const modalFooter = document.getElementById('vermietung-modal-footer');
@@ -599,7 +667,11 @@ async function vermietungAktion(action, idOrRow) {
   } catch (e) {
     if (modalFooter) modalFooter.innerHTML = originalFooter;
     console.error("Fehler bei Vermietungsaktion:", e);
-    alert("❌ Fehler beim Ausführen: " + e.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Fehler beim Ausführen", message: "❌ Fehler beim Ausführen: " + e.message, type: "danger" });
+    } else {
+      alert("❌ Fehler beim Ausführen: " + e.message);
+    }
   }
 }
 
@@ -707,71 +779,91 @@ async function saveNewReservation() {
   const totalAmount  = parseFloat(priceOption?.getAttribute('data-price') || 300.00);
 
   if (!firstname || !lastname || !email || !phone || !dateStr) {
-    alert("Bitte fülle alle mit * markierten Pflichtfelder aus.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Pflichtfelder ausfüllen", message: "Bitte fülle alle mit * markierten Pflichtfelder aus.", type: "warning" });
+    } else {
+      alert("Bitte fülle alle mit * markierten Pflichtfelder aus.");
+    }
     return;
   }
 
   const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
   if (!supa) {
-    alert("Supabase Verbindung nicht initialisiert.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Verbindungsfehler", message: "Supabase Verbindung nicht initialisiert.", type: "danger" });
+    } else {
+      alert("Supabase Verbindung nicht initialisiert.");
+    }
     return;
   }
 
-  try {
-    const payload = {
-      salutation: salutation,
-      first_name: firstname,
-      last_name: lastname,
-      street: street,
-      post_code: plz,
-      city: city,
-      email: email,
-      phone: phone,
-      start_date: dateStr,
-      end_date: dateStr,
-      festbeginn: timeStr,
-      pricing_id: pricingId && pricingId !== 'std' ? pricingId : null,
-      total_amount_chf: totalAmount,
-      status: 'contract_sent',
-      datum_vertrag: new Date().toISOString().split('T')[0],
-      admin_comment: notes
-    };
-
-    const { data, error } = await supa
-      .from('rental_requests')
-      .insert([payload])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // RechnungsCore: Zentrale Forderung/Rechnung automatisch anlegen
+  const executeSave = async () => {
     try {
-      await ensureRentalInvoice(data);
-    } catch (invErr) {
-      console.warn("⚠️ RechnungsCore Erstellung Vermietung:", invErr);
-    }
+      const payload = {
+        salutation: salutation,
+        first_name: firstname,
+        last_name: lastname,
+        street: street,
+        post_code: plz,
+        city: city,
+        email: email,
+        phone: phone,
+        start_date: dateStr,
+        end_date: dateStr,
+        festbeginn: timeStr,
+        pricing_id: pricingId && pricingId !== 'std' ? pricingId : null,
+        total_amount_chf: totalAmount,
+        status: 'contract_sent',
+        datum_vertrag: new Date().toISOString().split('T')[0],
+        admin_comment: notes
+      };
 
-    // Automatisches Generieren des Mietvertrags-PDFs mit Schweizer QR-Rechnung
-    if (typeof window.vmGenerateRentalContractPdf === 'function') {
+      const { data, error } = await supa
+        .from('rental_requests')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // RechnungsCore: Zentrale Forderung/Rechnung automatisch anlegen
       try {
-        await window.vmGenerateRentalContractPdf(data.booking_number);
-      } catch (pdfErr) {
-        console.warn("Hinweis PDF-Generierung:", pdfErr);
+        await ensureRentalInvoice(data);
+      } catch (invErr) {
+        console.warn("⚠️ RechnungsCore Erstellung Vermietung:", invErr);
+      }
+
+      // Automatisches Generieren des Mietvertrags-PDFs mit Schweizer QR-Rechnung
+      if (typeof window.vmGenerateRentalContractPdf === 'function') {
+        try {
+          await window.vmGenerateRentalContractPdf(data.booking_number);
+        } catch (pdfErr) {
+          console.warn("Hinweis PDF-Generierung:", pdfErr);
+        }
+      }
+
+      // Modal schliessen
+      const modalElem = document.getElementById('newReservationModal');
+      const modalInstance = bootstrap.Modal.getInstance(modalElem);
+      if (modalInstance) modalInstance.hide();
+
+      showToast(`✅ Reservation ${data.booking_number} erfolgreich in Supabase erfasst!`);
+      await loadVermietungData(true);
+
+    } catch (err) {
+      console.error("Fehler beim Speichern der Reservation:", err);
+      if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({ title: "Fehler beim Speichern", message: "❌ Fehler beim Speichern: " + err.message, type: "danger" });
+      } else {
+        alert("❌ Fehler beim Speichern: " + err.message);
       }
     }
+  };
 
-    // Modal schliessen
-    const modalElem = document.getElementById('newReservationModal');
-    const modalInstance = bootstrap.Modal.getInstance(modalElem);
-    if (modalInstance) modalInstance.hide();
-
-    showToast(`✅ Reservation ${data.booking_number} erfolgreich in Supabase erfasst!`);
-    await loadVermietungData(true);
-
-  } catch (err) {
-    console.error("Fehler beim Speichern der Reservation:", err);
-    alert("❌ Fehler beim Speichern: " + err.message);
+  if (window.UIButtonKit && document.getElementById('btn-save-new-reservation')) {
+    await UIButtonKit.withLoading('#btn-save-new-reservation', executeSave);
+  } else {
+    await executeSave();
   }
 }
 
@@ -853,7 +945,11 @@ async function ensureRentalInvoice(d) {
 async function saveRentalSettings() {
   const supa = (typeof window.getSupabaseClient === 'function') ? window.getSupabaseClient() : window.supabaseClient;
   if (!supa) {
-    alert("Supabase Client nicht initialisiert.");
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Verbindungsfehler", message: "Supabase Client nicht initialisiert.", type: "danger" });
+    } else {
+      alert("Supabase Client nicht initialisiert.");
+    }
     return;
   }
 
@@ -957,7 +1053,11 @@ async function saveRentalSettings() {
     showToast("✅ Einstellungen und Tarife erfolgreich in Supabase gespeichert!");
   } catch (err) {
     console.error("Fehler beim Speichern der Einstellungen:", err);
-    alert("❌ Fehler beim Speichern: " + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Fehler beim Speichern", message: "❌ Fehler beim Speichern: " + err.message, type: "danger" });
+    } else {
+      alert("❌ Fehler beim Speichern: " + err.message);
+    }
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -989,15 +1089,27 @@ async function syncNotfallBuchungen() {
     if (unsynced.length === 0) {
       if (typeof showToast === 'function') {
         showToast("ℹ️ Keine offenen Notfall-Buchungen im Google Sheet vorhanden. Alles auf aktuellem Stand!");
+      } else if (window.UIConfirmKit) {
+        await UIConfirmKit.alert({ title: "Notfall-Sheet synchron", message: "Keine offenen Notfall-Buchungen im Google Sheet vorhanden. Alles auf aktuellem Stand!", type: "primary" });
       } else {
         alert("ℹ️ Keine offenen Notfall-Buchungen im Google Sheet vorhanden. Alles auf aktuellem Stand!");
       }
       return;
     }
 
-    if (!confirm(`Es wurden ${unsynced.length} neue Notfall-Buchung(en) im Google Sheet gefunden:\n\n` +
+    const confirmMsg = `Es wurden ${unsynced.length} neue Notfall-Buchung(en) im Google Sheet gefunden:\n\n` +
       unsynced.map(b => `• ${b.booking_number}: ${b.vorname} ${b.nachname} (${b.mietdatum})`).join('\n') +
-      `\n\nJetzt in die Supabase-Datenbank importieren?`)) {
+      `\n\nJetzt in die Supabase-Datenbank importieren?`;
+
+    if (window.UIConfirmKit) {
+      const ok = await UIConfirmKit.confirm({
+        title: "Notfall-Buchungen importieren",
+        message: confirmMsg,
+        confirmText: "Jetzt importieren",
+        type: "primary"
+      });
+      if (!ok) return;
+    } else if (!confirm(confirmMsg)) {
       return;
     }
 
@@ -1068,6 +1180,8 @@ async function syncNotfallBuchungen() {
 
     if (typeof showToast === 'function') {
       showToast(`✅ ${importedCount} Notfall-Buchung(en) nach Supabase importiert!`);
+    } else if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Import erfolgreich", message: `✅ Erfolgreich ${importedCount} Notfall-Buchung(en) nach Supabase importiert und im Google Sheet als synchronisiert markiert.`, type: "primary" });
     } else {
       alert(`✅ Erfolgreich ${importedCount} Notfall-Buchung(en) nach Supabase importiert und im Google Sheet als synchronisiert markiert.`);
     }
@@ -1078,7 +1192,11 @@ async function syncNotfallBuchungen() {
     }
   } catch (err) {
     console.error("Notfall-Sync Fehler:", err);
-    alert("❌ Fehler beim Synchronisieren: " + err.message);
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Synchronisations-Fehler", message: "❌ Fehler beim Synchronisieren: " + err.message, type: "danger" });
+    } else {
+      alert("❌ Fehler beim Synchronisieren: " + err.message);
+    }
   } finally {
     if (btn) {
       btn.disabled = false;

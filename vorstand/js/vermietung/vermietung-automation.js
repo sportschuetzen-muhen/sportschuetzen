@@ -303,7 +303,11 @@ async function toggleBankCronActive(newActiveState) {
     renderBankAutomationTab();
   } catch (err) {
     console.error("Fehler beim Umschalten des Cronjobs:", err);
-    alert("Fehler beim Speichern: " + (err.message || err));
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Fehler beim Umschalten", message: "Fehler beim Speichern: " + (err.message || err), type: "danger" });
+    } else {
+      alert("Fehler beim Speichern: " + (err.message || err));
+    }
     renderBankAutomationTab();
   }
 }
@@ -334,7 +338,11 @@ async function saveBankCronSchedule(newSchedule) {
     }
   } catch (err) {
     console.error("Fehler beim Anpassen des Scan-Intervalls:", err);
-    alert("Fehler beim Speichern: " + (err.message || err));
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Fehler beim Anpassen", message: "Fehler beim Speichern: " + (err.message || err), type: "danger" });
+    } else {
+      alert("Fehler beim Speichern: " + (err.message || err));
+    }
     renderBankAutomationTab();
   }
 }
@@ -368,7 +376,11 @@ async function triggerBankMailScanNow() {
     }, 3500);
   } catch (err) {
     console.error("Fehler beim Starten des Sofort-Scans:", err);
-    alert("Fehler beim Starten des Scans: " + (err.message || err));
+    if (window.UIConfirmKit) {
+      await UIConfirmKit.alert({ title: "Scan-Fehler", message: "Fehler beim Starten des Scans: " + (err.message || err), type: "danger" });
+    } else {
+      alert("Fehler beim Starten des Scans: " + (err.message || err));
+    }
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = `<i class="fas fa-sync-alt me-1.5"></i>Jetzt Postfach scannen`;

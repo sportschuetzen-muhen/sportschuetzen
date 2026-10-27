@@ -51,7 +51,7 @@ async function loadVermietungData(force = false) {
           mietdatum: typeof isoToDisplay === 'function' ? isoToDisplay(r.start_date) : r.start_date,
           start_date_iso: r.start_date,
           festbeginn: r.festbeginn || '–',
-          mietbetrag: `CHF ${parseFloat(r.total_amount_chf || 0).toFixed(2)}`,
+          mietbetrag: (window.UIFormatKit ? UIFormatKit.formatCurrency(r.total_amount_chf || 0) : `CHF ${parseFloat(r.total_amount_chf || 0).toFixed(2)}`),
           betrag_raw: parseFloat(r.total_amount_chf || 0),
           total_amount_chf: parseFloat(r.total_amount_chf || 0),
           deposit_amount_chf: parseFloat(r.deposit_amount_chf || 200),
@@ -148,7 +148,7 @@ function updateEinnahmen(jahr) {
   einnahmenJahr = jahr;
   const einnahmen = berechneEinnahmen(vermietungDaten, jahr);
   const el = document.getElementById('einnahmen-betrag');
-  if (el) el.innerText = `CHF ${einnahmen.toFixed(0)}`;
+  if (el) el.innerText = (window.UIFormatKit ? UIFormatKit.formatCurrency(einnahmen) : `CHF ${einnahmen.toFixed(0)}`);
 }
 
 // Liefert die Vereinsfarbe passend zum Statuscode zurück

@@ -151,3 +151,12 @@ Das Modul Vermietung steuert den gesamten Lebenszyklus der Vermietung der verein
 * **RFC 2047 Display-Name Encoding:** Der Absender-Header wird standardkonform kodiert (`=?UTF-8?B?...?=`), womit Sonderzeichen in `Sportschützen Muhen` in Microsoft Outlook ohne Zeichensatzfehler (`Ã¼`) dargestellt werden.
 * **Signatur-Hierarchie:** In allen Vorlagen steht der Vereinsname **«Sportschützen Muhen»** in der Signatur konsistent oben, gefolgt vom Namen und den Kontaktdaten des zuständigen Vermieters (`{vermieter_name}`).
 
+---
+
+## 6. UI-Harmonisierung & Toolkits (Oktober 2026)
+
+* **Asynchroner Dialog-Standard (`UIConfirmKit`):** Alle Status-Mutationen, Mahnungs- und Vertragsworkflows, Notfall-Sync-Abgleiche und Stornierungen im Vermietungscockpit nutzen `UIConfirmKit.confirm` und `UIConfirmKit.alert` mit strikter Du-Form («Möchtest du wirklich eine erneute Mahnung senden?»). Stornierungen sind als `danger`, Mehrfachversand als `warning` und Bestätigungen als `primary` semantisch kodiert.
+* **Double-Submit-Schutz & Formatierung (`UIButtonKit`, `UIFormatKit`):** Die Schnellerfassung neuer Mieten (`#btn-save-new-reservation`), Notfall-Importe und Einstellungsdialoge sind gegen Mehrfachklicks via `UIButtonKit.withLoading` abgesichert. Mietbeträge und Jahreserträge werden zentral über `UIFormatKit.formatCurrency` formatiert.
+* **Excel-Export (`UIExportKit`):** Im Tabellen-Toolbar von `#vermietung-table` steht ein direkter Excel-Export (`UIExportKit.exportTableToExcel`) zur Verfügung.
+
+

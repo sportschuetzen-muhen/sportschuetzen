@@ -351,6 +351,9 @@ function renderVermietungCockpit(daten) {
                 <div class="d-flex gap-2 align-items-center">
                   <!-- Spalten-Ausblender (TableKit Standard) -->
                   <div id="vermietungColToggleContainer" class="d-inline-block"></div>
+                  <button class="btn btn-sm btn-outline-success py-1 fw-bold" onclick="if(window.UIExportKit)UIExportKit.exportTableToExcel('#vermietung-table', 'Vermietungen_Muhen.xlsx')" title="Tabelle als Excel exportieren">
+                    <i class="fas fa-file-excel me-1"></i>Excel
+                  </button>
                   ${canWrite ? `
                   <button class="btn btn-sm btn-outline-secondary py-1 fw-bold" onclick="syncNotfallBuchungen()" id="btn-sync-notfall" title="Prüft das Google Notfall-Sheet auf neue Buchungen und überträgt sie nach Supabase">
                     <i class="fas fa-cloud-download-alt text-primary me-1"></i>Notfall-Sync
@@ -460,7 +463,7 @@ function renderVermietungCockpit(daten) {
           <div class="modal-body p-4" id="new-reservation-modal-body"></div>
           <div class="modal-footer border-0 bg-light">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-            <button type="button" class="btn btn-primary fw-bold" onclick="saveNewReservation()"><i class="fas fa-save me-1"></i>Reservation speichern</button>
+            <button type="button" class="btn btn-primary fw-bold" id="btn-save-new-reservation" onclick="saveNewReservation()"><i class="fas fa-save me-1"></i>Reservation speichern</button>
           </div>
         </div>
       </div>
