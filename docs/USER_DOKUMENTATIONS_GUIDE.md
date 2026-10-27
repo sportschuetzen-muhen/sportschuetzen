@@ -29,6 +29,7 @@ Es muss bei einer Programmier-Aufgabe **niemals alles eingelesen werden**. Das S
 │          - Mitglieder & SSV    ──► docs/MITGLIEDER_UND_SSV.md               │
 │          - Buchhaltung & Bank  ──► docs/FINANZBUCHHALTUNG_UND_BANK.md       │
 │          - UI/UX & TableKit    ──► docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md│
+│          - UI-Toolkits & KI    ──► docs/KI_UI_TOOLKITS_RICHTLINIE.md        │
 │          - Vermietung          ──► docs/VERMIETUNG_SCHUETZENSTUBE.md        │
 │          - Inventar            ──► docs/INVENTAR.md                         │
 │          - Mail-Verteiler      ──► docs/MAIL_VERTEILER.md                   │

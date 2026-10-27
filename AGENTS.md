@@ -78,5 +78,14 @@ Nach **jeder** vorgenommenen Code- oder Schemaänderung müssen der lokale Entwi
 - **Vereinsnahe Tonalität (Du-Kultur):** Im gesamten Vereinsportal (Hilfetexte, Tipps, Erklärungen, Tooltips, Modale, Alerts, Infobanner, Eingabehinweise, Bestätigungs- und Fehlerdialoge) werden Benutzer grundsätzlich und ausnahmslos in der **Du-Form** angesprochen («du», «dein», «wähle aus», «trage ein»).
 - Die distanzierte Sie-Form («Sie», «Ihre») ist im internen Vorstand- und Mitgliederportal zu vermeiden. Externe Dokumente (offizielle Rechnungs-PDFs an externe Firmen/Kunden) richten sich weiterhin nach den dortigen Adress- und Vorlagenstandards.
 
+## 9. Verbindliche Nutzung der globalen UI-Toolkits (`vorstand/js/ui-table-kit.js`)
+Für sämtliche bestehende und neu implementierte Module im Vorstands- und Vereinsportal gelten zwingend die zentralen UI-Toolkits:
+- **Dialoge (`UIConfirmKit`):** Striktes Verbot von nativem, blockierendem `window.confirm(...)` und `window.alert(...)`. Es ist ausnahmslos `await UIConfirmKit.confirm({ title, message, type: 'danger'|'warning'|'primary', confirmText, cancelText })` (liefert `Promise<boolean>`) und `await UIConfirmKit.alert({ title, message, type: 'info'|'warning'|'danger' })` (liefert `Promise<void>`) zu verwenden. Stornierungen und Löschungen sind rot (`danger`), Warnungen gelb/orange (`warning`), normale Bestätigungen blau (`primary`).
+- **Schweizer Standard-Formatierung (`UIFormatKit`):** Alle Beträge sind via `UIFormatKit.formatCurrency(val)` (Schweizer Format `CHF 1'234.50`) darzustellen. Kalenderdaten via `UIFormatKit.formatDate(isoDate)` (`DD.MM.YYYY` ohne Zeitzonenverzerrung), Uhrzeiten via `UIFormatKit.formatTime(isoStr)` (`HH:mm`), IBAN via `UIFormatKit.formatIban(iban)` und Telefonnummern via `UIFormatKit.formatPhone(phone)`.
+- **Double-Submit Schutz (`UIButtonKit`):** Sämtliche asynchronen Speicher-, Buchungs-, Berechnungs- oder Sende-Aktionen an Buttons müssen mit `await UIButtonKit.withLoading(buttonSelector, async () => { ... })` gewrappt werden, um Mehrfachklicks abzufangen und den Button-Zustand (inklusive Originaltext und Spinner) im `finally`-Block garantiert zurückzusetzen.
+- **Tabellen & Excel-Export (`TableKit` & `UIExportKit`):** Tabellen nutzen `TableKit.initTable`. Tabellen- und Datenexporte nach Excel erfolgen zentral über `UIExportKit.exportTableToExcel('#tableId', 'Dateiname.xlsx')` oder `UIExportKit.dataToExcel(data, cols, 'Dateiname.xlsx')`.
+- **Ergonomie & Session-Schutz (`UIHotkeyKit` & `UIConnectivityKit`):** Standard-Tastenkombinationen (`Strg+S` Speichern, `Escape` hierarchisches Schliessen, `Strg+K` / `/` Suchfokus) sowie der fixe Offline-Banner am oberen Bildschirmrand und der transparente JWT-Auth-Heartbeat sind im Portal global aktiv.
+
+
 
 
