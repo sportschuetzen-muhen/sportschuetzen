@@ -1,6 +1,6 @@
 # Implementierungsplan: Globale UI-Toolkits & System-Harmonisierung
 
-> **Status:** IN UMSETZUNG (Phase 1 & 2 produktiv verifiziert)  
+> **Status:** IN UMSETZUNG (Phasen 1–4 produktiv verifiziert)  
 > **Stand:** 27. Oktober 2026  
 > **Gültigkeit:** Verbindlicher Leitfaden für die schrittweise Einführung der globalen Toolkits im Vorstandscockpit (`vorstand/js/`)  
 > **Referenz:** [`docs/SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md`](SYSTEM_HARMONISIERUNG_UND_RECHNUNGSWESEN.md)  
@@ -169,9 +169,11 @@ Zur Einhaltung von Stabilität, Reviewbarkeit und Projekt-Richtlinien wird die U
    - Asynchroner Modal-Confirm (`Promise<boolean>`) und Alert (`Promise<void>`) mit Danger/Warning/Primary/Success Semantik.
    - Schweizer Währungs-, Datums- (ohne UTC-Shift), Zeit-, IBAN- und Telefonformatierung inklusive Browser- und Node-E2E-Tests.
    - Globale Verfügbarkeit über `window.UIConfirmKit`, `window.confirmAsync`, `window.alertAsync`, `window.UIFormat` und `TableKit.Format`.
-2. **Paket B (Interaktion & Export):**
-   - Implementierung von `UIButtonKit` & `UIExportKit`.
-   - Migration der 7 redundant vorliegenden SheetJS-Exporte.
+2. **Paket B (Interaktion & Export):** ✅ **ABGESCHLOSSEN & VERIFIZIERT**
+   - Implementierung von `UIButtonKit` & `UIExportKit` in `vorstand/js/ui-table-kit.js`.
+   - `UIButtonKit.withLoading`: Double-Submit Schutz, Spinner-Injektion und garantierter Originalzustand-Reset im `finally`-Block.
+   - `UIExportKit`: Zentraler SheetJS Excel- (`tableToExcel`, `dataToExcel`) und CSV-Export (`dataToCsv`) mit Auto-Breiten (`!cols`), Datumssuffix und TableKit-Filterung.
+   - Unit- und E2E-Tests im Browser erfolgreich bestanden.
 3. **Paket C (Ergonomie & Stabilität):**
    - Implementierung von `UIHotkeyKit` & `UIConnectivityKit`.
    - Globaler Testlauf und Dokumentationsabschluss.

@@ -2106,6 +2106,340 @@
     }
   };
 
+  // ===========================================================================
+  // 11. BUTTON-LIFECYCLE & DOUBLE-SUBMIT GUARD (UIButtonKit)
+  // ===========================================================================
+  const UIButtonKit = {
+    /**
+     * Umschliesst eine asynchrone Funktion mit automatischer Button-Deaktivierung,
+     * Spinner und ausnahmsloser Wiederherstellung im finally-Block.
+     * @param {HTMLElement|string} buttonOrSelector
+     * @param {Function} asyncFn
+     * @param {Object} options
+     * @returns {Promise<any>}
+     */
+    async withLoading(buttonOrSelector, asyncFn, options = {}) {
+      const btn = (typeof buttonOrSelector === 'string')
+        ? document.querySelector(buttonOrSelector)
+        : buttonOrSelector;
+
+      if (!btn || typeof asyncFn !== 'function') {
+        if (typeof asyncFn === 'function') return await asyncFn();
+        return;
+      }
+
+      // Schutz vor Double-Submit bei schnellen Mehrfachklicks
+      if (btn._uiButtonLoading) return;
+      btn._uiButtonLoading = true;
+
+      const originalHtml = btn.innerHTML;
+      const originalDisabled = btn.disabled;
+      const originalWidth = btn.getBoundingClientRect().width;
+
+      if (originalWidth > 0 && options.preserveWidth !== false) {
+        btn.style.minWidth = Math.round(originalWidth) + 'px';
+      }
+
+      btn.disabled = true;
+
+      const spinnerText = options.loadingText !== undefined
+        ? options.loadingText
+        : (options.text || null);
+      const spinnerHtml = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>';
+
+      if (spinnerText !== null) {
+        btn.innerHTML = `${spinnerHtml}${spinnerText}`;
+      } else {
+        btn.innerHTML = `${spinnerHtml}${originalHtml}`;
+      }
+
+      try {
+        const result = await asyncFn();
+        if (options.successText) {
+          btn.innerHTML = options.successText;
+          const duration = options.successDuration || 1200;
+          await new Promise(r => setTimeout(r, duration));
+        }
+        return result;
+      } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = originalDisabled;
+        if (options.preserveWidth !== false) {
+          btn.style.minWidth = '';
+        }
+        delete btn._uiButtonLoading;
+      }
+    },
+
+    /**
+     * Manuelle Steuerung des Button-Ladezustands.
+     * @param {HTMLElement|string} buttonOrSelector
+     * @param {boolean} isLoading
+     * @param {Object} options
+     */
+    setLoading(buttonOrSelector, isLoading, options = {}) {
+      const btn = (typeof buttonOrSelector === 'string')
+        ? document.querySelector(buttonOrSelector)
+        : buttonOrSelector;
+      if (!btn) return;
+
+      if (isLoading) {
+        if (btn._uiButtonLoading) return;
+        btn._uiButtonLoading = true;
+        btn._originalHtml = btn.innerHTML;
+        btn._originalDisabled = btn.disabled;
+        btn.disabled = true;
+        const text = options.loadingText || options.text || btn.innerText;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${text}`;
+      } else {
+        if (btn._originalHtml !== undefined) {
+          btn.innerHTML = btn._originalHtml;
+          delete btn._originalHtml;
+        }
+        if (btn._originalDisabled !== undefined) {
+          btn.disabled = btn._originalDisabled;
+          delete btn._originalDisabled;
+        }
+        delete btn._uiButtonLoading;
+      }
+    }
+  };
+
+  // ===========================================================================
+  // 12. ZENTRALER SHEETJS EXPORT-SERVICE (UIExportKit)
+  // ===========================================================================
+  const UIExportKit = {
+    /**
+     * Exportiert eine gerenderte HTML-Tabelle direkt in eine Excel-Datei (.xlsx).
+     * Beachtet TableKit-Ausblendungen (.tk-col-hidden) und filtert UI-Artefakte heraus.
+     * @param {HTMLTableElement|string} tableOrSelector
+     * @param {Object} options
+     */
+    tableToExcel(tableOrSelector, options = {}) {
+      if (typeof XLSX === 'undefined') {
+        const msg = 'SheetJS (XLSX) Bibliothek ist nicht geladen.';
+        if (window.UIConfirmKit) window.UIConfirmKit.alert({ title: 'Export-Fehler', message: msg, type: 'danger' });
+        else alert(msg);
+        return;
+      }
+
+      const table = (typeof tableOrSelector === 'string')
+        ? document.querySelector(tableOrSelector)
+        : tableOrSelector;
+      if (!table) return;
+
+      const thead = table.querySelector('thead');
+      const tbody = table.querySelector('tbody') || table;
+      if (!thead) return;
+
+      const excludeHidden = options.excludeHiddenColumns !== false;
+      const onlyVisibleRows = options.onlyVisibleRows !== false;
+
+      // 1. Spalten analysieren
+      const headerThs = Array.from(thead.querySelectorAll('tr:last-child th'));
+      const activeColumns = [];
+
+      headerThs.forEach((th, idx) => {
+        const colId = (th.dataset.colId || th.getAttribute('data-col') || '').toLowerCase();
+        // Aktionen, Checkboxen und Ausblende-Spalten überspringen
+        if (colId === 'check' || colId === 'actions' || colId === 'aktionen' || colId === 'col_check' || colId === 'col_actions' || colId === 'drag' || colId === 'col_drag') return;
+        if (th.classList.contains('tk-col-actions') || th.classList.contains('tk-col-check')) return;
+        if (excludeHidden && (th.classList.contains('tk-col-hidden') || th.style.display === 'none')) return;
+
+        // Header-Text bereinigen (Sortierpfeile, Resizer entfernen)
+        let headerText = th.innerText.replace(/[↕▲▼]/g, '').trim();
+        // Text aus data-col-name bevorzugen falls vorhanden
+        if (th.dataset.colName) headerText = th.dataset.colName;
+
+        activeColumns.push({
+          idx,
+          colId,
+          name: headerText || `Spalte ${idx + 1}`
+        });
+      });
+
+      if (!activeColumns.length) return;
+
+      // 2. Tabellenzeilen extrahieren
+      const aoa = [activeColumns.map(c => c.name)];
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+
+      rows.forEach(tr => {
+        // Ignorieren wenn gefiltert / ausgeblendet
+        if (onlyVisibleRows && tr.style.display === 'none') return;
+        // Ignorieren wenn Sub-Header oder Leerzeile
+        if (tr.classList.contains('tk-ignore-export')) return;
+
+        const cells = Array.from(tr.children);
+        if (!cells.length) return;
+
+        const rowData = [];
+        activeColumns.forEach(c => {
+          let td = c.colId ? tr.querySelector(`td[data-col-id="${c.colId}"], td.tk-col-${c.colId}`) : null;
+          if (!td && cells[c.idx]) {
+            td = cells[c.idx];
+          }
+
+          if (!td) {
+            rowData.push('');
+            return;
+          }
+
+          let val = '';
+          const input = td.querySelector('input:not([type="checkbox"]):not([type="hidden"]), select, textarea');
+          if (input) {
+            if (input.tagName === 'SELECT') {
+              val = input.options[input.selectedIndex]?.text || input.value || '';
+            } else {
+              val = input.value || '';
+            }
+          } else {
+            val = td.innerText.trim();
+          }
+
+          // Formatierungen bereinigen (z.B. "CHF 1'234.50" -> Zahl 1234.50 für echte Excel-Berechnungen)
+          if (options.parseNumbers !== false && /^CHF\s*[\d',.-]+$/i.test(val)) {
+            const rawNum = parseFloat(val.replace(/CHF/i, '').replace(/'/g, '').trim());
+            if (!isNaN(rawNum)) val = rawNum;
+          } else if (options.parseNumbers !== false && /^[\d']+\.\d{2}$/.test(val)) {
+            const rawNum = parseFloat(val.replace(/'/g, ''));
+            if (!isNaN(rawNum)) val = rawNum;
+          }
+
+          rowData.push(val);
+        });
+
+        aoa.push(rowData);
+      });
+
+      // 3. Worksheet & Workbook erzeugen
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+      const colWidths = activeColumns.map((col, colIdx) => {
+        let maxLen = col.name.length;
+        for (let r = 1; r < aoa.length; r++) {
+          const cellVal = String(aoa[r][colIdx] || '');
+          if (cellVal.length > maxLen) maxLen = Math.min(60, cellVal.length);
+        }
+        return { wch: Math.max(12, maxLen + 3) };
+      });
+      ws['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      const sheetName = (options.sheetName || 'Tabelle').slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      let baseFilename = options.filename || table.id || 'Export';
+      baseFilename = baseFilename.replace(/\.xlsx$/i, '');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const finalFilename = (options.dateSuffix !== false)
+        ? `${baseFilename}_${todayStr}.xlsx`
+        : `${baseFilename}.xlsx`;
+
+      XLSX.writeFile(wb, finalFilename);
+    },
+
+    /**
+     * Exportiert ein Rohdaten-Array nach Excel (.xlsx).
+     * @param {Array<Object>} dataArray
+     * @param {Object} options
+     */
+    dataToExcel(dataArray, options = {}) {
+      if (typeof XLSX === 'undefined') {
+        const msg = 'SheetJS (XLSX) Bibliothek ist nicht geladen.';
+        if (window.UIConfirmKit) window.UIConfirmKit.alert({ title: 'Export-Fehler', message: msg, type: 'danger' });
+        else alert(msg);
+        return;
+      }
+
+      if (!Array.isArray(dataArray) || !dataArray.length) {
+        if (window.UIConfirmKit) {
+          window.UIConfirmKit.alert({ title: 'Keine Daten', message: 'Es sind keine Datensätze für den Export vorhanden.', type: 'warning' });
+        }
+        return;
+      }
+
+      let ws;
+      if (options.headers && typeof options.headers === 'object') {
+        const keys = Object.keys(options.headers);
+        const headerLabels = Object.values(options.headers);
+        const aoa = [headerLabels];
+
+        dataArray.forEach(row => {
+          const r = keys.map(k => (row[k] !== undefined && row[k] !== null) ? row[k] : '');
+          aoa.push(r);
+        });
+        ws = XLSX.utils.aoa_to_sheet(aoa);
+      } else {
+        ws = XLSX.utils.json_to_sheet(dataArray);
+      }
+
+      if (Array.isArray(options.columnWidths)) {
+        ws['!cols'] = options.columnWidths.map(w => ({ wch: w }));
+      }
+
+      const wb = XLSX.utils.book_new();
+      const sheetName = (options.sheetName || 'Daten').slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      let baseFilename = options.filename || 'Export';
+      baseFilename = baseFilename.replace(/\.xlsx$/i, '');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const finalFilename = (options.dateSuffix !== false)
+        ? `${baseFilename}_${todayStr}.xlsx`
+        : `${baseFilename}.xlsx`;
+
+      XLSX.writeFile(wb, finalFilename);
+    },
+
+    /**
+     * Exportiert ein Datenarray als CSV-Datei (.csv mit Semikolon).
+     * @param {Array<Object>} dataArray
+     * @param {Object} options
+     */
+    dataToCsv(dataArray, options = {}) {
+      if (typeof XLSX === 'undefined') {
+        const msg = 'SheetJS (XLSX) Bibliothek ist nicht geladen.';
+        if (window.UIConfirmKit) window.UIConfirmKit.alert({ title: 'Export-Fehler', message: msg, type: 'danger' });
+        else alert(msg);
+        return;
+      }
+
+      if (!Array.isArray(dataArray) || !dataArray.length) return;
+
+      let ws;
+      if (options.headers && typeof options.headers === 'object') {
+        const keys = Object.keys(options.headers);
+        const headerLabels = Object.values(options.headers);
+        const aoa = [headerLabels];
+        dataArray.forEach(row => {
+          aoa.push(keys.map(k => (row[k] !== undefined && row[k] !== null) ? row[k] : ''));
+        });
+        ws = XLSX.utils.aoa_to_sheet(aoa);
+      } else {
+        ws = XLSX.utils.json_to_sheet(dataArray);
+      }
+
+      const csvContent = '\uFEFF' + XLSX.utils.sheet_to_csv(ws, { FS: ';' });
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const baseFilename = (options.filename || 'Export').replace(/\.csv$/i, '');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const filename = (options.dateSuffix !== false) ? `${baseFilename}_${todayStr}.csv` : `${baseFilename}.csv`;
+
+      if (navigator.msSaveBlob) {
+        navigator.msSaveBlob(blob, filename);
+      } else {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      }
+    }
+  };
+
   // Globale Registrierung
   window.TableKit = {
     makeSortable,
@@ -2124,6 +2458,8 @@
     SaveButton: window.SaveButtonKit || null,
     Confirm: UIConfirmKit,
     Format: UIFormat,
+    Button: UIButtonKit,
+    Export: UIExportKit,
     ensureStyles
   };
 
@@ -2144,6 +2480,12 @@
     window.formatSwissDate = UIFormat.date;
   }
 
-  console.log('✅ TableKit, UIModalKit, UIConfirmKit & UIFormatKit Standard geladen (Sportschützen Muhen UI Toolkit)');
+  window.UIButtonKit = UIButtonKit;
+  window.withLoading = UIButtonKit.withLoading;
+
+  window.UIExportKit = UIExportKit;
+
+  console.log('✅ TableKit, UIModalKit, UIConfirmKit, UIFormatKit, UIButtonKit & UIExportKit Standard geladen (Sportschützen Muhen UI Toolkit)');
 })();
+
 

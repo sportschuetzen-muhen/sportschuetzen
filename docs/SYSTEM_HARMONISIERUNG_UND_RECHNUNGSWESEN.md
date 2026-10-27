@@ -109,6 +109,18 @@ Die Formatierung sensibler Finanz- und Personaldaten erfolgt zentral über `UIFo
 * **Datum & Zeit (`UIFormat.date`, `dateTime`, `time`):** Schweizer Datumsformat `DD.MM.YYYY` (verhindert bei reinen `YYYY-MM-DD`-Werten Zeitzonenverschiebungen) mit optionalem Wochentag (`Di, 27.10.2026`).
 * **Strukturierte Daten (`UIFormat.iban`, `phone`):** IBAN-Gruppierung in 4er-Blöcke (`CH93 0076 ...`) und Schweizer Rufnummern-Normalisierung (`+41 79 123 45 67` oder national `079 123 45 67`).
 
+### 2.7 Button-Lifecycle & Double-Submit Schutz (`UIButtonKit` & `window.withLoading`)
+Der zentrale Lifecycle-Wrapper `UIButtonKit.withLoading(button, asyncFn, options)` schützt Mutations-Aktionen:
+* **Double-Submit Guard:** Verhindert versehentliche Mehrfachbuchungen (`disabled = true`, Flag `_uiButtonLoading`).
+* **Visuelles Feedback:** Kompakter Bootstrap-Spinner (`spinner-border-sm`) und anpassbarer Ladetext.
+* **Garantierter Reset:** Stellt Originalzustand (`innerHTML`, `disabled`, `style.minWidth`) ausnahmslos im `finally`-Block wieder her – auch bei Netzwerkfehlern oder Exceptions.
+
+### 2.8 Zentraler SheetJS Export-Service (`UIExportKit`)
+Der Service `UIExportKit` (`vorstand/js/ui-table-kit.js`) bündelt alle Tabellen- und Datenexporte nach Excel (.xlsx) und CSV:
+* **Table-to-Excel (`UIExportKit.tableToExcel`):** Exportiert direkt aus dem DOM, ignoriert `.tk-col-hidden`, Checkbox- und Aktionsspalten, bereinigt HTML-Artefakte und berechnet dynamische Spaltenbreiten (`!cols`).
+* **Data-to-Excel (`UIExportKit.dataToExcel`):** Exportiert Rohdaten-Arrays mit anpassbarem Spalten-Mapping und automatischem Tagesdatum-Dateisuffix (`_YYYY-MM-DD.xlsx`).
+* **Data-to-CSV (`UIExportKit.dataToCsv`):** Erzeugt UTF-8 BOM CSV-Dateien mit Semikolon-Trennzeichen für Schweizer Microsoft Excel.
+
 ---
 
 ## 3. Entkopplung & Zero-Trust Sicherheitsmodell
