@@ -610,6 +610,9 @@ window.renderTabJournal = function(container) {
         <button class="bh-edit-btn ms-1" onclick="bhOpenEntryModal(${item.id})" title="Buchung bearbeiten (z. B. Gegenkonto nachführen)">
           <i class="fas fa-edit"></i>
         </button>
+        <button class="bh-edit-btn ms-1 text-primary" onclick="bhConvertEntryToSplit(${item.id})" title="In Split-Buchung aufteilen (oder Split-Verbund bearbeiten)">
+          <i class="fas fa-layer-group"></i>
+        </button>
         <button class="bh-edit-btn text-danger ms-1" onclick="bhDeleteJournalEntry(${item.id})" title="Buchung löschen">
           <i class="fas fa-trash-alt"></i>
         </button>

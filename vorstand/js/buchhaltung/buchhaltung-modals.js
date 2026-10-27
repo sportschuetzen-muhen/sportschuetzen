@@ -1374,7 +1374,18 @@ window.bhOpenEntryModal = function(entryId) {
             </div>
           `;
         } else {
-          warnContainer.innerHTML = '';
+          warnContainer.innerHTML = `
+            <div class="alert alert-light border border-secondary-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 py-2 px-3 rounded-3 shadow-sm" style="background: #f8fafc;">
+              <div class="small text-muted">
+                <i class="fas fa-info-circle text-primary me-1.5"></i>Dies ist eine <strong>Einzelbuchung</strong>. Du kannst sie nachträglich in mehrere Teilpositionen aufteilen.
+              </div>
+              <div>
+                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" onclick="bhConvertEntryToSplit(${entry.id})" title="Buchungssatz nachträglich in mehrere Teilpositionen aufteilen">
+                  <i class="fas fa-layer-group me-1.5"></i>In Split-Buchung aufteilen
+                </button>
+              </div>
+            </div>
+          `;
         }
       }
     }
@@ -3229,15 +3240,72 @@ window.bhExecuteDeleteSplitGroup = async function(baseBeleg, year) {
 };
 
 // =====================================================================
-// SPLIT-VERBUND: GEMEINSAMES BEARBEITEN ALLER ZEILEN
+// SPLIT-VERBUND: GEMEINSAMES BEARBEITEN ALLER ZEILEN & NACHTRÄGLICHER SPLIT
 // =====================================================================
-window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
+window.bhConvertEntryToSplit = function(entryId) {
+  if (typeof hasWriteAccess === 'function' && !hasWriteAccess('buchhaltung')) {
+    alert("Keine Berechtigung zum Bearbeiten von Buchungen.");
+    return;
+  }
+  const entry = (window._bhJournal || []).find(j => Number(j.id) === Number(entryId));
+  if (!entry) {
+    alert("Buchungssatz nicht gefunden.");
+    return;
+  }
+
+  const baseBeleg = window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(entry.beleg_nr) : String(entry.beleg_nr || '').trim();
+  const y = Number(entry.jahr || window._bhYear || new Date().getFullYear());
+
+  // Falls bereits ein Verbund mit mehreren Geschwistern existiert: direkt öffnen
+  const siblings = (window._bhJournal || []).filter(j => {
+    return Number(j.jahr) === y && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
+  });
+  if (siblings.length > 1) {
+    return window.bhOpenSplitGroupEditModal(baseBeleg, y);
+  }
+
+  // Schliesse das Einzelbuchungs-Modal falls geöffnet
   const entryModalEl = document.getElementById('bhModalNewEntry');
   if (entryModalEl) {
     const bsEntryModal = bootstrap.Modal.getInstance(entryModalEl);
     if (bsEntryModal) bsEntryModal.hide();
   }
 
+  const originalAmt = Number(entry.betrag || 0);
+
+  window._bhCurrentSplitEdit = {
+    baseBeleg: baseBeleg,
+    year: y,
+    datum: entry.datum,
+    originalSingleTotal: originalAmt,
+    isConvertedFromSingle: true,
+    rows: [
+      {
+        id: entry.id, // Verknüpfung mit existierendem Datensatz in der DB
+        beleg_nr: `${baseBeleg}a`,
+        beschreibung: entry.beschreibung || '',
+        konto_soll: entry.konto_soll || '',
+        konto_haben: entry.konto_haben || '',
+        betrag: originalAmt > 0 ? (originalAmt / 2).toFixed(2) : '',
+        typ: entry.typ || 'Kassa',
+        datum: entry.datum
+      },
+      {
+        beschreibung: '',
+        konto_soll: entry.konto_soll || '',
+        konto_haben: '',
+        betrag: originalAmt > 0 ? (originalAmt - Number((originalAmt / 2).toFixed(2))).toFixed(2) : '',
+        typ: entry.typ || 'Kassa',
+        datum: entry.datum
+      }
+    ],
+    deletedIds: []
+  };
+
+  window.bhOpenSplitGroupModalUI(baseBeleg, y, entry.datum);
+};
+
+window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
   const y = Number(year || window._bhYear || new Date().getFullYear());
   const siblings = (window._bhJournal || []).filter(j => {
     return Number(j.jahr) === y && (window.bhGetSplitBaseBeleg ? window.bhGetSplitBaseBeleg(j.beleg_nr) === baseBeleg : false);
@@ -3249,10 +3317,23 @@ window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
     return;
   }
 
+  if (siblings.length === 1) {
+    return window.bhConvertEntryToSplit(siblings[0].id);
+  }
+
+  const entryModalEl = document.getElementById('bhModalNewEntry');
+  if (entryModalEl) {
+    const bsEntryModal = bootstrap.Modal.getInstance(entryModalEl);
+    if (bsEntryModal) bsEntryModal.hide();
+  }
+
+  const origTotal = siblings.reduce((s, j) => s + (Number(j.betrag) || 0), 0);
+
   window._bhCurrentSplitEdit = {
     baseBeleg,
     year: y,
     datum: siblings[0].datum,
+    originalSingleTotal: origTotal,
     rows: siblings.map(s => ({
       id: s.id,
       beleg_nr: s.beleg_nr,
@@ -3260,11 +3341,16 @@ window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
       konto_soll: s.konto_soll,
       konto_haben: s.konto_haben,
       betrag: s.betrag,
-      typ: s.typ || 'Kassa'
+      typ: s.typ || 'Kassa',
+      datum: s.datum || siblings[0].datum
     })),
     deletedIds: []
   };
 
+  window.bhOpenSplitGroupModalUI(baseBeleg, y, siblings[0].datum);
+};
+
+window.bhOpenSplitGroupModalUI = function(baseBeleg, year, datum) {
   let modalEl = document.getElementById('bhModalSplitGroupEdit');
   if (!modalEl) {
     modalEl = document.createElement('div');
@@ -3277,7 +3363,7 @@ window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
   modalEl.innerHTML = `
     <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content shadow-lg border-0 rounded-4">
-        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4">
+        <div class="modal-header bg-primary text-white border-0 py-3 rounded-top-4" style="cursor: grab; user-select: none;">
           <h5 class="modal-title fw-bold">
             <i class="fas fa-layer-group me-2"></i>Split-Verbund bearbeiten (${escapeHtml(baseBeleg)})
           </h5>
@@ -3288,8 +3374,8 @@ window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div>
                 <strong>Belegstamm:</strong> <span class="font-monospace fw-bold text-primary">${escapeHtml(baseBeleg)}</span> &middot;
-                <strong>Datum:</strong> ${escapeHtml(siblings[0].datum || '')} &middot;
-                <strong>Jahr:</strong> ${y}
+                <strong>Datum:</strong> ${escapeHtml(datum || '')} &middot;
+                <strong>Jahr:</strong> ${year}
               </div>
               <div>
                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="bhAddSplitGroupEditRow()">
@@ -3346,6 +3432,9 @@ window.bhOpenSplitGroupEditModal = function(baseBeleg, year) {
   bhRenderSplitGroupEditRows();
   const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
   bsModal.show();
+  if (window.UIModalKit && typeof window.UIModalKit.makeMovableAndResizable === 'function') {
+    window.UIModalKit.makeMovableAndResizable(modalEl);
+  }
 };
 
 window.bhRenderSplitGroupEditRows = function() {
@@ -3441,7 +3530,7 @@ window.bhRemoveSplitGroupEditRow = function(idx) {
 window.bhUpdateSplitGroupLiveTotal = function() {
   bhSyncSplitGroupFromInputs();
   if (!window._bhCurrentSplitEdit) return;
-  const { rows, baseBeleg } = window._bhCurrentSplitEdit;
+  const { rows, baseBeleg, originalSingleTotal } = window._bhCurrentSplitEdit;
 
   let totalSum = 0;
   let count = 0;
@@ -3454,11 +3543,23 @@ window.bhUpdateSplitGroupLiveTotal = function() {
   });
 
   const totalEl = document.getElementById('bh-sge-total-display');
-  if (totalEl) totalEl.innerHTML = `Total Beleg: <span class="text-primary font-monospace">CHF ${typeof fmtChf === 'function' ? fmtChf(totalSum) : totalSum.toFixed(2)}</span>`;
+  if (totalEl) {
+    totalEl.innerHTML = `Total Beleg: <span class="text-primary font-monospace">CHF ${typeof fmtChf === 'function' ? fmtChf(totalSum) : totalSum.toFixed(2)}</span>`;
+  }
 
   const summaryEl = document.getElementById('bh-sge-summary-text');
   if (summaryEl) {
-    summaryEl.textContent = `${rows.length} Position(en) im Verbund`;
+    if (typeof originalSingleTotal === 'number' && originalSingleTotal > 0) {
+      const diff = totalSum - originalSingleTotal;
+      if (Math.abs(diff) < 0.005) {
+        summaryEl.innerHTML = `${rows.length} Position(en) &middot; <span class="badge bg-success text-white"><i class="fas fa-check me-1"></i>Deckung 100% (${typeof fmtChf === 'function' ? fmtChf(originalSingleTotal) : originalSingleTotal.toFixed(2)})</span>`;
+      } else {
+        const diffText = (diff > 0 ? '+' : '') + (typeof fmtChf === 'function' ? fmtChf(diff) : diff.toFixed(2));
+        summaryEl.innerHTML = `${rows.length} Position(en) &middot; <span class="badge bg-warning text-dark"><i class="fas fa-balance-scale me-1"></i>Original: ${typeof fmtChf === 'function' ? fmtChf(originalSingleTotal) : originalSingleTotal.toFixed(2)} (Diff: ${diffText})</span>`;
+      }
+    } else {
+      summaryEl.textContent = `${rows.length} Position(en) im Verbund`;
+    }
   }
 };
 
@@ -3532,7 +3633,11 @@ window.bhSaveSplitGroupEdit = async function(printAfter = false) {
             jRow.id = Number(vr.id);
             await supa.from('accounting_journal').upsert(jRow, { onConflict: 'id' });
           } else {
-            await supa.from('accounting_journal').insert(jRow);
+            const { data: insData, error: insErr } = await supa.from('accounting_journal').insert(jRow).select('id');
+            if (insErr) throw insErr;
+            if (insData && insData.length > 0) {
+              vr.id = insData[0].id;
+            }
           }
         }
       } catch (supaErr) {
